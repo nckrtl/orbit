@@ -13,9 +13,11 @@
     },
     "require-dev": {
         "carthage-software/mago": "^1.47",
+        "laravel/boost": "^2.5",
         "mockery/mockery": "^1.6.12",
         "pestphp/pest": "^5.1",
-        "phpunit/phpunit": "^13.0"
+        "phpunit/phpunit": "^13.0",
+        "spatie/guidelines-skills": "^1.1"
     },
     "autoload": {
         "psr-4": {
