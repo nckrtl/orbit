@@ -52,6 +52,38 @@ abstract class GatewayRequest extends Request
         return $this->stringKeyedArray($body['data'] ?? []);
     }
 
+    /**
+     * @mago-expect analysis:mixed-assignment Gateway collection items remain mixed until validated.
+     *
+     * @return list<array<string, mixed>>
+     */
+    protected function unwrapDataList(Response $response): array
+    {
+        $body = $this->decodeBody($response);
+
+        if (! is_array($body)) {
+            throw new GatewayApiException('Gateway response is not valid JSON.');
+        }
+
+        $data = $body['data'] ?? [];
+
+        if (! is_array($data)) {
+            return [];
+        }
+
+        $result = [];
+
+        foreach ($data as $item) {
+            if (! is_array($item)) {
+                continue;
+            }
+
+            $result[] = $this->stringKeyedArray($item);
+        }
+
+        return $result;
+    }
+
     /** @return array<string, mixed> */
     protected function unwrapMeta(Response $response): array
     {

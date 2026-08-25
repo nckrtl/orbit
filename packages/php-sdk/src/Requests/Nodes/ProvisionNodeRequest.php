@@ -12,7 +12,6 @@ use Saloon\Http\Response;
 use Saloon\Traits\Body\HasJsonBody;
 
 /**
- * @mago-expect lint:cyclomatic-complexity
  * @mago-expect lint:excessive-parameter-list
  */
 final class ProvisionNodeRequest extends GatewayRequest implements HasBody
@@ -42,18 +41,9 @@ final class ProvisionNodeRequest extends GatewayRequest implements HasBody
     {
         $data = $this->unwrapData($response);
         $meta = $this->unwrapMeta($response);
+        $requestId = is_string($meta['request_id'] ?? null) ? $meta['request_id'] : '';
 
-        return new NodeResponse(
-            id: is_int($data['id'] ?? null) ? $data['id'] : 0,
-            name: is_string($data['name'] ?? null) ? $data['name'] : '',
-            status: is_string($data['status'] ?? null) ? $data['status'] : '',
-            publicSshHost: is_string($data['public_ssh_host'] ?? null) ? $data['public_ssh_host'] : '',
-            publicSshPort: is_int($data['public_ssh_port'] ?? null) ? $data['public_ssh_port'] : 22,
-            sshUser: is_string($data['ssh_user'] ?? null) ? $data['ssh_user'] : '',
-            wireguardAddress: is_string($data['wireguard_address'] ?? null) ? $data['wireguard_address'] : null,
-            roles: $this->stringList($data['roles'] ?? []),
-            requestId: is_string($meta['request_id'] ?? null) ? $meta['request_id'] : '',
-        );
+        return NodeResponse::fromGatewayData($data, $requestId);
     }
 
     /** @return array<string, mixed> */
