@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Commands\Nodes;
 
+use App\Commands\GatewayCommand;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use LaravelZero\Framework\Commands\Command;
@@ -13,9 +14,11 @@ use Orbit\Sdk\Responses\Nodes\NodesResponse;
 
 final class ListNodesCommand extends Command
 {
+    #[\Override]
     protected $signature = 'node:list
         {--json : Return machine-readable JSON}';
 
+    #[\Override]
     protected $description = 'List nodes registered with the active gateway.';
 
     public function handle(
@@ -34,7 +37,7 @@ final class ListNodesCommand extends Command
             /** @var NodesResponse $response */
             $response = $connectors->make($profile)->send(new ListNodesRequest)->dto();
         } catch (GatewayApiException $exception) {
-            $this->error($exception->getMessage());
+            GatewayCommand::writeGatewayApiException($this, $exception);
 
             return self::FAILURE;
         }

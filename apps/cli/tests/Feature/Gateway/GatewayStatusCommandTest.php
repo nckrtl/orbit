@@ -80,4 +80,33 @@ describe(GatewayStatusCommand::class, function (): void {
             ->expectsOutputToContain('No active gateway profile.')
             ->assertExitCode(1);
     });
+
+    it('prints the request ID for gateway API errors', function (): void {
+        app(GatewayConfigRepository::class)->add(new GatewayProfile(
+            name: 'test',
+            url: 'https://10.70.0.1',
+            caPath: '/home/orbit/.orbit/ca/root.pem',
+        ));
+        MockClient::global([
+            ShowGatewayStatusRequest::class => MockResponse::make(
+                [
+                    'error' => [
+                        'code' => 'gateway.unavailable',
+                        'message' => 'Gateway is unavailable.',
+                        'details' => [],
+                    ],
+                ],
+                503,
+                [
+                    'X-Orbit-Request-Id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844',
+                ],
+            ),
+        ]);
+
+        $this
+            ->artisan('gateway:status')
+            ->expectsOutputToContain('Gateway is unavailable.')
+            ->expectsOutput('Request ID: 0198e15c-bf97-7c23-8f1f-61b8fe67a844')
+            ->assertExitCode(1);
+    });
 });

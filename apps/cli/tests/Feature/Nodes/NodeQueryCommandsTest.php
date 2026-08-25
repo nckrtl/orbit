@@ -111,6 +111,30 @@ describe('node:list', function (): void {
             ->expectsOutputToContain('Gateway is unavailable.')
             ->assertExitCode(1);
     });
+
+    it('prints the request ID for list command gateway API errors', function (): void {
+        MockClient::global([
+            ListNodesRequest::class => MockResponse::make(
+                [
+                    'error' => [
+                        'code' => 'gateway.unavailable',
+                        'message' => 'Gateway is unavailable.',
+                        'details' => [],
+                    ],
+                ],
+                503,
+                [
+                    'x-orbit-request-id' => request_id(),
+                ],
+            ),
+        ]);
+
+        $this
+            ->artisan('node:list')
+            ->expectsOutputToContain('Gateway is unavailable.')
+            ->expectsOutput('Request ID: '.request_id())
+            ->assertExitCode(1);
+    });
 });
 
 describe('node:show', function (): void {
@@ -195,6 +219,30 @@ describe('node:show', function (): void {
         $this
             ->artisan('node:show', ['node' => '999'])
             ->expectsOutputToContain('Node was not found.')
+            ->assertExitCode(1);
+    });
+
+    it('prints the request ID for show command gateway API errors', function (): void {
+        MockClient::global([
+            ShowNodeRequest::class => MockResponse::make(
+                [
+                    'error' => [
+                        'code' => 'node.not_found',
+                        'message' => 'Node was not found.',
+                        'details' => [],
+                    ],
+                ],
+                404,
+                [
+                    'X-Orbit-Request-Id' => request_id(),
+                ],
+            ),
+        ]);
+
+        $this
+            ->artisan('node:show', ['node' => '999'])
+            ->expectsOutputToContain('Node was not found.')
+            ->expectsOutput('Request ID: '.request_id())
             ->assertExitCode(1);
     });
 });

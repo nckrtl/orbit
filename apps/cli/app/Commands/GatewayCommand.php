@@ -83,7 +83,7 @@ abstract class GatewayCommand extends Command
             /** @mago-expect analysis:mixed-assignment Saloon returns DTOs through a mixed boundary. */
             $response = $connector->send($request)->dto();
         } catch (GatewayApiException $exception) {
-            $this->error($exception->getMessage());
+            self::writeGatewayApiException($this, $exception);
 
             return null;
         } catch (FatalRequestException) {
@@ -105,5 +105,14 @@ abstract class GatewayCommand extends Command
     protected function writeJson(array $payload): void
     {
         $this->line(json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
+    }
+
+    public static function writeGatewayApiException(Command $command, GatewayApiException $exception): void
+    {
+        $command->error($exception->getMessage());
+
+        if ($exception->requestId() !== null) {
+            $command->line("Request ID: {$exception->requestId()}");
+        }
     }
 }

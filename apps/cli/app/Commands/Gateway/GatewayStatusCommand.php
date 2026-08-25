@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Commands\Gateway;
 
+use App\Commands\GatewayCommand;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use LaravelZero\Framework\Commands\Command;
@@ -13,9 +14,11 @@ use Orbit\Sdk\Responses\Gateway\GatewayStatusResponse;
 
 final class GatewayStatusCommand extends Command
 {
+    #[\Override]
     protected $signature = 'gateway:status
         {--json : Return machine-readable JSON}';
 
+    #[\Override]
     protected $description = 'Show the active gateway status.';
 
     public function handle(
@@ -34,7 +37,7 @@ final class GatewayStatusCommand extends Command
             /** @var GatewayStatusResponse $status */
             $status = $connectors->make($profile)->send(new ShowGatewayStatusRequest)->dto();
         } catch (GatewayApiException $exception) {
-            $this->error($exception->getMessage());
+            GatewayCommand::writeGatewayApiException($this, $exception);
 
             return self::FAILURE;
         }
