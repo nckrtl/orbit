@@ -6,6 +6,18 @@ use Illuminate\Console\Scheduling\ScheduleFinishCommand;
 use Illuminate\Console\Scheduling\ScheduleListCommand;
 use Illuminate\Console\Scheduling\ScheduleRunCommand;
 use Illuminate\Foundation\Console\VendorPublishCommand;
+use Laravel\Boost\Console\AddSkillCommand;
+use Laravel\Boost\Console\InstallCommand as BoostInstallCommand;
+use Laravel\Boost\Console\ListSkillCommand;
+use Laravel\Boost\Console\StartCommand as BoostStartCommand;
+use Laravel\Boost\Console\UpdateCommand;
+use Laravel\Mcp\Console\Commands\InspectorCommand;
+use Laravel\Mcp\Console\Commands\MakeAppResourceCommand;
+use Laravel\Mcp\Console\Commands\MakePromptCommand;
+use Laravel\Mcp\Console\Commands\MakeResourceCommand;
+use Laravel\Mcp\Console\Commands\MakeServerCommand;
+use Laravel\Mcp\Console\Commands\MakeToolCommand;
+use Laravel\Mcp\Console\Commands\StartCommand as McpStartCommand;
 use LaravelZero\Framework\Commands\BuildCommand;
 use LaravelZero\Framework\Commands\InstallCommand;
 use LaravelZero\Framework\Commands\MakeCommand;
@@ -77,6 +89,18 @@ return [
         ScheduleFinishCommand::class,
         VendorPublishCommand::class,
         StubPublishCommand::class,
+        AddSkillCommand::class,
+        BoostInstallCommand::class,
+        ListSkillCommand::class,
+        BoostStartCommand::class,
+        UpdateCommand::class,
+        InspectorCommand::class,
+        MakeAppResourceCommand::class,
+        MakePromptCommand::class,
+        MakeResourceCommand::class,
+        MakeServerCommand::class,
+        MakeToolCommand::class,
+        McpStartCommand::class,
     ],
 
     /*

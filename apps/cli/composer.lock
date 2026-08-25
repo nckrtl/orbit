@@ -2272,7 +2272,7 @@
             "dist": {
                 "type": "path",
                 "url": "../php-sdk",
-                "reference": "ba1b70d32e6849f6ba052d8a7a417b001de15a5a"
+                "reference": "f26a2aaca36d9b4121895d51f97d42089f28c3f1"
             },
             "require": {
                 "php": "^8.5",
