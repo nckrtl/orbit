@@ -39,6 +39,7 @@ it('sends node provisioning input and maps the typed response', function (): voi
         wireguardAddress: '10.44.0.2',
         wireguardEndpointOverride: '10.0.0.2:51820',
         dnsServerOverride: '10.0.0.2',
+        hostKeyFingerprint: 'SHA256:5jCWsPXzMnd5zy5xVxZ2gzyjH9N3wVfL6n5X0M8W3uQ',
     );
 
     $response = $connector->send($request)->dto();
@@ -57,6 +58,7 @@ it('sends node provisioning input and maps the typed response', function (): voi
             'wireguard_address' => '10.44.0.2',
             'wireguard_endpoint_override' => '10.0.0.2:51820',
             'dns_server_override' => '10.0.0.2',
+            'host_key_fingerprint' => 'SHA256:5jCWsPXzMnd5zy5xVxZ2gzyjH9N3wVfL6n5X0M8W3uQ',
         ])
         ->and($response)
         ->toBeInstanceOf(NodeResponse::class)

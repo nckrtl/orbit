@@ -18,6 +18,7 @@ final class ProvisionNodeRequest extends GatewayRequest implements HasBody
 {
     use HasJsonBody;
 
+    #[\Override]
     protected Method $method = Method::POST;
 
     /** @param list<string> $roles */
@@ -30,6 +31,7 @@ final class ProvisionNodeRequest extends GatewayRequest implements HasBody
         private readonly ?string $wireguardAddress = null,
         private readonly ?string $wireguardEndpointOverride = null,
         private readonly ?string $dnsServerOverride = null,
+        private readonly ?string $hostKeyFingerprint = null,
     ) {}
 
     public function resolveEndpoint(): string
@@ -58,6 +60,7 @@ final class ProvisionNodeRequest extends GatewayRequest implements HasBody
             'wireguard_address' => $this->wireguardAddress,
             'wireguard_endpoint_override' => $this->wireguardEndpointOverride,
             'dns_server_override' => $this->dnsServerOverride,
+            'host_key_fingerprint' => $this->hostKeyFingerprint,
         ];
     }
 }

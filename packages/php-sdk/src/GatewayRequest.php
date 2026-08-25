@@ -37,6 +37,7 @@ abstract class GatewayRequest extends Request
             errorCode: $errorCode,
             details: $this->stringKeyedArray($error['details'] ?? []),
             previous: $senderException,
+            requestId: $this->requestId($response),
         );
     }
 
@@ -163,5 +164,12 @@ abstract class GatewayRequest extends Request
         } catch (JsonException) {
             return null;
         }
+    }
+
+    private function requestId(Response $response): ?string
+    {
+        $requestId = $response->getPsrResponse()->getHeaderLine('X-Orbit-Request-Id');
+
+        return $requestId !== '' ? $requestId : null;
     }
 }
