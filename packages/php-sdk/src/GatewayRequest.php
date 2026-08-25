@@ -85,6 +85,30 @@ abstract class GatewayRequest extends Request
     }
 
     /**
+     * @mago-expect analysis:mixed-assignment JSON values remain mixed until validated.
+     *
+     * @return list<string>
+     */
+    protected function stringList(mixed $value): array
+    {
+        if (! is_array($value)) {
+            return [];
+        }
+
+        $result = [];
+
+        foreach ($value as $item) {
+            if (! is_string($item)) {
+                continue;
+            }
+
+            $result[] = $item;
+        }
+
+        return $result;
+    }
+
+    /**
      * @mago-expect analysis:mixed-assignment JSON decoding starts at an untyped boundary.
      *
      * @return array<string, mixed>|null
