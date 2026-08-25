@@ -8,6 +8,6 @@ it('exposes only Orbit commands beyond the console essentials', function (): voi
     $commands = array_keys(app(Kernel::class)->all());
 
     expect($commands)
-        ->toContain('gateway:add', 'gateway:status', 'gateway:use')
+        ->toContain('gateway:add', 'gateway:status', 'gateway:use', 'node:provision')
         ->not->toContain('app:build', 'app:install', 'app:rename', 'make:command', 'make:test', 'test');
 });

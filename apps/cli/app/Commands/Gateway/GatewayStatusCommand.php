@@ -5,10 +5,9 @@ declare(strict_types=1);
 namespace App\Commands\Gateway;
 
 use App\Repositories\GatewayConfigRepository;
-use Illuminate\Support\Str;
+use App\Services\GatewayConnectorFactory;
 use LaravelZero\Framework\Commands\Command;
 use Orbit\Sdk\GatewayApiException;
-use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\Gateway\ShowGatewayStatusRequest;
 use Orbit\Sdk\Responses\Gateway\GatewayStatusResponse;
 
@@ -19,8 +18,10 @@ final class GatewayStatusCommand extends Command
 
     protected $description = 'Show the active gateway status.';
 
-    public function handle(GatewayConfigRepository $repository): int
-    {
+    public function handle(
+        GatewayConfigRepository $repository,
+        GatewayConnectorFactory $connectors,
+    ): int {
         $profile = $repository->active();
 
         if ($profile === null) {
@@ -29,15 +30,9 @@ final class GatewayStatusCommand extends Command
             return self::FAILURE;
         }
 
-        $connector = new GatewayConnector(
-            baseUrl: $profile->url,
-            caPemPath: $profile->caPath,
-            requestIdResolver: static fn (): string => (string) Str::uuid(),
-        );
-
         try {
             /** @var GatewayStatusResponse $status */
-            $status = $connector->send(new ShowGatewayStatusRequest)->dto();
+            $status = $connectors->make($profile)->send(new ShowGatewayStatusRequest)->dto();
         } catch (GatewayApiException $exception) {
             $this->error($exception->getMessage());
 
