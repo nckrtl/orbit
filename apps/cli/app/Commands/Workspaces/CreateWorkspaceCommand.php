@@ -16,7 +16,7 @@ final class CreateWorkspaceCommand extends GatewayCommand
         {instance : Numeric instance ID}
         {name : Workspace name}
         {--branch= : Git branch, defaults to the workspace name}
-        {--path= : Absolute workspace checkout path}
+        {--path= : Absolute target-node checkout path; Linux default: /home/orbit/.orbit/worktrees/<app>/<workspace>}
         {--php= : Optional PHP major.minor override}
         {--json : Return machine-readable JSON}';
 

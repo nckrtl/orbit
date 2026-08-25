@@ -32,6 +32,14 @@ afterEach(function (): void {
 });
 
 describe('instance:new', function (): void {
+    it('documents the per-app node constraint and app-derived runtime identity', function (): void {
+        $this
+            ->artisan('help', ['command_name' => 'instance:new'])
+            ->expectsOutputToContain('Create the single instance of an app on a node.')
+            ->expectsOutputToContain('Metadata name; source path and hostname use the app slug')
+            ->assertExitCode(0);
+    });
+
     it('creates an instance through the active gateway as JSON', function (): void {
         $mockClient = MockClient::global([
             CreateInstanceRequest::class => instance_mock_response(201),
@@ -113,7 +121,7 @@ describe('instance:list', function (): void {
             ->artisan('instance:list')
             ->expectsTable(
                 ['ID', 'App', 'Node', 'Name', 'Environment', 'Status', 'PHP', 'Hostname'],
-                [[5, 3, 2, 'dev', 'development', 'active', '8.5', 'dev.orbit']],
+                [[5, 3, 2, 'dev', 'development', 'active', '8.5', 'orbit-docs.beast']],
             )
             ->expectsOutput('Request ID: '.instance_request_id())
             ->assertExitCode(0);
@@ -144,10 +152,10 @@ describe('instance:show', function (): void {
             ->expectsOutput('App: 3')
             ->expectsOutput('Node: 2')
             ->expectsOutput('Environment: development')
-            ->expectsOutput('Checkout: /home/orbit/apps/orbit/dev')
+            ->expectsOutput('Checkout: /home/orbit/apps/orbit-docs')
             ->expectsOutput('Document root: public')
             ->expectsOutput('PHP: 8.5')
-            ->expectsOutput('Hostname: dev.orbit')
+            ->expectsOutput('Hostname: orbit-docs.beast')
             ->expectsOutput('Certificate: internal')
             ->doesntExpectOutputToContain('Failure:')
             ->expectsOutput('Request ID: '.instance_request_id())
@@ -307,10 +315,10 @@ function instance_payload(string $phpVersion = '8.5'): array
         'node_id' => 2,
         'name' => 'dev',
         'environment' => 'development',
-        'checkout_path' => '/home/orbit/apps/orbit/dev',
+        'checkout_path' => '/home/orbit/apps/orbit-docs',
         'document_root' => 'public',
         'php_version' => $phpVersion,
-        'hostname' => 'dev.orbit',
+        'hostname' => 'orbit-docs.beast',
         'certificate_mode' => 'internal',
         'status' => 'active',
         'failed_step' => null,

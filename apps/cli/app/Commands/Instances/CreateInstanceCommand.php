@@ -15,13 +15,13 @@ final class CreateInstanceCommand extends GatewayCommand
     protected $signature = 'instance:new
         {app : Numeric app ID}
         {node : Numeric node ID}
-        {name : Instance name}
+        {name : Metadata name; source path and hostname use the app slug}
         {--environment=development : Environment name}
         {--document-root=public : Web document root relative to the checkout}
         {--php=8.5 : PHP major.minor version}
         {--json : Return machine-readable JSON}';
 
-    protected $description = 'Create an instance.';
+    protected $description = 'Create the single instance of an app on a node.';
 
     public function handle(
         GatewayConfigRepository $repository,

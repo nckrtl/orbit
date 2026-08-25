@@ -32,6 +32,15 @@ afterEach(function (): void {
 });
 
 describe('workspace:new', function (): void {
+    it('documents target-node checkout path behavior', function (): void {
+        $this
+            ->artisan('help', ['command_name' => 'workspace:new'])
+            ->expectsOutputToContain(
+                'Absolute target-node checkout path; Linux default: /home/orbit/.orbit/worktrees/<app>/<workspace>',
+            )
+            ->assertExitCode(0);
+    });
+
     it('creates a workspace through the active gateway as JSON', function (): void {
         $mockClient = MockClient::global([
             CreateWorkspaceRequest::class => workspace_mock_response(201),
@@ -42,7 +51,7 @@ describe('workspace:new', function (): void {
                 'instance' => '5',
                 'name' => 'feature-auth',
                 '--branch' => 'feature/auth',
-                '--path' => '/home/orbit/apps/orbit/dev/.worktrees/feature-auth',
+                '--path' => '/home/orbit/.orbit/worktrees/orbit-docs/feature-auth',
                 '--php' => '8.4',
                 '--json' => true,
             ])
@@ -60,7 +69,7 @@ describe('workspace:new', function (): void {
                 'instance_id' => 5,
                 'name' => 'feature-auth',
                 'branch' => 'feature/auth',
-                'checkout_path' => '/home/orbit/apps/orbit/dev/.worktrees/feature-auth',
+                'checkout_path' => '/home/orbit/.orbit/worktrees/orbit-docs/feature-auth',
                 'php_version' => '8.4',
             ]);
     });
@@ -80,7 +89,10 @@ describe('workspace:new', function (): void {
             ->assertExitCode(0);
 
         expect($mockClient->getLastRequest()?->body()->all())
-            ->toMatchArray(['branch' => 'feature-auth']);
+            ->toMatchArray([
+                'branch' => 'feature-auth',
+                'checkout_path' => null,
+            ]);
     });
 });
 
@@ -115,7 +127,7 @@ describe('workspace:list', function (): void {
             ->artisan('workspace:list')
             ->expectsTable(
                 ['ID', 'Instance', 'Node', 'Name', 'Branch', 'Status', 'PHP', 'Hostname'],
-                [[7, 5, 2, 'feature-auth', 'feature/auth', 'active', '8.4', 'feature-auth.dev.orbit']],
+                [[7, 5, 2, 'feature-auth', 'feature/auth', 'active', '8.4', 'feature-auth.orbit-docs.beast']],
             )
             ->expectsOutput('Request ID: '.workspace_request_id())
             ->assertExitCode(0);
@@ -146,9 +158,9 @@ describe('workspace:show', function (): void {
             ->expectsOutput('Instance: 5')
             ->expectsOutput('Node: 2')
             ->expectsOutput('Branch: feature/auth')
-            ->expectsOutput('Checkout: /home/orbit/apps/orbit/dev/.worktrees/feature-auth')
+            ->expectsOutput('Checkout: /home/orbit/.orbit/worktrees/orbit-docs/feature-auth')
             ->expectsOutput('PHP: 8.4')
-            ->expectsOutput('Hostname: feature-auth.dev.orbit')
+            ->expectsOutput('Hostname: feature-auth.orbit-docs.beast')
             ->doesntExpectOutputToContain('Failure:')
             ->expectsOutput('Request ID: '.workspace_request_id())
             ->assertExitCode(0);
@@ -322,10 +334,10 @@ function workspace_payload(?string $phpVersion = '8.4'): array
         'node_id' => 2,
         'name' => 'feature-auth',
         'branch' => 'feature/auth',
-        'checkout_path' => '/home/orbit/apps/orbit/dev/.worktrees/feature-auth',
+        'checkout_path' => '/home/orbit/.orbit/worktrees/orbit-docs/feature-auth',
         'php_version' => $phpVersion,
         'effective_php_version' => $phpVersion ?? '8.5',
-        'hostname' => 'feature-auth.dev.orbit',
+        'hostname' => 'feature-auth.orbit-docs.beast',
         'status' => 'active',
         'failed_step' => null,
         'error_code' => null,
