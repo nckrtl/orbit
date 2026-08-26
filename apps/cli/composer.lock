@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "154ee9c8e0335e8f3fa30b7dfee2935f",
+    "content-hash": "15d3d5a7eb14dbc0e4c99bbd66a3d08e",
     "packages": [
         {
             "name": "brick/math",
@@ -2272,7 +2272,7 @@
             "dist": {
                 "type": "path",
                 "url": "../php-sdk",
-                "reference": "7ddcb86ba6290d56d7d627085d903379e6a97366"
+                "reference": "121535158738b072db3b413e1b88397ae95b5234"
             },
             "require": {
                 "php": "^8.5",
@@ -2301,6 +2301,7 @@
                     "vendor/bin/mago analyze src --reporting-format=medium"
                 ],
                 "check": [
+                    "@guidance:check",
                     "@rector",
                     "@test",
                     "@format:check",
@@ -2313,11 +2314,14 @@
                 "format:check": [
                     "vendor/bin/mago format --check"
                 ],
+                "guidance:check": [
+                    "vendor/bin/pest --no-tia --compact tests/Unit/RepositoryGuidanceTest.php"
+                ],
                 "lint": [
                     "vendor/bin/mago lint src tests --reporting-format=medium"
                 ],
                 "rector": [
-                    "vendor/bin/rector process"
+                    "vendor/bin/rector process --dry-run"
                 ],
                 "test": [
                     "vendor/bin/pest --compact"
@@ -10322,6 +10326,8 @@
     "prefer-stable": true,
     "prefer-lowest": false,
     "platform": {
+        "ext-pcntl": "*",
+        "ext-posix": "*",
         "php": "^8.5"
     },
     "platform-dev": {},

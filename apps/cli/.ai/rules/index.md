@@ -7,6 +7,7 @@ Before planning or editing, find the row whose globs match the file's path and r
 | app/** | .ai/rules/app.md |
 | app/Commands/** | .ai/rules/commands.md |
 | README.md | .ai/rules/documentation.md |
+| app/Commands/Nodes/SetupNodeCommand.php, app/Data/NodeSetup*.php, app/Exceptions/LocalNodeSetupException.php, app/Services/NodeSetup/**, app/Support/LocalDiagnosticRedactor.php | .ai/rules/macos-local-setup.md |
 | .ai/**, .agents/**, .codex/**, AGENTS.md, app/Providers/LaravelBoostCompatibilityServiceProvider.php, app/Support/LaravelZero*.php, boost.json, composer.json, composer.lock, config/boost.php, tests/Feature/BoostGuidanceTest.php | .ai/rules/repository-bootstrap.md |
 | bootstrap/**, config/**, orbit | .ai/rules/runtime.md |
 | tests/** | .ai/rules/tests.md |

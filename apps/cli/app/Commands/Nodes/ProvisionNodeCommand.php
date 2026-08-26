@@ -10,6 +10,7 @@ use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\Requests\Nodes\ProvisionNodeRequest;
 use Orbit\Sdk\Responses\Nodes\NodeResponse;
 
+/** @mago-expect lint:cyclomatic-complexity The command validates the frozen enrollment transport shape. */
 final class ProvisionNodeCommand extends GatewayCommand
 {
     #[\Override]
@@ -24,6 +25,7 @@ final class ProvisionNodeCommand extends GatewayCommand
         {--role=* : Initial role assignment}
         {--host-key-fingerprint= : Approved SSH SHA256 host key fingerprint}
         {--wireguard-address= : Stable WireGuard address}
+        {--wireguard-public-key= : Public key for an already installed WireGuard tunnel}
         {--wireguard-endpoint= : Per-node WireGuard endpoint override}
         {--dns-server= : Per-node DNS server override}
         {--json : Return machine-readable JSON}';
@@ -68,6 +70,7 @@ final class ProvisionNodeCommand extends GatewayCommand
         $roleNames = array_values(array_filter($roles, is_string(...)));
         $platform = $this->stringOption('platform');
         $hostKeyFingerprint = $this->stringOption('host-key-fingerprint');
+        $wireguardPublicKey = $this->option('wireguard-public-key');
 
         if (! in_array(needle: $platform, haystack: ['linux', 'darwin'], strict: true)) {
             return $this->renderGatewayFailure(
@@ -101,6 +104,7 @@ final class ProvisionNodeCommand extends GatewayCommand
                 platform: $platform,
                 architecture: $this->stringOption('architecture'),
                 tld: $this->stringOption('tld'),
+                wireguardPublicKey: is_string($wireguardPublicKey) ? $wireguardPublicKey : null,
             ),
             NodeResponse::class,
         );

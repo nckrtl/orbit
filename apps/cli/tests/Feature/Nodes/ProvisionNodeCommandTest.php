@@ -68,6 +68,7 @@ it('sends node provisioning to the active gateway', function (): void {
         'failed_step' => null,
         'error_code' => null,
         'roles' => ['app-dev'],
+        'role_assignments' => [],
         'request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844',
     ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
 
@@ -150,6 +151,47 @@ it('omits a public SSH host for Darwin provisioning', function (): void {
             'ssh_user' => 'root',
             'roles' => ['app-dev'],
         ]);
+});
+
+it('passes a Darwin enrollment public key through unchanged on identical retries', function (): void {
+    app(GatewayConfigRepository::class)->add(new GatewayProfile(
+        name: 'test',
+        url: 'https://10.44.0.1',
+        caPath: '/home/orbit/.orbit/ca/root.pem',
+    ));
+    $publicKey = 'darwin-public-key-with-gateway-owned-policy';
+    $mockClient = MockClient::global([
+        ProvisionNodeRequest::class => MockResponse::make([
+            'data' => [
+                'id' => 2,
+                'name' => 'mini',
+                'status' => 'pending',
+                'platform' => 'darwin',
+                'architecture' => 'arm64',
+                'roles' => ['app-dev'],
+                'wireguard_public_key' => $publicKey,
+            ],
+            'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844'],
+        ], 201),
+    ]);
+    $arguments = [
+        'name' => 'mini',
+        '--platform' => 'darwin',
+        '--architecture' => 'arm64',
+        '--role' => ['app-dev'],
+        '--wireguard-public-key' => $publicKey,
+        '--json' => true,
+    ];
+
+    $this->artisan('node:provision', $arguments)->assertExitCode(0);
+    $this->artisan('node:provision', $arguments)->assertExitCode(0);
+
+    expect($mockClient->getRecordedResponses())->toHaveCount(2);
+
+    foreach ($mockClient->getRecordedResponses() as $response) {
+        expect($response->getPendingRequest()->body()->all())
+            ->toHaveKey('wireguard_public_key', $publicKey);
+    }
 });
 
 it('rejects unsupported platform input before making an API request', function (): void {

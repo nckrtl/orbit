@@ -10,6 +10,7 @@ use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\Requests\Nodes\ShowNodeRequest;
 use Orbit\Sdk\Responses\Nodes\NodeResponse;
 
+/** @mago-expect lint:cyclomatic-complexity Human output covers additive node and role lifecycle fields. */
 final class ShowNodeCommand extends GatewayCommand
 {
     #[\Override]
@@ -58,6 +59,15 @@ final class ShowNodeCommand extends GatewayCommand
 
         $this->info("{$node->name}: {$node->status}");
         $this->line("Roles: {$roles}");
+
+        foreach ($node->roleAssignments as $assignment) {
+            $this->line("Role [{$assignment->role}]: {$assignment->status}");
+
+            if ($assignment->localActionRequired && $assignment->localCommand !== null) {
+                $this->line("Local setup required: {$assignment->localCommand}");
+            }
+        }
+
         $this->line('SSH: '.NodeOutput::sshEndpoint($node));
         $this->line('WireGuard: '.($node->wireguardAddress ?? '-'));
         $this->line('WireGuard public key: '.($node->wireguardPublicKey ?? '-'));

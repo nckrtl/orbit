@@ -38,6 +38,81 @@ afterEach(function (): void {
     new Filesystem()->deleteDirectory($this->orbitHome);
 });
 
+it('preserves each present process runtime exactly for Gateway policy', function (string $runtime): void {
+    $mock = MockClient::global([
+        AddProcessRequest::class => process_cli_response(201),
+    ]);
+
+    $this
+        ->artisan('process:add', [
+            'name' => 'worker',
+            '--instance' => '7',
+            '--runtime' => $runtime,
+            '--command' => ['php', 'artisan'],
+        ])
+        ->assertExitCode(0);
+
+    expect($mock->getLastRequest()?->body()->all())
+        ->toHaveKey('runtime', $runtime);
+})->with([
+    'explicit empty' => '',
+    'systemd' => 'systemd',
+    'launchd' => 'launchd',
+    'docker' => 'docker',
+    'unsupported' => 'gateway-owned-runtime',
+    'exactly 64 bytes' => str_repeat('r', 64),
+    'exactly 64 multibyte bytes' => str_repeat('é', 32),
+]);
+
+it('omits an absent process runtime', function (): void {
+    $mock = MockClient::global([
+        AddProcessRequest::class => process_cli_response(201),
+    ]);
+
+    $this
+        ->artisan('process:add', [
+            'name' => 'worker',
+            '--instance' => '7',
+            '--command' => ['php', 'artisan'],
+        ])
+        ->assertExitCode(0);
+
+    expect($mock->getLastRequest()?->body()->all())->not->toHaveKey('runtime');
+});
+
+it('rejects over-64-byte, invalid UTF-8, or control-bearing present runtimes before Gateway IO', function (
+    string $runtime,
+): void {
+    $mock = MockClient::global([
+        AddProcessRequest::class => process_cli_response(201),
+    ]);
+
+    $this
+        ->artisan('process:add', [
+            'name' => 'worker',
+            '--instance' => '7',
+            '--runtime' => $runtime,
+            '--command' => ['php', 'artisan'],
+            '--json' => true,
+        ])
+        ->expectsOutput(json_encode(['error' => [
+            'code' => 'process.runtime_invalid',
+            'message' => 'Process runtime is invalid.',
+            'request_id' => null,
+        ]], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))
+        ->doesntExpectOutputToContain('runtime-private-value')
+        ->assertExitCode(1);
+
+    expect($mock->getLastPendingRequest())->toBeNull();
+})->with([
+    '65 bytes' => str_repeat('r', 65),
+    '65-byte multibyte boundary' => str_repeat('é', 32).'x',
+    'ASCII control' => "launchd\nruntime-private-value",
+    'C1 Unicode control' => "launchd\u{0085}runtime-private-value",
+    'invalid UTF-8' => "launchd\xC3\x28runtime-private-value",
+    'DEL' => "launchd\x7Fruntime-private-value",
+]);
+
 it('adds one explicit Docker process through the active gateway', function (): void {
     $mock = MockClient::global([
         AddProcessRequest::class => process_cli_response(201),
@@ -165,7 +240,6 @@ it('passes a relative systemd executable to the Gateway for policy validation', 
             'target_type' => 'instance',
             'target_id' => 7,
             'name' => 'worker',
-            'runtime' => 'systemd',
             'command' => ['php', 'artisan'],
             'restart_policy' => 'never',
             'start' => false,
@@ -194,7 +268,6 @@ it('preserves explicitly supplied empty process arrays', function (): void {
             'target_type' => 'instance',
             'target_id' => 7,
             'name' => 'worker',
-            'runtime' => 'systemd',
             'command' => [],
             'restart_policy' => 'never',
             'start' => false,

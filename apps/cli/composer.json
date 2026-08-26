@@ -6,6 +6,8 @@
     "type": "project",
     "license": "MIT",
     "require": {
+        "ext-pcntl": "*",
+        "ext-posix": "*",
         "php": "^8.5",
         "laravel-zero/foundation": "^13.0",
         "laravel-zero/framework": "^13.0",

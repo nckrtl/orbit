@@ -21,7 +21,7 @@ final class AddProcessCommand extends ProcessCommand
         {name : Process name}
         {--instance= : Numeric instance ID}
         {--workspace= : Numeric workspace ID}
-        {--runtime=systemd : systemd or docker}
+        {--runtime= : Runtime such as systemd, launchd, or docker}
         {--command=* : One command argument; repeat for each argv item}
         {--image= : Docker image}
         {--working-directory= : Runtime working directory}
@@ -61,12 +61,20 @@ final class AddProcessCommand extends ProcessCommand
             return self::FAILURE;
         }
 
-        $runtime = $this->stringOption('runtime');
+        $runtimeWasProvided = $this->input->hasParameterOption('--runtime');
+        $runtimeValue = $this->option('runtime');
+        $runtime = $runtimeWasProvided && is_string($runtimeValue) ? $runtimeValue : null;
 
-        if ($runtime === null || ! in_array($runtime, ['systemd', 'docker'], strict: true)) {
+        if (
+            $runtimeWasProvided
+            && (! is_string($runtimeValue)
+            || strlen($runtimeValue) > 64
+            || preg_match('//u', $runtimeValue) !== 1
+            || preg_match('/\p{Cc}/u', $runtimeValue) === 1)
+        ) {
             return $this->renderGatewayFailure(
                 'process.runtime_invalid',
-                'Process runtime must be systemd or docker.',
+                'Process runtime is invalid.',
             );
         }
 

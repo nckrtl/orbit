@@ -364,11 +364,11 @@ it('renders local validation failures through the exact json boundary', function
         [
             'name' => 'worker',
             '--instance' => '1',
-            '--runtime' => 'validation-secret',
+            '--runtime' => "validation-secret\n",
             '--command' => ['/usr/bin/php'],
         ],
         'process.runtime_invalid',
-        'Process runtime must be systemd or docker.',
+        'Process runtime is invalid.',
     ],
     'process restart policy' => [
         'process:add',
