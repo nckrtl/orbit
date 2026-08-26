@@ -29,6 +29,7 @@
     "scripts": {
         "analyse": "vendor/bin/mago analyze src --reporting-format=medium",
         "check": [
+            "@guidance:check",
             "@rector",
             "@test",
             "@format:check",
@@ -37,6 +38,7 @@
         ],
         "format": "vendor/bin/mago format",
         "format:check": "vendor/bin/mago format --check",
+        "guidance:check": "vendor/bin/pest --no-tia --compact tests/Unit/RepositoryGuidanceTest.php",
         "lint": "vendor/bin/mago lint src tests --reporting-format=medium",
         "rector": "vendor/bin/rector process --dry-run",
         "test": "vendor/bin/pest --compact",

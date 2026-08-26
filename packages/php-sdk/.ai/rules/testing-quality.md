@@ -1,0 +1,21 @@
+# Testing and quality
+
+Use Pest 5 with `describe()` and `it()`. Use TDD for behavior changes. Run
+focused tests for red, green, and refactor. Use Pest 5 TIA through
+`composer test` during development, then run the no-TIA full suite through
+`composer test:full` before handoff.
+
+- Run `composer guidance:check` first. It must fail when the rule index, an
+  indexed file, material path coverage, or a required policy is missing.
+- Test exact methods, endpoints, query and body omission, explicit empty input,
+  headers, DTO bounds, request IDs, error envelopes, redaction, object-state
+  diagnostics, TLS verification, redirects, and root-CA one-shot behavior.
+- Use Saloon fakes. Do not contact a live Gateway or node.
+- Run `composer validate --strict` and `composer check`.
+- Run Mago format check, lint, and analysis with zero findings. Run Rector in
+  dry-run mode and `git diff --check`.
+- Run the full no-TIA suite after TIA. Do not use a partial TIA result as the
+  final suite result.
+- Review the diff, staged files, branch, and upstream state before handoff.
+  Never stage, commit, push, deploy, or edit a sibling repository unless the
+  user explicitly authorizes that action.
