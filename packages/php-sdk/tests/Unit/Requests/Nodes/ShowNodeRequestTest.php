@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\Nodes\ShowNodeRequest;
 use Orbit\Sdk\Responses\Nodes\NodeResponse;
@@ -32,14 +31,6 @@ describe(ShowNodeRequest::class, function (): void {
                     'failed_step' => null,
                     'error_code' => null,
                     'roles' => ['app-dev'],
-                    'role_assignments' => [[
-                        'role' => 'app-dev',
-                        'status' => 'provisioning',
-                        'failed_step' => null,
-                        'error_code' => null,
-                        'local_action_required' => true,
-                        'local_command' => 'orbit node:setup app-dev',
-                    ]],
                 ],
                 'meta' => ['request_id' => '0198e15d-16c4-7855-8eb2-182b53ad28ba'],
             ]),
@@ -72,26 +63,7 @@ describe(ShowNodeRequest::class, function (): void {
             ->toBe('SHA256:operator')
             ->and($response->roles)
             ->toBe(['app-dev'])
-            ->and($response->roleAssignments)
-            ->toHaveCount(1)
-            ->and($response->roleAssignments[0]->localCommand)
-            ->toBe('orbit node:setup app-dev')
             ->and($response->requestId)
             ->toBe('0198e15d-16c4-7855-8eb2-182b53ad28ba');
-    });
-
-    it('fails a malformed role assignment element closed', function (): void {
-        $mockClient = new MockClient([
-            ShowNodeRequest::class => MockResponse::make([
-                'data' => [
-                    'role_assignments' => ['malformed-assignment-element'],
-                ],
-            ]),
-        ]);
-        $connector = new GatewayConnector('https://10.44.0.1');
-        $connector->withMockClient($mockClient);
-
-        expect(fn (): mixed => $connector->send(new ShowNodeRequest(12))->dto())
-            ->toThrow(GatewayApiException::class, 'Gateway response contains an invalid node role assignment.');
     });
 });

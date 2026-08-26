@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\Nodes\ListNodesRequest;
 use Orbit\Sdk\Responses\Nodes\NodeResponse;
@@ -11,9 +10,7 @@ use Saloon\Enums\Method;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
-/** @mago-expect lint:halstead The complete collection contract stays visible in one test group. */
 describe(ListNodesRequest::class, function (): void {
-    /** @mago-expect lint:halstead The complete non-empty response shape is one contract. */
     it('maps the node collection and response metadata', function (): void {
         $mockClient = new MockClient([
             ListNodesRequest::class => MockResponse::make([
@@ -36,14 +33,6 @@ describe(ListNodesRequest::class, function (): void {
                         'failed_step' => null,
                         'error_code' => null,
                         'roles' => ['app-dev'],
-                        'role_assignments' => [[
-                            'role' => 'app-dev',
-                            'status' => 'active',
-                            'failed_step' => null,
-                            'error_code' => null,
-                            'local_action_required' => false,
-                            'local_command' => null,
-                        ]],
                     ],
                     [
                         'id' => 7,
@@ -63,7 +52,6 @@ describe(ListNodesRequest::class, function (): void {
                         'failed_step' => 'wireguard-server-validate',
                         'error_code' => 'vpn.server_config_invalid',
                         'roles' => ['app-prod'],
-                        'role_assignments' => [],
                     ],
                 ],
                 'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844'],
@@ -106,77 +94,12 @@ describe(ListNodesRequest::class, function (): void {
                 'failed_step' => null,
                 'error_code' => null,
                 'roles' => ['app-dev'],
-                'role_assignments' => [[
-                    'role' => 'app-dev',
-                    'status' => 'active',
-                    'failed_step' => null,
-                    'error_code' => null,
-                    'local_action_required' => false,
-                    'local_command' => null,
-                ]],
                 'request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844',
             ])
-            ->and($response->nodes[0]->roleAssignments)
-            ->toHaveCount(1)
-            ->and($response->nodes[0]->roleAssignments[0])
-            ->toBeInstanceOf(\Orbit\Sdk\Responses\Nodes\NodeRoleAssignmentResponse::class)
             ->and($response->nodes[1]->failedStep)
             ->toBe('wireguard-server-validate')
             ->and($response->nodes[1]->errorCode)
-            ->toBe('vpn.server_config_invalid')
-            ->and($response->toArray())
-            ->toBe([
-                'nodes' => [
-                    [
-                        'id' => 4,
-                        'name' => 'app-dev',
-                        'status' => 'active',
-                        'platform' => 'ubuntu',
-                        'architecture' => 'x86_64',
-                        'tld' => 'app-dev.orbit',
-                        'public_ssh_host' => '94.237.40.75',
-                        'public_ssh_port' => 22,
-                        'ssh_user' => 'orbit',
-                        'wireguard_address' => '10.44.0.3',
-                        'wireguard_public_key' => 'app-dev-public-key',
-                        'wireguard_endpoint_override' => '10.0.0.2:51820',
-                        'dns_server_override' => '10.0.0.2',
-                        'ssh_host_fingerprint' => 'SHA256:app-dev',
-                        'failed_step' => null,
-                        'error_code' => null,
-                        'roles' => ['app-dev'],
-                        'role_assignments' => [[
-                            'role' => 'app-dev',
-                            'status' => 'active',
-                            'failed_step' => null,
-                            'error_code' => null,
-                            'local_action_required' => false,
-                            'local_command' => null,
-                        ]],
-                    ],
-                    [
-                        'id' => 7,
-                        'name' => 'app-prod',
-                        'status' => 'failed',
-                        'platform' => null,
-                        'architecture' => null,
-                        'tld' => null,
-                        'public_ssh_host' => '85.9.211.193',
-                        'public_ssh_port' => 2202,
-                        'ssh_user' => 'root',
-                        'wireguard_address' => null,
-                        'wireguard_public_key' => null,
-                        'wireguard_endpoint_override' => null,
-                        'dns_server_override' => null,
-                        'ssh_host_fingerprint' => null,
-                        'failed_step' => 'wireguard-server-validate',
-                        'error_code' => 'vpn.server_config_invalid',
-                        'roles' => ['app-prod'],
-                        'role_assignments' => [],
-                    ],
-                ],
-                'request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844',
-            ]);
+            ->toBe('vpn.server_config_invalid');
     });
 
     it('maps an empty gateway collection', function (): void {
@@ -200,20 +123,5 @@ describe(ListNodesRequest::class, function (): void {
                 'nodes' => [],
                 'request_id' => '0198e15d-16c4-7855-8eb2-182b53ad28ba',
             ]);
-    });
-
-    it('fails a malformed role assignment container closed', function (): void {
-        $mockClient = new MockClient([
-            ListNodesRequest::class => MockResponse::make([
-                'data' => [[
-                    'role_assignments' => 'malformed-assignment-container',
-                ]],
-            ]),
-        ]);
-        $connector = new GatewayConnector('https://10.44.0.1');
-        $connector->withMockClient($mockClient);
-
-        expect(fn (): mixed => $connector->send(new ListNodesRequest)->dto())
-            ->toThrow(GatewayApiException::class, 'Gateway response contains an invalid node role assignment.');
     });
 });

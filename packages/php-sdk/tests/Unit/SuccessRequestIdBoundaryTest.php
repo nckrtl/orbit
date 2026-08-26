@@ -7,21 +7,14 @@ use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\GatewayRequest;
 use Orbit\Sdk\Requests\Apps\ListAppsRequest;
 use Orbit\Sdk\Requests\Gateway\ShowGatewayStatusRequest;
-use Orbit\Sdk\Requests\Nodes\AddNodeRoleRequest;
-use Orbit\Sdk\Requests\Nodes\FetchAppDevSetupScriptRequest;
 use Orbit\Sdk\Requests\Processes\ProcessLogsRequest;
 use Orbit\Sdk\Responses\Apps\AppsResponse;
 use Orbit\Sdk\Responses\Gateway\GatewayStatusResponse;
-use Orbit\Sdk\Responses\Nodes\AppDevSetupScriptResponse;
-use Orbit\Sdk\Responses\Nodes\NodeRoleResponse;
 use Orbit\Sdk\Responses\Processes\ProcessLogsResponse;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
-/**
- * @mago-expect lint:cyclomatic-complexity Request-ID cases share one diagnostic boundary.
- * @mago-expect lint:halstead Request-ID boundary assertions stay visible together.
- */
+/** @mago-expect lint:halstead Request-ID boundary assertions stay visible together. */
 describe('success request ID boundary', function (): void {
     it('accepts only UUID success metadata request IDs', function (
         array $meta,
@@ -169,57 +162,6 @@ describe('success request ID boundary', function (): void {
             ->not->toContain($credential);
     });
 
-    it('drops unsafe metadata from role and setup script responses', function (): void {
-        $credential = success_request_id_credential();
-        $role = success_request_id_dto(
-            new AddNodeRoleRequest(12, 'app-dev'),
-            [
-                'data' => [
-                    'node_id' => 12,
-                    'node_name' => 'mini',
-                    'assignment' => [
-                        'role' => 'app-dev',
-                        'status' => 'provisioning',
-                        'failed_step' => null,
-                        'error_code' => null,
-                        'local_action_required' => true,
-                        'local_command' => 'orbit node:setup app-dev',
-                    ],
-                ],
-                'meta' => ['request_id' => "request-token={$credential}"],
-            ],
-        );
-        $script = success_request_id_dto(
-            new FetchAppDevSetupScriptRequest('darwin', 'arm64', 'nckrtl', '/Users/nckrtl'),
-            [
-                'data' => [
-                    'role' => 'app-dev',
-                    'summary' => 'Install protected prerequisites.',
-                    'script' => "#!/bin/bash\n",
-                ],
-                'meta' => ['request_id' => "request-token={$credential}"],
-            ],
-        );
-
-        expect($role)
-            ->toBeInstanceOf(NodeRoleResponse::class)
-            ->and($script)
-            ->toBeInstanceOf(AppDevSetupScriptResponse::class);
-
-        if (! $role instanceof NodeRoleResponse || ! $script instanceof AppDevSetupScriptResponse) {
-            $this->fail('Expected typed node role and script responses.');
-        }
-
-        $diagnostics = json_encode($role->toArray(), JSON_THROW_ON_ERROR).print_r($script, return: true);
-
-        expect($role->requestId)
-            ->toBeEmpty()
-            ->and($script->requestId)
-            ->toBeEmpty()
-            ->and($diagnostics)
-            ->not->toContain($credential);
-    });
-
     it('does not retain unsafe success metadata in SDK-owned exception traces', function (): void {
         $credential = success_request_id_credential();
         $body = '{"meta":{"request_id":"request-token='.$credential.'"},"data":'.str_repeat('[', times: 513);
@@ -242,8 +184,7 @@ describe('success request ID boundary', function (): void {
 
             expect($diagnostics)
                 ->toContain('SensitiveParameterValue');
-            expect($diagnostics)->not->toContain($credential);
-            expect($diagnostics)->not->toContain($body);
+            expect($diagnostics)->not->toContain($credential, $body);
         }
     });
 

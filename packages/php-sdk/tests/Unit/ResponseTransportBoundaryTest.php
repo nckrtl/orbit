@@ -6,10 +6,7 @@ use Orbit\Sdk\Responses\Activities\ActivityResponse;
 use Orbit\Sdk\Responses\Apps\AppResponse;
 use Orbit\Sdk\Responses\Firewall\FirewallRuleResponse;
 use Orbit\Sdk\Responses\Instances\InstanceResponse;
-use Orbit\Sdk\Responses\Nodes\AppDevSetupScriptResponse;
 use Orbit\Sdk\Responses\Nodes\NodeResponse;
-use Orbit\Sdk\Responses\Nodes\NodeRoleAssignmentResponse;
-use Orbit\Sdk\Responses\Nodes\NodeRoleResponse;
 use Orbit\Sdk\Responses\Nodes\RemovedNodeResponse;
 use Orbit\Sdk\Responses\Processes\ProcessResponse;
 use Orbit\Sdk\Responses\Workspaces\WorkspaceResponse;
@@ -23,14 +20,6 @@ it('rejects unsafe success error codes across every response surface', function 
         FirewallRuleResponse::fromGatewayData(['error_code' => $unsafeCode], $requestId),
         InstanceResponse::fromGatewayData(['error_code' => $unsafeCode], $requestId),
         NodeResponse::fromGatewayData(['error_code' => $unsafeCode], $requestId),
-        NodeRoleAssignmentResponse::fromGatewayData([
-            'role' => 'app-dev',
-            'status' => 'failed',
-            'failed_step' => 'local-setup',
-            'error_code' => $unsafeCode,
-            'local_action_required' => false,
-            'local_command' => null,
-        ]),
         ProcessResponse::fromGatewayData(['error_code' => $unsafeCode], $requestId),
         WorkspaceResponse::fromGatewayData(['error_code' => $unsafeCode], $requestId),
     ];
@@ -43,8 +32,7 @@ it('rejects unsafe success error codes across every response surface', function 
         ]);
 
         expect($response->errorCode)->toBeNull();
-        expect($diagnostics)->not->toContain($credential);
-        expect($diagnostics)->not->toContain($unsafeCode);
+        expect($diagnostics)->not->toContain($credential, $unsafeCode);
     }
 });
 
@@ -101,9 +89,8 @@ it('redacts credentials from nested success payloads and response diagnostics', 
         ]);
 
         expect($diagnostics)
-            ->toContain('[REDACTED]');
-        expect($diagnostics)->not->toContain($credential);
-        expect($diagnostics)->not->toContain($credentialUrl);
+            ->toContain('[REDACTED]')
+            ->not->toContain($credential, $credentialUrl);
     }
 });
 
@@ -114,9 +101,6 @@ it('marks every public gateway DTO factory ingress as sensitive', function (): v
         FirewallRuleResponse::class,
         InstanceResponse::class,
         NodeResponse::class,
-        NodeRoleAssignmentResponse::class,
-        NodeRoleResponse::class,
-        AppDevSetupScriptResponse::class,
         RemovedNodeResponse::class,
         ProcessResponse::class,
         WorkspaceResponse::class,

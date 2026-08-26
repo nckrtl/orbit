@@ -13,27 +13,6 @@ use Throwable;
 
 final class GatewayApiException extends RuntimeException
 {
-    /** @var list<string> */
-    private const array LOCAL_ACTION_CHECKS = [
-        'remote-login',
-        'pf-anchor',
-        'resolver',
-        'dnsmasq',
-        'root-ca-trust',
-    ];
-
-    /** @var list<string> */
-    private const array VERIFICATION_CHECKS = [
-        'ssh-host-key',
-        'identity',
-        'architecture',
-        'restricted-key',
-        'homebrew',
-        'toolchain',
-        'caddy',
-        'php-fpm',
-    ];
-
     private readonly ?string $errorCode;
 
     /** @var array<string, mixed> */
@@ -56,7 +35,7 @@ final class GatewayApiException extends RuntimeException
     ) {
         $redactor = new CredentialRedactor;
         $this->errorCode = GatewayErrorCode::fromTransport($errorCode);
-        $this->details = $redactor->redactArray($this->normalizeDetails($this->errorCode, $details));
+        $this->details = $redactor->redactArray($details);
         $this->requestId = GatewayRequestId::fromTransport($requestId);
 
         parent::__construct(
@@ -104,87 +83,6 @@ final class GatewayApiException extends RuntimeException
             'details' => $this->details,
             'request_id' => $this->requestId,
             'previous' => $this->getPrevious()?->getMessage(),
-        ];
-    }
-
-    /**
-     * @param array<string, mixed> $details
-     * @return array<string, mixed>
-     */
-    private function normalizeDetails(#[SensitiveParameter] ?string $errorCode, array $details): array
-    {
-        return match ($errorCode) {
-            'macos.setup_failed' => $this->singleAllowedDetail(
-                $details,
-                'failed_step',
-                ['local-setup'],
-            ),
-            'node.role_setup_not_ready' => $this->singleAllowedDetail(
-                $details,
-                'failed_step',
-                ['wireguard-projection', 'private-dns'],
-            ),
-            'macos.verification_failed' => $this->singleAllowedDetail(
-                $details,
-                'check',
-                self::VERIFICATION_CHECKS,
-            ),
-            'macos.local_action_required' => $this->localActionDetails($details),
-            'macos.user_session_unavailable' => $this->singleAllowedDetail(
-                $details,
-                'runtime',
-                ['launchd'],
-            ),
-            'node.unreachable' => [],
-            default => $details,
-        };
-    }
-
-    /**
-     * @mago-expect analysis:mixed-assignment Gateway detail values remain mixed until validated.
-     *
-     * @param array<string, mixed> $details
-     * @param list<string> $allowed
-     * @return array<string, string>
-     */
-    private function singleAllowedDetail(
-        #[SensitiveParameter]
-        array $details,
-        string $key,
-        array $allowed,
-    ): array {
-        $value = $details[$key] ?? null;
-
-        if (! is_string($value) || ! in_array(needle: $value, haystack: $allowed, strict: true)) {
-            return [];
-        }
-
-        return [$key => $value];
-    }
-
-    /**
-     * @mago-expect analysis:mixed-assignment Gateway local-action details remain mixed until validated.
-     *
-     * @param array<string, mixed> $details
-     * @return array{check: string, local_command: ?string}|array<never, never>
-     */
-    private function localActionDetails(#[SensitiveParameter] array $details): array
-    {
-        $check = $details['check'] ?? null;
-
-        if (! is_string($check) || ! in_array(needle: $check, haystack: self::LOCAL_ACTION_CHECKS, strict: true)) {
-            return [];
-        }
-
-        $command = $details['local_command'] ?? null;
-        $localCommand =
-            $check === 'root-ca-trust' && $command === 'orbit gateway:trust'
-                ? $command
-                : null;
-
-        return [
-            'check' => $check,
-            'local_command' => $localCommand,
         ];
     }
 }

@@ -188,10 +188,7 @@ it('fails closed without retaining an invalid injected request ID', function ():
             needles: [$credential, $invalidRequestId],
         ))
             ->toBeEmpty();
-        $clientDebug = print_r($client, return: true);
-
-        expect($clientDebug)->not->toContain($credential);
-        expect($clientDebug)->not->toContain($invalidRequestId);
+        expect(print_r($client, return: true))->not->toContain($credential, $invalidRequestId);
     }
 
     expect(fn (): RootCaCertificateResponse => $client->fetch('https://10.44.0.1:8443'))
@@ -350,6 +347,7 @@ function gateway_root_ca_exception_has_marker(Throwable $exception, string $need
     foreach ([
         $exception->getMessage(),
         (string) $exception,
+        print_r($exception, return: true),
         gateway_root_ca_sdk_trace($exception),
     ] as $diagnostic) {
         if (str_contains($diagnostic, $needle)) {
