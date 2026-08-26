@@ -7,12 +7,13 @@ namespace App\Commands\Activities;
 use App\Commands\GatewayCommand;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
-use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Activities\ListActivitiesRequest;
 use Orbit\Sdk\Responses\Activities\ActivitiesResponse;
 
 final class ListActivitiesCommand extends GatewayCommand
 {
+    private const string REQUEST_ID_PATTERN = '/\A[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\z/iD';
+
     #[\Override]
     protected $signature = 'activity:list
         {--limit=25 : Maximum activity rows, from 1 through 200}
@@ -41,7 +42,11 @@ final class ListActivitiesCommand extends GatewayCommand
 
         $requestId = $this->option('request-id');
 
-        if ($requestId !== null && (! is_string($requestId) || ! Str::isUuid($requestId))) {
+        if (
+            $requestId !== null
+            && (! is_string($requestId)
+            || preg_match(self::REQUEST_ID_PATTERN, $requestId) !== 1)
+        ) {
             return $this->renderGatewayFailure(
                 'activity.request_id_invalid',
                 'Request ID must be a UUID.',
