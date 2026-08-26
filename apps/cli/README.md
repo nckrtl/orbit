@@ -28,6 +28,28 @@ Gateway profiles are stored in `$HOME/.orbit/config.json`. Set `ORBIT_HOME` to
 override that directory. `gateway:trust` is a visible local operating-system trust step.
 It can ask for local administrator privileges.
 
+## JavaScript processes
+
+```bash
+./orbit process:add vite \
+    --instance=12 \
+    --runtime=systemd \
+    --command=/usr/local/bin/vp \
+    --command=run \
+    --command=dev \
+    --command=--host=0.0.0.0 \
+    --working-directory=/home/orbit/apps/acme \
+    --restart=always \
+    --start
+```
+
+Use `vp install` for project dependencies and `vp run <script>` for package
+scripts. Vite+ follows its native package-manager selection order and
+defaults projects without a manager signal to pnpm. Bun is used only when
+project state selects it. Orbit installs pnpm by default.
+Orbit installs Bun separately from the Vite+-managed Node runtime. PHP
+dependencies continue to use Composer.
+
 ## Quality
 
 ```bash

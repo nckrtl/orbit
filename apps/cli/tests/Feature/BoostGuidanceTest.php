@@ -126,6 +126,16 @@ it('keeps scoped Boost guidance enabled and discoverable', function (): void {
         );
 });
 
+it('routes project JavaScript process guidance through Vite+', function (): void {
+    $commandRules = file_get_contents(base_path('.ai/rules/commands.md'));
+
+    expect($commandRules)
+        ->toBeString()
+        ->toContain('/usr/local/bin/vp')
+        ->toContain('one argv item')
+        ->not->toMatch('/\b(?:npm|npx|pnpm|pnpx|yarn|yarnpkg|bun|bunx)\s+(?:ci|install|run|exec|add|remove|update)\b/');
+});
+
 it('requires guidance bootstrap before repository edits', function (): void {
     $agents = file_get_contents(base_path('AGENTS.md'));
     $bootstrapGuidance = is_string($agents)
