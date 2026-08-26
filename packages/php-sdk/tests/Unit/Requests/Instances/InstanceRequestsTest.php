@@ -33,7 +33,6 @@ describe('instance requests', function (): void {
                 'app_id' => 3,
                 'node_id' => 4,
                 'name' => 'main',
-                'environment' => 'development',
                 'document_root' => 'public',
                 'php_version' => '8.5',
             ])
@@ -41,6 +40,24 @@ describe('instance requests', function (): void {
             ->toBeInstanceOf(InstanceResponse::class)
             ->and($response->requestId)
             ->toBe(instance_request_id());
+    });
+
+    it('maps optional production fields without inventing an environment', function (): void {
+        $request = new CreateInstanceRequest(
+            appId: 3,
+            nodeId: 4,
+            name: 'main',
+            hostname: 'orbit.nckrtl.com',
+        );
+
+        expect($request->body()->all())->toBe([
+            'app_id' => 3,
+            'node_id' => 4,
+            'name' => 'main',
+            'document_root' => 'public',
+            'php_version' => '8.5',
+            'hostname' => 'orbit.nckrtl.com',
+        ]);
     });
 
     it('lists instances through the explicit collection route', function (): void {

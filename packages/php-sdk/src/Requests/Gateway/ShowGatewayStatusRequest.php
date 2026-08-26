@@ -11,6 +11,7 @@ use Saloon\Http\Response;
 
 final class ShowGatewayStatusRequest extends GatewayRequest
 {
+    #[\Override]
     protected Method $method = Method::GET;
 
     public function resolveEndpoint(): string
@@ -18,18 +19,17 @@ final class ShowGatewayStatusRequest extends GatewayRequest
         return '/api/v1/gateway/status';
     }
 
-    public function createDtoFromResponse(Response $response): GatewayStatusResponse
+    public function createDtoFromResponse(#[\SensitiveParameter] Response $response): GatewayStatusResponse
     {
         $data = $this->unwrapData($response);
-        $meta = $this->unwrapMeta($response);
 
         return new GatewayStatusResponse(
-            name: (string) ($data['name'] ?? ''),
-            status: (string) ($data['status'] ?? ''),
-            version: (string) ($data['version'] ?? ''),
-            phpVersion: (string) ($data['php_version'] ?? ''),
-            laravelVersion: (string) ($data['laravel_version'] ?? ''),
-            requestId: (string) ($meta['request_id'] ?? ''),
+            name: is_string($data['name'] ?? null) ? $data['name'] : '',
+            status: is_string($data['status'] ?? null) ? $data['status'] : '',
+            version: is_string($data['version'] ?? null) ? $data['version'] : '',
+            phpVersion: is_string($data['php_version'] ?? null) ? $data['php_version'] : '',
+            laravelVersion: is_string($data['laravel_version'] ?? null) ? $data['laravel_version'] : '',
+            requestId: $this->successRequestId($response),
         );
     }
 }

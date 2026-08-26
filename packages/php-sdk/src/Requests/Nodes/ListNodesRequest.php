@@ -12,6 +12,7 @@ use Saloon\Http\Response;
 
 final class ListNodesRequest extends GatewayRequest
 {
+    #[\Override]
     protected Method $method = Method::GET;
 
     public function resolveEndpoint(): string
@@ -19,11 +20,10 @@ final class ListNodesRequest extends GatewayRequest
         return '/api/v1/nodes';
     }
 
-    public function createDtoFromResponse(Response $response): NodesResponse
+    public function createDtoFromResponse(#[\SensitiveParameter] Response $response): NodesResponse
     {
         $data = $this->unwrapDataList($response);
-        $meta = $this->unwrapMeta($response);
-        $requestId = is_string($meta['request_id'] ?? null) ? $meta['request_id'] : '';
+        $requestId = $this->successRequestId($response);
         $nodes = [];
 
         foreach ($data as $node) {

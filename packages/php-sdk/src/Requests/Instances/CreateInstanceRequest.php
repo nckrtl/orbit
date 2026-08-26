@@ -16,15 +16,17 @@ final class CreateInstanceRequest extends GatewayRequest implements HasBody
 {
     use HasJsonBody;
 
+    #[\Override]
     protected Method $method = Method::POST;
 
     public function __construct(
         private readonly int $appId,
         private readonly int $nodeId,
         private readonly string $name,
-        private readonly string $environment = 'development',
+        private readonly ?string $environment = null,
         private readonly string $documentRoot = 'public',
         private readonly string $phpVersion = '8.5',
+        private readonly ?string $hostname = null,
     ) {}
 
     public function resolveEndpoint(): string
@@ -32,11 +34,10 @@ final class CreateInstanceRequest extends GatewayRequest implements HasBody
         return '/api/v1/instances';
     }
 
-    public function createDtoFromResponse(Response $response): InstanceResponse
+    public function createDtoFromResponse(#[\SensitiveParameter] Response $response): InstanceResponse
     {
         $data = $this->unwrapData($response);
-        $meta = $this->unwrapMeta($response);
-        $requestId = is_string($meta['request_id'] ?? null) ? $meta['request_id'] : '';
+        $requestId = $this->successRequestId($response);
 
         return InstanceResponse::fromGatewayData($data, $requestId);
     }
@@ -44,13 +45,22 @@ final class CreateInstanceRequest extends GatewayRequest implements HasBody
     /** @return array<string, int|string> */
     protected function defaultBody(): array
     {
-        return [
+        $body = [
             'app_id' => $this->appId,
             'node_id' => $this->nodeId,
             'name' => $this->name,
-            'environment' => $this->environment,
             'document_root' => $this->documentRoot,
             'php_version' => $this->phpVersion,
         ];
+
+        if ($this->environment !== null) {
+            $body['environment'] = $this->environment;
+        }
+
+        if ($this->hostname !== null) {
+            $body['hostname'] = $this->hostname;
+        }
+
+        return $body;
     }
 }

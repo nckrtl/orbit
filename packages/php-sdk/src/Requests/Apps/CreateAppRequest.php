@@ -15,13 +15,16 @@ final class CreateAppRequest extends GatewayRequest implements HasBody
 {
     use HasJsonBody;
 
+    #[\Override]
     protected Method $method = Method::POST;
 
-    /** @param array<string, mixed>|null $defaults */
+    /** @param array<array-key, mixed>|null $defaults */
     public function __construct(
         private readonly string $slug,
+        #[\SensitiveParameter]
         private readonly string $repositoryUrl,
         private readonly ?string $name = null,
+        #[\SensitiveParameter]
         private readonly ?array $defaults = null,
     ) {}
 
@@ -30,11 +33,10 @@ final class CreateAppRequest extends GatewayRequest implements HasBody
         return '/api/v1/apps';
     }
 
-    public function createDtoFromResponse(Response $response): AppResponse
+    public function createDtoFromResponse(#[\SensitiveParameter] Response $response): AppResponse
     {
         $data = $this->unwrapData($response);
-        $meta = $this->unwrapMeta($response);
-        $requestId = is_string($meta['request_id'] ?? null) ? $meta['request_id'] : '';
+        $requestId = $this->successRequestId($response);
 
         return AppResponse::fromGatewayData($data, $requestId);
     }
@@ -42,11 +44,14 @@ final class CreateAppRequest extends GatewayRequest implements HasBody
     /** @return array<string, mixed> */
     protected function defaultBody(): array
     {
-        return [
-            'name' => $this->name ?? $this->slug,
-            'slug' => $this->slug,
-            'repository_url' => $this->repositoryUrl,
-            'defaults' => $this->defaults,
-        ];
+        return array_filter(
+            [
+                'name' => $this->name,
+                'slug' => $this->slug,
+                'repository_url' => $this->repositoryUrl,
+                'defaults' => $this->defaults,
+            ],
+            static fn (mixed $value): bool => $value !== null,
+        );
     }
 }

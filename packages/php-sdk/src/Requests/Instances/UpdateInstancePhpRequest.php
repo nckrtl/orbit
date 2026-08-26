@@ -15,6 +15,7 @@ final class UpdateInstancePhpRequest extends GatewayRequest implements HasBody
 {
     use HasJsonBody;
 
+    #[\Override]
     protected Method $method = Method::PATCH;
 
     public function __construct(
@@ -27,11 +28,10 @@ final class UpdateInstancePhpRequest extends GatewayRequest implements HasBody
         return "/api/v1/instances/{$this->instanceId}/php";
     }
 
-    public function createDtoFromResponse(Response $response): InstanceResponse
+    public function createDtoFromResponse(#[\SensitiveParameter] Response $response): InstanceResponse
     {
         $data = $this->unwrapData($response);
-        $meta = $this->unwrapMeta($response);
-        $requestId = is_string($meta['request_id'] ?? null) ? $meta['request_id'] : '';
+        $requestId = $this->successRequestId($response);
 
         return InstanceResponse::fromGatewayData($data, $requestId);
     }

@@ -30,6 +30,10 @@ describe(NodeResponse::class, function (): void {
             ->toBeNull()
             ->and($response->architecture)
             ->toBeNull()
+            ->and($response->tld)
+            ->toBeNull()
+            ->and($response->wireguardPublicKey)
+            ->toBeNull()
             ->and($response->sshHostFingerprint)
             ->toBeNull()
             ->and($response->failedStep)
@@ -57,5 +61,14 @@ describe(NodeResponse::class, function (): void {
             ->toBeNull()
             ->and($response->errorCode)
             ->toBeNull();
+    });
+
+    it('does not invent an SSH port for malformed gateway data', function (): void {
+        $response = NodeResponse::fromGatewayData(
+            ['public_ssh_port' => '22'],
+            '0198e15c-bf97-7c23-8f1f-61b8fe67a844',
+        );
+
+        expect($response->publicSshPort)->toBe(0);
     });
 });

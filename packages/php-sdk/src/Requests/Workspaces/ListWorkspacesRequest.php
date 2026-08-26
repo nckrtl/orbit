@@ -12,6 +12,7 @@ use Saloon\Http\Response;
 
 final class ListWorkspacesRequest extends GatewayRequest
 {
+    #[\Override]
     protected Method $method = Method::GET;
 
     public function resolveEndpoint(): string
@@ -19,11 +20,10 @@ final class ListWorkspacesRequest extends GatewayRequest
         return '/api/v1/workspaces';
     }
 
-    public function createDtoFromResponse(Response $response): WorkspacesResponse
+    public function createDtoFromResponse(#[\SensitiveParameter] Response $response): WorkspacesResponse
     {
         $data = $this->unwrapDataList($response);
-        $meta = $this->unwrapMeta($response);
-        $requestId = is_string($meta['request_id'] ?? null) ? $meta['request_id'] : '';
+        $requestId = $this->successRequestId($response);
         $workspaces = [];
 
         foreach ($data as $workspace) {

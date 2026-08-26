@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace Orbit\Sdk\Responses\Apps;
 
+use Orbit\Sdk\Support\CredentialRedactor;
+use SensitiveParameter;
+
 /** @mago-expect lint:excessive-parameter-list */
 final readonly class AppResponse
 {
-    /** @param array<string, mixed>|null $defaults */
+    /** @param array<array-key, mixed>|null $defaults */
     public function __construct(
         public int $id,
         public string $name,
@@ -18,14 +21,23 @@ final readonly class AppResponse
     ) {}
 
     /** @param array<string, mixed> $data */
-    public static function fromGatewayData(array $data, string $requestId): self
-    {
+    public static function fromGatewayData(
+        #[SensitiveParameter]
+        array $data,
+        #[SensitiveParameter]
+        string $requestId,
+    ): self {
+        $redactor = new CredentialRedactor;
+        $defaults = self::arrayValue($data['defaults'] ?? null);
+
         return new self(
             id: is_int($data['id'] ?? null) ? $data['id'] : 0,
             name: is_string($data['name'] ?? null) ? $data['name'] : '',
             slug: is_string($data['slug'] ?? null) ? $data['slug'] : '',
-            repositoryUrl: is_string($data['repository_url'] ?? null) ? $data['repository_url'] : '',
-            defaults: self::stringKeyedArray($data['defaults'] ?? null),
+            repositoryUrl: is_string($data['repository_url'] ?? null)
+                ? $redactor->redactText($data['repository_url'])
+                : '',
+            defaults: $defaults === null ? null : $redactor->redactTransportArray($defaults),
             requestId: $requestId,
         );
     }
@@ -44,26 +56,10 @@ final readonly class AppResponse
     }
 
     /**
-     * @mago-expect analysis:mixed-assignment Gateway default values remain mixed by design.
-     *
-     * @return array<string, mixed>|null
+     * @return array<array-key, mixed>|null
      */
-    private static function stringKeyedArray(mixed $value): ?array
+    private static function arrayValue(#[SensitiveParameter] mixed $value): ?array
     {
-        if (! is_array($value)) {
-            return null;
-        }
-
-        $result = [];
-
-        foreach ($value as $key => $item) {
-            if (! is_string($key)) {
-                continue;
-            }
-
-            $result[$key] = $item;
-        }
-
-        return $result;
+        return is_array($value) ? $value : null;
     }
 }

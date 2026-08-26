@@ -15,7 +15,7 @@ use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
 describe('workspace requests', function (): void {
-    it('creates a workspace with its branch and optional fields resolved by the SDK', function (): void {
+    it('creates a workspace and omits fields that the Gateway defaults', function (): void {
         $mockClient = new MockClient([
             CreateWorkspaceRequest::class => MockResponse::make(workspace_envelope(), 201),
         ]);
@@ -32,9 +32,6 @@ describe('workspace requests', function (): void {
             ->toBe([
                 'instance_id' => 7,
                 'name' => 'feature-auth',
-                'branch' => 'feature-auth',
-                'checkout_path' => null,
-                'php_version' => null,
             ])
             ->and($response)
             ->toBeInstanceOf(WorkspaceResponse::class)

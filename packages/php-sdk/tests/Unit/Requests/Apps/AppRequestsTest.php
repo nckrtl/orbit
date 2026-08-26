@@ -14,7 +14,7 @@ use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
 describe('app requests', function (): void {
-    it('creates an app with SDK defaults and maps the typed response', function (): void {
+    it('creates an app and omits nullable app fields when they are absent', function (): void {
         $mockClient = new MockClient([
             CreateAppRequest::class => MockResponse::make([
                 'data' => app_gateway_data(),
@@ -35,15 +35,29 @@ describe('app requests', function (): void {
             ->toBe('/api/v1/apps')
             ->and($request->body()->all())
             ->toBe([
-                'name' => 'orbit-docs',
                 'slug' => 'orbit-docs',
                 'repository_url' => 'git@github.com:nckrtl/orbit-docs.git',
-                'defaults' => null,
             ])
             ->and($response)
             ->toBeInstanceOf(AppResponse::class)
             ->and($response->requestId)
             ->toBe(orbit_request_id());
+    });
+
+    it('serializes explicit defaults exactly as supplied', function (): void {
+        $request = new CreateAppRequest(
+            slug: 'orbit-docs',
+            repositoryUrl: 'git@github.com:nckrtl/orbit-docs.git',
+            name: 'Orbit Docs',
+            defaults: ['php_version' => '8.5'],
+        );
+
+        expect($request->body()->all())->toBe([
+            'name' => 'Orbit Docs',
+            'slug' => 'orbit-docs',
+            'repository_url' => 'git@github.com:nckrtl/orbit-docs.git',
+            'defaults' => ['php_version' => '8.5'],
+        ]);
     });
 
     it('lists apps through the explicit collection route', function (): void {

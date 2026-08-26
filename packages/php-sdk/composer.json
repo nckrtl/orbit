@@ -13,7 +13,8 @@
     "require-dev": {
         "carthage-software/mago": "^1.47",
         "pestphp/pest": "^5.1",
-        "phpunit/phpunit": "^13.0"
+        "phpunit/phpunit": "^13.0",
+        "rector/rector": "^2.3"
     },
     "autoload": {
         "psr-4": {
@@ -28,6 +29,7 @@
     "scripts": {
         "analyse": "vendor/bin/mago analyze src --reporting-format=medium",
         "check": [
+            "@rector",
             "@test",
             "@format:check",
             "@lint",
@@ -36,12 +38,14 @@
         "format": "vendor/bin/mago format",
         "format:check": "vendor/bin/mago format --check",
         "lint": "vendor/bin/mago lint src tests --reporting-format=medium",
+        "rector": "vendor/bin/rector process --dry-run",
         "test": "vendor/bin/pest --compact",
         "test:full": "vendor/bin/pest --no-tia --compact"
     },
     "config": {
         "allow-plugins": {
-            "pestphp/pest-plugin": true
+            "pestphp/pest-plugin": true,
+            "rector/rector": true
         },
         "optimize-autoloader": true,
         "preferred-install": "dist",

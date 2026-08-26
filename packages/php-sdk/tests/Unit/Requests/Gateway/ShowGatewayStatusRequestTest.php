@@ -52,4 +52,36 @@ describe(ShowGatewayStatusRequest::class, function (): void {
             ->and($response->requestId)
             ->toBe('0198e15c-bf97-7c23-8f1f-61b8fe67a844');
     });
+
+    it('rejects non-string status fields instead of coercing them', function (): void {
+        $credential = substr(hash('sha256', __METHOD__), offset: 0, length: 20);
+        $mockClient = new MockClient([
+            ShowGatewayStatusRequest::class => MockResponse::make([
+                'data' => [
+                    'name' => ['token' => $credential],
+                    'status' => 503,
+                    'version' => true,
+                    'php_version' => null,
+                    'laravel_version' => [],
+                ],
+                'meta' => [
+                    'request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844',
+                ],
+            ]),
+        ]);
+        $connector = new GatewayConnector('https://10.70.0.1');
+        $connector->withMockClient($mockClient);
+
+        $response = $connector->send(new ShowGatewayStatusRequest)->dto();
+
+        expect($response)->toBeInstanceOf(GatewayStatusResponse::class);
+        expect($response->toArray())->toBe([
+            'name' => '',
+            'status' => '',
+            'version' => '',
+            'php_version' => '',
+            'laravel_version' => '',
+            'request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844',
+        ]);
+    });
 });

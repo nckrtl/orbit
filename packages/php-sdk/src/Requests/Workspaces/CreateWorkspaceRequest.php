@@ -15,6 +15,7 @@ final class CreateWorkspaceRequest extends GatewayRequest implements HasBody
 {
     use HasJsonBody;
 
+    #[\Override]
     protected Method $method = Method::POST;
 
     public function __construct(
@@ -30,11 +31,10 @@ final class CreateWorkspaceRequest extends GatewayRequest implements HasBody
         return '/api/v1/workspaces';
     }
 
-    public function createDtoFromResponse(Response $response): WorkspaceResponse
+    public function createDtoFromResponse(#[\SensitiveParameter] Response $response): WorkspaceResponse
     {
         $data = $this->unwrapData($response);
-        $meta = $this->unwrapMeta($response);
-        $requestId = is_string($meta['request_id'] ?? null) ? $meta['request_id'] : '';
+        $requestId = $this->successRequestId($response);
 
         return WorkspaceResponse::fromGatewayData($data, $requestId);
     }
@@ -42,12 +42,15 @@ final class CreateWorkspaceRequest extends GatewayRequest implements HasBody
     /** @return array<string, int|string|null> */
     protected function defaultBody(): array
     {
-        return [
-            'instance_id' => $this->instanceId,
-            'name' => $this->name,
-            'branch' => $this->branch ?? $this->name,
-            'checkout_path' => $this->checkoutPath,
-            'php_version' => $this->phpVersion,
-        ];
+        return array_filter(
+            [
+                'instance_id' => $this->instanceId,
+                'name' => $this->name,
+                'branch' => $this->branch,
+                'checkout_path' => $this->checkoutPath,
+                'php_version' => $this->phpVersion,
+            ],
+            static fn (int|string|null $value): bool => $value !== null,
+        );
     }
 }

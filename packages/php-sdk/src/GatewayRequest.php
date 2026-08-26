@@ -5,14 +5,60 @@ declare(strict_types=1);
 namespace Orbit\Sdk;
 
 use JsonException;
+use LogicException;
+use Orbit\Sdk\Support\CredentialRedactor;
+use Orbit\Sdk\Support\GatewayRequestId;
 use Saloon\Http\Request;
 use Saloon\Http\Response;
+use SensitiveParameter;
 use Throwable;
 
-/** @mago-expect lint:cyclomatic-complexity */
+/**
+ * @mago-expect lint:cyclomatic-complexity
+ * @mago-expect lint:too-many-methods Central request boundaries keep every transport safe.
+ */
 abstract class GatewayRequest extends Request
 {
-    public function hasRequestFailed(Response $response): ?bool
+    /** @return array{type: class-string<static>} */
+    final public function __debugInfo(): array
+    {
+        return ['type' => static::class];
+    }
+
+    /** @return array<never, never> */
+    final public function __serialize(): array
+    {
+        throw new LogicException('Orbit gateway requests cannot be serialized.');
+    }
+
+    /** @param array<array-key, mixed> $data */
+    final public function __unserialize(#[SensitiveParameter] array $data): void
+    {
+        throw new LogicException('Orbit gateway requests cannot be unserialized.');
+    }
+
+    final public function debug(bool $die = false): static
+    {
+        throw new LogicException('Orbit SDK raw transport debugging is disabled.');
+    }
+
+    final public function debugRequest(
+        #[SensitiveParameter]
+        ?callable $onRequest = null,
+        bool $die = false,
+    ): static {
+        throw new LogicException('Orbit SDK raw transport debugging is disabled.');
+    }
+
+    final public function debugResponse(
+        #[SensitiveParameter]
+        ?callable $onResponse = null,
+        bool $die = false,
+    ): static {
+        throw new LogicException('Orbit SDK raw transport debugging is disabled.');
+    }
+
+    public function hasRequestFailed(#[SensitiveParameter] Response $response): ?bool
     {
         if ($response->clientError() || $response->serverError()) {
             return true;
@@ -23,26 +69,31 @@ abstract class GatewayRequest extends Request
         return is_array($body) && array_key_exists('error', $body);
     }
 
-    public function getRequestException(Response $response, ?Throwable $senderException): ?Throwable
-    {
+    public function getRequestException(
+        #[SensitiveParameter]
+        Response $response,
+        #[SensitiveParameter]
+        ?Throwable $senderException,
+    ): ?Throwable {
         $body = $this->decodeBody($response);
         $error = is_array($body['error'] ?? null) ? $body['error'] : [];
         $message = is_string($error['message'] ?? null) && $error['message'] !== ''
             ? $error['message']
             : "Gateway request failed with HTTP status {$response->status()}.";
         $errorCode = is_string($error['code'] ?? null) ? $error['code'] : null;
+        $redactor = new CredentialRedactor;
 
         return new GatewayApiException(
-            message: $message,
+            message: $redactor->redactText($message),
             errorCode: $errorCode,
-            details: $this->stringKeyedArray($error['details'] ?? []),
-            previous: $senderException,
+            details: $redactor->redactArray($this->stringKeyedArray($error['details'] ?? [])),
+            previous: $redactor->redactThrowable($senderException),
             requestId: $this->requestId($response),
         );
     }
 
     /** @return array<string, mixed> */
-    protected function unwrapData(Response $response): array
+    protected function unwrapData(#[SensitiveParameter] Response $response): array
     {
         $body = $this->decodeBody($response);
 
@@ -58,7 +109,7 @@ abstract class GatewayRequest extends Request
      *
      * @return list<array<string, mixed>>
      */
-    protected function unwrapDataList(Response $response): array
+    protected function unwrapDataList(#[SensitiveParameter] Response $response): array
     {
         $body = $this->decodeBody($response);
 
@@ -85,12 +136,12 @@ abstract class GatewayRequest extends Request
         return $result;
     }
 
-    /** @return array<string, mixed> */
-    protected function unwrapMeta(Response $response): array
+    protected function successRequestId(#[SensitiveParameter] Response $response): string
     {
         $body = $this->decodeBody($response);
+        $meta = $this->stringKeyedArray($body['meta'] ?? []);
 
-        return $this->stringKeyedArray($body['meta'] ?? []);
+        return GatewayRequestId::fromTransport($meta['request_id'] ?? null) ?? '';
     }
 
     /**
@@ -98,7 +149,7 @@ abstract class GatewayRequest extends Request
      *
      * @return array<string, mixed>
      */
-    protected function stringKeyedArray(mixed $value): array
+    protected function stringKeyedArray(#[SensitiveParameter] mixed $value): array
     {
         if (! is_array($value)) {
             return [];
@@ -122,7 +173,7 @@ abstract class GatewayRequest extends Request
      *
      * @return list<string>
      */
-    protected function stringList(mixed $value): array
+    protected function stringList(#[SensitiveParameter] mixed $value): array
     {
         if (! is_array($value)) {
             return [];
@@ -146,7 +197,7 @@ abstract class GatewayRequest extends Request
      *
      * @return array<string, mixed>|null
      */
-    private function decodeBody(Response $response): ?array
+    private function decodeBody(#[SensitiveParameter] Response $response): ?array
     {
         if ($response->body() === '') {
             return null;
@@ -166,10 +217,10 @@ abstract class GatewayRequest extends Request
         }
     }
 
-    private function requestId(Response $response): ?string
+    private function requestId(#[SensitiveParameter] Response $response): ?string
     {
         $requestId = $response->getPsrResponse()->getHeaderLine('X-Orbit-Request-Id');
 
-        return $requestId !== '' ? $requestId : null;
+        return GatewayRequestId::fromTransport($requestId);
     }
 }

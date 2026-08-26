@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Orbit\Sdk\Responses\Instances;
 
+use Orbit\Sdk\Support\GatewayErrorCode;
+use SensitiveParameter;
+
 /**
  * @mago-expect lint:cyclomatic-complexity Gateway values are validated at the DTO boundary.
  * @mago-expect lint:excessive-parameter-list
@@ -28,8 +31,12 @@ final readonly class InstanceResponse
     ) {}
 
     /** @param array<string, mixed> $data */
-    public static function fromGatewayData(array $data, string $requestId): self
-    {
+    public static function fromGatewayData(
+        #[SensitiveParameter]
+        array $data,
+        #[SensitiveParameter]
+        string $requestId,
+    ): self {
         return new self(
             id: is_int($data['id'] ?? null) ? $data['id'] : 0,
             appId: is_int($data['app_id'] ?? null) ? $data['app_id'] : 0,
@@ -43,7 +50,7 @@ final readonly class InstanceResponse
             certificateMode: is_string($data['certificate_mode'] ?? null) ? $data['certificate_mode'] : '',
             status: is_string($data['status'] ?? null) ? $data['status'] : '',
             failedStep: is_string($data['failed_step'] ?? null) ? $data['failed_step'] : null,
-            errorCode: is_string($data['error_code'] ?? null) ? $data['error_code'] : null,
+            errorCode: GatewayErrorCode::fromTransport($data['error_code'] ?? null),
             requestId: $requestId,
         );
     }

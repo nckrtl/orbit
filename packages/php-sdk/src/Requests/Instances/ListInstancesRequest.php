@@ -12,6 +12,7 @@ use Saloon\Http\Response;
 
 final class ListInstancesRequest extends GatewayRequest
 {
+    #[\Override]
     protected Method $method = Method::GET;
 
     public function resolveEndpoint(): string
@@ -19,11 +20,10 @@ final class ListInstancesRequest extends GatewayRequest
         return '/api/v1/instances';
     }
 
-    public function createDtoFromResponse(Response $response): InstancesResponse
+    public function createDtoFromResponse(#[\SensitiveParameter] Response $response): InstancesResponse
     {
         $data = $this->unwrapDataList($response);
-        $meta = $this->unwrapMeta($response);
-        $requestId = is_string($meta['request_id'] ?? null) ? $meta['request_id'] : '';
+        $requestId = $this->successRequestId($response);
         $instances = [];
 
         foreach ($data as $instance) {

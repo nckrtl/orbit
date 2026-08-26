@@ -19,10 +19,14 @@ describe(ShowNodeRequest::class, function (): void {
                     'status' => 'active',
                     'platform' => 'ubuntu',
                     'architecture' => 'x86_64',
+                    'tld' => 'operator.orbit',
                     'public_ssh_host' => '94.237.108.25',
                     'public_ssh_port' => 22,
                     'ssh_user' => 'orbit',
                     'wireguard_address' => '10.44.0.2',
+                    'wireguard_public_key' => 'operator-public-key',
+                    'wireguard_endpoint_override' => null,
+                    'dns_server_override' => '10.0.0.2',
                     'ssh_host_fingerprint' => 'SHA256:operator',
                     'failed_step' => null,
                     'error_code' => null,
@@ -49,6 +53,12 @@ describe(ShowNodeRequest::class, function (): void {
             ->toBe('ubuntu')
             ->and($response->architecture)
             ->toBe('x86_64')
+            ->and($response->tld)
+            ->toBe('operator.orbit')
+            ->and($response->wireguardPublicKey)
+            ->toBe('operator-public-key')
+            ->and($response->dnsServerOverride)
+            ->toBe('10.0.0.2')
             ->and($response->sshHostFingerprint)
             ->toBe('SHA256:operator')
             ->and($response->roles)
