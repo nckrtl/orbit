@@ -12,9 +12,11 @@ use Orbit\Sdk\Responses\Instances\InstancesResponse;
 
 final class ListInstancesCommand extends GatewayCommand
 {
+    #[\Override]
     protected $signature = 'instance:list
         {--json : Return machine-readable JSON}';
 
+    #[\Override]
     protected $description = 'List instances.';
 
     public function handle(
@@ -27,7 +29,7 @@ final class ListInstancesCommand extends GatewayCommand
             return self::FAILURE;
         }
 
-        $response = $this->send($connector, new ListInstancesRequest);
+        $response = $this->send($connector, new ListInstancesRequest, InstancesResponse::class);
 
         if (! $response instanceof InstancesResponse) {
             return self::FAILURE;

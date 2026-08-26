@@ -61,10 +61,49 @@ describe('node:list', function (): void {
         $this
             ->artisan('node:list')
             ->expectsTable(
-                ['ID', 'Name', 'Status', 'Roles', 'SSH', 'WireGuard'],
-                [[2, 'app-dev', 'active', 'app-dev', 'orbit@94.237.40.75:22', '10.44.0.3']],
+                ['ID', 'Name', 'Status', 'Roles', 'Platform', 'TLD', 'SSH', 'WireGuard'],
+                [[2, 'app-dev', 'active', 'app-dev', 'linux', 'app-dev.orbit', 'orbit@94.237.40.75:22', '10.44.0.3']],
             )
             ->expectsOutput('Request ID: '.request_id())
+            ->assertExitCode(0);
+    });
+
+    it('does not invent a missing public SSH port', function (): void {
+        $payload = node_payload();
+        $payload['public_ssh_port'] = null;
+        MockClient::global([
+            ListNodesRequest::class => MockResponse::make([
+                'data' => [$payload],
+                'meta' => ['request_id' => request_id()],
+            ]),
+        ]);
+        $expected = json_encode([
+            'nodes' => [[...$payload, 'public_ssh_port' => 0]],
+            'request_id' => request_id(),
+        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+
+        $this
+            ->artisan('node:list', ['--json' => true])
+            ->expectsOutput($expected)
+            ->assertExitCode(0);
+    });
+
+    it('renders an incomplete public SSH endpoint safely in the node list', function (): void {
+        $payload = node_payload();
+        $payload['public_ssh_port'] = null;
+        MockClient::global([
+            ListNodesRequest::class => MockResponse::make([
+                'data' => [$payload],
+                'meta' => ['request_id' => request_id()],
+            ]),
+        ]);
+
+        $this
+            ->artisan('node:list')
+            ->expectsTable(
+                ['ID', 'Name', 'Status', 'Roles', 'Platform', 'TLD', 'SSH', 'WireGuard'],
+                [[2, 'app-dev', 'active', 'app-dev', 'linux', 'app-dev.orbit', '-', '10.44.0.3']],
+            )
             ->assertExitCode(0);
     });
 
@@ -173,8 +212,28 @@ describe('node:show', function (): void {
             ->expectsOutput('Roles: app-dev')
             ->expectsOutput('SSH: orbit@94.237.40.75:22')
             ->expectsOutput('WireGuard: 10.44.0.3')
+            ->expectsOutput('WireGuard public key: app-dev-public-key')
+            ->expectsOutput('WireGuard endpoint override: 10.0.0.2:51820')
+            ->expectsOutput('DNS server override: 10.0.0.2')
+            ->expectsOutput('TLD: app-dev.orbit')
             ->expectsOutput('Platform: linux (x86_64)')
             ->expectsOutput('Request ID: '.request_id())
+            ->assertExitCode(0);
+    });
+
+    it('renders an incomplete public SSH endpoint safely in node details', function (): void {
+        $payload = node_payload();
+        $payload['public_ssh_port'] = null;
+        MockClient::global([
+            ShowNodeRequest::class => MockResponse::make([
+                'data' => $payload,
+                'meta' => ['request_id' => request_id()],
+            ]),
+        ]);
+
+        $this
+            ->artisan('node:show', ['node' => '2'])
+            ->expectsOutput('SSH: -')
             ->assertExitCode(0);
     });
 
@@ -256,10 +315,14 @@ function node_payload(): array
         'status' => 'active',
         'platform' => 'linux',
         'architecture' => 'x86_64',
+        'tld' => 'app-dev.orbit',
         'public_ssh_host' => '94.237.40.75',
         'public_ssh_port' => 22,
         'ssh_user' => 'orbit',
         'wireguard_address' => '10.44.0.3',
+        'wireguard_public_key' => 'app-dev-public-key',
+        'wireguard_endpoint_override' => '10.0.0.2:51820',
+        'dns_server_override' => '10.0.0.2',
         'ssh_host_fingerprint' => 'SHA256:4dxvKOYfyTcqJHYoxamTSu9bYYI5KE3xYWQPCAmeUTo',
         'failed_step' => null,
         'error_code' => null,

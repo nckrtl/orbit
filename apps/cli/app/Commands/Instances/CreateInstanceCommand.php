@@ -12,36 +12,52 @@ use Orbit\Sdk\Responses\Instances\InstanceResponse;
 
 final class CreateInstanceCommand extends GatewayCommand
 {
+    #[\Override]
     protected $signature = 'instance:new
         {app : Numeric app ID}
         {node : Numeric node ID}
         {name : Metadata name; source path and hostname use the app slug}
-        {--environment=development : Environment name}
+        {--environment= : Environment name; the gateway derives the role default when omitted}
+        {--hostname= : Public hostname required for app-prod}
         {--document-root=public : Web document root relative to the checkout}
         {--php=8.5 : PHP major.minor version}
         {--json : Return machine-readable JSON}';
 
+    #[\Override]
     protected $description = 'Create the single instance of an app on a node.';
 
     public function handle(
         GatewayConfigRepository $repository,
         GatewayConnectorFactory $connectors,
     ): int {
-        $appId = $this->positiveId('app', 'App');
-        $nodeId = $this->positiveId('node', 'Node');
-        $name = $this->stringArgument('name', 'Instance name');
-        $environment = $this->stringOption('environment');
-        $documentRoot = $this->stringOption('document-root');
-        $phpVersion = $this->stringOption('php');
+        $appId = $this->positiveId('app', 'App', 'app.id_invalid');
 
-        if ($appId === null || $nodeId === null || $name === null) {
+        if ($appId === null) {
             return self::FAILURE;
         }
 
-        if ($environment === null || $documentRoot === null || $phpVersion === null) {
-            $this->error('Environment, document root, and PHP version are required.');
+        $nodeId = $this->positiveId('node', 'Node', 'node.id_invalid');
 
+        if ($nodeId === null) {
             return self::FAILURE;
+        }
+
+        $name = $this->stringArgument('name', 'Instance name', 'instance.name_required');
+
+        if ($name === null) {
+            return self::FAILURE;
+        }
+
+        $environment = $this->stringOption('environment');
+        $hostname = $this->stringOption('hostname');
+        $documentRoot = $this->stringOption('document-root');
+        $phpVersion = $this->stringOption('php');
+
+        if ($documentRoot === null || $phpVersion === null) {
+            return $this->renderGatewayFailure(
+                'instance.options_required',
+                'Document root and PHP version are required.',
+            );
         }
 
         if (! $this->validPhpVersion($phpVersion)) {
@@ -54,14 +70,19 @@ final class CreateInstanceCommand extends GatewayCommand
             return self::FAILURE;
         }
 
-        $instance = $this->send($connector, new CreateInstanceRequest(
-            appId: $appId,
-            nodeId: $nodeId,
-            name: $name,
-            environment: $environment,
-            documentRoot: $documentRoot,
-            phpVersion: $phpVersion,
-        ));
+        $instance = $this->send(
+            $connector,
+            new CreateInstanceRequest(
+                appId: $appId,
+                nodeId: $nodeId,
+                name: $name,
+                environment: $environment,
+                documentRoot: $documentRoot,
+                phpVersion: $phpVersion,
+                hostname: $hostname,
+            ),
+            InstanceResponse::class,
+        );
 
         if (! $instance instanceof InstanceResponse) {
             return self::FAILURE;

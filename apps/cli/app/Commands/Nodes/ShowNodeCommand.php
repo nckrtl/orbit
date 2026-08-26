@@ -7,12 +7,10 @@ namespace App\Commands\Nodes;
 use App\Commands\GatewayCommand;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
-use LaravelZero\Framework\Commands\Command;
-use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\Requests\Nodes\ShowNodeRequest;
 use Orbit\Sdk\Responses\Nodes\NodeResponse;
 
-final class ShowNodeCommand extends Command
+final class ShowNodeCommand extends GatewayCommand
 {
     #[\Override]
     protected $signature = 'node:show
@@ -26,37 +24,26 @@ final class ShowNodeCommand extends Command
         GatewayConfigRepository $repository,
         GatewayConnectorFactory $connectors,
     ): int {
-        $profile = $repository->active();
+        $connector = $this->gatewayConnector($repository, $connectors);
 
-        if ($profile === null) {
-            $this->error('No active gateway profile.');
-
+        if ($connector === null) {
             return self::FAILURE;
         }
 
-        $nodeId = filter_var(
-            $this->argument('node'),
-            FILTER_VALIDATE_INT,
-            ['options' => ['min_range' => 1]],
-        );
+        $nodeId = $this->positiveId('node', 'Node', 'node.id_invalid');
 
-        if (! is_int($nodeId)) {
-            $this->error('Node ID must be a positive integer.');
-
+        if ($nodeId === null) {
             return self::FAILURE;
         }
 
-        try {
-            /** @var NodeResponse $node */
-            $node = $connectors->make($profile)->send(new ShowNodeRequest($nodeId))->dto();
-        } catch (GatewayApiException $exception) {
-            GatewayCommand::writeGatewayApiException($this, $exception);
+        $node = $this->send($connector, new ShowNodeRequest($nodeId), NodeResponse::class);
 
+        if (! $node instanceof NodeResponse) {
             return self::FAILURE;
         }
 
         if ($this->option('json') === true) {
-            $this->line(json_encode($node->toArray(), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
+            $this->writeJson($node->toArray());
 
             return self::SUCCESS;
         }
@@ -71,8 +58,12 @@ final class ShowNodeCommand extends Command
 
         $this->info("{$node->name}: {$node->status}");
         $this->line("Roles: {$roles}");
-        $this->line("SSH: {$node->sshUser}@{$node->publicSshHost}:{$node->publicSshPort}");
+        $this->line('SSH: '.NodeOutput::sshEndpoint($node));
         $this->line('WireGuard: '.($node->wireguardAddress ?? '-'));
+        $this->line('WireGuard public key: '.($node->wireguardPublicKey ?? '-'));
+        $this->line('WireGuard endpoint override: '.($node->wireguardEndpointOverride ?? '-'));
+        $this->line('DNS server override: '.($node->dnsServerOverride ?? '-'));
+        $this->line('TLD: '.($node->tld ?? '-'));
         $this->line("Platform: {$platform}");
 
         if ($node->failedStep !== null || $node->errorCode !== null) {

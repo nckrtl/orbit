@@ -12,9 +12,11 @@ use Orbit\Sdk\Responses\Workspaces\WorkspacesResponse;
 
 final class ListWorkspacesCommand extends GatewayCommand
 {
+    #[\Override]
     protected $signature = 'workspace:list
         {--json : Return machine-readable JSON}';
 
+    #[\Override]
     protected $description = 'List workspaces.';
 
     public function handle(
@@ -27,7 +29,7 @@ final class ListWorkspacesCommand extends GatewayCommand
             return self::FAILURE;
         }
 
-        $response = $this->send($connector, new ListWorkspacesRequest);
+        $response = $this->send($connector, new ListWorkspacesRequest, WorkspacesResponse::class);
 
         if (! $response instanceof WorkspacesResponse) {
             return self::FAILURE;

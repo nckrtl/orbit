@@ -65,7 +65,7 @@ describe('workspace:new', function (): void {
             ->and($request)
             ->toBeInstanceOf(CreateWorkspaceRequest::class)
             ->and($request?->body()->all())
-            ->toMatchArray([
+            ->toBe([
                 'instance_id' => 5,
                 'name' => 'feature-auth',
                 'branch' => 'feature/auth',
@@ -89,9 +89,9 @@ describe('workspace:new', function (): void {
             ->assertExitCode(0);
 
         expect($mockClient->getLastRequest()?->body()->all())
-            ->toMatchArray([
-                'branch' => 'feature-auth',
-                'checkout_path' => null,
+            ->toBe([
+                'instance_id' => 5,
+                'name' => 'feature-auth',
             ]);
     });
 });

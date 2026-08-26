@@ -12,17 +12,19 @@ use Orbit\Sdk\Responses\Workspaces\WorkspaceResponse;
 
 final class RemoveWorkspaceCommand extends GatewayCommand
 {
+    #[\Override]
     protected $signature = 'workspace:remove
         {workspace : Numeric workspace ID}
         {--json : Return machine-readable JSON}';
 
+    #[\Override]
     protected $description = 'Remove a workspace.';
 
     public function handle(
         GatewayConfigRepository $repository,
         GatewayConnectorFactory $connectors,
     ): int {
-        $workspaceId = $this->positiveId('workspace', 'Workspace');
+        $workspaceId = $this->positiveId('workspace', 'Workspace', 'workspace.id_invalid');
 
         if ($workspaceId === null) {
             return self::FAILURE;
@@ -34,7 +36,11 @@ final class RemoveWorkspaceCommand extends GatewayCommand
             return self::FAILURE;
         }
 
-        $workspace = $this->send($connector, new RemoveWorkspaceRequest($workspaceId));
+        $workspace = $this->send(
+            $connector,
+            new RemoveWorkspaceRequest($workspaceId),
+            WorkspaceResponse::class,
+        );
 
         if (! $workspace instanceof WorkspaceResponse) {
             return self::FAILURE;

@@ -12,17 +12,19 @@ use Orbit\Sdk\Responses\Instances\InstanceResponse;
 
 final class RemoveInstanceCommand extends GatewayCommand
 {
+    #[\Override]
     protected $signature = 'instance:remove
         {instance : Numeric instance ID}
         {--json : Return machine-readable JSON}';
 
+    #[\Override]
     protected $description = 'Remove an instance.';
 
     public function handle(
         GatewayConfigRepository $repository,
         GatewayConnectorFactory $connectors,
     ): int {
-        $instanceId = $this->positiveId('instance', 'Instance');
+        $instanceId = $this->positiveId('instance', 'Instance', 'instance.id_invalid');
 
         if ($instanceId === null) {
             return self::FAILURE;
@@ -34,7 +36,11 @@ final class RemoveInstanceCommand extends GatewayCommand
             return self::FAILURE;
         }
 
-        $instance = $this->send($connector, new RemoveInstanceRequest($instanceId));
+        $instance = $this->send(
+            $connector,
+            new RemoveInstanceRequest($instanceId),
+            InstanceResponse::class,
+        );
 
         if (! $instance instanceof InstanceResponse) {
             return self::FAILURE;

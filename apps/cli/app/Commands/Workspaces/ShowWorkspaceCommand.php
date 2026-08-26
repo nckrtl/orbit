@@ -12,17 +12,19 @@ use Orbit\Sdk\Responses\Workspaces\WorkspaceResponse;
 
 final class ShowWorkspaceCommand extends GatewayCommand
 {
+    #[\Override]
     protected $signature = 'workspace:show
         {workspace : Numeric workspace ID}
         {--json : Return machine-readable JSON}';
 
+    #[\Override]
     protected $description = 'Show a workspace.';
 
     public function handle(
         GatewayConfigRepository $repository,
         GatewayConnectorFactory $connectors,
     ): int {
-        $workspaceId = $this->positiveId('workspace', 'Workspace');
+        $workspaceId = $this->positiveId('workspace', 'Workspace', 'workspace.id_invalid');
 
         if ($workspaceId === null) {
             return self::FAILURE;
@@ -34,7 +36,7 @@ final class ShowWorkspaceCommand extends GatewayCommand
             return self::FAILURE;
         }
 
-        $workspace = $this->send($connector, new ShowWorkspaceRequest($workspaceId));
+        $workspace = $this->send($connector, new ShowWorkspaceRequest($workspaceId), WorkspaceResponse::class);
 
         if (! $workspace instanceof WorkspaceResponse) {
             return self::FAILURE;

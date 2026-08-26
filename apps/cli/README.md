@@ -10,13 +10,23 @@ Clone this repository beside `orbit-php-sdk`, then install dependencies:
 
 ```bash
 composer install
-./orbit gateway:add local https://gateway.orbit --ca="$HOME/.orbit/ca/root.pem"
-./orbit gateway:status
 ```
 
 Composer symlinks `../php-sdk`, so local SDK changes are available at once.
+
+## First Use
+
+Register the gateway, trust its root CA locally, then verify the connection:
+
+```bash
+./orbit gateway:add local https://gateway.orbit --use
+./orbit gateway:trust
+./orbit gateway:status
+```
+
 Gateway profiles are stored in `$HOME/.orbit/config.json`. Set `ORBIT_HOME` to
-override that directory.
+override that directory. `gateway:trust` is a visible local operating-system trust step.
+It can ask for local administrator privileges.
 
 ## Quality
 

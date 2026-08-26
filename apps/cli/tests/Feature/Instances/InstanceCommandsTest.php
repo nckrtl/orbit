@@ -65,14 +65,38 @@ describe('instance:new', function (): void {
             ->and($request)
             ->toBeInstanceOf(CreateInstanceRequest::class)
             ->and($request?->body()->all())
-            ->toMatchArray([
+            ->toBe([
                 'app_id' => 3,
                 'node_id' => 2,
                 'name' => 'dev',
-                'environment' => 'development',
                 'document_root' => 'public',
                 'php_version' => '8.5',
+                'environment' => 'development',
             ]);
+    });
+
+    it('passes a production hostname while leaving the environment for the gateway to derive', function (): void {
+        $mockClient = MockClient::global([
+            CreateInstanceRequest::class => instance_mock_response(201),
+        ]);
+
+        $this
+            ->artisan('instance:new', [
+                'app' => '3',
+                'node' => '2',
+                'name' => 'main',
+                '--hostname' => 'orbit.nckrtl.com',
+            ])
+            ->assertExitCode(0);
+
+        expect($mockClient->getLastRequest()?->body()->all())->toBe([
+            'app_id' => 3,
+            'node_id' => 2,
+            'name' => 'main',
+            'document_root' => 'public',
+            'php_version' => '8.5',
+            'hostname' => 'orbit.nckrtl.com',
+        ]);
     });
 
     it('reports the created instance for humans', function (): void {

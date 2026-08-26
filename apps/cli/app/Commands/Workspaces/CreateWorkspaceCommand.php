@@ -12,35 +12,43 @@ use Orbit\Sdk\Responses\Workspaces\WorkspaceResponse;
 
 final class CreateWorkspaceCommand extends GatewayCommand
 {
+    #[\Override]
     protected $signature = 'workspace:new
         {instance : Numeric instance ID}
         {name : Workspace name}
-        {--branch= : Git branch, defaults to the workspace name}
+        {--branch= : Optional Git branch}
         {--path= : Absolute target-node checkout path; Linux default: /home/orbit/.orbit/worktrees/<app>/<workspace>}
         {--php= : Optional PHP major.minor override}
         {--json : Return machine-readable JSON}';
 
+    #[\Override]
     protected $description = 'Create a workspace.';
 
     public function handle(
         GatewayConfigRepository $repository,
         GatewayConnectorFactory $connectors,
     ): int {
-        $instanceId = $this->positiveId('instance', 'Instance');
-        $name = $this->stringArgument('name', 'Workspace name');
+        $instanceId = $this->positiveId('instance', 'Instance', 'instance.id_invalid');
 
-        if ($instanceId === null || $name === null) {
+        if ($instanceId === null) {
             return self::FAILURE;
         }
 
-        $branch = $this->stringOption('branch') ?? $name;
+        $name = $this->stringArgument('name', 'Workspace name', 'workspace.name_required');
+
+        if ($name === null) {
+            return self::FAILURE;
+        }
+
+        $branch = $this->stringOption('branch');
         $checkoutPath = $this->stringOption('path');
         $phpVersion = $this->stringOption('php');
 
         if ($checkoutPath !== null && ! $this->isSafeCheckoutPath($checkoutPath)) {
-            $this->error('Workspace checkout path must be a safe child of /home/orbit.');
-
-            return self::FAILURE;
+            return $this->renderGatewayFailure(
+                'workspace.checkout_path_invalid',
+                'Workspace checkout path must be a safe child of /home/orbit.',
+            );
         }
 
         if ($phpVersion !== null && ! $this->validPhpVersion($phpVersion)) {
@@ -53,13 +61,17 @@ final class CreateWorkspaceCommand extends GatewayCommand
             return self::FAILURE;
         }
 
-        $workspace = $this->send($connector, new CreateWorkspaceRequest(
-            instanceId: $instanceId,
-            name: $name,
-            branch: $branch,
-            checkoutPath: $checkoutPath,
-            phpVersion: $phpVersion,
-        ));
+        $workspace = $this->send(
+            $connector,
+            new CreateWorkspaceRequest(
+                instanceId: $instanceId,
+                name: $name,
+                branch: $branch,
+                checkoutPath: $checkoutPath,
+                phpVersion: $phpVersion,
+            ),
+            WorkspaceResponse::class,
+        );
 
         if (! $workspace instanceof WorkspaceResponse) {
             return self::FAILURE;

@@ -12,21 +12,28 @@ use Orbit\Sdk\Responses\Workspaces\WorkspaceResponse;
 
 final class UpdateWorkspacePhpCommand extends GatewayCommand
 {
+    #[\Override]
     protected $signature = 'workspace:php
         {workspace : Numeric workspace ID}
         {version : PHP major.minor version}
         {--json : Return machine-readable JSON}';
 
+    #[\Override]
     protected $description = 'Change a workspace PHP version.';
 
     public function handle(
         GatewayConfigRepository $repository,
         GatewayConnectorFactory $connectors,
     ): int {
-        $workspaceId = $this->positiveId('workspace', 'Workspace');
-        $phpVersion = $this->stringArgument('version', 'PHP version');
+        $workspaceId = $this->positiveId('workspace', 'Workspace', 'workspace.id_invalid');
 
-        if ($workspaceId === null || $phpVersion === null) {
+        if ($workspaceId === null) {
+            return self::FAILURE;
+        }
+
+        $phpVersion = $this->stringArgument('version', 'PHP version', 'php.version_required');
+
+        if ($phpVersion === null) {
             return self::FAILURE;
         }
 
@@ -40,7 +47,11 @@ final class UpdateWorkspacePhpCommand extends GatewayCommand
             return self::FAILURE;
         }
 
-        $workspace = $this->send($connector, new UpdateWorkspacePhpRequest($workspaceId, $phpVersion));
+        $workspace = $this->send(
+            $connector,
+            new UpdateWorkspacePhpRequest($workspaceId, $phpVersion),
+            WorkspaceResponse::class,
+        );
 
         if (! $workspace instanceof WorkspaceResponse) {
             return self::FAILURE;

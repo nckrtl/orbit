@@ -12,17 +12,19 @@ use Orbit\Sdk\Responses\Apps\AppResponse;
 
 final class ShowAppCommand extends GatewayCommand
 {
+    #[\Override]
     protected $signature = 'app:show
         {app : Numeric app ID}
         {--json : Return machine-readable JSON}';
 
+    #[\Override]
     protected $description = 'Show an app.';
 
     public function handle(
         GatewayConfigRepository $repository,
         GatewayConnectorFactory $connectors,
     ): int {
-        $appId = $this->positiveId('app', 'App');
+        $appId = $this->positiveId('app', 'App', 'app.id_invalid');
 
         if ($appId === null) {
             return self::FAILURE;
@@ -34,7 +36,7 @@ final class ShowAppCommand extends GatewayCommand
             return self::FAILURE;
         }
 
-        $app = $this->send($connector, new ShowAppRequest($appId));
+        $app = $this->send($connector, new ShowAppRequest($appId), AppResponse::class);
 
         if (! $app instanceof AppResponse) {
             return self::FAILURE;

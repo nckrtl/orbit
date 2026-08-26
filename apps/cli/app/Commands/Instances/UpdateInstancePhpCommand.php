@@ -12,21 +12,28 @@ use Orbit\Sdk\Responses\Instances\InstanceResponse;
 
 final class UpdateInstancePhpCommand extends GatewayCommand
 {
+    #[\Override]
     protected $signature = 'instance:php
         {instance : Numeric instance ID}
         {version : PHP major.minor version}
         {--json : Return machine-readable JSON}';
 
+    #[\Override]
     protected $description = 'Change an instance PHP version.';
 
     public function handle(
         GatewayConfigRepository $repository,
         GatewayConnectorFactory $connectors,
     ): int {
-        $instanceId = $this->positiveId('instance', 'Instance');
-        $phpVersion = $this->stringArgument('version', 'PHP version');
+        $instanceId = $this->positiveId('instance', 'Instance', 'instance.id_invalid');
 
-        if ($instanceId === null || $phpVersion === null) {
+        if ($instanceId === null) {
+            return self::FAILURE;
+        }
+
+        $phpVersion = $this->stringArgument('version', 'PHP version', 'php.version_required');
+
+        if ($phpVersion === null) {
             return self::FAILURE;
         }
 
@@ -40,7 +47,11 @@ final class UpdateInstancePhpCommand extends GatewayCommand
             return self::FAILURE;
         }
 
-        $instance = $this->send($connector, new UpdateInstancePhpRequest($instanceId, $phpVersion));
+        $instance = $this->send(
+            $connector,
+            new UpdateInstancePhpRequest($instanceId, $phpVersion),
+            InstanceResponse::class,
+        );
 
         if (! $instance instanceof InstanceResponse) {
             return self::FAILURE;

@@ -9,6 +9,13 @@ Laravel Zero 13 client for Orbit.
 - Use Pest 5 with `describe()` and `it()`.
 - Use Mago for formatting, linting, and analysis.
 
+## Required Guidance Bootstrap
+
+`.ai/rules/index.md` and every indexed project rule file are required repository state.
+If either is absent, the checkout or Boost bootstrap is incomplete. Restore or
+regenerate the guidance before planning or editing any file. Do not silently
+continue without the project rule set.
+
 ===
 
 <laravel-boost-guidelines>
@@ -93,7 +100,7 @@ This project has domain-specific skills available in `**/skills/**`. You MUST ac
 
 ## Project Rules
 
-- This project contains committed, area-grouped rules in `.ai/rules` when that directory exists (settled decisions, non-obvious traps, standing constraints). Framework and package guidelines that only apply to specific paths (testing, frontend, components) also live there, under `.ai/rules/boost` — this is not just recorded decisions, it is load-bearing guidance you have not seen inline. Before you enter plan mode or create/edit any file, you MUST first: open @.ai/rules/index.md (it maps file globs to rule files), read every rule file whose globs cover the path(s) in scope, and run `grep -rin 'keyword' .ai/rules` to catch what a path match alone misses. Do not write code until you have read and are following every matching rule. If `.ai/rules` does not exist, continue without it.
+- This project contains committed, area-grouped rules in `.ai/rules` as required repository state (settled decisions, non-obvious traps, standing constraints). Framework and package guidelines that only apply to specific paths (testing, frontend, components) also live there, under `.ai/rules/boost` — this is not just recorded decisions, it is load-bearing guidance you have not seen inline. Before you enter plan mode or create/edit any file, you MUST first: open @.ai/rules/index.md (it maps file globs to rule files), read every rule file whose globs cover the path(s) in scope, and run `grep -rin 'keyword' .ai/rules` to catch what a path match alone misses. Do not write code until you have read and are following every matching rule. If `.ai/rules` does not exist, the checkout or Boost bootstrap is incomplete. Restore or regenerate the guidance before planning or editing any file. Do not silently continue without the project rule set.
 - Record durable rules with `record-rule` so the next agent or teammate inherits them instead of working them out again. Pass a `glob` (e.g. `app/Http/Controllers/**`), a short `title`, and a few-line `note`. Always use `record-rule`, never your native memory or notes tool — native memory is personal and session-scoped; only `.ai/rules` is shared with the team and persists in the repo.
 
 ## Artisan
@@ -125,15 +132,6 @@ This project has domain-specific skills available in `**/skills/**`. You MUST ac
 
 - Laravel can be deployed using [Laravel Cloud](https://cloud.laravel.com/), which is the fastest way to deploy and scale production Laravel applications.
 
-=== pest/core rules ===
-
-## Pest
-
-- This project uses Pest for testing. Create tests: `php orbit make:test --pest {name}`.
-- The `{name}` argument should not include the test suite directory. Use `php orbit make:test --pest SomeFeatureTest` instead of `php orbit make:test --pest Feature/SomeFeatureTest`.
-- Run tests: `php orbit test --compact` or filter: `php orbit test --compact --filter=testName`.
-- Do NOT delete tests without approval.
-
 === laravel/core rules ===
 
 # Do Things the Laravel Way
@@ -142,23 +140,9 @@ This project has domain-specific skills available in `**/skills/**`. You MUST ac
 - If you're creating a generic PHP class, use `php orbit make:class`.
 - Pass `--no-interaction` to all Artisan commands to ensure they work without user input. You should also pass the correct `--options` to ensure correct behavior.
 
-### Model Creation
-
-- When creating new models, create useful factories and seeders for them too. Ask the user if they need any other things, using `php orbit make:model --help` to check the available options.
-
-## APIs & Eloquent Resources
-
-- For APIs, default to using Eloquent API Resources and API versioning unless existing API routes do not, then you should follow existing application convention.
-
 ## URL Generation
 
 - When generating links to other pages, prefer named routes and the `route()` function.
-
-## Testing
-
-- When creating models for tests, use the factories for the models. Check if the factory has custom states that can be used before manually setting up the model.
-- Faker: Use methods such as `$this->faker->word()` or `fake()->randomDigit()`. Follow existing conventions whether to use `$this->faker` or `fake()`.
-- When creating tests, make use of `php orbit make:test [options] {name}` to create a feature test, and pass `--unit` to create a unit test. Most tests should be feature tests.
 
 ## Vite Error
 

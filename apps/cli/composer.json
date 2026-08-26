@@ -17,6 +17,7 @@
         "mockery/mockery": "^1.6.12",
         "pestphp/pest": "^5.1",
         "phpunit/phpunit": "^13.0",
+        "rector/rector": "^2.3",
         "spatie/guidelines-skills": "^1.1"
     },
     "autoload": {
@@ -43,6 +44,7 @@
     "scripts": {
         "analyse": "vendor/bin/mago analyze app --reporting-format=medium",
         "check": [
+            "@rector",
             "@test",
             "@format:check",
             "@lint",
@@ -51,6 +53,7 @@
         "format": "vendor/bin/mago format",
         "format:check": "vendor/bin/mago format --check",
         "lint": "vendor/bin/mago lint app tests --reporting-format=medium",
+        "rector": "vendor/bin/rector process",
         "test": "vendor/bin/pest --compact",
         "test:full": "vendor/bin/pest --no-tia --compact"
     },
@@ -59,7 +62,8 @@
         "sort-packages": true,
         "optimize-autoloader": true,
         "allow-plugins": {
-            "pestphp/pest-plugin": true
+            "pestphp/pest-plugin": true,
+            "rector/rector": true
         }
     },
     "minimum-stability": "stable",

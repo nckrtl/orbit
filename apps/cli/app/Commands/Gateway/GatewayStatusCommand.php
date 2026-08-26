@@ -7,12 +7,10 @@ namespace App\Commands\Gateway;
 use App\Commands\GatewayCommand;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
-use LaravelZero\Framework\Commands\Command;
-use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\Requests\Gateway\ShowGatewayStatusRequest;
 use Orbit\Sdk\Responses\Gateway\GatewayStatusResponse;
 
-final class GatewayStatusCommand extends Command
+final class GatewayStatusCommand extends GatewayCommand
 {
     #[\Override]
     protected $signature = 'gateway:status
@@ -25,20 +23,19 @@ final class GatewayStatusCommand extends Command
         GatewayConfigRepository $repository,
         GatewayConnectorFactory $connectors,
     ): int {
-        $profile = $repository->active();
+        $profile = $this->activeGatewayProfile($repository);
 
         if ($profile === null) {
-            $this->error('No active gateway profile.');
-
             return self::FAILURE;
         }
 
-        try {
-            /** @var GatewayStatusResponse $status */
-            $status = $connectors->make($profile)->send(new ShowGatewayStatusRequest)->dto();
-        } catch (GatewayApiException $exception) {
-            GatewayCommand::writeGatewayApiException($this, $exception);
+        $status = $this->send(
+            $connectors->make($profile),
+            new ShowGatewayStatusRequest,
+            GatewayStatusResponse::class,
+        );
 
+        if (! $status instanceof GatewayStatusResponse) {
             return self::FAILURE;
         }
 
@@ -49,12 +46,15 @@ final class GatewayStatusCommand extends Command
         ];
 
         if ($this->option('json') === true) {
-            $this->line(json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
+            $this->writeJson($payload);
 
             return self::SUCCESS;
         }
 
-        $this->info("{$profile->name}: {$status->status} ({$status->version})");
+        $statusLabel = $status->status !== '' ? $status->status : '-';
+        $version = $status->version !== '' ? $status->version : '-';
+
+        $this->info("{$profile->name}: {$statusLabel} ({$version})");
         $this->line("URL: {$profile->url}");
         $this->line("Request ID: {$status->requestId}");
 

@@ -8,7 +8,10 @@ use App\Data\GatewayProfile;
 use App\Exceptions\GatewayConfigException;
 use JsonException;
 
-/** @mago-expect lint:cyclomatic-complexity */
+/**
+ * @mago-expect lint:cyclomatic-complexity
+ * @mago-expect lint:kan-defect
+ */
 final readonly class GatewayConfigRepository
 {
     public function __construct(
@@ -17,6 +20,14 @@ final readonly class GatewayConfigRepository
 
     public function add(GatewayProfile $profile): void
     {
+        if (
+            ! GatewayProfile::hasValidName($profile->name)
+            || ! GatewayProfile::hasSafeUrl($profile->url)
+            || ! GatewayProfile::hasValidCaPath($profile->caPath)
+        ) {
+            throw new GatewayConfigException('Gateway profile is invalid.');
+        }
+
         $config = $this->read();
         $config['gateways'][$profile->name] = $profile->toArray();
 
@@ -54,6 +65,10 @@ final readonly class GatewayConfigRepository
 
     public function find(string $name): ?GatewayProfile
     {
+        if (! GatewayProfile::hasValidName($name)) {
+            return null;
+        }
+
         $config = $this->read();
 
         return $this->profile($name, $config['gateways'][$name] ?? null);
@@ -73,25 +88,72 @@ final readonly class GatewayConfigRepository
             ];
         }
 
+        if (is_link($this->path)) {
+            throw new GatewayConfigException('Orbit gateway configuration is not private.');
+        }
+
+        $permissions = fileperms($this->path);
+        $owner = fileowner($this->path);
+        $effectiveUserId = function_exists('posix_geteuid') ? posix_geteuid() : null;
+
+        if (
+            ! is_int($permissions)
+            || ($permissions & 0o077) !== 0
+            || ! is_int($owner)
+            || ! is_int($effectiveUserId)
+            || $owner !== $effectiveUserId
+        ) {
+            throw new GatewayConfigException('Orbit gateway configuration is not private.');
+        }
+
+        $size = filesize($this->path);
+
+        if (! is_int($size) || $size > 1_048_576) {
+            throw new GatewayConfigException('Orbit gateway configuration is invalid.');
+        }
+
+        $contents = file_get_contents($this->path);
+
+        if (! is_string($contents)) {
+            throw new GatewayConfigException('Orbit gateway configuration is invalid.');
+        }
+
         try {
             $decoded = json_decode(
-                json: (string) file_get_contents($this->path),
-                associative: true,
+                json: $contents,
+                associative: false,
                 depth: 512,
                 flags: JSON_THROW_ON_ERROR,
             );
         } catch (JsonException $exception) {
-            throw new GatewayConfigException('Orbit gateway configuration is not valid JSON.', previous: $exception);
+            throw new GatewayConfigException('Orbit gateway configuration is invalid.', previous: $exception);
         }
 
-        if (! is_array($decoded)) {
-            throw new GatewayConfigException('Orbit gateway configuration must contain a JSON object.');
+        if (! is_object($decoded)) {
+            throw new GatewayConfigException('Orbit gateway configuration is invalid.');
         }
 
-        $activeGateway = is_string($decoded['active_gateway'] ?? null)
-            ? $decoded['active_gateway']
-            : null;
-        $gateways = $this->gatewayProfiles($decoded['gateways'] ?? null);
+        $values = get_object_vars($decoded);
+
+        if (! array_key_exists('active_gateway', $values) || ! array_key_exists('gateways', $values)) {
+            throw new GatewayConfigException('Orbit gateway configuration is invalid.');
+        }
+
+        $activeGateway = $values['active_gateway'];
+
+        if (
+            $activeGateway !== null
+            && (! is_string($activeGateway)
+            || ! GatewayProfile::hasValidName($activeGateway))
+        ) {
+            throw new GatewayConfigException('Orbit gateway configuration is invalid.');
+        }
+
+        $gateways = $this->gatewayProfiles($values['gateways']);
+
+        if (is_string($activeGateway) && ! array_key_exists($activeGateway, $gateways)) {
+            throw new GatewayConfigException('Orbit gateway configuration is invalid.');
+        }
 
         return [
             'active_gateway' => $activeGateway,
@@ -109,25 +171,35 @@ final readonly class GatewayConfigRepository
             && ! mkdir(directory: $directory, permissions: 0o700, recursive: true)
             && ! is_dir($directory)
         ) {
-            throw new GatewayConfigException("Could not create Orbit directory [{$directory}].");
+            throw new GatewayConfigException('Could not update Orbit gateway configuration.');
         }
 
-        $temporaryPath = $this->path.'.tmp';
+        if (! chmod(filename: $directory, permissions: 0o700)) {
+            throw new GatewayConfigException('Could not update Orbit gateway configuration.');
+        }
+
+        $temporaryPath = $this->path.'.tmp.'.bin2hex(random_bytes(8));
 
         try {
-            $json = json_encode($config, JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR).PHP_EOL;
+            $json =
+                json_encode(
+                    $config,
+                    JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES,
+                ).PHP_EOL;
 
             if (file_put_contents($temporaryPath, $json, LOCK_EX) === false) {
-                throw new GatewayConfigException("Could not write Orbit configuration [{$temporaryPath}].");
+                throw new GatewayConfigException('Could not update Orbit gateway configuration.');
             }
 
-            chmod(filename: $temporaryPath, permissions: 0o600);
+            if (! chmod(filename: $temporaryPath, permissions: 0o600)) {
+                throw new GatewayConfigException('Could not update Orbit gateway configuration.');
+            }
 
             if (! rename($temporaryPath, $this->path)) {
-                throw new GatewayConfigException("Could not install Orbit configuration [{$this->path}].");
+                throw new GatewayConfigException('Could not update Orbit gateway configuration.');
             }
         } catch (JsonException $exception) {
-            throw new GatewayConfigException('Could not encode Orbit gateway configuration.', previous: $exception);
+            throw new GatewayConfigException('Could not update Orbit gateway configuration.', previous: $exception);
         } finally {
             if (is_file($temporaryPath)) {
                 unlink($temporaryPath);
@@ -151,18 +223,28 @@ final readonly class GatewayConfigRepository
      */
     private function gatewayProfiles(mixed $value): array
     {
-        if (! is_array($value)) {
-            return [];
+        if (! is_object($value)) {
+            throw new GatewayConfigException('Orbit gateway configuration is invalid.');
         }
 
+        /** @var array<string, array<string, mixed>> $profiles */
         $profiles = [];
 
-        foreach ($value as $name => $profile) {
-            if (! is_string($name) || ! is_array($profile)) {
-                continue;
+        foreach (get_object_vars($value) as $name => $profileData) {
+            if (! is_object($profileData)) {
+                throw new GatewayConfigException('Orbit gateway configuration is invalid.');
             }
 
-            $profiles[$name] = $this->stringKeyedArray($profile);
+            $profile = GatewayProfile::fromArray(
+                (string) $name,
+                $this->stringKeyedArray(get_object_vars($profileData)),
+            );
+
+            if (! $profile instanceof GatewayProfile) {
+                throw new GatewayConfigException('Orbit gateway configuration is invalid.');
+            }
+
+            $profiles[$profile->name] = $profile->toArray();
         }
 
         return $profiles;

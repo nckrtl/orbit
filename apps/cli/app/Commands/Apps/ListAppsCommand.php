@@ -12,9 +12,11 @@ use Orbit\Sdk\Responses\Apps\AppsResponse;
 
 final class ListAppsCommand extends GatewayCommand
 {
+    #[\Override]
     protected $signature = 'app:list
         {--json : Return machine-readable JSON}';
 
+    #[\Override]
     protected $description = 'List apps.';
 
     public function handle(
@@ -27,7 +29,7 @@ final class ListAppsCommand extends GatewayCommand
             return self::FAILURE;
         }
 
-        $response = $this->send($connector, new ListAppsRequest);
+        $response = $this->send($connector, new ListAppsRequest, AppsResponse::class);
 
         if (! $response instanceof AppsResponse) {
             return self::FAILURE;

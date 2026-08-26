@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace App\Commands\Gateway;
 
+use App\Commands\GatewayCommand;
 use App\Data\GatewayProfile;
+use App\Exceptions\GatewayConfigException;
 use App\Repositories\GatewayConfigRepository;
-use LaravelZero\Framework\Commands\Command;
 
-final class GatewayAddCommand extends Command
+final class GatewayAddCommand extends GatewayCommand
 {
+    #[\Override]
     protected $signature = 'gateway:add
         {name : Local profile name}
         {url : Gateway HTTPS URL}
@@ -17,6 +19,7 @@ final class GatewayAddCommand extends Command
         {--use : Make this profile active}
         {--json : Return machine-readable JSON}';
 
+    #[\Override]
     protected $description = 'Add a gateway profile.';
 
     public function handle(GatewayConfigRepository $repository): int
@@ -26,35 +29,70 @@ final class GatewayAddCommand extends Command
         $caPath = $this->option('ca');
 
         if (! is_string($name) || ! is_string($url)) {
-            $this->error('Gateway name and URL must be strings.');
+            return $this->renderGatewayFailure(
+                'gateway.profile_invalid',
+                'Gateway name and URL must be strings.',
+            );
+        }
 
-            return self::FAILURE;
+        if (! GatewayProfile::hasValidName($name)) {
+            return $this->renderGatewayFailure(
+                'gateway.profile_invalid',
+                'Gateway profile name is invalid.',
+            );
+        }
+
+        if (! str_starts_with($url, 'https://')) {
+            return $this->renderGatewayFailure(
+                'gateway.profile_invalid',
+                'Gateway URL must use HTTPS.',
+            );
+        }
+
+        if (! GatewayProfile::hasSafeUrl($url)) {
+            return $this->renderGatewayFailure(
+                'gateway.profile_invalid',
+                'Gateway URL must be a safe HTTPS origin.',
+            );
         }
 
         $url = rtrim(string: $url, characters: '/');
 
-        if (! str_starts_with($url, 'https://') || filter_var($url, FILTER_VALIDATE_URL) === false) {
-            $this->error('Gateway URL must use HTTPS.');
+        $caPath = is_string($caPath) && $caPath !== '' ? $caPath : null;
 
-            return self::FAILURE;
+        if (! GatewayProfile::hasValidCaPath($caPath)) {
+            return $this->renderGatewayFailure(
+                'gateway.profile_invalid',
+                'Gateway CA path must be an absolute path.',
+            );
         }
 
         $profile = new GatewayProfile(
             name: $name,
             url: $url,
-            caPath: is_string($caPath) && $caPath !== '' ? $caPath : null,
+            caPath: $caPath,
         );
-        $repository->add($profile);
 
-        if ($this->option('use') === true) {
-            $repository->use($name);
+        try {
+            $repository->add($profile);
+
+            if ($this->option('use') === true) {
+                $repository->use($name);
+            }
+
+            $active = $repository->active()?->name === $name;
+        } catch (GatewayConfigException) {
+            return $this->renderGatewayFailure(
+                'gateway.config_invalid',
+                'Orbit gateway configuration is invalid.',
+            );
         }
 
         if ($this->option('json') === true) {
             $this->line(json_encode([
                 'name' => $profile->name,
                 ...$profile->toArray(),
-                'active' => $repository->active()?->name === $name,
+                'active' => $active,
             ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
 
             return self::SUCCESS;

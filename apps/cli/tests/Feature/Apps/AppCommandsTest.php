@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
 use Illuminate\Filesystem\Filesystem;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Apps\CreateAppRequest;
 use Orbit\Sdk\Requests\Apps\ListAppsRequest;
@@ -55,7 +56,7 @@ describe('app:new', function (): void {
             ->and($request)
             ->toBeInstanceOf(CreateAppRequest::class)
             ->and($request?->body()->all())
-            ->toMatchArray([
+            ->toBe([
                 'name' => 'Orbit',
                 'slug' => 'orbit',
                 'repository_url' => 'git@github.com:nckrtl/orbit.git',
@@ -75,22 +76,139 @@ describe('app:new', function (): void {
             ->assertExitCode(0);
     });
 
-    it('rejects an invalid slug before making an API request', function (string $slug): void {
+    it('rejects an unbounded or control-bearing slug without disclosure or gateway IO', function (string $slug): void {
         $mockClient = MockClient::global();
+        $expected = json_encode([
+            'error' => [
+                'code' => 'app.slug_invalid',
+                'message' => 'App slug is invalid.',
+                'request_id' => null,
+            ],
+        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+
+        $exitCode = Artisan::call('app:new', [
+            'slug' => $slug,
+            'repository' => 'git@github.com:nckrtl/orbit.git',
+            '--json' => true,
+        ]);
+        $output = trim(Artisan::output());
+
+        expect($exitCode)->toBe(1);
+        expect($output)
+            ->toBe($expected)
+            ->not->toContain('slug-secret');
+        expect($mockClient->getLastPendingRequest())->toBeNull();
+    })->with([
+        'line feed' => "orbit\nslug-secret",
+        'NUL' => "orbit\0slug-secret",
+        'over maximum length' => str_repeat(string: 'a', times: 64).'slug-secret',
+    ]);
+
+    it('passes app slug policy values through the typed SDK request', function (): void {
+        $mockClient = MockClient::global([
+            CreateAppRequest::class => app_mock_response(201),
+        ]);
 
         $this
             ->artisan('app:new', [
-                'slug' => $slug,
-                'repository' => 'git@github.com:nckrtl/orbit.git',
+                'slug' => 'Orbit App',
+                'repository' => 'nckrtl/orbit',
             ])
-            ->expectsOutputToContain('App slug must contain lowercase letters, numbers, and single hyphens only.')
-            ->assertExitCode(1);
+            ->assertExitCode(0);
 
+        expect($mockClient->getLastRequest())
+            ->toBeInstanceOf(CreateAppRequest::class)
+            ->and($mockClient->getLastRequest()?->body()->all())
+            ->toBe([
+                'slug' => 'Orbit App',
+                'repository_url' => 'nckrtl/orbit',
+            ]);
+    });
+});
+
+describe('app:new repository boundary', function (): void {
+    it('rejects unsafe repository input without disclosure or gateway IO', function (string $repository): void {
+        $mockClient = MockClient::global();
+        $expected = json_encode([
+            'error' => [
+                'code' => 'app.repository_invalid',
+                'message' => 'Repository URL is invalid.',
+                'request_id' => null,
+            ],
+        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+
+        $exitCode = Artisan::call('app:new', [
+            'slug' => 'orbit',
+            'repository' => $repository,
+            '--json' => true,
+        ]);
+        $output = trim(Artisan::output());
+
+        expect($exitCode)->toBe(1);
+        expect($output)
+            ->toBe($expected)
+            ->not->toContain('repository-secret');
         expect($mockClient->getLastPendingRequest())->toBeNull();
     })->with([
-        'uppercase' => 'Orbit',
-        'space' => 'orbit app',
-        'double hyphen' => 'orbit--app',
+        'HTTPS username' => 'https://repository-secret@example.test/orbit.git',
+        'HTTPS password' => 'https://user:'.app_cli_secret().'@example.test/orbit.git',
+        'HTTP username' => 'http://repository-secret@example.test/orbit.git',
+        'SSH password' => 'ssh://git:'.app_cli_secret().'@example.test/orbit.git',
+        'malformed credential authority' => 'https://user:repository-secret@',
+        'query' => 'https://example.test/orbit.git?token=repository-secret',
+        'fragment' => 'https://example.test/orbit.git#repository-secret',
+        'line feed' => "https://example.test/orbit.git\nrepository-secret",
+        'carriage return' => "https://example.test/orbit.git\rrepository-secret",
+        'NUL' => "https://example.test/orbit.git\0repository-secret",
+        'Unicode format character' => "https://example.test/orbit\u{200B}repository-secret",
+        'over maximum length' => 'https://example.test/'.str_repeat(string: 'a', times: 2028).'repository-secret',
+        'credential-shaped token' => 'API_TOKEN='.app_cli_secret(),
+    ]);
+
+    it('accepts one explicit safe repository reference', function (string $repository): void {
+        $mockClient = MockClient::global([
+            CreateAppRequest::class => app_mock_response(201),
+        ]);
+
+        $this
+            ->artisan('app:new', [
+                'slug' => 'orbit',
+                'repository' => $repository,
+            ])
+            ->assertExitCode(0);
+
+        expect($mockClient->getLastRequest()?->body()->all()['repository_url'] ?? null)
+            ->toBe($repository);
+    })->with([
+        'GitHub shorthand' => 'nckrtl/orbit',
+        'HTTPS URL' => 'https://github.com/nckrtl/orbit.git',
+        'SSH URL with conventional Git user' => 'ssh://git@github.com/nckrtl/orbit.git',
+        'scp-style SSH URL' => 'git@github.com:nckrtl/orbit.git',
+    ]);
+
+    it('passes repository policy values through the typed SDK request', function (string $repository): void {
+        $mockClient = MockClient::global([
+            CreateAppRequest::class => app_mock_response(201),
+        ]);
+
+        $this
+            ->artisan('app:new', [
+                'slug' => 'orbit',
+                'repository' => $repository,
+            ])
+            ->assertExitCode(0);
+
+        expect($mockClient->getLastRequest())
+            ->toBeInstanceOf(CreateAppRequest::class)
+            ->and($mockClient->getLastRequest()?->body()->all())
+            ->toBe([
+                'slug' => 'orbit',
+                'repository_url' => $repository,
+            ]);
+    })->with([
+        'unrecognized reference' => 'not-a-repository',
+        'file scheme' => 'file:///tmp/repository',
+        'plain path' => '/tmp/repository',
     ]);
 });
 
@@ -140,6 +258,37 @@ describe('app:list', function (): void {
             ->expectsOutputToContain('No active gateway profile.')
             ->assertExitCode(1);
 
+        expect($mockClient->getLastPendingRequest())->toBeNull();
+    });
+
+    it('fails closed on a corrupted persisted profile without sending a request', function (): void {
+        $configPath = $this->orbitHome.'/config.json';
+        file_put_contents($configPath, json_encode([
+            'active_gateway' => 'test',
+            'gateways' => [
+                'test' => [
+                    'url' => 'https://user:profile-secret@10.44.0.1',
+                    'ca_path' => '/tmp/profile-secret.pem',
+                ],
+            ],
+        ], JSON_THROW_ON_ERROR));
+        chmod(filename: $configPath, permissions: 0o600);
+        $mockClient = MockClient::global();
+        $expected = json_encode([
+            'error' => [
+                'code' => 'gateway.config_invalid',
+                'message' => 'Orbit gateway configuration is invalid.',
+                'request_id' => null,
+            ],
+        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+
+        $exitCode = Artisan::call('app:list', ['--json' => true]);
+        $output = trim(Artisan::output());
+
+        expect($exitCode)->toBe(1);
+        expect($output)
+            ->toBe($expected)
+            ->not->toContain('profile-secret');
         expect($mockClient->getLastPendingRequest())->toBeNull();
     });
 
@@ -278,4 +427,9 @@ function app_json(): string
 function app_request_id(): string
 {
     return '0198e15c-bf97-7c23-8f1f-61b8fe67a844';
+}
+
+function app_cli_secret(): string
+{
+    return implode('-', ['repository', 'secret']);
 }

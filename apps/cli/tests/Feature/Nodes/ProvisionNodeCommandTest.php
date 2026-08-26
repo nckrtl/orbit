@@ -34,10 +34,14 @@ it('sends node provisioning to the active gateway', function (): void {
                 'status' => 'active',
                 'platform' => 'linux',
                 'architecture' => 'x86_64',
+                'tld' => 'app-dev.orbit',
                 'public_ssh_host' => '94.237.40.75',
                 'public_ssh_port' => 22,
                 'ssh_user' => 'orbit',
                 'wireguard_address' => '10.44.0.2',
+                'wireguard_public_key' => 'app-dev-public-key',
+                'wireguard_endpoint_override' => '10.0.0.2:51820',
+                'dns_server_override' => '10.0.0.2',
                 'ssh_host_fingerprint' => 'SHA256:app-dev',
                 'failed_step' => null,
                 'error_code' => null,
@@ -52,10 +56,14 @@ it('sends node provisioning to the active gateway', function (): void {
         'status' => 'active',
         'platform' => 'linux',
         'architecture' => 'x86_64',
+        'tld' => 'app-dev.orbit',
         'public_ssh_host' => '94.237.40.75',
         'public_ssh_port' => 22,
         'ssh_user' => 'orbit',
         'wireguard_address' => '10.44.0.2',
+        'wireguard_public_key' => 'app-dev-public-key',
+        'wireguard_endpoint_override' => '10.0.0.2:51820',
+        'dns_server_override' => '10.0.0.2',
         'ssh_host_fingerprint' => 'SHA256:app-dev',
         'failed_step' => null,
         'error_code' => null,
@@ -68,6 +76,9 @@ it('sends node provisioning to the active gateway', function (): void {
             'name' => 'app-dev',
             'host' => '94.237.40.75',
             '--role' => ['app-dev'],
+            '--platform' => 'linux',
+            '--architecture' => 'x86_64',
+            '--tld' => '.App-Dev.Orbit',
             '--wireguard-address' => '10.44.0.2',
             '--wireguard-endpoint' => '10.0.0.2:51820',
             '--dns-server' => '10.0.0.2',
@@ -82,14 +93,117 @@ it('sends node provisioning to the active gateway', function (): void {
     expect($request)
         ->toBeInstanceOf(ProvisionNodeRequest::class)
         ->and($request?->body()->all())
-        ->toMatchArray([
+        ->toBe([
             'name' => 'app-dev',
+            'public_ssh_host' => '94.237.40.75',
+            'platform' => 'linux',
+            'architecture' => 'x86_64',
+            'tld' => '.App-Dev.Orbit',
+            'public_ssh_port' => 22,
+            'ssh_user' => 'root',
             'roles' => ['app-dev'],
+            'wireguard_address' => '10.44.0.2',
             'wireguard_endpoint_override' => '10.0.0.2:51820',
             'dns_server_override' => '10.0.0.2',
             'host_key_fingerprint' => 'SHA256:5jCWsPXzMnd5zy5xVxZ2gzyjH9N3wVfL6n5X0M8W3uQ',
         ]);
 });
+
+it('omits a public SSH host for Darwin provisioning', function (): void {
+    app(GatewayConfigRepository::class)->add(new GatewayProfile(
+        name: 'test',
+        url: 'https://10.44.0.1',
+        caPath: '/home/orbit/.orbit/ca/root.pem',
+    ));
+    $mockClient = MockClient::global([
+        ProvisionNodeRequest::class => MockResponse::make([
+            'data' => [
+                'id' => 2,
+                'name' => 'local-mac',
+                'status' => 'pending',
+                'platform' => 'darwin',
+                'architecture' => 'arm64',
+                'roles' => ['app-dev'],
+            ],
+            'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844'],
+        ], 201),
+    ]);
+
+    $this
+        ->artisan('node:provision', [
+            'name' => 'local-mac',
+            '--platform' => 'darwin',
+            '--architecture' => 'arm64',
+            '--role' => ['app-dev'],
+            '--json' => true,
+        ])
+        ->assertExitCode(0);
+
+    expect($mockClient->getLastRequest())
+        ->toBeInstanceOf(ProvisionNodeRequest::class)
+        ->and($mockClient->getLastRequest()?->body()->all())
+        ->toBe([
+            'name' => 'local-mac',
+            'platform' => 'darwin',
+            'architecture' => 'arm64',
+            'public_ssh_port' => 22,
+            'ssh_user' => 'root',
+            'roles' => ['app-dev'],
+        ]);
+});
+
+it('rejects unsupported platform input before making an API request', function (): void {
+    app(GatewayConfigRepository::class)->add(new GatewayProfile(
+        name: 'test',
+        url: 'https://10.44.0.1',
+        caPath: '/home/orbit/.orbit/ca/root.pem',
+    ));
+    $mockClient = MockClient::global();
+
+    $this
+        ->artisan('node:provision', [
+            'name' => 'app-dev',
+            'host' => '94.237.40.75',
+            '--platform' => 'windows',
+        ])
+        ->expectsOutputToContain('Platform must be linux or darwin.')
+        ->assertExitCode(1);
+
+    expect($mockClient->getLastPendingRequest())->toBeNull();
+});
+
+it('rejects invalid SSH ports before making an API request', function (string $port): void {
+    app(GatewayConfigRepository::class)->add(new GatewayProfile(
+        name: 'test',
+        url: 'https://10.44.0.1',
+    ));
+    $mockClient = MockClient::global();
+    $expected = json_encode([
+        'error' => [
+            'code' => 'node.ssh_port_invalid',
+            'message' => 'SSH port must be an integer from 1 to 65535.',
+            'request_id' => null,
+        ],
+    ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+
+    $this
+        ->artisan('node:provision', [
+            'name' => 'app-dev',
+            'host' => '94.237.40.75',
+            '--ssh-port' => $port,
+            '--json' => true,
+        ])
+        ->expectsOutput($expected)
+        ->doesntExpectOutputToContain($port)
+        ->assertExitCode(1);
+
+    expect($mockClient->getLastPendingRequest())->toBeNull();
+})->with([
+    'decimal' => '22.5',
+    'scientific notation' => '1e2',
+    'zero' => '0',
+    'above maximum' => '65536',
+]);
 
 it('rejects an invalid host key fingerprint before making an API request', function (): void {
     app(GatewayConfigRepository::class)->add(new GatewayProfile(

@@ -7,12 +7,10 @@ namespace App\Commands\Nodes;
 use App\Commands\GatewayCommand;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
-use LaravelZero\Framework\Commands\Command;
-use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\Requests\Nodes\ListNodesRequest;
 use Orbit\Sdk\Responses\Nodes\NodesResponse;
 
-final class ListNodesCommand extends Command
+final class ListNodesCommand extends GatewayCommand
 {
     #[\Override]
     protected $signature = 'node:list
@@ -25,25 +23,20 @@ final class ListNodesCommand extends Command
         GatewayConfigRepository $repository,
         GatewayConnectorFactory $connectors,
     ): int {
-        $profile = $repository->active();
+        $connector = $this->gatewayConnector($repository, $connectors);
 
-        if ($profile === null) {
-            $this->error('No active gateway profile.');
-
+        if ($connector === null) {
             return self::FAILURE;
         }
 
-        try {
-            /** @var NodesResponse $response */
-            $response = $connectors->make($profile)->send(new ListNodesRequest)->dto();
-        } catch (GatewayApiException $exception) {
-            GatewayCommand::writeGatewayApiException($this, $exception);
+        $response = $this->send($connector, new ListNodesRequest, NodesResponse::class);
 
+        if (! $response instanceof NodesResponse) {
             return self::FAILURE;
         }
 
         if ($this->option('json') === true) {
-            $this->line(json_encode($response->toArray(), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
+            $this->writeJson($response->toArray());
 
             return self::SUCCESS;
         }
@@ -56,7 +49,9 @@ final class ListNodesCommand extends Command
                 $node->name,
                 $node->status,
                 $node->roles === [] ? '-' : implode(', ', $node->roles),
-                "{$node->sshUser}@{$node->publicSshHost}:{$node->publicSshPort}",
+                $node->platform ?? '-',
+                $node->tld ?? '-',
+                NodeOutput::sshEndpoint($node),
                 $node->wireguardAddress ?? '-',
             ];
         }
@@ -68,7 +63,7 @@ final class ListNodesCommand extends Command
             return self::SUCCESS;
         }
 
-        $this->table(['ID', 'Name', 'Status', 'Roles', 'SSH', 'WireGuard'], $rows);
+        $this->table(['ID', 'Name', 'Status', 'Roles', 'Platform', 'TLD', 'SSH', 'WireGuard'], $rows);
 
         $this->line("Request ID: {$response->requestId}");
 
