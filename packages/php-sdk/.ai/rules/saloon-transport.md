@@ -14,7 +14,7 @@ select the exact HTTP method and endpoint from the current Gateway contract.
   generic escape hatch.
 - Keep test fakes and pending-request assertions typed. Assert the method, URL,
   query, body, headers, connector configuration, DTO, and error envelope.
-- Review the matching `/home/nckrtl/orbit-old` SDK request, response, exception,
+- Review the matching `/home/nckrtl/orbit` SDK request, response, exception,
   correlation, and fake tests before you invent transport behavior. Reuse
   proven transport invariants. The current Gateway design, not the retired
   package, is the surface authority.

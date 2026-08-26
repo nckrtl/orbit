@@ -33,7 +33,7 @@ Laravel or Boost support.
 - Preserve structured gateway error codes, safe messages, details, and request
   IDs. Redact credentials from URLs, nested payloads, defaults, exception text,
   and debug output.
-- Review the matching `/home/nckrtl/orbit-old` SDK and Saloon request,
+- Review the matching `/home/nckrtl/orbit` SDK and Saloon request,
   exception, correlation, and test patterns before inventing transport
   behavior.
 - Use Pest 5 with `describe()` and `it()`.

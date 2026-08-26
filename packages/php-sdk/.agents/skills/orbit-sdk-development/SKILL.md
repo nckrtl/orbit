@@ -38,7 +38,7 @@ It is framework-neutral. Laravel Boost is deliberately required in
 ## Contract workflow
 
 1. Read the matching gateway route, request, resource, and feature test.
-2. Read the matching `/home/nckrtl/orbit-old` SDK implementation and tests, then
+2. Read the matching `/home/nckrtl/orbit` SDK implementation and tests, then
    inspect the installed Saloon request, exception, and faking patterns. Reuse
    proven transport invariants, but do not restore retired architecture.
 3. Add or change the SDK request with the smallest public surface.
