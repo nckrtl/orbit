@@ -5,7 +5,6 @@ declare(strict_types=1);
 use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\Trust\LinuxTrustStoreInstaller;
-use App\Services\Trust\MacOsTrustStoreInstaller;
 use App\Services\Trust\RootCertificate;
 use App\Services\Trust\TrustStoreInstallerResolver;
 use Illuminate\Filesystem\Filesystem;
@@ -176,129 +175,6 @@ it('does not trust a copied Linux CA until the operating-system bundle verifies 
             ]
         ),
     );
-});
-
-it('matches the exact macOS keychain certificate when the profile name differs from its common name', function (): void {
-    $certificate = RootCertificate::fromPem($this->certificate);
-    $profileName = 'production-gateway';
-    Process::fake([
-        '*' => Process::result(output: $this->certificate),
-    ]);
-    Process::preventStrayProcesses();
-
-    $trusted = new MacOsTrustStoreInstaller()->isTrusted($certificate, $profileName);
-
-    expect($trusted)->toBeTrue();
-    Process::assertRan(
-        fn (PendingProcess $process): bool => (
-            $process->command === [
-                'security',
-                'find-certificate',
-                '-a',
-                '-p',
-                '/Library/Keychains/System.keychain',
-            ]
-            && $process->tty === false
-        ),
-    );
-});
-
-it('does not trust a different macOS keychain certificate with the same label', function (): void {
-    $differentCertificate = gateway_trust_test_certificate($this->orbitHome.'/different-root');
-    Process::fake([
-        '*' => Process::result(output: $differentCertificate),
-    ]);
-    Process::preventStrayProcesses();
-
-    $trusted = new MacOsTrustStoreInstaller()->isTrusted(
-        RootCertificate::fromPem($this->certificate),
-        'test-gateway',
-    );
-
-    expect($trusted)->toBeFalse();
-});
-
-it('installs the macOS root CA through typed sudo arguments with a visible tty', function (): void {
-    $certificatePath = $this->orbitHome.'/ca/secret-ca-path.pem';
-    $result = Process::result();
-    $process = Mockery::mock(PendingProcess::class);
-    $process->shouldReceive('tty')->once()->withNoArgs()->andReturnSelf();
-    $process
-        ->shouldReceive('run')
-        ->once()
-        ->with([
-            'sudo',
-            'security',
-            'add-trusted-cert',
-            '-d',
-            '-r',
-            'trustRoot',
-            '-k',
-            '/Library/Keychains/System.keychain',
-            $certificatePath,
-        ])
-        ->andReturn($result);
-    Process::shouldReceive('timeout')->once()->with(120)->andReturn($process);
-
-    new MacOsTrustStoreInstaller()->install($certificatePath, 'test-gateway');
-});
-
-it('redacts macOS trust command failures from json output', function (): void {
-    MockClient::global([
-        FetchRootCaCertificateRequest::class => MockResponse::make([
-            'data' => [
-                'root_ca' => $this->certificate,
-                'sha256' => $this->fingerprint,
-            ],
-            'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844'],
-        ]),
-    ]);
-    app()->instance(TrustStoreInstallerResolver::class, new TrustStoreInstallerResolver('Darwin'));
-    $sentinel = 'sudo-password=macos-trust-secret';
-    $probeResult = Process::result(exitCode: 1);
-    $installResult = Process::result(errorOutput: $sentinel, exitCode: 1);
-    $probe = Mockery::mock(PendingProcess::class);
-    $probe
-        ->shouldReceive('run')
-        ->once()
-        ->with([
-            'security',
-            'find-certificate',
-            '-a',
-            '-p',
-            '/Library/Keychains/System.keychain',
-        ])
-        ->andReturn($probeResult);
-    $install = Mockery::mock(PendingProcess::class);
-    $install->shouldReceive('tty')->once()->withNoArgs()->andReturnSelf();
-    $install
-        ->shouldReceive('run')
-        ->once()
-        ->with(Mockery::on(
-            fn (array $command): bool => $command[0] === 'sudo'
-            && $command[1] === 'security'
-            && $command[2] === 'add-trusted-cert'
-            && str_ends_with($command[8] ?? '', '.pem'),
-        ))
-        ->andReturn($installResult);
-    Process::shouldReceive('timeout')->once()->with(30)->andReturn($probe);
-    Process::shouldReceive('timeout')->once()->with(120)->andReturn($install);
-    $expected = json_encode([
-        'error' => [
-            'code' => 'gateway.ca_install_failed',
-            'message' => 'Could not install the gateway root CA on macOS.',
-            'request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844',
-        ],
-    ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
-
-    $exitCode = Artisan::call('gateway:trust', ['--json' => true]);
-    $output = trim(Artisan::output());
-
-    expect($exitCode)->toBe(1);
-    expect($output)
-        ->toBe($expected)
-        ->not->toContain($sentinel)
-        ->not->toContain($this->orbitHome);
 });
 
 it('rejects invalid CA material without logging or installing it', function (): void {

@@ -10,7 +10,6 @@ use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\Requests\Nodes\ProvisionNodeRequest;
 use Orbit\Sdk\Responses\Nodes\NodeResponse;
 
-/** @mago-expect lint:cyclomatic-complexity The command validates the frozen enrollment transport shape. */
 final class ProvisionNodeCommand extends GatewayCommand
 {
     #[\Override]
@@ -19,13 +18,12 @@ final class ProvisionNodeCommand extends GatewayCommand
         {host? : Optional public SSH host}
         {--ssh-port=22 : Public SSH port}
         {--ssh-user=root : Initial SSH user}
-        {--platform=linux : Node platform (linux or darwin)}
+        {--platform=linux : Node platform (linux only)}
         {--architecture= : Node machine architecture}
         {--tld= : Unique development TLD for app-dev}
         {--role=* : Initial role assignment}
         {--host-key-fingerprint= : Approved SSH SHA256 host key fingerprint}
         {--wireguard-address= : Stable WireGuard address}
-        {--wireguard-public-key= : Public key for an already installed WireGuard tunnel}
         {--wireguard-endpoint= : Per-node WireGuard endpoint override}
         {--dns-server= : Per-node DNS server override}
         {--json : Return machine-readable JSON}';
@@ -70,12 +68,11 @@ final class ProvisionNodeCommand extends GatewayCommand
         $roleNames = array_values(array_filter($roles, is_string(...)));
         $platform = $this->stringOption('platform');
         $hostKeyFingerprint = $this->stringOption('host-key-fingerprint');
-        $wireguardPublicKey = $this->option('wireguard-public-key');
 
-        if (! in_array(needle: $platform, haystack: ['linux', 'darwin'], strict: true)) {
+        if ($platform !== 'linux') {
             return $this->renderGatewayFailure(
                 'node.platform_invalid',
-                'Platform must be linux or darwin.',
+                'Platform must be linux.',
             );
         }
 
@@ -104,7 +101,6 @@ final class ProvisionNodeCommand extends GatewayCommand
                 platform: $platform,
                 architecture: $this->stringOption('architecture'),
                 tld: $this->stringOption('tld'),
-                wireguardPublicKey: is_string($wireguardPublicKey) ? $wireguardPublicKey : null,
             ),
             NodeResponse::class,
         );

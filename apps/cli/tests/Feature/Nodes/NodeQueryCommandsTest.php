@@ -62,16 +62,7 @@ describe('node:list', function (): void {
             ->artisan('node:list')
             ->expectsTable(
                 ['ID', 'Name', 'Status', 'Roles', 'Platform', 'TLD', 'SSH', 'WireGuard'],
-                [[
-                    2,
-                    'app-dev',
-                    'active',
-                    'app-dev: provisioning (orbit node:setup app-dev)',
-                    'linux',
-                    'app-dev.orbit',
-                    'orbit@94.237.40.75:22',
-                    '10.44.0.3',
-                ]],
+                [[2, 'app-dev', 'active', 'app-dev', 'linux', 'app-dev.orbit', 'orbit@94.237.40.75:22', '10.44.0.3']],
             )
             ->expectsOutput('Request ID: '.request_id())
             ->assertExitCode(0);
@@ -111,16 +102,7 @@ describe('node:list', function (): void {
             ->artisan('node:list')
             ->expectsTable(
                 ['ID', 'Name', 'Status', 'Roles', 'Platform', 'TLD', 'SSH', 'WireGuard'],
-                [[
-                    2,
-                    'app-dev',
-                    'active',
-                    'app-dev: provisioning (orbit node:setup app-dev)',
-                    'linux',
-                    'app-dev.orbit',
-                    '-',
-                    '10.44.0.3',
-                ]],
+                [[2, 'app-dev', 'active', 'app-dev', 'linux', 'app-dev.orbit', '-', '10.44.0.3']],
             )
             ->assertExitCode(0);
     });
@@ -228,8 +210,6 @@ describe('node:show', function (): void {
             ->artisan('node:show', ['node' => '2'])
             ->expectsOutput('app-dev: active')
             ->expectsOutput('Roles: app-dev')
-            ->expectsOutput('Role [app-dev]: provisioning')
-            ->expectsOutput('Local setup required: orbit node:setup app-dev')
             ->expectsOutput('SSH: orbit@94.237.40.75:22')
             ->expectsOutput('WireGuard: 10.44.0.3')
             ->expectsOutput('WireGuard public key: app-dev-public-key')
@@ -347,14 +327,6 @@ function node_payload(): array
         'failed_step' => null,
         'error_code' => null,
         'roles' => ['app-dev'],
-        'role_assignments' => [[
-            'role' => 'app-dev',
-            'status' => 'provisioning',
-            'failed_step' => null,
-            'error_code' => null,
-            'local_action_required' => true,
-            'local_command' => 'orbit node:setup app-dev',
-        ]],
     ];
 }
 

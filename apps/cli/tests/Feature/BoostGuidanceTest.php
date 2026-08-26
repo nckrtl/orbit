@@ -149,30 +149,6 @@ it('requires guidance bootstrap before repository edits', function (): void {
         ->toContain('Do not silently continue without the project rule set.');
 });
 
-it('documents the bounded local macOS setup exception', function (): void {
-    $index = file_get_contents(base_path('.ai/rules/index.md'));
-    $commands = file_get_contents(base_path('.ai/rules/commands.md'));
-    $localSetupPath = base_path('.ai/rules/macos-local-setup.md');
-    $localSetup = is_readable($localSetupPath) ? file_get_contents($localSetupPath) : false;
-    $commandDesigner = file_get_contents(base_path('.ai/skills/command-designer/SKILL.md'));
-
-    expect($index)
-        ->toBeString()
-        ->toContain('.ai/rules/macos-local-setup.md');
-    expect($commands)
-        ->toBeString()
-        ->toContain('`node:setup` is the only local script execution exception');
-    expect($localSetup)
-        ->toBeString()
-        ->toContain('a readable and writable controlling `/dev/tty`')
-        ->toContain('exclusive mode-`0600` script and FIFO')
-        ->toContain('Never retain setup state or expose scripts, diagnostics, paths, process IDs, or raw exceptions.');
-    expect($commandDesigner)
-        ->toBeString()
-        ->toContain('JSON success uses the exact typed SDK response array.')
-        ->toContain('JSON errors use one top-level `error` key with exactly `code`, `message`, and `request_id`.');
-});
-
 it('keeps Boost setup and repository-owned skills reproducible', function (): void {
     $composer = json_decode(
         (string) file_get_contents(base_path('composer.json')),

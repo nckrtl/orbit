@@ -15,7 +15,6 @@ class TrustStoreInstallerResolver
         $platform = $this->platform ?? PHP_OS_FAMILY;
 
         return match (strtolower($platform)) {
-            'darwin' => new MacOsTrustStoreInstaller,
             'linux' => new LinuxTrustStoreInstaller,
             default => throw new TrustStoreInstallException(
                 "Automatic root CA trust is not supported on [{$platform}].",

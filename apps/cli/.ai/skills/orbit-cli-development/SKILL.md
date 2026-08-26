@@ -15,7 +15,7 @@ to typed `orbit-php-sdk` requests and render gateway responses.
 - Do not add remote SSH execution, infrastructure business logic, an Agent,
   hidden transport, a generic executor, or automatic migrations.
 - Local-only actions can make visible OS changes only when the command contract
-  requires them, such as root-CA trust or one-time macOS setup.
+  requires them, such as root-CA trust.
 - Preserve request IDs and structured errors end to end.
 - Before adding command or OS-adapter behavior, search `~/orbit-old` for proven
   input, output, idempotency, redaction, and adapter-test invariants. Port only

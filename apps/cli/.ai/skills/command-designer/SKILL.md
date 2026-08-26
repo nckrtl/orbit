@@ -27,8 +27,7 @@ Keep human output and JSON output deterministic. Do not expose SDK or transport 
 
 - `--json` selects machine output and never grants destructive consent.
 - Destructive commands require interactive confirmation or explicit `--force` before the one remote request.
-- JSON success uses the exact typed SDK response array.
-- JSON errors use one top-level `error` key with exactly `code`, `message`, and `request_id`.
+- JSON responses use one top-level `success` or `error` key. Error objects contain exactly `code`, `message`, and `request_id`.
 - Orbit-handled failures exit with `1`; successful commands exit with `0`.
 
 ## Verification

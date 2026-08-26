@@ -16,24 +16,4 @@ final class NodeOutput
 
         return "{$node->sshUser}@{$node->publicSshHost}:{$node->publicSshPort}";
     }
-
-    public static function roles(NodeResponse $node): string
-    {
-        if ($node->roleAssignments === []) {
-            return $node->roles === [] ? '-' : implode(', ', $node->roles);
-        }
-
-        return implode(', ', array_map(
-            static function ($assignment): string {
-                $summary = "{$assignment->role}: {$assignment->status}";
-
-                if ($assignment->localActionRequired && $assignment->localCommand !== null) {
-                    $summary .= " ({$assignment->localCommand})";
-                }
-
-                return $summary;
-            },
-            $node->roleAssignments,
-        ));
-    }
 }

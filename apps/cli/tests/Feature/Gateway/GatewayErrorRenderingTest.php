@@ -333,7 +333,7 @@ it('renders local validation failures through the exact json boundary', function
         'node:provision',
         ['name' => 'node', 'host' => 'node.test', '--platform' => 'validation-secret'],
         'node.platform_invalid',
-        'Platform must be linux or darwin.',
+        'Platform must be linux.',
     ],
     'node host key fingerprint' => [
         'node:provision',
@@ -364,11 +364,11 @@ it('renders local validation failures through the exact json boundary', function
         [
             'name' => 'worker',
             '--instance' => '1',
-            '--runtime' => "validation-secret\n",
+            '--runtime' => 'validation-secret',
             '--command' => ['/usr/bin/php'],
         ],
         'process.runtime_invalid',
-        'Process runtime is invalid.',
+        'Process runtime must be systemd or docker.',
     ],
     'process restart policy' => [
         'process:add',

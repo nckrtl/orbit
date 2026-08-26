@@ -48,7 +48,7 @@ final class ListNodesCommand extends GatewayCommand
                 $node->id,
                 $node->name,
                 $node->status,
-                NodeOutput::roles($node),
+                $node->roles === [] ? '-' : implode(', ', $node->roles),
                 $node->platform ?? '-',
                 $node->tld ?? '-',
                 NodeOutput::sshEndpoint($node),
