@@ -9,6 +9,10 @@ return [
     ],
     'guidelines' => [
         'exclude' => [
+            'deployments',
+            'foundation',
+            'laravel/core',
+            'pest/core',
             'spatie/guidelines-skills/core',
         ],
     ],

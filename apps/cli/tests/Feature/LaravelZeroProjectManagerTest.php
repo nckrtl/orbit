@@ -25,10 +25,7 @@ describe('Laravel Zero project manager', function (): void {
         $codexAgent = app(app(BoostManager::class)->getAgents()['codex']);
         $guidelineConfig = new GuidelineConfig;
         $guidelineConfig->aiGuidelines = [];
-        $laravelGuidelines = app(GuidelineComposer::class)
-            ->config($guidelineConfig)
-            ->guidelines()
-            ->get('laravel/core')['content'];
+        $guidelineComposer = app(GuidelineComposer::class)->config($guidelineConfig);
 
         expect($codexAgent->getArtisanPath())
             ->toBe('orbit')
@@ -36,7 +33,9 @@ describe('Laravel Zero project manager', function (): void {
             ->toBe(base_path('orbit'))
             ->and(app(GuidelineAssist::class)->artisan())
             ->toBe('php orbit')
-            ->and($laravelGuidelines)
-            ->toContain('php orbit make:');
+            ->and($guidelineComposer->guidelines()->has('laravel/core'))
+            ->toBeFalse()
+            ->and($guidelineComposer->compose())
+            ->not->toContain('php artisan');
     });
 });

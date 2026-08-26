@@ -25,6 +25,11 @@ Define only the contract elements that the command needs:
 
 Keep human output and JSON output deterministic. Do not expose SDK or transport details unless they help the user resolve an error.
 
+- `--json` selects machine output and never grants destructive consent.
+- Destructive commands require interactive confirmation or explicit `--force` before the one remote request.
+- JSON responses use one top-level `success` or `error` key. Error objects contain exactly `code`, `message`, and `request_id`.
+- Orbit-handled failures exit with `1`; successful commands exit with `0`.
+
 ## Verification
 
 Test observable command behavior instead of internal method calls. Cover each required input, output, side effect, and exit outcome. Run the relevant existing Composer scripts, then run `composer check` before completion.

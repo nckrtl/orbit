@@ -5,8 +5,9 @@ Before planning or editing, find the row whose globs match the file's path and r
 | Applies to | Rule file |
 | --- | --- |
 | app/** | .ai/rules/app.md |
-| app/Http/**, routes/** | .ai/rules/boost/http-routes.md |
-| app/Models/** | .ai/rules/boost/models.md |
-| tests/** | .ai/rules/boost/tests.md |
 | app/Commands/** | .ai/rules/commands.md |
+| README.md | .ai/rules/documentation.md |
+| .ai/**, .agents/**, .codex/**, AGENTS.md, app/Providers/LaravelBoostCompatibilityServiceProvider.php, app/Support/LaravelZero*.php, boost.json, composer.json, composer.lock, config/boost.php, tests/Feature/BoostGuidanceTest.php | .ai/rules/repository-bootstrap.md |
+| bootstrap/**, config/**, orbit | .ai/rules/runtime.md |
 | tests/** | .ai/rules/tests.md |
+| .editorconfig, .gitattributes, .gitignore, mago.toml, phpunit.xml.dist, rector.php | .ai/rules/tooling.md |

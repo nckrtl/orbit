@@ -6,22 +6,24 @@ description: Use when changing the thin Orbit Laravel Zero commands, options, re
 # Orbit CLI Development
 
 This repository is the thin operator client. Normal commands translate input
-to `orbit-php-sdk` requests and render gateway responses.
+to typed `orbit-php-sdk` requests and render gateway responses.
 
 ## Boundaries
 
 - Keep the CLI stateless except for explicit files under `$ORBIT_HOME`.
-- Send infrastructure commands through `orbit-php-sdk` to the gateway.
+- Send remote operations through `orbit-php-sdk` to the gateway.
 - Do not add remote SSH execution, infrastructure business logic, an Agent,
-  hidden transport, generic script endpoint, or automatic migrations.
-- Local-only actions can make visible OS changes when the command contract
+  hidden transport, a generic executor, or automatic migrations.
+- Local-only actions can make visible OS changes only when the command contract
   requires them, such as root-CA trust or one-time macOS setup.
 - Preserve request IDs and structured errors end to end.
-- Before adding a command, search `~/orbit-old` for proven input, output,
-  idempotency, and OS-adapter tests. Port only the simplified command surface.
+- Before adding command or OS-adapter behavior, search `~/orbit-old` for proven
+  input, output, idempotency, redaction, and adapter-test invariants. Port only
+  behavior that fits the simplified command surface.
 
-## Required skills
+## Required Skills
 
+- Read `command-designer` before changing command behavior.
 - Read `spatie-laravel-php` for PHP and Laravel Zero changes.
 - Read `pest-testing` before changing tests.
 - Read `spatie-security` for configuration, credentials, certificates, local
@@ -29,10 +31,6 @@ to `orbit-php-sdk` requests and render gateway responses.
 
 ## Verification
 
-```bash
-composer test
-composer check
-composer test:full
-```
-
-When the HTTP contract changes, also run the focused SDK and gateway API tests.
+Run focused Pest tests while developing. Then run `composer test`,
+`composer test:full`, `composer check`, and `git diff --check`. Report a sibling
+SDK or Gateway contract need instead of editing another repository.

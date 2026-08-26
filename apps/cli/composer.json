@@ -44,6 +44,7 @@
     "scripts": {
         "analyse": "vendor/bin/mago analyze app --reporting-format=medium",
         "check": [
+            "@guidance:check",
             "@rector",
             "@test",
             "@format:check",
@@ -52,6 +53,8 @@
         ],
         "format": "vendor/bin/mago format",
         "format:check": "vendor/bin/mago format --check",
+        "guidance:check": "vendor/bin/pest tests/Feature/BoostGuidanceTest.php --no-tia --compact",
+        "guidance:generate": "@php orbit boost:update --no-discover --no-interaction",
         "lint": "vendor/bin/mago lint app tests --reporting-format=medium",
         "rector": "vendor/bin/rector process",
         "test": "vendor/bin/pest --compact",

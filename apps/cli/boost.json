@@ -17,6 +17,7 @@
         "spatie-laravel-php",
         "spatie-security",
         "spatie-version-control",
-        "command-designer"
+        "command-designer",
+        "orbit-cli-development"
     ]
 }
