@@ -6,7 +6,8 @@ focused tests for red, green, and refactor. Use Pest 5 TIA through
 `composer test:full` before handoff.
 
 - Run `composer guidance:check` first. It must fail when the rule index, an
-  indexed file, material path coverage, or a required policy is missing.
+  indexed file, or material path coverage is missing. The failure must give the
+  repository restoration command.
 - Test exact methods, endpoints, query and body omission, explicit empty input,
   headers, DTO bounds, request IDs, error envelopes, redaction, object-state
   diagnostics, TLS verification, redirects, and root-CA one-shot behavior.
