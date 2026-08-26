@@ -6,7 +6,10 @@ use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\GatewayRequest;
 use Orbit\Sdk\GatewayRootCaClient;
 use Orbit\Sdk\Requests\Apps\CreateAppRequest;
+use Orbit\Sdk\Requests\Nodes\FetchAppDevSetupScriptRequest;
+use Orbit\Sdk\Requests\Nodes\SubmitAppDevSetupResultRequest;
 use Orbit\Sdk\Requests\Processes\AddProcessRequest;
+use Orbit\Sdk\Responses\Nodes\AppDevSetupScriptResponse;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
@@ -140,6 +143,99 @@ describe('gateway object-state boundary', function (): void {
         $connector->send($request);
 
         expect($mockClient->getLastPendingRequest()?->body()?->all())->toBe($expectedBody);
+    });
+
+    it('hides local setup request values while preserving exact transport bodies', function (): void {
+        $identityCredential = gateway_object_state_credential('identity');
+        $diagnosticCredential = gateway_object_state_credential('diagnostics');
+        $homeDirectory = "/Users/{$identityCredential}";
+        $fetch = new FetchAppDevSetupScriptRequest(
+            platform: 'darwin',
+            architecture: 'arm64',
+            username: $identityCredential,
+            homeDirectory: $homeDirectory,
+        );
+        $submit = new SubmitAppDevSetupResultRequest(
+            exitCode: 1,
+            diagnostics: "token={$diagnosticCredential}",
+        );
+        $needles = [
+            'identity credential' => $identityCredential,
+            'home directory' => $homeDirectory,
+            'diagnostic credential' => $diagnosticCredential,
+        ];
+        $fetchDebug = gateway_object_state_debug_outputs($fetch);
+        $submitDebug = gateway_object_state_debug_outputs($submit);
+
+        expect(gateway_object_state_leaks(
+            [
+                'fetch print_r' => $fetchDebug['print_r'],
+                'fetch var_dump' => $fetchDebug['var_dump'],
+                'submit print_r' => $submitDebug['print_r'],
+                'submit var_dump' => $submitDebug['var_dump'],
+            ],
+            $needles,
+        ))->toBeEmpty();
+        expect($fetch->body()->all())->toBe([
+            'platform' => 'darwin',
+            'architecture' => 'arm64',
+            'username' => $identityCredential,
+            'home_directory' => $homeDirectory,
+        ]);
+        expect($submit->body()->all())->toBe([
+            'exit_code' => 1,
+            'diagnostics' => "token={$diagnosticCredential}",
+        ]);
+
+        foreach ([$fetch, $submit] as $request) {
+            $exception = gateway_object_state_serialization_exception($request);
+
+            expect(gateway_object_state_leaks([
+                'serialization message' => $exception->getMessage(),
+                'serialization string' => (string) $exception,
+                'serialization SDK trace' => gateway_object_state_sdk_trace($exception),
+            ], $needles))->toBeEmpty();
+        }
+
+        $fetchTrace = gateway_object_state_sdk_trace(
+            gateway_object_state_fetch_constructor_exception($identityCredential, $homeDirectory),
+        );
+        $submitTrace = gateway_object_state_sdk_trace(
+            gateway_object_state_submit_constructor_exception($diagnosticCredential),
+        );
+
+        expect($fetchTrace)
+            ->toContain('SensitiveParameterValue')
+            ->and($submitTrace)
+            ->toContain('SensitiveParameterValue');
+        expect(gateway_object_state_leaks([
+            'fetch constructor trace' => $fetchTrace,
+            'submit constructor trace' => $submitTrace,
+        ], $needles))->toBeEmpty();
+    });
+
+    it('hides executable script response state and denies serialization', function (): void {
+        $credential = gateway_object_state_credential('script');
+        $script = "#!/bin/bash\necho token={$credential}\n";
+        $response = AppDevSetupScriptResponse::fromGatewayData([
+            'role' => 'app-dev',
+            'summary' => 'Install protected prerequisites.',
+            'script' => $script,
+        ], '0198e15c-bf97-7c23-8f1f-61b8fe67a844');
+        $needles = ['script credential' => $credential, 'script' => $script];
+
+        expect(gateway_object_state_leaks(gateway_object_state_debug_outputs($response), $needles))->toBeEmpty();
+
+        try {
+            serialize($response);
+            $this->fail('Expected script response serialization to fail closed.');
+        } catch (LogicException $exception) {
+            expect(gateway_object_state_leaks([
+                'serialization message' => $exception->getMessage(),
+                'serialization string' => (string) $exception,
+                'serialization SDK trace' => gateway_object_state_sdk_trace($exception),
+            ], $needles))->toBeEmpty();
+        }
     });
 
     it('rejects an unsafe connector URL before a diagnostic operation can receive it', function (string $operation): void {
@@ -291,6 +387,10 @@ describe('gateway object-state boundary', function (): void {
         'request' => [CreateAppRequest::class, 'Orbit gateway requests cannot be unserialized.'],
         'connector' => [GatewayConnector::class, 'Orbit gateway connectors cannot be unserialized.'],
         'root CA client' => [GatewayRootCaClient::class, 'Orbit gateway root CA clients cannot be unserialized.'],
+        'script response' => [
+            AppDevSetupScriptResponse::class,
+            'Orbit app-dev setup script responses cannot be unserialized.',
+        ],
     ]);
 });
 
@@ -364,6 +464,36 @@ function gateway_object_state_process_constructor_exception(array $environment):
     }
 
     throw new RuntimeException('Expected the process request constructor to reject an invalid start value.');
+}
+
+function gateway_object_state_fetch_constructor_exception(string $username, string $homeDirectory): TypeError
+{
+    try {
+        new FetchAppDevSetupScriptRequest(
+            platform: 'darwin',
+            architecture: [],
+            username: $username,
+            homeDirectory: $homeDirectory,
+        );
+    } catch (TypeError $exception) {
+        return $exception;
+    }
+
+    throw new RuntimeException('Expected the setup script request constructor to reject an invalid architecture.');
+}
+
+function gateway_object_state_submit_constructor_exception(string $diagnostics): TypeError
+{
+    try {
+        new SubmitAppDevSetupResultRequest(
+            exitCode: [],
+            diagnostics: "token={$diagnostics}",
+        );
+    } catch (TypeError $exception) {
+        return $exception;
+    }
+
+    throw new RuntimeException('Expected the setup result request constructor to reject an invalid exit code.');
 }
 
 /** @param Closure(): string $requestIdResolver */

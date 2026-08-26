@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Orbit\Sdk\Responses\Nodes;
 
+use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\Support\GatewayErrorCode;
 use SensitiveParameter;
 
@@ -13,7 +14,10 @@ use SensitiveParameter;
  */
 final readonly class NodeResponse
 {
-    /** @param list<string> $roles */
+    /**
+     * @param list<string> $roles
+     * @param list<NodeRoleAssignmentResponse> $roleAssignments
+     */
     public function __construct(
         public int $id,
         public string $name,
@@ -33,6 +37,7 @@ final readonly class NodeResponse
         public ?string $wireguardPublicKey = null,
         public ?string $wireguardEndpointOverride = null,
         public ?string $dnsServerOverride = null,
+        public array $roleAssignments = [],
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -69,10 +74,13 @@ final readonly class NodeResponse
             errorCode: GatewayErrorCode::fromTransport($data['error_code'] ?? null),
             roles: self::stringList($data['roles'] ?? []),
             requestId: $requestId,
+            roleAssignments: array_key_exists('role_assignments', $data)
+                ? self::roleAssignmentList($data['role_assignments'])
+                : [],
         );
     }
 
-    /** @return array<string, int|string|list<string>|null> */
+    /** @return array<string, int|string|list<string>|list<array<string, bool|string|null>>|null> */
     public function toArray(): array
     {
         return [
@@ -93,6 +101,10 @@ final readonly class NodeResponse
             'failed_step' => $this->failedStep,
             'error_code' => $this->errorCode,
             'roles' => $this->roles,
+            'role_assignments' => array_map(
+                static fn (NodeRoleAssignmentResponse $assignment): array => $assignment->toArray(),
+                $this->roleAssignments,
+            ),
             'request_id' => $this->requestId,
         ];
     }
@@ -119,5 +131,34 @@ final readonly class NodeResponse
         }
 
         return $result;
+    }
+
+    /**
+     * @mago-expect analysis:mixed-assignment Gateway role assignments remain mixed until validated.
+     *
+     * @return list<NodeRoleAssignmentResponse>
+     */
+    private static function roleAssignmentList(#[SensitiveParameter] mixed $value): array
+    {
+        if (! is_array($value)) {
+            self::invalidRoleAssignment();
+        }
+
+        $assignments = [];
+
+        foreach ($value as $assignment) {
+            if (! is_array($assignment)) {
+                self::invalidRoleAssignment();
+            }
+
+            $assignments[] = NodeRoleAssignmentResponse::fromGatewayData($assignment);
+        }
+
+        return $assignments;
+    }
+
+    private static function invalidRoleAssignment(): never
+    {
+        throw new GatewayApiException('Gateway response contains an invalid node role assignment.');
     }
 }

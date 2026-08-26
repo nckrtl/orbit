@@ -29,7 +29,7 @@ final class AddProcessRequest extends GatewayRequest implements HasBody
         private readonly string $targetType,
         private readonly int $targetId,
         private readonly string $name,
-        private readonly string $runtime,
+        private readonly ?string $runtime,
         private readonly array $command,
         private readonly ?string $image = null,
         private readonly ?string $workingDirectory = null,
@@ -61,11 +61,15 @@ final class AddProcessRequest extends GatewayRequest implements HasBody
             'target_type' => $this->targetType,
             'target_id' => $this->targetId,
             'name' => $this->name,
-            'runtime' => $this->runtime,
-            'command' => $this->command,
-            'restart_policy' => $this->restartPolicy,
-            'start' => $this->start,
         ];
+
+        if ($this->runtime !== null) {
+            $body['runtime'] = $this->runtime;
+        }
+
+        $body['command'] = $this->command;
+        $body['restart_policy'] = $this->restartPolicy;
+        $body['start'] = $this->start;
 
         if ($this->environment !== null) {
             $body['environment'] = $this->environment;

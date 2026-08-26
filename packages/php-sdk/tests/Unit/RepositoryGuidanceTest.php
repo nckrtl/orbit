@@ -75,6 +75,23 @@ describe('repository guidance bootstrap', function (): void {
             ->toBe('vendor/bin/pest --no-tia --compact tests/Unit/RepositoryGuidanceTest.php');
         expect($composer['scripts']['check'][0] ?? null)->toBe('@guidance:check');
     });
+
+    it('defines exactly the approved 36-operation public contract', function (): void {
+        $contract = repository_guidance_contents('.ai/rules/public-contract.md');
+
+        expect($contract)
+            ->toContain('exactly 36 concrete public Gateway API operations')
+            ->and(substr_count(haystack: $contract, needle: '`POST /api/v1/nodes/{node}/roles`'))
+            ->toBe(1)
+            ->and(substr_count(haystack: $contract, needle: '`POST /api/v1/node-role-setups/app-dev/script`'))
+            ->toBe(1)
+            ->and(substr_count(haystack: $contract, needle: '`POST /api/v1/node-role-setups/app-dev/result`'))
+            ->toBe(1)
+            ->and(substr_count(haystack: $contract, needle: '/api/v1/node-role-setups/'))
+            ->toBe(2)
+            ->and($contract)
+            ->toContain('Role removal and generic role-setup routes remain forbidden.');
+    });
 });
 
 function repository_guidance_contents(string $path): string

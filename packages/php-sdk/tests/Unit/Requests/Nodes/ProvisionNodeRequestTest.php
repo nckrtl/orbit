@@ -101,6 +101,7 @@ it('sends explicit optional node payload fields exactly as supplied and maps the
         platform: 'linux',
         architecture: 'x86_64',
         tld: '.App-Dev.Orbit',
+        wireguardPublicKey: 'darwin-public-key',
     );
 
     $response = $connector->send($request)->dto();
@@ -120,6 +121,7 @@ it('sends explicit optional node payload fields exactly as supplied and maps the
             'ssh_user' => 'root',
             'roles' => ['app-dev'],
             'wireguard_address' => '10.44.0.2',
+            'wireguard_public_key' => 'darwin-public-key',
             'wireguard_endpoint_override' => '10.0.0.2:51820',
             'dns_server_override' => '10.0.0.2',
             'host_key_fingerprint' => 'SHA256:5jCWsPXzMnd5zy5xVxZ2gzyjH9N3wVfL6n5X0M8W3uQ',
@@ -151,6 +153,7 @@ it('represents a Darwin node without inventing a public SSH host', function (): 
         platform: 'darwin',
         architecture: 'arm64',
         tld: 'dev',
+        wireguardPublicKey: 'mini-public-key',
     );
 
     expect($request->body()->all())->toBe([
@@ -161,5 +164,6 @@ it('represents a Darwin node without inventing a public SSH host', function (): 
         'public_ssh_port' => 22,
         'ssh_user' => 'root',
         'roles' => [],
+        'wireguard_public_key' => 'mini-public-key',
     ]);
 });

@@ -114,6 +114,53 @@ it('omits every absent optional process field without applying runtime policy', 
     ]);
 });
 
+it('omits only a null process runtime', function (): void {
+    $constructor = new ReflectionMethod(AddProcessRequest::class, '__construct');
+    $runtime = array_find(
+        $constructor->getParameters(),
+        static fn (ReflectionParameter $parameter): bool => $parameter->getName() === 'runtime',
+    );
+
+    expect($runtime?->allowsNull())->toBeTrue();
+
+    $request = new AddProcessRequest(
+        targetType: 'instance',
+        targetId: 7,
+        name: 'worker',
+        runtime: null,
+        command: ['php', 'artisan', 'queue:work'],
+    );
+
+    expect($request->body()->all())->toBe([
+        'target_type' => 'instance',
+        'target_id' => 7,
+        'name' => 'worker',
+        'command' => ['php', 'artisan', 'queue:work'],
+        'restart_policy' => 'never',
+        'start' => false,
+    ]);
+});
+
+it('preserves every non-null process runtime exactly for Gateway validation', function (string $runtime): void {
+    $request = new AddProcessRequest(
+        targetType: 'instance',
+        targetId: 7,
+        name: 'worker',
+        runtime: $runtime,
+        command: ['php', 'artisan', 'queue:work'],
+    );
+
+    expect($request->body()->all()['runtime'])->toBe($runtime);
+})->with([
+    'empty' => [''],
+    'supported' => ['launchd'],
+    'unsupported' => ['direct-sdk-runtime'],
+    '64 bytes' => [str_repeat('r', times: 64)],
+    '65 bytes' => [str_repeat('r', times: 65)],
+    'multibyte' => [str_repeat('é', times: 33)],
+    'control-bearing' => ["launchd\x7f"],
+]);
+
 it('preserves explicitly supplied empty process collections', function (): void {
     $request = new AddProcessRequest(
         targetType: 'instance',

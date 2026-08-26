@@ -35,6 +35,7 @@ final class ProvisionNodeRequest extends GatewayRequest implements HasBody
         private readonly string $platform = 'linux',
         private readonly ?string $architecture = null,
         private readonly ?string $tld = null,
+        private readonly ?string $wireguardPublicKey = null,
     ) {}
 
     public function resolveEndpoint(): string
@@ -64,6 +65,7 @@ final class ProvisionNodeRequest extends GatewayRequest implements HasBody
                 'ssh_user' => $this->sshUser,
                 'roles' => $this->roles,
                 'wireguard_address' => $this->wireguardAddress,
+                'wireguard_public_key' => $this->wireguardPublicKey,
                 'wireguard_endpoint_override' => $this->wireguardEndpointOverride,
                 'dns_server_override' => $this->dnsServerOverride,
                 'host_key_fingerprint' => $this->hostKeyFingerprint,

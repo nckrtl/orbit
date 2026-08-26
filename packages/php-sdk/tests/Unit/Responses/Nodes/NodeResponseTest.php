@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\Responses\Nodes\NodeResponse;
 
 describe(NodeResponse::class, function (): void {
@@ -39,7 +40,9 @@ describe(NodeResponse::class, function (): void {
             ->and($response->failedStep)
             ->toBeNull()
             ->and($response->errorCode)
-            ->toBeNull();
+            ->toBeNull()
+            ->and($response->roleAssignments)
+            ->toBeEmpty();
     });
 
     it('preserves the original named constructor contract', function (): void {
@@ -60,7 +63,9 @@ describe(NodeResponse::class, function (): void {
             ->and($response->platform)
             ->toBeNull()
             ->and($response->errorCode)
-            ->toBeNull();
+            ->toBeNull()
+            ->and($response->roleAssignments)
+            ->toBeEmpty();
     });
 
     it('does not invent an SSH port for malformed gateway data', function (): void {
@@ -69,6 +74,25 @@ describe(NodeResponse::class, function (): void {
             '0198e15c-bf97-7c23-8f1f-61b8fe67a844',
         );
 
-        expect($response->publicSshPort)->toBe(0);
+        expect($response->publicSshPort)
+            ->toBe(0)
+            ->and($response->roleAssignments)
+            ->toBeEmpty();
+    });
+
+    it('fails a present malformed role assignment container closed', function (): void {
+        expect(fn (): NodeResponse => NodeResponse::fromGatewayData(
+            ['role_assignments' => 'malformed-assignment-container'],
+            '0198e15c-bf97-7c23-8f1f-61b8fe67a844',
+        ))
+            ->toThrow(GatewayApiException::class, 'Gateway response contains an invalid node role assignment.');
+    });
+
+    it('fails a malformed role assignment element closed', function (): void {
+        expect(fn (): NodeResponse => NodeResponse::fromGatewayData(
+            ['role_assignments' => ['malformed-assignment-element']],
+            '0198e15c-bf97-7c23-8f1f-61b8fe67a844',
+        ))
+            ->toThrow(GatewayApiException::class, 'Gateway response contains an invalid node role assignment.');
     });
 });
