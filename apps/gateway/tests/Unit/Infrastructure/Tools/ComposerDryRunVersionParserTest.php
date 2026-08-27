@@ -79,6 +79,9 @@ describe(ComposerDryRunVersionParser::class, function (): void {
         'extra target operation' => [
             "  - Locking laravel/installer (v5.17.0)\n  - Installing laravel/installer (v5.17.0)\n  - Installing laravel/installer (v5.17.0)",
         ],
+        'extra removing target operation' => [
+            "  - Locking laravel/installer (v5.17.0)\n  - Installing laravel/installer (v5.17.0)\n  - Removing laravel/installer (v5.16.0)",
+        ],
         'operation and no-op' => ["  - Installing laravel/installer (v5.17.0)\nNothing to install, update or remove"],
         'wrong package and no-op' => [
             "  - Installing laravel/framework (v12.0.0)\nNothing to install, update or remove",

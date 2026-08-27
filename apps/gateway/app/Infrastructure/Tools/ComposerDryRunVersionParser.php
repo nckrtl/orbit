@@ -44,7 +44,10 @@ final readonly class ComposerDryRunVersionParser
             $operation = $this->parseOperation($line);
 
             if ($operation === null) {
-                if (preg_match('/\A\s*-\s+(?:Locking|Installing|Upgrading|Downgrading)(?:\s|\z)/D', $line) === 1) {
+                if (
+                    preg_match('/\A\s*-\s+(?:Locking|Installing|Upgrading|Downgrading|Removing)(?:\s|\z)/D', $line)
+                    === 1
+                ) {
                     $malformedOperation = true;
                 }
 
