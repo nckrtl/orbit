@@ -112,9 +112,12 @@ gates:
 blockers: []
 ```
 
-`findings` must be empty when `status` is `approved`. `review_body` must be
-exactly `Approved.` whenever the review account is the same as the pull
-request author; otherwise it records the formal approval or the
-changes-requested body actually posted.
+`findings` must be empty when `status` is `approved`. When `status` is
+`approved` and the review account is the same as the pull request author,
+`review_body` must be exactly `Approved.`. When `status` is
+`changes_requested` and the review account is the same as the pull request
+author, `review_body` must be the `Changes requested:` body actually posted.
+Otherwise it records the formal approval or changes-requested review actually
+submitted.
 
 Approval ends the review cycle. It does not end the development cycle.
