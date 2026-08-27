@@ -6,7 +6,9 @@ use Orbit\Sdk\Responses\Activities\ActivityResponse;
 use Orbit\Sdk\Responses\Apps\AppResponse;
 use Orbit\Sdk\Responses\Firewall\FirewallRuleResponse;
 use Orbit\Sdk\Responses\Instances\InstanceResponse;
+use Orbit\Sdk\Responses\Nodes\AddedNodeAccessResponse;
 use Orbit\Sdk\Responses\Nodes\NodeResponse;
+use Orbit\Sdk\Responses\Nodes\RemovedNodeAccessResponse;
 use Orbit\Sdk\Responses\Nodes\RemovedNodeResponse;
 use Orbit\Sdk\Responses\Processes\ProcessResponse;
 use Orbit\Sdk\Responses\Workspaces\WorkspaceResponse;
@@ -100,7 +102,9 @@ it('marks every public gateway DTO factory ingress as sensitive', function (): v
         AppResponse::class,
         FirewallRuleResponse::class,
         InstanceResponse::class,
+        AddedNodeAccessResponse::class,
         NodeResponse::class,
+        RemovedNodeAccessResponse::class,
         RemovedNodeResponse::class,
         ProcessResponse::class,
         WorkspaceResponse::class,
