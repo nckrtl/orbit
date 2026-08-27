@@ -49,7 +49,24 @@ it('preserves public SSH before enabling inactive UFW', function (): void {
         ->toContain('orbit:public-ssh-recovery');
 });
 
-it('converges each exact role-owned firewall intent', function (RoleName $role, array $comments): void {
+it('keeps SSH on WireGuard and removes public recovery after VPN convergence', function (): void {
+    $ssh = new RoleFirewallSshExecutor;
+    $manager = role_firewall_manager($ssh);
+    $node = role_firewall_node();
+    $manager->convergeBase($node);
+    $ssh->calls = [];
+
+    $manager->converge($node, RoleName::Vpn);
+
+    expect($ssh->comments())
+        ->toContain('orbit:vpn-ssh')
+        ->not
+        ->toContain('orbit:public-ssh-recovery')
+        ->and(array_column($ssh->calls, 'connection'))
+        ->each(fn ($connection) => $connection->host->toBe('10.44.0.2'));
+});
+
+it('converges private SSH and each exact role-owned firewall intent', function (RoleName $role, array $comments): void {
     expect(class_exists(NativeNodeRoleFirewallManager::class))->toBeTrue();
 
     $ssh = new RoleFirewallSshExecutor;
@@ -57,20 +74,16 @@ it('converges each exact role-owned firewall intent', function (RoleName $role, 
 
     $manager->converge(role_firewall_node(), $role);
 
-    expect($ssh->comments())->toContain(...$comments);
-
-    if ($comments === []) {
-        expect($ssh->calls)->toBeEmpty();
-
-        return;
-    }
+    expect($ssh->comments())
+        ->toContain('orbit:vpn-ssh', ...$comments)
+        ->not->toContain('orbit:public-ssh-recovery');
 
     expect($ssh->calls[0]['connection']->host)->toBe('10.44.0.2');
 })->with([
     'app development' => [RoleName::AppDev, ['orbit:app-dev-http', 'orbit:app-dev-https']],
     'app production' => [RoleName::AppProd, ['orbit:app-prod-http', 'orbit:app-prod-https']],
     'gateway' => [RoleName::Gateway, ['orbit:gateway-https']],
-    'VPN has no firewall intent' => [RoleName::Vpn, []],
+    'VPN' => [RoleName::Vpn, []],
 ]);
 
 it('does not reapply exact managed role rules', function (): void {
@@ -291,6 +304,7 @@ final class RoleFirewallSshExecutor implements SshExecutor
 
         return match ($comment) {
             'orbit:public-ssh-recovery' => "[ {$number}] 22/tcp{$v6} ALLOW IN Anywhere{$v6} # {$comment}",
+            'orbit:vpn-ssh' => "[ {$number}] 10.44.0.2 22/tcp on orbit ALLOW IN Anywhere # {$comment}",
             'orbit:app-dev-http' => "[ {$number}] 10.44.0.2 80/tcp on orbit ALLOW IN Anywhere # {$comment}",
             'orbit:app-dev-https' => "[ {$number}] 10.44.0.2 443/tcp on orbit ALLOW IN Anywhere # {$comment}",
             'orbit:app-prod-http' => "[ {$number}] 80/tcp{$v6} ALLOW IN Anywhere{$v6} # {$comment}",

@@ -271,12 +271,12 @@ final readonly class NativeGatewayVpnConverger implements GatewayVpnConverger
     private function convergeFirewall(Node $gateway, BootstrapGatewayData $data): void
     {
         [$status, $inactive] = $this->firewallStatus();
-        $rules = [$this->recoveryFirewallRule($gateway), ...$this->firewallRules($data)];
+        $recovery = $this->recoveryFirewallRule($gateway);
+        $rules = $this->firewallRules($data);
 
         if ($inactive) {
             $stored = $this->storedFirewallRules();
-            $this->guardStoredFirewallDrift($stored, $rules);
-            $recovery = $rules[0];
+            $this->guardStoredFirewallDrift($stored, [$recovery, ...$rules]);
 
             if (
                 $this->storedFirewallParser->ownership($stored->stdout, $recovery->shape) === UfwRuleOwnership::Missing
@@ -327,6 +327,7 @@ final readonly class NativeGatewayVpnConverger implements GatewayVpnConverger
         }
 
         $this->verifyFirewallRules($verification, $rules);
+        $this->removeRecoveryFirewallRule($verification, $recovery);
     }
 
     /** @return array{CommandResult, bool} */
@@ -409,6 +410,61 @@ final readonly class NativeGatewayVpnConverger implements GatewayVpnConverger
         }
     }
 
+    private function removeRecoveryFirewallRule(CommandResult $status, UfwManagedRule $recovery): void
+    {
+        $ownership = $this->firewallParser->ownership($status->stdout, $recovery->shape);
+
+        if ($ownership === UfwRuleOwnership::Drift) {
+            $this->throwFirewallDrift($recovery, $status);
+        }
+
+        if ($ownership === UfwRuleOwnership::Missing) {
+            return;
+        }
+
+        $numbers = $this->ruleNumbers($status->stdout, $recovery->shape->comment);
+        rsort($numbers, SORT_NUMERIC);
+
+        foreach ($numbers as $number) {
+            $this->run(
+                step: 'vpn-firewall-recovery-remove',
+                errorCode: 'vpn.firewall_recovery_remove_failed',
+                arguments: ['sudo', 'ufw', '--force', 'delete', (string) $number],
+            );
+        }
+
+        [$verification, $inactive] = $this->firewallStatus();
+
+        if (
+            $inactive
+            || $this->firewallParser->ownership($verification->stdout, $recovery->shape) !== UfwRuleOwnership::Missing
+        ) {
+            $this->throwFirewallDrift($recovery, $verification);
+        }
+    }
+
+    /** @return list<int> */
+    private function ruleNumbers(string $output, string $comment): array
+    {
+        $numbers = [];
+
+        foreach (explode("\n", $output) as $line) {
+            $matches = [];
+
+            if (
+                preg_match(
+                    '/^\[\s*(\d+)\].*#\s*'.preg_quote(str: $comment, delimiter: '/').'\s*$/',
+                    trim($line),
+                    $matches,
+                ) === 1
+            ) {
+                $numbers[] = (int) $matches[1];
+            }
+        }
+
+        return $numbers;
+    }
+
     private function throwFirewallDrift(UfwManagedRule $rule, CommandResult $status): never
     {
         throw new NodeProvisioningException(
@@ -477,6 +533,37 @@ final readonly class NativeGatewayVpnConverger implements GatewayVpnConverger
                 (string) $data->wireguardPort,
                 'comment',
                 $wireguardComment,
+            ],
+        );
+        $sshComment = 'orbit:vpn-ssh';
+        $rules[] = new UfwManagedRule(
+            shape: new UfwRuleShape(
+                comment: $sshComment,
+                action: 'allow',
+                direction: 'in',
+                source: 'any',
+                destination: $data->wireguardAddress,
+                port: '22',
+                protocol: 'tcp',
+                inInterface: 'orbit',
+                outInterface: null,
+                family: 'v4',
+            ),
+            arguments: [
+                'sudo',
+                'ufw',
+                'allow',
+                'in',
+                'on',
+                'orbit',
+                'proto',
+                'tcp',
+                'to',
+                $data->wireguardAddress,
+                'port',
+                '22',
+                'comment',
+                $sshComment,
             ],
         );
 

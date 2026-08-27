@@ -150,20 +150,6 @@ function assert_gateway_firewall_commands(array $arguments): void
             'allow',
             'in',
             'proto',
-            'tcp',
-            'to',
-            'any',
-            'port',
-            '22',
-            'comment',
-            'orbit:public-ssh-recovery',
-        ],
-        [
-            'sudo',
-            'ufw',
-            'allow',
-            'in',
-            'proto',
             'udp',
             'to',
             'any',
@@ -171,6 +157,22 @@ function assert_gateway_firewall_commands(array $arguments): void
             '51820',
             'comment',
             'orbit:vpn-wireguard',
+        ],
+        [
+            'sudo',
+            'ufw',
+            'allow',
+            'in',
+            'on',
+            'orbit',
+            'proto',
+            'tcp',
+            'to',
+            '10.44.0.1',
+            'port',
+            '22',
+            'comment',
+            'orbit:vpn-ssh',
         ],
         [
             'sudo',
@@ -261,7 +263,53 @@ it('does not reapply exact managed gateway firewall rules', function (): void {
                 ),
             );
 
-        expect($ufwMutations)->toBeEmpty();
+        $reappliedRules = $ufwMutations->filter(
+            static fn (array $arguments): bool => (
+                in_array(needle: 'comment', haystack: $arguments, strict: true)
+                && ! in_array(needle: 'orbit:vpn-ssh', haystack: $arguments, strict: true)
+            ),
+        );
+
+        expect($reappliedRules)->toBeEmpty();
+    } finally {
+        new Filesystem()->deleteDirectory($orbitHome);
+    }
+});
+
+it('keeps SSH on WireGuard and removes public recovery after gateway VPN convergence', function (): void {
+    [$converger, $processes, $orbitHome] = gateway_vpn_converger(ufwRulesPreexisting: true);
+    $node = Node::query()->create([
+        'name' => 'gateway',
+        'public_ssh_host' => '85.9.218.89',
+        'wireguard_address' => '10.44.0.1',
+    ]);
+
+    try {
+        $converger->converge($node, gateway_bootstrap_data());
+        $arguments = Collection::make($processes->calls)
+            ->map(static fn (ProcessInvocation $call): array => $call->arguments);
+
+        expect($arguments)
+            ->toContain(
+                [
+                    'sudo',
+                    'ufw',
+                    'allow',
+                    'in',
+                    'on',
+                    'orbit',
+                    'proto',
+                    'tcp',
+                    'to',
+                    '10.44.0.1',
+                    'port',
+                    '22',
+                    'comment',
+                    'orbit:vpn-ssh',
+                ],
+                ['sudo', 'ufw', '--force', 'delete', '2'],
+                ['sudo', 'ufw', '--force', 'delete', '1'],
+            );
     } finally {
         new Filesystem()->deleteDirectory($orbitHome);
     }
@@ -307,7 +355,7 @@ it('verifies public SSH recovery before enabling and converging an inactive UFW 
             ->and($arguments->filter(
                 static fn (array $command): bool => $command === ['sudo', 'ufw', 'status', 'numbered'],
             ))
-            ->toHaveCount(3)
+            ->toHaveCount(4)
             ->and($arguments->contains(
                 static fn (array $command): bool => (
                     array_slice(array: $command, offset: 0, length: 2) === ['sudo', 'ufw']
@@ -785,7 +833,22 @@ final class GatewayVpnFakeProcessRunner implements ProcessRunner
         private readonly bool $ufwRulesPreexisting,
         private readonly bool $storedRuleDrift,
         private readonly string $orbitHome,
-    ) {}
+    ) {
+        if (! $this->ufwRulesPreexisting) {
+            return;
+        }
+
+        $this->ufwComments = array_fill_keys([
+            'orbit:public-ssh-recovery',
+            'orbit:vpn-wireguard',
+            'orbit:vpn-dns-udp-orbit',
+            'orbit:vpn-dns-tcp-orbit',
+            'orbit:vpn-dns-udp-eth3',
+            'orbit:vpn-dns-tcp-eth3',
+            'orbit:gateway-https',
+            'orbit:vpn-peer-forwarding',
+        ], value: true);
+    }
 
     public function run(ProcessInvocation $invocation): CommandResult
     {
@@ -900,6 +963,14 @@ final class GatewayVpnFakeProcessRunner implements ProcessRunner
 
     private function recordFirewallComment(ProcessInvocation $invocation): void
     {
+        if (
+            array_slice(array: $invocation->arguments, offset: 0, length: 4) === ['sudo', 'ufw', '--force', 'delete']
+        ) {
+            unset($this->ufwComments['orbit:public-ssh-recovery']);
+
+            return;
+        }
+
         if (array_slice(array: $invocation->arguments, offset: 0, length: 2) === ['sudo', 'ufw']) {
             $commentIndex = array_search(needle: 'comment', haystack: $invocation->arguments, strict: true);
             $comment = is_int($commentIndex) ? $invocation->arguments[$commentIndex + 1] ?? null : null;
@@ -931,18 +1002,7 @@ final class GatewayVpnFakeProcessRunner implements ProcessRunner
 
     private function activeFirewallRules(): string
     {
-        $comments = $this->ufwRulesPreexisting
-            ? array_fill_keys([
-                'orbit:public-ssh-recovery',
-                'orbit:vpn-wireguard',
-                'orbit:vpn-dns-udp-orbit',
-                'orbit:vpn-dns-tcp-orbit',
-                'orbit:vpn-dns-udp-eth3',
-                'orbit:vpn-dns-tcp-eth3',
-                'orbit:gateway-https',
-                'orbit:vpn-peer-forwarding',
-            ], value: true)
-            : $this->ufwComments;
+        $comments = $this->ufwComments;
         $lines = [];
 
         if (array_key_exists('orbit:public-ssh-recovery', $comments)) {
@@ -959,6 +1019,10 @@ final class GatewayVpnFakeProcessRunner implements ProcessRunner
             $suffix = $this->ambiguousUfwProbe ? '-extra' : '';
             $lines[] = "[ 3] 51820/udp                  ALLOW IN    Anywhere                   # orbit:vpn-wireguard{$suffix}";
             $lines[] = "[ 4] 51820/udp (v6)             ALLOW IN    Anywhere (v6)              # orbit:vpn-wireguard{$suffix}";
+        }
+
+        if (array_key_exists('orbit:vpn-ssh', $comments)) {
+            $lines[] = '[ 5] 10.44.0.1 22/tcp on orbit ALLOW IN Anywhere # orbit:vpn-ssh';
         }
 
         foreach ([

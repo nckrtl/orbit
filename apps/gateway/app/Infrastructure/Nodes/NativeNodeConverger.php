@@ -8,6 +8,7 @@ use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Nodes\NodeConverger;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\NodeRoleFirewallManager;
+use App\Domain\Nodes\RoleName;
 use App\Infrastructure\Ssh\HostKeyScanner;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -17,7 +18,10 @@ use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\WireGuard\WireGuardPeerConverger;
 use App\Models\Node;
 
-/** @mago-expect lint:excessive-parameter-list Base convergence requires each typed host boundary. */
+/**
+ * @mago-expect lint:cyclomatic-complexity Ordered node bootstrap keeps each SSH and firewall safety gate explicit.
+ * @mago-expect lint:excessive-parameter-list Base convergence requires each typed host boundary.
+ */
 final readonly class NativeNodeConverger implements NodeConverger
 {
     public function __construct(
@@ -30,6 +34,7 @@ final readonly class NativeNodeConverger implements NodeConverger
         private NodeRoleFirewallManager $firewall,
     ) {}
 
+    /** @mago-expect lint:halstead The method keeps public bootstrap, WireGuard verification, and SSH restriction in safety order. */
     public function converge(Node $node, ?string $expectedSshHostFingerprint = null): void
     {
         if ($node->platform !== 'linux') {
@@ -135,6 +140,18 @@ final readonly class NativeNodeConverger implements NodeConverger
                 'vpn.peer_ssh_failed',
                 "Could not reach node [{$node->name}] through WireGuard.",
                 result: $privateVerification,
+            );
+        }
+
+        try {
+            $this->firewall->converge($node, RoleName::Vpn);
+        } catch (FirewallOperationException $exception) {
+            throw new NodeProvisioningException(
+                $exception->step,
+                $exception->errorCode,
+                $exception->getMessage(),
+                $exception,
+                $exception->result,
             );
         }
 
