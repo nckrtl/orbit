@@ -14,8 +14,8 @@ Transport secrets through stdin or narrowly scoped mode-0600 protected files. Se
 ## Publish managed state atomically
 Require exact Orbit ownership before mutation. For shared state, lock first, snapshot after locking, write a candidate, validate it, switch atomically, and restore the exact prior file or symlink plus service state when activation fails. Keep an explicit recovery path.
 
-## Search the legacy Orbit project before infrastructure design
-Search /home/nckrtl/orbit implementations and tests before inventing infrastructure behavior. Port proven invariants when compatible, but never port the retired Agent, Docker or Swarm gateway, operation topology, generic executors, Compose, FrankenPHP, or image-building architecture.
+## Search proven behavior before infrastructure design
+Search matching repository implementations and tests before inventing infrastructure behavior. The legacy project is optional research, not a checkout dependency. Port proven invariants when compatible, but never port the retired Agent, Docker or Swarm gateway, operation topology, generic executors, Compose, FrankenPHP, or image-building architecture.
 
 ## Keep node access binary
 Enforce binary directed node access at the HTTP boundary. One access edge permits all commands for its serving node. The active Gateway peer is implicit authority, and access to the Gateway is fleet-wide. Do not add granular permissions, presets, wildcards, or permission compatibility code.

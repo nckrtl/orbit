@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+usage() {
+    printf 'Usage: %s LINEAR-ID slug\n' "${0##*/}" >&2
+    exit 2
+}
+
+[[ $# -eq 2 ]] || usage
+
+linear_id="$1"
+slug="$2"
+
+[[ "$linear_id" =~ ^[A-Za-z]+-[0-9]+$ ]] || usage
+[[ "$slug" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]] || usage
+
+name="${linear_id,,}-$slug"
+branch="$name"
+primary_root="$(git worktree list --porcelain | awk '/^worktree / { print substr($0, 10); exit }')"
+worktree="$primary_root/.worktrees/$name"
+
+git fetch --prune origin
+
+main_commit="$(git rev-parse refs/heads/main)"
+origin_main_commit="$(git rev-parse refs/remotes/origin/main)"
+
+if [[ "$main_commit" != "$origin_main_commit" ]]; then
+    printf 'Local main must match origin/main before creating a worktree.\n' >&2
+    exit 1
+fi
+
+if [[ -n "$(git -C "$primary_root" status --porcelain)" ]]; then
+    printf 'The primary worktree must be clean.\n' >&2
+    exit 1
+fi
+
+if git worktree list --porcelain | grep -Fxq "worktree $worktree"; then
+    if [[ -n "$(git -C "$worktree" status --porcelain)" ]]; then
+        printf 'Existing worktree is dirty: %s\n' "$worktree" >&2
+        exit 1
+    fi
+
+    existing_branch="$(git -C "$worktree" symbolic-ref --quiet --short HEAD || true)"
+    if [[ "$existing_branch" != "$branch" ]]; then
+        printf 'Existing worktree uses %s, expected %s.\n' "$existing_branch" "$branch" >&2
+        exit 1
+    fi
+
+    "$worktree/bin/bootstrap"
+    printf '%s\n' "$worktree"
+    exit 0
+fi
+
+if [[ -e "$worktree" ]]; then
+    printf 'Path exists but is not a registered worktree: %s\n' "$worktree" >&2
+    exit 1
+fi
+
+mkdir -p "$primary_root/.worktrees"
+
+if git show-ref --verify --quiet "refs/heads/$branch"; then
+    git worktree add "$worktree" "$branch"
+elif git show-ref --verify --quiet "refs/remotes/origin/$branch"; then
+    git worktree add --track -b "$branch" "$worktree" "origin/$branch"
+else
+    git worktree add -b "$branch" "$worktree" origin/main
+fi
+
+"$worktree/bin/bootstrap"
+printf '%s\n' "$worktree"

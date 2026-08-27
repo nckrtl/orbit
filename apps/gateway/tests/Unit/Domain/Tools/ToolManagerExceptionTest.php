@@ -26,13 +26,20 @@ describe(ToolManagerException::class, function (): void {
 
         expect($exception->getMessage())
             ->toBe('The tool manager operation failed.')
-            ->and($exception->step)->toBe('install')
-            ->and($exception->result?->exitCode)->toBe(1)
-            ->and($exception->result?->durationMs)->toBe(23)
-            ->and($exception->result?->truncated)->toBeTrue()
-            ->and($exception->result?->stdout)->toBeEmpty()
-            ->and($exception->result?->stderr)->toBeEmpty()
-            ->and($exception->getPrevious())->toBe($previous);
+            ->and($exception->step)
+            ->toBe('install')
+            ->and($exception->result?->exitCode)
+            ->toBe(1)
+            ->and($exception->result?->durationMs)
+            ->toBe(23)
+            ->and($exception->result?->truncated)
+            ->toBeTrue()
+            ->and($exception->result?->stdout)
+            ->toBeEmpty()
+            ->and($exception->result?->stderr)
+            ->toBeEmpty()
+            ->and($exception->getPrevious())
+            ->toBe($previous);
     });
 
     it('stores only safe command metadata and keeps raw output outside debug representations', function (): void {
@@ -60,18 +67,29 @@ describe(ToolManagerException::class, function (): void {
         ], return: true);
 
         expect($exception->result)
-            ->not->toBe($result)
-            ->and($printed)->toContain('The tool manager operation failed.', 'install')
-            ->and($exported)->toContain('The tool manager operation failed.', 'install');
+            ->not
+            ->toBe($result)
+            ->and($printed)
+            ->toContain('The tool manager operation failed.', 'install')
+            ->and($exported)
+            ->toContain('The tool manager operation failed.', 'install');
 
-        expect(str_contains($exception->getMessage(), $stdoutSentinel))->toBeFalse()
-            ->and(str_contains($exception->getMessage(), $stderrSentinel))->toBeFalse()
-            ->and(str_contains($printed, $stdoutSentinel))->toBeFalse()
-            ->and(str_contains($printed, $stderrSentinel))->toBeFalse()
-            ->and(str_contains($exported, $stdoutSentinel))->toBeFalse()
-            ->and(str_contains($exported, $stderrSentinel))->toBeFalse()
-            ->and(str_contains($publicChain, $stdoutSentinel))->toBeFalse()
-            ->and(str_contains($publicChain, $stderrSentinel))->toBeFalse();
+        expect(str_contains($exception->getMessage(), $stdoutSentinel))
+            ->toBeFalse()
+            ->and(str_contains($exception->getMessage(), $stderrSentinel))
+            ->toBeFalse()
+            ->and(str_contains($printed, $stdoutSentinel))
+            ->toBeFalse()
+            ->and(str_contains($printed, $stderrSentinel))
+            ->toBeFalse()
+            ->and(str_contains($exported, $stdoutSentinel))
+            ->toBeFalse()
+            ->and(str_contains($exported, $stderrSentinel))
+            ->toBeFalse()
+            ->and(str_contains($publicChain, $stdoutSentinel))
+            ->toBeFalse()
+            ->and(str_contains($publicChain, $stderrSentinel))
+            ->toBeFalse();
     });
 
     it('keeps the public tool operation exception chain free from raw manager output', function (): void {
@@ -109,15 +127,24 @@ describe(ToolManagerException::class, function (): void {
             'previous' => $operationException->getPrevious(),
         ], return: true);
 
-        expect($operationException->getPrevious())->toBe($managerException)
-            ->and($printed)->toContain('The tool install failed.', 'tool.install_failed')
-            ->and($exported)->toContain('The tool install failed.', 'tool.install_failed');
+        expect($operationException->getPrevious())
+            ->toBe($managerException)
+            ->and($printed)
+            ->toContain('The tool install failed.', 'tool.install_failed')
+            ->and($exported)
+            ->toContain('The tool install failed.', 'tool.install_failed');
 
-        expect(str_contains($printed, $stdoutSentinel))->toBeFalse()
-            ->and(str_contains($printed, $stderrSentinel))->toBeFalse()
-            ->and(str_contains($exported, $stdoutSentinel))->toBeFalse()
-            ->and(str_contains($exported, $stderrSentinel))->toBeFalse()
-            ->and(str_contains($publicChain, $stdoutSentinel))->toBeFalse()
-            ->and(str_contains($publicChain, $stderrSentinel))->toBeFalse();
+        expect(str_contains($printed, $stdoutSentinel))
+            ->toBeFalse()
+            ->and(str_contains($printed, $stderrSentinel))
+            ->toBeFalse()
+            ->and(str_contains($exported, $stdoutSentinel))
+            ->toBeFalse()
+            ->and(str_contains($exported, $stderrSentinel))
+            ->toBeFalse()
+            ->and(str_contains($publicChain, $stdoutSentinel))
+            ->toBeFalse()
+            ->and(str_contains($publicChain, $stderrSentinel))
+            ->toBeFalse();
     });
 });

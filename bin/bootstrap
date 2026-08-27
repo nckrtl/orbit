@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+projects=("apps/cli" "apps/gateway" "packages/php-sdk")
+
+if ! command -v composer >/dev/null 2>&1; then
+    printf 'Composer is required.\n' >&2
+    exit 2
+fi
+
+log_directory="$(mktemp -d)"
+pids=()
+failed=0
+
+cleanup() {
+    find "$log_directory" -maxdepth 1 -type f -delete
+    rmdir "$log_directory"
+}
+
+trap cleanup EXIT
+
+for project in "${projects[@]}"; do
+    (
+        cd "$repository_root/$project"
+
+        if [[ -f .env.example && ! -e .env ]]; then
+            cp .env.example .env
+        fi
+
+        composer install --no-interaction --prefer-dist
+    ) >"$log_directory/${project//\//-}.log" 2>&1 &
+    pids+=("$!")
+done
+
+for index in "${!projects[@]}"; do
+    project="${projects[$index]}"
+    log_file="$log_directory/${project//\//-}.log"
+
+    if wait "${pids[$index]}"; then
+        printf '\n[%s] installed\n' "$project"
+    else
+        printf '\n[%s] failed\n' "$project" >&2
+        failed=1
+    fi
+
+    sed 's/^/  /' "$log_file"
+done
+
+if ((failed != 0)); then
+    exit "$failed"
+fi
+
+pids=()
+
+for project in "${projects[@]}"; do
+    (
+        cd "$repository_root/$project"
+        composer guidance:check
+    ) >"$log_directory/${project//\//-}-guidance.log" 2>&1 &
+    pids+=("$!")
+done
+
+for index in "${!projects[@]}"; do
+    project="${projects[$index]}"
+    log_file="$log_directory/${project//\//-}-guidance.log"
+
+    if wait "${pids[$index]}"; then
+        printf '\n[%s] guidance valid\n' "$project"
+    else
+        printf '\n[%s] guidance failed\n' "$project" >&2
+        failed=1
+    fi
+
+    sed 's/^/  /' "$log_file"
+done
+
+exit "$failed"

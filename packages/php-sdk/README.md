@@ -6,7 +6,7 @@ The SDK contains the transport defaults, response envelopes, errors, and typed
 requests needed by the small public CLI surface. It does not depend on the
 gateway application.
 
-During local development, `orbit-cli` consumes this repository through a
+During monorepo development, `apps/cli` consumes this package through a
 Composer path repository with symlinking enabled.
 
 ## Requirements

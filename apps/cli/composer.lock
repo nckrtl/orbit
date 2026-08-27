@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "154ee9c8e0335e8f3fa30b7dfee2935f",
+    "content-hash": "ad183ba90b549373994101c075c1d500",
     "packages": [
         {
             "name": "brick/math",
@@ -2271,8 +2271,8 @@
             "version": "dev-main",
             "dist": {
                 "type": "path",
-                "url": "../php-sdk",
-                "reference": "7ddcb86ba6290d56d7d627085d903379e6a97366"
+                "url": "../../packages/php-sdk",
+                "reference": "e2da0c4a1d98cf4602c770d5ecead96799db0b28"
             },
             "require": {
                 "php": "^8.5",
@@ -2301,6 +2301,7 @@
                     "vendor/bin/mago analyze src --reporting-format=medium"
                 ],
                 "check": [
+                    "@guidance:check",
                     "@rector",
                     "@test",
                     "@format:check",
@@ -2313,11 +2314,14 @@
                 "format:check": [
                     "vendor/bin/mago format --check"
                 ],
+                "guidance:check": [
+                    "vendor/bin/pest --no-tia --compact tests/Unit/RepositoryGuidanceTest.php"
+                ],
                 "lint": [
                     "vendor/bin/mago lint src tests --reporting-format=medium"
                 ],
                 "rector": [
-                    "vendor/bin/rector process"
+                    "vendor/bin/rector process --dry-run"
                 ],
                 "test": [
                     "vendor/bin/pest --compact"

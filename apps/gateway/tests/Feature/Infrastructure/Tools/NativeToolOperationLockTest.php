@@ -11,20 +11,21 @@ use Illuminate\Support\Facades\Cache;
 describe(NativeToolOperationLock::class, function (): void {
     it('rejects concurrent mutations for the same tool identity', function (): void {
         $lock = new NativeToolOperationLock;
-        $identityKey = 'orbit:tool:7:vp:'.hash('sha256', '@openai/codex');
+        $identityKey = 'orbit:tool:7:vp:'.hash(algo: 'sha256', data: '@openai/codex');
         $identity = Cache::lock($identityKey, 3_600);
 
         expect($identity->get())->toBeTrue();
 
         try {
             expect(fn () => $lock->run(
-                7,
-                ToolManagerName::Vp,
-                '@openai/codex',
-                ToolOperation::Install,
-                '^0.150',
-                static fn (): bool => true,
-            ))->toThrow(ToolOperationException::class, 'already active');
+                nodeId: 7,
+                manager: ToolManagerName::Vp,
+                package: '@openai/codex',
+                operation: ToolOperation::Install,
+                versionConstraint: '^0.150',
+                callback: static fn (): bool => true,
+            ))
+                ->toThrow(ToolOperationException::class, 'already active');
         } finally {
             $identity->release();
         }
@@ -39,13 +40,14 @@ describe(NativeToolOperationLock::class, function (): void {
 
         try {
             expect(fn () => $lock->run(
-                7,
-                ToolManagerName::Vp,
-                '@openai/codex',
-                ToolOperation::Install,
-                '^0.150',
-                static fn (): bool => true,
-            ))->toThrow(ToolOperationException::class, 'manager mutation is already active');
+                nodeId: 7,
+                manager: ToolManagerName::Vp,
+                package: '@openai/codex',
+                operation: ToolOperation::Install,
+                versionConstraint: '^0.150',
+                callback: static fn (): bool => true,
+            ))
+                ->toThrow(ToolOperationException::class, 'manager mutation is already active');
         } finally {
             $manager->release();
         }

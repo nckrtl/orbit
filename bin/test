@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+projects=("apps/cli" "apps/gateway" "packages/php-sdk")
+available_processes="${ORBIT_TEST_PROCESSES:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || printf '3')}"
+
+if [[ ! "$available_processes" =~ ^[1-9][0-9]*$ ]]; then
+    printf 'ORBIT_TEST_PROCESSES must be a positive integer.\n' >&2
+    exit 2
+fi
+
+suite_processes=$((available_processes / ${#projects[@]}))
+if ((suite_processes < 1)); then
+    suite_processes=1
+fi
+
+for project in "${projects[@]}"; do
+    if [[ ! -x "$repository_root/$project/vendor/bin/pest" ]]; then
+        printf '%s is not installed. Run bin/bootstrap first.\n' "$project" >&2
+        exit 2
+    fi
+done
+
+log_directory="$(mktemp -d)"
+pids=()
+failed=0
+
+cleanup() {
+    find "$log_directory" -maxdepth 1 -type f -delete
+    rmdir "$log_directory"
+}
+
+trap cleanup EXIT
+
+for project in "${projects[@]}"; do
+    (
+        cd "$repository_root/$project"
+        vendor/bin/pest --parallel --processes="$suite_processes" --no-tia --compact
+    ) >"$log_directory/${project//\//-}.log" 2>&1 &
+    pids+=("$!")
+done
+
+printf 'Running %s suites with %s Pest processes per suite.\n' "${#projects[@]}" "$suite_processes"
+
+for index in "${!projects[@]}"; do
+    project="${projects[$index]}"
+    log_file="$log_directory/${project//\//-}.log"
+
+    if wait "${pids[$index]}"; then
+        printf '\n[%s] passed\n' "$project"
+    else
+        printf '\n[%s] failed\n' "$project" >&2
+        failed=1
+    fi
+
+    sed 's/^/  /' "$log_file"
+done
+
+exit "$failed"

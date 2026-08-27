@@ -38,9 +38,10 @@ It is framework-neutral. Laravel Boost is deliberately required in
 ## Contract workflow
 
 1. Read the matching gateway route, request, resource, and feature test.
-2. Read the matching `/home/nckrtl/orbit` SDK implementation and tests, then
-   inspect the installed Saloon request, exception, and faking patterns. Reuse
-   proven transport invariants, but do not restore retired architecture.
+2. Read the matching in-repository SDK and Gateway tests, then inspect the
+   installed Saloon request, exception, and faking patterns. The legacy project
+   is optional research, not a checkout dependency. Reuse proven transport
+   invariants, but do not restore retired architecture.
 3. Add or change the SDK request with the smallest public surface.
 4. Add a Pest test for the exact method, path, payload omission, correlation
    header, success envelope, structured failure, and redaction boundary.
@@ -57,11 +58,11 @@ vendor/bin/mago format --check
 vendor/bin/mago lint src tests --reporting-format=medium
 vendor/bin/mago analyze src --reporting-format=medium
 vendor/bin/rector process --dry-run
-git diff --check
+git diff --check -- packages/php-sdk
 ```
 
 Use Pest 5 with `describe()` and `it()`. Use Pest 5 TIA for the normal
 development loop. Run a no-TIA full suite before handoff. Run focused gateway
-API and CLI tests when a contract changes and the integration gate permits work
-in those repositories. Run Mago format, lint, and analysis and Rector before
+API and CLI tests when a contract changes. Coordinate those changes in the same
+feature branch. Run Mago format, lint, and analysis and Rector before
 handoff.

@@ -1,0 +1,18 @@
+version: 2
+updates:
+  - package-ecosystem: composer
+    directory: /apps/cli
+    schedule:
+      interval: weekly
+  - package-ecosystem: composer
+    directory: /apps/gateway
+    schedule:
+      interval: weekly
+  - package-ecosystem: composer
+    directory: /packages/php-sdk
+    schedule:
+      interval: weekly
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

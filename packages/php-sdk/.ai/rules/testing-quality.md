@@ -14,9 +14,10 @@ focused tests for red, green, and refactor. Use Pest 5 TIA through
 - Use Saloon fakes. Do not contact a live Gateway or node.
 - Run `composer validate --strict` and `composer check`.
 - Run Mago format check, lint, and analysis with zero findings. Run Rector in
-  dry-run mode and `git diff --check`.
+  dry-run mode and `git diff --check -- packages/php-sdk` from the monorepo
+  root.
 - Run the full no-TIA suite after TIA. Do not use a partial TIA result as the
   final suite result.
 - Review the diff, staged files, branch, and upstream state before handoff.
-  Never stage, commit, push, deploy, or edit a sibling repository unless the
-  user explicitly authorizes that action.
+  Keep authorized cross-component changes in the same feature branch. Never
+  stage, commit, push, or deploy without authorization.

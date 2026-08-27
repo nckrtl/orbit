@@ -17,9 +17,10 @@ to typed `orbit-php-sdk` requests and render gateway responses.
 - Local-only actions can make visible OS changes only when the command contract
   requires them, such as root-CA trust.
 - Preserve request IDs and structured errors end to end.
-- Before adding command or OS-adapter behavior, search `~/orbit-old` for proven
-  input, output, idempotency, redaction, and adapter-test invariants. Port only
-  behavior that fits the simplified command surface.
+- Before adding command or OS-adapter behavior, inspect matching in-repository
+  code and tests. The legacy project can provide optional research when it is
+  available, but it is not a checkout dependency. Port only behavior that fits
+  the simplified command surface.
 
 ## Required Skills
 
@@ -32,5 +33,6 @@ to typed `orbit-php-sdk` requests and render gateway responses.
 ## Verification
 
 Run focused Pest tests while developing. Then run `composer test`,
-`composer test:full`, `composer check`, and `git diff --check`. Report a sibling
-SDK or Gateway contract need instead of editing another repository.
+`composer test:full`, `composer check`, and `git diff --check -- apps/cli` from
+the monorepo root. Coordinate SDK or Gateway contract changes in the same
+feature branch.

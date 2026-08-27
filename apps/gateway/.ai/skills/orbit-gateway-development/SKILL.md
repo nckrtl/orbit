@@ -26,8 +26,9 @@ business logic and performs explicit infrastructure actions over SSH.
 - Use systemd for Linux services. Do not add Docker/Swarm gateway deployment,
   an Agent, a hidden executor, or generic scripts.
 - Keep Linux privilege escalation behind narrow remote commands.
-- Before designing infrastructure behavior, search `/home/nckrtl/orbit` for its
-  implementation and tests. Port compatible invariants, not retired topology.
+- Before designing infrastructure behavior, inspect matching repository code
+  and tests. The legacy project is optional research, not a checkout
+  dependency. Port compatible invariants, not retired topology.
 
 ## Required skills
 
@@ -45,4 +46,5 @@ composer test:full
 ```
 
 Run focused Pest tests during TDD. Run Pest 5 with TIA, full Pest without TIA,
-Rector, Mago format/lint/analyse, and `git diff --check` before handoff.
+Rector, Mago format/lint/analyse, and `git diff --check -- apps/gateway` from the
+monorepo root before handoff.

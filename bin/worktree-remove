@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+usage() {
+    printf 'Usage: %s LINEAR-ID slug\n' "${0##*/}" >&2
+    exit 2
+}
+
+[[ $# -eq 2 ]] || usage
+
+linear_id="$1"
+slug="$2"
+
+[[ "$linear_id" =~ ^[A-Za-z]+-[0-9]+$ ]] || usage
+[[ "$slug" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]] || usage
+
+name="${linear_id,,}-$slug"
+branch="$name"
+primary_root="$(git worktree list --porcelain | awk '/^worktree / { print substr($0, 10); exit }')"
+worktree="$primary_root/.worktrees/$name"
+
+git fetch --prune origin
+
+if git worktree list --porcelain | grep -Fxq "worktree $worktree"; then
+    if [[ -n "$(git -C "$worktree" status --porcelain)" ]]; then
+        printf 'Worktree is dirty: %s\n' "$worktree" >&2
+        exit 1
+    fi
+
+    if ! git merge-base --is-ancestor "$branch" origin/main; then
+        printf 'Branch is not merged into origin/main: %s\n' "$branch" >&2
+        exit 1
+    fi
+
+    git worktree remove "$worktree"
+elif [[ -e "$worktree" ]]; then
+    printf 'Path exists but is not a registered worktree: %s\n' "$worktree" >&2
+    exit 1
+fi
+
+if git show-ref --verify --quiet "refs/heads/$branch"; then
+    if ! git merge-base --is-ancestor "$branch" origin/main; then
+        printf 'Branch is not merged into origin/main: %s\n' "$branch" >&2
+        exit 1
+    fi
+
+    git branch -d "$branch"
+fi
+
+git worktree prune
+printf 'Removed %s\n' "$name"

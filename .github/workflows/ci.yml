@@ -1,0 +1,72 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  project:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: CLI
+            directory: apps/cli
+          - name: Gateway
+            directory: apps/gateway
+          - name: PHP SDK
+            directory: packages/php-sdk
+
+    defaults:
+      run:
+        working-directory: ${{ matrix.directory }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+          coverage: none
+          tools: composer:v2
+
+      - name: Prepare application environment
+        if: matrix.directory == 'apps/gateway'
+        run: cp .env.example .env
+
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist
+
+      - name: Validate Composer metadata
+        run: composer validate --strict
+
+      - name: Verify repository guidance
+        run: composer guidance:check
+
+      - name: Run full tests in parallel
+        run: vendor/bin/pest --parallel --processes=2 --no-tia --compact
+
+      - name: Check Rector
+        run: vendor/bin/rector process --dry-run
+
+      - name: Check formatting
+        run: composer format:check
+
+      - name: Lint
+        run: composer lint
+
+      - name: Analyse
+        run: composer analyse

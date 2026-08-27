@@ -35,7 +35,7 @@
     "repositories": [
         {
             "type": "path",
-            "url": "../php-sdk",
+            "url": "../../packages/php-sdk",
             "options": {
                 "symlink": true
             }

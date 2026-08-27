@@ -6,6 +6,7 @@ namespace App\Domain\Tools;
 
 use App\Models\Node;
 
+/** @mago-expect lint:too-many-methods The closed manager contract keeps every supported tool lifecycle operation explicit. */
 interface ToolManager
 {
     public function name(): ToolManagerName;

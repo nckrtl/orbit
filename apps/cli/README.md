@@ -6,13 +6,14 @@ managed nodes through SSH.
 
 ## Development
 
-Clone this repository beside `orbit-php-sdk`, then install dependencies:
+From the monorepo root, install every project:
 
 ```bash
-composer install
+bin/bootstrap
 ```
 
-Composer symlinks `../php-sdk`, so local SDK changes are available at once.
+Composer symlinks `packages/php-sdk` into the CLI, so local SDK changes are
+available at once.
 
 ## First Use
 

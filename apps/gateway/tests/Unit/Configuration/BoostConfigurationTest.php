@@ -241,7 +241,7 @@ it('keeps generated scoped guidance complete and de-duplicated', function (): vo
         '## Use fixed typed argv',
         '## Keep secrets out of command arguments',
         '## Publish managed state atomically',
-        '## Search the legacy Orbit project before infrastructure design',
+        '## Search proven behavior before infrastructure design',
         '## Use only pinned Sury Resolute PHP packages',
         '## Route project JavaScript work through Vite+',
         '## Run the Pest and Mago gates',
@@ -290,7 +290,7 @@ it('keeps generated scoped guidance complete and de-duplicated', function (): vo
             'switch atomically',
             'restore the exact prior file or symlink',
             'explicit recovery path',
-            '/home/nckrtl/orbit',
+            'legacy project is optional research',
             'never port the retired Agent',
         );
     expect($testRules)
@@ -407,7 +407,7 @@ it('preserves project and installed testing guidance', function (): void {
             'secrets out of local and remote argument arrays',
             'Require exact Orbit ownership before mutation.',
             'Linux privilege escalation',
-            'search `/home/nckrtl/orbit`',
+            'legacy project is optional research',
             'Pest 5 with TIA',
             'Mago format/lint/analyse',
         );

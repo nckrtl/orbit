@@ -33,10 +33,9 @@ Laravel or Boost support.
 - Preserve structured gateway error codes, safe messages, details, and request
   IDs. Redact credentials from URLs, nested payloads, defaults, exception text,
   and debug output.
-- Review the matching `/home/nckrtl/orbit` SDK and Saloon request,
-  exception, correlation, and test patterns before inventing transport
-  behavior.
+- Review matching SDK requests, exceptions, correlation behavior, and tests
+  before inventing a transport pattern.
 - Use Pest 5 with `describe()` and `it()`.
 - Use Pest 5 TIA for the development loop and a no-TIA full-suite milestone.
-- Run Mago format, lint, and analysis, Rector, and `git diff --check` before
-  handoff.
+- Run Mago format, lint, and analysis, Rector, and
+  `git diff --check -- packages/php-sdk` from the monorepo root before handoff.
