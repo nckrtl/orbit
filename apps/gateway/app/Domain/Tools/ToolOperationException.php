@@ -19,8 +19,29 @@ final class ToolOperationException extends RuntimeException
         public readonly string $package,
         public readonly ?string $versionConstraint,
         string $message,
-        ?\Throwable $previous = null,
+        ?ToolManagerException $previous = null,
     ) {
         parent::__construct($message, previous: $previous);
+    }
+
+    /** @return array{message: string, step: string, errorCode: string, outcome: string, status: int, nodeId: int, manager: string, package: string, versionConstraint: string|null, previous: array{message: string, step: string, result: array{exitCode: int, durationMs: int, truncated: bool}|null}|null} */
+    public function __debugInfo(): array
+    {
+        $previous = $this->getPrevious();
+
+        return [
+            'message' => $this->getMessage(),
+            'step' => $this->step,
+            'errorCode' => $this->errorCode,
+            'outcome' => $this->outcome->value,
+            'status' => $this->status,
+            'nodeId' => $this->nodeId,
+            'manager' => $this->manager,
+            'package' => $this->package,
+            'versionConstraint' => $this->versionConstraint,
+            'previous' => $previous instanceof ToolManagerException
+                ? $previous->__debugInfo()
+                : null,
+        ];
     }
 }

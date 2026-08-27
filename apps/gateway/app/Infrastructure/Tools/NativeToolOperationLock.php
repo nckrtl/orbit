@@ -14,7 +14,14 @@ use Illuminate\Support\Facades\Cache;
 
 final class NativeToolOperationLock implements ToolOperationLock
 {
-    /** @mago-expect lint:excessive-parameter-list The lock identity requires the complete typed tool operation. */
+    /**
+     * @template T
+     *
+     * @param Closure(): T $callback
+     * @return T
+     *
+     * @mago-expect lint:excessive-parameter-list The lock identity requires the complete typed tool operation.
+     */
     public function run(
         int $nodeId,
         ToolManagerName $manager,
