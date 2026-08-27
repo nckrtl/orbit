@@ -85,24 +85,8 @@ it('signs a target CSR for only the gateway-approved hostname', function (): voi
             $request,
         );
         file_put_contents("{$target}/leaf-second.pem", $secondCertificate);
-        $approvedHost = $processes->run(new ProcessInvocation([
-            'openssl',
-            'x509',
-            '-in',
-            "{$target}/leaf.pem",
-            '-noout',
-            '-checkhost',
-            $approvedHostname,
-        ]));
-        $unapprovedHost = $processes->run(new ProcessInvocation([
-            'openssl',
-            'x509',
-            '-in',
-            "{$target}/leaf.pem",
-            '-noout',
-            '-checkhost',
-            $unapprovedHostname,
-        ]));
+        $approvedHost = leaf_certificate_matches_host($processes, "{$target}/leaf.pem", $approvedHostname);
+        $unapprovedHost = leaf_certificate_matches_host($processes, "{$target}/leaf.pem", $unapprovedHostname);
         $verified = $processes->run(new ProcessInvocation([
             'openssl',
             'verify',
@@ -120,9 +104,9 @@ it('signs a target CSR for only the gateway-approved hostname', function (): voi
             $approvedHostname,
         );
 
-        expect($approvedHost->succeeded())
+        expect($approvedHost)
             ->toBeTrue()
-            ->and($unapprovedHost->succeeded())
+            ->and($unapprovedHost)
             ->toBeFalse()
             ->and($verified->succeeded())
             ->toBeTrue()
@@ -361,6 +345,22 @@ function leaf_certificate_text(NativeProcessRunner $processes, string $certifica
         '-noout',
         '-text',
     ]))->stdout;
+}
+
+function leaf_certificate_matches_host(
+    NativeProcessRunner $processes,
+    string $certificatePath,
+    string $hostname,
+): bool {
+    return $processes->run(new ProcessInvocation([
+        'openssl',
+        'x509',
+        '-in',
+        $certificatePath,
+        '-noout',
+        '-checkhost',
+        $hostname,
+    ]))->succeeded();
 }
 
 function leaf_certificate_caddy_validation(
