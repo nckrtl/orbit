@@ -76,15 +76,21 @@ describe('repository guidance bootstrap', function (): void {
         expect($composer['scripts']['check'][0] ?? null)->toBe('@guidance:check');
     });
 
-    it('documents the 35-operation SDK surface and the binary node access boundary', function (): void {
+    it('documents the 38-operation SDK surface and the binary node access boundary', function (): void {
         $publicContract = repository_guidance_contents('.ai/rules/public-contract.md');
         $normalizedPublicContract = repository_guidance_normalized_contents('.ai/rules/public-contract.md');
 
         expect($publicContract)
-            ->toContain('The SDK models exactly 35 concrete public Gateway API operations:')
-            ->toContain('- Node: list, show, provision, remove, access add, and access remove.')
-            ->toContain('Docker Swarm, role add/remove, Compose, image-building, stream,')
-            ->not->toContain('Docker Swarm, permissions, role add/remove');
+            ->toContain('The SDK models exactly 38 concrete public Gateway API operations:')
+            ->toContain(
+                '- Node: list, show, provision, remove, access add, access remove, role list, role add, and role remove.',
+            )
+            ->not->toContain('Docker Swarm, permissions, role add/remove')->toContain(
+                'Do not restore the retired Agent, generic executor, direct SSH execution,',
+            )->toContain('Docker Swarm, Compose, image-building, stream, database,')
+            ->not->toContain(
+                'Do not restore the retired Agent, generic executor, direct SSH execution, Docker Swarm, role add/remove, Compose',
+            );
 
         expect($normalizedPublicContract)
             ->toContain(

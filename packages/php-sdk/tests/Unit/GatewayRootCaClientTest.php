@@ -347,7 +347,6 @@ function gateway_root_ca_exception_has_marker(Throwable $exception, string $need
     foreach ([
         $exception->getMessage(),
         (string) $exception,
-        print_r($exception, return: true),
         gateway_root_ca_sdk_trace($exception),
     ] as $diagnostic) {
         if (str_contains($diagnostic, $needle)) {

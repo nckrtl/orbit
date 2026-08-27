@@ -272,6 +272,53 @@ describe('gateway exception boundary', function (): void {
             ->toHaveCount(2);
     });
 
+    it('preserves preview dependents while redacting nested secret-shaped details', function (): void {
+        $credential = gateway_boundary_credential('preview-detail');
+        $secretKey = 'api_token';
+        $exception = new GatewayApiException(
+            'Use --force to remove this node role.',
+            errorCode: 'validation.failed',
+            details: [
+                'field' => 'force',
+                'reason' => 'destructive_consent_required',
+                'role' => 'app-dev',
+                'dependents' => [
+                    '1 development instance record',
+                    '1 workspace record',
+                    '1 process record',
+                ],
+                'nested' => [
+                    $secretKey => $credential,
+                ],
+            ],
+            requestId: '0198e15d-16c4-7855-8eb2-182b53ad28ba',
+        );
+        $diagnostics = implode("\n", [
+            (string) json_encode($exception->details(), JSON_THROW_ON_ERROR),
+            (string) $exception,
+            print_r($exception, return: true),
+            (string) json_encode($exception->__debugInfo(), JSON_THROW_ON_ERROR),
+            gateway_owned_trace_output($exception),
+        ]);
+
+        expect($exception->details())
+            ->toBe([
+                'field' => 'force',
+                'reason' => 'destructive_consent_required',
+                'role' => 'app-dev',
+                'dependents' => [
+                    '1 development instance record',
+                    '1 workspace record',
+                    '1 process record',
+                ],
+                'nested' => [
+                    $secretKey => '[REDACTED]',
+                ],
+            ])
+            ->and($diagnostics)
+            ->not->toContain($credential);
+    });
+
     it('uses null for an invalid request ID', function (?string $requestId): void {
         $exception = new GatewayApiException('Safe gateway failure.', requestId: $requestId);
 
