@@ -74,6 +74,8 @@ it('creates an idempotent Orbit root CA signed gateway leaf with DNS and IP iden
             '-noout',
             '-issuer',
             '-subject',
+            '-nameopt',
+            'RFC2253',
             '-ext',
             'subjectAltName',
         ]));
