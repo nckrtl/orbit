@@ -43,13 +43,10 @@ final readonly class NativeNodeRoleFirewallManager implements NodeRoleFirewallMa
 
     public function converge(Node $node, RoleName $role): void
     {
-        $rules = $this->roleRules($node, $role);
-
-        if ($rules === []) {
-            return;
-        }
+        $rules = [$this->wireguardSshRule($node), ...$this->roleRules($node, $role)];
 
         $this->convergeRules($node, $rules, publicConnection: false, enable: false);
+        $this->removeRules($node, [$this->publicSshRule($node)]);
     }
 
     public function remove(Node $node, RoleName $role): void
@@ -60,6 +57,12 @@ final readonly class NativeNodeRoleFirewallManager implements NodeRoleFirewallMa
             return;
         }
 
+        $this->removeRules($node, $rules);
+    }
+
+    /** @param non-empty-list<UfwManagedRule> $rules */
+    private function removeRules(Node $node, array $rules): void
+    {
         [$status, $inactive] = $this->status($node, publicConnection: false);
 
         if ($inactive) {
@@ -153,6 +156,8 @@ final readonly class NativeNodeRoleFirewallManager implements NodeRoleFirewallMa
             }
         }
 
+        $missing = [];
+
         foreach ($rules as $rule) {
             $ownership = $this->statusParser->ownership($status->stdout, $rule->shape);
 
@@ -161,8 +166,12 @@ final readonly class NativeNodeRoleFirewallManager implements NodeRoleFirewallMa
             }
 
             if ($ownership === UfwRuleOwnership::Missing) {
-                $this->apply($node, $rule, $publicConnection);
+                $missing[] = $rule;
             }
+        }
+
+        foreach ($missing as $rule) {
+            $this->apply($node, $rule, $publicConnection);
         }
 
         [$verification, $inactive] = $this->status($node, $publicConnection);
@@ -271,6 +280,16 @@ final readonly class NativeNodeRoleFirewallManager implements NodeRoleFirewallMa
         return $this->incomingRule(
             comment: 'orbit:public-ssh-recovery',
             port: (string) $node->public_ssh_port,
+        );
+    }
+
+    private function wireguardSshRule(Node $node): UfwManagedRule
+    {
+        return $this->incomingRule(
+            comment: 'orbit:vpn-ssh',
+            port: '22',
+            destination: $this->wireguardAddress($node),
+            interface: 'orbit',
         );
     }
 
@@ -392,7 +411,7 @@ final readonly class NativeNodeRoleFirewallManager implements NodeRoleFirewallMa
         throw new FirewallOperationException(
             step: 'host-firewall',
             errorCode: 'node.firewall_convergence_failed',
-            message: "{$reason} Could not preserve recovery access and converge UFW on node [{$node->name}].",
+            message: "{$reason} Could not preserve SSH access and converge UFW on node [{$node->name}].",
             result: $result,
         );
     }

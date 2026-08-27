@@ -137,7 +137,8 @@ it('pins the host and converges only base node identity and connectivity', funct
     };
     $ssh = new BaseNodeSshExecutor;
     $baseNodes = [];
-    $firewall = base_firewall_spy($baseNodes);
+    $firewallRoles = [];
+    $firewall = base_firewall_spy($baseNodes, $firewallRoles);
     $wireGuard = new class implements WireGuardPeerConverger {
         public bool $converged = false;
 
@@ -169,6 +170,8 @@ it('pins the host and converges only base node identity and connectivity', funct
         ])
         ->and($baseNodes)
         ->toBe([$node->id])
+        ->and($firewallRoles)
+        ->toBe([RoleName::Vpn])
         ->and($wireGuard->converged)
         ->toBeTrue()
         ->and($ssh->calls)
@@ -438,8 +441,11 @@ final class BaseNodeSshExecutor implements SshExecutor
     }
 }
 
-/** @param list<int>|null $baseNodes */
-function base_firewall_spy(?array &$baseNodes = null): NodeRoleFirewallManager
+/**
+ * @param list<int>|null $baseNodes
+ * @param list<RoleName>|null $roles
+ */
+function base_firewall_spy(?array &$baseNodes = null, ?array &$roles = null): NodeRoleFirewallManager
 {
     $firewall = Mockery::mock(NodeRoleFirewallManager::class);
     $firewall
@@ -447,6 +453,13 @@ function base_firewall_spy(?array &$baseNodes = null): NodeRoleFirewallManager
         ->andReturnUsing(static function (Node $node) use (&$baseNodes): void {
             if (is_array($baseNodes)) {
                 $baseNodes[] = $node->id;
+            }
+        });
+    $firewall
+        ->shouldReceive('converge')
+        ->andReturnUsing(static function (Node $node, RoleName $role) use (&$roles): void {
+            if (is_array($roles)) {
+                $roles[] = $role;
             }
         });
 
