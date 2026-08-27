@@ -31,6 +31,16 @@ describe(ComposerDryRunVersionParser::class, function (): void {
         expect($version)->toBe('v5.16.0');
     });
 
+    it('returns the target version from a matching install transaction', function (): void {
+        $version = new ComposerDryRunVersionParser()->parse(
+            output: "  - Locking laravel/installer (v5.17.0)\n  - Installing laravel/installer (v5.17.0)",
+            package: 'laravel/installer',
+            installedFallback: static fn (): ?string => 'v5.16.0',
+        );
+
+        expect($version)->toBe('v5.17.0');
+    });
+
     it('does not read the installed fallback when the dry run has a target operation', function (): void {
         $fallbackRead = false;
 
@@ -57,7 +67,18 @@ describe(ComposerDryRunVersionParser::class, function (): void {
             ->toThrow(ToolManagerException::class);
     })->with([
         'wrong package' => ['  - Installing laravel/framework (v12.0.0)'],
-        'duplicate target' => ["  - Locking laravel/installer (v5.17.0)\n  - Installing laravel/installer (v5.17.0)"],
+        'duplicate locking target' => [
+            "  - Locking laravel/installer (v5.17.0)\n  - Locking laravel/installer (v5.17.0)",
+        ],
+        'duplicate installing target' => [
+            "  - Installing laravel/installer (v5.17.0)\n  - Installing laravel/installer (v5.17.0)",
+        ],
+        'conflicting install transaction' => [
+            "  - Locking laravel/installer (v5.17.0)\n  - Installing laravel/installer (v5.18.0)",
+        ],
+        'extra target operation' => [
+            "  - Locking laravel/installer (v5.17.0)\n  - Installing laravel/installer (v5.17.0)\n  - Installing laravel/installer (v5.17.0)",
+        ],
         'operation and no-op' => ["  - Installing laravel/installer (v5.17.0)\nNothing to install, update or remove"],
         'wrong package and no-op' => [
             "  - Installing laravel/framework (v12.0.0)\nNothing to install, update or remove",

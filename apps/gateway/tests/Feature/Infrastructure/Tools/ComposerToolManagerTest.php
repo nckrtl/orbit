@@ -188,7 +188,9 @@ describe(ComposerToolManager::class, function (): void {
         [$manager, $ssh] = composer_tool_manager([
             composer_result("Composer version 2.8.12 2025-09-19 13:41:59\nPHP version 8.5.0\n"),
             composer_result(composer_show(package: 'laravel/installer', version: 'v5.16.0')),
-            composer_result(stderr: '  - Locking laravel/installer (v5.17.0)'),
+            composer_result(
+                stderr: "  - Locking laravel/installer (v5.17.0)\n  - Installing laravel/installer (v5.17.0)",
+            ),
             composer_result('  - Upgrading laravel/installer (v5.16.0 => v5.17.0)'),
             composer_result(),
             composer_result(),
@@ -374,7 +376,11 @@ describe(ComposerToolManager::class, function (): void {
     })->with([
         'wrong package' => [composer_result('  - Installing laravel/framework (v12.0.0)'), 'candidate-version'],
         'duplicate target' => [
-            composer_result("  - Locking laravel/installer (v5.17.0)\n  - Installing laravel/installer (v5.17.0)"),
+            composer_result("  - Installing laravel/installer (v5.17.0)\n  - Installing laravel/installer (v5.17.0)"),
+            'candidate-version',
+        ],
+        'conflicting target' => [
+            composer_result("  - Locking laravel/installer (v5.17.0)\n  - Installing laravel/installer (v5.18.0)"),
             'candidate-version',
         ],
         'unknown nonzero' => [composer_result('secret', exitCode: 2, stderr: 'secret error'), 'candidate-version'],

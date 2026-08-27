@@ -29,7 +29,7 @@ final readonly class ComposerDryRunVersionParser
             throw $this->malformedOutput();
         }
 
-        $targetVersions = [];
+        $targetOperations = [];
         $noOperationCount = 0;
         $operationCount = 0;
         $malformedOperation = false;
@@ -57,24 +57,24 @@ final readonly class ComposerDryRunVersionParser
                 continue;
             }
 
-            $targetVersions[] = $operation['version'];
+            $targetOperations[] = $operation;
         }
 
         if ($malformedOperation) {
             throw $this->malformedOutput();
         }
 
-        if (count($targetVersions) === 1 && $noOperationCount === 0) {
-            $version = $targetVersions[0];
+        if ($targetOperations !== [] && $noOperationCount === 0) {
+            $version = $this->targetVersion($targetOperations);
 
-            if (! $this->isSafeVersion($version)) {
+            if ($version === null || ! $this->isSafeVersion($version)) {
                 throw $this->malformedOutput();
             }
 
             return $version;
         }
 
-        if ($targetVersions !== [] || $noOperationCount !== 1 || $operationCount !== 0) {
+        if ($noOperationCount !== 1 || $operationCount !== 0) {
             throw $this->malformedOutput();
         }
 
@@ -90,24 +90,48 @@ final readonly class ComposerDryRunVersionParser
         return $fallback;
     }
 
-    /** @return array{package: string, version: string}|null */
+    /** @return array{operation: string, package: string, version: string}|null */
     private function parseOperation(string $line): ?array
     {
         $matches = [];
-        $simplePattern = '~\A\s*-\s+(?:Locking|Installing)\s+('.self::PACKAGE_PATTERN.')\s+\(([^\s()]+)\)\s*\z~D';
+        $simplePattern = '~\A\s*-\s+(Locking|Installing)\s+('.self::PACKAGE_PATTERN.')\s+\(([^\s()]+)\)\s*\z~D';
 
         if (preg_match($simplePattern, $line, $matches) === 1) {
-            return ['package' => $matches[1], 'version' => $matches[2]];
+            return ['operation' => $matches[1], 'package' => $matches[2], 'version' => $matches[3]];
         }
 
         $transitionPattern =
-            '~\A\s*-\s+(?:Upgrading|Downgrading)\s+('.self::PACKAGE_PATTERN.')\s+\([^\s()]+\s+=>\s+([^\s()]+)\)\s*\z~D';
+            '~\A\s*-\s+(Upgrading|Downgrading)\s+('.self::PACKAGE_PATTERN.')\s+\([^\s()]+\s+=>\s+([^\s()]+)\)\s*\z~D';
 
         if (preg_match($transitionPattern, $line, $matches) === 1) {
-            return ['package' => $matches[1], 'version' => $matches[2]];
+            return ['operation' => $matches[1], 'package' => $matches[2], 'version' => $matches[3]];
         }
 
         return null;
+    }
+
+    /** @param list<array{operation: string, package: string, version: string}> $operations */
+    private function targetVersion(array $operations): ?string
+    {
+        if (count($operations) === 1) {
+            return $operations[0]['version'];
+        }
+
+        if (count($operations) !== 2) {
+            return null;
+        }
+
+        [$locking, $installing] = $operations;
+
+        if ($locking['operation'] !== 'Locking' || $installing['operation'] !== 'Installing') {
+            return null;
+        }
+
+        if ($locking['version'] !== $installing['version']) {
+            return null;
+        }
+
+        return $installing['version'];
     }
 
     private function isSafeVersion(string $version): bool
