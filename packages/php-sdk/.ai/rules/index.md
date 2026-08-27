@@ -26,7 +26,7 @@ repositories.
   correlation, diagnostics, TLS, and root-CA boundaries.
 - [Public contract](./public-contract.md) defines the approved small Gateway
   surface and cross-repository ownership.
-- [Testing and quality](./testing-quality.md) defines Pest 5 TIA, no-TIA, Mago,
+- [Testing and quality](./testing-quality.md) defines Pest 5 parallel no-TIA, Mago,
   Rector, and handoff gates.
 
 ## Path coverage

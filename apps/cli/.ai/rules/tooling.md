@@ -10,6 +10,6 @@ paths:
 
 # Development Tooling
 
-- Pest 5 uses Test Impact Analysis in `composer test`; `composer test:full` disables TIA.
+- Pest 5 runs the full suite in parallel without TIA through `composer test`.
 - Mago owns formatting, linting, and analysis. Rector owns automated PHP refactoring checks.
 - Do not commit test caches, runtime state, credentials, or generated environment files.

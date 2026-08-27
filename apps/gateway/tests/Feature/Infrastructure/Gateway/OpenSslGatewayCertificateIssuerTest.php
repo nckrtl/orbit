@@ -13,6 +13,7 @@ use App\Infrastructure\Processes\ProcessRunner;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 
+/** @mago-expect lint:halstead The integration test keeps issuance, identity, and renewal in one observable flow. */
 it('creates an idempotent Orbit root CA signed gateway leaf with DNS and IP identities', function (): void {
     $orbitHome = sys_get_temp_dir().'/orbit-gateway-certificate-'.Str::uuid();
     $caDirectory = $orbitHome.'/ca';
@@ -74,6 +75,8 @@ it('creates an idempotent Orbit root CA signed gateway leaf with DNS and IP iden
             '-noout',
             '-issuer',
             '-subject',
+            '-nameopt',
+            'RFC2253',
             '-ext',
             'subjectAltName',
         ]));

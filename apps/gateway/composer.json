@@ -71,8 +71,7 @@
         ],
         "lint": "vendor/bin/mago lint app routes database/migrations tests --reporting-format=medium",
         "rector": "vendor/bin/rector process",
-        "test": "vendor/bin/pest --compact",
-        "test:full": "vendor/bin/pest --no-tia --compact",
+        "test": "vendor/bin/pest --parallel --no-tia --compact",
         "post-autoload-dump": [
             "Illuminate\\Foundation\\ComposerScripts::postAutoloadDump",
             "@php artisan package:discover --ansi"

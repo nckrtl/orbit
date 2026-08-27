@@ -25,4 +25,4 @@ vendor/bin/pest --compact tests/Feature/Path/To/Test.php
 vendor/bin/pest --compact --filter='test name'
 ```
 
-`composer test` runs Pest with Test Impact Analysis. TIA replays cached results; it does not skip assertions. Before handoff, also run `composer test:full`, which uses `--no-tia`, plus the repository Rector and Mago gates.
+`composer test` runs the full Pest suite in parallel without Test Impact Analysis (`--parallel --no-tia`). Run the repository Rector and Mago gates before handoff.

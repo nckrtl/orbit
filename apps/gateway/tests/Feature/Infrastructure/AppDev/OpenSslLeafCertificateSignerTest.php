@@ -14,6 +14,8 @@ it('signs a target CSR for only the gateway-approved hostname', function (): voi
     $orbitHome = sys_get_temp_dir().'/orbit-leaf-signer-'.Str::uuid();
     $ca = "{$orbitHome}/ca";
     $target = "{$orbitHome}/target";
+    $approvedHostname = 'leaf-signer-approved.app-dev.orbit';
+    $unapprovedHostname = 'leaf-signer-unapproved.example';
     mkdir(directory: $ca, permissions: 0o700, recursive: true);
     mkdir(directory: $target, permissions: 0o700, recursive: true);
     $processes = new NativeProcessRunner;
@@ -65,42 +67,26 @@ it('signs a target CSR for only the gateway-approved hostname', function (): voi
                 '-out',
                 "{$target}/leaf.csr",
                 '-subj',
-                '/CN=evil.example',
+                "/CN={$unapprovedHostname}",
                 '-addext',
-                'subjectAltName=DNS:evil.example',
+                "subjectAltName=DNS:{$unapprovedHostname}",
             ]))->succeeded(),
         )->toBeTrue();
         $request = file_get_contents("{$target}/leaf.csr");
         expect($request)->toBeString();
         $certificate = new OpenSslLeafCertificateSigner($processes, $orbitHome)->sign(
-            'dev.app-dev.orbit',
+            $approvedHostname,
             $request,
         );
         file_put_contents("{$target}/leaf.pem", $certificate);
         $firstSerial = leaf_certificate_serial($processes, "{$target}/leaf.pem");
         $secondCertificate = new OpenSslLeafCertificateSigner($processes, $orbitHome)->sign(
-            'dev.app-dev.orbit',
+            $approvedHostname,
             $request,
         );
         file_put_contents("{$target}/leaf-second.pem", $secondCertificate);
-        $approvedHost = $processes->run(new ProcessInvocation([
-            'openssl',
-            'x509',
-            '-in',
-            "{$target}/leaf.pem",
-            '-noout',
-            '-checkhost',
-            'dev.app-dev.orbit',
-        ]));
-        $unapprovedHost = $processes->run(new ProcessInvocation([
-            'openssl',
-            'x509',
-            '-in',
-            "{$target}/leaf.pem",
-            '-noout',
-            '-checkhost',
-            'evil.example',
-        ]));
+        $approvedHost = leaf_certificate_matches_host($processes, "{$target}/leaf.pem", $approvedHostname);
+        $unapprovedHost = leaf_certificate_matches_host($processes, "{$target}/leaf.pem", $unapprovedHostname);
         $verified = $processes->run(new ProcessInvocation([
             'openssl',
             'verify',
@@ -115,11 +101,12 @@ it('signs a target CSR for only the gateway-approved hostname', function (): voi
             $target,
             "{$target}/leaf.pem",
             "{$target}/leaf.key",
+            $approvedHostname,
         );
 
-        expect($approvedHost->succeeded())
+        expect($approvedHost)
             ->toBeTrue()
-            ->and($unapprovedHost->succeeded())
+            ->and($unapprovedHost)
             ->toBeFalse()
             ->and($verified->succeeded())
             ->toBeTrue()
@@ -132,12 +119,12 @@ it('signs a target CSR for only the gateway-approved hostname', function (): voi
             ->and($extensions['extendedKeyUsage'] ?? null)
             ->toBe('TLS Web Server Authentication')
             ->and($extensions['subjectAltName'] ?? null)
-            ->toBe('DNS:dev.app-dev.orbit');
+            ->toBe("DNS:{$approvedHostname}");
         expect($text)
             ->toContain('X509v3 Basic Constraints: critical', 'X509v3 Key Usage: critical');
         expect(str_contains($text, 'Key Encipherment'))
             ->toBeFalse()
-            ->and(str_contains($text, 'DNS:evil.example'))
+            ->and(str_contains($text, "DNS:{$unapprovedHostname}"))
             ->toBeFalse()
             ->and($caddyValidation->succeeded())
             ->toBeTrue()
@@ -146,6 +133,19 @@ it('signs a target CSR for only the gateway-approved hostname', function (): voi
     } finally {
         new Filesystem()->deleteDirectory($orbitHome);
     }
+});
+
+it('rejects a hostname mismatch when OpenSSL exits successfully', function (): void {
+    $hostname = 'leaf-signer-unapproved.example';
+    $result = new CommandResult(
+        exitCode: 0,
+        stdout: "Hostname {$hostname} does NOT match certificate\n",
+        stderr: '',
+        durationMs: 1,
+        truncated: false,
+    );
+
+    expect(leaf_certificate_host_check_matches($result, $hostname))->toBeFalse();
 });
 
 it('fails closed when the root CA state is partial', function (): void {
@@ -360,15 +360,39 @@ function leaf_certificate_text(NativeProcessRunner $processes, string $certifica
     ]))->stdout;
 }
 
+function leaf_certificate_matches_host(
+    NativeProcessRunner $processes,
+    string $certificatePath,
+    string $hostname,
+): bool {
+    $result = $processes->run(new ProcessInvocation([
+        'openssl',
+        'x509',
+        '-in',
+        $certificatePath,
+        '-noout',
+        '-checkhost',
+        $hostname,
+    ]));
+
+    return leaf_certificate_host_check_matches($result, $hostname);
+}
+
+function leaf_certificate_host_check_matches(CommandResult $result, string $hostname): bool
+{
+    return $result->succeeded() && trim($result->stdout) === "Hostname {$hostname} does match certificate";
+}
+
 function leaf_certificate_caddy_validation(
     NativeProcessRunner $processes,
     string $directory,
     string $certificatePath,
     string $privateKeyPath,
+    string $hostname,
 ): CommandResult {
     $configurationPath = $directory.'/Caddyfile';
     file_put_contents($configurationPath, <<<CADDYFILE
-        https://dev.app-dev.orbit {
+        https://{$hostname} {
             tls {$certificatePath} {$privateKeyPath}
             respond "ok"
         }
