@@ -48,7 +48,7 @@ Return this YAML block:
 ```yaml
 role: merge-verifier
 status: merged|blocked
-issue: ORB-123|null
+issue: NCK-123|null
 pull_request: URL|null
 candidate_sha: full-sha|null
 merge_sha: full-sha|null

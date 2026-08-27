@@ -40,11 +40,11 @@ Feature branches use one repository worktree. A worktree contains the CLI,
 Gateway, and SDK at one commit, so cross-project changes stay atomic.
 
 ```bash
-bin/worktree-create ORB-123 concise-feature-name
+bin/worktree-create NCK-123 concise-feature-name
 ```
 
-The command creates `.worktrees/orb-123-concise-feature-name` on branch
-`orb-123-concise-feature-name` and bootstraps all projects.
+The command creates `.worktrees/nck-123-concise-feature-name` on branch
+`nck-123-concise-feature-name` and bootstraps all projects.
 
 See [the development workflow](docs/reference/development-workflow.md) for the
 Linear, Slack, pull request, review, compound, and cleanup contracts.

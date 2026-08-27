@@ -48,7 +48,7 @@ missing input prevents a review:
 ```yaml
 role: reviewer
 status: approved|changes_requested|blocked
-issue: ORB-123|null
+issue: NCK-123|null
 pull_request: URL|null
 head_sha: full-sha|null
 review_id: id|null

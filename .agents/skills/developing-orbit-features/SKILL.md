@@ -46,7 +46,7 @@ current-head CI are ready for independent review.
 ```yaml
 role: feature-worker
 status: review_ready|blocked
-issue: ORB-123|null
+issue: NCK-123|null
 pull_request: URL|null
 branch: branch-name
 head_sha: full-sha
