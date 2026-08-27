@@ -63,8 +63,10 @@ reviewer submits a formal GitHub approval. When the review account is the same
 as the pull request author, GitHub rejects a formal approval on its own pull
 request, so the reviewer submits a comment-type review whose body is exactly
 `Approved.`; the merge verifier accepts that exact comment as approval
-evidence in place of a formal approval. A non-approving review states only the
-actionable findings a worker must address.
+evidence in place of a formal approval. A non-approving review posts only a
+`Changes requested:` line followed by one `path:line — required correction`
+bullet per finding, with no verdict preamble, account explanation, evidence
+recap, gate output, or non-blocking observation.
 
 The merge agent uses `.agents/skills/merging-orbit-pull-requests` and verifies:
 

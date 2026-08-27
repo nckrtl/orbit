@@ -59,6 +59,30 @@ verification recap, or findings of any kind. It communicates the outcome only.
 Put verification detail in the `gates` and `findings` fields of the YAML
 handoff below, never in the posted review body.
 
+### Submitting changes requested
+
+Submit a formal GitHub changes-requested review (the hosting service's request
+changes event) when the review account differs from the pull request author.
+When the review account is the same as the pull request author, GitHub
+rejects a formal request-changes event from that account on its own pull
+request; submit a comment-type review instead.
+
+Either way, the review body is brief and states only actionable findings:
+
+```text
+Changes requested:
+- path:line — required correction
+- path:line — required correction
+```
+
+The first line reads exactly `Changes requested:`. Each following line is one
+bullet, one finding, in the form `path:line — required correction`, stating
+the exact change the worker must make. The body carries no verdict preamble,
+no explanation of account or event type, no evidence recap, no gate table or
+gate output, and no non-blocking observation. Put verification detail in the
+`gates` and `findings` fields of the YAML handoff below, never in the posted
+review body.
+
 ## Handoff
 
 Return this YAML block after submitting the GitHub review, or immediately when
