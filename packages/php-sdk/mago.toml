@@ -1,0 +1,12 @@
+version = "1.47.4"
+php-version = "8.5"
+
+[source]
+paths = ["src", "tests"]
+includes = ["vendor"]
+
+[formatter]
+preset = "laravel"
+
+[linter]
+integrations = ["pest", "phpunit"]
