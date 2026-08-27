@@ -136,6 +136,19 @@ it('routes project JavaScript process guidance through Vite+', function (): void
         ->not->toMatch('/\b(?:npm|npx|pnpm|pnpx|yarn|yarnpkg|bun|bunx)\s+(?:ci|install|run|exec|add|remove|update)\b/');
 });
 
+it('defines the durable node access command contract', function (): void {
+    $commandRules = file_get_contents(base_path('.ai/rules/commands.md'));
+    $normalizedCommandRules = is_string($commandRules)
+        ? preg_replace(pattern: '/\s+/', replacement: ' ', subject: $commandRules)
+        : null;
+
+    expect($normalizedCommandRules)
+        ->toBeString()
+        ->toContain(
+            'Node access commands use numeric consumer and serving node IDs. Add is idempotent. Remove requires interactive confirmation or --force. The CLI sends typed SDK requests and never decides access, Gateway identity, or role authority locally. Do not add granular permission options or output.',
+        );
+});
+
 it('requires guidance bootstrap before repository edits', function (): void {
     $agents = file_get_contents(base_path('AGENTS.md'));
     $bootstrapGuidance = is_string($agents)
