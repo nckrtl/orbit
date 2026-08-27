@@ -75,6 +75,22 @@ describe('repository guidance bootstrap', function (): void {
             ->toBe('vendor/bin/pest --no-tia --compact tests/Unit/RepositoryGuidanceTest.php');
         expect($composer['scripts']['check'][0] ?? null)->toBe('@guidance:check');
     });
+
+    it('documents the 35-operation SDK surface and the binary node access boundary', function (): void {
+        $publicContract = repository_guidance_contents('.ai/rules/public-contract.md');
+        $normalizedPublicContract = repository_guidance_normalized_contents('.ai/rules/public-contract.md');
+
+        expect($publicContract)
+            ->toContain('The SDK models exactly 35 concrete public Gateway API operations:')
+            ->toContain('- Node: list, show, provision, remove, access add, and access remove.')
+            ->toContain('Docker Swarm, role add/remove, Compose, image-building, stream,')
+            ->not->toContain('Docker Swarm, permissions, role add/remove');
+
+        expect($normalizedPublicContract)
+            ->toContain(
+                'Model binary node access add/remove and node-show access lists. Do not model granular permissions, presets, wildcards, permission editing, or legacy grant/revoke compatibility.',
+            );
+    });
 });
 
 function repository_guidance_contents(string $path): string
@@ -92,4 +108,9 @@ function repository_guidance_contents(string $path): string
     }
 
     return $contents;
+}
+
+function repository_guidance_normalized_contents(string $path): string
+{
+    return preg_replace('/\s+/', replacement: ' ', subject: repository_guidance_contents($path)) ?? '';
 }
