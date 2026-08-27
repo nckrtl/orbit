@@ -16,7 +16,7 @@ concurrency:
 jobs:
   project:
     name: ${{ matrix.name }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
@@ -42,6 +42,19 @@ jobs:
           php-version: '8.5'
           coverage: none
           tools: composer:v2
+          ini-values: zend.exception_ignore_args=0
+
+      - name: Set up Homebrew
+        if: matrix.directory == 'apps/gateway'
+        uses: Homebrew/actions/setup-homebrew@1f8e202ffddf94def7f42f6fa3a482e821489f9c # 2026.07.10.1
+
+      - name: Install Gateway system dependencies
+        if: matrix.directory == 'apps/gateway'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends --yes acl attr wireguard-tools
+          brew install caddy openssl@3
+          echo "$(brew --prefix)/bin" >> "$GITHUB_PATH"
 
       - name: Prepare application environment
         if: matrix.directory == 'apps/gateway'
