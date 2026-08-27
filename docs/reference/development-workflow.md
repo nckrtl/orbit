@@ -57,6 +57,18 @@ not necessarily a separate GitHub account. A reviewer uses
 request. The Slack project-manager agent sends each review signal back to the
 same feature worker. The loop repeats until the reviewer approves.
 
+After the feature worker commits and pushes requested corrections and
+current-head CI passes, it posts this pull request conversation comment once
+for that candidate SHA:
+
+```text
+Review feedback addressed in <full-sha>. Ready for re-review.
+```
+
+The resulting `issue_comment.created` event tells the project-manager agent to
+send the new candidate to the reviewer. The feature worker records the comment
+URL in its handoff.
+
 An approval carries no gate table, verification recap, or findings in its
 posted body. When the review account differs from the pull request author, the
 reviewer submits a formal GitHub approval. When the review account is the same
@@ -96,7 +108,7 @@ these structured events:
 | Pull request created | `pull_request` | `opened` |
 | Review submitted | `pull_request_review` | `submitted` |
 | Diff review comment | `pull_request_review_comment` | `created` |
-| Conversation comment | `issue_comment` | `created` |
+| Review corrections ready | `issue_comment` | `created` and body matches the worker template |
 | Pull request merged | `pull_request` | `closed` and `merged=true` |
 | Pull request closed | `pull_request` | `closed` and `merged=false` |
 

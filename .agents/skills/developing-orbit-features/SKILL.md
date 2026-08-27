@@ -96,6 +96,15 @@ Light subagents.
 6. Create or update the pull request from its template. Wait for current-head
    CI. Dispatch independent failures in parallel and fix all failures before
    the review handoff.
+7. On review resumption, after the requested changes are committed and pushed
+   and current-head CI passes, post one pull request conversation comment for
+   that candidate SHA:
+
+   ```text
+   Review feedback addressed in <full-sha>. Ready for re-review.
+   ```
+
+   Post it once per candidate SHA and record its URL in the handoff.
 
 Do not approve, merge, close the issue, remove the worktree, or release Incus.
 
@@ -111,6 +120,7 @@ issue: NCK-123|null
 pull_request: URL|null
 branch: branch-name
 head_sha: full-sha
+review_comment_url: URL|null
 components: []
 proof:
   venue: automated|incus
@@ -128,6 +138,10 @@ compound:
   reason: text
 blockers: []
 ```
+
+Set `review_comment_url` to the review-response comment URL after review
+resumption. Use `null` for the initial review handoff and when no comment was
+posted before a blocked handoff.
 
 Do not report the feature as complete. The development cycle ends after merge
 and external cleanup.
