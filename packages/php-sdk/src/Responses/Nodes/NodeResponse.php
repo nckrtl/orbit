@@ -33,6 +33,7 @@ final readonly class NodeResponse
         public ?string $wireguardPublicKey = null,
         public ?string $wireguardEndpointOverride = null,
         public ?string $dnsServerOverride = null,
+        public ?NodeAccessResponse $access = null,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -69,13 +70,19 @@ final readonly class NodeResponse
             errorCode: GatewayErrorCode::fromTransport($data['error_code'] ?? null),
             roles: self::stringList($data['roles'] ?? []),
             requestId: $requestId,
+            access: is_array($data['access'] ?? null) ? NodeAccessResponse::fromGatewayData($data['access']) : null,
         );
     }
 
-    /** @return array<string, int|string|list<string>|null> */
+    /**
+     * @return array<string, int|string|list<string>|null|array{
+     *     can_access: list<array{id: int, name: string}>,
+     *     accessible_by: list<array{id: int, name: string}>
+     * }>
+     */
     public function toArray(): array
     {
-        return [
+        $data = [
             'id' => $this->id,
             'name' => $this->name,
             'status' => $this->status,
@@ -95,6 +102,12 @@ final readonly class NodeResponse
             'roles' => $this->roles,
             'request_id' => $this->requestId,
         ];
+
+        if ($this->access instanceof NodeAccessResponse) {
+            $data['access'] = $this->access->toArray();
+        }
+
+        return $data;
     }
 
     /**

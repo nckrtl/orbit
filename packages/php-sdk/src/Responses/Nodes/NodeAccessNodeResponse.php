@@ -11,8 +11,10 @@ final readonly class NodeAccessNodeResponse
         public string $name,
     ) {}
 
-    public static function tryFromGatewayData(mixed $data): ?self
-    {
+    public static function tryFromGatewayData(
+        #[\SensitiveParameter]
+        mixed $data,
+    ): ?self {
         if (
             ! is_array($data)
             || ! is_int($data['id'] ?? null)

@@ -12,7 +12,12 @@ final readonly class NodesResponse
         public string $requestId,
     ) {}
 
-    /** @return array{nodes: list<array<string, int|string|list<string>|null>>, request_id: string} */
+    /**
+     * @return array{nodes: list<array<string, int|string|list<string>|null|array{
+     *     can_access: list<array{id: int, name: string}>,
+     *     accessible_by: list<array{id: int, name: string}>
+     * }>>, request_id: string}
+     */
     public function toArray(): array
     {
         return [

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\Nodes\ShowNodeRequest;
+use Orbit\Sdk\Responses\Nodes\NodeAccessNodeResponse;
 use Orbit\Sdk\Responses\Nodes\NodeResponse;
 use Saloon\Enums\Method;
 use Saloon\Http\Faking\MockClient;
@@ -31,6 +32,14 @@ describe(ShowNodeRequest::class, function (): void {
                     'failed_step' => null,
                     'error_code' => null,
                     'roles' => ['app-dev'],
+                    'access' => [
+                        'can_access' => [
+                            ['id' => 3, 'name' => 'app-dev'],
+                        ],
+                        'accessible_by' => [
+                            ['id' => 4, 'name' => 'maintainer'],
+                        ],
+                    ],
                 ],
                 'meta' => ['request_id' => '0198e15d-16c4-7855-8eb2-182b53ad28ba'],
             ]),
@@ -63,6 +72,22 @@ describe(ShowNodeRequest::class, function (): void {
             ->toBe('SHA256:operator')
             ->and($response->roles)
             ->toBe(['app-dev'])
+            ->and($response->access)
+            ->not
+            ->toBeNull()
+            ->and($response->access?->canAccess[0])
+            ->toBeInstanceOf(NodeAccessNodeResponse::class)
+            ->and($response->access?->accessibleBy[0])
+            ->toBeInstanceOf(NodeAccessNodeResponse::class)
+            ->and($response->toArray()['access'] ?? null)
+            ->toBe([
+                'can_access' => [
+                    ['id' => 3, 'name' => 'app-dev'],
+                ],
+                'accessible_by' => [
+                    ['id' => 4, 'name' => 'maintainer'],
+                ],
+            ])
             ->and($response->requestId)
             ->toBe('0198e15d-16c4-7855-8eb2-182b53ad28ba');
     });

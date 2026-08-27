@@ -7,6 +7,8 @@ use Orbit\Sdk\Responses\Apps\AppResponse;
 use Orbit\Sdk\Responses\Firewall\FirewallRuleResponse;
 use Orbit\Sdk\Responses\Instances\InstanceResponse;
 use Orbit\Sdk\Responses\Nodes\AddedNodeAccessResponse;
+use Orbit\Sdk\Responses\Nodes\NodeAccessNodeResponse;
+use Orbit\Sdk\Responses\Nodes\NodeAccessResponse;
 use Orbit\Sdk\Responses\Nodes\NodeResponse;
 use Orbit\Sdk\Responses\Nodes\RemovedNodeAccessResponse;
 use Orbit\Sdk\Responses\Nodes\RemovedNodeResponse;
@@ -97,28 +99,32 @@ it('redacts credentials from nested success payloads and response diagnostics', 
 });
 
 it('marks every public gateway DTO factory ingress as sensitive', function (): void {
-    $responseClasses = [
-        ActivityResponse::class,
-        AppResponse::class,
-        FirewallRuleResponse::class,
-        InstanceResponse::class,
-        AddedNodeAccessResponse::class,
-        NodeResponse::class,
-        RemovedNodeAccessResponse::class,
-        RemovedNodeResponse::class,
-        ProcessResponse::class,
-        WorkspaceResponse::class,
+    $responseFactories = [
+        ActivityResponse::class => ['fromGatewayData'],
+        AppResponse::class => ['fromGatewayData'],
+        FirewallRuleResponse::class => ['fromGatewayData'],
+        InstanceResponse::class => ['fromGatewayData'],
+        AddedNodeAccessResponse::class => ['fromGatewayData'],
+        NodeAccessNodeResponse::class => ['tryFromGatewayData'],
+        NodeAccessResponse::class => ['fromGatewayData'],
+        NodeResponse::class => ['fromGatewayData'],
+        RemovedNodeAccessResponse::class => ['fromGatewayData'],
+        RemovedNodeResponse::class => ['fromGatewayData'],
+        ProcessResponse::class => ['fromGatewayData'],
+        WorkspaceResponse::class => ['fromGatewayData'],
     ];
 
-    foreach ($responseClasses as $responseClass) {
-        $method = new ReflectionMethod($responseClass, 'fromGatewayData');
+    foreach ($responseFactories as $responseClass => $methodNames) {
+        foreach ($methodNames as $methodName) {
+            $method = new ReflectionMethod($responseClass, $methodName);
 
-        foreach ($method->getParameters() as $parameter) {
-            expect($parameter->getAttributes(SensitiveParameter::class))
-                ->toHaveCount(
-                    1,
-                    "{$responseClass}::fromGatewayData $".$parameter->getName().' is not sensitive.',
-                );
+            foreach ($method->getParameters() as $parameter) {
+                expect($parameter->getAttributes(SensitiveParameter::class))
+                    ->toHaveCount(
+                        1,
+                        "{$responseClass}::{$methodName} $".$parameter->getName().' is not sensitive.',
+                    );
+            }
         }
     }
 });
