@@ -135,6 +135,19 @@ it('signs a target CSR for only the gateway-approved hostname', function (): voi
     }
 });
 
+it('rejects a hostname mismatch when OpenSSL exits successfully', function (): void {
+    $hostname = 'leaf-signer-unapproved.example';
+    $result = new CommandResult(
+        exitCode: 0,
+        stdout: "Hostname {$hostname} does NOT match certificate\n",
+        stderr: '',
+        durationMs: 1,
+        truncated: false,
+    );
+
+    expect(leaf_certificate_host_check_matches($result, $hostname))->toBeFalse();
+});
+
 it('fails closed when the root CA state is partial', function (): void {
     $orbitHome = sys_get_temp_dir().'/orbit-leaf-signer-'.Str::uuid();
     $ca = "{$orbitHome}/ca";
@@ -352,7 +365,7 @@ function leaf_certificate_matches_host(
     string $certificatePath,
     string $hostname,
 ): bool {
-    return $processes->run(new ProcessInvocation([
+    $result = $processes->run(new ProcessInvocation([
         'openssl',
         'x509',
         '-in',
@@ -360,7 +373,14 @@ function leaf_certificate_matches_host(
         '-noout',
         '-checkhost',
         $hostname,
-    ]))->succeeded();
+    ]));
+
+    return leaf_certificate_host_check_matches($result, $hostname);
+}
+
+function leaf_certificate_host_check_matches(CommandResult $result, string $hostname): bool
+{
+    return $result->succeeded() && trim($result->stdout) === "Hostname {$hostname} does match certificate";
 }
 
 function leaf_certificate_caddy_validation(
