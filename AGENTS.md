@@ -14,6 +14,9 @@ This repository contains the Orbit CLI, Gateway, and PHP SDK.
 
 - Start feature work in a worktree created by `bin/worktree-create`.
 - Use `.agents/skills/creating-orbit-issues` to prepare Linear issues.
+- Use `.agents/skills/developing-orbit-features` for Work and Compound.
+- Use `.agents/skills/reviewing-orbit-pull-requests` for independent review.
+- Use `.agents/skills/merging-orbit-pull-requests` for the final merge gate.
 - Merge a required ADR to `main` before dependent issues become Ready.
 - The implementation agent owns Work and Compound for its pull request.
 - Review is a separate agent cycle. The same implementation agent addresses
@@ -21,6 +24,8 @@ This repository contains the Orbit CLI, Gateway, and PHP SDK.
 - The merge agent verifies checks, approval, proof, and compound learning.
 - The project-manager agent cleans any disposable Incus topology before it
   removes the worktree.
+- Keep project-manager orchestration outside this repository. The repository
+  owns role behavior and handoff contracts only.
 - Deployment and post-deploy verification are outside this repository cycle.
 
 ## Verification

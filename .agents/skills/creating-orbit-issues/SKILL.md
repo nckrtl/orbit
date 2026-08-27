@@ -5,9 +5,9 @@ description: Use when turning an Orbit request or production GitHub report into 
 
 # Creating Orbit Issues
 
-Create one claimable Linear record. Linear owns the outcome, scope, acceptance
-criteria, ADR decision, and proof venue. Do not create a repository feature
-plan.
+Create one claimable Linear record in the team with identifier `NCK`. Linear
+owns the outcome, scope, acceptance criteria, ADR decision, and proof venue. Do
+not create a repository feature plan.
 
 ## Issue Contract
 

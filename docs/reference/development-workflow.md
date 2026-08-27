@@ -4,6 +4,24 @@ The Orbit development cycle starts with a Ready Linear issue and ends when its
 approved pull request is merged and its development resources are removed.
 Deployment is a separate operations cycle.
 
+## Agent contracts
+
+Project-manager orchestration stays outside this repository. It claims issues,
+starts role sessions, routes GitHub events, and owns resource cleanup. This
+repository supplies the versioned behavior and machine-readable handoff for
+each development role:
+
+| Role | Repository skill | Successful signal |
+| --- | --- | --- |
+| Issue author | `.agents/skills/creating-orbit-issues` | Ready Linear issue |
+| Feature worker | `.agents/skills/developing-orbit-features` | `review_ready` |
+| Reviewer | `.agents/skills/reviewing-orbit-pull-requests` | `approved` |
+| Merge verifier | `.agents/skills/merging-orbit-pull-requests` | `merged` |
+
+The external orchestrator must pass each skill's required input and consume its
+YAML handoff. It must send `changes_requested` back to the same feature-worker
+session. It must not infer success from Slack message text.
+
 ## Issue contract
 
 Use `.agents/skills/creating-orbit-issues` to create the issue. Linear owns the
@@ -20,10 +38,11 @@ requires a registered Incus profile.
 2. It creates one monorepo worktree with `bin/worktree-create`.
 3. If the issue selects Incus, it creates the named disposable profile before
    implementation starts and records its identity.
-4. The implementation agent changes the live topology first when that gives
-   faster feedback, then codifies the proven behavior in the repository.
-5. The same agent runs focused checks, full affected suites, and required live
-   proof. It creates the pull request.
+4. The feature worker uses `.agents/skills/developing-orbit-features`. It
+   changes the live topology first when that gives faster feedback, then
+   codifies the proven behavior in the repository.
+5. The feature worker runs focused checks, full affected suites, and required
+   live proof. It creates the pull request.
 6. Before handoff, that agent compounds durable learning into an existing ADR,
    reference document, solution note, or repository rule when appropriate.
 
@@ -32,15 +51,26 @@ durable update is needed when the work produced no reusable learning.
 
 ## Review loop
 
-Review is independent from implementation. A reviewer comments on the pull
+Review is independent from implementation: a separate review agent session,
+not necessarily a separate GitHub account. A reviewer uses
+`.agents/skills/reviewing-orbit-pull-requests` and comments on the pull
 request. The Slack project-manager agent sends each review signal back to the
-same implementation agent. The loop repeats until the reviewer approves.
+same feature worker. The loop repeats until the reviewer approves.
 
-The merge agent then verifies:
+An approval carries no gate table, verification recap, or findings in its
+posted body. When the review account differs from the pull request author, the
+reviewer submits a formal GitHub approval. When the review account is the same
+as the pull request author, GitHub rejects a formal approval on its own pull
+request, so the reviewer submits a comment-type review whose body is exactly
+`Approved.`; the merge verifier accepts that exact comment as approval
+evidence in place of a formal approval. A non-approving review states only the
+actionable findings a worker must address.
+
+The merge agent uses `.agents/skills/merging-orbit-pull-requests` and verifies:
 
 - the Linear outcome and acceptance criteria;
 - required checks and proof evidence;
-- an independent approval;
+- an independent approval, formal or the `Approved.` comment;
 - every ADR link is already on `main`; and
 - the Compound result is useful or correctly marked as not needed.
 
