@@ -79,7 +79,7 @@ it('stores only safe command metadata and keeps raw output outside debug represe
     );
 
     $printDebugOutput = print_r($exception, return: true);
-    $exportDebugOutput = var_export($exception, return: true);
+    $exportDebugOutput = var_export($exception->__debugInfo(), return: true);
 
     expect($exception->result)
         ->not

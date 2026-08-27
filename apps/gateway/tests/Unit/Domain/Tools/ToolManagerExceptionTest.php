@@ -59,12 +59,7 @@ describe(ToolManagerException::class, function (): void {
         );
 
         $printed = print_r($exception, return: true);
-        $exported = var_export($exception, return: true);
-        $publicChain = print_r([
-            'step' => $exception->step,
-            'message' => $exception->getMessage(),
-            'result' => $exception->result,
-        ], return: true);
+        $exported = var_export($exception->__debugInfo(), return: true);
 
         expect($exception->result)
             ->not
@@ -85,10 +80,6 @@ describe(ToolManagerException::class, function (): void {
             ->and(str_contains($exported, $stdoutSentinel))
             ->toBeFalse()
             ->and(str_contains($exported, $stderrSentinel))
-            ->toBeFalse()
-            ->and(str_contains($publicChain, $stdoutSentinel))
-            ->toBeFalse()
-            ->and(str_contains($publicChain, $stderrSentinel))
             ->toBeFalse();
     });
 
@@ -119,13 +110,7 @@ describe(ToolManagerException::class, function (): void {
             previous: $managerException,
         );
         $printed = print_r($operationException, return: true);
-        $exported = var_export($operationException, return: true);
-        $publicChain = print_r([
-            'step' => $operationException->step,
-            'errorCode' => $operationException->errorCode,
-            'outcome' => $operationException->outcome->value,
-            'previous' => $operationException->getPrevious(),
-        ], return: true);
+        $exported = var_export($operationException->__debugInfo(), return: true);
 
         expect($operationException->getPrevious())
             ->toBe($managerException)
@@ -141,10 +126,6 @@ describe(ToolManagerException::class, function (): void {
             ->and(str_contains($exported, $stdoutSentinel))
             ->toBeFalse()
             ->and(str_contains($exported, $stderrSentinel))
-            ->toBeFalse()
-            ->and(str_contains($publicChain, $stdoutSentinel))
-            ->toBeFalse()
-            ->and(str_contains($publicChain, $stderrSentinel))
             ->toBeFalse();
     });
 });

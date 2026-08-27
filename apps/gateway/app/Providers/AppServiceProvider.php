@@ -31,6 +31,7 @@ use App\Domain\Nodes\NodeRoleDependentCleaner;
 use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Processes\ProcessRuntimeManager;
+use App\Domain\Tools\ToolManagerRegistry;
 use App\Domain\Tools\ToolOperationLock;
 use App\Domain\WireGuard\GatewayPeerProjectionManager;
 use App\Domain\WireGuard\VpnSettings;
@@ -78,7 +79,10 @@ use App\Infrastructure\Ssh\NativeSshExecutor;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshHostKeyScanner;
 use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Infrastructure\Tools\AptToolManager;
+use App\Infrastructure\Tools\ComposerToolManager;
 use App\Infrastructure\Tools\NativeToolOperationLock;
+use App\Infrastructure\Tools\VpToolManager;
 use App\Infrastructure\WireGuard\NativeGatewayPeerProjectionManager;
 use App\Infrastructure\WireGuard\NativeGatewayVpnConverger;
 use App\Infrastructure\WireGuard\NativeWireGuardPeerConverger;
@@ -126,6 +130,14 @@ final class AppServiceProvider extends ServiceProvider
         }
 
         $this->app->singleton(CommandDeadline::class);
+        $this->app->singleton(
+            ToolManagerRegistry::class,
+            static fn (): ToolManagerRegistry => new ToolManagerRegistry([
+                app(AptToolManager::class),
+                app(VpToolManager::class),
+                app(ComposerToolManager::class),
+            ]),
+        );
         $this->app->singleton(
             AppDevSourceOperationLock::class,
             static fn (): AppDevSourceOperationLock => new NativeAppDevSourceOperationLock(
