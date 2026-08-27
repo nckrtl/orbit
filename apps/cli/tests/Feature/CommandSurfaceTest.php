@@ -39,6 +39,7 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'instance:remove',
         'instance:show',
         'node:access:add',
+        'node:access:remove',
         'node:list',
         'node:provision',
         'node:remove',
@@ -62,7 +63,7 @@ it('does not register hidden Orbit product commands', function (): void {
     $orbitCommands = collect(app(Kernel::class)->all())
         ->filter(static fn (Command $command): bool => str_starts_with($command::class, 'App\\Commands\\'));
 
-    expect($orbitCommands)->toHaveCount(36);
+    expect($orbitCommands)->toHaveCount(37);
     expect($orbitCommands->every(
         static fn (Command $command): bool => ! $command->isHidden(),
     ))->toBeTrue();
@@ -130,6 +131,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'instance:remove' => [['instance'], ['json' => false]],
         'instance:show' => [['instance'], ['json' => false]],
         'node:access:add' => [['consumer', 'serving'], ['json' => false]],
+        'node:access:remove' => [['consumer', 'serving'], ['force' => false, 'json' => false]],
         'node:list' => [[], ['json' => false]],
         'node:provision' => [
             ['name', 'host'],
@@ -294,6 +296,7 @@ it('renders one exact json failure envelope for every Orbit product command', fu
         'instance:remove' => [['instance' => '1'], ...$profileMissing],
         'instance:show' => [['instance' => '1'], ...$profileMissing],
         'node:access:add' => [['consumer' => '2', 'serving' => '3'], ...$profileMissing],
+        'node:access:remove' => [['consumer' => '2', 'serving' => '3', '--force' => true], ...$profileMissing],
         'node:list' => [[], ...$profileMissing],
         'node:provision' => [['name' => 'node', 'host' => 'node.test'], ...$profileMissing],
         'node:remove' => [['node' => '1', '--force' => true], ...$profileMissing],
