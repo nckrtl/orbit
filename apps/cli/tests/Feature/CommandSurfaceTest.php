@@ -43,6 +43,9 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'node:list',
         'node:provision',
         'node:remove',
+        'node:role:add',
+        'node:role:list',
+        'node:role:remove',
         'node:show',
         'process:add',
         'process:list',
@@ -63,7 +66,7 @@ it('does not register hidden Orbit product commands', function (): void {
     $orbitCommands = collect(app(Kernel::class)->all())
         ->filter(static fn (Command $command): bool => str_starts_with($command::class, 'App\\Commands\\'));
 
-    expect($orbitCommands)->toHaveCount(37);
+    expect($orbitCommands)->toHaveCount(40);
     expect($orbitCommands->every(
         static fn (Command $command): bool => ! $command->isHidden(),
     ))->toBeTrue();
@@ -150,6 +153,9 @@ it('keeps the exact approved arguments options and defaults', function (): void 
             ],
         ],
         'node:remove' => [['node'], ['force' => false, 'json' => false]],
+        'node:role:add' => [['node', 'role'], ['converge' => false, 'json' => false]],
+        'node:role:list' => [['node'], ['json' => false]],
+        'node:role:remove' => [['node', 'role'], ['force' => false, 'purge-data' => false, 'json' => false]],
         'node:show' => [['node'], ['json' => false]],
         'process:add' => [
             ['name'],
@@ -300,6 +306,9 @@ it('renders one exact json failure envelope for every Orbit product command', fu
         'node:list' => [[], ...$profileMissing],
         'node:provision' => [['name' => 'node', 'host' => 'node.test'], ...$profileMissing],
         'node:remove' => [['node' => '1', '--force' => true], ...$profileMissing],
+        'node:role:add' => [['node' => '7', 'role' => 'app-dev'], ...$profileMissing],
+        'node:role:list' => [['node' => '7'], ...$profileMissing],
+        'node:role:remove' => [['node' => '7', 'role' => 'app-dev', '--force' => true], ...$profileMissing],
         'node:show' => [['node' => '1'], ...$profileMissing],
         'process:add' => [
             ['name' => 'worker', '--instance' => '1', '--command' => ['/usr/bin/php']],

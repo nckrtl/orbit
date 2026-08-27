@@ -18,7 +18,10 @@ use Symfony\Component\Console\Exception\ExceptionInterface;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 
-/** @mago-expect lint:cyclomatic-complexity The shared boundary handles each command failure category. */
+/**
+ * @mago-expect lint:cyclomatic-complexity The shared boundary handles each command failure category.
+ * @mago-expect lint:too-many-methods Shared gateway input, transport, and rendering helpers stay centralized for operator commands.
+ */
 abstract class GatewayCommand extends Command
 {
     #[\Override]
@@ -131,8 +134,7 @@ abstract class GatewayCommand extends Command
         string $responseClass,
     ): ?object {
         try {
-            /** @mago-expect analysis:mixed-assignment Saloon returns DTOs through a mixed boundary. */
-            $response = $connector->send($request)->dto();
+            $response = $this->sendOrThrow($connector, $request, $responseClass);
         } catch (GatewayApiException $exception) {
             GatewayFailureRenderer::write(
                 $this,
@@ -148,10 +150,23 @@ abstract class GatewayCommand extends Command
             return null;
         }
 
-        if (! is_object($response) || ! $response instanceof $responseClass) {
-            GatewayFailureRenderer::write($this, 'gateway.invalid_response', 'Gateway response is invalid.');
+        return $response;
+    }
 
-            return null;
+    protected function sendOrThrow(
+        GatewayConnector $connector,
+        GatewayRequest $request,
+        string $responseClass,
+    ): object {
+        try {
+            /** @mago-expect analysis:mixed-assignment Saloon returns DTOs through a mixed boundary. */
+            $response = $connector->send($request)->dto();
+        } catch (FatalRequestException) {
+            throw new GatewayApiException('Could not reach the gateway.', 'gateway.unreachable');
+        }
+
+        if (! $response instanceof $responseClass) {
+            throw new GatewayApiException('Gateway response is invalid.', 'gateway.invalid_response');
         }
 
         return $response;

@@ -439,10 +439,40 @@ it('renders local validation failures through the exact json boundary', function
         'workspace.id_invalid',
         'Workspace ID must be a positive integer.',
     ],
+    'node role list id' => [
+        'node:role:list',
+        ['node' => 'validation-secret'],
+        'node.id_invalid',
+        'Node ID must be a positive integer.',
+    ],
+    'node role add id' => [
+        'node:role:add',
+        ['node' => 'validation-secret', 'role' => 'app-dev'],
+        'node.id_invalid',
+        'Node ID must be a positive integer.',
+    ],
+    'node role add empty role' => [
+        'node:role:add',
+        ['node' => '7', 'role' => ''],
+        'node_role.role_required',
+        'Role is required.',
+    ],
+    'node role remove id' => [
+        'node:role:remove',
+        ['node' => 'validation-secret', 'role' => 'app-dev', '--force' => true],
+        'node.id_invalid',
+        'Node ID must be a positive integer.',
+    ],
+    'node role remove empty role' => [
+        'node:role:remove',
+        ['node' => '7', 'role' => '', '--force' => true],
+        'node_role.role_required',
+        'Role is required.',
+    ],
 ]);
 
 it('renders console input failures through the exact json boundary', function (array $arguments): void {
-    $command = app(\Illuminate\Contracts\Console\Kernel::class)->all()['app:show'];
+    $command = app(\Illuminate\Contracts\Console\Kernel::class)->all()[$arguments['command']];
     $tester = new CommandTester($command);
     $expectedPayload = [
         'error' => [
@@ -452,7 +482,10 @@ it('renders console input failures through the exact json boundary', function (a
         ],
     ];
 
-    $exitCode = $tester->execute($arguments, ['interactive' => false]);
+    $commandArguments = $arguments;
+    unset($commandArguments['command']);
+
+    $exitCode = $tester->execute($commandArguments, ['interactive' => false]);
     $output = trim($tester->getDisplay());
 
     expect($exitCode)->toBe(SymfonyCommand::FAILURE);
@@ -462,8 +495,36 @@ it('renders console input failures through the exact json boundary', function (a
     expect(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))
         ->toBe($expectedPayload);
 })->with([
-    'missing required argument' => [['--json' => true]],
-    'unknown option' => [['app' => '1', '--json' => true, '--validation-secret' => true]],
+    'app show missing required argument' => [['command' => 'app:show', '--json' => true]],
+    'app show unknown option' => [[
+        'command' => 'app:show',
+        'app' => '1',
+        '--json' => true,
+        '--validation-secret' => true,
+    ]],
+    'node role list missing required argument' => [['command' => 'node:role:list', '--json' => true]],
+    'node role list unknown option' => [[
+        'command' => 'node:role:list',
+        'node' => '7',
+        '--json' => true,
+        '--validation-secret' => true,
+    ]],
+    'node role add missing required arguments' => [['command' => 'node:role:add', '--json' => true]],
+    'node role add unknown option' => [[
+        'command' => 'node:role:add',
+        'node' => '7',
+        'role' => 'app-dev',
+        '--json' => true,
+        '--validation-secret' => true,
+    ]],
+    'node role remove missing required arguments' => [['command' => 'node:role:remove', '--json' => true]],
+    'node role remove unknown option' => [[
+        'command' => 'node:role:remove',
+        'node' => '7',
+        'role' => 'app-dev',
+        '--json' => true,
+        '--validation-secret' => true,
+    ]],
 ]);
 
 function gateway_error_request_id(): string
