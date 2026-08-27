@@ -89,14 +89,14 @@ final readonly class InstallToolAction
             );
         }
 
-        if ($this->requiresAppRole($managerName) && ! $this->hasActiveAppRole($node)) {
+        if ($this->requiresAppRole($managerName) && ! $this->hasAvailableAppRole($node)) {
             throw $this->failure(
                 errorCode: 'tool.app_role_required',
                 outcome: ToolOutcome::ManagerFailed,
                 status: 409,
                 data: $data,
                 manager: $managerName,
-                message: 'The tool manager requires an active app role.',
+                message: 'The tool manager requires a provisioning or active app role.',
             );
         }
 
@@ -159,14 +159,14 @@ final readonly class InstallToolAction
             );
         }
 
-        if ($this->requiresAppRole($managerName) && ! $this->hasActiveAppRole($node)) {
+        if ($this->requiresAppRole($managerName) && ! $this->hasAvailableAppRole($node)) {
             throw $this->failure(
                 errorCode: 'tool.app_role_required',
                 outcome: ToolOutcome::ManagerFailed,
                 status: 409,
                 data: $data,
                 manager: $managerName,
-                message: 'The tool manager requires an active app role.',
+                message: 'The tool manager requires a provisioning or active app role.',
             );
         }
 
@@ -556,14 +556,18 @@ final readonly class InstallToolAction
         return in_array($manager, [ToolManagerName::Vp, ToolManagerName::Composer], strict: true);
     }
 
-    private function hasActiveAppRole(Node $node): bool
+    private function hasAvailableAppRole(Node $node): bool
     {
         $node->loadMissing('roles');
 
         return $node->roles->contains(
             static fn (NodeRole $role): bool => (
                 in_array($role->role, [RoleName::AppDev, RoleName::AppProd], strict: true)
-                && $role->status === LifecycleStatus::Active
+                && in_array(
+                    $role->status,
+                    [LifecycleStatus::Provisioning, LifecycleStatus::Active],
+                    strict: true,
+                )
             ),
         );
     }

@@ -16,6 +16,8 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Processes\ProcessOperationException;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Tools\ToolManagerName;
+use App\Domain\Tools\ToolStatus;
 use App\Infrastructure\Nodes\NativeNodeRoleDependentCleaner;
 use App\Models\App;
 use App\Models\Instance;
@@ -53,6 +55,113 @@ describe(RemoveNodeRoleAction::class, function (): void {
             ->toBe(0)
             ->and($baseline->calls)
             ->toBe(0);
+    });
+
+    it('rejects removal of the last active app role while app-scoped Tool intent remains', function (
+        ToolManagerName $managerName,
+        RoleName $role,
+        string $package,
+    ): void {
+        [$node, $assignment] = removal_role_fixture(role: $role);
+        $manager = $node->toolManagers()->create([
+            'name' => $managerName,
+            'status' => LifecycleStatus::Active,
+        ]);
+        $tool = $node->tools()->create([
+            'tool_manager_id' => $manager->id,
+            'package' => $package,
+            'protected' => false,
+            'status' => ToolStatus::Installed,
+            'installed_version' => '2.4.1',
+        ]);
+        $cleaner = new RemovalCleanerFake;
+        $baseline = new RemovalBaselineFake;
+        $action = new RemoveNodeRoleAction(
+            new RemovalInspectorFake(new NodeRoleDependencySet([], [], [], [])),
+            $cleaner,
+            $baseline,
+            app(\App\Domain\Nodes\RoleRegistry::class),
+        );
+
+        expect(fn () => $action->execute($node, $role, force: true))
+            ->toThrow(
+                NodeRoleValidationException::class,
+                'Remove app-scoped Tools before removing the last active app role.',
+            );
+
+        expect($assignment->refresh()->status)
+            ->toBe(LifecycleStatus::Active)
+            ->and($tool->refresh()->status)
+            ->toBe(ToolStatus::Installed)
+            ->and($cleaner->calls)
+            ->toBe(0)
+            ->and($baseline->calls)
+            ->toBe(0);
+    })->with([
+        'VP with app-dev' => [ToolManagerName::Vp, RoleName::AppDev, '@openai/codex'],
+        'Composer with app-prod' => [ToolManagerName::Composer, RoleName::AppProd, 'laravel/installer'],
+    ]);
+
+    it('allows removal of the last active app role when app-scoped Tool intent is protected', function (): void {
+        [$node, $assignment, $dependencies] = removal_role_fixture(withDependents: true);
+        $manager = $node->toolManagers()->create([
+            'name' => ToolManagerName::Vp,
+            'status' => LifecycleStatus::Active,
+        ]);
+        $tool = $node->tools()->create([
+            'tool_manager_id' => $manager->id,
+            'package' => '@orbit/protected-runtime',
+            'protected' => true,
+            'status' => ToolStatus::Installed,
+            'installed_version' => '2.4.1',
+        ]);
+        $action = new RemoveNodeRoleAction(
+            new RemovalInspectorFake($dependencies),
+            new RemovalCleanerFake,
+            new RemovalBaselineFake,
+            app(\App\Domain\Nodes\RoleRegistry::class),
+        );
+
+        $action->execute($node, RoleName::AppDev, force: true);
+
+        expect(NodeRole::query()->whereKey($assignment->id)->exists())
+            ->toBeFalse()
+            ->and($tool->refresh()->status)
+            ->toBe(ToolStatus::Installed);
+    });
+
+    it('allows app role removal while another active app role remains', function (): void {
+        [$node, $assignment, $dependencies] = removal_role_fixture(withDependents: true);
+        $node->roles()->create([
+            'role' => RoleName::AppProd,
+            'status' => LifecycleStatus::Active,
+        ]);
+        $manager = $node->toolManagers()->create([
+            'name' => ToolManagerName::Composer,
+            'status' => LifecycleStatus::Active,
+        ]);
+        $tool = $node->tools()->create([
+            'tool_manager_id' => $manager->id,
+            'package' => 'laravel/installer',
+            'protected' => false,
+            'status' => ToolStatus::Installed,
+            'installed_version' => '2.4.1',
+        ]);
+        $action = new RemoveNodeRoleAction(
+            new RemovalInspectorFake($dependencies),
+            new RemovalCleanerFake,
+            new RemovalBaselineFake,
+            app(\App\Domain\Nodes\RoleRegistry::class),
+        );
+
+        $action->execute($node, RoleName::AppDev, force: true);
+
+        expect(NodeRole::query()->whereKey($assignment->id)->exists())
+            ->toBeFalse()
+            ->and($node->roles()->where('role', RoleName::AppProd)->exists())
+            ->toBeTrue()
+            ->and($tool->refresh()->status)
+            ->toBe(ToolStatus::Installed);
     });
 
     it('cleans dependents and baseline outside short transactions before deleting records', function (): void {
@@ -229,11 +338,11 @@ describe(RemoveNodeRoleAction::class, function (): void {
  * @return array{Node, NodeRole, 2?: NodeRoleDependencySet}
  * @mago-expect lint:no-boolean-flag-parameter The fixture optionally creates the dependent graph under test.
  */
-function removal_role_fixture(bool $withDependents = false): array
+function removal_role_fixture(bool $withDependents = false, RoleName $role = RoleName::AppDev): array
 {
     $node = removal_node('remove-node-'.strtolower(fake()->bothify('??##')));
     $assignment = $node->roles()->create([
-        'role' => RoleName::AppDev,
+        'role' => $role,
         'status' => LifecycleStatus::Active,
     ]);
 

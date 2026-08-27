@@ -197,7 +197,7 @@ describe(UpdateToolAction::class, function (): void {
         'Composer' => [ToolManagerName::Composer, 'laravel/installer'],
     ]);
 
-    it('rejects provisioning app roles before VP or Composer probes', function (
+    it('allows provisioning app roles for VP and Composer updates', function (
         ToolManagerName $managerName,
         RoleName $role,
         string $package,
@@ -206,17 +206,21 @@ describe(UpdateToolAction::class, function (): void {
         $record = update_action_manager($node, name: $managerName);
         $tool = update_action_tool($node, $record, package: $package);
         [$action, $manager, $lock] = update_action_fixture_for_node($node, $managerName);
+        $manager->installedVersions = ['2.4.0', '2.4.1'];
 
-        $exception = update_action_exception(fn (): mixed => $action->execute($tool));
+        $result = $action->execute($tool);
+        $stored = $tool->refresh();
 
-        expect($exception->errorCode)
-            ->toBe('tool.app_role_required')
-            ->and($exception->status)
-            ->toBe(409)
+        expect($result->outcome)
+            ->toBe(ToolOutcome::Applied)
+            ->and($stored->status)
+            ->toBe(ToolStatus::Installed)
+            ->and($stored->installed_version)
+            ->toBe('2.4.1')
             ->and($manager->calls)
-            ->toBeEmpty()
+            ->toBe(['installedVersion', 'update', 'installedVersion'])
             ->and($lock->runs)
-            ->toBe(0);
+            ->toBe(1);
     })->with([
         'VP with provisioning app-dev' => [ToolManagerName::Vp, RoleName::AppDev, '@openai/codex'],
         'Composer with provisioning app-prod' => [ToolManagerName::Composer, RoleName::AppProd, 'laravel/installer'],

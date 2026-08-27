@@ -16,6 +16,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\RoleRegistry;
 use App\Domain\Processes\ProcessOperationException;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Tools\ToolManagerName;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -183,6 +184,39 @@ final readonly class RemoveNodeRoleAction
         if (! NodeRole::query()->where('node_id', $node->id)->where('role', $role)->exists()) {
             throw new NodeRoleValidationException("Role [{$role->value}] is not assigned to node [{$node->name}].");
         }
+
+        if (! in_array($role, [RoleName::AppDev, RoleName::AppProd], strict: true)) {
+            return;
+        }
+
+        $hasOtherActiveAppRole = $node
+            ->roles()
+            ->whereIn('role', [RoleName::AppDev->value, RoleName::AppProd->value])
+            ->where('role', '!=', $role->value)
+            ->where('status', LifecycleStatus::Active)
+            ->exists();
+
+        if ($hasOtherActiveAppRole) {
+            return;
+        }
+
+        $appScopedManagerIds = $node
+            ->toolManagers()
+            ->whereIn('name', [ToolManagerName::Vp->value, ToolManagerName::Composer->value])
+            ->select('id');
+        $hasAppScopedToolIntent = $node
+            ->tools()
+            ->where('protected', false)
+            ->whereIn('tool_manager_id', $appScopedManagerIds)
+            ->exists();
+
+        if (! $hasAppScopedToolIntent) {
+            return;
+        }
+
+        throw new NodeRoleValidationException(
+            'Remove app-scoped Tools before removing the last active app role.',
+        );
     }
 
     private function canClaim(NodeRole $assignment): bool

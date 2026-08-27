@@ -142,7 +142,7 @@ describe(InstallToolAction::class, function (): void {
             ->toBe(0);
     });
 
-    it('rejects provisioning app roles for app-scoped managers before manager I/O', function (
+    it('allows provisioning app roles for app-scoped managers', function (
         ToolManagerName $managerName,
         RoleName $role,
         string $package,
@@ -150,23 +150,25 @@ describe(InstallToolAction::class, function (): void {
         $node = tool_action_node(role: $role, roleStatus: LifecycleStatus::Provisioning);
         tool_action_manager_record($node, $managerName);
         [$action, $manager, $lock] = tool_install_action($managerName);
+        $manager->installedVersions = [null, '2.4.1'];
 
-        $exception = tool_operation_exception(fn () => $action->execute(tool_install_data(
+        $result = $action->execute(tool_install_data(
             node: $node,
             manager: $managerName,
             package: $package,
-        )));
+        ));
+        $tool = Tool::query()->sole();
 
-        expect($exception->errorCode)
-            ->toBe('tool.app_role_required')
-            ->and($exception->status)
-            ->toBe(409)
+        expect($result->outcome)
+            ->toBe(ToolOutcome::Applied)
+            ->and($tool->status)
+            ->toBe(ToolStatus::Installed)
+            ->and($tool->installed_version)
+            ->toBe('2.4.1')
             ->and($manager->calls)
-            ->toBe(['validatePackage'])
+            ->toBe(['validatePackage', 'installedVersion', 'install', 'installedVersion'])
             ->and($lock->runs)
-            ->toBe(0)
-            ->and(Tool::query()->count())
-            ->toBe(0);
+            ->toBe(1);
     })->with([
         'VP with provisioning app-dev' => [ToolManagerName::Vp, RoleName::AppDev, '@openai/codex'],
         'Composer with provisioning app-prod' => [ToolManagerName::Composer, RoleName::AppProd, 'laravel/installer'],
