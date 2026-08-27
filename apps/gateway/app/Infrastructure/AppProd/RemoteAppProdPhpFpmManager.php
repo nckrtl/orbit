@@ -1,0 +1,237 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Infrastructure\AppProd;
+
+use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\AppProd\AppProdPhpFpmManager;
+use App\Infrastructure\Nodes\PhpFpmInstalledProjection;
+use App\Infrastructure\Nodes\PhpFpmPublicationPlan;
+use App\Infrastructure\Nodes\RemotePhpPackageManager;
+use App\Infrastructure\Ssh\RemoteCommand;
+use App\Models\Node;
+use App\Rules\SupportedPhpVersion;
+
+/** @mago-expect lint:excessive-parameter-list Explicit fixed paths support safe publication and isolated execution tests. */
+final readonly class RemoteAppProdPhpFpmManager implements AppProdPhpFpmManager
+{
+    public function __construct(
+        private AppProdSiteRepository $sites,
+        private AppProdPhpFpmConfigRenderer $renderer,
+        private AppProdSshExecutor $ssh,
+        private string $phpRoot = '/etc/php',
+        private string $lockDirectory = '/run/lock',
+        private string $logDirectory = '/var/log/orbit/php-fpm',
+        private RemotePhpPackageManager $packages = new RemotePhpPackageManager,
+    ) {}
+
+    public function converge(Node $node): void
+    {
+        $desiredSites = $this->sites->forNode($node);
+        $desiredVersions = $desiredSites
+            ->map(static fn (AppProdSite $site): string => $site->phpVersion)
+            ->unique()
+            ->values();
+        $unsupportedVersion = $desiredVersions
+            ->first(static fn (string $version): bool => ! SupportedPhpVersion::isSupported($version));
+
+        if (is_string($unsupportedVersion)) {
+            throw new RuntimeConvergenceException(
+                step: 'app-prod-php-version',
+                errorCode: 'app-prod.php_version_unsupported',
+                message: "PHP version [{$unsupportedVersion}] is not supported.",
+            );
+        }
+
+        $installedProjection = $this->installedProjection($node);
+        $this->packages->installForAppProd($node, $desiredVersions, $this->ssh);
+
+        $desiredPoolVersions = $desiredSites
+            ->mapWithKeys(static fn (AppProdSite $site): array => [$site->poolName() => $site->phpVersion])
+            ->all();
+        $plan = PhpFpmPublicationPlan::from(
+            installed: $installedProjection,
+            desiredPoolVersions: $desiredPoolVersions,
+            poolPattern: '/^\[(orbit-prod-instance-[1-9][0-9]*)\]$/m',
+        );
+
+        $transitionSites = $desiredSites
+            ->reject(static fn (AppProdSite $site): bool => in_array(
+                needle: $site->poolName(),
+                haystack: $plan->movingPoolNames,
+                strict: true,
+            ))
+            ->values();
+        $publishedVersions = [];
+
+        try {
+            foreach ($plan->publications as $publication) {
+                $sites = $publication['retirement'] ? $transitionSites : $desiredSites;
+                $version = $publication['version'];
+                $configuration = $this->renderer->render(
+                    $sites->where('phpVersion', $version)->values(),
+                );
+                $this->publishVersion($node, $version, $configuration);
+                $publishedVersions[] = $version;
+            }
+        } catch (RuntimeConvergenceException $exception) {
+            $recoveryFailure = $this->restorePublishedVersions(
+                node: $node,
+                publishedVersions: $publishedVersions,
+                installedProjection: $installedProjection,
+            );
+
+            throw $recoveryFailure ?? $exception;
+        }
+    }
+
+    private function installedProjection(Node $node): PhpFpmInstalledProjection
+    {
+        $result = $this->ssh->execute(
+            $node,
+            new RemoteCommand(
+                arguments: ['bash', '-seu', '--', $this->phpRoot],
+                input: <<<'BASH'
+                    php_root=$1
+                    for path in "$php_root"/*/fpm/pool.d/orbit-prod-scopes.conf; do
+                        if [ -e "$path" ]; then
+                            version=$(basename "$(dirname "$(dirname "$(dirname "$path")")")")
+                            printf '%s\t' "$version"
+                            base64 --wrap=0 -- "$path"
+                            printf '\n'
+                        fi
+                    done
+                    BASH,
+            ),
+            step: 'app-prod-php-fpm-discover',
+            errorCode: 'app-prod.php_fpm_discovery_failed',
+        );
+
+        return PhpFpmInstalledProjection::fromDiscoveryOutput($result->stdout);
+    }
+
+    /**
+     * @param  list<string>  $publishedVersions
+     */
+    private function restorePublishedVersions(
+        Node $node,
+        array $publishedVersions,
+        PhpFpmInstalledProjection $installedProjection,
+    ): ?RuntimeConvergenceException {
+        $restoredVersions = [];
+        $recoveryFailure = null;
+
+        foreach (array_reverse($publishedVersions) as $version) {
+            if (($restoredVersions[$version] ?? false) === true) {
+                continue;
+            }
+
+            try {
+                $this->publishVersion($node, $version, $installedProjection->previousConfiguration($version));
+            } catch (RuntimeConvergenceException $exception) {
+                $recoveryFailure ??= $exception;
+            }
+
+            $restoredVersions[$version] = true;
+        }
+
+        return $recoveryFailure;
+    }
+
+    private function publishVersion(Node $node, string $version, string $configuration): void
+    {
+        $this->ssh->execute(
+            $node,
+            new RemoteCommand(
+                arguments: [
+                    'sudo',
+                    'bash',
+                    '-seu',
+                    '--',
+                    $version,
+                    $this->phpRoot,
+                    $this->lockDirectory,
+                    $this->logDirectory,
+                ],
+                input: $this->publishScript($configuration),
+            ),
+            step: 'app-prod-php-fpm-config',
+            errorCode: 'app-prod.php_fpm_config_failed',
+        );
+    }
+
+    private function publishScript(string $configuration): string
+    {
+        $encoded = base64_encode($configuration);
+
+        return <<<BASH
+            version=\$1
+            php_root=\$2
+            lock_directory=\$3
+            log_directory=\$4
+            pool_directory="\$php_root/\$version/fpm/pool.d"
+            main_configuration="\$php_root/\$version/fpm/php-fpm.conf"
+            managed_configuration="\$pool_directory/orbit-prod-scopes.conf"
+            exec 9>"\$lock_directory/orbit-php-fpm-\$version.lock"
+            flock -w 30 9
+            temporary_directory=\$(mktemp -d)
+            candidate="\$temporary_directory/orbit-prod-scopes.conf"
+            backup="\$temporary_directory/orbit-prod-scopes.backup"
+            trap 'rm -rf -- "\$temporary_directory"' EXIT
+            install -d -m 0755 -- "\$temporary_directory/pool.d"
+            sudo install -d -o root -g root -m 0755 -- "\$log_directory"
+
+            for pool in "\$pool_directory"/*.conf; do
+                if [ ! -e "\$pool" ] || [ "\$pool" = "\$managed_configuration" ]; then
+                    continue
+                fi
+
+                cp -- "\$pool" "\$temporary_directory/pool.d/"
+            done
+
+            printf '%s' '{$encoded}' | base64 --decode > "\$candidate"
+            cp -- "\$candidate" "\$temporary_directory/pool.d/orbit-prod-scopes.conf"
+            awk -v managed_include="include=\$temporary_directory/pool.d/*.conf" '
+                /^include=.*pool[.]d\/[*][.]conf$/ {
+                    print managed_include
+                    replaced = 1
+                    next
+                }
+                { print }
+                END { if (! replaced) exit 42 }
+            ' "\$main_configuration" > "\$temporary_directory/php-fpm.conf"
+            sudo "php-fpm\$version" -y "\$temporary_directory/php-fpm.conf" -t
+
+            if [ -f "\$managed_configuration" ] && cmp -s -- "\$candidate" "\$managed_configuration"; then
+                exit 0
+            fi
+
+            had_previous=0
+            if [ -f "\$managed_configuration" ]; then
+                sudo cp -a -- "\$managed_configuration" "\$backup"
+                had_previous=1
+            fi
+
+            if [ -s "\$candidate" ]; then
+                staged="\$pool_directory/.orbit-prod-scopes.\$\$.candidate"
+                sudo install -o root -g root -m 0644 -- "\$candidate" "\$staged"
+                sudo mv -fT -- "\$staged" "\$managed_configuration"
+            else
+                sudo rm -f -- "\$managed_configuration"
+            fi
+
+            if ! sudo systemctl enable "php\$version-fpm" || ! sudo systemctl reload-or-restart "php\$version-fpm"; then
+                if [ "\$had_previous" = 1 ]; then
+                    rollback="\$pool_directory/.orbit-prod-scopes.\$\$.rollback"
+                    sudo cp -a -- "\$backup" "\$rollback"
+                    sudo mv -fT -- "\$rollback" "\$managed_configuration"
+                else
+                    sudo rm -f -- "\$managed_configuration"
+                fi
+                sudo systemctl reload-or-restart "php\$version-fpm" || true
+                exit 1
+            fi
+            BASH;
+    }
+}
