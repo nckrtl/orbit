@@ -39,10 +39,10 @@ requires a registered Incus profile.
 3. If the issue selects Incus, it creates the named disposable profile before
    implementation starts and records its identity.
 4. The feature worker uses `.agents/skills/developing-orbit-features`. It
-   changes the live topology first when that gives
-   faster feedback, then codifies the proven behavior in the repository.
-5. The same agent runs focused checks, full affected suites, and required live
-   proof. It creates the pull request.
+   changes the live topology first when that gives faster feedback, then
+   codifies the proven behavior in the repository.
+5. The feature worker runs focused checks, full affected suites, and required
+   live proof. It creates the pull request.
 6. Before handoff, that agent compounds durable learning into an existing ADR,
    reference document, solution note, or repository rule when appropriate.
 
@@ -51,16 +51,26 @@ durable update is needed when the work produced no reusable learning.
 
 ## Review loop
 
-Review is independent from implementation. A reviewer uses
-`.agents/skills/reviewing-orbit-pull-requests` and comments on the pull request.
-The Slack project-manager agent sends each review signal back to the same
-implementation agent. The loop repeats until the reviewer approves.
+Review is independent from implementation: a separate review agent session,
+not necessarily a separate GitHub account. A reviewer uses
+`.agents/skills/reviewing-orbit-pull-requests` and comments on the pull
+request. The Slack project-manager agent sends each review signal back to the
+same feature worker. The loop repeats until the reviewer approves.
+
+An approval carries no gate table, verification recap, or findings in its
+posted body. When the review account differs from the pull request author, the
+reviewer submits a formal GitHub approval. When the review account is the same
+as the pull request author, GitHub rejects a formal approval on its own pull
+request, so the reviewer submits a comment-type review whose body is exactly
+`Approved.`; the merge verifier accepts that exact comment as approval
+evidence in place of a formal approval. A non-approving review states only the
+actionable findings a worker must address.
 
 The merge agent uses `.agents/skills/merging-orbit-pull-requests` and verifies:
 
 - the Linear outcome and acceptance criteria;
 - required checks and proof evidence;
-- an independent approval;
+- an independent approval, formal or the `Approved.` comment;
 - every ADR link is already on `main`; and
 - the Compound result is useful or correctly marked as not needed.
 

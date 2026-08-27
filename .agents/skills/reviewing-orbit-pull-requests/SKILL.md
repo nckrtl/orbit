@@ -5,9 +5,12 @@ description: Use when independently reviewing an Orbit pull request against its 
 
 # Reviewing Orbit Pull Requests
 
-Review the candidate independently. Comment on the pull request and approve it
-only when every gate passes. Do not implement fixes, push commits, merge, close
-the issue, or clean the worktree or Incus topology.
+Review the candidate independently. Independent means a separate review agent
+session; it does not require a separate GitHub account. Reviewing from the
+same GitHub account that authored the pull request is acceptable. Comment on
+the pull request and approve it only when every gate passes and no finding
+remains. Do not implement fixes, push commits, merge, close the issue, or
+clean the worktree or Incus topology.
 
 ## Required input
 
@@ -36,9 +39,25 @@ cannot be reviewed, including when required Incus evidence is unavailable.
    approval. Add only concrete findings with a location, impact, and required
    correction.
 
-Request changes for defects or failed gates. Approve only the current candidate
-when all gates pass. The same feature worker owns all corrections; review the
-new candidate again after it responds.
+Request changes for defects or failed gates. State only actionable findings
+that a worker must address; omit non-blocking observations. Approve only the
+current candidate when every gate passes and no finding remains. The same
+feature worker owns all corrections; review the new candidate again after it
+responds.
+
+### Submitting the approval
+
+Submit a formal GitHub approval (the hosting service's approve event) when the
+review account differs from the pull request author. When the review account
+is the same as the pull request author, GitHub rejects a formal approve event
+from that account on its own pull request; submit a comment-type review whose
+body is exactly `Approved.` instead. That exact comment is the required
+approval evidence for a self-authored pull request.
+
+An approval, formal or the `Approved.` comment, carries no gate table,
+verification recap, or findings of any kind. It communicates the outcome only.
+Put verification detail in the `gates` and `findings` fields of the YAML
+handoff below, never in the posted review body.
 
 ## Handoff
 
@@ -52,13 +71,14 @@ issue: NCK-123|null
 pull_request: URL|null
 head_sha: full-sha|null
 review_id: id|null
+review_body: Approved.|text
 findings:
-  - severity: blocking|non-blocking
-    location: path:line|null
+  - location: path:line|null
     summary: text
 gates:
   candidate: pass|fail|not-assessed
   worker_handoff: pass|fail|not-assessed
+  review: pass|fail|not-assessed
   acceptance: pass|fail|not-assessed
   proof: pass|fail|not-assessed
   checks: pass|fail|not-assessed
@@ -67,5 +87,10 @@ gates:
   comments: pass|fail|not-assessed
 blockers: []
 ```
+
+`findings` must be empty when `status` is `approved`. `review_body` must be
+exactly `Approved.` whenever the review account is the same as the pull
+request author; otherwise it records the formal approval or the
+changes-requested body actually posted.
 
 Approval ends the review cycle. It does not end the development cycle.

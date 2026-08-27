@@ -23,8 +23,13 @@ is missing.
    mergeable, and still points to the candidate SHA.
 2. Confirm that every required check passed for that SHA and that no newer or
    pending result invalidates it.
-3. Confirm independent approval of that SHA. Any commit after approval requires
-   a new review. Unresolved actionable review comments block the merge.
+3. Confirm independent approval of that SHA: either a formal GitHub approval
+   from a review account different from the pull request author, or, when the
+   review account is the same as the pull request author, a comment-type
+   review from that account whose body is exactly `Approved.`. Reject any
+   other comment, or a formal approval attempt that GitHub did not accept, as
+   approval evidence. Any commit after approval requires a new review.
+   Unresolved actionable review comments block the merge.
 4. Verify the Linear scope and acceptance criteria against the diff and focused
    proof. A required ADR must already be on `main`; an ADR introduced by the
    feature pull request blocks the merge.
@@ -53,7 +58,6 @@ pull_request: URL|null
 candidate_sha: full-sha|null
 merge_sha: full-sha|null
 gates:
-  intake: pass|fail|not-assessed
   issue: pass|fail|not-assessed
   candidate: pass|fail|not-assessed
   mergeability: pass|fail|not-assessed
