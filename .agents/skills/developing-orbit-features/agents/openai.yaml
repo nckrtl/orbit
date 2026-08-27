@@ -1,0 +1,4 @@
+interface:
+  display_name: "Developing Orbit Features"
+  short_description: "Implement and compound an Orbit feature"
+  default_prompt: "Use $developing-orbit-features to implement the supplied Ready Orbit issue in this prepared worktree."

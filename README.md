@@ -48,3 +48,6 @@ The command creates `.worktrees/orb-123-concise-feature-name` on branch
 
 See [the development workflow](docs/reference/development-workflow.md) for the
 Linear, Slack, pull request, review, compound, and cleanup contracts.
+Repository-owned skills configure issue creation, feature work, independent
+review, and merge verification. External orchestration invokes those roles and
+handles lifecycle state.
