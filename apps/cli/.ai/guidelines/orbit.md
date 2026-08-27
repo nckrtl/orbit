@@ -13,5 +13,5 @@
 
 ## Verification
 
-- Use focused Pest 5 tests during development and Test Impact Analysis through `composer test`.
-- Run `composer check` and `composer test:full` before delivery. Mago and Rector are the configured PHP quality tools.
+- Use focused Pest 5 tests during development and the full parallel no-TIA suite through `composer test`.
+- Run `composer check` before delivery. Mago and Rector are the configured PHP quality tools.

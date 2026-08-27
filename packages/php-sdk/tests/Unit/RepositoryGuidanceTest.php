@@ -76,6 +76,38 @@ describe('repository guidance bootstrap', function (): void {
         expect($composer['scripts']['check'][0] ?? null)->toBe('@guidance:check');
     });
 
+    it('uses the full parallel no-TIA suite for normal SDK checks', function (): void {
+        /** @var array{scripts: array<string, string|list<string>>} $composer */
+        $composer = json_decode(
+            repository_guidance_contents('composer.json'),
+            associative: true,
+            flags: JSON_THROW_ON_ERROR,
+        );
+
+        expect($composer['scripts']['test'] ?? null)
+            ->toBe('vendor/bin/pest --parallel --no-tia --compact')
+            ->and($composer['scripts'])
+            ->not->toHaveKey('test:full');
+
+        expect(repository_guidance_contents('README.md'))
+            ->toContain('composer test       # full Pest suite (parallel, no TIA)')
+            ->not->toContain('composer test:full')
+            ->not->toContain('local TIA');
+
+        expect(repository_guidance_contents('AGENTS.md'))
+            ->toContain('Use Pest 5 with full parallel no-TIA runs for the normal workflow.');
+
+        foreach ([
+            '.ai/rules/index.md',
+            '.ai/rules/testing-quality.md',
+            '.agents/skills/orbit-sdk-development/SKILL.md',
+        ] as $guidanceFile) {
+            expect(repository_guidance_contents($guidanceFile))
+                ->toContain('parallel')
+                ->not->toContain('Pest 5 TIA', 'composer test:full', 'after TIA');
+        }
+    });
+
     it('documents the 38-operation SDK surface and the binary node access boundary', function (): void {
         $publicContract = repository_guidance_contents('.ai/rules/public-contract.md');
         $normalizedPublicContract = repository_guidance_normalized_contents('.ai/rules/public-contract.md');

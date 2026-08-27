@@ -17,8 +17,7 @@ Composer path repository with symlinking enabled.
 ## Quality
 
 ```bash
-composer test       # Pest 5 with local TIA
-composer test:full  # full Pest suite
+composer test       # full Pest suite (parallel, no TIA)
 composer format     # Mago formatter
-composer check      # TIA tests and all Mago checks
+composer check      # full parallel no-TIA tests and all Mago checks
 ```

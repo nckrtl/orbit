@@ -66,8 +66,7 @@ Use `ORBIT_HOME` to override the application data directory. The default is
 ## Quality
 
 ```bash
-composer test       # Pest 5 with local TIA
-composer test:full  # full Pest suite
+composer test       # full Pest 5 suite in parallel without TIA
 composer format     # Mago formatter
-composer check      # TIA tests and all Mago checks
+composer check      # full tests and all Mago checks
 ```

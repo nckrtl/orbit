@@ -41,8 +41,7 @@
         "guidance:check": "vendor/bin/pest --no-tia --compact tests/Unit/RepositoryGuidanceTest.php",
         "lint": "vendor/bin/mago lint src tests --reporting-format=medium",
         "rector": "vendor/bin/rector process --dry-run",
-        "test": "vendor/bin/pest --compact",
-        "test:full": "vendor/bin/pest --no-tia --compact"
+        "test": "vendor/bin/pest --parallel --no-tia --compact"
     },
     "config": {
         "allow-plugins": {

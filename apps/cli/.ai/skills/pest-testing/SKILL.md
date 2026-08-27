@@ -1,6 +1,6 @@
 ---
 name: pest-testing
-description: Use for every Pest 5 test change in the Orbit CLI, including TDD, command tests, security regressions, and Test Impact Analysis.
+description: Use for every Pest 5 test change in the Orbit CLI, including TDD, command tests, security regressions, and full parallel no-TIA verification.
 ---
 
 # Pest Testing
@@ -21,6 +21,5 @@ state. Never contact a live gateway or node.
 
 ## Gates
 
-- `composer test` runs Pest with Test Impact Analysis.
-- `composer test:full` runs the complete suite with `--no-tia`.
+- `composer test` runs the complete Pest suite in parallel with `--no-tia`.
 - Report exact test and assertion counts.

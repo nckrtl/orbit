@@ -42,9 +42,8 @@ business logic and performs explicit infrastructure actions over SSH.
 ```bash
 composer test
 composer check
-composer test:full
 ```
 
-Run focused Pest tests during TDD. Run Pest 5 with TIA, full Pest without TIA,
-Rector, Mago format/lint/analyse, and `git diff --check -- apps/gateway` from the
+Run focused Pest tests during TDD. Run the full Pest suite in parallel without
+TIA, Rector, Mago format/lint/analyse, and `git diff --check -- apps/gateway` from the
 monorepo root before handoff.

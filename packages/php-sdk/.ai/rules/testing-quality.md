@@ -1,9 +1,8 @@
 # Testing and quality
 
 Use Pest 5 with `describe()` and `it()`. Use TDD for behavior changes. Run
-focused tests for red, green, and refactor. Use Pest 5 TIA through
-`composer test` during development, then run the no-TIA full suite through
-`composer test:full` before handoff.
+focused tests for red, green, and refactor. Run the full Pest 5 suite in
+parallel without TIA through `composer test` before handoff.
 
 - Run `composer guidance:check` first. It must fail when the rule index, an
   indexed file, or material path coverage is missing. The failure must give the
@@ -16,8 +15,8 @@ focused tests for red, green, and refactor. Use Pest 5 TIA through
 - Run Mago format check, lint, and analysis with zero findings. Run Rector in
   dry-run mode and `git diff --check -- packages/php-sdk` from the monorepo
   root.
-- Run the full no-TIA suite after TIA. Do not use a partial TIA result as the
-  final suite result.
+- Run the full parallel no-TIA suite. Do not use a partial focused result as
+  the final suite result.
 - Review the diff, staged files, branch, and upstream state before handoff.
   Keep authorized cross-component changes in the same feature branch. Never
   stage, commit, push, or deploy without authorization.

@@ -54,8 +54,7 @@ dependencies continue to use Composer.
 ## Quality
 
 ```bash
-composer test       # Pest 5 with local TIA
-composer test:full  # full Pest suite
+composer test       # full Pest 5 suite in parallel, without TIA
 composer format     # Mago formatter
-composer check      # TIA tests and all Mago checks
+composer check      # parallel no-TIA tests and all Mago checks
 ```

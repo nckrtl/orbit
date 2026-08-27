@@ -75,7 +75,7 @@ final class GatewayGuidelineComposer extends GuidelineComposer
                     [
                         '- Keep the versioned Gateway API consistent with its existing typed Spatie Data response objects. Do not introduce Eloquent Resources beside the established contract without an explicit API migration.',
                         '- Keep models focused on persisted control-plane state. Add a factory or seeder only when an executing test or explicit bootstrap workflow needs it.',
-                        '- After focused tests pass, run `composer test` with TIA and `composer test:full` without TIA before handoff.',
+                        '- After focused tests pass, run `composer test` (the full parallel suite without TIA) before handoff.',
                     ],
                     $block['body'],
                 );

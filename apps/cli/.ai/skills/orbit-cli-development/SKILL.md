@@ -33,6 +33,6 @@ to typed `orbit-php-sdk` requests and render gateway responses.
 ## Verification
 
 Run focused Pest tests while developing. Then run `composer test`,
-`composer test:full`, `composer check`, and `git diff --check -- apps/cli` from
+`composer check`, and `git diff --check -- apps/cli` from
 the monorepo root. Coordinate SDK or Gateway contract changes in the same
 feature branch.

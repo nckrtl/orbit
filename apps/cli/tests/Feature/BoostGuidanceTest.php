@@ -191,8 +191,34 @@ it('keeps Boost setup and repository-owned skills reproducible', function (): vo
         ->toBe('@php orbit boost:update --no-discover --no-interaction')
         ->and($composer['scripts']['guidance:check'] ?? null)
         ->toBe('vendor/bin/pest tests/Feature/BoostGuidanceTest.php --no-tia --compact')
+        ->and($composer['scripts']['test'] ?? null)
+        ->toBe('vendor/bin/pest --parallel --no-tia --compact')
+        ->and($composer['scripts']['test:full'] ?? null)
+        ->toBeNull()
         ->and($composer['scripts']['check'][0] ?? null)
         ->toBe('@guidance:check');
+    foreach ([
+        'AGENTS.md',
+        'README.md',
+        '.ai/guidelines/orbit.md',
+        '.ai/rules/tests.md',
+        '.ai/rules/tooling.md',
+        '.ai/skills/orbit-cli-development/SKILL.md',
+        '.ai/skills/pest-testing/SKILL.md',
+    ] as $guidanceFile) {
+        $guidance = file_get_contents(base_path($guidanceFile));
+
+        expect($guidance)
+            ->not->toContain('Test Impact Analysis')
+            ->not->toContain('test:full');
+
+        if ($guidanceFile === '.ai/skills/orbit-cli-development/SKILL.md') {
+            expect(substr_count(
+                haystack: (string) $guidance,
+                needle: '`composer test`',
+            ))->toBe(1);
+        }
+    }
     expect(config('boost.guidelines.exclude'))
         ->toContain('deployments', 'foundation', 'laravel/core', 'pest/core')
         ->and(app(GuidelineComposer::class))
