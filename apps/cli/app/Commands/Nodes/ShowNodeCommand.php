@@ -65,6 +65,8 @@ final class ShowNodeCommand extends GatewayCommand
         $this->line('DNS server override: '.($node->dnsServerOverride ?? '-'));
         $this->line('TLD: '.($node->tld ?? '-'));
         $this->line("Platform: {$platform}");
+        $this->line('Access to: '.NodeOutput::accessList($node->access->canAccess ?? []));
+        $this->line('Accessible by: '.NodeOutput::accessList($node->access->accessibleBy ?? []));
 
         if ($node->failedStep !== null || $node->errorCode !== null) {
             $failure = implode(' / ', array_filter([$node->failedStep, $node->errorCode], is_string(...)));

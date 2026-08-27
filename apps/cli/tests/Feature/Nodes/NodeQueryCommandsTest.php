@@ -32,12 +32,12 @@ describe('node:list', function (): void {
     it('lists nodes from the active gateway as JSON', function (): void {
         $mockClient = MockClient::global([
             ListNodesRequest::class => MockResponse::make([
-                'data' => [node_payload()],
+                'data' => [list_node_payload()],
                 'meta' => ['request_id' => request_id()],
             ]),
         ]);
         $expected = json_encode([
-            'nodes' => [node_payload()],
+            'nodes' => [list_node_payload()],
             'request_id' => request_id(),
         ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
 
@@ -53,7 +53,7 @@ describe('node:list', function (): void {
     it('shows a concise node table', function (): void {
         MockClient::global([
             ListNodesRequest::class => MockResponse::make([
-                'data' => [node_payload()],
+                'data' => [list_node_payload()],
                 'meta' => ['request_id' => request_id()],
             ]),
         ]);
@@ -69,7 +69,7 @@ describe('node:list', function (): void {
     });
 
     it('does not invent a missing public SSH port', function (): void {
-        $payload = node_payload();
+        $payload = list_node_payload();
         $payload['public_ssh_port'] = null;
         MockClient::global([
             ListNodesRequest::class => MockResponse::make([
@@ -89,7 +89,7 @@ describe('node:list', function (): void {
     });
 
     it('renders an incomplete public SSH endpoint safely in the node list', function (): void {
-        $payload = node_payload();
+        $payload = list_node_payload();
         $payload['public_ssh_port'] = null;
         MockClient::global([
             ListNodesRequest::class => MockResponse::make([
@@ -180,14 +180,11 @@ describe('node:show', function (): void {
     it('shows one node from the active gateway as JSON', function (): void {
         $mockClient = MockClient::global([
             ShowNodeRequest::class => MockResponse::make([
-                'data' => node_payload(),
+                'data' => show_node_payload(),
                 'meta' => ['request_id' => request_id()],
             ]),
         ]);
-        $expected = json_encode([
-            ...node_payload(),
-            'request_id' => request_id(),
-        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+        $expected = json_encode(show_node_expected_json_payload(), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
 
         $this
             ->artisan('node:show', ['node' => '2', '--json' => true])
@@ -201,7 +198,7 @@ describe('node:show', function (): void {
     it('shows concise node details', function (): void {
         MockClient::global([
             ShowNodeRequest::class => MockResponse::make([
-                'data' => node_payload(),
+                'data' => show_node_payload(),
                 'meta' => ['request_id' => request_id()],
             ]),
         ]);
@@ -217,12 +214,35 @@ describe('node:show', function (): void {
             ->expectsOutput('DNS server override: 10.0.0.2')
             ->expectsOutput('TLD: app-dev.orbit')
             ->expectsOutput('Platform: linux (x86_64)')
+            ->expectsOutput('Access to: app-dev (#3), app-prod (#5)')
+            ->expectsOutput('Accessible by: maintainer (#4)')
             ->expectsOutput('Request ID: '.request_id())
             ->assertExitCode(0);
     });
 
+    it('shows empty node access summaries as dashes', function (): void {
+        $payload = show_node_payload();
+        $payload['access'] = [
+            'can_access' => [],
+            'accessible_by' => [],
+        ];
+
+        MockClient::global([
+            ShowNodeRequest::class => MockResponse::make([
+                'data' => $payload,
+                'meta' => ['request_id' => request_id()],
+            ]),
+        ]);
+
+        $this
+            ->artisan('node:show', ['node' => '2'])
+            ->expectsOutput('Access to: -')
+            ->expectsOutput('Accessible by: -')
+            ->assertExitCode(0);
+    });
+
     it('renders an incomplete public SSH endpoint safely in node details', function (): void {
-        $payload = node_payload();
+        $payload = show_node_payload();
         $payload['public_ssh_port'] = null;
         MockClient::global([
             ShowNodeRequest::class => MockResponse::make([
@@ -307,7 +327,7 @@ describe('node:show', function (): void {
 });
 
 /** @return array<string, int|string|list<string>|null> */
-function node_payload(): array
+function list_node_payload(): array
 {
     return [
         'id' => 2,
@@ -327,6 +347,87 @@ function node_payload(): array
         'failed_step' => null,
         'error_code' => null,
         'roles' => ['app-dev'],
+    ];
+}
+
+/**
+ * @return array<string, int|string|list<string>|null|array{
+ *     can_access: list<array{id: int, name: string}>,
+ *     accessible_by: list<array{id: int, name: string}>
+ * }>
+ */
+function show_node_payload(): array
+{
+    return [
+        ...list_node_payload(),
+        'access' => [
+            'can_access' => [
+                ['id' => 3, 'name' => 'app-dev'],
+                ['id' => 5, 'name' => 'app-prod'],
+            ],
+            'accessible_by' => [
+                ['id' => 4, 'name' => 'maintainer'],
+            ],
+        ],
+    ];
+}
+
+/**
+ * @return array{
+ *     id: int,
+ *     name: string,
+ *     status: string,
+ *     platform: string,
+ *     architecture: string,
+ *     tld: string,
+ *     public_ssh_host: string,
+ *     public_ssh_port: int,
+ *     ssh_user: string,
+ *     wireguard_address: string,
+ *     wireguard_public_key: string,
+ *     wireguard_endpoint_override: string,
+ *     dns_server_override: string,
+ *     ssh_host_fingerprint: string,
+ *     failed_step: null,
+ *     error_code: null,
+ *     roles: list<string>,
+ *     request_id: string,
+ *     access: array{
+ *         can_access: list<array{id: int, name: string}>,
+ *         accessible_by: list<array{id: int, name: string}>
+ *     }
+ * }
+ */
+function show_node_expected_json_payload(): array
+{
+    return [
+        'id' => 2,
+        'name' => 'app-dev',
+        'status' => 'active',
+        'platform' => 'linux',
+        'architecture' => 'x86_64',
+        'tld' => 'app-dev.orbit',
+        'public_ssh_host' => '94.237.40.75',
+        'public_ssh_port' => 22,
+        'ssh_user' => 'orbit',
+        'wireguard_address' => '10.44.0.3',
+        'wireguard_public_key' => 'app-dev-public-key',
+        'wireguard_endpoint_override' => '10.0.0.2:51820',
+        'dns_server_override' => '10.0.0.2',
+        'ssh_host_fingerprint' => 'SHA256:4dxvKOYfyTcqJHYoxamTSu9bYYI5KE3xYWQPCAmeUTo',
+        'failed_step' => null,
+        'error_code' => null,
+        'roles' => ['app-dev'],
+        'request_id' => request_id(),
+        'access' => [
+            'can_access' => [
+                ['id' => 3, 'name' => 'app-dev'],
+                ['id' => 5, 'name' => 'app-prod'],
+            ],
+            'accessible_by' => [
+                ['id' => 4, 'name' => 'maintainer'],
+            ],
+        ],
     ];
 }
 
