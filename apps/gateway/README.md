@@ -20,6 +20,45 @@ a separate Bun runtime on `app-dev` and `app-prod` nodes. Use `vp install` and
 native package-manager selection order and defaults a project without a manager
 signal to pnpm. PHP dependencies continue to use Composer.
 
+## Tool management
+
+The Gateway exposes exactly six versioned HTTP routes:
+
+- `GET /api/v1/tool-managers?node_id=<id>` lists manager state for a node.
+- `GET /api/v1/tools?node_id=<id>` lists managed tools for a node.
+- `GET /api/v1/tools/<tool-id>` shows one managed tool.
+- `POST /api/v1/tools` installs a tool or retries a failed install.
+- `POST /api/v1/tools/<tool-id>/update` updates a tool or retries a failed update.
+- `DELETE /api/v1/tools/<tool-id>` removes a tool or retries a failed removal.
+
+Tool install input is limited to `node_id`, `manager`, `package`, and the
+nullable `version_constraint`. The supported managers are `apt`, `vp`, and
+`composer`. A non-null constraint checks the manager's normal candidate before
+mutation. It does not select another release or downgrade automatically.
+Failed operations retain one managed row and can be retried through the matching
+operation.
+
+APT manages exact Linux package names. VP manages global packages in Orbit's
+shared node scope. Examples include `@openai/codex` and
+`@anthropic-ai/claude-code`. Composer manages exact root packages in Orbit's
+shared node scope. Removal targets only the exact recorded package. APT never
+runs `autoremove`.
+
+APT is available on managed Linux nodes. VP and Composer are available only
+while an `app-dev` or `app-prod` role is provisioning or active. Removing the
+last active app role is blocked while non-protected VP or Composer tools remain.
+Remove those tools explicitly first. Successful last-app-role removal retains
+protected manager rows and marks VP and Composer unavailable until later
+app-role convergence. Role removal never removes packages or Tool intent
+implicitly.
+
+Manager output is not persisted or returned. Failures expose only stable error
+codes and bounded, redacted diagnostics.
+
+Orbit does not expose npm, Bun, Brew, scripts, manual installs, or observed
+packages as tool managers. A tool package has no Orbit definition. The manager
+validates and resolves the package in its own shared node scope.
+
 ## Development
 
 ```bash
