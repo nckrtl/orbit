@@ -118,8 +118,8 @@ final readonly class TopologyConverger
                 $script === 'converge-gateway.sh'
                 && $result->exitCode === 71
                 && preg_match(
-                    '/(?:\A|\R)orbit-e2e-failure step=([a-z0-9:-]+) error=([a-z0-9._-]+)(?:\R|\z)/D',
-                    $result->stderr,
+                    '/(?:\A|\R)Gateway bootstrap failed at step \[([a-z0-9:-]+)\] with error \[([a-z0-9._-]+)\]\.(?:\R|\z)/D',
+                    $result->stdout."\n".$result->stderr,
                     $failure,
                 ) === 1
             ) {
