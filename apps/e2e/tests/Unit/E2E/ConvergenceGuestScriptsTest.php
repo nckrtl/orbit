@@ -209,6 +209,10 @@ describe('convergence guest scripts', function () {
                 'ORBIT_GATEWAY_CHECKOUT=/home/orbit/orbit/apps/gateway',
                 'exit 70',
                 'exit 71',
+                'sqlite3 -noheader -separator',
+                '.parameter set :public_host',
+                'WHERE public_ssh_host = :public_host',
+                'orbit-e2e-failure step=%s error=%s',
             )
             ->not->toContain('hydrate-orbit.sh')->and($production)->toContain(
                 'local_certs',

@@ -113,8 +113,22 @@ final readonly class TopologyConverger
         );
 
         if (! $result->successful()) {
+            $details = '';
+            if (
+                $script === 'converge-gateway.sh'
+                && $result->exitCode === 71
+                && preg_match(
+                    '/(?:\A|\R)orbit-e2e-failure step=([a-z0-9:-]+) error=([a-z0-9._-]+)(?:\R|\z)/D',
+                    $result->stderr,
+                    $failure,
+                ) === 1
+            ) {
+                $details = " at step {$failure[1]} ({$failure[2]})";
+            }
+
             throw new RuntimeException(
-                "Guest convergence script {$script} failed on {$instance} with exit code {$result->exitCode}.",
+                "Guest convergence script {$script} failed on {$instance} "
+                ."with exit code {$result->exitCode}{$details}.",
             );
         }
     }

@@ -34,8 +34,12 @@ function failing_converger_vm(string $name): string
 }
 
 describe('TopologyConverger failures', function () {
-    it('reports a failed guest script exit code without exposing its output', function () {
-        Process::fake(function (PendingProcess $process) {
+    it('reports safe guest failure evidence without exposing command output', function (
+        int $exitCode,
+        string $stderr,
+        string $expected,
+    ) {
+        Process::fake(function (PendingProcess $process) use ($exitCode, $stderr) {
             $command = $process->command;
             assert(is_array($command));
 
@@ -54,7 +58,7 @@ describe('TopologyConverger failures', function () {
             }
 
             if (in_array('/usr/local/bin/converge-gateway.sh', $command, true)) {
-                return Process::result('private stdout', 'Bearer private-token', 70);
+                return Process::result('private stdout', $stderr, $exitCode);
             }
 
             return Process::result();
@@ -69,11 +73,21 @@ describe('TopologyConverger failures', function () {
             $this->fail('Expected gateway convergence to fail.');
         } catch (RuntimeException $exception) {
             expect($exception->getMessage())
-                ->toBe(
-                    'Guest convergence script converge-gateway.sh failed on '
-                    .'orbit-e2e-nck-123-gateway with exit code 70.',
-                )
+                ->toBe($expected)
                 ->not->toContain('private stdout', 'private-token');
         }
-    });
+    })->with([
+        'migration exit' => [
+            70,
+            'Bearer private-token',
+            'Guest convergence script converge-gateway.sh failed on orbit-e2e-nck-123-gateway with exit code 70.',
+        ],
+        'gateway domain failure' => [
+            71,
+            "orbit-e2e-failure step=wireguard-server-install error=vpn.server_install_failed\n".'Bearer private-token',
+            'Guest convergence script converge-gateway.sh failed on '
+                .'orbit-e2e-nck-123-gateway with exit code 71 at step '
+                .'wireguard-server-install (vpn.server_install_failed).',
+        ],
+    ]);
 });
