@@ -8,6 +8,7 @@ use App\E2E\Git\GitRepository;
 use App\E2E\GuestTransport;
 use App\E2E\HostRelativeDeleter;
 use App\E2E\IncusHost;
+use App\E2E\IncusNetworkLifecycle;
 use App\E2E\LegacyIncusRevalidator;
 use App\E2E\LegacyRetirement;
 use App\E2E\PreparedStateFingerprint;
@@ -195,9 +196,11 @@ final class AppServiceProvider extends ServiceProvider
             );
         });
         $this->app->bind(GuestTransport::class, fn (Application $app): IncusHost => $app->make(IncusHost::class));
+        $this->app->singleton(IncusNetworkLifecycle::class);
 
         $this->app->singleton(StandbyBuilder::class, fn (Application $app): StandbyBuilder => new StandbyBuilder(
             $app->make(IncusHost::class),
+            $app->make(IncusNetworkLifecycle::class),
             $app->make(WorktreeSynchronizer::class),
             $app->make(TopologyConverger::class),
             $app->make(TopologyVerifier::class),
@@ -208,6 +211,7 @@ final class AppServiceProvider extends ServiceProvider
         ));
         $this->app->singleton(StandbyRefresher::class, fn (Application $app): StandbyRefresher => new StandbyRefresher(
             $app->make(IncusHost::class),
+            $app->make(IncusNetworkLifecycle::class),
             $app->make(PreparedStateFingerprint::class),
             $app->make(StandbyManifestStore::class),
             $app->make(StandbyBuilder::class),

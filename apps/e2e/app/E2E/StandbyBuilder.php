@@ -21,6 +21,7 @@ final readonly class StandbyBuilder
 {
     public function __construct(
         private IncusHost $host,
+        private IncusNetworkLifecycle $networks,
         private WorktreeSynchronizer $synchronizer,
         private TopologyConverger $converger,
         private TopologyVerifier $verifier,
@@ -96,7 +97,7 @@ final readonly class StandbyBuilder
         $this->recordAttempt($evidenceId, $attempt);
 
         try {
-            $this->host->createNetwork($target->network(), ['ipv4.address' => 'auto', 'ipv4.nat' => 'true']);
+            $this->networks->create($target->network());
             $attempt['network']['state'] = 'created';
             $this->recordAttempt($evidenceId, $attempt);
             foreach (TopologyProfile::ROLES as $index => $role) {
@@ -188,7 +189,7 @@ final readonly class StandbyBuilder
                 $this->host->deleteInstance($name['name']);
             }
             if ($network !== null) {
-                $this->host->deleteNetwork($network->name);
+                $this->networks->delete($network->name);
             }
             foreach ($attempt['instances'] as $intent) {
                 if ($this->host->instance($intent['name']) !== null) {

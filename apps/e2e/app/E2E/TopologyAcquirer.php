@@ -30,6 +30,7 @@ final readonly class TopologyAcquirer
 {
     public function __construct(
         private IncusHost $host,
+        private IncusNetworkLifecycle $networks,
         private PreparedStateFingerprint $fingerprints,
         private StandbyManifestStore $standby,
         private TopologyManifestStore $manifests,
@@ -86,6 +87,7 @@ final readonly class TopologyAcquirer
     {
         $topology = $this->requireTopology($request->target);
         $this->assertColdBaseMatchesMain($request->worktree);
+        $this->networks->reconcile($request->target->network());
         $source = $this->synchronizer->sync($request->target, $request->worktree, SyncMode::Incremental);
         $this->converger->converge($request->target, $source, $topology->generation->laravel);
         $verification = $this->verifier->verify($request->target, VerificationMode::Readiness, $source);
@@ -116,6 +118,7 @@ final readonly class TopologyAcquirer
     {
         $target = new TopologyTarget($issue);
         $topology = $this->requireTopology($target);
+        $this->networks->reconcile($target->network());
         $report = $this->verifier->verify($target, VerificationMode::Readiness, $topology->source);
         if (! $report->passed) {
             throw new RuntimeException('Feature topology verification failed.');
@@ -270,9 +273,8 @@ final readonly class TopologyAcquirer
         $created = [];
         try {
             $phase = 'create.network';
-            $this->host->createNetwork($request->target->network(), ['ipv4.address' => 'auto', 'ipv4.nat' => 'true']);
             $created[] = $request->target->network();
-            $this->host->setMetadata($request->target->network(), [
+            $this->networks->create($request->target->network(), [
                 'user.orbit.e2e.issue' => $request->issue,
                 'user.orbit.e2e.operation' => $operation->value,
             ]);
@@ -346,7 +348,7 @@ final readonly class TopologyAcquirer
                     $this->host->deleteInstance($resource);
                 },
                 function (string $resource): void {
-                    $this->host->deleteNetwork($resource);
+                    $this->networks->delete($resource);
                 },
             ))->cleanup($request->target, $created, $observed, $operation);
             $this->state->write('failures/'.$request->issue.'.json', [

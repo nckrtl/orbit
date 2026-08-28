@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\E2E\Git\GitRepository;
 use App\E2E\IncusHost;
+use App\E2E\IncusNetworkLifecycle;
 use App\E2E\LaravelReleaseResolver;
 use App\E2E\PreparedStateFingerprint;
 use App\E2E\StandbyBuilder;
@@ -44,9 +45,20 @@ function standbyRefresherForPowerTests(
 
     return new StandbyRefresher(
         $host,
+        new IncusNetworkLifecycle($host),
         new PreparedStateFingerprint($git),
         $manifests,
-        new StandbyBuilder($host, $synchronizer, $converger, $verifier, $manifests, $state, $paths, $root),
+        new StandbyBuilder(
+            $host,
+            new IncusNetworkLifecycle($host),
+            $synchronizer,
+            $converger,
+            $verifier,
+            $manifests,
+            $state,
+            $paths,
+            $root,
+        ),
         $synchronizer,
         $converger,
         $verifier,
@@ -157,7 +169,17 @@ describe('StandbyRefresher contracts', function () {
         $synchronizer = new WorktreeSynchronizer($host, $root);
         $converger = new TopologyConverger($host);
         $verifier = new TopologyVerifier($host, 1, 0);
-        $builder = new StandbyBuilder($host, $synchronizer, $converger, $verifier, $manifests, $state, $paths, $root);
+        $builder = new StandbyBuilder(
+            $host,
+            new IncusNetworkLifecycle($host),
+            $synchronizer,
+            $converger,
+            $verifier,
+            $manifests,
+            $state,
+            $paths,
+            $root,
+        );
         $requestLock = new OperationLock($paths);
         $holder = new OperationLock($paths);
         $holder->acquire('standby-generation', new OperationId(str_repeat('a', 32)), timeoutSeconds: 0);
@@ -165,6 +187,7 @@ describe('StandbyRefresher contracts', function () {
         try {
             $refresher = new StandbyRefresher(
                 $host,
+                new IncusNetworkLifecycle($host),
                 new PreparedStateFingerprint($git),
                 $manifests,
                 $builder,

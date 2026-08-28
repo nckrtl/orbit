@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\E2E\IncusHost;
+use App\E2E\IncusNetworkLifecycle;
 use App\E2E\State\AtomicJsonStore;
 use App\E2E\State\StatePaths;
 use App\E2E\TopologyManifestStore;
@@ -31,7 +32,14 @@ describe('topology release', function () {
         $root = sys_get_temp_dir().'/orbit-release-'.bin2hex(random_bytes(8));
         $paths = new StatePaths($root);
         $store = new AtomicJsonStore($paths);
-        $releaser = new TopologyReleaser(new IncusHost, new TopologyManifestStore($store), $store, $paths);
+        $host = new IncusHost;
+        $releaser = new TopologyReleaser(
+            $host,
+            new IncusNetworkLifecycle($host),
+            new TopologyManifestStore($store),
+            $store,
+            $paths,
+        );
 
         expect(fn () => $releaser->release('NCK-12'))
             ->toThrow(RuntimeException::class, 'exact feature topology manifest');
@@ -50,7 +58,14 @@ describe('topology release', function () {
                 [],
             )->toArray(),
         );
-        $releaser = new TopologyReleaser(new IncusHost, new TopologyManifestStore($store), $store, $paths);
+        $host = new IncusHost;
+        $releaser = new TopologyReleaser(
+            $host,
+            new IncusNetworkLifecycle($host),
+            new TopologyManifestStore($store),
+            $store,
+            $paths,
+        );
 
         $result = $releaser->release('NCK-12');
 

@@ -19,6 +19,7 @@ final readonly class TopologyReleaser
 {
     public function __construct(
         private IncusHost $host,
+        private IncusNetworkLifecycle $networks,
         private TopologyManifestStore $manifests,
         private AtomicJsonStore $state,
         private StatePaths $paths,
@@ -133,7 +134,7 @@ final readonly class TopologyReleaser
         }
 
         if ($network !== null) {
-            $this->host->deleteNetwork($target->network());
+            $this->networks->delete($target->network());
             $released[] = 'deleted:'.$target->network();
         }
 

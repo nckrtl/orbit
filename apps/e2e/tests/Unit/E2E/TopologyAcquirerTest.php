@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\E2E\AcquisitionRollback;
 use App\E2E\Git\GitRepository;
 use App\E2E\IncusHost;
+use App\E2E\IncusNetworkLifecycle;
 use App\E2E\PreparedStateFingerprint;
 use App\E2E\StandbyManifestStore;
 use App\E2E\State\AtomicJsonStore;
@@ -41,6 +42,7 @@ function taskNineAcquirer(
 
     return new TopologyAcquirer(
         $host,
+        new IncusNetworkLifecycle($host),
         new PreparedStateFingerprint(new GitRepository($repositoryRoot)),
         new StandbyManifestStore($store, $paths),
         new TopologyManifestStore($store),
@@ -52,6 +54,22 @@ function taskNineAcquirer(
         $repositoryRoot,
         $rollback,
     );
+}
+
+/** @param list<string> $command */
+function topologyFirewallResult(array $command): ?\Illuminate\Contracts\Process\ProcessResult
+{
+    if (array_slice($command, 0, 5) !== ['sudo', '-n', 'iptables', '-w', '5']) {
+        return null;
+    }
+
+    return in_array('-C', $command, true) ? Process::result('', '', 1) : Process::result();
+}
+
+/** @return list<string> */
+function topologyIncus(string ...$arguments): array
+{
+    return ['incus', '--project', 'default', ...$arguments];
 }
 
 function preparedTopologyRepository(): string
@@ -226,6 +244,9 @@ function identityRefreshInventoryResult(
     TopologyTarget $target,
     ?string &$operationId,
 ): ?\Illuminate\Contracts\Process\ProcessResult {
+    if (($firewall = topologyFirewallResult($command)) !== null) {
+        return $firewall;
+    }
     if (in_array('image', $command, true) && in_array('list', $command, true)) {
         return Process::result(preparedBaseImageJson(str_repeat('a', 64)));
     }
@@ -352,11 +373,17 @@ function pinnedFeatureWorktree(string $repositoryRoot, string $suffix, string $t
     return $worktree;
 }
 
-/** @param list<string> $command */
+/**
+ * @param list<string> $command
+ * @mago-expect lint:cyclomatic-complexity The fake inventories each exact Incus resource kind.
+ */
 function pinnedWorktreeInventoryResult(
     array $command,
     TopologyTarget $target,
 ): ?\Illuminate\Contracts\Process\ProcessResult {
+    if (($firewall = topologyFirewallResult($command)) !== null) {
+        return $firewall;
+    }
     if (in_array('image', $command, true) && in_array('list', $command, true)) {
         return Process::result(preparedBaseImageJson(str_repeat('b', 64)));
     }
@@ -666,6 +693,9 @@ it('uses the acquisition rollback after a topology creation failure', function (
     $target = new TopologyTarget('NCK-123');
     $realProcess = new ProcessFactory;
     Process::fake(function (\Illuminate\Process\PendingProcess $process) use ($target, $repositoryRoot, $realProcess) {
+        if (($firewall = topologyFirewallResult($process->command)) !== null) {
+            return $firewall;
+        }
         if (($process->command[0] ?? null) === 'git') {
             $events[] = $process->command;
 
@@ -965,6 +995,142 @@ it('reuses a prepared generation when main advances with a source-only change', 
     expect(collect($commands)->contains(
         fn (array $command): bool => in_array('network', $command, true) && in_array('create', $command, true),
     ))->toBeTrue();
+});
+
+/** @mago-expect lint:cyclomatic-complexity The integration case tracks the complete rollback state. */
+it('rolls back an exactly owned network when host forwarding setup fails', function () {
+    $repositoryRoot = preparedTopologyRepository();
+    $paths = new StatePaths(sys_get_temp_dir().'/orbit-acquirer-state-'.bin2hex(random_bytes(8)));
+    $store = new AtomicJsonStore($paths);
+    $prepared = new PreparedStateFingerprint(new GitRepository($repositoryRoot))->forCommit();
+    new StandbyManifestStore($store, $paths)->promote(new StandbyGeneration(
+        preparedGenerationId($repositoryRoot, $prepared->value),
+        new GitRepository($repositoryRoot)->commit(),
+        ['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod'],
+        $prepared->value,
+        str_repeat('a', 64),
+        new LaravelRelease('v13.10.1', '5aad4ddf34d5e21dfe6b4c07eeac67d5bd5e08b0'),
+    ));
+    $target = new TopologyTarget('NCK-123');
+    $networkExists = false;
+    $failedInsert = false;
+    $operationId = null;
+    $commands = [];
+    $realProcess = new ProcessFactory;
+
+    /** @mago-expect lint:cyclomatic-complexity The fake models one exact external failure transaction. */
+    Process::fake(function (\Illuminate\Process\PendingProcess $process) use (
+        &$commands,
+        &$failedInsert,
+        &$networkExists,
+        &$operationId,
+        $realProcess,
+        $repositoryRoot,
+        $target,
+    ) {
+        $command = $process->command;
+        $commands[] = $command;
+        if (($command[0] ?? null) === 'git') {
+            return $realProcess->path($repositoryRoot)->run($command);
+        }
+        foreach ($command as $argument) {
+            if (preg_match('/\Auser\.orbit\.e2e\.operation=([0-9a-f]{32})\z/D', (string) $argument, $matches)) {
+                $operationId = $matches[1];
+            }
+        }
+        if (in_array('image', $command, true) && in_array('list', $command, true)) {
+            return Process::result(preparedBaseImageJson(str_repeat('a', 64)));
+        }
+        if (in_array('snapshot', $command, true) && in_array('list', $command, true)) {
+            $instance = preg_replace('/\A[^:]+:/', '', (string) ($command[5] ?? ''));
+
+            return Process::result(standbySnapshotInventoryJson($instance));
+        }
+        if (($command[3] ?? null) === 'list') {
+            return Process::result(standbyVmInventoryJson());
+        }
+        if (
+            $command === topologyIncus(
+                'network',
+                'create',
+                'local:'.$target->network(),
+                'ipv4.address=auto',
+                'ipv4.nat=true',
+                'ipv6.address=none',
+                'user.orbit.e2e.issue=NCK-123',
+                'user.orbit.e2e.operation='.$operationId,
+                'user.orbit.e2e.owner=orbit-e2e',
+            )
+        ) {
+            $networkExists = true;
+
+            return Process::result();
+        }
+        if (($command[3] ?? null) === 'network' && ($command[4] ?? null) === 'list') {
+            return Process::result(json_encode(
+                $networkExists
+                    ? [[
+                        'name' => $target->network(),
+                        'config' => [
+                            'user.orbit.e2e.owner' => 'orbit-e2e',
+                            'user.orbit.e2e.issue' => 'NCK-123',
+                            'user.orbit.e2e.operation' => $operationId,
+                        ],
+                    ]] : [],
+                JSON_THROW_ON_ERROR,
+            ));
+        }
+        if ($command === topologyIncus('network', 'delete', 'local:'.$target->network())) {
+            $networkExists = false;
+
+            return Process::result();
+        }
+        if (array_slice($command, 0, 5) === ['sudo', '-n', 'iptables', '-w', '5']) {
+            if (in_array('-I', $command, true) && ! $failedInsert) {
+                $failedInsert = true;
+
+                return Process::result('', 'controlled forwarding failure', 2);
+            }
+
+            return in_array('-C', $command, true) ? Process::result('', '', 1) : Process::result();
+        }
+
+        return Process::result('', 'Unexpected command.', 2);
+    });
+
+    expect(fn () => taskNineAcquirer($repositoryRoot, $paths)->acquire(
+        new TopologyRequest('NCK-123', $repositoryRoot),
+    ))
+        ->toThrow(RuntimeException::class, 'Host firewall command failed.');
+
+    expect($operationId)
+        ->toMatch('/\A[0-9a-f]{32}\z/D')
+        ->and($networkExists)
+        ->toBeFalse()
+        ->and(collect($commands)->contains(
+            fn (array $command): bool => $command === topologyIncus(
+                'network',
+                'delete',
+                'local:'.$target->network(),
+            ),
+        ))
+        ->toBeTrue()
+        ->and(collect($commands)->contains(
+            fn (array $command): bool => (
+                in_array(
+                    'user.orbit.e2e.issue=NCK-123',
+                    $command,
+                    true,
+                )
+                && in_array('network', $command, true)
+                && in_array('create', $command, true)
+            ),
+        ))
+        ->toBeTrue()
+        ->and(collect($commands)->contains(
+            fn (array $command): bool => in_array('network', $command, true) && in_array('set', $command, true),
+        ))
+        ->toBeFalse();
 });
 
 it('blocks acquisition when the promoted base image no longer matches its alias', function () {

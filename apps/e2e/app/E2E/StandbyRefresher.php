@@ -26,6 +26,7 @@ final readonly class StandbyRefresher
 {
     public function __construct(
         private IncusHost $host,
+        private IncusNetworkLifecycle $networks,
         private PreparedStateFingerprint $fingerprints,
         private StandbyManifestStore $manifests,
         private StandbyBuilder $builder,
@@ -152,6 +153,7 @@ final readonly class StandbyRefresher
                     throw new RuntimeException('The promoted base image fingerprint drifted.');
                 }
                 $this->assertStopped();
+                $this->networks->reconcile($target->network());
                 $this->restoreSnapshots($promoted);
                 $this->startAll();
                 $source = $this->synchronizer->sync($target, $this->mainWorktree, SyncMode::Full);

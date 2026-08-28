@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\E2E\IncusHost;
+use App\E2E\IncusNetworkLifecycle;
 use App\E2E\StandbyBuilder;
 use App\E2E\StandbyManifestStore;
 use App\E2E\State\AtomicJsonStore;
@@ -14,6 +15,7 @@ use App\E2E\Value\PreparedFingerprint;
 use App\E2E\Value\TopologyTarget;
 use App\E2E\WorktreeSynchronizer;
 use Illuminate\Container\Container;
+use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Process\Factory as ProcessFactory;
 use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Facades\Facade;
@@ -26,6 +28,7 @@ function cold_cleanup_builder(IncusHost $host, AtomicJsonStore $state, StatePath
 
     return new StandbyBuilder(
         $host,
+        new IncusNetworkLifecycle($host),
         $uninitialized(WorktreeSynchronizer::class),
         $uninitialized(TopologyConverger::class),
         $uninitialized(TopologyVerifier::class),
@@ -39,6 +42,16 @@ function cold_cleanup_builder(IncusHost $host, AtomicJsonStore $state, StatePath
 function standby_incus_command(string ...$arguments): array
 {
     return ['incus', '--project', 'default', ...$arguments];
+}
+
+/** @param list<string> $command */
+function standby_firewall_result(array $command): ?ProcessResult
+{
+    if (array_slice($command, 0, 5) !== ['sudo', '-n', 'iptables', '-w', '5']) {
+        return null;
+    }
+
+    return in_array('-C', $command, true) ? Process::result('', '', 1) : Process::result();
 }
 
 /**
@@ -77,6 +90,7 @@ describe('StandbyBuilder', function () {
         $manifests = new StandbyManifestStore($state, $paths);
         $builder = new StandbyBuilder(
             $uninitialized(IncusHost::class),
+            $uninitialized(IncusNetworkLifecycle::class),
             $uninitialized(WorktreeSynchronizer::class),
             $uninitialized(TopologyConverger::class),
             $uninitialized(TopologyVerifier::class),
@@ -106,6 +120,9 @@ describe('StandbyBuilder', function () {
         Process::fake(function (PendingProcess $process) use (&$started, &$initialized, &$events) {
             $command = $process->command;
             assert(is_array($command), 'Incus uses argument arrays.');
+            if (($firewall = standby_firewall_result($command)) !== null) {
+                return $firewall;
+            }
             if (in_array('image', $command, true)) {
                 return Process::result(json_encode([[
                     'type' => 'virtual-machine',
@@ -292,6 +309,9 @@ describe('StandbyBuilder', function () {
         Process::fake(function (PendingProcess $process) use (&$deleted, &$networkExists, $instances) {
             $command = $process->command;
             assert(is_array($command), 'Incus uses argument arrays.');
+            if (($firewall = standby_firewall_result($command)) !== null) {
+                return $firewall;
+            }
             if ($command === standby_incus_command('network', 'list', 'local:', '--format=json')) {
                 return Process::result(json_encode(
                     $networkExists
@@ -380,6 +400,9 @@ describe('StandbyBuilder', function () {
         Process::fake(function (PendingProcess $process) use (&$existing, &$networkExists, &$deleted, $instances) {
             $command = $process->command;
             assert(is_array($command), 'Incus uses argument arrays.');
+            if (($firewall = standby_firewall_result($command)) !== null) {
+                return $firewall;
+            }
             if ($command === standby_incus_command('image', 'list', 'local:', 'orbit-base', '--format=json')) {
                 return Process::result(json_encode([[
                     'type' => 'virtual-machine',
@@ -404,6 +427,7 @@ describe('StandbyBuilder', function () {
                     'local:oe-standby',
                     'ipv4.address=auto',
                     'ipv4.nat=true',
+                    'ipv6.address=none',
                     'user.orbit.e2e.owner=orbit-e2e',
                 )
             ) {
@@ -504,6 +528,9 @@ describe('StandbyBuilder', function () {
         Process::fake(function (PendingProcess $process) use (&$observed, $instances) {
             $command = $process->command;
             assert(is_array($command), 'Incus uses argument arrays.');
+            if (($firewall = standby_firewall_result($command)) !== null) {
+                return $firewall;
+            }
             if ($command === standby_incus_command('image', 'list', 'local:', 'orbit-base', '--format=json')) {
                 return Process::result(json_encode([[
                     'type' => 'virtual-machine',
@@ -575,6 +602,7 @@ describe('StandbyBuilder', function () {
                             'local:oe-standby',
                             'ipv4.address=auto',
                             'ipv4.nat=true',
+                            'ipv6.address=none',
                             'user.orbit.e2e.owner=orbit-e2e',
                         ),
                         standby_incus_command(
@@ -644,6 +672,9 @@ describe('StandbyBuilder', function () {
         Process::fake(function (PendingProcess $process) {
             $command = $process->command;
             assert(is_array($command), 'Incus uses argument arrays.');
+            if (($firewall = standby_firewall_result($command)) !== null) {
+                return $firewall;
+            }
             if ($command === standby_incus_command('list', 'local:orbit-e2e-standby-gateway', '--format=json')) {
                 $name = 'orbit-e2e-standby-gateway';
 
@@ -706,6 +737,10 @@ describe('StandbyBuilder', function () {
         $networkExists = true;
         Process::fake(function (PendingProcess $process) use (&$networkExists) {
             $command = $process->command;
+            assert(is_array($command), 'Incus uses argument arrays.');
+            if (($firewall = standby_firewall_result($command)) !== null) {
+                return $firewall;
+            }
             if ($command === standby_incus_command('network', 'list', 'local:', '--format=json')) {
                 return Process::result(json_encode(
                     $networkExists
