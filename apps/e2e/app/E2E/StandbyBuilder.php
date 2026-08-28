@@ -183,6 +183,14 @@ final readonly class StandbyBuilder
             if ($network !== null) {
                 $this->host->deleteNetwork($network->name);
             }
+            foreach ($attempt['instances'] as $intent) {
+                if ($this->host->instance($intent['name']) !== null) {
+                    throw new RuntimeException('A cold-build VM persisted after deletion.');
+                }
+            }
+            if ($this->host->network($attempt['network']['name']) !== null) {
+                throw new RuntimeException('A cold-build network persisted after deletion.');
+            }
             $attempt['network']['state'] = 'cleaned';
             $attempt['instances'] = [];
             $attempt['status'] = 'cleaned';
@@ -192,6 +200,10 @@ final readonly class StandbyBuilder
                 'recovered' => true,
                 'resources_deleted' => true,
             ]);
+            $corrupt = $this->state->read('standby/corrupt.json');
+            if (is_array($corrupt) && ($corrupt['evidence_id'] ?? null) === $evidenceId) {
+                $this->state->delete('standby/corrupt.json');
+            }
 
             return true;
         } catch (Throwable $exception) {

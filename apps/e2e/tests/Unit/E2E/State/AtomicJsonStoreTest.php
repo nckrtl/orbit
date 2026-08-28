@@ -59,4 +59,39 @@ describe('AtomicJsonStore', function () {
             ->and(glob($paths->root().'/.state-*'))
             ->toBeEmpty();
     });
+
+    it('deletes an existing state file and is idempotent when absent', function () {
+        $paths = new StatePaths(sys_get_temp_dir().'/orbit-json-'.bin2hex(random_bytes(4)));
+        $store = new AtomicJsonStore($paths);
+        $store->write('standby/corrupt.json', ['reason' => 'recovery']);
+
+        $store->delete('standby/corrupt.json');
+        $store->delete('standby/corrupt.json');
+
+        expect(file_exists($paths->path('standby/corrupt.json')))->toBeFalse();
+    });
+
+    it('rejects unsafe existing deletion targets', function (string $target, callable $prepare, string $message): void {
+        $paths = new StatePaths(sys_get_temp_dir().'/orbit-json-'.bin2hex(random_bytes(4)));
+        $prepare($paths->path($target), $paths);
+
+        expect(fn () => new AtomicJsonStore($paths)->delete($target))
+            ->toThrow($message);
+    })->with([
+        'directory' => [
+            'standby/corrupt.json',
+            function (string $path): void {
+                mkdir($path, 0700, true);
+            },
+            'unsafe',
+        ],
+        'symlink' => [
+            'standby/corrupt.json',
+            function (string $path): void {
+                mkdir(dirname($path), 0700, true);
+                symlink('/tmp', $path);
+            },
+            'symbolic link',
+        ],
+    ]);
 });

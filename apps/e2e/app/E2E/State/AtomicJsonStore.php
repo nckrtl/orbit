@@ -8,7 +8,7 @@ use Closure;
 use JsonException;
 use RuntimeException;
 
-/** @mago-expect lint:cyclomatic-complexity Atomic I/O requires every failure to be checked. */
+/** @mago-expect lint:cyclomatic-complexity,kan-defect Atomic I/O requires every failure to be checked. */
 final readonly class AtomicJsonStore
 {
     public function __construct(
@@ -42,6 +42,25 @@ final readonly class AtomicJsonStore
         }
 
         return $value;
+    }
+
+    public function delete(string $name): void
+    {
+        $file = $this->paths->path($name);
+
+        if (! file_exists($file)) {
+            return;
+        }
+
+        if (! is_file($file) || is_link($file)) {
+            throw new RuntimeException('The JSON state target is unsafe.');
+        }
+
+        if (! unlink($file)) {
+            throw new RuntimeException('Unable to delete JSON state.');
+        }
+
+        $this->syncDirectory(dirname($file));
     }
 
     /** @param array<array-key, mixed> $value */

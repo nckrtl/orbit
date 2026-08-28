@@ -71,7 +71,7 @@ final readonly class StandbyRefresher
 
                 return $result;
             } catch (Throwable $exception) {
-                $this->state->write("standby/failures/{$evidence}.json", [
+                $this->writeFailureIfMissing("standby/failures/{$evidence}.json", [
                     'schema' => 1,
                     'main_sha' => $mainSha,
                     'message' => $exception->getMessage(),
@@ -187,7 +187,7 @@ final readonly class StandbyRefresher
 
             return new RefreshResult('promoted', $operation->value, $evidence, $generation->id);
         } catch (Throwable $exception) {
-            $this->state->write("standby/failures/{$evidence}.json", [
+            $this->writeFailureIfMissing("standby/failures/{$evidence}.json", [
                 'schema' => 1,
                 'main_sha' => $mainSha,
                 'message' => $exception->getMessage(),
@@ -210,6 +210,16 @@ final readonly class StandbyRefresher
         foreach (TopologyProfile::ROLES as $role) {
             $this->host->restore($target->instance($role), $generation->snapshots[$role]);
         }
+    }
+
+    /** @param array<array-key, mixed> $failure */
+    private function writeFailureIfMissing(string $path, array $failure): void
+    {
+        if ($this->state->read($path) !== null) {
+            return;
+        }
+
+        $this->state->write($path, $failure);
     }
 
     private function startAll(): void

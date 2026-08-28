@@ -163,7 +163,7 @@ describe('StandbyBuilder', function () {
             true,
             str_repeat('d', 32),
         ))
-            ->toThrow(Error::class);
+            ->toThrow(RuntimeException::class, 'cleanup failed');
 
         expect($started)->toBe([
             'local:orbit-e2e-standby-gateway',
@@ -661,5 +661,85 @@ describe('StandbyBuilder', function () {
             str_repeat('e', 32),
         ))
             ->toThrow(RuntimeException::class, 'blocked until explicit recovery');
+    });
+
+    it('fails closed when a recorded resource persists after deletion', function () {
+        $paths = new StatePaths(sys_get_temp_dir().'/orbit-builder-'.bin2hex(random_bytes(4)));
+        $state = new AtomicJsonStore($paths);
+        $evidence = str_repeat('c', 32);
+        $state->write("standby/cold-attempts/{$evidence}.json", [
+            'schema' => 2,
+            'operation_id' => $evidence,
+            'remote' => 'local',
+            'project' => 'default',
+            'pool' => 'orbit-e2e',
+            'network' => ['name' => 'oe-standby', 'state' => 'created', 'absent_preflight' => true],
+            'base_image_fingerprint' => str_repeat('f', 64),
+            'instances' => [],
+            'status' => 'creating',
+        ]);
+        $networkExists = true;
+        Process::fake(function (PendingProcess $process) use (&$networkExists) {
+            $command = $process->command;
+            if ($command === standby_incus_command('network', 'list', 'local:', '--format=json')) {
+                return Process::result(json_encode(
+                    $networkExists
+                        ? [['name' => 'oe-standby', 'config' => ['user.orbit.e2e.owner' => 'orbit-e2e']]]
+                        : [],
+                    JSON_THROW_ON_ERROR,
+                ));
+            }
+            if ($command === standby_incus_command('network', 'delete', 'local:oe-standby'))
+                return Process::result();
+            throw new RuntimeException(json_encode($command, JSON_THROW_ON_ERROR));
+        });
+        $builder = cold_cleanup_builder(new IncusHost(pool: 'orbit-e2e'), $state, $paths);
+        expect($builder->cleanupCold($evidence))
+            ->toBeFalse()
+            ->and($state->read("standby/recovery/{$evidence}.json")['recovered'])
+            ->toBeFalse();
+    });
+
+    it('clears only a corrupt marker with matching evidence after exact recovery', function () {
+        $paths = new StatePaths(sys_get_temp_dir().'/orbit-builder-'.bin2hex(random_bytes(4)));
+        $state = new AtomicJsonStore($paths);
+        $evidence = str_repeat('d', 32);
+        $state->write("standby/cold-attempts/{$evidence}.json", [
+            'schema' => 2,
+            'operation_id' => $evidence,
+            'remote' => 'local',
+            'project' => 'default',
+            'pool' => 'orbit-e2e',
+            'network' => ['name' => 'oe-standby', 'state' => 'cleaned', 'absent_preflight' => true],
+            'base_image_fingerprint' => str_repeat('f', 64),
+            'instances' => [],
+            'status' => 'cleaned',
+        ]);
+        $state->write('standby/corrupt.json', ['schema' => 1, 'evidence_id' => $evidence, 'message' => 'x']);
+        $builder = cold_cleanup_builder(new IncusHost(pool: 'orbit-e2e'), $state, $paths);
+        expect($builder->cleanupCold($evidence))->toBeTrue()->and($state->read('standby/corrupt.json'))->toBeNull();
+    });
+
+    it('retains a corrupt marker for different evidence after exact recovery', function () {
+        $paths = new StatePaths(sys_get_temp_dir().'/orbit-builder-'.bin2hex(random_bytes(4)));
+        $state = new AtomicJsonStore($paths);
+        $evidence = str_repeat('e', 32);
+        $state->write("standby/cold-attempts/{$evidence}.json", [
+            'schema' => 2,
+            'operation_id' => $evidence,
+            'remote' => 'local',
+            'project' => 'default',
+            'pool' => 'orbit-e2e',
+            'network' => ['name' => 'oe-standby', 'state' => 'cleaned', 'absent_preflight' => true],
+            'base_image_fingerprint' => str_repeat('f', 64),
+            'instances' => [],
+            'status' => 'cleaned',
+        ]);
+        $state->write('standby/corrupt.json', ['schema' => 1, 'evidence_id' => str_repeat('f', 32), 'message' => 'x']);
+        $builder = cold_cleanup_builder(new IncusHost(pool: 'orbit-e2e'), $state, $paths);
+        expect($builder->cleanupCold($evidence))
+            ->toBeTrue()
+            ->and($state->read('standby/corrupt.json')['evidence_id'])
+            ->toBe(str_repeat('f', 32));
     });
 });

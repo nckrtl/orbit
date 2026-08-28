@@ -13,6 +13,7 @@ use App\E2E\StandbyRefresher;
 use App\E2E\State\AtomicJsonStore;
 use App\E2E\State\OperationJournal;
 use App\E2E\State\OperationLock;
+use App\E2E\State\StatePaths;
 use App\E2E\TopologyConverger;
 use App\E2E\TopologyVerifier;
 use App\E2E\Value\MigrationPlan;
@@ -24,7 +25,7 @@ use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Facades\Facade;
 use Illuminate\Support\Facades\Process;
 
-function standbyRefresherForPowerTests(IncusHost $host): StandbyRefresher
+function standbyRefresherForPowerTests(IncusHost $host, ?AtomicJsonStore $state = null): StandbyRefresher
 {
     $uninitialized = fn (string $class): object => new ReflectionClass($class)->newInstanceWithoutConstructor();
 
@@ -40,7 +41,7 @@ function standbyRefresherForPowerTests(IncusHost $host): StandbyRefresher
         $uninitialized(LaravelReleaseResolver::class),
         $uninitialized(OperationLock::class),
         $uninitialized(OperationJournal::class),
-        $uninitialized(AtomicJsonStore::class),
+        $state ?? $uninitialized(AtomicJsonStore::class),
         $uninitialized(GitRepository::class),
         __DIR__,
     );
@@ -52,6 +53,22 @@ describe('StandbyRefresher contracts', function () {
         $container->instance(ProcessFactory::class, new ProcessFactory);
         Facade::clearResolvedInstances();
         Facade::setFacadeApplication($container);
+    });
+
+    it('preserves an existing failure record while writing failures that are absent', function () {
+        $state = new AtomicJsonStore(new StatePaths(sys_get_temp_dir().'/orbit-refresher-'.bin2hex(random_bytes(4))));
+        $path = 'standby/failures/evidence.json';
+        $existing = ['schema' => 1, 'phase' => 'cold-build', 'message' => 'primary failure'];
+        $state->write($path, $existing);
+        $refresher = standbyRefresherForPowerTests(new IncusHost(pool: 'orbit-e2e'), $state);
+        $method = new ReflectionMethod($refresher, 'writeFailureIfMissing');
+
+        $method->invoke($refresher, $path, $existing + ['message' => 'wrapper failure']);
+        expect($state->read($path))->toBe($existing);
+
+        $newPath = 'standby/failures/new-evidence.json';
+        $method->invoke($refresher, $newPath, ['schema' => 1, 'message' => 'wrapper failure']);
+        expect($state->read($newPath))->toBe(['schema' => 1, 'message' => 'wrapper failure']);
     });
 
     it('keeps result and external migration identities exact', function () {
