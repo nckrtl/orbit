@@ -940,6 +940,29 @@ it('restores absent peer files and an inactive disabled service after a late rem
             ->toBe(['inactive', 'disabled'])
             ->and($result['command_log'])
             ->toContain('wg show orbit public-key')
+            ->and($result['command_log'])
+            ->toContain('systemctl stop wg-quick@orbit')
+            ->and($result['rollback_artifacts'])
+            ->toBeEmpty();
+    } finally {
+        $harness->cleanup();
+    }
+});
+
+it('restores absent peer files when the peer command fails internally after restart', function (): void {
+    $harness = remote_wireguard_peer_install_harness(
+        filesPresent: false,
+        activeState: 'inactive',
+        enabledState: 'disabled',
+    );
+    try {
+        $result = $harness->converge(lateFailure: true);
+        expect($result['succeeded'])
+            ->toBeFalse()
+            ->and($result['live'])
+            ->toBeNull()
+            ->and($result['service_state'])
+            ->toBe(['inactive', 'disabled'])
             ->and($result['rollback_artifacts'])
             ->toBeEmpty();
     } finally {
@@ -1481,6 +1504,7 @@ function remote_wireguard_peer_install_harness(
                     printf 'active' > "{$root}/state/active"
                     ;;
                 stop)
+                    [ -f "{$root}/wireguard/orbit.conf" ] || exit 1
                     printf 'inactive' > "{$root}/state/active"
                     ;;
             esac

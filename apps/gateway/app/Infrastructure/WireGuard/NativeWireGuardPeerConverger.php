@@ -293,6 +293,10 @@ final readonly class NativeWireGuardPeerConverger implements WireGuardPeerConver
                     resolvectl domain "$old_dns_link" "~$old_dns_domain"
                 fi
 
+                if [ "$active_state" = inactive ] && [ "$live_present" = 0 ]; then
+                    systemctl stop wg-quick@orbit
+                fi
+
                 rm -f -- "$restore_candidate"
                 if [ "$live_present" = 1 ]; then
                     cp -a --no-dereference -- "$backup" "$restore_candidate"
@@ -320,7 +324,7 @@ final readonly class NativeWireGuardPeerConverger implements WireGuardPeerConver
 
                 if [ "$active_state" = active ]; then
                     systemctl restart wg-quick@orbit
-                else
+                elif [ "$live_present" = 1 ]; then
                     systemctl stop wg-quick@orbit
                 fi
 
@@ -514,6 +518,9 @@ final readonly class NativeWireGuardPeerConverger implements WireGuardPeerConver
                     chmod 0600 "$candidate"
                     wg-quick strip "$candidate" >/dev/null
                     restore_previous() {
+                        if [ "$active_state" = inactive ] && [ "$live_present" = 0 ]; then
+                            systemctl stop wg-quick@orbit || return 1
+                        fi
                         rm -f -- "$restore_candidate" || return 1
                         if [ "$live_present" -eq 1 ]; then
                             cp -a --no-dereference -- "$backup" "$restore_candidate" || return 1
@@ -525,7 +532,7 @@ final readonly class NativeWireGuardPeerConverger implements WireGuardPeerConver
                         restore_enabled_state || return 1
                         if [ "$active_state" = active ]; then
                             systemctl restart wg-quick@orbit || return 1
-                        else
+                        elif [ "$live_present" = 1 ]; then
                             systemctl stop wg-quick@orbit || return 1
                         fi
                         case "$enabled_state" in

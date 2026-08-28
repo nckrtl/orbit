@@ -27,6 +27,9 @@ use Closure;
  */
 final readonly class NativeNodeConverger implements NodeConverger, RecoverableNodeConverger
 {
+    /** @var list<positive-int> */
+    private const array WIREGUARD_SSH_RETRY_DELAYS = [1_000_000, 2_000_000];
+
     public function __construct(
         private HostKeyScanner $hostKeys,
         private KnownHostsStore $knownHosts,
@@ -35,6 +38,7 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
         private NodeBootstrapCommandFactory $bootstrapCommand,
         private WireGuardPeerConverger $wireGuard,
         private NodeRoleFirewallManager $firewall,
+        private ?Closure $sleep = null,
     ) {}
 
     public function converge(Node $node, ?string $expectedSshHostFingerprint = null): void
@@ -175,6 +179,21 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
             $this->connection($node, 'orbit', $wireguardAddress, 22),
             new RemoteCommand(['true']),
         );
+        foreach (self::WIREGUARD_SSH_RETRY_DELAYS as $delay) {
+            if (
+                $privateVerification->succeeded()
+                || $privateVerification->exitCode !== 255
+                || ! str_starts_with($privateVerification->stderr, 'ssh: connect to host ')
+            ) {
+                break;
+            }
+
+            ($this->sleep ?? usleep(...))($delay);
+            $privateVerification = $this->ssh->execute(
+                $this->connection($node, 'orbit', $wireguardAddress, 22),
+                new RemoteCommand(['true']),
+            );
+        }
 
         if (! $privateVerification->succeeded()) {
             throw new NodeProvisioningException(
