@@ -20,7 +20,7 @@ final readonly class NodeResponse
         public string $status,
         public string $publicSshHost,
         public int $publicSshPort,
-        public string $sshUser,
+        public string $user,
         public ?string $wireguardAddress,
         public array $roles,
         public string $requestId,
@@ -52,7 +52,7 @@ final readonly class NodeResponse
             tld: is_string($data['tld'] ?? null) ? $data['tld'] : null,
             publicSshHost: is_string($data['public_ssh_host'] ?? null) ? $data['public_ssh_host'] : '',
             publicSshPort: is_int($data['public_ssh_port'] ?? null) ? $data['public_ssh_port'] : 0,
-            sshUser: is_string($data['ssh_user'] ?? null) ? $data['ssh_user'] : '',
+            user: is_string($data['user'] ?? null) ? $data['user'] : '',
             wireguardAddress: is_string($data['wireguard_address'] ?? null) ? $data['wireguard_address'] : null,
             wireguardPublicKey: is_string($data['wireguard_public_key'] ?? null)
                 ? $data['wireguard_public_key']
@@ -91,7 +91,7 @@ final readonly class NodeResponse
             'tld' => $this->tld,
             'public_ssh_host' => $this->publicSshHost,
             'public_ssh_port' => $this->publicSshPort,
-            'ssh_user' => $this->sshUser,
+            'user' => $this->user,
             'wireguard_address' => $this->wireguardAddress,
             'wireguard_public_key' => $this->wireguardPublicKey,
             'wireguard_endpoint_override' => $this->wireguardEndpointOverride,

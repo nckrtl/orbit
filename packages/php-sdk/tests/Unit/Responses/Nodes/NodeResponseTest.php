@@ -14,7 +14,7 @@ it('preserves the original positional constructor contract', function (): void {
         'active',
         '94.237.40.75',
         22,
-        'orbit',
+        'nckrtl',
         '10.44.0.3',
         ['app-dev'],
         '0198e15c-bf97-7c23-8f1f-61b8fe67a844',
@@ -22,6 +22,13 @@ it('preserves the original positional constructor contract', function (): void {
 
     expect($response->publicSshHost)
         ->toBe('94.237.40.75')
+        ->and($response->user)
+        ->toBe('nckrtl')
+        ->and($response->toArray())
+        ->toHaveKey('user', 'nckrtl')
+        ->and($response->toArray())
+        ->not
+        ->toHaveKey('ssh_user')
         ->and($response->publicSshPort)
         ->toBe(22)
         ->and($response->roles)
@@ -53,7 +60,7 @@ it('preserves the original named constructor contract', function (): void {
         status: 'active',
         publicSshHost: '85.9.211.193',
         publicSshPort: 22,
-        sshUser: 'orbit',
+        user: 'orbit',
         wireguardAddress: '10.44.0.4',
         roles: ['app-prod'],
         requestId: '0198e15d-16c4-7855-8eb2-182b53ad28ba',
@@ -150,7 +157,7 @@ it('keeps real access in node collections while stripping nested request ids', f
             status: 'active',
             publicSshHost: '94.237.40.75',
             publicSshPort: 22,
-            sshUser: 'orbit',
+            user: 'orbit',
             wireguardAddress: '10.44.0.3',
             roles: ['app-dev'],
             requestId: '0198e15c-bf97-7c23-8f1f-61b8fe67a844',
@@ -189,7 +196,7 @@ function node_response_gateway_data(array $overrides = []): array
         'status' => 'active',
         'public_ssh_host' => '94.237.40.75',
         'public_ssh_port' => 22,
-        'ssh_user' => 'orbit',
+        'user' => 'orbit',
         'wireguard_address' => '10.44.0.3',
         'roles' => ['app-dev'],
     ], $overrides);
@@ -207,7 +214,7 @@ function node_response_public_data(): array
         'tld' => null,
         'public_ssh_host' => '94.237.40.75',
         'public_ssh_port' => 22,
-        'ssh_user' => 'orbit',
+        'user' => 'orbit',
         'wireguard_address' => '10.44.0.3',
         'wireguard_public_key' => null,
         'wireguard_endpoint_override' => null,

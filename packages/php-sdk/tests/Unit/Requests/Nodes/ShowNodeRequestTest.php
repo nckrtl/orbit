@@ -23,7 +23,7 @@ describe(ShowNodeRequest::class, function (): void {
                     'tld' => 'operator.orbit',
                     'public_ssh_host' => '94.237.108.25',
                     'public_ssh_port' => 22,
-                    'ssh_user' => 'orbit',
+                    'user' => 'orbit',
                     'wireguard_address' => '10.44.0.2',
                     'wireguard_public_key' => 'operator-public-key',
                     'wireguard_endpoint_override' => null,

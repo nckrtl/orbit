@@ -24,10 +24,10 @@ final class NodeOutput
 
     public static function sshEndpoint(NodeResponse $node): string
     {
-        if ($node->sshUser === '' || $node->publicSshHost === '' || $node->publicSshPort < 1) {
+        if ($node->user === '' || $node->publicSshHost === '' || $node->publicSshPort < 1) {
             return '-';
         }
 
-        return "{$node->sshUser}@{$node->publicSshHost}:{$node->publicSshPort}";
+        return "{$node->user}@{$node->publicSshHost}:{$node->publicSshPort}";
     }
 }
