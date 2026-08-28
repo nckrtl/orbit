@@ -178,6 +178,22 @@ describe(AptToolManager::class, function (): void {
         ]);
     });
 
+    it('returns null for the exact dpkg no-record miss', function (): void {
+        [$manager, $ssh] = apt_tool_manager([
+            apt_result(
+                exitCode: 1,
+                stderr: "dpkg-query: no packages found matching tree\n",
+            ),
+        ]);
+
+        $version = $manager->installedVersion(apt_tool_node(), 'tree');
+
+        expect($version)->toBeNull();
+        expect($ssh->arguments())->toBe([
+            ['dpkg-query', '--show', '--showformat=${Status}\n${Version}\n', '--', 'tree'],
+        ]);
+    });
+
     it('fails closed on an invalid manager-version result', function (CommandResult $result, string $step): void {
         [$manager] = apt_tool_manager([$result]);
 
@@ -237,6 +253,26 @@ describe(AptToolManager::class, function (): void {
             });
     })->with([
         'nonzero' => [apt_result('secret stdout', exitCode: 13, stderr: 'secret stderr'), 'installed-version'],
+        'no-record miss with wrong exit code' => [
+            apt_result(exitCode: 2, stderr: "dpkg-query: no packages found matching jq\n"),
+            'installed-version',
+        ],
+        'no-record miss with stdout' => [
+            apt_result('unexpected', exitCode: 1, stderr: "dpkg-query: no packages found matching jq\n"),
+            'installed-version',
+        ],
+        'no-record miss for another package' => [
+            apt_result(exitCode: 1, stderr: "dpkg-query: no packages found matching curl\n"),
+            'installed-version',
+        ],
+        'no-record miss with additional stderr' => [
+            apt_result(exitCode: 1, stderr: "dpkg-query: no packages found matching jq\nfatal\n"),
+            'installed-version',
+        ],
+        'no-record miss with truncated output' => [
+            apt_result(exitCode: 1, stderr: "dpkg-query: no packages found matching jq\n", truncated: true),
+            'ssh',
+        ],
         'truncated' => [apt_result('secret stdout', stderr: 'secret stderr', truncated: true), 'ssh'],
         'missing version' => [apt_result("install ok installed\n"), 'installed-version'],
         'duplicate version' => [apt_result("install ok installed\n1.0.0\n2.0.0\n"), 'installed-version'],

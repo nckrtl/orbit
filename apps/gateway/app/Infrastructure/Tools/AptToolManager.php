@@ -143,6 +143,14 @@ final readonly class AptToolManager implements ToolManager
             $package,
         ]);
 
+        if (
+            $result->exitCode === 1
+            && $result->stdout === ''
+            && $result->stderr === "dpkg-query: no packages found matching {$package}\n"
+        ) {
+            return null;
+        }
+
         $this->guardSuccessfulResult(
             result: $result,
             step: 'installed-version',
