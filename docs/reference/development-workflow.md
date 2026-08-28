@@ -2,7 +2,9 @@
 
 The Orbit development cycle starts with a Ready Linear issue and ends when its
 approved pull request is merged and its development resources are removed.
-Deployment is a separate operations cycle.
+Candidate deployment and rollout to the registered live topology are part of
+feature development. Production release and post-deploy operations remain a
+separate cycle. Development proof venues are automated checks or live proof.
 
 ## Agent contracts
 
@@ -26,24 +28,28 @@ session. It must not infer success from Slack message text.
 
 Use `.agents/skills/creating-orbit-issues` to create the issue. Linear owns the
 outcome, scope, acceptance criteria, component list, ADR links, proof venue,
-Incus profile, and checkout roles.
+applicable live nodes, and required checkout identity evidence.
 
 A required ADR must already be on `main` before the issue becomes Ready. An
 issue uses automated proof unless live operating-system or multi-node behavior
-requires a registered Incus profile.
+requires live proof. Live proof selects exact active applicable nodes with
+`orbit node:list --json` and records node identity, roles, and checkout identity.
 
 ## Work and compound
 
 1. The Slack project-manager agent claims a Ready issue.
 2. It creates one monorepo worktree with `bin/worktree-create`.
-3. If the issue selects Incus, it creates the named disposable profile before
-   implementation starts and records its identity.
-4. The feature worker uses `.agents/skills/developing-orbit-features`. It
-   changes the live topology first when that gives faster feedback, then
-   codifies the proven behavior in the repository.
-5. The feature worker runs focused checks, full affected suites, and required
-   live proof. It creates the pull request.
-6. Before handoff, that agent compounds durable learning into an existing ADR,
+3. The feature worker uses `.agents/skills/developing-orbit-features`. For live
+   proof, it selects active applicable nodes with `orbit node:list --json` and
+   revalidates them before mutation. It inspects and proves the live gap via
+   Orbit CLI, Gateway API, or pinned direct SSH before changing code. It then
+   inspects `/home/nckrtl/orbit-old` for applicable prior implementation.
+4. The feature worker runs focused checks, full affected suites, and required
+   live proof. Before mutation it captures recovery points and ownership. It
+   rolls out the candidate and mutates one live node at a time, verifying
+   identity and health after each node. It then records candidate/deployed
+   checkout identity and task-owned cleanup and creates the pull request.
+5. Before handoff, that agent compounds durable learning into an existing ADR,
    reference document, solution note, or repository rule when appropriate.
 
 Do not create documentation only to fill the Compound section. State why no
@@ -123,12 +129,11 @@ Official references:
 
 ## Cleanup and boundary
 
-After merge, the Slack project-manager agent removes the disposable Incus
-topology first and verifies that its instances, networks, and storage are gone.
-It then runs `bin/worktree-remove`. The cleanup command refuses an unmerged or
-dirty branch.
+After merge, the Slack project-manager agent verifies task-owned live resources
+are removed and shared live nodes remain intact. It then runs
+`bin/worktree-remove`. The cleanup command refuses an unmerged or dirty branch.
 
 The development issue closes after merge and cleanup. A separate operations
-process deploys and verifies the merged code. A post-deploy defect creates a
-GitHub issue with deployment evidence. Planning then creates a new Linear bug;
-it does not reopen the completed feature.
+process releases and verifies the merged code in production. A post-deploy
+defect creates a GitHub issue with deployment evidence. Planning then creates
+a new Linear bug; it does not reopen the completed feature.

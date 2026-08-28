@@ -14,9 +14,13 @@ All required ADRs must already exist on `main`.
 - [ ] Focused tests pass
 - [ ] Full affected project suites pass without TIA
 - [ ] Project quality checks pass
-- Proof venue: automated
-- Incus topology: none
-- Checkout roles: none
+- Proof venue: automated or live
+- Live nodes (if applicable): exact IDs, names, and roles from `orbit node:list --json`
+- Live access method (if applicable): Orbit CLI, Gateway API, or pinned direct SSH
+- Checkout identity (if applicable): candidate and deployed paths/commit SHAs
+- Recovery evidence (if applicable): verified recovery points before mutation
+- Pre-mutation cleanup baseline (if applicable): task-owned resources and shared nodes
+- Post-mutation cleanup evidence (if applicable): task-owned resources removed; shared nodes intact
 - Evidence:
 
 ## Compound
@@ -27,5 +31,5 @@ All required ADRs must already exist on `main`.
 
 ## Cleanup
 
-- [ ] Disposable Incus topology is absent or still required for review
+- [ ] Cleanup evidence is recorded for task-owned resources; shared live nodes remain intact
 - [ ] No credentials, runtime state, or generated artifacts are committed

@@ -22,11 +22,15 @@ This repository contains the Orbit CLI, Gateway, and PHP SDK.
 - Review is a separate agent cycle. The same implementation agent addresses
   review comments.
 - The merge agent verifies checks, approval, proof, and compound learning.
-- The project-manager agent cleans any disposable Incus topology before it
-  removes the worktree.
+- For live proof, inspect the registered topology before changing code. Select
+  and revalidate exact nodes with `orbit node:list --json`.
+- Shared live nodes are never removed by feature cleanup. Feature cleanup
+  removes only task-owned resources and the worktree.
 - Keep project-manager orchestration outside this repository. The repository
   owns role behavior and handoff contracts only.
-- Deployment and post-deploy verification are outside this repository cycle.
+- Candidate deployment and rollout to the registered live topology are part of
+  feature development. Production release and post-deploy operations remain
+  separate.
 
 ## Verification
 

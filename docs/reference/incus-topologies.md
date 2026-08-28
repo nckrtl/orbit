@@ -1,11 +1,11 @@
-# Incus topology registry
+# Optional Incus diagnostic registry
 
-Incus proof is optional. A Linear issue can select it only from the closed list
-of registered profiles in this document.
+Incus is optional diagnostic tooling. It never gates issue readiness, review,
+merge, or proof. No registered profiles is acceptable.
 
-The monorepo foundation does not register a profile. The Incus development
-harness is the next delivery layer. Until that harness lands, an Incus-backed
-issue stays in Preparation.
+The monorepo foundation does not register a profile. This document may list
+diagnostic profiles, but live proof uses active nodes selected with
+`orbit node:list --json`.
 
 A profile becomes registered only when the repository provides and verifies
 all of these exact-ID operations:
@@ -13,7 +13,7 @@ all of these exact-ID operations:
 - create or safely resume a topology for one Linear issue;
 - synchronize the selected worktree roles;
 - execute from a VM-local runtime checkout;
-- record proof against the candidate commit;
+- record diagnostic evidence against the candidate commit;
 - release its instances, networks, storage, source paths, and manifest; and
 - verify that release completed.
 

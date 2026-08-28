@@ -6,7 +6,7 @@ description: Use when implementing or resuming a Ready Orbit Linear issue anywhe
 # Developing Orbit Features
 
 Own Work and Compound until the pull request is ready for independent review.
-The external orchestrator owns issue state, worktree and Incus lifecycle,
+The external orchestrator owns issue state and worktree lifecycle,
 top-level role sessions, merge, and cleanup. The feature worker owns its
 internal implementation subagents.
 
@@ -30,7 +30,8 @@ existing pull request or review comments. Confirm that:
 - its outcome, scope, acceptance criteria, components, ADR links, and proof
   venue are complete;
 - every linked ADR is already on `main`; and
-- an Incus proof venue names a registered profile and exact checkout roles.
+- a `live` proof venue names exact applicable nodes, access method, and defined
+  checkout identity evidence.
 
 Return `blocked` without changing code when a required input or gate is absent.
 
@@ -83,13 +84,20 @@ Light subagents.
 2. Inspect the existing implementation and tests, build the dependency graph,
    and dispatch all unblocked work. On review resumption, assign every
    unresolved comment in the same worktree and pull request.
-3. Implement only the issue scope. Use test-driven development for behavior.
+3. For live proof, revalidate `orbit node:list --json`, then prove or inspect
+   the gap with Orbit CLI, Gateway API, or pinned direct SSH before code. Capture
+   ownership, recovery, and cleanup traps before mutation; fail closed on drift.
+   Inspect `/home/nckrtl/orbit-old` for applicable prior implementation before
+   codifying the behavior. Implement only the issue scope. Use test-driven
+   development for behavior.
    Integrate subagent changes continuously and check cross-project contracts.
 4. Map each acceptance criterion to focused proof. Run independent focused and
    per-project checks in parallel when they do not mutate shared files or
-   contend for the same service. After integration is stable, run each changed
-   project's `composer check` and root `bin/test`. Record commands, results,
-   test and assertion counts, and the candidate commit SHA.
+   contend for the same service. For live proof, roll out the candidate serially
+   and verify checkout identity and health after each node. After integration is
+   stable, run each changed project's `composer check` and root `bin/test`.
+   Record commands, results, test and assertion counts, and the candidate commit
+   SHA.
 5. Compound only reusable learning into the correct existing ADR, reference,
    solution, or rule. Do not introduce a required ADR in the feature pull
    request. Give a specific reason when no durable update is useful.
@@ -106,7 +114,8 @@ Light subagents.
 
    Post it once per candidate SHA and record its URL in the handoff.
 
-Do not approve, merge, close the issue, remove the worktree, or release Incus.
+Do not approve, merge, close the issue, remove the worktree, or mutate or
+remove shared live topology resources without explicit scope.
 
 ## Handoff
 
@@ -123,7 +132,23 @@ head_sha: full-sha
 review_comment_url: URL|null
 components: []
 proof:
-  venue: automated|incus
+  venue: automated|live
+  topology: none|registered-live
+  nodes:
+    - id: number
+      name: text
+      roles: []
+      access: [orbit|gateway|ssh]
+      ssh_host_key_fingerprint: SHA256:text|null
+      candidate_checkout_path: path|null
+      candidate_sha: full-sha|null
+      deployed_checkout_path: path|null
+      deployed_sha: full-sha|null
+      pre_state: text
+      recovery: text
+      post_state: text
+      cleanup: text
+  rollout: serial|not-applicable
   acceptance:
     - criterion: text
       evidence: text

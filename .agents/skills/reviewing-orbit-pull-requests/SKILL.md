@@ -9,14 +9,14 @@ Review the candidate independently. Independent means a separate review agent
 session; it does not require a separate GitHub account. Reviewing from the
 same GitHub account that authored the pull request is acceptable. Comment on
 the pull request and approve it only when every gate passes and no finding
-remains. Do not implement fixes, push commits, merge, close the issue, or
-clean the worktree or Incus topology.
+remains. Do not implement fixes, push commits, merge, close the issue, mutate
+shared live nodes, or remove task-owned resources.
 
 ## Required input
 
 Require the Linear issue contract, pull request URL, candidate commit SHA,
-linked ADRs, proof venue, and worker handoff. Return `blocked` when the candidate
-cannot be reviewed, including when required Incus evidence is unavailable.
+linked ADRs, proof venue, and worker handoff. Proof venue must be `automated` or
+`live`. Return `blocked` when the candidate cannot be reviewed.
 
 ## Review
 
@@ -30,8 +30,14 @@ cannot be reviewed, including when required Incus evidence is unavailable.
    belongs to the candidate SHA. Focused evidence must state reproducible
    commands or manual steps, the observed result, and a link or attached output
    when the proof venue produces one.
-4. For Incus proof, confirm that the issue names a registered profile and that
-   the evidence comes from the required checkout roles and candidate SHA.
+4. For live proof, confirm evidence identifies each exact node from
+   `orbit node:list --json` by numeric ID, name, and roles. Confirm the Orbit
+   CLI, Gateway API, or direct SSH method and a pinned host-key fingerprint for
+   each SSH path. Confirm proof-time candidate and deployed full SHAs plus
+   checkout paths. Confirm pre-state, post-state, recovery, and cleanup
+   evidence, including verification of task-owned cleanup. Confirm that
+   pre-existing state was not deleted or adopted. Automated proof still
+   requires reproducible commands and the candidate SHA.
 5. Confirm that Compound updates are useful and correctly placed. Accept no
    documentation change only when the worker gives a specific durable-learning
    reason.

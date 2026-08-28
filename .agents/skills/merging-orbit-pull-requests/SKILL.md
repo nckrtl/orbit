@@ -6,15 +6,14 @@ description: Use when performing the final merge gate for an approved Orbit pull
 # Merging Orbit Pull Requests
 
 Verify the exact approved candidate and merge it only when every gate passes.
-The external orchestrator owns issue state, Incus and worktree cleanup, and all
-deployment work.
+The external orchestrator owns issue state, task-owned resource and worktree
+cleanup, and all deployment work.
 
 ## Required input
 
 Require the Linear issue contract, pull request URL, candidate commit SHA,
-reviewer handoff, proof evidence, Compound disposition, worktree path, and any
-Incus topology identifier. Return `blocked` without merging when an input or gate
-is missing.
+reviewer handoff, proof evidence, Compound disposition, and worktree path.
+Return `blocked` without merging when an input or gate is missing.
 
 ## Verify and merge
 
@@ -33,18 +32,25 @@ is missing.
 4. Verify the Linear scope and acceptance criteria against the diff and focused
    proof. A required ADR must already be on `main`; an ADR introduced by the
    feature pull request blocks the merge.
-5. Confirm that automated or Incus proof matches the issue venue and candidate
-   SHA. Incus proof also requires the registered profile and exact checkout-role
-   evidence specified by the issue.
+5. Confirm that automated or live proof matches the issue venue and candidate
+   SHA. Live proof must identify exact nodes from `orbit node:list --json`,
+   including IDs, names, and roles; the Orbit CLI, Gateway API, or direct SSH
+   method; and a pinned host-key fingerprint for each SSH path. Require
+   proof-time checkout paths plus candidate and deployed full SHAs and
+   pre-state, post-state, recovery, and cleanup evidence. Treat verified
+   task-owned cleanup as a required gate. Confirm that no pre-existing state
+   was deleted or adopted and that shared live nodes remain intact.
 6. Confirm a useful Compound update in the correct durable location, or a
    specific reason why the work produced no durable learning.
 7. Re-read the pull request head and all gates immediately before merging. If
    they are unchanged and pass, create a merge commit. Use the hosting service's
    merge-commit method, equivalent to `gh pr merge --merge`.
 
-Do not close the Linear issue, release Incus, remove the worktree, or deploy.
-After a successful merge, signal the external orchestrator. It cleans Incus
-before the worktree, then closes the issue. Deployment is a separate cycle.
+Do not close the Linear issue, clean task-owned resources, remove the worktree,
+or perform a production release. Shared live nodes are never removed. After a
+successful merge, signal the external orchestrator. It cleans task-owned
+resources before the worktree, then closes the issue. Production release is a
+separate cycle.
 
 ## Handoff
 
@@ -72,9 +78,9 @@ gates:
 blockers: []
 cleanup:
   action: cleanup|none
-  incus_topology: id|null
+  task_owned_resources: text|null
   worktree: path|null
-  order: incus_then_worktree
+  order: resources_then_worktree
 external_issue_action: close_after_cleanup|none
 ```
 
