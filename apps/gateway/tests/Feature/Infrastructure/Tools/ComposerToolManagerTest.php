@@ -441,6 +441,10 @@ describe(ComposerToolManager::class, function (): void {
         'invalid JSON' => [composer_result('{'), 'installed-version'],
         'missing installed list' => [composer_result('{}'), 'installed-version'],
         'non-list installed value' => [composer_result('{"installed":{}}'), 'installed-version'],
+        'non-empty root list' => [
+            composer_result('[{"name":"laravel/installer","version":"v5.16.0"}]'),
+            'installed-version',
+        ],
         'malformed entry' => [
             composer_result(composer_show_entries([['name' => 'laravel/installer']])),
             'installed-version',

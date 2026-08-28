@@ -24,9 +24,11 @@ All required ADRs must already exist on `main`.
 - Checkout identity (if applicable): candidate and deployed paths/commit SHAs
 - Ownership baseline (if applicable): task-owned, shared, and pre-existing
   resources
-- Mutation evidence (if applicable): for each mutation, fresh node-list request
-  or snapshot, exact node, candidate SHA, mutation, task-owned resources,
-  pre-state, recovery, result, and cleanup
+- Mutation evidence (if applicable): one entry per live write, including recovery
+  artifacts, candidate files, Caddy or PHP-FPM files and symlinks, and service
+  reloads. Immediately before each write, record and inspect a fresh
+  `orbit node:list --json` request. Record the exact node, candidate SHA,
+  mutation, task-owned resources, pre-state, recovery, result, and cleanup
 - Recovery evidence (if applicable): verified recovery action and owned recovery artifacts
 - Post-proof absence evidence (if applicable): task-owned resources absent;
   shared and pre-existing state unchanged
