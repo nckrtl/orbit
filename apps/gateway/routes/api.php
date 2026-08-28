@@ -12,6 +12,8 @@ use App\Http\Controllers\Api\NodeRolesController;
 use App\Http\Controllers\Api\NodesController;
 use App\Http\Controllers\Api\ProcessesController;
 use App\Http\Controllers\Api\RootCaCertificatesController;
+use App\Http\Controllers\Api\ToolManagersController;
+use App\Http\Controllers\Api\ToolsController;
 use App\Http\Controllers\Api\WorkspacesController;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Http\Middleware\RequireNodeAccess;
@@ -103,5 +105,18 @@ Route::prefix('v1')->group(function (): void {
             ->name('process:restart');
         Route::delete('processes/{process}', [ProcessesController::class, 'destroy'])
             ->name('process:remove');
+        Route::get('tool-managers', [ToolManagersController::class, 'index'])
+            ->name('tool:manager:list');
+        Route::get('tools', [ToolsController::class, 'index'])->name('tool:list');
+        Route::get('tools/{tool}', [ToolsController::class, 'show'])
+            ->whereNumber('tool')
+            ->name('tool:show');
+        Route::post('tools', [ToolsController::class, 'store'])->name('tool:install');
+        Route::post('tools/{tool}/update', [ToolsController::class, 'update'])
+            ->whereNumber('tool')
+            ->name('tool:update');
+        Route::delete('tools/{tool}', [ToolsController::class, 'destroy'])
+            ->whereNumber('tool')
+            ->name('tool:remove');
     });
 });

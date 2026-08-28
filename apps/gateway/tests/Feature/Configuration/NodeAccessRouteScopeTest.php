@@ -80,6 +80,12 @@ it('declares node access scope on every active-peer API route', function (): voi
         'process:restart' => ServingNode::ProcessOwning,
         'process:start' => ServingNode::ProcessOwning,
         'process:stop' => ServingNode::ProcessOwning,
+        'tool:install' => ServingNode::ToolOwning,
+        'tool:list' => ServingNode::ToolOwning,
+        'tool:manager:list' => ServingNode::ToolOwning,
+        'tool:remove' => ServingNode::ToolOwning,
+        'tool:show' => ServingNode::ToolOwning,
+        'tool:update' => ServingNode::ToolOwning,
         'workspace:list' => ServingNode::Collection,
         'workspace:new' => ServingNode::WorkspaceOwning,
         'workspace:php' => ServingNode::WorkspaceOwning,
@@ -88,6 +94,48 @@ it('declares node access scope on every active-peer API route', function (): voi
     ];
 
     expect($actualScopes)->toBe($expectedScopes);
+});
+
+it('registers every Tool route with its exact HTTP contract', function (): void {
+    $actual = collect(Route::getRoutes()->getRoutes())
+        ->filter(static fn (IlluminateRoute $route): bool => str_starts_with($route->getName() ?? '', 'tool:'))
+        ->mapWithKeys(static fn (IlluminateRoute $route): array => [
+            $route->getName() => [
+                $route->methods()[0],
+                $route->uri(),
+            ],
+        ])
+        ->all();
+    ksort($actual);
+
+    expect($actual)->toBe([
+        'tool:install' => ['POST', 'api/v1/tools'],
+        'tool:list' => ['GET', 'api/v1/tools'],
+        'tool:manager:list' => ['GET', 'api/v1/tool-managers'],
+        'tool:remove' => ['DELETE', 'api/v1/tools/{tool}'],
+        'tool:show' => ['GET', 'api/v1/tools/{tool}'],
+        'tool:update' => ['POST', 'api/v1/tools/{tool}/update'],
+    ]);
+});
+
+it('constrains every route-bound Tool parameter to numeric IDs', function (): void {
+    $routes = collect(Route::getRoutes()->getRoutes())
+        ->filter(static fn (IlluminateRoute $route): bool => in_array(
+            $route->getName(),
+            [
+                'tool:show',
+                'tool:update',
+                'tool:remove',
+            ],
+            strict: true,
+        ));
+
+    expect($routes)->toHaveCount(3);
+
+    foreach ($routes as $route) {
+        expect($route->wheres['tool'] ?? null)
+            ->toBe('[0-9]+', "Route [{$route->getName()}] must constrain tool IDs.");
+    }
 });
 
 it('keeps only bootstrap routes outside peer and node access middleware', function (): void {

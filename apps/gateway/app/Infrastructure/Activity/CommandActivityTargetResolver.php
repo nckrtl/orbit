@@ -5,12 +5,15 @@ declare(strict_types=1);
 namespace App\Infrastructure\Activity;
 
 use App\Domain\Processes\ProcessTargetType;
+use App\Domain\Tools\ToolOperationException;
 use App\Models\App as OrbitApp;
 use App\Models\FirewallRule;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process as OrbitProcess;
+use App\Models\Tool;
 use App\Models\Workspace;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 
@@ -20,9 +23,13 @@ use Illuminate\Http\Request;
  */
 final readonly class CommandActivityTargetResolver
 {
-    /** @return array{subject_type: string, subject_id: int, target_node_id: ?int}|null */
-    public function resolve(Request $request): ?array
+    /** @return array{subject_type?: string, subject_id?: int, target_node_id: ?int}|null */
+    public function resolve(Request $request, ?ToolOperationException $exception = null): ?array
     {
+        if (str_starts_with((string) $request->route()?->getName(), 'tool:')) {
+            return $this->resolveTool($request, $exception);
+        }
+
         $subject = $this->subject($request);
 
         if (! $subject instanceof Model) {
@@ -34,6 +41,108 @@ final readonly class CommandActivityTargetResolver
             'subject_id' => (int) $subject->getKey(),
             'target_node_id' => $this->targetNodeId($subject),
         ];
+    }
+
+    /** @return array{subject_type?: string, subject_id?: int, target_node_id: ?int} */
+    private function resolveTool(Request $request, ?ToolOperationException $exception): array
+    {
+        $tool = $this->tool($request, $exception);
+        $nodeId = $this->toolNodeId($request, $tool, $exception);
+        $result = ['target_node_id' => $nodeId];
+
+        if ($tool instanceof Tool) {
+            $result['subject_type'] = $tool->getMorphClass();
+            $result['subject_id'] = (int) $tool->getKey();
+        }
+
+        return $result;
+    }
+
+    /** @mago-expect analysis:mixed-assignment Request attributes are an untyped boundary. */
+    private function tool(Request $request, ?ToolOperationException $exception): ?Tool
+    {
+        $snapshot = $request->attributes->get('orbit.tool_snapshot');
+
+        if ($snapshot instanceof Tool) {
+            return $snapshot;
+        }
+
+        $bound = $request->route('tool');
+
+        if ($bound instanceof Tool) {
+            return $bound;
+        }
+
+        $identity = $this->toolIdentity($request, $exception);
+
+        if ($identity === null || $request->route()?->getName() !== 'tool:install') {
+            return null;
+        }
+
+        return Tool::query()
+            ->with('manager')
+            ->where('node_id', $identity['node_id'])
+            ->where('package', $identity['package'])
+            ->whereHas('manager', static function (Builder $query) use ($identity): void {
+                $query
+                    ->where('node_id', $identity['node_id'])
+                    ->where('name', $identity['manager']);
+            })
+            ->first();
+    }
+
+    /**
+     * @return array{node_id: int, manager: string, package: string}|null
+     * @mago-expect analysis:mixed-assignment Request attributes are an untyped boundary.
+     */
+    private function toolIdentity(Request $request, ?ToolOperationException $exception): ?array
+    {
+        if ($exception instanceof ToolOperationException) {
+            return [
+                'node_id' => $exception->nodeId,
+                'manager' => $exception->manager,
+                'package' => $exception->package,
+            ];
+        }
+
+        $activity = $request->attributes->get('orbit.tool_activity');
+
+        if (
+            ! is_array($activity)
+            || ! is_int($activity['node_id'] ?? null)
+            || ! is_string($activity['manager'] ?? null)
+            || ! is_string($activity['package'] ?? null)
+        ) {
+            return null;
+        }
+
+        return [
+            'node_id' => $activity['node_id'],
+            'manager' => $activity['manager'],
+            'package' => $activity['package'],
+        ];
+    }
+
+    /** @mago-expect analysis:mixed-assignment The database value is checked before return. */
+    private function toolNodeId(
+        Request $request,
+        ?Tool $tool,
+        ?ToolOperationException $exception,
+    ): ?int {
+        if ($tool instanceof Tool) {
+            return $tool->node_id;
+        }
+
+        $identity = $this->toolIdentity($request, null);
+        $nodeId = match (true) {
+            $exception instanceof ToolOperationException => $exception->nodeId,
+            $identity !== null => $identity['node_id'],
+            default => $request->integer('node_id'),
+        };
+
+        $targetNodeId = Node::query()->whereKey($nodeId)->value('id');
+
+        return is_int($targetNodeId) ? $targetNodeId : null;
     }
 
     private function subject(Request $request): ?Model
@@ -129,6 +238,10 @@ final readonly class CommandActivityTargetResolver
         }
 
         if ($subject instanceof Instance) {
+            return $subject->node_id;
+        }
+
+        if ($subject instanceof Tool) {
             return $subject->node_id;
         }
 

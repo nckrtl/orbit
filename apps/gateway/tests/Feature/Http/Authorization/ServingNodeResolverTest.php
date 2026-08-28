@@ -7,6 +7,8 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Tools\ToolManagerName;
+use App\Domain\Tools\ToolStatus;
 use App\Http\Authorization\ActiveGatewayMissing;
 use App\Http\Authorization\ServingNode;
 use App\Http\Authorization\ServingNodeResolver;
@@ -125,6 +127,36 @@ it('resolves workspace-owning nodes from a bound workspace and create input', fu
         ->toBe([$node->id]);
 });
 
+it('resolves the Tool-owning node from a bound Tool and raw node input', function (): void {
+    $boundNode = resolver_node('tool-owner');
+    $manager = $boundNode
+        ->toolManagers()
+        ->create([
+            'name' => ToolManagerName::Apt,
+            'status' => LifecycleStatus::Active,
+        ]);
+    $tool = $boundNode
+        ->tools()
+        ->create([
+            'tool_manager_id' => $manager->id,
+            'package' => 'jq',
+            'status' => ToolStatus::Installed,
+            'installed_version' => '1.0.0',
+        ]);
+    $rawNode = resolver_node('raw-tool-owner');
+
+    expect(resolver_node_ids(resolver()->resolve(
+        resolver_request(['tool' => $tool]),
+        ServingNode::ToolOwning,
+    )))
+        ->toBe([$boundNode->id])
+        ->and(resolver_node_ids(resolver()->resolve(
+            resolver_request(input: ['node_id' => $rawNode->id]),
+            ServingNode::ToolOwning,
+        )))
+        ->toBe([$rawNode->id]);
+});
+
 it('resolves process-owning nodes from bound and raw instance targets', function (): void {
     $app = resolver_app('process-owner');
     $node = resolver_node('process-node');
@@ -180,6 +212,8 @@ it('leaves malformed or absent raw identifiers to validation', function (string 
     'malformed workspace instance' => ['WorkspaceOwning', ['instance_id' => 0]],
     'missing process target' => ['ProcessOwning', []],
     'malformed process target type' => ['ProcessOwning', ['target_type' => 'node', 'target_id' => 1]],
+    'missing tool node' => ['ToolOwning', []],
+    'malformed tool node' => ['ToolOwning', ['node_id' => 'not-a-number']],
 ]);
 
 it('throws for syntactically valid missing raw identifiers', function (string $scopeName, array $input): void {
@@ -193,6 +227,7 @@ it('throws for syntactically valid missing raw identifiers', function (string $s
     'workspace instance' => ['WorkspaceOwning', ['instance_id' => 999_999]],
     'process instance' => ['ProcessOwning', ['target_type' => 'instance', 'target_id' => 999_999]],
     'process workspace' => ['ProcessOwning', ['target_type' => 'workspace', 'target_id' => 999_999]],
+    'tool node' => ['ToolOwning', ['node_id' => 999_999]],
 ])->throws(ModelNotFoundException::class);
 
 function resolver(): ServingNodeResolver

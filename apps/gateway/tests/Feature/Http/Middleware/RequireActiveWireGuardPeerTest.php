@@ -12,6 +12,8 @@ use App\Models\App as OrbitApp;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\Tool;
+use App\Models\ToolManagerRecord;
 use Illuminate\Http\Middleware\TrustProxies;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Str;
@@ -133,6 +135,34 @@ it('identifies the peer before resolving a route-bound resource', function (stri
     'workspace' => '/api/v1/workspaces/999999',
     'process logs' => '/api/v1/processes/999999/logs',
     'activity' => '/api/v1/activities/999999',
+    'tool managers' => '/api/v1/tool-managers',
+    'tools' => '/api/v1/tools',
+    'tool show' => '/api/v1/tools/999999',
+]);
+
+it('rejects unknown peers before any Tool route is resolved', function (string $method, string $path): void {
+    $requestId = (string) Str::uuid();
+    $toolCount = Tool::query()->count();
+    $managerCount = ToolManagerRecord::query()->count();
+
+    $response = $this
+        ->withServerVariables(['REMOTE_ADDR' => '10.44.0.99'])
+        ->withHeader('X-Orbit-Request-Id', $requestId)
+        ->{$method.'Json'}($path, []);
+
+    $response
+        ->assertForbidden()
+        ->assertHeader('X-Orbit-Request-Id', $requestId)
+        ->assertJsonPath('error.code', 'peer.identity_unknown');
+
+    expect(Tool::query()->count())->toBe($toolCount)->and(ToolManagerRecord::query()->count())->toBe($managerCount);
+})->with([
+    'manager list' => ['get', '/api/v1/tool-managers?node_id=1'],
+    'tool list' => ['get', '/api/v1/tools?node_id=1'],
+    'show' => ['get', '/api/v1/tools/999999'],
+    'install' => ['post', '/api/v1/tools'],
+    'update' => ['post', '/api/v1/tools/999999/update'],
+    'remove' => ['delete', '/api/v1/tools/999999'],
 ]);
 
 it('rejects an active role-less operator without direct node access', function (): void {

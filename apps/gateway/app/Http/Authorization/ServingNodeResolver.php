@@ -10,6 +10,7 @@ use App\Models\App as OrbitApp;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\Tool;
 use App\Models\Workspace;
 use Illuminate\Http\Request;
 
@@ -29,6 +30,7 @@ final readonly class ServingNodeResolver
             ServingNode::InstanceOwning => $this->instanceOwning($request),
             ServingNode::WorkspaceOwning => $this->workspaceOwning($request),
             ServingNode::ProcessOwning => $this->processOwning($request),
+            ServingNode::ToolOwning => $this->toolOwning($request),
             ServingNode::Collection => [],
         };
     }
@@ -166,6 +168,24 @@ final readonly class ServingNodeResolver
         }
 
         return [$this->ownerNode($owner)];
+    }
+
+    /** @return list<Node> */
+    private function toolOwning(Request $request): array
+    {
+        $tool = $request->route('tool');
+
+        if ($tool instanceof Tool) {
+            return [Node::query()->findOrFail($tool->node_id)];
+        }
+
+        $nodeId = $this->positiveInteger($request->input('node_id'));
+
+        if ($nodeId === null) {
+            return [];
+        }
+
+        return [Node::query()->findOrFail($nodeId)];
     }
 
     private function ownerNode(Instance|Workspace $owner): Node
