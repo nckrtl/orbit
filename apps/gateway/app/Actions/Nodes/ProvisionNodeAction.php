@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace App\Actions\Nodes;
 
 use App\Data\Nodes\ProvisionNodeData;
+use App\Domain\Nodes\LinuxUserName;
 use App\Domain\Nodes\NodeConverger;
 use App\Domain\Nodes\NodeProvisioningException;
+use App\Domain\Nodes\NodeProvisioningIdentity;
 use App\Domain\Nodes\NodeTld;
 use App\Domain\Nodes\RecoverableNodeConverger;
 use App\Domain\Nodes\RoleName;
@@ -21,7 +23,7 @@ use App\Infrastructure\Ssh\SshHostKeyScanException;
 use App\Models\Node;
 use Throwable;
 
-/** @mago-expect lint:cyclomatic-complexity Node provisioning keeps its ordered identity, role, and recovery gates together. */
+/** @mago-expect lint:cyclomatic-complexity,kan-defect Node provisioning keeps its ordered identity, role, and recovery gates together. */
 final readonly class ProvisionNodeAction
 {
     public function __construct(
@@ -35,8 +37,20 @@ final readonly class ProvisionNodeAction
     /** @mago-expect lint:halstead Ordered provisioning keeps persisted state and failure recovery in one transaction-like flow. */
     public function execute(ProvisionNodeData $data): Node
     {
+        if (
+            ! LinuxUserName::isValid($data->user)
+            || $data->orbitUser !== null
+            && ! LinuxUserName::isValid($data->orbitUser)
+        ) {
+            throw new ResourceOperationException(
+                errorCode: 'node.invalid_linux_user',
+                message: 'The node Linux user name is invalid.',
+            );
+        }
         $this->validateEndpointOverride($data);
         $node = Node::query()->firstOrNew(['name' => $data->name]);
+        $managedUser = $data->orbitUser ?? ($node->exists ? $node->user : 'orbit');
+        $identity = new NodeProvisioningIdentity($data->user, $managedUser);
         $platform = $this->platform($node, $data);
         $architecture = $this->architecture($node, $data);
         $tld = $this->tld($node, $data);
@@ -105,7 +119,7 @@ final readonly class ProvisionNodeAction
             'tld' => $tld,
             'public_ssh_host' => $publicSshHost,
             'public_ssh_port' => $node->exists ? $node->public_ssh_port : $data->publicSshPort,
-            'user' => $node->exists ? $node->user : 'orbit',
+            'user' => $managedUser,
             'wireguard_address' => $wireguardAddress,
             'wireguard_endpoint_override' => $data->wireguardEndpointOverride ?? $node->wireguard_endpoint_override,
             'dns_server_override' => $data->dnsServerOverride ?? $node->dns_server_override,
@@ -117,13 +131,14 @@ final readonly class ProvisionNodeAction
             if ($priorActiveState !== null && $this->converger instanceof RecoverableNodeConverger) {
                 $this->converger->convergeRecoverably(
                     $node,
+                    $identity,
                     $data->expectedSshHostFingerprint,
                     function () use ($node): void {
                         $this->toolManagers->converge($node, ToolManagerName::Apt);
                     },
                 );
             } else {
-                $this->converger->converge($node, $data->expectedSshHostFingerprint);
+                $this->converger->converge($node, $identity, $data->expectedSshHostFingerprint);
                 $this->toolManagers->converge($node, ToolManagerName::Apt);
             }
         } catch (NodeProvisioningException $exception) {

@@ -99,6 +99,36 @@ it('keeps gateway and VPN removal protected at the baseline boundary', function 
     expect($events)->toBe(['firewall:converge:gateway', 'ssh:vpn', 'firewall:converge:vpn']);
 });
 
+it('uses the node user for VPN prerequisite SSH connections', function (): void {
+    $events = [];
+    [$node, $assignment] = role_baseline_models(RoleName::Vpn, 'vpn-user');
+    $node->update(['user' => 'nckrtl']);
+
+    $baseline = new VpnRoleBaseline(
+        new NodeRolePrerequisiteCommandFactory,
+        new class($events) implements SshExecutor {
+            /** @param list<string> $events */
+            public function __construct(
+                private array &$events,
+            ) {}
+
+            public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+            {
+                $this->events[] = "ssh-user:{$connection->user}";
+
+                return new CommandResult(0, '', '', 1, false);
+            }
+        },
+        baseline_keys(),
+        baseline_known_hosts(),
+        baseline_firewall($events),
+    );
+
+    $baseline->converge($node, $assignment);
+
+    expect($events)->toBe(['ssh-user:nckrtl', 'firewall:converge:vpn']);
+});
+
 it('dispatches every assignment to its code-defined baseline', function (): void {
     expect(class_exists(NativeRoleBaselineConverger::class))->toBeTrue();
 
@@ -345,17 +375,17 @@ function baseline_firewall(array &$events): NodeRoleFirewallManager
             private array &$events,
         ) {}
 
-        public function convergeBase(Node $node): void
+        public function convergeBase(Node $node, string $managedUser): void
         {
             $this->events[] = 'firewall:base';
         }
 
-        public function converge(Node $node, RoleName $role): void
+        public function converge(Node $node, RoleName $role, string $managedUser): void
         {
             $this->events[] = "firewall:converge:{$role->value}";
         }
 
-        public function remove(Node $node, RoleName $role): void
+        public function remove(Node $node, RoleName $role, string $managedUser): void
         {
             $this->events[] = "firewall:remove:{$role->value}";
         }

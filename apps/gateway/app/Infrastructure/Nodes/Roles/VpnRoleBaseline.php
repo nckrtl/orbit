@@ -40,7 +40,7 @@ final readonly class VpnRoleBaseline implements RoleBaseline
         $result = $this->ssh->execute(
             new SshConnection(
                 $node->wireguard_address,
-                'orbit',
+                $node->user,
                 22,
                 $this->keys->privateKeyPath(),
                 $this->knownHosts->path(),
@@ -58,7 +58,7 @@ final readonly class VpnRoleBaseline implements RoleBaseline
             );
         }
 
-        $this->firewall->converge($node, RoleName::Vpn);
+        $this->firewall->converge($node, RoleName::Vpn, $node->user);
     }
 
     public function remove(Node $node, NodeRole $assignment, bool $purgeData): never

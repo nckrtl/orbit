@@ -7,6 +7,7 @@ namespace App\Infrastructure\Nodes;
 use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Nodes\NodeConverger;
 use App\Domain\Nodes\NodeProvisioningException;
+use App\Domain\Nodes\NodeProvisioningIdentity;
 use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\RecoverableNodeConverger;
 use App\Domain\Nodes\RoleName;
@@ -41,23 +42,27 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
         private ?Closure $sleep = null,
     ) {}
 
-    public function converge(Node $node, ?string $expectedSshHostFingerprint = null): void
-    {
-        [$hostKey, $wireguardAddress] = $this->prepare($node, $expectedSshHostFingerprint);
-        $this->wireGuard->converge($node, $this->connection($node, 'orbit'));
-        $this->finishWireGuard($node, $hostKey, $wireguardAddress);
+    public function converge(
+        Node $node,
+        NodeProvisioningIdentity $identity,
+        ?string $expectedSshHostFingerprint = null,
+    ): void {
+        [$hostKey, $wireguardAddress] = $this->prepare($node, $identity, $expectedSshHostFingerprint);
+        $this->wireGuard->converge($node, $this->connection($node, $identity->managedUser));
+        $this->finishWireGuard($node, $identity->managedUser, $hostKey, $wireguardAddress);
     }
 
     public function convergeRecoverably(
         Node $node,
+        NodeProvisioningIdentity $identity,
         ?string $expectedSshHostFingerprint,
         Closure $completion,
     ): void {
-        [$hostKey, $wireguardAddress] = $this->prepare($node, $expectedSshHostFingerprint);
+        [$hostKey, $wireguardAddress] = $this->prepare($node, $identity, $expectedSshHostFingerprint);
 
         if (! $this->wireGuard instanceof RecoverableWireGuardPeerConverger) {
-            $this->wireGuard->converge($node, $this->connection($node, 'orbit'));
-            $this->finishWireGuard($node, $hostKey, $wireguardAddress);
+            $this->wireGuard->converge($node, $this->connection($node, $identity->managedUser));
+            $this->finishWireGuard($node, $identity->managedUser, $hostKey, $wireguardAddress);
             $completion();
 
             return;
@@ -65,16 +70,16 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
 
         $this->wireGuard->convergeRecoverably(
             $node,
-            $this->connection($node, 'orbit'),
-            function () use ($node, $hostKey, $wireguardAddress, $completion): void {
-                $this->finishWireGuard($node, $hostKey, $wireguardAddress);
+            $this->connection($node, $identity->managedUser),
+            function () use ($node, $identity, $hostKey, $wireguardAddress, $completion): void {
+                $this->finishWireGuard($node, $identity->managedUser, $hostKey, $wireguardAddress);
                 $completion();
             },
         );
     }
 
     /** @return array{0: \App\Infrastructure\Ssh\HostKey, 1: string} */
-    private function prepare(Node $node, ?string $expectedSshHostFingerprint): array
+    private function prepare(Node $node, NodeProvisioningIdentity $identity, ?string $expectedSshHostFingerprint): array
     {
         if ($node->platform !== 'linux') {
             throw new NodeProvisioningException(
@@ -118,10 +123,10 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
         ]);
 
         $bootstrap = $this->ssh->execute(
-            $this->connection($node, $node->user),
-            $node->user === 'orbit'
-                ? $this->bootstrapCommand->makeWithPasswordlessSudo($node)
-                : $this->bootstrapCommand->make($node),
+            $this->connection($node, $identity->bootstrapUser),
+            $identity->bootstrapUser === 'root'
+                ? $this->bootstrapCommand->make($node, $identity->managedUser)
+                : $this->bootstrapCommand->makeWithPasswordlessSudo($node, $identity->managedUser),
         );
 
         if (! $bootstrap->succeeded()) {
@@ -133,13 +138,16 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
             );
         }
 
-        $verification = $this->ssh->execute($this->connection($node, 'orbit'), new RemoteCommand(['true']));
+        $verification = $this->ssh->execute(
+            $this->connection($node, $identity->managedUser),
+            new RemoteCommand(['true']),
+        );
 
         if (! $verification->succeeded()) {
             throw new NodeProvisioningException(
                 'orbit-ssh',
                 'node.orbit_ssh_failed',
-                "Could not connect to node [{$node->name}] as orbit.",
+                "Could not connect to node [{$node->name}] as {$identity->managedUser}.",
                 result: $verification,
             );
         }
@@ -155,7 +163,7 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
         $wireguardAddress = $node->wireguard_address;
 
         try {
-            $this->firewall->convergeBase($node);
+            $this->firewall->convergeBase($node, $identity->managedUser);
         } catch (FirewallOperationException $exception) {
             throw new NodeProvisioningException(
                 $exception->step,
@@ -171,12 +179,13 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
 
     private function finishWireGuard(
         Node $node,
+        string $managedUser,
         \App\Infrastructure\Ssh\HostKey $hostKey,
         string $wireguardAddress,
     ): void {
         $this->knownHosts->put($wireguardAddress, 22, $hostKey);
         $privateVerification = $this->ssh->execute(
-            $this->connection($node, 'orbit', $wireguardAddress, 22),
+            $this->connection($node, $managedUser, $wireguardAddress, 22),
             new RemoteCommand(['true']),
         );
         foreach (self::WIREGUARD_SSH_RETRY_DELAYS as $delay) {
@@ -190,7 +199,7 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
 
             ($this->sleep ?? usleep(...))($delay);
             $privateVerification = $this->ssh->execute(
-                $this->connection($node, 'orbit', $wireguardAddress, 22),
+                $this->connection($node, $managedUser, $wireguardAddress, 22),
                 new RemoteCommand(['true']),
             );
         }
@@ -205,7 +214,7 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
         }
 
         try {
-            $this->firewall->converge($node, RoleName::Vpn);
+            $this->firewall->converge($node, RoleName::Vpn, $managedUser);
         } catch (FirewallOperationException $exception) {
             throw new NodeProvisioningException(
                 $exception->step,
@@ -215,8 +224,6 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
                 $exception->result,
             );
         }
-
-        $node->update(['user' => 'orbit']);
     }
 
     private function connection(Node $node, string $user, ?string $host = null, ?int $port = null): SshConnection

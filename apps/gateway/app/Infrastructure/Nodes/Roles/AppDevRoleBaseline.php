@@ -32,14 +32,14 @@ final readonly class AppDevRoleBaseline implements RoleBaseline
             'app-dev.prerequisite_failed',
         );
         $this->caddy->converge($node);
-        $this->firewall->converge($node, RoleName::AppDev);
+        $this->firewall->converge($node, RoleName::AppDev, $node->user);
         $this->dns->converge($node);
     }
 
     public function remove(Node $node, NodeRole $assignment, bool $purgeData): void
     {
         $this->caddy->remove($node);
-        $this->firewall->remove($node, RoleName::AppDev);
+        $this->firewall->remove($node, RoleName::AppDev, $node->user);
         $this->dns->converge();
     }
 }

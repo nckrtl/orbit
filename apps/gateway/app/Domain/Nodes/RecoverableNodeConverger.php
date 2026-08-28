@@ -11,6 +11,7 @@ interface RecoverableNodeConverger
 {
     public function convergeRecoverably(
         Node $node,
+        NodeProvisioningIdentity $identity,
         ?string $expectedSshHostFingerprint,
         Closure $completion,
     ): void;

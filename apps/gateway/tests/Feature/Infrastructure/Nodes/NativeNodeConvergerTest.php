@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Nodes\NodeProvisioningException;
+use App\Domain\Nodes\NodeProvisioningIdentity;
 use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\RecoverableNodeConverger;
 use App\Domain\Nodes\RoleName;
@@ -53,7 +54,7 @@ it('fails closed before SSH when no host adapter supports the node platform', fu
         },
     );
 
-    expect(fn () => $converger->converge($node, 'SHA256:pinned'))
+    expect(fn () => $converger->converge($node, base_identity(), 'SHA256:pinned'))
         ->toThrow(function (NodeProvisioningException $exception): void {
             expect($exception->step)
                 ->toBe('platform')
@@ -144,6 +145,7 @@ it('keeps the base bootstrap role-neutral with one fixed shared package list', f
             'ubuntu',
             'noble,resolute',
             UbuntuRelease::requirementText(),
+            'orbit',
             'ssh-ed25519 GATEWAY',
             'ca-certificates',
             'curl',
@@ -155,9 +157,9 @@ it('keeps the base bootstrap role-neutral with one fixed shared package list', f
         ])
         ->and($script)
         ->toContain(
-            'useradd --create-home --shell /bin/bash orbit',
-            'install -d -m 0700 -o orbit -g orbit /home/orbit',
-            'orbit ALL=(ALL) NOPASSWD:ALL',
+            'useradd --create-home --shell /bin/bash -- "$managed_user"',
+            'install -d -m 0700 -o "$managed_user" -g "$managed_group"',
+            'printf \'%s ALL=(ALL) NOPASSWD:ALL\\n\' "$managed_user"',
         )
         ->not->toContain(
             '/home/orbit/apps',
@@ -224,10 +226,10 @@ it('pins the host and converges only base node identity and connectivity', funct
         firewall: $firewall,
     );
 
-    $converger->converge($node, 'SHA256:pinned');
+    $converger->converge($node, base_identity(), 'SHA256:pinned');
 
     expect($node->refresh()->user)
-        ->toBe('orbit')
+        ->toBe('root')
         ->and($node->ssh_host_fingerprint)
         ->toBe('SHA256:pinned')
         ->and($knownHosts->hosts)
@@ -286,7 +288,7 @@ it('commits recoverable peer publication before activating orbit SSH for active 
     );
 
     expect($converger)->toBeInstanceOf(RecoverableNodeConverger::class);
-    $converger->convergeRecoverably($node, 'SHA256:pinned', function () use (&$events): void {
+    $converger->convergeRecoverably($node, base_identity(), 'SHA256:pinned', function () use (&$events): void {
         $events[] = 'apt';
     });
 
@@ -345,7 +347,12 @@ it('rolls back recoverable peer publication when late private ssh verification f
         firewall: base_firewall_spy(),
     );
 
-    expect(fn () => $converger->convergeRecoverably($node, 'SHA256:pinned', static function (): void {}))
+    expect(fn () => $converger->convergeRecoverably(
+        $node,
+        base_identity(),
+        'SHA256:pinned',
+        static function (): void {},
+    ))
         ->toThrow(function (NodeProvisioningException $exception): void {
             expect($exception->step)->toBe('wireguard-ssh')->and($exception->errorCode)->toBe('vpn.peer_ssh_failed');
         });
@@ -393,7 +400,7 @@ it('retries a transient private WireGuard SSH connection with bounded backoff', 
         },
     );
 
-    $converger->converge($node, 'SHA256:pinned');
+    $converger->converge($node, base_identity(), 'SHA256:pinned');
 
     expect($ssh->calls)->toBe(4)->and($sleeps)->toBe([1_000_000]);
 });
@@ -439,7 +446,7 @@ it('preserves the final transient private SSH failure after retries', function (
         },
     );
     expect(
-        fn () => $converger->converge($node, 'SHA256:pinned'),
+        fn () => $converger->converge($node, base_identity(), 'SHA256:pinned'),
     )->toThrow(function (NodeProvisioningException $exception) use ($ssh, &$sleeps): void {
         expect($exception->step)
             ->toBe('wireguard-ssh')
@@ -488,7 +495,7 @@ it('does not retry semantic private SSH exit 255 failures', function (): void {
             return 0;
         },
     );
-    expect(fn () => $converger->converge($node, 'SHA256:pinned'))
+    expect(fn () => $converger->converge($node, base_identity(), 'SHA256:pinned'))
         ->toThrow('Could not reach node')
         ->and($ssh->calls)
         ->toBe(3)
@@ -503,7 +510,7 @@ it('uses passwordless sudo for the same fixed base command when reconnecting as 
     $node->update(['user' => 'orbit', 'ssh_host_fingerprint' => 'SHA256:pinned']);
     $ssh = new BaseNodeSshExecutor;
     $factory = new NodeBootstrapCommandFactory(base_test_keys());
-    $expected = $factory->make($node);
+    $expected = $factory->makeWithPasswordlessSudo($node, 'orbit');
     $converger = new NativeNodeConverger(
         hostKeys: base_test_scanner(),
         knownHosts: base_test_known_hosts(),
@@ -516,10 +523,10 @@ it('uses passwordless sudo for the same fixed base command when reconnecting as 
         firewall: base_firewall_spy(),
     );
 
-    $converger->converge($node);
+    $converger->converge($node, new NodeProvisioningIdentity('nckrtl', 'orbit'));
 
     expect($ssh->calls[0]['command']->arguments)
-        ->toBe(['sudo', '-n', '--', ...$expected->arguments])
+        ->toBe($expected->arguments)
         ->and($ssh->calls[0]['command']->input)
         ->toBe($expected->input);
 });
@@ -541,7 +548,7 @@ it('reports a bounded base bootstrap failure before later convergence', function
     };
     $converger = base_node_converger($ssh);
 
-    expect(fn () => $converger->converge($node, 'SHA256:pinned'))
+    expect(fn () => $converger->converge($node, base_identity(), 'SHA256:pinned'))
         ->toThrow(function (NodeProvisioningException $exception) use ($failure): void {
             expect($exception->step)
                 ->toBe('base-host')
@@ -562,7 +569,7 @@ it('translates base firewall failures to node provisioning failures', function (
             private CommandResult $result,
         ) {}
 
-        public function convergeBase(Node $node): void
+        public function convergeBase(Node $node, string $managedUser): void
         {
             throw new FirewallOperationException(
                 step: 'host-firewall',
@@ -572,13 +579,13 @@ it('translates base firewall failures to node provisioning failures', function (
             );
         }
 
-        public function converge(Node $node, RoleName $role): void {}
+        public function converge(Node $node, RoleName $role, string $managedUser): void {}
 
-        public function remove(Node $node, RoleName $role): void {}
+        public function remove(Node $node, RoleName $role, string $managedUser): void {}
     };
     $converger = base_node_converger(new BaseNodeSshExecutor, firewall: $firewall);
 
-    expect(fn () => $converger->converge($node, 'SHA256:pinned'))
+    expect(fn () => $converger->converge($node, base_identity(), 'SHA256:pinned'))
         ->toThrow(function (NodeProvisioningException $exception) use ($result): void {
             expect($exception->step)
                 ->toBe('host-firewall')
@@ -624,7 +631,7 @@ it('guards first-contact and stored SSH fingerprints before remote effects', fun
     };
     $converger = base_node_converger($ssh, scanner: $scanner);
 
-    expect(fn () => $converger->converge($node, $expected))
+    expect(fn () => $converger->converge($node, base_identity(), $expected))
         ->toThrow(function (NodeProvisioningException $exception) use ($code): void {
             expect($exception->step)
                 ->toBe('ssh-host-key')
@@ -692,8 +699,89 @@ function base_test_keys(): SshKeyProvider
 
 function base_bootstrap_command(): RemoteCommand
 {
-    return new NodeBootstrapCommandFactory(base_test_keys())->make(new Node);
+    return new NodeBootstrapCommandFactory(base_test_keys())->make(new Node, 'orbit');
 }
+
+function base_identity(): NodeProvisioningIdentity
+{
+    return new NodeProvisioningIdentity('root', 'orbit');
+}
+
+it('bootstraps a supplied nckrtl identity without orbit literals or package confusion', function (): void {
+    $factory = new NodeBootstrapCommandFactory(base_test_keys());
+    $command = $factory->makeWithPasswordlessSudo(new Node, 'nckrtl');
+    $script = $command->input ?? '';
+
+    expect($command->arguments)
+        ->toBe([
+            'sudo',
+            '-n',
+            '--',
+            'bash',
+            '-seu',
+            '--',
+            'ubuntu',
+            'noble,resolute',
+            UbuntuRelease::requirementText(),
+            'nckrtl',
+            'ssh-ed25519 GATEWAY',
+            'ca-certificates',
+            'curl',
+            'gnupg',
+            'openssh-client',
+            'sudo',
+            'ufw',
+            'wireguard',
+        ])
+        ->and($script)
+        ->toContain(
+            'managed_user=$4',
+            'orbit_key=$5',
+            'useradd --create-home --shell /bin/bash -- "$managed_user"',
+            'sudo -n -u "$managed_user" -- sudo -n true',
+            '[ ! -d "$managed_home/.ssh" ]',
+            '[ ! -d "$managed_home/.orbit" ]',
+            '[ -L "$managed_home/.ssh" ]',
+            '[ -L "$managed_home/.orbit" ]',
+            '[ -L "$managed_home" ]',
+            '[ -L "$authorized_keys" ]',
+            'chown "$managed_user:$managed_group" -- "$authorized_keys"',
+            'chmod 0600 -- "$authorized_keys"',
+            'trap \'rm -f -- "$sudoers"\' EXIT',
+        )
+        ->not->toContain('useradd orbit', '/home/orbit', '/etc/sudoers.d/orbit')->and(array_slice(
+            $command->arguments,
+            12,
+        ))
+        ->not->toContain('nckrtl');
+});
+
+it('reports the selected managed user when its SSH verification fails', function (): void {
+    $node = base_provisionable_node();
+    $ssh = new class implements SshExecutor {
+        public int $calls = 0;
+
+        public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+        {
+            $this->calls++;
+
+            return $this->calls === 1
+                ? new CommandResult(0, '', '', 1, false)
+                : new CommandResult(255, '', 'permission denied', 1, false);
+        }
+    };
+
+    expect(fn () => base_node_converger($ssh)->converge(
+        $node,
+        new NodeProvisioningIdentity('nckrtl', 'nckrtl'),
+        'SHA256:pinned',
+    ))->toThrow(function (NodeProvisioningException $exception): void {
+        expect($exception->errorCode)
+            ->toBe('node.orbit_ssh_failed')
+            ->and($exception->getMessage())
+            ->toBe('Could not connect to node [base-node] as nckrtl.');
+    });
+});
 
 function run_base_bootstrap_preflight(
     ?string $release,
@@ -724,6 +812,7 @@ function run_base_bootstrap_preflight(
         'ubuntu',
         'noble,resolute',
         UbuntuRelease::requirementText(),
+        'orbit',
         'ssh-ed25519 TEST',
     ]);
     $process->setInput($harness);

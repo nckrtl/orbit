@@ -30,12 +30,12 @@ final readonly class AppProdRoleBaseline implements RoleBaseline
             'app-prod.prerequisite_failed',
         );
         $this->caddy->converge($node);
-        $this->firewall->converge($node, RoleName::AppProd);
+        $this->firewall->converge($node, RoleName::AppProd, $node->user);
     }
 
     public function remove(Node $node, NodeRole $assignment, bool $purgeData): void
     {
         $this->caddy->remove($node);
-        $this->firewall->remove($node, RoleName::AppProd);
+        $this->firewall->remove($node, RoleName::AppProd, $node->user);
     }
 }

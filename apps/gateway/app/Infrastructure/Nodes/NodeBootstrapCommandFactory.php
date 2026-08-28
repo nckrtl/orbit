@@ -26,18 +26,18 @@ final readonly class NodeBootstrapCommandFactory
         private SshKeyProvider $keys,
     ) {}
 
-    public function make(Node $node): RemoteCommand
+    public function make(Node $node, string $managedUser): RemoteCommand
     {
-        return $this->command();
+        return $this->command($managedUser);
     }
 
-    public function makeWithPasswordlessSudo(Node $node): RemoteCommand
+    public function makeWithPasswordlessSudo(Node $node, string $managedUser): RemoteCommand
     {
-        return $this->command(['sudo', '-n', '--']);
+        return $this->command($managedUser, ['sudo', '-n', '--']);
     }
 
     /** @param list<string> $argumentPrefix */
-    private function command(array $argumentPrefix = []): RemoteCommand
+    private function command(string $managedUser, array $argumentPrefix = []): RemoteCommand
     {
         return new RemoteCommand(
             arguments: [
@@ -48,6 +48,7 @@ final readonly class NodeBootstrapCommandFactory
                 'ubuntu',
                 implode(',', UbuntuRelease::supportedCodenames()),
                 UbuntuRelease::requirementText(),
+                $managedUser,
                 $this->keys->publicKey(),
                 ...self::PACKAGES,
             ],
@@ -106,7 +107,9 @@ final readonly class NodeBootstrapCommandFactory
                     exit 1
                 fi
 
-                orbit_key=$4
+                managed_user=$4
+                orbit_key=$5
+                shift
                 shift
                 shift
                 shift
@@ -116,26 +119,60 @@ final readonly class NodeBootstrapCommandFactory
                 apt-get update
                 apt-get install --yes --no-install-recommends -- "$@"
 
-                if ! id -u orbit >/dev/null 2>&1; then
-                    useradd --create-home --shell /bin/bash orbit
+                user_created=false
+                if ! id -u -- "$managed_user" >/dev/null 2>&1; then
+                    useradd --create-home --shell /bin/bash -- "$managed_user"
+                    user_created=true
                 fi
 
-                test "$(getent passwd orbit | cut -d: -f6)" = /home/orbit
-                install -d -m 0700 -o orbit -g orbit /home/orbit
-                install -d -m 0700 -o orbit -g orbit /home/orbit/.ssh /home/orbit/.orbit
-                touch /home/orbit/.ssh/authorized_keys
-                if ! grep -qxF "$orbit_key" /home/orbit/.ssh/authorized_keys; then
-                    printf '%s\n' "$orbit_key" >> /home/orbit/.ssh/authorized_keys
+                managed_home=$(getent passwd -- "$managed_user" | cut -d: -f6)
+                managed_group=$(id -gn -- "$managed_user")
+                test -n "$managed_home"
+                if [ -L "$managed_home" ] || [ ! -d "$managed_home" ]; then
+                    printf '%s\n' "Managed home is not a real directory." >&2
+                    exit 1
                 fi
-                chown orbit:orbit /home/orbit/.ssh/authorized_keys
-                chmod 0600 /home/orbit/.ssh/authorized_keys
-
-                sudoers=$(mktemp)
-                printf 'orbit ALL=(ALL) NOPASSWD:ALL\n' > "$sudoers"
-                chmod 0440 "$sudoers"
-                visudo -cf "$sudoers"
-                install -m 0440 -o root -g root "$sudoers" /etc/sudoers.d/orbit
-                rm -f "$sudoers"
+                if [ "$user_created" = true ]; then
+                    install -d -m 0700 -o "$managed_user" -g "$managed_group" "$managed_home/.ssh" "$managed_home/.orbit"
+                else
+                    if [ -L "$managed_home/.ssh" ] || { [ -e "$managed_home/.ssh" ] && [ ! -d "$managed_home/.ssh" ]; }; then
+                        printf '%s\n' "SSH directory is not a real directory." >&2
+                        exit 1
+                    fi
+                    if [ -L "$managed_home/.orbit" ] || { [ -e "$managed_home/.orbit" ] && [ ! -d "$managed_home/.orbit" ]; }; then
+                        printf '%s\n' "Orbit directory is not a real directory." >&2
+                        exit 1
+                    fi
+                    if [ ! -d "$managed_home/.ssh" ]; then
+                        install -d -m 0700 -o "$managed_user" -g "$managed_group" "$managed_home/.ssh"
+                    fi
+                    if [ ! -d "$managed_home/.orbit" ]; then
+                        install -d -m 0700 -o "$managed_user" -g "$managed_group" "$managed_home/.orbit"
+                    fi
+                fi
+                authorized_keys="$managed_home/.ssh/authorized_keys"
+                if [ -L "$authorized_keys" ] || { [ -e "$authorized_keys" ] && [ ! -f "$authorized_keys" ]; }; then
+                    printf '%s\n' "Authorized keys path is not a regular file." >&2
+                    exit 1
+                fi
+                if [ ! -e "$authorized_keys" ]; then
+                    install -m 0600 -o "$managed_user" -g "$managed_group" /dev/null "$authorized_keys"
+                fi
+                chown "$managed_user:$managed_group" -- "$authorized_keys"
+                chmod 0600 -- "$authorized_keys"
+                if ! grep -qxF "$orbit_key" "$managed_home/.ssh/authorized_keys"; then
+                    printf '%s\n' "$orbit_key" >> "$managed_home/.ssh/authorized_keys"
+                fi
+                if ! sudo -n -u "$managed_user" -- sudo -n true >/dev/null 2>&1; then
+                    sudoers=$(mktemp)
+                    trap 'rm -f -- "$sudoers"' EXIT
+                    printf '%s ALL=(ALL) NOPASSWD:ALL\n' "$managed_user" > "$sudoers"
+                    chmod 0440 "$sudoers"
+                    visudo -cf "$sudoers"
+                    install -m 0440 -o root -g root "$sudoers" "/etc/sudoers.d/$managed_user"
+                    trap - EXIT
+                    rm -f -- "$sudoers"
+                fi
                 BASH,
         );
     }
