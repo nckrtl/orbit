@@ -26,6 +26,7 @@ use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Firewall\FirewallManager;
 use App\Domain\Gateway\GatewayVpnConverger;
 use App\Domain\Gateway\GatewayWebConverger;
+use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\NodeConverger;
 use App\Domain\Nodes\NodeProvisioningLock;
 use App\Domain\Nodes\NodeRoleDependencyInspector;
@@ -73,6 +74,7 @@ use App\Infrastructure\Nodes\NativeNodeProvisioningLock;
 use App\Infrastructure\Nodes\NativeNodeRoleDependentCleaner;
 use App\Infrastructure\Nodes\Roles\NativeNodeRoleFirewallManager;
 use App\Infrastructure\Nodes\Roles\NativeRoleBaselineConverger;
+use App\Infrastructure\Nodes\SshManagedUserAccountResolver;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\ProcessRunner;
@@ -135,6 +137,7 @@ final class AppServiceProvider extends ServiceProvider
 
     public function register(): void
     {
+        $this->app->singleton(ManagedUserAccountResolver::class, SshManagedUserAccountResolver::class);
         $this->app->scoped(NodeProvisioningLock::class, NativeNodeProvisioningLock::class);
         $this->app->scoped(ToolManagerScopeLock::class, NativeToolManagerScopeLock::class);
 

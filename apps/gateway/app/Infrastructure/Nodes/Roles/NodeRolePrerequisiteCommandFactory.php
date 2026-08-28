@@ -4,13 +4,14 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Nodes\Roles;
 
+use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\UbuntuRelease;
 use App\Infrastructure\Ssh\RemoteCommand;
 
 final readonly class NodeRolePrerequisiteCommandFactory
 {
-    public function make(RoleName $role): RemoteCommand
+    public function make(RoleName $role, ManagedUserAccount $account): RemoteCommand
     {
         if ($role === RoleName::Gateway) {
             return new RemoteCommand(['true']);
@@ -19,6 +20,10 @@ final readonly class NodeRolePrerequisiteCommandFactory
         $input = <<<'BASH'
             role=$1
             shift
+            managed_user=$1
+            managed_group=$2
+            managed_home=$3
+            shift 3
             release_count=$1
             shift
             requirement_text=$1
@@ -96,8 +101,8 @@ final readonly class NodeRolePrerequisiteCommandFactory
             __APP_HOST_RUNTIME__
             BASH;
         $appDevSetup = <<<'BASH'
-                install -d -m 0755 -o orbit -g orbit /home/orbit/apps /home/orbit/.orbit/worktrees
-                setfacl -m u:caddy:--x /home/orbit /home/orbit/apps /home/orbit/.orbit /home/orbit/.orbit/worktrees
+                install -d -m 0755 -o "$managed_user" -g "$managed_group" "$managed_home/apps" "$managed_home/.orbit/worktrees"
+                setfacl -m u:caddy:--x "$managed_home" "$managed_home/apps" "$managed_home/.orbit" "$managed_home/.orbit/worktrees"
             BASH;
         $runtime = <<<'BASH'
                 if { [ -e /opt/orbit ] || [ -L /opt/orbit ]; } \
@@ -108,27 +113,27 @@ final readonly class NodeRolePrerequisiteCommandFactory
 
                 for directory in /opt/orbit/vite-plus /opt/orbit/bun; do
                     if { [ -e "$directory" ] || [ -L "$directory" ]; } \
-                        && { [ -L "$directory" ] || [ ! -d "$directory" ] || [ "$(stat -c '%U:%G' "$directory")" != 'orbit:orbit' ]; }; then
+                        && { [ -L "$directory" ] || [ ! -d "$directory" ] || [ "$(stat -c '%U:%G' "$directory")" != "$managed_user:$managed_group" ]; }; then
                         printf 'Orbit JavaScript runtime directory conflict: %s\n' "$directory" >&2
                         exit 1
                     fi
                 done
 
                 install -d -m 0755 /opt/orbit
-                install -d -m 0755 -o orbit -g orbit /opt/orbit/vite-plus /opt/orbit/bun
+                install -d -m 0755 -o "$managed_user" -g "$managed_group" /opt/orbit/vite-plus /opt/orbit/bun
 
-                sudo -u orbit -H env VP_HOME=/opt/orbit/vite-plus bash -o pipefail -lc 'curl -fsSL https://vite.plus | bash'
+                sudo -u "$managed_user" -H env VP_HOME=/opt/orbit/vite-plus bash -o pipefail -lc 'curl -fsSL https://vite.plus | bash'
                 vp_binary=/opt/orbit/vite-plus/bin/vp
                 test -x "$vp_binary"
-                sudo -u orbit -H env VP_HOME=/opt/orbit/vite-plus "$vp_binary" env setup
-                sudo -u orbit -H env VP_HOME=/opt/orbit/vite-plus "$vp_binary" env on
-                sudo -u orbit -H env VP_HOME=/opt/orbit/vite-plus "$vp_binary" env install lts
-                sudo -u orbit -H env VP_HOME=/opt/orbit/vite-plus "$vp_binary" env default lts
-                sudo -u orbit -H env VP_HOME=/opt/orbit/vite-plus "$vp_binary" install -g --node lts pnpm
+                sudo -u "$managed_user" -H env VP_HOME=/opt/orbit/vite-plus "$vp_binary" env setup
+                sudo -u "$managed_user" -H env VP_HOME=/opt/orbit/vite-plus "$vp_binary" env on
+                sudo -u "$managed_user" -H env VP_HOME=/opt/orbit/vite-plus "$vp_binary" env install lts
+                sudo -u "$managed_user" -H env VP_HOME=/opt/orbit/vite-plus "$vp_binary" env default lts
+                sudo -u "$managed_user" -H env VP_HOME=/opt/orbit/vite-plus "$vp_binary" install -g --node lts pnpm
                 pnpm_binary=/opt/orbit/vite-plus/bin/pnpm
                 test -x "$pnpm_binary"
 
-                sudo -u orbit -H env BUN_INSTALL=/opt/orbit/bun bash -o pipefail -lc 'curl -fsSL https://bun.com/install | bash'
+                sudo -u "$managed_user" -H env BUN_INSTALL=/opt/orbit/bun bash -o pipefail -lc 'curl -fsSL https://bun.com/install | bash'
                 bun_binary=/opt/orbit/bun/bin/bun
                 test -x "$bun_binary"
 
@@ -207,13 +212,13 @@ final readonly class NodeRolePrerequisiteCommandFactory
 
         $composerSetup = <<<'BASH'
                 install -d -m 0755 /opt/orbit
-                install -d -m 0755 -o orbit -g orbit /opt/orbit/composer
+                install -d -m 0755 -o "$managed_user" -g "$managed_group" /opt/orbit/composer
                 if [ -L /opt/orbit/composer/composer.json ]; then
                     printf 'Orbit Composer manifest conflict: %s\n' /opt/orbit/composer/composer.json >&2
                     exit 1
                 elif [ -e /opt/orbit/composer/composer.json ]; then
                     if ! test -f /opt/orbit/composer/composer.json \
-                        || ! test "$(stat -c %U:%G /opt/orbit/composer/composer.json)" = orbit:orbit; then
+                        || ! test "$(stat -c %U:%G /opt/orbit/composer/composer.json)" = "$managed_user:$managed_group"; then
                         printf 'Orbit Composer manifest conflict: %s\n' /opt/orbit/composer/composer.json >&2
                         exit 1
                     fi
@@ -225,11 +230,11 @@ final readonly class NodeRolePrerequisiteCommandFactory
                     trap cleanup_composer_manifest EXIT
                     printf '%s\n' '{"require":{}}' > "$composer_manifest"
                     chmod 0644 "$composer_manifest"
-                    chown orbit:orbit "$composer_manifest"
+                    chown "$managed_user":"$managed_group" "$composer_manifest"
                     if ! ln "$composer_manifest" /opt/orbit/composer/composer.json; then
                         if [ -L /opt/orbit/composer/composer.json ] \
                             || ! test -f /opt/orbit/composer/composer.json \
-                            || ! test "$(stat -c %U:%G /opt/orbit/composer/composer.json)" = orbit:orbit; then
+                            || ! test "$(stat -c %U:%G /opt/orbit/composer/composer.json)" = "$managed_user:$managed_group"; then
                             rm -f -- "$composer_manifest"
                             printf 'Orbit Composer manifest conflict: %s\n' /opt/orbit/composer/composer.json >&2
                             exit 1
@@ -240,13 +245,13 @@ final readonly class NodeRolePrerequisiteCommandFactory
                 revalidate() {
                     test ! -L /opt/orbit/composer/composer.json
                     test -f /opt/orbit/composer/composer.json
-                    test "$(stat -c %U:%G /opt/orbit/composer/composer.json)" = orbit:orbit
+                    test "$(stat -c %U:%G /opt/orbit/composer/composer.json)" = "$managed_user:$managed_group"
                 }
                 revalidate
                 composer_manifest=
                 trap - EXIT
-                install -d -m 0755 -o orbit -g orbit /opt/orbit/composer/vendor/bin
-                sudo -u orbit -H env COMPOSER_HOME=/opt/orbit/composer /usr/bin/composer --version --no-ansi
+                install -d -m 0755 -o "$managed_user" -g "$managed_group" /opt/orbit/composer/vendor/bin
+                sudo -u "$managed_user" -H env COMPOSER_HOME=/opt/orbit/composer /usr/bin/composer --version --no-ansi
             BASH;
 
         $input = str_replace('__APP_DEV_SETUP__', $role === RoleName::AppDev ? $appDevSetup : '', $input);
@@ -268,6 +273,9 @@ final readonly class NodeRolePrerequisiteCommandFactory
                 '-seu',
                 '--',
                 $role->value,
+                $account->user,
+                $account->group,
+                $account->home,
                 (string) count(UbuntuRelease::forRole($role)),
                 UbuntuRelease::requirementTextFor(UbuntuRelease::forRole($role)),
                 ...array_map(

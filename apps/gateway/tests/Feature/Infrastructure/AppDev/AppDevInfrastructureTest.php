@@ -11,7 +11,25 @@ use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Instances\CertificateMode;
+use App\Domain\Nodes\ManagedUserAccount;
+use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
+
+function app_dev_account_resolver(
+    ManagedUserAccount $account = new ManagedUserAccount('orbit', 'orbit', '/home/orbit'),
+): ManagedUserAccountResolver {
+    return new class($account) implements ManagedUserAccountResolver {
+        public function __construct(
+            private readonly ManagedUserAccount $account,
+        ) {}
+
+        public function resolve(\App\Models\Node $node): ManagedUserAccount
+        {
+            return $this->account;
+        }
+    };
+}
+
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AppDev\AppDevCaddyConfigRenderer;
 use App\Infrastructure\AppDev\AppDevCaddyPublisher;
@@ -25,6 +43,7 @@ use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
 use App\Infrastructure\AppDev\RemoteAppDevCertificateManager;
 use App\Infrastructure\AppDev\RemoteAppDevPhpFpmManager;
 use App\Infrastructure\AppDev\RemoteAppDevSourceManager;
+use App\Infrastructure\Nodes\RemotePhpPackageManager;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\ProcessInvocation;
@@ -47,7 +66,7 @@ use Tests\Support\FpmPublishHarness;
 it('renders isolated pools and private Caddy listeners for every active scope', function (): void {
     [$node, $instance, $workspace] = app_dev_runtime_models();
     $sites = new AppDevSiteRepository()->forNode($node);
-    $fpm = new AppDevPhpFpmConfigRenderer()->render($sites);
+    $fpm = new AppDevPhpFpmConfigRenderer()->render($sites, new ManagedUserAccount('orbit', 'orbit', '/home/orbit'));
     $caddy = new AppDevCaddyConfigRenderer()->render($sites);
     $adapted = new NativeProcessRunner()->run(new ProcessInvocation(
         arguments: ['caddy', 'adapt', '--config', '-', '--adapter', 'caddyfile'],
@@ -99,7 +118,7 @@ it('uses only generated instance paths and registered Git worktrees for source r
             'test ! -L "$current"',
             'setfacl -P -R -m u:caddy:--- "$checkout_root"',
             'find -P "$checkout_root" -type d -exec setfacl -m d:u:caddy:--- -- {} +',
-            'setfacl -m u:caddy:--x /home/orbit /home/orbit/apps "$checkout"',
+            'setfacl -m u:caddy:--x "$managed_home" "$managed_home/apps" "$checkout"',
             'setfacl -P -R -m u:caddy:r-X "$document_root_real"',
             'find -P "$document_root_real" -type d -exec setfacl -m d:u:caddy:r-x -- {} +',
         )
@@ -129,6 +148,50 @@ it('uses only generated instance paths and registered Git worktrees for source r
         )->and($ssh->commands[2]->arguments)->toContain(
             'git@github.com:acme/site.git',
         )->and($ssh->commands[3]->arguments)->toContain('git@github.com:acme/site.git');
+});
+
+it('uses a nondefault managed home for source converge and removal commands', function (): void {
+    $account = new ManagedUserAccount('nckrtl', 'nckrtl', '/srv/users/nckrtl');
+    [, $instance, $workspace] = app_dev_runtime_models(account: $account);
+    [$manager, $ssh] = source_manager(account: $account);
+
+    $manager->convergeInstance($instance);
+    $manager->convergeWorkspace($workspace);
+    $manager->removeWorkspace($workspace);
+    $manager->removeInstance($instance);
+
+    expect($ssh->commands)
+        ->toHaveCount(4)
+        ->and($ssh->commands[0]->arguments)
+        ->toContain(
+            '/srv/users/nckrtl/apps/acme',
+            'public',
+            'nckrtl',
+            '/srv/users/nckrtl',
+        )
+        ->and($ssh->commands[0]->input)
+        ->toContain(
+            'managed_user=$4',
+            'managed_group=$5',
+            'managed_home=$6',
+            'case "$parent" in',
+            'setfacl -m u:caddy:--x "$managed_home" "$managed_home/apps" "$checkout"',
+        )
+        ->not->toContain('/home/orbit')->and($ssh->commands[1]->arguments)->toContain(
+            '/srv/users/nckrtl/apps/acme',
+            '/srv/users/nckrtl/.orbit/worktrees/acme/feature',
+            '/srv/users/nckrtl',
+        )->and($ssh->commands[1]->input)->toContain(
+            'managed_home=$8',
+            '"$managed_home/.orbit/worktrees"',
+        )
+        ->not->toContain('/home/orbit')->and($ssh->commands[2]->arguments)->toContain(
+            '/srv/users/nckrtl/.orbit/worktrees/acme/feature',
+        )->and($ssh->commands[3]->arguments)->toContain(
+            '/srv/users/nckrtl/apps/acme',
+            '/srv/users/nckrtl',
+        )->and($ssh->commands[3]->input)->toContain('managed_home=$5')
+        ->not->toContain('/home/orbit');
 });
 
 it('rejects an unsafe stored repository origin before app-dev SSH execution', function (): void {
@@ -996,10 +1059,14 @@ it('retires previous app-dev pools before activating their lower PHP version', f
     $sites = new AppDevSiteRepository;
     $renderer = new AppDevPhpFpmConfigRenderer;
     $workspace->update(['php_version' => '8.5']);
-    $previousConfiguration = $renderer->render($sites->forNode($node));
+    $previousConfiguration = $renderer->render(
+        $sites->forNode($node),
+        new ManagedUserAccount('orbit', 'orbit', '/home/orbit'),
+    );
     $instance->update(['php_version' => '8.4']);
     $transitionConfiguration = $renderer->render(
         $sites->forNode($node)->where('phpVersion', '8.5')->values(),
+        new ManagedUserAccount('orbit', 'orbit', '/home/orbit'),
     );
     $ssh = new AppDevFakeSshExecutor([
         new CommandResult(0, "8.5\t".base64_encode($previousConfiguration)."\n", '', 1, false),
@@ -1008,6 +1075,8 @@ it('retires previous app-dev pools before activating their lower PHP version', f
         sites: $sites,
         renderer: $renderer,
         ssh: app_dev_ssh($ssh),
+        accounts: app_dev_account_resolver(),
+        packages: new RemotePhpPackageManager,
     );
 
     $manager->converge($node);
@@ -1030,7 +1099,10 @@ it('restores the previous app-dev pools when lower PHP activation fails', functi
     $sites = new AppDevSiteRepository;
     $renderer = new AppDevPhpFpmConfigRenderer;
     $workspace->update(['php_version' => '8.5']);
-    $previousConfiguration = $renderer->render($sites->forNode($node));
+    $previousConfiguration = $renderer->render(
+        $sites->forNode($node),
+        new ManagedUserAccount('orbit', 'orbit', '/home/orbit'),
+    );
     $instance->update(['php_version' => '8.4']);
     $ssh = new AppDevFakeSshExecutor([
         new CommandResult(0, "8.5\t".base64_encode($previousConfiguration)."\n", '', 1, false),
@@ -1044,6 +1116,8 @@ it('restores the previous app-dev pools when lower PHP activation fails', functi
         sites: $sites,
         renderer: $renderer,
         ssh: app_dev_ssh($ssh),
+        accounts: app_dev_account_resolver(),
+        packages: new RemotePhpPackageManager,
     );
 
     expect(fn () => $manager->converge($node))
@@ -1065,7 +1139,10 @@ it('removes a newly activated app-dev pool when later PHP activation fails', fun
     [$node, $instance, $workspace] = app_dev_runtime_models();
     $sites = new AppDevSiteRepository;
     $renderer = new AppDevPhpFpmConfigRenderer;
-    $previousConfiguration = $renderer->render($sites->forNode($node));
+    $previousConfiguration = $renderer->render(
+        $sites->forNode($node),
+        new ManagedUserAccount('orbit', 'orbit', '/home/orbit'),
+    );
     $instance->update(['php_version' => '8.4']);
     $workspace->update(['php_version' => '8.6']);
     $ssh = new AppDevFakeSshExecutor([
@@ -1081,6 +1158,8 @@ it('removes a newly activated app-dev pool when later PHP activation fails', fun
         sites: $sites,
         renderer: $renderer,
         ssh: app_dev_ssh($ssh),
+        accounts: app_dev_account_resolver(),
+        packages: new RemotePhpPackageManager,
     );
 
     expect(fn () => $manager->converge($node))
@@ -1111,6 +1190,8 @@ it('installs selected PHP versions and validates a complete staged FPM configura
         sites: new AppDevSiteRepository,
         renderer: new AppDevPhpFpmConfigRenderer,
         ssh: app_dev_ssh($ssh),
+        accounts: app_dev_account_resolver(),
+        packages: new RemotePhpPackageManager,
     );
 
     $manager->converge($node);
@@ -1173,6 +1254,44 @@ it('installs selected PHP versions and validates a complete staged FPM configura
         ->toBeLessThan($rollback);
 });
 
+it('renders and publishes AppDev FPM pools with the nondefault managed account', function (): void {
+    $account = new ManagedUserAccount('nckrtl', 'nckrtl', '/srv/users/nckrtl');
+    [$node] = app_dev_runtime_models(account: $account);
+    $sites = new AppDevSiteRepository()->forNode($node);
+    $rendered = new AppDevPhpFpmConfigRenderer()->render($sites, $account);
+    $ssh = new AppDevFakeSshExecutor([
+        new CommandResult(0, "8.5\n", '', 1, false),
+        new CommandResult(0, '', '', 1, false),
+    ]);
+    $manager = new RemoteAppDevPhpFpmManager(
+        sites: new AppDevSiteRepository,
+        renderer: new AppDevPhpFpmConfigRenderer,
+        ssh: app_dev_ssh($ssh),
+        accounts: app_dev_account_resolver($account),
+        packages: new RemotePhpPackageManager,
+    );
+
+    $manager->converge($node);
+
+    $publishCall = collect($ssh->commands)
+        ->first(static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'php-fpm.conf'));
+
+    expect($rendered)
+        ->toContain(
+            'user = nckrtl',
+            'group = nckrtl',
+            'listen.owner = nckrtl',
+            'listen.group = caddy',
+        )
+        ->and($publishCall)
+        ->not
+        ->toBeNull()
+        ->and($publishCall->input ?? '')
+        ->toContain(base64_encode($rendered))
+        ->and($publishCall->arguments ?? [])
+        ->toContain('8.5');
+});
+
 it('restores the exact AppDev FPM file before the recovery reload when activation fails', function (): void {
     [$node] = app_dev_runtime_models();
     $harness = new FpmPublishHarness;
@@ -1184,6 +1303,8 @@ it('restores the exact AppDev FPM file before the recovery reload when activatio
             sites: new AppDevSiteRepository,
             renderer: new AppDevPhpFpmConfigRenderer,
             ssh: app_dev_ssh($ssh),
+            accounts: app_dev_account_resolver(),
+            packages: new RemotePhpPackageManager,
             phpRoot: $harness->phpRoot(),
             lockDirectory: $harness->lockDirectory(),
         );
@@ -1217,6 +1338,8 @@ it('rejects an unsupported PHP version before target discovery or installation',
         sites: new AppDevSiteRepository,
         renderer: new AppDevPhpFpmConfigRenderer,
         ssh: app_dev_ssh($ssh),
+        accounts: app_dev_account_resolver(),
+        packages: new RemotePhpPackageManager,
     );
 
     expect(fn () => $manager->converge($node))
@@ -1248,7 +1371,7 @@ it('keeps leaf private keys on the target while publishing a gateway-signed cert
             return "ROOT CERTIFICATE\n";
         }
     };
-    $manager = new RemoteAppDevCertificateManager(app_dev_ssh($ssh), $signer);
+    $manager = new RemoteAppDevCertificateManager(app_dev_ssh($ssh), $signer, app_dev_account_resolver());
 
     $manager->convergeInstance($instance);
 
@@ -1280,6 +1403,74 @@ it('keeps leaf private keys on the target while publishing a gateway-signed cert
             'sudo install -o root -g caddy -m 0640 -- "$published/key.pem"',
         )
         ->not->toContain('PRIVATE KEY');
+});
+
+it('uses a nondefault managed home for app-dev certificate converge and removal', function (): void {
+    $account = new ManagedUserAccount('nckrtl', 'nckrtl', '/srv/users/nckrtl');
+    [, $instance, $workspace] = app_dev_runtime_models(account: $account);
+    $ssh = new AppDevFakeSshExecutor([
+        new CommandResult(0, 'CSR FROM TARGET', '', 1, false),
+        new CommandResult(0, '', '', 1, false),
+        new CommandResult(0, '', '', 1, false),
+        new CommandResult(0, '', '', 1, false),
+    ]);
+    $signer = new class implements LeafCertificateSigner {
+        public function sign(string $hostname, string $certificateRequest): string
+        {
+            return "LEAF CERTIFICATE\n";
+        }
+
+        public function rootCertificate(): string
+        {
+            return "ROOT CERTIFICATE\n";
+        }
+    };
+    $manager = new RemoteAppDevCertificateManager(app_dev_ssh($ssh), $signer, app_dev_account_resolver($account));
+
+    $manager->convergeInstance($instance);
+    $manager->removeInstance($instance);
+    $manager->convergeWorkspace($workspace);
+    $manager->removeWorkspace($workspace);
+
+    expect($ssh->commands)
+        ->toHaveCount(6)
+        ->and($ssh->commands[0]->arguments)
+        ->toContain('instance-1', 'acme.app-dev.orbit', 'nckrtl', '/srv/users/nckrtl')
+        ->and($ssh->commands[0]->input)
+        ->toContain('managed_home=$7', 'root="$managed_home/.orbit/certificates/$scope"')
+        ->not->toContain('/home/orbit/.orbit/certificates')->and($ssh->commands[2]->arguments)->toBe([
+            'bash',
+            '-seu',
+            '--',
+            'instance-1',
+            'nckrtl',
+            'nckrtl',
+            '/srv/users/nckrtl',
+        ])->and($ssh->commands[2]->input)->toContain(
+            'managed_user=$2',
+            'managed_group=$3',
+            'managed_home=$4',
+            'rm -rf -- "$managed_home/.orbit/certificates/$scope"',
+        )
+        ->not->toContain('/home/orbit/.orbit/certificates')->and($ssh->commands[3]->arguments)->toContain(
+            'workspace-1',
+            'feature.acme.app-dev.orbit',
+            'nckrtl',
+            '/srv/users/nckrtl',
+        )->and($ssh->commands[5]->arguments)->toBe([
+            'bash',
+            '-seu',
+            '--',
+            'workspace-1',
+            'nckrtl',
+            'nckrtl',
+            '/srv/users/nckrtl',
+        ])->and($ssh->commands[5]->input)->toContain(
+            'managed_user=$2',
+            'managed_group=$3',
+            'managed_home=$4',
+            'rm -rf -- "$managed_home/.orbit/certificates/$scope"',
+        );
 });
 
 it('reuses only current app-dev leaves with the exact Ed25519 extension policy', function (
@@ -1315,7 +1506,7 @@ it('reuses only current app-dev leaves with the exact Ed25519 extension policy',
             return $this->rootCertificate;
         }
     };
-    $manager = new RemoteAppDevCertificateManager(app_dev_ssh($ssh), $signer);
+    $manager = new RemoteAppDevCertificateManager(app_dev_ssh($ssh), $signer, app_dev_account_resolver());
 
     try {
         $manager->convergeInstance($instance);
@@ -1693,15 +1884,17 @@ it('keeps the live DNS fragment untouched when effective validation fails', func
 });
 
 /** @return array{Node, Instance, Workspace} */
-function app_dev_runtime_models(string $instancePhp = '8.5'): array
-{
+function app_dev_runtime_models(
+    string $instancePhp = '8.5',
+    ManagedUserAccount $account = new ManagedUserAccount('orbit', 'orbit', '/home/orbit'),
+): array {
     $node = Node::query()->create([
         'name' => 'app-dev',
         'status' => LifecycleStatus::Active,
         'tld' => 'app-dev.orbit',
         'public_ssh_host' => '192.0.2.10',
         'wireguard_address' => '10.44.0.3',
-        'user' => 'orbit',
+        'user' => $account->user,
     ]);
     $node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
     $app = OrbitApp::query()->create([
@@ -1714,7 +1907,7 @@ function app_dev_runtime_models(string $instancePhp = '8.5'): array
         'node_id' => $node->id,
         'name' => 'dev',
         'environment' => 'development',
-        'checkout_path' => '/home/orbit/apps/acme',
+        'checkout_path' => "{$account->home}/apps/acme",
         'document_root' => 'public',
         'php_version' => $instancePhp,
         'hostname' => 'acme.app-dev.orbit',
@@ -1725,7 +1918,7 @@ function app_dev_runtime_models(string $instancePhp = '8.5'): array
         'instance_id' => $instance->id,
         'name' => 'feature',
         'branch' => 'feature',
-        'checkout_path' => '/home/orbit/.orbit/worktrees/acme/feature',
+        'checkout_path' => "{$account->home}/.orbit/worktrees/acme/feature",
         'hostname' => 'feature.acme.app-dev.orbit',
         'status' => LifecycleStatus::Active,
     ]);
@@ -1745,6 +1938,7 @@ function app_dev_runtime_models(string $instancePhp = '8.5'): array
 function source_manager(
     ?AppDevSourceOperationLock $lock = null,
     ?AppDevFakeSshExecutor $ssh = null,
+    ManagedUserAccount $account = new ManagedUserAccount('orbit', 'orbit', '/home/orbit'),
 ): array {
     $ssh ??= new AppDevFakeSshExecutor;
     $lock ??= new class implements AppDevSourceOperationLock {
@@ -1754,7 +1948,7 @@ function source_manager(
         }
     };
 
-    return [new RemoteAppDevSourceManager(app_dev_ssh($ssh), $lock), $ssh];
+    return [new RemoteAppDevSourceManager(app_dev_ssh($ssh), $lock, app_dev_account_resolver($account)), $ssh];
 }
 
 function initialise_acl_test_repository(string $path, string $repository): void

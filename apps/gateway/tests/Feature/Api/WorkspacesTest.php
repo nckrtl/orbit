@@ -6,6 +6,9 @@ use App\Domain\AppDev\AppDevRuntimeConverger;
 use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Instances\CertificateMode;
+use App\Domain\Nodes\ManagedUserAccount;
+use App\Domain\Nodes\ManagedUserAccountResolver;
+use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\App as OrbitApp;
@@ -16,6 +19,12 @@ use App\Models\Workspace;
 /** @mago-expect lint:halstead The shared fixture keeps all workspace API state transitions consistent. */
 describe('workspace API', function (): void {
     beforeEach(function (): void {
+        app()->instance(ManagedUserAccountResolver::class, new class implements ManagedUserAccountResolver {
+            public function resolve(Node $node): ManagedUserAccount
+            {
+                return new ManagedUserAccount('nckrtl', 'nckrtl', '/srv/users/nckrtl');
+            }
+        });
         $this->runtime = new class implements AppDevRuntimeConverger {
             /** @var list<string> */
             public array $calls = [];
@@ -84,11 +93,40 @@ describe('workspace API', function (): void {
             'node_id' => $this->node->id,
             'name' => 'dev',
             'environment' => 'development',
-            'checkout_path' => '/home/orbit/apps/acme',
+            'checkout_path' => '/srv/users/nckrtl/apps/acme',
             'hostname' => 'acme.app-dev.orbit',
             'certificate_mode' => CertificateMode::OrbitCa,
             'status' => LifecycleStatus::Active,
         ]);
+    });
+
+    it('returns a safe error when managed user resolution fails', function (): void {
+        $sentinel = 'managed-user resolver secret';
+        app()->instance(ManagedUserAccountResolver::class, new class($sentinel) implements ManagedUserAccountResolver {
+            public function __construct(
+                private readonly string $sentinel,
+            ) {}
+
+            public function resolve(Node $node): ManagedUserAccount
+            {
+                throw new NodeProvisioningException('managed-user', 'node.managed_user_unavailable', $this->sentinel);
+            }
+        });
+
+        $response = $this->postJson('/api/v1/workspaces', [
+            'instance_id' => $this->instance->id,
+            'name' => 'feature-one',
+        ]);
+
+        $response
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'node.managed_user_unavailable');
+
+        expect($response->getContent())
+            ->not
+            ->toContain($sentinel)
+            ->and(Workspace::query()->count())
+            ->toBe(0);
     });
 
     it('creates a workspace with default branch, path, hostname, and inherited php', function (): void {
@@ -101,7 +139,7 @@ describe('workspace API', function (): void {
         $response
             ->assertCreated()
             ->assertJsonPath('data.branch', 'feature-one')
-            ->assertJsonPath('data.checkout_path', '/home/orbit/.orbit/worktrees/acme/feature-one')
+            ->assertJsonPath('data.checkout_path', '/srv/users/nckrtl/.orbit/worktrees/acme/feature-one')
             ->assertJsonPath('data.php_version', null)
             ->assertJsonPath('data.effective_php_version', '8.5')
             ->assertJsonPath('data.hostname', 'feature-one.acme.app-dev.orbit')
@@ -147,7 +185,7 @@ describe('workspace API', function (): void {
                 'instance_id' => $this->instance->id,
                 'name' => 'feature-one',
                 'branch' => 'feature/one',
-                'checkout_path' => '/home/orbit/custom-worktrees/acme-feature-one',
+                'checkout_path' => '/srv/users/nckrtl/custom-worktrees/acme-feature-one',
                 'php_version' => '8.6',
             ])
             ->assertStatus(502)
@@ -162,12 +200,12 @@ describe('workspace API', function (): void {
                 'instance_id' => $this->instance->id,
                 'name' => 'feature-one',
                 'branch' => 'feature/one',
-                'checkout_path' => '/home/orbit/custom-worktrees/acme-feature-one',
+                'checkout_path' => '/srv/users/nckrtl/custom-worktrees/acme-feature-one',
                 'php_version' => '8.6',
             ])
             ->assertOk()
             ->assertJsonPath('data.status', 'active')
-            ->assertJsonPath('data.checkout_path', '/home/orbit/custom-worktrees/acme-feature-one')
+            ->assertJsonPath('data.checkout_path', '/srv/users/nckrtl/custom-worktrees/acme-feature-one')
             ->assertJsonPath('data.php_version', '8.6');
     });
 
@@ -241,7 +279,7 @@ describe('workspace API', function (): void {
             ->postJson('/api/v1/workspaces', [
                 'instance_id' => $this->instance->id,
                 'name' => 'feature-two',
-                'checkout_path' => '/home/orbit/.orbit/worktrees/acme/feature-one/nested',
+                'checkout_path' => '/srv/users/nckrtl/.orbit/worktrees/acme/feature-one/nested',
             ])
             ->assertConflict()
             ->assertJsonPath('error.code', 'workspace.path_taken');
@@ -250,10 +288,10 @@ describe('workspace API', function (): void {
             ->postJson('/api/v1/workspaces', [
                 'instance_id' => $this->instance->id,
                 'name' => 'feature-three',
-                'checkout_path' => '/home/orbit/apps/acme',
+                'checkout_path' => '/srv/users/nckrtl/apps/acme',
             ])
-            ->assertUnprocessable()
-            ->assertJsonPath('error.code', 'validation.failed');
+            ->assertConflict()
+            ->assertJsonPath('error.code', 'workspace.path_taken');
 
         expect(Workspace::query()->count())
             ->toBe(1)
@@ -284,7 +322,13 @@ describe('workspace API', function (): void {
                 ...$payload,
             ])
             ->assertUnprocessable()
-            ->assertJsonPath("error.details.{$field}.0", fn (string $message): bool => $message !== '');
+            ->assertJsonPath('error.code', fn (string $code): bool => in_array(
+                $code,
+                ['workspace.checkout_path_invalid', 'validation.failed'],
+                true,
+            ));
+
+        expect(Workspace::query()->count())->toBe(0);
     })->with([
         'relative path' => [['checkout_path' => '../worktree'], 'checkout_path'],
         'system path' => [['checkout_path' => '/etc/orbit'], 'checkout_path'],
@@ -409,7 +453,7 @@ function create_workspace_for_api_test(Instance $instance): Workspace
         'instance_id' => $instance->id,
         'name' => 'feature-one',
         'branch' => 'feature-one',
-        'checkout_path' => '/home/orbit/.orbit/worktrees/acme/feature-one',
+        'checkout_path' => '/srv/users/nckrtl/.orbit/worktrees/acme/feature-one',
         'hostname' => 'feature-one.acme.app-dev.orbit',
         'status' => LifecycleStatus::Active,
     ]);

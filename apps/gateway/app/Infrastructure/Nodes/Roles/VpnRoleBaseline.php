@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Nodes\Roles;
 
+use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\NodeRoleValidationException;
@@ -16,6 +17,7 @@ use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
 use App\Models\NodeRole;
 
+/** @mago-expect lint:excessive-parameter-list Baseline wiring keeps SSH, key, host, and firewall dependencies explicit. */
 final readonly class VpnRoleBaseline implements RoleBaseline
 {
     public function __construct(
@@ -24,6 +26,7 @@ final readonly class VpnRoleBaseline implements RoleBaseline
         private SshKeyProvider $keys,
         private KnownHostsStore $knownHosts,
         private NodeRoleFirewallManager $firewall,
+        private ManagedUserAccountResolver $accounts,
     ) {}
 
     public function converge(Node $node, NodeRole $assignment): void
@@ -37,15 +40,20 @@ final readonly class VpnRoleBaseline implements RoleBaseline
             );
         }
 
+        $account = $this->accounts->resolve($node);
+
+        /** @var string $wireguardAddress */
+        $wireguardAddress = $node->wireguard_address;
+
         $result = $this->ssh->execute(
             new SshConnection(
-                $node->wireguard_address,
+                $wireguardAddress,
                 $node->user,
                 22,
                 $this->keys->privateKeyPath(),
                 $this->knownHosts->path(),
             ),
-            $this->commands->make(RoleName::Vpn),
+            $this->commands->make(RoleName::Vpn, $account),
         );
 
         if (! $result->succeeded()) {

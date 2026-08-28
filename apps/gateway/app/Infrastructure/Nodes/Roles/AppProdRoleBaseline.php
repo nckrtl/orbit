@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\Nodes\Roles;
 
 use App\Domain\AppProd\AppProdCaddyManager;
+use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\RoleBaseline;
 use App\Domain\Nodes\RoleName;
@@ -19,13 +20,15 @@ final readonly class AppProdRoleBaseline implements RoleBaseline
         private AppProdSshExecutor $ssh,
         private AppProdCaddyManager $caddy,
         private NodeRoleFirewallManager $firewall,
+        private ManagedUserAccountResolver $accounts,
     ) {}
 
     public function converge(Node $node, NodeRole $assignment): void
     {
+        $account = $this->accounts->resolve($node);
         $this->ssh->execute(
             $node,
-            $this->commands->make(RoleName::AppProd),
+            $this->commands->make(RoleName::AppProd, $account),
             'role-prerequisites',
             'app-prod.prerequisite_failed',
         );

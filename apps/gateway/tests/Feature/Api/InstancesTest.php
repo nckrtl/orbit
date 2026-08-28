@@ -6,6 +6,9 @@ use App\Domain\AppDev\AppDevRuntimeConverger;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\AppProd\AppProdRuntimeConverger;
 use App\Domain\Instances\CertificateMode;
+use App\Domain\Nodes\ManagedUserAccount;
+use App\Domain\Nodes\ManagedUserAccountResolver;
+use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Activity;
@@ -17,6 +20,12 @@ use Illuminate\Support\Str;
 /** @mago-expect lint:halstead The shared fixture keeps all instance API state transitions consistent. */
 describe('instance API', function (): void {
     beforeEach(function (): void {
+        app()->instance(ManagedUserAccountResolver::class, new class implements ManagedUserAccountResolver {
+            public function resolve(Node $node): ManagedUserAccount
+            {
+                return new ManagedUserAccount('nckrtl', 'nckrtl', '/srv/users/nckrtl');
+            }
+        });
         $this->runtime = new class implements AppDevRuntimeConverger {
             /** @var list<string> */
             public array $calls = [];
@@ -109,6 +118,36 @@ describe('instance API', function (): void {
         ]);
     });
 
+    it('returns a safe error when managed user resolution fails', function (): void {
+        $sentinel = 'managed-user resolver secret';
+        app()->instance(ManagedUserAccountResolver::class, new class($sentinel) implements ManagedUserAccountResolver {
+            public function __construct(
+                private readonly string $sentinel,
+            ) {}
+
+            public function resolve(Node $node): ManagedUserAccount
+            {
+                throw new NodeProvisioningException('managed-user', 'node.managed_user_unavailable', $this->sentinel);
+            }
+        });
+
+        $response = $this->postJson('/api/v1/instances', [
+            'app_id' => $this->orbitApp->id,
+            'node_id' => $this->node->id,
+            'name' => 'dev',
+        ]);
+
+        $response
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'node.managed_user_unavailable');
+
+        expect($response->getContent())
+            ->not
+            ->toContain($sentinel)
+            ->and(Instance::query()->count())
+            ->toBe(0);
+    });
+
     it('creates an app-dev instance with derived defaults and converges retries', function (): void {
         $requestId = (string) Str::uuid();
         $first = $this->withHeader('X-Orbit-Request-Id', $requestId)->postJson('/api/v1/instances', [
@@ -120,7 +159,7 @@ describe('instance API', function (): void {
         $first
             ->assertCreated()
             ->assertJsonPath('data.environment', 'development')
-            ->assertJsonPath('data.checkout_path', '/home/orbit/apps/acme')
+            ->assertJsonPath('data.checkout_path', '/srv/users/nckrtl/apps/acme')
             ->assertJsonPath('data.document_root', 'public')
             ->assertJsonPath('data.php_version', '8.5')
             ->assertJsonPath('data.hostname', 'acme.app-dev.orbit')
@@ -211,7 +250,7 @@ describe('instance API', function (): void {
             'node_id' => $this->node->id,
             'name' => 'existing',
             'environment' => 'development',
-            'checkout_path' => '/home/orbit/apps/acme',
+            'checkout_path' => '/srv/users/nckrtl/apps/acme',
             'hostname' => 'orbit.nckrtl.com',
             'certificate_mode' => CertificateMode::OrbitCa,
             'status' => LifecycleStatus::Active,
@@ -536,7 +575,7 @@ describe('instance API', function (): void {
             ])
             ->assertCreated()
             ->assertJsonPath('data.name', 'other-node-metadata')
-            ->assertJsonPath('data.checkout_path', '/home/orbit/apps/acme');
+            ->assertJsonPath('data.checkout_path', '/srv/users/nckrtl/apps/acme');
 
         expect(Instance::query()->count())->toBe(2);
     });
@@ -592,7 +631,7 @@ describe('instance API', function (): void {
             ->create([
                 'name' => 'feature',
                 'branch' => 'feature',
-                'checkout_path' => '/home/orbit/.orbit/worktrees/acme/feature',
+                'checkout_path' => '/srv/users/nckrtl/.orbit/worktrees/acme/feature',
                 'hostname' => 'feature.acme.app-dev.orbit',
             ]);
 
@@ -676,7 +715,7 @@ describe('instance API', function (): void {
             'node_id' => $otherNode->id,
             'name' => 'other',
             'environment' => 'development',
-            'checkout_path' => '/home/orbit/apps/acme-other',
+            'checkout_path' => '/srv/users/nckrtl/apps/acme-other',
             'hostname' => 'other.other.orbit',
             'certificate_mode' => CertificateMode::OrbitCa,
             'status' => LifecycleStatus::Active,
@@ -715,7 +754,7 @@ function create_instance_for_api_test(OrbitApp $app, Node $node): Instance
         'node_id' => $node->id,
         'name' => 'dev',
         'environment' => 'development',
-        'checkout_path' => '/home/orbit/apps/acme',
+        'checkout_path' => '/srv/users/nckrtl/apps/acme',
         'hostname' => 'acme.app-dev.orbit',
         'certificate_mode' => CertificateMode::OrbitCa,
         'status' => LifecycleStatus::Active,
