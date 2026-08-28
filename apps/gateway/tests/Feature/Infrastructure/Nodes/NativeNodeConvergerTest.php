@@ -226,7 +226,7 @@ it('pins the host and converges only base node identity and connectivity', funct
 
     $converger->converge($node, 'SHA256:pinned');
 
-    expect($node->refresh()->ssh_user)
+    expect($node->refresh()->user)
         ->toBe('orbit')
         ->and($node->ssh_host_fingerprint)
         ->toBe('SHA256:pinned')
@@ -500,7 +500,7 @@ it('uses passwordless sudo for the same fixed base command when reconnecting as 
     expect(interface_exists(NodeRoleFirewallManager::class))->toBeTrue();
 
     $node = base_provisionable_node();
-    $node->update(['ssh_user' => 'orbit', 'ssh_host_fingerprint' => 'SHA256:pinned']);
+    $node->update(['user' => 'orbit', 'ssh_host_fingerprint' => 'SHA256:pinned']);
     $ssh = new BaseNodeSshExecutor;
     $factory = new NodeBootstrapCommandFactory(base_test_keys());
     $expected = $factory->make($node);
@@ -645,7 +645,7 @@ function base_provisionable_node(): Node
         'platform' => 'linux',
         'public_ssh_host' => '192.0.2.10',
         'public_ssh_port' => 22,
-        'ssh_user' => 'root',
+        'user' => 'root',
         'wireguard_address' => '10.44.0.2',
     ]);
     $node->roles()->create(['role' => RoleName::AppDev]);

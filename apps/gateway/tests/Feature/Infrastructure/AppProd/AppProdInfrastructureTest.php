@@ -936,7 +936,7 @@ function app_prod_runtime_models(): array
         'status' => LifecycleStatus::Active,
         'public_ssh_host' => '192.0.2.20',
         'wireguard_address' => '10.44.0.5',
-        'ssh_user' => 'orbit',
+        'user' => 'orbit',
     ]);
     $app = OrbitApp::query()->create([
         'name' => 'Acme',

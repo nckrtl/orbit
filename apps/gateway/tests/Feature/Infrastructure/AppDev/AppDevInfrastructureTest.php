@@ -1701,7 +1701,7 @@ function app_dev_runtime_models(string $instancePhp = '8.5'): array
         'tld' => 'app-dev.orbit',
         'public_ssh_host' => '192.0.2.10',
         'wireguard_address' => '10.44.0.3',
-        'ssh_user' => 'orbit',
+        'user' => 'orbit',
     ]);
     $node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
     $app = OrbitApp::query()->create([

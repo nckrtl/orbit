@@ -91,7 +91,7 @@ describe('instance API', function (): void {
             'tld' => 'app-dev.orbit',
             'status' => LifecycleStatus::Active,
             'public_ssh_host' => '192.0.2.10',
-            'ssh_user' => 'orbit',
+            'user' => 'orbit',
             'wireguard_address' => '10.44.0.3',
         ]);
         $this->node
@@ -165,7 +165,7 @@ describe('instance API', function (): void {
             'status' => LifecycleStatus::Active,
             'public_ssh_host' => '192.0.2.20',
             'wireguard_address' => '10.44.0.5',
-            'ssh_user' => 'orbit',
+            'user' => 'orbit',
         ]);
         $node->roles()->create([
             'role' => RoleName::AppProd,
@@ -200,7 +200,7 @@ describe('instance API', function (): void {
             'status' => LifecycleStatus::Active,
             'public_ssh_host' => '192.0.2.20',
             'wireguard_address' => '10.44.0.5',
-            'ssh_user' => 'orbit',
+            'user' => 'orbit',
         ]);
         $node->roles()->create([
             'role' => RoleName::AppProd,
@@ -237,7 +237,7 @@ describe('instance API', function (): void {
             'status' => LifecycleStatus::Active,
             'public_ssh_host' => '192.0.2.20',
             'wireguard_address' => '10.44.0.5',
-            'ssh_user' => 'orbit',
+            'user' => 'orbit',
         ]);
         $node->roles()->create([
             'role' => RoleName::AppProd,
@@ -279,7 +279,7 @@ describe('instance API', function (): void {
             'status' => LifecycleStatus::Active,
             'public_ssh_host' => '192.0.2.20',
             'wireguard_address' => '10.44.0.5',
-            'ssh_user' => 'orbit',
+            'user' => 'orbit',
         ]);
         $instance = Instance::query()->create([
             'app_id' => $this->orbitApp->id,
@@ -361,7 +361,7 @@ describe('instance API', function (): void {
             'status' => LifecycleStatus::Active,
             'public_ssh_host' => '192.0.2.20',
             'wireguard_address' => '10.44.0.5',
-            'ssh_user' => 'orbit',
+            'user' => 'orbit',
             ...$nodeAttributes,
         ]);
 
@@ -405,7 +405,7 @@ describe('instance API', function (): void {
             'status' => LifecycleStatus::Active,
             'public_ssh_host' => '192.0.2.20',
             'wireguard_address' => '10.44.0.5',
-            'ssh_user' => 'orbit',
+            'user' => 'orbit',
         ]);
         $node->roles()->create([
             'role' => RoleName::AppProd,
@@ -442,7 +442,7 @@ describe('instance API', function (): void {
             'status' => LifecycleStatus::Active,
             'public_ssh_host' => '192.0.2.20',
             'wireguard_address' => '10.44.0.5',
-            'ssh_user' => 'orbit',
+            'user' => 'orbit',
         ]);
         $node->roles()->create([
             'role' => RoleName::AppProd,
@@ -730,7 +730,7 @@ function create_app_prod_instance_for_api_test(OrbitApp $app): Instance
         'status' => LifecycleStatus::Active,
         'public_ssh_host' => '192.0.2.20',
         'wireguard_address' => '10.44.0.5',
-        'ssh_user' => 'orbit',
+        'user' => 'orbit',
     ]);
     $node->roles()->create([
         'role' => RoleName::AppProd,

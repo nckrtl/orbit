@@ -118,8 +118,8 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
         ]);
 
         $bootstrap = $this->ssh->execute(
-            $this->connection($node, $node->ssh_user),
-            $node->ssh_user === 'orbit'
+            $this->connection($node, $node->user),
+            $node->user === 'orbit'
                 ? $this->bootstrapCommand->makeWithPasswordlessSudo($node)
                 : $this->bootstrapCommand->make($node),
         );
@@ -216,7 +216,7 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
             );
         }
 
-        $node->update(['ssh_user' => 'orbit']);
+        $node->update(['user' => 'orbit']);
     }
 
     private function connection(Node $node, string $user, ?string $host = null, ?int $port = null): SshConnection

@@ -366,7 +366,7 @@ function apt_tool_node(string $platform = 'linux'): Node
         'status' => 'active',
         'platform' => $platform,
         'public_ssh_host' => '127.0.0.1',
-        'ssh_user' => 'orbit',
+        'user' => 'orbit',
         'wireguard_address' => '10.8.0.43',
     ]);
 }

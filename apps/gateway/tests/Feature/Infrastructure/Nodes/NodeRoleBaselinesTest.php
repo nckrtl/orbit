@@ -260,7 +260,7 @@ function role_baseline_models(RoleName $role, string $name = 'role-node'): array
         'platform' => 'linux',
         'public_ssh_host' => '192.0.2.10',
         'public_ssh_port' => 22,
-        'ssh_user' => 'orbit',
+        'user' => 'orbit',
         'wireguard_address' => $address,
     ]);
     $assignment = $node->roles()->create(['role' => $role, 'status' => 'provisioning']);

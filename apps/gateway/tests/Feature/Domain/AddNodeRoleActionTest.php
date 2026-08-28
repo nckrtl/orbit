@@ -435,7 +435,7 @@ function add_role_node(
         'platform' => 'linux',
         'architecture' => 'x86_64',
         'public_ssh_host' => '192.0.2.10',
-        'ssh_user' => 'orbit',
+        'user' => 'orbit',
         'wireguard_address' => $wireguardAddress,
     ]);
 }

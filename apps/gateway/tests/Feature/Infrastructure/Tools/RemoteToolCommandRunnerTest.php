@@ -115,7 +115,7 @@ function remote_tool_runner_node(?string $wireguardAddress): Node
         'status' => 'active',
         'platform' => 'linux',
         'public_ssh_host' => '127.0.0.1',
-        'ssh_user' => 'orbit',
+        'user' => 'orbit',
         'wireguard_address' => $wireguardAddress,
     ]);
 }

@@ -51,7 +51,7 @@ final readonly class BootstrapGatewayAction
                 'architecture' => php_uname('m'),
                 'public_ssh_host' => $data->publicHost,
                 'public_ssh_port' => 22,
-                'ssh_user' => 'orbit',
+                'user' => 'orbit',
                 'wireguard_address' => $data->wireguardAddress,
                 'failed_step' => null,
                 'error_code' => null,

@@ -272,7 +272,7 @@ function node_role_guard_node(): Node
         'platform' => 'linux',
         'public_ssh_host' => '192.0.2.10',
         'public_ssh_port' => 22,
-        'ssh_user' => 'orbit',
+        'user' => 'orbit',
         'wireguard_address' => '10.44.0.2',
     ]);
 }

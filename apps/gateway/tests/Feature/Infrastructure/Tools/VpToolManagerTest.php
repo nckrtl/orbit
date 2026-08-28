@@ -59,7 +59,7 @@ describe(VpToolManager::class, function (): void {
             'status' => 'active',
             'platform' => 'darwin',
             'public_ssh_host' => '127.0.0.1',
-            'ssh_user' => 'orbit',
+            'user' => 'orbit',
             'wireguard_address' => '10.44.10.10',
         ]);
         $node->roles()->create([
@@ -461,7 +461,7 @@ function vp_tool_node(string $platform = 'linux', array $roles = [['app-dev', 'a
         'status' => 'active',
         'platform' => $platform,
         'public_ssh_host' => '127.0.0.1',
-        'ssh_user' => 'orbit',
+        'user' => 'orbit',
         'wireguard_address' => '10.8.0.43',
     ]);
 
