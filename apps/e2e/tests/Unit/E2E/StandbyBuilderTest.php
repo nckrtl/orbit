@@ -97,6 +97,81 @@ describe('StandbyBuilder', function () {
             ->toThrow(RuntimeException::class, 'explicit permission');
     });
 
+    it('starts every newly initialized VM before source synchronization', function () {
+        $paths = new StatePaths(sys_get_temp_dir().'/orbit-builder-'.bin2hex(random_bytes(4)));
+        $state = new AtomicJsonStore($paths);
+        $started = [];
+        $initialized = [];
+        Process::fake(function (PendingProcess $process) use (&$started, &$initialized) {
+            $command = $process->command;
+            assert(is_array($command), 'Incus uses argument arrays.');
+            if (in_array('image', $command, true)) {
+                return Process::result(json_encode([[
+                    'type' => 'virtual-machine',
+                    'fingerprint' => str_repeat('f', 64),
+                    'aliases' => [['name' => 'orbit-base']],
+                ]], JSON_THROW_ON_ERROR));
+            }
+            if (in_array('create', $command, true)) {
+                return Process::result();
+            }
+            if (in_array('init', $command, true)) {
+                $initialized[] = preg_replace(
+                    '/\A[^:]+:/',
+                    '',
+                    array_values(array_filter(
+                        $command,
+                        fn (mixed $value): bool => is_string($value) && str_contains($value, 'standby-'),
+                    ))[0],
+                );
+
+                return Process::result();
+            }
+            if (in_array('list', $command, true)) {
+                $name = preg_replace('/\A[^:]+:/', '', $command[4]);
+
+                return Process::result(
+                    in_array($name, $initialized, true)
+                        ? json_encode([[
+                            'name' => $name,
+                            'type' => 'virtual-machine',
+                            'status' => 'Stopped',
+                            'status_code' => 102,
+                            'config' => ['user.orbit.e2e.owner' => 'orbit-e2e'],
+                            'devices' => ['root' => ['pool' => 'orbit-e2e'], 'eth0' => ['network' => 'oe-standby']],
+                        ]], JSON_THROW_ON_ERROR) : '[]',
+                );
+            }
+            if (in_array('start', $command, true)) {
+                $started[] = array_values(array_filter(
+                    $command,
+                    fn (mixed $value): bool => is_string($value) && str_contains($value, 'standby-'),
+                ))[0];
+
+                return Process::result();
+            }
+
+            return Process::result('[]');
+        });
+        $builder = cold_cleanup_builder(new IncusHost(pool: 'orbit-e2e'), $state, $paths);
+
+        expect(fn () => $builder->build(
+            str_repeat('a', 40),
+            new PreparedFingerprint(str_repeat('b', 64), ['base_image_alias' => 'orbit-base']),
+            str_repeat('f', 64),
+            new LaravelRelease('v13.0.0', str_repeat('c', 40)),
+            true,
+            str_repeat('d', 32),
+        ))
+            ->toThrow(Error::class);
+
+        expect($started)->toBe([
+            'local:orbit-e2e-standby-gateway',
+            'local:orbit-e2e-standby-app-dev',
+            'local:orbit-e2e-standby-app-prod',
+        ]);
+    });
+
     it('accepts a fully cleaned attempt recorded with the former standby network identity', function () {
         $paths = new StatePaths(sys_get_temp_dir().'/orbit-builder-'.bin2hex(random_bytes(4)));
         $state = new AtomicJsonStore($paths);

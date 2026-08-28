@@ -198,6 +198,25 @@ describe('IncusHost network creation', function () {
 });
 
 describe('IncusHost mutations', function () {
+    it('does not start an already running owned VM', function () {
+        Process::fake(function (PendingProcess $process) {
+            return match ($process->command) {
+                incusCommand('list', incusTarget('orbit-e2e-nck-123-gateway'), '--format=json') => Process::result(
+                    str_replace(
+                        ['"status":"Stopped"', '"status_code":102'],
+                        ['"status":"Running"', '"status_code":103'],
+                        vmJson(),
+                    ),
+                ),
+                default => Process::result(),
+            };
+        });
+
+        incusHost()->start('orbit-e2e-nck-123-gateway');
+
+        Process::assertNotRan(incusCommand('start', incusTarget('orbit-e2e-nck-123-gateway')));
+    });
+
     it('passes guest stdin through process input without adding it to argv', function () {
         $observedInput = null;
         $secret = 'token='.bin2hex(random_bytes(8))."\n";

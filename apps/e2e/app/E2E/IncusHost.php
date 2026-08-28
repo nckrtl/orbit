@@ -267,7 +267,10 @@ final readonly class IncusHost
 
     public function start(string $instance): void
     {
-        $this->validatedOwnedVm($instance);
+        if ($this->validatedOwnedVm($instance)->isRunning()) {
+            return;
+        }
+
         $this->run(['start', $this->target($instance)], 120);
     }
 

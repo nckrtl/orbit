@@ -103,6 +103,7 @@ final readonly class StandbyBuilder
                 $this->host->initVm($alias, $target->instance($role), $target->network());
                 $attempt['instances'][$index]['state'] = 'created';
                 $this->recordAttempt($evidenceId, $attempt);
+                $this->host->start($target->instance($role));
             }
 
             $source = $this->synchronizer->sync($target, $this->mainWorktree, SyncMode::Full);
