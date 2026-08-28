@@ -8,6 +8,12 @@ use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Activities\ListActivitiesRequest;
+use Orbit\Sdk\Requests\Tools\InstallToolRequest;
+use Orbit\Sdk\Requests\Tools\ListToolManagersRequest;
+use Orbit\Sdk\Requests\Tools\ListToolsRequest;
+use Orbit\Sdk\Requests\Tools\RemoveToolRequest;
+use Orbit\Sdk\Requests\Tools\ShowToolRequest;
+use Orbit\Sdk\Requests\Tools\UpdateToolRequest;
 use Saloon\Exceptions\Request\FatalRequestException;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
@@ -66,6 +72,75 @@ it('renders one deterministic json envelope for a resource gateway error', funct
         ->not->toContain('details')
         ->not->toContain('fixture-secret');
     expect(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))->toBe($expectedPayload);
+});
+
+it('renders shared gateway errors safely for every tool command', function (
+    string $command,
+    array $arguments,
+    string $requestClass,
+): void {
+    MockClient::global([
+        $requestClass => MockResponse::make(
+            [
+                'error' => [
+                    'code' => 'tool.manager_unavailable',
+                    'message' => 'The tool manager is unavailable.',
+                    'details' => ['manager_output' => 'validation-secret'],
+                ],
+            ],
+            409,
+            ['X-Orbit-Request-Id' => gateway_error_request_id()],
+        ),
+    ]);
+    $expectedPayload = [
+        'error' => [
+            'code' => 'tool.manager_unavailable',
+            'message' => 'The tool manager is unavailable.',
+            'request_id' => gateway_error_request_id(),
+        ],
+    ];
+
+    $exitCode = Artisan::call($command, [...$arguments, '--json' => true]);
+    $output = trim(Artisan::output());
+
+    expect($exitCode)->toBe(SymfonyCommand::FAILURE);
+    expect($output)
+        ->toBe(json_encode($expectedPayload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))
+        ->not->toContain('details')
+        ->not->toContain('validation-secret');
+    expect(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))
+        ->toBe($expectedPayload);
+})->with([
+    'manager list' => ['tool:manager:list', ['--node' => '12'], ListToolManagersRequest::class],
+    'tool list' => ['tool:list', ['--node' => '12'], ListToolsRequest::class],
+    'tool show' => ['tool:show', ['tool' => '41'], ShowToolRequest::class],
+    'tool install' => [
+        'tool:install',
+        ['package' => '@openai/codex', '--node' => '12', '--manager' => 'vp'],
+        InstallToolRequest::class,
+    ],
+    'tool update' => ['tool:update', ['tool' => '41'], UpdateToolRequest::class],
+    'tool remove' => ['tool:remove', ['tool' => '41'], RemoveToolRequest::class],
+]);
+
+it('renders malformed successful tool responses through the shared json boundary', function (): void {
+    MockClient::global([
+        ShowToolRequest::class => MockResponse::make([
+            'data' => ['id' => 'validation-secret'],
+            'meta' => ['request_id' => gateway_error_request_id()],
+        ]),
+    ]);
+    $expected = json_encode(['error' => [
+        'code' => 'gateway.invalid_response',
+        'message' => 'Gateway response is invalid.',
+        'request_id' => gateway_error_request_id(),
+    ]], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+
+    expect(Artisan::call('tool:show', ['tool' => '41', '--json' => true]))
+        ->toBe(SymfonyCommand::FAILURE)
+        ->and(trim(Artisan::output()))
+        ->toBe($expected)
+        ->not->toContain('validation-secret');
 });
 
 it('renders a bounded json envelope for a fatal transport error', function (): void {

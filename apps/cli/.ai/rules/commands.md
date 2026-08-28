@@ -17,3 +17,10 @@ absolute executable. Pass `run`, the script name, and each script argument as
 one argv item through repeated `--command` options. Do not replace PHP or
 Composer commands. Do not document direct package-manager project install/run
 commands; project state lets Vite+ select the manager.
+
+## Keep tool commands on the Gateway boundary
+
+Tool commands use the PHP SDK only. Do not execute a package manager, process,
+SSH, sudo, or SemVer policy in the CLI. Interactive install manager choices
+come from the target node's active manager rows. Noninteractive and JSON calls
+must supply node, manager, and package without prompting.

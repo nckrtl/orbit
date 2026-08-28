@@ -54,6 +54,12 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'process:restart',
         'process:start',
         'process:stop',
+        'tool:install',
+        'tool:list',
+        'tool:manager:list',
+        'tool:remove',
+        'tool:show',
+        'tool:update',
         'workspace:list',
         'workspace:new',
         'workspace:php',
@@ -66,7 +72,7 @@ it('does not register hidden Orbit product commands', function (): void {
     $orbitCommands = collect(app(Kernel::class)->all())
         ->filter(static fn (Command $command): bool => str_starts_with($command::class, 'App\\Commands\\'));
 
-    expect($orbitCommands)->toHaveCount(40);
+    expect($orbitCommands)->toHaveCount(46);
     expect($orbitCommands->every(
         static fn (Command $command): bool => ! $command->isHidden(),
     ))->toBeTrue();
@@ -180,6 +186,15 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'process:restart' => [['process'], ['json' => false]],
         'process:start' => [['process'], ['json' => false]],
         'process:stop' => [['process'], ['json' => false]],
+        'tool:install' => [
+            ['package'],
+            ['node' => null, 'manager' => null, 'constraint' => null, 'json' => false],
+        ],
+        'tool:list' => [[], ['node' => null, 'json' => false]],
+        'tool:manager:list' => [[], ['node' => null, 'json' => false]],
+        'tool:remove' => [['tool'], ['json' => false]],
+        'tool:show' => [['tool'], ['json' => false]],
+        'tool:update' => [['tool'], ['json' => false]],
         'workspace:list' => [[], ['json' => false]],
         'workspace:new' => [
             ['instance', 'name'],
@@ -210,7 +225,11 @@ it('keeps the exact approved arguments options and defaults', function (): void 
             ->all();
 
         expect(array_keys($definition->getArguments()))->toBe($arguments);
-        $optionalArguments = $name === 'node:provision' ? ['host'] : [];
+        $optionalArguments = match ($name) {
+            'node:provision' => ['host'],
+            'tool:install' => ['package'],
+            default => [],
+        };
         expect(collect($definition->getArguments())
             ->reject(static fn ($argument, string $argumentName): bool => in_array(
                 $argumentName,
@@ -320,6 +339,15 @@ it('renders one exact json failure envelope for every Orbit product command', fu
         'process:restart' => [['process' => '1'], ...$profileMissing],
         'process:start' => [['process' => '1'], ...$profileMissing],
         'process:stop' => [['process' => '1'], ...$profileMissing],
+        'tool:install' => [
+            ['package' => 'curl', '--node' => '1', '--manager' => 'apt'],
+            ...$profileMissing,
+        ],
+        'tool:list' => [['--node' => '1'], ...$profileMissing],
+        'tool:manager:list' => [['--node' => '1'], ...$profileMissing],
+        'tool:remove' => [['tool' => '1'], ...$profileMissing],
+        'tool:show' => [['tool' => '1'], ...$profileMissing],
+        'tool:update' => [['tool' => '1'], ...$profileMissing],
         'workspace:list' => [[], ...$profileMissing],
         'workspace:new' => [['instance' => '1', 'name' => 'work'], ...$profileMissing],
         'workspace:php' => [['workspace' => '1', 'version' => '8.5'], ...$profileMissing],

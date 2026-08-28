@@ -9,11 +9,14 @@ use App\Exceptions\GatewayConfigException;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use App\Support\GatewayFailureRenderer;
+use InvalidArgumentException;
+use JsonException;
 use LaravelZero\Framework\Commands\Command;
 use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\GatewayRequest;
 use Saloon\Exceptions\Request\FatalRequestException;
+use Saloon\Http\Response;
 use Symfony\Component\Console\Exception\ExceptionInterface;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
@@ -159,17 +162,59 @@ abstract class GatewayCommand extends Command
         string $responseClass,
     ): object {
         try {
-            /** @mago-expect analysis:mixed-assignment Saloon returns DTOs through a mixed boundary. */
-            $response = $connector->send($request)->dto();
+            $response = $connector->send($request);
         } catch (FatalRequestException) {
             throw new GatewayApiException('Could not reach the gateway.', 'gateway.unreachable');
         }
 
-        if (! $response instanceof $responseClass) {
+        try {
+            /** @mago-expect analysis:mixed-assignment Saloon returns DTOs through a mixed boundary. */
+            $dto = $response->dto();
+        } catch (InvalidArgumentException $exception) {
+            throw new GatewayApiException(
+                message: 'Gateway response is invalid.',
+                errorCode: 'gateway.invalid_response',
+                previous: $exception,
+                requestId: $this->responseRequestId($response),
+            );
+        }
+
+        if (! $dto instanceof $responseClass) {
             throw new GatewayApiException('Gateway response is invalid.', 'gateway.invalid_response');
         }
 
-        return $response;
+        return $dto;
+    }
+
+    private function responseRequestId(Response $response): ?string
+    {
+        try {
+            /** @mago-expect analysis:mixed-assignment Malformed DTOs still expose untyped response metadata. */
+            $metaRequestId = $response->json('meta.request_id');
+        } catch (JsonException) {
+            $metaRequestId = null;
+        }
+
+        return (
+            $this->validResponseRequestId($metaRequestId) ?? $this->validResponseRequestId(
+                $response->getPsrResponse()->getHeaderLine('X-Orbit-Request-Id'),
+            )
+        );
+    }
+
+    private function validResponseRequestId(mixed $requestId): ?string
+    {
+        if (
+            is_string($requestId)
+            && preg_match(
+                '/\A[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\z/iD',
+                $requestId,
+            ) === 1
+        ) {
+            return $requestId;
+        }
+
+        return null;
     }
 
     /** @param array<string, mixed> $payload */
