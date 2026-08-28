@@ -219,7 +219,7 @@ it('always returns the exact preview without mutating when force is absent or fa
                     'field' => 'force',
                     'reason' => 'destructive_consent_required',
                     'role' => 'app-dev',
-                    'dependents' => [],
+                    'dependents' => ['VP and Composer become unavailable after role removal.'],
                 ],
             ],
         ]);

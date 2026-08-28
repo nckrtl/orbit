@@ -19,6 +19,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolStatus;
 use App\Infrastructure\Nodes\NativeNodeRoleDependentCleaner;
+use App\Infrastructure\Tools\EloquentNodeRoleToolIntentGuard;
 use App\Models\App;
 use App\Models\Instance;
 use App\Models\Node;
@@ -34,7 +35,13 @@ describe(RemoveNodeRoleAction::class, function (): void {
         $inspector = new RemovalInspectorFake(new NodeRoleDependencySet([], [], [], []));
         $cleaner = new RemovalCleanerFake;
         $baseline = new RemovalBaselineFake;
-        $action = new RemoveNodeRoleAction($inspector, $cleaner, $baseline, app(\App\Domain\Nodes\RoleRegistry::class));
+        $action = new RemoveNodeRoleAction(
+            $inspector,
+            $cleaner,
+            $baseline,
+            app(\App\Domain\Nodes\RoleRegistry::class),
+            new EloquentNodeRoleToolIntentGuard,
+        );
 
         expect(fn () => $action->execute($node, RoleName::AppDev, force: false, purgeData: false))
             ->toThrow(function (NodeRoleValidationException $exception): void {
@@ -45,7 +52,7 @@ describe(RemoveNodeRoleAction::class, function (): void {
                         'field' => 'force',
                         'reason' => 'destructive_consent_required',
                         'role' => 'app-dev',
-                        'dependents' => [],
+                        'dependents' => ['VP and Composer become unavailable after role removal.'],
                     ]);
             });
 
@@ -81,12 +88,13 @@ describe(RemoveNodeRoleAction::class, function (): void {
             $cleaner,
             $baseline,
             app(\App\Domain\Nodes\RoleRegistry::class),
+            new EloquentNodeRoleToolIntentGuard,
         );
 
         expect(fn () => $action->execute($node, $role, force: true))
             ->toThrow(
                 NodeRoleValidationException::class,
-                'Remove app-scoped Tools before removing the last active app role.',
+                'Remove app-scoped tools before removing the last active app role.',
             );
 
         expect($assignment->refresh()->status)
@@ -120,6 +128,7 @@ describe(RemoveNodeRoleAction::class, function (): void {
             new RemovalCleanerFake,
             new RemovalBaselineFake,
             app(\App\Domain\Nodes\RoleRegistry::class),
+            new EloquentNodeRoleToolIntentGuard,
         );
 
         $action->execute($node, RoleName::AppDev, force: true);
@@ -152,6 +161,7 @@ describe(RemoveNodeRoleAction::class, function (): void {
             new RemovalCleanerFake,
             new RemovalBaselineFake,
             app(\App\Domain\Nodes\RoleRegistry::class),
+            new EloquentNodeRoleToolIntentGuard,
         );
 
         $action->execute($node, RoleName::AppDev, force: true);
@@ -164,6 +174,47 @@ describe(RemoveNodeRoleAction::class, function (): void {
             ->toBe(ToolStatus::Installed);
     });
 
+    it('retires unsupported VP and Composer managers after the last app role is removed', function (): void {
+        [$node, , $dependencies] = removal_role_fixture(withDependents: true);
+        $vp = $node->toolManagers()->create([
+            'name' => ToolManagerName::Vp,
+            'status' => LifecycleStatus::Active,
+            'installed_version' => '1.2.3',
+        ]);
+        $composer = $node->toolManagers()->create([
+            'name' => ToolManagerName::Composer,
+            'status' => LifecycleStatus::Active,
+            'installed_version' => '2.7.0',
+        ]);
+        $node->toolManagers()->create([
+            'name' => ToolManagerName::Apt,
+            'status' => LifecycleStatus::Active,
+            'installed_version' => '2.0',
+        ]);
+        $action = new RemoveNodeRoleAction(
+            new RemovalInspectorFake($dependencies),
+            new RemovalCleanerFake,
+            new RemovalBaselineFake,
+            app(\App\Domain\Nodes\RoleRegistry::class),
+            new EloquentNodeRoleToolIntentGuard,
+        );
+
+        $action->execute($node, RoleName::AppDev, force: true);
+
+        expect($vp->refresh()->status)
+            ->toBe(LifecycleStatus::Failed)
+            ->and($vp->failed_step)
+            ->toBe('app-role')
+            ->and($vp->error_code)
+            ->toBe('tool_manager.app_role_required')
+            ->and($vp->installed_version)
+            ->toBe('1.2.3')
+            ->and($composer->refresh()->status)
+            ->toBe(LifecycleStatus::Failed)
+            ->and($composer->installed_version)
+            ->toBe('2.7.0');
+    });
+
     it('cleans dependents and baseline outside short transactions before deleting records', function (): void {
         [$node, $assignment, $dependencies] = removal_role_fixture(withDependents: true);
         $inspector = new RemovalInspectorFake($dependencies);
@@ -172,7 +223,13 @@ describe(RemoveNodeRoleAction::class, function (): void {
         $cleaner->events = &$events;
         $baseline = new RemovalBaselineFake;
         $baseline->events = &$events;
-        $action = new RemoveNodeRoleAction($inspector, $cleaner, $baseline, app(\App\Domain\Nodes\RoleRegistry::class));
+        $action = new RemoveNodeRoleAction(
+            $inspector,
+            $cleaner,
+            $baseline,
+            app(\App\Domain\Nodes\RoleRegistry::class),
+            new EloquentNodeRoleToolIntentGuard,
+        );
         $ambientTransactionLevel = DB::transactionLevel();
 
         $removed = $action->execute($node, RoleName::AppDev, force: true, purgeData: true);
@@ -214,7 +271,13 @@ describe(RemoveNodeRoleAction::class, function (): void {
             );
         }
 
-        $action = new RemoveNodeRoleAction($inspector, $cleaner, $baseline, app(\App\Domain\Nodes\RoleRegistry::class));
+        $action = new RemoveNodeRoleAction(
+            $inspector,
+            $cleaner,
+            $baseline,
+            app(\App\Domain\Nodes\RoleRegistry::class),
+            new EloquentNodeRoleToolIntentGuard,
+        );
 
         expect(fn () => $action->execute($node, RoleName::AppDev, force: true, purgeData: false))
             ->toThrow(NodeRoleOperationException::class);
@@ -252,7 +315,13 @@ describe(RemoveNodeRoleAction::class, function (): void {
             removal_process(owner: $instance, name: 'late-process', status: LifecycleStatus::Active);
         };
         $baseline = new RemovalBaselineFake;
-        $action = new RemoveNodeRoleAction($inspector, $cleaner, $baseline, app(\App\Domain\Nodes\RoleRegistry::class));
+        $action = new RemoveNodeRoleAction(
+            $inspector,
+            $cleaner,
+            $baseline,
+            app(\App\Domain\Nodes\RoleRegistry::class),
+            new EloquentNodeRoleToolIntentGuard,
+        );
 
         expect(fn () => $action->execute($node, RoleName::AppDev, force: true, purgeData: false))
             ->toThrow(NodeRoleOperationException::class);

@@ -29,6 +29,7 @@ use App\Domain\Nodes\NodeConverger;
 use App\Domain\Nodes\NodeRoleDependencyInspector;
 use App\Domain\Nodes\NodeRoleDependentCleaner;
 use App\Domain\Nodes\NodeRoleFirewallManager;
+use App\Domain\Nodes\NodeRoleToolIntentGuard;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Tools\ToolManagerMaterializer;
@@ -82,6 +83,7 @@ use App\Infrastructure\Ssh\SshHostKeyScanner;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\Tools\AptToolManager;
 use App\Infrastructure\Tools\ComposerToolManager;
+use App\Infrastructure\Tools\EloquentNodeRoleToolIntentGuard;
 use App\Infrastructure\Tools\NativeToolManagerMaterializer;
 use App\Infrastructure\Tools\NativeToolOperationLock;
 use App\Infrastructure\Tools\VpToolManager;
@@ -116,6 +118,7 @@ final class AppServiceProvider extends ServiceProvider
         NodeRoleDependencyInspector::class => EloquentNodeRoleDependencyInspector::class,
         NodeRoleDependentCleaner::class => NativeNodeRoleDependentCleaner::class,
         NodeRoleFirewallManager::class => NativeNodeRoleFirewallManager::class,
+        NodeRoleToolIntentGuard::class => EloquentNodeRoleToolIntentGuard::class,
         RoleBaselineConverger::class => NativeRoleBaselineConverger::class,
         ProcessRuntimeManager::class => RemoteProcessRuntimeManager::class,
         ProcessRunner::class => NativeProcessRunner::class,
