@@ -239,7 +239,7 @@ final readonly class StandbyBuilder
             || ! is_string($value['pool'])
             || ! is_array($value['network'])
             || $value['network'] !== [
-                'name' => 'orbit-e2e-standby',
+                'name' => 'oe-standby',
                 'state' => $value['network']['state'] ?? null,
                 'absent_preflight' => true,
             ]
@@ -259,7 +259,7 @@ final readonly class StandbyBuilder
                 || array_keys($intent) !== ['role', 'name', 'network', 'state', 'absent_preflight']
                 || ! is_string($intent['role'])
                 || ! is_string($intent['name'])
-                || $intent['network'] !== 'orbit-e2e-standby'
+                || $intent['network'] !== 'oe-standby'
                 || ! in_array($intent['state'], ['planned', 'created'], true)
                 || $intent['absent_preflight'] !== true
                 || ! in_array(
@@ -280,7 +280,7 @@ final readonly class StandbyBuilder
             $instances[] = [
                 'role' => $intent['role'],
                 'name' => $intent['name'],
-                'network' => 'orbit-e2e-standby',
+                'network' => 'oe-standby',
                 'state' => $intent['state'],
                 'absent_preflight' => true,
             ];
@@ -293,7 +293,7 @@ final readonly class StandbyBuilder
             'project' => $value['project'],
             'pool' => $value['pool'],
             'network' => [
-                'name' => 'orbit-e2e-standby',
+                'name' => 'oe-standby',
                 'state' => $value['network']['state'],
                 'absent_preflight' => true,
             ],

@@ -121,6 +121,45 @@ function retirementService(array &$observed, array &$operations, string $now): L
 }
 
 describe('legacy retirement', function () {
+    it('protects compact topology networks and all accepted feature issue identities', function (
+        string $kind,
+        string $identity,
+    ): void {
+        expect(fn () => \App\E2E\Value\RetirementInventory::assertLegacyCandidate($kind, [
+            'identity' => $identity,
+            'classification' => 'legacy',
+            'remote' => 'local',
+            'project' => 'default',
+            'dependencies' => [],
+        ]))
+            ->toThrow(InvalidArgumentException::class, 'protected resource');
+    })->with([
+        'compact standby network' => ['networks', 'oe-standby'],
+        'compact feature network' => ['networks', 'oe-a1b2c3d4e5f6'],
+        'canonical standby VM' => ['instances', 'orbit-e2e-standby-gateway'],
+        'canonical ORBIT feature VM' => ['instances', 'orbit-e2e-orbit-123456789-gateway'],
+        'canonical ORBIT feature snapshot' => ['snapshots', 'orbit-e2e-orbit-123456789-gateway/ready'],
+    ]);
+
+    it('keeps similar-looking foreign identities eligible when classified as legacy', function (
+        string $kind,
+        string $identity,
+    ): void {
+        expect(fn () => \App\E2E\Value\RetirementInventory::assertLegacyCandidate($kind, [
+            'identity' => $identity,
+            'classification' => 'legacy',
+            'remote' => 'local',
+            'project' => 'default',
+            'dependencies' => [],
+        ]))
+            ->not
+            ->toThrow(InvalidArgumentException::class);
+    })->with([
+        'foreign compact network' => ['networks', 'oe-a1b2c3d4e5f'],
+        'foreign VM prefix' => ['instances', 'orbit-e2e-orbitx-0-1'],
+        'foreign standby spelling' => ['networks', 'oe-standby-extra'],
+    ]);
+
     it('rejects symbolic-link parents for every protected JSON input and provider observation', function () {
         $root = sys_get_temp_dir().'/legacy-read-'.bin2hex(random_bytes(5));
         mkdir($root.'/real', 0700, true);

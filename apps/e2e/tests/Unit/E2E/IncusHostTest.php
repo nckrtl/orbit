@@ -186,6 +186,17 @@ describe('IncusHost reads', function () {
     });
 });
 
+describe('IncusHost network creation', function () {
+    it('rejects names longer than the Linux bridge interface limit before invoking Incus', function () {
+        $name = 'orbit-e2e-network-too-long';
+
+        expect(fn () => incusHost()->createNetwork($name, []))
+            ->toThrow(RuntimeException::class, 'Incus network names must be 15 ASCII characters or fewer.');
+
+        Process::assertNothingRan();
+    });
+});
+
 describe('IncusHost mutations', function () {
     it('passes guest stdin through process input without adding it to argv', function () {
         $observedInput = null;
@@ -223,21 +234,21 @@ describe('IncusHost mutations', function () {
                     vmJson(),
                 ),
                 incusCommand('network', 'list', incusTarget(), '--format=json') => Process::result(json_encode([
-                    ['name' => 'orbit-e2e-nck-123', 'config' => ['user.orbit.e2e.owner' => 'orbit-e2e']],
+                    ['name' => 'oe-b32d6c83af72', 'config' => ['user.orbit.e2e.owner' => 'orbit-e2e']],
                 ], JSON_THROW_ON_ERROR)),
                 default => Process::result(),
             };
         });
         $host = incusHost();
 
-        $network = $host->createNetwork('orbit-e2e-nck-123', ['ipv4.address' => '10.20.30.1/24']);
-        $instance = $host->initVm('orbit-base', 'orbit-e2e-nck-123-gateway', 'orbit-e2e-nck-123');
+        $network = $host->createNetwork('oe-b32d6c83af72', ['ipv4.address' => '10.20.30.1/24']);
+        $instance = $host->initVm('orbit-base', 'orbit-e2e-nck-123-gateway', 'oe-b32d6c83af72');
         $copy = $host->copySnapshot('orbit-e2e-standby-gateway', 'main-g1', 'orbit-e2e-nck-123-gateway');
-        $host->setNetwork('orbit-e2e-nck-123-gateway', 'orbit-e2e-nck-123');
+        $host->setNetwork('orbit-e2e-nck-123-gateway', 'oe-b32d6c83af72');
         $host->setMetadata('orbit-e2e-nck-123-gateway', ['user.orbit.e2e.issue' => 'NCK-123']);
 
         expect($network->name)
-            ->toBe('orbit-e2e-nck-123')
+            ->toBe('oe-b32d6c83af72')
             ->and($network->metadata['user.orbit.e2e.owner'])
             ->toBe('orbit-e2e')
             ->and($instance->pool)
@@ -249,7 +260,7 @@ describe('IncusHost mutations', function () {
             incusCommand(
                 'network',
                 'create',
-                incusTarget('orbit-e2e-nck-123'),
+                incusTarget('oe-b32d6c83af72'),
                 'ipv4.address=10.20.30.1/24',
                 'user.orbit.e2e.owner=orbit-e2e',
             ),
@@ -261,7 +272,7 @@ describe('IncusHost mutations', function () {
                 '--storage',
                 'orbit-e2e',
                 '--network',
-                'orbit-e2e-nck-123',
+                'oe-b32d6c83af72',
                 '--config',
                 'user.orbit.e2e.owner=orbit-e2e',
             ),
@@ -278,7 +289,7 @@ describe('IncusHost mutations', function () {
                 'override',
                 incusTarget('orbit-e2e-nck-123-gateway'),
                 'eth0',
-                'network=orbit-e2e-nck-123',
+                'network=oe-b32d6c83af72',
             ),
             incusCommand(
                 'config',

@@ -162,6 +162,9 @@ final readonly class IncusHost
     public function createNetwork(string $name, array $configuration): IncusNetwork
     {
         $this->validateName($name, 'network');
+        if (strlen($name) > 15) {
+            throw new RuntimeException('Incus network names must be 15 ASCII characters or fewer.');
+        }
         $this->validateStringMap($configuration, 'network configuration');
         $configuration = [...$configuration, ...$this->ownershipMetadata];
         $arguments = ['network', 'create', "{$this->remote}:{$name}"];

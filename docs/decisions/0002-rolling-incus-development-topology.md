@@ -34,8 +34,12 @@ Persistent standby VMs use the same three roles and remain stopped outside
 refresh or recovery. The standby and feature namespaces are distinct from
 Orbit-old resources. The canonical standby identities are
 `orbit-e2e-standby-gateway`, `orbit-e2e-standby-app-dev`, and
-`orbit-e2e-standby-app-prod`, on network `orbit-e2e-standby`. Each generation
-uses coordinated snapshots named `main-<generation-id>` on all three VMs.
+`orbit-e2e-standby-app-prod`, on network `oe-standby`. Feature networks use
+`oe-<issue-hash>`, where `<issue-hash>` is the first 12 lowercase hexadecimal
+characters of the issue ID's SHA-256 digest. This keeps every managed bridge
+within Linux's 15-character interface-name limit while readable VM names retain
+the full issue ID. Each generation uses coordinated snapshots named
+`main-<generation-id>` on all three VMs.
 
 ### Treat snapshots as an acceleration cache
 

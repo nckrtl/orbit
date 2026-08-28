@@ -33,7 +33,7 @@ final readonly class TopologyTarget
 
     public function network(): string
     {
-        return $this->standby ? 'orbit-e2e-standby' : 'orbit-e2e-'.strtolower($this->issue);
+        return $this->standby ? 'oe-standby' : 'oe-'.substr(hash('sha256', $this->issue), 0, 12);
     }
 
     public function instance(string $role): string
@@ -42,6 +42,6 @@ final readonly class TopologyTarget
             throw new InvalidArgumentException('The topology role is invalid.');
         }
 
-        return $this->network().'-'.$role;
+        return 'orbit-e2e-'.strtolower($this->issue).'-'.$role;
     }
 }

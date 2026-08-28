@@ -48,7 +48,7 @@ describe('StatePaths', function () {
             ->and(TopologyProfile::CHECKOUT_ROLES)
             ->toBe(['gateway', 'app-dev'])
             ->and($target->network())
-            ->toBe('orbit-e2e-nck-321')
+            ->toBe('oe-ed6933862e02')
             ->and($target->instance('app-prod'))
             ->toBe('orbit-e2e-nck-321-app-prod');
     });

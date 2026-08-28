@@ -48,7 +48,7 @@ describe('TopologyConverger', function () {
 
             if (array_slice($command, -4) === ['network', 'list', 'lab:', '--format=json']) {
                 return Process::result(json_encode([[
-                    'name' => 'orbit-e2e-nck-123',
+                    'name' => 'oe-b32d6c83af72',
                     'config' => ['user.orbit.e2e.owner' => 'orbit-e2e'],
                 ]], JSON_THROW_ON_ERROR));
             }
@@ -120,7 +120,7 @@ describe('TopologyConverger', function () {
             new SourceState(str_repeat('a', 40), str_repeat('a', 40), false),
             new LaravelRelease('v13.10.1', str_repeat('b', 40)),
         ))
-            ->toThrow(RuntimeException::class, 'network orbit-e2e-nck-123 does not exist');
+            ->toThrow(RuntimeException::class, 'network oe-b32d6c83af72 does not exist');
 
         Process::assertDidntRun(
             fn (PendingProcess $process): bool => (
@@ -138,7 +138,7 @@ describe('TopologyConverger', function () {
 
             if (array_slice($command, -4) === ['network', 'list', 'lab:', '--format=json']) {
                 return Process::result(json_encode([[
-                    'name' => 'orbit-e2e-nck-123',
+                    'name' => 'oe-b32d6c83af72',
                     'config' => ['user.orbit.e2e.owner' => $foreignResource === 'network' ? 'foreign' : 'orbit-e2e'],
                 ]], JSON_THROW_ON_ERROR));
             }

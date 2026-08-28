@@ -60,7 +60,7 @@ describe('StandbyBuilder', function () {
         expect($target->isStandby())
             ->toBeTrue()
             ->and($target->network())
-            ->toBe('orbit-e2e-standby')
+            ->toBe('oe-standby')
             ->and($target->instance('gateway'))
             ->toBe('orbit-e2e-standby-gateway')
             ->and($target->instance('app-dev'))
@@ -108,13 +108,13 @@ describe('StandbyBuilder', function () {
             'remote' => 'local',
             'project' => 'default',
             'pool' => 'orbit-e2e',
-            'network' => ['name' => 'orbit-e2e-standby', 'state' => 'created', 'absent_preflight' => true],
+            'network' => ['name' => 'oe-standby', 'state' => 'created', 'absent_preflight' => true],
             'base_image_fingerprint' => str_repeat('f', 64),
             'instances' => array_map(
                 fn (string $role, string $name): array => [
                     'role' => $role,
                     'name' => $name,
-                    'network' => 'orbit-e2e-standby',
+                    'network' => 'oe-standby',
                     'state' => 'created',
                     'absent_preflight' => true,
                 ],
@@ -132,7 +132,7 @@ describe('StandbyBuilder', function () {
                 return Process::result(json_encode(
                     $networkExists
                         ? [[
-                            'name' => 'orbit-e2e-standby',
+                            'name' => 'oe-standby',
                             'config' => ['user.orbit.e2e.owner' => 'orbit-e2e'],
                         ]] : [],
                     JSON_THROW_ON_ERROR,
@@ -159,13 +159,13 @@ describe('StandbyBuilder', function () {
                             'config' => ['user.orbit.e2e.owner' => 'orbit-e2e'],
                             'devices' => [
                                 'root' => ['pool' => 'orbit-e2e'],
-                                'eth0' => ['network' => 'orbit-e2e-standby'],
+                                'eth0' => ['network' => 'oe-standby'],
                             ],
                         ]] : [],
                     JSON_THROW_ON_ERROR,
                 ));
             }
-            if ($command === standby_incus_command('network', 'delete', 'local:orbit-e2e-standby')) {
+            if ($command === standby_incus_command('network', 'delete', 'local:oe-standby')) {
                 $networkExists = false;
 
                 return Process::result();
@@ -227,7 +227,7 @@ describe('StandbyBuilder', function () {
                 return Process::result(json_encode(
                     $networkExists
                         ? [[
-                            'name' => 'orbit-e2e-standby',
+                            'name' => 'oe-standby',
                             'config' => ['user.orbit.e2e.owner' => 'orbit-e2e'],
                         ]] : [],
                     JSON_THROW_ON_ERROR,
@@ -237,7 +237,7 @@ describe('StandbyBuilder', function () {
                 $command === standby_incus_command(
                     'network',
                     'create',
-                    'local:orbit-e2e-standby',
+                    'local:oe-standby',
                     'ipv4.address=auto',
                     'ipv4.nat=true',
                     'user.orbit.e2e.owner=orbit-e2e',
@@ -267,7 +267,7 @@ describe('StandbyBuilder', function () {
                             'config' => ['user.orbit.e2e.owner' => 'orbit-e2e'],
                             'devices' => [
                                 'root' => ['pool' => 'orbit-e2e'],
-                                'eth0' => ['network' => 'orbit-e2e-standby'],
+                                'eth0' => ['network' => 'oe-standby'],
                             ],
                         ]] : [],
                     JSON_THROW_ON_ERROR,
@@ -282,7 +282,7 @@ describe('StandbyBuilder', function () {
                     '--storage',
                     'orbit-e2e',
                     '--network',
-                    'orbit-e2e-standby',
+                    'oe-standby',
                     '--config',
                     'user.orbit.e2e.owner=orbit-e2e',
                 )
@@ -291,9 +291,9 @@ describe('StandbyBuilder', function () {
 
                 return Process::result('', 'creation response lost', 1);
             }
-            if ($command === standby_incus_command('network', 'delete', 'local:orbit-e2e-standby')) {
+            if ($command === standby_incus_command('network', 'delete', 'local:oe-standby')) {
                 $networkExists = false;
-                $deleted[] = 'orbit-e2e-standby';
+                $deleted[] = 'oe-standby';
 
                 return Process::result();
             } else {
@@ -322,7 +322,7 @@ describe('StandbyBuilder', function () {
             ->toThrow(RuntimeException::class, 'Incus command failed');
 
         expect($deleted)
-            ->toBe(['orbit-e2e-standby-gateway', 'orbit-e2e-standby'])
+            ->toBe(['orbit-e2e-standby-gateway', 'oe-standby'])
             ->and($state->read('standby/recovery/'.str_repeat('d', 32).'.json')['recovered'])
             ->toBeTrue();
     });
@@ -372,7 +372,7 @@ describe('StandbyBuilder', function () {
                     'status' => 'Stopped',
                     'status_code' => 102,
                     'config' => ['user.orbit.e2e.owner' => 'orbit-e2e'],
-                    'devices' => ['root' => ['pool' => 'orbit-e2e'], 'eth0' => ['network' => 'orbit-e2e-standby']],
+                    'devices' => ['root' => ['pool' => 'orbit-e2e'], 'eth0' => ['network' => 'oe-standby']],
                 ]], JSON_THROW_ON_ERROR));
             }
 
@@ -408,7 +408,7 @@ describe('StandbyBuilder', function () {
                         standby_incus_command(
                             'network',
                             'create',
-                            'local:orbit-e2e-standby',
+                            'local:oe-standby',
                             'ipv4.address=auto',
                             'ipv4.nat=true',
                             'user.orbit.e2e.owner=orbit-e2e',
@@ -421,7 +421,7 @@ describe('StandbyBuilder', function () {
                             '--storage',
                             'orbit-e2e',
                             '--network',
-                            'orbit-e2e-standby',
+                            'oe-standby',
                             '--config',
                             'user.orbit.e2e.owner=orbit-e2e',
                         ),
@@ -433,7 +433,7 @@ describe('StandbyBuilder', function () {
                             '--storage',
                             'orbit-e2e',
                             '--network',
-                            'orbit-e2e-standby',
+                            'oe-standby',
                             '--config',
                             'user.orbit.e2e.owner=orbit-e2e',
                         ),
@@ -445,7 +445,7 @@ describe('StandbyBuilder', function () {
                             '--storage',
                             'orbit-e2e',
                             '--network',
-                            'orbit-e2e-standby',
+                            'oe-standby',
                             '--config',
                             'user.orbit.e2e.owner=orbit-e2e',
                         ),
@@ -466,12 +466,12 @@ describe('StandbyBuilder', function () {
             'remote' => 'local',
             'project' => 'default',
             'pool' => 'orbit-e2e',
-            'network' => ['name' => 'orbit-e2e-standby', 'state' => 'created', 'absent_preflight' => true],
+            'network' => ['name' => 'oe-standby', 'state' => 'created', 'absent_preflight' => true],
             'base_image_fingerprint' => str_repeat('f', 64),
             'instances' => [[
                 'role' => 'gateway',
                 'name' => 'orbit-e2e-standby-gateway',
-                'network' => 'orbit-e2e-standby',
+                'network' => 'oe-standby',
                 'state' => 'planned',
                 'absent_preflight' => true,
             ]],
@@ -489,7 +489,7 @@ describe('StandbyBuilder', function () {
                     'status' => 'Stopped',
                     'status_code' => 102,
                     'config' => ['user.orbit.e2e.owner' => 'unrelated'],
-                    'devices' => ['root' => ['pool' => 'orbit-e2e'], 'eth0' => ['network' => 'orbit-e2e-standby']],
+                    'devices' => ['root' => ['pool' => 'orbit-e2e'], 'eth0' => ['network' => 'oe-standby']],
                 ]], JSON_THROW_ON_ERROR));
             }
 
@@ -507,7 +507,7 @@ describe('StandbyBuilder', function () {
                     $process->command,
                     [
                         standby_incus_command('delete', 'local:orbit-e2e-standby-gateway'),
-                        standby_incus_command('network', 'delete', 'local:orbit-e2e-standby'),
+                        standby_incus_command('network', 'delete', 'local:oe-standby'),
                     ],
                     true,
                 )
