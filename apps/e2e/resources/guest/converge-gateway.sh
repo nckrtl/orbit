@@ -11,10 +11,11 @@ case ${1-} in
     touch /home/orbit/.orbit/gateway.sqlite
     chown orbit:orbit /home/orbit/.orbit/gateway.sqlite
     chmod 0600 /home/orbit/.orbit/gateway.sqlite
-    if ! "${orbit_env[@]}" php "$gateway/artisan" migrate --force; then
+    cd "$gateway"
+    if ! "${orbit_env[@]}" php artisan migrate --force; then
       exit 70
     fi
-    if ! "${orbit_env[@]}" php "$gateway/artisan" orbit:bootstrap "$2" --no-interaction; then
+    if ! "${orbit_env[@]}" php artisan orbit:bootstrap "$2" --no-interaction; then
       exit 71
     fi
     ;;

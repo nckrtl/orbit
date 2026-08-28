@@ -5,6 +5,55 @@ declare(strict_types=1);
 use Symfony\Component\Process\Process;
 
 describe('convergence guest scripts', function () {
+    it('runs Gateway Artisan commands from the Gateway checkout', function () {
+        $root = sys_get_temp_dir().'/orbit-gateway-converge-'.bin2hex(random_bytes(4));
+        try {
+            mkdir("{$root}/bin", 0o700, true);
+            mkdir("{$root}/checkout/apps/gateway", 0o700, true);
+            file_put_contents("{$root}/bin/sudo", <<<'BASH'
+                #!/usr/bin/env bash
+                shift 3
+                exec "$@"
+                BASH);
+            file_put_contents("{$root}/bin/install", <<<'BASH'
+                #!/usr/bin/env bash
+                mkdir -p "${@: -1}"
+                BASH);
+            file_put_contents("{$root}/bin/chown", "#!/usr/bin/env bash\nexit 0\n");
+            file_put_contents("{$root}/bin/php", str_replace(
+                '__CWD_FILE__',
+                "{$root}/cwd",
+                <<<'BASH'
+                    #!/usr/bin/env bash
+                    printf '%s\n' "$PWD" >> '__CWD_FILE__'
+                    BASH,
+            ));
+            foreach (['sudo', 'install', 'chown', 'php'] as $command) {
+                chmod("{$root}/bin/{$command}", 0o700);
+            }
+
+            $source = str_replace(
+                ['/home/orbit/orbit', '/home/orbit/.orbit'],
+                ["{$root}/checkout", "{$root}/orbit"],
+                file_get_contents(dirname(__DIR__, 3).'/resources/guest/converge-gateway.sh'),
+            );
+            file_put_contents("{$root}/converge-gateway.sh", $source);
+            chmod("{$root}/converge-gateway.sh", 0o700);
+
+            $process = new Process(['bash', "{$root}/converge-gateway.sh", 'bootstrap', 'gateway'], env: [
+                'PATH' => "{$root}/bin:".getenv('PATH'),
+            ]);
+            expect($process->run())->toBe(0);
+
+            expect(file("{$root}/cwd", FILE_IGNORE_NEW_LINES))->toBe([
+                "{$root}/checkout/apps/gateway",
+                "{$root}/checkout/apps/gateway",
+            ]);
+        } finally {
+            new Illuminate\Filesystem\Filesystem()->deleteDirectory($root);
+        }
+    });
+
     it('keeps every guest script valid Bash', function () {
         $scripts = glob(dirname(__DIR__, 3).'/resources/guest/*.sh');
         expect($scripts)->not->toBeFalse()->not->toBeEmpty();
