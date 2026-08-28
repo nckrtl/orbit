@@ -416,6 +416,16 @@ describe(ComposerToolManager::class, function (): void {
         expect($version)->toBeNull();
     });
 
+    it('returns null for Composer empty global-root output', function (): void {
+        [$manager] = composer_tool_manager([
+            composer_result('[]'),
+        ]);
+
+        $version = $manager->installedVersion(composer_tool_node(), 'laravel/installer');
+
+        expect($version)->toBeNull();
+    });
+
     it('fails closed on malformed installed-version output', function (CommandResult $result, string $step): void {
         [$manager] = composer_tool_manager([$result]);
 
