@@ -241,6 +241,28 @@ it('materializes the Composer manifest and vendor bin directory idempotently', f
     }
 });
 
+it('converges an existing Composer vendor tree before package operations', function (): void {
+    $harness = role_composer_harness(mode: 'existing-vendor-tree');
+
+    try {
+        expect($harness['first']->isSuccessful())
+            ->toBeTrue($harness['first']->getErrorOutput());
+
+        foreach (["{$harness['composer']}/vendor", "{$harness['composer']}/vendor/bin"] as $directory) {
+            expect($directory)
+                ->toBeDirectory()
+                ->and(fileperms($directory) & 0o777)
+                ->toBe(0o755)
+                ->and(posix_getpwuid(fileowner($directory))['name'])
+                ->toBe($harness['owner'])
+                ->and(posix_getgrgid(filegroup($directory))['name'])
+                ->toBe($harness['group']);
+        }
+    } finally {
+        new Filesystem()->deleteDirectory($harness['root']);
+    }
+});
+
 it('rejects Composer manifest file, directory, and symlink conflicts without overwrite', function (): void {
     foreach (['file', 'directory', 'symlink'] as $conflict) {
         $harness = role_composer_harness(conflict: $conflict);
@@ -368,6 +390,11 @@ function role_composer_harness(?string $conflict = null, string $mode = 'success
 
     if ($conflict !== null) {
         $filesystem->makeDirectory($composer, 0o755);
+    }
+
+    if ($mode === 'existing-vendor-tree') {
+        $filesystem->makeDirectory("{$composer}/vendor/bin", 0o700, true);
+        chmod(filename: "{$composer}/vendor", permissions: 0o700);
     }
 
     $script = new NodeRolePrerequisiteCommandFactory()->make(RoleName::AppDev)->input ?? '';

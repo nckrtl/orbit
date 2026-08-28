@@ -179,7 +179,9 @@ final readonly class NodeRolePrerequisiteCommandFactory
                 revalidate
                 composer_manifest=
                 trap - EXIT
-                install -d -m 0755 -o orbit -g orbit /opt/orbit/composer/vendor/bin
+                install -d -m 0755 -o orbit -g orbit \
+                    /opt/orbit/composer/vendor \
+                    /opt/orbit/composer/vendor/bin
                 sudo -u orbit -H env COMPOSER_HOME=/opt/orbit/composer /usr/bin/composer --version --no-ansi
             BASH;
 

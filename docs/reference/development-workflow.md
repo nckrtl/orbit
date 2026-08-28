@@ -2,7 +2,11 @@
 
 The Orbit development cycle starts with a Ready Linear issue and ends when its
 approved pull request is merged and its development resources are removed.
-Deployment is a separate operations cycle.
+Candidate deployment and rollout to the registered live topology are part of
+feature development. Production release and post-deploy operations remain a
+separate cycle. Development proof venues are automated checks or live proof.
+The candidate rollout and cleanup boundary is governed by
+[ADR 0002](../decisions/0002-candidate-deployment-proof-boundary.md).
 
 ## Agent contracts
 
@@ -14,8 +18,8 @@ each development role:
 | Role | Repository skill | Successful signal |
 | --- | --- | --- |
 | Issue author | `.agents/skills/creating-orbit-issues` | Ready Linear issue |
-| Feature worker | `.agents/skills/developing-orbit-features` | `review_ready` |
-| Reviewer | `.agents/skills/reviewing-orbit-pull-requests` | `approved` |
+| Feature worker | `.agents/skills/developing-orbit-features` | staged `review_ready` |
+| Reviewer | `.agents/skills/reviewing-orbit-pull-requests` | `rollout_approved`, then `approved` |
 | Merge verifier | `.agents/skills/merging-orbit-pull-requests` | `merged` |
 
 The external orchestrator must pass each skill's required input and consume its
@@ -26,25 +30,46 @@ session. It must not infer success from Slack message text.
 
 Use `.agents/skills/creating-orbit-issues` to create the issue. Linear owns the
 outcome, scope, acceptance criteria, component list, ADR links, proof venue,
-Incus profile, and checkout roles.
+applicable live nodes, and required checkout identity evidence.
 
-A required ADR must already be on `main` before the issue becomes Ready. An
-issue uses automated proof unless live operating-system or multi-node behavior
-requires a registered Incus profile.
+Every linked or otherwise governing ADR must already be on `main` before the
+issue becomes Ready, implementation starts, or a dependent workflow contract
+changes. A feature pull request must not introduce or modify its governing ADR.
+An issue uses automated proof unless live operating-system or multi-node
+behavior requires live proof. Live proof selects exact active applicable nodes
+with `orbit node:list --json` and records node identity, roles, access,
+ownership, recovery, and checkout identity requirements.
 
 ## Work and compound
 
 1. The Slack project-manager agent claims a Ready issue.
 2. It creates one monorepo worktree with `bin/worktree-create`.
-3. If the issue selects Incus, it creates the named disposable profile before
-   implementation starts and records its identity.
-4. The feature worker uses `.agents/skills/developing-orbit-features`. It
-   changes the live topology first when that gives faster feedback, then
-   codifies the proven behavior in the repository.
-5. The feature worker runs focused checks, full affected suites, and required
-   live proof. It creates the pull request.
-6. Before handoff, that agent compounds durable learning into an existing ADR,
-   reference document, solution note, or repository rule when appropriate.
+3. The feature worker uses `.agents/skills/developing-orbit-features`. For live
+   proof, it selects active applicable nodes with `orbit node:list --json` for
+   read-only preflight. It inspects the gap via Orbit CLI, Gateway API, or pinned
+   direct SSH and records rollout intent, ownership, recovery, and cleanup plans
+   before changing code. It does not deploy or mutate live state at this stage.
+   It then inspects `/home/nckrtl/orbit-old` for applicable prior implementation.
+4. The feature worker implements the change and compounds durable learning into
+   an existing ADR, reference document, solution note, or repository rule when
+   appropriate. It then runs focused checks, each affected project's full suite
+   and quality check, and root `bin/test`. It commits and pushes a clean
+   candidate, creates or updates the pull request, and waits for current-head CI.
+5. For live proof, a separate reviewer approves the exact candidate and rollout
+   intent with `review_phase: pre_rollout` and `status: rollout_approved`. Any
+   later commit invalidates this event. No rollout or live mutation occurs before
+   this review.
+6. Immediately before every rollout command and every other live mutation, the
+   feature worker runs and inspects `orbit node:list --json`. A prior listing
+   cannot authorize a later mutation. It fails closed on identity, topology,
+   access, applicability, or ownership drift. Mutations are serial. Each record
+   names the fresh topology request or snapshot, exact node, candidate SHA,
+   mutation, task-owned resources, pre-state, recovery, result, and cleanup.
+7. After live proof, the feature worker restores the pre-state, removes every
+   task-owned proof and recovery resource, and verifies absence. Shared and
+   pre-existing state must still match the ownership baseline. It then requests
+   `post_proof` review. Automated proof goes directly to this review after step
+   4.
 
 Do not create documentation only to fill the Compound section. State why no
 durable update is needed when the work produced no reusable learning.
@@ -53,9 +78,13 @@ durable update is needed when the work produced no reusable learning.
 
 Review is independent from implementation: a separate review agent session,
 not necessarily a separate GitHub account. A reviewer uses
-`.agents/skills/reviewing-orbit-pull-requests` and comments on the pull
-request. The Slack project-manager agent sends each review signal back to the
-same feature worker. The loop repeats until the reviewer approves.
+`.agents/skills/reviewing-orbit-pull-requests`. Live proof has two review events
+anchored to the exact candidate. The `pre_rollout` event posts a comment-type
+review whose body is exactly `Rollout approved.` and returns
+`rollout_approved`. It authorizes live proof only. The `post_proof` event occurs
+after proof and verified task-resource absence and can return final `approved`.
+Automated proof uses only `post_proof`. The Slack project-manager agent sends
+each review signal back to the same feature worker.
 
 After the feature worker commits and pushes requested corrections and
 current-head CI passes, it posts this pull request conversation comment once
@@ -69,26 +98,29 @@ The resulting `issue_comment.created` event tells the project-manager agent to
 send the new candidate to the reviewer. The feature worker records the comment
 URL in its handoff.
 
-An approval carries no gate table, verification recap, or findings in its
-posted body. When the review account differs from the pull request author, the
-reviewer submits a formal GitHub approval. When the review account is the same
-as the pull request author, GitHub rejects a formal approval on its own pull
-request, so the reviewer submits a comment-type review whose body is exactly
-`Approved.`; the merge verifier accepts that exact comment as approval
-evidence in place of a formal approval. A non-approving review posts only a
-`Changes requested:` line followed by one `path:line — required correction`
-bullet per finding, with no verdict preamble, account explanation, evidence
-recap, gate output, or non-blocking observation.
+Neither successful review body carries a gate table, verification recap, or
+findings. Final `post_proof` approval is a formal GitHub approval when the review
+account differs from the pull request author. When the account is the same,
+GitHub rejects a formal approval on its own pull request, so the reviewer posts
+a comment-type review whose body is exactly `Approved.`. A non-approving review
+posts only a `Changes requested:` line followed by one
+`path:line — required correction` bullet per finding, with no verdict preamble,
+account explanation, evidence recap, gate output, or non-blocking observation.
 
 The merge agent uses `.agents/skills/merging-orbit-pull-requests` and verifies:
 
 - the Linear outcome and acceptance criteria;
 - required checks and proof evidence;
-- an independent approval, formal or the `Approved.` comment;
+- the exact-SHA `post_proof` reviewer handoff with final approval and, for live
+  proof, its retained `pre_rollout` review event;
 - every ADR link is already on `main`; and
-- the Compound result is useful or correctly marked as not needed.
+- the Compound result is useful or correctly marked as not needed;
+- read-only verification that every task-owned resource is absent; and
+- no ownership or shared-state drift from the recorded baseline.
 
-Only then can it merge the pull request.
+Any remaining resource, uncertain ownership, stale absence evidence, or live
+drift blocks merge. The merge verifier never cleans or mutates live state. Only
+after all gates pass can it merge the pull request.
 
 ## GitHub and Slack events
 
@@ -123,12 +155,14 @@ Official references:
 
 ## Cleanup and boundary
 
-After merge, the Slack project-manager agent removes the disposable Incus
-topology first and verifies that its instances, networks, and storage are gone.
-It then runs `bin/worktree-remove`. The cleanup command refuses an unmerged or
-dirty branch.
+Task-owned live resources must be absent before final review and merge. After
+merge, the Slack project-manager agent verifies absence and shared-state
+integrity again, then runs `bin/worktree-remove`. It does not defer live-resource
+cleanup until after merge. The cleanup command refuses an unmerged or dirty
+branch.
 
-The development issue closes after merge and cleanup. A separate operations
-process deploys and verifies the merged code. A post-deploy defect creates a
-GitHub issue with deployment evidence. Planning then creates a new Linear bug;
-it does not reopen the completed feature.
+The development issue closes after merge, the final absence check, and worktree
+removal. A separate operations process releases and verifies the merged code in
+production. A post-deploy defect creates a GitHub issue with deployment
+evidence. Planning then creates a new Linear bug; it does not reopen the
+completed feature.
