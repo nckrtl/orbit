@@ -97,6 +97,70 @@ describe('StandbyBuilder', function () {
             ->toThrow(RuntimeException::class, 'explicit permission');
     });
 
+    it('accepts a fully cleaned attempt recorded with the former standby network identity', function () {
+        $paths = new StatePaths(sys_get_temp_dir().'/orbit-builder-'.bin2hex(random_bytes(4)));
+        $state = new AtomicJsonStore($paths);
+        $previousEvidence = str_repeat('a', 32);
+        $state->write("standby/cold-attempts/{$previousEvidence}.json", [
+            'schema' => 2,
+            'operation_id' => $previousEvidence,
+            'remote' => 'local',
+            'project' => 'default',
+            'pool' => 'orbit-e2e',
+            'network' => [
+                'name' => 'orbit-e2e-standby',
+                'state' => 'cleaned',
+                'absent_preflight' => true,
+            ],
+            'base_image_fingerprint' => str_repeat('f', 64),
+            'instances' => [],
+            'status' => 'cleaned',
+        ]);
+        $builder = cold_cleanup_builder(new IncusHost(pool: 'orbit-e2e'), $state, $paths);
+
+        expect(fn () => $builder->build(
+            str_repeat('a', 40),
+            new PreparedFingerprint(str_repeat('b', 64)),
+            str_repeat('d', 64),
+            new LaravelRelease('v13.0.0', str_repeat('c', 40)),
+            true,
+            str_repeat('e', 32),
+        ))
+            ->toThrow(RuntimeException::class, 'no base image alias');
+    });
+
+    it('rejects an active attempt recorded with the former standby network identity', function () {
+        $paths = new StatePaths(sys_get_temp_dir().'/orbit-builder-'.bin2hex(random_bytes(4)));
+        $state = new AtomicJsonStore($paths);
+        $previousEvidence = str_repeat('a', 32);
+        $state->write("standby/cold-attempts/{$previousEvidence}.json", [
+            'schema' => 2,
+            'operation_id' => $previousEvidence,
+            'remote' => 'local',
+            'project' => 'default',
+            'pool' => 'orbit-e2e',
+            'network' => [
+                'name' => 'orbit-e2e-standby',
+                'state' => 'created',
+                'absent_preflight' => true,
+            ],
+            'base_image_fingerprint' => str_repeat('f', 64),
+            'instances' => [],
+            'status' => 'creating',
+        ]);
+        $builder = cold_cleanup_builder(new IncusHost(pool: 'orbit-e2e'), $state, $paths);
+
+        expect(fn () => $builder->build(
+            str_repeat('a', 40),
+            new PreparedFingerprint(str_repeat('b', 64)),
+            str_repeat('d', 64),
+            new LaravelRelease('v13.0.0', str_repeat('c', 40)),
+            true,
+            str_repeat('e', 32),
+        ))
+            ->toThrow(RuntimeException::class, 'attempt evidence is invalid');
+    });
+
     it('deletes only resources recorded by a failed cold attempt in reverse order', function (int $count) {
         $paths = new StatePaths(sys_get_temp_dir().'/orbit-builder-'.bin2hex(random_bytes(4)));
         $state = new AtomicJsonStore($paths);

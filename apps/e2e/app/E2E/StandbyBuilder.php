@@ -219,6 +219,8 @@ final readonly class StandbyBuilder
     private function attempt(string $evidenceId): array
     {
         $value = $this->state->read("standby/cold-attempts/{$evidenceId}.json");
+        $network = is_array($value['network'] ?? null) ? $value['network'] : null;
+        $networkName = is_string($network['name'] ?? null) ? $network['name'] : null;
         if (
             $value === null
             || array_keys($value) !== [
@@ -237,18 +239,27 @@ final readonly class StandbyBuilder
             || ! is_string($value['remote'])
             || ! is_string($value['project'])
             || ! is_string($value['pool'])
-            || ! is_array($value['network'])
-            || $value['network'] !== [
-                'name' => 'oe-standby',
-                'state' => $value['network']['state'] ?? null,
+            || $network === null
+            || $network !== [
+                'name' => $networkName,
+                'state' => $network['state'] ?? null,
                 'absent_preflight' => true,
             ]
-            || ! in_array($value['network']['state'] ?? null, ['planned', 'created', 'cleaned'], true)
+            || ! in_array($networkName, ['oe-standby', 'orbit-e2e-standby'], true)
+            || ! in_array($network['state'] ?? null, ['planned', 'created', 'cleaned'], true)
             || ! is_string($value['base_image_fingerprint'])
             || preg_match('/\A[a-f0-9]{64}\z/D', $value['base_image_fingerprint']) !== 1
             || ! is_array($value['instances'])
             || ! array_is_list($value['instances'])
             || ! is_string($value['status'])
+        ) {
+            throw new RuntimeException('The cold-build attempt evidence is invalid.');
+        }
+        if (
+            $networkName === 'orbit-e2e-standby'
+            && ($network['state'] !== 'cleaned'
+            || $value['instances'] !== []
+            || $value['status'] !== 'cleaned')
         ) {
             throw new RuntimeException('The cold-build attempt evidence is invalid.');
         }
@@ -259,7 +270,7 @@ final readonly class StandbyBuilder
                 || array_keys($intent) !== ['role', 'name', 'network', 'state', 'absent_preflight']
                 || ! is_string($intent['role'])
                 || ! is_string($intent['name'])
-                || $intent['network'] !== 'oe-standby'
+                || $intent['network'] !== $networkName
                 || ! in_array($intent['state'], ['planned', 'created'], true)
                 || $intent['absent_preflight'] !== true
                 || ! in_array(
@@ -280,7 +291,7 @@ final readonly class StandbyBuilder
             $instances[] = [
                 'role' => $intent['role'],
                 'name' => $intent['name'],
-                'network' => 'oe-standby',
+                'network' => $networkName,
                 'state' => $intent['state'],
                 'absent_preflight' => true,
             ];
@@ -293,8 +304,8 @@ final readonly class StandbyBuilder
             'project' => $value['project'],
             'pool' => $value['pool'],
             'network' => [
-                'name' => 'oe-standby',
-                'state' => $value['network']['state'],
+                'name' => $networkName,
+                'state' => $network['state'],
                 'absent_preflight' => true,
             ],
             'base_image_fingerprint' => $value['base_image_fingerprint'],
