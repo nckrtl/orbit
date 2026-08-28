@@ -14,13 +14,23 @@ All required ADRs must already exist on `main`.
 - [ ] Focused tests pass
 - [ ] Full affected project suites pass without TIA
 - [ ] Project quality checks pass
+- [ ] Current-head CI passes before any candidate rollout or live mutation
 - Proof venue: automated or live
-- Live nodes (if applicable): exact IDs, names, and roles from `orbit node:list --json`
-- Live access method (if applicable): Orbit CLI, Gateway API, or pinned direct SSH
+- Live nodes (if applicable): exact IDs, names, and roles from
+  `orbit node:list --json`
+- Live access method (if applicable): Orbit CLI, Gateway API, or pinned direct
+  SSH
+- Pre-rollout review (live only): review ID, candidate SHA, `rollout_approved`
 - Checkout identity (if applicable): candidate and deployed paths/commit SHAs
-- Recovery evidence (if applicable): verified recovery points before mutation
-- Pre-mutation cleanup baseline (if applicable): task-owned resources and shared nodes
-- Post-mutation cleanup evidence (if applicable): task-owned resources removed; shared nodes intact
+- Ownership baseline (if applicable): task-owned, shared, and pre-existing
+  resources
+- Mutation evidence (if applicable): for each mutation, fresh node-list request
+  or snapshot, exact node, candidate SHA, mutation, task-owned resources,
+  pre-state, recovery, result, and cleanup
+- Recovery evidence (if applicable): verified recovery action and owned recovery artifacts
+- Post-proof absence evidence (if applicable): task-owned resources absent;
+  shared and pre-existing state unchanged
+- Final review: review ID, candidate SHA, `post_proof` and `approved`
 - Evidence:
 
 ## Compound
@@ -29,7 +39,9 @@ All required ADRs must already exist on `main`.
 - Reusable solution notes: none
 - Why no durable documentation is needed, if none:
 
-## Cleanup
+## Absence and drift
 
-- [ ] Cleanup evidence is recorded for task-owned resources; shared live nodes remain intact
+- [ ] Every task-owned proof and recovery resource is verified absent before
+  final review
+- [ ] Ownership and shared-state drift checks pass without merge-verifier cleanup
 - [ ] No credentials, runtime state, or generated artifacts are committed
