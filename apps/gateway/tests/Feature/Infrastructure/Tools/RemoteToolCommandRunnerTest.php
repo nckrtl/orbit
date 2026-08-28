@@ -43,7 +43,7 @@ describe(RemoteToolCommandRunner::class, function (): void {
             ->and($executor->connection?->host)
             ->toBe('10.8.0.7')
             ->and($executor->connection?->user)
-            ->toBe('orbit')
+            ->toBe('nckrtl')
             ->and($executor->connection?->port)
             ->toBe(22)
             ->and($executor->connection?->identityFile)
@@ -115,7 +115,7 @@ function remote_tool_runner_node(?string $wireguardAddress): Node
         'status' => 'active',
         'platform' => 'linux',
         'public_ssh_host' => '127.0.0.1',
-        'user' => 'orbit',
+        'user' => 'nckrtl',
         'wireguard_address' => $wireguardAddress,
     ]);
 }

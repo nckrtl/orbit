@@ -37,7 +37,7 @@ beforeEach(function (): void {
         'platform' => 'linux',
         'public_ssh_host' => '192.0.2.20',
         'public_ssh_port' => 22,
-        'user' => 'orbit',
+        'user' => 'nckrtl',
         'wireguard_address' => '10.44.0.3',
     ]);
     $this->node
@@ -355,6 +355,24 @@ it('uses an isolated app user for app-prod systemd processes', function (): void
     $target = $this->targets->resolve(ProcessTargetType::Instance, $this->instance->id);
 
     expect($target->user)->toBe('orbit-docs');
+});
+
+it('uses the node managed user for app-dev instance and workspace targets', function (): void {
+    expect($this->targets->resolve(ProcessTargetType::Instance, $this->instance->id)->user)
+        ->toBe('nckrtl')
+        ->and($this->targets->resolve(ProcessTargetType::Workspace, $this->workspace->id)->user)
+        ->toBe('nckrtl')
+        ->and($this->targets->forRemoval(Process::query()->create([
+            'owner_type' => Instance::class,
+            'owner_id' => $this->instance->id,
+            'name' => 'removal-target',
+            'runtime' => 'systemd',
+            'working_directory' => '/tmp',
+            'runtime_config' => ['command' => ['/bin/true']],
+            'desired_state' => 'stopped',
+            'status' => LifecycleStatus::Removing,
+        ]))->user)
+        ->toBe('nckrtl');
 });
 
 it('rejects workspace process targets on app-prod nodes', function (): void {

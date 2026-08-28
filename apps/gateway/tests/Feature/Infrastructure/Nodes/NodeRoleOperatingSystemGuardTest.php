@@ -48,7 +48,7 @@ it('runs one fixed remote operating-system preflight through WireGuard as orbit'
         ->and($calls[0]['host'])
         ->toBe('10.44.0.2')
         ->and($calls[0]['user'])
-        ->toBe('orbit')
+        ->toBe('nckrtl')
         ->and($calls[0]['arguments'])
         ->toBe([
             'bash',
@@ -124,7 +124,7 @@ it('accepts every supported remote Ubuntu release for the role matrix', function
         expect($harness->calls)
             ->toHaveCount(1)
             ->and($harness->calls[0]['user'])
-            ->toBe('orbit')
+            ->toBe('nckrtl')
             ->and($harness->calls[0]['host'])
             ->toBe('10.44.0.2')
             ->and($harness->calls[0]['result']->succeeded())
@@ -272,7 +272,7 @@ function node_role_guard_node(): Node
         'platform' => 'linux',
         'public_ssh_host' => '192.0.2.10',
         'public_ssh_port' => 22,
-        'user' => 'orbit',
+        'user' => 'nckrtl',
         'wireguard_address' => '10.44.0.2',
     ]);
 }

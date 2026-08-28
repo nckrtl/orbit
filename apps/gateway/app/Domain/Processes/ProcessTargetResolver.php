@@ -57,7 +57,7 @@ final readonly class ProcessTargetResolver
         $this->ensureActive($instance);
         $user = $this->hasActiveAppProdRole($instance)
             ? "orbit-{$instance->app->slug}"
-            : 'orbit';
+            : $instance->node->user;
 
         return new ProcessTarget(
             node: $instance->node,
@@ -86,7 +86,7 @@ final readonly class ProcessTargetResolver
 
         return new ProcessTarget(
             node: $workspace->instance->node,
-            user: 'orbit',
+            user: $workspace->instance->node->user,
             checkoutPath: $workspace->checkout_path,
         );
     }
@@ -99,7 +99,7 @@ final readonly class ProcessTargetResolver
             node: $instance->node,
             user: $instance->certificate_mode === CertificateMode::Acme
                 ? "orbit-{$instance->app->slug}"
-                : 'orbit',
+                : $instance->node->user,
             checkoutPath: $instance->checkout_path,
         );
     }
@@ -117,7 +117,7 @@ final readonly class ProcessTargetResolver
 
         return new ProcessTarget(
             node: $workspace->instance->node,
-            user: 'orbit',
+            user: $workspace->instance->node->user,
             checkoutPath: $workspace->checkout_path,
         );
     }

@@ -39,7 +39,7 @@ final readonly class NodeRoleOperatingSystemGuard
         $result = $this->ssh->execute(
             new SshConnection(
                 $wireGuardAddress,
-                'orbit',
+                $node->user,
                 22,
                 $this->keys->privateKeyPath(),
                 $this->knownHosts->path(),
