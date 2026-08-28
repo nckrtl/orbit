@@ -29,9 +29,12 @@ use App\Domain\Nodes\NodeConverger;
 use App\Domain\Nodes\NodeRoleDependencyInspector;
 use App\Domain\Nodes\NodeRoleDependentCleaner;
 use App\Domain\Nodes\NodeRoleFirewallManager;
+use App\Domain\Nodes\NodeRoleToolIntentGuard;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Processes\ProcessRuntimeManager;
+use App\Domain\Tools\ToolManagerMaterializer;
 use App\Domain\Tools\ToolManagerRegistry;
+use App\Domain\Tools\ToolManagerScopeLock;
 use App\Domain\Tools\ToolOperationLock;
 use App\Domain\WireGuard\GatewayPeerProjectionManager;
 use App\Domain\WireGuard\VpnSettings;
@@ -81,6 +84,9 @@ use App\Infrastructure\Ssh\SshHostKeyScanner;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\Tools\AptToolManager;
 use App\Infrastructure\Tools\ComposerToolManager;
+use App\Infrastructure\Tools\EloquentNodeRoleToolIntentGuard;
+use App\Infrastructure\Tools\NativeToolManagerMaterializer;
+use App\Infrastructure\Tools\NativeToolManagerScopeLock;
 use App\Infrastructure\Tools\NativeToolOperationLock;
 use App\Infrastructure\Tools\VpToolManager;
 use App\Infrastructure\WireGuard\NativeGatewayPeerProjectionManager;
@@ -113,17 +119,21 @@ final class AppServiceProvider extends ServiceProvider
         NodeConverger::class => NativeNodeConverger::class,
         NodeRoleDependencyInspector::class => EloquentNodeRoleDependencyInspector::class,
         NodeRoleDependentCleaner::class => NativeNodeRoleDependentCleaner::class,
+        NodeRoleToolIntentGuard::class => EloquentNodeRoleToolIntentGuard::class,
         NodeRoleFirewallManager::class => NativeNodeRoleFirewallManager::class,
         RoleBaselineConverger::class => NativeRoleBaselineConverger::class,
         ProcessRuntimeManager::class => RemoteProcessRuntimeManager::class,
         ProcessRunner::class => NativeProcessRunner::class,
         SshExecutor::class => NativeSshExecutor::class,
         PrivateDnsManager::class => DnsmasqPrivateDnsManager::class,
+        ToolManagerMaterializer::class => NativeToolManagerMaterializer::class,
         ToolOperationLock::class => NativeToolOperationLock::class,
     ];
 
     public function register(): void
     {
+        $this->app->scoped(ToolManagerScopeLock::class, NativeToolManagerScopeLock::class);
+
         if (class_exists(GuidelineComposer::class)) {
             $this->app->singleton(GuidelineComposer::class, GatewayGuidelineComposer::class);
             $this->app->singleton(InstallCommand::class, GatewayBoostInstallCommand::class);

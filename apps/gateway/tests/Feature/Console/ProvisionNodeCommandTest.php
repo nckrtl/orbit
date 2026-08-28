@@ -5,10 +5,13 @@ declare(strict_types=1);
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Nodes\NodeConverger;
 use App\Domain\Nodes\RoleBaselineConverger;
+use App\Domain\Tools\ToolManagerMaterializer;
 use App\Models\Node;
 use App\Models\NodeRole;
+use Tests\Support\FakeToolManagerMaterializer;
 
 it('provisions the first peer from the gateway console', function (): void {
+    app()->instance(ToolManagerMaterializer::class, new FakeToolManagerMaterializer);
     app()->instance(PrivateDnsManager::class, new class implements PrivateDnsManager {
         public function converge(?Node $pendingNode = null): void {}
     });

@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Infrastructure\Tools;
 
 use App\Domain\Tools\ToolManagerName;
+use App\Domain\Tools\ToolManagerScopeLock;
+use App\Domain\Tools\ToolManagerScopeLockException;
 use App\Domain\Tools\ToolOperation;
 use App\Domain\Tools\ToolOperationException;
 use App\Domain\Tools\ToolOperationLock;
@@ -12,8 +14,12 @@ use App\Domain\Tools\ToolOutcome;
 use Closure;
 use Illuminate\Support\Facades\Cache;
 
-final class NativeToolOperationLock implements ToolOperationLock
+final readonly class NativeToolOperationLock implements ToolOperationLock
 {
+    public function __construct(
+        private ToolManagerScopeLock $managerScope,
+    ) {}
+
     /**
      * @template T
      *
@@ -46,10 +52,10 @@ final class NativeToolOperationLock implements ToolOperationLock
             );
         }
 
-        $managerScope = Cache::lock("orbit:tool-manager:{$nodeId}:{$manager->value}", 3_600);
-
         try {
-            if (! $managerScope->get()) {
+            try {
+                return $this->managerScope->run($nodeId, $manager, $callback);
+            } catch (ToolManagerScopeLockException) {
                 throw $this->lockedException(
                     nodeId: $nodeId,
                     manager: $manager,
@@ -58,12 +64,6 @@ final class NativeToolOperationLock implements ToolOperationLock
                     versionConstraint: $versionConstraint,
                     message: 'A shared tool manager mutation is already active.',
                 );
-            }
-
-            try {
-                return $callback();
-            } finally {
-                $managerScope->release();
             }
         } finally {
             $identity->release();
