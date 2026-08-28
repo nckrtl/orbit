@@ -207,6 +207,8 @@ describe('convergence guest scripts', function () {
                 'migrate --force',
                 'orbit:bootstrap',
                 'ORBIT_GATEWAY_CHECKOUT=/home/orbit/orbit/apps/gateway',
+                'exit 70',
+                'exit 71',
             )
             ->not->toContain('hydrate-orbit.sh')->and($production)->toContain(
                 'local_certs',

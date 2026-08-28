@@ -113,7 +113,9 @@ final readonly class TopologyConverger
         );
 
         if (! $result->successful()) {
-            throw new RuntimeException("Guest convergence script {$script} failed on {$instance}.");
+            throw new RuntimeException(
+                "Guest convergence script {$script} failed on {$instance} with exit code {$result->exitCode}.",
+            );
         }
     }
 }
