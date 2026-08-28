@@ -6,12 +6,14 @@ namespace App\Actions\Nodes;
 
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Firewall\FirewallOperationException;
+use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\RoleAssignmentException;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\RoleRegistry;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Tools\ToolManagerMaterializer;
 use App\Models\Node;
 use App\Models\NodeRole;
 use Illuminate\Support\Facades\DB;
@@ -23,6 +25,7 @@ final readonly class AddNodeRoleAction
         private AssignRoleAction $assignRole,
         private RoleRegistry $registry,
         private RoleBaselineConverger $baselines,
+        private ToolManagerMaterializer $toolManagers,
     ) {}
 
     /**
@@ -125,6 +128,16 @@ final readonly class AddNodeRoleAction
     {
         try {
             $this->baselines->converge($node, $claim['assignment']);
+            $node->setRelation('roles', $node->roles()->get());
+            $this->toolManagers->converge($node);
+        } catch (NodeProvisioningException $exception) {
+            $this->failConvergence($claim['assignment'], new NodeRoleOperationException(
+                step: $exception->step,
+                errorCode: 'node_role.convergence_failed',
+                underlyingErrorCode: $exception->errorCode,
+                message: $exception->getMessage(),
+                previous: $exception,
+            ));
         } catch (NodeRoleOperationException $exception) {
             $step = $this->unnamespacedStep($exception->step);
 

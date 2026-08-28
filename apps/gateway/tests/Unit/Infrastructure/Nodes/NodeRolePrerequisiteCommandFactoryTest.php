@@ -41,6 +41,23 @@ it('keeps app development directories and Caddy traversal ACLs role-owned', func
         ->not->toContain('/home/orbit/apps', '/opt/orbit/vite-plus', '/opt/orbit/bun');
 });
 
+it('provisions the shared Composer root before app host runtime setup', function (): void {
+    $script = new NodeRolePrerequisiteCommandFactory()->make(RoleName::AppProd)->input ?? '';
+
+    expect($script)
+        ->toContain(
+            'install -d -m 0755 /opt/orbit',
+            'install -d -m 0755 -o orbit -g orbit /opt/orbit/composer',
+            'printf \'%s\\n\' \'{"require":{}}\' > "$composer_manifest"',
+            'install -d -m 0755 -o orbit -g orbit /opt/orbit/composer/vendor/bin',
+            'sudo -u orbit -H env COMPOSER_HOME=/opt/orbit/composer /usr/bin/composer --version --no-ansi',
+        )
+        ->not->toContain('/home/orbit/.composer');
+
+    expect(strpos($script, '/opt/orbit/composer/composer.json'))
+        ->toBeLessThan(strpos($script, 'VP_HOME=/opt/orbit/vite-plus'));
+});
+
 it('preserves the complete Vite Plus and Bun application-host runtime', function (RoleName $role): void {
     expect(class_exists(NodeRolePrerequisiteCommandFactory::class))->toBeTrue();
 
@@ -114,7 +131,10 @@ it('propagates failures from both official runtime installer downloads', functio
 it('guards managed JavaScript paths before publishing stable entry points', function (): void {
     $script = new NodeRolePrerequisiteCommandFactory()->make(RoleName::AppProd)->input ?? '';
     $runtimeGuard = mb_strpos(haystack: $script, needle: 'Orbit JavaScript runtime directory conflict:');
-    $runtimeCreation = mb_strpos(haystack: $script, needle: 'install -d -m 0755 /opt/orbit');
+    $runtimeCreation = mb_strpos(
+        haystack: $script,
+        needle: 'install -d -m 0755 -o orbit -g orbit /opt/orbit/vite-plus /opt/orbit/bun',
+    );
     $candidateCreation = mb_strpos(
         haystack: $script,
         needle: 'launcher_candidates=$(mktemp -d "/usr/local/bin/.orbit-js-runtime.XXXXXX")',

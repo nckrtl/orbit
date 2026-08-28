@@ -31,6 +31,7 @@ use App\Domain\Nodes\NodeRoleDependentCleaner;
 use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Processes\ProcessRuntimeManager;
+use App\Domain\Tools\ToolManagerMaterializer;
 use App\Domain\Tools\ToolManagerRegistry;
 use App\Domain\Tools\ToolOperationLock;
 use App\Domain\WireGuard\GatewayPeerProjectionManager;
@@ -81,6 +82,7 @@ use App\Infrastructure\Ssh\SshHostKeyScanner;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\Tools\AptToolManager;
 use App\Infrastructure\Tools\ComposerToolManager;
+use App\Infrastructure\Tools\NativeToolManagerMaterializer;
 use App\Infrastructure\Tools\NativeToolOperationLock;
 use App\Infrastructure\Tools\VpToolManager;
 use App\Infrastructure\WireGuard\NativeGatewayPeerProjectionManager;
@@ -120,6 +122,7 @@ final class AppServiceProvider extends ServiceProvider
         SshExecutor::class => NativeSshExecutor::class,
         PrivateDnsManager::class => DnsmasqPrivateDnsManager::class,
         ToolOperationLock::class => NativeToolOperationLock::class,
+        ToolManagerMaterializer::class => NativeToolManagerMaterializer::class,
     ];
 
     public function register(): void

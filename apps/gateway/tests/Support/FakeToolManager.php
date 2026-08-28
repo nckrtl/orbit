@@ -20,6 +20,9 @@ final class FakeToolManager implements ToolManager
     /** @var list<string|null|Throwable> */
     public array $candidateVersions = [];
 
+    /** @var list<string|Throwable> */
+    public array $managerVersions = [];
+
     /** @var list<string> */
     public array $calls = [];
 
@@ -59,7 +62,13 @@ final class FakeToolManager implements ToolManager
     {
         $this->calls[] = 'managerVersion';
 
-        return '1.0.0';
+        $version = array_shift($this->managerVersions);
+
+        if ($version instanceof Throwable) {
+            throw $version;
+        }
+
+        return $version ?? '1.0.0';
     }
 
     public function candidateVersion(Node $node, string $package, ToolOperation $operation): ?string

@@ -34,11 +34,17 @@ it('renders an Orbit-owned systemd unit with fixed argv and the target identity'
         ->toContain('X-Orbit-Process-ID=17')
         ->toContain('User=orbit-docs')
         ->toContain('WorkingDirectory=/var/www/docs/main')
+        ->toContain(
+            'Environment=PATH=/opt/orbit/vite-plus/bin:/opt/orbit/composer/vendor/bin:/usr/local/bin:/usr/bin:/bin',
+        )
         ->toContain('EnvironmentFile=-/var/www/docs/main/.env')
         ->toContain('ExecStart="/usr/bin/php" "artisan" "queue:work" "--queue=high priority" "$$LITERAL" "%%n"')
         ->toContain('Restart=on-failure')
         ->not->toContain('/bin/bash')
         ->not->toContain('sh -c');
+
+    expect(strpos($unit, 'Environment=PATH='))
+        ->toBeLessThan(strpos($unit, 'EnvironmentFile='));
 });
 
 it('maps common restart policies to valid systemd values', function (string $policy, string $expected): void {

@@ -13,6 +13,7 @@ use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tools\ToolManagerMaterializer;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -21,11 +22,64 @@ use Illuminate\Support\Facades\DB;
 /** @mago-expect lint:halstead The provisioning group keeps ordering and failure boundaries visible. */
 describe(ProvisionNodeAction::class, function (): void {
     beforeEach(function (): void {
+        app()->instance(ToolManagerMaterializer::class, new ProvisionNodeMaterializerFake);
         app()->instance(RoleBaselineConverger::class, new class implements RoleBaselineConverger {
             public function converge(Node $node, NodeRole $assignment): void {}
 
             public function remove(Node $node, NodeRole $assignment, bool $purgeData): void {}
         });
+    });
+
+    it('materializes base managers from a role-neutral view before activation', function (): void {
+        app()->instance(NodeConverger::class, new class implements NodeConverger {
+            public function converge(Node $node, ?string $expectedSshHostFingerprint = null): void {}
+        });
+        $materializer = new ProvisionNodeMaterializerFake;
+        app()->instance(ToolManagerMaterializer::class, $materializer);
+        $existing = Node::query()->create([
+            'name' => 'stale-app-host',
+            'status' => LifecycleStatus::Active,
+            'platform' => 'linux',
+            'architecture' => 'x86_64',
+            'tld' => 'stale.orbit',
+            'public_ssh_host' => '192.0.2.82',
+            'wireguard_address' => '10.44.0.82',
+            'ssh_host_fingerprint' => 'SHA256:pinned',
+        ]);
+        $existing->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
+
+        app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
+            name: 'stale-app-host',
+            publicSshHost: '192.0.2.82',
+        ));
+
+        expect($materializer->roleCounts)->toBe([0]);
+    });
+
+    it('fails provisioning when base manager materialization fails', function (): void {
+        app()->instance(NodeConverger::class, new class implements NodeConverger {
+            public function converge(Node $node, ?string $expectedSshHostFingerprint = null): void {}
+        });
+        $materializer = new ProvisionNodeMaterializerFake;
+        $materializer->failure = new NodeProvisioningException(
+            step: 'tool-manager-apt',
+            errorCode: 'node.tool_manager_probe_failed',
+            message: 'APT failed.',
+        );
+        app()->instance(ToolManagerMaterializer::class, $materializer);
+
+        expect(fn () => app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
+            name: 'apt-failure',
+            publicSshHost: '192.0.2.83',
+            architecture: 'x86_64',
+            expectedSshHostFingerprint: 'SHA256:pinned',
+        )))
+            ->toThrow(NodeProvisioningException::class);
+
+        expect(Node::query()->where('name', 'apt-failure')->sole())
+            ->status->toBe(LifecycleStatus::Failed)
+            ->failed_step->toBe('tool-manager-apt')
+            ->error_code->toBe('node.tool_manager_probe_failed');
     });
 
     it('activates a node after its requested roles converge', function (): void {
@@ -549,3 +603,21 @@ describe(ProvisionNodeAction::class, function (): void {
             ->toBeFalse();
     });
 });
+
+/** @mago-expect lint:file-name The focused fake records the base materialization boundary. */
+final class ProvisionNodeMaterializerFake implements ToolManagerMaterializer
+{
+    /** @var list<int> */
+    public array $roleCounts = [];
+
+    public ?Throwable $failure = null;
+
+    public function converge(Node $node): void
+    {
+        $this->roleCounts[] = $node->roles->count();
+
+        if ($this->failure instanceof Throwable) {
+            throw $this->failure;
+        }
+    }
+}

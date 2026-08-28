@@ -4,17 +4,72 @@ declare(strict_types=1);
 
 use App\Actions\Nodes\AddNodeRoleAction;
 use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\RoleAssignmentException;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Tools\ToolManagerMaterializer;
 use App\Models\Node;
 use App\Models\NodeRole;
 use Illuminate\Support\Facades\DB;
 
 /** @mago-expect lint:halstead The focused group keeps each role lifecycle transition visible. */
 describe(AddNodeRoleAction::class, function (): void {
+    beforeEach(function (): void {
+        app()->instance(ToolManagerMaterializer::class, new AddNodeRoleMaterializerFake);
+    });
+
+    it('materializes app managers after the baseline and before activation', function (): void {
+        $events = [];
+        app()->instance(RoleBaselineConverger::class, new class($events) implements RoleBaselineConverger {
+            /** @param list<string> $events */
+            public function __construct(
+                private array &$events,
+            ) {}
+
+            public function converge(Node $node, NodeRole $assignment): void
+            {
+                $this->events[] = "baseline:{$assignment->status->value}";
+            }
+
+            public function remove(Node $node, NodeRole $assignment, bool $purgeData): void {}
+        });
+        app()->instance(ToolManagerMaterializer::class, new AddNodeRoleMaterializerFake($events));
+
+        $result = app(AddNodeRoleAction::class)->execute(add_role_node(), RoleName::AppDev);
+
+        expect($events)
+            ->toBe(['baseline:provisioning', 'managers:provisioning'])
+            ->and($result['assignment']->status)
+            ->toBe(LifecycleStatus::Active);
+    });
+
+    it('fails only the role assignment when app manager materialization fails', function (): void {
+        app()->instance(RoleBaselineConverger::class, new AddNodeRoleBaselineFake);
+        $materializer = new AddNodeRoleMaterializerFake;
+        $materializer->failure = new NodeProvisioningException(
+            step: 'tool-manager-vp',
+            errorCode: 'node.tool_manager_probe_failed',
+            message: 'VP failed.',
+        );
+        app()->instance(ToolManagerMaterializer::class, $materializer);
+        $node = add_role_node();
+
+        expect(fn () => app(AddNodeRoleAction::class)->execute($node, RoleName::AppDev))
+            ->toThrow(function (NodeRoleOperationException $exception): void {
+                expect($exception->step)
+                    ->toBe('converge:tool-manager-vp')
+                    ->and($exception->underlyingErrorCode)
+                    ->toBe('node.tool_manager_probe_failed');
+            });
+
+        expect($node->refresh()->status)
+            ->toBe(LifecycleStatus::Active)
+            ->and($node->roles()->sole()->status)
+            ->toBe(LifecycleStatus::Failed);
+    });
     it('creates and converges a mutable role outside a database transaction', function (): void {
         expect(class_exists(AddNodeRoleAction::class))->toBeTrue();
 
@@ -257,4 +312,25 @@ final class AddNodeRoleBaselineFake implements RoleBaselineConverger
     }
 
     public function remove(Node $node, NodeRole $assignment, bool $purgeData): void {}
+}
+
+/** @mago-expect lint:file-name The focused fake records app manager materialization. */
+final class AddNodeRoleMaterializerFake implements ToolManagerMaterializer
+{
+    public ?Throwable $failure = null;
+
+    /** @param list<string> $events */
+    public function __construct(
+        private array &$events = [],
+    ) {}
+
+    public function converge(Node $node): void
+    {
+        $assignment = $node->roles->sole();
+        $this->events[] = "managers:{$assignment->status->value}";
+
+        if ($this->failure instanceof Throwable) {
+            throw $this->failure;
+        }
+    }
 }

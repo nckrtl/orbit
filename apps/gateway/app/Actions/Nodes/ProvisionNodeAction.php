@@ -11,10 +11,12 @@ use App\Domain\Nodes\NodeTld;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tools\ToolManagerMaterializer;
 use App\Domain\WireGuard\WireGuardAddressAllocator;
 use App\Domain\WireGuard\WireGuardEndpoint;
 use App\Infrastructure\Ssh\SshHostKeyScanException;
 use App\Models\Node;
+use Illuminate\Database\Eloquent\Collection;
 use Throwable;
 
 /** @mago-expect lint:cyclomatic-complexity Node provisioning keeps its ordered identity, role, and recovery gates together. */
@@ -23,6 +25,7 @@ final readonly class ProvisionNodeAction
     public function __construct(
         private AddNodeRoleAction $roles,
         private NodeConverger $converger,
+        private ToolManagerMaterializer $toolManagers,
         private WireGuardAddressAllocator $addresses,
     ) {}
 
@@ -80,6 +83,9 @@ final readonly class ProvisionNodeAction
 
         try {
             $this->converger->converge($node, $data->expectedSshHostFingerprint);
+            $baseNode = clone $node;
+            $baseNode->setRelation('roles', new Collection);
+            $this->toolManagers->converge($baseNode);
         } catch (NodeProvisioningException $exception) {
             $this->markFailed($node, $exception);
 

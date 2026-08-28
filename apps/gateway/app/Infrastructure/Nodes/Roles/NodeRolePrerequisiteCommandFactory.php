@@ -25,6 +25,8 @@ final readonly class NodeRolePrerequisiteCommandFactory
 
             __APP_DEV_SETUP__
 
+            __APP_COMPOSER_ROOT__
+
             __APP_HOST_RUNTIME__
             BASH;
         $appDevSetup = <<<'BASH'
@@ -136,8 +138,30 @@ final readonly class NodeRolePrerequisiteCommandFactory
                 published_paths=
                 trap - EXIT
             BASH;
+        $composerRoot = <<<'BASH'
+                install -d -m 0755 /opt/orbit
+                install -d -m 0755 -o orbit -g orbit /opt/orbit/composer
+
+                if [ -e /opt/orbit/composer/composer.json ]; then
+                    test -f /opt/orbit/composer/composer.json
+                    test "$(stat -c %U:%G /opt/orbit/composer/composer.json)" = orbit:orbit
+                else
+                    composer_manifest=$(mktemp)
+                    printf '%s\n' '{"require":{}}' > "$composer_manifest"
+                    install -m 0644 -o orbit -g orbit "$composer_manifest" /opt/orbit/composer/composer.json
+                    rm -f -- "$composer_manifest"
+                fi
+
+                install -d -m 0755 -o orbit -g orbit /opt/orbit/composer/vendor/bin
+                sudo -u orbit -H env COMPOSER_HOME=/opt/orbit/composer /usr/bin/composer --version --no-ansi
+            BASH;
 
         $input = str_replace('__APP_DEV_SETUP__', $role === RoleName::AppDev ? $appDevSetup : '', $input);
+        $input = str_replace(
+            '__APP_COMPOSER_ROOT__',
+            in_array($role, [RoleName::AppDev, RoleName::AppProd], strict: true) ? $composerRoot : '',
+            $input,
+        );
         $input = str_replace(
             '__APP_HOST_RUNTIME__',
             in_array($role, [RoleName::AppDev, RoleName::AppProd], strict: true) ? $runtime : '',
