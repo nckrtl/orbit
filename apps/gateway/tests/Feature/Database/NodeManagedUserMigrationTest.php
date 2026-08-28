@@ -25,8 +25,14 @@ describe('managed node user migrations', function (): void {
             legacyNode('legacy-nckrtl', '192.0.2.2', 'nckrtl', $timestamp),
             legacyNode('legacy-empty', '192.0.2.3', '', $timestamp),
             legacyNode('legacy-whitespace', '192.0.2.4', ' nckrtl ', $timestamp),
+            legacyNode('legacy-nul', '192.0.2.7', "nck\0rtl", $timestamp),
         ]);
 
+        expect(fn () => $expand->up())
+            ->toThrow(RuntimeException::class, 'Invalid legacy node user.');
+
+        DB::table('nodes')->where('name', 'legacy-whitespace')->delete();
+        DB::table('nodes')->where('name', 'legacy-nul')->delete();
         $expand->up();
 
         expect(Schema::hasColumn('nodes', 'ssh_user'))
@@ -39,8 +45,8 @@ describe('managed node user migrations', function (): void {
             ->toBe('nckrtl')
             ->and(DB::table('nodes')->where('name', 'legacy-empty')->value('user'))
             ->toBe('orbit')
-            ->and(DB::table('nodes')->where('name', 'legacy-whitespace')->value('user'))
-            ->toBe(' nckrtl ');
+            ->and(DB::table('nodes')->where('name', 'legacy-whitespace')->exists())
+            ->toBeFalse();
 
         DB::table('nodes')->insert(legacyNode('legacy-write', '192.0.2.5', 'nckrtl', $timestamp));
 
@@ -51,6 +57,20 @@ describe('managed node user migrations', function (): void {
 
         expect(DB::table('nodes')->where('name', 'legacy-write')->value('user'))
             ->toBe('orbit');
+
+        expect(fn () => DB::table('nodes')->insert(legacyNode('invalid-insert', '192.0.2.6', 'bad/name', $timestamp)))
+            ->toThrow(RuntimeException::class, 'Invalid legacy node user.');
+
+        expect(fn () => DB::table('nodes')->insert(legacyNode(
+            'invalid-nul-insert',
+            '192.0.2.8',
+            "nck\0rtl",
+            $timestamp,
+        )))
+            ->toThrow(RuntimeException::class, 'Invalid legacy node user.');
+
+        expect(fn () => DB::table('nodes')->where('name', 'legacy-write')->update(['ssh_user' => '9bad']))
+            ->toThrow(RuntimeException::class, 'Invalid legacy node user.');
 
         $contract->up();
 
@@ -75,8 +95,8 @@ describe('managed node user migrations', function (): void {
             ->toBeTrue()
             ->and(DB::table('nodes')->where('name', 'legacy-nckrtl')->value('ssh_user'))
             ->toBe('nckrtl')
-            ->and(DB::table('nodes')->where('name', 'legacy-whitespace')->value('ssh_user'))
-            ->toBe(' nckrtl ');
+            ->and(DB::table('nodes')->where('name', 'legacy-whitespace')->exists())
+            ->toBeFalse();
 
         DB::table('nodes')->where('name', 'legacy-write')->update(['ssh_user' => 'nckrtl']);
 

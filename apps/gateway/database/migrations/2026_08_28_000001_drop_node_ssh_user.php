@@ -12,6 +12,8 @@ return new class extends Migration {
     {
         DB::statement('DROP TRIGGER IF EXISTS nodes_sync_user_after_insert');
         DB::statement('DROP TRIGGER IF EXISTS nodes_sync_user_after_legacy_update');
+        DB::statement('DROP TRIGGER IF EXISTS nodes_validate_legacy_user_before_insert');
+        DB::statement('DROP TRIGGER IF EXISTS nodes_validate_legacy_user_before_update');
 
         if (DB::table('nodes')->whereNull('user')->orWhere('user', '')->exists()) {
             throw new RuntimeException('Cannot make nodes.user non-null while empty values exist.');
@@ -29,6 +31,8 @@ return new class extends Migration {
     {
         DB::statement('DROP TRIGGER IF EXISTS nodes_sync_user_after_insert');
         DB::statement('DROP TRIGGER IF EXISTS nodes_sync_user_after_legacy_update');
+        DB::statement('DROP TRIGGER IF EXISTS nodes_validate_legacy_user_before_insert');
+        DB::statement('DROP TRIGGER IF EXISTS nodes_validate_legacy_user_before_update');
         Schema::table('nodes', static function (Blueprint $table): void {
             $table->string('ssh_user')->default('root')->after('public_ssh_port');
         });
@@ -38,6 +42,12 @@ return new class extends Migration {
         });
         DB::statement(
             "CREATE TRIGGER nodes_sync_user_after_insert AFTER INSERT ON nodes WHEN NEW.user IS NULL OR NEW.user = '' BEGIN UPDATE nodes SET user = CASE WHEN NEW.ssh_user IS NULL OR NEW.ssh_user = '' THEN 'orbit' ELSE NEW.ssh_user END WHERE id = NEW.id; END",
+        );
+        DB::statement(
+            "CREATE TRIGGER nodes_validate_legacy_user_before_insert BEFORE INSERT ON nodes WHEN NEW.ssh_user IS NOT NULL AND NEW.ssh_user <> '' AND (NEW.ssh_user GLOB '*[^a-z0-9_-]*' OR length(CAST(NEW.ssh_user AS BLOB)) > 32 OR instr(NEW.ssh_user, char(0)) > 0 OR substr(NEW.ssh_user, 1, 1) NOT GLOB '[a-z_]') BEGIN SELECT RAISE(ABORT, 'Invalid legacy node user.'); END",
+        );
+        DB::statement(
+            "CREATE TRIGGER nodes_validate_legacy_user_before_update BEFORE UPDATE OF ssh_user ON nodes WHEN NEW.ssh_user IS NOT NULL AND NEW.ssh_user <> '' AND (NEW.ssh_user GLOB '*[^a-z0-9_-]*' OR length(CAST(NEW.ssh_user AS BLOB)) > 32 OR instr(NEW.ssh_user, char(0)) > 0 OR substr(NEW.ssh_user, 1, 1) NOT GLOB '[a-z_]') BEGIN SELECT RAISE(ABORT, 'Invalid legacy node user.'); END",
         );
         DB::statement(
             "CREATE TRIGGER nodes_sync_user_after_legacy_update AFTER UPDATE OF ssh_user ON nodes BEGIN UPDATE nodes SET user = CASE WHEN NEW.ssh_user IS NULL OR NEW.ssh_user = '' THEN 'orbit' ELSE NEW.ssh_user END WHERE id = NEW.id; END",
