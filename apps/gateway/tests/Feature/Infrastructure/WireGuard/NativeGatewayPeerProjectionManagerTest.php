@@ -117,9 +117,11 @@ it('removes and restores only the selected peer in the serialized gateway projec
             ->toContain(
                 'systemctl is-active --quiet wg-quick@orbit',
                 'systemctl is-enabled --quiet wg-quick@orbit',
+                'mktemp /etc/wireguard/orbit-wireguard.XXXXXX',
                 'wg syncconf orbit "$runtime_config"',
                 'systemctl start wg-quick@orbit',
             );
+        expect($processes->calls[9]->input)->not->toContain('/run/orbit-wireguard');
     } finally {
         new Filesystem()->deleteDirectory($orbitHome);
     }
@@ -716,7 +718,7 @@ function gateway_peer_projection_rewrite_shell(string $input, string $root): str
         [
             '/etc/wireguard/orbit.conf',
             '/etc/wireguard/.orbit.conf.rollback',
-            '/run/orbit-wireguard.XXXXXX',
+            '/etc/wireguard/orbit-wireguard.XXXXXX',
         ],
         [
             $root.'/wireguard/live.conf',

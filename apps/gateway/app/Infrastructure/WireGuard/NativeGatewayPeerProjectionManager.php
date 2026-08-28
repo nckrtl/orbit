@@ -213,7 +213,7 @@ final readonly class NativeGatewayPeerProjectionManager implements GatewayPeerPr
                     restore_previous
                     exit 1
                 fi
-                if ! runtime_config=$(mktemp /run/orbit-wireguard.XXXXXX); then
+                if ! runtime_config=$(mktemp /etc/wireguard/orbit-wireguard.XXXXXX); then
                     restore_previous
                     exit 1
                 fi
