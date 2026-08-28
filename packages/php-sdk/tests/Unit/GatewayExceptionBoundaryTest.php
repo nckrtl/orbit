@@ -5,11 +5,73 @@ declare(strict_types=1);
 use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\Gateway\ShowGatewayStatusRequest;
+use Orbit\Sdk\Requests\Tools\InstallToolRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
 /** @mago-expect lint:halstead Security-boundary assertions stay visible together. */
 describe('gateway exception boundary', function (): void {
+    it('preserves Tool error outcomes through the transport boundary', function (
+        string $errorCode,
+        string $outcome,
+    ): void {
+        $credential = gateway_boundary_credential($errorCode);
+        $requestId = '11111111-1111-4111-8111-111111111111';
+        $mockClient = new MockClient([
+            InstallToolRequest::class => MockResponse::make(
+                [
+                    'error' => [
+                        'code' => $errorCode,
+                        'message' => "Tool install failed with password={$credential}",
+                        'details' => [
+                            'step' => 'install',
+                            'outcome' => $outcome,
+                        ],
+                    ],
+                ],
+                422,
+                ['X-Orbit-Request-Id' => $requestId],
+            ),
+        ]);
+        $connector = new GatewayConnector('https://10.70.0.1');
+        $connector->withMockClient($mockClient);
+
+        try {
+            $connector->send(new InstallToolRequest(12, 'vp', '@openai/codex', '^0.150'))->dto();
+            $this->fail('Expected a Tool GatewayApiException.');
+        } catch (GatewayApiException $exception) {
+            $diagnostics = implode("\n", [
+                $exception->getMessage(),
+                (string) $exception,
+                print_r($exception, return: true),
+                gateway_owned_trace_output($exception),
+            ]);
+
+            expect($exception->errorCode())
+                ->toBe($errorCode)
+                ->and($exception->requestId())
+                ->toBe($requestId)
+                ->and($exception->getMessage())
+                ->toBe('Tool install failed with password=[REDACTED]')
+                ->and($exception->details())
+                ->toBe([
+                    'step' => 'install',
+                    'outcome' => $outcome,
+                ])
+                ->and($diagnostics)
+                ->not->toContain($credential);
+        }
+    })->with([
+        'invalid constraint' => ['tool.constraint_invalid', 'constraint_invalid'],
+        'unparseable candidate' => ['tool.candidate_version_unparseable', 'candidate_version_unparseable'],
+        'blocked candidate' => ['tool.version_constraint_blocked', 'blocked_by_constraint'],
+        'unparseable installed version' => ['tool.installed_version_unparseable', 'manager_failed'],
+        'installed version outside constraint' => [
+            'tool.installed_version_constraint_violated',
+            'manager_failed',
+        ],
+    ]);
+
     it('drops unsafe identifiers and removes credentials from SDK-owned state and traces', function (): void {
         $messageCredential = gateway_boundary_credential('message');
         $codeCredential = gateway_boundary_credential('code');
