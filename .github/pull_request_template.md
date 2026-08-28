@@ -18,6 +18,9 @@ All required ADRs must already exist on `main`.
 - Incus topology: none
 - Checkout roles: none
 - Evidence:
+- Candidate SHA and tree:
+- Incus generation/topology identity (if used):
+- Checkout roles (if used):
 
 ## Compound
 
@@ -29,3 +32,4 @@ All required ADRs must already exist on `main`.
 
 - [ ] Disposable Incus topology is absent or still required for review
 - [ ] No credentials, runtime state, or generated artifacts are committed
+- Merge refresh result: unchanged|promoted|failed|not-assessed

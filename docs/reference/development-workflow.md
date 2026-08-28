@@ -30,17 +30,23 @@ Incus profile, and checkout roles.
 
 A required ADR must already be on `main` before the issue becomes Ready. An
 issue uses automated proof unless live operating-system or multi-node behavior
-requires a registered Incus profile.
+requires a registered Incus profile. The Incus-only full profile pending live
+registration is `gateway_app-dev_app-prod`, with ordered roles `gateway`,
+`app-dev`, `app-prod` and checkout roles `gateway` and `app-dev`; the registry
+currently reports none.
+
+The rolling Incus topology and its refresh and retirement rules are defined in
+[ADR 0002](../decisions/0002-rolling-incus-development-topology.md).
 
 ## Work and compound
 
 1. The Slack project-manager agent claims a Ready issue.
 2. It creates one monorepo worktree with `bin/worktree-create`.
-3. If the issue selects Incus, it creates the named disposable profile before
-   implementation starts and records its identity.
+3. If the issue selects Incus, it creates the named disposable profile after
+   the worktree exists and records its generation and topology identity.
 4. The feature worker uses `.agents/skills/developing-orbit-features`. It
-   changes the live topology first when that gives faster feedback, then
-   codifies the proven behavior in the repository.
+   synchronizes the selected roles before each iteration, then codifies the
+   proven behavior in the repository. It does not release the topology.
 5. The feature worker runs focused checks, full affected suites, and required
    live proof. It creates the pull request.
 6. Before handoff, that agent compounds durable learning into an existing ADR,
@@ -123,8 +129,12 @@ Official references:
 
 ## Cleanup and boundary
 
-After merge, the Slack project-manager agent removes the disposable Incus
-topology first and verifies that its instances, networks, and storage are gone.
+After merge, the Slack project-manager agent fingerprints the merged main tree.
+It refreshes the standby only when the fingerprint changed and records
+`unchanged`, `promoted`, or `failed`. A failed refresh produces
+`merged_refresh_blocked`, leaves cleanup untouched, and does not close the
+issue. Otherwise it releases the disposable Incus topology first and verifies
+that its instances, networks, and storage are gone.
 It then runs `bin/worktree-remove`. The cleanup command refuses an unmerged or
 dirty branch.
 

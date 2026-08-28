@@ -1,0 +1,62 @@
+{
+    "schema": 1,
+    "paths": [
+        "apps/cli/app/Commands/*.php",
+        "apps/cli/app/Commands/**/*.php",
+        "apps/cli/composer.json",
+        "apps/cli/composer.lock",
+        "apps/gateway/app/Actions/Apps/*.php",
+        "apps/gateway/app/Actions/Nodes/*.php",
+        "apps/gateway/app/Console/Commands/*.php",
+        "apps/gateway/app/Data/Apps/*.php",
+        "apps/gateway/app/Data/Nodes/*.php",
+        "apps/gateway/app/Domain/SourceControl/*.php",
+        "apps/gateway/app/Http/Controllers/Api/*.php",
+        "apps/gateway/app/Http/Requests/**/*.php",
+        "apps/gateway/app/Infrastructure/AppDev/*.php",
+        "apps/gateway/app/Infrastructure/AppProd/*.php",
+        "apps/gateway/app/Infrastructure/Nodes/*.php",
+        "apps/gateway/app/Infrastructure/Ssh/*.php",
+        "apps/gateway/composer.json",
+        "apps/gateway/composer.lock",
+        "apps/gateway/config/*.php",
+        "apps/gateway/database/migrations/*.php",
+        "apps/gateway/routes/*.php",
+        "packages/php-sdk/composer.json",
+        "packages/php-sdk/composer.lock",
+        "packages/php-sdk/src/*.php",
+        "packages/php-sdk/src/**/*.php",
+        "apps/e2e/resources/guest/receive-source.sh",
+        "apps/e2e/resources/guest/hydrate-orbit.sh",
+        "apps/e2e/resources/guest/prepare-node.sh",
+        "apps/e2e/resources/guest/converge-gateway.sh",
+        "apps/e2e/resources/guest/converge-app-dev.sh",
+        "apps/e2e/resources/guest/converge-app-prod-internal-tls.sh",
+        "apps/e2e/resources/guest/converge-sample-app.sh"
+    ],
+    "cold_epoch": "ubuntu-26.04-amd64-v1",
+    "base_image_alias": "orbit-base-ubuntu-26.04-runtime",
+    "declared_epochs": {
+        "base_image": 1,
+        "gateway_provisioning": 1,
+        "laravel_release": 1,
+        "node_convergence": 1,
+        "php_toolchain": 1
+    },
+    "laravel_pin": {
+        "tag": "v13.10.1",
+        "commit": "5aad4ddf34d5e21dfe6b4c07eeac67d5bd5e08b0"
+    },
+    "topology": {
+        "profile": "gateway_app-dev_app-prod",
+        "roles": [
+            "gateway",
+            "app-dev",
+            "app-prod"
+        ],
+        "checkout_roles": [
+            "gateway",
+            "app-dev"
+        ]
+    }
+}

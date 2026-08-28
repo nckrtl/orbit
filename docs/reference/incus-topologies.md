@@ -24,4 +24,15 @@ A TTL reaper is only a fallback for abandoned resources.
 
 ## Registered profiles
 
-None.
+Registered profiles: None.
+
+The future full profile is `gateway_app-dev_app-prod`. It will use the
+`gateway` and `app-dev` checkout roles and the `app-prod` standby target.
+Registration requires live proof of exact generation and topology identity,
+synchronization, candidate SHA and tree, clean prove, and release.
+Future commands: `bin/incus-profile acquire gateway_app-dev_app-prod --issue <ISSUE>`,
+`bin/incus-profile create gateway_app-dev_app-prod --issue <ISSUE>`,
+`bin/incus-profile sync gateway_app-dev_app-prod --worktree <WORKTREE> --role <ROLE>`,
+`bin/incus-profile prove gateway_app-dev_app-prod --sha <CANDIDATE_SHA> --tree <TREE>`,
+and `bin/incus-profile release gateway_app-dev_app-prod`. These commands do
+not register a live profile.

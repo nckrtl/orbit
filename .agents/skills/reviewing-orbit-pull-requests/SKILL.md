@@ -30,8 +30,10 @@ cannot be reviewed, including when required Incus evidence is unavailable.
    belongs to the candidate SHA. Focused evidence must state reproducible
    commands or manual steps, the observed result, and a link or attached output
    when the proof venue produces one.
-4. For Incus proof, confirm that the issue names a registered profile and that
-   the evidence comes from the required checkout roles and candidate SHA.
+4. For Incus proof, confirm that the issue names the exact
+   `gateway_app-dev_app-prod` profile, that generation and topology identity
+   are recorded, and that evidence comes from the `gateway` and `app-dev`
+   checkout roles at the candidate SHA and tree.
 5. Confirm that Compound updates are useful and correctly placed. Accept no
    documentation change only when the worker gives a specific durable-learning
    reason.

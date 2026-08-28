@@ -1,0 +1,21 @@
+{
+    "agents": [
+        "codex"
+    ],
+    "cloud": false,
+    "guidelines": true,
+    "mcp": true,
+    "nightwatch": false,
+    "packages": [
+        "spatie/guidelines-skills"
+    ],
+    "sail": false,
+    "skills": [
+        "laravel-best-practices",
+        "testing-best-practices",
+        "pest-testing",
+        "spatie-laravel-php",
+        "spatie-security",
+        "spatie-version-control",
+    ]
+}

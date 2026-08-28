@@ -59,12 +59,17 @@ Use `automated` when tests can prove the behavior. Set both Incus fields to
 
 Use `incus` when acceptance depends on a real OS, service manager, privilege
 boundary, network, certificate, filesystem ownership, or multi-node behavior.
-Select the smallest registered topology profile ID, such as
-`operator_gateway_app-dev`. Copy its checkout roles exactly; do not infer them
+Use only the registered topology profile ID
+`gateway_app-dev_app-prod`. Copy its checkout roles exactly; do not infer them
 from changed components. A prose description or role list is not a profile ID.
-Do not invent or expand a profile. Keep the issue in preparation when the
-required profile or its roles are unavailable. The closed registry and
-lifecycle requirements are in `docs/reference/incus-topologies.md`.
+Do not invent or expand a profile. Keep the issue in preparation until this
+profile and its roles are registered. The closed registry and lifecycle
+requirements are in `docs/reference/incus-topologies.md`.
+
+The full `gateway_app-dev_app-prod` profile is Incus-only and remains pending
+live registration. Its ordered roles are `gateway`, `app-dev`, `app-prod`;
+checkout roles are exactly `gateway` and `app-dev`. Automated issues always
+use `Incus topology: none` and `Checkout roles: none`.
 
 ## Production Reports
 
@@ -75,8 +80,9 @@ deployment identity, expected and observed behavior, evidence, and containment.
 ## Ready Gate
 
 Move the issue to Ready only when all fields are complete, linked ADRs are on
-`main`, the Incus profile exists, and criteria are verifiable. Otherwise, name
-the missing item and use `Status: Preparation`.
+`main`, and criteria are verifiable. For `Proof venue: incus`, the selected
+profile and exact checkout roles must also exist in the registry. Otherwise,
+name the missing item and use `Status: Preparation`.
 
 ## Example
 

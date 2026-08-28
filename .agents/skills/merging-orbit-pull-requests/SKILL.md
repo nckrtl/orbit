@@ -43,7 +43,10 @@ is missing.
    merge-commit method, equivalent to `gh pr merge --merge`.
 
 Do not close the Linear issue, release Incus, remove the worktree, or deploy.
-After a successful merge, signal the external orchestrator. It cleans Incus
+After a successful merge, signal the external orchestrator. It fingerprints
+the merged main tree and refreshes the standby only when that fingerprint
+changed. A refresh result is `unchanged`, `promoted`, or `failed`; refresh
+failure leaves cleanup unperformed and blocks issue closure. It cleans Incus
 before the worktree, then closes the issue. Deployment is a separate cycle.
 
 ## Handoff
@@ -52,7 +55,7 @@ Return this YAML block:
 
 ```yaml
 role: merge-verifier
-status: merged|blocked
+status: merged|merged_refresh_blocked|blocked
 issue: NCK-123|null
 pull_request: URL|null
 candidate_sha: full-sha|null
@@ -76,9 +79,13 @@ cleanup:
   worktree: path|null
   order: incus_then_worktree
 external_issue_action: close_after_cleanup|none
+standby:
+  result: unchanged|promoted|failed|not-assessed
 ```
 
 Use `merged` only after the hosting service confirms the merge and returns the
 merge commit SHA. Use `cleanup.action: cleanup` and
 `external_issue_action: close_after_cleanup` only with `status: merged`. A
 blocked handoff must use `none` for both actions.
+For `merged_refresh_blocked` or `blocked`, `cleanup.action` is `none` and
+`external_issue_action` is `none`; only `merged` may use cleanup and close.

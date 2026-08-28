@@ -33,6 +33,9 @@ existing pull request or review comments. Confirm that:
 - an Incus proof venue names a registered profile and exact checkout roles.
 
 Return `blocked` without changing code when a required input or gate is absent.
+For the full `gateway_app-dev_app-prod` profile, acquire Incus only after the
+worktree exists, synchronize it before every iteration, and prove from the
+`gateway` and `app-dev` checkout roles. The worker never releases Incus.
 
 ## Orchestrate for throughput
 
