@@ -17,10 +17,12 @@ final readonly class NativeRoleBaselineConverger implements RoleBaselineConverge
         private VpnRoleBaseline $vpn,
         private AppDevRoleBaseline $appDev,
         private AppProdRoleBaseline $appProd,
+        private NodeRoleOperatingSystemGuard $operatingSystem,
     ) {}
 
     public function converge(Node $node, NodeRole $assignment): void
     {
+        $this->operatingSystem->assert($node, $assignment->role);
         $this->baseline($assignment->role)->converge($node, $assignment);
     }
 

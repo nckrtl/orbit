@@ -7,6 +7,7 @@ use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tools\ToolManagerMaterializer;
+use App\Domain\WireGuard\GatewayPeerProjectionManager;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\SshHostKeyScanException;
 use App\Models\Activity;
@@ -392,6 +393,47 @@ describe('POST /api/v1/nodes', function (): void {
             ->toBe(LifecycleStatus::Failed)
             ->and($node->error_code)
             ->toBe('node.ssh_host_key_mismatch');
+    });
+
+    it('keeps an active reprovisioning caller authorized after convergence failure', function (): void {
+        app()->instance(GatewayPeerProjectionManager::class, new class implements GatewayPeerProjectionManager {
+            public function converge(Node $node): void {}
+
+            public function remove(Node $node): void {}
+
+            public function restore(Node $node): void {}
+        });
+        app()->instance(NodeConverger::class, new class implements NodeConverger {
+            public function converge(Node $node, ?string $expectedSshHostFingerprint = null): void
+            {
+                $node->update(['wireguard_public_key' => 'replacement-key']);
+
+                throw new NodeProvisioningException('wireguard', 'node.wireguard_failed', 'WireGuard failed.');
+            }
+        });
+        $operator = Node::query()->where('name', 'operator')->sole();
+        $operator->update([
+            'platform' => 'linux',
+            'architecture' => 'x86_64',
+            'wireguard_public_key' => 'prior-key',
+            'ssh_host_fingerprint' => 'SHA256:pinned',
+        ]);
+
+        $this->postJson('/api/v1/nodes', [
+            'name' => 'operator',
+            'public_ssh_host' => '192.0.2.2',
+            'architecture' => 'x86_64',
+        ])->assertStatus(502);
+
+        $this
+            ->getJson('/api/v1/nodes')
+            ->assertOk()
+            ->assertJsonPath('data.0.name', 'operator');
+
+        expect($operator->refresh()->status)
+            ->toBe(LifecycleStatus::Active)
+            ->and($operator->wireguard_public_key)
+            ->toBe('prior-key');
     });
 
     it('persists a stable host key scan failure before first-contact SSH', function (): void {

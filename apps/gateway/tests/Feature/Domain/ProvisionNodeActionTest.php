@@ -8,6 +8,7 @@ use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Nodes\NodeConverger;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\NodeRoleOperationException;
+use App\Domain\Nodes\RecoverableNodeConverger;
 use App\Domain\Nodes\RoleAssignmentException;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
@@ -15,6 +16,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ToolManagerMaterializer;
 use App\Domain\Tools\ToolManagerName;
+use App\Domain\WireGuard\GatewayPeerProjectionManager;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -31,6 +33,416 @@ describe(ProvisionNodeAction::class, function (): void {
 
             public function remove(Node $node, NodeRole $assignment, bool $purgeData): void {}
         });
+    });
+
+    it('restores an active node and its gateway peer when reprovisioning fails after replacing its key', function (): void {
+        $projection = new class implements GatewayPeerProjectionManager {
+            /** @var list<string|null> */
+            public array $keys = [];
+
+            public function converge(Node $node): void
+            {
+                $this->keys[] = $node->wireguard_public_key;
+            }
+
+            public function remove(Node $node): void {}
+
+            public function restore(Node $node): void
+            {
+                $this->keys[] = $node->wireguard_public_key;
+            }
+        };
+        app()->instance(GatewayPeerProjectionManager::class, $projection);
+        app()->instance(NodeConverger::class, new class implements NodeConverger {
+            public function converge(Node $node, ?string $expectedSshHostFingerprint = null): void
+            {
+                $node->update(['wireguard_public_key' => 'replacement-key']);
+                app(GatewayPeerProjectionManager::class)->converge($node);
+
+                throw new NodeProvisioningException('wireguard', 'node.wireguard_failed', 'WireGuard failed.');
+            }
+        });
+        $existing = Node::query()->create([
+            'name' => 'active-reprovision',
+            'status' => LifecycleStatus::Active,
+            'platform' => 'linux',
+            'architecture' => 'x86_64',
+            'public_ssh_host' => '192.0.2.40',
+            'wireguard_address' => '10.44.0.40',
+            'wireguard_public_key' => 'prior-key',
+            'ssh_host_fingerprint' => 'SHA256:pinned',
+        ]);
+
+        expect(fn () => app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
+            name: $existing->name,
+            publicSshHost: $existing->public_ssh_host,
+        )))
+            ->toThrow(
+                fn (NodeProvisioningException $exception) => (
+                    $exception->step === 'wireguard'
+                    && $exception->errorCode === 'node.wireguard_failed'
+                    && $exception->getMessage() === 'WireGuard failed.'
+                ),
+            );
+
+        $existing->refresh();
+        expect($existing->status)
+            ->toBe(LifecycleStatus::Active)
+            ->and($existing->getAttribute('failed_step'))
+            ->toBeNull()
+            ->and($existing->getAttribute('error_code'))
+            ->toBeNull()
+            ->and($existing->wireguard_public_key)
+            ->toBe('prior-key')
+            ->and($projection->keys)
+            ->toBe(['replacement-key', 'prior-key']);
+    });
+
+    it('returns a bounded rollback failure when gateway peer restoration fails', function (): void {
+        app()->instance(GatewayPeerProjectionManager::class, new class implements GatewayPeerProjectionManager {
+            public function converge(Node $node): void {}
+
+            public function remove(Node $node): void {}
+
+            public function restore(Node $node): void
+            {
+                throw new RuntimeException('secret host output');
+            }
+        });
+        app()->instance(NodeConverger::class, new class implements NodeConverger {
+            public function converge(Node $node, ?string $expectedSshHostFingerprint = null): void
+            {
+                $node->update(['wireguard_public_key' => 'replacement-key']);
+
+                throw new NodeProvisioningException('wireguard', 'node.wireguard_failed', 'WireGuard failed.');
+            }
+        });
+        $existing = Node::query()->create([
+            'name' => 'rollback-failure',
+            'status' => LifecycleStatus::Active,
+            'platform' => 'linux',
+            'architecture' => 'x86_64',
+            'public_ssh_host' => '192.0.2.41',
+            'wireguard_address' => '10.44.0.41',
+            'wireguard_public_key' => 'prior-key',
+            'ssh_host_fingerprint' => 'SHA256:pinned',
+        ]);
+
+        expect(fn () => app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
+            name: $existing->name,
+            publicSshHost: $existing->public_ssh_host,
+        )))
+            ->toThrow(
+                fn (NodeProvisioningException $exception) => (
+                    $exception->step === 'node-rollback'
+                    && $exception->errorCode === 'node.reprovision_rollback_failed'
+                    && ! str_contains($exception->getMessage(), 'secret host output')
+                ),
+            );
+
+        expect($existing->refresh()->status)
+            ->toBe(LifecycleStatus::Active)
+            ->and($existing->wireguard_public_key)
+            ->toBe('prior-key');
+    });
+
+    it('rolls back an active node when APT materialization fails after base convergence', function (): void {
+        $projection = new class implements GatewayPeerProjectionManager {
+            /** @var list<string|null> */
+            public array $keys = [];
+
+            public function converge(Node $node): void
+            {
+                $this->keys[] = $node->wireguard_public_key;
+            }
+
+            public function remove(Node $node): void {}
+
+            public function restore(Node $node): void
+            {
+                $this->keys[] = $node->wireguard_public_key;
+            }
+        };
+        app()->instance(GatewayPeerProjectionManager::class, $projection);
+        app()->instance(NodeConverger::class, new class implements NodeConverger {
+            public function converge(Node $node, ?string $expectedSshHostFingerprint = null): void
+            {
+                $node->update(['wireguard_public_key' => 'replacement-key']);
+                app(GatewayPeerProjectionManager::class)->converge($node);
+            }
+        });
+        $materializer = new FakeToolManagerMaterializer;
+        $materializer->failure = new NodeProvisioningException('tool-manager-apt', 'node.apt_failed', 'APT failed.');
+        app()->instance(ToolManagerMaterializer::class, $materializer);
+        $existing = Node::query()->create([
+            'name' => 'apt-rollback',
+            'status' => LifecycleStatus::Active,
+            'platform' => 'linux',
+            'architecture' => 'x86_64',
+            'public_ssh_host' => '192.0.2.42',
+            'wireguard_address' => '10.44.0.42',
+            'wireguard_public_key' => 'prior-key',
+            'ssh_host_fingerprint' => 'SHA256:pinned',
+            'failed_step' => null,
+            'error_code' => null,
+        ]);
+
+        expect(fn () => app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
+            name: $existing->name,
+            publicSshHost: $existing->public_ssh_host,
+        )))
+            ->toThrow(
+                fn (NodeProvisioningException $exception) => (
+                    $exception->step === 'tool-manager-apt'
+                    && $exception->errorCode === 'node.apt_failed'
+                    && $exception->getMessage() === 'APT failed.'
+                ),
+            );
+
+        expect($existing->refresh()->status)
+            ->toBe(LifecycleStatus::Active)
+            ->and($existing->failed_step)
+            ->toBeNull()
+            ->and($existing->error_code)
+            ->toBeNull()
+            ->and($existing->wireguard_public_key)
+            ->toBe('prior-key')
+            ->and($projection->keys)
+            ->toBe(['replacement-key', 'prior-key']);
+    });
+
+    it('rolls back the remote peer before restoring persisted state and the gateway projection after APT failure', function (): void {
+        $events = [];
+        $projection = new class($events) implements GatewayPeerProjectionManager {
+            public function __construct(
+                private array &$events,
+            ) {}
+
+            public function converge(Node $node): void
+            {
+                $this->events[] = "gateway-converge:{$node->wireguard_public_key}";
+            }
+
+            public function remove(Node $node): void {}
+
+            public function restore(Node $node): void
+            {
+                $this->events[] = "gateway-restore:{$node->wireguard_public_key}";
+            }
+        };
+        app()->instance(GatewayPeerProjectionManager::class, $projection);
+        app()->instance(NodeConverger::class, new class($events) implements NodeConverger, RecoverableNodeConverger {
+            public function __construct(
+                private array &$events,
+            ) {}
+
+            public function converge(Node $node, ?string $expectedSshHostFingerprint = null): void
+            {
+                $this->events[] = 'ordinary-converge';
+            }
+
+            public function convergeRecoverably(
+                Node $node,
+                ?string $expectedSshHostFingerprint,
+                Closure $completion,
+            ): void {
+                $node->update(['wireguard_public_key' => 'replacement-key']);
+                app(GatewayPeerProjectionManager::class)->converge($node);
+
+                try {
+                    $completion();
+                } catch (Throwable $throwable) {
+                    $this->events[] = 'remote-rollback';
+
+                    throw $throwable;
+                }
+            }
+        });
+        $materializer = new FakeToolManagerMaterializer;
+        $materializer->failure = new NodeProvisioningException('tool-manager-apt', 'node.apt_failed', 'APT failed.');
+        app()->instance(ToolManagerMaterializer::class, $materializer);
+        $existing = Node::query()->create([
+            'name' => 'apt-rollback-order',
+            'status' => LifecycleStatus::Active,
+            'platform' => 'linux',
+            'architecture' => 'x86_64',
+            'public_ssh_host' => '192.0.2.43',
+            'wireguard_address' => '10.44.0.43',
+            'wireguard_public_key' => 'prior-key',
+            'ssh_host_fingerprint' => 'SHA256:pinned',
+        ]);
+
+        expect(fn () => app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
+            name: $existing->name,
+            publicSshHost: $existing->public_ssh_host,
+        )))
+            ->toThrow(NodeProvisioningException::class);
+
+        expect($events)
+            ->toBe([
+                'gateway-converge:replacement-key',
+                'remote-rollback',
+                'gateway-restore:prior-key',
+            ]);
+    });
+
+    it('marks rollback failure after restoring persisted state when recoverable remote rollback fails', function (): void {
+        app()->instance(GatewayPeerProjectionManager::class, new class implements GatewayPeerProjectionManager {
+            public function converge(Node $node): void {}
+
+            public function remove(Node $node): void {}
+
+            public function restore(Node $node): void {}
+        });
+        app()->instance(NodeConverger::class, new class implements NodeConverger, RecoverableNodeConverger {
+            public function converge(Node $node, ?string $expectedSshHostFingerprint = null): void {}
+
+            public function convergeRecoverably(
+                Node $node,
+                ?string $expectedSshHostFingerprint,
+                Closure $completion,
+            ): void {
+                $node->update(['wireguard_public_key' => 'replacement-key']);
+                app(GatewayPeerProjectionManager::class)->converge($node);
+
+                try {
+                    $completion();
+                } catch (Throwable $throwable) {
+                    throw new NodeProvisioningException(
+                        step: 'wireguard-rollback',
+                        errorCode: 'vpn.peer_rollback_failed',
+                        message: 'Could not restore the remote WireGuard peer.',
+                        previous: $throwable,
+                    );
+                }
+            }
+        });
+        $materializer = new FakeToolManagerMaterializer;
+        $materializer->failure = new NodeProvisioningException('tool-manager-apt', 'node.apt_failed', 'APT failed.');
+        app()->instance(ToolManagerMaterializer::class, $materializer);
+        $existing = Node::query()->create([
+            'name' => 'remote-rollback-failure',
+            'status' => LifecycleStatus::Active,
+            'platform' => 'linux',
+            'architecture' => 'x86_64',
+            'public_ssh_host' => '192.0.2.44',
+            'wireguard_address' => '10.44.0.44',
+            'wireguard_public_key' => 'prior-key',
+            'ssh_host_fingerprint' => 'SHA256:pinned',
+        ]);
+
+        expect(fn () => app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
+            name: $existing->name,
+            publicSshHost: $existing->public_ssh_host,
+        )))
+            ->toThrow(
+                fn (NodeProvisioningException $exception) => (
+                    $exception->step === 'node-rollback'
+                    && $exception->errorCode === 'node.reprovision_rollback_failed'
+                    && ! str_contains($exception->getMessage(), 'remote WireGuard peer')
+                ),
+            );
+
+        expect($existing->refresh()->wireguard_public_key)->toBe('prior-key');
+    });
+
+    it('restores changed connection fields before rebuilding the prior gateway peer', function (): void {
+        $projection = new class implements GatewayPeerProjectionManager {
+            public array $peers = [];
+
+            public function converge(Node $node): void
+            {
+                $this->peers[] = [$node->wireguard_address, $node->wireguard_public_key];
+            }
+
+            public function remove(Node $node): void {}
+
+            public function restore(Node $node): void
+            {
+                $this->peers[] = [$node->wireguard_address, $node->wireguard_public_key];
+            }
+        };
+        app()->instance(GatewayPeerProjectionManager::class, $projection);
+        app()->instance(NodeConverger::class, new class implements NodeConverger {
+            public function converge(Node $node, ?string $expectedSshHostFingerprint = null): void
+            {
+                $node->update([
+                    'ssh_host_key_type' => 'ecdsa',
+                    'ssh_host_key' => 'replacement-host-key',
+                    'ssh_host_fingerprint' => 'replacement-fingerprint',
+                    'wireguard_public_key' => 'replacement-key',
+                ]);
+                app(GatewayPeerProjectionManager::class)->converge($node);
+                throw new NodeProvisioningException('wireguard', 'node.wireguard_failed', 'WireGuard failed.');
+            }
+        });
+        $existing = Node::query()->create([
+            'name' => 'full-state-rollback',
+            'status' => LifecycleStatus::Active,
+            'platform' => 'linux',
+            'architecture' => 'x86_64',
+            'tld' => 'prior.orbit',
+            'public_ssh_host' => '192.0.2.50',
+            'public_ssh_port' => 2222,
+            'ssh_user' => 'prior-user',
+            'wireguard_address' => '10.44.0.50',
+            'wireguard_endpoint_override' => '10.0.0.2:51820',
+            'dns_server_override' => '10.0.0.1',
+            'wireguard_public_key' => 'prior-key',
+            'ssh_host_key_type' => 'ed25519',
+            'ssh_host_key' => 'prior-host-key',
+            'ssh_host_fingerprint' => 'prior-fingerprint',
+            'failed_step' => 'prior-step',
+            'error_code' => 'prior.error',
+        ]);
+        expect(fn () => app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
+            name: $existing->name,
+            publicSshHost: '192.0.2.51',
+            tld: 'changed.orbit',
+            wireguardAddress: '10.44.0.51',
+            wireguardEndpointOverride: '10.0.0.3:51820',
+            dnsServerOverride: '10.0.0.2',
+        )))
+            ->toThrow(NodeProvisioningException::class);
+        expect($existing
+            ->refresh()
+            ->only([
+                'status',
+                'tld',
+                'public_ssh_host',
+                'public_ssh_port',
+                'ssh_user',
+                'wireguard_address',
+                'wireguard_endpoint_override',
+                'dns_server_override',
+                'ssh_host_key_type',
+                'ssh_host_key',
+                'ssh_host_fingerprint',
+                'wireguard_public_key',
+                'failed_step',
+                'error_code',
+            ]))
+            ->toBe([
+                'status' => LifecycleStatus::Active,
+                'tld' => 'prior.orbit',
+                'public_ssh_host' => '192.0.2.50',
+                'public_ssh_port' => 2222,
+                'ssh_user' => 'prior-user',
+                'wireguard_address' => '10.44.0.50',
+                'wireguard_endpoint_override' => '10.0.0.2:51820',
+                'dns_server_override' => '10.0.0.1',
+                'ssh_host_key_type' => 'ed25519',
+                'ssh_host_key' => 'prior-host-key',
+                'ssh_host_fingerprint' => 'prior-fingerprint',
+                'wireguard_public_key' => 'prior-key',
+                'failed_step' => 'prior-step',
+                'error_code' => 'prior.error',
+            ])
+            ->and($projection->peers)
+            ->toBe([
+                ['10.44.0.51', 'replacement-key'],
+                ['10.44.0.50', 'prior-key'],
+            ]);
     });
 
     it('materializes only APT after base convergence and before activation', function (): void {
@@ -60,6 +472,70 @@ describe(ProvisionNodeAction::class, function (): void {
             ->toBe([[ToolManagerName::Apt]])
             ->and($node->status)
             ->toBe(LifecycleStatus::Active);
+    });
+
+    it('uses recoverable convergence only for previously active nodes', function (): void {
+        $events = [];
+        app()->instance(NodeConverger::class, new class($events) implements NodeConverger, RecoverableNodeConverger {
+            public function __construct(
+                private array &$events,
+            ) {}
+
+            public function converge(Node $node, ?string $expectedSshHostFingerprint = null): void
+            {
+                $this->events[] = "ordinary:{$node->name}";
+            }
+
+            public function convergeRecoverably(
+                Node $node,
+                ?string $expectedSshHostFingerprint,
+                Closure $completion,
+            ): void {
+                $this->events[] = "recoverable:{$node->name}";
+                $completion();
+            }
+        });
+
+        app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
+            name: 'new-node-path',
+            publicSshHost: '192.0.2.94',
+            architecture: 'x86_64',
+            expectedSshHostFingerprint: 'SHA256:pinned',
+        ));
+
+        $existing = Node::query()->create([
+            'name' => 'existing-node-path',
+            'status' => LifecycleStatus::Provisioning,
+            'platform' => 'linux',
+            'architecture' => 'x86_64',
+            'public_ssh_host' => '192.0.2.95',
+            'wireguard_address' => '10.44.0.95',
+            'ssh_host_fingerprint' => 'SHA256:pinned',
+        ]);
+        app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
+            name: $existing->name,
+            publicSshHost: $existing->public_ssh_host,
+        ));
+
+        $active = Node::query()->create([
+            'name' => 'active-node-path',
+            'status' => LifecycleStatus::Active,
+            'platform' => 'linux',
+            'architecture' => 'x86_64',
+            'public_ssh_host' => '192.0.2.96',
+            'wireguard_address' => '10.44.0.96',
+            'ssh_host_fingerprint' => 'SHA256:pinned',
+        ]);
+        app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
+            name: $active->name,
+            publicSshHost: $active->public_ssh_host,
+        ));
+
+        expect($events)->toBe([
+            'ordinary:new-node-path',
+            'ordinary:existing-node-path',
+            'recoverable:active-node-path',
+        ]);
     });
 
     it('does not materialize managers after base convergence fails', function (): void {

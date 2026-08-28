@@ -6,6 +6,7 @@ namespace App\Providers;
 
 use App\Actions\Gateway\BootstrapGatewayAction;
 use App\Actions\Gateway\GatewayBootstrapIdentityValidator;
+use App\Actions\Gateway\GatewayOperatingSystemGuard;
 use App\Actions\Nodes\AssignRoleAction;
 use App\Console\GatewayBoostInstallCommand;
 use App\Domain\AppDev\AppDevCaddyManager;
@@ -206,6 +207,7 @@ final class AppServiceProvider extends ServiceProvider
             static fn (): BootstrapGatewayAction => new BootstrapGatewayAction(
                 assignRole: app(AssignRoleAction::class),
                 identity: app(GatewayBootstrapIdentityValidator::class),
+                operatingSystem: app(GatewayOperatingSystemGuard::class),
                 vpnSettings: app(VpnSettings::class),
                 processes: app(ProcessRunner::class),
                 files: app(ProtectedFileWriter::class),

@@ -8,6 +8,7 @@ use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Nodes\NodeConverger;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\NodeRoleFirewallManager;
+use App\Domain\Nodes\RecoverableNodeConverger;
 use App\Domain\Nodes\RoleName;
 use App\Infrastructure\Ssh\HostKeyScanner;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -15,14 +16,16 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Infrastructure\WireGuard\RecoverableWireGuardPeerConverger;
 use App\Infrastructure\WireGuard\WireGuardPeerConverger;
 use App\Models\Node;
+use Closure;
 
 /**
  * @mago-expect lint:cyclomatic-complexity Ordered node bootstrap keeps each SSH and firewall safety gate explicit.
  * @mago-expect lint:excessive-parameter-list Base convergence requires each typed host boundary.
  */
-final readonly class NativeNodeConverger implements NodeConverger
+final readonly class NativeNodeConverger implements NodeConverger, RecoverableNodeConverger
 {
     public function __construct(
         private HostKeyScanner $hostKeys,
@@ -34,8 +37,40 @@ final readonly class NativeNodeConverger implements NodeConverger
         private NodeRoleFirewallManager $firewall,
     ) {}
 
-    /** @mago-expect lint:halstead The method keeps public bootstrap, WireGuard verification, and SSH restriction in safety order. */
     public function converge(Node $node, ?string $expectedSshHostFingerprint = null): void
+    {
+        [$hostKey, $wireguardAddress] = $this->prepare($node, $expectedSshHostFingerprint);
+        $this->wireGuard->converge($node, $this->connection($node, 'orbit'));
+        $this->finishWireGuard($node, $hostKey, $wireguardAddress);
+    }
+
+    public function convergeRecoverably(
+        Node $node,
+        ?string $expectedSshHostFingerprint,
+        Closure $completion,
+    ): void {
+        [$hostKey, $wireguardAddress] = $this->prepare($node, $expectedSshHostFingerprint);
+
+        if (! $this->wireGuard instanceof RecoverableWireGuardPeerConverger) {
+            $this->wireGuard->converge($node, $this->connection($node, 'orbit'));
+            $this->finishWireGuard($node, $hostKey, $wireguardAddress);
+            $completion();
+
+            return;
+        }
+
+        $this->wireGuard->convergeRecoverably(
+            $node,
+            $this->connection($node, 'orbit'),
+            function () use ($node, $hostKey, $wireguardAddress, $completion): void {
+                $this->finishWireGuard($node, $hostKey, $wireguardAddress);
+                $completion();
+            },
+        );
+    }
+
+    /** @return array{0: \App\Infrastructure\Ssh\HostKey, 1: string} */
+    private function prepare(Node $node, ?string $expectedSshHostFingerprint): array
     {
         if ($node->platform !== 'linux') {
             throw new NodeProvisioningException(
@@ -127,7 +162,14 @@ final readonly class NativeNodeConverger implements NodeConverger
             );
         }
 
-        $this->wireGuard->converge($node, $this->connection($node, 'orbit'));
+        return [$hostKey, $wireguardAddress];
+    }
+
+    private function finishWireGuard(
+        Node $node,
+        \App\Infrastructure\Ssh\HostKey $hostKey,
+        string $wireguardAddress,
+    ): void {
         $this->knownHosts->put($wireguardAddress, 22, $hostKey);
         $privateVerification = $this->ssh->execute(
             $this->connection($node, 'orbit', $wireguardAddress, 22),

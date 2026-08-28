@@ -8,11 +8,13 @@ use App\Data\Nodes\ProvisionNodeData;
 use App\Domain\Nodes\NodeConverger;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\NodeTld;
+use App\Domain\Nodes\RecoverableNodeConverger;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ToolManagerMaterializer;
 use App\Domain\Tools\ToolManagerName;
+use App\Domain\WireGuard\GatewayPeerProjectionManager;
 use App\Domain\WireGuard\WireGuardAddressAllocator;
 use App\Domain\WireGuard\WireGuardEndpoint;
 use App\Infrastructure\Ssh\SshHostKeyScanException;
@@ -27,6 +29,7 @@ final readonly class ProvisionNodeAction
         private NodeConverger $converger,
         private ToolManagerMaterializer $toolManagers,
         private WireGuardAddressAllocator $addresses,
+        private GatewayPeerProjectionManager $gatewayPeers,
     ) {}
 
     /** @mago-expect lint:halstead Ordered provisioning keeps persisted state and failure recovery in one transaction-like flow. */
@@ -53,6 +56,35 @@ final readonly class ProvisionNodeAction
             $data->wireguardAddress ?? (is_string($node->wireguard_address) ? $node->wireguard_address : null);
         $wireguardAddress = $this->addresses->forProvisioning($requestedAddress, $node);
         $publicSshHost = $data->publicSshHost;
+        /** @var ?string $failedStep */
+        $failedStep = $node->getAttribute('failed_step');
+        /** @var ?string $errorCode */
+        $errorCode = $node->getAttribute('error_code');
+        /** @var ?string $sshHostKeyType */
+        $sshHostKeyType = $node->getAttribute('ssh_host_key_type');
+        /** @var ?string $sshHostKey */
+        $sshHostKey = $node->getAttribute('ssh_host_key');
+        /** @var ?array<string, mixed> $priorActiveState */
+        $priorActiveState = $node->exists && $node->status === LifecycleStatus::Active
+            ? [
+                'status' => $node->status,
+                'platform' => $node->platform,
+                'architecture' => $node->architecture,
+                'tld' => $node->tld,
+                'public_ssh_host' => $node->public_ssh_host,
+                'public_ssh_port' => $node->public_ssh_port,
+                'ssh_user' => $node->ssh_user,
+                'wireguard_address' => $node->wireguard_address,
+                'wireguard_endpoint_override' => $node->wireguard_endpoint_override,
+                'dns_server_override' => $node->dns_server_override,
+                'failed_step' => $failedStep,
+                'error_code' => $errorCode,
+                'ssh_host_key_type' => $sshHostKeyType,
+                'ssh_host_key' => $sshHostKey,
+                'ssh_host_fingerprint' => $node->ssh_host_fingerprint,
+                'wireguard_public_key' => $node->wireguard_public_key,
+            ]
+            : null;
 
         if ($publicSshHost === '' && $node->exists && $node->public_ssh_host !== '') {
             $publicSshHost = $node->public_ssh_host;
@@ -82,10 +114,20 @@ final readonly class ProvisionNodeAction
         ])->save();
 
         try {
-            $this->converger->converge($node, $data->expectedSshHostFingerprint);
-            $this->toolManagers->converge($node, ToolManagerName::Apt);
+            if ($priorActiveState !== null && $this->converger instanceof RecoverableNodeConverger) {
+                $this->converger->convergeRecoverably(
+                    $node,
+                    $data->expectedSshHostFingerprint,
+                    function () use ($node): void {
+                        $this->toolManagers->converge($node, ToolManagerName::Apt);
+                    },
+                );
+            } else {
+                $this->converger->converge($node, $data->expectedSshHostFingerprint);
+                $this->toolManagers->converge($node, ToolManagerName::Apt);
+            }
         } catch (NodeProvisioningException $exception) {
-            $this->markFailed($node, $exception);
+            $this->handleFailure($node, $exception, $priorActiveState);
 
             throw $exception;
         } catch (SshHostKeyScanException $exception) {
@@ -96,7 +138,7 @@ final readonly class ProvisionNodeAction
                 previous: $exception,
                 result: $exception->result,
             );
-            $this->markFailed($node, $failure);
+            $this->handleFailure($node, $failure, $priorActiveState);
 
             throw $failure;
         } catch (Throwable $exception) {
@@ -106,7 +148,7 @@ final readonly class ProvisionNodeAction
                 message: 'Node provisioning failed.',
                 previous: $exception,
             );
-            $this->markFailed($node, $failure);
+            $this->handleFailure($node, $failure, $priorActiveState);
 
             throw $failure;
         }
@@ -240,5 +282,46 @@ final readonly class ProvisionNodeAction
         ];
 
         $node->update($failure);
+    }
+
+    /** @param ?array<string, mixed> $priorActiveState */
+    private function handleFailure(
+        Node $node,
+        NodeProvisioningException $failure,
+        ?array $priorActiveState,
+    ): void {
+        if ($priorActiveState === null) {
+            $this->markFailed($node, $failure);
+
+            return;
+        }
+
+        try {
+            $node->update($priorActiveState);
+        } catch (Throwable) {
+            throw new NodeProvisioningException(
+                step: 'node-rollback',
+                errorCode: 'node.reprovision_rollback_failed',
+                message: 'Node reprovisioning rollback failed.',
+            );
+        }
+
+        try {
+            $this->gatewayPeers->restore($node->refresh());
+        } catch (Throwable) {
+            throw new NodeProvisioningException(
+                step: 'node-rollback',
+                errorCode: 'node.reprovision_rollback_failed',
+                message: 'Node reprovisioning rollback failed.',
+            );
+        }
+
+        if ($failure->errorCode === 'vpn.peer_rollback_failed') {
+            throw new NodeProvisioningException(
+                step: 'node-rollback',
+                errorCode: 'node.reprovision_rollback_failed',
+                message: 'Node reprovisioning rollback failed.',
+            );
+        }
     }
 }

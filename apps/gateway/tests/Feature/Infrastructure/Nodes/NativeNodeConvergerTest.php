@@ -5,7 +5,9 @@ declare(strict_types=1);
 use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\NodeRoleFirewallManager;
+use App\Domain\Nodes\RecoverableNodeConverger;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Nodes\UbuntuRelease;
 use App\Infrastructure\Nodes\NativeNodeConverger;
 use App\Infrastructure\Nodes\NodeBootstrapCommandFactory;
 use App\Infrastructure\Processes\CommandResult;
@@ -16,6 +18,7 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Infrastructure\WireGuard\RecoverableWireGuardPeerConverger;
 use App\Infrastructure\WireGuard\WireGuardPeerConverger;
 use App\Models\Node;
 use Illuminate\Filesystem\Filesystem;
@@ -66,14 +69,67 @@ it('stops unsupported operating systems before the first bootstrap mutation', fu
     expect($result->isSuccessful())
         ->toBeFalse()
         ->and($result->getErrorOutput())
-        ->toContain('Orbit requires Ubuntu 26.04 Resolute.')
+        ->toContain(UbuntuRelease::requirementText())
         ->and($result->getOutput())
         ->not->toContain('mutation-reached');
 })->with([
     'missing release file' => null,
-    'Ubuntu Noble' => "ID=ubuntu\nVERSION_CODENAME=noble\n",
+    'Ubuntu Jammy' => "ID=ubuntu\nVERSION_CODENAME=jammy\n",
     'Debian' => "ID=debian\nVERSION_CODENAME=resolute\n",
     'malformed codename' => "ID=ubuntu\nVERSION_CODENAME='resolute extra'\n",
+]);
+
+it('does not execute commands from the remote os-release file', function (): void {
+    $marker = sys_get_temp_dir().'/orbit-os-release-sourced-'.Str::random(16);
+    $result = run_base_bootstrap_preflight("ID=ubuntu\nVERSION_CODENAME=$(touch __OS_RELEASE_MARKER__)\n", $marker);
+
+    expect($result->isSuccessful())
+        ->toBeFalse()
+        ->and($result->getErrorOutput())
+        ->toContain(UbuntuRelease::requirementText())
+        ->and($result->getErrorOutput())
+        ->not
+        ->toContain('__OS_RELEASE_MARKER__')
+        ->and(is_file($marker))
+        ->toBeFalse();
+});
+
+it('accepts matching quoted os-release values', function (string $release): void {
+    $result = run_base_bootstrap_preflight($release);
+
+    expect($result->isSuccessful())->toBeTrue()->and($result->getOutput())->toContain('mutation-reached');
+})->with([
+    'double quoted' => "ID=\"ubuntu\"\nVERSION_CODENAME=\"noble\"\n",
+    'single quoted' => "ID='ubuntu'\nVERSION_CODENAME='noble'\n",
+    'bare values without final newline' => "ID=ubuntu\nVERSION_CODENAME=noble",
+]);
+
+it('rejects unsafe or incomplete os-release metadata before bootstrap mutation', function (string $release): void {
+    $payload = 'payload-'.Str::random(16);
+    $mutation = 'mutation-'.Str::random(16);
+    $result = run_base_bootstrap_preflight(
+        str_replace('__PAYLOAD_MARKER__', $payload, $release),
+        mutationMarker: $mutation,
+    );
+
+    expect($result->isSuccessful())
+        ->toBeFalse()
+        ->and($result->getErrorOutput())
+        ->toBe(UbuntuRelease::requirementText()."\n")
+        ->and($result->getOutput())
+        ->not->toContain($payload, $mutation);
+})->with([
+    'duplicate id with supported value first' => "ID=ubuntu\nID=__PAYLOAD_MARKER__\nVERSION_CODENAME=noble\n",
+    'duplicate id with supported value last' => "ID=__PAYLOAD_MARKER__\nID=ubuntu\nVERSION_CODENAME=noble\n",
+    'duplicate codename with supported value first' => "ID=ubuntu\nVERSION_CODENAME=noble\nVERSION_CODENAME=__PAYLOAD_MARKER__\n",
+    'duplicate codename with supported value last' => "ID=ubuntu\nVERSION_CODENAME=__PAYLOAD_MARKER__\nVERSION_CODENAME=noble\n",
+    'missing id' => "VERSION_CODENAME=noble\n",
+    'empty codename' => "ID=ubuntu\nVERSION_CODENAME=\n",
+    'mismatched quotes' => "ID=ubuntu\nVERSION_CODENAME=\"__PAYLOAD_MARKER__'\n",
+    'unclosed quotes' => "ID=ubuntu\nVERSION_CODENAME='__PAYLOAD_MARKER__\n",
+    'command substitution' => "ID=ubuntu\nVERSION_CODENAME=\$(touch __PAYLOAD_MARKER__)\n",
+    'backticks' => "ID=ubuntu\nVERSION_CODENAME=`touch __PAYLOAD_MARKER__`\n",
+    'semicolon' => "ID=ubuntu\nVERSION_CODENAME=noble; touch __PAYLOAD_MARKER__\n",
 ]);
 
 it('keeps the base bootstrap role-neutral with one fixed shared package list', function (): void {
@@ -85,6 +141,9 @@ it('keeps the base bootstrap role-neutral with one fixed shared package list', f
             'bash',
             '-seu',
             '--',
+            'ubuntu',
+            'noble,resolute',
+            UbuntuRelease::requirementText(),
             'ssh-ed25519 GATEWAY',
             'ca-certificates',
             'curl',
@@ -96,7 +155,6 @@ it('keeps the base bootstrap role-neutral with one fixed shared package list', f
         ])
         ->and($script)
         ->toContain(
-            'Orbit requires Ubuntu 26.04 Resolute.',
             'useradd --create-home --shell /bin/bash orbit',
             'install -d -m 0700 -o orbit -g orbit /home/orbit',
             'orbit ALL=(ALL) NOPASSWD:ALL',
@@ -116,6 +174,15 @@ it('keeps the base bootstrap role-neutral with one fixed shared package list', f
             'openssl',
         );
 });
+
+it('accepts each supported Ubuntu release before the first bootstrap mutation', function (string $release): void {
+    $result = run_base_bootstrap_preflight($release);
+
+    expect($result->isSuccessful())->toBeTrue()->and($result->getOutput())->toContain('mutation-reached');
+})->with([
+    'Ubuntu Noble' => "ID=ubuntu\nVERSION_CODENAME=noble\n",
+    'Ubuntu Resolute' => "ID=ubuntu\nVERSION_CODENAME=resolute\n",
+]);
 
 it('pins the host and converges only base node identity and connectivity', function (): void {
     expect(interface_exists(NodeRoleFirewallManager::class))->toBeTrue();
@@ -184,6 +251,106 @@ it('pins the host and converges only base node identity and connectivity', funct
         ->toBe('10.44.0.2')
         ->and($ssh->calls[2]['command']->arguments)
         ->toBe(['true']);
+});
+
+it('commits recoverable peer publication before activating orbit SSH for active reprovisioning', function (): void {
+    $node = base_provisionable_node();
+    $node->update(['status' => \App\Domain\Shared\LifecycleStatus::Active, 'ssh_host_fingerprint' => 'SHA256:pinned']);
+    $events = [];
+    $wireGuard = new class($events) implements WireGuardPeerConverger, RecoverableWireGuardPeerConverger {
+        public function __construct(
+            private array &$events,
+        ) {}
+
+        public function converge(Node $node, SshConnection $connection): void
+        {
+            $this->events[] = 'ordinary-wireguard';
+        }
+
+        public function convergeRecoverably(Node $node, SshConnection $connection, Closure $completion): void
+        {
+            $this->events[] = 'wireguard-publish';
+            $completion();
+            $this->events[] = 'wireguard-commit';
+        }
+    };
+    $ssh = new BaseNodeSshExecutor;
+    $converger = new NativeNodeConverger(
+        hostKeys: base_test_scanner(),
+        knownHosts: base_test_known_hosts(),
+        sshKeys: base_test_keys(),
+        ssh: $ssh,
+        bootstrapCommand: new NodeBootstrapCommandFactory(base_test_keys()),
+        wireGuard: $wireGuard,
+        firewall: base_firewall_spy(),
+    );
+
+    expect($converger)->toBeInstanceOf(RecoverableNodeConverger::class);
+    $converger->convergeRecoverably($node, 'SHA256:pinned', function () use (&$events): void {
+        $events[] = 'apt';
+    });
+
+    expect($events)->toBe([
+        'wireguard-publish',
+        'apt',
+        'wireguard-commit',
+    ]);
+    expect($ssh->calls)->toHaveCount(3);
+});
+
+it('rolls back recoverable peer publication when late private ssh verification fails', function (): void {
+    $node = base_provisionable_node();
+    $node->update(['status' => \App\Domain\Shared\LifecycleStatus::Active, 'ssh_host_fingerprint' => 'SHA256:pinned']);
+    $events = [];
+    $wireGuard = new class($events) implements WireGuardPeerConverger, RecoverableWireGuardPeerConverger {
+        public function __construct(
+            private array &$events,
+        ) {}
+
+        public function converge(Node $node, SshConnection $connection): void {}
+
+        public function convergeRecoverably(Node $node, SshConnection $connection, Closure $completion): void
+        {
+            $this->events[] = 'wireguard-publish';
+
+            try {
+                $completion();
+            } catch (Throwable $throwable) {
+                $this->events[] = 'wireguard-rollback';
+
+                throw $throwable;
+            }
+        }
+    };
+    $ssh = new class implements SshExecutor {
+        public int $calls = 0;
+
+        public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+        {
+            $this->calls++;
+
+            return match ($this->calls) {
+                1, 2 => new CommandResult(0, '', '', 1, false),
+                default => new CommandResult(1, '', 'no route', 1, false),
+            };
+        }
+    };
+    $converger = new NativeNodeConverger(
+        hostKeys: base_test_scanner(),
+        knownHosts: base_test_known_hosts(),
+        sshKeys: base_test_keys(),
+        ssh: $ssh,
+        bootstrapCommand: new NodeBootstrapCommandFactory(base_test_keys()),
+        wireGuard: $wireGuard,
+        firewall: base_firewall_spy(),
+    );
+
+    expect(fn () => $converger->convergeRecoverably($node, 'SHA256:pinned', static function (): void {}))
+        ->toThrow(function (NodeProvisioningException $exception): void {
+            expect($exception->step)->toBe('wireguard-ssh')->and($exception->errorCode)->toBe('vpn.peer_ssh_failed');
+        });
+
+    expect($events)->toBe(['wireguard-publish', 'wireguard-rollback']);
 });
 
 it('uses passwordless sudo for the same fixed base command when reconnecting as orbit', function (): void {
@@ -385,14 +552,20 @@ function base_bootstrap_command(): RemoteCommand
     return new NodeBootstrapCommandFactory(base_test_keys())->make(new Node);
 }
 
-function run_base_bootstrap_preflight(?string $release): Process
-{
+function run_base_bootstrap_preflight(
+    ?string $release,
+    ?string $marker = null,
+    string $mutationMarker = 'mutation-reached',
+): Process {
     $filesystem = new Filesystem;
     $directory = sys_get_temp_dir().'/orbit-node-bootstrap-'.Str::random(16);
     $releasePath = "{$directory}/os-release";
     $filesystem->makeDirectory($directory, 0o700);
 
     if ($release !== null) {
+        if ($marker !== null) {
+            $release = str_replace('__OS_RELEASE_MARKER__', $marker, $release);
+        }
         $filesystem->put($releasePath, $release);
     }
 
@@ -400,8 +573,16 @@ function run_base_bootstrap_preflight(?string $release): Process
     $preMutation = strstr(haystack: $script, needle: 'export DEBIAN_FRONTEND=noninteractive', before_needle: true);
     $harness =
         str_replace('/etc/os-release', $releasePath, is_string($preMutation) ? $preMutation : $script)
-        ."printf 'mutation-reached\\n'\n";
-    $process = new Process(['bash', '-seu', '--', 'ssh-ed25519 TEST']);
+        ."printf '{$mutationMarker}\\n'\n";
+    $process = new Process([
+        'bash',
+        '-seu',
+        '--',
+        'ubuntu',
+        'noble,resolute',
+        UbuntuRelease::requirementText(),
+        'ssh-ed25519 TEST',
+    ]);
     $process->setInput($harness);
     $process->run();
     $filesystem->deleteDirectory($directory);

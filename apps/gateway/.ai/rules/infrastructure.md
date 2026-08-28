@@ -20,8 +20,8 @@ Search matching repository implementations and tests before inventing infrastruc
 ## Keep node access binary
 Enforce binary directed node access at the HTTP boundary. One access edge permits all commands for its serving node. The active Gateway peer is implicit authority, and access to the Gateway is fleet-wide. Do not add granular permissions, presets, wildcards, or permission compatibility code.
 
-## Use only pinned Sury Resolute PHP packages
-Require Ubuntu Resolute before remote mutation. Use the direct Sury PHP repository with an Orbit-owned scoped keyring, pinned key digest and fingerprints, exact candidate-origin checks, and atomic recovery. Never use a Launchpad PPA, mix Ubuntu suites, or accept caller-provided package sources.
+## Use only pinned Sury PHP packages
+Require the role-supported Ubuntu release before remote mutation. Base and app-dev nodes support Noble and Resolute; Gateway, VPN, and app-prod require Resolute. Use the direct Sury PHP repository with an Orbit-owned scoped keyring, pinned key digest and fingerprints, exact candidate-origin checks against the validated release suite, and atomic recovery. Never use a Launchpad PPA, mix Ubuntu suites, or accept caller-provided package sources.
 
 ## Route project JavaScript work through Vite+
 

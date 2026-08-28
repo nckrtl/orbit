@@ -6,6 +6,7 @@ use App\Domain\AppDev\AppDevCaddyManager;
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\AppProd\AppProdCaddyManager;
 use App\Domain\Nodes\NodeRoleFirewallManager;
+use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\NodeRoleValidationException;
 use App\Domain\Nodes\RoleName;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
@@ -14,6 +15,7 @@ use App\Infrastructure\Nodes\Roles\AppDevRoleBaseline;
 use App\Infrastructure\Nodes\Roles\AppProdRoleBaseline;
 use App\Infrastructure\Nodes\Roles\GatewayRoleBaseline;
 use App\Infrastructure\Nodes\Roles\NativeRoleBaselineConverger;
+use App\Infrastructure\Nodes\Roles\NodeRoleOperatingSystemGuard;
 use App\Infrastructure\Nodes\Roles\NodeRolePrerequisiteCommandFactory;
 use App\Infrastructure\Nodes\Roles\VpnRoleBaseline;
 use App\Infrastructure\Processes\CommandResult;
@@ -114,6 +116,11 @@ it('dispatches every assignment to its code-defined baseline', function (): void
         ),
         app_dev_role_baseline($events),
         app_prod_role_baseline($events),
+        new NodeRoleOperatingSystemGuard(
+            baseline_guard_ssh($events),
+            baseline_keys(),
+            baseline_known_hosts(),
+        ),
     );
 
     foreach (RoleName::cases() as $role) {
@@ -128,6 +135,120 @@ it('dispatches every assignment to its code-defined baseline', function (): void
         'ssh:app-prod',
     );
 });
+
+it('checks the remote operating system before every role convergence', function (): void {
+    $events = [];
+    $dispatcher = new NativeRoleBaselineConverger(
+        new GatewayRoleBaseline(baseline_firewall($events)),
+        new VpnRoleBaseline(
+            new NodeRolePrerequisiteCommandFactory,
+            baseline_ssh($events),
+            baseline_keys(),
+            baseline_known_hosts(),
+            baseline_firewall($events),
+        ),
+        app_dev_role_baseline($events),
+        app_prod_role_baseline($events),
+        new NodeRoleOperatingSystemGuard(
+            baseline_guard_ssh($events),
+            baseline_keys(),
+            baseline_known_hosts(),
+        ),
+    );
+
+    foreach (RoleName::cases() as $role) {
+        [$node, $assignment] = role_baseline_models($role, "guard-{$role->value}");
+        $dispatcher->converge($node, $assignment);
+    }
+
+    expect($events)->toBe([
+        'guard:gateway',
+        'firewall:converge:gateway',
+        'guard:vpn',
+        'ssh:vpn',
+        'firewall:converge:vpn',
+        'guard:app-dev',
+        'ssh:app-dev',
+        'caddy:converge',
+        'firewall:converge:app-dev',
+        'dns:3',
+        'guard:app-prod',
+        'ssh:app-prod',
+        'caddy:converge',
+        'firewall:converge:app-prod',
+    ]);
+});
+
+it('stops baseline convergence when the remote operating system guard fails', function (): void {
+    $events = [];
+    [$node, $assignment] = role_baseline_models(RoleName::AppDev, 'guard-failure');
+    $dispatcher = new NativeRoleBaselineConverger(
+        new GatewayRoleBaseline(baseline_firewall($events)),
+        new VpnRoleBaseline(
+            new NodeRolePrerequisiteCommandFactory,
+            baseline_ssh($events),
+            baseline_keys(),
+            baseline_known_hosts(),
+            baseline_firewall($events),
+        ),
+        app_dev_role_baseline($events),
+        app_prod_role_baseline($events),
+        new NodeRoleOperatingSystemGuard(
+            new class($events) implements SshExecutor {
+                /** @param list<string> $events */
+                public function __construct(
+                    private array &$events,
+                ) {}
+
+                public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+                {
+                    $this->events[] = 'guard:app-dev';
+
+                    return new CommandResult(
+                        1,
+                        '',
+                        'Orbit requires Ubuntu 24.04 Noble or Ubuntu 26.04 Resolute.',
+                        1,
+                        false,
+                    );
+                }
+            },
+            baseline_keys(),
+            baseline_known_hosts(),
+        ),
+    );
+
+    expect(fn () => $dispatcher->converge($node, $assignment))
+        ->toThrow(NodeRoleOperationException::class);
+    expect($events)->toBe(['guard:app-dev']);
+});
+
+/** @param list<string> $events */
+function baseline_guard_ssh(array &$events): SshExecutor
+{
+    return new class($events) implements SshExecutor {
+        /** @param list<string> $events */
+        public function __construct(
+            private array &$events,
+        ) {}
+
+        public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+        {
+            $role = $command->arguments[0] === 'bash'
+                ? match ($connection->host) {
+                    '10.44.0.2' => 'gateway',
+                    '10.44.0.3' => 'vpn',
+                    '10.44.0.4' => 'app-dev',
+                    '10.44.0.5' => 'app-prod',
+                    default => 'unknown',
+                }
+                : 'unknown';
+            $this->events[] = "guard:{$role}";
+
+            return new CommandResult(0, "ID=ubuntu\nVERSION_CODENAME=resolute\n", '', 1, false);
+        }
+    };
+}
 
 /** @return array{Node, NodeRole} */
 function role_baseline_models(RoleName $role, string $name = 'role-node'): array

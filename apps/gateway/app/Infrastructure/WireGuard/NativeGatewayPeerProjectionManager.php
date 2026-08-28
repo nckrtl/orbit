@@ -170,20 +170,76 @@ final readonly class NativeGatewayPeerProjectionManager implements GatewayPeerPr
             input: <<<'BASH'
                 live=/etc/wireguard/orbit.conf
                 backup=/etc/wireguard/.orbit.conf.rollback
+                runtime_config=
+                was_active=false
+                was_enabled=false
+                if systemctl is-active --quiet wg-quick@orbit; then
+                    was_active=true
+                fi
+                if systemctl is-enabled --quiet wg-quick@orbit; then
+                    was_enabled=true
+                fi
+                sync_live() {
+                    [ -n "$runtime_config" ] || return 1
+                    if ! wg-quick strip "$live" > "$runtime_config"; then
+                        return 1
+                    fi
+                    wg syncconf orbit "$runtime_config"
+                }
+                restore_state() {
+                    if [ "$was_enabled" = true ]; then
+                        systemctl enable wg-quick@orbit || true
+                    else
+                        systemctl disable wg-quick@orbit || true
+                    fi
+                }
                 restore_previous() {
                     if [ -f "$backup" ]; then
                         mv -fT -- "$backup" "$live"
-                        systemctl restart wg-quick@orbit || true
+                        if [ "$was_active" = true ]; then
+                            if [ -n "$runtime_config" ]; then
+                                sync_live || systemctl restart wg-quick@orbit || true
+                            fi
+                        else
+                            systemctl stop wg-quick@orbit || true
+                        fi
                     else
                         rm -f -- "$live"
                         systemctl stop wg-quick@orbit || true
                     fi
+                    restore_state
                 }
                 if ! systemctl enable wg-quick@orbit; then
                     restore_previous
                     exit 1
                 fi
-                if ! systemctl restart wg-quick@orbit; then
+                if ! runtime_config=$(mktemp /run/orbit-wireguard.XXXXXX); then
+                    restore_previous
+                    exit 1
+                fi
+                if ! chmod 0600 "$runtime_config"; then
+                    rm -f -- "$runtime_config"
+                    runtime_config=
+                    restore_previous
+                    exit 1
+                fi
+                trap 'rm -f -- "$runtime_config"' EXIT
+                if [ "$was_active" = true ]; then
+                    if ! sync_live; then
+                        restore_previous
+                        exit 1
+                    fi
+                else
+                    if ! systemctl start wg-quick@orbit; then
+                        restore_previous
+                        exit 1
+                    fi
+                fi
+                if ! systemctl is-active --quiet wg-quick@orbit; then
+                    restore_previous
+                    exit 1
+                fi
+                if ! systemctl is-enabled --quiet wg-quick@orbit; then
                     restore_previous
                     exit 1
                 fi

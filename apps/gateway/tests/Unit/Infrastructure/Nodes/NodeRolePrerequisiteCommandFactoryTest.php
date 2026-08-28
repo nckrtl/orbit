@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Nodes\RoleName;
+use App\Domain\Nodes\UbuntuRelease;
 use App\Infrastructure\Nodes\Roles\NodeRolePrerequisiteCommandFactory;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
@@ -13,15 +14,97 @@ it('uses fixed package lists for every role', function (): void {
 
     $factory = new NodeRolePrerequisiteCommandFactory;
 
-    expect(array_slice($factory->make(RoleName::AppDev)->arguments, offset: 5))
+    expect(array_slice($factory->make(RoleName::AppDev)->arguments, offset: 9))
         ->toBe(['acl', 'attr', 'caddy', 'composer', 'docker.io', 'git', 'openssl', 'unzip'])
-        ->and(array_slice($factory->make(RoleName::AppProd)->arguments, offset: 5))
+        ->and(array_slice($factory->make(RoleName::AppProd)->arguments, offset: 8))
         ->toBe(['acl', 'attr', 'caddy', 'composer', 'docker.io', 'git', 'openssl', 'unzip'])
-        ->and(array_slice($factory->make(RoleName::Vpn)->arguments, offset: 5))
+        ->and(array_slice($factory->make(RoleName::Vpn)->arguments, offset: 8))
         ->toBe(['dnsmasq', 'openssl'])
         ->and($factory->make(RoleName::Gateway)->arguments)
         ->toBe(['true']);
 });
+
+it('validates the supported Ubuntu release before any non-gateway mutation', function (RoleName $role): void {
+    $script = new NodeRolePrerequisiteCommandFactory()->make($role)->input ?? '';
+    $preflight = Str::before($script, "export DEBIAN_FRONTEND=noninteractive\n");
+    $marker = sys_get_temp_dir().'/orbit-role-marker-'.Str::uuid();
+    $requirement = UbuntuRelease::requirementTextFor(UbuntuRelease::forRole($role));
+    $supportedReleases = array_map(
+        static fn (UbuntuRelease $release): string => $release->value,
+        UbuntuRelease::forRole($role),
+    );
+    $unsupportedContents = $role === RoleName::AppDev
+        ? "ID=ubuntu\nVERSION_CODENAME=jammy\n"
+        : "ID=ubuntu\nVERSION_CODENAME=noble\n";
+    $supportedFixture = role_prerequisite_os_release_fixture(
+        "ID='ubuntu'\nVERSION_CODENAME='{$supportedReleases[0]}'\n",
+    );
+    $unsupportedFixture = role_prerequisite_os_release_fixture($unsupportedContents);
+
+    try {
+        $supportedProcess = new Process([
+            'bash',
+            '-seu',
+            '--',
+            $marker,
+            $role->value,
+            (string) count($supportedReleases),
+            $requirement,
+            ...$supportedReleases,
+        ]);
+        $supportedProcess->setEnv(['PATH' => getenv('PATH') ?: '']);
+        $supportedProcess->setInput(
+            "marker_path=\$1\nshift\n"
+            .str_replace('/etc/os-release', $supportedFixture, $preflight)
+            ."printf 'mutation-marker\n' > \"\$marker_path\"\n",
+        );
+        $supportedProcess->run();
+
+        expect($supportedProcess->isSuccessful())
+            ->toBeTrue($supportedProcess->getErrorOutput())
+            ->and(trim(file_get_contents($marker)))
+            ->toBe('mutation-marker');
+
+        if (is_file($marker)) {
+            unlink($marker);
+        }
+
+        $unsupportedProcess = new Process([
+            'bash',
+            '-seu',
+            '--',
+            $marker,
+            $role->value,
+            (string) count($supportedReleases),
+            $requirement,
+            ...$supportedReleases,
+        ]);
+        $unsupportedProcess->setEnv(['PATH' => getenv('PATH') ?: '']);
+        $unsupportedProcess->setInput(
+            "marker_path=\$1\nshift\n"
+            .str_replace('/etc/os-release', $unsupportedFixture, $preflight)
+            ."printf 'mutation-marker\n' > \"\$marker_path\"\n",
+        );
+        $unsupportedProcess->run();
+
+        expect($unsupportedProcess->isSuccessful())
+            ->toBeFalse()
+            ->and($unsupportedProcess->getErrorOutput())
+            ->toContain($requirement)
+            ->and(file_exists($marker))
+            ->toBeFalse();
+    } finally {
+        if (is_file($marker)) {
+            unlink($marker);
+        }
+        if (is_file($supportedFixture)) {
+            unlink($supportedFixture);
+        }
+        if (is_file($unsupportedFixture)) {
+            unlink($unsupportedFixture);
+        }
+    }
+})->with([RoleName::AppDev, RoleName::AppProd, RoleName::Vpn]);
 
 it('keeps app development directories and Caddy traversal ACLs role-owned', function (): void {
     expect(class_exists(NodeRolePrerequisiteCommandFactory::class))->toBeTrue();
@@ -40,6 +123,121 @@ it('keeps app development directories and Caddy traversal ACLs role-owned', func
         ->not->toContain('/home/orbit/apps', 'setfacl')->and($vpn)
         ->not->toContain('/home/orbit/apps', '/opt/orbit/composer', '/opt/orbit/vite-plus', '/opt/orbit/bun');
 });
+
+it('prints the fixed requirement for malformed os-release quotes', function (): void {
+    $role = RoleName::Vpn;
+    $script = new NodeRolePrerequisiteCommandFactory()->make($role)->input ?? '';
+    $preflight = Str::before($script, "export DEBIAN_FRONTEND=noninteractive\n");
+    $requirement = UbuntuRelease::requirementTextFor(UbuntuRelease::forRole($role));
+    $fixture = role_prerequisite_os_release_fixture("ID=\"ubuntu'\nVERSION_CODENAME=resolute\n");
+
+    try {
+        $process = new Process(['bash', '-seu', '--', $role->value, '1', $requirement, 'resolute']);
+        $process->setEnv(['PATH' => getenv('PATH') ?: '']);
+        $process->setInput(str_replace('/etc/os-release', $fixture, $preflight));
+        $process->run();
+
+        expect($process->isSuccessful())->toBeFalse()->and($process->getErrorOutput())->toContain($requirement);
+    } finally {
+        if (is_file($fixture)) {
+            unlink($fixture);
+        }
+    }
+});
+
+it('rejects adversarial os-release values before the payload sentinel', function (string $contents): void {
+    $role = RoleName::Vpn;
+    $requirement = UbuntuRelease::requirementTextFor(UbuntuRelease::forRole($role));
+    $payloadMarker = sys_get_temp_dir().'/orbit-role-payload-'.Str::uuid();
+    $fixture = role_prerequisite_os_release_fixture(str_replace('__PAYLOAD_MARKER__', $payloadMarker, $contents));
+    $mutationMarker = sys_get_temp_dir().'/orbit-role-mutation-'.Str::uuid();
+    $script = new NodeRolePrerequisiteCommandFactory()->make($role)->input ?? '';
+    $preflight = Str::before($script, "export DEBIAN_FRONTEND=noninteractive\n");
+    $process = new Process(['bash', '-seu', '--', $role->value, '1', $requirement, 'resolute']);
+    $process->setEnv(['PATH' => getenv('PATH') ?: '']);
+    $process->setInput(
+        "mutation_marker={$mutationMarker}\n"
+        .str_replace('/etc/os-release', $fixture, $preflight)
+        ."printf 'mutation-marker\n' > \"\$mutation_marker\"\n",
+    );
+
+    try {
+        $process->run();
+
+        expect($process->isSuccessful())
+            ->toBeFalse()
+            ->and($process->getOutput())
+            ->toBeEmpty()
+            ->and($process->getErrorOutput())
+            ->toBe($requirement."\n")
+            ->and(file_exists($mutationMarker))
+            ->toBeFalse()
+            ->and(file_exists($payloadMarker))
+            ->toBeFalse();
+    } finally {
+        if (is_file($fixture)) {
+            unlink($fixture);
+        }
+
+        if (is_file($mutationMarker)) {
+            unlink($mutationMarker);
+        }
+
+        if (is_file($payloadMarker)) {
+            unlink($payloadMarker);
+        }
+    }
+})->with([
+    'duplicate ID supported then supported' => "ID=ubuntu\nID=ubuntu\nVERSION_CODENAME=resolute\n",
+    'duplicate ID supported then unsupported' => "ID=ubuntu\nID=debian\nVERSION_CODENAME=resolute\n",
+    'duplicate codename supported then supported' => "ID=ubuntu\nVERSION_CODENAME=resolute\nVERSION_CODENAME=resolute\n",
+    'duplicate codename supported then unsupported' => "ID=ubuntu\nVERSION_CODENAME=resolute\nVERSION_CODENAME=jammy\n",
+    'missing codename value' => "ID=ubuntu\nVERSION_CODENAME=\n",
+    'empty ID value' => "ID=\nVERSION_CODENAME=resolute\n",
+    'mismatched ID quotes' => "ID=\"ubuntu'\nVERSION_CODENAME=resolute\n",
+    'unclosed codename quote' => "ID=ubuntu\nVERSION_CODENAME='resolute\n",
+    'command substitution' => "ID=ubuntu\nVERSION_CODENAME=\$(__PAYLOAD_MARKER__)\n",
+    'backticks' => "ID=ubuntu\nVERSION_CODENAME=`touch __PAYLOAD_MARKER__`\n",
+    'semicolon' => "ID=ubuntu\nVERSION_CODENAME=resolute;touch __PAYLOAD_MARKER__\n",
+]);
+
+it('accepts bare, single quoted, double quoted, and final unterminated supported values', function (string $contents): void {
+    $role = RoleName::Vpn;
+    $requirement = UbuntuRelease::requirementTextFor(UbuntuRelease::forRole($role));
+    $fixture = role_prerequisite_os_release_fixture($contents);
+    $mutationMarker = sys_get_temp_dir().'/orbit-role-mutation-'.Str::uuid();
+    $script = new NodeRolePrerequisiteCommandFactory()->make($role)->input ?? '';
+    $preflight = Str::before($script, "export DEBIAN_FRONTEND=noninteractive\n");
+    $process = new Process(['bash', '-seu', '--', $role->value, '1', $requirement, 'resolute']);
+    $process->setEnv(['PATH' => getenv('PATH') ?: '']);
+    $process->setInput(
+        "mutation_marker={$mutationMarker}\n"
+        .str_replace('/etc/os-release', $fixture, $preflight)
+        ."printf 'mutation-marker\n' > \"\$mutation_marker\"\n",
+    );
+
+    try {
+        $process->run();
+
+        expect($process->isSuccessful())
+            ->toBeTrue($process->getErrorOutput())
+            ->and(trim(file_get_contents($mutationMarker)))
+            ->toBe('mutation-marker');
+    } finally {
+        if (is_file($fixture)) {
+            unlink($fixture);
+        }
+
+        if (is_file($mutationMarker)) {
+            unlink($mutationMarker);
+        }
+    }
+})->with([
+    'bare values' => "ID=ubuntu\nVERSION_CODENAME=resolute\n",
+    'single quoted values' => "ID='ubuntu'\nVERSION_CODENAME='resolute'\n",
+    'double quoted values' => "ID=\"ubuntu\"\nVERSION_CODENAME=\"resolute\"\n",
+    'final unterminated value' => "ID=ubuntu\nVERSION_CODENAME=resolute",
+]);
 
 it('prepares the orbit Composer workspace with the managed path', function (RoleName $role): void {
     $script = new NodeRolePrerequisiteCommandFactory()->make($role)->input ?? '';
@@ -444,4 +642,12 @@ function role_composer_harness(?string $conflict = null, string $mode = 'success
     $second = $run();
 
     return compact('root', 'composer', 'manifest', 'owner', 'group', 'first', 'second');
+}
+
+function role_prerequisite_os_release_fixture(string $contents): string
+{
+    $path = sys_get_temp_dir().'/orbit-role-os-release-'.Str::uuid();
+    file_put_contents($path, $contents);
+
+    return $path;
 }

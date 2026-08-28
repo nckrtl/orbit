@@ -29,6 +29,7 @@ final readonly class BootstrapGatewayAction
     public function __construct(
         private AssignRoleAction $assignRole,
         private GatewayBootstrapIdentityValidator $identity,
+        private GatewayOperatingSystemGuard $operatingSystem,
         private VpnSettings $vpnSettings,
         private ProcessRunner $processes,
         private ProtectedFileWriter $files,
@@ -40,6 +41,7 @@ final readonly class BootstrapGatewayAction
     public function execute(BootstrapGatewayData $data): Node
     {
         $this->identity->validate($data);
+        $this->operatingSystem->assertSupported();
 
         $node = Node::query()->updateOrCreate(
             ['name' => $data->name],
