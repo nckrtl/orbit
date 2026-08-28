@@ -8,14 +8,17 @@ use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Tools\ToolManagerMaterializer;
 use App\Infrastructure\Processes\CommandResult;
 use App\Models\Activity;
 use App\Models\Node;
 use App\Models\NodeRole;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
+use Tests\Support\FakeToolManagerMaterializer;
 
 beforeEach(function (): void {
+    app()->instance(ToolManagerMaterializer::class, new FakeToolManagerMaterializer);
     $this->roleLifecycle = new NodeRoleApiLifecycleFake;
     app()->instance(RoleBaselineConverger::class, $this->roleLifecycle);
     app()->instance(NodeRoleDependentCleaner::class, $this->roleLifecycle);

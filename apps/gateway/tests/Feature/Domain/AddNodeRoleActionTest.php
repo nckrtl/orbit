@@ -4,17 +4,184 @@ declare(strict_types=1);
 
 use App\Actions\Nodes\AddNodeRoleAction;
 use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\RoleAssignmentException;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Tools\ToolManagerMaterializer;
+use App\Domain\Tools\ToolManagerName;
+use App\Domain\Tools\ToolManagerRegistry;
+use App\Domain\Tools\ToolManagerScopeLock;
+use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\Tools\NativeToolManagerMaterializer;
 use App\Models\Node;
 use App\Models\NodeRole;
+use App\Models\ToolManagerRecord;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Tests\Support\FakeToolManager;
+use Tests\Support\FakeToolManagerMaterializer;
 
 /** @mago-expect lint:halstead The focused group keeps each role lifecycle transition visible. */
 describe(AddNodeRoleAction::class, function (): void {
+    beforeEach(function (): void {
+        app()->instance(ToolManagerMaterializer::class, new FakeToolManagerMaterializer);
+    });
+
+    it('maps outer Composer contention without claiming the role', function (): void {
+        $baseline = new AddNodeRoleBaselineFake;
+        $materializer = new FakeToolManagerMaterializer;
+        app()->instance(RoleBaselineConverger::class, $baseline);
+        app()->instance(ToolManagerMaterializer::class, $materializer);
+        $node = add_role_node();
+        $lock = Cache::lock("orbit:tool-manager:{$node->id}:composer", 3_600);
+        expect($lock->get())->toBeTrue();
+
+        try {
+            expect(fn () => app(AddNodeRoleAction::class)->execute($node, RoleName::AppDev))
+                ->toThrow(function (NodeRoleOperationException $exception) use ($node): void {
+                    expect($exception->step)
+                        ->toBe('converge:tool-manager-lock')
+                        ->and($exception->errorCode)
+                        ->toBe('node_role.convergence_failed')
+                        ->and($exception->underlyingErrorCode)
+                        ->toBe('node_role.tool_manager_locked')
+                        ->and($exception->getMessage())
+                        ->toBe("Tool manager state is busy on node [{$node->name}].");
+                });
+        } finally {
+            $lock->release();
+        }
+
+        expect($node->roles()->exists())
+            ->toBeFalse()
+            ->and($node->toolManagers()->exists())
+            ->toBeFalse()
+            ->and($baseline->convergedRoles)
+            ->toBeEmpty()
+            ->and($materializer->requests)
+            ->toBeEmpty();
+        app(ToolManagerScopeLock::class)->run($node->id, ToolManagerName::Vp, static fn (): null => null);
+        app(ToolManagerScopeLock::class)->run($node->id, ToolManagerName::Composer, static fn (): null => null);
+    });
+
+    it('materializes app managers after baseline while the assignment is provisioning', function (): void {
+        $baseline = new AddNodeRoleBaselineFake;
+        $materializer = new FakeToolManagerMaterializer;
+        app()->instance(RoleBaselineConverger::class, $baseline);
+        app()->instance(ToolManagerMaterializer::class, $materializer);
+        $node = add_role_node();
+
+        $result = app(AddNodeRoleAction::class)->execute($node, RoleName::AppDev);
+
+        expect($baseline->observedStatuses)
+            ->toBe([LifecycleStatus::Provisioning])
+            ->and($materializer->events)
+            ->toBe(['vp,composer:provisioning'])
+            ->and($materializer->requests)
+            ->toBe([[ToolManagerName::Vp, ToolManagerName::Composer]])
+            ->and($result['assignment']->status)
+            ->toBe(LifecycleStatus::Active);
+    });
+
+    it('fails only the app role when a manager probe fails', function (ToolManagerName $manager): void {
+        $baseline = new AddNodeRoleBaselineFake;
+        $materializer = new FakeToolManagerMaterializer;
+        $materializer->failure = new NodeProvisioningException(
+            "tool-manager-{$manager->value}",
+            'node.tool_manager_probe_failed',
+            'Manager probe failed.',
+            result: new CommandResult(9, 'secret', 'secret', 31, false),
+        );
+        app()->instance(RoleBaselineConverger::class, $baseline);
+        app()->instance(ToolManagerMaterializer::class, $materializer);
+        $node = add_role_node();
+
+        expect(fn () => app(AddNodeRoleAction::class)->execute($node, RoleName::AppProd))
+            ->toThrow(function (NodeRoleOperationException $exception) use ($manager): void {
+                expect($exception->step)
+                    ->toBe("converge:tool-manager-{$manager->value}")
+                    ->and($exception->errorCode)
+                    ->toBe('node_role.convergence_failed')
+                    ->and($exception->underlyingErrorCode)
+                    ->toBe('node.tool_manager_probe_failed')
+                    ->and($exception->result?->stdout)
+                    ->toBeEmpty()
+                    ->and($exception->result?->stderr)
+                    ->toBeEmpty();
+            });
+
+        $assignment = $node->roles()->sole();
+        expect($node->refresh()->status)
+            ->toBe(LifecycleStatus::Active)
+            ->and($assignment->status)
+            ->toBe(LifecycleStatus::Failed)
+            ->and($assignment->failed_step)
+            ->toBe("converge:tool-manager-{$manager->value}")
+            ->and($assignment->error_code)
+            ->toBe('node.tool_manager_probe_failed');
+    })->with(['VP' => ToolManagerName::Vp, 'Composer' => ToolManagerName::Composer]);
+
+    it('reactivates retained app manager records when an app role is added again', function (): void {
+        $baseline = new AddNodeRoleBaselineFake;
+        $vpManager = new FakeToolManager(ToolManagerName::Vp);
+        $vpManager->requiresAppRole = true;
+        $composerManager = new FakeToolManager(ToolManagerName::Composer);
+        $composerManager->requiresAppRole = true;
+        app()->instance(RoleBaselineConverger::class, $baseline);
+        app()->instance(ToolManagerMaterializer::class, new NativeToolManagerMaterializer(
+            new ToolManagerRegistry([
+                $vpManager,
+                $composerManager,
+            ]),
+            app(ToolManagerScopeLock::class),
+        ));
+        $node = add_role_node();
+        $node->load('roles');
+        $vp = $node->toolManagers()->create([
+            'name' => ToolManagerName::Vp,
+            'status' => LifecycleStatus::Failed,
+            'installed_version' => '0.31.0',
+            'failed_step' => 'app-role',
+            'error_code' => 'tool_manager.app_role_required',
+        ]);
+        $composer = $node->toolManagers()->create([
+            'name' => ToolManagerName::Composer,
+            'status' => LifecycleStatus::Failed,
+            'installed_version' => '2.7.9',
+            'failed_step' => 'app-role',
+            'error_code' => 'tool_manager.app_role_required',
+        ]);
+
+        $result = app(AddNodeRoleAction::class)->execute($node, RoleName::AppDev);
+
+        expect($result['assignment']->status)
+            ->toBe(LifecycleStatus::Active)
+            ->and(ToolManagerRecord::query()->count())
+            ->toBe(2)
+            ->and($vp->refresh()->id)
+            ->toBe($vp->id)
+            ->and($vp->status)
+            ->toBe(LifecycleStatus::Active)
+            ->and($vp->installed_version)
+            ->toBe('1.0.0')
+            ->and($vp->failed_step)
+            ->toBeNull()
+            ->and($vp->error_code)
+            ->toBeNull()
+            ->and($composer->refresh()->id)
+            ->toBe($composer->id)
+            ->and($composer->status)
+            ->toBe(LifecycleStatus::Active)
+            ->and($composer->installed_version)
+            ->toBe('1.0.0')
+            ->and($composer->failed_step)
+            ->toBeNull()
+            ->and($composer->error_code)
+            ->toBeNull();
+    });
     it('creates and converges a mutable role outside a database transaction', function (): void {
         expect(class_exists(AddNodeRoleAction::class))->toBeTrue();
 
@@ -55,13 +222,17 @@ describe(AddNodeRoleAction::class, function (): void {
 
     it('rejects protected roles before baseline effects', function (RoleName $role): void {
         $baseline = new AddNodeRoleBaselineFake;
+        $materializer = new FakeToolManagerMaterializer;
         app()->instance(RoleBaselineConverger::class, $baseline);
+        app()->instance(ToolManagerMaterializer::class, $materializer);
         $node = add_role_node();
 
         expect(fn () => app(AddNodeRoleAction::class)->execute($node, $role))
             ->toThrow(RoleAssignmentException::class);
 
         expect($baseline->convergedRoles)
+            ->toBeEmpty()
+            ->and($materializer->requests)
             ->toBeEmpty()
             ->and($node->roles()->exists())
             ->toBeFalse();
@@ -213,6 +384,44 @@ describe(AddNodeRoleAction::class, function (): void {
             ->and($baseline->transactionLevels)
             ->toBe([$ambientTransactionLevel]);
     });
+
+    it('persists app role failure before releasing nested manager scopes', function (): void {
+        $baseline = new AddNodeRoleBaselineFake;
+        $baseline->failure = new RuntimeConvergenceException(
+            step: 'caddy-config',
+            errorCode: 'app-dev.caddy_config_failed',
+            message: 'Caddy failed.',
+        );
+        $materializer = new FakeToolManagerMaterializer;
+        $scopeLock = new StateAwareToolManagerScopeLock;
+        app()->instance(RoleBaselineConverger::class, $baseline);
+        app()->instance(ToolManagerMaterializer::class, $materializer);
+        app()->instance(ToolManagerScopeLock::class, $scopeLock);
+        $node = add_role_node();
+
+        expect(fn () => app(AddNodeRoleAction::class)->execute($node, RoleName::AppDev))
+            ->toThrow(NodeRoleOperationException::class);
+
+        expect($scopeLock->events)
+            ->toBe(['acquire:vp', 'acquire:composer', 'release:composer', 'release:vp'])
+            ->and($scopeLock->releaseStates)
+            ->toBe([
+                [
+                    'manager' => ToolManagerName::Composer,
+                    'status' => LifecycleStatus::Failed,
+                    'failed_step' => 'converge:caddy-config',
+                    'error_code' => 'app-dev.caddy_config_failed',
+                ],
+                [
+                    'manager' => ToolManagerName::Vp,
+                    'status' => LifecycleStatus::Failed,
+                    'failed_step' => 'converge:caddy-config',
+                    'error_code' => 'app-dev.caddy_config_failed',
+                ],
+            ])
+            ->and($materializer->requests)
+            ->toBeEmpty();
+    });
 });
 
 function add_role_node(
@@ -231,7 +440,6 @@ function add_role_node(
     ]);
 }
 
-/** @mago-expect lint:file-name The focused fake records role convergence boundaries. */
 final class AddNodeRoleBaselineFake implements RoleBaselineConverger
 {
     /** @var list<RoleName> */
@@ -257,4 +465,32 @@ final class AddNodeRoleBaselineFake implements RoleBaselineConverger
     }
 
     public function remove(Node $node, NodeRole $assignment, bool $purgeData): void {}
+}
+
+/** @mago-expect lint:single-class-per-file Test-local lock records persisted assignment state at release. */
+final class StateAwareToolManagerScopeLock implements ToolManagerScopeLock
+{
+    /** @var list<string> */
+    public array $events = [];
+
+    /** @var list<array{manager: ToolManagerName, status: LifecycleStatus, failed_step: ?string, error_code: ?string}> */
+    public array $releaseStates = [];
+
+    public function run(int $nodeId, ToolManagerName $manager, \Closure $callback): mixed
+    {
+        $this->events[] = 'acquire:'.$manager->value;
+
+        try {
+            return $callback();
+        } finally {
+            $assignment = NodeRole::query()->where('node_id', $nodeId)->sole()->refresh();
+            $this->releaseStates[] = [
+                'manager' => $manager,
+                'status' => $assignment->status,
+                'failed_step' => $assignment->failed_step,
+                'error_code' => $assignment->error_code,
+            ];
+            $this->events[] = 'release:'.$manager->value;
+        }
+    }
 }

@@ -6,16 +6,19 @@ use App\Domain\Nodes\NodeConverger;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Tools\ToolManagerMaterializer;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\SshHostKeyScanException;
 use App\Models\Activity;
 use App\Models\Node;
 use App\Models\NodeRole;
 use Illuminate\Support\Str;
+use Tests\Support\FakeToolManagerMaterializer;
 
 /** @mago-expect lint:halstead The API matrix keeps registration, recovery, and activity contracts together. */
 describe('POST /api/v1/nodes', function (): void {
     beforeEach(function (): void {
+        app()->instance(ToolManagerMaterializer::class, new FakeToolManagerMaterializer);
         app()->instance(RoleBaselineConverger::class, new class implements RoleBaselineConverger {
             public function converge(Node $node, NodeRole $assignment): void {}
 

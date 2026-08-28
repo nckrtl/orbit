@@ -25,6 +25,8 @@ final readonly class NodeRolePrerequisiteCommandFactory
 
             __APP_DEV_SETUP__
 
+            __APP_COMPOSER_SETUP__
+
             __APP_HOST_RUNTIME__
             BASH;
         $appDevSetup = <<<'BASH'
@@ -137,7 +139,56 @@ final readonly class NodeRolePrerequisiteCommandFactory
                 trap - EXIT
             BASH;
 
+        $composerSetup = <<<'BASH'
+                install -d -m 0755 /opt/orbit
+                install -d -m 0755 -o orbit -g orbit /opt/orbit/composer
+                if [ -L /opt/orbit/composer/composer.json ]; then
+                    printf 'Orbit Composer manifest conflict: %s\n' /opt/orbit/composer/composer.json >&2
+                    exit 1
+                elif [ -e /opt/orbit/composer/composer.json ]; then
+                    if ! test -f /opt/orbit/composer/composer.json \
+                        || ! test "$(stat -c %U:%G /opt/orbit/composer/composer.json)" = orbit:orbit; then
+                        printf 'Orbit Composer manifest conflict: %s\n' /opt/orbit/composer/composer.json >&2
+                        exit 1
+                    fi
+                else
+                    composer_manifest=$(mktemp /opt/orbit/.composer.json.XXXXXX)
+                    cleanup_composer_manifest() {
+                        [ -z "${composer_manifest:-}" ] || rm -f -- "$composer_manifest"
+                    }
+                    trap cleanup_composer_manifest EXIT
+                    printf '%s\n' '{"require":{}}' > "$composer_manifest"
+                    chmod 0644 "$composer_manifest"
+                    chown orbit:orbit "$composer_manifest"
+                    if ! ln "$composer_manifest" /opt/orbit/composer/composer.json; then
+                        if [ -L /opt/orbit/composer/composer.json ] \
+                            || ! test -f /opt/orbit/composer/composer.json \
+                            || ! test "$(stat -c %U:%G /opt/orbit/composer/composer.json)" = orbit:orbit; then
+                            rm -f -- "$composer_manifest"
+                            printf 'Orbit Composer manifest conflict: %s\n' /opt/orbit/composer/composer.json >&2
+                            exit 1
+                        fi
+                    fi
+                    rm -f -- "$composer_manifest"
+                fi
+                revalidate() {
+                    test ! -L /opt/orbit/composer/composer.json
+                    test -f /opt/orbit/composer/composer.json
+                    test "$(stat -c %U:%G /opt/orbit/composer/composer.json)" = orbit:orbit
+                }
+                revalidate
+                composer_manifest=
+                trap - EXIT
+                install -d -m 0755 -o orbit -g orbit /opt/orbit/composer/vendor/bin
+                sudo -u orbit -H env COMPOSER_HOME=/opt/orbit/composer /usr/bin/composer --version --no-ansi
+            BASH;
+
         $input = str_replace('__APP_DEV_SETUP__', $role === RoleName::AppDev ? $appDevSetup : '', $input);
+        $input = str_replace(
+            '__APP_COMPOSER_SETUP__',
+            in_array($role, [RoleName::AppDev, RoleName::AppProd], strict: true) ? $composerSetup : '',
+            $input,
+        );
         $input = str_replace(
             '__APP_HOST_RUNTIME__',
             in_array($role, [RoleName::AppDev, RoleName::AppProd], strict: true) ? $runtime : '',

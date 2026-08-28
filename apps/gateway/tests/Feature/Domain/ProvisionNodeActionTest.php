@@ -13,19 +13,106 @@ use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tools\ToolManagerMaterializer;
+use App\Domain\Tools\ToolManagerName;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\NodeRole;
+use App\Models\ToolManagerRecord;
 use Illuminate\Support\Facades\DB;
+use Tests\Support\FakeToolManagerMaterializer;
 
 /** @mago-expect lint:halstead The provisioning group keeps ordering and failure boundaries visible. */
 describe(ProvisionNodeAction::class, function (): void {
     beforeEach(function (): void {
+        app()->instance(ToolManagerMaterializer::class, new FakeToolManagerMaterializer);
         app()->instance(RoleBaselineConverger::class, new class implements RoleBaselineConverger {
             public function converge(Node $node, NodeRole $assignment): void {}
 
             public function remove(Node $node, NodeRole $assignment, bool $purgeData): void {}
         });
+    });
+
+    it('materializes only APT after base convergence and before activation', function (): void {
+        $materializer = new FakeToolManagerMaterializer;
+        app()->instance(ToolManagerMaterializer::class, $materializer);
+        app()->instance(NodeConverger::class, new class($materializer) implements NodeConverger {
+            public function __construct(
+                private FakeToolManagerMaterializer $materializer,
+            ) {}
+
+            public function converge(Node $node, ?string $expectedSshHostFingerprint = null): void
+            {
+                $this->materializer->events[] = "base:{$node->status->value}";
+            }
+        });
+
+        $node = app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
+            name: 'apt-host',
+            publicSshHost: '192.0.2.91',
+            architecture: 'x86_64',
+            expectedSshHostFingerprint: 'SHA256:pinned',
+        ));
+
+        expect($materializer->events)
+            ->toBe(['base:provisioning', 'apt:provisioning'])
+            ->and($materializer->requests)
+            ->toBe([[ToolManagerName::Apt]])
+            ->and($node->status)
+            ->toBe(LifecycleStatus::Active);
+    });
+
+    it('does not materialize managers after base convergence fails', function (): void {
+        $materializer = new FakeToolManagerMaterializer;
+        app()->instance(ToolManagerMaterializer::class, $materializer);
+        app()->instance(NodeConverger::class, new class implements NodeConverger {
+            public function converge(Node $node, ?string $expectedSshHostFingerprint = null): void
+            {
+                throw new NodeProvisioningException('base-packages', 'node.package_install_failed', 'Base failed.');
+            }
+        });
+
+        expect(fn () => app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
+            name: 'base-failure',
+            publicSshHost: '192.0.2.92',
+            architecture: 'x86_64',
+            expectedSshHostFingerprint: 'SHA256:pinned',
+        )))
+            ->toThrow(NodeProvisioningException::class);
+
+        expect($materializer->requests)
+            ->toBeEmpty()
+            ->and(ToolManagerRecord::query()->count())
+            ->toBe(0);
+    });
+
+    it('marks the node failed when the APT probe fails', function (): void {
+        $materializer = new FakeToolManagerMaterializer;
+        $materializer->failure = new NodeProvisioningException(
+            'tool-manager-apt',
+            'node.tool_manager_probe_failed',
+            'Probe failed.',
+        );
+        app()->instance(ToolManagerMaterializer::class, $materializer);
+        app()->instance(NodeConverger::class, new class implements NodeConverger {
+            public function converge(Node $node, ?string $expectedSshHostFingerprint = null): void {}
+        });
+
+        expect(fn () => app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
+            name: 'probe-failure',
+            publicSshHost: '192.0.2.93',
+            architecture: 'x86_64',
+            expectedSshHostFingerprint: 'SHA256:pinned',
+        )))
+            ->toThrow(NodeProvisioningException::class);
+
+        $node = Node::query()->where('name', 'probe-failure')->sole();
+        expect($node->status)
+            ->toBe(LifecycleStatus::Failed)
+            ->and($node->failed_step)
+            ->toBe('tool-manager-apt')
+            ->and($node->error_code)
+            ->toBe('node.tool_manager_probe_failed');
     });
 
     it('activates a node after its requested roles converge', function (): void {
@@ -214,6 +301,8 @@ describe(ProvisionNodeAction::class, function (): void {
     });
 
     it('preserves established node identity and connection fields during safe reprovision', function (): void {
+        $materializer = new FakeToolManagerMaterializer;
+        app()->instance(ToolManagerMaterializer::class, $materializer);
         $converger = new class implements NodeConverger {
             /** @var array<string, mixed> */
             public array $observed = [];
@@ -264,7 +353,9 @@ describe(ProvisionNodeAction::class, function (): void {
             ->and($node->tld)
             ->toBe('app-dev.orbit')
             ->and($node->roles()->sole()->status)
-            ->toBe(LifecycleStatus::Active);
+            ->toBe(LifecycleStatus::Active)
+            ->and($materializer->requests)
+            ->toBe([[ToolManagerName::Apt]]);
     });
 
     it('rejects a TLD change while the node owns instances', function (): void {

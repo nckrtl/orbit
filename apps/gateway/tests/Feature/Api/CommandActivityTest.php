@@ -6,11 +6,13 @@ use App\Domain\Nodes\NodeRoleDependencySet;
 use App\Domain\Nodes\NodeRoleDependentCleaner;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Tools\ToolManagerMaterializer;
 use App\Models\Activity;
 use App\Models\App as OrbitApp;
 use App\Models\Node;
 use App\Models\NodeRole;
 use Illuminate\Support\Str;
+use Tests\Support\FakeToolManagerMaterializer;
 
 it('records one completed activity for each API command', function (): void {
     $requestId = (string) Str::uuid();
@@ -243,6 +245,7 @@ it('records node access add and remove commands against the serving node and pre
 });
 
 it('records node role commands against the node with bounded inputs and stable failures', function (): void {
+    app()->instance(ToolManagerMaterializer::class, new FakeToolManagerMaterializer);
     $gateway = $this->markAsGateway(Node::query()->create([
         'name' => 'role-activity-gateway',
         'status' => LifecycleStatus::Active,

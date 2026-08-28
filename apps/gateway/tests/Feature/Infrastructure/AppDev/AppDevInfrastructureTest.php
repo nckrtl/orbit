@@ -63,6 +63,7 @@ it('renders isolated pools and private Caddy listeners for every active scope', 
             '[orbit-workspace-1]',
             'listen = /run/php/orbit-workspace-1.sock',
             'listen.group = caddy',
+            'env[PATH] = /opt/orbit/vite-plus/bin:/opt/orbit/composer/vendor/bin:/usr/local/bin:/usr/bin:/bin',
         )
         ->and($caddy)
         ->toContain(
