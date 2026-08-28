@@ -11,6 +11,40 @@ Laravel 13 control plane for Orbit.
 - Do not add queues, agents, a UI, or Docker orchestration.
 - Enforce binary directed node access at the HTTP boundary. One access edge permits all commands for its serving node. The active Gateway peer is implicit authority, and access to the Gateway is fleet-wide. Do not add granular permissions, presets, wildcards, or permission compatibility code.
 
+## Track tool intent, not host inventory
+
+Tool rows store managed intent, not observed host inventory.
+The tool identity is node, manager, and package. Keep managers as protected
+node prerequisites. Do not scan migrations to adopt existing packages or
+create rows for private bootstrap prerequisites.
+
+## Keep tool input narrow
+
+Tool install input is limited to node_id, manager, package, and version_constraint.
+Do not expose manager argv, scripts, repositories, environment variables, or options.
+Keep manager policy in the Gateway; the SDK and CLI only transport and render
+the typed contract.
+
+## Use the closed tool manager registry
+
+The closed tool manager registry contains apt, vp, and composer.
+Use Vite+ global packages instead of exposing npm as a manager. A nullable
+SemVer constraint gates the manager's normal candidate before mutation; it
+never selects or downgrades a version.
+
+Never persist or return raw manager stdout or stderr. Reject unmanaged package
+adoption, protected removal, and unsafe shared-scope removal.
+APT removal must remove only the exact recorded package. VP and Composer
+commands target the exact root package in their Orbit-owned shared scopes.
+
+VP and Composer are available only while an app-dev or app-prod assignment is
+provisioning or active. Public install and update require an active app role.
+Block last-app-role removal while non-protected VP or Composer tool intent
+exists; require explicit tool removal first. Successful last-app-role removal
+retains protected manager rows but marks VP and Composer unavailable until a
+later role convergence reactivates them. Never remove packages or tool intent
+implicitly from role removal.
+
 ## Required Guidance Bootstrap
 
 `AGENTS.md`, `.ai/guidelines`, `.ai/rules`, `.ai/skills`, `.agents/skills`,

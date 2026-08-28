@@ -11,3 +11,10 @@ Keep controllers thin. Use Form Requests and typed data objects at the boundary.
 
 ## Enforce binary node access
 Enforce binary directed node access at the HTTP boundary. One access edge permits all commands for its serving node. The active Gateway peer is implicit authority, and access to the Gateway is fleet-wide. Do not add granular permissions, presets, wildcards, or permission compatibility code.
+
+## Keep tool input narrow
+
+Tool install input is limited to node_id, manager, package, and version_constraint.
+Do not expose manager argv, scripts, repositories, environment variables, or options.
+Keep manager policy in the Gateway; the SDK and CLI only transport and render
+the typed contract.
