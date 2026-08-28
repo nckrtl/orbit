@@ -11,6 +11,7 @@ use App\Domain\Nodes\NodeRoleValidationException;
 use App\Domain\Nodes\RoleAssignmentException;
 use App\Domain\Processes\ProcessOperationException;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tools\ToolOperationException;
 use App\Http\Middleware\EnsureRequestId;
 use App\Http\Middleware\RecordCommandActivity;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
@@ -215,6 +216,28 @@ return Application::configure(basePath: dirname(__DIR__))
                             'code' => $exception->errorCode,
                             'message' => $exception->getMessage(),
                             'details' => ['step' => $exception->step],
+                        ],
+                    ], $exception->status)
+                    ->header('X-Orbit-Request-Id', is_string($requestId) ? $requestId : '');
+            });
+            $exceptions->render(function (ToolOperationException $exception, Request $request): JsonResponse {
+                $request->attributes->set('orbit.error_code', $exception->errorCode);
+                $request->attributes->set('orbit.tool_exception', $exception);
+                $requestId = $request->attributes->get('orbit.request_id');
+
+                if (! is_string($requestId) || $requestId === '') {
+                    $requestId = $request->header('X-Orbit-Request-Id', '');
+                }
+
+                return response()
+                    ->json([
+                        'error' => [
+                            'code' => $exception->errorCode,
+                            'message' => $exception->getMessage(),
+                            'details' => [
+                                'step' => $exception->step,
+                                'outcome' => $exception->outcome->value,
+                            ],
                         ],
                     ], $exception->status)
                     ->header('X-Orbit-Request-Id', is_string($requestId) ? $requestId : '');

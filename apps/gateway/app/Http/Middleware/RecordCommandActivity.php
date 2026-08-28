@@ -14,6 +14,7 @@ use App\Domain\Nodes\RoleAssignmentException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Processes\ProcessOperationException;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tools\ToolOperationException;
 use App\Http\Requests\TopLevelJsonObjectInspector;
 use App\Infrastructure\Activity\CommandActivityInputSanitizer;
 use App\Infrastructure\Activity\CommandActivityTargetResolver;
@@ -65,7 +66,7 @@ final readonly class RecordCommandActivity
         try {
             /** @var Response $response */
             $response = $next($request);
-            $this->complete($activity, $request, $response->getStatusCode(), $startedAt);
+            $this->complete($activity, $request, $response, $startedAt);
 
             return $response;
         } catch (Throwable $exception) {
@@ -82,14 +83,15 @@ final readonly class RecordCommandActivity
         $command = $request->route()->getName();
         $callerIp = $this->callerIp($request);
 
+        $toolCommand = str_starts_with((string) $command, 'tool:');
+
         return Activity::query()->create([
             'log_name' => 'commands',
             'description' => is_string($command) ? $command : 'unknown',
             'event' => 'command',
             'properties' => [
-                'method' => $request->method(),
-                'path' => $request->path(),
-                'input' => $this->activityInput($request),
+                ...($toolCommand ? [] : ['method' => $request->method(), 'path' => $request->path()]),
+                'input' => $toolCommand ? [] : $this->activityInput($request),
             ],
             'request_id' => is_string($requestId) ? $requestId : '',
             'command' => is_string($command) ? $command : 'unknown',
@@ -100,10 +102,16 @@ final readonly class RecordCommandActivity
     }
 
     /** @mago-expect analysis:mixed-assignment Request attributes are an untyped boundary. */
-    private function complete(Activity $activity, Request $request, int $statusCode, float $startedAt): void
-    {
+    private function complete(
+        Activity $activity,
+        Request $request,
+        Response $response,
+        float $startedAt,
+    ): void {
+        $statusCode = $response->getStatusCode();
         $requestErrorCode = $request->attributes->get('orbit.error_code');
         $commandResult = $request->attributes->get('orbit.command_result');
+        $toolException = $request->attributes->get('orbit.tool_exception');
         $errorCode = null;
 
         if ($statusCode >= 400) {
@@ -116,10 +124,28 @@ final readonly class RecordCommandActivity
             'error_code' => $errorCode,
         ];
 
+        $toolActivity = $request->attributes->get('orbit.tool_activity');
+
+        if (is_array($toolActivity)) {
+            $updates['properties'] = [
+                ...($activity->properties?->toArray() ?? []),
+                'tool' => $this->inputSanitizer->sanitizeProperties($toolActivity),
+            ];
+        }
+
+        if ($toolException instanceof ToolOperationException) {
+            $updates['properties'] = [
+                ...($activity->properties?->toArray() ?? []),
+                'tool' => $this->inputSanitizer->sanitizeProperties($this->toolProjection($toolException)),
+            ];
+            $commandResult = null;
+        }
+
         $activity->update($this->withTarget(
             $activity,
             $request,
             $this->withResult($activity, $request, $updates, $commandResult),
+            $toolException instanceof ToolOperationException ? $toolException : null,
         ));
     }
 
@@ -144,6 +170,7 @@ final readonly class RecordCommandActivity
                 $exception instanceof ResourceOperationException => $exception->errorCode,
                 $exception instanceof NodeRoleOperationException => $exception->errorCode,
                 $exception instanceof RoleAssignmentException => 'node.role_conflict',
+                $exception instanceof ToolOperationException => $exception->errorCode,
                 $exception instanceof ModelNotFoundException, $exception instanceof NotFoundHttpException => 'http.404',
                 default => 'gateway.unhandled',
             },
@@ -158,11 +185,34 @@ final readonly class RecordCommandActivity
             default => null,
         };
 
+        if ($exception instanceof ToolOperationException) {
+            $updates['properties'] = [
+                ...($activity->properties?->toArray() ?? []),
+                'tool' => $this->inputSanitizer->sanitizeProperties($this->toolProjection($exception)),
+            ];
+            $result = null;
+        }
+
         $activity->update($this->withTarget(
             $activity,
             $request,
             $this->withResult($activity, $request, $updates, $result),
+            $exception instanceof ToolOperationException ? $exception : null,
         ));
+    }
+
+    /** @return array<string, mixed> */
+    private function toolProjection(ToolOperationException $exception): array
+    {
+        return [
+            'node_id' => $exception->nodeId,
+            'manager' => $exception->manager,
+            'package' => $exception->package,
+            'operation' => $exception->step,
+            'outcome' => $exception->outcome->value,
+            'version_constraint' => $exception->versionConstraint,
+            'error_code' => $exception->errorCode,
+        ];
     }
 
     /**
@@ -284,9 +334,13 @@ final readonly class RecordCommandActivity
      *
      * @mago-expect analysis:mixed-assignment Request attributes are an untyped transport boundary.
      */
-    private function withTarget(Activity $activity, Request $request, array $updates): array
-    {
-        $target = $this->targetResolver->resolve($request);
+    private function withTarget(
+        Activity $activity,
+        Request $request,
+        array $updates,
+        ?ToolOperationException $exception = null,
+    ): array {
+        $target = $this->targetResolver->resolve($request, $exception);
 
         if ($target !== null) {
             $updates = [...$updates, ...$target];

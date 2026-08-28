@@ -6,12 +6,21 @@ use App\Domain\Nodes\NodeRoleDependencySet;
 use App\Domain\Nodes\NodeRoleDependentCleaner;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Tools\ToolManagerException;
 use App\Domain\Tools\ToolManagerMaterializer;
+use App\Domain\Tools\ToolManagerName;
+use App\Domain\Tools\ToolManagerRegistry;
+use App\Domain\Tools\ToolRemovalPlan;
+use App\Domain\Tools\ToolStatus;
+use App\Infrastructure\Processes\CommandResult;
 use App\Models\Activity;
 use App\Models\App as OrbitApp;
 use App\Models\Node;
 use App\Models\NodeRole;
+use App\Models\Tool;
+use App\Models\ToolManagerRecord;
 use Illuminate\Support\Str;
+use Tests\Support\FakeToolManager;
 use Tests\Support\FakeToolManagerMaterializer;
 
 it('records one completed activity for each API command', function (): void {
@@ -332,3 +341,541 @@ final class CommandActivityNodeRoleLifecycleFake implements RoleBaselineConverge
 
     public function clean(NodeRoleDependencySet $dependencies): void {}
 }
+
+it('records tool manager and tool lists with the node target and no tool subject', function (): void {
+    $node = Node::query()->create([
+        'name' => 'tool-list-node',
+        'status' => LifecycleStatus::Active,
+        'public_ssh_host' => '192.0.2.30',
+        'wireguard_address' => '10.44.0.30',
+    ]);
+    $this->markAsGateway($node);
+    foreach ([
+        ['tool:manager:list', '/api/v1/tool-managers?node_id='.$node->id],
+        ['tool:list', '/api/v1/tools?node_id='.$node->id],
+    ] as [$command, $url]) {
+        $requestId = (string) Str::uuid();
+        $this
+            ->withServerVariables(['REMOTE_ADDR' => $node->wireguard_address])
+            ->withHeader('X-Orbit-Request-Id', $requestId)
+            ->getJson($url);
+        $activity = Activity::query()->where('request_id', $requestId)->sole();
+        expect($activity->command)
+            ->toBe($command)
+            ->and($activity->target_node_id)
+            ->toBe($node->id)
+            ->and($activity->subject_type)
+            ->toBeNull();
+    }
+});
+
+it('records tool show with the tool subject and node target', function (): void {
+    $node = Node::query()->create([
+        'name' => 'tool-node',
+        'status' => LifecycleStatus::Active,
+        'public_ssh_host' => '192.0.2.31',
+        'wireguard_address' => '10.44.0.31',
+    ]);
+    $this->markAsGateway($node);
+    $manager = ToolManagerRecord::query()->create([
+        'node_id' => $node->id,
+        'name' => ToolManagerName::Apt,
+        'status' => LifecycleStatus::Active,
+    ]);
+    $tool = Tool::query()->create([
+        'node_id' => $node->id,
+        'tool_manager_id' => $manager->id,
+        'package' => 'jq',
+        'status' => ToolStatus::Installed,
+    ]);
+    $requestId = (string) Str::uuid();
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $node->wireguard_address])
+        ->withHeader('X-Orbit-Request-Id', $requestId)
+        ->getJson("/api/v1/tools/{$tool->id}");
+
+    $activity = Activity::query()->where('request_id', $requestId)->sole();
+
+    expect($activity->command)
+        ->toBe('tool:show')
+        ->and($activity->target_node_id)
+        ->toBe($node->id)
+        ->and($activity->subject_type)
+        ->toBe(Tool::class)
+        ->and($activity->subject_id)
+        ->toBe($tool->id);
+});
+
+it('records successful install with the created tool and an exact safe projection', function (): void {
+    $node = Node::query()->create([
+        'name' => 'tool-install-node',
+        'status' => LifecycleStatus::Active,
+        'public_ssh_host' => '192.0.2.33',
+        'wireguard_address' => '10.44.0.33',
+    ]);
+    $this->markAsGateway($node);
+    $manager = ToolManagerRecord::query()->create([
+        'node_id' => $node->id,
+        'name' => ToolManagerName::Apt,
+        'status' => LifecycleStatus::Active,
+    ]);
+    $fake = new Tests\Support\FakeToolManager;
+    $fake->installedVersions = [null, '1.2.3'];
+    $fake->candidateVersions = ['1.2.3'];
+    app()->instance(ToolManagerRegistry::class, new ToolManagerRegistry([$fake]));
+    $requestId = (string) Str::uuid();
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $node->wireguard_address])
+        ->withHeader('X-Orbit-Request-Id', $requestId)
+        ->postJson('/api/v1/tools', [
+            'node_id' => $node->id,
+            'manager' => 'apt',
+            'package' => 'jq',
+            'version_constraint' => '^1.0',
+        ])
+        ->assertSuccessful();
+    $activity = Activity::query()->where('request_id', $requestId)->sole();
+    $tool = Tool::query()->where('node_id', $node->id)->sole();
+    expect($activity->subject_type)
+        ->toBe(Tool::class)
+        ->and($activity->subject_id)
+        ->toBe($tool->id)
+        ->and($activity->target_node_id)
+        ->toBe($node->id)
+        ->and($activity->properties?->get('tool'))
+        ->toBe([
+            'node_id' => $node->id,
+            'manager' => 'apt',
+            'package' => 'jq',
+            'operation' => 'install',
+            'outcome' => 'applied',
+            'version_constraint' => '^1.0',
+        ])
+        ->and($activity->properties?->get('input'))
+        ->toBe([]);
+});
+
+it('records pre-row tool failures safely without substituting the node subject', function (): void {
+    $node = Node::query()->create([
+        'name' => 'tool-failure-node',
+        'status' => LifecycleStatus::Active,
+        'public_ssh_host' => '192.0.2.34',
+        'wireguard_address' => '10.44.0.34',
+    ]);
+    $this->markAsGateway($node);
+    app()->instance(ToolManagerRegistry::class, new ToolManagerRegistry([new Tests\Support\FakeToolManager]));
+    $requestId = (string) Str::uuid();
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $node->wireguard_address])
+        ->withHeader('X-Orbit-Request-Id', $requestId)
+        ->postJson('/api/v1/tools', ['node_id' => $node->id, 'manager' => 'unsupported', 'package' => 'jq'])
+        ->assertStatus(422);
+    $activity = Activity::query()->where('request_id', $requestId)->sole();
+    expect($activity->status)
+        ->toBe('failed')
+        ->and($activity->error_code)
+        ->toBe('tool.manager_unsupported')
+        ->and($activity->subject_type)
+        ->toBeNull()
+        ->and($activity->subject_id)
+        ->toBeNull()
+        ->and($activity->target_node_id)
+        ->toBe($node->id)
+        ->and($activity->properties?->get('tool'))
+        ->toBe([
+            'node_id' => $node->id,
+            'manager' => 'unsupported',
+            'package' => 'jq',
+            'operation' => 'install',
+            'outcome' => 'manager_failed',
+            'version_constraint' => null,
+            'error_code' => 'tool.manager_unsupported',
+        ]);
+});
+
+it('records retained failed tools as subjects with safe outcomes', function (): void {
+    $node = Node::query()->create([
+        'name' => 'tool-retained-node',
+        'status' => LifecycleStatus::Active,
+        'public_ssh_host' => '192.0.2.35',
+        'wireguard_address' => '10.44.0.35',
+    ]);
+    $this->markAsGateway($node);
+    ToolManagerRecord::query()->create([
+        'node_id' => $node->id,
+        'name' => ToolManagerName::Apt,
+        'status' => LifecycleStatus::Active,
+    ]);
+    $otherNode = Node::query()->create([
+        'name' => 'other-tool-retained-node',
+        'status' => LifecycleStatus::Active,
+        'public_ssh_host' => '192.0.2.45',
+        'wireguard_address' => '10.44.0.45',
+    ]);
+    $otherManager = ToolManagerRecord::query()->create([
+        'node_id' => $otherNode->id,
+        'name' => ToolManagerName::Apt,
+        'status' => LifecycleStatus::Active,
+    ]);
+    $otherTool = Tool::query()->create([
+        'node_id' => $otherNode->id,
+        'tool_manager_id' => $otherManager->id,
+        'package' => 'jq',
+        'status' => ToolStatus::Installed,
+    ]);
+    $fake = new Tests\Support\FakeToolManager;
+    $fake->failures['install'] = [new ToolManagerException('install', 'RAW_EXCEPTION_SENTINEL')];
+    app()->instance(ToolManagerRegistry::class, new ToolManagerRegistry([$fake]));
+    $requestId = (string) Str::uuid();
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $node->wireguard_address])
+        ->withHeader('X-Orbit-Request-Id', $requestId)
+        ->postJson('/api/v1/tools', ['node_id' => $node->id, 'manager' => 'apt', 'package' => 'jq'])
+        ->assertStatus(502);
+    $activity = Activity::query()->where('request_id', $requestId)->sole();
+    $tool = Tool::query()->where('node_id', $node->id)->sole();
+    expect($tool->status)
+        ->toBe(ToolStatus::Failed)
+        ->and($activity->subject_type)
+        ->toBe(Tool::class)
+        ->and($activity->subject_id)
+        ->toBe($tool->id)
+        ->not->toBe($otherTool->id)->and($activity->target_node_id)->toBe($node->id)->and($activity->properties?->get(
+            'tool',
+        ))->toBe([
+            'node_id' => $node->id,
+            'manager' => 'apt',
+            'package' => 'jq',
+            'operation' => 'install',
+            'outcome' => 'manager_failed',
+            'version_constraint' => null,
+            'error_code' => 'tool.install_failed',
+        ])->and(json_encode($activity->toArray()))
+        ->not->toContain('RAW_EXCEPTION_SENTINEL');
+});
+
+it('does not persist command result data from manager failures', function (): void {
+    $node = Node::query()->create([
+        'name' => 'tool-redaction-node',
+        'status' => LifecycleStatus::Active,
+        'public_ssh_host' => '192.0.2.36',
+        'wireguard_address' => '10.44.0.36',
+    ]);
+    $this->markAsGateway($node);
+    ToolManagerRecord::query()->create([
+        'node_id' => $node->id,
+        'name' => ToolManagerName::Apt,
+        'status' => LifecycleStatus::Active,
+    ]);
+    $fake = new Tests\Support\FakeToolManager;
+    $fake->failures['install'] = [new ToolManagerException(
+        'install',
+        'EXCEPTION_SENTINEL',
+        new CommandResult(7, 'STDOUT_SENTINEL', 'STDERR_SENTINEL', 1, true),
+    )];
+    app()->instance(ToolManagerRegistry::class, new ToolManagerRegistry([$fake]));
+    $requestId = (string) Str::uuid();
+    $response = $this
+        ->withServerVariables(['REMOTE_ADDR' => $node->wireguard_address])
+        ->withHeader('X-Orbit-Request-Id', $requestId)
+        ->postJson('/api/v1/tools', ['node_id' => $node->id, 'manager' => 'apt', 'package' => 'jq'])
+        ->assertStatus(502);
+    $activity = Activity::query()->where('request_id', $requestId)->sole();
+    $json = json_encode($activity->toArray()).$response->getContent();
+    expect($json)
+        ->not->toContain(
+            'STDOUT_SENTINEL',
+            'STDERR_SENTINEL',
+            'EXCEPTION_SENTINEL',
+        )->and($activity->exit_code)->toBeNull()->and($activity->properties?->toArray())
+        ->not->toHaveKeys(['stdout', 'stderr', 'argv', 'path', 'url', 'command_result', 'output_truncated']);
+});
+
+it('records a successful remove against the deleted tool snapshot', function (): void {
+    $node = Node::query()->create([
+        'name' => 'tool-remove-node',
+        'status' => LifecycleStatus::Active,
+        'public_ssh_host' => '192.0.2.37',
+        'wireguard_address' => '10.44.0.37',
+    ]);
+    $this->markAsGateway($node);
+    $manager = ToolManagerRecord::query()->create([
+        'node_id' => $node->id,
+        'name' => ToolManagerName::Apt,
+        'status' => LifecycleStatus::Active,
+    ]);
+    $tool = Tool::query()->create([
+        'node_id' => $node->id,
+        'tool_manager_id' => $manager->id,
+        'package' => 'jq',
+        'status' => ToolStatus::Installed,
+    ]);
+    $originalId = $tool->id;
+    $fake = new FakeToolManager;
+    $fake->removalPlan = new ToolRemovalPlan(['jq']);
+    $fake->installedVersions = ['1.0.0', null];
+    app()->instance(ToolManagerRegistry::class, new ToolManagerRegistry([$fake]));
+    $requestId = (string) Str::uuid();
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $node->wireguard_address])
+        ->withHeader('X-Orbit-Request-Id', $requestId)
+        ->deleteJson("/api/v1/tools/{$originalId}")
+        ->assertOk();
+
+    $activity = Activity::query()->where('request_id', $requestId)->sole();
+    expect(Tool::query()->find($originalId))
+        ->toBeNull()
+        ->and($activity->command)
+        ->toBe('tool:remove')
+        ->and($activity->subject_type)
+        ->toBe(Tool::class)
+        ->and($activity->subject_id)
+        ->toBe($originalId)
+        ->and($activity->target_node_id)
+        ->toBe($node->id)
+        ->and($activity->properties?->get('tool'))
+        ->toBe([
+            'node_id' => $node->id,
+            'manager' => 'apt',
+            'package' => 'jq',
+            'operation' => 'remove',
+            'outcome' => 'applied',
+            'version_constraint' => null,
+        ])
+        ->and($activity->properties?->get('tool'))
+        ->not->toHaveKey('error_code');
+});
+
+it('redacts unsupported values from invalid tool request activity', function (): void {
+    $node = Node::query()->create([
+        'name' => 'tool-validation-node',
+        'status' => LifecycleStatus::Active,
+        'public_ssh_host' => '192.0.2.38',
+        'wireguard_address' => '10.44.0.38',
+    ]);
+    $this->markAsGateway($node);
+    $requestId = (string) Str::uuid();
+    $sentinel = 'RAW_TOOL_VALIDATION_SENTINEL';
+
+    $response = $this
+        ->withServerVariables(['REMOTE_ADDR' => $node->wireguard_address])
+        ->call(
+            'POST',
+            '/api/v1/tools',
+            [],
+            [],
+            [],
+            [
+                'CONTENT_TYPE' => 'application/json',
+                'HTTP_X_ORBIT_REQUEST_ID' => $requestId,
+            ],
+            json_encode([
+                'node_id' => $node->id,
+                'manager' => 'apt',
+                'package' => 'jq',
+                'unsupported' => $sentinel,
+            ]),
+        );
+    $response->assertUnprocessable();
+    $activity = Activity::query()->where('request_id', $requestId)->sole();
+    expect($response->status())
+        ->toBe(422)
+        ->and($activity->target_node_id)
+        ->toBe($node->id)
+        ->and($activity->subject_type)
+        ->toBeNull()
+        ->and($activity->properties?->get('input'))
+        ->toBe([])
+        ->and($activity->exit_code)
+        ->toBeNull()
+        ->and($activity->properties?->toArray())
+        ->not->toHaveKeys(['stdout', 'stderr', 'output_truncated'])->and($response->getContent())
+        ->not->toContain($sentinel)->and(json_encode($activity->toArray()))
+        ->not->toContain($sentinel);
+});
+
+it('records tool update outcomes with an exact safe projection', function (
+    string $outcome,
+    string $candidateVersion,
+    ?string $installedVersion,
+): void {
+    $node = Node::query()->create([
+        'name' => 'tool-update-node-'.$outcome,
+        'status' => LifecycleStatus::Active,
+        'public_ssh_host' => '192.0.2.39',
+        'wireguard_address' => '10.44.0.39',
+    ]);
+    $this->markAsGateway($node);
+    $manager = ToolManagerRecord::query()->create([
+        'node_id' => $node->id,
+        'name' => ToolManagerName::Apt,
+        'status' => LifecycleStatus::Active,
+    ]);
+    $tool = Tool::query()->create([
+        'node_id' => $node->id,
+        'tool_manager_id' => $manager->id,
+        'package' => 'jq',
+        'version_constraint' => '^1.0',
+        'status' => ToolStatus::Installed,
+        'installed_version' => '1.0.0',
+    ]);
+    $fake = new FakeToolManager;
+    $fake->installedVersions = $installedVersion === null
+        ? ['1.0.0']
+        : ['1.0.0', $installedVersion];
+    $fake->candidateVersions = [$candidateVersion];
+    app()->instance(ToolManagerRegistry::class, new ToolManagerRegistry([$fake]));
+    $requestId = (string) Str::uuid();
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $node->wireguard_address])
+        ->withHeader('X-Orbit-Request-Id', $requestId)
+        ->postJson("/api/v1/tools/{$tool->id}/update")
+        ->assertOk()
+        ->assertJsonPath('data.outcome', $outcome);
+
+    $activity = Activity::query()->where('request_id', $requestId)->sole();
+
+    expect($activity->subject_type)
+        ->toBe(Tool::class)
+        ->and($activity->subject_id)
+        ->toBe($tool->id)
+        ->and($activity->target_node_id)
+        ->toBe($node->id)
+        ->and($activity->properties?->get('input'))
+        ->toBe([])
+        ->and($activity->properties?->get('tool'))
+        ->toBe([
+            'node_id' => $node->id,
+            'manager' => 'apt',
+            'package' => 'jq',
+            'operation' => 'update',
+            'outcome' => $outcome,
+            'version_constraint' => '^1.0',
+        ]);
+})->with([
+    'applied' => ['applied', '1.1.0', '1.1.0'],
+    'unchanged' => ['unchanged', '1.0.0', '1.0.0'],
+    'blocked by constraint' => ['blocked_by_constraint', '2.0.0', null],
+]);
+
+it('keeps failed update tools retained and redacted', function (): void {
+    $node = Node::query()->create([
+        'name' => 'tool-update-failure-node',
+        'status' => LifecycleStatus::Active,
+        'public_ssh_host' => '192.0.2.40',
+        'wireguard_address' => '10.44.0.40',
+    ]);
+    $this->markAsGateway($node);
+    $manager = ToolManagerRecord::query()->create([
+        'node_id' => $node->id,
+        'name' => ToolManagerName::Apt,
+        'status' => LifecycleStatus::Active,
+    ]);
+    $tool = Tool::query()->create([
+        'node_id' => $node->id,
+        'tool_manager_id' => $manager->id,
+        'package' => 'jq',
+        'status' => ToolStatus::Installed,
+        'installed_version' => '1.0.0',
+    ]);
+    $fake = new FakeToolManager;
+    $fake->installedVersions = ['1.0.0'];
+    $fake->failures['update'] = [new ToolManagerException('update', 'UPDATE_EXCEPTION_SENTINEL')];
+    app()->instance(ToolManagerRegistry::class, new ToolManagerRegistry([$fake]));
+    $requestId = (string) Str::uuid();
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $node->wireguard_address])
+        ->withHeader('X-Orbit-Request-Id', $requestId)
+        ->postJson("/api/v1/tools/{$tool->id}/update")
+        ->assertStatus(502)
+        ->assertJsonPath('error.code', 'tool.update_failed');
+
+    $activity = Activity::query()->where('request_id', $requestId)->sole();
+
+    expect($activity->status)
+        ->toBe('failed')
+        ->and($activity->error_code)
+        ->toBe('tool.update_failed')
+        ->and($activity->subject_id)
+        ->toBe($tool->id)
+        ->and($activity->target_node_id)
+        ->toBe($node->id)
+        ->and($activity->properties?->get('tool'))
+        ->toBe([
+            'node_id' => $node->id,
+            'manager' => 'apt',
+            'package' => 'jq',
+            'operation' => 'update',
+            'outcome' => 'manager_failed',
+            'version_constraint' => null,
+            'error_code' => 'tool.update_failed',
+        ])
+        ->and($activity->properties?->toArray())
+        ->not->toHaveKeys(['stdout', 'stderr', 'argv', 'path', 'url'])->and(json_encode($activity->toArray()))
+        ->not->toContain('UPDATE_EXCEPTION_SENTINEL');
+});
+
+it('keeps failed remove tools retained and redacted', function (): void {
+    $node = Node::query()->create([
+        'name' => 'tool-remove-failure-node',
+        'status' => LifecycleStatus::Active,
+        'public_ssh_host' => '192.0.2.41',
+        'wireguard_address' => '10.44.0.41',
+    ]);
+    $this->markAsGateway($node);
+    $manager = ToolManagerRecord::query()->create([
+        'node_id' => $node->id,
+        'name' => ToolManagerName::Apt,
+        'status' => LifecycleStatus::Active,
+    ]);
+    $tool = Tool::query()->create([
+        'node_id' => $node->id,
+        'tool_manager_id' => $manager->id,
+        'package' => 'jq',
+        'status' => ToolStatus::Installed,
+        'installed_version' => '1.0.0',
+    ]);
+    $fake = new FakeToolManager;
+    $fake->installedVersions = ['1.0.0'];
+    $fake->removalPlan = new ToolRemovalPlan(['jq']);
+    $fake->failures['remove'] = [new ToolManagerException('remove', 'REMOVE_EXCEPTION_SENTINEL')];
+    app()->instance(ToolManagerRegistry::class, new ToolManagerRegistry([$fake]));
+    $requestId = (string) Str::uuid();
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $node->wireguard_address])
+        ->withHeader('X-Orbit-Request-Id', $requestId)
+        ->deleteJson("/api/v1/tools/{$tool->id}")
+        ->assertStatus(502)
+        ->assertJsonPath('error.code', 'tool.remove_failed');
+
+    $activity = Activity::query()->where('request_id', $requestId)->sole();
+
+    $this->assertModelExists($tool);
+    expect($activity->status)
+        ->toBe('failed')
+        ->and($activity->error_code)
+        ->toBe('tool.remove_failed')
+        ->and($activity->subject_type)
+        ->toBe(Tool::class)
+        ->and($activity->subject_id)
+        ->toBe($tool->id)
+        ->and($activity->target_node_id)
+        ->toBe($node->id)
+        ->and($activity->properties?->get('tool'))
+        ->toBe([
+            'node_id' => $node->id,
+            'manager' => 'apt',
+            'package' => 'jq',
+            'operation' => 'remove',
+            'outcome' => 'manager_failed',
+            'version_constraint' => null,
+            'error_code' => 'tool.remove_failed',
+        ])
+        ->and(json_encode($activity->toArray()))
+        ->not->toContain('REMOVE_EXCEPTION_SENTINEL');
+});

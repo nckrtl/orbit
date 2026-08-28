@@ -5,6 +5,8 @@ declare(strict_types=1);
 use App\Domain\Instances\CertificateMode;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Tools\ToolManagerName;
+use App\Domain\Tools\ToolStatus;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
@@ -12,6 +14,7 @@ use App\Http\Middleware\RequireNodeAccess;
 use App\Models\App as OrbitApp;
 use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Tool;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Middleware\SubstituteBindings;
@@ -32,11 +35,77 @@ beforeEach(function (): void {
         Route::get('gateway', [NodeAccessTestController::class, 'gateway']);
         Route::post('instance', [NodeAccessTestController::class, 'instance']);
         Route::get('process', [NodeAccessTestController::class, 'process']);
+        Route::get('tool/{tool}', [NodeAccessTestController::class, 'tool']);
+        Route::post('tool-raw', [NodeAccessTestController::class, 'toolRaw']);
         Route::get('missing-scope', [NodeAccessMissingScopeController::class, 'show']);
     });
 
     NodeAccessMissingScopeController::$executed = false;
     NodeAccessTestController::$gatewayExecuted = false;
+});
+
+it('allows direct access to a Tool-owning node', function (): void {
+    $consumer = middleware_node('consumer');
+    $target = middleware_tool('target');
+    $consumer->accessibleNodes()->attach($target->node);
+    middleware_gateway();
+
+    middleware_get($this, $consumer, "/_node-access/tool/{$target->id}")
+        ->assertOk()
+        ->assertJsonPath('node_id', $target->node_id);
+});
+
+it('allows Gateway fleet authority for Tool ownership without an edge', function (): void {
+    $gateway = middleware_gateway();
+    $tool = middleware_tool('target');
+
+    middleware_get($this, $gateway, "/_node-access/tool/{$tool->id}")->assertOk();
+});
+
+it('denies unrelated peers with the concrete Tool-owning node', function (): void {
+    $consumer = middleware_node('consumer');
+    $tool = middleware_tool('target');
+    middleware_gateway();
+
+    middleware_get($this, $consumer, "/_node-access/tool/{$tool->id}")
+        ->assertForbidden()
+        ->assertJsonPath('error.details.serving_node.id', $tool->node_id);
+});
+
+it('uses Tool.node_id when its manager belongs to another node', function (): void {
+    $consumer = middleware_node('consumer');
+    $toolNode = middleware_node('tool-node');
+    $managerNode = middleware_node('manager-node');
+    $tool = middleware_tool('owned', $toolNode, $managerNode);
+    $consumer->accessibleNodes()->attach($toolNode);
+    middleware_gateway();
+
+    middleware_get($this, $consumer, "/_node-access/tool/{$tool->id}")
+        ->assertOk()
+        ->assertJsonPath('node_id', $toolNode->id);
+});
+
+it('resolves raw Tool node access and leaves invalid input to validation', function (
+    array $input,
+    string $assertion,
+): void {
+    $consumer = middleware_node('consumer');
+    middleware_gateway();
+
+    middleware_post($this, $consumer, '/_node-access/tool-raw', $input)->{$assertion}();
+})->with([
+    'missing' => [[], 'assertUnprocessable'],
+    'malformed' => [['node_id' => 'bad'], 'assertUnprocessable'],
+    'valid missing node returns 404' => [['node_id' => 999999], 'assertNotFound'],
+    'zero node returns 422' => [['node_id' => 0], 'assertUnprocessable'],
+    'negative node returns 422' => [['node_id' => -1], 'assertUnprocessable'],
+]);
+
+it('returns 404 when a bound Tool is missing', function (): void {
+    $consumer = middleware_node('consumer');
+    middleware_gateway();
+
+    middleware_get($this, $consumer, '/_node-access/tool/999999')->assertNotFound();
 });
 
 it('uses a method access declaration before the class declaration', function (): void {
@@ -297,6 +366,24 @@ function middleware_instance(OrbitApp $app, Node $node, string $name): Instance
     ]);
 }
 
+function middleware_tool(string $package, ?Node $toolNode = null, ?Node $managerNode = null): Tool
+{
+    $toolNode ??= middleware_node($package.'-node');
+    $managerNode ??= $toolNode;
+    $manager = $managerNode
+        ->toolManagers()
+        ->create(['name' => ToolManagerName::Apt, 'status' => LifecycleStatus::Active]);
+
+    return $toolNode
+        ->tools()
+        ->create([
+            'tool_manager_id' => $manager->id,
+            'package' => $package,
+            'status' => ToolStatus::Installed,
+            'installed_version' => '1.0.0',
+        ]);
+}
+
 function middleware_get(Tests\TestCase $test, Node $consumer, string $uri): Illuminate\Testing\TestResponse
 {
     return $test
@@ -370,6 +457,18 @@ final class NodeAccessTestController
     {
         return ['target_id' => (int) $request->validated('target_id')];
     }
+
+    #[RequiresNodeAccess(ServingNode::ToolOwning)]
+    public function tool(Tool $tool): array
+    {
+        return ['node_id' => $tool->node_id];
+    }
+
+    #[RequiresNodeAccess(ServingNode::ToolOwning)]
+    public function toolRaw(NodeAccessToolRequest $request): array
+    {
+        return ['node_id' => (int) $request->validated('node_id')];
+    }
 }
 
 /** @mago-expect lint:single-class-per-file Test-only controller fixture. */
@@ -416,6 +515,21 @@ final class NodeAccessProcessRequest extends FormRequest
             'target_type' => ['required', 'in:instance,workspace'],
             'target_id' => ['required', 'integer', 'min:1'],
         ];
+    }
+}
+
+/** @mago-expect lint:single-class-per-file Test-only request fixture. */
+final class NodeAccessToolRequest extends FormRequest
+{
+    public function authorize(): bool
+    {
+        return true;
+    }
+
+    /** @return array<string, list<string>> */
+    public function rules(): array
+    {
+        return ['node_id' => ['required', 'integer', 'min:1', 'exists:nodes,id']];
     }
 }
 
