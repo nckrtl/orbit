@@ -8,6 +8,8 @@ use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Nodes\NodeConverger;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\NodeProvisioningIdentity;
+use App\Domain\Nodes\NodeProvisioningLock;
+use App\Domain\Nodes\NodeProvisioningLockException;
 use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\RecoverableNodeConverger;
 use App\Domain\Nodes\RoleAssignmentException;
@@ -18,6 +20,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ToolManagerMaterializer;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\WireGuard\GatewayPeerProjectionManager;
+use App\Infrastructure\Processes\CommandResult;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -34,6 +37,26 @@ describe(ProvisionNodeAction::class, function (): void {
 
             public function remove(Node $node, NodeRole $assignment, bool $purgeData): void {}
         });
+    });
+
+    it('rejects provisioning contention before creating or changing a node', function (): void {
+        app()->instance(NodeProvisioningLock::class, new class implements NodeProvisioningLock {
+            public function run(string $nodeName, Closure $callback): mixed
+            {
+                throw new NodeProvisioningLockException($nodeName);
+            }
+        });
+
+        expect(fn () => app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
+            name: 'busy-node',
+            publicSshHost: '192.0.2.70',
+            architecture: 'x86_64',
+            expectedSshHostFingerprint: 'SHA256:pinned',
+        )))->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)->toBe('node.provisioning_busy')->and($exception->status)->toBe(409);
+        });
+
+        expect(Node::query()->where('name', 'busy-node')->exists())->toBeFalse();
     });
 
     it('restores an active node and its gateway peer when reprovisioning fails after replacing its key', function (): void {
@@ -567,6 +590,210 @@ describe(ProvisionNodeAction::class, function (): void {
         ]);
     });
 
+    it('keeps the prior persisted identity during recoverable completion while using the candidate in memory', function (): void {
+        $events = [];
+        $materializer = new class($events) implements ToolManagerMaterializer {
+            /** @param list<string> $events */
+            public function __construct(
+                private array &$events,
+            ) {}
+
+            public function converge(Node $node, ToolManagerName ...$managerNames): void
+            {
+                $fresh = Node::query()->whereKey($node->getKey())->sole();
+                $this->events[] = "apt:{$node->user}:{$node->status->value}:{$fresh->user}:{$fresh->status->value}";
+            }
+
+            public function convergeWithFailureHandler(
+                Node $node,
+                Closure $onFailure,
+                ToolManagerName ...$managerNames,
+            ): void {
+                $this->converge($node, ...$managerNames);
+            }
+        };
+        app()->instance(ToolManagerMaterializer::class, $materializer);
+        app()->instance(RoleBaselineConverger::class, new class($events) implements RoleBaselineConverger {
+            /** @param list<string> $events */
+            public function __construct(
+                private array &$events,
+            ) {}
+
+            public function converge(Node $node, NodeRole $assignment): void
+            {
+                $fresh = Node::query()->whereKey($node->getKey())->sole();
+                $this->events[] = "role:{$assignment->role->value}:{$node->user}:{$node->status->value}:{$fresh->user}:{$fresh->status->value}";
+            }
+
+            public function remove(Node $node, NodeRole $assignment, bool $purgeData): void {}
+        });
+        app()->instance(NodeConverger::class, new class($events) implements NodeConverger, RecoverableNodeConverger {
+            /** @param list<string> $events */
+            public function __construct(
+                private array &$events,
+            ) {}
+
+            public function converge(
+                Node $node,
+                NodeProvisioningIdentity $identity,
+                ?string $expectedSshHostFingerprint = null,
+            ): void {}
+
+            public function convergeRecoverably(
+                Node $node,
+                NodeProvisioningIdentity $identity,
+                ?string $expectedSshHostFingerprint,
+                Closure $completion,
+            ): void {
+                $fresh = Node::query()->whereKey($node->getKey())->sole();
+                $this->events[] = "before:{$node->user}:{$node->status->value}:{$fresh->user}:{$fresh->status->value}";
+                $completion();
+                $fresh = Node::query()->whereKey($node->getKey())->sole();
+                $this->events[] = "after:{$node->user}:{$node->status->value}:{$fresh->user}:{$fresh->status->value}";
+            }
+        });
+        $existing = Node::query()->create([
+            'name' => 'recoverable-identity',
+            'status' => LifecycleStatus::Active,
+            'platform' => 'linux',
+            'architecture' => 'x86_64',
+            'public_ssh_host' => '192.0.2.97',
+            'wireguard_address' => '10.44.0.97',
+            'user' => 'orbit',
+            'ssh_host_fingerprint' => 'SHA256:pinned',
+        ]);
+
+        $node = app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
+            name: $existing->name,
+            publicSshHost: $existing->public_ssh_host,
+            orbitUser: 'nckrtl',
+            roles: [RoleName::AppDev, RoleName::Vpn],
+            tld: 'recoverable-identity.orbit',
+        ));
+
+        expect($events)
+            ->toBe([
+                'before:orbit:provisioning:orbit:provisioning',
+                'apt:nckrtl:provisioning:orbit:provisioning',
+                'role:app-dev:nckrtl:provisioning:orbit:provisioning',
+                'apt:nckrtl:provisioning:orbit:provisioning',
+                'role:vpn:nckrtl:provisioning:orbit:provisioning',
+                'after:nckrtl:provisioning:orbit:provisioning',
+            ])
+            ->and($node->user)
+            ->toBe('nckrtl')
+            ->and($node->status)
+            ->toBe(LifecycleStatus::Active)
+            ->and($node->refresh()->user)
+            ->toBe('nckrtl');
+    });
+
+    it('recovers active state when a requested role fails during completion', function (): void {
+        $events = [];
+        app()->instance(GatewayPeerProjectionManager::class, new class($events) implements
+            GatewayPeerProjectionManager {
+            public function __construct(
+                private array &$events,
+            ) {}
+
+            public function converge(Node $node): void
+            {
+                $this->events[] = "gateway-converge:{$node->wireguard_public_key}";
+            }
+
+            public function remove(Node $node): void
+            {
+                $this->events[] = 'delete';
+            }
+
+            public function restore(Node $node): void
+            {
+                $this->events[] = "gateway-restore:{$node->wireguard_public_key}";
+            }
+        });
+        app()->instance(NodeConverger::class, new class($events) implements NodeConverger, RecoverableNodeConverger {
+            public function __construct(
+                private array &$events,
+            ) {}
+
+            public function converge(
+                Node $node,
+                NodeProvisioningIdentity $identity,
+                ?string $expectedSshHostFingerprint = null,
+            ): void {}
+
+            public function convergeRecoverably(
+                Node $node,
+                NodeProvisioningIdentity $identity,
+                ?string $expectedSshHostFingerprint,
+                Closure $completion,
+            ): void {
+                $node->update(['wireguard_public_key' => 'replacement-key']);
+                app(GatewayPeerProjectionManager::class)->converge($node);
+                try {
+                    $completion();
+                } catch (Throwable $throwable) {
+                    $this->events[] = 'remote-rollback';
+                    throw $throwable;
+                }
+            }
+        });
+        app()->instance(RoleBaselineConverger::class, new class implements RoleBaselineConverger {
+            public function converge(Node $node, NodeRole $assignment): void
+            {
+                throw new NodeRoleOperationException(
+                    'wireguard',
+                    'node.role_failed',
+                    'command.failed',
+                    'secret raw CommandResult text',
+                    new CommandResult(23, 'secret raw CommandResult text', 'secret raw CommandResult text', 1, false),
+                );
+            }
+
+            public function remove(Node $node, NodeRole $assignment, bool $purgeData): void
+            {
+                throw new RuntimeException('must not delete');
+            }
+        });
+        $existing = Node::query()->create([
+            'name' => 'active-role-failure',
+            'status' => LifecycleStatus::Active,
+            'platform' => 'linux',
+            'architecture' => 'x86_64',
+            'public_ssh_host' => '192.0.2.98',
+            'wireguard_address' => '10.44.0.98',
+            'wireguard_public_key' => 'prior-key',
+            'user' => 'orbit',
+            'ssh_host_fingerprint' => 'SHA256:pinned',
+            'failed_step' => 'prior-step',
+            'error_code' => 'prior.error',
+        ]);
+        expect(fn () => app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
+            name: $existing->name,
+            publicSshHost: $existing->public_ssh_host,
+            orbitUser: 'nckrtl',
+            roles: [RoleName::Vpn],
+        )))
+            ->toThrow(
+                fn (NodeProvisioningException $exception) => (
+                    $exception->step === 'role:wireguard'
+                    && ! str_contains($exception->getMessage(), 'secret raw CommandResult text')
+                ),
+            );
+        expect($events)
+            ->toBe(['gateway-converge:replacement-key', 'remote-rollback', 'gateway-restore:prior-key'])
+            ->and($existing->refresh()->only(['status', 'user', 'wireguard_public_key', 'failed_step', 'error_code']))
+            ->toBe([
+                'status' => LifecycleStatus::Active,
+                'user' => 'orbit',
+                'wireguard_public_key' => 'prior-key',
+                'failed_step' => 'prior-step',
+                'error_code' => 'prior.error',
+            ])
+            ->and($events)
+            ->not->toContain('delete');
+    });
+
     it('does not materialize managers after base convergence fails', function (): void {
         $materializer = new FakeToolManagerMaterializer;
         app()->instance(ToolManagerMaterializer::class, $materializer);
@@ -685,7 +912,7 @@ describe(ProvisionNodeAction::class, function (): void {
             ->and($converger->expectedFingerprint)
             ->toBe('SHA256:pinned')
             ->and($events)
-            ->toBe(['base:provisioning:0', "role:app-dev:active:{$ambientTransactionLevel}"]);
+            ->toBe(['base:provisioning:0', "role:app-dev:provisioning:{$ambientTransactionLevel}"]);
     });
 
     it('rejects pairwise requested role conflicts before persistence or base convergence', function (): void {
@@ -1058,23 +1285,25 @@ describe(ProvisionNodeAction::class, function (): void {
             architecture: 'x86_64',
             tld: 'app-dev.orbit',
             expectedSshHostFingerprint: 'SHA256:pinned',
-        )))->toThrow(function (NodeRoleOperationException $exception): void {
+        )))->toThrow(function (NodeProvisioningException $exception): void {
             expect($exception->step)
-                ->toBe('converge:caddy-config')
+                ->toBe('role:converge:caddy-config')
                 ->and($exception->errorCode)
-                ->toBe('node_role.convergence_failed');
+                ->toBe('node.role_convergence_failed')
+                ->and($exception->getMessage())
+                ->toBe('Node role provisioning failed.');
         });
 
         $node = Node::query()->where('name', 'app-dev')->sole();
 
         expect($node->status)
-            ->toBe(LifecycleStatus::Active)
+            ->toBe(LifecycleStatus::Failed)
             ->and($node->roles()->sole()->status)
             ->toBe(LifecycleStatus::Failed)
             ->and($node->failed_step)
-            ->toBeNull()
+            ->toBe('role:converge:caddy-config')
             ->and($node->error_code)
-            ->toBeNull()
+            ->toBe('node.role_convergence_failed')
             ->and($node->roles()->sole()->failed_step)
             ->toBe('converge:caddy-config')
             ->and($node->roles()->sole()->error_code)

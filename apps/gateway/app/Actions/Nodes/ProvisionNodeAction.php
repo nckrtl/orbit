@@ -9,6 +9,9 @@ use App\Domain\Nodes\LinuxUserName;
 use App\Domain\Nodes\NodeConverger;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\NodeProvisioningIdentity;
+use App\Domain\Nodes\NodeProvisioningLock;
+use App\Domain\Nodes\NodeProvisioningLockException;
+use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\NodeTld;
 use App\Domain\Nodes\RecoverableNodeConverger;
 use App\Domain\Nodes\RoleName;
@@ -23,19 +26,34 @@ use App\Infrastructure\Ssh\SshHostKeyScanException;
 use App\Models\Node;
 use Throwable;
 
-/** @mago-expect lint:cyclomatic-complexity,kan-defect Node provisioning keeps its ordered identity, role, and recovery gates together. */
+/** @mago-expect lint:cyclomatic-complexity,kan-defect,too-many-methods Node provisioning keeps its ordered identity, role, and recovery gates together. */
 final readonly class ProvisionNodeAction
 {
+    /** @mago-expect lint:excessive-parameter-list The action coordinates its complete provisioning boundary. */
     public function __construct(
         private AddNodeRoleAction $roles,
         private NodeConverger $converger,
         private ToolManagerMaterializer $toolManagers,
         private WireGuardAddressAllocator $addresses,
         private GatewayPeerProjectionManager $gatewayPeers,
+        private NodeProvisioningLock $provisioningLock,
     ) {}
 
-    /** @mago-expect lint:halstead Ordered provisioning keeps persisted state and failure recovery in one transaction-like flow. */
     public function execute(ProvisionNodeData $data): Node
+    {
+        try {
+            return $this->provisioningLock->run($data->name, fn (): Node => $this->provision($data));
+        } catch (NodeProvisioningLockException) {
+            throw new ResourceOperationException(
+                errorCode: 'node.provisioning_busy',
+                message: "Node [{$data->name}] is already being provisioned.",
+                status: 409,
+            );
+        }
+    }
+
+    /** @mago-expect lint:halstead Ordered provisioning keeps persisted state and failure recovery in one transaction-like flow. */
+    private function provision(ProvisionNodeData $data): Node
     {
         if (
             ! LinuxUserName::isValid($data->user)
@@ -119,7 +137,6 @@ final readonly class ProvisionNodeAction
             'tld' => $tld,
             'public_ssh_host' => $publicSshHost,
             'public_ssh_port' => $node->exists ? $node->public_ssh_port : $data->publicSshPort,
-            'user' => $managedUser,
             'wireguard_address' => $wireguardAddress,
             'wireguard_endpoint_override' => $data->wireguardEndpointOverride ?? $node->wireguard_endpoint_override,
             'dns_server_override' => $data->dnsServerOverride ?? $node->dns_server_override,
@@ -133,13 +150,17 @@ final readonly class ProvisionNodeAction
                     $node,
                     $identity,
                     $data->expectedSshHostFingerprint,
-                    function () use ($node): void {
+                    function () use ($node, $managedUser, $data): void {
+                        $node->user = $managedUser;
                         $this->toolManagers->converge($node, ToolManagerName::Apt);
+                        $this->convergeRoles($node, $data->roles);
                     },
                 );
             } else {
                 $this->converger->converge($node, $identity, $data->expectedSshHostFingerprint);
+                $node->user = $managedUser;
                 $this->toolManagers->converge($node, ToolManagerName::Apt);
+                $this->convergeRoles($node, $data->roles);
             }
         } catch (NodeProvisioningException $exception) {
             $this->handleFailure($node, $exception, $priorActiveState);
@@ -169,16 +190,30 @@ final readonly class ProvisionNodeAction
         }
 
         $node->update([
+            'user' => $managedUser,
             'status' => LifecycleStatus::Active,
             'failed_step' => null,
             'error_code' => null,
         ]);
 
-        foreach ($data->roles as $role) {
-            $this->roles->executeDuringProvisioning($node, $role);
-        }
-
         return $node->refresh()->load('roles');
+    }
+
+    /** @param list<RoleName> $roles */
+    private function convergeRoles(Node $node, array $roles): void
+    {
+        try {
+            foreach ($roles as $role) {
+                $this->roles->executeDuringProvisioning($node, $role);
+            }
+        } catch (NodeRoleOperationException $exception) {
+            throw new NodeProvisioningException(
+                step: "role:{$exception->step}",
+                errorCode: 'node.role_convergence_failed',
+                message: 'Node role provisioning failed.',
+                previous: $exception,
+            );
+        }
     }
 
     private function tld(Node $node, ProvisionNodeData $data): ?string

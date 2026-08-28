@@ -220,6 +220,37 @@ describe(AddNodeRoleAction::class, function (): void {
             ->toBeFalse();
     });
 
+    it('allows assignable roles on a provisioning node', function (): void {
+        $baseline = new AddNodeRoleBaselineFake;
+        app()->instance(RoleBaselineConverger::class, $baseline);
+        $node = add_role_node(LifecycleStatus::Provisioning);
+
+        $assignment = app(AddNodeRoleAction::class)->executeDuringProvisioning($node, RoleName::AppDev);
+
+        expect($assignment->status)
+            ->toBe(LifecycleStatus::Active)
+            ->and($baseline->convergedRoles)
+            ->toBe([RoleName::AppDev]);
+    });
+
+    it('rejects failed, removing, and nonexistent nodes during provisioning', function (?LifecycleStatus $status): void {
+        $baseline = new AddNodeRoleBaselineFake;
+        app()->instance(RoleBaselineConverger::class, $baseline);
+        $node = $status === null ? new Node : add_role_node($status);
+
+        expect(fn () => app(AddNodeRoleAction::class)->executeDuringProvisioning($node, RoleName::AppDev))
+            ->toThrow(RoleAssignmentException::class);
+
+        expect($baseline->convergedRoles)->toBeEmpty();
+        if ($node->exists) {
+            expect($node->roles()->exists())->toBeFalse();
+        }
+    })->with([
+        'failed node' => LifecycleStatus::Failed,
+        'removing node' => LifecycleStatus::Removing,
+        'nonexistent node' => null,
+    ]);
+
     it('rejects protected roles before baseline effects', function (RoleName $role): void {
         $baseline = new AddNodeRoleBaselineFake;
         $materializer = new FakeToolManagerMaterializer;
