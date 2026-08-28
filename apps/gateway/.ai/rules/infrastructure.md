@@ -8,6 +8,14 @@ paths:
 ## Use fixed typed argv
 Build remote operations from fixed, typed argv in narrow infrastructure contracts. Never add a generic executor, arbitrary script endpoint, Agent, or caller-supplied shell program.
 
+## Preserve an existing healthy Docker CE prerequisite
+Install Ubuntu `docker.io` as the fixed default for app-role hosts. When the
+fixed `docker-ce`, `docker-ce-cli`, and `containerd.io` packages, the fixed
+Docker executable, and the Docker service are already healthy, treat that
+stack only as a satisfied private host prerequisite. Do not create Tool intent,
+change its repositories or packages, or adopt it for public removal. Run role
+prerequisite APT installs with removal disabled.
+
 ## Keep secrets out of command arguments
 Transport secrets through stdin or narrowly scoped mode-0600 protected files. Secret bytes must never enter local or remote argv, ProcessInvocation state, exception or debug text, API responses, or activity data.
 
