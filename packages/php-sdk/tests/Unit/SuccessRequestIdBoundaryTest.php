@@ -8,14 +8,100 @@ use Orbit\Sdk\GatewayRequest;
 use Orbit\Sdk\Requests\Apps\ListAppsRequest;
 use Orbit\Sdk\Requests\Gateway\ShowGatewayStatusRequest;
 use Orbit\Sdk\Requests\Processes\ProcessLogsRequest;
+use Orbit\Sdk\Requests\Tools\ListToolManagersRequest;
+use Orbit\Sdk\Requests\Tools\ListToolsRequest;
 use Orbit\Sdk\Responses\Apps\AppsResponse;
 use Orbit\Sdk\Responses\Gateway\GatewayStatusResponse;
 use Orbit\Sdk\Responses\Processes\ProcessLogsResponse;
+use Orbit\Sdk\Responses\Tools\ToolManagersResponse;
+use Orbit\Sdk\Responses\Tools\ToolsResponse;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
 /** @mago-expect lint:halstead Request-ID boundary assertions stay visible together. */
 describe('success request ID boundary', function (): void {
+    /** @mago-expect lint:cyclomatic-complexity Tool metadata boundaries stay visible together. */
+    it('bounds Tool item and collection response metadata request IDs', function (
+        array $meta,
+        string $expected,
+        ?string $unsafe,
+    ): void {
+        $tools = success_request_id_dto(
+            new ListToolsRequest(7),
+            [
+                'data' => [[
+                    'id' => 41,
+                    'node_id' => 7,
+                    'manager' => 'composer',
+                    'package' => 'vendor/package',
+                    'version_constraint' => null,
+                    'protected' => false,
+                    'status' => 'installed',
+                    'installed_version' => '1.0.0',
+                    'failed_operation' => null,
+                    'error_code' => null,
+                    'outcome' => null,
+                ]],
+                'meta' => $meta,
+            ],
+        );
+        $managers = success_request_id_dto(
+            new ListToolManagersRequest(7),
+            [
+                'data' => [[
+                    'id' => 9,
+                    'node_id' => 7,
+                    'name' => 'composer',
+                    'status' => 'active',
+                    'installed_version' => '2.9.2',
+                    'failed_step' => null,
+                    'error_code' => null,
+                ]],
+                'meta' => $meta,
+            ],
+        );
+
+        expect($tools)
+            ->toBeInstanceOf(ToolsResponse::class)
+            ->and($managers)
+            ->toBeInstanceOf(ToolManagersResponse::class);
+
+        if (! $tools instanceof ToolsResponse || ! $managers instanceof ToolManagersResponse) {
+            $this->fail('Expected typed Tool collection responses.');
+        }
+
+        $diagnostics = implode("\n", [
+            print_r($tools, return: true),
+            json_encode($tools->toArray(), flags: JSON_THROW_ON_ERROR),
+            print_r($managers, return: true),
+            json_encode($managers->toArray(), flags: JSON_THROW_ON_ERROR),
+        ]);
+
+        expect($tools->requestId)
+            ->toBe($expected)
+            ->and($tools->tools[0]->requestId)
+            ->toBe($expected)
+            ->and($managers->requestId)
+            ->toBe($expected)
+            ->and($managers->managers[0]->requestId)
+            ->toBe($expected);
+
+        if ($unsafe !== null) {
+            expect($diagnostics)->not->toContain($unsafe);
+        }
+    })->with([
+        'safe UUID' => [
+            ['request_id' => '11111111-1111-4111-8111-111111111111'],
+            '11111111-1111-4111-8111-111111111111',
+            null,
+        ],
+        'credential-shaped' => [
+            ['request_id' => 'request-token=tool-request-id-secret'],
+            '',
+            'tool-request-id-secret',
+        ],
+    ]);
+
     it('accepts only UUID success metadata request IDs', function (
         array $meta,
         string $expected,
