@@ -41,3 +41,24 @@ it('documents JavaScript processes through the managed Vite+ entry point', funct
         ->toContain('Orbit installs Bun separately')
         ->not->toMatch('/\b(?:npm|npx|pnpm|pnpx|yarn|yarnpkg|bun|bunx)\s+(?:ci|install|run|exec|add|remove|update)\b/');
 });
+
+it('documents tool management through the gateway boundary', function (): void {
+    $readme = file_get_contents(base_path('README.md'));
+    $toolFlow = <<<'MARKDOWN'
+        ./orbit tool:manager:list --node=12
+        ./orbit tool:install @openai/codex --node=12 --manager=vp --constraint='^0.150'
+        ./orbit tool:list --node=12
+        ./orbit tool:update 41
+        ./orbit tool:show 41
+        ./orbit tool:remove 41
+        MARKDOWN;
+
+    expect($readme)
+        ->toBeString()
+        ->toContain('## Tool Management')
+        ->toContain($toolFlow)
+        ->toContain('npm-compatible global tools')
+        ->toContain('`vendor/package`')
+        ->toContain('Ubuntu packages')
+        ->toContain('unsafe normal candidate');
+});
