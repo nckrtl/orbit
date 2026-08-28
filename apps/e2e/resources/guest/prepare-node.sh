@@ -3,24 +3,31 @@ set -euo pipefail
 umask 077
 mode=${1-}
 case "$mode" in
-  checkout)
-    [[ $# -eq 3 && "$2" =~ ^[0-9a-f]{40}$ ]]
-    case "$3" in gateway|app-dev) ;; *) exit 64 ;; esac
-    cd /home/orbit
-    /home/orbit/orbit/apps/e2e/resources/guest/hydrate-orbit.sh orbit "$([[ "$3" == gateway ]] && printf gateway || printf cli)"
-    git -C /home/orbit/orbit reset --hard --quiet "$2"
-    ;;
   ssh-pins)
     [[ $# -eq 3 && "$2" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]{0,62}$ && "$3" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]{0,62}$ ]]
     install -d -m 0700 /home/orbit/.ssh
     pins=$(mktemp)
-    trap 'rm -f "$pins"' EXIT
-    ssh-keyscan -H -- "$2" "$3" >"$pins"
-    touch /home/orbit/.ssh/known_hosts
-    while IFS= read -r pin; do
-      grep -qxF -- "$pin" /home/orbit/.ssh/known_hosts || printf '%s\n' "$pin" >>/home/orbit/.ssh/known_hosts
-    done <"$pins"
-    chmod 0600 /home/orbit/.ssh/known_hosts
+    first_pins=$(mktemp)
+    second_pins=$(mktemp)
+    candidate=$(mktemp /home/orbit/.ssh/known_hosts.XXXXXX)
+    trap 'rm -f "$pins" "$first_pins" "$second_pins" "$candidate"' EXIT
+    deadline=$((SECONDS + 60))
+    while :; do
+      if ssh-keyscan -T 5 -H -- "$2" >"$first_pins" 2>/dev/null \
+        && ssh-keyscan -T 5 -H -- "$3" >"$second_pins" 2>/dev/null \
+        && grep -qv '^#' "$first_pins" \
+        && grep -qv '^#' "$second_pins"; then
+        cat "$first_pins" "$second_pins" >"$pins"
+        break
+      fi
+      (( SECONDS >= deadline )) && exit 75
+      sleep 1
+    done
+    cat "$pins" >"$candidate"
+    chmod 0600 "$candidate"
+    chown orbit:orbit "$candidate"
+    mv -f "$candidate" /home/orbit/.ssh/known_hosts
+    chown orbit:orbit /home/orbit/.ssh
     ;;
   permissions)
     [[ $# -eq 1 ]]

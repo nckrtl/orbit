@@ -67,19 +67,6 @@ final readonly class TopologyConverger
 
         $steps = ['validate.prerequisites' => true];
 
-        foreach ($instances as $instance) {
-            $this->host->start($instance);
-        }
-
-        $steps['start.instances'] = true;
-
-        foreach (TopologyProfile::CHECKOUT_ROLES as $role) {
-            $this->run($instances[$role], 'prepare-node.sh', ['checkout', $source->guestSha, $role]);
-        }
-
-        $steps['prepare.checkouts'] = true;
-        $this->run($instances['gateway'], 'converge-gateway.sh', ['hydrate', $source->guestSha]);
-        $steps['hydrate.gateway'] = true;
         $this->run($instances['gateway'], 'converge-gateway.sh', ['bootstrap', $instances['gateway']]);
         $steps['bootstrap.gateway'] = true;
         $this->run(

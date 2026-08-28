@@ -24,6 +24,11 @@ final class StatusCommand extends Command
             $generation = $manifests->promoted();
             $stopped = true;
             $target = TopologyTarget::standby();
+            if ($generation !== null) {
+                foreach (TopologyProfile::ROLES as $role) {
+                    $host->assertOwnedSnapshot($target->instance($role), $generation->snapshots[$role]);
+                }
+            }
             foreach (TopologyProfile::ROLES as $role) {
                 $instance = $host->instance($target->instance($role));
                 $stopped = $stopped && $instance !== null && $instance->isStopped();

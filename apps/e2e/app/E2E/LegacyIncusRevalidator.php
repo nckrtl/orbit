@@ -45,6 +45,10 @@ final readonly class LegacyIncusRevalidator
             throw new RuntimeException('Incus returned malformed live resource JSON.', 0, $exception);
         }
         $live = $this->liveObject($live);
+        if (($live['type'] ?? null) === 'sync') {
+            $metadata = $live['metadata'] ?? null;
+            $live = $this->liveObject($metadata);
+        }
 
         $this->assertExact($kind, $identity, $expected, $live, $operation);
     }

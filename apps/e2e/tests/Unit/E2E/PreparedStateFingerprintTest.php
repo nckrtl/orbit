@@ -4,20 +4,43 @@ declare(strict_types=1);
 
 use App\E2E\Git\GitRepository;
 use App\E2E\PreparedStateFingerprint;
+use App\E2E\Value\PreparedFingerprint;
 use Illuminate\Container\Container;
 use Illuminate\Process\Factory as ProcessFactory;
 use Illuminate\Support\Facades\Facade;
 
 /** @property string $path */
 describe('PreparedStateFingerprint', function (): void {
+    it('rejects an invalid fingerprint at construction', function (): void {
+        expect(fn () => new PreparedFingerprint('not-a-hash'))->toThrow(InvalidArgumentException::class);
+    });
+
     beforeEach(function (): void {
         configureFingerprintProcessFacade();
         $this->path = sys_get_temp_dir().'/orbit-fingerprint-'.bin2hex(random_bytes(6));
         mkdir($this->path.'/resources', 0700, true);
         mkdir($this->path.'/contracts', 0700, true);
+        mkdir($this->path.'/apps/e2e/app/E2E', 0700, true);
+        mkdir($this->path.'/apps/e2e/resources/guest', 0700, true);
+        mkdir($this->path.'/apps/cli/app/Commands/Gateway', 0700, true);
         fingerprintGit($this->path, ['init', '--quiet']);
         fingerprintGit($this->path, ['config', 'user.email', 'orbit@example.test']);
         fingerprintGit($this->path, ['config', 'user.name', 'Orbit']);
+    });
+
+    afterEach(function (): void {
+        $tempDirectory = rtrim(sys_get_temp_dir(), '/');
+        $expectedPrefix = $tempDirectory.'/orbit-fingerprint-';
+
+        if (
+            ! str_starts_with($this->path, $expectedPrefix)
+            || preg_match('/\A'.preg_quote($expectedPrefix, '/').'[0-9a-f]{12}\z/', $this->path) !== 1
+            || ! is_dir($this->path)
+        ) {
+            return;
+        }
+
+        removeFingerprintFixture($this->path);
     });
 
     it('canonicalizes prepared input and excludes source identity', function (): void {
@@ -102,6 +125,118 @@ describe('PreparedStateFingerprint', function (): void {
         'invalid checkout roles' => [['topology' => ['checkout_roles' => ['gateway', 'app-prod']]]],
         'invalid path type' => [['paths' => [42]]],
     ]);
+
+    it('tracks the prepared guest dependency closure without lifecycle-only orchestration', function (): void {
+        $path = dirname(__DIR__, 3).'/resources/prepared-state.json';
+        $manifest = json_decode((string) file_get_contents($path), true, 512, JSON_THROW_ON_ERROR);
+        $paths = $manifest['paths'] ?? null;
+
+        expect($paths)
+            ->toBeArray()
+            ->toContain(
+                'apps/e2e/app/E2E/TopologyConverger.php',
+                'apps/e2e/resources/guest/converge-app-dev.sh',
+                'apps/e2e/resources/guest/converge-app-prod-internal-tls.sh',
+                'apps/e2e/resources/guest/converge-gateway.sh',
+                'apps/e2e/resources/guest/converge-sample-app.sh',
+                'apps/gateway/app/Actions/Gateway/BootstrapGatewayAction.php',
+                'apps/gateway/app/Actions/Gateway/GatewayBootstrapIdentityValidator.php',
+                'apps/gateway/app/Infrastructure/Nodes/Roles/*.php',
+                'apps/gateway/app/Infrastructure/WireGuard/*.php',
+                'apps/gateway/app/Http/Middleware/RequireActiveWireGuardPeer.php',
+                'apps/gateway/app/Http/Middleware/RequireNodeAccess.php',
+                'packages/php-sdk/src/Requests/Instances/CreateInstanceRequest.php',
+            )
+            ->not->toContain(
+                'apps/e2e/app/E2E/StandbyBuilder.php',
+                'apps/e2e/app/E2E/StandbyRefresher.php',
+                'apps/e2e/app/E2E/TopologyAcquirer.php',
+                'apps/e2e/app/E2E/TopologyVerifier.php',
+                'apps/e2e/app/E2E/State/*.php',
+                'apps/e2e/resources/guest/prepare-node.sh',
+                'apps/e2e/resources/guest/verify-topology.sh',
+                'apps/e2e/resources/guest/hydrate-orbit.sh',
+                'apps/e2e/resources/guest/receive-source.sh',
+                'apps/cli/app/Commands/Gateway/GatewayStatusCommand.php',
+                'apps/gateway/app/Console/Commands/*.php',
+                'apps/gateway/app/Http/Controllers/Api/GatewayStatusesController.php',
+                'packages/php-sdk/src/Requests/Gateway/ShowGatewayStatusRequest.php',
+                'packages/php-sdk/src/Responses/Gateway/GatewayStatusResponse.php',
+            );
+    });
+
+    it('requires every current manifest selector to match a tracked file', function (): void {
+        $root = dirname(__DIR__, 5);
+        $manifest = json_decode(
+            (string) file_get_contents($root.'/apps/e2e/resources/prepared-state.json'),
+            true,
+            512,
+            JSON_THROW_ON_ERROR,
+        );
+
+        foreach ($manifest['paths'] as $selector) {
+            expect(fingerprintGit($root, ['ls-files', '--', $selector]))->not->toBe('');
+        }
+    });
+
+    it('changes when an included prepared-state file changes, but ignores excluded lifecycle files', function (): void {
+        file_put_contents($this->path.'/apps/e2e/resources/guest/converge-gateway.sh', "converge-v1\n");
+        file_put_contents($this->path.'/apps/e2e/app/E2E/TopologyVerifier.php', "verifier-v1\n");
+        file_put_contents($this->path.'/apps/e2e/resources/guest/verify-topology.sh', "verify-v1\n");
+        file_put_contents($this->path.'/apps/cli/app/Commands/Gateway/GatewayStatusCommand.php', "status-v1\n");
+        file_put_contents($this->path.'/apps/e2e/resources/guest/receive-source.sh', "transport-v1\n");
+        writePreparedManifest($this->path, array_replace(preparedManifest(), [
+            'paths' => ['apps/e2e/resources/guest/converge-gateway.sh'],
+        ]));
+        fingerprintGit($this->path, ['add', '.']);
+        fingerprintGit($this->path, ['commit', '--quiet', '-m', 'first']);
+        $first = new PreparedStateFingerprint(
+            new GitRepository($this->path),
+            'resources/prepared-state.json',
+        )->forCommit();
+
+        file_put_contents($this->path.'/apps/e2e/app/E2E/TopologyVerifier.php', "verifier-v2\n");
+        fingerprintGit($this->path, ['add', '.']);
+        fingerprintGit($this->path, ['commit', '--quiet', '-m', 'verifier']);
+        $verifier = new PreparedStateFingerprint(
+            new GitRepository($this->path),
+            'resources/prepared-state.json',
+        )->forCommit();
+
+        file_put_contents($this->path.'/apps/e2e/resources/guest/verify-topology.sh', "verify-v2\n");
+        fingerprintGit($this->path, ['add', '.']);
+        fingerprintGit($this->path, ['commit', '--quiet', '-m', 'verify']);
+        $verify = new PreparedStateFingerprint(
+            new GitRepository($this->path),
+            'resources/prepared-state.json',
+        )->forCommit();
+
+        file_put_contents($this->path.'/apps/cli/app/Commands/Gateway/GatewayStatusCommand.php', "status-v2\n");
+        file_put_contents($this->path.'/apps/e2e/resources/guest/receive-source.sh', "transport-v2\n");
+        fingerprintGit($this->path, ['add', '.']);
+        fingerprintGit($this->path, ['commit', '--quiet', '-m', 'transport']);
+        $transport = new PreparedStateFingerprint(
+            new GitRepository($this->path),
+            'resources/prepared-state.json',
+        )->forCommit();
+
+        file_put_contents($this->path.'/apps/e2e/resources/guest/converge-gateway.sh', "converge-v2\n");
+        fingerprintGit($this->path, ['add', '.']);
+        fingerprintGit($this->path, ['commit', '--quiet', '-m', 'convergence']);
+        $convergence = new PreparedStateFingerprint(
+            new GitRepository($this->path),
+            'resources/prepared-state.json',
+        )->forCommit();
+
+        expect($verifier->value)
+            ->toBe($first->value)
+            ->and($verify->value)
+            ->toBe($first->value)
+            ->and($transport->value)
+            ->toBe($first->value)
+            ->and($convergence->value)
+            ->not->toBe($first->value);
+    });
 });
 
 /** @param list<string> $arguments */
@@ -153,4 +288,18 @@ function preparedManifest(): array
             'checkout_roles' => ['gateway', 'app-dev'],
         ],
     ];
+}
+
+function removeFingerprintFixture(string $path): void
+{
+    $iterator = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($path, FilesystemIterator::SKIP_DOTS),
+        RecursiveIteratorIterator::CHILD_FIRST,
+    );
+
+    foreach ($iterator as $item) {
+        $item->isDir() && ! $item->isLink() ? rmdir($item->getPathname()) : unlink($item->getPathname());
+    }
+
+    rmdir($path);
 }

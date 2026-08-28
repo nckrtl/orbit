@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\E2E\StandbyManifestStore;
 use App\E2E\State\AtomicJsonStore;
 use App\E2E\State\StatePaths;
+use App\E2E\Value\LaravelRelease;
 use App\E2E\Value\StandbyGeneration;
 
 describe('StandbyManifestStore', function () {
@@ -21,6 +22,7 @@ describe('StandbyManifestStore', function () {
             ],
             str_repeat('b', 64),
             str_repeat('c', 64),
+            new LaravelRelease('v13.10.1', '5aad4ddf34d5e21dfe6b4c07eeac67d5bd5e08b0'),
         );
         $store->record($generation);
         $store->promote($generation);
@@ -44,6 +46,7 @@ describe('StandbyManifestStore', function () {
                 ['gateway' => 'main-gateway'],
                 str_repeat('b', 64),
                 str_repeat('c', 64),
+                new LaravelRelease('v13.10.1', '5aad4ddf34d5e21dfe6b4c07eeac67d5bd5e08b0'),
             ),
         )
             ->toThrow(InvalidArgumentException::class);
@@ -64,6 +67,7 @@ describe('StandbyManifestStore', function () {
             ['gateway' => "main-{$id}", 'app-dev' => "main-{$id}", 'app-prod' => "main-{$id}"],
             str_repeat('a', 64),
             str_repeat('b', 64),
+            new LaravelRelease('v13.10.1', '5aad4ddf34d5e21dfe6b4c07eeac67d5bd5e08b0'),
             $previous,
         );
         $old = $generation('g1');

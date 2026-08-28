@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Providers;
 
 use App\E2E\Git\GitRepository;
+use App\E2E\GuestTransport;
 use App\E2E\HostRelativeDeleter;
 use App\E2E\IncusHost;
 use App\E2E\LegacyIncusRevalidator;
@@ -35,7 +36,7 @@ final class AppServiceProvider extends ServiceProvider
         $this->app->singleton(StatePaths::class, fn (): StatePaths => StatePaths::fromEnvironment());
         $this->app->singleton(AtomicJsonStore::class);
         $this->app->singleton(OperationJournal::class);
-        $this->app->singleton(OperationLock::class);
+        $this->app->bind(OperationLock::class);
         $this->app->singleton(LegacyRetirement::class, function (): LegacyRetirement {
             $revalidator = new LegacyIncusRevalidator;
             $deleter = new HostRelativeDeleter(dirname(__DIR__, 2).'/resources/host/delete-relative.py');
@@ -146,7 +147,6 @@ final class AppServiceProvider extends ServiceProvider
         });
 
         $repositoryRoot = dirname(__DIR__, 4);
-        $guestScripts = dirname(__DIR__, 2).'/resources/guest';
         $this->app->singleton(GitRepository::class, fn (): GitRepository => new GitRepository($repositoryRoot));
         $this->app->singleton(
             PreparedStateFingerprint::class,
@@ -157,7 +157,6 @@ final class AppServiceProvider extends ServiceProvider
             fn (Application $app): WorktreeSynchronizer => new WorktreeSynchronizer(
                 $app->make(IncusHost::class),
                 $repositoryRoot,
-                $guestScripts,
             ),
         );
 
@@ -195,6 +194,7 @@ final class AppServiceProvider extends ServiceProvider
                 operationId: is_string($operationId) ? new OperationId($operationId) : null,
             );
         });
+        $this->app->bind(GuestTransport::class, fn (Application $app): IncusHost => $app->make(IncusHost::class));
 
         $this->app->singleton(StandbyBuilder::class, fn (Application $app): StandbyBuilder => new StandbyBuilder(
             $app->make(IncusHost::class),
@@ -210,7 +210,6 @@ final class AppServiceProvider extends ServiceProvider
             $app->make(IncusHost::class),
             $app->make(PreparedStateFingerprint::class),
             $app->make(StandbyManifestStore::class),
-            $app->make(\App\E2E\RefreshRequestStore::class),
             $app->make(StandbyBuilder::class),
             $app->make(WorktreeSynchronizer::class),
             $app->make(TopologyConverger::class),

@@ -32,12 +32,17 @@ describe('legacy Incus revalidation', function (): void {
             expect($process->command)->toBe(liveIncusQuery('lab:/1.0/instances/old-vm?project=orbit'));
 
             return Process::result(json_encode([
-                'name' => 'old-vm',
-                'type' => 'virtual-machine',
-                'status' => 'Stopped',
-                'config' => ['owner' => 'alice'],
-                'devices' => ['eth0' => ['network' => 'old-net']],
-                'owner' => 'alice',
+                'type' => 'sync',
+                'status' => 'Success',
+                'status_code' => 200,
+                'metadata' => [
+                    'name' => 'old-vm',
+                    'type' => 'virtual-machine',
+                    'status' => 'Stopped',
+                    'config' => ['owner' => 'alice'],
+                    'devices' => ['eth0' => ['network' => 'old-net']],
+                    'owner' => 'alice',
+                ],
             ], JSON_THROW_ON_ERROR));
         });
 
@@ -153,5 +158,22 @@ describe('legacy Incus revalidation', function (): void {
             'dependencies' => [],
         ]))
             ->toThrow(RuntimeException::class);
+    });
+
+    it('fails closed when an Incus response envelope has no object metadata', function (): void {
+        Process::fake(['*' => Process::result(json_encode([
+            'type' => 'sync',
+            'status' => 'Success',
+            'metadata' => [],
+        ], JSON_THROW_ON_ERROR))]);
+
+        expect(fn () => new LegacyIncusRevalidator()->assertCurrent('instances', [
+            'name' => 'old-vm',
+            'remote' => 'lab',
+            'project' => 'orbit',
+            'metadata' => [],
+            'dependencies' => [],
+        ]))
+            ->toThrow(RuntimeException::class, 'invalid live resource object');
     });
 });

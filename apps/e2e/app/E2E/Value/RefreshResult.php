@@ -8,7 +8,7 @@ use InvalidArgumentException;
 
 final readonly class RefreshResult
 {
-    public const array STATES = ['unchanged', 'queued', 'promoted', 'failed'];
+    public const array STATES = ['unchanged', 'promoted', 'failed'];
 
     public function __construct(
         public string $state,
@@ -36,5 +36,10 @@ final readonly class RefreshResult
             'evidence_id' => $this->evidenceId,
             'generation_id' => $this->generationId,
         ];
+    }
+
+    public function successful(): bool
+    {
+        return in_array($this->state, ['unchanged', 'promoted'], true);
     }
 }

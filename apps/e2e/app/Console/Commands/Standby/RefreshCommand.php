@@ -28,7 +28,7 @@ final class RefreshCommand extends Command
             $payload = $result->toArray();
             $this->line($this->option('json') ? json_encode($payload, JSON_THROW_ON_ERROR) : $result->state);
 
-            return $result->state === 'failed' ? self::FAILURE : self::SUCCESS;
+            return $result->successful() ? self::SUCCESS : self::FAILURE;
         } catch (Throwable $exception) {
             $this->error($exception->getMessage());
 

@@ -9,8 +9,10 @@ use App\E2E\Value\SourceState;
 use App\E2E\Value\TopologyTarget;
 use App\E2E\Value\VerificationMode;
 use App\E2E\Value\VerificationReport;
+use InvalidArgumentException;
 use JsonException;
 
+/** @mago-expect lint:cyclomatic-complexity Bounded readiness retries and fail-closed evidence validation form one verification boundary. */
 final readonly class TopologyVerifier
 {
     private const array PROBES = [
@@ -38,29 +40,72 @@ final readonly class TopologyVerifier
     ];
 
     public function __construct(
-        private IncusHost $host,
-    ) {}
+        private GuestTransport $host,
+        private int $readinessTimeoutSeconds = 120,
+        private int $readinessPollIntervalMicroseconds = 1_000_000,
+    ) {
+        if ($readinessTimeoutSeconds < 1 || $readinessPollIntervalMicroseconds < 0) {
+            throw new InvalidArgumentException('Topology readiness timing must be bounded and non-negative.');
+        }
+    }
 
     public function verify(TopologyTarget $target, VerificationMode $mode, SourceState $source): VerificationReport
     {
-        $results = [];
+        $results = array_fill_keys(array_keys(self::PROBES), false);
+        $pending = self::PROBES;
+        $deadline = microtime(true) + $this->readinessTimeoutSeconds;
 
-        foreach (self::PROBES as $name => $role) {
-            $results[$name] = $this->probe($target->instance($role), $name, $mode, $source);
-        }
+        do {
+            foreach ($pending as $name => $role) {
+                $remainingSeconds = max(1, (int) ceil($deadline - microtime(true)));
+                $arguments = [
+                    '/usr/local/bin/verify-topology.sh',
+                    $name,
+                    $mode->value,
+                    $source->guestSha,
+                ];
+                if ($name === 'wireguard.reachability') {
+                    $arguments[] = $target->instance('app-dev');
+                    $arguments[] = $target->instance('app-prod');
+                }
+                if ($this->probe(
+                    $target->instance($role),
+                    $name,
+                    $arguments,
+                    $source->guestSha,
+                    min(30, $remainingSeconds),
+                )) {
+                    $results[$name] = true;
+                    unset($pending[$name]);
+                }
+
+                if (microtime(true) >= $deadline) {
+                    break;
+                }
+            }
+
+            if ($pending === [] || $mode === VerificationMode::Proof || microtime(true) >= $deadline) {
+                break;
+            }
+
+            if ($this->readinessPollIntervalMicroseconds > 0) {
+                usleep($this->readinessPollIntervalMicroseconds);
+            }
+        } while (microtime(true) < $deadline);
 
         return new VerificationReport(! in_array(false, $results, true), $results);
     }
 
-    private function probe(string $instance, string $name, VerificationMode $mode, SourceState $source): bool
-    {
+    /** @param list<string> $arguments */
+    private function probe(
+        string $instance,
+        string $name,
+        array $arguments,
+        string $identity,
+        int $timeoutSeconds,
+    ): bool {
         try {
-            $result = $this->host->exec($instance, new GuestCommand([
-                '/usr/local/bin/verify-topology.sh',
-                $name,
-                $mode->value,
-                $source->guestSha,
-            ], 30));
+            $result = $this->host->exec($instance, new GuestCommand($arguments, $timeoutSeconds));
 
             if (! $result->successful()) {
                 return false;
@@ -76,7 +121,7 @@ final readonly class TopologyVerifier
             && array_keys($evidence) === ['probe', 'passed', 'identity']
             && ($evidence['probe'] ?? null) === $name
             && ($evidence['passed'] ?? null) === true
-            && ($evidence['identity'] ?? null) === $source->guestSha
+            && ($evidence['identity'] ?? null) === $identity
         );
     }
 }

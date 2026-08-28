@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\E2E;
 
 use App\E2E\Git\GitRepository;
+use App\E2E\Value\LaravelRelease;
 use App\E2E\Value\PreparedFingerprint;
 use InvalidArgumentException;
 use JsonException;
@@ -27,7 +28,7 @@ final readonly class PreparedStateFingerprint
         private string $manifestPath = 'apps/e2e/resources/prepared-state.json',
     ) {}
 
-    public function forCommit(string $commit = 'HEAD'): PreparedFingerprint
+    public function forCommit(string $commit = 'HEAD', ?LaravelRelease $laravel = null): PreparedFingerprint
     {
         $sha = $this->git->commit($commit);
         $blob = $this->git->blobs($sha, [$this->manifestPath])[$this->manifestPath];
@@ -39,6 +40,9 @@ final readonly class PreparedStateFingerprint
         }
 
         $manifest = $this->validateManifest($manifest);
+        if ($laravel !== null) {
+            $manifest['laravel_pin'] = ['tag' => $laravel->tag, 'commit' => $laravel->commit];
+        }
         $hashes = [];
 
         foreach ($this->git->blobs($sha, $manifest['paths']) as $path => $content) {

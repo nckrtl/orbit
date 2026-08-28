@@ -6,6 +6,7 @@ use App\E2E\State\AtomicJsonStore;
 use App\E2E\State\StatePaths;
 use App\E2E\TopologyManifestStore;
 use App\E2E\Value\FeatureTopology;
+use App\E2E\Value\LaravelRelease;
 use App\E2E\Value\SourceState;
 use App\E2E\Value\StandbyGeneration;
 use App\E2E\Value\TopologyTarget;
@@ -34,6 +35,7 @@ describe('TopologyManifestStore', function () {
             ],
             str_repeat('c', 64),
             str_repeat('d', 64),
+            new LaravelRelease('v13.10.1', '5aad4ddf34d5e21dfe6b4c07eeac67d5bd5e08b0'),
         );
         $source = new SourceState(str_repeat('b', 40), str_repeat('b', 40));
         $report = new VerificationReport(true, ['gateway.ready' => true]);
@@ -72,6 +74,7 @@ function topologyFixture(TopologyTarget $target): FeatureTopology
         ],
         str_repeat('c', 64),
         str_repeat('d', 64),
+        new LaravelRelease('v13.10.1', '5aad4ddf34d5e21dfe6b4c07eeac67d5bd5e08b0'),
     );
     $instances = [
         'gateway' => $target->instance('gateway'),

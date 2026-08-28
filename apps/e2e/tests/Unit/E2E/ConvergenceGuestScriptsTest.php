@@ -5,6 +5,180 @@ declare(strict_types=1);
 use Symfony\Component\Process\Process;
 
 describe('convergence guest scripts', function () {
+    it('keeps every guest script valid Bash', function () {
+        $scripts = glob(dirname(__DIR__, 3).'/resources/guest/*.sh');
+        expect($scripts)->not->toBeFalse()->not->toBeEmpty();
+
+        foreach ($scripts as $script) {
+            expect(new Process(['bash', '-n', $script], timeout: 5)->run())->toBe(0, $script);
+        }
+    });
+
+    it('enforces the verifier argument and output contract', function () {
+        $script = dirname(__DIR__, 3).'/resources/guest/verify-topology.sh';
+        $sha = str_repeat('a', 40);
+        expect(new Process(['bash', $script], timeout: 5)->run())->not->toBe(0);
+        foreach ([
+            ['vm.gateway.running', 'bad',       $sha],
+            ['vm.gateway.running', 'readiness', 'bad'],
+            ['unknown',            'readiness', $sha],
+        ] as $args) {
+            $process = new Process(['bash', $script, ...$args]);
+            expect($process->run())->not->toBe(0)->and(trim($process->getOutput()))->toBe('');
+        }
+    });
+
+    it('returns only three JSON keys for a command-only VM probe', function () {
+        $root = sys_get_temp_dir().'/orbit-verifier-'.bin2hex(random_bytes(4));
+        mkdir("{$root}/bin", 0o700, true);
+        file_put_contents("{$root}/bin/systemctl", "#!/usr/bin/env bash\nprintf 'running\\n'\n");
+        chmod("{$root}/bin/systemctl", 0o700);
+        $sha = str_repeat('a', 40);
+        $process = new Process([
+            'bash',
+            dirname(__DIR__, 3).'/resources/guest/verify-topology.sh',
+            'vm.gateway.running',
+            'readiness',
+            $sha,
+        ], env: ['PATH' => "{$root}/bin:".getenv('PATH')]);
+        expect($process->mustRun()->getOutput())->toBe(json_encode([
+            'probe' => 'vm.gateway.running',
+            'passed' => true,
+            'identity' => $sha,
+        ])
+            ."\n");
+    });
+
+    it('accepts degraded system state but rejects other non-failed states', function () {
+        $root = sys_get_temp_dir().'/orbit-verifier-state-'.bin2hex(random_bytes(4));
+        mkdir("{$root}/bin", 0o700, true);
+        file_put_contents("{$root}/bin/systemctl", "#!/usr/bin/env bash\nprintf '%s\\n' \"\$SYSTEM_STATE\"\n");
+        chmod("{$root}/bin/systemctl", 0o700);
+        $script = dirname(__DIR__, 3).'/resources/guest/verify-topology.sh';
+        $sha = str_repeat('a', 40);
+
+        $degraded = new Process(['bash', $script, 'vm.gateway.running', 'readiness', $sha], env: [
+            'PATH' => "{$root}/bin:".getenv('PATH'),
+            'SYSTEM_STATE' => 'degraded',
+        ]);
+        expect($degraded->run())->toBe(0);
+
+        $starting = new Process(['bash', $script, 'vm.gateway.running', 'readiness', $sha], env: [
+            'PATH' => "{$root}/bin:".getenv('PATH'),
+            'SYSTEM_STATE' => 'starting',
+        ]);
+        expect($starting->run())->not->toBe(0);
+    });
+
+    it('keeps the CLI gateway status check for the app-dev operator only', function () {
+        $source = file_get_contents(dirname(__DIR__, 3).'/resources/guest/verify-topology.sh');
+        preg_match('/role\.gateway\) (.*?);/s', $source, $gatewayBranch);
+        expect($gatewayBranch[1] ?? '')
+            ->not
+            ->toContain('gateway:status')
+            ->and($source)
+            ->toContain('operator.app-dev) sudo -u orbit -- env HOME=/home/orbit ORBIT_HOME=/home/orbit/.orbit');
+    });
+
+    it('emits no JSON when an observable command fails', function () {
+        $root = sys_get_temp_dir().'/orbit-verifier-fail-'.bin2hex(random_bytes(4));
+        mkdir("{$root}/bin", 0o700, true);
+        file_put_contents("{$root}/bin/systemctl", "#!/usr/bin/env bash\nexit 1\n");
+        chmod("{$root}/bin/systemctl", 0o700);
+        $process = new Process([
+            'bash',
+            dirname(__DIR__, 3).'/resources/guest/verify-topology.sh',
+            'vm.gateway.running',
+            'readiness',
+            str_repeat('a', 40),
+        ], env: ['PATH' => "{$root}/bin:".getenv('PATH')]);
+        expect($process->run())->not->toBe(0)->and(trim($process->getOutput()))->toBe('');
+    });
+
+    it('fails wireguard reachability before SSH when the app-prod route is missing', function () {
+        $root = sys_get_temp_dir().'/orbit-verifier-wireguard-'.bin2hex(random_bytes(4));
+        mkdir("{$root}/bin", 0o700, true);
+        mkdir("{$root}/home/orbit/.orbit/ssh", 0o700, true);
+        file_put_contents("{$root}/gateway.sqlite", 'fixture');
+        file_put_contents("{$root}/home/orbit/.orbit/ssh/id_ed25519", 'fixture');
+
+        file_put_contents("{$root}/bin/sqlite3", <<<'BASH'
+            #!/usr/bin/env bash
+            case "$*" in
+              *app-dev*) printf '10.0.0.10\n' ;;
+              *app-prod*) printf '10.0.0.20\n' ;;
+              *) exit 1 ;;
+            esac
+            BASH);
+        file_put_contents("{$root}/bin/wg", <<<'BASH'
+            #!/usr/bin/env bash
+            printf '%s\n' 'peer-dev 10.0.0.10/32' 'peer-unrelated 10.0.0.99/32'
+            BASH);
+        file_put_contents("{$root}/bin/sudo", <<<'BASH'
+            #!/usr/bin/env bash
+            shift 3
+            exec "$@"
+            BASH);
+        file_put_contents("{$root}/bin/ssh", "#!/usr/bin/env bash\nprintf 'ssh-reached\\n' >> '{$root}/ssh-reached'\n");
+
+        foreach (['sqlite3', 'wg', 'sudo', 'ssh'] as $command) {
+            chmod("{$root}/bin/{$command}", 0o700);
+        }
+
+        $source = file_get_contents(dirname(__DIR__, 3).'/resources/guest/verify-topology.sh');
+        $script = str_replace(
+            ['/home/orbit/.orbit/gateway.sqlite', '/home/orbit/.orbit/ssh/id_ed25519'],
+            ["{$root}/gateway.sqlite", "{$root}/home/orbit/.orbit/ssh/id_ed25519"],
+            $source,
+        );
+        file_put_contents("{$root}/verify-topology.sh", $script);
+        chmod("{$root}/verify-topology.sh", 0o700);
+
+        $process = new Process([
+            'bash',
+            "{$root}/verify-topology.sh",
+            'wireguard.reachability',
+            'readiness',
+            str_repeat('a', 40),
+            'app-dev',
+            'app-prod',
+        ], env: ['PATH' => "{$root}/bin:".getenv('PATH')]);
+
+        expect($process->run())
+            ->not
+            ->toBe(0)
+            ->and(trim($process->getOutput()))
+            ->toBe('')
+            ->and(file_exists("{$root}/ssh-reached"))
+            ->toBeFalse();
+    });
+
+    it('keeps verifier contract paths and commands explicit', function () {
+        $source = file_get_contents(dirname(__DIR__, 3).'/resources/guest/verify-topology.sh');
+        expect($source)->toContain(
+            'php8.5-fpm',
+            'wg-quick@orbit',
+            'wg show orbit',
+            'orbit',
+            '/home/orbit/apps/laravel',
+            '/home/orbit/.orbit/worktrees/laravel/e2e',
+            '/var/www/laravel/e2e-prod',
+            '/home/orbit/orbit/.git/orbit-overlay.paths',
+            'gateway:status',
+            'gateway.orbit',
+            'caddy-ca-path',
+            'sqlite3 -cmd ".parameter set :name $app_dev_name"',
+            'HostKeyAlias="$app_dev_name"',
+            '"orbit@$app_dev_address"',
+            'StrictHostKeyChecking=yes',
+        );
+        expect($source)
+            ->not->toContain('"orbit@$app_dev_name"')
+            ->not->toContain('StrictHostKeyChecking=no')->toContain(
+                'awk -v expected="$app_dev_address/32"',
+                'awk -v expected="$app_prod_address/32"',
+            );
+    });
     it('uses fixed paths, safe arguments, idempotent resources, and the stock Laravel repository', function () {
         $guest = dirname(__DIR__, 3).'/resources/guest';
         $scripts = [
@@ -22,26 +196,66 @@ describe('convergence guest scripts', function () {
 
         $prepare = file_get_contents("{$guest}/prepare-node.sh");
         $gateway = file_get_contents("{$guest}/converge-gateway.sh");
+        $hydrate = file_get_contents("{$guest}/hydrate-orbit.sh");
         $production = file_get_contents("{$guest}/converge-app-prod-internal-tls.sh");
         $sample = file_get_contents("{$guest}/converge-sample-app.sh");
 
         expect($prepare)
-            ->toContain('/home/orbit/orbit/apps/e2e/resources/guest/hydrate-orbit.sh')
-            ->and($gateway)
-            ->toContain('/home/orbit/orbit', 'database.sqlite', 'migrate --force', 'orbit:bootstrap')
-            ->and($production)
-            ->toContain('local_certs', 'caddy validate', 'systemctl reload caddy', 'caddy-ca-path')
-            ->and($sample)
-            ->toContain(
+            ->not->toContain('hydrate-orbit.sh')->and($gateway)->toContain(
+                '/home/orbit/orbit',
+                '/home/orbit/.orbit/gateway.sqlite',
+                'migrate --force',
+                'orbit:bootstrap',
+                'ORBIT_GATEWAY_CHECKOUT=/home/orbit/orbit/apps/gateway',
+            )
+            ->not->toContain('hydrate-orbit.sh')->and($production)->toContain(
+                'local_certs',
+                'caddy validate',
+                'systemctl reload caddy',
+                'caddy-ca-path',
+            )->and($sample)->toContain(
                 'https://github.com/laravel/laravel.git',
                 'app:new laravel',
                 'instance:new',
                 'workspace:new',
                 'APP_KEY=base64:',
                 'composer install',
+                'runtime_user=orbit',
+                'runtime_user=orbit-laravel',
+                'sudo -u "$runtime_user"',
+                '/home/orbit/.orbit/e2e-gateway-root-ca.pem',
                 'readlink -f /etc/caddy/Caddyfile',
                 'curl --fail --silent --show-error --cacert',
-            );
+            )->and($hydrate)->toContain(
+                '$ORBIT_HOME/gateway.app-key',
+                'openssl rand -base64 32',
+                'ORBIT_GATEWAY_CHECKOUT=/home/orbit/orbit/apps/gateway',
+                'DB_DATABASE=/home/orbit/.orbit/gateway.sqlite',
+            )
+            ->not->toContain('AAAAAAAAAAAAAAAA');
+
+        expect($production)
+            ->toContain(
+                'sudo -u orbit -- env HOME=/home/orbit ssh -i /home/orbit/.orbit/ssh/id_ed25519',
+                '-o UserKnownHostsFile=/home/orbit/.orbit/ssh/known_hosts',
+                '-o BatchMode=yes',
+                '-o StrictHostKeyChecking=yes',
+                '-- orbit@"$1"',
+            )
+            ->not->toContain('ssh -o BatchMode=yes -- "$1"');
+    });
+
+    it('hydrates Composer dependencies only when the lock marker is stale', function () {
+        $source = file_get_contents(dirname(__DIR__, 3).'/resources/guest/hydrate-orbit.sh');
+
+        expect($source)
+            ->toContain('hydrate_composer_dependencies()')
+            ->toContain('sha256sum "$project_path/composer.lock"')
+            ->toContain('vendor/.orbit-e2e-composer-lock')
+            ->toContain('vendor/autoload.php')
+            ->toContain('mktemp "$project_path/vendor/.orbit-e2e-composer-lock.XXXXXX"')
+            ->toContain('mv -f "$marker_tmp" "$marker"')
+            ->toContain('hydrate_composer_dependencies "$repo/$project"');
     });
 
     it('does not create duplicate sample resources on a second run', function () {

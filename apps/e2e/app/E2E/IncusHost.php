@@ -14,6 +14,7 @@ use App\E2E\Value\IncusSnapshot;
 use App\E2E\Value\OperationId;
 use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Support\Facades\Process;
+use InvalidArgumentException;
 use JsonException;
 use RuntimeException;
 use Throwable;
@@ -23,8 +24,11 @@ use Throwable;
  * @mago-expect lint:kan-defect The boundary fails closed for each identity and ownership check.
  * @mago-expect lint:too-many-methods The approved adapter contract requires this exact method surface.
  */
-final readonly class IncusHost
+final readonly class IncusHost implements GuestTransport
 {
+    private const int GUEST_READINESS_POLL_INTERVAL_MICROSECONDS = 1_000_000;
+    private const string NETWORK_IDENTITY_SCRIPT = 'rm -f /etc/machine-id /var/lib/dbus/machine-id && systemd-machine-id-setup && systemctl restart systemd-journald && rm -f /run/systemd/netif/leases/* /var/lib/systemd/network/* && (systemctl --no-block restart systemd-networkd 2>/dev/null || systemctl --no-block restart NetworkManager 2>/dev/null || true)';
+
     /**
      * @param array<string, string> $ownershipMetadata
      * @mago-expect lint:excessive-parameter-list Explicit dependencies keep this infrastructure boundary configurable and testable.
@@ -37,10 +41,14 @@ final readonly class IncusHost
         private SecretRedactor $redactor = new SecretRedactor,
         private ?OperationJournal $journal = null,
         private ?OperationId $operationId = null,
+        private int $guestReadinessTimeoutSeconds = 120,
     ) {
         $this->validateName($remote, 'remote');
         $this->validateName($project, 'project');
         $this->validateName($pool, 'storage pool');
+        if ($guestReadinessTimeoutSeconds < 1) {
+            throw new InvalidArgumentException('Guest readiness timeout must be positive.');
+        }
 
         if ($ownershipMetadata === []) {
             throw new RuntimeException('Incus ownership metadata cannot be empty.');
@@ -208,6 +216,7 @@ final readonly class IncusHost
         $this->validateName($source, 'instance');
         $this->validateName($snapshot, 'snapshot');
         $this->validateName($target, 'instance');
+        $this->assertOwnedSnapshot($source, $snapshot);
         $this->run([
             'copy',
             "{$this->target($source)}/{$snapshot}",
@@ -274,6 +283,158 @@ final readonly class IncusHost
         $this->run(['start', $this->target($instance)], 120);
     }
 
+    /** @param list<string> $instances */
+    public function waitForAgents(array $instances): void
+    {
+        if ($instances === [] || count($instances) !== count(array_unique($instances))) {
+            throw new RuntimeException('Incus guest agent instance list must be non-empty and unique.');
+        }
+
+        foreach ($instances as $instance) {
+            $this->validatedOwnedVm($instance);
+        }
+
+        $deadline = microtime(true) + $this->guestReadinessTimeoutSeconds;
+        $pending = array_fill_keys($instances, true);
+
+        while ($pending !== []) {
+            if (microtime(true) >= $deadline) {
+                break;
+            }
+
+            foreach (array_keys($pending) as $instance) {
+                try {
+                    $probe = $this->run(
+                        ['exec', $this->target($instance), '--', '/bin/true'],
+                        10,
+                        false,
+                    );
+                } catch (RuntimeException) {
+                    continue;
+                }
+                if ($probe->successful()) {
+                    unset($pending[$instance]);
+                }
+            }
+
+            if (microtime(true) >= $deadline) {
+                break;
+            }
+
+            if ($pending === []) {
+                break;
+            }
+
+            usleep(self::GUEST_READINESS_POLL_INTERVAL_MICROSECONDS);
+        }
+
+        if ($pending !== []) {
+            throw new RuntimeException('Timed out waiting for Incus guest agents to become ready.');
+        }
+    }
+
+    /** @param list<string> $instances */
+    public function waitForGlobalIpv4(array $instances): void
+    {
+        if ($instances === [] || count($instances) !== count(array_unique($instances))) {
+            throw new RuntimeException('Incus IPv4 instance list must be non-empty and unique.');
+        }
+
+        foreach ($instances as $instance) {
+            $this->validatedOwnedVm($instance);
+        }
+
+        $deadline = microtime(true) + $this->guestReadinessTimeoutSeconds;
+        $pending = array_fill_keys($instances, true);
+        while ($pending !== []) {
+            if (microtime(true) >= $deadline) {
+                break;
+            }
+
+            foreach (array_keys($pending) as $instance) {
+                try {
+                    $probe = $this->exec($instance, new GuestCommand([
+                        'ip',
+                        '-4',
+                        '-o',
+                        'addr',
+                        'show',
+                        'scope',
+                        'global',
+                    ], 10));
+                } catch (RuntimeException) {
+                    continue;
+                }
+                if ($probe->successful() && $this->hasUsableGlobalIpv4($probe->stdout)) {
+                    unset($pending[$instance]);
+                }
+            }
+            if ($pending === [] || microtime(true) >= $deadline) {
+                break;
+            }
+            usleep(self::GUEST_READINESS_POLL_INTERVAL_MICROSECONDS);
+        }
+
+        if ($pending !== []) {
+            throw new RuntimeException('Timed out waiting for Incus guests to receive global IPv4 addresses.');
+        }
+    }
+
+    public function regenerateNetworkIdentity(string $instance): void
+    {
+        $this->validatedOwnedVm($instance);
+        $result = $this->exec(
+            $instance,
+            new GuestCommand(
+                [
+                    'sh',
+                    '-c',
+                    self::NETWORK_IDENTITY_SCRIPT,
+                ],
+                60,
+            ),
+        );
+        if (! $result->successful()) {
+            throw new RuntimeException("Failed to regenerate network identity for {$instance}.");
+        }
+    }
+
+    public function setDeterministicMac(string $instance, string $runId, string $role): void
+    {
+        $this->validatedOwnedVm($instance);
+        $hash = substr(sha1("{$runId}:{$role}"), 0, 6);
+        $mac = '00:16:3e:'.implode(':', str_split($hash, 2));
+        $this->run(['config', 'device', 'override', $this->target($instance), 'eth0', "hwaddr={$mac}"]);
+    }
+
+    private function hasUsableGlobalIpv4(string $output): bool
+    {
+        foreach (preg_split('/\R/', trim($output)) ?: [] as $line) {
+            $interface = preg_split('/\s+/', trim($line))[1] ?? '';
+            $interface = rtrim($interface, ':');
+            if (
+                $interface === 'lo'
+                || in_array($interface, ['wg-orbit', 'wg0', 'docker0', 'docker_gwbridge'], true)
+                || str_starts_with($interface, 'br-')
+                || str_starts_with($interface, 'veth')
+            ) {
+                continue;
+            }
+            $fields = preg_split('/\s+/', trim($line)) ?: [];
+            foreach ($fields as $field) {
+                $address = explode('/', $field, 2)[0];
+                if (
+                    filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false
+                    && ! str_starts_with($address, '127.')
+                ) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
     public function stop(string $instance): void
     {
         $this->validatedOwnedVm($instance);
@@ -295,9 +456,24 @@ final readonly class IncusHost
         $this->run(['snapshot', 'restore', $this->target($instance), $snapshot], 300);
     }
 
+    /** Assert that an exact, Orbit-owned snapshot exists on an exact VM. */
+    public function assertOwnedSnapshot(string $instance, string $snapshot): void
+    {
+        $this->validatedOwnedSnapshot($instance, $snapshot);
+    }
+
     public function deleteSnapshot(string $instance, string $snapshot): void
     {
         $this->validatedOwnedSnapshot($instance, $snapshot);
+        $this->run(['snapshot', 'delete', $this->target($instance), $snapshot], 300);
+    }
+
+    public function deleteSnapshotIfExists(string $instance, string $snapshot): void
+    {
+        if (! $this->ownedSnapshotExists($instance, $snapshot)) {
+            return;
+        }
+
         $this->run(['snapshot', 'delete', $this->target($instance), $snapshot], 300);
     }
 
@@ -316,6 +492,10 @@ final readonly class IncusHost
 
         $this->assertOwned($resource->metadata, "network {$network}");
         $this->run(['network', 'delete', "{$this->remote}:{$network}"]);
+
+        if ($this->network($network) !== null) {
+            throw new RuntimeException("Incus network {$network} still exists after deletion.");
+        }
     }
 
     public function pushFile(string $instance, string $source, string $destination): void
@@ -366,6 +546,13 @@ final readonly class IncusHost
 
     private function validatedOwnedSnapshot(string $instance, string $snapshot): void
     {
+        if (! $this->ownedSnapshotExists($instance, $snapshot)) {
+            throw new RuntimeException('Incus snapshot identity changed before mutation.');
+        }
+    }
+
+    private function ownedSnapshotExists(string $instance, string $snapshot): bool
+    {
         $vm = $this->validatedOwnedVm($instance);
         $this->validateName($snapshot, 'snapshot');
         $resources = $this->readJson(['snapshot', 'list', $this->target($instance), '--format=json']);
@@ -375,7 +562,7 @@ final readonly class IncusHost
             fn ($candidate) => is_array($candidate) && in_array($candidate['name'] ?? null, $expectedNames, true),
         );
         if (! is_array($resource)) {
-            throw new RuntimeException('Incus snapshot identity changed before mutation.');
+            return false;
         }
         $observedName = $resource['name'] ?? null;
 
@@ -385,6 +572,8 @@ final readonly class IncusHost
 
         $metadata = $this->metadata($resource);
         $this->assertOwned($metadata === [] ? $vm->metadata : $metadata, "snapshot {$instance}/{$snapshot}");
+
+        return true;
     }
 
     /** @param array<string, string> $metadata */

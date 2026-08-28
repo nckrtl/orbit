@@ -37,7 +37,162 @@ function removeSyncRepository(string $path): void
     new Illuminate\Filesystem\Filesystem()->deleteDirectory($path);
 }
 
+/** @return array{output:string,error:string,exitCode:int} */
+function runReceiveSource(string ...$arguments): array
+{
+    $process = new Symfony\Component\Process\Process([
+        'bash',
+        dirname(__DIR__, 3).'/resources/guest/receive-source.sh',
+        ...$arguments,
+    ]);
+    $process->run();
+
+    return [
+        'output' => $process->getOutput(),
+        'error' => $process->getErrorOutput(),
+        'exitCode' => $process->getExitCode() ?? -1,
+    ];
+}
+
 describe('worktree source preparation', function () {
+    it('removes the temporary index when effective tree construction fails', function () {
+        $host = syncRepository();
+        $guest = sys_get_temp_dir().'/orbit-sync-guest-'.bin2hex(random_bytes(8));
+        mkdir($guest, 0700);
+        $transfer = sys_get_temp_dir().'/orbit-transfer-'.bin2hex(random_bytes(8));
+        mkdir($transfer, 0700);
+        try {
+            $repository = new GitRepository($host);
+            $sha = $repository->commit();
+            $bundle = $transfer.'/source.bundle';
+            $repository->createBundle($bundle, $sha);
+            file_put_contents($transfer.'/blocked', "blocked\n");
+            new Symfony\Component\Process\Process([
+                'tar',
+                '--mode=000',
+                '-cf',
+                $transfer.'/bad.tar',
+                '-C',
+                $transfer,
+                'blocked',
+            ])->mustRun();
+            $manifest = $transfer.'/manifest';
+            file_put_contents($manifest, "blocked\0");
+            $deletions = $transfer.'/deletions';
+            file_put_contents($deletions, '');
+            $tmp = $transfer.'/tmp';
+            mkdir($tmp, 0700);
+            $old = getenv('TMPDIR');
+            putenv('TMPDIR='.$tmp);
+            try {
+                $result = runReceiveSource(
+                    $guest,
+                    $sha,
+                    $bundle,
+                    $transfer.'/bad.tar',
+                    $manifest,
+                    $deletions,
+                    $repository->effectiveTreeHash(),
+                );
+            } finally {
+                putenv($old === false ? 'TMPDIR' : 'TMPDIR='.$old);
+            }
+            expect($result['exitCode'])
+                ->not
+                ->toBe(0)
+                ->and($result['error'])
+                ->toContain('unable to index file')
+                ->and(file_exists($guest.'/blocked'))
+                ->toBeTrue()
+                ->and(fileperms($guest.'/blocked') & 0777)
+                ->toBe(0)
+                ->and(scandir($tmp))
+                ->toBe(['.', '..']);
+        } finally {
+            if (file_exists($guest.'/blocked'))
+                chmod($guest.'/blocked', 0600);
+            removeSyncRepository($host);
+            removeSyncRepository($guest);
+            removeSyncRepository($transfer);
+        }
+    });
+
+    it('receives a bundle and replaces a dirty overlay with verified tree evidence', function () {
+        $host = syncRepository();
+        $guest = sys_get_temp_dir().'/orbit-sync-guest-'.bin2hex(random_bytes(8));
+        mkdir($guest, 0700);
+
+        try {
+            file_put_contents($host.'/deleted.txt', "remove me\n");
+            syncGit($host, 'add', 'deleted.txt');
+            syncGit($host, 'commit', '--quiet', '-m', 'Overlay base');
+            unlink($host.'/deleted.txt');
+            file_put_contents($host.'/tracked.txt', "overlay\n");
+            file_put_contents($host.'/untracked.txt', "new\n");
+
+            $repository = new GitRepository($host);
+            $overlay = $repository->dirtyOverlay();
+            $expectedTree = $overlay?->treeHash ?? $repository->effectiveTreeHash();
+            $sha = $repository->commit();
+            $transfer = sys_get_temp_dir().'/orbit-transfer-'.bin2hex(random_bytes(8));
+            mkdir($transfer, 0700);
+            $bundle = $transfer.'/source.bundle';
+            $archive = $transfer.'/overlay.tar';
+            $manifest = $transfer.'/overlay.paths';
+            $deletions = $transfer.'/overlay.deletions';
+            $repository->createBundle($bundle, $sha);
+            $repository->createOverlayArchive($archive, $overlay?->paths ?? []);
+            file_put_contents($manifest, implode("\0", $overlay?->paths ?? [])."\0");
+            file_put_contents(
+                $deletions,
+                implode(
+                    "\0",
+                    array_values(array_filter(
+                        $overlay?->paths ?? [],
+                        fn (string $path): bool => ! file_exists($host.'/'.$path),
+                    )),
+                )
+                    ."\0",
+            );
+
+            $result = runReceiveSource($guest, $sha, $bundle, $archive, $manifest, $deletions, $expectedTree);
+            expect($result['exitCode'])->toBe(0, $result['output']);
+            $evidence = json_decode($result['output'], true, 16, JSON_THROW_ON_ERROR);
+
+            expect($evidence)
+                ->toEqual(['sha' => $sha, 'tree_hash' => $expectedTree])
+                ->and(new GitRepository($guest)->effectiveTreeHash())
+                ->toBe($expectedTree)
+                ->and(file_exists($guest.'/deleted.txt'))
+                ->toBeFalse()
+                ->and(file_get_contents($guest.'/tracked.txt'))
+                ->toBe("overlay\n")
+                ->and(file_get_contents($guest.'/untracked.txt'))
+                ->toBe("new\n");
+
+            unlink($host.'/untracked.txt');
+            file_put_contents($host.'/second.txt', "second\n");
+            $overlay = $repository->dirtyOverlay();
+            $repository->createOverlayArchive($archive, $overlay?->paths ?? []);
+            file_put_contents($manifest, implode("\0", $overlay?->paths ?? [])."\0");
+            $expectedTree = $repository->effectiveTreeHash();
+            $result = runReceiveSource($guest, $sha, $bundle, $archive, $manifest, $deletions, $expectedTree);
+
+            expect($result['exitCode'])
+                ->toBe(0)
+                ->and(file_exists($guest.'/untracked.txt'))
+                ->toBeFalse()
+                ->and(file_get_contents($guest.'/second.txt'))
+                ->toBe("second\n");
+        } finally {
+            removeSyncRepository($host);
+            removeSyncRepository($guest);
+            if (isset($transfer)) {
+                removeSyncRepository($transfer);
+            }
+        }
+    });
+
     it('creates complete and prerequisite bundles for an exact local commit', function () {
         $path = syncRepository();
         try {
@@ -57,6 +212,26 @@ describe('worktree source preparation', function () {
                 ->and(filesize($complete))
                 ->toBeGreaterThan(0)
                 ->and(filesize($incremental))
+                ->toBeGreaterThan(0)
+                ->and(syncGit($path, 'for-each-ref', '--format=%(refname)', 'refs/orbit/e2e-source'))
+                ->toBe('');
+        } finally {
+            removeSyncRepository($path);
+        }
+    });
+
+    it('creates a complete bundle when the prerequisite matches the commit', function () {
+        $path = syncRepository();
+        try {
+            $repository = new GitRepository($path);
+            $commit = $repository->commit();
+            $bundle = $path.'/same-commit.bundle';
+
+            $repository->createBundle($bundle, $commit, $commit);
+
+            expect(syncGit($path, 'bundle', 'verify', $bundle))
+                ->toContain('The bundle records a complete history')
+                ->and(filesize($bundle))
                 ->toBeGreaterThan(0)
                 ->and(syncGit($path, 'for-each-ref', '--format=%(refname)', 'refs/orbit/e2e-source'))
                 ->toBe('');
@@ -112,6 +287,50 @@ describe('worktree source preparation', function () {
                 ->not->toContain('ignored.txt');
         } finally {
             removeSyncRepository($path);
+        }
+    });
+
+    it('preserves ignored dependency directories while cleaning the checkout', function () {
+        $host = syncRepository();
+        $guest = sys_get_temp_dir().'/orbit-sync-guest-'.bin2hex(random_bytes(8));
+        mkdir($guest, 0700);
+        $transfer = sys_get_temp_dir().'/orbit-transfer-'.bin2hex(random_bytes(8));
+        mkdir($transfer, 0700);
+        try {
+            file_put_contents($host.'/.gitignore', "ignored.txt\nvendor/\n");
+            syncGit($host, 'add', '.gitignore');
+            syncGit($host, 'commit', '--quiet', '-m', 'Ignore dependencies');
+            $repository = new GitRepository($host);
+            $sha = $repository->commit();
+            $bundle = $transfer.'/source.bundle';
+            $archive = $transfer.'/overlay.tar';
+            $manifest = $transfer.'/manifest';
+            $deletions = $transfer.'/deletions';
+            $repository->createBundle($bundle, $sha);
+            $repository->createOverlayArchive($archive, []);
+            file_put_contents($manifest, '');
+            file_put_contents($deletions, '');
+            mkdir($guest.'/vendor/package', 0700, true);
+            file_put_contents($guest.'/vendor/package/installed.php', "dependency\n");
+
+            $result = runReceiveSource(
+                $guest,
+                $sha,
+                $bundle,
+                $archive,
+                $manifest,
+                $deletions,
+                $repository->effectiveTreeHash(),
+            );
+
+            expect($result['exitCode'])
+                ->toBe(0, $result['error'])
+                ->and(file_get_contents($guest.'/vendor/package/installed.php'))
+                ->toBe("dependency\n");
+        } finally {
+            removeSyncRepository($host);
+            removeSyncRepository($guest);
+            removeSyncRepository($transfer);
         }
     });
 
@@ -183,6 +402,7 @@ describe('worktree source preparation', function () {
                 $sha,
                 $bundle,
                 $archive,
+                $manifest,
                 $manifest,
                 $repository->effectiveTreeHash(),
             ]);

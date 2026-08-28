@@ -102,7 +102,8 @@ describe('StandbyBuilder', function () {
         $state = new AtomicJsonStore($paths);
         $started = [];
         $initialized = [];
-        Process::fake(function (PendingProcess $process) use (&$started, &$initialized) {
+        $events = [];
+        Process::fake(function (PendingProcess $process) use (&$started, &$initialized, &$events) {
             $command = $process->command;
             assert(is_array($command), 'Incus uses argument arrays.');
             if (in_array('image', $command, true)) {
@@ -143,10 +144,21 @@ describe('StandbyBuilder', function () {
                 );
             }
             if (in_array('start', $command, true)) {
+                $events[] = 'start';
                 $started[] = array_values(array_filter(
                     $command,
                     fn (mixed $value): bool => is_string($value) && str_contains($value, 'standby-'),
                 ))[0];
+
+                return Process::result();
+            }
+            if (in_array('ip', $command, true)) {
+                $events[] = 'ipv4';
+
+                return Process::result("2: eth0    inet 10.44.0.10/24 scope global eth0\n");
+            }
+            if (in_array('/bin/true', $command, true)) {
+                $events[] = 'wait';
 
                 return Process::result();
             }
@@ -165,11 +177,24 @@ describe('StandbyBuilder', function () {
         ))
             ->toThrow(RuntimeException::class, 'cleanup failed');
 
-        expect($started)->toBe([
-            'local:orbit-e2e-standby-gateway',
-            'local:orbit-e2e-standby-app-dev',
-            'local:orbit-e2e-standby-app-prod',
-        ]);
+        expect($started)
+            ->toBe([
+                'local:orbit-e2e-standby-gateway',
+                'local:orbit-e2e-standby-app-dev',
+                'local:orbit-e2e-standby-app-prod',
+            ])
+            ->and($events)
+            ->toBe([
+                'start',
+                'start',
+                'start',
+                'wait',
+                'wait',
+                'wait',
+                'ipv4',
+                'ipv4',
+                'ipv4',
+            ]);
     });
 
     it('accepts a fully cleaned attempt recorded with the former standby network identity', function () {

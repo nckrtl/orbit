@@ -9,6 +9,7 @@ use App\E2E\State\AtomicJsonStore;
 use App\E2E\State\OperationJournal;
 use App\E2E\State\OperationLock;
 use App\E2E\Value\GuestCommand;
+use App\E2E\Value\LaravelRelease;
 use App\E2E\Value\MigrationPlan;
 use App\E2E\Value\OperationId;
 use App\E2E\Value\RefreshResult;
@@ -27,7 +28,6 @@ final readonly class StandbyRefresher
         private IncusHost $host,
         private PreparedStateFingerprint $fingerprints,
         private StandbyManifestStore $manifests,
-        private RefreshRequestStore $requests,
         private StandbyBuilder $builder,
         private WorktreeSynchronizer $synchronizer,
         private TopologyConverger $converger,
@@ -48,28 +48,19 @@ final readonly class StandbyRefresher
 
         $operation = new OperationId(bin2hex(random_bytes(16)));
         $evidence = bin2hex(random_bytes(16));
-        $this->requests->request($mainSha);
-        if (! $this->lock->acquire('standby-refresh', $operation, timeoutSeconds: 5.0)) {
-            return new RefreshResult('queued', $operation->value, $evidence);
+        if (! $this->lock->acquire('standby-generation', $operation, timeoutSeconds: 5.0)) {
+            $this->writeFailureIfMissing("standby/failures/{$evidence}.json", [
+                'schema' => 1,
+                'main_sha' => $mainSha,
+                'message' => 'Unable to acquire the standby generation lock.',
+            ]);
+
+            return new RefreshResult('failed', $operation->value, $evidence);
         }
 
         try {
             try {
-                $result = new RefreshResult('unchanged', $operation->value, $evidence);
-                while (($pending = $this->requests->pending()) !== null) {
-                    $result = $this->refresh(
-                        $pending,
-                        $pending === $mainSha ? $migration : null,
-                        $allowCold,
-                        $operation,
-                        $evidence,
-                    );
-                    if ($result->state === 'failed') {
-                        return $result;
-                    }
-                }
-
-                return $result;
+                return $this->refresh($mainSha, $migration, $allowCold, $operation, $evidence);
             } catch (Throwable $exception) {
                 $this->writeFailureIfMissing("standby/failures/{$evidence}.json", [
                     'schema' => 1,
@@ -86,16 +77,26 @@ final readonly class StandbyRefresher
 
     public function restore(): StandbyGeneration
     {
-        $generation = $this->manifests->promoted();
-        if ($generation === null) {
-            throw new RuntimeException('There is no promoted standby generation.');
+        $operation = new OperationId(bin2hex(random_bytes(16)));
+        if (! $this->lock->acquire('standby-generation', $operation, timeoutSeconds: 3600)) {
+            throw new RuntimeException('Unable to acquire the standby generation lock.');
         }
 
-        $this->stopAndProve();
-        $this->restoreSnapshots($generation);
-        $this->assertStopped();
+        try {
+            $generation = $this->manifests->promoted();
+            if ($generation === null) {
+                throw new RuntimeException('There is no promoted standby generation.');
+            }
 
-        return $generation;
+            $this->stopAndProve();
+            $this->restoreSnapshots($generation);
+            $this->assertStopped();
+            $this->state->delete('standby/corrupt.json');
+
+            return $generation;
+        } finally {
+            $this->lock->release();
+        }
     }
 
     private function refresh(
@@ -109,30 +110,31 @@ final readonly class StandbyRefresher
             throw new RuntimeException('The host main checkout does not match the requested clean SHA.');
         }
 
-        $desired = $this->fingerprints->forCommit($mainSha);
-        $alias = $desired->manifest['base_image_alias'] ?? null;
-        if (! is_string($alias) || $alias === '') {
-            throw new RuntimeException('The prepared fingerprint has no base image alias.');
-        }
-        $baseImageFingerprint = $this->host->imageFingerprint($alias);
         try {
             $promoted = $this->manifests->promoted();
         } catch (Throwable $exception) {
             $this->markCorrupt($evidence, $exception);
             throw $exception;
         }
-
+        $desired = $this->fingerprints->forCommit($mainSha, $promoted?->laravel);
+        $alias = $desired->manifest['base_image_alias'] ?? null;
+        if (! is_string($alias) || $alias === '') {
+            throw new RuntimeException('The prepared fingerprint has no base image alias.');
+        }
+        $baseImageFingerprint = $this->host->imageFingerprint($alias);
         if (
             $promoted !== null
             && $promoted->preparedFingerprint === $desired->value
             && $promoted->baseImageFingerprint === $baseImageFingerprint
         ) {
-            $this->requests->clear($mainSha);
+            $this->assertGenerationAvailable($promoted);
+            $this->assertStopped();
 
             return new RefreshResult('unchanged', $operation->value, $evidence, $promoted->id);
         }
 
-        $release = $this->laravel->resolve('^13.0');
+        $release = $this->laravel->resolve('>=13.0.0');
+        $desired = $this->fingerprints->forCommit($mainSha, $release);
         $target = TopologyTarget::standby();
 
         try {
@@ -178,12 +180,12 @@ final readonly class StandbyRefresher
                 $mainSha,
                 $desired->value,
                 $baseImageFingerprint,
+                $release,
                 $promoted?->id,
             );
             $this->manifests->record($generation);
             $this->manifests->promote($generation);
-            $this->prune($generation);
-            $this->requests->clear($mainSha);
+            $this->prune($generation, $evidence);
 
             return new RefreshResult('promoted', $operation->value, $evidence, $generation->id);
         } catch (Throwable $exception) {
@@ -206,9 +208,18 @@ final readonly class StandbyRefresher
 
     private function restoreSnapshots(StandbyGeneration $generation): void
     {
+        $this->assertGenerationAvailable($generation);
         $target = TopologyTarget::standby();
         foreach (TopologyProfile::ROLES as $role) {
             $this->host->restore($target->instance($role), $generation->snapshots[$role]);
+        }
+    }
+
+    private function assertGenerationAvailable(StandbyGeneration $generation): void
+    {
+        $target = TopologyTarget::standby();
+        foreach (TopologyProfile::ROLES as $role) {
+            $this->host->assertOwnedSnapshot($target->instance($role), $generation->snapshots[$role]);
         }
     }
 
@@ -228,6 +239,11 @@ final readonly class StandbyRefresher
         foreach (TopologyProfile::ROLES as $role) {
             $this->host->start($target->instance($role));
         }
+        $this->host->waitForAgents(array_map(
+            $target->instance(...),
+            TopologyProfile::ROLES,
+        ));
+        $this->host->waitForGlobalIpv4(array_map($target->instance(...), TopologyProfile::ROLES));
     }
 
     private function stopAll(): void
@@ -275,6 +291,7 @@ final readonly class StandbyRefresher
         string $mainSha,
         string $fingerprint,
         string $baseImageFingerprint,
+        LaravelRelease $laravel,
         ?string $previousGenerationId,
     ): StandbyGeneration {
         $id = substr($mainSha, 0, 12).'-'.substr($fingerprint, 0, 12);
@@ -299,6 +316,7 @@ final readonly class StandbyRefresher
             $snapshots,
             $fingerprint,
             $baseImageFingerprint,
+            $laravel,
             $previousGenerationId,
         );
     }
@@ -352,20 +370,27 @@ final readonly class StandbyRefresher
         }
     }
 
-    private function prune(StandbyGeneration $current): void
+    private function prune(StandbyGeneration $current, string $evidence): void
     {
         try {
             foreach ($this->manifests->prunable($current) as $generation) {
                 foreach (TopologyProfile::ROLES as $role) {
-                    $this->host->deleteSnapshot(
+                    $this->host->deleteSnapshotIfExists(
                         TopologyTarget::standby()->instance($role),
                         $generation->snapshots[$role],
                     );
                 }
                 $this->manifests->forget($generation);
             }
-        } catch (Throwable) { // @mago-expect lint:no-empty-catch-clause Conservative pruning must not invalidate promotion.
+        } catch (Throwable $exception) {
             // Uncertain or failed pruning never invalidates the promoted generation.
+            $this->writeFailureIfMissing("standby/failures/{$evidence}.json", [
+                'schema' => 1,
+                'phase' => 'pruning',
+                'generation_id' => $current->id,
+                'main_sha' => $current->mainSha,
+                'message' => $exception->getMessage(),
+            ]);
         }
     }
 

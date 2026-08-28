@@ -4,8 +4,9 @@ umask 077
 orbit=/home/orbit/orbit/apps/cli/orbit
 case ${1-} in
   configure-cli)
+    [[ "$(id -u)" -eq 0 ]] && exec sudo -u orbit -- env HOME=/home/orbit ORBIT_HOME=/home/orbit/.orbit DB_DATABASE=/home/orbit/.orbit/gateway.sqlite bash "$0" "$@"
     [[ $# -eq 2 && "$2" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]{0,62}$ ]]
-    ca=/home/orbit/.config/orbit/e2e-gateway-root-ca.pem
+    ca=/home/orbit/.orbit/e2e-gateway-root-ca.pem
     install -d -m 0700 "$(dirname "$ca")"
     curl --fail --silent --show-error --insecure "https://$2/api/root-ca" -o "$ca.new"
     php -r '$v=json_decode(file_get_contents($argv[1]), true, 512, JSON_THROW_ON_ERROR); file_put_contents($argv[2], $v["root_ca"]);' "$ca.new" "$ca"
@@ -13,6 +14,7 @@ case ${1-} in
     "$orbit" gateway:add e2e "https://$2" --ca="$ca" --use --json
     ;;
   create-resources)
+    [[ "$(id -u)" -eq 0 ]] && exec sudo -u orbit -- env HOME=/home/orbit ORBIT_HOME=/home/orbit/.orbit DB_DATABASE=/home/orbit/.orbit/gateway.sqlite bash "$0" "$@"
     [[ $# -eq 4 && "$2" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]{0,62}$ && "$3" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]{0,62}$ && "$4" =~ ^[0-9a-f]{40}$ ]]
     dev_id=$("$orbit" node:show "$2" --json | php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); echo $v["id"];')
     prod_id=$("$orbit" node:show "$3" --json | php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); echo $v["id"];')
@@ -39,21 +41,28 @@ case ${1-} in
   hydrate)
     [[ $# -eq 3 && "$2" =~ ^[0-9a-f]{40}$ ]]
     case "$3" in
-      app-dev) checkouts=(/home/orbit/apps/laravel /home/orbit/.orbit/worktrees/laravel/e2e) ;;
-      app-prod) checkouts=(/var/www/laravel/e2e-prod) ;;
+      app-dev) runtime_user=orbit; runtime_home=/home/orbit; checkouts=(/home/orbit/apps/laravel /home/orbit/.orbit/worktrees/laravel/e2e) ;;
+      app-prod) runtime_user=orbit-laravel; runtime_home=/var/www/laravel; checkouts=(/var/www/laravel/e2e-prod) ;;
       *) exit 64 ;;
     esac
+    run_as_runtime() {
+      if [[ "$(id -u)" -eq 0 ]]; then
+        sudo -u "$runtime_user" -- env HOME="$runtime_home" "$@"
+      else
+        "$@"
+      fi
+    }
     for checkout in "${checkouts[@]}"; do
-    if [[ ! -d "$checkout/.git" ]]; then git clone --quiet https://github.com/laravel/laravel.git "$checkout"; fi
-    [[ "$(git -C "$checkout" remote get-url origin)" == https://github.com/laravel/laravel.git ]]
-    git -C "$checkout" fetch --quiet origin "$2"
-    git -C "$checkout" reset --hard --quiet "$2"
-    [[ "$(git -C "$checkout" rev-parse HEAD)" == "$2" ]]
-    [[ -f "$checkout/.env" ]] || cp "$checkout/.env.example" "$checkout/.env"
-    composer install --working-dir="$checkout" --no-interaction --no-progress
-    grep -q '^APP_KEY=base64:' "$checkout/.env" || php "$checkout/artisan" key:generate --force --no-interaction
-    install -d -m 0775 "$checkout/storage" "$checkout/bootstrap/cache"
-    chmod -R ug+rwX "$checkout/storage" "$checkout/bootstrap/cache"
+      if [[ ! -d "$checkout/.git" ]]; then run_as_runtime git clone --quiet https://github.com/laravel/laravel.git "$checkout"; fi
+      [[ "$(run_as_runtime git -C "$checkout" remote get-url origin)" == https://github.com/laravel/laravel.git ]]
+      run_as_runtime git -C "$checkout" fetch --quiet origin "$2"
+      run_as_runtime git -C "$checkout" reset --hard --quiet "$2"
+      [[ "$(run_as_runtime git -C "$checkout" rev-parse HEAD)" == "$2" ]]
+      [[ -f "$checkout/.env" ]] || run_as_runtime cp "$checkout/.env.example" "$checkout/.env"
+      run_as_runtime composer install --working-dir="$checkout" --no-interaction --no-progress
+      run_as_runtime grep -q '^APP_KEY=base64:' "$checkout/.env" || run_as_runtime php "$checkout/artisan" key:generate --force --no-interaction
+      run_as_runtime install -d -m 0775 "$checkout/storage" "$checkout/bootstrap/cache"
+      run_as_runtime chmod -R ug+rwX "$checkout/storage" "$checkout/bootstrap/cache"
     done
     if [[ "$3" == app-prod ]]; then
       fragment=/etc/caddy/orbit-e2e-global.caddy

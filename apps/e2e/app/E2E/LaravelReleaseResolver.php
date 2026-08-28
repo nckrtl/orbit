@@ -33,24 +33,6 @@ final readonly class LaravelReleaseResolver
         return $releases[Semver::rsort($matches)[0]];
     }
 
-    public function forCommit(string $tag, ?string $commit = null): LaravelRelease
-    {
-        if ($commit === null) {
-            $commit = $tag;
-            $tag = '';
-        }
-
-        if ($tag !== '' && preg_match('/\Av\d+\.\d+\.\d+\z/D', $tag) !== 1) {
-            throw new InvalidArgumentException('The Laravel release tag is invalid.');
-        }
-
-        if (preg_match('/\A[0-9a-f]{40}\z/D', $commit) !== 1) {
-            throw new InvalidArgumentException('The Laravel commit must be a lowercase full SHA.');
-        }
-
-        return new LaravelRelease($tag, $commit);
-    }
-
     /** @return array<string, LaravelRelease> */
     private function parseReleases(string $output): array
     {

@@ -36,6 +36,7 @@ it('keeps the approved workflow contracts aligned', function (): void {
         '/releases Incus first, then the worktree, and closes\s+only after unchanged or promoted/s',
     );
     expect($workflow)->toMatch('/merged_refresh_blocked.*cleanup untouched.*does not close/s');
+    expect($workflow)->toMatch('/external orchestrator retries a failed refresh.*lock/s');
     expect($workflow)->toMatch('/releases the disposable Incus\s+topology first.*runs `bin\/worktree-remove`/s');
     expect($topologies)->toContain('Registered profiles: None.');
     expect($topologies)->toMatch('/acquire gateway_app-dev_app-prod --issue <ISSUE>/');

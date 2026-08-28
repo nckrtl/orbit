@@ -49,6 +49,14 @@ function vmJson(
     ]], JSON_THROW_ON_ERROR);
 }
 
+function snapshotJson(string $name, string $owner = 'orbit-e2e'): string
+{
+    return json_encode([[
+        'name' => $name,
+        'config' => ['user.orbit.e2e.owner' => $owner],
+    ]], JSON_THROW_ON_ERROR);
+}
+
 function incusHost(
     ?SecretRedactor $redactor = null,
     ?OperationJournal $journal = null,
@@ -65,12 +73,66 @@ function incusHost(
 }
 
 describe('IncusHost reads', function () {
+    it('filters virtual and loopback interfaces when checking global IPv4', function () {
+        $host = incusHost();
+        $method = new ReflectionMethod($host, 'hasUsableGlobalIpv4');
+
+        $virtualAddresses = implode("\n", [
+            '1: lo    inet 127.0.0.1/8',
+            '2: wg-orbit    inet 10.0.0.1/24',
+            '3: wg0    inet 10.0.0.2/24',
+            '4: docker0    inet 10.0.0.3/24',
+            '5: docker_gwbridge    inet 10.0.0.4/24',
+            '6: br-c9536c1    inet 10.0.0.5/24',
+            '7: veth5521    inet 10.0.0.6/24',
+        ]);
+
+        expect($method->invoke($host, $virtualAddresses))
+            ->toBeFalse()
+            ->and($method->invoke($host, $virtualAddresses."\n8: eth0    inet 192.0.2.10/24"))
+            ->toBeTrue();
+    });
+
+    it('assigns the legacy deterministic Incus MAC address', function () {
+        Process::fake(function (PendingProcess $process) {
+            return match ($process->command) {
+                incusCommand('list', incusTarget('orbit-e2e-nck-123-gateway'), '--format=json') => Process::result(
+                    vmJson(),
+                ),
+                incusCommand(
+                    'config',
+                    'device',
+                    'override',
+                    incusTarget('orbit-e2e-nck-123-gateway'),
+                    'eth0',
+                    'hwaddr=00:16:3e:5e:4b:52',
+                )
+                    => Process::result(''),
+                default => Process::result('', 'Unexpected command.', 1),
+            };
+        });
+
+        incusHost()->setDeterministicMac('orbit-e2e-nck-123-gateway', 'run', 'gateway');
+
+        Process::assertRan(incusCommand(
+            'config',
+            'device',
+            'override',
+            incusTarget('orbit-e2e-nck-123-gateway'),
+            'eth0',
+            'hwaddr=00:16:3e:5e:4b:52',
+        ));
+    });
+
     it('reads exact VM, network, and image identities as JSON', function () {
         $fingerprint = str_repeat('a', 64);
         Process::fake(function (PendingProcess $process) use ($fingerprint) {
             return match ($process->command) {
                 incusCommand('list', incusTarget('orbit-e2e-nck-123-gateway'), '--format=json') => Process::result(
                     vmJson(),
+                ),
+                incusCommand('list', incusTarget('orbit-e2e-standby-gateway'), '--format=json') => Process::result(
+                    vmJson('orbit-e2e-standby-gateway'),
                 ),
                 incusCommand('network', 'list', incusTarget(), '--format=json') => Process::result(json_encode([
                     ['name' => 'orbit-e2e-nck-123', 'config' => ['user.orbit.e2e.owner' => 'orbit-e2e']],
@@ -197,7 +259,56 @@ describe('IncusHost network creation', function () {
     });
 });
 
+/** @mago-expect lint:cyclomatic-complexity,kan-defect Mutation cases share one explicit process contract. */
 describe('IncusHost mutations', function () {
+    it('regenerates cloned guest network identity with a fixed script', function () {
+        Process::fake(function (PendingProcess $process) {
+            if ($process->command === incusCommand('list', incusTarget('orbit-e2e-nck-123-gateway'), '--format=json')) {
+                return Process::result(vmJson());
+            }
+
+            expect($process->command)->toBe(incusCommand(
+                'exec',
+                incusTarget('orbit-e2e-nck-123-gateway'),
+                '--',
+                'sh',
+                '-c',
+                'rm -f /etc/machine-id /var/lib/dbus/machine-id && systemd-machine-id-setup && systemctl restart systemd-journald && rm -f /run/systemd/netif/leases/* /var/lib/systemd/network/* && (systemctl --no-block restart systemd-networkd 2>/dev/null || systemctl --no-block restart NetworkManager 2>/dev/null || true)',
+            ));
+
+            return Process::result();
+        });
+
+        incusHost()->regenerateNetworkIdentity('orbit-e2e-nck-123-gateway');
+
+        Process::assertRan(incusCommand(
+            'exec',
+            incusTarget('orbit-e2e-nck-123-gateway'),
+            '--',
+            'sh',
+            '-c',
+            'rm -f /etc/machine-id /var/lib/dbus/machine-id && systemd-machine-id-setup && systemctl restart systemd-journald && rm -f /run/systemd/netif/leases/* /var/lib/systemd/network/* && (systemctl --no-block restart systemd-networkd 2>/dev/null || systemctl --no-block restart NetworkManager 2>/dev/null || true)',
+        ));
+    });
+
+    it('fails when guest network identity regeneration fails', function () {
+        Process::fake(function (PendingProcess $process) {
+            if ($process->command === incusCommand('list', incusTarget('orbit-e2e-nck-123-gateway'), '--format=json')) {
+                return Process::result(vmJson());
+            }
+
+            return Process::result('', 'restart failed', 1);
+        });
+
+        expect(fn () => incusHost()->regenerateNetworkIdentity('orbit-e2e-nck-123-gateway'))
+            ->toThrow(RuntimeException::class, 'Failed to regenerate network identity');
+    });
+
+    it('rejects a non-positive guest readiness timeout', function () {
+        expect(fn () => new IncusHost(guestReadinessTimeoutSeconds: 0))
+            ->toThrow(InvalidArgumentException::class, 'Guest readiness timeout must be positive.');
+    });
+
     it('does not start an already running owned VM', function () {
         Process::fake(function (PendingProcess $process) {
             return match ($process->command) {
@@ -208,7 +319,7 @@ describe('IncusHost mutations', function () {
                         vmJson(),
                     ),
                 ),
-                default => Process::result(),
+                default => Process::result('[]'),
             };
         });
 
@@ -216,6 +327,88 @@ describe('IncusHost mutations', function () {
 
         Process::assertNotRan(incusCommand('start', incusTarget('orbit-e2e-nck-123-gateway')));
     });
+
+    it('retries guest readiness after starting until the agent succeeds', function () {
+        $probes = 0;
+        Process::fake(function (PendingProcess $process) use (&$probes) {
+            return match ($process->command) {
+                incusCommand('list', incusTarget('orbit-e2e-nck-123-gateway'), '--format=json') => Process::result(
+                    vmJson(),
+                ),
+                incusCommand('exec', incusTarget('orbit-e2e-nck-123-gateway'), '--', '/bin/true') => ++$probes === 1
+                    ? Process::result('', 'agent not ready', 1)
+                    : Process::result(),
+                default => Process::result('[]'),
+            };
+        });
+
+        incusHost()->waitForAgents(['orbit-e2e-nck-123-gateway']);
+
+        expect($probes)->toBe(2);
+        Process::assertRan(incusCommand(
+            'exec',
+            incusTarget('orbit-e2e-nck-123-gateway'),
+            '--',
+            '/bin/true',
+        ));
+    });
+
+    it('retries guest readiness after a transient probe exception', function () {
+        $probes = 0;
+        Process::fake(function (PendingProcess $process) use (&$probes) {
+            if (
+                $process->command === incusCommand(
+                    'list',
+                    incusTarget('orbit-e2e-nck-123-gateway'),
+                    '--format=json',
+                )
+            ) {
+                return Process::result(vmJson());
+            }
+
+            if (++$probes === 1) {
+                throw new RuntimeException('The guest agent probe timed out.');
+            }
+
+            return Process::result();
+        });
+
+        incusHost()->waitForAgents(['orbit-e2e-nck-123-gateway']);
+
+        expect($probes)->toBe(2);
+    });
+
+    it('fails at the readiness deadline when the guest readiness process cannot run', function () {
+        $probes = 0;
+        Process::fake(function (PendingProcess $process) use (&$probes) {
+            if ($process->command === incusCommand('list', incusTarget('orbit-e2e-nck-123-gateway'), '--format=json')) {
+                return Process::result(vmJson());
+            }
+
+            $probes++;
+            throw new RuntimeException('incus unavailable');
+        });
+
+        expect(fn () => new IncusHost(
+            remote: 'lab',
+            project: 'orbit',
+            pool: 'orbit-e2e',
+            guestReadinessTimeoutSeconds: 1,
+        )
+            ->waitForAgents(['orbit-e2e-nck-123-gateway']))
+            ->toThrow(RuntimeException::class, 'Timed out waiting for Incus guest agents')
+            ->and($probes)
+            ->toBe(1);
+    });
+
+    it('rejects empty and duplicate readiness instance lists before probing', function (array $instances) {
+        expect(fn () => incusHost()->waitForAgents($instances))
+            ->toThrow(RuntimeException::class, 'non-empty and unique');
+        Process::assertNothingRan();
+    })->with([
+        'empty' => [[]],
+        'duplicate' => [['orbit-e2e-nck-123-gateway', 'orbit-e2e-nck-123-gateway']],
+    ]);
 
     it('passes guest stdin through process input without adding it to argv', function () {
         $observedInput = null;
@@ -252,9 +445,23 @@ describe('IncusHost mutations', function () {
                 incusCommand('list', incusTarget('orbit-e2e-nck-123-gateway'), '--format=json') => Process::result(
                     vmJson(),
                 ),
+                incusCommand('list', incusTarget('orbit-e2e-standby-gateway'), '--format=json') => Process::result(
+                    vmJson('orbit-e2e-standby-gateway'),
+                ),
+                incusCommand('image', 'list', incusTarget(), 'orbit-base', '--format=json') => Process::result(
+                    json_encode([[
+                        'fingerprint' => str_repeat('a', 64),
+                        'type' => 'virtual-machine',
+                        'aliases' => [['name' => 'orbit-base']],
+                    ]], JSON_THROW_ON_ERROR),
+                ),
                 incusCommand('network', 'list', incusTarget(), '--format=json') => Process::result(json_encode([
                     ['name' => 'oe-b32d6c83af72', 'config' => ['user.orbit.e2e.owner' => 'orbit-e2e']],
                 ], JSON_THROW_ON_ERROR)),
+                incusCommand('snapshot', 'list', incusTarget('orbit-e2e-standby-gateway'), '--format=json')
+                    => Process::result(
+                    snapshotJson('main-g1'),
+                ),
                 default => Process::result(),
             };
         });
@@ -407,6 +614,47 @@ describe('IncusHost mutations', function () {
         ]);
     });
 
+    it('verifies an owned network disappeared after deletion', function () {
+        $listCalls = 0;
+        Process::fake(function (PendingProcess $process) use (&$listCalls) {
+            return match ($process->command) {
+                incusCommand('network', 'list', incusTarget(), '--format=json') => Process::result(
+                    ++$listCalls === 1
+                        ? json_encode([[
+                            'name' => 'orbit-e2e-nck-123',
+                            'config' => ['user.orbit.e2e.owner' => 'orbit-e2e'],
+                        ]], JSON_THROW_ON_ERROR)
+                        : '[]',
+                ),
+                incusCommand('network', 'delete', incusTarget('orbit-e2e-nck-123')) => Process::result(),
+                default => Process::result('', 'Unexpected command.', 1),
+            };
+        });
+
+        incusHost()->deleteNetwork('orbit-e2e-nck-123');
+
+        Process::assertRanInOrder([
+            incusCommand('network', 'list', incusTarget(), '--format=json'),
+            incusCommand('network', 'delete', incusTarget('orbit-e2e-nck-123')),
+            incusCommand('network', 'list', incusTarget(), '--format=json'),
+        ]);
+    });
+
+    it('fails when a deleted network remains present', function () {
+        Process::fake(function (PendingProcess $process) {
+            return match ($process->command) {
+                incusCommand('network', 'list', incusTarget(), '--format=json') => Process::result(json_encode([
+                    ['name' => 'orbit-e2e-nck-123', 'config' => ['user.orbit.e2e.owner' => 'orbit-e2e']],
+                ], JSON_THROW_ON_ERROR)),
+                incusCommand('network', 'delete', incusTarget('orbit-e2e-nck-123')) => Process::result(),
+                default => Process::result('', 'Unexpected command.', 1),
+            };
+        });
+
+        expect(fn () => incusHost()->deleteNetwork('orbit-e2e-nck-123'))
+            ->toThrow(RuntimeException::class, 'still exists');
+    });
+
     it('re-reads exact snapshots before restore and deletion', function (string $operation) {
         Process::fake([
             '*' => Process::sequence()
@@ -436,6 +684,23 @@ describe('IncusHost mutations', function () {
             ),
         ]);
     })->with(['restore', 'deleteSnapshot']);
+
+    it('treats an already absent snapshot as a completed idempotent deletion', function () {
+        Process::fake([
+            '*' => Process::sequence()
+                ->push(vmJson())
+                ->push('[]'),
+        ]);
+
+        incusHost()->deleteSnapshotIfExists('orbit-e2e-nck-123-gateway', 'main-g1');
+
+        Process::assertDidntRun(incusCommand(
+            'snapshot',
+            'delete',
+            incusTarget('orbit-e2e-nck-123-gateway'),
+            'main-g1',
+        ));
+    });
 
     it('accepts a fully qualified snapshot identity for the requested instance', function () {
         Process::fake([

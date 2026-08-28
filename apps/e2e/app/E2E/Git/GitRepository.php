@@ -38,6 +38,26 @@ final readonly class GitRepository
         return $branch;
     }
 
+    public function isLinkedWorktree(): bool
+    {
+        $gitDirectory = realpath(trim($this->run([
+            'rev-parse',
+            '--path-format=absolute',
+            '--git-dir',
+        ])));
+        $commonDirectory = realpath(trim($this->run([
+            'rev-parse',
+            '--path-format=absolute',
+            '--git-common-dir',
+        ])));
+
+        if ($gitDirectory === false || $commonDirectory === false) {
+            throw new InvalidArgumentException('The Git directories do not exist.');
+        }
+
+        return $gitDirectory !== $commonDirectory;
+    }
+
     public function isPrerequisite(string $prerequisite, string $commit): bool
     {
         $this->validateSha($prerequisite);
@@ -68,7 +88,7 @@ final readonly class GitRepository
         $this->run(['update-ref', $ref, $commit, str_repeat('0', 40)]);
         try {
             $arguments = ['bundle', 'create', $destination, $ref];
-            if ($prerequisite !== null) {
+            if ($prerequisite !== null && $prerequisite !== $commit) {
                 $arguments[] = "^{$prerequisite}";
             }
             $this->run($arguments);

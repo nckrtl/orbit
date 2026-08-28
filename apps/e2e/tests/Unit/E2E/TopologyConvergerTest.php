@@ -39,7 +39,7 @@ function task7_vm(string $name, string $owner = 'orbit-e2e'): string
 }
 
 describe('TopologyConverger', function () {
-    it('validates, starts, and converges an existing topology in the required order', function () {
+    it('validates and converges an existing ready topology in the required order', function () {
         $recorded = [];
         Process::fake(function (PendingProcess $process) use (&$recorded) {
             $command = $process->command;
@@ -73,9 +73,6 @@ describe('TopologyConverger', function () {
 
         expect(array_keys($report->steps))->toBe([
             'validate.prerequisites',
-            'start.instances',
-            'prepare.checkouts',
-            'hydrate.gateway',
             'bootstrap.gateway',
             'pin.ssh-hosts',
             'provision.app-dev',
@@ -87,17 +84,17 @@ describe('TopologyConverger', function () {
         ]);
 
         $mutations = collect($recorded)
-            ->filter(fn (array $command): bool => in_array('start', $command, true) || in_array('exec', $command, true))
+            ->filter(fn (array $command): bool => in_array('exec', $command, true))
             ->values()
             ->all();
 
         expect($mutations)
-            ->toHaveCount(17)
+            ->toHaveCount(11)
             ->and(array_column(array_slice($mutations, 0, 3), 4))
             ->toBe([
                 'lab:orbit-e2e-nck-123-gateway',
-                'lab:orbit-e2e-nck-123-app-dev',
-                'lab:orbit-e2e-nck-123-app-prod',
+                'lab:orbit-e2e-nck-123-gateway',
+                'lab:orbit-e2e-nck-123-gateway',
             ]);
 
         Process::assertDidntRun(
@@ -108,6 +105,11 @@ describe('TopologyConverger', function () {
         Process::assertDidntRun(
             fn (PendingProcess $process): bool => (
                 is_array($process->command) && in_array('create', $process->command, true)
+            ),
+        );
+        Process::assertDidntRun(
+            fn (PendingProcess $process): bool => (
+                is_array($process->command) && in_array('start', $process->command, true)
             ),
         );
     });

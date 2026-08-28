@@ -36,7 +36,6 @@ final readonly class TopologyAcquirer
         private WorktreeSynchronizer $synchronizer,
         private TopologyConverger $converger,
         private TopologyVerifier $verifier,
-        private LaravelReleaseResolver $laravel,
         private AtomicJsonStore $state,
         private StatePaths $paths,
         private string $repositoryRoot = '',
@@ -86,8 +85,9 @@ final readonly class TopologyAcquirer
     private function syncUnlocked(TopologyRequest $request): FeatureTopology
     {
         $topology = $this->requireTopology($request->target);
+        $this->assertColdBaseMatchesMain($request->worktree);
         $source = $this->synchronizer->sync($request->target, $request->worktree, SyncMode::Incremental);
-        $this->converger->converge($request->target, $source, $this->laravelFor($topology));
+        $this->converger->converge($request->target, $source, $topology->generation->laravel);
         $verification = $this->verifier->verify($request->target, VerificationMode::Readiness, $source);
         if (! $verification->passed) {
             throw new RuntimeException('Feature topology verification failed.');
@@ -233,13 +233,38 @@ final readonly class TopologyAcquirer
         if ($this->manifests->read($request->target) !== null) {
             throw new RuntimeException('The issue already has a topology manifest.');
         }
+        if ($this->state->read('standby/corrupt.json') !== null) {
+            throw new RuntimeException('The promoted standby is marked corrupt.');
+        }
         $generation = $this->standby->promoted();
         if ($generation === null) {
             throw new RuntimeException('No promoted standby generation is available.');
         }
-        $desired = $this->fingerprints->forCommit($generation->mainSha);
-        if (! str_ends_with($generation->id, substr($desired->value, offset: 0, length: 12))) {
+        $promoted = $this->fingerprints->forCommit($generation->mainSha, $generation->laravel);
+        $expectedGenerationId = substr($generation->mainSha, 0, 12).'-'.substr($promoted->value, 0, 12);
+        if (
+            $generation->preparedFingerprint !== $promoted->value
+            || $generation->id !== $expectedGenerationId
+        ) {
             throw new RuntimeException('The promoted standby fingerprint is stale or corrupt.');
+        }
+        $main = $this->fingerprints->forCommit('main', $generation->laravel);
+        if ($generation->preparedFingerprint !== $main->value) {
+            throw new RuntimeException('The promoted standby prepared state is stale.');
+        }
+        $this->assertColdBaseMatchesMain($request->worktree, $main);
+        $baseImageAlias = $main->manifest['base_image_alias'] ?? null;
+        if (! is_string($baseImageAlias) || $baseImageAlias === '') {
+            throw new RuntimeException('The prepared fingerprint has no base image alias.');
+        }
+        if ($generation->baseImageFingerprint !== $this->host->imageFingerprint($baseImageAlias)) {
+            throw new RuntimeException('The promoted standby base image fingerprint is stale.');
+        }
+        foreach (TopologyProfile::ROLES as $role) {
+            $this->host->assertOwnedSnapshot(
+                TopologyTarget::standby()->instance($role),
+                $generation->snapshots[$role],
+            );
         }
 
         $created = [];
@@ -270,12 +295,23 @@ final readonly class TopologyAcquirer
                     'user.orbit.e2e.operation' => $operation->value,
                 ]);
                 $this->host->setNetwork($target, $request->target->network());
-                $this->host->start($target);
             }
+            foreach (TopologyProfile::ROLES as $role) {
+                $this->host->setDeterministicMac($request->target->instance($role), $operation->value, $role);
+                $this->host->start($request->target->instance($role));
+            }
+            $this->host->waitForAgents(array_map(
+                $request->target->instance(...),
+                TopologyProfile::ROLES,
+            ));
+            foreach (TopologyProfile::ROLES as $role) {
+                $this->host->regenerateNetworkIdentity($request->target->instance($role));
+            }
+            $this->host->waitForGlobalIpv4(array_map($request->target->instance(...), TopologyProfile::ROLES));
             $phase = 'sync.source';
             $source = $this->synchronizer->sync($request->target, $request->worktree, SyncMode::Full);
             $phase = 'converge';
-            $this->converger->converge($request->target, $source, $this->laravelForGeneration($generation));
+            $this->converger->converge($request->target, $source, $generation->laravel);
             $phase = 'verify';
             $verification = $this->verifier->verify($request->target, VerificationMode::Readiness, $source);
             if (! $verification->passed) {
@@ -363,21 +399,21 @@ final readonly class TopologyAcquirer
         return $resolved;
     }
 
-    private function laravelFor(FeatureTopology $topology): \App\E2E\Value\LaravelRelease
+    private function fingerprintsForWorktree(string $worktree): PreparedStateFingerprint
     {
-        return $this->laravelForGeneration($topology->generation);
+        return new PreparedStateFingerprint(new GitRepository($worktree));
     }
 
-    private function laravelForGeneration(\App\E2E\Value\StandbyGeneration $generation): \App\E2E\Value\LaravelRelease
+    private function assertColdBaseMatchesMain(string $worktree, ?\App\E2E\Value\PreparedFingerprint $main = null): void
     {
-        $fingerprint = $this->fingerprints->forCommit($generation->mainSha);
-        /** @var mixed $pin */
-        $pin = $fingerprint->manifest['laravel_pin'] ?? null;
-        if (! is_array($pin) || ! is_string($pin['tag'] ?? null) || ! is_string($pin['commit'] ?? null)) {
-            throw new RuntimeException('The prepared fingerprint has no Laravel pin.');
+        $main ??= $this->fingerprints->forCommit('main');
+        $feature = $this->fingerprintsForWorktree($worktree)->forCommit();
+        if (
+            ($feature->manifest['cold_epoch'] ?? null) !== ($main->manifest['cold_epoch'] ?? null)
+            || ($feature->manifest['base_image_alias'] ?? null) !== ($main->manifest['base_image_alias'] ?? null)
+        ) {
+            throw new RuntimeException('The feature prepared state changes the cold base contract.');
         }
-
-        return $this->laravel->forCommit($pin['tag'], $pin['commit']);
     }
 
     /**

@@ -9,7 +9,7 @@ use InvalidArgumentException;
 /** @mago-expect lint:cyclomatic-complexity,excessive-parameter-list The promoted generation validates one atomic identity record. */
 final readonly class StandbyGeneration
 {
-    public const int SCHEMA = 2;
+    public const int SCHEMA = 3;
 
     /** @param array<string, string> $snapshots */
     public function __construct(
@@ -18,6 +18,7 @@ final readonly class StandbyGeneration
         public array $snapshots,
         public string $preparedFingerprint,
         public string $baseImageFingerprint,
+        public LaravelRelease $laravel,
         public ?string $previousGenerationId = null,
     ) {
         if (
@@ -42,7 +43,7 @@ final readonly class StandbyGeneration
         }
     }
 
-    /** @return array{schema:int,id:string,main_sha:string,snapshots:array<string,string>,prepared_fingerprint:string,base_image_fingerprint:string,previous_generation_id:?string} */
+    /** @return array<string,mixed> */
     public function toArray(): array
     {
         return [
@@ -52,6 +53,7 @@ final readonly class StandbyGeneration
             'snapshots' => $this->snapshots,
             'prepared_fingerprint' => $this->preparedFingerprint,
             'base_image_fingerprint' => $this->baseImageFingerprint,
+            'laravel_pin' => ['tag' => $this->laravel->tag, 'commit' => $this->laravel->commit],
             'previous_generation_id' => $this->previousGenerationId,
         ];
     }
@@ -67,6 +69,7 @@ final readonly class StandbyGeneration
                 'snapshots',
                 'prepared_fingerprint',
                 'base_image_fingerprint',
+                'laravel_pin',
                 'previous_generation_id',
             ]
             || $value['schema'] !== self::SCHEMA
@@ -75,6 +78,9 @@ final readonly class StandbyGeneration
             || ! is_array($value['snapshots'])
             || ! is_string($value['prepared_fingerprint'])
             || ! is_string($value['base_image_fingerprint'])
+            || ! is_array($value['laravel_pin'])
+            || ! is_string($value['laravel_pin']['tag'] ?? null)
+            || ! is_string($value['laravel_pin']['commit'] ?? null)
             || $value['previous_generation_id'] !== null
             && ! is_string($value['previous_generation_id'])
         ) {
@@ -95,6 +101,7 @@ final readonly class StandbyGeneration
             $snapshots,
             $value['prepared_fingerprint'],
             $value['base_image_fingerprint'],
+            new LaravelRelease($value['laravel_pin']['tag'], $value['laravel_pin']['commit']),
             $value['previous_generation_id'],
         );
     }

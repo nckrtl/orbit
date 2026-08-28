@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\E2E\LaravelReleaseResolver;
+use App\E2E\Value\LaravelRelease;
 use Illuminate\Container\Container;
 use Illuminate\Process\Factory as ProcessFactory;
 use Illuminate\Process\PendingProcess;
@@ -18,19 +19,26 @@ beforeEach(function (): void {
 });
 
 describe('LaravelReleaseResolver', function (): void {
+    it('rejects invalid release identities at construction', function (): void {
+        expect(fn () => new LaravelRelease('v13.0', str_repeat('a', 40)))
+            ->toThrow(InvalidArgumentException::class)
+            ->and(fn () => new LaravelRelease('v13.0.0', str_repeat('A', 40)))
+            ->toThrow(InvalidArgumentException::class);
+    });
     it('selects the newest stable application tag and its exact commit', function (): void {
         Process::fake([
             '*' => Process::result(output: implode("\n", [
                 str_repeat('a', 40)."\trefs/tags/v13.1.0",
                 str_repeat('2', 40)."\trefs/tags/v13.2.0-beta.1",
                 str_repeat('c', 40)."\trefs/tags/v13.1.2",
+                str_repeat('d', 40)."\trefs/tags/v14.0.0",
             ])
                 ."\n"),
         ]);
 
-        $release = new LaravelReleaseResolver()->resolve('^13.0');
+        $release = new LaravelReleaseResolver()->resolve('>=13.0.0');
 
-        expect($release->tag)->toBe('v13.1.2')->and($release->commit)->toBe(str_repeat('c', 40));
+        expect($release->tag)->toBe('v14.0.0')->and($release->commit)->toBe(str_repeat('d', 40));
 
         Process::assertRan(
             fn (PendingProcess $process): bool => (
@@ -63,13 +71,4 @@ describe('LaravelReleaseResolver', function (): void {
         'prerelease only' => [str_repeat('1', 40)."\trefs/tags/v13.0.0-rc.1\n", '^13.0'],
         'noncommit tag' => [str_repeat('1', 40)."\trefs/tags/not-a-release\n", '^13.0'],
     ]);
-
-    it('creates a pinned release without a network call', function (): void {
-        Process::fake();
-
-        $release = new LaravelReleaseResolver()->forCommit('v13.4.0', str_repeat('d', 40));
-
-        expect($release->tag)->toBe('v13.4.0')->and($release->commit)->toBe(str_repeat('d', 40));
-        Process::assertNothingRan();
-    });
 });

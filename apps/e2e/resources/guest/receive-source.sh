@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 umask 077
-[[ $# -eq 6 ]] || exit 64
-repo=$1; sha=$2; bundle=$3; archive=$4; manifest=$5; expected_tree=$6
+[[ $# -eq 7 ]] || exit 64
+repo=$1; sha=$2; bundle=$3; archive=$4; manifest=$5; deletions=$6; expected_tree=$7
 [[ "$repo" == /* && "$sha" =~ ^[0-9a-f]{40}$ && "$expected_tree" =~ ^[0-9a-f]{64}$ ]] || exit 64
-for path in "$bundle" "$archive" "$manifest"; do [[ "$path" == /* && -f "$path" ]] || exit 64; done
+for path in "$bundle" "$archive" "$manifest" "$deletions"; do [[ "$path" == /* && -f "$path" ]] || exit 64; done
 mkdir -p "$repo"
 git -C "$repo" init --quiet
 git -C "$repo" bundle verify "$bundle" >/dev/null
@@ -36,19 +36,22 @@ if [[ -f "$previous" ]]; then
     done < "$previous"
 fi
 git -C "$repo" reset --hard --quiet "$sha"
-git -C "$repo" clean -ffdqx
-if [[ -s "$archive" ]]; then tar -C "$repo" --no-same-owner --no-same-permissions -xf "$archive"; fi
+git -C "$repo" clean -ffdq
 while IFS= read -r -d '' path; do
     validate_overlay_path "$path" || exit 65
-    [[ -e "$repo/$path" ]] || rm -f -- "$repo/$path"
-done < "$manifest"
+    rm -f -- "$repo/$path"
+done < "$deletions"
+if [[ -s "$archive" ]]; then tar -C "$repo" --no-same-owner --no-same-permissions -xf "$archive"; fi
+while IFS= read -r -d '' path; do validate_overlay_path "$path" || exit 65; done < "$manifest"
 cp -- "$manifest" "$previous"
 index=$(mktemp)
+trap 'rm -f -- "$index"' EXIT
 rm -f "$index"
 GIT_INDEX_FILE="$index" git -C "$repo" read-tree HEAD
 GIT_INDEX_FILE="$index" git -C "$repo" add -A -- .
 tree=$(GIT_INDEX_FILE="$index" git -C "$repo" write-tree)
 rm -f "$index"
+trap - EXIT
 tree_hash=$(printf '%s' "$tree" | sha256sum | cut -d ' ' -f 1)
 [[ "$tree_hash" == "$expected_tree" ]] || exit 66
 printf '{"sha":"%s","tree_hash":"%s"}\n' "$sha" "$tree_hash"

@@ -103,8 +103,15 @@ final readonly class StandbyBuilder
                 $this->host->initVm($alias, $target->instance($role), $target->network());
                 $attempt['instances'][$index]['state'] = 'created';
                 $this->recordAttempt($evidenceId, $attempt);
+            }
+            foreach (TopologyProfile::ROLES as $role) {
                 $this->host->start($target->instance($role));
             }
+            $this->host->waitForAgents(array_map(
+                $target->instance(...),
+                TopologyProfile::ROLES,
+            ));
+            $this->host->waitForGlobalIpv4(array_map($target->instance(...), TopologyProfile::ROLES));
 
             $source = $this->synchronizer->sync($target, $this->mainWorktree, SyncMode::Full);
             if ($source->hostSha !== $mainSha || $source->guestSha !== $mainSha || $source->dirty) {
