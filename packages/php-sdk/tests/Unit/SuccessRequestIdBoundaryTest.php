@@ -8,9 +8,11 @@ use Orbit\Sdk\GatewayRequest;
 use Orbit\Sdk\Requests\Apps\ListAppsRequest;
 use Orbit\Sdk\Requests\Gateway\ShowGatewayStatusRequest;
 use Orbit\Sdk\Requests\Processes\ProcessLogsRequest;
+use Orbit\Sdk\Requests\Tools\ListToolsRequest;
 use Orbit\Sdk\Responses\Apps\AppsResponse;
 use Orbit\Sdk\Responses\Gateway\GatewayStatusResponse;
 use Orbit\Sdk\Responses\Processes\ProcessLogsResponse;
+use Orbit\Sdk\Responses\Tools\ToolsResponse;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
@@ -119,18 +121,40 @@ describe('success request ID boundary', function (): void {
                 'meta' => ['request_id' => "request-token={$credential}"],
             ],
         );
+        $tools = success_request_id_dto(
+            new ListToolsRequest(12),
+            [
+                'data' => [[
+                    'id' => 41,
+                    'node_id' => 12,
+                    'manager' => 'vp',
+                    'package' => '@openai/codex',
+                    'version_constraint' => null,
+                    'protected' => false,
+                    'status' => 'installed',
+                    'installed_version' => '0.150.0',
+                    'failed_operation' => null,
+                    'error_code' => null,
+                    'outcome' => 'applied',
+                ]],
+                'meta' => ['request_id' => "request-token={$credential}"],
+            ],
+        );
 
         expect($status)
             ->toBeInstanceOf(GatewayStatusResponse::class)
             ->and($apps)
             ->toBeInstanceOf(AppsResponse::class)
             ->and($logs)
-            ->toBeInstanceOf(ProcessLogsResponse::class);
+            ->toBeInstanceOf(ProcessLogsResponse::class)
+            ->and($tools)
+            ->toBeInstanceOf(ToolsResponse::class);
 
         if (
             ! $status instanceof GatewayStatusResponse
             || ! $apps instanceof AppsResponse
             || ! $logs instanceof ProcessLogsResponse
+            || ! $tools instanceof ToolsResponse
         ) {
             $this->fail('Expected typed gateway responses.');
         }
@@ -142,6 +166,8 @@ describe('success request ID boundary', function (): void {
             print_r($apps, return: true),
             (string) json_encode($logs->toArray()),
             print_r($logs, return: true),
+            (string) json_encode($tools->toArray()),
+            print_r($tools, return: true),
         ]);
 
         expect($status->requestId)
@@ -157,6 +183,10 @@ describe('success request ID boundary', function (): void {
             ->and($logs->requestId)
             ->toBeEmpty()
             ->and($logs->toArray()['request_id'])
+            ->toBeEmpty()
+            ->and($tools->requestId)
+            ->toBeEmpty()
+            ->and($tools->tools[0]->requestId)
             ->toBeEmpty()
             ->and($diagnostics)
             ->not->toContain($credential);

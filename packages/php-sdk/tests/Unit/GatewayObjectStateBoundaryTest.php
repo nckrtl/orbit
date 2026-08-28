@@ -7,6 +7,7 @@ use Orbit\Sdk\GatewayRequest;
 use Orbit\Sdk\GatewayRootCaClient;
 use Orbit\Sdk\Requests\Apps\CreateAppRequest;
 use Orbit\Sdk\Requests\Processes\AddProcessRequest;
+use Orbit\Sdk\Requests\Tools\InstallToolRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
@@ -289,6 +290,7 @@ describe('gateway object-state boundary', function (): void {
             ->toThrow(LogicException::class, $message);
     })->with([
         'request' => [CreateAppRequest::class, 'Orbit gateway requests cannot be unserialized.'],
+        'Tool request' => [InstallToolRequest::class, 'Orbit gateway requests cannot be unserialized.'],
         'connector' => [GatewayConnector::class, 'Orbit gateway connectors cannot be unserialized.'],
         'root CA client' => [GatewayRootCaClient::class, 'Orbit gateway root CA clients cannot be unserialized.'],
     ]);

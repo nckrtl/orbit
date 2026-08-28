@@ -1,6 +1,6 @@
 # Public contract
 
-The SDK models exactly 38 concrete public Gateway API operations:
+The SDK models exactly 44 concrete public Gateway API operations:
 
 - Gateway: status and root trust.
 - Activity: list and show.
@@ -10,6 +10,7 @@ The SDK models exactly 38 concrete public Gateway API operations:
 - Workspace: list, show, create, remove, and update PHP.
 - Process: list, add, start, stop, restart, logs, and remove.
 - Firewall: list, allow, deny, and remove.
+- Tool: manager list, tool list, show, install, update, and remove.
 
 The two abstract request bases are implementation details, not extra Gateway
 operations. Keep the public API typed and small.
@@ -23,11 +24,13 @@ operations. Keep the public API typed and small.
   validates it for app production and derives it for app development.
 - Preserve explicitly supplied process fields for every runtime. The Gateway
   owns cross-field policy.
+- Preserve Tool manager, package, nullable constraint, outcome, structured
+  errors, and request IDs. The Gateway owns all manager policy.
 - Model binary node access add/remove and node-show access lists. Do not model
   granular permissions, presets, wildcards, permission editing, or legacy
   grant/revoke compatibility.
 - Do not restore the retired Agent, generic executor, direct SSH execution,
   Docker Swarm, Compose, image-building, stream, database,
-  proxy, schedule, VPN, tool, or deploy surfaces.
+  proxy, schedule, or deploy surfaces.
 - Coordinate contract changes with Gateway and CLI owners. Do not implement
   Gateway policy or CLI presentation in this repository.

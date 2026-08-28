@@ -5,11 +5,57 @@ declare(strict_types=1);
 use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\Gateway\ShowGatewayStatusRequest;
+use Orbit\Sdk\Requests\Tools\ShowToolRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
 /** @mago-expect lint:halstead Security-boundary assertions stay visible together. */
 describe('gateway exception boundary', function (): void {
+    it('preserves bounded Tool constraint errors and redacted outcome details', function (
+        string $errorCode,
+        string $outcome,
+    ): void {
+        $credential = gateway_boundary_credential($outcome);
+        $secretKey = 'token';
+        $mockClient = new MockClient([
+            ShowToolRequest::class => MockResponse::make([
+                'error' => [
+                    'code' => $errorCode,
+                    'message' => 'The Tool operation failed.',
+                    'details' => [
+                        'step' => 'install',
+                        'outcome' => $outcome,
+                        $secretKey => $credential,
+                    ],
+                ],
+            ], 422),
+        ]);
+        $connector = new GatewayConnector('https://10.70.0.1');
+        $connector->withMockClient($mockClient);
+
+        try {
+            $connector->send(new ShowToolRequest(41))->dto();
+            $this->fail('Expected GatewayApiException.');
+        } catch (GatewayApiException $exception) {
+            expect($exception->errorCode())
+                ->toBe($errorCode)
+                ->and($exception->details())
+                ->toBe([
+                    'step' => 'install',
+                    'outcome' => $outcome,
+                    $secretKey => '[REDACTED]',
+                ])
+                ->and(json_encode($exception->details(), JSON_THROW_ON_ERROR))
+                ->not->toContain($credential);
+        }
+    })->with([
+        'invalid constraint' => ['tool.constraint_invalid', 'constraint_invalid'],
+        'candidate unavailable' => ['tool.candidate_version_unavailable', 'candidate_version_unavailable'],
+        'candidate unparseable' => ['tool.candidate_version_unparseable', 'candidate_version_unparseable'],
+        'candidate blocked' => ['tool.version_constraint_blocked', 'blocked_by_constraint'],
+        'installed version violated' => ['tool.installed_version_constraint_violated', 'constraint_violated'],
+    ]);
+
     it('drops unsafe identifiers and removes credentials from SDK-owned state and traces', function (): void {
         $messageCredential = gateway_boundary_credential('message');
         $codeCredential = gateway_boundary_credential('code');

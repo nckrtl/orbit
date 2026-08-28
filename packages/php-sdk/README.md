@@ -9,6 +9,24 @@ gateway application.
 During monorepo development, `apps/cli` consumes this package through a
 Composer path repository with symlinking enabled.
 
+## Tool transport
+
+```php
+use Orbit\Sdk\Requests\Tools\InstallToolRequest;
+use Orbit\Sdk\Responses\Tools\ToolResponse;
+
+/** @var ToolResponse $tool */
+$tool = $connector->send(new InstallToolRequest(
+    nodeId: 12,
+    manager: 'vp',
+    package: '@openai/codex',
+    versionConstraint: '^0.150',
+))->dto();
+```
+
+The SDK preserves Tool transport values and request IDs. The Gateway owns
+manager, package, version, node-state, and outcome policy.
+
 ## Requirements
 
 - PHP 8.5

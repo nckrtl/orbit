@@ -13,6 +13,8 @@ use Orbit\Sdk\Responses\Nodes\NodeResponse;
 use Orbit\Sdk\Responses\Nodes\RemovedNodeAccessResponse;
 use Orbit\Sdk\Responses\Nodes\RemovedNodeResponse;
 use Orbit\Sdk\Responses\Processes\ProcessResponse;
+use Orbit\Sdk\Responses\Tools\ToolManagerResponse;
+use Orbit\Sdk\Responses\Tools\ToolResponse;
 use Orbit\Sdk\Responses\Workspaces\WorkspaceResponse;
 
 it('rejects unsafe success error codes across every response surface', function (): void {
@@ -111,6 +113,8 @@ it('marks every public gateway DTO factory ingress as sensitive', function (): v
         RemovedNodeAccessResponse::class => ['fromGatewayData'],
         RemovedNodeResponse::class => ['fromGatewayData'],
         ProcessResponse::class => ['fromGatewayData'],
+        ToolManagerResponse::class => ['fromGatewayData'],
+        ToolResponse::class => ['fromGatewayData'],
         WorkspaceResponse::class => ['fromGatewayData'],
     ];
 
