@@ -1199,10 +1199,13 @@ describe('convergence guest scripts', function () {
         file_put_contents("{$root}/state/caddy-ca-path", "{$root}/ca.crt\n");
         file_put_contents("{$root}/ca.crt", 'ca');
 
-        foreach (['composer', 'curl'] as $command) {
-            file_put_contents("{$root}/bin/{$command}", "#!/usr/bin/env bash\nexit 0\n");
-            chmod("{$root}/bin/{$command}", 0o700);
-        }
+        file_put_contents("{$root}/bin/composer", "#!/usr/bin/env bash\nexit 0\n");
+        chmod("{$root}/bin/composer", 0o700);
+        file_put_contents(
+            "{$root}/bin/curl",
+            "#!/usr/bin/env bash\n[[ \" \$* \" == *' --resolve laravel.internal:443:127.0.0.1 '* ]]\n",
+        );
+        chmod("{$root}/bin/curl", 0o700);
         file_put_contents("{$root}/bin/systemctl", "#!/usr/bin/env bash\nprintf '%s\\n' \"\$*\" >>'{$root}/reloads'\n");
         chmod("{$root}/bin/systemctl", 0o700);
         file_put_contents(
