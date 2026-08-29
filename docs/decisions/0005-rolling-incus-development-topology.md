@@ -27,8 +27,9 @@ closed when resources or state do not match their recorded identities.
 ### Use one complete profile
 
 Incus-backed development uses only `gateway_app-dev_app-prod`, with ordered
-roles `gateway`, `app-dev`, and `app-prod`. Each feature receives disposable,
-issue-specific Gateway, app-dev, and app-prod VMs on an isolated network.
+nodes `gateway`, `app-dev`, and `app-prod`. The Gateway node has the `gateway`
+and `vpn` roles. Each feature receives disposable, issue-specific Gateway,
+app-dev, and app-prod VMs on an isolated network.
 Persistent standby VMs use the same three roles and remain stopped outside
 refresh or recovery. The standby and feature namespaces are distinct from
 Orbit-old resources. The canonical standby identities are
@@ -37,8 +38,10 @@ Orbit-old resources. The canonical standby identities are
 `oe-<issue-hash>`, where `<issue-hash>` is the first 12 lowercase hexadecimal
 characters of the issue ID's SHA-256 digest. This keeps every managed bridge
 within Linux's 15-character interface-name limit while readable VM names retain
-the full issue ID. Each generation uses coordinated snapshots named
-`main-<generation-id>` on all three VMs.
+the full issue ID. The issue identity and node role also derive deterministic
+MAC, IPv4, and machine identities. Isolated networks let concurrent topologies
+reuse role-local conventions without a conflict. Each generation uses
+coordinated snapshots named `main-<generation-id>` on all three VMs.
 
 ### Treat snapshots as an acceleration cache
 
