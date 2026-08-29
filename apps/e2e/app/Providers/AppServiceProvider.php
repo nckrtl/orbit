@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
+use App\E2E\DiscoveryGuestPreparer;
 use App\E2E\Git\GitRepository;
 use App\E2E\GuestTransport;
 use App\E2E\HostCapacity;
@@ -127,6 +128,7 @@ final class AppServiceProvider extends ServiceProvider
         $this->app->singleton(IncusNetworkLifecycle::class);
         $this->app->singleton(ProofRecordReader::class);
         $this->app->singleton(ReleaseReceiptStore::class);
+        $this->app->singleton(DiscoveryGuestPreparer::class);
         $this->app->singleton(TopologyAcquirer::class, fn (Application $app): TopologyAcquirer => new TopologyAcquirer(
             host: $app->make(IncusHost::class),
             networks: $app->make(IncusNetworkLifecycle::class),
@@ -144,6 +146,7 @@ final class AppServiceProvider extends ServiceProvider
             repositoryRoot: $repositoryRoot,
             capacity: $app->make(HostCapacity::class),
             proofs: $app->make(ProofRecordReader::class),
+            guests: $app->make(DiscoveryGuestPreparer::class),
         ));
         $this->app->singleton(TopologyReleaser::class, fn (Application $app): TopologyReleaser => new TopologyReleaser(
             $app->make(IncusHost::class),

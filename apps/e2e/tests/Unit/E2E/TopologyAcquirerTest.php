@@ -590,6 +590,7 @@ function taskNineAcquirer(
         $redactor,
         new \App\E2E\HostCapacity($store, $paths, $operation, 12),
         new \App\E2E\ProofRecordReader($store),
+        new \App\E2E\DiscoveryGuestPreparer($host),
         $repositoryRoot,
         $rollback,
         attempts: static fn (): \App\E2E\Value\AttemptId => attemptId(),

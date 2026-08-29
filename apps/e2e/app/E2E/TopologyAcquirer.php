@@ -68,6 +68,7 @@ final readonly class TopologyAcquirer
         private SecretRedactor $redactor,
         private HostCapacity $capacity,
         private ProofRecordReader $proofs,
+        private DiscoveryGuestPreparer $guests,
         private string $repositoryRoot = '',
         private ?AcquisitionRollback $rollback = null,
         /** @var (Closure(): AttemptId)|null Mints the attempt identity; injectable so tests pin resource names. */
@@ -172,7 +173,7 @@ final readonly class TopologyAcquirer
         $target = $topology->target;
         if ($topology->source->mounted) {
             $this->assertWorktreeIsMounted($topology, $worktree);
-            $this->assertSourceMounted($target);
+            $this->guests->assertSourceMounted($target);
 
             return $this->synchronizer->syncWorkingTree($target, $worktree);
         }
@@ -205,7 +206,7 @@ final readonly class TopologyAcquirer
             $target = $topology->target;
             $this->networks->reconcile($target->network());
             if ($topology->source->mounted) {
-                $this->assertSourceMounted($target);
+                $this->guests->assertSourceMounted($target);
             }
             $report = $this->verifier->verify($target, VerificationMode::Readiness, $topology->source);
             if (! $report->passed) {
@@ -543,9 +544,9 @@ final readonly class TopologyAcquirer
             $phase = 'prepare.cloned-host-state';
             $this->measurePhase($phase, $phaseTimings, fn () => $this->host->prepareClonedHostStates($instances));
             $phase = 'mount.source';
-            $this->measurePhase($phase, $phaseTimings, fn () => $this->assertSourceMounted($target));
+            $this->measurePhase($phase, $phaseTimings, fn () => $this->guests->assertSourceMounted($target));
             $phase = 'repair.identity';
-            $this->measurePhase($phase, $phaseTimings, fn () => $this->repairCloneIdentity($target));
+            $this->measurePhase($phase, $phaseTimings, fn () => $this->guests->repairCloneIdentity($target));
             $phase = 'sync.source';
             $source = $this->measurePhase(
                 $phase,
@@ -720,82 +721,6 @@ final readonly class TopologyAcquirer
                     "The worktree is missing {$autoload}; run bin/bootstrap in the worktree before discovery.",
                 );
             }
-        }
-    }
-
-    /**
-     * The mount hides the snapshot checkout, so the gateway `.env` the standby
-     * build preserved is placed into the mounted worktree when it is absent there.
-     * It lands in the host worktree (gitignored) and is never overwritten.
-     */
-    private function assertSourceMounted(TopologyTarget $target): void
-    {
-        $commands = [];
-        foreach (TopologyProfile::CHECKOUT_ROLES as $role) {
-            $commands["mountpoint.{$role}"] = [
-                'instance' => $target->instance($role),
-                'command' => new GuestCommand(['mountpoint', '-q', '--', self::SOURCE_MOUNT_PATH], 30),
-            ];
-        }
-        $this->assertGuestBatch($this->host->execAll($commands), 'The worktree is not mounted on');
-
-        $environment = $this->host->exec($target->instance('gateway'), new GuestCommand([
-            'sh',
-            '-c',
-            '[ -e "$1" ] || install -o 1000 -g 1000 -m 0600 -- "$2" "$1"',
-            'orbit-e2e',
-            self::SOURCE_MOUNT_PATH.'/apps/gateway/.env',
-            WorktreeSynchronizer::GATEWAY_ENV_COPY,
-        ], 30));
-        if (! $environment->successful()) {
-            throw new RuntimeException(
-                'The gateway environment could not be placed into the mounted worktree; '
-                .'the promoted standby generation must be refreshed so it preserves '
-                .WorktreeSynchronizer::GATEWAY_ENV_COPY
-                .'.',
-            );
-        }
-    }
-
-    /**
-     * A clone keeps its snapshot's WireGuard endpoint and PHP caches: point the
-     * nodes at the cloned gateway and drop opcache/realpath state that names the
-     * hidden snapshot checkout.
-     */
-    private function repairCloneIdentity(TopologyTarget $target): void
-    {
-        $instances = array_combine(TopologyProfile::ROLES, array_map($target->instance(...), TopologyProfile::ROLES));
-        $addresses = $this->host->globalIpv4All($instances);
-        $retarget = [];
-        foreach (['app-dev', 'app-prod'] as $role) {
-            $retarget["retarget-vpn.{$role}"] = [
-                'instance' => $instances[$role],
-                'command' => new GuestCommand(['/usr/local/bin/retarget-vpn.sh', $addresses['gateway']], 300),
-            ];
-        }
-        $this->assertGuestBatch($this->host->execAll($retarget), 'WireGuard retargeting failed on');
-
-        $restart = [];
-        foreach (TopologyProfile::CHECKOUT_ROLES as $role) {
-            $restart["php-fpm.{$role}"] = [
-                'instance' => $instances[$role],
-                'command' => new GuestCommand(['systemctl', 'restart', 'php8.5-fpm'], 120),
-            ];
-        }
-        $this->assertGuestBatch($this->host->execAll($restart), 'PHP-FPM restart failed on');
-    }
-
-    /** @param array<string, GuestCommandResult> $results */
-    private function assertGuestBatch(array $results, string $message): void
-    {
-        $failed = [];
-        foreach ($results as $label => $result) {
-            if (! $result->successful()) {
-                $failed[] = $label;
-            }
-        }
-        if ($failed !== []) {
-            throw new RuntimeException($message.' '.implode(', ', $failed).'.');
         }
     }
 
