@@ -6,24 +6,39 @@ namespace App\E2E\Value;
 
 use InvalidArgumentException;
 
+/** @mago-expect lint:too-many-methods One identity boundary derives every attempt-scoped resource name. */
 final readonly class TopologyTarget
 {
-    public function __construct(
-        public string $issue,
-        private bool $standby = false,
-    ) {
-        if (! $standby && preg_match('/\A[A-Z][A-Z0-9]{1,9}-[1-9][0-9]{0,8}\z/D', $issue) !== 1) {
-            throw new InvalidArgumentException('The Linear issue ID is invalid.');
-        }
+    private const string ISSUE_PATTERN = '/\A[A-Z][A-Z0-9]{1,9}-[1-9][0-9]{0,8}\z/D';
 
-        if ($standby && $issue !== 'standby') {
-            throw new InvalidArgumentException('The standby target identity is invalid.');
-        }
+    private function __construct(
+        public string $issue,
+        public ?AttemptId $attempt,
+        private bool $standby = false,
+    ) {}
+
+    public static function feature(string $issue, AttemptId $attempt): self
+    {
+        self::assertIssue($issue);
+
+        return new self($issue, $attempt);
     }
 
     public static function standby(): self
     {
-        return new self('standby', true);
+        return new self('standby', null, true);
+    }
+
+    public static function assertIssue(string $issue): void
+    {
+        if (preg_match(self::ISSUE_PATTERN, $issue) !== 1) {
+            throw new InvalidArgumentException('The Linear issue ID is invalid.');
+        }
+    }
+
+    public static function isIssue(string $issue): bool
+    {
+        return preg_match(self::ISSUE_PATTERN, $issue) === 1;
     }
 
     public static function ipv4For(int $slot, string $role): string
@@ -52,9 +67,16 @@ final readonly class TopologyTarget
             return false;
         }
 
+        return self::issueMatchesBranch($this->issue, $branch);
+    }
+
+    public static function issueMatchesBranch(string $issue, string $branch): bool
+    {
+        self::assertIssue($issue);
+
         return (
             preg_match(
-                '/(?:\A|[^a-z0-9])'.preg_quote($this->issue, '/').'(?=\z|[^a-z0-9])/i',
+                '/(?:\A|[^a-z0-9])'.preg_quote($issue, '/').'(?=\z|[^a-z0-9])/i',
                 $branch,
             ) === 1
         );
@@ -62,14 +84,22 @@ final readonly class TopologyTarget
 
     public function network(): string
     {
-        return $this->standby ? 'oe-standby' : 'oe-'.substr(hash('sha256', $this->issue), 0, 12);
+        if ($this->standby) {
+            return 'oe-standby';
+        }
+
+        return 'oe-'.substr(hash('sha256', $this->issue.':'.$this->requireAttempt()->value), 0, 12);
     }
 
     public function instance(string $role): string
     {
         $this->validateRole($role);
 
-        return 'orbit-e2e-'.strtolower($this->issue).'-'.$role;
+        if ($this->standby) {
+            return 'orbit-e2e-standby-'.$role;
+        }
+
+        return 'orbit-e2e-'.strtolower($this->issue).'-'.$this->requireAttempt()->short().'-'.$role;
     }
 
     public function mac(string $role): string
@@ -91,6 +121,12 @@ final readonly class TopologyTarget
         $hash = substr(sha1($topology.':'.$role), 0, 6);
 
         return '00:16:3e:'.implode(':', str_split($hash, 2));
+    }
+
+    /** The attempt identity of a feature target; standby has none. */
+    public function requireAttempt(): AttemptId
+    {
+        return $this->attempt ?? throw new InvalidArgumentException('The feature target has no attempt identity.');
     }
 
     private function validateRole(string $role): void

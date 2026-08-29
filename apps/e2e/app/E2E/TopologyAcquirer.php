@@ -10,6 +10,8 @@ use App\E2E\State\OperationJournal;
 use App\E2E\State\OperationLock;
 use App\E2E\State\SecretRedactor;
 use App\E2E\State\StatePaths;
+use App\E2E\Value\AttemptId;
+use App\E2E\Value\AttemptPurpose;
 use App\E2E\Value\FeatureTopology;
 use App\E2E\Value\GuestCommand;
 use App\E2E\Value\GuestCommandResult;
@@ -50,7 +52,7 @@ final readonly class TopologyAcquirer
         private ?AcquisitionRollback $rollback = null,
     ) {}
 
-    public function acquire(TopologyRequest $request): FeatureTopology
+    public function acquire(TopologyRequest $request, AttemptId $attempt): FeatureTopology
     {
         $this->validateRequestOwnership($request);
         $operation = $this->commandOperation;
@@ -60,7 +62,7 @@ final readonly class TopologyAcquirer
         }
 
         try {
-            return $this->acquirePinned($request, $operation);
+            return $this->acquirePinned($request, TopologyTarget::feature($request->issue, $attempt), $operation);
         } finally {
             $issueLock->release();
         }
@@ -84,8 +86,9 @@ final readonly class TopologyAcquirer
     private function syncUnlocked(TopologyRequest $request, bool $allowInterrupted = false): FeatureTopology
     {
         $topology = $allowInterrupted
-            ? $this->requireTopologyForSync($request->target)
-            : $this->requireTopology($request->target);
+            ? $this->requireTopologyForSync($request->issue)
+            : $this->requireTopology($request->issue);
+        $target = $topology->target;
         // The lease keeps the acquiring operation: Incus resources are stamped
         // with it, and release verifies ownership against that exact value.
         // The synchronizing operation is recorded in the manifest source.
@@ -94,44 +97,46 @@ final readonly class TopologyAcquirer
         if (! is_string($operationId) || preg_match('/\A[a-f0-9]{32}\z/D', $operationId) !== 1) {
             throw new RuntimeException('The topology lease has no valid acquiring operation.');
         }
-        $this->writeLease($request->issue, $operationId, 'syncing');
+        $this->writeLease($request->issue, $topology->attempt, $operationId, 'syncing');
         try {
             $this->assertColdBaseMatchesMain($request->worktree);
-            $this->networks->reconcile($request->target->network());
-            $source = $this->synchronizer->sync($request->target, $request->worktree);
-            $this->converger->converge($request->target, $source, $topology->generation->laravel);
-            $verification = $this->verifier->verify($request->target, VerificationMode::Readiness, $source);
+            $this->networks->reconcile($target->network());
+            $source = $this->synchronizer->sync($target, $request->worktree);
+            $this->converger->converge($target, $source, $topology->generation->laravel);
+            $verification = $this->verifier->verify($target, VerificationMode::Readiness, $source);
             if (! $verification->passed) {
                 throw new RuntimeException('Feature topology verification failed.'.$verification->failedSummary());
             }
 
             $updated = new FeatureTopology(
-                $request->target,
+                $target,
+                $topology->purpose,
                 $topology->generation,
                 $topology->network,
                 $topology->instances,
                 $source,
                 $verification,
             );
-            $this->manifests->write($updated);
-            $this->writeLease($request->issue, $operationId, 'ready');
+            $this->manifests->writeActive($updated);
+            $this->writeLease($request->issue, $topology->attempt, $operationId, 'ready');
 
             return $updated;
         } catch (Throwable $exception) {
-            $this->writeLease($request->issue, $operationId, 'failed');
+            $this->writeLease($request->issue, $topology->attempt, $operationId, 'failed');
             throw $exception;
         }
     }
 
     public function verify(string $issue): FeatureTopology
     {
-        $target = new TopologyTarget($issue);
+        TopologyTarget::assertIssue($issue);
         $lock = new OperationLock($this->paths);
         if (! $lock->acquire('topology-'.$issue, $this->commandOperation)) {
             throw new RuntimeException('The issue topology is locked.');
         }
         try {
-            $topology = $this->requireTopology($target);
+            $topology = $this->requireTopology($issue);
+            $target = $topology->target;
             $this->networks->reconcile($target->network());
             $report = $this->verifier->verify($target, VerificationMode::Readiness, $topology->source);
             if (! $report->passed) {
@@ -140,13 +145,14 @@ final readonly class TopologyAcquirer
 
             $updated = new FeatureTopology(
                 $target,
+                $topology->purpose,
                 $topology->generation,
                 $topology->network,
                 $topology->instances,
                 $topology->source,
                 $report,
             );
-            $this->manifests->write($updated);
+            $this->manifests->writeActive($updated);
 
             return $updated;
         } finally {
@@ -157,20 +163,21 @@ final readonly class TopologyAcquirer
     /** @param list<string> $argv */
     public function execute(string $issue, string $role, array $argv, ?string $stdin = null): GuestCommandResult
     {
-        $target = new TopologyTarget($issue);
+        TopologyTarget::assertIssue($issue);
         $lock = new OperationLock($this->paths);
         if (! $lock->acquire('topology-'.$issue, $this->commandOperation)) {
             throw new RuntimeException('The issue topology is locked.');
         }
 
         try {
-            $topology = $this->requireTopology($target);
-            $instance = $target->instance($role);
+            $topology = $this->requireTopology($issue);
+            $instance = $topology->target->instance($role);
             $owned = $this->host->instance($instance);
             if (
                 $owned === null
                 || ($owned->metadata['user.orbit.e2e.owner'] ?? null) !== 'orbit-e2e'
                 || ($owned->metadata['user.orbit.e2e.issue'] ?? null) !== $issue
+                || ($owned->metadata['user.orbit.e2e.attempt'] ?? null) !== $topology->attempt->value
                 || ($owned->metadata['user.orbit.e2e.generation'] ?? null) !== $topology->generation->id
                 || $owned->network !== $topology->network
             ) {
@@ -226,11 +233,12 @@ final readonly class TopologyAcquirer
         }
 
         $topology = $this->syncUnlocked($request);
+        $target = $topology->target;
         if ($topology->source->dirty || $topology->source->hostSha !== $candidateSha) {
             throw new RuntimeException('Final source sync changed the candidate identity.');
         }
         foreach (TopologyProfile::CHECKOUT_ROLES as $role) {
-            $identity = $this->host->exec($request->target->instance($role), new GuestCommand([
+            $identity = $this->host->exec($target->instance($role), new GuestCommand([
                 'runuser',
                 '-u',
                 'orbit',
@@ -247,7 +255,7 @@ final readonly class TopologyAcquirer
             if (! $identity->successful() || trim($identity->stdout) !== $candidateSha) {
                 throw new RuntimeException("The {$role} checkout is not at the candidate SHA.");
             }
-            $result = $this->host->exec($request->target->instance($role), new GuestCommand([
+            $result = $this->host->exec($target->instance($role), new GuestCommand([
                 'runuser',
                 '-u',
                 'orbit',
@@ -266,7 +274,7 @@ final readonly class TopologyAcquirer
             }
         }
         $automated = $this->host->exec(
-            $request->target->instance('gateway'),
+            $target->instance('gateway'),
             new GuestCommand(
                 [
                     'runuser',
@@ -288,7 +296,7 @@ final readonly class TopologyAcquirer
             );
         }
 
-        $verification = $this->verifier->verify($request->target, VerificationMode::Proof, $topology->source);
+        $verification = $this->verifier->verify($target, VerificationMode::Proof, $topology->source);
         if (! $verification->passed) {
             throw new RuntimeException('Candidate proof probes failed.');
         }
@@ -310,38 +318,48 @@ final readonly class TopologyAcquirer
         return $result;
     }
 
-    private function acquirePinned(TopologyRequest $request, OperationId $operation): FeatureTopology
-    {
+    private function acquirePinned(
+        TopologyRequest $request,
+        TopologyTarget $target,
+        OperationId $operation,
+    ): FeatureTopology {
         if ($this->state->read('release-pending/'.$request->issue.'.json') !== null) {
             throw new RuntimeException('The issue has a pending release finalization.');
         }
-        $manifest = $this->manifests->read($request->target);
+        $manifest = $this->manifests->active($request->issue);
         $lease = $this->state->read('leases/'.$request->issue.'.json');
         if (($lease['state'] ?? null) === 'acquiring') {
             if ($lease === null) {
                 throw new RuntimeException('Acquiring lease data is missing.');
             }
             $acquiringOperation = $this->acquiringLeaseOperation($lease, $request->issue);
+            $acquiringTarget = TopologyTarget::feature(
+                $request->issue,
+                $this->leaseAttempt($lease, $request->issue, 'acquiring'),
+            );
             if (! $this->acquiringLeaseIsStale($lease)) {
                 throw new RuntimeException('The acquiring topology lease is still owned by a live process.');
             }
             if ($manifest !== null) {
+                if ($manifest->attempt->value !== $acquiringTarget->attempt?->value) {
+                    throw new RuntimeException('The interrupted topology manifest belongs to another attempt.');
+                }
                 $this->assertInterruptedManifestLive($manifest, $acquiringOperation);
-                $this->writeLease($request->issue, $acquiringOperation->value, 'ready');
+                $this->writeLease($request->issue, $manifest->attempt, $acquiringOperation->value, 'ready');
 
                 return $manifest;
             }
 
             $resources = [
-                $request->target->network(),
+                $acquiringTarget->network(),
                 ...array_map(
-                    $request->target->instance(...),
+                    $acquiringTarget->instance(...),
                     TopologyProfile::ROLES,
                 ),
             ];
-            $observed = $this->observedResources($request->target, $resources);
-            $cleanup = $this->rollbackFor($request)->cleanup(
-                $request->target,
+            $observed = $this->observedResources($acquiringTarget, $resources);
+            $cleanup = $this->rollbackFor($acquiringTarget)->cleanup(
+                $acquiringTarget,
                 $resources,
                 $observed,
                 $acquiringOperation,
@@ -352,7 +370,7 @@ final readonly class TopologyAcquirer
             )) {
                 throw new RuntimeException('Interrupted topology acquisition cleanup was refused.');
             }
-            $this->capacity->release($request->issue, $acquiringOperation);
+            $this->capacity->release($request->issue, $acquiringTarget->requireAttempt(), $acquiringOperation);
         } elseif ($manifest !== null) {
             throw new RuntimeException('The issue already has a topology manifest.');
         }
@@ -386,36 +404,39 @@ final readonly class TopologyAcquirer
 
         $created = [];
         $phaseTimings = [];
-        $manifestWritten = false;
+        $attempt = $target->requireAttempt();
+        $writtenTopology = null;
         try {
-            $this->writeLease($request->issue, $operation->value, 'acquiring');
-            $networkSlot = $this->capacity->reserve($request->issue, $operation);
+            $this->writeLease($request->issue, $attempt, $operation->value, 'acquiring');
+            $networkSlot = $this->capacity->reserve($request->issue, $attempt, $operation);
             $phase = 'create.network';
-            $created[] = $request->target->network();
+            $created[] = $target->network();
             $this->measurePhase($phase, $phaseTimings, fn () => $this->networks->create(
-                $request->target->network(),
+                $target->network(),
                 $networkSlot,
                 [
                     'user.orbit.e2e.issue' => $request->issue,
+                    'user.orbit.e2e.attempt' => $attempt->value,
                     'user.orbit.e2e.operation' => $operation->value,
                 ],
             ));
             $copies = [];
             foreach (TopologyProfile::ROLES as $role) {
-                $target = $request->target->instance($role);
-                $created[] = $target;
+                $name = $target->instance($role);
+                $created[] = $name;
                 $copies[$role] = [
                     'source' => TopologyTarget::standby()->instance($role),
                     'snapshot' => $generation->snapshots[$role],
-                    'target' => $target,
+                    'target' => $name,
                     'metadata' => [
                         'user.orbit.e2e.issue' => $request->issue,
+                        'user.orbit.e2e.attempt' => $attempt->value,
                         'user.orbit.e2e.generation' => $generation->id,
                         'user.orbit.e2e.operation' => $operation->value,
                     ],
-                    'network' => $request->target->network(),
+                    'network' => $target->network(),
                     'role' => $role,
-                    'topology' => $request->target->network(),
+                    'topology' => $target->network(),
                     'slot' => $networkSlot,
                 ];
             }
@@ -425,7 +446,7 @@ final readonly class TopologyAcquirer
                 $phaseTimings,
                 fn () => $this->copyPinnedSnapshots($generation, $copies, $operation),
             );
-            $instances = array_map($request->target->instance(...), TopologyProfile::ROLES);
+            $instances = array_map($target->instance(...), TopologyProfile::ROLES);
             $phase = 'start';
             $this->measurePhase($phase, $phaseTimings, fn () => $this->host->startAll($instances));
             $phase = 'prepare.cloned-host-state';
@@ -434,19 +455,19 @@ final readonly class TopologyAcquirer
             $source = $this->measurePhase(
                 $phase,
                 $phaseTimings,
-                fn () => $this->synchronizer->sync($request->target, $request->worktree),
+                fn () => $this->synchronizer->sync($target, $request->worktree),
             );
             $phase = 'converge';
             $this->measurePhase(
                 $phase,
                 $phaseTimings,
-                fn () => $this->converger->converge($request->target, $source, $generation->laravel),
+                fn () => $this->converger->converge($target, $source, $generation->laravel),
             );
             $phase = 'verify';
             $verification = $this->measurePhase(
                 $phase,
                 $phaseTimings,
-                fn () => $this->verifier->verify($request->target, VerificationMode::Readiness, $source),
+                fn () => $this->verifier->verify($target, VerificationMode::Readiness, $source),
             );
             if (! $verification->passed) {
                 throw new RuntimeException(
@@ -455,19 +476,20 @@ final readonly class TopologyAcquirer
             }
             $instances = [];
             foreach (TopologyProfile::ROLES as $role) {
-                $instances[$role] = $request->target->instance($role);
+                $instances[$role] = $target->instance($role);
             }
             $topology = new FeatureTopology(
-                $request->target,
+                $target,
+                AttemptPurpose::Discovery,
                 $generation,
-                $request->target->network(),
+                $target->network(),
                 $instances,
                 $source,
                 $verification,
             );
-            $this->manifests->write($topology);
-            $manifestWritten = true;
-            $this->writeLease($request->issue, $operation->value, 'ready');
+            $this->manifests->writeActive($topology);
+            $writtenTopology = $topology;
+            $this->writeLease($request->issue, $attempt, $operation->value, 'ready');
             $this->journal->append($operation, [
                 'event' => 'topology.acquire.phases',
                 'state' => 'completed',
@@ -479,9 +501,9 @@ final readonly class TopologyAcquirer
         } catch (Throwable $exception) {
             $secondaryFailures = [];
             $recoveryRequired = false;
-            if ($manifestWritten) {
+            if ($writtenTopology !== null) {
                 try {
-                    $this->state->delete('topologies/'.$request->issue.'.json');
+                    $this->manifests->forgetActive($writtenTopology);
                 } catch (Throwable $manifestFailure) {
                     $recoveryRequired = true;
                     $secondaryFailures[] = 'manifest deletion: '.$manifestFailure->getMessage();
@@ -490,8 +512,8 @@ final readonly class TopologyAcquirer
             $cleanup = [];
             $cleanupFailed = false;
             try {
-                $observed = $this->observedResources($request->target, $created);
-                $cleanup = $this->rollbackFor($request)->cleanup($request->target, $created, $observed, $operation);
+                $observed = $this->observedResources($target, $created);
+                $cleanup = $this->rollbackFor($target)->cleanup($target, $created, $observed, $operation);
             } catch (Throwable $cleanupFailure) {
                 $cleanupFailed = true;
                 $recoveryRequired = true;
@@ -508,7 +530,7 @@ final readonly class TopologyAcquirer
             }
             if (! $recoveryRequired) {
                 try {
-                    $this->capacity->release($request->issue, $operation);
+                    $this->capacity->release($request->issue, $attempt, $operation);
                     $this->state->delete('leases/'.$request->issue.'.json');
                 } catch (Throwable $leaseFailure) {
                     $secondaryFailures[] = 'lease deletion: '.$leaseFailure->getMessage();
@@ -520,9 +542,10 @@ final readonly class TopologyAcquirer
             )));
             try {
                 $this->state->write('failures/'.$request->issue.'.json', [
-                    'schema' => 1,
+                    'schema' => 2,
                     'operation_id' => $operation->value,
                     'issue' => $request->issue,
+                    'attempt' => $attempt->value,
                     'resources' => $created,
                     'phase' => $phase ?? 'preflight',
                     'duration_ms' => $phaseTimings,
@@ -640,6 +663,7 @@ final readonly class TopologyAcquirer
                 || $instance->mac !== $target->mac($role)
                 || ($instance->metadata['user.orbit.e2e.owner'] ?? null) !== 'orbit-e2e'
                 || ($instance->metadata['user.orbit.e2e.issue'] ?? null) !== $target->issue
+                || ($instance->metadata['user.orbit.e2e.attempt'] ?? null) !== $manifest->attempt->value
                 || ($instance->metadata['user.orbit.e2e.generation'] ?? null) !== $manifest->generation->id
                 || ($instance->metadata['user.orbit.e2e.operation'] ?? null) !== $operation->value
             ) {
@@ -652,43 +676,69 @@ final readonly class TopologyAcquirer
             $network === null
             || ($network->metadata['user.orbit.e2e.owner'] ?? null) !== 'orbit-e2e'
             || ($network->metadata['user.orbit.e2e.issue'] ?? null) !== $target->issue
+            || ($network->metadata['user.orbit.e2e.attempt'] ?? null) !== $manifest->attempt->value
             || ($network->metadata['user.orbit.e2e.operation'] ?? null) !== $operation->value
         ) {
             throw new RuntimeException('Interrupted topology live network identity does not match the manifest.');
         }
     }
 
-    private function requireTopology(TopologyTarget $target): FeatureTopology
+    private function requireTopology(string $issue): FeatureTopology
     {
-        $lease = $this->state->read('leases/'.$target->issue.'.json');
+        $lease = $this->state->read('leases/'.$issue.'.json');
         if (! is_array($lease)) {
             throw new RuntimeException('The topology lease is invalid.');
         }
         if (($lease['state'] ?? null) !== 'ready') {
             throw new RuntimeException('The feature topology lease is not ready.');
         }
-        $this->leaseOperation($lease, $target->issue, ['ready'], 'topology');
+        $this->leaseOperation($lease, $issue, ['ready'], 'topology');
 
-        return $this->manifests->read($target) ?? throw new RuntimeException('The feature topology does not exist.');
+        return $this->activeTopology($issue, $this->leaseAttempt($lease, $issue, 'topology'));
     }
 
-    private function requireTopologyForSync(TopologyTarget $target): FeatureTopology
+    private function requireTopologyForSync(string $issue): FeatureTopology
     {
-        $lease = $this->state->read('leases/'.$target->issue.'.json');
+        $lease = $this->state->read('leases/'.$issue.'.json');
         if (! is_array($lease)) {
             throw new RuntimeException('The sync lease is invalid.');
         }
         $state = $lease['state'] ?? null;
         if ($state === 'ready') {
-            return $this->requireTopology($target);
+            return $this->requireTopology($issue);
         }
         if (! in_array($state, ['syncing', 'failed'], true)) {
             throw new RuntimeException('The feature topology lease is not ready.');
         }
 
-        $this->leaseOperation($lease, $target->issue, ['syncing', 'failed'], 'sync');
+        $this->leaseOperation($lease, $issue, ['syncing', 'failed'], 'sync');
 
-        return $this->manifests->read($target) ?? throw new RuntimeException('The feature topology does not exist.');
+        return $this->activeTopology($issue, $this->leaseAttempt($lease, $issue, 'sync'));
+    }
+
+    /** The lease and the active pointer must name the same attempt before any command touches it. */
+    private function activeTopology(string $issue, AttemptId $attempt): FeatureTopology
+    {
+        $topology = $this->manifests->active($issue) ?? throw new RuntimeException(
+            'The feature topology does not exist.',
+        );
+
+        if ($topology->attempt->value !== $attempt->value) {
+            throw new RuntimeException('The topology lease and the active topology attempt do not match.');
+        }
+
+        return $topology;
+    }
+
+    /** @param array<array-key, mixed> $lease */
+    private function leaseAttempt(array $lease, string $issue, string $context): AttemptId
+    {
+        $attempt = $lease['attempt'] ?? null;
+        if (! is_string($attempt) || preg_match('/\A[0-9a-f]{32}\z/D', $attempt) !== 1) {
+            throw new RuntimeException("The {$context} lease is invalid.");
+        }
+
+        return new AttemptId($attempt);
     }
 
     /** @param list<string> $states */
@@ -699,6 +749,7 @@ final readonly class TopologyAcquirer
             array_diff(array_keys($lease), [
                 'schema',
                 'issue',
+                'attempt',
                 'state',
                 'operation_id',
                 'expires_at',
@@ -706,8 +757,8 @@ final readonly class TopologyAcquirer
                 'process_start_identity',
                 'acquired_at',
             ]) !== []
-            || count($lease) < 5
-            || ($lease['schema'] ?? null) !== 1
+            || count($lease) < 6
+            || ($lease['schema'] ?? null) !== 2
             || ($lease['issue'] ?? null) !== $issue
             || ! in_array($lease['state'] ?? null, $states, true)
             || ! is_string($expiresAt)
@@ -733,7 +784,7 @@ final readonly class TopologyAcquirer
         if ($this->gitCommonDirectory($repository->root()) !== $this->gitCommonDirectory($expected->root())) {
             throw new \InvalidArgumentException('The worktree repository identity does not match Orbit.');
         }
-        if (! $request->target->matchesBranch($repository->branch())) {
+        if (! TopologyTarget::issueMatchesBranch($request->issue, $repository->branch())) {
             throw new \InvalidArgumentException('The worktree branch does not match the issue.');
         }
         if (function_exists('posix_geteuid') && fileowner($request->worktree) !== posix_geteuid()) {
@@ -815,10 +866,10 @@ final readonly class TopologyAcquirer
         ];
     }
 
-    private function rollbackFor(TopologyRequest $request): AcquisitionRollback
+    private function rollbackFor(TopologyTarget $target): AcquisitionRollback
     {
         /** @return array<string, IncusInstance|IncusNetwork|null> */
-        $inventory = function (array $resources) use ($request): array {
+        $inventory = function (array $resources) use ($target): array {
             if (
                 ! array_is_list($resources)
                 || array_filter($resources, static fn (mixed $resource): bool => ! is_string($resource)) !== []
@@ -827,7 +878,7 @@ final readonly class TopologyAcquirer
             }
 
             /** @var list<string> $resources */
-            return $this->rollbackInventory($request->target, $resources);
+            return $this->rollbackInventory($target, $resources);
         };
 
         return (
@@ -865,11 +916,12 @@ final readonly class TopologyAcquirer
         return $inventory;
     }
 
-    private function writeLease(string $issue, string $operationId, string $state): void
+    private function writeLease(string $issue, AttemptId $attempt, string $operationId, string $state): void
     {
         $lease = [
-            'schema' => 1,
+            'schema' => 2,
             'issue' => $issue,
+            'attempt' => $attempt->value,
             'state' => $state,
             'operation_id' => $operationId,
             'expires_at' => gmdate('Y-m-d\TH:i:s\Z', time() + 604_800),

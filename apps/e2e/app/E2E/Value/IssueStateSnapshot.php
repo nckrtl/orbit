@@ -16,7 +16,7 @@ final readonly class IssueStateSnapshot
         public array $issues,
     ) {
         foreach ($issues as $issue => $state) {
-            new TopologyTarget($issue);
+            TopologyTarget::assertIssue($issue);
             if (! in_array(strtolower($state), self::TERMINAL, true)) {
                 throw new InvalidArgumentException('The issue snapshot contains a non-terminal state.');
             }

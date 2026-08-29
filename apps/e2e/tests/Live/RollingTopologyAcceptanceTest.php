@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\E2E\Value\AttemptId;
 use App\E2E\Value\TopologyProfile;
 use App\E2E\Value\TopologyTarget;
 use Illuminate\Contracts\Process\ProcessResult;
@@ -52,10 +53,8 @@ it('proves the rolling topology contract through public wrappers', function (): 
     Assert::assertNotSame(realpath($repositoryRoot), realpath($inputs['ORBIT_LIVE_FEATURE_WORKTREE']));
 
     $issue = $inputs['ORBIT_LIVE_ISSUE'];
-    $target = new TopologyTarget($issue);
     $isolationIssue = $inputs['ORBIT_LIVE_ISOLATION_ISSUE'];
     Assert::assertNotSame($issue, $isolationIssue);
-    $isolationTarget = new TopologyTarget($isolationIssue);
     $mainWorktree = $inputs['ORBIT_LIVE_MAIN_WORKTREE'];
     $featureWorktree = $inputs['ORBIT_LIVE_FEATURE_WORKTREE'];
     $candidateSha = $inputs['ORBIT_LIVE_CANDIDATE_SHA'];
@@ -115,6 +114,7 @@ it('proves the rolling topology contract through public wrappers', function (): 
             $featureWorktree,
         ));
         $acquired = true;
+        $target = liveAcquiredTarget($acquire, $issue);
         Assert::assertSame('ready', $acquire['state'] ?? null);
         Assert::assertArrayNotHasKey('evidence_id', $acquire);
         Assert::assertSame($acquire['operation_id'] ?? null, $acquire['topology']['source']['operation_id'] ?? null);
@@ -128,6 +128,7 @@ it('proves the rolling topology contract through public wrappers', function (): 
             $isolationIssue,
             $featureWorktree,
         ));
+        $isolationTarget = liveAcquiredTarget($isolationAcquire, $isolationIssue);
         Assert::assertSame('ready', $isolationAcquire['state'] ?? null);
         liveAssertTopology($isolationAcquire['topology'] ?? null, $isolationTarget, $candidateSha);
         liveAssertIncusTopology($isolationAcquire['topology'] ?? null, $isolationTarget);
@@ -141,7 +142,7 @@ it('proves the rolling topology contract through public wrappers', function (): 
         Assert::assertSame('released', $isolationRelease['state'] ?? null);
         $isolationAcquired = false;
 
-        $manifestPath = "{$stateRoot}/topologies/{$issue}.json";
+        $manifestPath = "{$stateRoot}/topologies/{$issue}/{$target->requireAttempt()->value}.json";
         Assert::assertSame($acquire['topology'], liveJsonFile($manifestPath));
         liveVoidPhase('verify services', function () use ($issue): void {
             $verified = liveJsonWrapper('topology', 'verify', $issue);
@@ -472,11 +473,21 @@ function liveAssertStandbyStatus(array $payload, string $state): void
     Assert::assertIsArray($payload['generation']);
 }
 
+/** @param array<array-key, mixed> $acquire */
+function liveAcquiredTarget(array $acquire, string $issue): TopologyTarget
+{
+    $attempt = $acquire['topology']['attempt_id'] ?? null;
+    Assert::assertIsString($attempt);
+
+    return TopologyTarget::feature($issue, new AttemptId($attempt));
+}
+
 function liveAssertTopology(mixed $topology, TopologyTarget $target, string $candidateSha): void
 {
     Assert::assertIsArray($topology);
     Assert::assertSame(1, $topology['schema'] ?? null);
     Assert::assertSame($target->issue, $topology['issue'] ?? null);
+    Assert::assertSame($target->requireAttempt()->value, $topology['attempt_id'] ?? null);
     Assert::assertSame(TopologyProfile::NAME, $topology['profile'] ?? null);
     Assert::assertSame($target->network(), $topology['network'] ?? null);
     Assert::assertSame([
@@ -501,6 +512,10 @@ function liveAssertIncusTopology(mixed $topology, TopologyTarget $target): void
     Assert::assertIsArray($networkConfiguration);
     Assert::assertSame('orbit-e2e', $networkConfiguration['user.orbit.e2e.owner'] ?? null);
     Assert::assertSame($target->issue, $networkConfiguration['user.orbit.e2e.issue'] ?? null);
+    Assert::assertSame(
+        $target->requireAttempt()->value,
+        $networkConfiguration['user.orbit.e2e.attempt'] ?? null,
+    );
     Assert::assertSame('true', $networkConfiguration['ipv4.nat'] ?? null);
     Assert::assertSame('none', $networkConfiguration['ipv6.address'] ?? null);
     Assert::assertSame('port=0', $networkConfiguration['raw.dnsmasq'] ?? null);
@@ -529,6 +544,7 @@ function liveAssertIncusTopology(mixed $topology, TopologyTarget $target): void
         Assert::assertSame('RUNNING', strtoupper((string) ($instance['status'] ?? '')));
         Assert::assertSame('orbit-e2e', $configuration['user.orbit.e2e.owner'] ?? null);
         Assert::assertSame($target->issue, $configuration['user.orbit.e2e.issue'] ?? null);
+        Assert::assertSame($target->requireAttempt()->value, $configuration['user.orbit.e2e.attempt'] ?? null);
         Assert::assertSame($generation, $configuration['user.orbit.e2e.generation'] ?? null);
 
         $devices = $instance['devices'] ?? $instance['expanded_devices'] ?? null;

@@ -17,6 +17,7 @@ use App\E2E\TopologyAcquirer;
 use App\E2E\TopologyConverger;
 use App\E2E\TopologyManifestStore;
 use App\E2E\TopologyVerifier;
+use App\E2E\Value\AttemptPurpose;
 use App\E2E\Value\FeatureTopology;
 use App\E2E\Value\IncusInstance;
 use App\E2E\Value\IncusNetwork;
@@ -40,10 +41,10 @@ it('successful verify persists the returned verification report', function () {
     $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));
     featureTopologyFixture($repositoryRoot, $paths);
     $events = [];
-    fakePinnedWorktreeProcesses(new TopologyTarget('NCK-123'), $events);
+    fakePinnedWorktreeProcesses(featureTarget('NCK-123'), $events);
 
     $verified = taskNineAcquirer($repositoryRoot, $paths)->verify('NCK-123');
-    $persisted = new TopologyManifestStore(new AtomicJsonStore($paths))->read(new TopologyTarget('NCK-123'));
+    $persisted = new TopologyManifestStore(new AtomicJsonStore($paths))->active('NCK-123');
 
     expect($verified->verification->probes)
         ->not->toBe(['fixture' => true])->and($persisted?->verification->toArray())->toBe(
@@ -56,9 +57,9 @@ it('journals successful execution with redacted argv and output without persisti
     $repositoryRoot = preparedTopologyRepository();
     $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));
     featureTopologyFixture($repositoryRoot, $paths);
-    $topology = new TopologyManifestStore(new AtomicJsonStore($paths))->read(new TopologyTarget('NCK-123'));
+    $topology = new TopologyManifestStore(new AtomicJsonStore($paths))->active('NCK-123');
     expect($topology)->not->toBeNull();
-    $target = new TopologyTarget('NCK-123');
+    $target = featureTarget('NCK-123');
     $instance = $target->instance('gateway');
     $redactor = new SecretRedactor(['configured-secret']);
     $journal = new OperationJournal($paths, $redactor);
@@ -69,6 +70,7 @@ it('journals successful execution with redacted argv and output without persisti
                 [
                     'user.orbit.e2e.owner' => 'orbit-e2e',
                     'user.orbit.e2e.issue' => 'NCK-123',
+                    'user.orbit.e2e.attempt' => attemptId()->value,
                     'user.orbit.e2e.generation' => $topology->generation->id,
                 ],
                 $target->network(),
@@ -132,9 +134,9 @@ it('nonzero execute writes a completed topology.exec entry', function () {
     $repositoryRoot = preparedTopologyRepository();
     $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));
     featureTopologyFixture($repositoryRoot, $paths);
-    $topology = new TopologyManifestStore(new AtomicJsonStore($paths))->read(new TopologyTarget('NCK-123'));
+    $topology = new TopologyManifestStore(new AtomicJsonStore($paths))->active('NCK-123');
     expect($topology)->not->toBeNull();
-    $target = new TopologyTarget('NCK-123');
+    $target = featureTarget('NCK-123');
     $instance = $target->instance('gateway');
     $redactor = new SecretRedactor;
     $journal = new OperationJournal($paths, $redactor);
@@ -145,6 +147,7 @@ it('nonzero execute writes a completed topology.exec entry', function () {
                 [
                     'user.orbit.e2e.owner' => 'orbit-e2e',
                     'user.orbit.e2e.issue' => 'NCK-123',
+                    'user.orbit.e2e.attempt' => attemptId()->value,
                     'user.orbit.e2e.generation' => $topology->generation->id,
                 ],
                 $target->network(),
@@ -181,13 +184,14 @@ it('rejects a replaced VM before guest execution', function (string $mismatch) {
     $repositoryRoot = preparedTopologyRepository();
     $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));
     featureTopologyFixture($repositoryRoot, $paths);
-    $topology = new TopologyManifestStore(new AtomicJsonStore($paths))->read(new TopologyTarget('NCK-123'));
+    $topology = new TopologyManifestStore(new AtomicJsonStore($paths))->active('NCK-123');
     expect($topology)->not->toBeNull();
-    $target = new TopologyTarget('NCK-123');
+    $target = featureTarget('NCK-123');
     $instance = $target->instance('gateway');
     $metadata = [
         'user.orbit.e2e.owner' => 'orbit-e2e',
         'user.orbit.e2e.issue' => 'NCK-123',
+        'user.orbit.e2e.attempt' => attemptId()->value,
         'user.orbit.e2e.generation' => $topology->generation->id,
     ];
     $network = $target->network();
@@ -434,6 +438,7 @@ function topology_creation_failure_host_result(
             'config' => [
                 'user.orbit.e2e.owner' => 'orbit-e2e',
                 'user.orbit.e2e.issue' => 'NCK-123',
+                'user.orbit.e2e.attempt' => attemptId()->value,
                 'ipv4.address' => '10.232.2.1/24',
             ],
         ]], JSON_THROW_ON_ERROR));
@@ -516,7 +521,7 @@ function standbyVmInventoryJson(): string
     $roles = \App\E2E\Value\TopologyProfile::ROLES;
     $instances = array_merge(
         array_map(static fn (string $role): string => TopologyTarget::standby()->instance($role), $roles),
-        array_map(static fn (string $role): string => new TopologyTarget('NCK-123')->instance($role), $roles),
+        array_map(static fn (string $role): string => featureTarget('NCK-123')->instance($role), $roles),
     );
 
     return json_encode(array_map(
@@ -617,7 +622,7 @@ function featureTopologyFixture(string $repositoryRoot, StatePaths $paths): void
     $store = new AtomicJsonStore($paths);
     $fingerprint = topologyFinalPreparedFingerprint($repositoryRoot);
     $structural = new PreparedStateFingerprint(new GitRepository($repositoryRoot))->forCommit();
-    $target = new TopologyTarget('NCK-123');
+    $target = featureTarget('NCK-123');
     $generation = new StandbyGeneration(
         str_repeat('a', 12).'-'.substr($fingerprint->value, 0, 12),
         new GitRepository($repositoryRoot)->commit(),
@@ -633,8 +638,9 @@ function featureTopologyFixture(string $repositoryRoot, StatePaths $paths): void
         $structural->manifest['topology']['roles'],
         $structural->manifest['topology']['checkout_roles'],
     );
-    new TopologyManifestStore($store)->write(new FeatureTopology(
+    new TopologyManifestStore($store)->writeActive(new FeatureTopology(
         $target,
+        AttemptPurpose::Discovery,
         $generation,
         $target->network(),
         [
@@ -646,8 +652,9 @@ function featureTopologyFixture(string $repositoryRoot, StatePaths $paths): void
         new VerificationReport(true, ['fixture' => verificationProbeFixture()]),
     ));
     $store->write('leases/NCK-123.json', [
-        'schema' => 1,
+        'schema' => 2,
         'issue' => 'NCK-123',
+        'attempt' => attemptId()->value,
         'state' => 'ready',
         'operation_id' => str_repeat('a', 32),
         'expires_at' => gmdate('Y-m-d\\TH:i:s\\Z', time() + 604800),
@@ -667,11 +674,13 @@ function identityRefreshRollback(
                     ? new IncusNetwork('local', 'default', $resource, [
                         'user.orbit.e2e.owner' => 'orbit-e2e',
                         'user.orbit.e2e.issue' => 'NCK-123',
+                        'user.orbit.e2e.attempt' => attemptId()->value,
                         'user.orbit.e2e.operation' => $operationId,
                     ])
                     : new IncusInstance('local', 'default', $resource, 'default', [
                         'user.orbit.e2e.owner' => 'orbit-e2e',
                         'user.orbit.e2e.issue' => 'NCK-123',
+                        'user.orbit.e2e.attempt' => attemptId()->value,
                         'user.orbit.e2e.operation' => $operationId,
                     ])
             );
@@ -707,6 +716,7 @@ function identityRefreshInventoryResult(
             'config' => [
                 'user.orbit.e2e.owner' => 'orbit-e2e',
                 'user.orbit.e2e.issue' => 'NCK-123',
+                'user.orbit.e2e.attempt' => attemptId()->value,
                 'user.orbit.e2e.operation' => $operationId,
                 'ipv4.address' => '10.232.2.1/24',
             ],
@@ -727,6 +737,7 @@ function identityRefreshInventoryResult(
                     topologyVmJson($target->instance($role), [
                         'user.orbit.e2e.owner' => 'orbit-e2e',
                         'user.orbit.e2e.issue' => 'NCK-123',
+                        'user.orbit.e2e.attempt' => attemptId()->value,
                         'user.orbit.e2e.operation' => $operationId,
                     ]),
                     true,
@@ -738,13 +749,14 @@ function identityRefreshInventoryResult(
 
             return Process::result(json_encode([...$standby, ...$feature], JSON_THROW_ON_ERROR));
         }
-        $featurePrefix = 'local:orbit-e2e-nck-123-';
+        $featurePrefix = 'local:orbit-e2e-nck-123-aaaaaaaa-';
         if (str_starts_with($identity, $featurePrefix)) {
             $name = preg_replace('/\A[^:]+:/', '', $identity);
 
             return Process::result(topologyVmJson($name, [
                 'user.orbit.e2e.owner' => 'orbit-e2e',
                 'user.orbit.e2e.issue' => 'NCK-123',
+                'user.orbit.e2e.attempt' => attemptId()->value,
                 'user.orbit.e2e.operation' => $operationId,
             ]));
         }
@@ -883,7 +895,7 @@ function fakeIdentityRefreshFailure(
                 $events,
                 static function (array $guest) use (&$events): \Illuminate\Contracts\Process\ProcessResult {
                     return identityRefreshMutationResult(
-                        topologyIncus('exec', 'local:orbit-e2e-nck-123-gateway', '--', ...$guest),
+                        topologyIncus('exec', 'local:orbit-e2e-nck-123-aaaaaaaa-gateway', '--', ...$guest),
                         $events,
                     );
                 },
@@ -1176,7 +1188,7 @@ it('holds the shared standby pin only through snapshot copy', function () {
     $copySharedLockResults = [];
     $postCopyLockResult = null;
     fakePinnedWorktreeProcesses(
-        new TopologyTarget('NCK-123'),
+        featureTarget('NCK-123'),
         $events,
         function (array $command) use (
             $paths,
@@ -1222,7 +1234,7 @@ it('holds the shared standby pin only through snapshot copy', function () {
     );
 
     try {
-        taskNineAcquirer($repositoryRoot, $paths)->acquire(new TopologyRequest('NCK-123', $worktree));
+        taskNineAcquirer($repositoryRoot, $paths)->acquire(new TopologyRequest('NCK-123', $worktree), attemptId());
 
         expect($copyExclusiveLockResults)
             ->toBe([false, false, false])
@@ -1243,7 +1255,7 @@ it('requires an exact issue and a real absolute worktree', function () {
 
     $request = new TopologyRequest('NCK-12', dirname(__DIR__, 4));
 
-    expect($request->target->issue)
+    expect($request->issue)
         ->toBe('NCK-12')
         ->and($request->worktree)
         ->toBe(realpath(dirname(__DIR__, 4)));
@@ -1274,7 +1286,7 @@ it('keeps the command operation identity separate from proof evidence', function
     $paths = new StatePaths(temporaryPath('orbit-proof-operation-', 8));
     $worktree = pinnedFeatureWorktree($repositoryRoot, 'proof-operation');
     featureTopologyFixture($repositoryRoot, $paths);
-    $target = new TopologyTarget('NCK-123');
+    $target = featureTarget('NCK-123');
     $candidateSha = new GitRepository($worktree)->commit();
     $realProcess = new ProcessFactory;
 
@@ -1330,7 +1342,7 @@ it('checks copied ownership before applying issue metadata', function () {
     Process::fake(function (\Illuminate\Process\PendingProcess $process) {
         if (str_contains(implode(' ', $process->command ?? []), 'list')) {
             return Process::result(json_encode([[
-                'name' => 'orbit-e2e-nck-123-gateway',
+                'name' => 'orbit-e2e-nck-123-aaaaaaaa-gateway',
                 'type' => 'virtual-machine',
                 'status' => 'Stopped',
                 'status_code' => 102,
@@ -1343,17 +1355,17 @@ it('checks copied ownership before applying issue metadata', function () {
     });
 
     $host = new IncusHost(remote: 'lab', project: 'orbit', pool: 'orbit-e2e');
-    $host->setMetadata('orbit-e2e-nck-123-gateway', ['user.orbit.e2e.issue' => 'NCK-123']);
+    $host->setMetadata('orbit-e2e-nck-123-aaaaaaaa-gateway', ['user.orbit.e2e.issue' => 'NCK-123']);
 
     Process::assertRanInOrder([
-        ['incus', '--project', 'orbit', 'list', 'lab:orbit-e2e-nck-123-gateway', '--format=json'],
+        ['incus', '--project', 'orbit', 'list', 'lab:orbit-e2e-nck-123-aaaaaaaa-gateway', '--format=json'],
         [
             'incus',
             '--project',
             'orbit',
             'config',
             'set',
-            'lab:orbit-e2e-nck-123-gateway',
+            'lab:orbit-e2e-nck-123-aaaaaaaa-gateway',
             'user.orbit.e2e.issue=NCK-123',
         ],
     ]);
@@ -1369,8 +1381,9 @@ it('recovers a manifest-backed acquiring lease without mutating Incus', function
     featureTopologyFixture($repositoryRoot, $paths);
     $store = new AtomicJsonStore($paths);
     $store->write('leases/NCK-123.json', [
-        'schema' => 1,
+        'schema' => 2,
         'issue' => 'NCK-123',
+        'attempt' => attemptId()->value,
         'state' => 'acquiring',
         'operation_id' => str_repeat('b', 32),
         'pid' => 999999,
@@ -1378,7 +1391,7 @@ it('recovers a manifest-backed acquiring lease without mutating Incus', function
         'acquired_at' => gmdate('Y-m-d\\TH:i:s\\Z'),
         'expires_at' => gmdate('Y-m-d\\TH:i:s\\Z', time() + 604800),
     ]);
-    $topology = new TopologyManifestStore($store)->read(new TopologyTarget('NCK-123'));
+    $topology = new TopologyManifestStore($store)->active('NCK-123');
     expect($topology)->not->toBeNull();
     $target = $topology->target;
     $operation = str_repeat('b', 32);
@@ -1409,6 +1422,7 @@ it('recovers a manifest-backed acquiring lease without mutating Incus', function
                     'config' => [
                         'user.orbit.e2e.owner' => 'orbit-e2e',
                         'user.orbit.e2e.issue' => $target->issue,
+                        'user.orbit.e2e.attempt' => attemptId()->value,
                         'user.orbit.e2e.generation' => $topology->generation->id,
                         'user.orbit.e2e.operation' => $operation,
                     ],
@@ -1426,6 +1440,7 @@ it('recovers a manifest-backed acquiring lease without mutating Incus', function
                 'config' => [
                     'user.orbit.e2e.owner' => 'orbit-e2e',
                     'user.orbit.e2e.issue' => $target->issue,
+                    'user.orbit.e2e.attempt' => attemptId()->value,
                     'user.orbit.e2e.operation' => $operation,
                 ],
             ]], JSON_THROW_ON_ERROR));
@@ -1436,6 +1451,7 @@ it('recovers a manifest-backed acquiring lease without mutating Incus', function
 
     $topology = taskNineAcquirer($repositoryRoot, $paths)->acquire(
         new TopologyRequest('NCK-123', $repositoryRoot),
+        attemptId(),
     );
 
     expect($topology->target->issue)
@@ -1474,8 +1490,9 @@ it('refuses manifest-backed acquisition recovery when exact live identity drifte
         $store = new AtomicJsonStore($paths);
         $operation = str_repeat('b', 32);
         $lease = [
-            'schema' => 1,
+            'schema' => 2,
             'issue' => 'NCK-123',
+            'attempt' => attemptId()->value,
             'state' => 'acquiring',
             'operation_id' => $operation,
             'pid' => 999999,
@@ -1484,7 +1501,7 @@ it('refuses manifest-backed acquisition recovery when exact live identity drifte
             'expires_at' => gmdate('Y-m-d\\TH:i:s\\Z', time() + 604800),
         ];
         $store->write('leases/NCK-123.json', $lease);
-        $topology = new TopologyManifestStore($store)->read(new TopologyTarget('NCK-123'));
+        $topology = new TopologyManifestStore($store)->active('NCK-123');
         expect($topology)->not->toBeNull();
         $target = $topology->target;
         $commands = [];
@@ -1513,6 +1530,7 @@ it('refuses manifest-backed acquisition recovery when exact live identity drifte
                         $metadata = [
                             'user.orbit.e2e.owner' => 'orbit-e2e',
                             'user.orbit.e2e.issue' => $target->issue,
+                            'user.orbit.e2e.attempt' => attemptId()->value,
                             'user.orbit.e2e.generation' => $topology->generation->id,
                             'user.orbit.e2e.operation' => $operation,
                         ];
@@ -1567,6 +1585,7 @@ it('refuses manifest-backed acquisition recovery when exact live identity drifte
 
         expect(fn () => taskNineAcquirer($repositoryRoot, $paths)->acquire(
             new TopologyRequest('NCK-123', $repositoryRoot),
+            attemptId(),
         ))
             ->toThrow(RuntimeException::class);
         expect($store->read('leases/NCK-123.json'))
@@ -1607,8 +1626,9 @@ it('cleans an interrupted no-manifest acquisition before starting a new operatio
     ));
     $oldOperation = str_repeat('b', 32);
     $store->write('leases/NCK-123.json', [
-        'schema' => 1,
+        'schema' => 2,
         'issue' => 'NCK-123',
+        'attempt' => attemptId()->value,
         'state' => 'acquiring',
         'operation_id' => $oldOperation,
         'pid' => 999999,
@@ -1616,7 +1636,7 @@ it('cleans an interrupted no-manifest acquisition before starting a new operatio
         'acquired_at' => gmdate('Y-m-d\\TH:i:s\\Z'),
         'expires_at' => gmdate('Y-m-d\\TH:i:s\\Z', time() + 604800),
     ]);
-    $target = new TopologyTarget('NCK-123');
+    $target = featureTarget('NCK-123');
     $operationId = $oldOperation;
     $commands = [];
     $realProcess = new ProcessFactory;
@@ -1652,6 +1672,7 @@ it('cleans an interrupted no-manifest acquisition before starting a new operatio
                 'config' => [
                     'user.orbit.e2e.owner' => 'orbit-e2e',
                     'user.orbit.e2e.issue' => 'NCK-123',
+                    'user.orbit.e2e.attempt' => attemptId()->value,
                     'user.orbit.e2e.operation' => $oldOperation,
                     'ipv4.address' => '10.232.2.1/24',
                 ],
@@ -1672,6 +1693,7 @@ it('cleans an interrupted no-manifest acquisition before starting a new operatio
                         [
                             'user.orbit.e2e.owner' => 'orbit-e2e',
                             'user.orbit.e2e.issue' => 'NCK-123',
+                            'user.orbit.e2e.attempt' => attemptId()->value,
                             'user.orbit.e2e.operation' => $oldOperation,
                         ],
                         $target->network(),
@@ -1700,6 +1722,7 @@ it('cleans an interrupted no-manifest acquisition before starting a new operatio
                     ? new IncusNetwork('local', 'default', $resource, [
                         'user.orbit.e2e.owner' => 'orbit-e2e',
                         'user.orbit.e2e.issue' => 'NCK-123',
+                        'user.orbit.e2e.attempt' => attemptId()->value,
                         'user.orbit.e2e.operation' => $operationId,
                     ])
                     : new IncusInstance(
@@ -1710,11 +1733,12 @@ it('cleans an interrupted no-manifest acquisition before starting a new operatio
                         [
                             'user.orbit.e2e.owner' => 'orbit-e2e',
                             'user.orbit.e2e.issue' => 'NCK-123',
+                            'user.orbit.e2e.attempt' => attemptId()->value,
                             'user.orbit.e2e.operation' => $operationId,
                         ],
                         network: $target->network(),
                         mac: $target->mac(str_replace(
-                            'orbit-e2e-nck-123-',
+                            'orbit-e2e-nck-123-'.attemptId()->short().'-',
                             '',
                             $resource,
                         )),
@@ -1734,7 +1758,7 @@ it('cleans an interrupted no-manifest acquisition before starting a new operatio
     expect(fn () => taskNineAcquirer($repositoryRoot, $paths, $rollback)->acquire(new TopologyRequest(
         'NCK-123',
         $repositoryRoot,
-    )))
+    ), attemptId()))
         ->toThrow(RuntimeException::class, 'deliberate retry stop');
     $lease = $store->read('leases/NCK-123.json');
     expect($rollbackMutations)
@@ -1759,8 +1783,9 @@ it('refuses an unobservable interrupted acquisition without mutation', function 
     $store = new AtomicJsonStore($paths);
     $operation = str_repeat('c', 32);
     $lease = [
-        'schema' => 1,
+        'schema' => 2,
         'issue' => 'NCK-123',
+        'attempt' => attemptId()->value,
         'state' => 'acquiring',
         'operation_id' => $operation,
         'pid' => 999999,
@@ -1803,7 +1828,7 @@ it('refuses an unobservable interrupted acquisition without mutation', function 
         },
     ));
     foreach (range(1, 2) as $_) {
-        expect(fn () => $acquirer->acquire(new TopologyRequest('NCK-123', $repositoryRoot)))
+        expect(fn () => $acquirer->acquire(new TopologyRequest('NCK-123', $repositoryRoot), attemptId()))
             ->toThrow(RuntimeException::class, 'cleanup was refused');
     }
     expect($store->read('leases/NCK-123.json'))
@@ -1825,8 +1850,9 @@ it('refuses a drifted interrupted acquisition without mutation on repeated retri
     $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));
     $store = new AtomicJsonStore($paths);
     $lease = [
-        'schema' => 1,
+        'schema' => 2,
         'issue' => 'NCK-123',
+        'attempt' => attemptId()->value,
         'state' => 'acquiring',
         'operation_id' => str_repeat('d', 32),
         'pid' => 999999,
@@ -1875,7 +1901,7 @@ it('refuses a drifted interrupted acquisition without mutation on repeated retri
     });
     $acquirer = taskNineAcquirer($repositoryRoot, $paths, $rollback);
     foreach (range(1, 2) as $_) {
-        expect(fn () => $acquirer->acquire(new TopologyRequest('NCK-123', $repositoryRoot)))
+        expect(fn () => $acquirer->acquire(new TopologyRequest('NCK-123', $repositoryRoot), attemptId()))
             ->toThrow(RuntimeException::class, 'cleanup was refused');
     }
     expect($store->read('leases/NCK-123.json'))
@@ -1897,14 +1923,16 @@ it('fails closed for a malformed acquiring lease', function () {
     $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));
     $store = new AtomicJsonStore($paths);
     $store->write('leases/NCK-123.json', [
-        'schema' => 1,
+        'schema' => 2,
         'issue' => 'NCK-123',
+        'attempt' => attemptId()->value,
         'state' => 'acquiring',
         'operation_id' => 'not-an-operation-id',
     ]);
 
     expect(fn () => taskNineAcquirer($repositoryRoot, $paths)->acquire(
         new TopologyRequest('NCK-123', $repositoryRoot),
+        attemptId(),
     ))
         ->toThrow(RuntimeException::class, 'acquiring lease is invalid');
 });
@@ -1916,27 +1944,31 @@ it('fails closed when an acquiring lease has invalid expiry or extra fields', fu
 
     expect(fn () => taskNineAcquirer($repositoryRoot, $paths)->acquire(
         new TopologyRequest('NCK-123', $repositoryRoot),
+        attemptId(),
     ))
         ->toThrow(RuntimeException::class, 'acquiring lease is invalid');
 })->with([
     [[
-        'schema' => 1,
+        'schema' => 2,
         'issue' => 'NCK-123',
+        'attempt' => attemptId()->value,
         'state' => 'acquiring',
         'operation_id' => str_repeat('a', 32),
         'expires_at' => 'invalid',
     ]],
     [[
-        'schema' => 1,
+        'schema' => 2,
         'issue' => 'NCK-123',
+        'attempt' => attemptId()->value,
         'state' => 'acquiring',
         'operation_id' => str_repeat('a', 32),
         'expires_at' => gmdate('Y-m-d\\TH:i:s\\Z'),
         'unexpected' => true,
     ]],
     [[
-        'schema' => 1,
+        'schema' => 2,
         'issue' => 'NCK-123',
+        'attempt' => attemptId()->value,
         'state' => 'acquiring',
         'operation_id' => str_repeat('a', 32),
         'expires_at' => '2026-99-99T99:99:99Z',
@@ -1950,6 +1982,7 @@ it('keeps ready topology acquisition rejection unchanged', function () {
 
     expect(fn () => taskNineAcquirer($repositoryRoot, $paths)->acquire(
         new TopologyRequest('NCK-123', $repositoryRoot),
+        attemptId(),
     ))
         ->toThrow(RuntimeException::class, 'already has a topology manifest');
 });
@@ -1967,11 +2000,12 @@ it('recovers a manifest when acquiring lease keys use a different JSON order', f
         'acquired_at' => gmdate('Y-m-d\\TH:i:s\\Z'),
         'state' => 'acquiring',
         'issue' => 'NCK-123',
-        'schema' => 1,
+        'attempt' => attemptId()->value,
+        'schema' => 2,
     ], JSON_THROW_ON_ERROR));
 
-    $target = new TopologyTarget('NCK-123');
-    $topology = new TopologyManifestStore(new AtomicJsonStore($paths))->read($target);
+    $target = featureTarget('NCK-123');
+    $topology = new TopologyManifestStore(new AtomicJsonStore($paths))->active('NCK-123');
     $realProcess = new ProcessFactory;
     Process::fake(function (\Illuminate\Process\PendingProcess $process) use (
         $target,
@@ -1993,6 +2027,7 @@ it('recovers a manifest when acquiring lease keys use a different JSON order', f
                 'config' => [
                     'user.orbit.e2e.owner' => 'orbit-e2e',
                     'user.orbit.e2e.issue' => 'NCK-123',
+                    'user.orbit.e2e.attempt' => attemptId()->value,
                     'user.orbit.e2e.generation' => $topology->generation->id,
                     'user.orbit.e2e.operation' => str_repeat('b', 32),
                 ],
@@ -2015,6 +2050,7 @@ it('recovers a manifest when acquiring lease keys use a different JSON order', f
                 'config' => [
                     'user.orbit.e2e.owner' => 'orbit-e2e',
                     'user.orbit.e2e.issue' => 'NCK-123',
+                    'user.orbit.e2e.attempt' => attemptId()->value,
                     'user.orbit.e2e.operation' => str_repeat('b', 32),
                 ],
             ]], JSON_THROW_ON_ERROR));
@@ -2027,6 +2063,7 @@ it('recovers a manifest when acquiring lease keys use a different JSON order', f
         taskNineAcquirer($repositoryRoot, $paths)
             ->acquire(
                 new TopologyRequest('NCK-123', $repositoryRoot),
+                attemptId(),
             )
             ->target
             ->issue,
@@ -2044,6 +2081,7 @@ it('preflights every rollback target before any deletion', function () {
             return new IncusInstance('lab', 'orbit', $resource, 'orbit-e2e', [
                 'user.orbit.e2e.owner' => 'orbit-e2e',
                 'user.orbit.e2e.issue' => 'NCK-123',
+                'user.orbit.e2e.attempt' => attemptId()->value,
                 'user.orbit.e2e.operation' => str_repeat('a', 32),
             ]);
         },
@@ -2057,7 +2095,7 @@ it('preflights every rollback target before any deletion', function () {
             $mutations[] = 'network:'.$resource;
         },
     );
-    $target = new TopologyTarget('NCK-123');
+    $target = featureTarget('NCK-123');
     $identity = static fn (string $name): array => [
         'remote' => 'lab',
         'project' => 'orbit',
@@ -2066,26 +2104,27 @@ it('preflights every rollback target before any deletion', function () {
         'metadata' => [
             'user.orbit.e2e.owner' => 'orbit-e2e',
             'user.orbit.e2e.issue' => 'NCK-123',
+            'user.orbit.e2e.attempt' => attemptId()->value,
             'user.orbit.e2e.operation' => str_repeat('a', 32),
         ],
     ];
 
     $result = $rollback->cleanup(
         $target,
-        ['orbit-e2e-nck-123-gateway', 'orbit-e2e-nck-123-app-dev'],
+        ['orbit-e2e-nck-123-aaaaaaaa-gateway', 'orbit-e2e-nck-123-aaaaaaaa-app-dev'],
         [
-            'orbit-e2e-nck-123-gateway' => $identity('orbit-e2e-nck-123-gateway'),
-            'orbit-e2e-nck-123-app-dev' => ['remote' => 'lab'],
+            'orbit-e2e-nck-123-aaaaaaaa-gateway' => $identity('orbit-e2e-nck-123-aaaaaaaa-gateway'),
+            'orbit-e2e-nck-123-aaaaaaaa-app-dev' => ['remote' => 'lab'],
         ],
         new OperationId(str_repeat('a', 32)),
     );
 
-    expect($result['orbit-e2e-nck-123-gateway'])
+    expect($result['orbit-e2e-nck-123-aaaaaaaa-gateway'])
         ->toBe('retained_due_to_preflight_failure')
         ->and($mutations)
         ->toBeEmpty()
         ->and($read)
-        ->toBe(['orbit-e2e-nck-123-gateway', 'orbit-e2e-nck-123-app-dev']);
+        ->toBe(['orbit-e2e-nck-123-aaaaaaaa-gateway', 'orbit-e2e-nck-123-aaaaaaaa-app-dev']);
 });
 
 it('uses the preflight snapshot once before rollback mutation', function () {
@@ -2099,6 +2138,7 @@ it('uses the preflight snapshot once before rollback mutation', function () {
                 : [
                     'user.orbit.e2e.owner' => 'orbit-e2e',
                     'user.orbit.e2e.issue' => 'NCK-123',
+                    'user.orbit.e2e.attempt' => attemptId()->value,
                     'user.orbit.e2e.operation' => str_repeat('a', 32),
                 ];
 
@@ -2114,33 +2154,34 @@ it('uses the preflight snapshot once before rollback mutation', function () {
             $mutations[] = 'network:'.$resource;
         },
     );
-    $target = new TopologyTarget('NCK-123');
+    $target = featureTarget('NCK-123');
     $identity = [
         'remote' => 'lab',
         'project' => 'orbit',
-        'name' => 'orbit-e2e-nck-123-gateway',
+        'name' => 'orbit-e2e-nck-123-aaaaaaaa-gateway',
         'pool' => 'orbit-e2e',
         'metadata' => [
             'user.orbit.e2e.owner' => 'orbit-e2e',
             'user.orbit.e2e.issue' => 'NCK-123',
+            'user.orbit.e2e.attempt' => attemptId()->value,
             'user.orbit.e2e.operation' => str_repeat('a', 32),
         ],
     ];
 
     $result = $rollback->cleanup(
         $target,
-        ['orbit-e2e-nck-123-gateway'],
-        ['orbit-e2e-nck-123-gateway' => $identity],
+        ['orbit-e2e-nck-123-aaaaaaaa-gateway'],
+        ['orbit-e2e-nck-123-aaaaaaaa-gateway' => $identity],
         new OperationId(str_repeat('a', 32)),
     );
 
-    expect($result['orbit-e2e-nck-123-gateway'])
+    expect($result['orbit-e2e-nck-123-aaaaaaaa-gateway'])
         ->toBe('removed')
         ->and($reads)
         ->toBe(1)
         ->and($mutations)
         ->toBe([
-            'delete:orbit-e2e-nck-123-gateway',
+            'delete:orbit-e2e-nck-123-aaaaaaaa-gateway',
         ]);
 });
 
@@ -2182,7 +2223,7 @@ it('uses the acquisition rollback after a topology creation failure', function (
         static function (): void {},
         static function (): void {},
     );
-    $target = new TopologyTarget('NCK-123');
+    $target = featureTarget('NCK-123');
     $realProcess = new ProcessFactory;
     Process::fake(function (\Illuminate\Process\PendingProcess $process) use ($target, $repositoryRoot, $realProcess) {
         return topology_creation_failure_process_result($process, $target, $repositoryRoot, $realProcess);
@@ -2190,7 +2231,7 @@ it('uses the acquisition rollback after a topology creation failure', function (
     $acquirer = taskNineAcquirer($repositoryRoot, $paths, $rollback);
     $request = new TopologyRequest('NCK-123', $repositoryRoot);
 
-    expect(fn () => $acquirer->acquire($request))
+    expect(fn () => $acquirer->acquire($request, attemptId()))
         ->toThrow(RuntimeException::class, 'copy failed')
         ->and($reads)
         ->toBe([$target->network()])
@@ -2215,7 +2256,7 @@ it('rolls back without parsing a manifest when the ready lease write fails', fun
                 return;
             }
 
-            file_put_contents($paths->path('topologies/NCK-123.json'), '{malformed');
+            file_put_contents($paths->path('topologies/NCK-123/'.attemptId()->value.'.json'), '{malformed');
 
             throw new RuntimeException('injected ready lease failure');
         },
@@ -2250,7 +2291,7 @@ it('rolls back without parsing a manifest when the ready lease write fails', fun
         static function (): void {},
     );
     $events = [];
-    fakePinnedWorktreeProcesses(new TopologyTarget('NCK-123'), $events);
+    fakePinnedWorktreeProcesses(featureTarget('NCK-123'), $events);
 
     try {
         expect(fn () => taskNineAcquirer(
@@ -2258,16 +2299,16 @@ it('rolls back without parsing a manifest when the ready lease write fails', fun
             $paths,
             $rollback,
             store: $store,
-        )->acquire(new TopologyRequest('NCK-123', $worktree)))
+        )->acquire(new TopologyRequest('NCK-123', $worktree), attemptId()))
             ->toThrow(RuntimeException::class, 'injected ready lease failure')
             ->and($rollbackReads)
             ->toBe([
-                new TopologyTarget('NCK-123')->network(),
-                new TopologyTarget('NCK-123')->instance('gateway'),
-                new TopologyTarget('NCK-123')->instance('app-dev'),
-                new TopologyTarget('NCK-123')->instance('app-prod'),
+                featureTarget('NCK-123')->network(),
+                featureTarget('NCK-123')->instance('gateway'),
+                featureTarget('NCK-123')->instance('app-dev'),
+                featureTarget('NCK-123')->instance('app-prod'),
             ])
-            ->and(file_exists($paths->path('topologies/NCK-123.json')))
+            ->and(file_exists($paths->path('topologies/NCK-123/'.attemptId()->value.'.json')))
             ->toBeFalse()
             ->and($store->read('failures/NCK-123.json')['error'] ?? null)
             ->toBe('injected ready lease failure');
@@ -2283,14 +2324,14 @@ it('surfaces a manifest deletion failure and retains the recovery state', functi
                 return;
             }
 
-            $manifest = $paths->path('topologies/NCK-123.json');
+            $manifest = $paths->path('topologies/NCK-123/'.attemptId()->value.'.json');
             unlink($manifest);
             mkdir($manifest, 0700);
         },
     );
     $reads = [];
     $events = [];
-    fakePinnedWorktreeProcesses(new TopologyTarget('NCK-123'), $events);
+    fakePinnedWorktreeProcesses(featureTarget('NCK-123'), $events);
 
     try {
         $failure = capturedTopologyAcquisitionFailure(fn () => taskNineAcquirer(
@@ -2298,7 +2339,7 @@ it('surfaces a manifest deletion failure and retains the recovery state', functi
             $paths,
             absentAcquisitionRollback($reads),
             store: $store,
-        )->acquire(new TopologyRequest('NCK-123', $worktree)));
+        )->acquire(new TopologyRequest('NCK-123', $worktree), attemptId()));
         $evidence = $store->read('failures/NCK-123.json');
 
         expect($failure)
@@ -2309,7 +2350,7 @@ it('surfaces a manifest deletion failure and retains the recovery state', functi
             ->toContain('primary-secret')
             ->and($failure->getPrevious()?->getMessage())
             ->toBe('primary acquisition Bearer primary-secret')
-            ->and(is_dir($paths->path('topologies/NCK-123.json')))
+            ->and(is_dir($paths->path('topologies/NCK-123/'.attemptId()->value.'.json')))
             ->toBeTrue()
             ->and($store->read('leases/NCK-123.json')['state'] ?? null)
             ->toBe('acquiring')
@@ -2325,12 +2366,13 @@ it('redacts recursive rollback evidence and deduplicates cleanup failures under 
     [$repositoryRoot, $worktree, $paths, $store, $fault] = topologyAcquisitionBoundaryFixture(
         static function (): void {},
     );
-    $target = new TopologyTarget('NCK-123');
+    $target = featureTarget('NCK-123');
     $operationId = str_repeat('a', 32);
     $secret = bin2hex(random_bytes(16));
     $metadata = [
         'user.orbit.e2e.owner' => 'orbit-e2e',
         'user.orbit.e2e.issue' => 'NCK-123',
+        'user.orbit.e2e.attempt' => attemptId()->value,
         'user.orbit.e2e.operation' => $operationId,
         'user.orbit.e2e.api_token' => $secret,
     ];
@@ -2420,7 +2462,7 @@ it('redacts recursive rollback evidence and deduplicates cleanup failures under 
             $rollback,
             store: $store,
             redactor: $redactor,
-        )->acquire(new TopologyRequest('NCK-123', $worktree)));
+        )->acquire(new TopologyRequest('NCK-123', $worktree), attemptId()));
         $evidence = $store->read('failures/NCK-123.json');
         $resources = [
             $target->network(),
@@ -2450,7 +2492,7 @@ it('redacts recursive rollback evidence and deduplicates cleanup failures under 
             ])
             ->and($store->read('leases/NCK-123.json')['state'] ?? null)
             ->toBe('acquiring')
-            ->and(file_exists($paths->path('topologies/NCK-123.json')))
+            ->and(file_exists($paths->path('topologies/NCK-123/'.attemptId()->value.'.json')))
             ->toBeFalse();
     } finally {
         Process::run(['git', '-C', $repositoryRoot, 'worktree', 'remove', '--force', $worktree]);
@@ -2467,7 +2509,7 @@ it('surfaces a failure evidence write failure with the acquisition as previous',
     );
     $reads = [];
     $events = [];
-    fakePinnedWorktreeProcesses(new TopologyTarget('NCK-123'), $events);
+    fakePinnedWorktreeProcesses(featureTarget('NCK-123'), $events);
 
     try {
         $failure = capturedTopologyAcquisitionFailure(fn () => taskNineAcquirer(
@@ -2475,7 +2517,7 @@ it('surfaces a failure evidence write failure with the acquisition as previous',
             $paths,
             absentAcquisitionRollback($reads),
             store: $store,
-        )->acquire(new TopologyRequest('NCK-123', $worktree)));
+        )->acquire(new TopologyRequest('NCK-123', $worktree), attemptId()));
 
         expect($failure->getMessage())
             ->toContain('failure evidence write: Bearer [REDACTED]')
@@ -2487,7 +2529,7 @@ it('surfaces a failure evidence write failure with the acquisition as previous',
             ->toBeNull()
             ->and($store->read('leases/NCK-123.json'))
             ->toBeNull()
-            ->and(file_exists($paths->path('topologies/NCK-123.json')))
+            ->and(file_exists($paths->path('topologies/NCK-123/'.attemptId()->value.'.json')))
             ->toBeFalse();
     } finally {
         Process::run(['git', '-C', $repositoryRoot, 'worktree', 'remove', '--force', $worktree]);
@@ -2507,7 +2549,7 @@ it('records and redacts a lease deletion failure in retained evidence', function
     );
     $reads = [];
     $events = [];
-    fakePinnedWorktreeProcesses(new TopologyTarget('NCK-123'), $events);
+    fakePinnedWorktreeProcesses(featureTarget('NCK-123'), $events);
 
     try {
         $failure = capturedTopologyAcquisitionFailure(fn () => taskNineAcquirer(
@@ -2515,7 +2557,7 @@ it('records and redacts a lease deletion failure in retained evidence', function
             $paths,
             absentAcquisitionRollback($reads),
             store: $store,
-        )->acquire(new TopologyRequest('NCK-123', $worktree)));
+        )->acquire(new TopologyRequest('NCK-123', $worktree), attemptId()));
         $evidence = $store->read('failures/NCK-123.json');
 
         expect($failure->getMessage())
@@ -2528,7 +2570,7 @@ it('records and redacts a lease deletion failure in retained evidence', function
             ->toBe(['lease deletion: The JSON state target is unsafe.'])
             ->and(is_dir($paths->path('leases/NCK-123.json')))
             ->toBeTrue()
-            ->and(file_exists($paths->path('topologies/NCK-123.json')))
+            ->and(file_exists($paths->path('topologies/NCK-123/'.attemptId()->value.'.json')))
             ->toBeFalse();
     } finally {
         Process::run(['git', '-C', $repositoryRoot, 'worktree', 'remove', '--force', $worktree]);
@@ -2542,12 +2584,12 @@ it('reports multiple distinct secondary failures once and keeps cleanup recovery
                 return;
             }
 
-            $manifest = $paths->path('topologies/NCK-123.json');
+            $manifest = $paths->path('topologies/NCK-123/'.attemptId()->value.'.json');
             unlink($manifest);
             mkdir($manifest, 0700);
         },
     );
-    $target = new TopologyTarget('NCK-123');
+    $target = featureTarget('NCK-123');
     $reads = [];
     $rollback = serialAcquisitionRollback(
         function (string $resource) use (&$reads): never {
@@ -2568,7 +2610,7 @@ it('reports multiple distinct secondary failures once and keeps cleanup recovery
             $paths,
             $rollback,
             store: $store,
-        )->acquire(new TopologyRequest('NCK-123', $worktree)));
+        )->acquire(new TopologyRequest('NCK-123', $worktree), attemptId()));
         $evidence = $store->read('failures/NCK-123.json');
         $secondary = $evidence['secondary_failures'] ?? [];
 
@@ -2590,7 +2632,7 @@ it('reports multiple distinct secondary failures once and keeps cleanup recovery
             ->toBe([
                 $target->network(),
             ])
-            ->and(is_dir($paths->path('topologies/NCK-123.json')))
+            ->and(is_dir($paths->path('topologies/NCK-123/'.attemptId()->value.'.json')))
             ->toBeTrue()
             ->and($store->read('leases/NCK-123.json')['state'] ?? null)
             ->toBe('acquiring');
@@ -2655,7 +2697,7 @@ it('preflights all standby snapshots before any network or copy mutation', funct
         return Process::result();
     });
 
-    expect(fn () => $acquirer->acquire($request))
+    expect(fn () => $acquirer->acquire($request, attemptId()))
         ->toThrow(RuntimeException::class, 'snapshots do not exist');
 
     expect(collect($commands)->contains(
@@ -2708,7 +2750,10 @@ it('blocks acquisition when the standby is marked corrupt before Incus mutation'
         return Process::result();
     });
 
-    expect(fn () => taskNineAcquirer($repositoryRoot, $paths)->acquire(new TopologyRequest('NCK-123', $repositoryRoot)))
+    expect(fn () => taskNineAcquirer($repositoryRoot, $paths)->acquire(
+        new TopologyRequest('NCK-123', $repositoryRoot),
+        attemptId(),
+    ))
         ->toThrow(RuntimeException::class, 'marked corrupt')
         ->and($commands)
         ->toBeEmpty();
@@ -2737,6 +2782,7 @@ it('blocks acquisition while an exact release still needs local finalization', f
 
     expect(fn () => taskNineAcquirer($repositoryRoot, $paths)->acquire(
         new TopologyRequest('NCK-123', $repositoryRoot),
+        attemptId(),
     ))
         ->toThrow(RuntimeException::class, 'pending release finalization')
         ->and($commands)
@@ -2783,7 +2829,7 @@ it('requires the promoted generation fingerprint to match its exact main commit'
     });
 
     $acquirer = taskNineAcquirer($repositoryRoot, $paths);
-    expect(fn () => $acquirer->acquire(new TopologyRequest('NCK-123', $repositoryRoot)))
+    expect(fn () => $acquirer->acquire(new TopologyRequest('NCK-123', $repositoryRoot), attemptId()))
         ->toThrow(RuntimeException::class, 'fingerprint is stale or corrupt')
         ->and($commands)
         ->toBeEmpty();
@@ -2837,7 +2883,7 @@ it('blocks acquisition when current main requires a newer prepared generation', 
     });
 
     $acquirer = taskNineAcquirer($repositoryRoot, $paths);
-    expect(fn () => $acquirer->acquire(new TopologyRequest('NCK-123', $repositoryRoot)))
+    expect(fn () => $acquirer->acquire(new TopologyRequest('NCK-123', $repositoryRoot), attemptId()))
         ->toThrow(RuntimeException::class, 'The promoted standby structural fingerprint is stale.')
         ->and($commands)
         ->toBeEmpty();
@@ -2901,7 +2947,10 @@ it('reuses a prepared generation when main advances with a source-only change', 
 
         return Process::result();
     });
-    expect(fn () => taskNineAcquirer($repositoryRoot, $paths)->acquire(new TopologyRequest('NCK-123', $repositoryRoot)))
+    expect(fn () => taskNineAcquirer($repositoryRoot, $paths)->acquire(
+        new TopologyRequest('NCK-123', $repositoryRoot),
+        attemptId(),
+    ))
         ->toThrow(RuntimeException::class, 'controlled network failure');
     expect(collect($commands)->contains(
         fn (array $command): bool => in_array('network', $command, true) && in_array('create', $command, true),
@@ -2930,7 +2979,7 @@ it('rolls back an exactly owned network when host forwarding setup fails', funct
         $structural->manifest['topology']['roles'],
         $structural->manifest['topology']['checkout_roles'],
     ));
-    $target = new TopologyTarget('NCK-123');
+    $target = featureTarget('NCK-123');
     $networkExists = false;
     $failedFirewallEnsure = false;
     $operationId = null;
@@ -2982,6 +3031,7 @@ it('rolls back an exactly owned network when host forwarding setup fails', funct
                 'ipv6.address=none',
                 'raw.dnsmasq=port=0',
                 'user.orbit.e2e.issue=NCK-123',
+                'user.orbit.e2e.attempt='.attemptId()->value,
                 'user.orbit.e2e.operation='.$operationId,
                 'user.orbit.e2e.owner=orbit-e2e',
             )
@@ -2999,6 +3049,7 @@ it('rolls back an exactly owned network when host forwarding setup fails', funct
                         'config' => [
                             'user.orbit.e2e.owner' => 'orbit-e2e',
                             'user.orbit.e2e.issue' => 'NCK-123',
+                            'user.orbit.e2e.attempt' => attemptId()->value,
                             'user.orbit.e2e.operation' => $operationId,
                         ],
                     ]] : [],
@@ -3032,6 +3083,7 @@ it('rolls back an exactly owned network when host forwarding setup fails', funct
 
     expect(fn () => taskNineAcquirer($repositoryRoot, $paths)->acquire(
         new TopologyRequest('NCK-123', $repositoryRoot),
+        attemptId(),
     ))
         ->toThrow(RuntimeException::class, 'Host firewall command failed: controlled forwarding failure');
 
@@ -3125,7 +3177,7 @@ it('uses the promoted base fingerprint when the base image alias moves', functio
     });
 
     $acquirer = taskNineAcquirer($repositoryRoot, $paths);
-    expect(fn () => $acquirer->acquire(new TopologyRequest('NCK-123', $repositoryRoot)))
+    expect(fn () => $acquirer->acquire(new TopologyRequest('NCK-123', $repositoryRoot), attemptId()))
         ->toThrow(RuntimeException::class, 'controlled network failure')
         ->and(collect($commands)->contains(
             fn (array $command): bool => in_array('image', $command, true) && in_array('list', $command, true),
@@ -3160,7 +3212,7 @@ it('batches clone and boot work before cloned host-state reset and preserves fai
         $structural->manifest['topology']['checkout_roles'],
     );
     new StandbyManifestStore($store, $paths)->promote($generation);
-    $target = new TopologyTarget('NCK-123');
+    $target = featureTarget('NCK-123');
     $operationId = null;
     $events = [];
     $mutations = [];
@@ -3173,7 +3225,7 @@ it('batches clone and boot work before cloned host-state reset and preserves fai
         new IncusHost(guestReadinessTimeoutSeconds: 1),
     );
 
-    expect(fn () => $acquirer->acquire(new TopologyRequest('NCK-123', $repositoryRoot)))
+    expect(fn () => $acquirer->acquire(new TopologyRequest('NCK-123', $repositoryRoot), attemptId()))
         ->toThrow(RuntimeException::class, 'Failed to reset cloned host state')
         ->and($events)
         ->toBe([
@@ -3345,7 +3397,7 @@ it('allows an ordinary prepared-state change through the cold-base gate', functi
         'HEAD',
     ]);
     $events = [];
-    fakeOrdinaryPreparedChangeProcesses($repositoryRoot, new TopologyTarget('NCK-123'), $events);
+    fakeOrdinaryPreparedChangeProcesses($repositoryRoot, featureTarget('NCK-123'), $events);
 
     try {
         expect(fn () => taskNineAcquirer($repositoryRoot, $paths)->sync(new TopologyRequest(
@@ -3376,7 +3428,7 @@ it('preserves prior release evidence when acquisition preflight fails', function
         'state' => 'released',
         'operation_id' => str_repeat('c', 32),
         'evidence_id' => str_repeat('d', 32),
-        'released' => ['orbit-e2e-nck-123-gateway'],
+        'released' => ['orbit-e2e-nck-123-aaaaaaaa-gateway'],
         'already_absent' => [],
     ];
     $store->write('releases/NCK-123.json', $priorRelease);
@@ -3411,7 +3463,10 @@ it('preserves prior release evidence when acquisition preflight fails', function
 
         return Process::result();
     });
-    expect(fn () => taskNineAcquirer($repositoryRoot, $paths)->acquire(new TopologyRequest('NCK-123', $repositoryRoot)))
+    expect(fn () => taskNineAcquirer($repositoryRoot, $paths)->acquire(
+        new TopologyRequest('NCK-123', $repositoryRoot),
+        attemptId(),
+    ))
         ->toThrow(RuntimeException::class, 'fingerprint is stale or corrupt')
         ->and($store->read('releases/NCK-123.json'))
         ->toBe($priorRelease)
@@ -3450,15 +3505,15 @@ it('invalidates prior release evidence before reacquiring an issue', function ()
         'state' => 'released',
         'operation_id' => str_repeat('c', 32),
         'evidence_id' => str_repeat('d', 32),
-        'released' => ['orbit-e2e-nck-123-gateway'],
+        'released' => ['orbit-e2e-nck-123-aaaaaaaa-gateway'],
         'already_absent' => [],
     ]);
-    $target = new TopologyTarget('NCK-123');
+    $target = featureTarget('NCK-123');
     $events = [];
     fakePinnedWorktreeProcesses($target, $events);
 
     try {
-        taskNineAcquirer($repositoryRoot, $paths)->acquire(new TopologyRequest('NCK-123', $worktree));
+        taskNineAcquirer($repositoryRoot, $paths)->acquire(new TopologyRequest('NCK-123', $worktree), attemptId());
         expect($store->read('releases/NCK-123.json'))->toBeNull();
     } finally {
         Process::run(['git', '-C', $repositoryRoot, 'worktree', 'remove', '--force', $worktree]);
@@ -3504,11 +3559,12 @@ it('removes prior release evidence before the first acquisition mutation', funct
         'already_absent' => [],
     ]);
     $events = [];
-    fakePinnedWorktreeProcesses(new TopologyTarget('NCK-123'), $events);
+    fakePinnedWorktreeProcesses(featureTarget('NCK-123'), $events);
 
     try {
         expect(fn () => taskNineAcquirer($repositoryRoot, $paths, store: $store)->acquire(
             new TopologyRequest('NCK-123', $worktree),
+            attemptId(),
         ))
             ->toThrow(RuntimeException::class, 'injected acquisition lease failure')
             ->and($store->read('releases/NCK-123.json'))
@@ -3552,12 +3608,12 @@ it('keeps the promoted Laravel pin when feature worktrees change source', functi
         $structural->manifest['topology']['roles'],
         $structural->manifest['topology']['checkout_roles'],
     ));
-    $target = new TopologyTarget('NCK-123');
+    $target = featureTarget('NCK-123');
     $events = [];
     fakePinnedWorktreeProcesses($target, $events);
 
     $acquirer = taskNineAcquirer($repositoryRoot, $paths);
-    $acquired = $acquirer->acquire(new TopologyRequest('NCK-123', $worktreeA));
+    $acquired = $acquirer->acquire(new TopologyRequest('NCK-123', $worktreeA), attemptId());
     $acquireEvents = $events;
     $acquireJournal = new OperationJournal($paths)->entries(new OperationId(str_repeat('a', 32)));
     $events = [];
@@ -3706,19 +3762,20 @@ it('retries sync from a valid interrupted lease and writes the refreshed manifes
     $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));
     featureTopologyFixture($repositoryRoot, $paths);
     new AtomicJsonStore($paths)->write('leases/NCK-123.json', [
-        'schema' => 1,
+        'schema' => 2,
         'issue' => 'NCK-123',
+        'attempt' => attemptId()->value,
         'state' => $state,
         'operation_id' => str_repeat('b', 32),
         'expires_at' => $expiresAt,
     ]);
     $events = [];
-    fakePinnedWorktreeProcesses(new TopologyTarget('NCK-123'), $events);
+    fakePinnedWorktreeProcesses(featureTarget('NCK-123'), $events);
 
     $topology = taskNineAcquirer($repositoryRoot, $paths)->sync(
         new TopologyRequest('NCK-123', pinnedFeatureWorktree($repositoryRoot, 'retry')),
     );
-    $persisted = new TopologyManifestStore(new AtomicJsonStore($paths))->read(new TopologyTarget('NCK-123'));
+    $persisted = new TopologyManifestStore(new AtomicJsonStore($paths))->active('NCK-123');
 
     expect($topology->source->hostSha)
         ->toMatch('/\\A[0-9a-f]{40}\\z/')
@@ -3747,7 +3804,7 @@ it('fails closed for an unknown or malformed interrupted lease', function (mixed
         new AtomicJsonStore($paths)->write('leases/NCK-123.json', $lease);
     }
     $events = [];
-    fakePinnedWorktreeProcesses(new TopologyTarget('NCK-123'), $events);
+    fakePinnedWorktreeProcesses(featureTarget('NCK-123'), $events);
 
     expect(fn () => taskNineAcquirer($repositoryRoot, $paths)->sync(
         new TopologyRequest('NCK-123', $repositoryRoot),
@@ -3757,8 +3814,9 @@ it('fails closed for an unknown or malformed interrupted lease', function (mixed
         ->toBeEmpty();
 })->with([
     [[
-        'schema' => 1,
+        'schema' => 2,
         'issue' => 'NCK-123',
+        'attempt' => attemptId()->value,
         'state' => 'unknown',
         'operation_id' => str_repeat('a', 32),
         'expires_at' => gmdate('Y-m-d\\TH:i:s\\Z', time() + 604800),
@@ -3774,7 +3832,7 @@ it('fails closed for a syncing or failed lease with invalid manifest state', fun
     $repositoryRoot = preparedTopologyRepository();
     $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));
     featureTopologyFixture($repositoryRoot, $paths);
-    $manifestPath = $paths->path('topologies/NCK-123.json');
+    $manifestPath = $paths->path('topologies/NCK-123/'.attemptId()->value.'.json');
     if ($manifestMode === 'missing') {
         unlink($manifestPath);
     } elseif ($manifestMode === 'malformed') {
@@ -3785,14 +3843,15 @@ it('fails closed for a syncing or failed lease with invalid manifest state', fun
         file_put_contents($manifestPath, json_encode($manifest, JSON_THROW_ON_ERROR));
     }
     new AtomicJsonStore($paths)->write('leases/NCK-123.json', [
-        'schema' => 1,
+        'schema' => 2,
         'issue' => 'NCK-123',
+        'attempt' => attemptId()->value,
         'state' => $state,
         'operation_id' => str_repeat('b', 32),
         'expires_at' => gmdate('Y-m-d\\TH:i:s\\Z', time() + 604800),
     ]);
     $events = [];
-    fakePinnedWorktreeProcesses(new TopologyTarget('NCK-123'), $events);
+    fakePinnedWorktreeProcesses(featureTarget('NCK-123'), $events);
 
     expect(fn () => taskNineAcquirer($repositoryRoot, $paths)->sync(
         new TopologyRequest('NCK-123', $repositoryRoot),
@@ -3815,7 +3874,7 @@ it('fails closed for a malformed interrupted sync lease', function (array $lease
     featureTopologyFixture($repositoryRoot, $paths);
     new AtomicJsonStore($paths)->write('leases/NCK-123.json', $lease);
     $events = [];
-    fakePinnedWorktreeProcesses(new TopologyTarget('NCK-123'), $events);
+    fakePinnedWorktreeProcesses(featureTarget('NCK-123'), $events);
 
     expect(fn () => taskNineAcquirer($repositoryRoot, $paths)->sync(
         new TopologyRequest('NCK-123', $repositoryRoot),
@@ -3825,22 +3884,25 @@ it('fails closed for a malformed interrupted sync lease', function (array $lease
         ->toBeEmpty();
 })->with([
     [[
-        'schema' => 1,
+        'schema' => 2,
         'issue' => 'NCK-123',
+        'attempt' => attemptId()->value,
         'state' => 'syncing',
         'operation_id' => 'invalid',
         'expires_at' => gmdate('Y-m-d\\TH:i:s\\Z', time() + 604800),
     ]],
     [[
-        'schema' => 1,
+        'schema' => 2,
         'issue' => 'NCK-123',
+        'attempt' => attemptId()->value,
         'state' => 'failed',
         'operation_id' => str_repeat('a', 32),
         'expires_at' => '2026-99-99T99:99:99Z',
     ]],
     [[
-        'schema' => 1,
+        'schema' => 2,
         'issue' => 'NCK-123',
+        'attempt' => attemptId()->value,
         'state' => 'syncing',
         'operation_id' => str_repeat('a', 32),
         'expires_at' => gmdate('Y-m-d\\TH:i:s\\Z', time() + 604800),
@@ -3853,14 +3915,15 @@ it('fails closed for a malformed ready lease on operational entry points', funct
     $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));
     featureTopologyFixture($repositoryRoot, $paths);
     new AtomicJsonStore($paths)->write('leases/NCK-123.json', [
-        'schema' => 1,
+        'schema' => 2,
         'issue' => 'NCK-123',
+        'attempt' => attemptId()->value,
         'state' => 'ready',
         'operation_id' => 'invalid',
         'expires_at' => gmdate('Y-m-d\\TH:i:s\\Z', time() + 604800),
     ]);
     $events = [];
-    fakePinnedWorktreeProcesses(new TopologyTarget('NCK-123'), $events);
+    fakePinnedWorktreeProcesses(featureTarget('NCK-123'), $events);
     $acquirer = taskNineAcquirer($repositoryRoot, $paths);
     $request = new TopologyRequest('NCK-123', $repositoryRoot);
     $candidate = new GitRepository($repositoryRoot)->commit();
@@ -3881,8 +3944,9 @@ it('runs interrupted sync retry under the issue lock', function () {
     $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));
     featureTopologyFixture($repositoryRoot, $paths);
     new AtomicJsonStore($paths)->write('leases/NCK-123.json', [
-        'schema' => 1,
+        'schema' => 2,
         'issue' => 'NCK-123',
+        'attempt' => attemptId()->value,
         'state' => 'syncing',
         'operation_id' => str_repeat('a', 32),
         'expires_at' => gmdate('Y-m-d\\TH:i:s\\Z', time() + 604800),
@@ -3890,7 +3954,7 @@ it('runs interrupted sync retry under the issue lock', function () {
     $lock = new OperationLock($paths);
     expect($lock->acquire('topology-NCK-123', new OperationId(str_repeat('b', 32))))->toBeTrue();
     $events = [];
-    fakePinnedWorktreeProcesses(new TopologyTarget('NCK-123'), $events);
+    fakePinnedWorktreeProcesses(featureTarget('NCK-123'), $events);
 
     try {
         expect(fn () => taskNineAcquirer($repositoryRoot, $paths)->sync(
@@ -3911,7 +3975,7 @@ it('blocks verification while the exact issue topology lock is held', function (
     $lock = new OperationLock($paths);
     expect($lock->acquire('topology-NCK-123', new OperationId(str_repeat('b', 32))))->toBeTrue();
     $events = [];
-    fakePinnedWorktreeProcesses(new TopologyTarget('NCK-123'), $events);
+    fakePinnedWorktreeProcesses(featureTarget('NCK-123'), $events);
 
     try {
         expect(fn () => taskNineAcquirer($repositoryRoot, $paths)->verify('NCK-123'))
@@ -3930,7 +3994,7 @@ it('blocks guest execution while the exact issue topology lock is held', functio
     $lock = new OperationLock($paths);
     expect($lock->acquire('topology-NCK-123', new OperationId(str_repeat('b', 32))))->toBeTrue();
     $events = [];
-    fakePinnedWorktreeProcesses(new TopologyTarget('NCK-123'), $events);
+    fakePinnedWorktreeProcesses(featureTarget('NCK-123'), $events);
 
     try {
         expect(fn () => taskNineAcquirer($repositoryRoot, $paths)->execute('NCK-123', 'gateway', ['true']))
@@ -3950,7 +4014,7 @@ it('reports the lock before malformed topology validation', function (string $en
     $lock = new OperationLock($paths);
     expect($lock->acquire('topology-NCK-123', new OperationId(str_repeat('b', 32))))->toBeTrue();
     $events = [];
-    fakePinnedWorktreeProcesses(new TopologyTarget('NCK-123'), $events);
+    fakePinnedWorktreeProcesses(featureTarget('NCK-123'), $events);
 
     try {
         expect(fn () => match ($entryPoint) {
@@ -3970,14 +4034,15 @@ it('releases the issue lock after interrupted sync retry fails', function () {
     $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));
     featureTopologyFixture($repositoryRoot, $paths);
     new AtomicJsonStore($paths)->write('leases/NCK-123.json', [
-        'schema' => 1,
+        'schema' => 2,
         'issue' => 'NCK-123',
+        'attempt' => attemptId()->value,
         'state' => 'failed',
         'operation_id' => str_repeat('a', 32),
         'expires_at' => gmdate('Y-m-d\\TH:i:s\\Z', time() + 604800),
     ]);
     $events = [];
-    fakeOrdinaryPreparedChangeProcesses($repositoryRoot, new TopologyTarget('NCK-123'), $events);
+    fakeOrdinaryPreparedChangeProcesses($repositoryRoot, featureTarget('NCK-123'), $events);
     $worktree = pinnedFeatureWorktree($repositoryRoot, 'lock-release');
 
     expect(fn () => taskNineAcquirer($repositoryRoot, $paths)->sync(
@@ -3998,14 +4063,15 @@ it('rejects operational entry points while a topology lease is syncing or failed
     $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));
     featureTopologyFixture($repositoryRoot, $paths);
     new AtomicJsonStore($paths)->write('leases/NCK-123.json', [
-        'schema' => 1,
+        'schema' => 2,
         'issue' => 'NCK-123',
+        'attempt' => attemptId()->value,
         'state' => $state,
         'operation_id' => str_repeat('b', 32),
         'expires_at' => gmdate('Y-m-d\\TH:i:s\\Z', time() + 604800),
     ]);
     $events = [];
-    fakePinnedWorktreeProcesses(new TopologyTarget('NCK-123'), $events);
+    fakePinnedWorktreeProcesses(featureTarget('NCK-123'), $events);
     $acquirer = taskNineAcquirer($repositoryRoot, $paths);
     $request = new TopologyRequest('NCK-123', $repositoryRoot);
     $candidate = new GitRepository($repositoryRoot)->commit();

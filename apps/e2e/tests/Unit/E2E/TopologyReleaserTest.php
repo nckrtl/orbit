@@ -9,6 +9,7 @@ use App\E2E\State\AtomicJsonStore;
 use App\E2E\State\StatePaths;
 use App\E2E\TopologyManifestStore;
 use App\E2E\TopologyReleaser;
+use App\E2E\Value\AttemptId;
 use App\E2E\Value\OperationId;
 use App\E2E\Value\ReleaseResult;
 use App\E2E\Value\TopologyProfile;
@@ -35,8 +36,9 @@ describe('topology release', function () {
         $store = new AtomicJsonStore($paths);
         readyReleaseState($store);
         $store->write('leases/NCK-12.json', [
-            'schema' => 1,
+            'schema' => 2,
             'issue' => 'NCK-12',
+            'attempt' => releaseAttempt()->value,
             'state' => 'acquiring',
             'operation_id' => str_repeat('a', 32),
             'expires_at' => '2020-01-01T00:00:00+00:00',
@@ -44,7 +46,7 @@ describe('topology release', function () {
             'process_start_identity' => 'dead-test-owner',
             'acquired_at' => '2020-01-01T00:00:00+00:00',
         ]);
-        $target = new TopologyTarget('NCK-12');
+        $target = featureTarget('NCK-12');
         $rollback = new AcquisitionRollback(
             static fn (array $resources): array => array_fill_keys($resources, null),
             static function (array $resources): void {},
@@ -65,7 +67,7 @@ describe('topology release', function () {
 
         expect($result->alreadyAbsent)
             ->toHaveCount(count(TopologyProfile::ROLES) + 1)
-            ->and($store->read('topologies/NCK-12.json'))
+            ->and($store->read(releaseTopologyPath()))
             ->toBeNull()
             ->and($store->read('leases/NCK-12.json'))
             ->toBeNull()
@@ -73,18 +75,31 @@ describe('topology release', function () {
             ->not->toBeNull();
     });
 
+    function releaseAttempt(): AttemptId
+    {
+        return new AttemptId(str_repeat('a', 32));
+    }
+
+    function releaseTopologyPath(string $issue = 'NCK-12'): string
+    {
+        return 'topologies/'.$issue.'/'.releaseAttempt()->value.'.json';
+    }
+
     function readyReleaseState(AtomicJsonStore $store, string $issue = 'NCK-12'): void
     {
-        $target = new TopologyTarget($issue);
+        $target = featureTarget($issue);
         $store->write('leases/'.$issue.'.json', [
-            'schema' => 1,
+            'schema' => 2,
             'issue' => $issue,
+            'attempt' => releaseAttempt()->value,
             'state' => 'ready',
             'operation_id' => str_repeat('a', 32),
         ]);
-        $store->write('topologies/'.$issue.'.json', [
-            'schema' => 1,
+        $store->write(releaseTopologyPath($issue), [
+            'schema' => 2,
             'issue' => $issue,
+            'attempt_id' => releaseAttempt()->value,
+            'purpose' => 'discovery',
             'profile' => TopologyProfile::NAME,
             'generation' => [
                 'schema' => 4,
@@ -127,6 +142,11 @@ describe('topology release', function () {
                 'probes' => ['ready' => verificationProbeFixture(probe: 'ready')],
             ],
         ]);
+        $store->write('topologies/'.$issue.'/active.json', [
+            'schema' => 2,
+            'issue' => $issue,
+            'attempt' => releaseAttempt()->value,
+        ]);
     }
 
     function completedReleaseState(AtomicJsonStore $store): void
@@ -161,7 +181,7 @@ describe('topology release', function () {
         expect(fn () => $releaser->release('NCK-12'))
             ->toThrow(RuntimeException::class, 'active topology state');
         expect($store->read('leases/NCK-12.json'))
-            ->not->toBeNull()->and($store->read('topologies/NCK-12.json'))
+            ->not->toBeNull()->and($store->read(releaseTopologyPath()))
             ->not->toBeNull();
         Process::assertNothingRan();
     });
@@ -171,7 +191,8 @@ describe('topology release', function () {
         $paths = new StatePaths($root);
         $store = new AtomicJsonStore($paths);
         completedReleaseState($store);
-        unlink($paths->root().'/topologies/NCK-12.json');
+        unlink($paths->root().'/'.releaseTopologyPath());
+        unlink($paths->root().'/topologies/NCK-12/active.json');
         Process::preventStrayProcesses();
         $releaser = new TopologyReleaser(
             new IncusHost,
@@ -192,7 +213,7 @@ describe('topology release', function () {
         $paths = new StatePaths($root);
         $store = new AtomicJsonStore($paths);
         completedReleaseState($store);
-        file_put_contents($paths->root().'/topologies/NCK-12.json', '{malformed');
+        file_put_contents($paths->root().'/'.releaseTopologyPath(), '{malformed');
         Process::preventStrayProcesses();
 
         $releaser = new TopologyReleaser(
@@ -208,9 +229,9 @@ describe('topology release', function () {
         expect($store->read('leases/NCK-12.json'))
             ->not
             ->toBeNull()
-            ->and(is_link($paths->root().'/topologies/NCK-12.json'))
+            ->and(is_link($paths->root().'/'.releaseTopologyPath()))
             ->toBeFalse()
-            ->and(file_exists($paths->root().'/topologies/NCK-12.json'))
+            ->and(file_exists($paths->root().'/'.releaseTopologyPath()))
             ->toBeTrue();
         Process::assertNothingRan();
     });
@@ -238,7 +259,7 @@ describe('topology release', function () {
         unlink($paths->root().'/leases/NCK-12.json');
         expect(fn () => $releaser->release('NCK-12'))
             ->toThrow(RuntimeException::class, 'active topology state');
-        expect($store->read('topologies/NCK-12.json'))->not->toBeNull();
+        expect($store->read(releaseTopologyPath()))->not->toBeNull();
         Process::assertNothingRan();
     });
     it('returns compact exact release evidence', function () {
@@ -246,7 +267,7 @@ describe('topology release', function () {
             str_repeat('a', 32),
             str_repeat('b', 32),
             ['deleted:orbit-e2e-nck-12'],
-            ['orbit-e2e-nck-12-app-prod'],
+            ['orbit-e2e-nck-12-aaaaaaaa-app-prod'],
         );
 
         expect($result->toArray())->toBe([
@@ -254,7 +275,7 @@ describe('topology release', function () {
             'operation_id' => str_repeat('a', 32),
             'evidence_id' => str_repeat('b', 32),
             'released' => ['deleted:orbit-e2e-nck-12'],
-            'already_absent' => ['orbit-e2e-nck-12-app-prod'],
+            'already_absent' => ['orbit-e2e-nck-12-aaaaaaaa-app-prod'],
         ]);
     });
 
@@ -262,7 +283,7 @@ describe('topology release', function () {
     it('persists the injected operation identity for a completed release', function () {
         $paths = new StatePaths(temporaryPath('orbit-release-complete-', 8));
         $store = new AtomicJsonStore($paths);
-        $target = new TopologyTarget('NCK-123');
+        $target = featureTarget('NCK-123');
         readyReleaseState($store, $target->issue);
         $instances = array_fill_keys(array_map($target->instance(...), TopologyProfile::ROLES), true);
         $networkExists = true;
@@ -298,6 +319,7 @@ describe('topology release', function () {
                             'config' => [
                                 'user.orbit.e2e.owner' => 'orbit-e2e',
                                 'user.orbit.e2e.issue' => $target->issue,
+                                'user.orbit.e2e.attempt' => releaseAttempt()->value,
                                 'user.orbit.e2e.generation' => 'generation-1',
                                 'user.orbit.e2e.operation' => str_repeat('a', 32),
                             ],
@@ -328,6 +350,7 @@ describe('topology release', function () {
                     'config' => [
                         'user.orbit.e2e.owner' => 'orbit-e2e',
                         'user.orbit.e2e.issue' => $target->issue,
+                        'user.orbit.e2e.attempt' => releaseAttempt()->value,
                         'user.orbit.e2e.generation' => 'generation-1',
                         'user.orbit.e2e.operation' => str_repeat('a', 32),
                     ],
@@ -352,6 +375,7 @@ describe('topology release', function () {
                             'config' => [
                                 'user.orbit.e2e.owner' => 'orbit-e2e',
                                 'user.orbit.e2e.issue' => $target->issue,
+                                'user.orbit.e2e.attempt' => releaseAttempt()->value,
                                 'user.orbit.e2e.operation' => str_repeat('a', 32),
                             ],
                         ]] : [],
@@ -411,7 +435,7 @@ describe('topology release', function () {
     it('refuses release when the deterministic topology MAC drifted', function () {
         $paths = new StatePaths(temporaryPath('orbit-release-mac-', 8));
         $store = new AtomicJsonStore($paths);
-        $target = new TopologyTarget('NCK-123');
+        $target = featureTarget('NCK-123');
         readyReleaseState($store, $target->issue);
         $commands = [];
         Process::fake(function (\Illuminate\Process\PendingProcess $process) use (&$commands, $target) {
@@ -429,6 +453,7 @@ describe('topology release', function () {
                     'config' => [
                         'user.orbit.e2e.owner' => 'orbit-e2e',
                         'user.orbit.e2e.issue' => $target->issue,
+                        'user.orbit.e2e.attempt' => releaseAttempt()->value,
                         'user.orbit.e2e.generation' => 'generation-1',
                         'user.orbit.e2e.operation' => str_repeat('a', 32),
                     ],
@@ -540,10 +565,11 @@ describe('topology release', function () {
             }
             if (($command[3] ?? null) === 'network' && ($command[4] ?? null) === 'list') {
                 return Process::result(json_encode([[
-                    'name' => new TopologyTarget('NCK-12')->network(),
+                    'name' => featureTarget('NCK-12')->network(),
                     'config' => [
                         'user.orbit.e2e.owner' => 'orbit-e2e',
                         'user.orbit.e2e.issue' => 'NCK-12',
+                        'user.orbit.e2e.attempt' => releaseAttempt()->value,
                         'user.orbit.e2e.operation' => str_repeat('a', 32),
                     ],
                 ]], JSON_THROW_ON_ERROR));
@@ -584,7 +610,7 @@ describe('topology release', function () {
             'operation_id' => $result->operationId,
             'evidence_id' => $result->evidenceId,
             'lease_sha256' => releaseStateDigest($store->read('leases/NCK-12.json')),
-            'topology_sha256' => releaseStateDigest($store->read('topologies/NCK-12.json')),
+            'topology_sha256' => releaseStateDigest($store->read(releaseTopologyPath())),
             'result' => $result->toArray(),
         ]);
         Process::fake(['*' => Process::result('[]')]);
@@ -612,7 +638,7 @@ describe('topology release', function () {
             ->toBeNull()
             ->and($store->read('leases/NCK-12.json'))
             ->toBeNull()
-            ->and($store->read('topologies/NCK-12.json'))
+            ->and($store->read(releaseTopologyPath()))
             ->toBeNull();
     });
 
@@ -628,7 +654,7 @@ describe('topology release', function () {
             'operation_id' => $result->operationId,
             'evidence_id' => $result->evidenceId,
             'lease_sha256' => releaseStateDigest(['state' => 'different']),
-            'topology_sha256' => releaseStateDigest($store->read('topologies/NCK-12.json')),
+            'topology_sha256' => releaseStateDigest($store->read(releaseTopologyPath())),
             'result' => $result->toArray(),
         ]);
         Process::preventStrayProcesses();
@@ -644,7 +670,7 @@ describe('topology release', function () {
         expect(fn () => $releaser->release('NCK-12'))
             ->toThrow(RuntimeException::class, 'pending release state does not match');
         expect($store->read('leases/NCK-12.json'))
-            ->not->toBeNull()->and($store->read('topologies/NCK-12.json'))
+            ->not->toBeNull()->and($store->read(releaseTopologyPath()))
             ->not->toBeNull()->and($store->read('release-pending/NCK-12.json'))
             ->not->toBeNull()->and($store->read('releases/NCK-12.json'))->toBeNull();
         Process::assertNothingRan();

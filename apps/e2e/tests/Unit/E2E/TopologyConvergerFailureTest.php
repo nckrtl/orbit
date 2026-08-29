@@ -25,7 +25,7 @@ beforeEach(function () {
 function failing_converger_vm(string $name): string
 {
     $role = str_ends_with($name, '-gateway') ? 'gateway' : (str_ends_with($name, '-app-dev') ? 'app-dev' : 'app-prod');
-    $network = 'oe-b32d6c83af72';
+    $network = 'oe-0799eee4eaf4';
     $hash = substr(sha1("{$network}:{$role}"), 0, 6);
     $mac = '00:16:3e:'.implode(':', str_split($hash, 2));
     $ipv4 = ['gateway' => '10.232.2.10', 'app-dev' => '10.232.2.11', 'app-prod' => '10.232.2.12'][$role];
@@ -60,14 +60,14 @@ function failing_converger_process_result(
 ): ProcessResult {
     return match (true) {
         array_slice($command, -4) === ['network', 'list', 'lab:', '--format=json'] => Process::result(json_encode([[
-            'name' => 'oe-b32d6c83af72',
+            'name' => 'oe-0799eee4eaf4',
             'config' => ['user.orbit.e2e.owner' => 'orbit-e2e', 'ipv4.address' => '10.232.2.1/24'],
         ]], JSON_THROW_ON_ERROR)),
         ($command[count($command) - 2] ?? null) === 'lab:' && in_array('list', $command, true)
             => Process::result(json_encode(
             array_map(
                 static fn (string $role): array => json_decode(
-                    failing_converger_vm('orbit-e2e-nck-123-'.$role),
+                    failing_converger_vm('orbit-e2e-nck-123-aaaaaaaa-'.$role),
                     true,
                     16,
                     JSON_THROW_ON_ERROR,
@@ -156,7 +156,7 @@ describe('TopologyConverger failures', function () {
 
         try {
             new TopologyConverger(new IncusHost(remote: 'lab', project: 'orbit', pool: 'orbit-e2e'))->converge(
-                new TopologyTarget('NCK-123'),
+                featureTarget('NCK-123'),
                 new SourceState(str_repeat('a', 40), str_repeat('a', 40), false),
                 new LaravelRelease('v13.10.1', str_repeat('b', 40)),
             );
@@ -164,7 +164,7 @@ describe('TopologyConverger failures', function () {
         } catch (RuntimeException $exception) {
             expect($exception->getMessage())
                 ->toBe(
-                    'Guest convergence script converge-app-dev.sh failed on orbit-e2e-nck-123-gateway '
+                    'Guest convergence script converge-app-dev.sh failed on orbit-e2e-nck-123-aaaaaaaa-gateway '
                     .'with exit code 1 at step base-packages (node.package_install_failed).',
                 )
                 ->not->toContain('private stdout', 'private-token');
@@ -187,7 +187,7 @@ describe('TopologyConverger guest failures', function () {
 
             if (array_slice($command, -4) === ['network', 'list', 'lab:', '--format=json']) {
                 return Process::result(json_encode([[
-                    'name' => 'oe-b32d6c83af72',
+                    'name' => 'oe-0799eee4eaf4',
                     'config' => ['user.orbit.e2e.owner' => 'orbit-e2e', 'ipv4.address' => '10.232.2.1/24'],
                 ]], JSON_THROW_ON_ERROR));
             }
@@ -199,7 +199,7 @@ describe('TopologyConverger guest failures', function () {
                 return Process::result(json_encode(
                     array_map(
                         static fn (string $role): array => json_decode(
-                            failing_converger_vm('orbit-e2e-nck-123-'.$role),
+                            failing_converger_vm('orbit-e2e-nck-123-aaaaaaaa-'.$role),
                             true,
                             16,
                             JSON_THROW_ON_ERROR,
@@ -229,7 +229,7 @@ describe('TopologyConverger guest failures', function () {
 
         try {
             new TopologyConverger(new IncusHost(remote: 'lab', project: 'orbit', pool: 'orbit-e2e'))->converge(
-                new TopologyTarget('NCK-123'),
+                featureTarget('NCK-123'),
                 new SourceState(str_repeat('a', 40), str_repeat('a', 40), false),
                 new LaravelRelease('v13.10.1', str_repeat('b', 40)),
             );
@@ -243,14 +243,14 @@ describe('TopologyConverger guest failures', function () {
         'migration exit' => [
             70,
             'Bearer private-token',
-            'Guest convergence script converge-gateway.sh failed on orbit-e2e-nck-123-gateway with exit code 70.',
+            'Guest convergence script converge-gateway.sh failed on orbit-e2e-nck-123-aaaaaaaa-gateway with exit code 70.',
         ],
         'gateway domain failure' => [
             71,
             "Gateway bootstrap failed at step [wireguard-server-install] with error [vpn.server_config_install_failed].\n"
                 .'Bearer private-token',
             'Guest convergence script converge-gateway.sh failed on '
-                .'orbit-e2e-nck-123-gateway with exit code 71 at step '
+                .'orbit-e2e-nck-123-aaaaaaaa-gateway with exit code 71 at step '
                 .'wireguard-server-install (vpn.server_config_install_failed).',
         ],
     ]);
@@ -273,7 +273,7 @@ describe('TopologyConverger diagnostic parsing', function () {
 
             if (array_slice($command, -4) === ['network', 'list', 'lab:', '--format=json']) {
                 return Process::result(json_encode([[
-                    'name' => 'oe-b32d6c83af72',
+                    'name' => 'oe-0799eee4eaf4',
                     'config' => ['user.orbit.e2e.owner' => 'orbit-e2e', 'ipv4.address' => '10.232.2.1/24'],
                 ]], JSON_THROW_ON_ERROR));
             }
@@ -285,7 +285,7 @@ describe('TopologyConverger diagnostic parsing', function () {
                 return Process::result(json_encode(
                     array_map(
                         static fn (string $role): array => json_decode(
-                            failing_converger_vm('orbit-e2e-nck-123-'.$role),
+                            failing_converger_vm('orbit-e2e-nck-123-aaaaaaaa-'.$role),
                             true,
                             16,
                             JSON_THROW_ON_ERROR,
@@ -330,7 +330,7 @@ describe('TopologyConverger diagnostic parsing', function () {
                 project: 'orbit',
                 pool: 'orbit-e2e',
             ))->converge(
-                new TopologyTarget('NCK-123'),
+                featureTarget('NCK-123'),
                 new SourceState(str_repeat('a', 40), str_repeat('a', 40), false),
                 new LaravelRelease('v13.10.1', str_repeat('b', 40)),
             );
@@ -338,7 +338,7 @@ describe('TopologyConverger diagnostic parsing', function () {
         } catch (RuntimeException $exception) {
             expect($exception->getMessage())
                 ->toBe(
-                    "Guest convergence script {$script} failed on orbit-e2e-nck-123-gateway "
+                    "Guest convergence script {$script} failed on orbit-e2e-nck-123-aaaaaaaa-gateway "
                     ."with exit code {$exitCode}.",
                 )
                 ->not->toContain('sensitive', 'wireguard-server-install', 'base-packages');

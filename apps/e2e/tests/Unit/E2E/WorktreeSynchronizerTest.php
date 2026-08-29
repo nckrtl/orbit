@@ -464,7 +464,7 @@ describe('WorktreeSynchronizer', function () {
     it('uses one preflight batch and no guest mutation for hydrated clean source', function () {
         [$root, $worktree] = createSynchronizerRepositoryFixture('LUNA-130');
         try {
-            $target = new TopologyTarget('LUNA-130');
+            $target = featureTarget('LUNA-130');
             $sha = trim(synchronizerGit($worktree, ['rev-parse', 'HEAD'])[0]);
             $tree = new GitRepository($worktree)->effectiveTreeHash();
             /** @mago-expect lint:cyclomatic-complexity The fixture callback keeps its exact hydration assertions together. */
@@ -546,7 +546,7 @@ describe('WorktreeSynchronizer', function () {
         [$root, $worktree] = createSynchronizerRepositoryFixture('LUNA-141');
         try {
             file_put_contents($worktree.'/README.md', "dirty source\n");
-            $target = new TopologyTarget('LUNA-141');
+            $target = featureTarget('LUNA-141');
             $sha = trim(synchronizerGit($worktree, ['rev-parse', 'HEAD'])[0]);
             $tree = new GitRepository($worktree)->effectiveTreeHash();
             $scriptHash = hash('sha256', implode('', array_map(
@@ -602,7 +602,7 @@ describe('WorktreeSynchronizer', function () {
         [$root, $worktree] = createSynchronizerRepositoryFixture('LUNA-142');
         try {
             file_put_contents($worktree.'/README.md', "dirty source\n");
-            $target = new TopologyTarget('LUNA-142');
+            $target = featureTarget('LUNA-142');
             $sha = trim(synchronizerGit($worktree, ['rev-parse', 'HEAD'])[0]);
             $tree = new GitRepository($worktree)->effectiveTreeHash();
             $scriptHash = hash('sha256', implode('', array_map(
@@ -651,7 +651,7 @@ describe('WorktreeSynchronizer', function () {
                 new WorktreeSynchronizerGuestFake($sha),
                 $root,
                 new OperationId(str_repeat('a', 32)),
-            )->sync(new TopologyTarget('LUNA-129'), $worktree);
+            )->sync(featureTarget('LUNA-129'), $worktree);
             expect($state->operationId)->toBe(str_repeat('a', 32));
         } finally {
             destroySynchronizerRepositoryFixture($root, $worktree);
@@ -669,12 +669,12 @@ describe('WorktreeSynchronizer', function () {
         try {
             $ancestor = trim(synchronizerGit($worktree, ['rev-parse', 'HEAD^'])[0]);
             $guest = new WorktreeSynchronizerGuestFake([
-                'orbit-e2e-luna-131-gateway' => $ancestor,
-                'orbit-e2e-luna-131-app-dev' => $ancestor,
+                'orbit-e2e-luna-131-aaaaaaaa-gateway' => $ancestor,
+                'orbit-e2e-luna-131-aaaaaaaa-app-dev' => $ancestor,
             ]);
 
             new WorktreeSynchronizer($guest, $root, new OperationId(str_repeat('a', 32)))->sync(
-                new TopologyTarget('LUNA-131'),
+                featureTarget('LUNA-131'),
                 $worktree,
             );
 
@@ -697,7 +697,7 @@ describe('WorktreeSynchronizer', function () {
             $guest = new WorktreeSynchronizerGuestFake($sha);
 
             new WorktreeSynchronizer($guest, $root, new OperationId(str_repeat('a', 32)))->sync(
-                new TopologyTarget('LUNA-140'),
+                featureTarget('LUNA-140'),
                 $worktree,
             );
 
@@ -734,7 +734,7 @@ describe('WorktreeSynchronizer', function () {
             );
 
             new WorktreeSynchronizer($guest, $root, new OperationId(str_repeat('a', 32)))->sync(
-                new TopologyTarget('LUNA-137'),
+                featureTarget('LUNA-137'),
                 $worktree,
             );
 
@@ -798,12 +798,12 @@ describe('WorktreeSynchronizer', function () {
                 'new head',
             ]);
             $guest = new WorktreeSynchronizerGuestFake([
-                'orbit-e2e-luna-132-gateway' => $earlier,
-                'orbit-e2e-luna-132-app-dev' => $later,
+                'orbit-e2e-luna-132-aaaaaaaa-gateway' => $earlier,
+                'orbit-e2e-luna-132-aaaaaaaa-app-dev' => $later,
             ]);
 
             new WorktreeSynchronizer($guest, $root, new OperationId(str_repeat('a', 32)))->sync(
-                new TopologyTarget('LUNA-132'),
+                featureTarget('LUNA-132'),
                 $worktree,
             );
 
@@ -826,12 +826,12 @@ describe('WorktreeSynchronizer', function () {
             $ancestor = trim(synchronizerGit($worktree, ['rev-parse', 'HEAD^'])[0]);
             $unknown = str_repeat('f', 40);
             $guest = new WorktreeSynchronizerGuestFake([
-                'orbit-e2e-luna-133-gateway' => $ancestor,
-                'orbit-e2e-luna-133-app-dev' => $unknown,
+                'orbit-e2e-luna-133-aaaaaaaa-gateway' => $ancestor,
+                'orbit-e2e-luna-133-aaaaaaaa-app-dev' => $unknown,
             ]);
 
             $state = new WorktreeSynchronizer($guest, $root, new OperationId(str_repeat('a', 32)))->sync(
-                new TopologyTarget('LUNA-133'),
+                featureTarget('LUNA-133'),
                 $worktree,
             );
 
@@ -844,8 +844,8 @@ describe('WorktreeSynchronizer', function () {
                 ->toContain("-{$unknown} ")
                 ->and(array_column($guest->bundlePushes, 'instance'))
                 ->toBe([
-                    'orbit-e2e-luna-133-gateway',
-                    'orbit-e2e-luna-133-app-dev',
+                    'orbit-e2e-luna-133-aaaaaaaa-gateway',
+                    'orbit-e2e-luna-133-aaaaaaaa-app-dev',
                 ])
                 ->and($state->guestSha)
                 ->toBe($state->hostSha);
@@ -873,12 +873,12 @@ describe('WorktreeSynchronizer', function () {
             $feature = trim(synchronizerGit($worktree, ['rev-parse', 'HEAD'])[0]);
             $common = trim(synchronizerGit($root, ['merge-base', $diverged, $feature])[0]);
             $guest = new WorktreeSynchronizerGuestFake([
-                'orbit-e2e-luna-134-gateway' => $diverged,
-                'orbit-e2e-luna-134-app-dev' => 'invalid',
+                'orbit-e2e-luna-134-aaaaaaaa-gateway' => $diverged,
+                'orbit-e2e-luna-134-aaaaaaaa-app-dev' => 'invalid',
             ]);
 
             new WorktreeSynchronizer($guest, $root, new OperationId(str_repeat('a', 32)))->sync(
-                new TopologyTarget('LUNA-134'),
+                featureTarget('LUNA-134'),
                 $worktree,
             );
 
@@ -901,11 +901,11 @@ describe('WorktreeSynchronizer', function () {
         try {
             $ancestor = trim(synchronizerGit($worktree, ['rev-parse', 'HEAD^'])[0]);
             $guest = new WorktreeSynchronizerGuestFake([
-                'orbit-e2e-luna-135-gateway' => $ancestor,
+                'orbit-e2e-luna-135-aaaaaaaa-gateway' => $ancestor,
             ]);
 
             new WorktreeSynchronizer($guest, $root, new OperationId(str_repeat('a', 32)))->sync(
-                new TopologyTarget('LUNA-135'),
+                featureTarget('LUNA-135'),
                 $worktree,
             );
 
@@ -926,14 +926,14 @@ describe('WorktreeSynchronizer', function () {
             $sha = trim(synchronizerGit($worktree, ['rev-parse', 'HEAD'])[0]);
             $guest = new WorktreeSynchronizerGuestFake(
                 $sha,
-                evidenceShas: ['orbit-e2e-luna-136-app-dev' => str_repeat('f', 40)],
+                evidenceShas: ['orbit-e2e-luna-136-aaaaaaaa-app-dev' => str_repeat('f', 40)],
             );
 
             expect(fn () => new WorktreeSynchronizer(
                 $guest,
                 $root,
                 new OperationId(str_repeat('a', 32)),
-            )->sync(new TopologyTarget('LUNA-136'), $worktree))
+            )->sync(featureTarget('LUNA-136'), $worktree))
                 ->toThrow(RuntimeException::class, 'Guest source evidence does not match the host.');
         } finally {
             destroySynchronizerRepositoryFixture($root, $worktree);
@@ -955,7 +955,7 @@ describe('WorktreeSynchronizer', function () {
         $guest = new WorktreeSynchronizerGuestFake($sha, $hash, null, synchronizerScriptContentHashes($worktree));
         try {
             new WorktreeSynchronizer($guest, $root, new OperationId(str_repeat('a', 32)))->sync(
-                new TopologyTarget('LUNA-125'),
+                featureTarget('LUNA-125'),
                 $worktree,
             );
             expect(array_filter($guest->pushes, fn (array $push): bool => str_contains(
@@ -987,10 +987,10 @@ describe('WorktreeSynchronizer', function () {
                 null,
                 synchronizerScriptContentHashes($worktree),
                 [],
-                [new TopologyTarget('LUNA-142')->instance('gateway') => " M README.md\n"],
+                [featureTarget('LUNA-142')->instance('gateway') => " M README.md\n"],
             );
             new WorktreeSynchronizer($guest, $root, new OperationId(str_repeat('a', 32)))->sync(
-                new TopologyTarget('LUNA-142'),
+                featureTarget('LUNA-142'),
                 $worktree,
             );
             expect(array_filter($guest->pushes, fn (array $push): bool => str_contains(
@@ -1006,7 +1006,7 @@ describe('WorktreeSynchronizer', function () {
         [$root, $worktree] = createSynchronizerRepositoryFixture('LUNA-144');
         try {
             $sha = trim(synchronizerGit($worktree, ['rev-parse', 'HEAD'])[0]);
-            $target = new TopologyTarget('LUNA-144');
+            $target = featureTarget('LUNA-144');
             $guest = new WorktreeSynchronizerGuestFake($sha, failure: 'source-hydrate');
             $synchronizer = new WorktreeSynchronizer(
                 $guest,
@@ -1096,7 +1096,7 @@ describe('WorktreeSynchronizer', function () {
         $guest = new WorktreeSynchronizerGuestFake($sha, $markerHash, null, $drifted);
         try {
             new WorktreeSynchronizer($guest, $root, new OperationId(str_repeat('a', 32)))->sync(
-                new TopologyTarget('LUNA-126'),
+                featureTarget('LUNA-126'),
                 $worktree,
             );
             expect(synchronizerInstalledScripts($guest))->toHaveCount(27);
@@ -1123,7 +1123,7 @@ describe('WorktreeSynchronizer', function () {
             }
 
             new WorktreeSynchronizer($guest, $root, new OperationId(str_repeat('a', 32)))->sync(
-                new TopologyTarget('LUNA-141'),
+                featureTarget('LUNA-141'),
                 $worktree,
             );
 
@@ -1155,14 +1155,14 @@ describe('WorktreeSynchronizer', function () {
             $sha = trim(synchronizerGit($worktree, ['rev-parse', 'HEAD'])[0]);
             $guest = new WorktreeSynchronizerGuestFake(
                 $sha,
-                failure: 'script-install:orbit-e2e-luna-142-app-dev',
+                failure: 'script-install:orbit-e2e-luna-142-aaaaaaaa-app-dev',
             );
 
             expect(fn () => new WorktreeSynchronizer(
                 $guest,
                 $root,
                 new OperationId(str_repeat('a', 32)),
-            )->sync(new TopologyTarget('LUNA-142'), $worktree))
+            )->sync(featureTarget('LUNA-142'), $worktree))
                 ->toThrow(
                     RuntimeException::class,
                     'Guest script installation failed. Failed operations: '
@@ -1191,8 +1191,8 @@ describe('WorktreeSynchronizer', function () {
         try {
             $sha = trim(synchronizerGit($worktree, ['rev-parse', 'HEAD'])[0]);
             $guest = new WorktreeSynchronizerGuestFake($sha, failure: [
-                'script-install:orbit-e2e-luna-143-app-dev',
-                'script-cleanup:orbit-e2e-luna-143-app-prod',
+                'script-install:orbit-e2e-luna-143-aaaaaaaa-app-dev',
+                'script-cleanup:orbit-e2e-luna-143-aaaaaaaa-app-prod',
             ]);
 
             try {
@@ -1200,7 +1200,7 @@ describe('WorktreeSynchronizer', function () {
                     $guest,
                     $root,
                     new OperationId(str_repeat('a', 32)),
-                )->sync(new TopologyTarget('LUNA-143'), $worktree);
+                )->sync(featureTarget('LUNA-143'), $worktree);
                 $this->fail('Expected script installation to fail.');
             } catch (RuntimeException $exception) {
                 expect($exception->getMessage())
@@ -1222,7 +1222,7 @@ describe('WorktreeSynchronizer', function () {
         $guest = new WorktreeSynchronizerGuestFake($sha);
         try {
             $state = new WorktreeSynchronizer($guest, $root, new OperationId(str_repeat('a', 32)))->sync(
-                new TopologyTarget('LUNA-123'),
+                featureTarget('LUNA-123'),
                 $worktree,
             );
             $scriptInstalls = synchronizerInstalledScripts($guest);
@@ -1276,7 +1276,7 @@ describe('WorktreeSynchronizer', function () {
             unlink($worktree.'/apps/e2e/resources/guest/receive-source.sh');
             $guest = new WorktreeSynchronizerGuestFake(str_repeat('a', 40));
             expect(fn () => new WorktreeSynchronizer($guest, $root, new OperationId(str_repeat('a', 32)))->sync(
-                new TopologyTarget('LUNA-127'),
+                featureTarget('LUNA-127'),
                 $worktree,
             ))
                 ->toThrow(RuntimeException::class, 'Guest script inventory is invalid.');
@@ -1291,7 +1291,7 @@ describe('WorktreeSynchronizer', function () {
         $guest = new WorktreeSynchronizerGuestFake(str_repeat('a', 40));
         try {
             expect(fn () => new WorktreeSynchronizer($guest, $root, new OperationId(str_repeat('a', 32)))->sync(
-                new TopologyTarget('LUNA-129'),
+                featureTarget('LUNA-129'),
                 $root,
             ))
                 ->toThrow(InvalidArgumentException::class, 'linked worktree');
@@ -1322,7 +1322,7 @@ describe('WorktreeSynchronizer', function () {
         $guest = new WorktreeSynchronizerGuestFake($sha, null, 'source-receive');
         try {
             expect(fn () => new WorktreeSynchronizer($guest, $root, new OperationId(str_repeat('a', 32)))->sync(
-                new TopologyTarget('LUNA-128'),
+                featureTarget('LUNA-128'),
                 $worktree,
             ))
                 ->toThrow(RuntimeException::class);
@@ -1344,8 +1344,8 @@ describe('WorktreeSynchronizer', function () {
                 ->toHaveCount(2)
                 ->and(array_column($cleanups, 'instance'))
                 ->toBe([
-                    'orbit-e2e-luna-128-gateway',
-                    'orbit-e2e-luna-128-app-dev',
+                    'orbit-e2e-luna-128-aaaaaaaa-gateway',
+                    'orbit-e2e-luna-128-aaaaaaaa-app-dev',
                 ])
                 ->and(array_map(
                     fn (array $cleanup): mixed => $cleanup['command']->command[array_key_last(
@@ -1369,15 +1369,15 @@ describe('WorktreeSynchronizer', function () {
         [$root, $worktree] = createSynchronizerRepositoryFixture('LUNA-138');
         $sha = trim(synchronizerGit($worktree, ['rev-parse', 'HEAD'])[0]);
         $guest = new WorktreeSynchronizerGuestFake($sha, failure: [
-            'source-receive:orbit-e2e-luna-138-gateway',
-            'source-cleanup:orbit-e2e-luna-138-app-dev',
+            'source-receive:orbit-e2e-luna-138-aaaaaaaa-gateway',
+            'source-cleanup:orbit-e2e-luna-138-aaaaaaaa-app-dev',
         ]);
         try {
             expect(fn () => new WorktreeSynchronizer(
                 $guest,
                 $root,
                 new OperationId(str_repeat('a', 32)),
-            )->sync(new TopologyTarget('LUNA-138'), $worktree))
+            )->sync(featureTarget('LUNA-138'), $worktree))
                 ->toThrow(
                     RuntimeException::class,
                     'Primary operation failed: Guest source installation failed. Failed operations: '
@@ -1394,14 +1394,14 @@ describe('WorktreeSynchronizer', function () {
         $sha = trim(synchronizerGit($worktree, ['rev-parse', 'HEAD'])[0]);
         $guest = new WorktreeSynchronizerGuestFake(
             $sha,
-            failure: 'source-prepare:orbit-e2e-luna-139-app-dev',
+            failure: 'source-prepare:orbit-e2e-luna-139-aaaaaaaa-app-dev',
         );
         try {
             expect(fn () => new WorktreeSynchronizer(
                 $guest,
                 $root,
                 new OperationId(str_repeat('a', 32)),
-            )->sync(new TopologyTarget('LUNA-139'), $worktree))
+            )->sync(featureTarget('LUNA-139'), $worktree))
                 ->toThrow(RuntimeException::class, 'Guest source staging failed.');
 
             $sourceBatches = array_values(array_filter(

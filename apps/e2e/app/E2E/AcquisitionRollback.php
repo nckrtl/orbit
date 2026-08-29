@@ -211,6 +211,7 @@ final readonly class AcquisitionRollback
             || $current->name !== $resource
             || ($current->metadata['user.orbit.e2e.owner'] ?? null) !== 'orbit-e2e'
             || ($current->metadata['user.orbit.e2e.issue'] ?? null) !== $target->issue
+            || ($current->metadata['user.orbit.e2e.attempt'] ?? null) !== $target->attempt?->value
             || ($current->metadata['user.orbit.e2e.operation'] ?? null) !== $operation->value
         ) {
             throw new RuntimeException('Rollback resource identity or acquisition ownership drifted.');

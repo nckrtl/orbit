@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\E2E\Value\AttemptId;
 use App\E2E\Value\TopologyTarget;
 
 describe('TopologyTarget', function () {
@@ -23,26 +24,65 @@ describe('TopologyTarget', function () {
         'unknown role' => [1, 'unknown'],
     ]);
 
-    it('uses compact deterministic network names', function () {
+    it('rejects an invalid issue identity', function (string $issue) {
+        expect(fn () => TopologyTarget::feature($issue, AttemptId::generate()))
+            ->toThrow(InvalidArgumentException::class);
+    })->with([
+        'lowercase prefix' => ['nck-123'],
+        'no number' => ['NCK-'],
+        'leading zero' => ['NCK-0'],
+        'standby' => ['standby'],
+    ]);
+
+    it('uses compact deterministic network names within the managed bridge limit', function () {
+        $attempt = new AttemptId(str_repeat('a', 32));
+
         expect(TopologyTarget::standby()->network())
             ->toBe('oe-standby')
-            ->and(new TopologyTarget('NCK-123')->network())
-            ->toBe('oe-b32d6c83af72')
-            ->and(new TopologyTarget('ORBIT-123456789')->network())
-            ->toBe('oe-f1eb5094419d')
-            ->and(strlen(new TopologyTarget('ORBIT-123456789')->network()))
+            ->and(TopologyTarget::feature('NCK-123', $attempt)->network())
+            ->toBe('oe-0799eee4eaf4')
+            ->and(TopologyTarget::feature('ORBIT-123456789', $attempt)->network())
+            ->toBe('oe-83bc72a8f494')
+            ->and(strlen(TopologyTarget::feature('ORBIT-123456789', $attempt)->network()))
             ->toBe(15);
     });
 
-    it('keeps instance names based on the target identity', function () {
-        expect(new TopologyTarget('NCK-123')->instance('app-dev'))
-            ->toBe('orbit-e2e-nck-123-app-dev')
+    it('keeps instance names readable and inside the Incus name limit', function () {
+        $attempt = new AttemptId(str_repeat('a', 32));
+
+        expect(TopologyTarget::feature('NCK-123', $attempt)->instance('app-dev'))
+            ->toBe('orbit-e2e-nck-123-aaaaaaaa-app-dev')
             ->and(TopologyTarget::standby()->instance('gateway'))
-            ->toBe('orbit-e2e-standby-gateway');
+            ->toBe('orbit-e2e-standby-gateway')
+            ->and(strlen(TopologyTarget::feature('ORBIT-123456789', $attempt)->instance('app-prod')))
+            ->toBeLessThanOrEqual(63);
+    });
+
+    it('never shares resource identities between two attempts of one issue', function () {
+        $first = TopologyTarget::feature('NCK-123', new AttemptId(str_repeat('a', 32)));
+        $second = TopologyTarget::feature('NCK-123', new AttemptId(str_repeat('b', 32)));
+
+        expect($first->network())
+            ->not->toBe($second->network())->and($first->instance('gateway'))
+            ->not->toBe($second->instance('gateway'))->and($first->mac('gateway'))
+            ->not->toBe($second->mac('gateway'));
+    });
+
+    it('carries the attempt identity of a feature target only', function () {
+        $attempt = new AttemptId(str_repeat('a', 32));
+
+        expect(TopologyTarget::feature('NCK-123', $attempt)->attempt)
+            ->toEqual($attempt)
+            ->and(TopologyTarget::feature('NCK-123', $attempt)->isStandby())
+            ->toBeFalse()
+            ->and(TopologyTarget::standby()->attempt)
+            ->toBeNull()
+            ->and(TopologyTarget::standby()->isStandby())
+            ->toBeTrue();
     });
 
     it('uses the proven deterministic topology and role MAC formula', function () {
-        $target = new TopologyTarget('NCK-123');
+        $target = TopologyTarget::feature('NCK-123', new AttemptId(str_repeat('a', 32)));
 
         expect($target->mac('gateway'))
             ->toBe('00:16:3e:'.implode(':', str_split(substr(sha1($target->network().':gateway'), 0, 6), 2)))
@@ -51,7 +91,7 @@ describe('TopologyTarget', function () {
     });
 
     it('matches the issue as one delimited branch token', function (string $branch, bool $matches) {
-        expect(new TopologyTarget('NCK-123')->matchesBranch($branch))->toBe($matches);
+        expect(TopologyTarget::feature('NCK-123', AttemptId::generate())->matchesBranch($branch))->toBe($matches);
     })->with([
         'prefixed feature branch' => ['feature/NCK-123-build-topology', true],
         'lowercase worktree branch' => ['codex/nck-123', true],

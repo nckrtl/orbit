@@ -7,6 +7,7 @@ namespace App\E2E;
 use App\E2E\State\AtomicJsonStore;
 use App\E2E\State\OperationLock;
 use App\E2E\State\StatePaths;
+use App\E2E\Value\AttemptId;
 use App\E2E\Value\OperationId;
 use App\E2E\Value\TopologyProfile;
 use App\E2E\Value\TopologyTarget;
@@ -20,7 +21,9 @@ use RuntimeException;
 final readonly class HostCapacity
 {
     private const string LEDGER = 'capacity/incus.json';
+    private const int LEDGER_SCHEMA = 2;
     private const int STANDBY_SLOTS = 3;
+    private const string RESERVATION_KEY = '/\A[A-Z][A-Z0-9]{1,9}-[1-9][0-9]{0,8}:[0-9a-f]{32}\z/D';
 
     public function __construct(
         private AtomicJsonStore $state,
@@ -34,13 +37,13 @@ final readonly class HostCapacity
         }
     }
 
-    public function reserve(string $issue, OperationId $acquisitionOperation): int
+    public function reserve(string $issue, AttemptId $attempt, OperationId $acquisitionOperation): int
     {
-        new TopologyTarget($issue);
+        $key = $this->reservationKey($issue, $attempt);
         $lock = $this->lock();
         try {
             $ledger = $this->ledger();
-            $existing = $ledger['reservations'][$issue] ?? null;
+            $existing = $ledger['reservations'][$key] ?? null;
             if ($existing !== null) {
                 if (($existing['operation_id'] ?? null) !== $acquisitionOperation->value) {
                     throw new RuntimeException('Incus host capacity is retained by another acquisition operation.');
@@ -48,19 +51,20 @@ final readonly class HostCapacity
 
                 if (! isset($existing['network_slot'])) {
                     $existing['network_slot'] = $this->nextNetworkSlot($ledger);
-                    $ledger['reservations'][$issue] = $existing;
+                    $ledger['reservations'][$key] = $existing;
                     $this->state->write(self::LEDGER, $ledger);
                 }
 
                 return $existing['network_slot'];
             }
+            $this->assertIssueUnreserved($ledger, $issue);
             $slots = count(TopologyProfile::ROLES);
             $used = self::STANDBY_SLOTS + array_sum(array_column($ledger['reservations'], 'slots'));
             if (($used + $slots) > $this->maxVms) {
                 throw new RuntimeException('Incus host capacity is exhausted.');
             }
             $networkSlot = $this->nextNetworkSlot($ledger);
-            $ledger['reservations'][$issue] = [
+            $ledger['reservations'][$key] = [
                 'operation_id' => $acquisitionOperation->value,
                 'slots' => $slots,
                 'network_slot' => $networkSlot,
@@ -74,20 +78,20 @@ final readonly class HostCapacity
         }
     }
 
-    public function release(string $issue, OperationId $acquisitionOperation): void
+    public function release(string $issue, AttemptId $attempt, OperationId $acquisitionOperation): void
     {
-        new TopologyTarget($issue);
+        $key = $this->reservationKey($issue, $attempt);
         $lock = $this->lock();
         try {
             $ledger = $this->ledger();
-            $existing = $ledger['reservations'][$issue] ?? null;
+            $existing = $ledger['reservations'][$key] ?? null;
             if ($existing === null) {
                 return;
             }
             if (($existing['operation_id'] ?? null) !== $acquisitionOperation->value) {
                 throw new RuntimeException('Incus host capacity reservation ownership does not match.');
             }
-            unset($ledger['reservations'][$issue]);
+            unset($ledger['reservations'][$key]);
             $this->state->write(self::LEDGER, $ledger);
         } finally {
             $lock->release();
@@ -104,14 +108,36 @@ final readonly class HostCapacity
         return $lock;
     }
 
+    private function reservationKey(string $issue, AttemptId $attempt): string
+    {
+        TopologyTarget::assertIssue($issue);
+
+        return $issue.':'.$attempt->value;
+    }
+
+    /**
+     * One issue keeps at most one live capacity reservation, so a second attempt
+     * cannot take host slots while the first attempt still owns Incus resources.
+     *
+     * @param array{schema:int,reservations:array<string,array{operation_id:string,slots:int,network_slot?:int}>} $ledger
+     */
+    private function assertIssueUnreserved(array $ledger, string $issue): void
+    {
+        foreach (array_keys($ledger['reservations']) as $key) {
+            if (str_starts_with($key, $issue.':')) {
+                throw new RuntimeException('Incus host capacity is retained by another attempt of this issue.');
+            }
+        }
+    }
+
     /** @return array{schema: int, reservations: array<string, array{operation_id: string, slots: int, network_slot?: int}>} */
     private function ledger(): array
     {
-        $ledger = $this->state->read(self::LEDGER) ?? ['schema' => 1, 'reservations' => []];
+        $ledger = $this->state->read(self::LEDGER) ?? ['schema' => self::LEDGER_SCHEMA, 'reservations' => []];
         if (
             ! is_array($ledger)
             || array_keys($ledger) !== ['schema', 'reservations']
-            || $ledger['schema'] !== 1
+            || $ledger['schema'] !== self::LEDGER_SCHEMA
             || ! is_array($ledger['reservations'])
         ) {
             throw new RuntimeException('The Incus host capacity ledger is invalid.');
@@ -119,9 +145,10 @@ final readonly class HostCapacity
         /** @var array{schema: int, reservations: array<string, array{operation_id: string, slots: int, network_slot?: int}>} $ledger */
         assert(is_array($ledger['reservations']));
         $networkSlots = [];
-        foreach ($ledger['reservations'] as $issue => $reservation) {
+        foreach ($ledger['reservations'] as $key => $reservation) {
             if (
-                ! is_string($issue)
+                ! is_string($key)
+                || preg_match(self::RESERVATION_KEY, $key) !== 1
                 || ! is_array($reservation)
                 || ! in_array(
                     array_keys($reservation),
@@ -143,11 +170,6 @@ final readonly class HostCapacity
                     throw new RuntimeException('The Incus host capacity ledger is invalid.');
                 }
                 $networkSlots[$reservation['network_slot']] = true;
-            }
-            try {
-                new TopologyTarget($issue);
-            } catch (\InvalidArgumentException $exception) {
-                throw new RuntimeException('The Incus host capacity ledger is invalid.', 0, $exception);
             }
         }
 

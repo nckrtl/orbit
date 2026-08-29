@@ -7,6 +7,8 @@ namespace App\E2E;
 use App\E2E\State\AtomicJsonStore;
 use App\E2E\State\OperationLock;
 use App\E2E\State\StatePaths;
+use App\E2E\Value\AttemptId;
+use App\E2E\Value\FeatureTopology;
 use App\E2E\Value\IncusInstance;
 use App\E2E\Value\IncusNetwork;
 use App\E2E\Value\OperationId;
@@ -31,23 +33,22 @@ final readonly class TopologyReleaser
 
     public function release(string $issue): ReleaseResult
     {
-        $target = new TopologyTarget($issue);
+        TopologyTarget::assertIssue($issue);
         $lock = new OperationLock($this->paths);
         $operation = $this->operation;
         if (! $lock->acquire('topology-'.$issue, $operation)) {
             throw new RuntimeException('The issue topology is locked.');
         }
         try {
-            return $this->releaseLocked($target);
+            return $this->releaseLocked($issue);
         } finally {
             $lock->release();
         }
     }
 
     /** @mago-expect lint:halstead Exact release evidence requires explicit ordered mutations. */
-    private function releaseLocked(TopologyTarget $target): ReleaseResult
+    private function releaseLocked(string $issue): ReleaseResult
     {
-        $issue = $target->issue;
         $retained = $this->state->read('releases/'.$issue.'.json');
         if ($retained !== null) {
             $previous = ReleaseResult::fromArray($retained);
@@ -62,26 +63,38 @@ final readonly class TopologyReleaser
                 $this->state->delete('release-pending/'.$issue.'.json');
             }
 
-            return $this->replay($target, $previous);
+            return $this->replay(null, $previous);
         }
+        $lease = $this->state->read('leases/'.$issue.'.json');
+        $leaseAttempt = $lease === null ? null : $this->leaseAttempt($lease);
         $pending = $this->state->read('release-pending/'.$issue.'.json');
         if ($pending !== null) {
-            return $this->replay($target, $this->finalizePending($target, $pending));
+            $pendingTarget = $leaseAttempt === null ? null : TopologyTarget::feature($issue, $leaseAttempt);
+
+            return $this->replay($pendingTarget, $this->finalizePending($issue, $pendingTarget, $pending));
         }
-        $topology = $this->manifests->read($target);
-        $lease = $this->state->read('leases/'.$issue.'.json');
+        $topology = $this->manifests->active($issue);
         if ($topology === null && $lease === null) {
             throw new RuntimeException('The exact feature topology manifest does not exist.');
         }
-        if ($lease === null || ($lease['issue'] ?? null) !== $issue || ! is_string($lease['operation_id'] ?? null)) {
+        if (
+            $lease === null
+            || ($lease['issue'] ?? null) !== $issue
+            || ! is_string($lease['operation_id'] ?? null)
+            || $leaseAttempt === null
+        ) {
             throw new RuntimeException('The exact topology lease is invalid before release.');
         }
         if (($lease['state'] ?? null) === 'acquiring') {
-            return $this->releaseAbandonedAcquisition($target, $lease);
+            return $this->releaseAbandonedAcquisition(TopologyTarget::feature($issue, $leaseAttempt), $lease);
         }
         if ($topology === null) {
             throw new RuntimeException('The exact feature topology manifest does not exist.');
         }
+        if ($topology->attempt->value !== $leaseAttempt->value) {
+            throw new RuntimeException('The topology lease and the active topology attempt do not match.');
+        }
+        $target = $topology->target;
         if (! in_array($lease['state'] ?? null, ['ready', 'syncing', 'failed'], true)) {
             throw new RuntimeException('The exact topology lease is invalid before release.');
         }
@@ -108,6 +121,7 @@ final readonly class TopologyReleaser
             $this->assertOwnership(
                 $instance->metadata,
                 $issue,
+                $topology->attempt,
                 $name,
                 $topology->generation->id,
                 $lease['operation_id'],
@@ -125,7 +139,14 @@ final readonly class TopologyReleaser
             $absent[] = $topology->network;
         }
         if ($network !== null) {
-            $this->assertOwnership($network->metadata, $issue, $target->network(), null, $lease['operation_id']);
+            $this->assertOwnership(
+                $network->metadata,
+                $issue,
+                $topology->attempt,
+                $target->network(),
+                null,
+                $lease['operation_id'],
+            );
         }
         $running = [];
         foreach (TopologyProfile::ROLES as $role) {
@@ -168,7 +189,7 @@ final readonly class TopologyReleaser
 
         $result = new ReleaseResult($this->operation->value, bin2hex(random_bytes(16)), $released, $absent);
         $leaseState = $this->state->read('leases/'.$issue.'.json');
-        $topologyState = $this->state->read('topologies/'.$issue.'.json');
+        $topologyState = $this->topologyState($topology);
         if ($topologyState === null) {
             throw new RuntimeException('The exact feature topology manifest disappeared before release finalization.');
         }
@@ -182,7 +203,7 @@ final readonly class TopologyReleaser
             'result' => $result->toArray(),
         ];
         $this->state->write('release-pending/'.$issue.'.json', $pending);
-        $this->finalizePending($target, $pending, resourcesVerifiedAbsent: true);
+        $this->finalizePending($issue, $target, $pending, resourcesVerifiedAbsent: true);
 
         return $result;
     }
@@ -193,6 +214,7 @@ final readonly class TopologyReleaser
         $required = [
             'schema',
             'issue',
+            'attempt',
             'state',
             'operation_id',
             'expires_at',
@@ -203,7 +225,7 @@ final readonly class TopologyReleaser
         if (
             array_diff(array_keys($lease), $required) !== []
             || array_diff($required, array_keys($lease)) !== []
-            || $lease['schema'] !== 1
+            || $lease['schema'] !== 2
             || ! is_int($lease['pid'])
             || ! is_string($lease['process_start_identity'])
             || ! is_string($lease['acquired_at'])
@@ -284,8 +306,8 @@ final readonly class TopologyReleaser
         if ($remainingInstances !== [] || $this->host->network($target->network()) !== null) {
             throw new RuntimeException('Abandoned acquisition resources remain after cleanup.');
         }
-        $this->state->delete('topologies/'.$target->issue.'.json');
-        $this->capacity?->release($target->issue, new OperationId($operationId));
+        $this->forgetTopology($target->issue);
+        $this->capacity?->release($target->issue, $target->requireAttempt(), new OperationId($operationId));
         $this->state->delete('leases/'.$target->issue.'.json');
         $result = new ReleaseResult(
             $this->operation->value,
@@ -323,33 +345,34 @@ final readonly class TopologyReleaser
 
     /** @param array<array-key, mixed> $pending */
     private function finalizePending(
-        TopologyTarget $target,
+        string $issue,
+        ?TopologyTarget $target,
         array $pending,
         bool $resourcesVerifiedAbsent = false,
     ): ReleaseResult {
-        $issue = $target->issue;
         $result = $this->pendingRelease($pending, $issue);
         $lease = $this->state->read('leases/'.$issue.'.json');
-        $topology = $this->state->read('topologies/'.$issue.'.json');
+        $topology = $this->manifests->active($issue);
+        $topologyState = $this->topologyState($topology);
         $this->assertPendingState($lease, $pending['lease_sha256']);
-        $this->assertPendingState($topology, $pending['topology_sha256']);
+        $this->assertPendingState($topologyState, $pending['topology_sha256']);
 
-        if (! $resourcesVerifiedAbsent) {
+        if (! $resourcesVerifiedAbsent && $target !== null) {
             $instances = array_map($target->instance(...), TopologyProfile::ROLES);
             if ($this->host->instances($instances) !== [] || $this->host->network($target->network()) !== null) {
                 throw new RuntimeException('Cannot finalize pending release while an exact topology resource exists.');
             }
         }
 
-        if ($lease !== null && is_string($lease['operation_id'] ?? null)) {
-            $this->capacity?->release($issue, new OperationId($lease['operation_id']));
+        if ($lease !== null && is_string($lease['operation_id'] ?? null) && $target !== null) {
+            $this->capacity?->release($issue, $target->requireAttempt(), new OperationId($lease['operation_id']));
         }
 
         if ($lease !== null) {
             $this->state->delete('leases/'.$issue.'.json');
         }
         if ($topology !== null) {
-            $this->state->delete('topologies/'.$issue.'.json');
+            $this->manifests->forgetActive($topology);
         }
         $this->state->write('releases/'.$issue.'.json', $result->toArray());
         $this->state->delete('release-pending/'.$issue.'.json');
@@ -409,11 +432,13 @@ final readonly class TopologyReleaser
         return hash('sha256', json_encode($state, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
     }
 
-    private function replay(TopologyTarget $target, ReleaseResult $previous): ReleaseResult
+    private function replay(?TopologyTarget $target, ReleaseResult $previous): ReleaseResult
     {
-        $names = array_map($target->instance(...), TopologyProfile::ROLES);
-        if ($this->host->instances($names) !== [] || $this->host->network($target->network()) !== null) {
-            throw new RuntimeException('Cannot replay retained evidence while an exact topology resource exists.');
+        if ($target !== null) {
+            $names = array_map($target->instance(...), TopologyProfile::ROLES);
+            if ($this->host->instances($names) !== [] || $this->host->network($target->network()) !== null) {
+                throw new RuntimeException('Cannot replay retained evidence while an exact topology resource exists.');
+            }
         }
 
         return new ReleaseResult(
@@ -426,12 +451,43 @@ final readonly class TopologyReleaser
 
     private function assertActiveArtifactsAbsent(string $issue): void
     {
-        foreach (['leases', 'topologies'] as $directory) {
-            $path = $this->paths->root().'/'.$directory.'/'.$issue.'.json';
+        $paths = [
+            $this->paths->root().'/leases/'.$issue.'.json',
+            $this->paths->root().'/topologies/'.$issue.'.json',
+            $this->paths->root().'/topologies/'.$issue.'/active.json',
+        ];
 
+        foreach ($paths as $path) {
             if (file_exists($path) || is_link($path)) {
                 throw new RuntimeException('Cannot replay retained evidence while active topology state exists.');
             }
+        }
+    }
+
+    /** @param array<array-key, mixed> $lease */
+    private function leaseAttempt(array $lease): ?AttemptId
+    {
+        $attempt = $lease['attempt'] ?? null;
+
+        if (! is_string($attempt) || preg_match('/\A[0-9a-f]{32}\z/D', $attempt) !== 1) {
+            return null;
+        }
+
+        return new AttemptId($attempt);
+    }
+
+    /** @return array<array-key, mixed>|null */
+    private function topologyState(?FeatureTopology $topology): ?array
+    {
+        return $topology?->toArray();
+    }
+
+    private function forgetTopology(string $issue): void
+    {
+        $topology = $this->manifests->active($issue);
+
+        if ($topology !== null) {
+            $this->manifests->forgetActive($topology);
         }
     }
 
@@ -439,6 +495,7 @@ final readonly class TopologyReleaser
     private function assertOwnership(
         array $metadata,
         string $issue,
+        AttemptId $attempt,
         string $resource,
         ?string $generation,
         string $operation,
@@ -446,6 +503,7 @@ final readonly class TopologyReleaser
         if (
             ($metadata['user.orbit.e2e.owner'] ?? null) !== 'orbit-e2e'
             || ($metadata['user.orbit.e2e.issue'] ?? null) !== $issue
+            || ($metadata['user.orbit.e2e.attempt'] ?? null) !== $attempt->value
             || $generation !== null
             && ($metadata['user.orbit.e2e.generation'] ?? null) !== $generation
             || ($metadata['user.orbit.e2e.operation'] ?? null) !== $operation
