@@ -17,7 +17,11 @@ use App\E2E\Value\VerificationReport;
 describe('StandbyManifestStore', function () {
     it('round-trips a typed generation with exact ordered snapshots', function () {
         $paths = new StatePaths(temporaryPath('orbit-standby-', 4));
-        $store = new StandbyManifestStore(new AtomicJsonStore($paths), $paths);
+        $store = new StandbyManifestStore(
+            $json = new AtomicJsonStore($paths),
+            $paths,
+            new TopologyManifestStore($json, $paths),
+        );
         $generation = new StandbyGeneration(
             'g1',
             str_repeat('a', 40),
@@ -86,14 +90,20 @@ describe('StandbyManifestStore', function () {
 
         $paths = new StatePaths(temporaryPath('orbit-standby-', 4));
         new AtomicJsonStore($paths)->write('standby/promoted.json', ['schema' => 99]);
-        expect(fn () => new StandbyManifestStore(new AtomicJsonStore($paths), $paths)->promoted())
+        expect(
+            fn () => new StandbyManifestStore(
+                $json = new AtomicJsonStore($paths),
+                $paths,
+                new TopologyManifestStore($json, $paths),
+            )->promoted(),
+        )
             ->toThrow(InvalidArgumentException::class);
     });
 
     it('retains current, previous, and topology-pinned generations when pruning', function () {
         $paths = new StatePaths(temporaryPath('orbit-standby-', 4));
         $json = new AtomicJsonStore($paths);
-        $store = new StandbyManifestStore($json, $paths);
+        $store = new StandbyManifestStore($json, $paths, new TopologyManifestStore($json, $paths));
         $old = standbyPruneGeneration('g1');
         $pinned = standbyPruneGeneration('g2');
         $previous = standbyPruneGeneration('g3');
@@ -110,7 +120,7 @@ describe('StandbyManifestStore', function () {
     it('never prunes the generation a live topology attempt pins', function () {
         $paths = new StatePaths(temporaryPath('orbit-standby-', 4));
         $json = new AtomicJsonStore($paths);
-        $store = new StandbyManifestStore($json, $paths);
+        $store = new StandbyManifestStore($json, $paths, new TopologyManifestStore($json, $paths));
         $pinned = standbyPruneGeneration('g1');
         $current = standbyPruneGeneration('g2');
         foreach ([$pinned, $current] as $item) {
@@ -124,7 +134,7 @@ describe('StandbyManifestStore', function () {
     it('fails closed when an active topology pointer cannot be resolved', function (Closure $corrupt) {
         $paths = new StatePaths(temporaryPath('orbit-standby-', 4));
         $json = new AtomicJsonStore($paths);
-        $store = new StandbyManifestStore($json, $paths);
+        $store = new StandbyManifestStore($json, $paths, new TopologyManifestStore($json, $paths));
         $pinned = standbyPruneGeneration('g1');
         $current = standbyPruneGeneration('g2');
         foreach ([$pinned, $current] as $item) {
@@ -152,7 +162,7 @@ describe('StandbyManifestStore', function () {
     it('fails closed when a manifest collection cannot be inspected', function (string $collection) {
         $paths = new StatePaths(temporaryPath('orbit-standby-', 4));
         $json = new AtomicJsonStore($paths);
-        $store = new StandbyManifestStore($json, $paths);
+        $store = new StandbyManifestStore($json, $paths, new TopologyManifestStore($json, $paths));
         $current = new StandbyGeneration(
             'g1',
             str_repeat('a', 40),
@@ -177,7 +187,11 @@ describe('StandbyManifestStore', function () {
 
     it('fails closed when a manifest collection is a broken symbolic link', function (string $collection) {
         $paths = new StatePaths(temporaryPath('orbit-standby-', 4));
-        $store = new StandbyManifestStore(new AtomicJsonStore($paths), $paths);
+        $store = new StandbyManifestStore(
+            $json = new AtomicJsonStore($paths),
+            $paths,
+            new TopologyManifestStore($json, $paths),
+        );
         $current = new StandbyGeneration(
             'g1',
             str_repeat('a', 40),

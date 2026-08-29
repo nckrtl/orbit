@@ -116,6 +116,7 @@ final class IncusHost implements GuestTransport
                     $statusCode,
                     $network,
                     $mac,
+                    $this->disks($resource, $name),
                 );
             }
         }
@@ -382,7 +383,7 @@ final class IncusHost implements GuestTransport
     }
 
     /**
-     * @param array<string, array{source:string,snapshot:string,target:string,metadata:array<string, string>,network?:string,role?:string,topology?:string,slot?:int}> $copies
+     * @param array<string, array{source:string,snapshot:string,target:string,metadata:array<string, string>,network?:string,role?:string,topology?:string,slot?:int,mount?:array{device:string,source:string,path:string}}> $copies
      * @return array<string, IncusInstance>
      */
     public function copySnapshots(array $copies): array
@@ -420,6 +421,7 @@ final class IncusHost implements GuestTransport
                 $copy['topology'] ?? null,
                 $copy['slot'] ?? null,
                 false,
+                $copy['mount'] ?? null,
             );
             [$commands[$label], $instances[$label]] = $copyResult;
         }
@@ -1511,7 +1513,41 @@ final class IncusHost implements GuestTransport
             $statusCode,
             $network,
             $mac,
+            $this->disks($resource, $name),
         );
+    }
+
+    /**
+     * Every non-root disk device with a host source: the exact mount identity release must re-check.
+     *
+     * @param array<array-key, mixed> $resource
+     * @return array<string, array{source:string,path:string}>
+     */
+    private function disks(array $resource, string $name): array
+    {
+        $devices = $resource['devices'] ?? $resource['expanded_devices'] ?? [];
+        if (! is_array($devices)) {
+            throw new RuntimeException("Incus instance {$name} has invalid devices.");
+        }
+        $disks = [];
+        foreach ($devices as $device => $configuration) {
+            if (
+                ! is_string($device)
+                || $device === 'root'
+                || ! is_array($configuration)
+                || ($configuration['type'] ?? null) !== 'disk'
+            ) {
+                continue;
+            }
+            $source = $configuration['source'] ?? null;
+            $path = $configuration['path'] ?? null;
+            if (! is_string($source) || ! is_string($path) || $source === '' || $path === '') {
+                throw new RuntimeException("Incus instance {$name} disk device {$device} identity is invalid.");
+            }
+            $disks[$device] = ['source' => $source, 'path' => $path];
+        }
+
+        return $disks;
     }
 
     private function validatedOwnedVm(string $name): IncusInstance
@@ -1711,6 +1747,7 @@ final class IncusHost implements GuestTransport
 
     /**
      * @param array<string, string> $acquisitionMetadata
+     * @param array{device:string,source:string,path:string}|null $mount A host directory attached as a virtiofs disk at copy time.
      * @return array{list<string>, IncusInstance}
      * @mago-expect lint:excessive-parameter-list Snapshot transfer inputs remain explicit at the Incus trust boundary.
      */
@@ -1724,6 +1761,7 @@ final class IncusHost implements GuestTransport
         ?string $topology = null,
         ?int $slot = null,
         bool $validateSource = true,
+        ?array $mount = null,
     ): array {
         $this->validateName($source, 'instance');
         $this->validateName($snapshot, 'snapshot');
@@ -1761,6 +1799,13 @@ final class IncusHost implements GuestTransport
             $configuration[] = '--device';
             $configuration[] = 'eth0,hwaddr='.$this->deterministicMac($topology, $role);
         }
+        $disks = [];
+        if ($mount !== null) {
+            $this->validateMount($mount);
+            $configuration[] = '--device';
+            $configuration[] = "{$mount['device']},type=disk,source={$mount['source']},path={$mount['path']}";
+            $disks[$mount['device']] = ['source' => $mount['source'], 'path' => $mount['path']];
+        }
 
         return [
             [
@@ -1779,8 +1824,37 @@ final class IncusHost implements GuestTransport
                 'root,size='.$this->incusLimit('root_size', '16GiB'),
                 ...$configuration,
             ],
-            new IncusInstance($this->remote, $this->project, $target, $this->pool, $metadata),
+            new IncusInstance($this->remote, $this->project, $target, $this->pool, $metadata, disks: $disks),
         ];
+    }
+
+    /**
+     * A source mount must name an existing host directory; the guest path and the
+     * device name are passed to Incus verbatim, so they must be free of separators.
+     *
+     * @param array{device:string,source:string,path:string} $mount
+     */
+    private function validateMount(array $mount): void
+    {
+        $this->validateName($mount['device'], 'device');
+        if ($mount['device'] === 'root' || $mount['device'] === 'eth0') {
+            throw new RuntimeException('Invalid Incus device identity.');
+        }
+        foreach (['source', 'path'] as $key) {
+            $value = $mount[$key];
+            if (
+                ! str_starts_with($value, '/')
+                || str_contains($value, "\0")
+                || str_contains($value, "\n")
+                || str_contains($value, ',')
+                || str_contains($value, '=')
+            ) {
+                throw new RuntimeException("Invalid Incus mount {$key}.");
+            }
+        }
+        if (is_link($mount['source']) || ! is_dir($mount['source'])) {
+            throw new RuntimeException('The Incus mount source must be an existing directory.');
+        }
     }
 
     private function networkSlot(IncusNetwork $network): int
@@ -1807,7 +1881,8 @@ final class IncusHost implements GuestTransport
      *     network?:string,
      *     role?:string,
      *     topology?:string,
-     *     slot?:int
+     *     slot?:int,
+     *     mount?:array{device:string,source:string,path:string}
      * }> $copies
      */
     private function validateSnapshotCopies(array $copies): void

@@ -1314,4 +1314,73 @@ describe('convergence guest scripts', function () {
             ->toHaveCount(1);
         expect(fileperms("{$root}/etc/caddy/Caddyfile.orbit-e2e") & 0o777)->toBe(0o644);
     });
+    it('compares mounted source probes against the host marker instead of guest git', function () {
+        $root = temporaryPath('orbit-verifier-mounted-', 4);
+        mkdir("{$root}/bin", 0o700, true);
+        $sha = str_repeat('a', 40);
+        $tree = str_repeat('b', 64);
+        $marker = "{$root}/source-state";
+        file_put_contents(
+            "{$root}/bin/git",
+            "#!/usr/bin/env bash\nprintf 'guest-git-ran\\n' >> '{$root}/git-ran'\nexit 1\n",
+        );
+        chmod("{$root}/bin/git", 0o700);
+        $script = str_replace(
+            'source_marker=/var/lib/orbit-e2e/source-state',
+            "source_marker={$marker}",
+            file_get_contents(dirname(__DIR__, 3).'/resources/guest/verify-topology.sh'),
+        );
+        file_put_contents("{$root}/verify.sh", $script);
+        chmod("{$root}/verify.sh", 0o700);
+        $environment = ['PATH' => "{$root}/bin:".getenv('PATH')];
+        $run = static fn (array $arguments): Process => new Process(
+            ['bash', "{$root}/verify.sh", ...$arguments],
+            env: $environment,
+        );
+
+        try {
+            file_put_contents($marker, json_encode(['sha' => $sha, 'tree' => $tree, 'mounted' => true])."\n");
+            $evidence = json_decode(
+                $run(['source.gateway', 'readiness', $sha, 'orbit-e2e-x-gateway'])->mustRun()->getOutput(),
+                true,
+                16,
+                JSON_THROW_ON_ERROR,
+            );
+            expect($evidence)->toMatchArray(['probe' => 'source.gateway', 'expected' => $sha, 'observed' => $sha]);
+
+            $manifest = json_decode(
+                $run(['source.manifest', 'readiness', $sha, 'orbit-e2e-x-gateway', $tree, ''])->mustRun()->getOutput(),
+                true,
+                16,
+                JSON_THROW_ON_ERROR,
+            );
+            expect($manifest)->toMatchArray(['expected' => "{$sha}:{$tree}", 'observed' => "{$sha}:{$tree}"]);
+
+            $clean = json_decode(
+                $run(['source.manifest', 'readiness', $sha, 'orbit-e2e-x-gateway', '-', ''])->mustRun()->getOutput(),
+                true,
+                16,
+                JSON_THROW_ON_ERROR,
+            );
+            expect($clean)->toMatchArray(['expected' => "{$sha}:{$tree}"]);
+
+            expect($run(['source.gateway', 'readiness', str_repeat('c', 40), 'orbit-e2e-x-gateway'])->run())
+                ->not->toBe(0)->and(
+                    $run(['source.manifest', 'readiness', $sha, 'orbit-e2e-x-gateway', str_repeat('d', 64), ''])->run(),
+                )
+                ->not->toBe(0);
+
+            file_put_contents($marker, json_encode(['sha' => $sha, 'tree' => $tree, 'mounted' => false])."\n");
+            expect($run(['source.gateway', 'readiness', $sha, 'orbit-e2e-x-gateway'])->run())->not->toBe(0);
+
+            file_put_contents($marker, "{malformed\n");
+            expect($run(['source.manifest', 'readiness', $sha, 'orbit-e2e-x-gateway', $tree, ''])->run())
+                ->not
+                ->toBe(0)
+                ->and(file_exists("{$root}/git-ran"))
+                ->toBeFalse();
+        } finally {
+            new Illuminate\Filesystem\Filesystem()->deleteDirectory($root);
+        }
+    });
 });

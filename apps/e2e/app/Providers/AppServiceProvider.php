@@ -14,6 +14,7 @@ use App\E2E\LegacyIncusRevalidator;
 use App\E2E\LegacyRetirement;
 use App\E2E\LegacyRetirementHost;
 use App\E2E\PreparedStateFingerprint;
+use App\E2E\ReleaseReceiptStore;
 use App\E2E\StandbyBuilder;
 use App\E2E\StandbyManifestStore;
 use App\E2E\StandbyRefresher;
@@ -147,6 +148,7 @@ final class AppServiceProvider extends ServiceProvider
             $app->make(StatePaths::class),
             $app->make(OperationId::class),
             $app->make(HostCapacity::class),
+            receipts: $app->make(ReleaseReceiptStore::class),
         ));
 
         $this->app->singleton(StandbyBuilder::class, fn (Application $app): StandbyBuilder => new StandbyBuilder(

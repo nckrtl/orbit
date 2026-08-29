@@ -15,6 +15,7 @@ use App\E2E\StandbyRefresher;
 use App\E2E\State\AtomicJsonStore;
 use App\E2E\State\OperationLock;
 use App\E2E\State\StatePaths;
+use App\E2E\TopologyManifestStore;
 use App\E2E\Value\LaravelRelease;
 use App\E2E\Value\StandbyGeneration;
 use Illuminate\Process\PendingProcess;
@@ -43,7 +44,7 @@ function bindPromotedStandby(StandbyGeneration $generation): void
 {
     $paths = new StatePaths(temporaryPath('orbit-standby-command-', 8));
     $store = new AtomicJsonStore($paths);
-    $manifests = new StandbyManifestStore($store, $paths);
+    $manifests = new StandbyManifestStore($store, $paths, new TopologyManifestStore($store, $paths));
     $manifests->promote($generation);
     app()->instance(StandbyManifestStore::class, $manifests);
 }

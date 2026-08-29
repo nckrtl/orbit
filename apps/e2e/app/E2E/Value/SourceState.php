@@ -17,6 +17,7 @@ final readonly class SourceState
         public ?string $treeHash = null,
         public array $overlayPaths = [],
         public ?string $operationId = null,
+        public bool $mounted = false,
     ) {
         foreach ([$hostSha, $guestSha] as $sha) {
             if (preg_match('/\A[a-f0-9]{40}\z/D', $sha) !== 1) {
@@ -43,7 +44,7 @@ final readonly class SourceState
         }
     }
 
-    /** @return array{host_sha:string,guest_sha:string,dirty:bool,tree_hash:?string,overlay_paths:list<string>,operation_id:?string} */
+    /** @return array{host_sha:string,guest_sha:string,dirty:bool,tree_hash:?string,overlay_paths:list<string>,operation_id:?string,mounted:bool} */
     public function toArray(): array
     {
         return [
@@ -53,6 +54,7 @@ final readonly class SourceState
             'tree_hash' => $this->treeHash,
             'overlay_paths' => $this->overlayPaths,
             'operation_id' => $this->operationId,
+            'mounted' => $this->mounted,
         ];
     }
 
@@ -60,7 +62,15 @@ final readonly class SourceState
     public static function fromArray(array $value): self
     {
         if (
-            array_keys($value) !== ['host_sha', 'guest_sha', 'dirty', 'tree_hash', 'overlay_paths', 'operation_id']
+            array_keys($value) !== [
+                'host_sha',
+                'guest_sha',
+                'dirty',
+                'tree_hash',
+                'overlay_paths',
+                'operation_id',
+                'mounted',
+            ]
             || ! is_string($value['host_sha'])
             || ! is_string($value['guest_sha'])
             || ! is_bool($value['dirty'])
@@ -69,6 +79,7 @@ final readonly class SourceState
             || ! is_array($value['overlay_paths'])
             || $value['operation_id'] !== null
             && ! is_string($value['operation_id'])
+            || ! is_bool($value['mounted'])
         ) {
             throw new InvalidArgumentException('The source state schema is invalid.');
         }
@@ -89,6 +100,7 @@ final readonly class SourceState
             $value['tree_hash'],
             $overlayPaths,
             $value['operation_id'],
+            $value['mounted'],
         );
     }
 }

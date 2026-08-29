@@ -15,6 +15,7 @@ final readonly class StandbyManifestStore
     public function __construct(
         private AtomicJsonStore $store,
         private StatePaths $paths,
+        private TopologyManifestStore $topologies,
     ) {}
 
     public function promoted(): ?StandbyGeneration
@@ -62,7 +63,7 @@ final readonly class StandbyManifestStore
             $protected[] = $current->previousGenerationId;
         }
 
-        foreach (new TopologyManifestStore($this->store, $this->paths)->activeGenerationIds() as $generationId) {
+        foreach ($this->topologies->activeGenerationIds() as $generationId) {
             $protected[] = $generationId;
         }
 

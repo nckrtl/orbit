@@ -15,6 +15,7 @@ use App\E2E\State\OperationJournal;
 use App\E2E\State\OperationLock;
 use App\E2E\State\StatePaths;
 use App\E2E\TopologyConverger;
+use App\E2E\TopologyManifestStore;
 use App\E2E\TopologyVerifier;
 use App\E2E\Value\LaravelRelease;
 use App\E2E\Value\MigrationPlan;
@@ -49,7 +50,7 @@ function standbyRefresherForPowerTests(
     $verifier = new TopologyVerifier($host, 1, 0);
     $paths ??= new StatePaths(temporaryPath('orbit-refresh-', 4));
     $state ??= new AtomicJsonStore($paths);
-    $manifests ??= new StandbyManifestStore($state, $paths);
+    $manifests ??= new StandbyManifestStore($state, $paths, new TopologyManifestStore($state, $paths));
 
     return new StandbyRefresher(
         $host,
@@ -197,7 +198,7 @@ function standbyRestoreFixture(bool $corrupt = true): array
 {
     $paths = new StatePaths(temporaryPath('orbit-refresher-', 4));
     $state = new AtomicJsonStore($paths);
-    $manifests = new StandbyManifestStore($state, $paths);
+    $manifests = new StandbyManifestStore($state, $paths, new TopologyManifestStore($state, $paths));
     if ($corrupt) {
         $state->write('standby/corrupt.json', ['schema' => 1, 'message' => 'restore required']);
     }
@@ -648,7 +649,7 @@ describe('StandbyRefresher contracts', function () {
     it('returns terminal failure with evidence when standby generation is locked', function () {
         $paths = new StatePaths(temporaryPath('orbit-refresh-lock-', 4));
         $state = new AtomicJsonStore($paths);
-        $manifests = new StandbyManifestStore($state, $paths);
+        $manifests = new StandbyManifestStore($state, $paths, new TopologyManifestStore($state, $paths));
         $root = dirname(__DIR__, 4);
         $host = new IncusHost(pool: 'orbit-e2e');
         $git = new GitRepository($root);
@@ -876,7 +877,7 @@ describe('StandbyRefresher contracts', function () {
             $desiredFingerprint = new PreparedStateFingerprint($git)->forCommit($newSha, $release);
             $paths = new StatePaths(temporaryPath('orbit-refresh-migration-state-', 4));
             $state = new AtomicJsonStore($paths);
-            $manifests = new StandbyManifestStore($state, $paths);
+            $manifests = new StandbyManifestStore($state, $paths, new TopologyManifestStore($state, $paths));
             $manifests->promote(new StandbyGeneration(
                 'old-generation',
                 $oldSha,
@@ -1055,7 +1056,7 @@ describe('StandbyRefresher contracts', function () {
             $structural = new PreparedStateFingerprint($git)->forCommit($mainSha);
             $paths = new StatePaths(temporaryPath('orbit-refresh-stopped-', 4));
             $state = new AtomicJsonStore($paths);
-            $manifests = new StandbyManifestStore($state, $paths);
+            $manifests = new StandbyManifestStore($state, $paths, new TopologyManifestStore($state, $paths));
             $manifests->promote(new \App\E2E\Value\StandbyGeneration(
                 'stopped-test',
                 $mainSha,
@@ -1179,7 +1180,7 @@ describe('StandbyRefresher contracts', function () {
             $newSha = $git->commit('HEAD');
             $paths = new StatePaths(temporaryPath('orbit-refresh-cold-state-', 4));
             $state = new AtomicJsonStore($paths);
-            $manifests = new StandbyManifestStore($state, $paths);
+            $manifests = new StandbyManifestStore($state, $paths, new TopologyManifestStore($state, $paths));
             $generation = new \App\E2E\Value\StandbyGeneration(
                 'old-generation',
                 $oldSha,
@@ -1366,7 +1367,7 @@ describe('StandbyRefresher contracts', function () {
     it('clears the corrupt marker only after an exact restore succeeds', function () {
         $paths = new StatePaths(temporaryPath('orbit-refresher-', 4));
         $state = new AtomicJsonStore($paths);
-        $manifests = new StandbyManifestStore($state, $paths);
+        $manifests = new StandbyManifestStore($state, $paths, new TopologyManifestStore($state, $paths));
         $state->write('standby/corrupt.json', ['schema' => 1, 'message' => 'restore required']);
         $generation = new \App\E2E\Value\StandbyGeneration(
             'g-'.str_repeat('a', 12),

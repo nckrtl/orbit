@@ -2699,4 +2699,145 @@ describe('IncusHost failures', function () {
             ->toThrow(RuntimeException::class, 'ownership metadata');
         Process::assertNothingRan();
     });
+    it('attaches a validated host worktree as the source disk device at copy time', function () {
+        $worktree = temporaryPath('orbit-incus-mount-', 4);
+        mkdir($worktree, 0700, true);
+        Process::fake(function (PendingProcess $process) {
+            if ($process->command === incusCommand('list', incusTarget(), '--format=json')) {
+                return Process::result(json_encode([
+                    json_decode(vmJson('orbit-e2e-standby-gateway'), true, 16, JSON_THROW_ON_ERROR)[0],
+                ], JSON_THROW_ON_ERROR));
+            }
+            if (array_slice($process->command, 3, 2) === ['snapshot', 'list']) {
+                return Process::result(snapshotJson('main-g1'));
+            }
+
+            return Process::result();
+        });
+
+        $instances = incusHost()->copySnapshots([
+            'gateway' => [
+                'source' => 'orbit-e2e-standby-gateway',
+                'snapshot' => 'main-g1',
+                'target' => 'orbit-e2e-nck-123-aaaaaaaa-gateway',
+                'metadata' => ['user.orbit.e2e.operation' => 'op-1'],
+                'network' => 'oe-b32d6c83af72',
+                'role' => 'gateway',
+                'topology' => 'oe-b32d6c83af72',
+                'slot' => 30,
+                'mount' => ['device' => 'orbit-source', 'source' => $worktree, 'path' => '/home/orbit/orbit'],
+            ],
+        ]);
+
+        expect($instances['gateway']->disks)
+            ->toBe(['orbit-source' => ['source' => $worktree, 'path' => '/home/orbit/orbit']]);
+        Process::assertRan(incusCommand(
+            'copy',
+            incusTarget('orbit-e2e-standby-gateway').'/main-g1',
+            incusTarget('orbit-e2e-nck-123-aaaaaaaa-gateway'),
+            '--storage',
+            'orbit-e2e',
+            '--config',
+            'limits.cpu=1',
+            '--config',
+            'limits.memory=2GiB',
+            '--device',
+            'root,pool=orbit-e2e',
+            '--device',
+            'root,size=16GiB',
+            '--config',
+            'user.orbit.e2e.owner=orbit-e2e',
+            '--config',
+            'user.orbit.e2e.operation=op-1',
+            '--device',
+            'eth0,network=oe-b32d6c83af72',
+            '--device',
+            'eth0,ipv4.address=10.232.30.10',
+            '--device',
+            'eth0,hwaddr=00:16:3e:a1:e4:eb',
+            '--device',
+            'orbit-source,type=disk,source='.$worktree.',path=/home/orbit/orbit',
+        ));
+    });
+
+    it('rejects an unsafe or missing source mount before copying', function (array $mount, string $message) {
+        Process::fake(function (PendingProcess $process) {
+            if ($process->command === incusCommand('list', incusTarget(), '--format=json')) {
+                return Process::result(json_encode([
+                    json_decode(vmJson('orbit-e2e-standby-gateway'), true, 16, JSON_THROW_ON_ERROR)[0],
+                ], JSON_THROW_ON_ERROR));
+            }
+            if (array_slice($process->command, 3, 2) === ['snapshot', 'list']) {
+                return Process::result(snapshotJson('main-g1'));
+            }
+
+            return Process::result();
+        });
+
+        expect(fn () => incusHost()->copySnapshots([
+            'gateway' => [
+                'source' => 'orbit-e2e-standby-gateway',
+                'snapshot' => 'main-g1',
+                'target' => 'orbit-e2e-nck-123-aaaaaaaa-gateway',
+                'metadata' => [],
+                'mount' => $mount,
+            ],
+        ]))
+            ->toThrow(RuntimeException::class, $message);
+        Process::assertNotRan(static fn (PendingProcess $process): bool => ($process->command[3] ?? null) === 'copy');
+    })->with([
+        'relative source' => [
+            ['device' => 'orbit-source', 'source' => 'relative', 'path' => '/home/orbit/orbit'],
+            'mount source',
+        ],
+        'comma in source' => [
+            ['device' => 'orbit-source', 'source' => '/tmp/a,b', 'path' => '/home/orbit/orbit'],
+            'mount source',
+        ],
+        'newline in path' => [
+            ['device' => 'orbit-source', 'source' => '/tmp', 'path' => "/home/orbit\n/orbit"],
+            'mount path',
+        ],
+        'missing directory' => [
+            ['device' => 'orbit-source', 'source' => '/nonexistent/orbit-worktree', 'path' => '/home/orbit/orbit'],
+            'existing directory',
+        ],
+        'root device' => [['device' => 'root', 'source' => '/tmp', 'path' => '/home/orbit/orbit'], 'device identity'],
+        'bad device name' => [
+            ['device' => 'orbit source', 'source' => '/tmp', 'path' => '/home/orbit/orbit'],
+            'device identity',
+        ],
+    ]);
+
+    it('reads every non-root disk device from the instance inventory', function () {
+        $resource = json_decode(vmJson('orbit-e2e-nck-123-aaaaaaaa-gateway'), true, 16, JSON_THROW_ON_ERROR)[0];
+        $resource['devices']['orbit-source'] = [
+            'type' => 'disk',
+            'source' => '/srv/worktrees/nck-123',
+            'path' => '/home/orbit/orbit',
+        ];
+        $resource['devices']['eth1'] = ['type' => 'nic', 'network' => 'oe-other'];
+        Process::fake(['*' => Process::result(json_encode([$resource], JSON_THROW_ON_ERROR))]);
+
+        $instance = incusHost()->instance('orbit-e2e-nck-123-aaaaaaaa-gateway');
+        $inventory = incusHost()->instances(['orbit-e2e-nck-123-aaaaaaaa-gateway']);
+
+        expect($instance?->disks)
+            ->toBe(['orbit-source' => ['source' => '/srv/worktrees/nck-123', 'path' => '/home/orbit/orbit']])
+            ->and($instance?->disk('orbit-source'))
+            ->toBe(['source' => '/srv/worktrees/nck-123', 'path' => '/home/orbit/orbit'])
+            ->and($instance?->disk('missing'))
+            ->toBeNull()
+            ->and($inventory['orbit-e2e-nck-123-aaaaaaaa-gateway']->disks)
+            ->toBe($instance?->disks);
+    });
+
+    it('rejects a disk device without an exact source and path', function () {
+        $resource = json_decode(vmJson('orbit-e2e-nck-123-aaaaaaaa-gateway'), true, 16, JSON_THROW_ON_ERROR)[0];
+        $resource['devices']['orbit-source'] = ['type' => 'disk', 'source' => '/srv/worktrees/nck-123'];
+        Process::fake(['*' => Process::result(json_encode([$resource], JSON_THROW_ON_ERROR))]);
+
+        expect(fn () => incusHost()->instance('orbit-e2e-nck-123-aaaaaaaa-gateway'))
+            ->toThrow(RuntimeException::class, 'disk device orbit-source identity is invalid');
+    });
 });

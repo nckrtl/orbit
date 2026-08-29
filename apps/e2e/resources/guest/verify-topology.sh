@@ -26,6 +26,12 @@ repo_git() {
     "$@"
   fi
 }
+# A discovery topology mounts the host worktree over the checkout; its `.git` is a
+# pointer file the guest cannot read, so the host records the exact identity here.
+source_marker=/var/lib/orbit-e2e/source-state
+mounted_source_state() {
+  /usr/bin/php -r '$state = json_decode(file_get_contents($argv[1]), true, 8, JSON_THROW_ON_ERROR); if (($state["mounted"] ?? null) !== true) exit(66); $sha = $state["sha"] ?? null; $tree = $state["tree"] ?? null; if (!is_string($sha) || !preg_match("/\\A[0-9a-f]{40}\\z/D", $sha) || !is_string($tree) || !preg_match("/\\A[0-9a-f]{64}\\z/D", $tree)) exit(65); echo $sha, " ", $tree, "\n";' -- "$1"
+}
 
 case "$probe" in
   vm.gateway.running|vm.app-dev.running|vm.app-prod.running) state=$(systemctl is-system-running 2>/dev/null) || { [[ "$state" == degraded ]] || exit 1; }; expected='running|degraded'; observed=$state; [[ "$state" == running || "$state" == degraded ]] ;;
@@ -70,35 +76,53 @@ case "$probe" in
   laravel.dev) [[ -f /home/orbit/apps/laravel/artisan ]] && php /home/orbit/apps/laravel/artisan --version >/dev/null; expected='app-dev-laravel:operational'; observed=$expected ;;
   laravel.prod) [[ -f /var/www/laravel/e2e-prod/artisan ]] && php /var/www/laravel/e2e-prod/artisan --version >/dev/null && curl --fail --silent --show-error --retry 10 --retry-delay 2 --retry-connrefused --retry-all-errors --connect-timeout 10 --max-time 30 --cacert "$(cat /var/lib/orbit-e2e/caddy-ca-path)" --resolve laravel.internal:443:127.0.0.1 https://laravel.internal/ >/dev/null; expected='app-prod-laravel:https-operational'; observed=$expected ;;
   workspace.app-dev) [[ -d /home/orbit/.orbit/worktrees/laravel/e2e && -f /home/orbit/.orbit/worktrees/laravel/e2e/artisan ]]; expected='app-dev-workspace:operational'; observed=$expected ;;
-  source.gateway|source.app-dev) source_sha=$(repo_git git -C /home/orbit/orbit rev-parse HEAD 2>/dev/null); expected=$identity; observed=$source_sha; [[ "$observed" == "$expected" ]] ;;
+  source.gateway|source.app-dev)
+    if [[ -f "$source_marker" ]]; then
+      read -r source_sha _ < <(mounted_source_state "$source_marker")
+    else
+      source_sha=$(repo_git git -C /home/orbit/orbit rev-parse HEAD 2>/dev/null)
+    fi
+    expected=$identity; observed=$source_sha; [[ "$observed" == "$expected" ]] ;;
   source.manifest)
     repo=/home/orbit/orbit
     expected_tree=$5
     expected_manifest=$6
     [[ "$expected_tree" == - || "$expected_tree" =~ ^[0-9a-f]{64}$ ]]
     [[ "$expected_manifest" =~ ^[A-Za-z0-9+/]*={0,2}$ ]]
-    [[ -f "$repo/.git/orbit-overlay.paths" && -f "$repo/.git/orbit-source-state" ]]
-    printf '%s' "$expected_manifest" | base64 --decode | cmp -s - "$repo/.git/orbit-overlay.paths"
-    read -r marker_sha marker_tree < <(/usr/bin/php -r '$state = json_decode(file_get_contents($argv[1]), true, 8, JSON_THROW_ON_ERROR); $sha = $state["sha"] ?? null; $tree = $state["tree"] ?? null; if (!is_string($sha) || !preg_match("/\\A[0-9a-f]{40}\\z/D", $sha) || !is_string($tree) || !preg_match("/\\A[0-9a-f]{64}\\z/D", $tree)) exit(65); echo $sha, " ", $tree, "\n";' -- "$repo/.git/orbit-source-state")
-    [[ "$marker_sha" == "$identity" ]]
-    index=$(repo_git mktemp)
-    trap 'rm -f -- "$index"' EXIT
-    rm -f -- "$index"
-    repo_git env GIT_INDEX_FILE="$index" git -C "$repo" read-tree HEAD
-    repo_git env GIT_INDEX_FILE="$index" git -C "$repo" add -A -- .
-    actual_tree=$(repo_git env GIT_INDEX_FILE="$index" git -C "$repo" write-tree)
-    actual_tree_hash=$(printf '%s' "$actual_tree" | sha256sum | cut -d ' ' -f 1)
-    rm -f -- "$index"
-    trap - EXIT
-    [[ "$marker_tree" == "$actual_tree_hash" ]]
-    if [[ "$expected_tree" == - ]]; then
-      [[ -z "$(git -C "$repo" status --porcelain=v1 --untracked-files=all)" ]]
-      expected_tree=$actual_tree_hash
+    if [[ -f "$source_marker" ]]; then
+      read -r marker_sha marker_tree < <(mounted_source_state "$source_marker")
+      [[ "$marker_sha" == "$identity" ]]
+      if [[ "$expected_tree" == - ]]; then
+        expected_tree=$marker_tree
+      else
+        [[ "$marker_tree" == "$expected_tree" ]]
+      fi
+      expected="$identity:$expected_tree"
+      observed="$marker_sha:$marker_tree"
     else
-      [[ "$actual_tree_hash" == "$expected_tree" ]]
+      [[ -f "$repo/.git/orbit-overlay.paths" && -f "$repo/.git/orbit-source-state" ]]
+      printf '%s' "$expected_manifest" | base64 --decode | cmp -s - "$repo/.git/orbit-overlay.paths"
+      read -r marker_sha marker_tree < <(/usr/bin/php -r '$state = json_decode(file_get_contents($argv[1]), true, 8, JSON_THROW_ON_ERROR); $sha = $state["sha"] ?? null; $tree = $state["tree"] ?? null; if (!is_string($sha) || !preg_match("/\\A[0-9a-f]{40}\\z/D", $sha) || !is_string($tree) || !preg_match("/\\A[0-9a-f]{64}\\z/D", $tree)) exit(65); echo $sha, " ", $tree, "\n";' -- "$repo/.git/orbit-source-state")
+      [[ "$marker_sha" == "$identity" ]]
+      index=$(repo_git mktemp)
+      trap 'rm -f -- "$index"' EXIT
+      rm -f -- "$index"
+      repo_git env GIT_INDEX_FILE="$index" git -C "$repo" read-tree HEAD
+      repo_git env GIT_INDEX_FILE="$index" git -C "$repo" add -A -- .
+      actual_tree=$(repo_git env GIT_INDEX_FILE="$index" git -C "$repo" write-tree)
+      actual_tree_hash=$(printf '%s' "$actual_tree" | sha256sum | cut -d ' ' -f 1)
+      rm -f -- "$index"
+      trap - EXIT
+      [[ "$marker_tree" == "$actual_tree_hash" ]]
+      if [[ "$expected_tree" == - ]]; then
+        [[ -z "$(git -C "$repo" status --porcelain=v1 --untracked-files=all)" ]]
+        expected_tree=$actual_tree_hash
+      else
+        [[ "$actual_tree_hash" == "$expected_tree" ]]
+      fi
+      expected="$identity:$expected_tree"
+      observed="$marker_sha:$actual_tree_hash"
     fi
-    expected="$identity:$expected_tree"
-    observed="$marker_sha:$actual_tree_hash"
     ;;
   operator.app-dev) sudo -u orbit -- env HOME=/home/orbit ORBIT_HOME=/home/orbit/.orbit DB_DATABASE=/home/orbit/.orbit/gateway.sqlite /home/orbit/orbit/apps/cli/orbit gateway:status --json >/dev/null; expected='gateway:status=available'; observed=$expected ;;
   *) exit 64 ;;

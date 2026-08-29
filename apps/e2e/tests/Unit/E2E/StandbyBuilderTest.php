@@ -9,6 +9,7 @@ use App\E2E\StandbyManifestStore;
 use App\E2E\State\AtomicJsonStore;
 use App\E2E\State\StatePaths;
 use App\E2E\TopologyConverger;
+use App\E2E\TopologyManifestStore;
 use App\E2E\TopologyVerifier;
 use App\E2E\Value\LaravelRelease;
 use App\E2E\Value\OperationId;
@@ -38,7 +39,7 @@ function cold_cleanup_builder(IncusHost $host, AtomicJsonStore $state, StatePath
         $uninitialized(WorktreeSynchronizer::class),
         $uninitialized(TopologyConverger::class),
         $uninitialized(TopologyVerifier::class),
-        new StandbyManifestStore($state, $paths),
+        new StandbyManifestStore($state, $paths, new TopologyManifestStore($state, $paths)),
         $state,
         $paths,
         __DIR__,
@@ -130,7 +131,7 @@ describe('StandbyBuilder', function () {
         $uninitialized = fn (string $class): object => new ReflectionClass($class)->newInstanceWithoutConstructor();
         $paths = new StatePaths(temporaryPath('orbit-builder-', 4));
         $state = new AtomicJsonStore($paths);
-        $manifests = new StandbyManifestStore($state, $paths);
+        $manifests = new StandbyManifestStore($state, $paths, new TopologyManifestStore($state, $paths));
         $builder = new StandbyBuilder(
             $uninitialized(IncusHost::class),
             $uninitialized(IncusNetworkLifecycle::class),

@@ -43,7 +43,7 @@ it('successful verify persists the returned verification report', function () {
     $events = [];
     fakePinnedWorktreeProcesses(featureTarget('NCK-123'), $events);
 
-    $verified = taskNineAcquirer($repositoryRoot, $paths)->verify('NCK-123');
+    $verified = taskNineAcquirer($repositoryRoot, $paths)->verify('NCK-123', attemptId());
     $persisted = new TopologyManifestStore(new AtomicJsonStore($paths), $paths)->active('NCK-123');
 
     expect($verified->verification->probes)
@@ -87,6 +87,7 @@ it('journals successful execution with redacted argv and output without persisti
         redactor: $redactor,
     )->execute(
         'NCK-123',
+        attemptId(),
         'gateway',
         ['tool', '--token', 'token-value', '--password=password-value', 'https://user:pass@example.test'],
         'stdin-secret',
@@ -162,7 +163,7 @@ it('nonzero execute writes a completed topology.exec entry', function () {
         $paths,
         journal: $journal,
         redactor: $redactor,
-    )->execute('NCK-123', 'gateway', ['tool']);
+    )->execute('NCK-123', attemptId(), 'gateway', ['tool']);
     $entries = $journal->entries(new OperationId(str_repeat('a', 32)));
 
     expect($result->exitCode)
@@ -220,6 +221,7 @@ it('rejects a replaced VM before guest execution', function (string $mismatch) {
 
     expect(fn () => taskNineAcquirer($repositoryRoot, $paths)->execute(
         'NCK-123',
+        attemptId(),
         'gateway',
         ['tool'],
     ))
@@ -227,6 +229,259 @@ it('rejects a replaced VM before guest execution', function (string $mismatch) {
         ->and($executed)
         ->toBeFalse();
 })->with(['owner', 'issue', 'generation', 'network']);
+
+/** One promoted generation for the fixture repository, so discovery acquisition can start. */
+function promoteDiscoveryGeneration(string $repositoryRoot, StatePaths $paths): void
+{
+    $store = new AtomicJsonStore($paths);
+    $prepared = topologyFinalPreparedFingerprint($repositoryRoot);
+    $mainSha = new GitRepository($repositoryRoot)->commit();
+    $structural = new PreparedStateFingerprint(new GitRepository($repositoryRoot))->forCommit($mainSha);
+    new StandbyManifestStore($store, $paths, new TopologyManifestStore($store, $paths))->promote(new StandbyGeneration(
+        substr($mainSha, 0, 12).'-'.substr($prepared->value, 0, 12),
+        $mainSha,
+        ['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod'],
+        $prepared->value,
+        str_repeat('b', 64),
+        topologyPromotedLaravel(),
+        $structural->value,
+        $structural->manifest['schema'],
+        $structural->manifest['cold_epoch'],
+        $structural->manifest['base_image_alias'],
+        $structural->manifest['topology']['profile'],
+        $structural->manifest['topology']['roles'],
+        $structural->manifest['topology']['checkout_roles'],
+    ));
+}
+
+it('refuses discovery before any Incus mutation when a vendor autoload is missing', function (string $project) {
+    $repositoryRoot = preparedTopologyRepository();
+    $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));
+    $worktree = pinnedFeatureWorktree($repositoryRoot, 'vendor');
+    promoteDiscoveryGeneration($repositoryRoot, $paths);
+    unlink($worktree.'/'.$project.'/vendor/autoload.php');
+    $events = [];
+    fakePinnedWorktreeProcesses(featureTarget('NCK-123'), $events);
+
+    try {
+        expect(fn () => taskNineAcquirer($repositoryRoot, $paths)->acquireDiscovery(
+            new TopologyRequest('NCK-123', $worktree),
+        ))
+            ->toThrow(RuntimeException::class, "missing {$project}/vendor/autoload.php; run bin/bootstrap")
+            ->and(collect($events)->contains(
+                static fn (array $command): bool => (
+                    array_intersect(
+                        $command,
+                        ['create', 'copy', 'start', 'exec'],
+                    ) !== []
+                ),
+            ))
+            ->toBeFalse()
+            ->and(new AtomicJsonStore($paths)->read('leases/NCK-123.json'))
+            ->toBeNull();
+    } finally {
+        Process::run(['git', '-C', $repositoryRoot, 'worktree', 'remove', '--force', $worktree]);
+    }
+})->with(['apps/gateway', 'apps/cli', 'packages/php-sdk']);
+
+it('rolls back discovery when the worktree is not mounted or the gateway environment is missing', function (
+    string $failure,
+    string $message,
+) {
+    $repositoryRoot = preparedTopologyRepository();
+    $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));
+    $worktree = pinnedFeatureWorktree($repositoryRoot, 'mount-'.$failure);
+    promoteDiscoveryGeneration($repositoryRoot, $paths);
+    $target = featureTarget('NCK-123');
+    $events = [];
+    $realProcess = new ProcessFactory;
+    Process::fake(function (\Illuminate\Process\PendingProcess $process) use (
+        &$events,
+        $realProcess,
+        $target,
+        $failure,
+    ) {
+        $command = $process->command;
+        if (($command[0] ?? null) === 'git') {
+            return $realProcess
+                ->path((string) ($process->path ?: getcwd()))
+                ->input($process->input)
+                ->run($command);
+        }
+        $batch = pinnedWorktreeBatchResult(
+            $process,
+            $events,
+            static fn (array $guest): ?\Illuminate\Contracts\Process\ProcessResult => $failure === 'mountpoint'
+                && ($guest[0] ?? null) === 'mountpoint'
+                    ? Process::result('', '', 32)
+                    : null,
+        );
+        if ($batch !== null) {
+            return $batch;
+        }
+        $events[] = $command;
+        if ($failure === 'environment' && in_array('/var/lib/orbit-e2e/gateway.env', $command, true)) {
+            return Process::result('', 'install: cannot stat', 1);
+        }
+        $inventory = pinnedWorktreeInventoryResult($command, $target);
+        if ($inventory !== null && ($command[3] ?? null) === 'network' && ($command[4] ?? null) === 'list') {
+            return Process::result(json_encode([[
+                'name' => $target->network(),
+                'config' => [
+                    'user.orbit.e2e.owner' => 'orbit-e2e',
+                    'user.orbit.e2e.issue' => 'NCK-123',
+                    'user.orbit.e2e.attempt' => attemptId()->value,
+                    'user.orbit.e2e.operation' => str_repeat('a', 32),
+                    'ipv4.address' => '10.232.2.1/24',
+                ],
+            ]], JSON_THROW_ON_ERROR));
+        }
+        if ($inventory !== null && ($command[3] ?? null) === 'list') {
+            // Rollback revalidates exact ownership, so the cloned VMs carry the acquiring identity.
+            $resources = json_decode($inventory->output(), true, 16, JSON_THROW_ON_ERROR);
+            foreach ($resources as &$resource) {
+                if (str_starts_with((string) ($resource['name'] ?? ''), 'orbit-e2e-nck-123-')) {
+                    $resource['config'] += [
+                        'user.orbit.e2e.issue' => 'NCK-123',
+                        'user.orbit.e2e.attempt' => attemptId()->value,
+                        'user.orbit.e2e.operation' => str_repeat('a', 32),
+                    ];
+                }
+            }
+            unset($resource);
+
+            return Process::result(json_encode($resources, JSON_THROW_ON_ERROR));
+        }
+
+        return $inventory ?? pinnedWorktreeGuestResult($command);
+    });
+
+    $mutations = [];
+    $rollback = serialAcquisitionRollback(
+        static fn (string $resource): IncusInstance|IncusNetwork => (
+            $resource === $target->network()
+                ? new IncusNetwork('local', 'default', $resource, [
+                    'user.orbit.e2e.owner' => 'orbit-e2e',
+                    'user.orbit.e2e.issue' => 'NCK-123',
+                    'user.orbit.e2e.attempt' => attemptId()->value,
+                    'user.orbit.e2e.operation' => str_repeat('a', 32),
+                ])
+                : new IncusInstance(
+                    'local',
+                    'default',
+                    $resource,
+                    'default',
+                    [
+                        'user.orbit.e2e.owner' => 'orbit-e2e',
+                        'user.orbit.e2e.issue' => 'NCK-123',
+                        'user.orbit.e2e.attempt' => attemptId()->value,
+                        'user.orbit.e2e.operation' => str_repeat('a', 32),
+                    ],
+                    network: $target->network(),
+                    mac: $target->mac(substr($resource, strlen($target->instance('gateway')) - strlen('gateway'))),
+                )
+        ),
+        static function (string $resource) use (&$mutations): void {
+            $mutations[] = 'stop:'.$resource;
+        },
+        static function (string $resource) use (&$mutations): void {
+            $mutations[] = 'delete:'.$resource;
+        },
+        static function (string $resource) use (&$mutations): void {
+            $mutations[] = 'network:'.$resource;
+        },
+    );
+
+    try {
+        expect(fn () => taskNineAcquirer($repositoryRoot, $paths, $rollback)->acquireDiscovery(
+            new TopologyRequest('NCK-123', $worktree),
+        ))
+            ->toThrow(RuntimeException::class, $message)
+            ->and(collect($events)->contains(
+                static fn (array $command): bool => str_contains(implode(' ', $command), 'retarget-vpn.sh'),
+            ))
+            ->toBeFalse()
+            ->and($mutations)
+            ->toContain('delete:'.$target->instance('gateway'), 'network:'.$target->network())
+            ->and(new AtomicJsonStore($paths)->read('leases/NCK-123.json'))
+            ->toBeNull()
+            ->and(new AtomicJsonStore($paths)->read('failures/NCK-123.json')['phase'] ?? null)
+            ->toBe('mount.source')
+            ->and(new TopologyManifestStore(new AtomicJsonStore($paths), $paths)->active('NCK-123'))
+            ->toBeNull();
+    } finally {
+        Process::run(['git', '-C', $repositoryRoot, 'worktree', 'remove', '--force', $worktree]);
+    }
+})->with([
+    'mountpoint' => ['mountpoint', 'The worktree is not mounted on mountpoint.gateway, mountpoint.app-dev.'],
+    'environment' => ['environment', 'promoted standby generation must be refreshed'],
+]);
+
+it('refuses to touch a proved attempt or one the lease and active pointer do not name', function (string $case) {
+    $repositoryRoot = preparedTopologyRepository();
+    $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));
+    featureTopologyFixture($repositoryRoot, $paths);
+    $store = new AtomicJsonStore($paths);
+    $worktree = pinnedFeatureWorktree($repositoryRoot, 'exact-'.$case);
+    $attempt = attemptId();
+    $message = match ($case) {
+        'proved' => 'proved and cannot be changed',
+        'lease' => 'lease names another attempt',
+        'record' => 'exact topology attempt does not exist',
+        'pointer' => 'not the active topology attempt',
+    };
+    match ($case) {
+        'proved' => $store->write('evidence/proofs/NCK-123/'.$attempt->value.'.json', ['status' => 'proved']),
+        'lease' => $attempt = attemptId('b'),
+        'record' => $store->write('topologies/NCK-123/active.json', [
+            'schema' => 2,
+            'issue' => 'NCK-123',
+            'attempt' => attemptId('b')->value,
+        ]) ?? $store->write('leases/NCK-123.json', [
+            ...($store->read('leases/NCK-123.json') ?? []),
+            'attempt' => attemptId('b')->value,
+        ]),
+        'pointer' => null,
+    };
+    if ($case === 'record') {
+        $attempt = attemptId('b');
+    }
+    if ($case === 'pointer') {
+        $record = $store->read('topologies/NCK-123/'.$attempt->value.'.json') ?? [];
+        $store->write('topologies/NCK-123/'.attemptId('b')->value.'.json', [
+            ...$record,
+            'attempt_id' => attemptId('b')->value,
+            'network' => featureTarget('NCK-123', 'b')->network(),
+            'instances' => array_combine(
+                TopologyProfile::ROLES,
+                array_map(featureTarget('NCK-123', 'b')->instance(...), TopologyProfile::ROLES),
+            ),
+        ]);
+        $store->write('topologies/NCK-123/active.json', [
+            'schema' => 2,
+            'issue' => 'NCK-123',
+            'attempt' => attemptId('b')->value,
+        ]);
+    }
+    $events = [];
+    fakePinnedWorktreeProcesses(featureTarget('NCK-123'), $events);
+    $acquirer = taskNineAcquirer($repositoryRoot, $paths);
+
+    try {
+        expect(fn () => $acquirer->sync('NCK-123', $attempt, $worktree))
+            ->toThrow(RuntimeException::class, $message)
+            ->and(fn () => $acquirer->verify('NCK-123', $attempt))
+            ->toThrow(RuntimeException::class, $message)
+            ->and(fn () => $acquirer->execute('NCK-123', $attempt, 'gateway', ['true']))
+            ->toThrow(RuntimeException::class, $message)
+            ->and(collect($events)->contains(
+                static fn (array $command): bool => in_array('exec', $command, true),
+            ))
+            ->toBeFalse();
+    } finally {
+        Process::run(['git', '-C', $repositoryRoot, 'worktree', 'remove', '--force', $worktree]);
+    }
+})->with(['proved', 'lease', 'record', 'pointer']);
 
 /** @mago-expect lint:excessive-parameter-list The helper exposes each injectable test dependency explicitly. */
 function taskNineAcquirer(
@@ -248,7 +503,7 @@ function taskNineAcquirer(
         $host,
         new IncusNetworkLifecycle($host),
         new PreparedStateFingerprint(new GitRepository($repositoryRoot)),
-        new StandbyManifestStore($store, $paths),
+        new StandbyManifestStore($store, $paths, new TopologyManifestStore($store, $paths)),
         new TopologyManifestStore($store, $paths),
         new WorktreeSynchronizer($host, $repositoryRoot, $operation),
         new TopologyConverger($host),
@@ -261,6 +516,7 @@ function taskNineAcquirer(
         new \App\E2E\HostCapacity($store, $paths, $operation, 12),
         $repositoryRoot,
         $rollback,
+        attempts: static fn (): \App\E2E\Value\AttemptId => attemptId(),
     );
 }
 
@@ -298,7 +554,7 @@ function topologyAcquisitionBoundaryFixture(Closure $inject): array
     );
     $prepared = topologyFinalPreparedFingerprint($repositoryRoot);
     $structural = new PreparedStateFingerprint(new GitRepository($repositoryRoot))->forCommit();
-    new StandbyManifestStore($store, $paths)->promote(new StandbyGeneration(
+    new StandbyManifestStore($store, $paths, new TopologyManifestStore($store, $paths))->promote(new StandbyGeneration(
         preparedGenerationId($repositoryRoot, $prepared->value),
         new GitRepository($repositoryRoot)->commit(),
         ['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod'],
@@ -499,6 +755,9 @@ function preparedTopologyRepository(): string
         copy($script, $guestTarget.'/'.basename($script));
         chmod($guestTarget.'/'.basename($script), 0755);
     }
+    // Vendor trees and the gateway environment stay out of the tree, as in Orbit itself.
+    file_put_contents($root.'/.gitignore', "/vendor/\nvendor/\n.env\n");
+    hydrateFixtureVendor($root);
 
     foreach ([
         ['git', 'init', '-q', '-b', 'feature/NCK-123', $root],
@@ -514,6 +773,17 @@ function preparedTopologyRepository(): string
     }
 
     return $root;
+}
+
+/** Host `bin/bootstrap` owns vendor; discovery requires every autoload before any Incus mutation. */
+function hydrateFixtureVendor(string $worktree): void
+{
+    foreach (['apps/gateway', 'apps/cli', 'packages/php-sdk'] as $project) {
+        if (! is_dir($worktree.'/'.$project.'/vendor')) {
+            mkdir($worktree.'/'.$project.'/vendor', 0700, true);
+        }
+        file_put_contents($worktree.'/'.$project.'/vendor/autoload.php', "<?php\n");
+    }
 }
 
 function standbyVmInventoryJson(): string
@@ -933,6 +1203,7 @@ function pinnedFeatureWorktree(string $repositoryRoot, string $suffix): string
     if (! Process::run(['git', '-C', $worktree, 'commit', '-q', '-m', 'Pin Laravel'])->successful()) {
         throw new RuntimeException('Unable to commit the feature fixture.');
     }
+    hydrateFixtureVendor($worktree);
 
     return $worktree;
 }
@@ -1168,7 +1439,7 @@ it('holds the shared standby pin only through snapshot copy', function () {
     $prepared = topologyFinalPreparedFingerprint($repositoryRoot);
     $mainSha = new GitRepository($repositoryRoot)->commit();
     $structural = new PreparedStateFingerprint(new GitRepository($repositoryRoot))->forCommit($mainSha);
-    new StandbyManifestStore($store, $paths)->promote(new StandbyGeneration(
+    new StandbyManifestStore($store, $paths, new TopologyManifestStore($store, $paths))->promote(new StandbyGeneration(
         substr($mainSha, 0, 12).'-'.substr($prepared->value, 0, 12),
         $mainSha,
         ['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod'],
@@ -1234,7 +1505,7 @@ it('holds the shared standby pin only through snapshot copy', function () {
     );
 
     try {
-        taskNineAcquirer($repositoryRoot, $paths)->acquire(new TopologyRequest('NCK-123', $worktree), attemptId());
+        taskNineAcquirer($repositoryRoot, $paths)->acquireDiscovery(new TopologyRequest('NCK-123', $worktree));
 
         expect($copyExclusiveLockResults)
             ->toBe([false, false, false])
@@ -1449,9 +1720,8 @@ it('recovers a manifest-backed acquiring lease without mutating Incus', function
         return Process::result();
     });
 
-    $topology = taskNineAcquirer($repositoryRoot, $paths)->acquire(
+    $topology = taskNineAcquirer($repositoryRoot, $paths)->acquireDiscovery(
         new TopologyRequest('NCK-123', $repositoryRoot),
-        attemptId(),
     );
 
     expect($topology->target->issue)
@@ -1583,9 +1853,8 @@ it('refuses manifest-backed acquisition recovery when exact live identity drifte
             return Process::result();
         });
 
-        expect(fn () => taskNineAcquirer($repositoryRoot, $paths)->acquire(
+        expect(fn () => taskNineAcquirer($repositoryRoot, $paths)->acquireDiscovery(
             new TopologyRequest('NCK-123', $repositoryRoot),
-            attemptId(),
         ))
             ->toThrow(RuntimeException::class);
         expect($store->read('leases/NCK-123.json'))
@@ -1609,7 +1878,7 @@ it('cleans an interrupted no-manifest acquisition before starting a new operatio
     $store = new AtomicJsonStore($paths);
     $prepared = topologyFinalPreparedFingerprint($repositoryRoot);
     $structural = new PreparedStateFingerprint(new GitRepository($repositoryRoot))->forCommit();
-    new StandbyManifestStore($store, $paths)->promote(new StandbyGeneration(
+    new StandbyManifestStore($store, $paths, new TopologyManifestStore($store, $paths))->promote(new StandbyGeneration(
         preparedGenerationId($repositoryRoot, $prepared->value),
         new GitRepository($repositoryRoot)->commit(),
         ['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod'],
@@ -1755,10 +2024,10 @@ it('cleans an interrupted no-manifest acquisition before starting a new operatio
             $rollbackMutations[] = 'network:'.$resource;
         },
     );
-    expect(fn () => taskNineAcquirer($repositoryRoot, $paths, $rollback)->acquire(new TopologyRequest(
+    expect(fn () => taskNineAcquirer($repositoryRoot, $paths, $rollback)->acquireDiscovery(new TopologyRequest(
         'NCK-123',
         $repositoryRoot,
-    ), attemptId()))
+    )))
         ->toThrow(RuntimeException::class, 'deliberate retry stop');
     $lease = $store->read('leases/NCK-123.json');
     expect($rollbackMutations)
@@ -1828,7 +2097,7 @@ it('refuses an unobservable interrupted acquisition without mutation', function 
         },
     ));
     foreach (range(1, 2) as $_) {
-        expect(fn () => $acquirer->acquire(new TopologyRequest('NCK-123', $repositoryRoot), attemptId()))
+        expect(fn () => $acquirer->acquireDiscovery(new TopologyRequest('NCK-123', $repositoryRoot)))
             ->toThrow(RuntimeException::class, 'cleanup was refused');
     }
     expect($store->read('leases/NCK-123.json'))
@@ -1901,7 +2170,7 @@ it('refuses a drifted interrupted acquisition without mutation on repeated retri
     });
     $acquirer = taskNineAcquirer($repositoryRoot, $paths, $rollback);
     foreach (range(1, 2) as $_) {
-        expect(fn () => $acquirer->acquire(new TopologyRequest('NCK-123', $repositoryRoot), attemptId()))
+        expect(fn () => $acquirer->acquireDiscovery(new TopologyRequest('NCK-123', $repositoryRoot)))
             ->toThrow(RuntimeException::class, 'cleanup was refused');
     }
     expect($store->read('leases/NCK-123.json'))
@@ -1930,9 +2199,8 @@ it('fails closed for a malformed acquiring lease', function () {
         'operation_id' => 'not-an-operation-id',
     ]);
 
-    expect(fn () => taskNineAcquirer($repositoryRoot, $paths)->acquire(
+    expect(fn () => taskNineAcquirer($repositoryRoot, $paths)->acquireDiscovery(
         new TopologyRequest('NCK-123', $repositoryRoot),
-        attemptId(),
     ))
         ->toThrow(RuntimeException::class, 'acquiring lease is invalid');
 });
@@ -1942,9 +2210,8 @@ it('fails closed when an acquiring lease has invalid expiry or extra fields', fu
     $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));
     new AtomicJsonStore($paths)->write('leases/NCK-123.json', $lease);
 
-    expect(fn () => taskNineAcquirer($repositoryRoot, $paths)->acquire(
+    expect(fn () => taskNineAcquirer($repositoryRoot, $paths)->acquireDiscovery(
         new TopologyRequest('NCK-123', $repositoryRoot),
-        attemptId(),
     ))
         ->toThrow(RuntimeException::class, 'acquiring lease is invalid');
 })->with([
@@ -1980,9 +2247,8 @@ it('keeps ready topology acquisition rejection unchanged', function () {
     $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));
     featureTopologyFixture($repositoryRoot, $paths);
 
-    expect(fn () => taskNineAcquirer($repositoryRoot, $paths)->acquire(
+    expect(fn () => taskNineAcquirer($repositoryRoot, $paths)->acquireDiscovery(
         new TopologyRequest('NCK-123', $repositoryRoot),
-        attemptId(),
     ))
         ->toThrow(RuntimeException::class, 'already has a topology manifest');
 });
@@ -2061,9 +2327,8 @@ it('recovers a manifest when acquiring lease keys use a different JSON order', f
 
     expect(
         taskNineAcquirer($repositoryRoot, $paths)
-            ->acquire(
+            ->acquireDiscovery(
                 new TopologyRequest('NCK-123', $repositoryRoot),
-                attemptId(),
             )
             ->target
             ->issue,
@@ -2211,7 +2476,7 @@ it('uses the acquisition rollback after a topology creation failure', function (
         $structural->manifest['topology']['roles'],
         $structural->manifest['topology']['checkout_roles'],
     );
-    new StandbyManifestStore($store, $paths)->promote($generation);
+    new StandbyManifestStore($store, $paths, new TopologyManifestStore($store, $paths))->promote($generation);
     $reads = [];
     $rollback = serialAcquisitionRollback(
         function (string $resource) use (&$reads): never {
@@ -2231,7 +2496,7 @@ it('uses the acquisition rollback after a topology creation failure', function (
     $acquirer = taskNineAcquirer($repositoryRoot, $paths, $rollback);
     $request = new TopologyRequest('NCK-123', $repositoryRoot);
 
-    expect(fn () => $acquirer->acquire($request, attemptId()))
+    expect(fn () => $acquirer->acquireDiscovery($request))
         ->toThrow(RuntimeException::class, 'copy failed')
         ->and($reads)
         ->toBe([$target->network()])
@@ -2264,7 +2529,7 @@ it('rolls back without parsing a manifest when the ready lease write fails', fun
     $prepared = topologyFinalPreparedFingerprint($repositoryRoot);
     $structural = new PreparedStateFingerprint(new GitRepository($repositoryRoot))->forCommit();
     $mainSha = new GitRepository($repositoryRoot)->commit();
-    new StandbyManifestStore($store, $paths)->promote(new StandbyGeneration(
+    new StandbyManifestStore($store, $paths, new TopologyManifestStore($store, $paths))->promote(new StandbyGeneration(
         preparedGenerationId($repositoryRoot, $prepared->value),
         $mainSha,
         ['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod'],
@@ -2299,7 +2564,7 @@ it('rolls back without parsing a manifest when the ready lease write fails', fun
             $paths,
             $rollback,
             store: $store,
-        )->acquire(new TopologyRequest('NCK-123', $worktree), attemptId()))
+        )->acquireDiscovery(new TopologyRequest('NCK-123', $worktree)))
             ->toThrow(RuntimeException::class, 'injected ready lease failure')
             ->and($rollbackReads)
             ->toBe([
@@ -2339,7 +2604,7 @@ it('surfaces a manifest deletion failure and retains the recovery state', functi
             $paths,
             absentAcquisitionRollback($reads),
             store: $store,
-        )->acquire(new TopologyRequest('NCK-123', $worktree), attemptId()));
+        )->acquireDiscovery(new TopologyRequest('NCK-123', $worktree)));
         $evidence = $store->read('failures/NCK-123.json');
 
         expect($failure)
@@ -2462,7 +2727,7 @@ it('redacts recursive rollback evidence and deduplicates cleanup failures under 
             $rollback,
             store: $store,
             redactor: $redactor,
-        )->acquire(new TopologyRequest('NCK-123', $worktree), attemptId()));
+        )->acquireDiscovery(new TopologyRequest('NCK-123', $worktree)));
         $evidence = $store->read('failures/NCK-123.json');
         $resources = [
             $target->network(),
@@ -2517,7 +2782,7 @@ it('surfaces a failure evidence write failure with the acquisition as previous',
             $paths,
             absentAcquisitionRollback($reads),
             store: $store,
-        )->acquire(new TopologyRequest('NCK-123', $worktree), attemptId()));
+        )->acquireDiscovery(new TopologyRequest('NCK-123', $worktree)));
 
         expect($failure->getMessage())
             ->toContain('failure evidence write: Bearer [REDACTED]')
@@ -2557,7 +2822,7 @@ it('records and redacts a lease deletion failure in retained evidence', function
             $paths,
             absentAcquisitionRollback($reads),
             store: $store,
-        )->acquire(new TopologyRequest('NCK-123', $worktree), attemptId()));
+        )->acquireDiscovery(new TopologyRequest('NCK-123', $worktree)));
         $evidence = $store->read('failures/NCK-123.json');
 
         expect($failure->getMessage())
@@ -2610,7 +2875,7 @@ it('reports multiple distinct secondary failures once and keeps cleanup recovery
             $paths,
             $rollback,
             store: $store,
-        )->acquire(new TopologyRequest('NCK-123', $worktree), attemptId()));
+        )->acquireDiscovery(new TopologyRequest('NCK-123', $worktree)));
         $evidence = $store->read('failures/NCK-123.json');
         $secondary = $evidence['secondary_failures'] ?? [];
 
@@ -2663,7 +2928,7 @@ it('preflights all standby snapshots before any network or copy mutation', funct
         $structural->manifest['topology']['roles'],
         $structural->manifest['topology']['checkout_roles'],
     );
-    new StandbyManifestStore($store, $paths)->promote($generation);
+    new StandbyManifestStore($store, $paths, new TopologyManifestStore($store, $paths))->promote($generation);
     $commands = [];
     $acquirer = taskNineAcquirer($repositoryRoot, $paths);
     $request = new TopologyRequest('NCK-123', $repositoryRoot);
@@ -2697,7 +2962,7 @@ it('preflights all standby snapshots before any network or copy mutation', funct
         return Process::result();
     });
 
-    expect(fn () => $acquirer->acquire($request, attemptId()))
+    expect(fn () => $acquirer->acquireDiscovery($request))
         ->toThrow(RuntimeException::class, 'snapshots do not exist');
 
     expect(collect($commands)->contains(
@@ -2714,7 +2979,7 @@ it('blocks acquisition when the standby is marked corrupt before Incus mutation'
     $store = new AtomicJsonStore($paths);
     $prepared = topologyFinalPreparedFingerprint($repositoryRoot);
     $structural = new PreparedStateFingerprint(new GitRepository($repositoryRoot))->forCommit();
-    new StandbyManifestStore($store, $paths)->promote(new StandbyGeneration(
+    new StandbyManifestStore($store, $paths, new TopologyManifestStore($store, $paths))->promote(new StandbyGeneration(
         preparedGenerationId($repositoryRoot, $prepared->value),
         new GitRepository($repositoryRoot)->commit(),
         ['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod'],
@@ -2750,9 +3015,8 @@ it('blocks acquisition when the standby is marked corrupt before Incus mutation'
         return Process::result();
     });
 
-    expect(fn () => taskNineAcquirer($repositoryRoot, $paths)->acquire(
+    expect(fn () => taskNineAcquirer($repositoryRoot, $paths)->acquireDiscovery(
         new TopologyRequest('NCK-123', $repositoryRoot),
-        attemptId(),
     ))
         ->toThrow(RuntimeException::class, 'marked corrupt')
         ->and($commands)
@@ -2780,9 +3044,8 @@ it('refuses acquisition while a schema 1 topology manifest exists', function () 
         return Process::result();
     });
 
-    expect(fn () => taskNineAcquirer($repositoryRoot, $paths)->acquire(
+    expect(fn () => taskNineAcquirer($repositoryRoot, $paths)->acquireDiscovery(
         new TopologyRequest('NCK-123', $repositoryRoot),
-        attemptId(),
     ))
         ->toThrow(RuntimeException::class, 'schema 1 topology manifest')
         ->and($commands)
@@ -2795,7 +3058,7 @@ it('blocks acquisition while an exact release still needs local finalization', f
     $repositoryRoot = preparedTopologyRepository();
     $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));
     $store = new AtomicJsonStore($paths);
-    $store->write('release-pending/NCK-123.json', ['schema' => 1]);
+    $store->write('release-pending/NCK-123/'.attemptId('b')->value.'.json', ['schema' => 1]);
     $commands = [];
     $realProcess = new ProcessFactory;
     Process::fake(function (\Illuminate\Process\PendingProcess $process) use (
@@ -2812,14 +3075,13 @@ it('blocks acquisition while an exact release still needs local finalization', f
         return Process::result();
     });
 
-    expect(fn () => taskNineAcquirer($repositoryRoot, $paths)->acquire(
+    expect(fn () => taskNineAcquirer($repositoryRoot, $paths)->acquireDiscovery(
         new TopologyRequest('NCK-123', $repositoryRoot),
-        attemptId(),
     ))
         ->toThrow(RuntimeException::class, 'pending release finalization')
         ->and($commands)
         ->toBeEmpty()
-        ->and($store->read('release-pending/NCK-123.json'))
+        ->and($store->read('release-pending/NCK-123/'.attemptId('b')->value.'.json'))
         ->not->toBeNull();
 });
 
@@ -2829,7 +3091,7 @@ it('requires the promoted generation fingerprint to match its exact main commit'
     $store = new AtomicJsonStore($paths);
     $prepared = topologyFinalPreparedFingerprint($repositoryRoot);
     $structural = new PreparedStateFingerprint(new GitRepository($repositoryRoot))->forCommit();
-    new StandbyManifestStore($store, $paths)->promote(new StandbyGeneration(
+    new StandbyManifestStore($store, $paths, new TopologyManifestStore($store, $paths))->promote(new StandbyGeneration(
         preparedGenerationId($repositoryRoot, $prepared->value),
         new GitRepository($repositoryRoot)->commit(),
         ['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod'],
@@ -2861,7 +3123,7 @@ it('requires the promoted generation fingerprint to match its exact main commit'
     });
 
     $acquirer = taskNineAcquirer($repositoryRoot, $paths);
-    expect(fn () => $acquirer->acquire(new TopologyRequest('NCK-123', $repositoryRoot), attemptId()))
+    expect(fn () => $acquirer->acquireDiscovery(new TopologyRequest('NCK-123', $repositoryRoot)))
         ->toThrow(RuntimeException::class, 'fingerprint is stale or corrupt')
         ->and($commands)
         ->toBeEmpty();
@@ -2875,7 +3137,7 @@ it('blocks acquisition when current main requires a newer prepared generation', 
     $prepared = topologyFinalPreparedFingerprint($repositoryRoot);
     $generationSha = new GitRepository($repositoryRoot)->commit();
     $structural = $fingerprints->forCommit($generationSha);
-    new StandbyManifestStore($store, $paths)->promote(new StandbyGeneration(
+    new StandbyManifestStore($store, $paths, new TopologyManifestStore($store, $paths))->promote(new StandbyGeneration(
         preparedGenerationId($repositoryRoot, $prepared->value),
         $generationSha,
         ['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod'],
@@ -2915,7 +3177,7 @@ it('blocks acquisition when current main requires a newer prepared generation', 
     });
 
     $acquirer = taskNineAcquirer($repositoryRoot, $paths);
-    expect(fn () => $acquirer->acquire(new TopologyRequest('NCK-123', $repositoryRoot), attemptId()))
+    expect(fn () => $acquirer->acquireDiscovery(new TopologyRequest('NCK-123', $repositoryRoot)))
         ->toThrow(RuntimeException::class, 'The promoted standby structural fingerprint is stale.')
         ->and($commands)
         ->toBeEmpty();
@@ -2929,7 +3191,7 @@ it('reuses a prepared generation when main advances with a source-only change', 
     $prepared = topologyFinalPreparedFingerprint($repositoryRoot);
     $generationSha = new GitRepository($repositoryRoot)->commit();
     $structural = $fingerprints->forCommit($generationSha);
-    new StandbyManifestStore($store, $paths)->promote(new StandbyGeneration(
+    new StandbyManifestStore($store, $paths, new TopologyManifestStore($store, $paths))->promote(new StandbyGeneration(
         preparedGenerationId($repositoryRoot, $prepared->value),
         $generationSha,
         ['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod'],
@@ -2979,9 +3241,8 @@ it('reuses a prepared generation when main advances with a source-only change', 
 
         return Process::result();
     });
-    expect(fn () => taskNineAcquirer($repositoryRoot, $paths)->acquire(
+    expect(fn () => taskNineAcquirer($repositoryRoot, $paths)->acquireDiscovery(
         new TopologyRequest('NCK-123', $repositoryRoot),
-        attemptId(),
     ))
         ->toThrow(RuntimeException::class, 'controlled network failure');
     expect(collect($commands)->contains(
@@ -2996,7 +3257,7 @@ it('rolls back an exactly owned network when host forwarding setup fails', funct
     $store = new AtomicJsonStore($paths);
     $prepared = topologyFinalPreparedFingerprint($repositoryRoot);
     $structural = new PreparedStateFingerprint(new GitRepository($repositoryRoot))->forCommit();
-    new StandbyManifestStore($store, $paths)->promote(new StandbyGeneration(
+    new StandbyManifestStore($store, $paths, new TopologyManifestStore($store, $paths))->promote(new StandbyGeneration(
         preparedGenerationId($repositoryRoot, $prepared->value),
         new GitRepository($repositoryRoot)->commit(),
         ['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod'],
@@ -3113,9 +3374,8 @@ it('rolls back an exactly owned network when host forwarding setup fails', funct
         return Process::result('', 'Unexpected command.', 2);
     });
 
-    expect(fn () => taskNineAcquirer($repositoryRoot, $paths)->acquire(
+    expect(fn () => taskNineAcquirer($repositoryRoot, $paths)->acquireDiscovery(
         new TopologyRequest('NCK-123', $repositoryRoot),
-        attemptId(),
     ))
         ->toThrow(RuntimeException::class, 'Host firewall command failed: controlled forwarding failure');
 
@@ -3163,7 +3423,7 @@ it('uses the promoted base fingerprint when the base image alias moves', functio
     $store = new AtomicJsonStore($paths);
     $prepared = topologyFinalPreparedFingerprint($repositoryRoot);
     $structural = new PreparedStateFingerprint(new GitRepository($repositoryRoot))->forCommit();
-    new StandbyManifestStore($store, $paths)->promote(new StandbyGeneration(
+    new StandbyManifestStore($store, $paths, new TopologyManifestStore($store, $paths))->promote(new StandbyGeneration(
         preparedGenerationId($repositoryRoot, $prepared->value),
         new GitRepository($repositoryRoot)->commit(),
         ['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod'],
@@ -3209,7 +3469,7 @@ it('uses the promoted base fingerprint when the base image alias moves', functio
     });
 
     $acquirer = taskNineAcquirer($repositoryRoot, $paths);
-    expect(fn () => $acquirer->acquire(new TopologyRequest('NCK-123', $repositoryRoot), attemptId()))
+    expect(fn () => $acquirer->acquireDiscovery(new TopologyRequest('NCK-123', $repositoryRoot)))
         ->toThrow(RuntimeException::class, 'controlled network failure')
         ->and(collect($commands)->contains(
             fn (array $command): bool => in_array('image', $command, true) && in_array('list', $command, true),
@@ -3243,7 +3503,7 @@ it('batches clone and boot work before cloned host-state reset and preserves fai
         $structural->manifest['topology']['roles'],
         $structural->manifest['topology']['checkout_roles'],
     );
-    new StandbyManifestStore($store, $paths)->promote($generation);
+    new StandbyManifestStore($store, $paths, new TopologyManifestStore($store, $paths))->promote($generation);
     $target = featureTarget('NCK-123');
     $operationId = null;
     $events = [];
@@ -3257,7 +3517,7 @@ it('batches clone and boot work before cloned host-state reset and preserves fai
         new IncusHost(guestReadinessTimeoutSeconds: 1),
     );
 
-    expect(fn () => $acquirer->acquire(new TopologyRequest('NCK-123', $repositoryRoot), attemptId()))
+    expect(fn () => $acquirer->acquireDiscovery(new TopologyRequest('NCK-123', $repositoryRoot)))
         ->toThrow(RuntimeException::class, 'Failed to reset cloned host state')
         ->and($events)
         ->toBe([
@@ -3298,7 +3558,7 @@ it('rejects unrelated clean repositories before lock state or Incus access', fun
     $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));
     $acquirer = taskNineAcquirer($repositoryRoot, $paths);
 
-    expect(fn () => $acquirer->sync(new TopologyRequest('NCK-12', $unrelated)))
+    expect(fn () => $acquirer->sync('NCK-12', attemptId(), $unrelated))
         ->toThrow(InvalidArgumentException::class, 'repository identity')
         ->and(is_dir($paths->root().'/locks'))
         ->toBeFalse();
@@ -3316,7 +3576,7 @@ it('rejects a wrong issue branch before creating lifecycle state', function () {
     $acquirer = taskNineAcquirer($branchWorktree, $paths);
 
     try {
-        expect(fn () => $acquirer->sync(new TopologyRequest('NCK-999999', $branchWorktree)))
+        expect(fn () => $acquirer->sync('NCK-999999', attemptId(), $branchWorktree))
             ->toThrow(InvalidArgumentException::class, 'branch does not match')
             ->and(is_dir($paths->root().'/locks'))
             ->toBeFalse();
@@ -3358,10 +3618,7 @@ it('sync rejects a feature HEAD cold epoch change before source sync or Incus', 
         return Process::result();
     });
 
-    expect(fn () => taskNineAcquirer($repositoryRoot, $paths)->sync(new TopologyRequest(
-        'NCK-123',
-        $repositoryRoot,
-    )))
+    expect(fn () => taskNineAcquirer($repositoryRoot, $paths)->sync('NCK-123', attemptId(), $repositoryRoot))
         ->toThrow(RuntimeException::class, 'cold base contract')
         ->and($commands)
         ->toBeEmpty();
@@ -3399,10 +3656,7 @@ it('sync rejects a feature HEAD base image alias change before source sync or In
         return Process::result();
     });
 
-    expect(fn () => taskNineAcquirer($repositoryRoot, $paths)->sync(new TopologyRequest(
-        'NCK-123',
-        $repositoryRoot,
-    )))
+    expect(fn () => taskNineAcquirer($repositoryRoot, $paths)->sync('NCK-123', attemptId(), $repositoryRoot))
         ->toThrow(RuntimeException::class, 'cold base contract')
         ->and($commands)
         ->toBeEmpty();
@@ -3432,10 +3686,7 @@ it('allows an ordinary prepared-state change through the cold-base gate', functi
     fakeOrdinaryPreparedChangeProcesses($repositoryRoot, featureTarget('NCK-123'), $events);
 
     try {
-        expect(fn () => taskNineAcquirer($repositoryRoot, $paths)->sync(new TopologyRequest(
-            'NCK-123',
-            $featureWorktree,
-        )))
+        expect(fn () => taskNineAcquirer($repositoryRoot, $paths)->sync('NCK-123', attemptId(), $featureWorktree))
             ->toThrow(RuntimeException::class)
             ->and(collect($events)->contains(fn (array $command): bool => str_contains(
                 implode(' ', $command),
@@ -3466,7 +3717,7 @@ it('preserves prior release evidence when acquisition preflight fails', function
     $store->write('releases/NCK-123.json', $priorRelease);
     $fingerprint = topologyFinalPreparedFingerprint($repositoryRoot);
     $structural = new PreparedStateFingerprint(new GitRepository($repositoryRoot))->forCommit();
-    new StandbyManifestStore($store, $paths)->promote(new StandbyGeneration(
+    new StandbyManifestStore($store, $paths, new TopologyManifestStore($store, $paths))->promote(new StandbyGeneration(
         'wrong-generation-id',
         new GitRepository($repositoryRoot)->commit(),
         ['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod'],
@@ -3495,9 +3746,8 @@ it('preserves prior release evidence when acquisition preflight fails', function
 
         return Process::result();
     });
-    expect(fn () => taskNineAcquirer($repositoryRoot, $paths)->acquire(
+    expect(fn () => taskNineAcquirer($repositoryRoot, $paths)->acquireDiscovery(
         new TopologyRequest('NCK-123', $repositoryRoot),
-        attemptId(),
     ))
         ->toThrow(RuntimeException::class, 'fingerprint is stale or corrupt')
         ->and($store->read('releases/NCK-123.json'))
@@ -3506,7 +3756,7 @@ it('preserves prior release evidence when acquisition preflight fails', function
         ->toBeEmpty();
 });
 
-it('invalidates prior release evidence before reacquiring an issue', function () {
+it('keeps the release receipts of earlier attempts when reacquiring an issue', function () {
     $repositoryRoot = preparedTopologyRepository();
     $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));
     $worktree = pinnedFeatureWorktree($repositoryRoot, 'release-evidence');
@@ -3518,7 +3768,7 @@ it('invalidates prior release evidence before reacquiring an issue', function ()
         'v13.10.1',
         '5aad4ddf34d5e21dfe6b4c07eeac67d5bd5e08b0',
     );
-    new StandbyManifestStore($store, $paths)->promote(new StandbyGeneration(
+    new StandbyManifestStore($store, $paths, new TopologyManifestStore($store, $paths))->promote(new StandbyGeneration(
         substr($mainSha, 0, 12).'-'.substr($prepared->value, 0, 12),
         $mainSha,
         ['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod'],
@@ -3533,26 +3783,41 @@ it('invalidates prior release evidence before reacquiring an issue', function ()
         $structural->manifest['topology']['roles'],
         $structural->manifest['topology']['checkout_roles'],
     ));
-    $store->write('releases/NCK-123.json', [
-        'state' => 'released',
-        'operation_id' => str_repeat('c', 32),
-        'evidence_id' => str_repeat('d', 32),
-        'released' => ['orbit-e2e-nck-123-aaaaaaaa-gateway'],
-        'already_absent' => [],
-    ]);
+    $receipt = new \App\E2E\Value\ReleaseResult(
+        str_repeat('c', 32),
+        str_repeat('d', 32),
+        'NCK-123',
+        attemptId('b'),
+        AttemptPurpose::Discovery,
+        ['deleted:orbit-e2e-nck-123-bbbbbbbb-gateway'],
+        [],
+        ['orbit-e2e-nck-123-bbbbbbbb-gateway'],
+        '2026-08-29T10:00:00Z',
+    );
+    new \App\E2E\ReleaseReceiptStore($store, $paths)->write($receipt);
     $target = featureTarget('NCK-123');
     $events = [];
     fakePinnedWorktreeProcesses($target, $events);
 
     try {
-        taskNineAcquirer($repositoryRoot, $paths)->acquire(new TopologyRequest('NCK-123', $worktree), attemptId());
-        expect($store->read('releases/NCK-123.json'))->toBeNull();
+        $acquired = taskNineAcquirer($repositoryRoot, $paths)->acquireDiscovery(new TopologyRequest(
+            'NCK-123',
+            $worktree,
+        ));
+        expect($acquired->attempt->value)
+            ->toBe(attemptId()->value)
+            ->and(
+                new \App\E2E\ReleaseReceiptStore($store, $paths)
+                    ->read('NCK-123', attemptId('b'))
+                    ?->toArray(),
+            )
+            ->toBe($receipt->toArray());
     } finally {
         Process::run(['git', '-C', $repositoryRoot, 'worktree', 'remove', '--force', $worktree]);
     }
 });
 
-it('removes prior release evidence before the first acquisition mutation', function () {
+it('fails closed before the first Incus mutation when the acquiring lease cannot be written', function () {
     $repositoryRoot = preparedTopologyRepository();
     $worktree = pinnedFeatureWorktree($repositoryRoot, 'release-evidence-write-failure');
     $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));
@@ -3568,7 +3833,7 @@ it('removes prior release evidence before the first acquisition mutation', funct
     $prepared = topologyFinalPreparedFingerprint($repositoryRoot);
     $mainSha = new GitRepository($repositoryRoot)->commit();
     $structural = new PreparedStateFingerprint(new GitRepository($repositoryRoot))->forCommit($mainSha);
-    new StandbyManifestStore($store, $paths)->promote(new StandbyGeneration(
+    new StandbyManifestStore($store, $paths, new TopologyManifestStore($store, $paths))->promote(new StandbyGeneration(
         substr($mainSha, 0, 12).'-'.substr($prepared->value, 0, 12),
         $mainSha,
         ['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod'],
@@ -3583,24 +3848,14 @@ it('removes prior release evidence before the first acquisition mutation', funct
         $structural->manifest['topology']['roles'],
         $structural->manifest['topology']['checkout_roles'],
     ));
-    $store->write('releases/NCK-123.json', [
-        'state' => 'released',
-        'operation_id' => str_repeat('c', 32),
-        'evidence_id' => str_repeat('d', 32),
-        'released' => [],
-        'already_absent' => [],
-    ]);
     $events = [];
     fakePinnedWorktreeProcesses(featureTarget('NCK-123'), $events);
 
     try {
-        expect(fn () => taskNineAcquirer($repositoryRoot, $paths, store: $store)->acquire(
+        expect(fn () => taskNineAcquirer($repositoryRoot, $paths, store: $store)->acquireDiscovery(
             new TopologyRequest('NCK-123', $worktree),
-            attemptId(),
         ))
             ->toThrow(RuntimeException::class, 'injected acquisition lease failure')
-            ->and($store->read('releases/NCK-123.json'))
-            ->toBeNull()
             ->and(collect($events)->contains(
                 static fn (array $command): bool => (
                     in_array('create', $command, true) || in_array('copy', $command, true)
@@ -3612,7 +3867,7 @@ it('removes prior release evidence before the first acquisition mutation', funct
     }
 });
 
-it('keeps the promoted Laravel pin when feature worktrees change source', function () {
+it('mounts the worktree, repairs clone identity, and records the host source without convergence', function () {
     $repositoryRoot = preparedTopologyRepository();
     $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));
     $worktreeA = pinnedFeatureWorktree($repositoryRoot, 'a');
@@ -3625,7 +3880,7 @@ it('keeps the promoted Laravel pin when feature worktrees change source', functi
         'v13.10.1',
         '5aad4ddf34d5e21dfe6b4c07eeac67d5bd5e08b0',
     );
-    new StandbyManifestStore($store, $paths)->promote(new StandbyGeneration(
+    new StandbyManifestStore($store, $paths, new TopologyManifestStore($store, $paths))->promote(new StandbyGeneration(
         substr($mainSha, 0, 12).'-'.substr($prepared->value, 0, 12),
         $mainSha,
         ['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod'],
@@ -3645,145 +3900,152 @@ it('keeps the promoted Laravel pin when feature worktrees change source', functi
     fakePinnedWorktreeProcesses($target, $events);
 
     $acquirer = taskNineAcquirer($repositoryRoot, $paths);
-    $acquired = $acquirer->acquire(new TopologyRequest('NCK-123', $worktreeA), attemptId());
+    $acquired = $acquirer->acquireDiscovery(new TopologyRequest('NCK-123', $worktreeA));
     $acquireEvents = $events;
     $acquireJournal = new OperationJournal($paths)->entries(new OperationId(str_repeat('a', 32)));
-    $events = [];
-    $synced = $acquirer->sync(new TopologyRequest('NCK-123', $worktreeB));
+    $joined = static fn (array $command): string => implode(' ', array_map(strval(...), $command));
+    $instanceOf = static fn (array $command): string => preg_replace('/\A[^:]+:/', '', (string) $command[4]) ?? '';
+    $eventsMatching = static fn (array $events, string $needle): array => array_values(array_filter(
+        $events,
+        static fn (array $command): bool => str_contains($joined($command), $needle),
+    ));
 
-    $eventIndex = static function (array $events, string $instance, callable $matches): int {
-        foreach ($events as $index => $command) {
-            $targetsInstance = array_any(
-                $command,
-                static fn (mixed $argument): bool => (
-                    is_string($argument)
-                    && ($argument === $instance || str_ends_with($argument, ':'.$instance))
-                ),
-            );
-            if ($targetsInstance && $matches($command)) {
+    $mountDevice = 'orbit-source,type=disk,source='.$worktreeA.',path=/home/orbit/orbit';
+    $copies = $eventsMatching($acquireEvents, ' copy ');
+    $mountedCopies = array_values(array_filter(
+        $copies,
+        static fn (array $command): bool => in_array($mountDevice, $command, true),
+    ));
+    expect($copies)
+        ->toHaveCount(3)
+        ->and($mountedCopies)
+        ->toHaveCount(2)
+        ->and(array_map(static fn (array $command): string => (string) $command[5], $mountedCopies))
+        ->toBe(['local:'.$target->instance('gateway'), 'local:'.$target->instance('app-dev')]);
+
+    $mountChecks = $eventsMatching($acquireEvents, 'mountpoint -q -- /home/orbit/orbit');
+    $environment = $eventsMatching($acquireEvents, '/var/lib/orbit-e2e/gateway.env');
+    $retargets = $eventsMatching($acquireEvents, '/usr/local/bin/retarget-vpn.sh 10.44.0.10');
+    $restarts = $eventsMatching($acquireEvents, 'systemctl restart php8.5-fpm');
+    $markers = $eventsMatching($acquireEvents, '/var/lib/orbit-e2e/source-state');
+    $hostSha = new GitRepository($worktreeA)->commit();
+    $treeHash = new GitRepository($worktreeA)->effectiveTreeHash();
+    expect(array_map($instanceOf, $mountChecks))
+        ->toBe([$target->instance('gateway'), $target->instance('app-dev')])
+        ->and(array_map($instanceOf, $environment))
+        ->toBe([$target->instance('gateway')])
+        ->and($joined($environment[0]))
+        ->toContain('[ -e "$1" ] || install -o 1000 -g 1000 -m 0600 -- "$2" "$1"')
+        ->toContain('/home/orbit/orbit/apps/gateway/.env')
+        ->and(array_map($instanceOf, $retargets))
+        ->toBe([$target->instance('app-dev'), $target->instance('app-prod')])
+        ->and(array_map($instanceOf, $restarts))
+        ->toBe([$target->instance('gateway'), $target->instance('app-dev')])
+        ->and(array_map($instanceOf, $markers))
+        ->toBe([$target->instance('gateway'), $target->instance('app-dev')])
+        ->and($markers[0])
+        ->toContain(json_encode(['sha' => $hostSha, 'tree' => $treeHash, 'mounted' => true], JSON_THROW_ON_ERROR))
+        ->and($eventsMatching($acquireEvents, 'converge-'))
+        ->toBe([])
+        ->and($eventsMatching($acquireEvents, 'hydrate-orbit.sh'))
+        ->toBe([])
+        ->and($eventsMatching($acquireEvents, 'receive-source.sh'))
+        ->toBe([])
+        ->and($eventsMatching($acquireEvents, 'file push'))
+        ->toBe([])
+        ->and($eventsMatching($acquireEvents, $promotedLaravel->commit))
+        ->toBe([]);
+
+    $indexOf = static function (array $haystack, array $needle): int {
+        foreach ($haystack as $index => $command) {
+            if ($command === $needle) {
                 return $index;
             }
         }
 
         return -1;
     };
-    $roleStarts = [];
-    $phaseIndices = [
-        'mac' => [],
-        'start' => [],
-        'readiness' => [],
-        'ipv4-pre' => [],
-        'identity' => [],
-        'ipv4-post' => [],
-        'ipv4-converge' => [],
+    $sequence = [
+        $indexOf($acquireEvents, $eventsMatching($acquireEvents, ' start ')[2]),
+        $indexOf($acquireEvents, $mountChecks[0]),
+        $indexOf($acquireEvents, $retargets[0]),
+        $indexOf($acquireEvents, $restarts[0]),
+        $indexOf($acquireEvents, $markers[0]),
+        $indexOf($acquireEvents, $eventsMatching($acquireEvents, 'verify-topology.sh')[0]),
     ];
-    foreach (['gateway', 'app-dev', 'app-prod'] as $role) {
-        $instance = $target->instance($role);
-        $mac = $eventIndex($acquireEvents, $instance, static fn (array $command): bool => array_any(
-            $command,
-            static fn (mixed $argument): bool => is_string($argument) && str_contains($argument, 'hwaddr='),
-        ));
-        $start = $eventIndex($acquireEvents, $instance, static fn (array $command): bool => in_array(
-            'start',
-            $command,
-            true,
-        ));
-        $readiness = $eventIndex($acquireEvents, $instance, static fn (array $command): bool => in_array(
-            '/bin/true',
-            $command,
-            true,
-        ));
-        $identityIndices = topology_command_indices(
-            $acquireEvents,
-            $instance,
-            static fn (array $command): bool => str_contains(
-                implode(' ', $command),
-                "printf '%s\\n'",
-            ),
-        );
-        $ipv4Indices = topology_command_indices(
-            $acquireEvents,
-            $instance,
-            static fn (array $command): bool => str_contains(
-                implode(' ', $command),
-                'ip -4 -o addr show dev "$interface" scope global',
-            ),
-        );
-        expect($identityIndices)
-            ->toHaveCount(1)
-            ->and($ipv4Indices)
-            ->toHaveCount(3);
-        $identity = $identityIndices[0] ?? -1;
-        $preResetIpv4 = $ipv4Indices[0] ?? -1;
-        $postResetIpv4 = $ipv4Indices[1] ?? -1;
-        $convergenceIpv4 = $ipv4Indices[2] ?? -1;
-        $indices = [$mac, $start, $readiness, $preResetIpv4, $identity, $postResetIpv4, $convergenceIpv4];
-        $orderedIndices = $indices;
-        sort($orderedIndices);
-        expect($indices)
-            ->not
-            ->toContain(-1)
-            ->and($indices)
-            ->toBe($orderedIndices);
-        $roleStarts[$role] = $start;
-        foreach (array_keys($phaseIndices) as $phaseIndex => $phase) {
-            $phaseIndices[$phase][] = $indices[$phaseIndex];
-        }
-    }
-    expect($roleStarts['gateway'])
-        ->toBeLessThan($roleStarts['app-dev'])
-        ->and($roleStarts['app-dev'])
-        ->toBeLessThan($roleStarts['app-prod']);
-    expect(max($phaseIndices['mac']))
-        ->toBeLessThan(min($phaseIndices['start']))
-        ->and(max($phaseIndices['start']))
-        ->toBeLessThan(min($phaseIndices['readiness']))
-        ->and($phaseIndices['ipv4-pre'])
-        ->toHaveCount(3)
-        ->and($phaseIndices['ipv4-post'])
-        ->toHaveCount(3)
-        ->and($phaseIndices['ipv4-converge'])
-        ->toHaveCount(3);
+    $ordered = $sequence;
+    sort($ordered);
+    expect($sequence)->not->toContain(-1)->and($sequence)->toBe($ordered);
 
-    expect($acquired->source->hostSha)
-        ->toBe(new GitRepository($worktreeA)->commit())
+    $mounts = [
+        'gateway' => ['device' => 'orbit-source', 'source' => $worktreeA, 'path' => '/home/orbit/orbit'],
+        'app-dev' => ['device' => 'orbit-source', 'source' => $worktreeA, 'path' => '/home/orbit/orbit'],
+    ];
+    expect($acquired->purpose)
+        ->toBe(AttemptPurpose::Discovery)
+        ->and($acquired->mounts)
+        ->toBe($mounts)
+        ->and($acquired->source->toArray())
+        ->toMatchArray(['host_sha' => $hostSha, 'guest_sha' => $hostSha, 'dirty' => false, 'mounted' => true])
+        ->and(
+            new TopologyManifestStore($store, $paths)
+                ->read('NCK-123', attemptId())
+                ?->toArray(),
+        )
+        ->toBe($acquired->toArray())
         ->and($acquireJournal)
         ->toHaveCount(1)
-        ->and($acquireJournal[0])
-        ->toMatchArray([
-            'event' => 'topology.acquire.phases',
-            'state' => 'completed',
-            'issue' => 'NCK-123',
-        ])
         ->and(array_keys($acquireJournal[0]['duration_ms'] ?? []))
         ->toBe([
             'create.network',
             'clone',
             'start',
             'prepare.cloned-host-state',
+            'mount.source',
+            'repair.identity',
             'sync.source',
-            'converge',
             'verify',
         ])
         ->and(collect($acquireJournal[0]['duration_ms'] ?? [])
             ->every(
                 static fn (mixed $milliseconds): bool => is_float($milliseconds) && $milliseconds >= 0,
             ))
-        ->toBeTrue()
-        ->and(collect($acquireEvents)->contains(fn (array $command): bool => in_array(
-            $promotedLaravel->commit,
-            $command,
-            true,
-        )))
-        ->toBeTrue()
-        ->and($synced->source->hostSha)
-        ->toBe(new GitRepository($worktreeB)->commit())
-        ->and(collect($events)->contains(fn (array $command): bool => in_array(
-            $promotedLaravel->commit,
-            $command,
-            true,
-        )))
         ->toBeTrue();
+
+    $events = [];
+    expect(fn () => $acquirer->sync('NCK-123', attemptId(), $worktreeB))
+        ->toThrow(RuntimeException::class, 'not the source mounted')
+        ->and($eventsMatching($events, 'source-state'))
+        ->toBe([])
+        ->and($store->read('leases/NCK-123.json')['state'] ?? null)
+        ->toBe('failed');
+
+    file_put_contents($worktreeA.'/discovery-overlay.txt', "dirty\n");
+    $events = [];
+    $synced = $acquirer->sync('NCK-123', attemptId(), $worktreeA);
+    $dirtyTree = new GitRepository($worktreeA)->effectiveTreeHash();
+    $syncMarkers = $eventsMatching($events, '/var/lib/orbit-e2e/source-state');
+
+    expect($synced->source->toArray())
+        ->toMatchArray([
+            'host_sha' => $hostSha,
+            'dirty' => true,
+            'tree_hash' => $dirtyTree,
+            'overlay_paths' => ['discovery-overlay.txt'],
+            'mounted' => true,
+        ])
+        ->and($synced->mounts)
+        ->toBe($mounts)
+        ->and(array_map($instanceOf, $syncMarkers))
+        ->toBe([$target->instance('gateway'), $target->instance('app-dev')])
+        ->and($syncMarkers[0])
+        ->toContain(json_encode(['sha' => $hostSha, 'tree' => $dirtyTree, 'mounted' => true], JSON_THROW_ON_ERROR))
+        ->and($eventsMatching($events, 'file push'))
+        ->toBe([])
+        ->and($eventsMatching($events, 'converge-'))
+        ->toBe([])
+        ->and($store->read('leases/NCK-123.json')['state'] ?? null)
+        ->toBe('ready');
 });
 
 it('retries sync from a valid interrupted lease and writes the refreshed manifest', function (
@@ -3805,7 +4067,9 @@ it('retries sync from a valid interrupted lease and writes the refreshed manifes
     fakePinnedWorktreeProcesses(featureTarget('NCK-123'), $events);
 
     $topology = taskNineAcquirer($repositoryRoot, $paths)->sync(
-        new TopologyRequest('NCK-123', pinnedFeatureWorktree($repositoryRoot, 'retry')),
+        'NCK-123',
+        attemptId(),
+        pinnedFeatureWorktree($repositoryRoot, 'retry'),
     );
     $persisted = new TopologyManifestStore(new AtomicJsonStore($paths), $paths)->active('NCK-123');
 
@@ -3838,9 +4102,7 @@ it('fails closed for an unknown or malformed interrupted lease', function (mixed
     $events = [];
     fakePinnedWorktreeProcesses(featureTarget('NCK-123'), $events);
 
-    expect(fn () => taskNineAcquirer($repositoryRoot, $paths)->sync(
-        new TopologyRequest('NCK-123', $repositoryRoot),
-    ))
+    expect(fn () => taskNineAcquirer($repositoryRoot, $paths)->sync('NCK-123', attemptId(), $repositoryRoot))
         ->toThrow(RuntimeException::class)
         ->and($events)
         ->toBeEmpty();
@@ -3885,9 +4147,7 @@ it('fails closed for a syncing or failed lease with invalid manifest state', fun
     $events = [];
     fakePinnedWorktreeProcesses(featureTarget('NCK-123'), $events);
 
-    expect(fn () => taskNineAcquirer($repositoryRoot, $paths)->sync(
-        new TopologyRequest('NCK-123', $repositoryRoot),
-    ))
+    expect(fn () => taskNineAcquirer($repositoryRoot, $paths)->sync('NCK-123', attemptId(), $repositoryRoot))
         ->toThrow($exception)
         ->and($events)
         ->toBeEmpty();
@@ -3908,9 +4168,7 @@ it('fails closed for a malformed interrupted sync lease', function (array $lease
     $events = [];
     fakePinnedWorktreeProcesses(featureTarget('NCK-123'), $events);
 
-    expect(fn () => taskNineAcquirer($repositoryRoot, $paths)->sync(
-        new TopologyRequest('NCK-123', $repositoryRoot),
-    ))
+    expect(fn () => taskNineAcquirer($repositoryRoot, $paths)->sync('NCK-123', attemptId(), $repositoryRoot))
         ->toThrow(RuntimeException::class, 'sync lease is invalid')
         ->and($events)
         ->toBeEmpty();
@@ -3961,9 +4219,9 @@ it('fails closed for a malformed ready lease on operational entry points', funct
     $candidate = new GitRepository($repositoryRoot)->commit();
 
     expect(fn () => match ($entryPoint) {
-        'sync' => $acquirer->sync($request),
-        'verify' => $acquirer->verify('NCK-123'),
-        'execute' => $acquirer->execute('NCK-123', 'gateway', ['true']),
+        'sync' => $acquirer->sync($request->issue, attemptId(), $request->worktree),
+        'verify' => $acquirer->verify('NCK-123', attemptId()),
+        'execute' => $acquirer->execute('NCK-123', attemptId(), 'gateway', ['true']),
         'prove' => $acquirer->prove($request, $candidate),
     })
         ->toThrow(RuntimeException::class, 'topology lease is invalid')
@@ -3989,9 +4247,7 @@ it('runs interrupted sync retry under the issue lock', function () {
     fakePinnedWorktreeProcesses(featureTarget('NCK-123'), $events);
 
     try {
-        expect(fn () => taskNineAcquirer($repositoryRoot, $paths)->sync(
-            new TopologyRequest('NCK-123', $repositoryRoot),
-        ))
+        expect(fn () => taskNineAcquirer($repositoryRoot, $paths)->sync('NCK-123', attemptId(), $repositoryRoot))
             ->toThrow(RuntimeException::class, 'locked')
             ->and($events)
             ->toBeEmpty();
@@ -4010,7 +4266,7 @@ it('blocks verification while the exact issue topology lock is held', function (
     fakePinnedWorktreeProcesses(featureTarget('NCK-123'), $events);
 
     try {
-        expect(fn () => taskNineAcquirer($repositoryRoot, $paths)->verify('NCK-123'))
+        expect(fn () => taskNineAcquirer($repositoryRoot, $paths)->verify('NCK-123', attemptId()))
             ->toThrow(RuntimeException::class, 'The issue topology is locked.')
             ->and($events)
             ->toBeEmpty();
@@ -4029,7 +4285,7 @@ it('blocks guest execution while the exact issue topology lock is held', functio
     fakePinnedWorktreeProcesses(featureTarget('NCK-123'), $events);
 
     try {
-        expect(fn () => taskNineAcquirer($repositoryRoot, $paths)->execute('NCK-123', 'gateway', ['true']))
+        expect(fn () => taskNineAcquirer($repositoryRoot, $paths)->execute('NCK-123', attemptId(), 'gateway', ['true']))
             ->toThrow(RuntimeException::class, 'The issue topology is locked.')
             ->and($events)
             ->toBeEmpty();
@@ -4050,8 +4306,13 @@ it('reports the lock before malformed topology validation', function (string $en
 
     try {
         expect(fn () => match ($entryPoint) {
-            'verify' => taskNineAcquirer($repositoryRoot, $paths)->verify('NCK-123'),
-            'execute' => taskNineAcquirer($repositoryRoot, $paths)->execute('NCK-123', 'gateway', ['true']),
+            'verify' => taskNineAcquirer($repositoryRoot, $paths)->verify('NCK-123', attemptId()),
+            'execute' => taskNineAcquirer($repositoryRoot, $paths)->execute(
+                'NCK-123',
+                attemptId(),
+                'gateway',
+                ['true'],
+            ),
         })
             ->toThrow(RuntimeException::class, 'The issue topology is locked.')
             ->and($events)
@@ -4077,9 +4338,7 @@ it('releases the issue lock after interrupted sync retry fails', function () {
     fakeOrdinaryPreparedChangeProcesses($repositoryRoot, featureTarget('NCK-123'), $events);
     $worktree = pinnedFeatureWorktree($repositoryRoot, 'lock-release');
 
-    expect(fn () => taskNineAcquirer($repositoryRoot, $paths)->sync(
-        new TopologyRequest('NCK-123', $worktree),
-    ))
+    expect(fn () => taskNineAcquirer($repositoryRoot, $paths)->sync('NCK-123', attemptId(), $worktree))
         ->toThrow(RuntimeException::class, 'converge-gateway.sh failed');
 
     $lock = new OperationLock($paths);
@@ -4109,8 +4368,8 @@ it('rejects operational entry points while a topology lease is syncing or failed
     $candidate = new GitRepository($repositoryRoot)->commit();
 
     expect(fn () => match ($entryPoint) {
-        'verify' => $acquirer->verify('NCK-123'),
-        'execute' => $acquirer->execute('NCK-123', 'gateway', ['true']),
+        'verify' => $acquirer->verify('NCK-123', attemptId()),
+        'execute' => $acquirer->execute('NCK-123', attemptId(), 'gateway', ['true']),
         'prove' => $acquirer->prove($request, $candidate),
     })
         ->toThrow(RuntimeException::class)

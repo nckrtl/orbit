@@ -19,10 +19,12 @@ use App\E2E\Value\IncusInstance;
 use App\E2E\Value\IncusNetwork;
 use App\E2E\Value\OperationId;
 use App\E2E\Value\ProofResult;
+use App\E2E\Value\SourceState;
 use App\E2E\Value\TopologyProfile;
 use App\E2E\Value\TopologyRequest;
 use App\E2E\Value\TopologyTarget;
 use App\E2E\Value\VerificationMode;
+use Closure;
 use Illuminate\Support\Facades\Process;
 use RuntimeException;
 use Throwable;
@@ -33,6 +35,16 @@ use Throwable;
  */
 final readonly class TopologyAcquirer
 {
+    /** The guest path every checkout role mounts the host worktree on. */
+    public const string SOURCE_MOUNT_PATH = '/home/orbit/orbit';
+
+    /** Host `bin/bootstrap` owns vendor; guests never run composer in discovery. */
+    private const array REQUIRED_VENDOR_AUTOLOADS = [
+        'apps/gateway/vendor/autoload.php',
+        'apps/cli/vendor/autoload.php',
+        'packages/php-sdk/vendor/autoload.php',
+    ];
+
     public function __construct(
         private IncusHost $host,
         private IncusNetworkLifecycle $networks,
@@ -50,9 +62,18 @@ final readonly class TopologyAcquirer
         private HostCapacity $capacity,
         private string $repositoryRoot = '',
         private ?AcquisitionRollback $rollback = null,
+        private ?ProofRecordReader $proofs = null,
+        /** @var (Closure(): AttemptId)|null Mints the attempt identity; injectable so tests pin resource names. */
+        private ?Closure $attempts = null,
     ) {}
 
-    public function acquire(TopologyRequest $request, AttemptId $attempt): FeatureTopology
+    /**
+     * Acquire one disposable discovery attempt: clone the promoted generation,
+     * mount the worktree on the checkout roles, repair the clone identity, record
+     * the host source identity, and verify readiness. No source is bundled and no
+     * repository convergence runs.
+     */
+    public function acquireDiscovery(TopologyRequest $request): FeatureTopology
     {
         $this->validateRequestOwnership($request);
         $operation = $this->commandOperation;
@@ -62,14 +83,19 @@ final readonly class TopologyAcquirer
         }
 
         try {
-            return $this->acquirePinned($request, TopologyTarget::feature($request->issue, $attempt), $operation);
+            return $this->acquirePinned(
+                $request,
+                TopologyTarget::feature($request->issue, $this->mintAttempt()),
+                $operation,
+            );
         } finally {
             $issueLock->release();
         }
     }
 
-    public function sync(TopologyRequest $request): FeatureTopology
+    public function sync(string $issue, AttemptId $attempt, string $worktree): FeatureTopology
     {
+        $request = new TopologyRequest($issue, $worktree);
         $this->validateRequestOwnership($request);
         $operation = $this->commandOperation;
         $lock = new OperationLock($this->paths);
@@ -77,17 +103,20 @@ final readonly class TopologyAcquirer
             throw new RuntimeException('The issue topology is locked.');
         }
         try {
-            return $this->syncUnlocked($request, true);
+            return $this->syncUnlocked($request, $attempt, true);
         } finally {
             $lock->release();
         }
     }
 
-    private function syncUnlocked(TopologyRequest $request, bool $allowInterrupted = false): FeatureTopology
-    {
+    private function syncUnlocked(
+        TopologyRequest $request,
+        AttemptId $attempt,
+        bool $allowInterrupted = false,
+    ): FeatureTopology {
         $topology = $allowInterrupted
-            ? $this->requireTopologyForSync($request->issue)
-            : $this->requireTopology($request->issue);
+            ? $this->requireTopologyForSync($request->issue, $attempt)
+            : $this->requireTopology($request->issue, $attempt);
         $target = $topology->target;
         // The lease keeps the acquiring operation: Incus resources are stamped
         // with it, and release verifies ownership against that exact value.
@@ -101,8 +130,7 @@ final readonly class TopologyAcquirer
         try {
             $this->assertColdBaseMatchesMain($request->worktree);
             $this->networks->reconcile($target->network());
-            $source = $this->synchronizer->sync($target, $request->worktree);
-            $this->converger->converge($target, $source, $topology->generation->laravel);
+            $source = $this->synchronizeSource($topology, $request->worktree);
             $verification = $this->verifier->verify($target, VerificationMode::Readiness, $source);
             if (! $verification->passed) {
                 throw new RuntimeException('Feature topology verification failed.'.$verification->failedSummary());
@@ -116,6 +144,7 @@ final readonly class TopologyAcquirer
                 $topology->instances,
                 $source,
                 $verification,
+                $topology->mounts,
             );
             $this->manifests->writeActive($updated);
             $this->writeLease($request->issue, $topology->attempt, $operationId, 'ready');
@@ -127,7 +156,36 @@ final readonly class TopologyAcquirer
         }
     }
 
-    public function verify(string $issue): FeatureTopology
+    /**
+     * A mounted topology reads the host worktree directly, so only its identity is
+     * re-recorded; a transferred checkout receives the source and converges again.
+     */
+    private function synchronizeSource(FeatureTopology $topology, string $worktree): SourceState
+    {
+        $target = $topology->target;
+        if ($topology->source->mounted) {
+            $this->assertWorktreeIsMounted($topology, $worktree);
+
+            return $this->synchronizer->syncWorkingTree($target, $worktree);
+        }
+
+        $source = $this->synchronizer->sync($target, $worktree);
+        $this->converger->converge($target, $source, $topology->generation->laravel);
+
+        return $source;
+    }
+
+    /** A mounted topology serves exactly one host worktree; another path cannot be synchronized into it. */
+    private function assertWorktreeIsMounted(FeatureTopology $topology, string $worktree): void
+    {
+        foreach ($topology->mounts as $mount) {
+            if ($mount['source'] !== $worktree) {
+                throw new RuntimeException('The worktree is not the source mounted on the topology attempt.');
+            }
+        }
+    }
+
+    public function verify(string $issue, AttemptId $attempt): FeatureTopology
     {
         TopologyTarget::assertIssue($issue);
         $lock = new OperationLock($this->paths);
@@ -135,7 +193,7 @@ final readonly class TopologyAcquirer
             throw new RuntimeException('The issue topology is locked.');
         }
         try {
-            $topology = $this->requireTopology($issue);
+            $topology = $this->requireTopology($issue, $attempt);
             $target = $topology->target;
             $this->networks->reconcile($target->network());
             $report = $this->verifier->verify($target, VerificationMode::Readiness, $topology->source);
@@ -151,6 +209,7 @@ final readonly class TopologyAcquirer
                 $topology->instances,
                 $topology->source,
                 $report,
+                $topology->mounts,
             );
             $this->manifests->writeActive($updated);
 
@@ -161,8 +220,13 @@ final readonly class TopologyAcquirer
     }
 
     /** @param list<string> $argv */
-    public function execute(string $issue, string $role, array $argv, ?string $stdin = null): GuestCommandResult
-    {
+    public function execute(
+        string $issue,
+        AttemptId $attempt,
+        string $role,
+        array $argv,
+        ?string $stdin = null,
+    ): GuestCommandResult {
         TopologyTarget::assertIssue($issue);
         $lock = new OperationLock($this->paths);
         if (! $lock->acquire('topology-'.$issue, $this->commandOperation)) {
@@ -170,7 +234,7 @@ final readonly class TopologyAcquirer
         }
 
         try {
-            $topology = $this->requireTopology($issue);
+            $topology = $this->requireTopology($issue, $attempt);
             $instance = $topology->target->instance($role);
             $owned = $this->host->instance($instance);
             if (
@@ -187,6 +251,7 @@ final readonly class TopologyAcquirer
                 'event' => 'topology.exec',
                 'state' => 'started',
                 'issue' => $issue,
+                'attempt' => $attempt->value,
                 'role' => $role,
                 'target' => $instance,
                 'argv' => $this->redactor->redactArgv($argv),
@@ -232,7 +297,10 @@ final readonly class TopologyAcquirer
             throw new RuntimeException('Final proof requires a clean worktree at the candidate SHA.');
         }
 
-        $topology = $this->syncUnlocked($request);
+        $active = $this->manifests->active($request->issue) ?? throw new RuntimeException(
+            'The feature topology does not exist.',
+        );
+        $topology = $this->syncUnlocked($request, $active->attempt);
         $target = $topology->target;
         if ($topology->source->dirty || $topology->source->hostSha !== $candidateSha) {
             throw new RuntimeException('Final source sync changed the candidate identity.');
@@ -323,7 +391,7 @@ final readonly class TopologyAcquirer
         TopologyTarget $target,
         OperationId $operation,
     ): FeatureTopology {
-        if ($this->state->read('release-pending/'.$request->issue.'.json') !== null) {
+        if ($this->hasPendingRelease($request->issue)) {
             throw new RuntimeException('The issue has a pending release finalization.');
         }
         $manifest = $this->manifests->active($request->issue);
@@ -400,12 +468,20 @@ final readonly class TopologyAcquirer
             $generation->snapshots,
         ));
 
-        $this->state->delete('releases/'.$request->issue.'.json');
+        $this->assertVendorHydrated($request->worktree);
 
         $created = [];
         $phaseTimings = [];
         $attempt = $target->requireAttempt();
         $writtenTopology = null;
+        $mounts = [];
+        foreach (TopologyProfile::CHECKOUT_ROLES as $role) {
+            $mounts[$role] = [
+                'device' => FeatureTopology::SOURCE_DEVICE,
+                'source' => $request->worktree,
+                'path' => self::SOURCE_MOUNT_PATH,
+            ];
+        }
         try {
             $this->writeLease($request->issue, $attempt, $operation->value, 'acquiring');
             $networkSlot = $this->capacity->reserve($request->issue, $attempt, $operation);
@@ -439,6 +515,9 @@ final readonly class TopologyAcquirer
                     'topology' => $target->network(),
                     'slot' => $networkSlot,
                 ];
+                if (array_key_exists($role, $mounts)) {
+                    $copies[$role]['mount'] = $mounts[$role];
+                }
             }
             $phase = 'clone';
             $this->measurePhase(
@@ -451,17 +530,15 @@ final readonly class TopologyAcquirer
             $this->measurePhase($phase, $phaseTimings, fn () => $this->host->startAll($instances));
             $phase = 'prepare.cloned-host-state';
             $this->measurePhase($phase, $phaseTimings, fn () => $this->host->prepareClonedHostStates($instances));
+            $phase = 'mount.source';
+            $this->measurePhase($phase, $phaseTimings, fn () => $this->assertSourceMounted($target));
+            $phase = 'repair.identity';
+            $this->measurePhase($phase, $phaseTimings, fn () => $this->repairCloneIdentity($target));
             $phase = 'sync.source';
             $source = $this->measurePhase(
                 $phase,
                 $phaseTimings,
-                fn () => $this->synchronizer->sync($target, $request->worktree),
-            );
-            $phase = 'converge';
-            $this->measurePhase(
-                $phase,
-                $phaseTimings,
-                fn () => $this->converger->converge($target, $source, $generation->laravel),
+                fn () => $this->synchronizer->syncWorkingTree($target, $request->worktree),
             );
             $phase = 'verify';
             $verification = $this->measurePhase(
@@ -486,6 +563,7 @@ final readonly class TopologyAcquirer
                 $instances,
                 $source,
                 $verification,
+                $mounts,
             );
             $this->manifests->writeActive($topology);
             $writtenTopology = $topology;
@@ -575,6 +653,121 @@ final readonly class TopologyAcquirer
         }
     }
 
+    private function mintAttempt(): AttemptId
+    {
+        if ($this->attempts === null) {
+            return AttemptId::generate();
+        }
+
+        return ($this->attempts)();
+    }
+
+    /** Any attempt of the issue whose release finalization was interrupted blocks a new attempt. */
+    private function hasPendingRelease(string $issue): bool
+    {
+        $directory = $this->paths->path('release-pending/'.$issue);
+        if (! file_exists($directory)) {
+            return false;
+        }
+        if (! is_dir($directory) || is_link($directory)) {
+            throw new RuntimeException('The pending release collection cannot be inspected.');
+        }
+        $pending = glob($directory.'/*.json');
+        if ($pending === false) {
+            throw new RuntimeException('The pending release collection cannot be inspected.');
+        }
+
+        return $pending !== [];
+    }
+
+    /** Discovery guests never run composer, so the host worktree must already carry every vendor tree. */
+    private function assertVendorHydrated(string $worktree): void
+    {
+        foreach (self::REQUIRED_VENDOR_AUTOLOADS as $autoload) {
+            if (! is_file($worktree.'/'.$autoload)) {
+                throw new RuntimeException(
+                    "The worktree is missing {$autoload}; run bin/bootstrap in the worktree before discovery.",
+                );
+            }
+        }
+    }
+
+    /**
+     * The mount hides the snapshot checkout, so the gateway `.env` the standby
+     * build preserved is placed into the mounted worktree when it is absent there.
+     * It lands in the host worktree (gitignored) and is never overwritten.
+     */
+    private function assertSourceMounted(TopologyTarget $target): void
+    {
+        $commands = [];
+        foreach (TopologyProfile::CHECKOUT_ROLES as $role) {
+            $commands["mountpoint.{$role}"] = [
+                'instance' => $target->instance($role),
+                'command' => new GuestCommand(['mountpoint', '-q', '--', self::SOURCE_MOUNT_PATH], 30),
+            ];
+        }
+        $this->assertGuestBatch($this->host->execAll($commands), 'The worktree is not mounted on');
+
+        $environment = $this->host->exec($target->instance('gateway'), new GuestCommand([
+            'sh',
+            '-c',
+            '[ -e "$1" ] || install -o 1000 -g 1000 -m 0600 -- "$2" "$1"',
+            'orbit-e2e',
+            self::SOURCE_MOUNT_PATH.'/apps/gateway/.env',
+            WorktreeSynchronizer::GATEWAY_ENV_COPY,
+        ], 30));
+        if (! $environment->successful()) {
+            throw new RuntimeException(
+                'The gateway environment could not be placed into the mounted worktree; '
+                .'the promoted standby generation must be refreshed so it preserves '
+                .WorktreeSynchronizer::GATEWAY_ENV_COPY
+                .'.',
+            );
+        }
+    }
+
+    /**
+     * A clone keeps its snapshot's WireGuard endpoint and PHP caches: point the
+     * nodes at the cloned gateway and drop opcache/realpath state that names the
+     * hidden snapshot checkout.
+     */
+    private function repairCloneIdentity(TopologyTarget $target): void
+    {
+        $instances = array_combine(TopologyProfile::ROLES, array_map($target->instance(...), TopologyProfile::ROLES));
+        $addresses = $this->host->globalIpv4All($instances);
+        $retarget = [];
+        foreach (['app-dev', 'app-prod'] as $role) {
+            $retarget["retarget-vpn.{$role}"] = [
+                'instance' => $instances[$role],
+                'command' => new GuestCommand(['/usr/local/bin/retarget-vpn.sh', $addresses['gateway']], 300),
+            ];
+        }
+        $this->assertGuestBatch($this->host->execAll($retarget), 'WireGuard retargeting failed on');
+
+        $restart = [];
+        foreach (TopologyProfile::CHECKOUT_ROLES as $role) {
+            $restart["php-fpm.{$role}"] = [
+                'instance' => $instances[$role],
+                'command' => new GuestCommand(['systemctl', 'restart', 'php8.5-fpm'], 120),
+            ];
+        }
+        $this->assertGuestBatch($this->host->execAll($restart), 'PHP-FPM restart failed on');
+    }
+
+    /** @param array<string, GuestCommandResult> $results */
+    private function assertGuestBatch(array $results, string $message): void
+    {
+        $failed = [];
+        foreach ($results as $label => $result) {
+            if (! $result->successful()) {
+                $failed[] = $label;
+            }
+        }
+        if ($failed !== []) {
+            throw new RuntimeException($message.' '.implode(', ', $failed).'.');
+        }
+    }
+
     /**
      * @template T
      * @param array<string, float> $timings
@@ -614,7 +807,7 @@ final readonly class TopologyAcquirer
      * `copySnapshots()` repeats source and snapshot ownership checks while the
      * pin is held, so refresh cannot replace the source between proof and copy.
      *
-     * @param array<string, array{source:string,snapshot:string,target:string,metadata:array<string, string>,network?:string,role?:string,topology?:string,slot?:int}> $copies
+     * @param array<string, array{source:string,snapshot:string,target:string,metadata:array<string, string>,network?:string,role?:string,topology?:string,slot?:int,mount?:array{device:string,source:string,path:string}}> $copies
      */
     private function copyPinnedSnapshots(
         \App\E2E\Value\StandbyGeneration $generation,
@@ -683,7 +876,7 @@ final readonly class TopologyAcquirer
         }
     }
 
-    private function requireTopology(string $issue): FeatureTopology
+    private function requireTopology(string $issue, AttemptId $attempt): FeatureTopology
     {
         $lease = $this->state->read('leases/'.$issue.'.json');
         if (! is_array($lease)) {
@@ -694,10 +887,10 @@ final readonly class TopologyAcquirer
         }
         $this->leaseOperation($lease, $issue, ['ready'], 'topology');
 
-        return $this->activeTopology($issue, $this->leaseAttempt($lease, $issue, 'topology'));
+        return $this->exactTopology($issue, $attempt, $this->leaseAttempt($lease, $issue, 'topology'));
     }
 
-    private function requireTopologyForSync(string $issue): FeatureTopology
+    private function requireTopologyForSync(string $issue, AttemptId $attempt): FeatureTopology
     {
         $lease = $this->state->read('leases/'.$issue.'.json');
         if (! is_array($lease)) {
@@ -705,7 +898,7 @@ final readonly class TopologyAcquirer
         }
         $state = $lease['state'] ?? null;
         if ($state === 'ready') {
-            return $this->requireTopology($issue);
+            return $this->requireTopology($issue, $attempt);
         }
         if (! in_array($state, ['syncing', 'failed'], true)) {
             throw new RuntimeException('The feature topology lease is not ready.');
@@ -713,18 +906,28 @@ final readonly class TopologyAcquirer
 
         $this->leaseOperation($lease, $issue, ['syncing', 'failed'], 'sync');
 
-        return $this->activeTopology($issue, $this->leaseAttempt($lease, $issue, 'sync'));
+        return $this->exactTopology($issue, $attempt, $this->leaseAttempt($lease, $issue, 'sync'));
     }
 
-    /** The lease and the active pointer must name the same attempt before any command touches it. */
-    private function activeTopology(string $issue, AttemptId $attempt): FeatureTopology
+    /**
+     * The exact attempt record, the lease, and the active pointer must all name the
+     * requested attempt before any command touches it; a proved attempt is immutable.
+     */
+    private function exactTopology(string $issue, AttemptId $attempt, AttemptId $leaseAttempt): FeatureTopology
     {
-        $topology = $this->manifests->active($issue) ?? throw new RuntimeException(
-            'The feature topology does not exist.',
-        );
+        if ($leaseAttempt->value !== $attempt->value) {
+            throw new RuntimeException('The topology lease names another attempt.');
+        }
 
-        if ($topology->attempt->value !== $attempt->value) {
-            throw new RuntimeException('The topology lease and the active topology attempt do not match.');
+        $topology = $this->manifests->read($issue, $attempt) ?? throw new RuntimeException(
+            'The exact topology attempt does not exist.',
+        );
+        $active = $this->manifests->active($issue);
+        if ($active === null || $active->attempt->value !== $attempt->value) {
+            throw new RuntimeException('The topology attempt is not the active topology attempt.');
+        }
+        if (($this->proofs ?? new ProofRecordReader($this->state))->isProved($issue, $attempt)) {
+            throw new RuntimeException('The topology attempt is proved and cannot be changed.');
         }
 
         return $topology;

@@ -87,6 +87,8 @@ it('proves the rolling topology contract through public wrappers', function (): 
     $acquired = false;
     $isolationAcquired = false;
     $primaryFailure = null;
+    $target = null;
+    $isolationTarget = null;
 
     try {
         $initial = liveJsonPhase('standby status', fn (): array => liveJsonWrapper('standby', 'status'));
@@ -116,7 +118,8 @@ it('proves the rolling topology contract through public wrappers', function (): 
         ));
         $acquired = true;
         $target = liveAcquiredTarget($acquire, $issue);
-        Assert::assertSame('ready', $acquire['state'] ?? null);
+        Assert::assertSame('discovery', $acquire['state'] ?? null);
+        Assert::assertSame($target->requireAttempt()->value, $acquire['attempt_id'] ?? null);
         Assert::assertArrayNotHasKey('evidence_id', $acquire);
         Assert::assertSame($acquire['operation_id'] ?? null, $acquire['topology']['source']['operation_id'] ?? null);
         liveAssertTopology($acquire['topology'] ?? null, $target, $candidateSha);
@@ -130,7 +133,7 @@ it('proves the rolling topology contract through public wrappers', function (): 
             $featureWorktree,
         ));
         $isolationTarget = liveAcquiredTarget($isolationAcquire, $isolationIssue);
-        Assert::assertSame('ready', $isolationAcquire['state'] ?? null);
+        Assert::assertSame('discovery', $isolationAcquire['state'] ?? null);
         liveAssertTopology($isolationAcquire['topology'] ?? null, $isolationTarget, $candidateSha);
         liveAssertIncusTopology($isolationAcquire['topology'] ?? null, $isolationTarget);
         liveAssertTopologyTrafficIsolation($target, $isolationTarget);
@@ -139,14 +142,15 @@ it('proves the rolling topology contract through public wrappers', function (): 
             'topology',
             'release',
             $isolationIssue,
+            $isolationTarget->requireAttempt()->value,
         ));
         Assert::assertSame('released', $isolationRelease['state'] ?? null);
         $isolationAcquired = false;
 
         $manifestPath = "{$stateRoot}/topologies/{$issue}/{$target->requireAttempt()->value}.json";
         Assert::assertSame($acquire['topology'], liveJsonFile($manifestPath));
-        liveVoidPhase('verify services', function () use ($issue): void {
-            $verified = liveJsonWrapper('topology', 'verify', $issue);
+        liveVoidPhase('verify services', function () use ($issue, $target): void {
+            $verified = liveJsonWrapper('topology', 'verify', $issue, $target->requireAttempt()->value);
             Assert::assertSame('verified', $verified['state'] ?? null);
             Assert::assertTrue($verified['verification']['passed'] ?? false);
             Assert::assertNotContains(false, $verified['verification']['probes'] ?? []);
@@ -161,6 +165,7 @@ it('proves the rolling topology contract through public wrappers', function (): 
                 'topology',
                 'sync',
                 $issue,
+                $target->requireAttempt()->value,
                 $featureWorktree,
             ));
             Assert::assertSame('ready', $dirty['state'] ?? null);
@@ -183,6 +188,7 @@ it('proves the rolling topology contract through public wrappers', function (): 
             'topology',
             'sync',
             $issue,
+            $target->requireAttempt()->value,
             $featureWorktree,
         ));
         $cleanManifest = liveJsonFile($manifestPath);
@@ -276,21 +282,28 @@ it('proves the rolling topology contract through public wrappers', function (): 
         }
         foreach (array_reverse(TopologyProfile::ROLES) as $role) {
             $expectedReleased[] = 'deleted:'.$target->instance($role);
+            if (in_array($role, TopologyProfile::CHECKOUT_ROLES, true)) {
+                $expectedReleased[] = 'device:'.$target->instance($role).':orbit-source';
+            }
         }
         $expectedReleased[] = 'deleted:'.$target->network();
+        $attemptId = $target->requireAttempt()->value;
 
         $release = liveJsonPhase('release exact topology', fn (): array => liveJsonWrapper(
             'topology',
             'release',
             $issue,
+            $attemptId,
         ));
         Assert::assertSame('released', $release['state'] ?? null);
+        Assert::assertSame($attemptId, $release['attempt_id'] ?? null);
+        Assert::assertSame('discovery', $release['purpose'] ?? null);
         Assert::assertSame($expectedReleased, $release['released'] ?? null);
         Assert::assertSame([], $release['already_absent'] ?? null);
-        Assert::assertSame($release, liveJsonFile("{$stateRoot}/releases/{$issue}.json"));
+        Assert::assertSame($release, liveJsonFile("{$stateRoot}/evidence/releases/{$issue}/{$attemptId}.json"));
         Assert::assertFileDoesNotExist($manifestPath);
         Assert::assertFileDoesNotExist("{$stateRoot}/leases/{$issue}.json");
-        $repeated = liveJsonWrapper('topology', 'release', $issue);
+        $repeated = liveJsonWrapper('topology', 'release', $issue, $attemptId);
         Assert::assertSame('released', $repeated['state'] ?? null);
         Assert::assertSame([], $repeated['released'] ?? null);
         Assert::assertSame($expectedReleased, $repeated['already_absent'] ?? null);
@@ -301,24 +314,26 @@ it('proves the rolling topology contract through public wrappers', function (): 
         $primaryFailure = $exception;
     } finally {
         $cleanupFailure = null;
-        if ($isolationAcquired) {
+        if ($isolationAcquired && $isolationTarget !== null) {
             try {
                 $cleanup = liveProcessPhase('cleanup isolation topology release', fn (): ProcessResult => liveWrapper(
                     'topology',
                     'release',
                     $isolationIssue,
+                    $isolationTarget->requireAttempt()->value,
                 ));
                 Assert::assertTrue($cleanup->successful(), $cleanup->errorOutput() ?: $cleanup->output());
             } catch (Throwable $exception) {
                 $cleanupFailure = $exception;
             }
         }
-        if ($acquired) {
+        if ($acquired && $target !== null) {
             try {
                 $cleanup = liveProcessPhase('cleanup topology release', fn (): ProcessResult => liveWrapper(
                     'topology',
                     'release',
                     $issue,
+                    $target->requireAttempt()->value,
                 ));
                 Assert::assertTrue($cleanup->successful(), $cleanup->errorOutput() ?: $cleanup->output());
             } catch (Throwable $exception) {

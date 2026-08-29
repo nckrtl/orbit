@@ -9,6 +9,7 @@ use App\E2E\Value\GuestCommand;
 use App\E2E\Value\GuestCommandResult;
 use App\E2E\Value\OperationId;
 use App\E2E\Value\SourceState;
+use App\E2E\Value\TopologyProfile;
 use App\E2E\Value\TopologyTarget;
 use InvalidArgumentException;
 use JsonException;
@@ -31,11 +32,64 @@ final readonly class WorktreeSynchronizer
         'verify-topology.sh',
     ];
 
+    /** Where a mounted checkout records its host identity; guests cannot read a worktree `.git` pointer file. */
+    public const string SOURCE_STATE_MARKER = '/var/lib/orbit-e2e/source-state';
+
+    /** The gateway `.env` is preserved outside the checkout so a mounted worktree can receive it. */
+    public const string GATEWAY_ENV_COPY = '/var/lib/orbit-e2e/gateway.env';
+
     public function __construct(
         private GuestTransport $incus,
         private string $repositoryRoot,
         private OperationId $operation,
     ) {}
+
+    /**
+     * Record the host identity of a worktree that is mounted into every checkout
+     * role. No file is transferred: the guests read the mounted tree directly and
+     * only need the exact SHA and effective tree hash the host computed.
+     */
+    public function syncWorkingTree(TopologyTarget $target, string $worktree): SourceState
+    {
+        $repository = new GitRepository($worktree);
+        $this->validateWorktree($repository, $target);
+        $hostSha = $repository->commit();
+        $overlay = $repository->dirtyOverlay();
+        $paths = $overlay === null ? [] : $overlay->paths;
+        $treeHash = $overlay === null ? $repository->effectiveTreeHash() : $overlay->treeHash;
+        $marker = json_encode([
+            'sha' => $hostSha,
+            'tree' => $treeHash,
+            'mounted' => true,
+        ], JSON_THROW_ON_ERROR);
+
+        $commands = [];
+        foreach (TopologyProfile::CHECKOUT_ROLES as $role) {
+            $commands["source-marker.{$role}"] = [
+                'instance' => $target->instance($role),
+                'command' => new GuestCommand([
+                    'sh',
+                    '-c',
+                    'umask 022 && install -d -m 0755 -- "$(dirname -- "$2")" '
+                        .'&& printf \'%s\\n\' "$1" > "$2.tmp" && mv -f -- "$2.tmp" "$2"',
+                    'orbit-e2e',
+                    $marker,
+                    self::SOURCE_STATE_MARKER,
+                ], 30),
+            ];
+        }
+        $this->assertBatchSuccessful($this->incus->execAll($commands), 'Guest source marker write failed.');
+
+        return new SourceState(
+            $hostSha,
+            $hostSha,
+            $overlay !== null,
+            $overlay?->treeHash,
+            $paths,
+            $this->operation->value,
+            true,
+        );
+    }
 
     public function sync(TopologyTarget $target, string $worktree): SourceState
     {
@@ -531,6 +585,7 @@ final readonly class WorktreeSynchronizer
                 ];
             }
             $this->assertBatchSuccessful($this->incus->execAll($hydrate), 'Guest source hydration failed.');
+            $this->preserveGatewayEnvironment($transfers);
 
             $cleanupInstances = $staged;
             $staged = [];
@@ -549,6 +604,42 @@ final readonly class WorktreeSynchronizer
             }
             throw $primary;
         }
+    }
+
+    /**
+     * Keep a root-owned copy of the hydrated gateway `.env` outside the checkout.
+     * A discovery mount hides the snapshot checkout, so the copy is the only way
+     * the mounted worktree receives the gateway environment.
+     *
+     * @param array<string, array{instance:string, files:array<string, array{string, string}>}> $transfers
+     */
+    private function preserveGatewayEnvironment(array $transfers): void
+    {
+        $gateway = $transfers['gateway'] ?? null;
+        if ($gateway === null) {
+            return;
+        }
+
+        $this->assertBatchSuccessful(
+            $this->incus->execAll([
+                'source-preserve-env.gateway' => [
+                    'instance' => $gateway['instance'],
+                    'command' => new GuestCommand([
+                        'install',
+                        '-o',
+                        'root',
+                        '-g',
+                        'root',
+                        '-m',
+                        '0600',
+                        '--',
+                        '/home/orbit/orbit/apps/gateway/.env',
+                        self::GATEWAY_ENV_COPY,
+                    ], 30),
+                ],
+            ]),
+            'Guest gateway environment preservation failed.',
+        );
     }
 
     /** @return list<string> */

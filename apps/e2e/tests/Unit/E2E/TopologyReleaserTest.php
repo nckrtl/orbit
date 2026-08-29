@@ -6,11 +6,13 @@ use App\E2E\AcquisitionRollback;
 use App\E2E\HostCapacity;
 use App\E2E\IncusHost;
 use App\E2E\IncusNetworkLifecycle;
+use App\E2E\ReleaseReceiptStore;
 use App\E2E\State\AtomicJsonStore;
 use App\E2E\State\StatePaths;
 use App\E2E\TopologyManifestStore;
 use App\E2E\TopologyReleaser;
 use App\E2E\Value\AttemptId;
+use App\E2E\Value\AttemptPurpose;
 use App\E2E\Value\OperationId;
 use App\E2E\Value\ReleaseResult;
 use App\E2E\Value\TopologyProfile;
@@ -28,12 +30,267 @@ beforeEach(function () {
     Process::preventStrayProcesses();
 });
 
+const RELEASE_MOUNT_SOURCE = '/srv/worktrees/nck-12';
+
+function releaseAttempt(string $character = 'a'): AttemptId
+{
+    return new AttemptId(str_repeat($character, 32));
+}
+
+function releaseTopologyPath(string $issue = 'NCK-12', string $character = 'a'): string
+{
+    return 'topologies/'.$issue.'/'.releaseAttempt($character)->value.'.json';
+}
+
+function releaseReceiptPath(string $issue = 'NCK-12', string $character = 'a'): string
+{
+    return 'evidence/releases/'.$issue.'/'.releaseAttempt($character)->value.'.json';
+}
+
+function releasePendingPath(string $issue = 'NCK-12', string $character = 'a'): string
+{
+    return 'release-pending/'.$issue.'/'.releaseAttempt($character)->value.'.json';
+}
+
+/** @return array<string, array{device:string,source:string,path:string}> */
+function releaseMounts(): array
+{
+    $mounts = [];
+    foreach (TopologyProfile::CHECKOUT_ROLES as $role) {
+        $mounts[$role] = ['device' => 'orbit-source', 'source' => RELEASE_MOUNT_SOURCE, 'path' => '/home/orbit/orbit'];
+    }
+
+    return $mounts;
+}
+
+function readyReleaseState(AtomicJsonStore $store, string $issue = 'NCK-12', string $character = 'a'): void
+{
+    $target = featureTarget($issue, $character);
+    $store->write('leases/'.$issue.'.json', [
+        'schema' => 2,
+        'issue' => $issue,
+        'attempt' => releaseAttempt($character)->value,
+        'state' => 'ready',
+        'operation_id' => str_repeat('a', 32),
+    ]);
+    $store->write(releaseTopologyPath($issue, $character), [
+        'schema' => 2,
+        'issue' => $issue,
+        'attempt_id' => releaseAttempt($character)->value,
+        'purpose' => 'discovery',
+        'profile' => TopologyProfile::NAME,
+        'generation' => [
+            'schema' => 4,
+            'id' => 'generation-1',
+            'main_sha' => str_repeat('a', 40),
+            'snapshots' => [
+                'gateway' => 'main-gateway',
+                'app-dev' => 'main-app-dev',
+                'app-prod' => 'main-app-prod',
+            ],
+            'prepared_fingerprint' => str_repeat('a', 64),
+            'base_image_fingerprint' => str_repeat('b', 64),
+            'structural_fingerprint' => str_repeat('e', 64),
+            'prepared_schema' => 1,
+            'cold_epoch' => 'ubuntu-26.04-amd64-v1',
+            'base_image_alias' => 'orbit-base-ubuntu-26.04-runtime',
+            'topology' => [
+                'profile' => TopologyProfile::NAME,
+                'roles' => TopologyProfile::ROLES,
+                'checkout_roles' => TopologyProfile::CHECKOUT_ROLES,
+            ],
+            'laravel_pin' => ['tag' => 'v1.0.0', 'commit' => str_repeat('c', 40)],
+            'previous_generation_id' => null,
+        ],
+        'network' => $target->network(),
+        'instances' => array_combine(TopologyProfile::ROLES, array_map(
+            $target->instance(...),
+            TopologyProfile::ROLES,
+        )),
+        'mounts' => releaseMounts(),
+        'source' => [
+            'host_sha' => str_repeat('d', 40),
+            'guest_sha' => str_repeat('d', 40),
+            'dirty' => false,
+            'tree_hash' => null,
+            'overlay_paths' => [],
+            'operation_id' => null,
+            'mounted' => true,
+        ],
+        'verification' => [
+            'passed' => true,
+            'probes' => ['ready' => verificationProbeFixture(probe: 'ready')],
+        ],
+    ]);
+    $store->write('topologies/'.$issue.'/active.json', [
+        'schema' => 2,
+        'issue' => $issue,
+        'attempt' => releaseAttempt($character)->value,
+    ]);
+}
+
+function releaseReceipt(
+    string $operation = 'a',
+    string $evidence = 'b',
+    array $released = ['deleted:old'],
+    array $absent = [],
+    string $issue = 'NCK-12',
+    string $character = 'a',
+): ReleaseResult {
+    return new ReleaseResult(
+        str_repeat($operation, 32),
+        str_repeat($evidence, 32),
+        $issue,
+        releaseAttempt($character),
+        AttemptPurpose::Discovery,
+        $released,
+        $absent,
+        ['verified:old'],
+        '2026-08-29T10:00:00Z',
+    );
+}
+
+function completedReleaseState(AtomicJsonStore $store, StatePaths $paths): void
+{
+    readyReleaseState($store);
+    new ReleaseReceiptStore($store, $paths)->write(releaseReceipt());
+}
+
+/** @param array<array-key, mixed> $value */
+function releaseStateDigest(array $value): string
+{
+    return hash('sha256', json_encode($value, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
+}
+
+function releaser(
+    AtomicJsonStore $store,
+    StatePaths $paths,
+    ?HostCapacity $capacity = null,
+    ?AcquisitionRollback $rollback = null,
+    string $operation = 'a',
+): TopologyReleaser {
+    $host = new IncusHost;
+
+    return new TopologyReleaser(
+        $host,
+        new IncusNetworkLifecycle($host),
+        new TopologyManifestStore($store, $paths),
+        $store,
+        $paths,
+        new OperationId(str_repeat($operation, 32)),
+        $capacity,
+        $rollback,
+        new ReleaseReceiptStore($store, $paths),
+    );
+}
+
+/** @return array<string, mixed> */
+function releaseInstanceJson(
+    TopologyTarget $target,
+    string $role,
+    ?array $mount = null,
+    ?string $mac = null,
+    string $status = 'Running',
+): array {
+    $devices = [
+        'root' => ['pool' => 'default'],
+        'eth0' => ['network' => $target->network(), 'hwaddr' => $mac ?? $target->mac($role)],
+    ];
+    $mount ??= in_array($role, TopologyProfile::CHECKOUT_ROLES, true)
+        ? ['source' => RELEASE_MOUNT_SOURCE, 'path' => '/home/orbit/orbit']
+        : [];
+    if ($mount !== []) {
+        $devices['orbit-source'] = ['type' => 'disk', ...$mount];
+    }
+
+    return [
+        'name' => $target->instance($role),
+        'type' => 'virtual-machine',
+        'status' => $status,
+        'status_code' => $status === 'Running' ? 103 : 102,
+        'config' => [
+            'user.orbit.e2e.owner' => 'orbit-e2e',
+            'user.orbit.e2e.issue' => $target->issue,
+            'user.orbit.e2e.attempt' => $target->requireAttempt()->value,
+            'user.orbit.e2e.generation' => 'generation-1',
+            'user.orbit.e2e.operation' => str_repeat('a', 32),
+        ],
+        'devices' => $devices,
+    ];
+}
+
+/**
+ * A live Incus fake: every exact instance and the network exist until deleted.
+ *
+ * @param array<string, array<string, mixed>> $instances instance name → resource JSON
+ * @param list<list<string>> $commands
+ * @mago-expect lint:cyclomatic-complexity The fake models each exact cleanup branch.
+ */
+function fakeReleaseIncus(TopologyTarget $target, array &$instances, bool &$networkExists, array &$commands): void
+{
+    Process::fake(function (\Illuminate\Process\PendingProcess $process) use (
+        &$instances,
+        &$networkExists,
+        &$commands,
+        $target,
+    ) {
+        $command = $process->command;
+        $commands[] = $command;
+        if (
+            ($command[0] ?? null) === 'python3'
+            && str_ends_with((string) ($command[1] ?? ''), '/resources/host/reconcile-firewall.py')
+        ) {
+            return Process::result('{"changed":true}');
+        }
+        if (array_slice($command, 0, 5) === ['sudo', '-n', 'iptables', '-w', '5']) {
+            return in_array('-C', $command, true) ? Process::result('', '', 1) : Process::result();
+        }
+        if (($command[3] ?? null) === 'network' && ($command[4] ?? null) === 'list') {
+            return Process::result(json_encode(
+                $networkExists
+                    ? [[
+                        'name' => $target->network(),
+                        'config' => [
+                            'user.orbit.e2e.owner' => 'orbit-e2e',
+                            'user.orbit.e2e.issue' => $target->issue,
+                            'user.orbit.e2e.attempt' => $target->requireAttempt()->value,
+                            'user.orbit.e2e.operation' => str_repeat('a', 32),
+                        ],
+                    ]] : [],
+                JSON_THROW_ON_ERROR,
+            ));
+        }
+        if (($command[3] ?? null) === 'network' && ($command[4] ?? null) === 'delete') {
+            $networkExists = false;
+
+            return Process::result();
+        }
+        if (($command[3] ?? null) === 'list') {
+            $name = preg_replace('/\A[^:]+:/', '', (string) ($command[4] ?? ''));
+            if ($name === '') {
+                return Process::result(json_encode(array_values($instances), JSON_THROW_ON_ERROR));
+            }
+
+            return Process::result(json_encode(
+                isset($instances[$name]) ? [$instances[$name]] : [],
+                JSON_THROW_ON_ERROR,
+            ));
+        }
+        if (($command[3] ?? null) === 'delete') {
+            unset($instances[preg_replace('/\A[^:]+:/', '', (string) ($command[4] ?? ''))]);
+
+            return Process::result();
+        }
+
+        return Process::result();
+    });
+}
+
 /** @mago-expect lint:cyclomatic-complexity The release scenarios keep exact cleanup behavior visible. */
 describe('topology release', function () {
     it('removes an abandoned acquisition manifest after exact cleanup', function () {
         Process::fake(['*' => Process::result('[]')]);
-        $root = temporaryPath('orbit-release-', 8);
-        $paths = new StatePaths($root);
+        $paths = new StatePaths(temporaryPath('orbit-release-', 8));
         $store = new AtomicJsonStore($paths);
         readyReleaseState($store);
         $store->write('leases/NCK-12.json', [
@@ -54,132 +311,35 @@ describe('topology release', function () {
             static function (array $resources): void {},
             static function (string $resource): void {},
         );
-        $releaser = new TopologyReleaser(
-            new IncusHost,
-            new IncusNetworkLifecycle(new IncusHost),
-            new TopologyManifestStore($store, $paths),
-            $store,
-            $paths,
-            new OperationId(str_repeat('b', 32)),
-            acquisitionRollback: $rollback,
-        );
 
-        $result = $releaser->release($target->issue);
+        $result = releaser($store, $paths, rollback: $rollback, operation: 'b')->release(
+            $target->issue,
+            releaseAttempt(),
+        );
 
         expect($result->alreadyAbsent)
             ->toHaveCount(count(TopologyProfile::ROLES) + 1)
+            ->and($result->purpose)
+            ->toBe(AttemptPurpose::Discovery)
+            ->and($result->verifiedAbsent)
+            ->toBe([...array_map($target->instance(...), TopologyProfile::ROLES), $target->network()])
             ->and($store->read(releaseTopologyPath()))
+            ->toBeNull()
+            ->and($store->read('topologies/NCK-12/active.json'))
             ->toBeNull()
             ->and($store->read('leases/NCK-12.json'))
             ->toBeNull()
-            ->and($store->read('releases/NCK-12.json'))
-            ->not->toBeNull();
+            ->and($store->read(releaseReceiptPath()))
+            ->toBe($result->toArray());
     });
 
-    function releaseAttempt(): AttemptId
-    {
-        return new AttemptId(str_repeat('a', 32));
-    }
-
-    function releaseTopologyPath(string $issue = 'NCK-12'): string
-    {
-        return 'topologies/'.$issue.'/'.releaseAttempt()->value.'.json';
-    }
-
-    function readyReleaseState(AtomicJsonStore $store, string $issue = 'NCK-12'): void
-    {
-        $target = featureTarget($issue);
-        $store->write('leases/'.$issue.'.json', [
-            'schema' => 2,
-            'issue' => $issue,
-            'attempt' => releaseAttempt()->value,
-            'state' => 'ready',
-            'operation_id' => str_repeat('a', 32),
-        ]);
-        $store->write(releaseTopologyPath($issue), [
-            'schema' => 2,
-            'issue' => $issue,
-            'attempt_id' => releaseAttempt()->value,
-            'purpose' => 'discovery',
-            'profile' => TopologyProfile::NAME,
-            'generation' => [
-                'schema' => 4,
-                'id' => 'generation-1',
-                'main_sha' => str_repeat('a', 40),
-                'snapshots' => [
-                    'gateway' => 'main-gateway',
-                    'app-dev' => 'main-app-dev',
-                    'app-prod' => 'main-app-prod',
-                ],
-                'prepared_fingerprint' => str_repeat('a', 64),
-                'base_image_fingerprint' => str_repeat('b', 64),
-                'structural_fingerprint' => str_repeat('e', 64),
-                'prepared_schema' => 1,
-                'cold_epoch' => 'ubuntu-26.04-amd64-v1',
-                'base_image_alias' => 'orbit-base-ubuntu-26.04-runtime',
-                'topology' => [
-                    'profile' => TopologyProfile::NAME,
-                    'roles' => TopologyProfile::ROLES,
-                    'checkout_roles' => TopologyProfile::CHECKOUT_ROLES,
-                ],
-                'laravel_pin' => ['tag' => 'v1.0.0', 'commit' => str_repeat('c', 40)],
-                'previous_generation_id' => null,
-            ],
-            'network' => $target->network(),
-            'instances' => array_combine(TopologyProfile::ROLES, array_map(
-                $target->instance(...),
-                TopologyProfile::ROLES,
-            )),
-            'source' => [
-                'host_sha' => str_repeat('d', 40),
-                'guest_sha' => str_repeat('e', 40),
-                'dirty' => false,
-                'tree_hash' => null,
-                'overlay_paths' => [],
-                'operation_id' => null,
-            ],
-            'verification' => [
-                'passed' => true,
-                'probes' => ['ready' => verificationProbeFixture(probe: 'ready')],
-            ],
-        ]);
-        $store->write('topologies/'.$issue.'/active.json', [
-            'schema' => 2,
-            'issue' => $issue,
-            'attempt' => releaseAttempt()->value,
-        ]);
-    }
-
-    function completedReleaseState(AtomicJsonStore $store): void
-    {
-        readyReleaseState($store);
-        $store->write(
-            'releases/NCK-12.json',
-            new ReleaseResult('a'.str_repeat('0', 31), 'b'.str_repeat('0', 31), ['deleted:old'], [])->toArray(),
-        );
-    }
-
-    /** @param array<array-key, mixed> $value */
-    function releaseStateDigest(array $value): string
-    {
-        return hash('sha256', json_encode($value, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
-    }
-
     it('refuses retained evidence while active artifacts exist', function () {
-        $root = temporaryPath('orbit-release-', 8);
-        $paths = new StatePaths($root);
+        $paths = new StatePaths(temporaryPath('orbit-release-', 8));
         $store = new AtomicJsonStore($paths);
-        completedReleaseState($store);
-        $releaser = new TopologyReleaser(
-            new IncusHost,
-            new IncusNetworkLifecycle(new IncusHost),
-            new TopologyManifestStore($store, $paths),
-            $store,
-            $paths,
-            new OperationId(str_repeat('a', 32)),
-        );
+        completedReleaseState($store, $paths);
         Process::preventStrayProcesses();
-        expect(fn () => $releaser->release('NCK-12'))
+
+        expect(fn () => releaser($store, $paths)->release('NCK-12', releaseAttempt()))
             ->toThrow(RuntimeException::class, 'active topology state');
         expect($store->read('leases/NCK-12.json'))
             ->not->toBeNull()->and($store->read(releaseTopologyPath()))
@@ -188,44 +348,27 @@ describe('topology release', function () {
     });
 
     it('preserves a retained lease when the manifest is absent but lease is current', function () {
-        $root = temporaryPath('orbit-release-', 8);
-        $paths = new StatePaths($root);
+        $paths = new StatePaths(temporaryPath('orbit-release-', 8));
         $store = new AtomicJsonStore($paths);
-        completedReleaseState($store);
+        completedReleaseState($store, $paths);
         unlink($paths->root().'/'.releaseTopologyPath());
         unlink($paths->root().'/topologies/NCK-12/active.json');
         Process::preventStrayProcesses();
-        $releaser = new TopologyReleaser(
-            new IncusHost,
-            new IncusNetworkLifecycle(new IncusHost),
-            new TopologyManifestStore($store, $paths),
-            $store,
-            $paths,
-            new OperationId(str_repeat('a', 32)),
-        );
-        expect(fn () => $releaser->release('NCK-12'))
+
+        expect(fn () => releaser($store, $paths)->release('NCK-12', releaseAttempt()))
             ->toThrow(RuntimeException::class, 'active topology state');
         expect($store->read('leases/NCK-12.json'))->not->toBeNull();
         Process::assertNothingRan();
     });
 
     it('refuses retained evidence when the manifest is malformed', function () {
-        $root = temporaryPath('orbit-release-', 8);
-        $paths = new StatePaths($root);
+        $paths = new StatePaths(temporaryPath('orbit-release-', 8));
         $store = new AtomicJsonStore($paths);
-        completedReleaseState($store);
+        completedReleaseState($store, $paths);
         file_put_contents($paths->root().'/'.releaseTopologyPath(), '{malformed');
         Process::preventStrayProcesses();
 
-        $releaser = new TopologyReleaser(
-            new IncusHost,
-            new IncusNetworkLifecycle(new IncusHost),
-            new TopologyManifestStore($store, $paths),
-            $store,
-            $paths,
-            new OperationId(str_repeat('a', 32)),
-        );
-        expect(fn () => $releaser->release('NCK-12'))
+        expect(fn () => releaser($store, $paths)->release('NCK-12', releaseAttempt()))
             ->toThrow(RuntimeException::class, 'active topology state');
         expect($store->read('leases/NCK-12.json'))
             ->not
@@ -238,189 +381,90 @@ describe('topology release', function () {
     });
 
     it('keeps evidence identity across a local state failure boundary', function () {
-        $root = temporaryPath('orbit-release-', 8);
-        $paths = new StatePaths($root);
+        $paths = new StatePaths(temporaryPath('orbit-release-', 8));
         $store = new AtomicJsonStore($paths);
-        completedReleaseState($store);
+        completedReleaseState($store, $paths);
         unlink($paths->root().'/leases/NCK-12.json');
         symlink('/tmp', $paths->root().'/leases/NCK-12.json');
-        $releaser = new TopologyReleaser(
-            new IncusHost,
-            new IncusNetworkLifecycle(new IncusHost),
-            new TopologyManifestStore($store, $paths),
-            $store,
-            $paths,
-            new OperationId(str_repeat('a', 32)),
-        );
         Process::preventStrayProcesses();
-        expect(fn () => $releaser->release('NCK-12'))
-            ->toThrow(RuntimeException::class, 'active topology state');
+
+        expect(fn () => releaser($store, $paths)->release('NCK-12', releaseAttempt()))
+            ->toThrow(Exception::class);
         Process::assertNothingRan();
-        expect($store->read('releases/NCK-12.json')['evidence_id'])->toBe('b'.str_repeat('0', 31));
+        expect($store->read(releaseReceiptPath())['evidence_id'] ?? null)->toBe(str_repeat('b', 32));
         unlink($paths->root().'/leases/NCK-12.json');
-        expect(fn () => $releaser->release('NCK-12'))
+        expect(fn () => releaser($store, $paths)->release('NCK-12', releaseAttempt()))
             ->toThrow(RuntimeException::class, 'active topology state');
         expect($store->read(releaseTopologyPath()))->not->toBeNull();
         Process::assertNothingRan();
     });
-    it('returns compact exact release evidence', function () {
-        $result = new ReleaseResult(
-            str_repeat('a', 32),
-            str_repeat('b', 32),
-            ['deleted:orbit-e2e-nck-12'],
-            ['orbit-e2e-nck-12-aaaaaaaa-app-prod'],
-        );
 
-        expect($result->toArray())->toBe([
-            'state' => 'released',
-            'operation_id' => str_repeat('a', 32),
-            'evidence_id' => str_repeat('b', 32),
-            'released' => ['deleted:orbit-e2e-nck-12'],
-            'already_absent' => ['orbit-e2e-nck-12-aaaaaaaa-app-prod'],
-        ]);
-    });
-
-    /** @mago-expect lint:cyclomatic-complexity The case tracks the complete release state transition. */
-    it('persists the injected operation identity for a completed release', function () {
+    it('releases the exact attempt, its mount devices, and verifies absence', function () {
         $paths = new StatePaths(temporaryPath('orbit-release-complete-', 8));
         $store = new AtomicJsonStore($paths);
         $target = featureTarget('NCK-123');
         readyReleaseState($store, $target->issue);
-        $instances = array_fill_keys(array_map($target->instance(...), TopologyProfile::ROLES), true);
+        $capacity = new HostCapacity($store, $paths, new OperationId(str_repeat('f', 32)), 12);
+        $capacity->reserve('NCK-123', releaseAttempt(), new OperationId(str_repeat('a', 32)));
+        $instances = [];
+        foreach (TopologyProfile::ROLES as $role) {
+            $instances[$target->instance($role)] = releaseInstanceJson($target, $role);
+        }
         $networkExists = true;
         $commands = [];
+        fakeReleaseIncus($target, $instances, $networkExists, $commands);
 
-        /** @mago-expect lint:cyclomatic-complexity The process fake models exact external cleanup branches. */
-        Process::fake(function (\Illuminate\Process\PendingProcess $process) use (
-            &$instances,
-            &$networkExists,
-            &$commands,
-            $target,
-        ) {
-            $command = $process->command;
-            $commands[] = $command;
-            if (
-                ($command[0] ?? null) === 'python3'
-                && str_ends_with((string) ($command[1] ?? ''), '/resources/host/reconcile-firewall.py')
-            ) {
-                return Process::result('{"changed":true}');
-            }
-            if (array_slice($command, 0, 5) === ['sudo', '-n', 'iptables', '-w', '5']) {
-                return in_array('-C', $command, true) ? Process::result('', '', 1) : Process::result();
-            }
-            if (($command[3] ?? null) === 'list') {
-                $name = preg_replace('/\A[^:]+:/', '', (string) ($command[4] ?? ''));
-                if ($name === '') {
-                    return Process::result(json_encode(array_map(
-                        static fn (string $instance): array => [
-                            'name' => $instance,
-                            'type' => 'virtual-machine',
-                            'status' => 'Running',
-                            'status_code' => 103,
-                            'config' => [
-                                'user.orbit.e2e.owner' => 'orbit-e2e',
-                                'user.orbit.e2e.issue' => $target->issue,
-                                'user.orbit.e2e.attempt' => releaseAttempt()->value,
-                                'user.orbit.e2e.generation' => 'generation-1',
-                                'user.orbit.e2e.operation' => str_repeat('a', 32),
-                            ],
-                            'devices' => [
-                                'root' => ['pool' => 'default'],
-                                'eth0' => [
-                                    'network' => $target->network(),
-                                    'hwaddr' => $target->mac(match (true) {
-                                        str_ends_with($instance, '-gateway') => 'gateway',
-                                        str_ends_with($instance, '-app-dev') => 'app-dev',
-                                        default => 'app-prod',
-                                    }),
-                                ],
-                            ],
-                        ],
-                        array_keys($instances),
-                    ), JSON_THROW_ON_ERROR));
-                }
-                if (! isset($instances[$name])) {
-                    return Process::result('[]');
-                }
-
-                return Process::result(json_encode([[
-                    'name' => $name,
-                    'type' => 'virtual-machine',
-                    'status' => 'Running',
-                    'status_code' => 103,
-                    'config' => [
-                        'user.orbit.e2e.owner' => 'orbit-e2e',
-                        'user.orbit.e2e.issue' => $target->issue,
-                        'user.orbit.e2e.attempt' => releaseAttempt()->value,
-                        'user.orbit.e2e.generation' => 'generation-1',
-                        'user.orbit.e2e.operation' => str_repeat('a', 32),
-                    ],
-                    'devices' => [
-                        'root' => ['pool' => 'default'],
-                        'eth0' => [
-                            'network' => $target->network(),
-                            'hwaddr' => $target->mac(match (true) {
-                                str_ends_with($name, '-gateway') => 'gateway',
-                                str_ends_with($name, '-app-dev') => 'app-dev',
-                                default => 'app-prod',
-                            }),
-                        ],
-                    ],
-                ]], JSON_THROW_ON_ERROR));
-            }
-            if (($command[3] ?? null) === 'network' && ($command[4] ?? null) === 'list') {
-                return Process::result(json_encode(
-                    $networkExists
-                        ? [[
-                            'name' => $target->network(),
-                            'config' => [
-                                'user.orbit.e2e.owner' => 'orbit-e2e',
-                                'user.orbit.e2e.issue' => $target->issue,
-                                'user.orbit.e2e.attempt' => releaseAttempt()->value,
-                                'user.orbit.e2e.operation' => str_repeat('a', 32),
-                            ],
-                        ]] : [],
-                    JSON_THROW_ON_ERROR,
-                ));
-            }
-            if (($command[3] ?? null) === 'delete') {
-                $name = preg_replace('/\A[^:]+:/', '', (string) ($command[4] ?? ''));
-                unset($instances[$name]);
-
-                return Process::result();
-            }
-            if (($command[3] ?? null) === 'network' && ($command[4] ?? null) === 'delete') {
-                $networkExists = false;
-
-                return Process::result();
-            }
-
-            return Process::result();
-        });
-
-        $operation = new OperationId(str_repeat('a', 32));
-        $host = new IncusHost;
-        $result = new TopologyReleaser(
-            $host,
-            new IncusNetworkLifecycle($host),
-            new TopologyManifestStore($store, $paths),
-            $store,
-            $paths,
-            $operation,
-        )->release('NCK-123');
-        $stored = $store->read('releases/NCK-123.json');
+        $before = ReleaseResult::now();
+        $result = releaser($store, $paths, $capacity)->release('NCK-123', releaseAttempt());
+        $receipt = $store->read(releaseReceiptPath('NCK-123'));
 
         expect($result->operationId)
-            ->toBe($operation->value)
+            ->toBe(str_repeat('a', 32))
             ->and($result->evidenceId)
             ->not
-            ->toBe($operation->value)
-            ->and($stored)
+            ->toBe($result->operationId)
+            ->and($result->issue)
+            ->toBe('NCK-123')
+            ->and($result->attempt->value)
+            ->toBe(releaseAttempt()->value)
+            ->and($result->purpose)
+            ->toBe(AttemptPurpose::Discovery)
+            ->and($result->released)
+            ->toBe([
+                'stopped:'.$target->instance('gateway'),
+                'stopped:'.$target->instance('app-dev'),
+                'stopped:'.$target->instance('app-prod'),
+                'deleted:'.$target->instance('app-prod'),
+                'deleted:'.$target->instance('app-dev'),
+                'device:'.$target->instance('app-dev').':orbit-source',
+                'deleted:'.$target->instance('gateway'),
+                'device:'.$target->instance('gateway').':orbit-source',
+                'deleted:'.$target->network(),
+            ])
+            ->and($result->alreadyAbsent)
+            ->toBe([])
+            ->and($result->verifiedAbsent)
+            ->toBe([...array_map($target->instance(...), TopologyProfile::ROLES), $target->network()])
+            ->and(strcmp($result->releasedAt, $before) >= 0)
+            ->toBeTrue()
+            ->and($receipt)
             ->toBe($result->toArray())
+            ->and(array_keys($receipt ?? []))
+            ->toBe(ReleaseResult::KEYS)
             ->and($instances)
             ->toBe([])
             ->and($networkExists)
-            ->toBeFalse();
+            ->toBeFalse()
+            ->and($store->read('leases/NCK-123.json'))
+            ->toBeNull()
+            ->and($store->read('topologies/NCK-123/active.json'))
+            ->toBeNull()
+            ->and($store->read(releaseTopologyPath('NCK-123')))
+            ->toBeNull()
+            ->and($store->read(releasePendingPath('NCK-123')))
+            ->toBeNull()
+            ->and($store->read('capacity/incus.json'))
+            ->toBe(['schema' => 2, 'reservations' => []]);
         $stops = array_values(array_filter(
             $commands,
             static fn (array $command): bool => ($command[3] ?? null) === 'stop',
@@ -430,7 +474,11 @@ describe('topology release', function () {
             ->and(collect($stops)->every(
                 static fn (array $command): bool => in_array('--force', $command, true),
             ))
-            ->toBeTrue();
+            ->toBeTrue()
+            ->and(collect($commands)->contains(
+                static fn (array $command): bool => in_array(RELEASE_MOUNT_SOURCE, $command, true),
+            ))
+            ->toBeFalse();
     });
 
     it('refuses release when the deterministic topology MAC drifted', function () {
@@ -438,112 +486,167 @@ describe('topology release', function () {
         $store = new AtomicJsonStore($paths);
         $target = featureTarget('NCK-123');
         readyReleaseState($store, $target->issue);
+        $instances = [];
+        foreach (TopologyProfile::ROLES as $role) {
+            $instances[$target->instance($role)] = releaseInstanceJson(
+                $target,
+                $role,
+                mac: $role === 'gateway' ? '00:16:3e:00:00:00' : null,
+            );
+        }
+        $networkExists = true;
         $commands = [];
-        Process::fake(function (\Illuminate\Process\PendingProcess $process) use (&$commands, $target) {
-            $commands[] = $process->command;
-            if (($process->command[3] ?? null) !== 'list') {
-                return Process::result('[]');
-            }
+        fakeReleaseIncus($target, $instances, $networkExists, $commands);
 
-            return Process::result(json_encode(array_map(
-                static fn (string $role): array => [
-                    'name' => $target->instance($role),
-                    'type' => 'virtual-machine',
-                    'status' => 'Running',
-                    'status_code' => 103,
-                    'config' => [
-                        'user.orbit.e2e.owner' => 'orbit-e2e',
-                        'user.orbit.e2e.issue' => $target->issue,
-                        'user.orbit.e2e.attempt' => releaseAttempt()->value,
-                        'user.orbit.e2e.generation' => 'generation-1',
-                        'user.orbit.e2e.operation' => str_repeat('a', 32),
-                    ],
-                    'devices' => [
-                        'root' => ['pool' => 'default'],
-                        'eth0' => [
-                            'network' => $target->network(),
-                            'hwaddr' => $role === 'gateway' ? '00:16:3e:00:00:00' : $target->mac($role),
-                        ],
-                    ],
-                ],
-                TopologyProfile::ROLES,
-            ), JSON_THROW_ON_ERROR));
-        });
-
-        $host = new IncusHost;
-        $releaser = new TopologyReleaser(
-            $host,
-            new IncusNetworkLifecycle($host),
-            new TopologyManifestStore($store, $paths),
-            $store,
-            $paths,
-            new OperationId(str_repeat('a', 32)),
-        );
-
-        expect(fn () => $releaser->release($target->issue))
+        expect(fn () => releaser($store, $paths)->release($target->issue, releaseAttempt()))
             ->toThrow(RuntimeException::class, 'identity does not match')
             ->and(collect($commands)->contains(
-                static fn (array $command): bool => (
-                    array_intersect(
-                        $command,
-                        ['stop', 'delete'],
-                    ) !== []
-                ),
+                static fn (array $command): bool => array_intersect($command, ['stop', 'delete']) !== [],
             ))
-            ->toBeFalse();
+            ->toBeFalse()
+            ->and($store->read(releaseReceiptPath('NCK-123')))
+            ->toBeNull();
     });
 
-    it('refuses cleanup without the exact manifest', function () {
-        $root = temporaryPath('orbit-release-', 8);
-        $paths = new StatePaths($root);
+    it('blocks deletion when a source mount does not match the attempt record', function (string $drift) {
+        $paths = new StatePaths(temporaryPath('orbit-release-mount-', 8));
         $store = new AtomicJsonStore($paths);
-        $host = new IncusHost;
-        $releaser = new TopologyReleaser(
-            $host,
-            new IncusNetworkLifecycle($host),
-            new TopologyManifestStore($store, $paths),
-            $store,
-            $paths,
-            new OperationId(str_repeat('a', 32)),
-        );
+        $target = featureTarget('NCK-123');
+        readyReleaseState($store, $target->issue);
+        $instances = [];
+        foreach (TopologyProfile::ROLES as $role) {
+            $mount = null;
+            if ($role === 'gateway') {
+                $mount = match ($drift) {
+                    'source' => ['source' => '/srv/worktrees/other', 'path' => '/home/orbit/orbit'],
+                    'path' => ['source' => RELEASE_MOUNT_SOURCE, 'path' => '/home/orbit/elsewhere'],
+                    'missing' => [],
+                    default => null,
+                };
+            }
+            if ($role === 'app-prod' && $drift === 'unexpected') {
+                $mount = ['source' => RELEASE_MOUNT_SOURCE, 'path' => '/home/orbit/orbit'];
+            }
+            $instances[$target->instance($role)] = releaseInstanceJson($target, $role, $mount);
+        }
+        $networkExists = true;
+        $commands = [];
+        fakeReleaseIncus($target, $instances, $networkExists, $commands);
 
-        expect(fn () => $releaser->release('NCK-12'))
-            ->toThrow(RuntimeException::class, 'exact feature topology manifest');
+        expect(fn () => releaser($store, $paths)->release($target->issue, releaseAttempt()))
+            ->toThrow(RuntimeException::class, 'source mount')
+            ->and(collect($commands)->contains(
+                static fn (array $command): bool => array_intersect($command, ['stop', 'delete']) !== [],
+            ))
+            ->toBeFalse()
+            ->and(count($instances))
+            ->toBe(3)
+            ->and($store->read(releaseTopologyPath('NCK-123')))
+            ->not->toBeNull();
+    })->with(['source', 'path', 'missing', 'unexpected']);
+
+    it('refuses cleanup without the exact attempt', function () {
+        $paths = new StatePaths(temporaryPath('orbit-release-', 8));
+        $store = new AtomicJsonStore($paths);
+
+        expect(fn () => releaser($store, $paths)->release('NCK-12', releaseAttempt()))
+            ->toThrow(RuntimeException::class, 'exact topology attempt does not exist');
     });
 
-    it('returns already absent evidence after an exact completed release', function () {
-        Process::fake(['*' => Process::result('[]')]);
-
-        $root = temporaryPath('orbit-release-', 8);
-        $paths = new StatePaths($root);
+    it('refuses release of an attempt the lease or the active pointer does not name', function () {
+        $paths = new StatePaths(temporaryPath('orbit-release-', 8));
         $store = new AtomicJsonStore($paths);
-        $store->write(
-            'releases/NCK-12.json',
-            new ReleaseResult(
-                str_repeat('a', 32),
-                str_repeat('b', 32),
-                ['deleted:orbit-e2e-nck-12'],
-                [],
-            )->toArray(),
-        );
-        $host = new IncusHost;
-        $releaser = new TopologyReleaser(
-            $host,
-            new IncusNetworkLifecycle($host),
-            new TopologyManifestStore($store, $paths),
-            $store,
-            $paths,
-            new OperationId(str_repeat('a', 32)),
-        );
+        readyReleaseState($store);
+        Process::preventStrayProcesses();
 
-        $result = $releaser->release('NCK-12');
+        expect(fn () => releaser($store, $paths)->release('NCK-12', releaseAttempt('b')))
+            ->toThrow(RuntimeException::class, 'names another attempt');
+
+        // Attempt b is the active one; attempt a keeps its record and the lease still names it.
+        readyReleaseState($store, 'NCK-12', 'b');
+        readyReleaseState($store);
+        $store->write('topologies/NCK-12/active.json', [
+            'schema' => 2,
+            'issue' => 'NCK-12',
+            'attempt' => releaseAttempt('b')->value,
+        ]);
+
+        expect(fn () => releaser($store, $paths)->release('NCK-12', releaseAttempt()))
+            ->toThrow(RuntimeException::class, 'not the active topology attempt')
+            ->and($store->read(releaseTopologyPath()))
+            ->not->toBeNull();
+        Process::assertNothingRan();
+    });
+
+    it('reports recorded resources as already absent on a repeated release', function () {
+        $paths = new StatePaths(temporaryPath('orbit-release-', 8));
+        $store = new AtomicJsonStore($paths);
+        $target = featureTarget('NCK-12');
+        $receipt = releaseReceipt(released: ['deleted:orbit-e2e-nck-12'], absent: [
+            'orbit-e2e-nck-12-aaaaaaaa-app-prod',
+        ]);
+        new ReleaseReceiptStore($store, $paths)->write($receipt);
+        $commands = [];
+        Process::fake(function (\Illuminate\Process\PendingProcess $process) use (&$commands) {
+            $commands[] = $process->command;
+
+            return Process::result('[]');
+        });
+
+        $result = releaser($store, $paths, operation: 'c')->release('NCK-12', releaseAttempt());
 
         expect($result->released)
             ->toBe([])
             ->and($result->alreadyAbsent)
-            ->toBe(['deleted:orbit-e2e-nck-12'])
+            ->toBe(['deleted:orbit-e2e-nck-12', 'orbit-e2e-nck-12-aaaaaaaa-app-prod'])
+            ->and($result->verifiedAbsent)
+            ->toBe([...array_map($target->instance(...), TopologyProfile::ROLES), $target->network()])
             ->and($result->evidenceId)
-            ->toBe(str_repeat('b', 32));
+            ->toBe(str_repeat('b', 32))
+            ->and($result->operationId)
+            ->toBe(str_repeat('c', 32))
+            ->and($result->purpose)
+            ->toBe(AttemptPurpose::Discovery)
+            ->and($store->read(releaseReceiptPath()))
+            ->toBe($receipt->toArray())
+            ->and(collect($commands)->contains(
+                static fn (array $command): bool => array_intersect($command, ['stop', 'delete']) !== [],
+            ))
+            ->toBeFalse();
+    });
+
+    it('touches nothing of a newer attempt when replaying an older release', function () {
+        $paths = new StatePaths(temporaryPath('orbit-release-', 8));
+        $store = new AtomicJsonStore($paths);
+        readyReleaseState($store, 'NCK-12', 'b');
+        new ReleaseReceiptStore($store, $paths)->write(releaseReceipt());
+        $newerLease = $store->read('leases/NCK-12.json');
+        $newerRecord = $store->read(releaseTopologyPath('NCK-12', 'b'));
+        $newerPointer = $store->read('topologies/NCK-12/active.json');
+        $commands = [];
+        Process::fake(function (\Illuminate\Process\PendingProcess $process) use (&$commands) {
+            $commands[] = $process->command;
+
+            return Process::result('[]');
+        });
+
+        $result = releaser($store, $paths)->release('NCK-12', releaseAttempt());
+
+        expect($result->attempt->value)
+            ->toBe(releaseAttempt()->value)
+            ->and($store->read('leases/NCK-12.json'))
+            ->toBe($newerLease)
+            ->and($store->read(releaseTopologyPath('NCK-12', 'b')))
+            ->toBe($newerRecord)
+            ->and($store->read('topologies/NCK-12/active.json'))
+            ->toBe($newerPointer)
+            ->and(collect($commands)->contains(
+                static fn (array $command): bool => (
+                    str_contains(implode(' ', $command), 'bbbbbbbb')
+                    || array_intersect($command, ['stop', 'delete']) !== []
+                ),
+            ))
+            ->toBeFalse();
     });
 
     it('refuses success when network deletion leaves the exact network present', function () {
@@ -579,34 +682,18 @@ describe('topology release', function () {
             return Process::result();
         });
 
-        $host = new IncusHost;
-        $releaser = new TopologyReleaser(
-            $host,
-            new IncusNetworkLifecycle($host),
-            new TopologyManifestStore($store, $paths),
-            $store,
-            $paths,
-            new OperationId(str_repeat('a', 32)),
-        );
-
-        expect(fn () => $releaser->release('NCK-12'))
+        expect(fn () => releaser($store, $paths)->release('NCK-12', releaseAttempt()))
             ->toThrow(RuntimeException::class, 'resources remain after release deletion');
-        expect($store->read('releases/NCK-12.json'))->toBeNull();
+        expect($store->read(releaseReceiptPath()))->toBeNull();
     });
 
     it('finishes an exact pending release after local finalization was interrupted', function () {
-        $root = temporaryPath('orbit-release-', 8);
-        $paths = new StatePaths($root);
+        $paths = new StatePaths(temporaryPath('orbit-release-', 8));
         $store = new AtomicJsonStore($paths);
         readyReleaseState($store);
-        $result = new ReleaseResult(
-            str_repeat('c', 32),
-            str_repeat('b', 32),
-            ['deleted:old'],
-            ['already-absent:old'],
-        );
-        $store->write('release-pending/NCK-12.json', [
-            'schema' => 2,
+        $result = releaseReceipt('c', 'b', ['deleted:old'], ['already-absent:old']);
+        $store->write(releasePendingPath(), [
+            'schema' => 3,
             'issue' => 'NCK-12',
             'attempt' => releaseAttempt()->value,
             'acquisition_operation_id' => str_repeat('a', 32),
@@ -618,42 +705,37 @@ describe('topology release', function () {
         ]);
         Process::fake(['*' => Process::result('[]')]);
 
-        $replayed = new TopologyReleaser(
-            new IncusHost,
-            new IncusNetworkLifecycle(new IncusHost),
-            new TopologyManifestStore($store, $paths),
-            $store,
-            $paths,
-            new OperationId(str_repeat('a', 32)),
-        )->release('NCK-12');
+        $replayed = releaser($store, $paths)->release('NCK-12', releaseAttempt());
 
         expect($replayed->operationId)
-            ->toBe(str_repeat('a', 32))
+            ->toBe(str_repeat('c', 32))
             ->and($replayed->evidenceId)
             ->toBe(str_repeat('b', 32))
             ->and($replayed->released)
-            ->toBe([])
+            ->toBe(['deleted:old'])
             ->and($replayed->alreadyAbsent)
-            ->toBe(['deleted:old', 'already-absent:old'])
-            ->and($store->read('releases/NCK-12.json'))
+            ->toBe(['already-absent:old'])
+            ->and($store->read(releaseReceiptPath()))
             ->toBe($result->toArray())
-            ->and($store->read('release-pending/NCK-12.json'))
+            ->and($store->read(releasePendingPath()))
             ->toBeNull()
             ->and($store->read('leases/NCK-12.json'))
             ->toBeNull()
             ->and($store->read(releaseTopologyPath()))
+            ->toBeNull()
+            ->and($store->read('topologies/NCK-12/active.json'))
             ->toBeNull();
     });
 
     /**
      * The crash window `finalizePending()` must survive: the pending record is written and
-     * the lease and the active pointer are already deleted, but no release evidence exists.
+     * the lease and the active pointer are already deleted, but no receipt exists.
      */
     function interruptedPendingRelease(AtomicJsonStore $store, string $issue = 'NCK-12'): void
     {
-        $result = new ReleaseResult(str_repeat('c', 32), str_repeat('b', 32), ['deleted:old'], []);
-        $store->write('release-pending/'.$issue.'.json', [
-            'schema' => 2,
+        $result = releaseReceipt('c', 'b', ['deleted:old'], [], $issue);
+        $store->write(releasePendingPath($issue), [
+            'schema' => 3,
             'issue' => $issue,
             'attempt' => releaseAttempt()->value,
             'acquisition_operation_id' => str_repeat('a', 32),
@@ -677,22 +759,14 @@ describe('topology release', function () {
         interruptedPendingRelease($store);
         Process::fake(['*' => Process::result('[]')]);
 
-        $replayed = new TopologyReleaser(
-            new IncusHost,
-            new IncusNetworkLifecycle(new IncusHost),
-            new TopologyManifestStore($store, $paths),
-            $store,
-            $paths,
-            new OperationId(str_repeat('a', 32)),
-            $capacity,
-        )->release('NCK-12');
+        $replayed = releaser($store, $paths, $capacity)->release('NCK-12', releaseAttempt());
 
         expect($replayed->evidenceId)
             ->toBe(str_repeat('b', 32))
-            ->and($store->read('releases/NCK-12.json'))
+            ->and($store->read(releaseReceiptPath()))
             ->not
             ->toBeNull()
-            ->and($store->read('release-pending/NCK-12.json'))
+            ->and($store->read(releasePendingPath()))
             ->toBeNull()
             ->and($store->read('capacity/incus.json'))
             ->toBe(['schema' => 2, 'reservations' => []]);
@@ -718,24 +792,14 @@ describe('topology release', function () {
             return Process::result('[]');
         });
 
-        $releaser = new TopologyReleaser(
-            new IncusHost,
-            new IncusNetworkLifecycle(new IncusHost),
-            new TopologyManifestStore($store, $paths),
-            $store,
-            $paths,
-            new OperationId(str_repeat('a', 32)),
-            $capacity,
-        );
-
-        expect(fn () => $releaser->release('NCK-12'))
+        expect(fn () => releaser($store, $paths, $capacity)->release('NCK-12', releaseAttempt()))
             ->toThrow(
                 RuntimeException::class,
                 'Cannot finalize pending release while an exact topology resource exists',
             )
-            ->and($store->read('releases/NCK-12.json'))
+            ->and($store->read(releaseReceiptPath()))
             ->toBeNull()
-            ->and($store->read('release-pending/NCK-12.json'))
+            ->and($store->read(releasePendingPath()))
             ->not
             ->toBeNull()
             ->and($store->read('capacity/incus.json'))
@@ -743,13 +807,12 @@ describe('topology release', function () {
     });
 
     it('preserves active state that does not match pending release identity', function () {
-        $root = temporaryPath('orbit-release-', 8);
-        $paths = new StatePaths($root);
+        $paths = new StatePaths(temporaryPath('orbit-release-', 8));
         $store = new AtomicJsonStore($paths);
         readyReleaseState($store);
-        $result = new ReleaseResult(str_repeat('c', 32), str_repeat('b', 32), [], []);
-        $store->write('release-pending/NCK-12.json', [
-            'schema' => 2,
+        $result = releaseReceipt('c', 'b', [], []);
+        $store->write(releasePendingPath(), [
+            'schema' => 3,
             'issue' => 'NCK-12',
             'attempt' => releaseAttempt()->value,
             'acquisition_operation_id' => str_repeat('a', 32),
@@ -760,21 +823,13 @@ describe('topology release', function () {
             'result' => $result->toArray(),
         ]);
         Process::preventStrayProcesses();
-        $releaser = new TopologyReleaser(
-            new IncusHost,
-            new IncusNetworkLifecycle(new IncusHost),
-            new TopologyManifestStore($store, $paths),
-            $store,
-            $paths,
-            new OperationId(str_repeat('a', 32)),
-        );
 
-        expect(fn () => $releaser->release('NCK-12'))
+        expect(fn () => releaser($store, $paths)->release('NCK-12', releaseAttempt()))
             ->toThrow(RuntimeException::class, 'pending release state does not match');
         expect($store->read('leases/NCK-12.json'))
             ->not->toBeNull()->and($store->read(releaseTopologyPath()))
-            ->not->toBeNull()->and($store->read('release-pending/NCK-12.json'))
-            ->not->toBeNull()->and($store->read('releases/NCK-12.json'))->toBeNull();
+            ->not->toBeNull()->and($store->read(releasePendingPath()))
+            ->not->toBeNull()->and($store->read(releaseReceiptPath()))->toBeNull();
         Process::assertNothingRan();
     });
 });
