@@ -4,6 +4,83 @@ declare(strict_types=1);
 
 use Symfony\Component\Process\Process;
 
+function gateway_prerequisite_fixture(): string
+{
+    $root = sys_get_temp_dir().'/orbit-gateway-prereqs-'.bin2hex(random_bytes(4));
+    mkdir("{$root}/bin", 0o700, true);
+    file_put_contents("{$root}/bin/dpkg-query", <<<'BASH'
+        #!/usr/bin/env bash
+        case ",${DPKG_MISSING_PACKAGES:-}," in
+          *",${@: -1},"*) exit 1 ;;
+        esac
+        printf 'install ok installed'
+        BASH);
+    file_put_contents(
+        "{$root}/bin/apt-get",
+        "#!/usr/bin/env bash\nprintf '%s %s\\n' \"\$DEBIAN_FRONTEND\" \"\$*\" >> '{$root}/apt'\n",
+    );
+    foreach (['dpkg-query', 'apt-get'] as $command) {
+        chmod("{$root}/bin/{$command}", 0o700);
+    }
+    $source = file_get_contents(dirname(__DIR__, 3).'/resources/guest/converge-gateway.sh');
+    file_put_contents("{$root}/converge-gateway.sh", $source);
+    chmod("{$root}/converge-gateway.sh", 0o700);
+
+    return $root;
+}
+
+describe('Gateway host prerequisite convergence', function () {
+    it('skips apt when all Gateway prerequisites are installed', function () {
+        $root = gateway_prerequisite_fixture();
+        try {
+            $process = new Process(['bash', "{$root}/converge-gateway.sh", 'prerequisites'], env: [
+                'PATH' => "{$root}/bin:".getenv('PATH'),
+            ]);
+            expect($process->run())->toBe(0)->and(file_exists("{$root}/apt"))->toBeFalse();
+        } finally {
+            new Illuminate\Filesystem\Filesystem()->deleteDirectory($root);
+        }
+    });
+
+    it('installs only the missing Gateway prerequisite', function () {
+        $root = gateway_prerequisite_fixture();
+        try {
+            $process = new Process(['bash', "{$root}/converge-gateway.sh", 'prerequisites'], env: [
+                'PATH' => "{$root}/bin:".getenv('PATH'),
+                'DPKG_MISSING_PACKAGES' => 'php8.5-fpm',
+            ]);
+            expect($process->run())
+                ->toBe(0)
+                ->and(file("{$root}/apt", FILE_IGNORE_NEW_LINES))
+                ->toBe([
+                    'noninteractive update',
+                    'noninteractive install --yes --no-install-recommends -- php8.5-fpm',
+                ]);
+        } finally {
+            new Illuminate\Filesystem\Filesystem()->deleteDirectory($root);
+        }
+    });
+
+    it('installs all Gateway prerequisites in fixed order', function () {
+        $root = gateway_prerequisite_fixture();
+        try {
+            $process = new Process(['bash', "{$root}/converge-gateway.sh", 'prerequisites'], env: [
+                'PATH' => "{$root}/bin:".getenv('PATH'),
+                'DPKG_MISSING_PACKAGES' => 'caddy,dnsmasq,php8.5-fpm',
+            ]);
+            expect($process->run())
+                ->toBe(0)
+                ->and(file("{$root}/apt", FILE_IGNORE_NEW_LINES))
+                ->toBe([
+                    'noninteractive update',
+                    'noninteractive install --yes --no-install-recommends -- caddy dnsmasq php8.5-fpm',
+                ]);
+        } finally {
+            new Illuminate\Filesystem\Filesystem()->deleteDirectory($root);
+        }
+    });
+});
+
 describe('convergence guest scripts', function () {
     it('runs Gateway Artisan commands from the Gateway checkout', function () {
         $root = sys_get_temp_dir().'/orbit-gateway-converge-'.bin2hex(random_bytes(4));
@@ -20,6 +97,8 @@ describe('convergence guest scripts', function () {
                 mkdir -p "${@: -1}"
                 BASH);
             file_put_contents("{$root}/bin/chown", "#!/usr/bin/env bash\nexit 0\n");
+            file_put_contents("{$root}/bin/dpkg-query", "#!/usr/bin/env bash\nprintf 'install ok installed'\n");
+            file_put_contents("{$root}/bin/apt-get", "#!/usr/bin/env bash\nexit 0\n");
             file_put_contents("{$root}/bin/php", str_replace(
                 '__CWD_FILE__',
                 "{$root}/cwd",
@@ -28,7 +107,7 @@ describe('convergence guest scripts', function () {
                     printf '%s\n' "$PWD" >> '__CWD_FILE__'
                     BASH,
             ));
-            foreach (['sudo', 'install', 'chown', 'php'] as $command) {
+            foreach (['sudo', 'install', 'chown', 'dpkg-query', 'apt-get', 'php'] as $command) {
                 chmod("{$root}/bin/{$command}", 0o700);
             }
 

@@ -67,6 +67,8 @@ final readonly class TopologyConverger
 
         $steps = ['validate.prerequisites' => true];
 
+        $this->run($instances['gateway'], 'converge-gateway.sh', ['prerequisites']);
+        $steps['prerequisites.gateway'] = true;
         $this->run($instances['gateway'], 'converge-gateway.sh', ['bootstrap', $instances['gateway']]);
         $steps['bootstrap.gateway'] = true;
         $this->run(

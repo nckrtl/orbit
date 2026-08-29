@@ -73,6 +73,7 @@ describe('TopologyConverger', function () {
 
         expect(array_keys($report->steps))->toBe([
             'validate.prerequisites',
+            'prerequisites.gateway',
             'bootstrap.gateway',
             'pin.ssh-hosts',
             'provision.app-dev',
@@ -89,13 +90,22 @@ describe('TopologyConverger', function () {
             ->all();
 
         expect($mutations)
-            ->toHaveCount(11)
-            ->and(array_column(array_slice($mutations, 0, 3), 4))
+            ->toHaveCount(12)
+            ->and(array_column(array_slice($mutations, 0, 4), 4))
             ->toBe([
                 'lab:orbit-e2e-nck-123-gateway',
                 'lab:orbit-e2e-nck-123-gateway',
                 'lab:orbit-e2e-nck-123-gateway',
+                'lab:orbit-e2e-nck-123-gateway',
             ]);
+
+        expect(array_map(
+            fn (array $command): array => array_slice($command, 6),
+            array_slice($mutations, 0, 2),
+        ))->toBe([
+            ['/usr/local/bin/converge-gateway.sh', 'prerequisites'],
+            ['/usr/local/bin/converge-gateway.sh', 'bootstrap', 'orbit-e2e-nck-123-gateway'],
+        ]);
 
         Process::assertDidntRun(
             fn (PendingProcess $process): bool => (
