@@ -546,10 +546,10 @@ final readonly class RemotePhpPackageManager
                     BASH."\n".$pcovSetup."\n".<<<'BASH'
                     sudo systemctl enable --now "php$version-fpm.service"
 
-                    php"$version" -v >/dev/null
-                    php-fpm"$version" -v >/dev/null
-                    cli_modules=$(php"$version" -m | tr '[:upper:]' '[:lower:]')
-                    fpm_modules=$(php-fpm"$version" -m | tr '[:upper:]' '[:lower:]')
+                    /usr/bin/php"$version" -v >/dev/null
+                    /usr/sbin/php-fpm"$version" -v >/dev/null
+                    cli_modules=$(/usr/bin/php"$version" -m | tr '[:upper:]' '[:lower:]')
+                    fpm_modules=$(/usr/sbin/php-fpm"$version" -m | tr '[:upper:]' '[:lower:]')
                     for module in bcmath curl gd imagick intl mbstring mysqli pdo_mysql pdo_pgsql redis pdo_sqlite simplexml xml zip; do
                         printf '%s\n' "$cli_modules" | grep -qxF "$module"
                         printf '%s\n' "$fpm_modules" | grep -qxF "$module"

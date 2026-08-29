@@ -453,6 +453,79 @@ it('enables PCOV only for app-dev CLI and verifies both SAPIs', function (): voi
         ->not->toContain('xdebug', 'opentelemetry');
 });
 
+it('verifies the managed absolute PHP binaries', function (): void {
+    $transport = new AppDevFakeSshExecutor;
+
+    new RemotePhpPackageManager()->installForAppDev(
+        php_package_node(RoleName::AppDev),
+        collect(['8.5']),
+        php_package_app_dev_ssh($transport),
+    );
+
+    $script = $transport->commands[1]->input ?? '';
+    $verification = substr($script, (int) mb_strpos($script, 'sudo systemctl enable --now'));
+    $root = sys_get_temp_dir().'/orbit-php-binary-verification-'.bin2hex(random_bytes(6));
+
+    try {
+        mkdir($root.'/bin', 0777, true);
+        mkdir($root.'/usr/bin', 0777, true);
+        mkdir($root.'/usr/sbin', 0777, true);
+        file_put_contents(
+            $root.'/bin/php8.5',
+            "#!/usr/bin/env bash\necho shadowed >> ".escapeshellarg($root.'/calls')."\nexit 1\n",
+        );
+        file_put_contents(
+            $root.'/bin/php-fpm8.5',
+            "#!/usr/bin/env bash\necho shadowed >> ".escapeshellarg($root.'/calls')."\nexit 1\n",
+        );
+        $cliModules = "#!/usr/bin/env bash\nprintf '%s\\n' bcmath curl gd imagick intl mbstring mysqli pdo_mysql pdo_pgsql redis pdo_sqlite simplexml xml zip pcov\n";
+        $fpmModules = str_replace(' pcov', '', $cliModules);
+        file_put_contents($root.'/usr/bin/php8.5', $cliModules);
+        file_put_contents($root.'/usr/sbin/php-fpm8.5', $fpmModules);
+        file_put_contents($root.'/bin/systemctl', "#!/usr/bin/env bash\nexit 0\n");
+        foreach ([
+            $root.'/bin/php8.5',
+            $root.'/bin/php-fpm8.5',
+            $root.'/usr/bin/php8.5',
+            $root.'/usr/sbin/php-fpm8.5',
+            $root.'/bin/systemctl',
+        ] as $binary) {
+            chmod($binary, 0755);
+        }
+        $verification = str_replace(
+            ['sudo systemctl', '/usr/bin', '/usr/sbin'],
+            ['systemctl', $root.'/usr/bin', $root.'/usr/sbin'],
+            $verification,
+        );
+        $process = new Process(['bash', '-seu', '--', '8.5', 'app-dev'], $root, [
+            'PATH' => $root.'/bin:'.getenv('PATH'),
+        ]);
+        $process->setInput("version=\$1\n".$verification);
+        $process->run();
+
+        expect($process->getExitCode())
+            ->toBe(0)
+            ->and(is_file($root.'/calls') ? file_get_contents($root.'/calls') : '')
+            ->toBe('');
+    } finally {
+        new Filesystem()->deleteDirectory($root);
+    }
+
+    expect($script)
+        ->toContain(
+            '/usr/bin/php"$version" -v',
+            '/usr/sbin/php-fpm"$version" -v',
+            '/usr/bin/php"$version" -m',
+            '/usr/sbin/php-fpm"$version" -m',
+        )
+        ->not->toContain(
+            "\n                    php\"\$version\" -v",
+            "\n                    php-fpm\"\$version\" -v",
+            "\n                    cli_modules=\$(php\"\$version\" -m",
+            "\n                    fpm_modules=\$(php-fpm\"\$version\" -m",
+        );
+});
+
 it('does not request or enable PCOV for a pure app-prod node', function (): void {
     $transport = new AppDevFakeSshExecutor;
 
