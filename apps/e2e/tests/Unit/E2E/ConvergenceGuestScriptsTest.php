@@ -1071,6 +1071,41 @@ describe('convergence guest scripts', function () {
         }
     });
 
+    it('prepares the stock SQLite database and migrates every sample checkout', function () {
+        $fixture = sample_hydration_fixture();
+        try {
+            file_put_contents("{$fixture['checkout']}/.env", "APP_KEY=base64:fixture\nDB_CONNECTION=sqlite\n");
+            file_put_contents("{$fixture['checkout']}/vendor/autoload.php", "autoloaded\n");
+            file_put_contents(
+                "{$fixture['checkout']}/vendor/.orbit-e2e-composer-lock",
+                hash_file('sha256', "{$fixture['checkout']}/composer.lock"),
+            );
+            file_put_contents("{$fixture['root']}/bin/php", <<<'BASH'
+                #!/usr/bin/env bash
+                set -euo pipefail
+                printf '%s\n' "$*" >> "$SAMPLE_PHP_COMMANDS"
+                [[ "$*" == *' migrate '* ]] && [[ -f "$(dirname "$1")/database/database.sqlite" ]]
+                exit 0
+                BASH);
+            chmod("{$fixture['root']}/bin/php", 0o700);
+            $environment = [...$fixture['environment'], 'SAMPLE_PHP_COMMANDS' => "{$fixture['root']}/php-commands"];
+
+            $process = new Process(
+                ['bash', $fixture['script'], 'hydrate', str_repeat('b', 40), 'app-dev'],
+                env: $environment,
+            );
+
+            expect($process->run())
+                ->toBe(0, $process->getErrorOutput())
+                ->and(file_exists("{$fixture['checkout']}/database/database.sqlite"))
+                ->toBeTrue()
+                ->and(file("{$fixture['root']}/php-commands", FILE_IGNORE_NEW_LINES))
+                ->toBe([$fixture['checkout'].'/artisan migrate --force --no-interaction']);
+        } finally {
+            new Illuminate\Filesystem\Filesystem()->deleteDirectory($fixture['root']);
+        }
+    });
+
     it('does not publish a sample hydration marker without installed Composer content', function () {
         $fixture = sample_hydration_fixture();
         try {

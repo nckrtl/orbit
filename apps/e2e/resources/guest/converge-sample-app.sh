@@ -94,6 +94,11 @@ case ${1-} in
       run_as_runtime grep -q '^APP_KEY=base64:' "$checkout/.env" || run_as_runtime php "$checkout/artisan" key:generate --force --no-interaction
       run_as_runtime install -d -m 0775 "$checkout/storage" "$checkout/bootstrap/cache"
       run_as_runtime chmod -R ug+rwX "$checkout/storage" "$checkout/bootstrap/cache"
+      if run_as_runtime grep -q '^DB_CONNECTION=sqlite$' "$checkout/.env"; then
+        run_as_runtime install -d -m 0775 "$checkout/database"
+        [[ -f "$checkout/database/database.sqlite" ]] || run_as_runtime touch "$checkout/database/database.sqlite"
+      fi
+      run_as_runtime php "$checkout/artisan" migrate --force --no-interaction
     done
     if [[ "$3" == app-prod ]]; then
       fragment=/etc/caddy/orbit-e2e-global.caddy
