@@ -872,9 +872,12 @@ describe('convergence guest scripts', function () {
                 'runtime_user=orbit-laravel',
                 'sudo -u "$runtime_user"',
                 '/home/orbit/.orbit/e2e-gateway-root-ca.pem',
+                '/api/v1/ca/root',
+                '$v["data"]["root_ca"]',
                 'readlink -f /etc/caddy/Caddyfile',
                 'curl --fail --silent --show-error --cacert',
-            )->and($hydrate)->toContain(
+            )
+            ->not->toContain('/api/root-ca')->and($hydrate)->toContain(
                 '$ORBIT_HOME/gateway.app-key',
                 'openssl rand -base64 32',
                 'ORBIT_GATEWAY_CHECKOUT=/home/orbit/orbit/apps/gateway',

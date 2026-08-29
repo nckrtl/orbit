@@ -8,8 +8,8 @@ case ${1-} in
     [[ $# -eq 2 && "$2" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]{0,62}$ ]]
     ca=/home/orbit/.orbit/e2e-gateway-root-ca.pem
     install -d -m 0700 "$(dirname "$ca")"
-    curl --fail --silent --show-error --insecure "https://$2/api/root-ca" -o "$ca.new"
-    php -r '$v=json_decode(file_get_contents($argv[1]), true, 512, JSON_THROW_ON_ERROR); file_put_contents($argv[2], $v["root_ca"]);' "$ca.new" "$ca"
+    curl --fail --silent --show-error --insecure "https://$2/api/v1/ca/root" -o "$ca.new"
+    php -r '$v=json_decode(file_get_contents($argv[1]), true, 512, JSON_THROW_ON_ERROR); file_put_contents($argv[2], $v["data"]["root_ca"]);' "$ca.new" "$ca"
     rm -f "$ca.new"
     "$orbit" gateway:add e2e "https://$2" --ca="$ca" --use --json
     ;;
