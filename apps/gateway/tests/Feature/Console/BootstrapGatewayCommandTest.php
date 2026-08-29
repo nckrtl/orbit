@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\Gateway\BootstrapGatewayAction;
 use App\Actions\Gateway\GatewayBootstrapIdentityValidator;
+use App\Actions\Gateway\GatewayOperatingSystemGuard;
 use App\Data\Gateway\BootstrapGatewayData;
 use App\Domain\Gateway\GatewayVpnConverger;
 use App\Domain\Gateway\GatewayWebConverger;
@@ -18,6 +19,10 @@ use Illuminate\Support\Str;
 
 it('reports typed gateway provisioning failures without leaking command output', function (): void {
     $orbitHome = sys_get_temp_dir().'/orbit-command-'.Str::uuid();
+    $filesystem = new Filesystem;
+    $filesystem->ensureDirectoryExists($orbitHome);
+    $osReleasePath = $orbitHome.'/os-release';
+    $filesystem->put($osReleasePath, "ID=ubuntu\nVERSION_CODENAME=resolute\n");
     $failure = new NodeProvisioningException(
         step: 'wireguard-server-install',
         errorCode: 'vpn.server_config_install_failed',
@@ -28,6 +33,7 @@ it('reports typed gateway provisioning failures without leaking command output',
     app()->instance(BootstrapGatewayAction::class, new BootstrapGatewayAction(
         assignRole: app(App\Actions\Nodes\AssignRoleAction::class),
         identity: new GatewayBootstrapIdentityValidator,
+        operatingSystem: new GatewayOperatingSystemGuard($osReleasePath),
         vpnSettings: app(VpnSettings::class),
         processes: new NativeProcessRunner,
         files: new ProtectedFileWriter,
@@ -58,7 +64,7 @@ it('reports typed gateway provisioning failures without leaking command output',
             ->doesntExpectOutputToContain('sensitive stderr')
             ->assertExitCode(1);
     } finally {
-        new Filesystem()->deleteDirectory($orbitHome);
+        $filesystem->deleteDirectory($orbitHome);
     }
 });
 

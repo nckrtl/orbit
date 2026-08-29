@@ -209,7 +209,7 @@ describe('StandbyBuilder', function () {
 
                 return Process::result();
             }
-            if (str_contains(implode(' ', $command), 'systemd-machine-id-setup')) {
+            if (str_contains(implode(' ', $command), "printf '%s\\n'")) {
                 $events[] = 'reset';
 
                 return Process::result();
