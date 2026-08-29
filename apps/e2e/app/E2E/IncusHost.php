@@ -31,7 +31,7 @@ final class IncusHost implements GuestTransport
     private const string DEFAULT_ROUTE_INTERFACE_RESOLUTION = 'interface=$(ip -4 route show default | awk \'$1 == "default" { for (i = 2; i < NF; i++) if ($i == "dev") { print $(i + 1); exit } }\') && [ -n "$interface" ]';
     private const string GLOBAL_IPV4_PROBE =
         self::DEFAULT_ROUTE_INTERFACE_RESOLUTION.' && ip -4 -o addr show dev "$interface" scope global';
-    private const string CLONED_HOST_STATE_RESET_SUFFIX = ' && systemctl restart systemd-journald && for directory in /run/systemd/netif/leases /var/lib/systemd/network; do if [ -e "$directory" ]; then [ -d "$directory" ] && [ ! -L "$directory" ] || exit 1; find "$directory" -mindepth 1 -maxdepth 1 -type f -delete || exit 1; fi; done && ip -4 addr flush dev "$interface" scope global && (systemctl restart systemd-networkd || systemctl restart NetworkManager)';
+    private const string CLONED_HOST_STATE_RESET_SUFFIX = ' && systemctl restart systemd-journald && for directory in /run/systemd/netif/leases /var/lib/systemd/network; do if [ -e "$directory" ]; then [ -d "$directory" ] && [ ! -L "$directory" ] || exit 1; find "$directory" -mindepth 1 -maxdepth 1 -type f -delete || exit 1; fi; done && ip -4 addr flush dev "$interface" scope global && ip link set dev "$interface" down && ip link set dev "$interface" up && (systemctl restart systemd-networkd || systemctl restart NetworkManager)';
 
     /** @var array<string, IncusInstance> */
     private array $ownedInstanceCache = [];
