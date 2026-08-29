@@ -21,6 +21,8 @@ final readonly class ProofPlan
 {
     public const int MAX_TIMEOUT_SECONDS = 900;
 
+    public const int MAX_ID_LENGTH = 64;
+
     private const array SECTIONS = ['setup', 'acceptance', 'post_deployment_actions'];
 
     private const array ACTION_KEYS = ['id', 'node', 'argv', 'timeout_seconds'];
@@ -53,6 +55,12 @@ final readonly class ProofPlan
             $decoded = json_decode($content, associative: false, depth: 16, flags: JSON_THROW_ON_ERROR);
             if (! $decoded instanceof stdClass) {
                 throw new InvalidArgumentException('The proof plan must be a JSON object.');
+            }
+            // An object with index-like keys decodes to a PHP list; only the raw decode tells them apart.
+            foreach (self::SECTIONS as $section) {
+                if (property_exists($decoded, $section) && ! is_array($decoded->{$section})) {
+                    throw new InvalidArgumentException("The proof plan section [{$section}] must be a list.");
+                }
             }
             /** @var array<array-key, mixed> $plan */
             $plan = json_decode($content, associative: true, depth: 16, flags: JSON_THROW_ON_ERROR);
@@ -123,9 +131,15 @@ final readonly class ProofPlan
             }
             /** @var mixed $id */
             $id = $action['id'];
-            if (! is_string($id) || preg_match('/\A[a-z0-9][a-z0-9-]*\z/D', $id) !== 1) {
+            if (
+                ! is_string($id)
+                || strlen($id) > self::MAX_ID_LENGTH
+                || preg_match('/\A[a-z0-9][a-z0-9-]*\z/D', $id) !== 1
+            ) {
                 throw new InvalidArgumentException(
-                    "Proof action [{$label}] must have an ID of lowercase letters, digits, and hyphens.",
+                    "Proof action [{$label}] must have an ID of 1 through "
+                    .self::MAX_ID_LENGTH
+                    .' lowercase letters, digits, and hyphens.',
                 );
             }
             if (array_key_exists($id, $ids)) {

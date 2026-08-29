@@ -157,6 +157,21 @@ describe('ProofPlan', function (): void {
         'post-deployment null' => ['post_deployment_actions', null],
     ]);
 
+    it('rejects a section declared as a JSON object even when its keys look like list indexes', function (): void {
+        $content = json_encode([
+            'setup' => [],
+            'acceptance' => ['0' => proofPlanFixture()['acceptance'][0]],
+            'post_deployment_actions' => [],
+        ], JSON_THROW_ON_ERROR | JSON_FORCE_OBJECT);
+        $content = str_replace('"setup":{}', '"setup":[]', $content);
+        $content = str_replace('"post_deployment_actions":{}', '"post_deployment_actions":[]', $content);
+
+        expect($content)
+            ->toContain('"acceptance":{"0":')
+            ->and(fn () => ProofPlan::fromFile(proofPlanFile($content)))
+            ->toThrow(InvalidArgumentException::class, 'The proof plan section [acceptance] must be a list.');
+    });
+
     it('requires at least one acceptance action', function (): void {
         expect(fn () => ProofPlan::fromFile(mutatedProofPlanFile(function (array $plan): array {
             $plan['acceptance'] = [];
@@ -210,7 +225,7 @@ describe('ProofPlan', function (): void {
         })))
             ->toThrow(
                 InvalidArgumentException::class,
-                'Proof action [setup#0] must have an ID of lowercase letters, digits, and hyphens.',
+                'Proof action [setup#0] must have an ID of 1 through 64 lowercase letters, digits, and hyphens.',
             );
     })->with([
         'uppercase' => ['Create-Workspace'],
@@ -219,8 +234,19 @@ describe('ProofPlan', function (): void {
         'newline' => ["create\nworkspace"],
         'NUL byte' => ["create\0workspace"],
         'leading hyphen' => ['-create'],
+        'too long' => [str_repeat('a', 65)],
         'integer' => [7],
     ]);
+
+    it('accepts a 64 character action ID', function (): void {
+        $plan = ProofPlan::fromFile(mutatedProofPlanFile(function (array $plan): array {
+            $plan['setup'][0]['id'] = str_repeat('a', 64);
+
+            return $plan;
+        }));
+
+        expect($plan->setup[0]['id'])->toBe(str_repeat('a', 64));
+    });
 
     it('rejects a duplicate action ID across sections', function (): void {
         expect(fn () => ProofPlan::fromFile(mutatedProofPlanFile(function (array $plan): array {

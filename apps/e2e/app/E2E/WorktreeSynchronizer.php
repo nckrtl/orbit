@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\E2E;
 
 use App\E2E\Git\GitRepository;
+use App\E2E\Value\CandidateSync;
 use App\E2E\Value\GuestCommand;
 use App\E2E\Value\GuestCommandResult;
 use App\E2E\Value\OperationId;
@@ -30,6 +31,19 @@ final readonly class WorktreeSynchronizer
         'receive-source.sh',
         'retarget-vpn.sh',
         'verify-topology.sh',
+    ];
+
+    /** Git in the guest checkout as the `orbit` user. */
+    private const array GUEST_GIT = [
+        'runuser',
+        '-u',
+        'orbit',
+        '--',
+        'env',
+        'HOME=/home/orbit',
+        'git',
+        '-C',
+        '/home/orbit/orbit',
     ];
 
     /** Where a mounted checkout records its host identity; guests cannot read a worktree `.git` pointer file. */
@@ -216,12 +230,17 @@ final readonly class WorktreeSynchronizer
      * Transfer one exact candidate commit into every checkout role for a proof.
      *
      * Only the requested commit travels: the host worktree may be dirty or moved
-     * on past the candidate, and neither is read. Each checkout ends detached at
-     * the candidate with a clean status, proved by the guest before hydration.
-     * The candidate must be a full SHA that a repository reference still reaches.
+     * on past the candidate, and neither its files nor its guest scripts are
+     * read; the scripts are taken from the candidate commit itself. Each checkout
+     * ends detached at the candidate with a clean status, proved by the guest
+     * before hydration. The candidate must be a full SHA that a repository
+     * reference still reaches, and the standby baseline is never a target.
      */
-    public function syncCommit(TopologyTarget $target, string $repository, string $candidateSha): SourceState
+    public function syncCommit(TopologyTarget $target, string $repository, string $candidateSha): CandidateSync
     {
+        if ($target->isStandby()) {
+            throw new InvalidArgumentException('A proof candidate cannot be synced into a standby topology.');
+        }
         $git = new GitRepository($repository);
         $this->validateRepositoryIdentity($git);
         $candidateTree = $git->tree($candidateSha);
@@ -230,7 +249,7 @@ final readonly class WorktreeSynchronizer
         $temporaryDirectory = $this->temporaryDirectory();
 
         try {
-            $guestScripts = $this->guestScripts($git->root());
+            $guestScripts = $this->materializeCandidateGuestScripts($git, $candidateSha, $temporaryDirectory);
             $guestScriptHash = $this->guestScriptHash($guestScripts);
             [
                 'archive' => $archive,
@@ -275,7 +294,7 @@ final readonly class WorktreeSynchronizer
                 throw new RuntimeException('Guest source SHAs do not match the candidate SHA.');
             }
 
-            $state = new SourceState($candidateSha, $candidateSha, false, null, [], $operationId);
+            $state = new CandidateSync($candidateSha, $candidateTree, $guestScriptHash, $operationId);
         } catch (\Throwable $primary) {
             $this->failAfterTemporaryCleanup($temporaryDirectory, $primary);
         }
@@ -283,6 +302,45 @@ final readonly class WorktreeSynchronizer
         $this->cleanupTemporaryDirectory($temporaryDirectory);
 
         return $state;
+    }
+
+    /**
+     * Write the candidate commit's guest scripts under the temporary directory in
+     * the layout `guestScripts()` expects, so the proof installs and hashes the
+     * scripts of the commit under proof rather than the host working tree.
+     *
+     * @return list<string>
+     */
+    private function materializeCandidateGuestScripts(
+        GitRepository $repository,
+        string $candidateSha,
+        string $temporaryDirectory,
+    ): array {
+        $blobs = $repository->blobs($candidateSha, ['apps/e2e/resources/guest/*.sh']);
+        $expected = array_map(
+            static fn (string $name): string => 'apps/e2e/resources/guest/'.$name,
+            self::REQUIRED_GUEST_SCRIPTS,
+        );
+        $found = array_keys($blobs);
+        sort($expected, SORT_STRING);
+        sort($found, SORT_STRING);
+        if ($found !== $expected) {
+            throw new RuntimeException('Guest script inventory is invalid.');
+        }
+
+        $root = $temporaryDirectory.'/candidate';
+        $directory = $root.'/apps/e2e/resources/guest';
+        if (! mkdir($directory, 0700, true)) {
+            throw new RuntimeException('Could not stage the candidate guest scripts.');
+        }
+        foreach ($blobs as $path => $content) {
+            $script = $root.'/'.$path;
+            if (file_put_contents($script, $content, LOCK_EX) === false || ! chmod($script, 0755)) {
+                throw new RuntimeException('Could not stage the candidate guest scripts.');
+            }
+        }
+
+        return $this->guestScripts($root);
     }
 
     private function failAfterTemporaryCleanup(string $temporaryDirectory, \Throwable $primary): never
@@ -373,6 +431,12 @@ final readonly class WorktreeSynchronizer
         return $roles;
     }
 
+    /**
+     * A guest commit serves as the bundle prerequisite only when the host has it
+     * and the commit being sent is not already reachable from it: a guest sitting
+     * on the commit or a descendant would leave Git refusing an empty bundle. A
+     * diverged sibling stays a valid prerequisite.
+     */
     private function bundlePrerequisite(GitRepository $repository, ?string $guestSha, string $hostSha): ?string
     {
         if ($guestSha === null || $guestSha === $hostSha) {
@@ -380,7 +444,9 @@ final readonly class WorktreeSynchronizer
         }
 
         try {
-            return $repository->hasCommit($guestSha) ? $guestSha : null;
+            return $repository->hasCommit($guestSha) && ! $repository->isAncestor($hostSha, $guestSha)
+                ? $guestSha
+                : null;
         } catch (InvalidArgumentException) {
             return null;
         }
@@ -399,7 +465,15 @@ final readonly class WorktreeSynchronizer
             }
 
             $path = $directory.'/'.$entry;
-            if (is_file($path) && ! is_link($path) && ! unlink($path)) {
+            if (is_link($path)) {
+                throw new RuntimeException('Could not remove a temporary source file.');
+            }
+            if (is_dir($path)) {
+                $this->cleanupTemporaryDirectory($path);
+
+                continue;
+            }
+            if (is_file($path) && ! unlink($path)) {
                 throw new RuntimeException('Could not remove a temporary source file.');
             }
         }
@@ -765,40 +839,65 @@ final readonly class WorktreeSynchronizer
      */
     private function detachCheckouts(array $transfers, string $sha, string $candidateTree): void
     {
-        $git = ['runuser', '-u', 'orbit', '--', 'env', 'HOME=/home/orbit', 'git', '-C', '/home/orbit/orbit'];
         $detach = [];
         foreach ($transfers as $role => $transfer) {
             $detach["source-detach.{$role}"] = [
                 'instance' => $transfer['instance'],
-                'command' => new GuestCommand([...$git, 'checkout', '--detach', '--quiet', $sha], 300),
+                'command' => new GuestCommand([...self::GUEST_GIT, 'checkout', '--detach', '--quiet', $sha], 300),
             ];
         }
         $this->assertBatchSuccessful($this->incus->execAll($detach), 'Guest checkout detach failed.');
 
+        $instances = array_map(static fn (array $transfer): string => $transfer['instance'], $transfers);
+        $this->probeCheckoutIdentityOf($instances, $sha, $candidateTree);
+    }
+
+    /**
+     * Prove every checkout role still sits detached at the exact candidate: `HEAD`
+     * is the commit, `HEAD^{tree}` is its tree, and the status is empty. The proof
+     * runner re-runs this after convergence.
+     */
+    public function probeCheckoutIdentity(TopologyTarget $target, string $sha, string $tree): void
+    {
+        $instances = [];
+        foreach (TopologyProfile::CHECKOUT_ROLES as $role) {
+            $instances[$role] = $target->instance($role);
+        }
+        $this->probeCheckoutIdentityOf($instances, $sha, $tree);
+    }
+
+    /** @param array<string, string> $instances */
+    private function probeCheckoutIdentityOf(array $instances, string $sha, string $tree): void
+    {
         $probes = [];
-        foreach ($transfers as $role => $transfer) {
+        foreach ($instances as $role => $instance) {
             $probes["source-head.{$role}"] = [
-                'instance' => $transfer['instance'],
-                'command' => new GuestCommand([...$git, 'rev-parse', '--verify', 'HEAD^{commit}']),
+                'instance' => $instance,
+                'command' => new GuestCommand([...self::GUEST_GIT, 'rev-parse', '--verify', 'HEAD^{commit}']),
             ];
             $probes["source-tree.{$role}"] = [
-                'instance' => $transfer['instance'],
-                'command' => new GuestCommand([...$git, 'rev-parse', '--verify', 'HEAD^{tree}']),
+                'instance' => $instance,
+                'command' => new GuestCommand([...self::GUEST_GIT, 'rev-parse', '--verify', 'HEAD^{tree}']),
             ];
             $probes["source-status.{$role}"] = [
-                'instance' => $transfer['instance'],
-                'command' => new GuestCommand([...$git, 'status', '--porcelain=v1', '--untracked-files=all']),
+                'instance' => $instance,
+                'command' => new GuestCommand([
+                    ...self::GUEST_GIT,
+                    'status',
+                    '--porcelain=v1',
+                    '--untracked-files=all',
+                ]),
             ];
         }
         $results = $this->incus->execAll($probes);
         $this->assertBatchSuccessful($results, 'Guest checkout identity probes failed.');
-        foreach (array_keys($transfers) as $role) {
+        foreach (array_keys($instances) as $role) {
             $head = $results["source-head.{$role}"] ?? null;
-            $tree = $results["source-tree.{$role}"] ?? null;
+            $treeResult = $results["source-tree.{$role}"] ?? null;
             $status = $results["source-status.{$role}"] ?? null;
             if (
                 ! $head instanceof GuestCommandResult
-                || ! $tree instanceof GuestCommandResult
+                || ! $treeResult instanceof GuestCommandResult
                 || ! $status instanceof GuestCommandResult
             ) {
                 throw new RuntimeException('Guest checkout identity batch result is invalid.');
@@ -806,7 +905,7 @@ final readonly class WorktreeSynchronizer
             if (strtolower(trim($head->stdout)) !== $sha) {
                 throw new RuntimeException("Guest checkout [{$role}] HEAD does not match the candidate commit.");
             }
-            if (strtolower(trim($tree->stdout)) !== $candidateTree) {
+            if (strtolower(trim($treeResult->stdout)) !== $tree) {
                 throw new RuntimeException("Guest checkout [{$role}] tree does not match the candidate tree.");
             }
             if (trim($status->stdout) !== '') {
