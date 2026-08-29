@@ -22,5 +22,23 @@ case "$mode" in
       [[ ! -e "$path" ]] || chown -R orbit:orbit "$path"
     done
     ;;
+  align-identity)
+    # Feature topologies mount the host worktree (owned by host uid/gid 1000)
+    # into /home/orbit/orbit, so the orbit account must own uid/gid 1000.
+    # The stock cloud image gives 1000 to the unused ubuntu user.
+    [[ $# -eq 1 ]]
+    current_uid=$(id -u orbit)
+    current_gid=$(id -g orbit)
+    if [[ "$current_uid" == 1000 && "$current_gid" == 1000 ]]; then exit 0; fi
+    if id -u ubuntu >/dev/null 2>&1; then
+      userdel --remove ubuntu || userdel ubuntu
+    fi
+    [[ -z "$(getent passwd 1000)" && -z "$(getent group 1000)" ]] || exit 67
+    groupmod --gid 1000 orbit
+    usermod --uid 1000 --gid 1000 orbit
+    find / /run -xdev -uid "$current_uid" -exec chown -h 1000 {} + 2>/dev/null || true
+    find / /run -xdev -gid "$current_gid" -exec chgrp -h 1000 {} + 2>/dev/null || true
+    if systemctl is-active --quiet php8.5-fpm; then systemctl restart php8.5-fpm; fi
+    ;;
   *) exit 64 ;;
 esac

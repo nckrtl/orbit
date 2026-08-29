@@ -46,6 +46,56 @@ describe('prepare node guest script', function () {
     });
 
     /* ssh host pinning was removed; KnownHostsStore is authoritative. */
+    it('moves the orbit account to uid and gid 1000 and re-owns stale files', function () {
+        $root = sys_get_temp_dir().'/orbit-align-identity-'.bin2hex(random_bytes(4));
+        mkdir("{$root}/bin", 0o700, true);
+        $shim = "#!/usr/bin/env bash\nprintf '%s\\n' \"\$(basename \"\$0\") \$*\" >> '{$root}/commands'\n";
+        foreach (['userdel', 'groupmod', 'usermod', 'find', 'systemctl'] as $command) {
+            file_put_contents("{$root}/bin/{$command}", $shim);
+            chmod("{$root}/bin/{$command}", 0o700);
+        }
+        file_put_contents("{$root}/bin/id", <<<'BASH'
+            #!/usr/bin/env bash
+            case "$*" in
+              '-u orbit') printf '%s\n' "${ALIGN_ORBIT_UID:-1002}" ;;
+              '-g orbit') printf '%s\n' "${ALIGN_ORBIT_GID:-1002}" ;;
+              '-u ubuntu') [[ "${ALIGN_UBUNTU_PRESENT:-1}" == 1 ]] && printf '1000\n' ;;
+              *) exit 1 ;;
+            esac
+            BASH);
+        file_put_contents("{$root}/bin/getent", "#!/usr/bin/env bash\nexit 2\n");
+        chmod("{$root}/bin/id", 0o700);
+        chmod("{$root}/bin/getent", 0o700);
+        $source = file_get_contents(dirname(__DIR__, 3).'/resources/guest/prepare-node.sh');
+        file_put_contents("{$root}/prepare-node.sh", $source);
+        $environment = ['PATH' => "{$root}/bin:".getenv('PATH')];
+
+        try {
+            $process = new Process(['bash', "{$root}/prepare-node.sh", 'align-identity'], env: $environment);
+            expect($process->run())
+                ->toBe(0, $process->getErrorOutput())
+                ->and(file("{$root}/commands", FILE_IGNORE_NEW_LINES))
+                ->toBe([
+                    'userdel --remove ubuntu',
+                    'groupmod --gid 1000 orbit',
+                    'usermod --uid 1000 --gid 1000 orbit',
+                    'find / /run -xdev -uid 1002 -exec chown -h 1000 {} +',
+                    'find / /run -xdev -gid 1002 -exec chgrp -h 1000 {} +',
+                    'systemctl is-active --quiet php8.5-fpm',
+                    'systemctl restart php8.5-fpm',
+                ]);
+
+            unlink("{$root}/commands");
+            $process = new Process(
+                ['bash', "{$root}/prepare-node.sh", 'align-identity'],
+                env: [...$environment, 'ALIGN_ORBIT_UID' => '1000', 'ALIGN_ORBIT_GID' => '1000'],
+            );
+            expect($process->run())->toBe(0)->and(file_exists("{$root}/commands"))->toBeFalse();
+        } finally {
+            new Illuminate\Filesystem\Filesystem()->deleteDirectory($root);
+        }
+    });
+
     it('does not expose an ssh-pins mode', function () {
         $source = file_get_contents(dirname(__DIR__, 3).'/resources/guest/prepare-node.sh');
         expect($source)->not->toContain('ssh-pins');
