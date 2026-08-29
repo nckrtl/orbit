@@ -47,34 +47,8 @@ sudo -u orbit -- env HOME=/home/orbit ssh -i /home/orbit/.orbit/ssh/id_ed25519 \
   -- orbit@"$wireguard_address" 'bash -se' <<'GUEST'
 set -euo pipefail
 fragment=/etc/caddy/orbit-e2e-global.caddy
-state=/var/lib/orbit-e2e/caddy-config-sha256
-rendered=/etc/caddy/Caddyfile
-if [[ -L "$rendered" ]]; then rendered=$(readlink -f "$rendered"); fi
 printf '%s\n' '{' '    local_certs' '}' | sudo install -m 0644 /dev/stdin "$fragment"
 sudo caddy validate --config "$fragment" --adapter caddyfile
-if [[ -e /etc/caddy/Caddyfile ]]; then
-  sudo caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
-fi
 sudo install -d -m 0755 /var/lib/orbit-e2e
-candidate=$(mktemp /etc/caddy/Caddyfile.orbit-e2e.XXXXXX)
-printf 'import %s\nimport %s\n' "$fragment" "$rendered" >"$candidate"
-hash=$(sha256sum "$candidate" | awk '{print $1}')
-if [[ -e "$state" ]]; then
-  [[ "$(cat "$state")" =~ ^[0-9a-f]{64}$ ]] || exit 66
-  current=$(sha256sum /etc/caddy/Caddyfile 2>/dev/null | awk '{print $1}' || true)
-  if [[ "$current" == "$hash" && "$(cat "$state")" == "$hash" ]]; then
-    rm -f "$candidate"
-  else
-    mv -f "$candidate" /etc/caddy/Caddyfile.orbit-e2e
-    ln -sfn Caddyfile.orbit-e2e /etc/caddy/Caddyfile
-    printf '%s\n' "$hash" | sudo install -m 0644 /dev/stdin "$state"
-    sudo systemctl reload caddy
-  fi
-else
-  mv -f "$candidate" /etc/caddy/Caddyfile.orbit-e2e
-  ln -sfn Caddyfile.orbit-e2e /etc/caddy/Caddyfile
-  printf '%s\n' "$hash" | sudo install -m 0644 /dev/stdin "$state"
-  sudo systemctl reload caddy
-fi
 printf '%s\n' /var/lib/caddy/.local/share/caddy/pki/authorities/local/root.crt | sudo tee /var/lib/orbit-e2e/caddy-ca-path >/dev/null
 GUEST

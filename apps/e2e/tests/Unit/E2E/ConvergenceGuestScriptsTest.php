@@ -452,6 +452,22 @@ describe('convergence guest scripts', function () {
         }
     });
 
+    it('defers the app-prod Caddy wrapper until the sample instance exists', function (): void {
+        $guest = dirname(__DIR__, 3).'/resources/guest';
+        $production = file_get_contents("{$guest}/converge-app-prod-internal-tls.sh");
+        $sample = file_get_contents("{$guest}/converge-sample-app.sh");
+
+        expect($production)
+            ->toContain('orbit-e2e-global.caddy', 'local_certs', 'caddy-ca-path')
+            ->not->toContain('Caddyfile.orbit-e2e')
+            ->and($production)
+            ->not->toContain('readlink -f')
+            ->and($production)
+            ->not->toContain('systemctl reload caddy')
+            ->and($sample)
+            ->toContain('Caddyfile.orbit-e2e', 'readlink -f /etc/caddy/Caddyfile', 'systemctl reload caddy');
+    });
+
     it('enforces the verifier argument and output contract', function () {
         $script = dirname(__DIR__, 3).'/resources/guest/verify-topology.sh';
         $sha = str_repeat('a', 40);
@@ -844,7 +860,6 @@ describe('convergence guest scripts', function () {
             ->not->toContain('hydrate-orbit.sh')->and($production)->toContain(
                 'local_certs',
                 'caddy validate',
-                'systemctl reload caddy',
                 'caddy-ca-path',
             )->and($sample)->toContain(
                 'https://github.com/laravel/laravel.git',
