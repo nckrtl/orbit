@@ -1,6 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 umask 077
+write_marker() {
+  local value="$1" destination="$2" source
+  source=$(mktemp)
+  printf '%s\n' "$value" >"$source"
+  if ! install -m 0644 "$source" "$destination"; then
+    rm -f "$source"
+    return 1
+  fi
+  rm -f "$source"
+}
 cd /home/orbit/orbit/apps/gateway
 [[ $# -eq 3 && "$1" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]{0,62}$ && "$2" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || exit 64
 wireguard_address=10.44.0.3
@@ -27,7 +37,7 @@ if [[ -e "$state" ]]; then
       rm -f "$state" "$state.address"
       exit 1
     fi
-    printf '%s\n' "$address" | install -m 0644 /dev/stdin "$state.address"
+    write_marker "$address" "$state.address"
     provision=false
   fi
 fi
@@ -37,8 +47,8 @@ if [[ "$provision" == true ]]; then
     --wireguard-address="$wireguard_address" \
     --host-key-fingerprint="$fingerprint" --no-interaction
   install -d -m 0755 "$(dirname "$state")"
-  printf '%s\n' "$prepared" | install -m 0644 /dev/stdin "$state"
-  printf '%s\n' "$address" | install -m 0644 /dev/stdin "$state.address"
+  write_marker "$prepared" "$state"
+  write_marker "$address" "$state.address"
 fi
 sudo -u orbit -- env HOME=/home/orbit ssh -i /home/orbit/.orbit/ssh/id_ed25519 \
   -o UserKnownHostsFile=/home/orbit/.orbit/ssh/known_hosts \
@@ -46,8 +56,18 @@ sudo -u orbit -- env HOME=/home/orbit ssh -i /home/orbit/.orbit/ssh/id_ed25519 \
   -o StrictHostKeyChecking=yes \
   -- orbit@"$wireguard_address" 'bash -se' <<'GUEST'
 set -euo pipefail
+install_root_text_file() {
+  local value="$1" destination="$2" source
+  source=$(mktemp)
+  printf '%s\n' "$value" >"$source"
+  if ! sudo install -m 0644 "$source" "$destination"; then
+    rm -f "$source"
+    return 1
+  fi
+  rm -f "$source"
+}
 fragment=/etc/caddy/orbit-e2e-global.caddy
-printf '%s\n' '{' '    local_certs' '}' | sudo install -m 0644 /dev/stdin "$fragment"
+install_root_text_file "$(printf '%s\n' '{' '    local_certs' '}')" "$fragment"
 sudo caddy validate --config "$fragment" --adapter caddyfile
 sudo install -d -m 0755 /var/lib/orbit-e2e
 printf '%s\n' /var/lib/caddy/.local/share/caddy/pki/authorities/local/root.crt | sudo tee /var/lib/orbit-e2e/caddy-ca-path >/dev/null

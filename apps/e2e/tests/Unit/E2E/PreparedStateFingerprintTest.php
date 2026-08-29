@@ -135,7 +135,7 @@ describe('PreparedStateFingerprint', function (): void {
             ->toThrow(InvalidArgumentException::class);
     })->with([
         'extra root key' => [['unexpected' => true]],
-        'invalid cold epoch' => [['cold_epoch' => 'ubuntu-24.04-amd64-v0']],
+        'invalid cold epoch' => [['cold_epoch' => 'ubuntu-26.04-amd64-v0']],
         'invalid base image alias' => [['base_image_alias' => 'ubuntu:26.04']],
         'invalid declared epoch' => [['declared_epochs' => ['php' => '1']]],
         'extra Laravel pin key' => [['laravel_pin' => ['tag' => 'v13.0.0', 'commit' => str_repeat('a', 40)]]],

@@ -46,6 +46,7 @@ final readonly class GatewayOperatingSystemGuard
 
             if (array_key_exists($name, $seen)) {
                 $invalid = true;
+                unset($values[$name]);
                 continue;
             }
 
@@ -64,6 +65,7 @@ final readonly class GatewayOperatingSystemGuard
             $values[$name] = $matches[3] !== '' ? $matches[3] : $matches[4];
         }
 
+        $id = $values['ID'] ?? null;
         $codename = $values['VERSION_CODENAME'] ?? null;
         $supported = array_map(
             static fn (UbuntuRelease $release): string => $release->value,
@@ -72,20 +74,20 @@ final readonly class GatewayOperatingSystemGuard
 
         if (
             $invalid
-            || ($values['ID'] ?? null) !== 'ubuntu'
+            || $id !== 'ubuntu'
             || ! is_string($codename)
             || ! in_array($codename, $supported, strict: true)
         ) {
-            throw $this->unsupported();
+            throw $this->unsupported($id, $codename);
         }
     }
 
-    private function unsupported(): NodeProvisioningException
+    private function unsupported(?string $id = null, ?string $codename = null): NodeProvisioningException
     {
         return new NodeProvisioningException(
             'operating-system',
             'gateway.operating_system_unsupported',
-            'Gateway bootstrap requires Ubuntu 26.04 Resolute.',
+            UbuntuRelease::unsupportedText($id, $codename),
         );
     }
 }

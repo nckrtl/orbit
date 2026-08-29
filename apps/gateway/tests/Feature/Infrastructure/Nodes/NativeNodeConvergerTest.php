@@ -64,20 +64,23 @@ it('fails closed before SSH when no host adapter supports the node platform', fu
     expect($scans)->toBe(0);
 });
 
-it('stops unsupported operating systems before the first bootstrap mutation', function (?string $release): void {
+it('stops unsupported operating systems before the first bootstrap mutation', function (
+    ?string $release,
+    string $identifier,
+): void {
     $result = run_base_bootstrap_preflight($release);
 
     expect($result->isSuccessful())
         ->toBeFalse()
         ->and($result->getErrorOutput())
-        ->toContain(UbuntuRelease::requirementText())
+        ->toBe(UbuntuRelease::unsupportedText(...explode('/', $identifier))."\n")
         ->and($result->getOutput())
         ->not->toContain('mutation-reached');
 })->with([
-    'missing release file' => null,
-    'Ubuntu Jammy' => "ID=ubuntu\nVERSION_CODENAME=jammy\n",
-    'Debian' => "ID=debian\nVERSION_CODENAME=resolute\n",
-    'malformed codename' => "ID=ubuntu\nVERSION_CODENAME='resolute extra'\n",
+    'missing release file' => [null, 'unknown/unknown'],
+    'unsupported Ubuntu release' => ["ID=ubuntu\nVERSION_CODENAME=unsupported\n", 'ubuntu/unsupported'],
+    'Debian' => ["ID=debian\nVERSION_CODENAME=resolute\n", 'debian/resolute'],
+    'malformed codename' => ["ID=ubuntu\nVERSION_CODENAME='resolute extra'\n", 'unknown/unknown'],
 ]);
 
 it('does not execute commands from the remote os-release file', function (): void {
@@ -87,7 +90,7 @@ it('does not execute commands from the remote os-release file', function (): voi
     expect($result->isSuccessful())
         ->toBeFalse()
         ->and($result->getErrorOutput())
-        ->toContain(UbuntuRelease::requirementText())
+        ->toContain(UbuntuRelease::unsupportedText())
         ->and($result->getErrorOutput())
         ->not
         ->toContain('__OS_RELEASE_MARKER__')
@@ -100,9 +103,9 @@ it('accepts matching quoted os-release values', function (string $release): void
 
     expect($result->isSuccessful())->toBeTrue()->and($result->getOutput())->toContain('mutation-reached');
 })->with([
-    'double quoted' => "ID=\"ubuntu\"\nVERSION_CODENAME=\"noble\"\n",
-    'single quoted' => "ID='ubuntu'\nVERSION_CODENAME='noble'\n",
-    'bare values without final newline' => "ID=ubuntu\nVERSION_CODENAME=noble",
+    'double quoted' => "ID=\"ubuntu\"\nVERSION_CODENAME=\"resolute\"\n",
+    'single quoted' => "ID='ubuntu'\nVERSION_CODENAME='resolute'\n",
+    'bare values without final newline' => "ID=ubuntu\nVERSION_CODENAME=resolute",
 ]);
 
 it('rejects unsafe or incomplete os-release metadata before bootstrap mutation', function (string $release): void {
@@ -116,21 +119,21 @@ it('rejects unsafe or incomplete os-release metadata before bootstrap mutation',
     expect($result->isSuccessful())
         ->toBeFalse()
         ->and($result->getErrorOutput())
-        ->toBe(UbuntuRelease::requirementText()."\n")
+        ->toBe(UbuntuRelease::unsupportedText()."\n")
         ->and($result->getOutput())
         ->not->toContain($payload, $mutation);
 })->with([
-    'duplicate id with supported value first' => "ID=ubuntu\nID=__PAYLOAD_MARKER__\nVERSION_CODENAME=noble\n",
-    'duplicate id with supported value last' => "ID=__PAYLOAD_MARKER__\nID=ubuntu\nVERSION_CODENAME=noble\n",
-    'duplicate codename with supported value first' => "ID=ubuntu\nVERSION_CODENAME=noble\nVERSION_CODENAME=__PAYLOAD_MARKER__\n",
-    'duplicate codename with supported value last' => "ID=ubuntu\nVERSION_CODENAME=__PAYLOAD_MARKER__\nVERSION_CODENAME=noble\n",
-    'missing id' => "VERSION_CODENAME=noble\n",
+    'duplicate id with supported value first' => "ID=ubuntu\nID=__PAYLOAD_MARKER__\nVERSION_CODENAME=resolute\n",
+    'duplicate id with supported value last' => "ID=__PAYLOAD_MARKER__\nID=ubuntu\nVERSION_CODENAME=resolute\n",
+    'duplicate codename with supported value first' => "ID=ubuntu\nVERSION_CODENAME=resolute\nVERSION_CODENAME=__PAYLOAD_MARKER__\n",
+    'duplicate codename with supported value last' => "ID=ubuntu\nVERSION_CODENAME=__PAYLOAD_MARKER__\nVERSION_CODENAME=resolute\n",
+    'missing id' => "VERSION_CODENAME=resolute\n",
     'empty codename' => "ID=ubuntu\nVERSION_CODENAME=\n",
     'mismatched quotes' => "ID=ubuntu\nVERSION_CODENAME=\"__PAYLOAD_MARKER__'\n",
     'unclosed quotes' => "ID=ubuntu\nVERSION_CODENAME='__PAYLOAD_MARKER__\n",
     'command substitution' => "ID=ubuntu\nVERSION_CODENAME=\$(touch __PAYLOAD_MARKER__)\n",
     'backticks' => "ID=ubuntu\nVERSION_CODENAME=`touch __PAYLOAD_MARKER__`\n",
-    'semicolon' => "ID=ubuntu\nVERSION_CODENAME=noble; touch __PAYLOAD_MARKER__\n",
+    'semicolon' => "ID=ubuntu\nVERSION_CODENAME=resolute; touch __PAYLOAD_MARKER__\n",
 ]);
 
 it('keeps the base bootstrap role-neutral with one fixed shared package list', function (): void {
@@ -143,8 +146,8 @@ it('keeps the base bootstrap role-neutral with one fixed shared package list', f
             '-seu',
             '--',
             'ubuntu',
-            'noble,resolute',
-            UbuntuRelease::requirementText(),
+            'resolute',
+            UbuntuRelease::unsupportedText(),
             'orbit',
             'ssh-ed25519 GATEWAY',
             'ca-certificates',
@@ -182,7 +185,6 @@ it('accepts each supported Ubuntu release before the first bootstrap mutation', 
 
     expect($result->isSuccessful())->toBeTrue()->and($result->getOutput())->toContain('mutation-reached');
 })->with([
-    'Ubuntu Noble' => "ID=ubuntu\nVERSION_CODENAME=noble\n",
     'Ubuntu Resolute' => "ID=ubuntu\nVERSION_CODENAME=resolute\n",
 ]);
 
@@ -721,8 +723,8 @@ it('bootstraps a supplied nckrtl identity without orbit literals or package conf
             '-seu',
             '--',
             'ubuntu',
-            'noble,resolute',
-            UbuntuRelease::requirementText(),
+            'resolute',
+            UbuntuRelease::unsupportedText(),
             'nckrtl',
             'ssh-ed25519 GATEWAY',
             'ca-certificates',
@@ -810,8 +812,8 @@ function run_base_bootstrap_preflight(
         '-seu',
         '--',
         'ubuntu',
-        'noble,resolute',
-        UbuntuRelease::requirementText(),
+        'resolute',
+        UbuntuRelease::unsupportedText(),
         'orbit',
         'ssh-ed25519 TEST',
     ]);
