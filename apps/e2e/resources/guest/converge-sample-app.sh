@@ -8,7 +8,7 @@ case ${1-} in
     [[ $# -eq 3 && "$2" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]{0,62}$ && "$3" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]{0,62}$ ]] || { echo "grant-operator: invalid arguments" >&2; exit 64; }
     ca=/home/orbit/.orbit/ca/root.pem
     [[ -s "$ca" ]] || { echo "grant-operator: missing root CA at $ca ($(id -un))" >&2; ls -ln /home/orbit/.orbit/ca >&2; exit 66; }
-    if ! output=$("$orbit" gateway:add e2e https://10.44.0.1 --ca="$ca" --use --json 2>&1); then
+    if ! output=$("$orbit" gateway:add https://10.44.0.1 --name=e2e --ca="$ca" --use --json 2>&1); then
       printf 'gateway:add failed: %s\n' "$output" >&2
       exit 1
     fi
@@ -31,7 +31,7 @@ case ${1-} in
     curl --fail --silent --show-error --insecure "https://$2/api/v1/ca/root" -o "$ca.new"
     php -r '$v=json_decode(file_get_contents($argv[1]), true, 512, JSON_THROW_ON_ERROR); file_put_contents($argv[2], $v["data"]["root_ca"]);' "$ca.new" "$ca"
     rm -f "$ca.new"
-    "$orbit" gateway:add e2e "https://$2" --ca="$ca" --use --json
+    "$orbit" gateway:add "https://$2" --name=e2e --ca="$ca" --use --json
     ;;
   create-resources)
     [[ "$(id -u)" -eq 0 ]] && exec sudo -u orbit -- env HOME=/home/orbit ORBIT_HOME=/home/orbit/.orbit DB_DATABASE=/home/orbit/.orbit/gateway.sqlite bash "$0" "$@"
