@@ -5,8 +5,17 @@ approved pull request is merged and its development resources are removed.
 Candidate deployment and rollout to the registered live topology are part of
 feature development. Production release and post-deploy operations remain a
 separate cycle. Development proof venues are automated checks or live proof.
-The candidate rollout and cleanup boundary is governed by
-[ADR 0002](../decisions/0002-candidate-deployment-proof-boundary.md).
+The development-proof boundary is governed by
+[ADR 0006](../decisions/0006-topology-led-feature-development.md): separate
+disposable discovery, fresh proof of the exact candidate commit, immutable
+successful proof, review in parallel with CI, and exact cleanup before
+prepared-state refresh.
+[ADR 0002](../decisions/0002-candidate-deployment-proof-boundary.md) is
+historical context. Its shared-live rollout, pre-rollout review, and
+restored-pre-state rules are superseded; its ownership and
+production-separation principles continue in ADR 0006. The role contracts
+below still describe the ADR 0002 flow until a dependent change activates the
+ADR 0006 commands and handoffs.
 
 ## Agent contracts
 

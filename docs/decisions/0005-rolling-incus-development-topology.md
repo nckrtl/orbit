@@ -7,6 +7,15 @@ acceptance on 2026-08-29 (cold standby build, rolling refresh, acquire, dirty
 and clean sync, verify, prove, release with verified absence) and is registered
 in `docs/reference/incus-topologies.md`.
 
+Amended on 2026-08-29 by
+[ADR 0006](0006-topology-led-feature-development.md). The rule "the host
+worktree is never mounted into a VM" now reads "proof never mounts host state;
+discovery mounts the feature worktree". Discovery attaches the worktree to the
+checkout roles with an Incus virtiofs disk device; proof still synchronizes
+the exact candidate commit from Git. ADR 0006 also supersedes the
+ADR 0002 boundary that the last paragraph of the Decision section preserves.
+The original text below is unchanged.
+
 ## Context
 
 Orbit benefits from a repeatable, live-like venue for feature experiments and
