@@ -127,6 +127,33 @@ it('reports typed retarget failures without leaking command output', function ()
         ->assertExitCode(1);
 });
 
+it('explains the node-side recovery when a converged node is unreachable over wireguard', function (): void {
+    app()->instance(HostKeyScanner::class, new class implements HostKeyScanner {
+        public function scan(string $host, int $port): HostKey
+        {
+            throw new RuntimeException('sensitive command output');
+        }
+    });
+    $node = Node::query()->create([
+        'name' => 'app-dev',
+        'status' => LifecycleStatus::Active,
+        'public_ssh_host' => '192.0.2.10',
+        'wireguard_address' => '10.44.0.3',
+        'ssh_host_fingerprint' => 'SHA256:pinned',
+    ]);
+    $node->roles()->create(['role' => \App\Domain\Nodes\RoleName::AppDev, 'status' => LifecycleStatus::Active]);
+
+    $this
+        ->artisan('orbit:node-retarget', [
+            'name' => 'app-dev',
+            'host' => '198.51.100.25',
+        ])
+        ->expectsOutput('Node retarget failed at step [wireguard-ssh] with error [node.retarget_requires_vpn].')
+        ->expectsOutputToContain('/etc/wireguard/orbit.conf')
+        ->doesntExpectOutputToContain('sensitive command output')
+        ->assertExitCode(1);
+});
+
 it('rejects an out of range ssh port before retargeting', function (): void {
     $this
         ->artisan('orbit:node-retarget', [

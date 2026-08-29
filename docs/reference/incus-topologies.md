@@ -52,7 +52,9 @@ promoted snapshots, converges, and re-snapshots in about one minute.
 
 Guests are reachable from the Gateway only over WireGuard after role
 provisioning; the harness repairs cloned WireGuard endpoints through root
-`incus exec` (`retarget-vpn.sh`) and never depends on public SSH.
+`incus exec` (`retarget-vpn.sh`) and never depends on public SSH. After that
+repair, `orbit:node-retarget` updates the public record over WireGuard; see
+[node retarget](node-retarget.md).
 
 `bin/e2e-standby refresh --allow-cold` permits only initial construction when
 no promoted generation or standby resources exist. It never replaces a

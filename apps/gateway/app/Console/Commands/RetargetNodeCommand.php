@@ -34,6 +34,10 @@ final class RetargetNodeCommand extends Command
         } catch (NodeProvisioningException $exception) {
             $this->error("Node retarget failed at step [{$exception->step}] with error [{$exception->errorCode}].");
 
+            if ($exception->errorCode === 'node.retarget_requires_vpn') {
+                $this->line(RetargetNodeAction::VPN_RECOVERY_HINT);
+            }
+
             return self::FAILURE;
         }
 
