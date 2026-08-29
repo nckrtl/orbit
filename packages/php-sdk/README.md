@@ -9,8 +9,8 @@ gateway application.
 During monorepo development, `apps/cli` consumes this package through a
 Composer path repository with symlinking enabled.
 
-The SDK exposes exactly 44 public Gateway operations (the original 38 plus
-tool manager list, tool list, show, install, update, and remove). It preserves
+The SDK exposes exactly 45 public Gateway operations (the original 38 plus
+tool manager list, tool list, show, install, update, remove, and Doctor run). It preserves
 manager, package, nullable version constraints, outcomes, structured errors,
 and request IDs without applying policy. It does not define CLI presentation
 or manager command behavior.
@@ -27,6 +27,13 @@ $response = $connector
 
 assert($response instanceof ToolResponse);
 ```
+
+## Doctor
+
+The SDK exposes `RunDoctorRequest` and bounded typed report responses. It sends
+`POST /api/v1/doctor` as JSON. It omits null filters and preserves explicit
+filter values so the Gateway can validate them. It transports received health,
+order, issues, and summary aggregates without applying Doctor policy.
 
 ## Requirements
 

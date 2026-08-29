@@ -154,6 +154,7 @@ describe('repository guidance bootstrap', function (): void {
 
         $requestDirectory = "{$root}/src/Requests";
         $requestClasses = [];
+        $requestFileCount = 0;
         $files = new RecursiveIteratorIterator(
             new RecursiveDirectoryIterator($requestDirectory, FilesystemIterator::SKIP_DOTS),
         );
@@ -162,6 +163,8 @@ describe('repository guidance bootstrap', function (): void {
             if (! $file instanceof SplFileInfo || $file->getExtension() !== 'php') {
                 continue;
             }
+
+            $requestFileCount++;
 
             $relative = str_replace(
                 search: $requestDirectory.'/',
@@ -176,18 +179,23 @@ describe('repository guidance bootstrap', function (): void {
             }
         }
 
-        expect($requestClasses)->toHaveCount(44);
+        expect($requestFileCount)
+            ->toBe(47)
+            ->and($requestClasses)
+            ->toHaveCount(45)
+            ->toContain(Orbit\Sdk\Requests\Doctor\RunDoctorRequest::class);
     });
 
-    it('documents the 44-operation SDK surface and the binary node access boundary', function (): void {
+    it('documents the 45-operation SDK surface, Doctor, and the binary node access boundary', function (): void {
         $publicContract = repository_guidance_contents('.ai/rules/public-contract.md');
         $normalizedPublicContract = repository_guidance_normalized_contents('.ai/rules/public-contract.md');
 
         expect($publicContract)
-            ->toContain('The SDK models exactly 44 concrete public Gateway API operations:')
+            ->toContain('The SDK models exactly 45 concrete public Gateway API operations:')
             ->toContain(
                 '- Node: list, show, provision, remove, access add, access remove, role list, role add, and role remove.',
             )
+            ->toContain('- Doctor: run the complete typed Gateway report.')
             ->not->toContain('Docker Swarm, permissions, role add/remove')->toContain(
                 'Do not restore the retired Agent, generic executor, direct SSH execution,',
             )->toContain('Docker Swarm, Compose, image-building, stream, database,')

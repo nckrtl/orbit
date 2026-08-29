@@ -6,11 +6,13 @@ use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\GatewayRequest;
 use Orbit\Sdk\Requests\Apps\ListAppsRequest;
+use Orbit\Sdk\Requests\Doctor\RunDoctorRequest;
 use Orbit\Sdk\Requests\Gateway\ShowGatewayStatusRequest;
 use Orbit\Sdk\Requests\Processes\ProcessLogsRequest;
 use Orbit\Sdk\Requests\Tools\ListToolManagersRequest;
 use Orbit\Sdk\Requests\Tools\ListToolsRequest;
 use Orbit\Sdk\Responses\Apps\AppsResponse;
+use Orbit\Sdk\Responses\Doctor\DoctorReportResponse;
 use Orbit\Sdk\Responses\Gateway\GatewayStatusResponse;
 use Orbit\Sdk\Responses\Processes\ProcessLogsResponse;
 use Orbit\Sdk\Responses\Tools\ToolManagersResponse;
@@ -20,6 +22,35 @@ use Saloon\Http\Faking\MockResponse;
 
 /** @mago-expect lint:halstead Request-ID boundary assertions stay visible together. */
 describe('success request ID boundary', function (): void {
+    it('bounds Doctor response metadata request IDs', function (array $meta, string $expected, ?string $unsafe): void {
+        $response = success_request_id_dto(new RunDoctorRequest, [
+            'data' => [
+                'healthy' => true,
+                'nodes' => [],
+                'summary' => ['nodes' => 0, 'families' => 0, 'checks' => 0, 'drift' => 0, 'unverifiable' => 0],
+            ],
+            'meta' => $meta,
+        ]);
+
+        expect($response)->toBeInstanceOf(DoctorReportResponse::class);
+        if (! $response instanceof DoctorReportResponse) {
+            $this->fail('Expected a Doctor report response.');
+        }
+
+        $diagnostics = print_r([$response, $response->toArray()], return: true);
+        expect($response->requestId)->toBe($expected);
+        if ($unsafe !== null) {
+            expect($diagnostics)->not->toContain($unsafe);
+        }
+    })->with([
+        'safe' => [
+            ['request_id' => '11111111-1111-4111-8111-111111111111'],
+            '11111111-1111-4111-8111-111111111111',
+            null,
+        ],
+        'unsafe' => [['request_id' => 'token=doctor-metadata-secret'], '', 'doctor-metadata-secret'],
+    ]);
+
     /** @mago-expect lint:cyclomatic-complexity Tool metadata boundaries stay visible together. */
     it('bounds Tool item and collection response metadata request IDs', function (
         array $meta,
