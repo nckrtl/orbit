@@ -3910,7 +3910,7 @@ it('mounts the worktree, repairs clone identity, and records the host source wit
         static fn (array $command): bool => str_contains($joined($command), $needle),
     ));
 
-    $mountDevice = 'orbit-source,type=disk,source='.$worktreeA.',path=/home/orbit/orbit';
+    $mountDevice = 'orbit-source,source='.$worktreeA;
     $copies = $eventsMatching($acquireEvents, ' copy ');
     $mountedCopies = array_values(array_filter(
         $copies,
@@ -3921,7 +3921,9 @@ it('mounts the worktree, repairs clone identity, and records the host source wit
         ->and($mountedCopies)
         ->toHaveCount(2)
         ->and(array_map(static fn (array $command): string => (string) $command[5], $mountedCopies))
-        ->toBe(['local:'.$target->instance('gateway'), 'local:'.$target->instance('app-dev')]);
+        ->toBe(['local:'.$target->instance('gateway'), 'local:'.$target->instance('app-dev')])
+        ->and($mountedCopies)
+        ->each(fn ($copy) => $copy->toContain('orbit-source,type=disk', 'orbit-source,path=/home/orbit/orbit'));
 
     $mountChecks = $eventsMatching($acquireEvents, 'mountpoint -q -- /home/orbit/orbit');
     $environment = $eventsMatching($acquireEvents, '/var/lib/orbit-e2e/gateway.env');

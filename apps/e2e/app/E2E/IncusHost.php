@@ -1802,8 +1802,13 @@ final class IncusHost implements GuestTransport
         $disks = [];
         if ($mount !== null) {
             $this->validateMount($mount);
+            // Incus takes one --device flag per key.
             $configuration[] = '--device';
-            $configuration[] = "{$mount['device']},type=disk,source={$mount['source']},path={$mount['path']}";
+            $configuration[] = "{$mount['device']},type=disk";
+            $configuration[] = '--device';
+            $configuration[] = "{$mount['device']},source={$mount['source']}";
+            $configuration[] = '--device';
+            $configuration[] = "{$mount['device']},path={$mount['path']}";
             $disks[$mount['device']] = ['source' => $mount['source'], 'path' => $mount['path']];
         }
 

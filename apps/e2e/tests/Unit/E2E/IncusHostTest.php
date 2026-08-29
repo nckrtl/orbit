@@ -2756,7 +2756,11 @@ describe('IncusHost failures', function () {
             '--device',
             'eth0,hwaddr=00:16:3e:a1:e4:eb',
             '--device',
-            'orbit-source,type=disk,source='.$worktree.',path=/home/orbit/orbit',
+            'orbit-source,type=disk',
+            '--device',
+            'orbit-source,source='.$worktree,
+            '--device',
+            'orbit-source,path=/home/orbit/orbit',
         ));
     });
 
