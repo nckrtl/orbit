@@ -61,8 +61,8 @@ describe('node:list', function (): void {
         $this
             ->artisan('node:list')
             ->expectsTable(
-                ['ID', 'Name', 'Status', 'Roles', 'Platform', 'TLD', 'SSH', 'WireGuard'],
-                [[2, 'app-dev', 'active', 'app-dev', 'linux', 'app-dev.orbit', 'orbit@94.237.40.75:22', '10.44.0.3']],
+                ['ID', 'Name', 'Status', 'Roles', 'Platform', 'TLD', 'User', 'WireGuard'],
+                [[2, 'app-dev', 'active', 'app-dev', 'linux', 'app-dev.orbit', 'orbit', '10.44.0.3']],
             )
             ->expectsOutput('Request ID: '.request_id())
             ->assertExitCode(0);
@@ -88,7 +88,7 @@ describe('node:list', function (): void {
             ->assertExitCode(0);
     });
 
-    it('renders an incomplete public SSH endpoint safely in the node list', function (): void {
+    it('keeps the managed user visible without a complete public endpoint', function (): void {
         $payload = list_node_payload();
         $payload['public_ssh_port'] = null;
         MockClient::global([
@@ -101,8 +101,8 @@ describe('node:list', function (): void {
         $this
             ->artisan('node:list')
             ->expectsTable(
-                ['ID', 'Name', 'Status', 'Roles', 'Platform', 'TLD', 'SSH', 'WireGuard'],
-                [[2, 'app-dev', 'active', 'app-dev', 'linux', 'app-dev.orbit', '-', '10.44.0.3']],
+                ['ID', 'Name', 'Status', 'Roles', 'Platform', 'TLD', 'User', 'WireGuard'],
+                [[2, 'app-dev', 'active', 'app-dev', 'linux', 'app-dev.orbit', 'orbit', '10.44.0.3']],
             )
             ->assertExitCode(0);
     });

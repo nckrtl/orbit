@@ -31,7 +31,7 @@ final readonly class AppDevRoleBaseline implements RoleBaseline
         $account = $this->accounts->resolve($node);
         $this->ssh->execute(
             $node,
-            $this->commands->make(RoleName::AppDev, $account),
+            $this->commands->make($node, RoleName::AppDev, $account),
             'role-prerequisites',
             'app-dev.prerequisite_failed',
         );

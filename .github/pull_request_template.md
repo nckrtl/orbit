@@ -14,9 +14,25 @@ All required ADRs must already exist on `main`.
 - [ ] Focused tests pass
 - [ ] Full affected project suites pass without TIA
 - [ ] Project quality checks pass
-- Proof venue: automated
-- Incus topology: none
-- Checkout roles: none
+- [ ] Current-head CI passes before any candidate rollout or live mutation
+- Proof venue: automated or live
+- Live nodes (if applicable): exact IDs, names, and roles from
+  `orbit node:list --json`
+- Live access method (if applicable): Orbit CLI, Gateway API, or pinned direct
+  SSH
+- Pre-rollout review (live only): review ID, candidate SHA, `rollout_approved`
+- Checkout identity (if applicable): candidate and deployed paths/commit SHAs
+- Ownership baseline (if applicable): task-owned, shared, and pre-existing
+  resources
+- Mutation evidence (if applicable): one entry per live write, including recovery
+  artifacts, candidate files, Caddy or PHP-FPM files and symlinks, and service
+  reloads. Immediately before each write, record and inspect a fresh
+  `orbit node:list --json` request. Record the exact node, candidate SHA,
+  mutation, task-owned resources, pre-state, recovery, result, and cleanup
+- Recovery evidence (if applicable): verified recovery action and owned recovery artifacts
+- Post-proof absence evidence (if applicable): task-owned resources absent;
+  shared and pre-existing state unchanged
+- Final review: review ID, candidate SHA, `post_proof` and `approved`
 - Evidence:
 
 ## Compound
@@ -25,7 +41,9 @@ All required ADRs must already exist on `main`.
 - Reusable solution notes: none
 - Why no durable documentation is needed, if none:
 
-## Cleanup
+## Absence and drift
 
-- [ ] Disposable Incus topology is absent or still required for review
+- [ ] Every task-owned proof and recovery resource is verified absent before
+  final review
+- [ ] Ownership and shared-state drift checks pass without merge-verifier cleanup
 - [ ] No credentials, runtime state, or generated artifacts are committed

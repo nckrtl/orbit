@@ -6,6 +6,7 @@ use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\UbuntuRelease;
 use App\Infrastructure\Nodes\Roles\NodeRolePrerequisiteCommandFactory;
+use App\Models\Node;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
@@ -15,20 +16,26 @@ it('uses fixed package lists for every role', function (): void {
 
     $factory = new NodeRolePrerequisiteCommandFactory;
     $account = default_managed_user_account();
+    expect(role_prerequisite_packages($factory->make(new Node, RoleName::AppDev, $account)))
+        ->toBe(['acl', 'attr', 'caddy', 'composer', 'docker.io', 'git', 'openssl', 'unzip']);
 
-    expect(role_prerequisite_packages($factory->make(RoleName::AppDev, $account)))
+    expect(role_prerequisite_packages($factory->make(new Node, RoleName::AppDev, $account)))
         ->toBe(['acl', 'attr', 'caddy', 'composer', 'docker.io', 'git', 'openssl', 'unzip'])
-        ->and(role_prerequisite_packages($factory->make(RoleName::AppProd, $account)))
+        ->and(role_prerequisite_packages($factory->make(new Node, RoleName::AppProd, $account)))
         ->toBe(['acl', 'attr', 'caddy', 'composer', 'docker.io', 'git', 'openssl', 'unzip'])
-        ->and(role_prerequisite_packages($factory->make(RoleName::Vpn, $account)))
+        ->and(role_prerequisite_packages($factory->make(new Node, RoleName::Vpn, $account)))
         ->toBe(['dnsmasq', 'openssl'])
-        ->and($factory->make(RoleName::Gateway, $account)->arguments)
+        ->and($factory->make(new Node, RoleName::Gateway, $account)->arguments)
         ->toBe(['true']);
 });
 
 it('uses healthy Docker CE as the private Docker prerequisite without allowing removals', function (): void {
     $script =
-        new NodeRolePrerequisiteCommandFactory()->make(RoleName::AppProd, default_managed_user_account())->input ?? '';
+        new NodeRolePrerequisiteCommandFactory()->make(
+            new Node,
+            RoleName::AppProd,
+            default_managed_user_account(),
+        )->input ?? '';
     $preflight = Str::before($script, 'install -d -m 0755 /opt/orbit');
     $fixture = role_prerequisite_os_release_fixture("ID=ubuntu\nVERSION_CODENAME=\"resolute\"\n");
     $root = sys_get_temp_dir().'/orbit-docker-ce-'.Str::uuid();
@@ -91,7 +98,8 @@ it('uses healthy Docker CE as the private Docker prerequisite without allowing r
 });
 
 it('validates the supported Ubuntu release before any non-gateway mutation', function (RoleName $role): void {
-    $script = new NodeRolePrerequisiteCommandFactory()->make($role, default_managed_user_account())->input ?? '';
+    $script =
+        new NodeRolePrerequisiteCommandFactory()->make(new Node, $role, default_managed_user_account())->input ?? '';
     $preflight = Str::before($script, "export DEBIAN_FRONTEND=noninteractive\n");
     $marker = sys_get_temp_dir().'/orbit-role-marker-'.Str::uuid();
     $requirement = UbuntuRelease::requirementTextFor(UbuntuRelease::forRole($role));
@@ -180,7 +188,7 @@ it('validates the supported Ubuntu release before any non-gateway mutation', fun
 
 it('uses fixed managed account argv and dynamic paths for a nondefault home', function (): void {
     $account = nondefault_managed_user_account();
-    $command = new NodeRolePrerequisiteCommandFactory()->make(RoleName::AppDev, $account);
+    $command = new NodeRolePrerequisiteCommandFactory()->make(new Node, RoleName::AppDev, $account);
 
     expect(array_slice($command->arguments, 0, 9))
         ->toBe(['sudo', 'bash', '-seu', '--', 'app-dev', 'nckrtl', 'nckrtl', '/srv/users/nckrtl', '2'])
@@ -200,6 +208,7 @@ it('uses fixed managed account argv and dynamic paths for a nondefault home', fu
 it('uses the managed account for ownership validation on shared prerequisites', function (): void {
     $script =
         new NodeRolePrerequisiteCommandFactory()->make(
+            new Node,
             RoleName::AppDev,
             nondefault_managed_user_account(),
         )->input ?? '';
@@ -217,9 +226,9 @@ it('keeps app development directories and Caddy traversal ACLs role-owned', func
 
     $factory = new NodeRolePrerequisiteCommandFactory;
     $account = default_managed_user_account();
-    $appDev = $factory->make(RoleName::AppDev, $account)->input ?? '';
-    $appProd = $factory->make(RoleName::AppProd, $account)->input ?? '';
-    $vpn = $factory->make(RoleName::Vpn, $account)->input ?? '';
+    $appDev = $factory->make(new Node, RoleName::AppDev, $account)->input ?? '';
+    $appProd = $factory->make(new Node, RoleName::AppProd, $account)->input ?? '';
+    $vpn = $factory->make(new Node, RoleName::Vpn, $account)->input ?? '';
 
     expect($appDev)
         ->toContain(
@@ -233,7 +242,8 @@ it('keeps app development directories and Caddy traversal ACLs role-owned', func
 
 it('prints the fixed requirement for malformed os-release quotes', function (): void {
     $role = RoleName::Vpn;
-    $script = new NodeRolePrerequisiteCommandFactory()->make($role, default_managed_user_account())->input ?? '';
+    $script =
+        new NodeRolePrerequisiteCommandFactory()->make(new Node, $role, default_managed_user_account())->input ?? '';
     $preflight = Str::before($script, "export DEBIAN_FRONTEND=noninteractive\n");
     $requirement = UbuntuRelease::requirementTextFor(UbuntuRelease::forRole($role));
     $fixture = role_prerequisite_os_release_fixture("ID=\"ubuntu'\nVERSION_CODENAME=resolute\n");
@@ -263,7 +273,8 @@ it('rejects adversarial os-release values before the payload sentinel', function
     $payloadMarker = sys_get_temp_dir().'/orbit-role-payload-'.Str::uuid();
     $fixture = role_prerequisite_os_release_fixture(str_replace('__PAYLOAD_MARKER__', $payloadMarker, $contents));
     $mutationMarker = sys_get_temp_dir().'/orbit-role-mutation-'.Str::uuid();
-    $script = new NodeRolePrerequisiteCommandFactory()->make($role, default_managed_user_account())->input ?? '';
+    $script =
+        new NodeRolePrerequisiteCommandFactory()->make(new Node, $role, default_managed_user_account())->input ?? '';
     $preflight = Str::before($script, "export DEBIAN_FRONTEND=noninteractive\n");
     $process = new Process(role_prerequisite_process_arguments(
         $role,
@@ -323,7 +334,8 @@ it('accepts bare, single quoted, double quoted, and final unterminated supported
     $requirement = UbuntuRelease::requirementTextFor(UbuntuRelease::forRole($role));
     $fixture = role_prerequisite_os_release_fixture($contents);
     $mutationMarker = sys_get_temp_dir().'/orbit-role-mutation-'.Str::uuid();
-    $script = new NodeRolePrerequisiteCommandFactory()->make($role, default_managed_user_account())->input ?? '';
+    $script =
+        new NodeRolePrerequisiteCommandFactory()->make(new Node, $role, default_managed_user_account())->input ?? '';
     $preflight = Str::before($script, "export DEBIAN_FRONTEND=noninteractive\n");
     $process = new Process(role_prerequisite_process_arguments(
         $role,
@@ -362,7 +374,8 @@ it('accepts bare, single quoted, double quoted, and final unterminated supported
 ]);
 
 it('prepares the orbit Composer workspace with the managed path', function (RoleName $role): void {
-    $script = new NodeRolePrerequisiteCommandFactory()->make($role, default_managed_user_account())->input ?? '';
+    $script =
+        new NodeRolePrerequisiteCommandFactory()->make(new Node, $role, default_managed_user_account())->input ?? '';
 
     expect($script)
         ->toContain(
@@ -390,7 +403,8 @@ it('prepares the orbit Composer workspace with the managed path', function (Role
 it('preserves the complete Vite Plus and Bun application-host runtime', function (RoleName $role): void {
     expect(class_exists(NodeRolePrerequisiteCommandFactory::class))->toBeTrue();
 
-    $script = new NodeRolePrerequisiteCommandFactory()->make($role, default_managed_user_account())->input ?? '';
+    $script =
+        new NodeRolePrerequisiteCommandFactory()->make(new Node, $role, default_managed_user_account())->input ?? '';
     $syntax = new Process(['bash', '-n']);
     $syntax->setInput($script);
     $syntax->run();
@@ -431,7 +445,11 @@ it('propagates failures from both official runtime installer downloads', functio
     expect(class_exists(NodeRolePrerequisiteCommandFactory::class))->toBeTrue();
 
     $script =
-        new NodeRolePrerequisiteCommandFactory()->make(RoleName::AppDev, default_managed_user_account())->input ?? '';
+        new NodeRolePrerequisiteCommandFactory()->make(
+            new Node,
+            RoleName::AppDev,
+            default_managed_user_account(),
+        )->input ?? '';
 
     foreach (['https://vite.plus', 'https://bun.com/install'] as $installerUrl) {
         $installerLine = collect(preg_split('/\R/', $script))
@@ -460,7 +478,11 @@ it('propagates failures from both official runtime installer downloads', functio
 
 it('guards managed JavaScript paths before publishing stable entry points', function (): void {
     $script =
-        new NodeRolePrerequisiteCommandFactory()->make(RoleName::AppProd, default_managed_user_account())->input ?? '';
+        new NodeRolePrerequisiteCommandFactory()->make(
+            new Node,
+            RoleName::AppProd,
+            default_managed_user_account(),
+        )->input ?? '';
     $runtimeGuard = mb_strpos(haystack: $script, needle: 'Orbit JavaScript runtime directory conflict:');
     $runtimeCreation = mb_strpos(
         haystack: $script,
@@ -498,7 +520,11 @@ it('guards managed JavaScript paths before publishing stable entry points', func
 
 it('repairs existing managed runtime ownership without following symlinks before installers', function (): void {
     $script =
-        new NodeRolePrerequisiteCommandFactory()->make(RoleName::AppDev, default_managed_user_account())->input ?? '';
+        new NodeRolePrerequisiteCommandFactory()->make(
+            new Node,
+            RoleName::AppDev,
+            default_managed_user_account(),
+        )->input ?? '';
     $repair = mb_strpos($script, 'chown -R --no-dereference "$managed_user:$managed_group"');
     $viteInstaller = mb_strpos($script, 'https://vite.plus');
     $bunInstaller = mb_strpos($script, 'https://bun.com/install');
@@ -529,7 +555,11 @@ it('rejects foreign launchers before publishing stable entry points', function (
     expect(class_exists(NodeRolePrerequisiteCommandFactory::class))->toBeTrue();
 
     $script =
-        new NodeRolePrerequisiteCommandFactory()->make(RoleName::AppProd, default_managed_user_account())->input ?? '';
+        new NodeRolePrerequisiteCommandFactory()->make(
+            new Node,
+            RoleName::AppProd,
+            default_managed_user_account(),
+        )->input ?? '';
     $harness = role_javascript_runtime_harness($script, foreignLauncher: 'npm');
 
     try {
@@ -550,7 +580,11 @@ it('rejects foreign launchers before publishing stable entry points', function (
 
 it('preserves exact launchers while rolling back new entry points after verification fails', function (): void {
     $script =
-        new NodeRolePrerequisiteCommandFactory()->make(RoleName::AppDev, default_managed_user_account())->input ?? '';
+        new NodeRolePrerequisiteCommandFactory()->make(
+            new Node,
+            RoleName::AppDev,
+            default_managed_user_account(),
+        )->input ?? '';
     $harness = role_javascript_runtime_harness($script, failingRuntime: 'npx', exactLauncher: 'vp');
 
     try {
@@ -724,7 +758,11 @@ function role_composer_harness(?string $conflict = null, string $mode = 'success
     }
 
     $script =
-        new NodeRolePrerequisiteCommandFactory()->make(RoleName::AppDev, default_managed_user_account())->input ?? '';
+        new NodeRolePrerequisiteCommandFactory()->make(
+            new Node,
+            RoleName::AppDev,
+            default_managed_user_account(),
+        )->input ?? '';
     $start = mb_strpos(
         haystack: $script,
         needle: 'install -d -m 0755 -o "$managed_user" -g "$managed_group" /opt/orbit/composer',

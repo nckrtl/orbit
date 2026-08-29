@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Domain\Doctor\NodeInspectionData;
+use App\Domain\Doctor\NodeStateInspector;
 use App\Domain\Nodes\NodeRoleDependencySet;
 use App\Domain\Nodes\NodeRoleDependentCleaner;
 use App\Domain\Nodes\RoleBaselineConverger;
@@ -22,6 +24,98 @@ use App\Models\ToolManagerRecord;
 use Illuminate\Support\Str;
 use Tests\Support\FakeToolManager;
 use Tests\Support\FakeToolManagerMaterializer;
+
+it('records exactly one bounded doctor activity without report findings or diagnostics', function (): void {
+    $requestId = (string) Str::uuid();
+    $caller = command_activity_doctor_node('doctor-caller');
+    $selected = command_activity_doctor_node('doctor-selected');
+    $caller->accessibleNodes()->attach($selected->id);
+    app()->instance(NodeStateInspector::class, new class implements NodeStateInspector {
+        public function inspect(Node $node): NodeInspectionData
+        {
+            return new NodeInspectionData(true, 'linux', 'x86_64', true);
+        }
+    });
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
+        ->withHeader('X-Orbit-Request-Id', $requestId)
+        ->postJson('/api/v1/doctor', [
+            'node_id' => $selected->id,
+            'families' => ['node'],
+        ])
+        ->assertOk();
+
+    $activity = Activity::query()->sole();
+
+    expect($activity->request_id)
+        ->toBe($requestId)
+        ->and($activity->command)
+        ->toBe('doctor:run')
+        ->and($activity->status)
+        ->toBe('succeeded')
+        ->and($activity->error_code)
+        ->toBeNull()
+        ->and($activity->subject_type)
+        ->toBeNull()
+        ->and($activity->target_node_id)
+        ->toBeNull()
+        ->and($activity->properties?->toArray())
+        ->toBe([
+            'method' => 'POST',
+            'path' => 'api/v1/doctor',
+            'input' => [
+                'node_id' => $selected->id,
+                'families' => ['node'],
+            ],
+        ])
+        ->and(json_encode($activity->toArray(), JSON_THROW_ON_ERROR))
+        ->not->toContain('issues', 'findings', 'summary', 'stdout', 'stderr', 'diagnostics');
+});
+
+it('does not persist rejected doctor request data in activity', function (string $body): void {
+    $sentinel = 'DOCTOR_ACTIVITY_SECRET_SENTINEL';
+    $requestId = (string) Str::uuid();
+    $caller = command_activity_doctor_node('doctor-rejected-caller');
+    $selected = command_activity_doctor_node('doctor-rejected-selected');
+    $caller->accessibleNodes()->attach($selected->id);
+
+    $response = $this->call(
+        'POST',
+        '/api/v1/doctor',
+        [],
+        [],
+        [],
+        [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_ACCEPT' => 'application/json',
+            'HTTP_X_ORBIT_REQUEST_ID' => $requestId,
+            'REMOTE_ADDR' => $caller->wireguard_address,
+        ],
+        str_replace('__SENTINEL__', $sentinel, $body),
+    );
+
+    $response->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
+    $activity = Activity::query()->sole();
+
+    expect($activity->command)
+        ->toBe('doctor:run')
+        ->and($activity->status)
+        ->toBe('failed')
+        ->and($activity->error_code)
+        ->toBe('validation.failed')
+        ->and($activity->properties?->get('input'))
+        ->toBe([])
+        ->and($response->getContent())
+        ->not->toContain($sentinel)->and(json_encode($activity->toArray(), JSON_THROW_ON_ERROR))
+        ->not->toContain($sentinel);
+})->with([
+    'malformed JSON' => ['{"families":["__SENTINEL__"'],
+    'unknown key' => ['{"unknown":"__SENTINEL__"}'],
+    'duplicate key' => ['{"families":["node"],"families":["__SENTINEL__"]}'],
+    'object family list' => ['{"families":{"chosen":"node"}}'],
+    'numeric-keyed object family list' => ['{"families":{"0":"node"}}'],
+]);
 
 it('records one completed activity for each API command', function (): void {
     $requestId = (string) Str::uuid();
@@ -879,3 +973,20 @@ it('keeps failed remove tools retained and redacted', function (): void {
         ->and(json_encode($activity->toArray()))
         ->not->toContain('REMOVE_EXCEPTION_SENTINEL');
 });
+
+function command_activity_doctor_node(string $name): Node
+{
+    static $number = 210;
+    $number++;
+
+    return Node::query()->create([
+        'name' => $name,
+        'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
+        'architecture' => 'amd64',
+        'public_ssh_host' => "192.0.2.{$number}",
+        'public_ssh_port' => 22,
+        'user' => 'orbit',
+        'wireguard_address' => "10.44.0.{$number}",
+    ]);
+}

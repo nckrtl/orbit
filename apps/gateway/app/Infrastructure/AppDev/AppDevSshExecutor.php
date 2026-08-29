@@ -26,6 +26,7 @@ final readonly class AppDevSshExecutor
         RemoteCommand $command,
         string $step,
         string $errorCode,
+        ?float $commandTimeout = null,
     ): CommandResult {
         if (! is_string($node->wireguard_address) || $node->wireguard_address === '') {
             throw new RuntimeConvergenceException(
@@ -42,6 +43,7 @@ final readonly class AppDevSshExecutor
                 port: 22,
                 identityFile: $this->keys->privateKeyPath(),
                 knownHostsFile: $this->knownHosts->path(),
+                commandTimeout: $commandTimeout ?? 900.0,
             ),
             $command,
         );

@@ -33,6 +33,7 @@ function app_dev_account_resolver(
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AppDev\AppDevCaddyConfigRenderer;
 use App\Infrastructure\AppDev\AppDevCaddyPublisher;
+use App\Infrastructure\AppDev\AppDevDnsConfigRenderer;
 use App\Infrastructure\AppDev\AppDevPhpFpmConfigRenderer;
 use App\Infrastructure\AppDev\AppDevSiteRepository;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
@@ -1540,7 +1541,7 @@ it('publishes private Caddy and DNS configurations through complete preserved va
         ssh: app_dev_ssh($ssh),
     );
     $processes = new AppDevFakeProcessRunner;
-    $dns = new DnsmasqPrivateDnsManager(new AppDevSiteRepository, $processes);
+    $dns = new DnsmasqPrivateDnsManager($processes, new AppDevDnsConfigRenderer(new AppDevSiteRepository));
 
     $caddy->converge($node);
     $dns->converge();
@@ -1614,7 +1615,7 @@ it('projects only the explicit provisioning node before its active transition', 
         'wireguard_address' => '10.44.0.31',
     ]);
     $processes = new AppDevFakeProcessRunner;
-    $manager = new DnsmasqPrivateDnsManager(new AppDevSiteRepository, $processes);
+    $manager = new DnsmasqPrivateDnsManager($processes, new AppDevDnsConfigRenderer(new AppDevSiteRepository));
 
     $manager->converge($pending);
 
@@ -1647,7 +1648,7 @@ it('projects node wildcards only while the app-dev role is provisioning or activ
     }
     $processes = new AppDevFakeProcessRunner;
 
-    new DnsmasqPrivateDnsManager(new AppDevSiteRepository, $processes)->converge();
+    new DnsmasqPrivateDnsManager($processes, new AppDevDnsConfigRenderer(new AppDevSiteRepository))->converge();
 
     $input = $processes->invocations[0]->input ?? '';
     preg_match("/printf '%s' '([^']+)'/", $input, $matches);
@@ -1691,7 +1692,7 @@ it('holds the shared projection lock while capturing and publishing DNS intent',
     };
 
     try {
-        new DnsmasqPrivateDnsManager(new AppDevSiteRepository, $processes)->converge();
+        new DnsmasqPrivateDnsManager($processes, new AppDevDnsConfigRenderer(new AppDevSiteRepository))->converge();
 
         expect($processes->observedLock)->toBeTrue();
     } finally {
@@ -1862,7 +1863,7 @@ it('keeps the live DNS fragment untouched when effective validation fails', func
     app_dev_runtime_models();
     $processes = new AppDevFakeProcessRunner;
     $processes->fail = true;
-    $manager = new DnsmasqPrivateDnsManager(new AppDevSiteRepository, $processes);
+    $manager = new DnsmasqPrivateDnsManager($processes, new AppDevDnsConfigRenderer(new AppDevSiteRepository));
 
     expect($manager->converge(...))
         ->toThrow(function (RuntimeConvergenceException $exception): void {

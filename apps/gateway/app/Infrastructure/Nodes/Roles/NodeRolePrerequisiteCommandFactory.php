@@ -7,11 +7,17 @@ namespace App\Infrastructure\Nodes\Roles;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\UbuntuRelease;
+use App\Infrastructure\Nodes\NodeBootstrapPackageCatalog;
 use App\Infrastructure\Ssh\RemoteCommand;
+use App\Models\Node;
 
 final readonly class NodeRolePrerequisiteCommandFactory
 {
-    public function make(RoleName $role, ManagedUserAccount $account): RemoteCommand
+    public function __construct(
+        private NodeBootstrapPackageCatalog $packages = new NodeBootstrapPackageCatalog,
+    ) {}
+
+    public function make(Node $node, RoleName $role, ManagedUserAccount $account): RemoteCommand
     {
         if ($role === RoleName::Gateway) {
             return new RemoteCommand(['true']);
@@ -251,7 +257,7 @@ final readonly class NodeRolePrerequisiteCommandFactory
                 revalidate
                 composer_manifest=
                 trap - EXIT
-                install -d -m 0755 -o "$managed_user" -g "$managed_group" /opt/orbit/composer/vendor/bin
+                install -d -m 0755 -o "$managed_user" -g "$managed_group" /opt/orbit/composer/vendor /opt/orbit/composer/vendor/bin
                 sudo -u "$managed_user" -H env COMPOSER_HOME=/opt/orbit/composer /usr/bin/composer --version --no-ansi
             BASH;
 
@@ -283,28 +289,9 @@ final readonly class NodeRolePrerequisiteCommandFactory
                     static fn (UbuntuRelease $release): string => $release->value,
                     UbuntuRelease::forRole($role),
                 ),
-                ...$this->packages($role),
+                ...$this->packages->forRole($node, $role),
             ],
             input: $input,
         );
-    }
-
-    /** @return non-empty-list<string> */
-    private function packages(RoleName $role): array
-    {
-        return match ($role) {
-            RoleName::AppDev, RoleName::AppProd => [
-                'acl',
-                'attr',
-                'caddy',
-                'composer',
-                'docker.io',
-                'git',
-                'openssl',
-                'unzip',
-            ],
-            RoleName::Vpn => ['dnsmasq', 'openssl'],
-            RoleName::Gateway => ['ca-certificates'],
-        };
     }
 }

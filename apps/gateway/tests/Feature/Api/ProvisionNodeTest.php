@@ -763,10 +763,13 @@ describe('POST /api/v1/nodes', function (): void {
         $this->postJson('/api/v1/nodes', [
             'name' => 'identity-explicit-api',
             'public_ssh_host' => '192.0.2.92',
-            'user' => 'nckrtl',
+            'user' => 'deployer',
             'orbit_user' => 'nckrtl',
         ] + $common)->assertCreated();
-        expect($identities)->toBe([['root', 'orbit'], ['nckrtl', 'nckrtl']]);
+        expect($identities)->toBe([
+            ['root',     'orbit'],
+            ['deployer', 'nckrtl'],
+        ]);
     });
 
     it('rejects invalid user values before convergence', function (): void {

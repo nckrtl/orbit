@@ -17,16 +17,30 @@ This repository contains the Orbit CLI, Gateway, and PHP SDK.
 - Use `.agents/skills/developing-orbit-features` for Work and Compound.
 - Use `.agents/skills/reviewing-orbit-pull-requests` for independent review.
 - Use `.agents/skills/merging-orbit-pull-requests` for the final merge gate.
-- Merge a required ADR to `main` before dependent issues become Ready.
+- Merge every governing ADR to `main` before implementation or a dependent
+  workflow-contract change starts. A feature pull request must not introduce,
+  modify, or rely on an unmerged governing ADR.
 - The implementation agent owns Work and Compound for its pull request.
-- Review is a separate agent cycle. The same implementation agent addresses
+- Review is a separate agent cycle. For live proof, review the exact candidate
+  after full gates and current-head CI but before rollout, then review it again
+  after proof and task-resource cleanup. The same implementation agent addresses
   review comments.
-- The merge agent verifies checks, approval, proof, and compound learning.
-- The project-manager agent cleans any disposable Incus topology before it
-  removes the worktree.
+- The merge agent verifies checks, post-proof approval, proof, task-resource
+  absence, live-state drift, and compound learning without mutating live state.
+- For live proof, inspect the registered topology read-only before changing
+  code. Immediately before every rollout or other live mutation, run and inspect
+  `orbit node:list --json`; a prior listing cannot authorize a later mutation.
+- Shared live nodes and pre-existing resources are never removed or adopted by
+  feature cleanup. The feature worker removes only recorded task-owned proof
+  resources before final review. After merge, the external orchestrator verifies
+  absence again before it removes the worktree.
+- Incus is optional diagnostic tooling. It never gates readiness, proof, review,
+  or merge.
 - Keep project-manager orchestration outside this repository. The repository
   owns role behavior and handoff contracts only.
-- Deployment and post-deploy verification are outside this repository cycle.
+- Candidate deployment and rollout to the registered live topology are part of
+  feature development. Production release and post-deploy operations remain
+  separate.
 
 ## Verification
 

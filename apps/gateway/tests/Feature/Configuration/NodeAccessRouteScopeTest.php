@@ -55,6 +55,7 @@ it('declares node access scope on every active-peer API route', function (): voi
         'app:new' => ServingNode::Gateway,
         'app:remove' => ServingNode::AppOwning,
         'app:show' => ServingNode::AppOwning,
+        'doctor:run' => ServingNode::Collection,
         'firewall:allow' => ServingNode::Target,
         'firewall:deny' => ServingNode::Target,
         'firewall:list' => ServingNode::Target,

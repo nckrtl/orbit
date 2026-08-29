@@ -131,12 +131,12 @@ it('passes bootstrap and managed users to the SDK', function (): void {
 
     $this->artisan('node:provision', [
         'name' => 'app-dev',
-        '--user' => 'nckrtl',
+        '--user' => 'deployer',
         '--orbit-user' => 'nckrtl',
     ])->assertExitCode(0);
 
     expect($mockClient->getLastRequest()?->body()->all())
-        ->toHaveKey('user', 'nckrtl')
+        ->toHaveKey('user', 'deployer')
         ->toHaveKey('orbit_user', 'nckrtl');
 });
 

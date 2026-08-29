@@ -53,7 +53,7 @@ final readonly class VpnRoleBaseline implements RoleBaseline
                 $this->keys->privateKeyPath(),
                 $this->knownHosts->path(),
             ),
-            $this->commands->make(RoleName::Vpn, $account),
+            $this->commands->make($node, RoleName::Vpn, $account),
         );
 
         if (! $result->succeeded()) {

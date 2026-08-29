@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Http\Controllers\Api\ActivitiesController;
 use App\Http\Controllers\Api\AppsController;
+use App\Http\Controllers\Api\DoctorRunsController;
 use App\Http\Controllers\Api\FirewallRulesController;
 use App\Http\Controllers\Api\GatewayStatusesController;
 use App\Http\Controllers\Api\InstancesController;
@@ -31,6 +32,8 @@ Route::prefix('v1')->group(function (): void {
     ])->group(function (): void {
         Route::get('nodes', [NodesController::class, 'index'])
             ->name('node:list');
+        Route::post('doctor', [DoctorRunsController::class, 'store'])
+            ->name('doctor:run');
         Route::get('nodes/{node}', [NodesController::class, 'show'])
             ->name('node:show');
         Route::get('nodes/{node}/roles', [NodeRolesController::class, 'index'])
