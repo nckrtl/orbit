@@ -67,13 +67,16 @@ case ${1-} in
     hydrate_composer_dependencies() {
       local checkout=$1
       local lock_hash marker marker_tmp
-      lock_hash=$(sha256sum "$checkout/composer.lock" | awk '{print $1}')
       marker="$checkout/vendor/.orbit-e2e-composer-lock"
-      if [[ -s "$checkout/vendor/autoload.php" && -f "$marker" && "$(<"$marker")" == "$lock_hash" ]]; then
-        return
+      if [[ -f "$checkout/composer.lock" ]]; then
+        lock_hash=$(sha256sum "$checkout/composer.lock" | awk '{print $1}')
+        if [[ -s "$checkout/vendor/autoload.php" && -f "$marker" && "$(<"$marker")" == "$lock_hash" ]]; then
+          return
+        fi
       fi
       run_as_runtime composer install --working-dir="$checkout" --no-interaction --no-progress
-      [[ -s "$checkout/vendor/autoload.php" ]]
+      [[ -s "$checkout/vendor/autoload.php" && -f "$checkout/composer.lock" ]]
+      lock_hash=$(sha256sum "$checkout/composer.lock" | awk '{print $1}')
       marker_tmp=$(run_as_runtime mktemp "$checkout/vendor/.orbit-e2e-composer-lock.XXXXXX")
       printf '%s' "$lock_hash" | run_as_runtime tee "$marker_tmp" >/dev/null
       run_as_runtime mv -f "$marker_tmp" "$marker"

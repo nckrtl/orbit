@@ -64,6 +64,9 @@ function sample_hydration_fixture(bool $commitPresent = true): array
           mkdir -p "$checkout/vendor"
           printf 'autoloaded\n' > "$checkout/vendor/autoload.php"
         fi
+        if [[ "$SAMPLE_COMPOSER_WRITES_LOCK" == 1 ]]; then
+          printf 'resolved dependencies\n' > "$checkout/composer.lock"
+        fi
         BASH);
     chmod("{$root}/bin/git", 0o700);
     chmod("{$root}/bin/composer", 0o700);
@@ -88,6 +91,7 @@ function sample_hydration_fixture(bool $commitPresent = true): array
             'SAMPLE_COMPOSER_COMMANDS' => "{$root}/composer-commands",
             'SAMPLE_COMPOSER_FAILS' => '0',
             'SAMPLE_COMPOSER_WRITES_AUTOLOAD' => '1',
+            'SAMPLE_COMPOSER_WRITES_LOCK' => '0',
             'SAMPLE_FETCHED' => "{$root}/fetched",
             'SAMPLE_GIT_COMMANDS' => "{$root}/git-commands",
             'SAMPLE_HEAD_SHA' => $sha,
@@ -1038,6 +1042,28 @@ describe('convergence guest scripts', function () {
                 ->toBe(0)
                 ->and(file_get_contents("{$fixture['checkout']}/vendor/.orbit-e2e-composer-lock"))
                 ->toBe('stale-lock');
+        } finally {
+            new Illuminate\Filesystem\Filesystem()->deleteDirectory($fixture['root']);
+        }
+    });
+
+    it('hydrates a stock Laravel checkout without a committed Composer lock', function () {
+        $fixture = sample_hydration_fixture();
+        try {
+            unlink("{$fixture['checkout']}/composer.lock");
+            $environment = [...$fixture['environment'], 'SAMPLE_COMPOSER_WRITES_LOCK' => '1'];
+
+            $process = new Process(
+                ['bash', $fixture['script'], 'hydrate', str_repeat('b', 40), 'app-dev'],
+                env: $environment,
+            );
+
+            expect($process->run())
+                ->toBe(0)
+                ->and(file_get_contents("{$fixture['checkout']}/composer.lock"))
+                ->toBe("resolved dependencies\n")
+                ->and(file_get_contents("{$fixture['checkout']}/vendor/.orbit-e2e-composer-lock"))
+                ->toBe(hash_file('sha256', "{$fixture['checkout']}/composer.lock"));
         } finally {
             new Illuminate\Filesystem\Filesystem()->deleteDirectory($fixture['root']);
         }
