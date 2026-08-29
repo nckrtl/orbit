@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Middleware;
 
 use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\Doctor\DoctorFamily;
 use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\NodeRemovalException;
@@ -28,6 +29,8 @@ use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Validation\ValidationException;
+use JsonException;
+use stdClass;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Throwable;
@@ -257,6 +260,10 @@ final readonly class RecordCommandActivity
     {
         $command = $request->route()?->getName();
 
+        if ($command === 'doctor:run') {
+            return $this->doctorInput($request);
+        }
+
         if (! in_array($command, ['node:role:add', 'node:role:remove'], strict: true)) {
             return $this->inputSanitizer->sanitizeProperties($request->collect()->all());
         }
@@ -279,6 +286,54 @@ final readonly class RecordCommandActivity
 
         if ($command === 'node:role:remove' && is_string($routeRole)) {
             $input['role'] = $routeRole;
+        }
+
+        return $this->inputSanitizer->sanitizeProperties($input);
+    }
+
+    /** @return array<array-key, mixed> */
+    private function doctorInput(Request $request): array
+    {
+        try {
+            $input = $this->jsonInspector->inspect($request->getContent(), ['node_id', 'families']);
+        } catch (UnexpectedValueException) {
+            return [];
+        }
+
+        if (array_key_exists('node_id', $input)) {
+            $nodeId = $input['node_id'];
+
+            if (! is_int($nodeId) || $nodeId < 1) {
+                return [];
+            }
+        }
+
+        if (array_key_exists('families', $input)) {
+            $families = $input['families'];
+
+            try {
+                $raw = json_decode($request->getContent(), flags: JSON_THROW_ON_ERROR);
+            } catch (JsonException) {
+                return [];
+            }
+
+            if (! $raw instanceof stdClass || ! is_array($raw->families)) {
+                return [];
+            }
+
+            if (! is_array($families) || $families === [] || ! array_is_list($families)) {
+                return [];
+            }
+
+            foreach ($families as $family) {
+                if (! is_string($family) || ! DoctorFamily::tryFrom($family) instanceof DoctorFamily) {
+                    return [];
+                }
+            }
+
+            if (count(array_unique($families)) !== count($families)) {
+                return [];
+            }
         }
 
         return $this->inputSanitizer->sanitizeProperties($input);
