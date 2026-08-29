@@ -355,6 +355,7 @@ final readonly class RemotePhpPackageManager
                         apt-get -o DPkg::Lock::Timeout=300 update
 
                     expected_origin="${expected_uri%/} $selected_codename/main"
+                    package_architecture=$(dpkg --print-architecture)
                     for package in "$@"; do
                         policy=$(apt-cache policy -- "$package")
                         candidate=$(printf '%s\n' "$policy" | awk '$1 == "Candidate:" { print $2; exit }')
@@ -363,25 +364,55 @@ final readonly class RemotePhpPackageManager
                             exit 1
                         fi
 
-                        apt-cache madison -- "$package" | awk -F '|' \
+                        madison=$(apt-cache madison -- "$package")
+                        if printf '%s\n' "$madison" | awk -F '|' \
                             -v candidate="$candidate" \
+                            -v package="$package" \
+                            -v architecture="$package_architecture" \
                             -v origin="$expected_origin" '
                                 function trim(value) {
                                     gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
                                     return value
                                 }
-                                trim($2) == candidate {
+                                NF != 3 || trim($1) != package { malformed = 1 }
+                                NF == 3 && trim($1) == package && trim($2) == candidate {
                                     value = trim($3)
                                     prefix = origin " "
                                     if (index(value, prefix) == 1) {
                                         suffix = substr(value, length(prefix) + 1)
                                         count = split(suffix, fields, /[[:space:]]+/)
-                                        if (count == 2 && fields[1] ~ /^[[:alnum:]][[:alnum:]+.-]*$/ && fields[2] == "Packages") { found = 1 }
+                                        if (count == 2 && fields[1] == architecture && fields[2] == "Packages") { found = 1 }
                                     }
                                     else { foreign = 1 }
                                 }
-                                END { exit found && ! foreign ? 0 : 1 }
-                            '
+                                END { exit found && ! foreign && ! malformed ? 0 : 1 }
+                            '; then
+                            continue
+                        fi
+
+                        installed=$(dpkg-query -W -f='${Status} ${Version}\n' -- "$package" 2>/dev/null || true)
+                        if ! printf '%s\n' "$installed" | awk -v candidate="$candidate" \
+                            '$1 == "install" && $2 == "ok" && $3 == "installed" && $4 == candidate { found = 1 } END { exit found ? 0 : 1 }'
+                        then
+                            printf '%s\n' "A required PHP package candidate is unavailable from the pinned Sury source: $package" >&2
+                            exit 1
+                        fi
+
+                        printf '%s\n' "$madison" | awk -F '|' -v candidate="$candidate" -v package="$package" -v architecture="$package_architecture" -v origin="$expected_origin" '
+                            function trim(value) { gsub(/^[[:space:]]+|[[:space:]]+$/, "", value); return value }
+                            NF != 3 || trim($1) != package { malformed = 1 }
+                            NF == 3 {
+                                version = trim($2); value = trim($3); prefix = origin " "
+                                if (trim($1) != package) { malformed = 1 }
+                                else if (version == candidate) { foreign = 1 }
+                                else if (index(value, prefix) == 1) {
+                                    suffix = substr(value, length(prefix) + 1)
+                                    count = split(suffix, fields, /[[:space:]]+/)
+                                    if (count == 2 && fields[1] == architecture && fields[2] == "Packages") { found = 1 } else { malformed = 1 }
+                                }
+                            }
+                            END { exit found && ! foreign && ! malformed ? 0 : 1 }
+                        '
                     done
 
                     published=0

@@ -254,6 +254,8 @@ it('does not execute a malicious os-release payload in either remote script', fu
             "#!/usr/bin/env bash\ntouch ".escapeshellarg($root.'/package-mutation')."\nexit 1\n",
         );
         chmod($root.'/bin/dpkg-query', 0755);
+        file_put_contents($root.'/bin/dpkg', "#!/usr/bin/env bash\nprintf 'amd64\\n'\n");
+        chmod($root.'/bin/dpkg', 0755);
 
         foreach ([0, 1] as $commandIndex) {
             $script = str_replace('/etc/os-release', $osRelease, $transport->commands[$commandIndex]->input ?? '');
@@ -291,6 +293,8 @@ it('accepts valid release metadata forms in both remote scripts', function (stri
         file_put_contents($root.'/etc/os-release', $osRelease);
         file_put_contents($root.'/bin/dpkg-query', "#!/usr/bin/env bash\nexit 1\n");
         chmod($root.'/bin/dpkg-query', 0755);
+        file_put_contents($root.'/bin/dpkg', "#!/usr/bin/env bash\nprintf 'amd64\\n'\n");
+        chmod($root.'/bin/dpkg', 0755);
         foreach ([0, 1] as $commandIndex) {
             $script = str_replace(
                 ['/etc/os-release', '/etc/apt'],
@@ -585,6 +589,7 @@ it('executes the source program with the selected Ubuntu suite', function (
     ?string $origin = null,
     ?string $foreignOrigin = null,
     string $originMetadata = '',
+    string $architecture = 'amd64',
 ): void {
     $transport = new AppDevFakeSshExecutor;
     new RemotePhpPackageManager()->installForAppDev(
@@ -612,7 +617,7 @@ it('executes the source program with the selected Ubuntu suite', function (
             ),
             array_slice($transport->commands[0]->arguments, 3),
         );
-        php_package_write_source_binaries($root, $origin ?? $codename, $foreignOrigin, $originMetadata);
+        php_package_write_source_binaries($root, $origin ?? $codename, $foreignOrigin, $originMetadata, $architecture);
         $process = new Process(['bash', '-seu', '--', ...$arguments], $root, ['PATH' => $root.'/bin:'.getenv('PATH')]);
         $process->setInput($script);
         $process->run();
@@ -641,6 +646,113 @@ it('executes the source program with the selected Ubuntu suite', function (
     'mismatched origin' => ['ubuntu', 'noble', false, 'resolute'],
     'foreign origin for candidate' => ['ubuntu', 'noble', false, null, 'archive.ubuntu.com/ubuntu'],
     'extra origin metadata' => ['ubuntu', 'noble', false, null, null, ' extra'],
+    'wrong candidate architecture' => ['ubuntu', 'noble', false, null, null, '', 'arm64'],
+]);
+
+it('accepts an installed-only policy candidate when Sury publishes another version', function (): void {
+    $transport = new AppDevFakeSshExecutor;
+    new RemotePhpPackageManager()->installForAppDev(
+        php_package_node(RoleName::AppDev),
+        collect(['8.5']),
+        php_package_app_dev_ssh($transport),
+    );
+    $root = sys_get_temp_dir().'/orbit-php-installed-candidate-'.bin2hex(random_bytes(6));
+    try {
+        mkdir($root.'/bin', 0777, true);
+        mkdir($root.'/etc/apt/sources.list.d', 0777, true);
+        mkdir($root.'/usr/share/keyrings', 0777, true);
+        file_put_contents($root.'/etc/os-release', "ID=ubuntu\nVERSION_CODENAME=noble\n");
+        $script = str_replace(
+            ['/etc/os-release', '/etc/apt', '/usr/share/keyrings'],
+            [$root.'/etc/os-release', $root.'/etc/apt', $root.'/usr/share/keyrings'],
+            $transport->commands[0]->input ?? '',
+        );
+        $arguments = array_map(
+            static fn (string $argument): string => str_replace(
+                ['/etc/os-release', '/etc/apt', '/usr/share/keyrings'],
+                [$root.'/etc/os-release', $root.'/etc/apt', $root.'/usr/share/keyrings'],
+                $argument,
+            ),
+            array_slice($transport->commands[0]->arguments, 3),
+        );
+        php_package_write_source_binaries($root, 'noble', null);
+        file_put_contents(
+            $root.'/bin/dpkg-query',
+            "#!/usr/bin/env bash\nprintf '%s\\n' 'install ok installed 6.3.0-2+ubuntu24.04.1+deb.sury.org+1'\n",
+        );
+        chmod($root.'/bin/dpkg-query', 0755);
+        file_put_contents($root.'/bin/apt-cache', <<<'BASH'
+            #!/usr/bin/env bash
+            package="${@: -1}"
+            case "$1" in
+             policy) printf 'Candidate: 6.3.0-2+ubuntu24.04.1+deb.sury.org+1\n';;
+             madison) printf '%s | 6.3.0-2+0~20260711.1+ubuntu24.04~1.gbp123 | https://packages.sury.org/php noble/main amd64 Packages\n' "$package";;
+            esac
+            BASH);
+        chmod($root.'/bin/apt-cache', 0755);
+        $process = new Process(['bash', '-seu', '--', ...$arguments], $root, ['PATH' => $root.'/bin:'.getenv('PATH')]);
+        $process->setInput($script);
+        $process->run();
+        expect($process->getExitCode())->toBe(0);
+    } finally {
+        new Filesystem()->deleteDirectory($root);
+    }
+});
+
+it('rejects unsafe installed-only candidate fallback metadata', function (string $madison): void {
+    $transport = new AppDevFakeSshExecutor;
+    new RemotePhpPackageManager()->installForAppDev(
+        php_package_node(RoleName::AppDev),
+        collect(['8.5']),
+        php_package_app_dev_ssh($transport),
+    );
+    $root = sys_get_temp_dir().'/orbit-php-installed-negative-'.bin2hex(random_bytes(6));
+    try {
+        mkdir($root.'/bin', 0777, true);
+        mkdir($root.'/etc/apt/sources.list.d', 0777, true);
+        mkdir($root.'/usr/share/keyrings', 0777, true);
+        file_put_contents($root.'/etc/os-release', "ID=ubuntu\nVERSION_CODENAME=noble\n");
+        $script = str_replace(
+            ['/etc/os-release', '/etc/apt', '/usr/share/keyrings'],
+            [$root.'/etc/os-release', $root.'/etc/apt', $root.'/usr/share/keyrings'],
+            $transport->commands[0]->input ?? '',
+        );
+        $arguments = array_map(
+            static fn (string $argument): string => str_replace(
+                ['/etc/os-release', '/etc/apt', '/usr/share/keyrings'],
+                [$root.'/etc/os-release', $root.'/etc/apt', $root.'/usr/share/keyrings'],
+                $argument,
+            ),
+            array_slice($transport->commands[0]->arguments, 3),
+        );
+        php_package_write_source_binaries($root, 'noble', null);
+        file_put_contents(
+            $root.'/bin/dpkg-query',
+            "#!/usr/bin/env bash\nprintf '%s\\n' 'install ok installed 6.3.0-2+ubuntu24.04.1+deb.sury.org+1'\n",
+        );
+        chmod($root.'/bin/dpkg-query', 0755);
+        file_put_contents(
+            $root.'/bin/apt-cache',
+            "#!/usr/bin/env bash\npackage=\"\${@: -1}\"\ncase \"\$1\" in policy) printf 'Candidate: 6.3.0-2+ubuntu24.04.1+deb.sury.org+1\\n';; madison) printf '%s\\n' "
+            .escapeshellarg(str_replace('php8.5-cli', '{package}', $madison))
+            .' | sed "s/{package}/$package/g";; esac'
+            ."\n",
+        );
+        chmod($root.'/bin/apt-cache', 0755);
+        $process = new Process(['bash', '-seu', '--', ...$arguments], $root, ['PATH' => $root.'/bin:'.getenv('PATH')]);
+        $process->setInput($script);
+        $process->run();
+        expect($process->getExitCode())->not->toBe(0);
+    } finally {
+        new Filesystem()->deleteDirectory($root);
+    }
+})->with([
+    'foreign candidate' => 'php8.5-cli | 6.3.0-2+ubuntu24.04.1+deb.sury.org+1 | https://mirror.example noble/main amd64 Packages',
+    'extra pipe' => 'php8.5-cli | 6.3.0-2+0~20260711 | https://packages.sury.org/php noble/main amd64 Packages | extra',
+    'no Sury row' => 'php8.5-cli | 6.3.0-2+0~20260711 | https://mirror.example noble/main amd64 Packages',
+    'wrong architecture' => 'php8.5-cli | 6.3.0-2+0~20260711 | https://packages.sury.org/php noble/main arm64 Packages',
+    'malformed architecture' => 'php8.5-cli | 6.3.0-2+0~20260711 | https://packages.sury.org/php noble/main amd64:evil Packages',
+    'unexpected package' => 'unexpected-package | 6.3.0-2+0~20260711 | https://packages.sury.org/php noble/main amd64 Packages',
 ]);
 
 it('rejects lookalike origin hostnames', function (): void {
@@ -802,6 +914,7 @@ function php_package_write_source_binaries(
     string $origin,
     ?string $foreignOrigin,
     string $originMetadata = '',
+    string $architecture = 'amd64',
 ): void {
     $write = static function (string $name, string $body) use ($root): void {
         file_put_contents($root.'/bin/'.$name, "#!/usr/bin/env bash\n{$body}\n");
@@ -824,17 +937,20 @@ function php_package_write_source_binaries(
     );
     $write('mktemp', 'exec /usr/bin/mktemp "$@"');
     $write('apt-get', 'exit 0');
+    $write('dpkg', 'if [ "$1" = --print-architecture ]; then printf "amd64\\n"; fi');
     $write(
         'apt-cache',
-        'case "$1" in policy) printf "Candidate: 8.5.0\\n";; madison) printf "php8.5-cli | 8.5.0 | https://packages.sury.org/php '
+        'package="${@: -1}"; case "$1" in policy) printf "Candidate: 8.5.0\\n";; madison) printf "%s | 8.5.0 | https://packages.sury.org/php '
         .$origin
-        .'/main amd64 Packages'
+        .'/main '
+        .$architecture
+        .' Packages'
         .$originMetadata
-        .'\\n"'
+        .'\\n" "$package"'
         .(
             $foreignOrigin === null
                 ? ''
-                : '; printf "php8.5-cli | 8.5.0 | https://'.$foreignOrigin.'/main amd64 Packages\\n"'
+                : '; printf "%s | 8.5.0 | https://'.$foreignOrigin.'/main '.$architecture.' Packages\\n" "$package"'
         )
         .';; esac',
     );
