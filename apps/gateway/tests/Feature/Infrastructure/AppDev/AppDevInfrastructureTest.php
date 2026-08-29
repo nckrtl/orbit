@@ -1571,7 +1571,9 @@ it('publishes private Caddy and DNS configurations through complete preserved va
             'flock -w 30 9',
             'source_main=$(readlink -f "$live_caddyfile")',
             'previous_fragments=$(dirname "$source_main")/fragments',
-            'cp --preserve=mode,ownership -- "$fragment" "$candidate/fragments/"',
+            'destination="$candidate/fragments/$fragment_name"',
+            'destination="$candidate/fragments/00-unmanaged.caddy"',
+            'cp --preserve=mode,ownership -- "$fragment" "$destination"',
             'app-dev.caddy',
             "printf 'import %s/%s/fragments/*.caddy\n' \"\$versions\" \"\$version\"",
             'caddy validate --config "$candidate/Caddyfile"',
@@ -1739,6 +1741,7 @@ it('retires only the exact package-default caddyfile while preserving modified c
         $orbitResult = $harness->run(
             publisher: zero_site_publisher($harness),
             scenario: AppDevCaddyPublishScenario::orbitAggregate("import fragments/*.caddy\n", [
+                'unmanaged.caddy' => "{\n    local_certs\n}\n",
                 'custom.caddy' => "custom handler\n",
                 'app-dev.caddy' => "stale app-dev\n",
             ]),
@@ -1748,11 +1751,14 @@ it('retires only the exact package-default caddyfile while preserving modified c
             ->toBe(0)
             ->and($orbitResult->publishedFragments)
             ->toHaveKey('app-dev.caddy')
+            ->toHaveKey('00-unmanaged.caddy')
             ->toHaveKey('custom.caddy')
             ->not
             ->toHaveKey('unmanaged.caddy')
             ->and($orbitResult->publishedFragments['custom.caddy'])
             ->toBe("custom handler\n")
+            ->and($orbitResult->publishedFragments['00-unmanaged.caddy'])
+            ->toBe("{\n    local_certs\n}\n")
             ->and($orbitResult->publishedFragments['app-dev.caddy'])
             ->toBe("# Managed by Orbit.\n");
 
@@ -1764,8 +1770,10 @@ it('retires only the exact package-default caddyfile while preserving modified c
         expect($modifiedResult->exitCode)
             ->toBe(0)
             ->and($modifiedResult->publishedFragments)
+            ->toHaveKey('00-unmanaged.caddy')
+            ->not
             ->toHaveKey('unmanaged.caddy')
-            ->and($modifiedResult->publishedFragments['unmanaged.caddy'])
+            ->and($modifiedResult->publishedFragments['00-unmanaged.caddy'])
             ->toBe("modified config\n");
     } finally {
         $harness->cleanup();
@@ -2367,7 +2375,9 @@ it('removes only the app development Caddy fragment through an atomic preserved 
             'flock -w 30 9',
             'source_main=$(readlink -f "$live_caddyfile")',
             'test ! -f "$current_fragments/app-dev.caddy"',
-            'cp --preserve=mode,ownership -- "$fragment" "$candidate/fragments/"',
+            'destination="$candidate/fragments/$fragment_name"',
+            'destination="$candidate/fragments/00-unmanaged.caddy"',
+            'cp --preserve=mode,ownership -- "$fragment" "$destination"',
             'caddy validate --config "$candidate/Caddyfile" --adapter caddyfile',
             'mv -fT -- "$candidate_link" "$live_caddyfile"',
             'mv -fT -- "$rollback_link" "$live_caddyfile"',

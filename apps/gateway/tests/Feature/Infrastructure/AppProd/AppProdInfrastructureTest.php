@@ -651,6 +651,34 @@ it('publishes one Orbit-owned Caddy fragment and restores the prior aggregate af
         ->toBeLessThan($rollback);
 });
 
+it('normalizes the unmanaged production fragment before app production configuration', function (): void {
+    $harness = new AppDevCaddyPublishHarness;
+
+    try {
+        $publisher = new AppProdCaddyPublisher(
+            versionsDirectory: $harness->etcCaddyPath('orbit-versions'),
+            liveCaddyfilePath: $harness->etcCaddyPath('Caddyfile'),
+            caddyServiceName: 'caddy',
+            lockPath: $harness->etcCaddyPath('orbit-locks/caddy.lock'),
+        );
+        $result = $harness->run(
+            publisher: $publisher,
+            scenario: AppDevCaddyPublishScenario::orbitAggregate("import fragments/*.caddy\n", [
+                'unmanaged.caddy' => "{\n    local_certs\n}\n",
+                'app-prod.caddy' => "stale production\n",
+            ]),
+        );
+
+        expect($result->exitCode)
+            ->toBe(0)
+            ->and($result->publishedFragments)
+            ->toHaveKey('00-unmanaged.caddy')
+            ->not->toHaveKey('unmanaged.caddy');
+    } finally {
+        $harness->cleanup();
+    }
+});
+
 it('restores the exact Caddy symlink before the recovery reload when activation fails', function (): void {
     $harness = new AppDevCaddyPublishHarness;
     $previousTarget = $harness->etcCaddyPath('orbit-versions/current/Caddyfile');
@@ -872,7 +900,6 @@ it('removes only the app production Caddy fragment through an atomic preserved a
             'flock -w 30 9',
             'source_main=$(readlink -f "$live_caddyfile")',
             'test ! -f "$current_fragments/app-prod.caddy"',
-            'cp --preserve=mode,ownership -- "$fragment" "$candidate/fragments/"',
             'caddy validate --config "$candidate/Caddyfile" --adapter caddyfile',
             'mv -fT -- "$candidate_link" "$live_caddyfile"',
             'mv -fT -- "$rollback_link" "$live_caddyfile"',

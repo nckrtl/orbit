@@ -80,10 +80,17 @@ final readonly class AppProdCaddyPublisher
                 case "\$source_main" in
                     "\$versions"/*/Caddyfile)
                         for fragment in "\$current_fragments"/*.caddy; do
-                            if [ ! -e "\$fragment" ] || [ "\$(basename "\$fragment")" = app-prod.caddy ]; then
+                            fragment_name=\$(basename "\$fragment")
+                            if [ ! -e "\$fragment" ] || [ "\$fragment_name" = app-prod.caddy ]; then
                                 continue
                             fi
-                            cp --preserve=mode,ownership -- "\$fragment" "\$candidate/fragments/"
+                            destination="\$candidate/fragments/\$fragment_name"
+                            if [ "\$fragment_name" = unmanaged.caddy ]; then
+                                destination="\$candidate/fragments/00-unmanaged.caddy"
+                                test ! -e "\$destination"
+                            fi
+
+                            cp --preserve=mode,ownership -- "\$fragment" "\$destination"
                         done
                         ;;
                     *)
@@ -95,7 +102,7 @@ final readonly class AppProdCaddyPublisher
                             fi
                         fi
                         if [ "\$preserve_source_main" = 1 ]; then
-                            cp --preserve=mode,ownership -- "\$source_main" "\$candidate/fragments/unmanaged.caddy"
+                            cp --preserve=mode,ownership -- "\$source_main" "\$candidate/fragments/00-unmanaged.caddy"
                         fi
                         ;;
                 esac
@@ -194,10 +201,17 @@ final readonly class AppProdCaddyPublisher
                 trap 'rm -rf -- "$candidate"; rm -f -- "$candidate_link" "$rollback_link" "$rollback_file" "$previous_main"' EXIT
                 install -d -o root -g caddy -m 0750 -- "$candidate/fragments"
                 for fragment in "$current_fragments"/*.caddy; do
-                    if [ ! -e "$fragment" ] || [ "$(basename "$fragment")" = "$owned_fragment" ]; then
+                    fragment_name=$(basename "$fragment")
+                    if [ ! -e "$fragment" ] || [ "$fragment_name" = "$owned_fragment" ]; then
                         continue
                     fi
-                    cp --preserve=mode,ownership -- "$fragment" "$candidate/fragments/"
+                    destination="$candidate/fragments/$fragment_name"
+                    if [ "$fragment_name" = unmanaged.caddy ]; then
+                        destination="$candidate/fragments/00-unmanaged.caddy"
+                        test ! -e "$destination"
+                    fi
+
+                    cp --preserve=mode,ownership -- "$fragment" "$destination"
                 done
                 printf 'import %s/fragments/*.caddy\n' "$candidate" > "$candidate/Caddyfile"
                 chown -R root:caddy "$candidate"
