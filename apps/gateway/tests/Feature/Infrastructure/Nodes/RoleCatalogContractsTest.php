@@ -1,0 +1,54 @@
+<?php
+
+declare(strict_types=1);
+
+use App\Domain\Nodes\RoleName;
+use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
+use App\Infrastructure\Firewall\UfwManagedRule;
+use App\Infrastructure\Nodes\NodeBootstrapPackageCatalog;
+use App\Infrastructure\Nodes\NodeRoleServiceCatalog;
+use App\Models\Node;
+
+it('covers exact package and service matrices', function (): void {
+    $node = new Node(['public_ssh_port' => 22, 'wireguard_address' => '10.0.0.1']);
+    $p = new NodeBootstrapPackageCatalog;
+    $s = new NodeRoleServiceCatalog;
+    expect($p->forNode($node))
+        ->toBe(['ca-certificates', 'curl', 'gnupg', 'openssh-client', 'sudo', 'ufw', 'wireguard'])
+        ->and($p->forRole($node, RoleName::Gateway))
+        ->toBe(['ca-certificates'])
+        ->and($p->forRole($node, RoleName::Vpn))
+        ->toBe(['dnsmasq', 'openssl'])
+        ->and($p->forRole($node, RoleName::AppDev))
+        ->toBe(['acl', 'attr', 'caddy', 'composer', 'docker.io', 'git', 'openssl', 'unzip'])
+        ->and($p->forRole($node, RoleName::AppProd))
+        ->toBe(['acl', 'attr', 'caddy', 'composer', 'docker.io', 'git', 'openssl', 'unzip'])
+        ->and($s->forRole(RoleName::Gateway))
+        ->toBe(['caddy', 'php8.5-fpm'])
+        ->and($s->forRole(RoleName::Vpn))
+        ->toBe(['wg-quick@orbit', 'dnsmasq'])
+        ->and($s->forRole(RoleName::AppDev))
+        ->toBe(['caddy', 'docker'])
+        ->and($s->forRole(RoleName::AppProd))
+        ->toBe(['caddy', 'docker']);
+});
+it('returns typed exact firewall rules', function (): void {
+    $rules = new NodeFirewallRuleCatalog()->forNode(new Node([
+        'public_ssh_port' => 22,
+        'wireguard_address' => '10.0.0.1',
+    ]));
+    expect($rules[0])
+        ->toBeInstanceOf(UfwManagedRule::class)
+        ->and($rules[0]->shape->comment)
+        ->toBe('orbit:public-ssh-recovery');
+});
+
+it('keeps public app-production rules independent of a WireGuard address', function (): void {
+    $rules = new NodeFirewallRuleCatalog()->forRole(
+        new Node(['public_ssh_port' => 22, 'wireguard_address' => null]),
+        RoleName::AppProd,
+    );
+
+    expect(array_map(static fn (UfwManagedRule $rule): ?string => $rule->shape->destination, $rules))
+        ->toBe(['any', 'any']);
+});

@@ -22,6 +22,14 @@ use App\Domain\AppProd\AppProdSourceManager;
 use App\Domain\AppProd\AppProdUserManager;
 use App\Domain\Certificates\GatewayCertificateIssuer;
 use App\Domain\Certificates\LeafCertificateSigner;
+use App\Domain\Doctor\AppStateInspector;
+use App\Domain\Doctor\GatewayVpnStateInspector;
+use App\Domain\Doctor\InstanceStateInspector;
+use App\Domain\Doctor\NodeStateInspector;
+use App\Domain\Doctor\ProcessStateInspector;
+use App\Domain\Doctor\RoleStateInspector;
+use App\Domain\Doctor\WorkspaceStateInspector;
+use App\Domain\Firewall\FirewallInspector;
 use App\Domain\Firewall\FirewallManager;
 use App\Domain\Gateway\GatewayVpnConverger;
 use App\Domain\Gateway\GatewayWebConverger;
@@ -32,6 +40,7 @@ use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\NodeRoleToolIntentGuard;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Processes\ProcessRuntimeManager;
+use App\Domain\Tools\ToolInspector;
 use App\Domain\Tools\ToolManagerMaterializer;
 use App\Domain\Tools\ToolManagerRegistry;
 use App\Domain\Tools\ToolManagerScopeLock;
@@ -54,8 +63,16 @@ use App\Infrastructure\AppProd\RemoteAppProdUserManager;
 use App\Infrastructure\Certificates\OpenSslGatewayCertificateIssuer;
 use App\Infrastructure\Certificates\OpenSslGatewayCertificateValidator;
 use App\Infrastructure\Certificates\OpenSslLeafCertificateSigner;
+use App\Infrastructure\Doctor\NativeAppStateInspector;
+use App\Infrastructure\Doctor\NativeGatewayVpnStateInspector;
+use App\Infrastructure\Doctor\NativeInstanceStateInspector;
+use App\Infrastructure\Doctor\NativeProcessStateInspector;
+use App\Infrastructure\Doctor\NativeRoleStateInspector;
+use App\Infrastructure\Doctor\NativeWorkspaceStateInspector;
+use App\Infrastructure\Doctor\SshNodeStateInspector;
 use App\Infrastructure\Files\NativeAtomicSymlinkPublisher;
 use App\Infrastructure\Files\ProtectedFileWriter;
+use App\Infrastructure\Firewall\NativeUfwFirewallInspector;
 use App\Infrastructure\Firewall\NativeUfwFirewallManager;
 use App\Infrastructure\Firewall\UfwStatusParser;
 use App\Infrastructure\Gateway\GatewayCaddyConfigRenderer;
@@ -85,6 +102,7 @@ use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\Tools\AptToolManager;
 use App\Infrastructure\Tools\ComposerToolManager;
 use App\Infrastructure\Tools\EloquentNodeRoleToolIntentGuard;
+use App\Infrastructure\Tools\NativeToolInspector;
 use App\Infrastructure\Tools\NativeToolManagerMaterializer;
 use App\Infrastructure\Tools\NativeToolManagerScopeLock;
 use App\Infrastructure\Tools\NativeToolOperationLock;
@@ -114,9 +132,15 @@ final class AppServiceProvider extends ServiceProvider
         AppProdRuntimeConverger::class => NativeAppProdRuntimeConverger::class,
         AppProdSourceManager::class => RemoteAppProdSourceManager::class,
         AppProdUserManager::class => RemoteAppProdUserManager::class,
+        AppStateInspector::class => NativeAppStateInspector::class,
+        FirewallInspector::class => NativeUfwFirewallInspector::class,
         FirewallManager::class => NativeUfwFirewallManager::class,
+        GatewayVpnStateInspector::class => NativeGatewayVpnStateInspector::class,
         HostKeyScanner::class => SshHostKeyScanner::class,
+        InstanceStateInspector::class => NativeInstanceStateInspector::class,
         NodeConverger::class => NativeNodeConverger::class,
+        NodeStateInspector::class => SshNodeStateInspector::class,
+        ProcessStateInspector::class => NativeProcessStateInspector::class,
         NodeRoleDependencyInspector::class => EloquentNodeRoleDependencyInspector::class,
         NodeRoleDependentCleaner::class => NativeNodeRoleDependentCleaner::class,
         NodeRoleToolIntentGuard::class => EloquentNodeRoleToolIntentGuard::class,
@@ -126,8 +150,11 @@ final class AppServiceProvider extends ServiceProvider
         ProcessRunner::class => NativeProcessRunner::class,
         SshExecutor::class => NativeSshExecutor::class,
         PrivateDnsManager::class => DnsmasqPrivateDnsManager::class,
+        RoleStateInspector::class => NativeRoleStateInspector::class,
+        ToolInspector::class => NativeToolInspector::class,
         ToolManagerMaterializer::class => NativeToolManagerMaterializer::class,
         ToolOperationLock::class => NativeToolOperationLock::class,
+        WorkspaceStateInspector::class => NativeWorkspaceStateInspector::class,
     ];
 
     public function register(): void
