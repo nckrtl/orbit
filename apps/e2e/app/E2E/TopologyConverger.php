@@ -65,23 +65,32 @@ final readonly class TopologyConverger
             }
         }
 
+        $addresses = [];
+        foreach (TopologyProfile::ROLES as $role) {
+            $addresses[$role] = $this->host->globalIpv4($instances[$role]);
+        }
+
         $steps = ['validate.prerequisites' => true];
 
         $this->run($instances['gateway'], 'converge-gateway.sh', ['prerequisites']);
         $steps['prerequisites.gateway'] = true;
-        $this->run($instances['gateway'], 'converge-gateway.sh', ['bootstrap', $instances['gateway']]);
+        $this->run($instances['gateway'], 'converge-gateway.sh', ['bootstrap', $addresses['gateway']]);
         $steps['bootstrap.gateway'] = true;
         $this->run(
             $instances['gateway'],
             'prepare-node.sh',
-            ['ssh-pins', $instances['app-dev'], $instances['app-prod']],
+            ['ssh-pins', $addresses['app-dev'], $addresses['app-prod']],
         );
         $steps['pin.ssh-hosts'] = true;
-        $this->run($instances['gateway'], 'converge-app-dev.sh', [$instances['app-dev']]);
+        $this->run($instances['gateway'], 'converge-app-dev.sh', [$instances['app-dev'], $addresses['app-dev']]);
         $steps['provision.app-dev'] = true;
-        $this->run($instances['gateway'], 'converge-app-prod-internal-tls.sh', [$instances['app-prod']]);
+        $this->run(
+            $instances['gateway'],
+            'converge-app-prod-internal-tls.sh',
+            [$instances['app-prod'], $addresses['app-prod']],
+        );
         $steps['provision.app-prod'] = true;
-        $this->run($instances['app-dev'], 'converge-sample-app.sh', ['configure-cli', $instances['gateway']]);
+        $this->run($instances['app-dev'], 'converge-sample-app.sh', ['configure-cli', $addresses['gateway']]);
         $steps['configure.app-dev-cli'] = true;
         $this->run($instances['app-dev'], 'converge-sample-app.sh', [
             'create-resources',

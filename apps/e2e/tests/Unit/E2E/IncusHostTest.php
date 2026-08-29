@@ -73,6 +73,60 @@ function incusHost(
 }
 
 describe('IncusHost reads', function () {
+    it('returns the physical global IPv4 and ignores virtual interfaces', function () {
+        Process::fake(function (PendingProcess $process) {
+            if (in_array('list', $process->command, true)) {
+                return Process::result(vmJson());
+            }
+
+            return Process::result(
+                "3: wg0    inet 10.0.0.1/24 scope global wg0\n4: docker0    inet 172.17.0.1/16 scope global docker0\n5: br-abcd    inet 172.18.0.1/16 scope global br-abcd\n2: eth0    inet 192.0.2.44/24 scope global eth0\n",
+            );
+        });
+
+        expect(incusHost()->globalIpv4('orbit-e2e-nck-123-gateway'))->toBe('192.0.2.44');
+    });
+
+    it('fails when the IPv4 probe fails', function () {
+        Process::fake(function (PendingProcess $process) {
+            if (in_array('list', $process->command, true)) {
+                return Process::result(vmJson());
+            }
+
+            return Process::result('', 'probe failed', 1);
+        });
+        expect(fn () => incusHost()->globalIpv4('orbit-e2e-nck-123-gateway'))
+            ->toThrow(RuntimeException::class, 'Failed to read global IPv4 address');
+    });
+
+    it('fails when no usable IPv4 address exists', function () {
+        Process::fake(function (PendingProcess $process) {
+            if (in_array('list', $process->command, true)) {
+                return Process::result(vmJson());
+            }
+
+            return Process::result("3: wg0    inet 10.0.0.1/24 scope global wg0\n");
+        });
+        expect(fn () => incusHost()->globalIpv4('orbit-e2e-nck-123-gateway'))
+            ->toThrow(RuntimeException::class, 'has no usable global IPv4 address');
+    });
+
+    it('fails closed when more than one underlay IPv4 address exists', function () {
+        Process::fake(function (PendingProcess $process) {
+            if (in_array('list', $process->command, true)) {
+                return Process::result(vmJson());
+            }
+
+            return Process::result(
+                "2: eth0    inet 192.0.2.44/24 scope global eth0\n"
+                ."6: enp6s0    inet 198.51.100.44/24 scope global enp6s0\n",
+            );
+        });
+
+        expect(fn () => incusHost()->globalIpv4('orbit-e2e-nck-123-gateway'))
+            ->toThrow(RuntimeException::class, 'does not have exactly one usable global IPv4 address');
+    });
+
     it('filters virtual and loopback interfaces when checking global IPv4', function () {
         $host = incusHost();
         $method = new ReflectionMethod($host, 'hasUsableGlobalIpv4');

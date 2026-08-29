@@ -371,9 +371,12 @@ describe('convergence guest scripts', function () {
                 '-o UserKnownHostsFile=/home/orbit/.orbit/ssh/known_hosts',
                 '-o BatchMode=yes',
                 '-o StrictHostKeyChecking=yes',
-                '-- orbit@"$1"',
+                '-- orbit@"$2"',
             )
             ->not->toContain('ssh -o BatchMode=yes -- "$1"');
+        expect(file_get_contents("{$guest}/converge-app-dev.sh"))
+            ->toContain('orbit:node-provision "$1" "$2"', 'ssh-keyscan -- "$2"');
+        expect($production)->toContain('orbit:node-provision "$1" "$2"', 'ssh-keyscan -- "$2"');
     });
 
     it('hydrates Composer dependencies only when the lock marker is stale', function () {

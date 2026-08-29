@@ -57,6 +57,10 @@ describe('TopologyConverger failures', function () {
                 return Process::result(failing_converger_vm($name));
             }
 
+            if (in_array('addr', $command, true)) {
+                return Process::result("2: eth0    inet 192.0.2.10/24 scope global eth0\n");
+            }
+
             if (in_array('/usr/local/bin/converge-gateway.sh', $command, true)) {
                 return Process::result('private stdout', $stderr, $exitCode);
             }
@@ -109,6 +113,10 @@ describe('TopologyConverger failures', function () {
                 $name = str_contains($target, ':') ? substr($target, strpos($target, ':') + 1) : $target;
 
                 return Process::result(failing_converger_vm($name));
+            }
+
+            if (in_array('addr', $command, true)) {
+                return Process::result("2: eth0    inet 192.0.2.10/24 scope global eth0\n");
             }
 
             if (in_array('/usr/local/bin/converge-gateway.sh', $command, true)) {

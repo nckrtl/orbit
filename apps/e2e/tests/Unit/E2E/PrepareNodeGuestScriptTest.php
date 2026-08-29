@@ -23,8 +23,8 @@ describe('prepare node guest script', function () {
             #!/usr/bin/env bash
             set -euo pipefail
             case "${@: -1}" in
-              app-dev) printf '%s\n' 'app-dev hashed-key' ;;
-              app-prod) printf '%s\n' 'app-prod hashed-key' ;;
+              192.0.2.10) printf '%s\n' 'app-dev hashed-key' ;;
+              192.0.2.11) printf '%s\n' 'app-prod hashed-key' ;;
             esac
             BASH);
         file_put_contents("$root/bin/chown", "#!/usr/bin/env bash\nexit 0\n");
@@ -35,7 +35,7 @@ describe('prepare node guest script', function () {
         $path = "$root/prepare-node.sh";
         file_put_contents($path, $script);
         chmod($path, 0o700);
-        $process = new Process(['bash', $path, 'ssh-pins', 'app-dev', 'app-prod'], env: [
+        $process = new Process(['bash', $path, 'ssh-pins', '192.0.2.10', '192.0.2.11'], env: [
             'PATH' => "$root/bin:".getenv('PATH'),
         ]);
 

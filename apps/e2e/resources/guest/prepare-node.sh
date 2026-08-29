@@ -4,7 +4,7 @@ umask 077
 mode=${1-}
 case "$mode" in
   ssh-pins)
-    [[ $# -eq 3 && "$2" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]{0,62}$ && "$3" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]{0,62}$ ]]
+    [[ $# -eq 3 && "$2" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ && "$3" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]
     install -d -m 0700 /home/orbit/.ssh
     pins=$(mktemp)
     first_pins=$(mktemp)

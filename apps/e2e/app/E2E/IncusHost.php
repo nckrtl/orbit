@@ -380,6 +380,66 @@ final readonly class IncusHost implements GuestTransport
         }
     }
 
+    public function globalIpv4(string $instance): string
+    {
+        $this->validatedOwnedVm($instance);
+        $probe = $this->exec($instance, new GuestCommand([
+            'ip',
+            '-4',
+            '-o',
+            'addr',
+            'show',
+            'scope',
+            'global',
+        ], 10));
+        if (! $probe->successful()) {
+            throw new RuntimeException("Failed to read global IPv4 address for Incus guest {$instance}.");
+        }
+        $addresses = $this->globalIpv4Candidates($probe->stdout);
+        if (count($addresses) === 1) {
+            return $addresses[0];
+        }
+        if ($addresses === []) {
+            throw new RuntimeException("Incus guest {$instance} has no usable global IPv4 address.");
+        }
+
+        throw new RuntimeException("Incus guest {$instance} does not have exactly one usable global IPv4 address.");
+    }
+
+    /** @return list<string> */
+    private function globalIpv4Candidates(string $output): array
+    {
+        $addresses = [];
+        foreach (preg_split('/\R/', trim($output)) ?: [] as $line) {
+            $fields = preg_split('/\s+/', trim($line)) ?: [];
+            $interface = rtrim($fields[1] ?? '', ':');
+            if ($this->excludedIpv4Interface($interface)) {
+                continue;
+            }
+            $inet = array_search('inet', $fields, true);
+            $address = is_int($inet) ? explode('/', $fields[$inet + 1] ?? '', 2)[0] : '';
+            if (
+                filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false
+                || str_starts_with($address, '127.')
+            ) {
+                continue;
+            }
+
+            $addresses[] = $address;
+        }
+
+        return array_values(array_unique($addresses));
+    }
+
+    private function excludedIpv4Interface(string $interface): bool
+    {
+        return (
+            in_array($interface, ['lo', 'wg-orbit', 'wg0', 'docker0', 'docker_gwbridge'], true)
+            || str_starts_with($interface, 'br-')
+            || str_starts_with($interface, 'veth')
+        );
+    }
+
     public function regenerateNetworkIdentity(string $instance): void
     {
         $this->validatedOwnedVm($instance);
@@ -409,30 +469,7 @@ final readonly class IncusHost implements GuestTransport
 
     private function hasUsableGlobalIpv4(string $output): bool
     {
-        foreach (preg_split('/\R/', trim($output)) ?: [] as $line) {
-            $interface = preg_split('/\s+/', trim($line))[1] ?? '';
-            $interface = rtrim($interface, ':');
-            if (
-                $interface === 'lo'
-                || in_array($interface, ['wg-orbit', 'wg0', 'docker0', 'docker_gwbridge'], true)
-                || str_starts_with($interface, 'br-')
-                || str_starts_with($interface, 'veth')
-            ) {
-                continue;
-            }
-            $fields = preg_split('/\s+/', trim($line)) ?: [];
-            foreach ($fields as $field) {
-                $address = explode('/', $field, 2)[0];
-                if (
-                    filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false
-                    && ! str_starts_with($address, '127.')
-                ) {
-                    return true;
-                }
-            }
-        }
-
-        return false;
+        return count($this->globalIpv4Candidates($output)) === 1;
     }
 
     public function stop(string $instance): void

@@ -8,6 +8,7 @@ use App\E2E\Value\LaravelRelease;
 use App\E2E\Value\SourceState;
 use App\E2E\Value\TopologyTarget;
 use Illuminate\Container\Container;
+use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Process\Factory as ProcessFactory;
 use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Facades\Facade;
@@ -38,30 +39,57 @@ function task7_vm(string $name, string $owner = 'orbit-e2e'): string
     ]], JSON_THROW_ON_ERROR);
 }
 
+/** @param list<string> $command */
+function task7_ipv4(array $command): ?string
+{
+    if (! in_array('addr', $command, true)) {
+        return null;
+    }
+
+    $target = implode(' ', $command);
+
+    return match (true) {
+        str_contains($target, 'gateway') => '192.0.2.10',
+        str_contains($target, 'app-dev') => '192.0.2.11',
+        default => '192.0.2.12',
+    };
+}
+
+/** @param list<list<string>> $recorded */
+function task7_process_result(PendingProcess $process, array &$recorded): ProcessResult
+{
+    $command = $process->command;
+    assert(is_array($command));
+    $recorded[] = $command;
+
+    $address = task7_ipv4($command);
+    if ($address !== null) {
+        return Process::result("2: eth0    inet {$address}/24 scope global eth0\n");
+    }
+
+    if (array_slice($command, -4) === ['network', 'list', 'lab:', '--format=json']) {
+        return Process::result(json_encode([[
+            'name' => 'oe-b32d6c83af72',
+            'config' => ['user.orbit.e2e.owner' => 'orbit-e2e'],
+        ]], JSON_THROW_ON_ERROR));
+    }
+
+    if (($command[count($command) - 1] ?? null) === '--format=json') {
+        $target = $command[count($command) - 2];
+
+        return Process::result(task7_vm(
+            str_contains($target, ':') ? substr($target, strpos($target, ':') + 1) : $target,
+        ));
+    }
+
+    return Process::result();
+}
+
 describe('TopologyConverger', function () {
     it('validates and converges an existing ready topology in the required order', function () {
         $recorded = [];
-        Process::fake(function (PendingProcess $process) use (&$recorded) {
-            $command = $process->command;
-            assert(is_array($command));
-            $recorded[] = $command;
-
-            if (array_slice($command, -4) === ['network', 'list', 'lab:', '--format=json']) {
-                return Process::result(json_encode([[
-                    'name' => 'oe-b32d6c83af72',
-                    'config' => ['user.orbit.e2e.owner' => 'orbit-e2e'],
-                ]], JSON_THROW_ON_ERROR));
-            }
-
-            if (($command[count($command) - 1] ?? null) === '--format=json') {
-                $target = $command[count($command) - 2];
-
-                return Process::result(task7_vm(
-                    str_contains($target, ':') ? substr($target, strpos($target, ':') + 1) : $target,
-                ));
-            }
-
-            return Process::result();
+        Process::fake(function (PendingProcess $process) use (&$recorded): ProcessResult {
+            return task7_process_result($process, $recorded);
         });
 
         $sha = str_repeat('a', 40);
@@ -85,7 +113,9 @@ describe('TopologyConverger', function () {
         ]);
 
         $mutations = collect($recorded)
-            ->filter(fn (array $command): bool => in_array('exec', $command, true))
+            ->filter(
+                fn (array $command): bool => in_array('exec', $command, true) && ! in_array('addr', $command, true),
+            )
             ->values()
             ->all();
 
@@ -104,7 +134,21 @@ describe('TopologyConverger', function () {
             array_slice($mutations, 0, 2),
         ))->toBe([
             ['/usr/local/bin/converge-gateway.sh', 'prerequisites'],
-            ['/usr/local/bin/converge-gateway.sh', 'bootstrap', 'orbit-e2e-nck-123-gateway'],
+            ['/usr/local/bin/converge-gateway.sh', 'bootstrap', '192.0.2.10'],
+        ]);
+
+        expect(array_map(fn (array $command): array => array_slice($command, 6), array_slice($mutations, 2, 5)))->toBe([
+            ['/usr/local/bin/prepare-node.sh', 'ssh-pins', '192.0.2.11', '192.0.2.12'],
+            ['/usr/local/bin/converge-app-dev.sh', 'orbit-e2e-nck-123-app-dev', '192.0.2.11'],
+            ['/usr/local/bin/converge-app-prod-internal-tls.sh', 'orbit-e2e-nck-123-app-prod', '192.0.2.12'],
+            ['/usr/local/bin/converge-sample-app.sh', 'configure-cli', '192.0.2.10'],
+            [
+                '/usr/local/bin/converge-sample-app.sh',
+                'create-resources',
+                'orbit-e2e-nck-123-app-dev',
+                'orbit-e2e-nck-123-app-prod',
+                str_repeat('b', 40),
+            ],
         ]);
 
         Process::assertDidntRun(
