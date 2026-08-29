@@ -26,6 +26,21 @@ final readonly class TopologyTarget
         return new self('standby', true);
     }
 
+    public static function ipv4For(int $slot, string $role): string
+    {
+        if ($slot < 1 || $slot > 200) {
+            throw new InvalidArgumentException('The topology slot is invalid.');
+        }
+
+        $roleIndex = array_search($role, TopologyProfile::ROLES, true);
+
+        if ($roleIndex === false) {
+            throw new InvalidArgumentException('The topology role is invalid.');
+        }
+
+        return '10.232.'.$slot.'.'.(10 + $roleIndex);
+    }
+
     public function isStandby(): bool
     {
         return $this->standby;

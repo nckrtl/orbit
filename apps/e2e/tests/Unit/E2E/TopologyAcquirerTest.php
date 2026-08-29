@@ -562,12 +562,15 @@ function topologyVmJson(
 ): string {
     $devices = ['root' => ['pool' => 'default']];
     if ($network !== null) {
-        $role = str_ends_with($name, '-gateway')
-            ? 'gateway'
-            : (str_ends_with($name, '-app-dev') ? 'app-dev' : 'app-prod');
+        $role = match (true) {
+            str_ends_with($name, '-gateway') => 'gateway',
+            str_ends_with($name, '-app-dev') => 'app-dev',
+            default => 'app-prod',
+        };
         $devices['eth0'] = [
             'network' => $network,
             'hwaddr' => '00:16:3e:'.implode(':', str_split(substr(sha1($network.':'.$role), 0, 6), 2)),
+            'ipv4.address' => TopologyTarget::ipv4For(2, $role),
         ];
     }
 
@@ -2977,10 +2980,7 @@ it('rolls back an exactly owned network when host forwarding setup fails', funct
                 'ipv4.nat=true',
                 'ipv4.dhcp.ranges=10.232.2.10-10.232.2.12',
                 'ipv6.address=none',
-                "raw.dnsmasq=port=0\n"
-                ."dhcp-host=00:16:3e:a1:e4:eb,10.232.2.10\n"
-                ."dhcp-host=00:16:3e:43:00:72,10.232.2.11\n"
-                .'dhcp-host=00:16:3e:39:69:0b,10.232.2.12',
+                'raw.dnsmasq=port=0',
                 'user.orbit.e2e.issue=NCK-123',
                 'user.orbit.e2e.operation='.$operationId,
                 'user.orbit.e2e.owner=orbit-e2e',

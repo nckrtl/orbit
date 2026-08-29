@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace App\E2E;
 
 use App\E2E\Value\IncusNetwork;
-use App\E2E\Value\TopologyProfile;
-use App\E2E\Value\TopologyTarget;
 use Illuminate\Support\Facades\Process;
 use JsonException;
 use RuntimeException;
@@ -34,7 +32,7 @@ final readonly class IncusNetworkLifecycle
         }
         $network = $this->host->createNetwork($name, [
             'ipv4.address' => "10.232.{$slot}.1/24",
-            ...$this->networkConfiguration($name, $slot),
+            ...$this->networkConfiguration($slot),
             ...$metadata,
         ]);
 
@@ -81,7 +79,7 @@ final readonly class IncusNetworkLifecycle
         }
         /** @var array<string, string> $configurationDrift */
         $configurationDrift = [];
-        foreach ($this->networkConfiguration($name, $slot) as $key => $value) {
+        foreach ($this->networkConfiguration($slot) as $key => $value) {
             if (($network->config[$key] ?? null) !== $value) {
                 $configurationDrift[$key] = $value;
             }
@@ -112,19 +110,15 @@ final readonly class IncusNetworkLifecycle
     }
 
     /** @return array<string, string> */
-    private function networkConfiguration(string $name, int $slot): array
+    private function networkConfiguration(int $slot): array
     {
         $prefix = "10.232.{$slot}";
-        $dnsmasq = ['port=0'];
-        foreach (array_values(TopologyProfile::ROLES) as $offset => $role) {
-            $dnsmasq[] = 'dhcp-host='.TopologyTarget::macFor($name, $role).",{$prefix}.".(10 + $offset);
-        }
 
         return [
             'ipv4.nat' => 'true',
             'ipv4.dhcp.ranges' => "{$prefix}.10-{$prefix}.12",
             'ipv6.address' => 'none',
-            'raw.dnsmasq' => implode("\n", $dnsmasq),
+            'raw.dnsmasq' => 'port=0',
         ];
     }
 

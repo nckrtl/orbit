@@ -102,13 +102,15 @@ function vmJson(
     string $pool = 'orbit-e2e',
     ?string $network = null,
     ?string $mac = null,
+    ?string $ipv4 = null,
 ): string {
     $devices = ['root' => ['pool' => $pool]];
-    if ($network !== null || $mac !== null) {
+    if ($network !== null || $mac !== null || $ipv4 !== null) {
         $devices['eth0'] = array_filter(
             [
                 'network' => $network,
                 'hwaddr' => $mac,
+                'ipv4.address' => $ipv4,
             ],
             static fn (?string $value): bool => $value !== null,
         );
@@ -235,11 +237,11 @@ describe('IncusHost reads', function () {
             return Process::result(json_encode([
                 [
                     'name' => 'oe-b32d6c83af72',
-                    'config' => ['ipv4.address' => '10.20.30.1/24'],
+                    'config' => ['ipv4.address' => '10.232.30.1/24'],
                 ],
                 [
                     'name' => 'oe-9c9ad027b058',
-                    'config' => ['ipv4.address' => '10.20.31.1/24'],
+                    'config' => ['ipv4.address' => '10.232.31.1/24'],
                 ],
             ], JSON_THROW_ON_ERROR));
         });
@@ -249,7 +251,7 @@ describe('IncusHost reads', function () {
         expect(array_keys($networks))
             ->toBe(['oe-b32d6c83af72', 'oe-9c9ad027b058'])
             ->and($networks['oe-b32d6c83af72']->config['ipv4.address'])
-            ->toBe('10.20.30.1/24');
+            ->toBe('10.232.30.1/24');
     });
 
     it('reads guest IPv4 addresses in one owned inventory and one parallel probe phase', function () {
@@ -426,7 +428,7 @@ describe('IncusHost reads', function () {
 
                 return Process::result(json_encode([[
                     'name' => 'oe-b32d6c83af72',
-                    'config' => ['user.orbit.e2e.owner' => 'orbit-e2e'],
+                    'config' => ['user.orbit.e2e.owner' => 'orbit-e2e', 'ipv4.address' => '10.232.30.1/24'],
                 ]], JSON_THROW_ON_ERROR));
             }
 
@@ -453,6 +455,11 @@ describe('IncusHost reads', function () {
                 incusTarget('orbit-e2e-nck-123-'.$role),
                 'eth0',
                 'network=oe-b32d6c83af72',
+                'ipv4.address='.match ($role) {
+                    'gateway' => '10.232.30.10',
+                    'app-dev' => '10.232.30.11',
+                    'app-prod' => '10.232.30.12',
+                },
                 "hwaddr={$mac}",
             ));
         }
@@ -461,7 +468,7 @@ describe('IncusHost reads', function () {
     it('validates owned topology network and MAC identity from one instance inventory', function () {
         $network = 'oe-b32d6c83af72';
         $resources = [];
-        foreach (['gateway', 'app-dev', 'app-prod'] as $role) {
+        foreach (['gateway', 'app-dev', 'app-prod'] as $offset => $role) {
             $hash = substr(sha1("{$network}:{$role}"), 0, 6);
             $mac = '00:16:3e:'.implode(':', str_split($hash, 2));
             $resources[] = json_decode(
@@ -469,6 +476,7 @@ describe('IncusHost reads', function () {
                     "orbit-e2e-nck-123-{$role}",
                     network: $network,
                     mac: $mac,
+                    ipv4: '10.232.30.'.(10 + $offset),
                 ),
                 true,
                 16,
@@ -480,7 +488,10 @@ describe('IncusHost reads', function () {
             if ($process->command === incusCommand('network', 'list', incusTarget(), '--format=json')) {
                 return Process::result(json_encode([[
                     'name' => 'oe-b32d6c83af72',
-                    'config' => ['user.orbit.e2e.owner' => 'orbit-e2e'],
+                    'config' => [
+                        'user.orbit.e2e.owner' => 'orbit-e2e',
+                        'ipv4.address' => '10.232.30.1/24',
+                    ],
                 ]], JSON_THROW_ON_ERROR));
             }
 
@@ -507,7 +518,10 @@ describe('IncusHost reads', function () {
             if ($process->command === incusCommand('network', 'list', incusTarget(), '--format=json')) {
                 return Process::result(json_encode([[
                     'name' => 'oe-b32d6c83af72',
-                    'config' => ['user.orbit.e2e.owner' => 'orbit-e2e'],
+                    'config' => [
+                        'user.orbit.e2e.owner' => 'orbit-e2e',
+                        'ipv4.address' => '10.232.30.1/24',
+                    ],
                 ]], JSON_THROW_ON_ERROR));
             }
 
@@ -526,6 +540,33 @@ describe('IncusHost reads', function () {
             'gateway' => 'orbit-e2e-nck-123-gateway',
         ], 'oe-b32d6c83af72'))
             ->toThrow(RuntimeException::class, 'MAC identity does not match topology');
+    });
+
+    it('rejects a topology instance whose fixed IPv4 address does not match its role', function () {
+        $network = 'oe-b32d6c83af72';
+        $mac = '00:16:3e:'.implode(':', str_split(substr(sha1("{$network}:gateway"), 0, 6), 2));
+        Process::fake(function (PendingProcess $process) use ($network, $mac) {
+            if ($process->command === incusCommand('network', 'list', incusTarget(), '--format=json')) {
+                return Process::result(json_encode([[
+                    'name' => $network,
+                    'config' => [
+                        'user.orbit.e2e.owner' => 'orbit-e2e',
+                        'ipv4.address' => '10.232.30.1/24',
+                    ],
+                ]], JSON_THROW_ON_ERROR));
+            }
+
+            return Process::result(vmJson(
+                network: $network,
+                mac: $mac,
+                ipv4: '10.232.30.11',
+            ));
+        });
+
+        expect(fn () => incusHost()->assertTopologyNetworkIdentity([
+            'gateway' => 'orbit-e2e-nck-123-gateway',
+        ], $network))
+            ->toThrow(RuntimeException::class, 'IPv4 identity does not match topology');
     });
 
     it('rejects topology identity on a network that Orbit does not own', function () {
@@ -561,7 +602,10 @@ describe('IncusHost reads', function () {
                 ),
                 incusCommand('network', 'list', incusTarget(), '--format=json') => Process::result(json_encode([[
                     'name' => 'oe-b32d6c83af72',
-                    'config' => ['user.orbit.e2e.owner' => 'orbit-e2e'],
+                    'config' => [
+                        'user.orbit.e2e.owner' => 'orbit-e2e',
+                        'ipv4.address' => '10.232.30.1/24',
+                    ],
                 ]], JSON_THROW_ON_ERROR)),
                 default => Process::result(),
             };
@@ -580,6 +624,7 @@ describe('IncusHost reads', function () {
             incusTarget('orbit-e2e-nck-123-gateway'),
             'eth0',
             'network=oe-b32d6c83af72',
+            'ipv4.address=10.232.30.10',
             'hwaddr=00:16:3e:a1:e4:eb',
         ));
     });
@@ -772,6 +817,7 @@ describe('IncusHost mutations', function () {
             'network' => 'oe-standby',
             'role' => 'gateway',
             'topology' => 'oe-standby',
+            'slot' => 1,
             'metadata' => [],
         ];
         expect(fn () => incusHost()->initVms(['one' => $vm, 'two' => [...$vm, 'role' => 'app-dev']]))
@@ -845,6 +891,7 @@ describe('IncusHost mutations', function () {
                 'network' => 'oe-standby',
                 'role' => $role,
                 'topology' => 'oe-standby',
+                'slot' => 1,
                 'metadata' => ['user.orbit.e2e.operation' => str_repeat('a', 32)],
             ], ['gateway', 'app-dev', 'app-prod']),
         ));
@@ -853,6 +900,11 @@ describe('IncusHost mutations', function () {
         foreach (['gateway', 'app-dev', 'app-prod'] as $role) {
             $hash = substr(sha1("oe-standby:{$role}"), 0, 6);
             $mac = '00:16:3e:'.implode(':', str_split($hash, 2));
+            $ipv4 = match ($role) {
+                'gateway' => '10.232.1.10',
+                'app-dev' => '10.232.1.11',
+                'app-prod' => '10.232.1.12',
+            };
             Process::assertRan(incusCommand(
                 'init',
                 incusTarget('orbit-base'),
@@ -870,6 +922,8 @@ describe('IncusHost mutations', function () {
                 'root,size=16GiB',
                 '--device',
                 'eth0,network=oe-standby',
+                '--device',
+                "eth0,ipv4.address={$ipv4}",
                 '--device',
                 "eth0,hwaddr={$mac}",
                 '--config',
@@ -1340,7 +1394,10 @@ describe('IncusHost mutations', function () {
                     ]], JSON_THROW_ON_ERROR),
                 ),
                 incusCommand('network', 'list', incusTarget(), '--format=json') => Process::result(json_encode([
-                    ['name' => 'oe-b32d6c83af72', 'config' => ['user.orbit.e2e.owner' => 'orbit-e2e']],
+                    [
+                        'name' => 'oe-b32d6c83af72',
+                        'config' => ['user.orbit.e2e.owner' => 'orbit-e2e', 'ipv4.address' => '10.232.30.1/24'],
+                    ],
                 ], JSON_THROW_ON_ERROR)),
                 incusCommand('snapshot', 'list', incusTarget('orbit-e2e-standby-gateway'), '--format=json')
                     => Process::result(
@@ -1351,7 +1408,7 @@ describe('IncusHost mutations', function () {
         });
         $host = incusHost();
 
-        $network = $host->createNetwork('oe-b32d6c83af72', ['ipv4.address' => '10.20.30.1/24']);
+        $network = $host->createNetwork('oe-b32d6c83af72', ['ipv4.address' => '10.232.30.1/24']);
         $instance = $host->initVm('orbit-base', 'orbit-e2e-nck-123-gateway', 'oe-b32d6c83af72');
         $copy = $host->copySnapshot('orbit-e2e-standby-gateway', 'main-g1', 'orbit-e2e-nck-123-gateway', [
             'user.orbit.e2e.issue' => 'NCK-123',
@@ -1379,7 +1436,7 @@ describe('IncusHost mutations', function () {
                 'network',
                 'create',
                 incusTarget('oe-b32d6c83af72'),
-                'ipv4.address=10.20.30.1/24',
+                'ipv4.address=10.232.30.1/24',
                 'user.orbit.e2e.owner=orbit-e2e',
             ),
             incusCommand(
@@ -1432,6 +1489,7 @@ describe('IncusHost mutations', function () {
                 incusTarget('orbit-e2e-nck-123-gateway'),
                 'eth0',
                 'network=oe-b32d6c83af72',
+                'ipv4.address=10.232.30.10',
                 'hwaddr=00:16:3e:a1:e4:eb',
             ),
             incusCommand(
@@ -1724,6 +1782,7 @@ describe('IncusHost mutations', function () {
                 'network' => 'oe-b32d6c83af72',
                 'role' => 'gateway',
                 'topology' => 'oe-b32d6c83af72',
+                'slot' => 30,
             ],
             'app-dev' => [
                 'source' => 'orbit-e2e-standby-app-dev',
@@ -1733,6 +1792,7 @@ describe('IncusHost mutations', function () {
                 'network' => 'oe-b32d6c83af72',
                 'role' => 'app-dev',
                 'topology' => 'oe-b32d6c83af72',
+                'slot' => 30,
             ],
             'app-prod' => [
                 'source' => 'orbit-e2e-standby-app-prod',
@@ -1742,6 +1802,7 @@ describe('IncusHost mutations', function () {
                 'network' => 'oe-b32d6c83af72',
                 'role' => 'app-prod',
                 'topology' => 'oe-b32d6c83af72',
+                'slot' => 30,
             ],
         ]);
 
@@ -1776,6 +1837,8 @@ describe('IncusHost mutations', function () {
             '--device',
             'eth0,network=oe-b32d6c83af72',
             '--device',
+            'eth0,ipv4.address=10.232.30.10',
+            '--device',
             'eth0,hwaddr=00:16:3e:a1:e4:eb',
         ));
         Process::assertRan(incusCommand(
@@ -1799,6 +1862,8 @@ describe('IncusHost mutations', function () {
             '--device',
             'eth0,network=oe-b32d6c83af72',
             '--device',
+            'eth0,ipv4.address=10.232.30.11',
+            '--device',
             'eth0,hwaddr=00:16:3e:43:00:72',
         ));
         Process::assertRan(incusCommand(
@@ -1821,6 +1886,8 @@ describe('IncusHost mutations', function () {
             'user.orbit.e2e.evidence=ev-2',
             '--device',
             'eth0,network=oe-b32d6c83af72',
+            '--device',
+            'eth0,ipv4.address=10.232.30.12',
             '--device',
             'eth0,hwaddr=00:16:3e:39:69:0b',
         ));

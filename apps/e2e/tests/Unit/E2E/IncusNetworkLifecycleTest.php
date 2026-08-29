@@ -40,12 +40,7 @@ function lifecycleFirewallHelper(): array
 
 function lifecycleDnsmasq(): string
 {
-    return implode("\n", [
-        'port=0',
-        'dhcp-host=00:16:3e:59:7c:3c,10.232.2.10',
-        'dhcp-host=00:16:3e:8d:34:34,10.232.2.11',
-        'dhcp-host=00:16:3e:12:42:f3,10.232.2.12',
-    ]);
+    return 'port=0';
 }
 
 /** @mago-expect lint:cyclomatic-complexity,kan-defect Exact process cases share one lifecycle boundary. */

@@ -24,12 +24,7 @@ use Illuminate\Support\Facades\Process;
 
 function standby_dnsmasq(): string
 {
-    return implode("\n", [
-        'port=0',
-        'dhcp-host=00:16:3e:77:ee:5a,10.232.1.10',
-        'dhcp-host=00:16:3e:71:18:e5,10.232.1.11',
-        'dhcp-host=00:16:3e:a3:2d:6c,10.232.1.12',
-    ]);
+    return 'port=0';
 }
 
 function cold_cleanup_builder(IncusHost $host, AtomicJsonStore $state, StatePaths $paths): StandbyBuilder
@@ -701,6 +696,8 @@ describe('StandbyBuilder', function () {
                     'root,size=16GiB',
                     '--device',
                     'eth0,network=oe-standby',
+                    '--device',
+                    'eth0,ipv4.address=10.232.1.10',
                     '--device',
                     'eth0,hwaddr=00:16:3e:77:ee:5a',
                     '--config',

@@ -504,6 +504,16 @@ function liveAssertIncusTopology(mixed $topology, TopologyTarget $target): void
     Assert::assertSame('true', $networkConfiguration['ipv4.nat'] ?? null);
     Assert::assertSame('none', $networkConfiguration['ipv6.address'] ?? null);
     Assert::assertSame('port=0', $networkConfiguration['raw.dnsmasq'] ?? null);
+    Assert::assertMatchesRegularExpression(
+        '/\A10\.232\.(\d{1,3})\.1\/24\z/D',
+        (string) ($networkConfiguration['ipv4.address'] ?? ''),
+    );
+    preg_match(
+        '/\A10\.232\.(\d{1,3})\.1\/24\z/D',
+        (string) $networkConfiguration['ipv4.address'],
+        $networkAddress,
+    );
+    $slot = (int) $networkAddress[1];
 
     $generation = $topology['generation']['id'] ?? null;
     Assert::assertIsString($generation);
@@ -527,6 +537,7 @@ function liveAssertIncusTopology(mixed $topology, TopologyTarget $target): void
         Assert::assertIsArray($eth0);
         Assert::assertSame($target->network(), $eth0['network'] ?? null);
         Assert::assertSame(liveDeterministicMac($target->network(), $role), $eth0['hwaddr'] ?? null);
+        Assert::assertSame(TopologyTarget::ipv4For($slot, $role), $eth0['ipv4.address'] ?? null);
 
         $machineId = strtolower(trim(liveIncusExec($name, ['cat', '/etc/machine-id'])->output()));
         Assert::assertMatchesRegularExpression('/\A[a-f0-9]{32}\z/D', $machineId);
@@ -535,6 +546,7 @@ function liveAssertIncusTopology(mixed $topology, TopologyTarget $target): void
         $addressOutput = liveIncusExec($name, ['ip', '-4', '-o', 'addr', 'show', 'scope', 'global'])->output();
         $roleAddresses = liveGlobalIpv4Addresses($addressOutput);
         Assert::assertCount(1, $roleAddresses);
+        Assert::assertSame(TopologyTarget::ipv4For($slot, $role), $roleAddresses[0]);
         $addresses[] = $roleAddresses[0];
     }
 
