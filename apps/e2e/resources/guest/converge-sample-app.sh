@@ -108,6 +108,7 @@ case ${1-} in
       [[ -f "$fragment" && -f "$rendered" ]]
       candidate=$(mktemp /etc/caddy/Caddyfile.orbit-e2e.XXXXXX)
       printf 'import %s\nimport %s\n' "$fragment" "$rendered" >"$candidate"
+      chmod 0644 "$candidate"
       caddy validate --config "$candidate" --adapter caddyfile
       if [[ -f /var/lib/orbit-e2e/caddy-config-sha256 ]] && [[ "$(cat /var/lib/orbit-e2e/caddy-config-sha256)" == "$(sha256sum "$candidate" | awk '{print $1}')" ]]; then
         rm -f "$candidate"

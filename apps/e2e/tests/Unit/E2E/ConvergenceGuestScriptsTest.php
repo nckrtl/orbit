@@ -1250,5 +1250,6 @@ describe('convergence guest scripts', function () {
             ->toHaveCount(2)
             ->and(file("{$root}/reloads", FILE_IGNORE_NEW_LINES))
             ->toHaveCount(1);
+        expect(fileperms("{$root}/etc/caddy/Caddyfile.orbit-e2e") & 0o777)->toBe(0o644);
     });
 });
