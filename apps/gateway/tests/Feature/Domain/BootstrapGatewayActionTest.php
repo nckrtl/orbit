@@ -55,6 +55,14 @@ it('initializes the portable gateway authority idempotently', function (): void 
     try {
         $first = $action->execute($data);
         $second = $action->execute($data);
+        $rootCertificate = file_get_contents($orbitHome.'/ca/root.pem');
+        $rootPublicKey = is_string($rootCertificate)
+            ? openssl_pkey_get_public($rootCertificate)
+            : false;
+        $rootPublicKeyDetails = $rootPublicKey !== false
+            ? openssl_pkey_get_details($rootPublicKey)
+            : false;
+
         expect($first->is($second))
             ->toBeTrue()
             ->and($first->roles()->pluck('role')->all())
@@ -75,6 +83,10 @@ it('initializes the portable gateway authority idempotently', function (): void 
             ->toBe(0o600)
             ->and(gateway_root_ca_pair_matches($orbitHome))
             ->toBeTrue()
+            ->and($rootPublicKeyDetails['type'] ?? null)
+            ->toBe(OPENSSL_KEYTYPE_RSA)
+            ->and($rootPublicKeyDetails['bits'] ?? null)
+            ->toBe(4096)
             ->and(gateway_root_ca_validity_days($orbitHome))
             ->toBeIn([3649, 3650])
             ->and(app(VpnSettings::class)->privateInterface())
@@ -179,19 +191,17 @@ it('rejects a mismatched complete root CA pair without replacing it', function (
     $processes = new NativeProcessRunner;
     $processes->run(new ProcessInvocation([
         'openssl',
-        'genpkey',
-        '-algorithm',
-        'ED25519',
+        'genrsa',
         '-out',
         $ca.'/root.key',
+        '4096',
     ]));
     $processes->run(new ProcessInvocation([
         'openssl',
-        'genpkey',
-        '-algorithm',
-        'ED25519',
+        'genrsa',
         '-out',
         $ca.'/other.key',
+        '4096',
     ]));
     $processes->run(new ProcessInvocation([
         'openssl',
@@ -242,6 +252,63 @@ it('rejects a mismatched complete root CA pair without replacing it', function (
             ->toBe($originalKey)
             ->and(file_get_contents($ca.'/root.pem'))
             ->toBe($originalCertificate);
+    } finally {
+        new Filesystem()->deleteDirectory($orbitHome);
+    }
+});
+
+it('rejects an existing root CA that is not RSA 4096', function (): void {
+    $orbitHome = sys_get_temp_dir().'/orbit-bootstrap-'.Str::uuid();
+    $ca = $orbitHome.'/ca';
+    mkdir(directory: $ca, permissions: 0o700, recursive: true);
+    $processes = new NativeProcessRunner;
+    $processes->run(new ProcessInvocation([
+        'openssl',
+        'genrsa',
+        '-out',
+        $ca.'/root.key',
+        '2048',
+    ]));
+    $processes->run(new ProcessInvocation([
+        'openssl',
+        'req',
+        '-x509',
+        '-new',
+        '-key',
+        $ca.'/root.key',
+        '-out',
+        $ca.'/root.pem',
+        '-days',
+        '3650',
+        '-subj',
+        '/CN=Orbit Root CA',
+        '-addext',
+        'basicConstraints=critical,CA:TRUE',
+        '-addext',
+        'keyUsage=critical,keyCertSign,cRLSign',
+    ]));
+    $action = new BootstrapGatewayAction(
+        assignRole: app(App\Actions\Nodes\AssignRoleAction::class),
+        identity: new App\Actions\Gateway\GatewayBootstrapIdentityValidator,
+        operatingSystem: bootstrap_gateway_resolute_guard(),
+        vpnSettings: app(VpnSettings::class),
+        processes: $processes,
+        files: new ProtectedFileWriter,
+        vpn: gateway_vpn_noop(),
+        web: new class implements GatewayWebConverger {
+            public function converge(string $hostname, string $wireguardAddress): void {}
+        },
+        orbitHome: $orbitHome,
+    );
+
+    try {
+        expect(fn () => $action->execute(bootstrap_gateway_action_data()))
+            ->toThrow(function (NodeProvisioningException $exception): void {
+                expect($exception->step)
+                    ->toBe('ca-root-validate')
+                    ->and($exception->errorCode)
+                    ->toBe('ca.invalid_state');
+            });
     } finally {
         new Filesystem()->deleteDirectory($orbitHome);
     }

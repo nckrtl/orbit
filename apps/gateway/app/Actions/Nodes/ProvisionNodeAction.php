@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Actions\Nodes;
 
 use App\Data\Nodes\ProvisionNodeData;
+use App\Domain\AppDev\PrivateDnsManager;
+use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Nodes\LinuxUserName;
 use App\Domain\Nodes\NodeConverger;
 use App\Domain\Nodes\NodeProvisioningException;
@@ -37,6 +39,7 @@ final readonly class ProvisionNodeAction
         private WireGuardAddressAllocator $addresses,
         private GatewayPeerProjectionManager $gatewayPeers,
         private NodeProvisioningLock $provisioningLock,
+        private PrivateDnsManager $dns,
     ) {}
 
     public function execute(ProvisionNodeData $data): Node
@@ -92,7 +95,13 @@ final readonly class ProvisionNodeAction
         $identity = new NodeProvisioningIdentity($data->user, $managedUser);
         $platform = $this->platform($node, $data);
         $architecture = $this->architecture($node, $data);
+        $previousTld = $node->exists && is_string($node->tld) ? $node->tld : null;
         $tld = $this->tld($node, $data);
+        $convergeChangedAppDevTld =
+            $node->exists
+            && $previousTld !== $tld
+            && $this->hasActiveAppDevRole($node)
+            && ! in_array(RoleName::AppDev, $data->roles, strict: true);
 
         if (
             $platform === 'linux'
@@ -150,6 +159,7 @@ final readonly class ProvisionNodeAction
         foreach ($data->roles as $role) {
             $this->roles->preflightDuringProvisioning($node, $role, $data->roles);
         }
+        $rolelessOperator = $data->roles === [] && (! $node->exists || $node->roles()->doesntExist());
 
         $node->fill([
             'status' => LifecycleStatus::Provisioning,
@@ -177,9 +187,15 @@ final readonly class ProvisionNodeAction
                         $this->toolManagers->converge($node, ToolManagerName::Apt);
                         $this->convergeRoles($node, $data->roles);
                     },
+                    $rolelessOperator,
                 );
             } else {
-                $this->converger->converge($node, $identity, $data->expectedSshHostFingerprint);
+                $this->converger->converge(
+                    $node,
+                    $identity,
+                    $data->expectedSshHostFingerprint,
+                    $rolelessOperator,
+                );
                 $node->user = $managedUser;
                 $this->toolManagers->converge($node, ToolManagerName::Apt);
                 $this->convergeRoles($node, $data->roles);
@@ -217,6 +233,10 @@ final readonly class ProvisionNodeAction
             'failed_step' => null,
             'error_code' => null,
         ]);
+
+        if ($convergeChangedAppDevTld) {
+            $this->convergeChangedAppDevTld($node, $previousTld);
+        }
 
         return $node->refresh()->load('roles');
     }
@@ -331,6 +351,40 @@ final readonly class ProvisionNodeAction
             in_array(needle: RoleName::AppDev, haystack: $data->roles, strict: true)
             || $node->exists && $node->roles()->where('role', RoleName::AppDev->value)->exists()
         );
+    }
+
+    private function hasActiveAppDevRole(Node $node): bool
+    {
+        return $node
+            ->roles()
+            ->where('role', RoleName::AppDev->value)
+            ->where('status', LifecycleStatus::Active)
+            ->exists();
+    }
+
+    private function convergeChangedAppDevTld(Node $node, ?string $previousTld): void
+    {
+        try {
+            $this->dns->converge($node);
+        } catch (Throwable $exception) {
+            $node->update(['tld' => $previousTld]);
+
+            try {
+                $this->dns->converge($node->refresh());
+            } catch (Throwable $rollbackException) {
+                throw new RuntimeConvergenceException(
+                    step: 'private-dns-rollback',
+                    errorCode: 'app-dev.dns_rollback_failed',
+                    message: "Could not restore private DNS after changing node [{$node->name}] TLD.",
+                    previous: $rollbackException,
+                    result: $rollbackException instanceof RuntimeConvergenceException
+                        ? $rollbackException->result
+                        : null,
+                );
+            }
+
+            throw $exception;
+        }
     }
 
     private function validateEndpointOverride(ProvisionNodeData $data): void

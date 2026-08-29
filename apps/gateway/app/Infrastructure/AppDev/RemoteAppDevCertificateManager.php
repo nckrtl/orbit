@@ -108,11 +108,11 @@ final readonly class RemoteAppDevCertificateManager implements AppDevCertificate
                         [ "$validity_seconds" -ge 34214400 ] && [ "$validity_seconds" -le 34387200 ] && \
                         openssl x509 -in "$current/cert.pem" -noout -checkhost "$hostname" >/dev/null && \
                         openssl pkey -in "$current/key.pem" -text_pub -noout 2>/dev/null | \
-                            grep -qx 'ED25519 Public-Key:' && \
+                            grep -Eq '^(RSA )?Public-Key: \(2048 bit\)' && \
                         [ "$(certificate_extension basicConstraints)" = \
                             'X509v3 Basic Constraints: critical CA:FALSE' ] && \
                         [ "$(certificate_extension keyUsage)" = \
-                            'X509v3 Key Usage: critical Digital Signature' ] && \
+                            'X509v3 Key Usage: critical Digital Signature, Key Encipherment' ] && \
                         [ "$(certificate_extension extendedKeyUsage)" = \
                             'X509v3 Extended Key Usage: TLS Web Server Authentication' ] && \
                         [ "$(certificate_extension subjectAltName)" = \
@@ -140,7 +140,7 @@ final readonly class RemoteAppDevCertificateManager implements AppDevCertificate
                     find "$root/versions" -mindepth 1 -maxdepth 1 -type d -name '*.candidate' -exec rm -rf -- {} +
                     candidate="$root/versions/$version.candidate"
                     install -d -m 0700 -- "$candidate"
-                    openssl genpkey -algorithm ED25519 -out "$candidate/key.pem"
+                    openssl genrsa -out "$candidate/key.pem" 2048
                     chmod 0600 "$candidate/key.pem"
                     openssl req -new -key "$candidate/key.pem" -subj "/CN=$hostname" -out "$candidate/request.pem"
                     cat "$candidate/request.pem"
@@ -223,7 +223,7 @@ final readonly class RemoteAppDevCertificateManager implements AppDevCertificate
             chmod 0600 "$candidate/key.pem"
             chmod 0644 "$candidate/cert.pem" "$candidate/root.pem"
             openssl pkey -in "$candidate/key.pem" -text_pub -noout 2>/dev/null | \
-                grep -qx 'ED25519 Public-Key:'
+                grep -Eq '^(RSA )?Public-Key: \(2048 bit\)'
             openssl verify -CAfile "$candidate/root.pem" "$candidate/cert.pem"
             test "$(sha256sum "$candidate/root.pem" | cut -d ' ' -f 1)" = "$expected_root_hash"
             openssl x509 -in "$candidate/cert.pem" -noout -checkhost "$hostname"

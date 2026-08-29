@@ -14,5 +14,6 @@ interface RecoverableNodeConverger
         NodeProvisioningIdentity $identity,
         ?string $expectedSshHostFingerprint,
         Closure $completion,
+        bool $rolelessOperator = false,
     ): void;
 }

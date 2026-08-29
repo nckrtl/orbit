@@ -19,7 +19,7 @@ final readonly class AppDevCaddyConfigRenderer
             ->sortBy('hostname')
             ->map(static fn (AppDevSite $site): string => <<<CADDY
                 https://{$site->hostname} {
-                    bind {$site->nodeAddress}
+                    bind 0.0.0.0
                     root * {$site->checkoutPath}/{$site->documentRoot}
                     tls {$site->certificateDirectory()}/cert.pem {$site->certificateDirectory()}/key.pem
                     encode zstd gzip

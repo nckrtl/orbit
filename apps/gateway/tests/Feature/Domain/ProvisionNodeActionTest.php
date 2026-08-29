@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\Nodes\ProvisionNodeAction;
 use App\Data\Nodes\ProvisionNodeData;
+use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Nodes\NodeConverger;
 use App\Domain\Nodes\NodeProvisioningException;
@@ -59,6 +60,7 @@ describe(ProvisionNodeAction::class, function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
+                bool $rolelessOperator = false,
             ): void {
                 $this->converged = true;
             }
@@ -127,6 +129,7 @@ describe(ProvisionNodeAction::class, function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
+                bool $rolelessOperator = false,
             ): void {
                 $node->update(['wireguard_public_key' => 'replacement-key']);
                 app(GatewayPeerProjectionManager::class)->converge($node);
@@ -186,6 +189,7 @@ describe(ProvisionNodeAction::class, function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
+                bool $rolelessOperator = false,
             ): void {
                 $node->update(['wireguard_public_key' => 'replacement-key']);
 
@@ -244,6 +248,7 @@ describe(ProvisionNodeAction::class, function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
+                bool $rolelessOperator = false,
             ): void {
                 $node->update(['wireguard_public_key' => 'replacement-key']);
                 app(GatewayPeerProjectionManager::class)->converge($node);
@@ -318,6 +323,7 @@ describe(ProvisionNodeAction::class, function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
+                bool $rolelessOperator = false,
             ): void {
                 $this->events[] = 'ordinary-converge';
             }
@@ -327,6 +333,7 @@ describe(ProvisionNodeAction::class, function (): void {
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint,
                 Closure $completion,
+                bool $rolelessOperator = false,
             ): void {
                 $node->update(['wireguard_public_key' => 'replacement-key']);
                 app(GatewayPeerProjectionManager::class)->converge($node);
@@ -381,6 +388,7 @@ describe(ProvisionNodeAction::class, function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
+                bool $rolelessOperator = false,
             ): void {}
 
             public function convergeRecoverably(
@@ -388,6 +396,7 @@ describe(ProvisionNodeAction::class, function (): void {
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint,
                 Closure $completion,
+                bool $rolelessOperator = false,
             ): void {
                 $node->update(['wireguard_public_key' => 'replacement-key']);
                 app(GatewayPeerProjectionManager::class)->converge($node);
@@ -455,6 +464,7 @@ describe(ProvisionNodeAction::class, function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
+                bool $rolelessOperator = false,
             ): void {
                 $node->update([
                     'ssh_host_key_type' => 'ecdsa',
@@ -547,6 +557,7 @@ describe(ProvisionNodeAction::class, function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
+                bool $rolelessOperator = false,
             ): void {
                 $this->materializer->events[] = "base:{$node->status->value}";
             }
@@ -578,6 +589,7 @@ describe(ProvisionNodeAction::class, function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
+                bool $rolelessOperator = false,
             ): void {
                 $this->events[] = "ordinary:{$node->name}";
             }
@@ -587,6 +599,7 @@ describe(ProvisionNodeAction::class, function (): void {
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint,
                 Closure $completion,
+                bool $rolelessOperator = false,
             ): void {
                 $this->events[] = "recoverable:{$node->name}";
                 $completion();
@@ -682,6 +695,7 @@ describe(ProvisionNodeAction::class, function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
+                bool $rolelessOperator = false,
             ): void {}
 
             public function convergeRecoverably(
@@ -689,6 +703,7 @@ describe(ProvisionNodeAction::class, function (): void {
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint,
                 Closure $completion,
+                bool $rolelessOperator = false,
             ): void {
                 $fresh = Node::query()->whereKey($node->getKey())->sole();
                 $this->events[] = "before:{$node->user}:{$node->status->value}:{$fresh->user}:{$fresh->status->value}";
@@ -765,6 +780,7 @@ describe(ProvisionNodeAction::class, function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
+                bool $rolelessOperator = false,
             ): void {}
 
             public function convergeRecoverably(
@@ -772,6 +788,7 @@ describe(ProvisionNodeAction::class, function (): void {
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint,
                 Closure $completion,
+                bool $rolelessOperator = false,
             ): void {
                 $node->update(['wireguard_public_key' => 'replacement-key']);
                 app(GatewayPeerProjectionManager::class)->converge($node);
@@ -847,6 +864,7 @@ describe(ProvisionNodeAction::class, function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
+                bool $rolelessOperator = false,
             ): void {
                 throw new NodeProvisioningException('base-packages', 'node.package_install_failed', 'Base failed.');
             }
@@ -879,6 +897,7 @@ describe(ProvisionNodeAction::class, function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
+                bool $rolelessOperator = false,
             ): void {}
         });
 
@@ -905,6 +924,7 @@ describe(ProvisionNodeAction::class, function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
+                bool $rolelessOperator = false,
             ): void {
                 throw new NodeProvisioningException('late-step', 'node.late_failed', 'Late failure.');
             }
@@ -932,6 +952,7 @@ describe(ProvisionNodeAction::class, function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
+                bool $rolelessOperator = false,
             ): void {
                 $this->identity = $identity;
             }
@@ -961,6 +982,7 @@ describe(ProvisionNodeAction::class, function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
+                bool $rolelessOperator = false,
             ): void {
                 $this->expectedFingerprint = $expectedSshHostFingerprint;
                 $this->events[] = "base:{$node->status->value}:{$node->roles()->count()}";
@@ -1016,6 +1038,7 @@ describe(ProvisionNodeAction::class, function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
+                bool $rolelessOperator = false,
             ): void {
                 $this->calls++;
             }
@@ -1044,6 +1067,7 @@ describe(ProvisionNodeAction::class, function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
+                bool $rolelessOperator = false,
             ): void {}
         });
         $roles = [];
@@ -1104,6 +1128,7 @@ describe(ProvisionNodeAction::class, function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
+                bool $rolelessOperator = false,
             ): void {
                 $this->expectedFingerprint = $expectedSshHostFingerprint;
             }
@@ -1130,6 +1155,7 @@ describe(ProvisionNodeAction::class, function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
+                bool $rolelessOperator = false,
             ): void {}
         });
         Node::query()->create([
@@ -1160,6 +1186,7 @@ describe(ProvisionNodeAction::class, function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
+                bool $rolelessOperator = false,
             ): void {
                 $this->observed = $node->only([
                     'platform',
@@ -1218,6 +1245,7 @@ describe(ProvisionNodeAction::class, function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
+                bool $rolelessOperator = false,
             ): void {
                 $this->calls++;
             }
@@ -1265,6 +1293,101 @@ describe(ProvisionNodeAction::class, function (): void {
             ->toBe(0);
     });
 
+    it('converges gateway DNS after changing an app development TLD', function (): void {
+        app()->instance(NodeConverger::class, new class implements NodeConverger {
+            public function converge(
+                Node $node,
+                NodeProvisioningIdentity $identity,
+                ?string $expectedSshHostFingerprint = null,
+                bool $rolelessOperator = false,
+            ): void {}
+        });
+        $dns = new class implements PrivateDnsManager {
+            /** @var list<array{tld: ?string, status: LifecycleStatus}> */
+            public array $calls = [];
+
+            public function converge(?Node $pendingNode = null): void
+            {
+                $this->calls[] = [
+                    'tld' => $pendingNode->tld ?? null,
+                    'status' => $pendingNode->status ?? LifecycleStatus::Failed,
+                ];
+            }
+        };
+        app()->instance(PrivateDnsManager::class, $dns);
+        $node = provision_node_tld_change_record();
+
+        $result = app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
+            name: $node->name,
+            publicSshHost: $node->public_ssh_host,
+            tld: 'new.orbit',
+        ));
+
+        expect($result->tld)
+            ->toBe('new.orbit')
+            ->and($dns->calls)
+            ->toBe([['tld' => 'new.orbit', 'status' => LifecycleStatus::Active]]);
+    });
+
+    it('restores the previous app development TLD and DNS when new DNS convergence fails', function (): void {
+        app()->instance(NodeConverger::class, new class implements NodeConverger {
+            public function converge(
+                Node $node,
+                NodeProvisioningIdentity $identity,
+                ?string $expectedSshHostFingerprint = null,
+                bool $rolelessOperator = false,
+            ): void {}
+        });
+        $dns = new ProvisionNodeTldDnsManager([1]);
+        app()->instance(PrivateDnsManager::class, $dns);
+        $node = provision_node_tld_change_record();
+
+        expect(fn () => app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
+            name: $node->name,
+            publicSshHost: $node->public_ssh_host,
+            tld: 'new.orbit',
+        )))->toThrow(function (RuntimeConvergenceException $exception): void {
+            expect($exception->errorCode)->toBe('app-dev.dns_config_failed');
+        });
+
+        expect($node->refresh()->tld)
+            ->toBe('old.orbit')
+            ->and($node->status)
+            ->toBe(LifecycleStatus::Active)
+            ->and($dns->calls)
+            ->toBe(['new.orbit', 'old.orbit']);
+    });
+
+    it('returns a stable error when restoring previous app development DNS fails', function (): void {
+        app()->instance(NodeConverger::class, new class implements NodeConverger {
+            public function converge(
+                Node $node,
+                NodeProvisioningIdentity $identity,
+                ?string $expectedSshHostFingerprint = null,
+                bool $rolelessOperator = false,
+            ): void {}
+        });
+        $dns = new ProvisionNodeTldDnsManager([1, 2]);
+        app()->instance(PrivateDnsManager::class, $dns);
+        $node = provision_node_tld_change_record();
+
+        expect(fn () => app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
+            name: $node->name,
+            publicSshHost: $node->public_ssh_host,
+            tld: 'new.orbit',
+        )))->toThrow(function (RuntimeConvergenceException $exception): void {
+            expect($exception->step)
+                ->toBe('private-dns-rollback')
+                ->and($exception->errorCode)
+                ->toBe('app-dev.dns_rollback_failed');
+        });
+
+        expect($node->refresh()->tld)
+            ->toBe('old.orbit')
+            ->and($dns->calls)
+            ->toBe(['new.orbit', 'old.orbit']);
+    });
+
     it('rejects a managed user change while the node owns instances', function (): void {
         $converger = new class implements NodeConverger {
             public int $calls = 0;
@@ -1273,6 +1396,7 @@ describe(ProvisionNodeAction::class, function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
+                bool $rolelessOperator = false,
             ): void {
                 $this->calls++;
             }
@@ -1329,6 +1453,7 @@ describe(ProvisionNodeAction::class, function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
+                bool $rolelessOperator = false,
             ): void {
                 $this->calls++;
             }
@@ -1377,6 +1502,7 @@ describe(ProvisionNodeAction::class, function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
+                bool $rolelessOperator = false,
             ): void {
                 $this->calls++;
             }
@@ -1411,6 +1537,7 @@ describe(ProvisionNodeAction::class, function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
+                bool $rolelessOperator = false,
             ): void {
                 $this->calls++;
             }
@@ -1440,6 +1567,7 @@ describe(ProvisionNodeAction::class, function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
+                bool $rolelessOperator = false,
             ): void {}
         });
 
@@ -1460,6 +1588,7 @@ describe(ProvisionNodeAction::class, function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
+                bool $rolelessOperator = false,
             ): void {}
         });
         app()->instance(RoleBaselineConverger::class, new class implements RoleBaselineConverger {
@@ -1515,6 +1644,7 @@ describe(ProvisionNodeAction::class, function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
+                bool $rolelessOperator = false,
             ): void {
                 $this->calls++;
             }
@@ -1551,6 +1681,7 @@ describe(ProvisionNodeAction::class, function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
+                bool $rolelessOperator = false,
             ): void {
                 $this->calls++;
             }
@@ -1579,6 +1710,7 @@ describe(ProvisionNodeAction::class, function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
+                bool $rolelessOperator = false,
             ): void {}
         });
 
@@ -1600,6 +1732,7 @@ describe(ProvisionNodeAction::class, function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
+                bool $rolelessOperator = false,
             ): void {
                 throw new NodeProvisioningException('base-packages', 'node.package_install_failed', 'Apt failed.');
             }
@@ -1639,6 +1772,7 @@ describe(ProvisionNodeAction::class, function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
+                bool $rolelessOperator = false,
             ): void {
                 $this->identities[] = [$identity->bootstrapUser, $identity->managedUser];
             }
@@ -1677,3 +1811,47 @@ describe(ProvisionNodeAction::class, function (): void {
         expect($identities)->toBe([['root', 'orbit'], ['nckrtl', 'nckrtl'], ['root', 'nckrtl']]);
     });
 });
+
+function provision_node_tld_change_record(): Node
+{
+    $node = Node::query()->create([
+        'name' => 'renamed-app-dev',
+        'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
+        'architecture' => 'x86_64',
+        'tld' => 'old.orbit',
+        'public_ssh_host' => '192.0.2.21',
+        'wireguard_address' => '10.44.0.4',
+        'ssh_host_fingerprint' => 'SHA256:pinned',
+    ]);
+    $node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
+
+    return $node;
+}
+
+/** @mago-expect lint:file-name The stateful fake keeps TLD rollback calls visible in the action test. */
+final class ProvisionNodeTldDnsManager implements PrivateDnsManager
+{
+    /** @var list<string|null> */
+    public array $calls = [];
+
+    /** @param list<int> $failingCalls */
+    public function __construct(
+        private readonly array $failingCalls,
+    ) {}
+
+    public function converge(?Node $pendingNode = null): void
+    {
+        $this->calls[] = $pendingNode?->tld;
+
+        if (! in_array(count($this->calls), $this->failingCalls, strict: true)) {
+            return;
+        }
+
+        throw new RuntimeConvergenceException(
+            step: 'private-dns',
+            errorCode: 'app-dev.dns_config_failed',
+            message: 'DNS failed.',
+        );
+    }
+}

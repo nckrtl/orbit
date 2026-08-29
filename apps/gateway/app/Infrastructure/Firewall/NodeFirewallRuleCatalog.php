@@ -28,6 +28,8 @@ final class NodeFirewallRuleCatalog
             RoleName::AppDev => [
                 $this->rule('orbit:app-dev-http', '80', $this->wireguardAddress($node), 'orbit'),
                 $this->rule('orbit:app-dev-https', '443', $this->wireguardAddress($node), 'orbit'),
+                $this->rule('orbit:app-dev-direct-http', '80'),
+                $this->rule('orbit:app-dev-direct-https', '443'),
             ],
             RoleName::AppProd => [$this->rule('orbit:app-prod-http', '80'), $this->rule('orbit:app-prod-https', '443')],
         };

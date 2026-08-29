@@ -86,14 +86,19 @@ it('renders isolated pools and private Caddy listeners for every active scope', 
         ->toContain(
             "https://{$instance->hostname}",
             "https://{$workspace->hostname}",
-            'bind 10.44.0.3',
+            'bind 0.0.0.0',
             'php_fastcgi unix//run/php/orbit-instance-1.sock',
             'tls /etc/caddy/orbit-certificates/instance-1/current/cert.pem',
         )
-        ->not->toContain('0.0.0.0', ':80')->and($adapted->succeeded())->toBeTrue()->and($adapted->stdout)->toContain(
-            '10.44.0.3:443',
-        )
-        ->not->toContain('0.0.0.0:443', '127.0.0.1:443');
+        ->not->toContain(':80');
+
+    if (new Symfony\Component\Process\ExecutableFinder()->find('caddy') !== null) {
+        expect($adapted->succeeded())
+            ->toBeTrue()
+            ->and($adapted->stdout)
+            ->toContain('0.0.0.0:443')
+            ->not->toContain('127.0.0.1:443');
+    }
 });
 
 it('uses only generated instance paths and registered Git worktrees for source removal', function (): void {
@@ -1393,11 +1398,11 @@ it('keeps leaf private keys on the target while publishing a gateway-signed cert
         ->toHaveCount(2)
         ->and($ssh->commands[0]->input)
         ->toContain(
-            'openssl genpkey -algorithm ED25519',
+            'openssl genrsa -out "$candidate/key.pem" 2048',
             'cat "$candidate/request.pem"',
             'openssl verify -CAfile "$current/root.pem" "$current/cert.pem"',
             'openssl x509 -in "$current/cert.pem" -noout -checkend 2592000',
-            "grep -qx 'ED25519 Public-Key:'",
+            "grep -Eq '^(RSA )?Public-Key: \\(2048 bit\\)'",
             'not_before_epoch=$(date -d "$not_before" +%s)',
             '[ "$validity_seconds" -ge 34214400 ]',
             '[ "$validity_seconds" -le 34387200 ]',
@@ -1414,7 +1419,7 @@ it('keeps leaf private keys on the target while publishing a gateway-signed cert
         ->and($ssh->commands[1]->arguments[2])
         ->toContain(
             'head -c "$certificate_length"',
-            "grep -qx 'ED25519 Public-Key:'",
+            "grep -Eq '^(RSA )?Public-Key: \\(2048 bit\\)'",
             'openssl verify -CAfile',
             'test "$(sha256sum "$candidate/root.pem" | cut -d \' \' -f 1)" = "$expected_root_hash"',
             'sudo install -o root -g root -m 0644',
@@ -1491,7 +1496,7 @@ it('uses a nondefault managed home for app-dev certificate converge and removal'
         );
 });
 
-it('reuses only current app-dev leaves with the exact Ed25519 extension policy', function (
+it('reuses only current app-dev leaves with the exact RSA extension policy', function (
     string $keyUsage,
     string $keyAlgorithm,
     string $expectedDecision,
@@ -1552,9 +1557,9 @@ it('reuses only current app-dev leaves with the exact Ed25519 extension policy',
         $filesystem->deleteDirectory($root);
     }
 })->with([
-    'Ed25519 with digital signature only' => ['digitalSignature', 'ED25519', 'reuse'],
-    'Ed25519 with legacy key encipherment' => ['digitalSignature,keyEncipherment', 'ED25519', 'reissue'],
-    'RSA with digital signature only' => ['digitalSignature', 'RSA', 'reissue'],
+    'RSA with the approved usages' => ['digitalSignature,keyEncipherment', 'RSA', 'reuse'],
+    'RSA without key encipherment' => ['digitalSignature', 'RSA', 'reissue'],
+    'Ed25519 with the approved usages' => ['digitalSignature,keyEncipherment', 'ED25519', 'reissue'],
 ]);
 
 it('publishes private Caddy and DNS configurations through complete preserved validation aggregates', function (): void {
@@ -2099,6 +2104,9 @@ function run_app_dev_certificate_probe_locally(RemoteCommand $command, string $r
             'sudo update-ca-certificates',
             'install -o root -g root ',
             'sudo ',
+            'openssl ',
+            'date -d "$not_before" +%s',
+            'date -d "$not_after" +%s',
         ],
         [
             $root,
@@ -2108,6 +2116,13 @@ function run_app_dev_certificate_probe_locally(RemoteCommand $command, string $r
             '{ printf "Updating certificates\\n"; touch "$trust_anchor.updated"; }',
             'install ',
             '',
+            app_dev_test_openssl_binary().' ',
+            PHP_OS_FAMILY === 'Darwin'
+                ? 'date -j -f "%b %e %T %Y %Z" "$not_before" +%s'
+                : 'date -d "$not_before" +%s',
+            PHP_OS_FAMILY === 'Darwin'
+                ? 'date -j -f "%b %e %T %Y %Z" "$not_after" +%s'
+                : 'date -d "$not_after" +%s',
         ],
         $command->input ?? '',
     );
@@ -2134,7 +2149,8 @@ function create_app_dev_certificate_reuse_fixture(
     $filesystem->makeDirectory($current, mode: 0o700, recursive: true);
     $filesystem->makeDirectory($caddyCurrent, mode: 0o700, recursive: true);
 
-    $leafKeyArguments = ['openssl', 'genpkey', '-algorithm', $keyAlgorithm];
+    $openssl = app_dev_test_openssl_binary();
+    $leafKeyArguments = [$openssl, 'genpkey', '-algorithm', $keyAlgorithm];
 
     if ($keyAlgorithm === 'RSA') {
         $leafKeyArguments = [...$leafKeyArguments, '-pkeyopt', 'rsa_keygen_bits:2048'];
@@ -2142,9 +2158,9 @@ function create_app_dev_certificate_reuse_fixture(
 
     $leafKeyArguments = [...$leafKeyArguments, '-out', "{$current}/key.pem"];
     $commands = [
-        ['openssl', 'genpkey', '-algorithm', 'ED25519', '-out', "{$ca}/root.key"],
+        [$openssl, 'genrsa', '-out', "{$ca}/root.key", '4096'],
         [
-            'openssl',
+            $openssl,
             'req',
             '-x509',
             '-new',
@@ -2163,7 +2179,7 @@ function create_app_dev_certificate_reuse_fixture(
         ],
         $leafKeyArguments,
         [
-            'openssl',
+            $openssl,
             'req',
             '-new',
             '-key',
@@ -2187,7 +2203,7 @@ function create_app_dev_certificate_reuse_fixture(
         "subjectAltName=DNS:{$hostname}",
     ]));
     $signed = $processes->run(new ProcessInvocation([
-        'openssl',
+        $openssl,
         'x509',
         '-req',
         '-in',
@@ -2213,6 +2229,11 @@ function create_app_dev_certificate_reuse_fixture(
     copy("{$current}/cert.pem", "{$caddyCurrent}/cert.pem");
 
     return is_string($rootCertificate) ? $rootCertificate : '';
+}
+
+function app_dev_test_openssl_binary(): string
+{
+    return is_executable('/opt/homebrew/bin/openssl') ? '/opt/homebrew/bin/openssl' : 'openssl';
 }
 
 function acl_for(string $path): string

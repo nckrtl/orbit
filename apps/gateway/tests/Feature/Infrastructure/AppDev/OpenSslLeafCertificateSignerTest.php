@@ -24,11 +24,10 @@ it('signs a target CSR for only the gateway-approved hostname', function (): voi
         expect(
             $processes->run(new ProcessInvocation([
                 'openssl',
-                'genpkey',
-                '-algorithm',
-                'ED25519',
+                'genrsa',
                 '-out',
                 "{$ca}/root.key",
+                '4096',
             ]))->succeeded(),
         )->toBeTrue();
         expect(
@@ -45,16 +44,19 @@ it('signs a target CSR for only the gateway-approved hostname', function (): voi
                 '1',
                 '-subj',
                 '/CN=Orbit Test Root',
+                '-addext',
+                'basicConstraints=critical,CA:TRUE',
+                '-addext',
+                'keyUsage=critical,keyCertSign,cRLSign',
             ]))->succeeded(),
         )->toBeTrue();
         expect(
             $processes->run(new ProcessInvocation([
                 'openssl',
-                'genpkey',
-                '-algorithm',
-                'ED25519',
+                'genrsa',
                 '-out',
                 "{$target}/leaf.key",
+                '2048',
             ]))->succeeded(),
         )->toBeTrue();
         expect(
@@ -96,6 +98,10 @@ it('signs a target CSR for only the gateway-approved hostname', function (): voi
         ]));
         $extensions = leaf_certificate_extensions("{$target}/leaf.pem");
         $text = leaf_certificate_text($processes, "{$target}/leaf.pem");
+        $leafPublicKey = openssl_pkey_get_public($certificate);
+        $leafPublicKeyDetails = $leafPublicKey !== false
+            ? openssl_pkey_get_details($leafPublicKey)
+            : false;
         $caddyValidation = leaf_certificate_caddy_validation(
             $processes,
             $target,
@@ -115,7 +121,7 @@ it('signs a target CSR for only the gateway-approved hostname', function (): voi
             ->and($extensions['basicConstraints'] ?? null)
             ->toBe('CA:FALSE')
             ->and($extensions['keyUsage'] ?? null)
-            ->toBe('Digital Signature')
+            ->toBe('Digital Signature, Key Encipherment')
             ->and($extensions['extendedKeyUsage'] ?? null)
             ->toBe('TLS Web Server Authentication')
             ->and($extensions['subjectAltName'] ?? null)
@@ -123,10 +129,14 @@ it('signs a target CSR for only the gateway-approved hostname', function (): voi
         expect($text)
             ->toContain('X509v3 Basic Constraints: critical', 'X509v3 Key Usage: critical');
         expect(str_contains($text, 'Key Encipherment'))
-            ->toBeFalse()
+            ->toBeTrue()
+            ->and($leafPublicKeyDetails['type'] ?? null)
+            ->toBe(OPENSSL_KEYTYPE_RSA)
+            ->and($leafPublicKeyDetails['bits'] ?? null)
+            ->toBe(2048)
             ->and(str_contains($text, "DNS:{$unapprovedHostname}"))
             ->toBeFalse()
-            ->and($caddyValidation->succeeded())
+            ->and($caddyValidation === null || $caddyValidation->succeeded())
             ->toBeTrue()
             ->and(leaf_certificate_serial($processes, "{$target}/leaf-second.pem") === $firstSerial)
             ->toBeFalse();
@@ -165,7 +175,7 @@ it('fails closed when the root CA state is partial', function (): void {
     }
 });
 
-it('rejects an RSA target CSR with the approved hostname and SAN', function (): void {
+it('rejects an Ed25519 target CSR with the approved hostname and SAN', function (): void {
     $orbitHome = sys_get_temp_dir().'/orbit-leaf-signer-rsa-'.Str::uuid();
     $ca = "{$orbitHome}/ca";
     $target = "{$orbitHome}/target";
@@ -177,19 +187,17 @@ it('rejects an RSA target CSR with the approved hostname and SAN', function (): 
         create_leaf_signer_root_ca($processes, $ca);
         expect(
             $processes->run(new ProcessInvocation([
-                'openssl',
+                leaf_openssl_binary(),
                 'genpkey',
                 '-algorithm',
-                'RSA',
-                '-pkeyopt',
-                'rsa_keygen_bits:2048',
+                'ED25519',
                 '-out',
                 "{$target}/leaf.key",
             ]))->succeeded(),
         )->toBeTrue();
         expect(
             $processes->run(new ProcessInvocation([
-                'openssl',
+                leaf_openssl_binary(),
                 'req',
                 '-new',
                 '-key',
@@ -251,6 +259,50 @@ it('rejects root CA material outside its validity window', function (): void {
     }
 });
 
+it('rejects root CA material that is not RSA 4096', function (): void {
+    $orbitHome = sys_get_temp_dir().'/orbit-leaf-signer-'.Str::uuid();
+    $ca = "{$orbitHome}/ca";
+    mkdir(directory: $ca, permissions: 0o700, recursive: true);
+    $processes = new NativeProcessRunner;
+
+    try {
+        expect(
+            $processes->run(new ProcessInvocation([
+                'openssl',
+                'genrsa',
+                '-out',
+                "{$ca}/root.key",
+                '2048',
+            ]))->succeeded(),
+        )->toBeTrue();
+        expect(
+            $processes->run(new ProcessInvocation([
+                'openssl',
+                'req',
+                '-x509',
+                '-new',
+                '-key',
+                "{$ca}/root.key",
+                '-out',
+                "{$ca}/root.pem",
+                '-days',
+                '1',
+                '-subj',
+                '/CN=Orbit Test Root',
+                '-addext',
+                'basicConstraints=critical,CA:TRUE',
+                '-addext',
+                'keyUsage=critical,keyCertSign,cRLSign',
+            ]))->succeeded(),
+        )->toBeTrue();
+
+        expect(fn () => new OpenSslLeafCertificateSigner($processes, $orbitHome)->rootCertificate())
+            ->toThrow(RuntimeException::class, 'material is invalid');
+    } finally {
+        new Filesystem()->deleteDirectory($orbitHome);
+    }
+});
+
 it('rejects a root certificate and private key mismatch', function (): void {
     $orbitHome = sys_get_temp_dir().'/orbit-leaf-signer-'.Str::uuid();
     $ca = "{$orbitHome}/ca";
@@ -262,11 +314,10 @@ it('rejects a root certificate and private key mismatch', function (): void {
         expect(
             $processes->run(new ProcessInvocation([
                 'openssl',
-                'genpkey',
-                '-algorithm',
-                'ED25519',
+                'genrsa',
                 '-out',
                 "{$ca}/root.key",
+                '4096',
             ]))->succeeded(),
         )->toBeTrue();
 
@@ -312,11 +363,10 @@ function create_leaf_signer_root_ca(NativeProcessRunner $processes, string $ca):
 {
     $key = $processes->run(new ProcessInvocation([
         'openssl',
-        'genpkey',
-        '-algorithm',
-        'ED25519',
+        'genrsa',
         '-out',
         "{$ca}/root.key",
+        '4096',
     ]));
     $certificate = $processes->run(new ProcessInvocation([
         'openssl',
@@ -331,6 +381,10 @@ function create_leaf_signer_root_ca(NativeProcessRunner $processes, string $ca):
         '1',
         '-subj',
         '/CN=Orbit Test Root',
+        '-addext',
+        'basicConstraints=critical,CA:TRUE',
+        '-addext',
+        'keyUsage=critical,keyCertSign,cRLSign',
     ]));
 
     if (! $key->succeeded() || ! $certificate->succeeded()) {
@@ -375,7 +429,18 @@ function leaf_certificate_matches_host(
         $hostname,
     ]));
 
+    if (! $result->succeeded() && str_contains($result->stderr, 'unknown option -checkhost')) {
+        $extensions = leaf_certificate_extensions($certificatePath);
+
+        return ($extensions['subjectAltName'] ?? null) === "DNS:{$hostname}";
+    }
+
     return leaf_certificate_host_check_matches($result, $hostname);
+}
+
+function leaf_openssl_binary(): string
+{
+    return is_executable('/opt/homebrew/bin/openssl') ? '/opt/homebrew/bin/openssl' : 'openssl';
 }
 
 function leaf_certificate_host_check_matches(CommandResult $result, string $hostname): bool
@@ -389,7 +454,11 @@ function leaf_certificate_caddy_validation(
     string $certificatePath,
     string $privateKeyPath,
     string $hostname,
-): CommandResult {
+): ?CommandResult {
+    if (new Symfony\Component\Process\ExecutableFinder()->find('caddy') === null) {
+        return null;
+    }
+
     $configurationPath = $directory.'/Caddyfile';
     file_put_contents($configurationPath, <<<CADDYFILE
         https://{$hostname} {

@@ -91,13 +91,17 @@ it('validates a candidate config under /etc/wireguard before replacing the live 
             ssh: $ssh,
         );
 
-        $converger->converge($peer, new SshConnection(
-            host: '94.237.40.75',
-            user: 'orbit',
-            port: 22,
-            identityFile: '/tmp/key',
-            knownHostsFile: '/tmp/known_hosts',
-        ));
+        $converger->converge(
+            $peer,
+            new SshConnection(
+                host: '94.237.40.75',
+                user: 'orbit',
+                port: 22,
+                identityFile: '/tmp/key',
+                knownHostsFile: '/tmp/known_hosts',
+            ),
+            true,
+        );
 
         expect($peer->refresh()->wireguard_public_key)
             ->toBe(str_repeat(string: 'A', times: 43).'=')
@@ -166,9 +170,13 @@ it('validates a candidate config under /etc/wireguard before replacing the live 
                 'printf -v domain_escaped \'%q\' "~$domain"',
                 'app_dev_tld=$8',
                 'dns_mode=$9',
+                'operator_dns=${10}',
+                'transaction_mode=${11}',
                 'dns_state=/etc/wireguard/orbit.dns-link',
                 'restore_dns() {',
                 'if [ "$dns_mode" = wireguard ]; then',
+                'if [ "$dns_mode" != operator ] && [ -s "$dns_state" ]; then',
+                'operator_dns_line="DNS = $operator_dns_escaped"',
                 'PostUp = resolvectl dns %i $dns_server_escaped; resolvectl domain %i $dns_domains',
                 'PreDown = resolvectl revert %i',
                 'route=$(ip -o route get "$dns_server")',
@@ -188,8 +196,8 @@ it('validates a candidate config under /etc/wireguard before replacing the live 
         expect($ssh->commands[1]->arguments)
             ->toContain('custom.internal');
 
-        expect(array_slice($ssh->commands[1]->arguments, -2))
-            ->toBe(['underlay', 'finalize']);
+        expect(array_slice($ssh->commands[1]->arguments, -3))
+            ->toBe(['operator', '10.44.0.1', 'finalize']);
 
         $remoteScript = $ssh->commands[1]->input ?? '';
         $dnsStateWrite = mb_strpos(
@@ -1593,7 +1601,20 @@ function remote_wireguard_peer_install_harness(
         name: 'mv',
         body: <<<SH
             if [ "\${4:-}" = "{$root}/wireguard/.orbit.peer-transaction" ] && [ -f "{$root}/state/transaction-failure" ]; then exit 1; fi
-            exec /usr/bin/mv "\$@"
+            if [ "\${1:-}" = '-fT' ] && [ "\${2:-}" = '--' ]; then
+                exec /bin/mv -f "\$3" "\$4"
+            fi
+            exec /bin/mv "\$@"
+            SH,
+    );
+    remote_wireguard_peer_write_shim(
+        root: $root,
+        name: 'cp',
+        body: <<<'SH'
+            if [ "${1:-}" = '-a' ] && [ "${2:-}" = '--no-dereference' ] && [ "${3:-}" = '--' ]; then
+                exec /bin/cp -a "$4" "$5"
+            fi
+            exec /bin/cp "$@"
             SH,
     );
     remote_wireguard_peer_write_shim(
@@ -1660,7 +1681,7 @@ function remote_wireguard_peer_install_harness(
             printf '%s\n' "wg-quick \$*" >> "{$root}/commands.log"
             if [ "\$1" = 'strip' ]; then
                 [ ! -f "{$root}/state/strip-failure" ] || exit 1
-                /usr/bin/cat -- "\$2"
+                /bin/cat -- "\$2"
             fi
             SH,
     );
@@ -1702,17 +1723,24 @@ function remote_wireguard_peer_install_harness(
     );
     remote_wireguard_peer_write_shim(
         root: $root,
+        name: 'flock',
+        body: <<<'SH'
+            exit 0
+            SH,
+    );
+    remote_wireguard_peer_write_shim(
+        root: $root,
         name: 'rm',
         body: <<<SH
             if [ -f "{$root}/state/commit-cleanup-failure" ]; then
                 for argument in "\$@"; do
                     if [ "\$argument" = "{$root}/wireguard/.orbit.peer-transaction" ]; then
-                        /usr/bin/rm -f -- "{$root}/state/commit-cleanup-failure"
+                        /bin/rm -f -- "{$root}/state/commit-cleanup-failure"
                         exit 1
                     fi
                 done
             fi
-            exec /usr/bin/rm "\$@"
+            exec /bin/rm "\$@"
             SH,
     );
 
@@ -1755,8 +1783,9 @@ function remote_wireguard_peer_install_harness(
         {
             $this->commands[] = $command;
             $input = remote_wireguard_peer_rewrite_shell($command->input ?? '', $this->root);
+            $bash = is_executable('/opt/homebrew/bin/bash') ? '/opt/homebrew/bin/bash' : '/bin/bash';
             $arguments = array_merge(
-                ['/bin/bash', '-seu', '--'],
+                [$bash, '-seu', '--'],
                 array_slice(array: $command->arguments, offset: 4),
             );
             $process = proc_open(

@@ -213,7 +213,7 @@ it('pins the host and converges only base node identity and connectivity', funct
     $wireGuard = new class implements WireGuardPeerConverger {
         public bool $converged = false;
 
-        public function converge(Node $node, SshConnection $connection): void
+        public function converge(Node $node, SshConnection $connection, bool $rolelessOperator = false): void
         {
             $this->converged = true;
         }
@@ -266,13 +266,17 @@ it('commits recoverable peer publication before activating orbit SSH for active 
             private array &$events,
         ) {}
 
-        public function converge(Node $node, SshConnection $connection): void
+        public function converge(Node $node, SshConnection $connection, bool $rolelessOperator = false): void
         {
             $this->events[] = 'ordinary-wireguard';
         }
 
-        public function convergeRecoverably(Node $node, SshConnection $connection, Closure $completion): void
-        {
+        public function convergeRecoverably(
+            Node $node,
+            SshConnection $connection,
+            Closure $completion,
+            bool $rolelessOperator = false,
+        ): void {
             $this->events[] = 'wireguard-publish';
             $completion();
             $this->events[] = 'wireguard-commit';
@@ -311,10 +315,14 @@ it('rolls back recoverable peer publication when late private ssh verification f
             private array &$events,
         ) {}
 
-        public function converge(Node $node, SshConnection $connection): void {}
+        public function converge(Node $node, SshConnection $connection, bool $rolelessOperator = false): void {}
 
-        public function convergeRecoverably(Node $node, SshConnection $connection, Closure $completion): void
-        {
+        public function convergeRecoverably(
+            Node $node,
+            SshConnection $connection,
+            Closure $completion,
+            bool $rolelessOperator = false,
+        ): void {
             $this->events[] = 'wireguard-publish';
 
             try {
@@ -392,7 +400,7 @@ it('retries a transient private WireGuard SSH connection with bounded backoff', 
         ssh: $ssh,
         bootstrapCommand: new NodeBootstrapCommandFactory(base_test_keys()),
         wireGuard: new class implements WireGuardPeerConverger {
-            public function converge(Node $node, SshConnection $connection): void {}
+            public function converge(Node $node, SshConnection $connection, bool $rolelessOperator = false): void {}
         },
         firewall: base_firewall_spy(),
         sleep: static function (int $delay) use (&$sleeps): int {
@@ -438,7 +446,7 @@ it('preserves the final transient private SSH failure after retries', function (
         ssh: $ssh,
         bootstrapCommand: new NodeBootstrapCommandFactory(base_test_keys()),
         wireGuard: new class implements WireGuardPeerConverger {
-            public function converge(Node $node, SshConnection $connection): void {}
+            public function converge(Node $node, SshConnection $connection, bool $rolelessOperator = false): void {}
         },
         firewall: base_firewall_spy(),
         sleep: static function (int $delay) use (&$sleeps): int {
@@ -488,7 +496,7 @@ it('does not retry semantic private SSH exit 255 failures', function (): void {
         ssh: $ssh,
         bootstrapCommand: new NodeBootstrapCommandFactory(base_test_keys()),
         wireGuard: new class implements WireGuardPeerConverger {
-            public function converge(Node $node, SshConnection $connection): void {}
+            public function converge(Node $node, SshConnection $connection, bool $rolelessOperator = false): void {}
         },
         firewall: base_firewall_spy(),
         sleep: static function (int $delay) use (&$sleeps): int {
@@ -520,7 +528,7 @@ it('uses passwordless sudo for the same fixed base command when reconnecting as 
         ssh: $ssh,
         bootstrapCommand: $factory,
         wireGuard: new class implements WireGuardPeerConverger {
-            public function converge(Node $node, SshConnection $connection): void {}
+            public function converge(Node $node, SshConnection $connection, bool $rolelessOperator = false): void {}
         },
         firewall: base_firewall_spy(),
     );
@@ -836,7 +844,7 @@ function base_node_converger(
         ssh: $ssh,
         bootstrapCommand: new NodeBootstrapCommandFactory(base_test_keys()),
         wireGuard: new class implements WireGuardPeerConverger {
-            public function converge(Node $node, SshConnection $connection): void {}
+            public function converge(Node $node, SshConnection $connection, bool $rolelessOperator = false): void {}
         },
         firewall: $firewall ?? base_firewall_spy(),
     );

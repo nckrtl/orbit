@@ -85,7 +85,15 @@ it('converges private SSH and each exact role-owned firewall intent', function (
         ->and($ssh->users())
         ->each->toBe('nckrtl');
 })->with([
-    'app development' => [RoleName::AppDev, ['orbit:app-dev-http', 'orbit:app-dev-https']],
+    'app development' => [
+        RoleName::AppDev,
+        [
+            'orbit:app-dev-http',
+            'orbit:app-dev-https',
+            'orbit:app-dev-direct-http',
+            'orbit:app-dev-direct-https',
+        ],
+    ],
     'app production' => [RoleName::AppProd, ['orbit:app-prod-http', 'orbit:app-prod-https']],
     'gateway' => [RoleName::Gateway, ['orbit:gateway-https']],
     'VPN' => [RoleName::Vpn, []],
@@ -103,6 +111,44 @@ it('does not reapply exact managed role rules', function (): void {
     $manager->converge($node, RoleName::AppProd, 'nckrtl');
 
     expect($ssh->mutations())->toBe($firstMutations);
+});
+
+it('adds direct app development web access without changing private rules', function (): void {
+    $ssh = new RoleFirewallSshExecutor;
+
+    role_firewall_manager($ssh)->converge(role_firewall_node(), RoleName::AppDev, 'nckrtl');
+
+    expect($ssh->mutations())
+        ->toContain(
+            [
+                'sudo',
+                'ufw',
+                'allow',
+                'in',
+                'proto',
+                'tcp',
+                'to',
+                'any',
+                'port',
+                '80',
+                'comment',
+                'orbit:app-dev-direct-http',
+            ],
+            [
+                'sudo',
+                'ufw',
+                'allow',
+                'in',
+                'proto',
+                'tcp',
+                'to',
+                'any',
+                'port',
+                '443',
+                'comment',
+                'orbit:app-dev-direct-https',
+            ],
+        );
 });
 
 it('removes only exact owned rules in descending number order', function (): void {
@@ -287,6 +333,8 @@ final class RoleFirewallSshExecutor implements SshExecutor
             $comment,
             [
                 'orbit:public-ssh-recovery',
+                'orbit:app-dev-direct-http',
+                'orbit:app-dev-direct-https',
                 'orbit:app-prod-http',
                 'orbit:app-prod-https',
             ],
@@ -329,6 +377,8 @@ final class RoleFirewallSshExecutor implements SshExecutor
             'orbit:vpn-ssh' => "[ {$number}] 10.44.0.2 22/tcp on orbit ALLOW IN Anywhere # {$comment}",
             'orbit:app-dev-http' => "[ {$number}] 10.44.0.2 80/tcp on orbit ALLOW IN Anywhere # {$comment}",
             'orbit:app-dev-https' => "[ {$number}] 10.44.0.2 443/tcp on orbit ALLOW IN Anywhere # {$comment}",
+            'orbit:app-dev-direct-http' => "[ {$number}] 80/tcp{$v6} ALLOW IN Anywhere{$v6} # {$comment}",
+            'orbit:app-dev-direct-https' => "[ {$number}] 443/tcp{$v6} ALLOW IN Anywhere{$v6} # {$comment}",
             'orbit:app-prod-http' => "[ {$number}] 80/tcp{$v6} ALLOW IN Anywhere{$v6} # {$comment}",
             'orbit:app-prod-https' => "[ {$number}] 443/tcp{$v6} ALLOW IN Anywhere{$v6} # {$comment}",
             'orbit:gateway-https' => "[ {$number}] 10.44.0.2 443/tcp on orbit ALLOW IN Anywhere # {$comment}",

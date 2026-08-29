@@ -83,7 +83,7 @@ describe(RetargetNodeAction::class, function (): void {
             public ?SshConnection $connection = null;
             public ?Throwable $throws = null;
 
-            public function converge(Node $node, SshConnection $connection): void
+            public function converge(Node $node, SshConnection $connection, bool $rolelessOperator = false): void
             {
                 $this->node = $node;
                 $this->connection = $connection;

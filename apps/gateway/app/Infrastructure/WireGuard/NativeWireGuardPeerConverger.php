@@ -26,18 +26,25 @@ final readonly class NativeWireGuardPeerConverger implements WireGuardPeerConver
         private ?Closure $sleep = null,
     ) {}
 
-    public function converge(Node $node, SshConnection $connection): void
-    {
+    public function converge(
+        Node $node,
+        SshConnection $connection,
+        bool $rolelessOperator = false,
+    ): void {
         $publicKey = $this->preflightPeerKey($node, $connection, 'new');
-        $this->publishPeer($node, $connection, $publicKey, 'finalize');
+        $this->publishPeer($node, $connection, $publicKey, 'finalize', $rolelessOperator);
     }
 
-    public function convergeRecoverably(Node $node, SshConnection $connection, Closure $completion): void
-    {
+    public function convergeRecoverably(
+        Node $node,
+        SshConnection $connection,
+        Closure $completion,
+        bool $rolelessOperator = false,
+    ): void {
         $publicKey = $this->preflightPeerKey($node, $connection, 'recoverable');
 
         try {
-            $this->publishPeer($node, $connection, $publicKey, 'retain');
+            $this->publishPeer($node, $connection, $publicKey, 'retain', $rolelessOperator);
             $completion();
             $this->commitPeerTransaction($node, $connection, $publicKey);
         } catch (\Throwable $throwable) {
@@ -113,12 +120,32 @@ final readonly class NativeWireGuardPeerConverger implements WireGuardPeerConver
         SshConnection $connection,
         string $publicKey,
         string $transactionMode,
+        bool $rolelessOperator,
     ): void {
         $retainTransaction = $transactionMode === 'retain';
         $vpn = $this->configuration->forPeer($node);
         $node->update(['wireguard_public_key' => $publicKey]);
         $this->gatewayPeers->converge($node);
-        $peerCommand = $this->peerCommand($vpn, $publicKey, $node->tld, $transactionMode);
+        $dnsMode = match (true) {
+            $rolelessOperator => 'operator',
+            $vpn->dnsThroughWireGuard => 'wireguard',
+            default => 'underlay',
+        };
+        $gatewayWireGuardAddress = explode(
+            separator: '/',
+            string: $vpn->serverAddress,
+            limit: 2,
+        )[0];
+        $peerCommand = $this->peerCommand(
+            $vpn,
+            $publicKey,
+            [
+                'appDevTld' => $node->tld,
+                'transactionMode' => $transactionMode,
+                'dnsMode' => $dnsMode,
+                'operatorDns' => $rolelessOperator ? $gatewayWireGuardAddress : '',
+            ],
+        );
         $peerResult = $this->ssh->execute($connection, $peerCommand);
         foreach (self::PEER_INSTALL_RETRY_DELAYS as $delay) {
             if (
@@ -353,12 +380,17 @@ final readonly class NativeWireGuardPeerConverger implements WireGuardPeerConver
         }
     }
 
-    private function peerCommand(
-        VpnConfiguration $vpn,
-        string $peerPublicKey,
-        ?string $appDevTld,
-        string $transactionMode,
-    ): RemoteCommand {
+    /**
+     * @param array{appDevTld: ?string, transactionMode: string, dnsMode: string, operatorDns: string} $dns
+     */
+    private function peerCommand(VpnConfiguration $vpn, string $peerPublicKey, array $dns): RemoteCommand
+    {
+        [
+            'appDevTld' => $appDevTld,
+            'transactionMode' => $transactionMode,
+            'dnsMode' => $dnsMode,
+            'operatorDns' => $operatorDns,
+        ] = $dns;
         $cleanup = $transactionMode === 'retain'
             ? 'trap - EXIT'
             : 'rm -f -- "$backup" "$dns_state_backup" "$transaction"'
@@ -385,7 +417,8 @@ final readonly class NativeWireGuardPeerConverger implements WireGuardPeerConver
                 $vpn->dnsServer,
                 $vpn->domain,
                 $appDevTld ?? '',
-                $vpn->dnsThroughWireGuard ? 'wireguard' : 'underlay',
+                $dnsMode,
+                $operatorDns,
                 $transactionMode,
             ],
             input: str_replace(
@@ -401,7 +434,8 @@ final readonly class NativeWireGuardPeerConverger implements WireGuardPeerConver
                     domain=$7
                     app_dev_tld=$8
                     dns_mode=$9
-                    transaction_mode=${10}
+                    operator_dns=${10}
+                    transaction_mode=${11}
                     exec 9>/run/lock/orbit-wireguard-peer.lock
                     flock -w 30 9
                     private_key=$(cat /etc/wireguard/orbit.key)
@@ -428,7 +462,7 @@ final readonly class NativeWireGuardPeerConverger implements WireGuardPeerConver
                     trap cleanup_finalize EXIT
 
                     case "$dns_mode:$transaction_mode" in
-                        wireguard:retain|wireguard:finalize|underlay:retain|underlay:finalize) ;;
+                        operator:retain|operator:finalize|wireguard:retain|wireguard:finalize|underlay:retain|underlay:finalize) ;;
                         *) exit 43 ;;
                     esac
                     if [ -e "$backup" ] || [ -L "$backup" ] \
@@ -471,6 +505,7 @@ final readonly class NativeWireGuardPeerConverger implements WireGuardPeerConver
                     printf -v dns_server_escaped '%q' "$dns_server"
                     printf -v domain_escaped '%q' "~$domain"
                     printf -v app_dev_tld_escaped '%q' "~$app_dev_tld"
+                    printf -v operator_dns_escaped '%q' "$operator_dns"
 
                     dns_hooks=
                     if [ "$dns_mode" = wireguard ]; then
@@ -480,11 +515,15 @@ final readonly class NativeWireGuardPeerConverger implements WireGuardPeerConver
                         fi
                         dns_hooks="PostUp = resolvectl dns %i $dns_server_escaped; resolvectl domain %i $dns_domains"$'\n'"PreDown = resolvectl revert %i"
                     fi
+                    operator_dns_line=
+                    if [ -n "$operator_dns" ]; then
+                        operator_dns_line="DNS = $operator_dns_escaped"
+                    fi
 
                     old_dns_link=
                     old_dns_server=
                     old_dns_domain=
-                    if [ -s "$dns_state" ]; then
+                    if [ "$dns_mode" != operator ] && [ -s "$dns_state" ]; then
                         mapfile -t old_dns_state < "$dns_state"
                         old_dns_link=${old_dns_state[0]:-}
                         old_dns_server=${old_dns_state[1]:-$dns_server}
@@ -522,6 +561,7 @@ final readonly class NativeWireGuardPeerConverger implements WireGuardPeerConver
                     [Interface]
                     PrivateKey = $private_key
                     Address = $address
+                    $operator_dns_line
                     $dns_hooks
 
                     [Peer]
@@ -602,7 +642,9 @@ final readonly class NativeWireGuardPeerConverger implements WireGuardPeerConver
                         exit 1
                     fi
 
-                    if [ "$dns_mode" = underlay ]; then
+                    if [ "$dns_mode" = operator ]; then
+                        rm -f -- "$dns_state"
+                    elif [ "$dns_mode" = underlay ]; then
                         route=$(ip -o route get "$dns_server")
                         if [[ "$route" =~ [[:space:]]dev[[:space:]]([^[:space:]]+) ]]; then
                             dns_link=${BASH_REMATCH[1]}
@@ -628,20 +670,20 @@ final readonly class NativeWireGuardPeerConverger implements WireGuardPeerConver
                         dns_link=orbit
                     fi
 
-                    if [ -n "$old_dns_link" ] && [ "$old_dns_link" != "$dns_link" ]; then
-                        if ! resolvectl revert "$old_dns_link"; then
+                    if [ "$dns_mode" != operator ]; then
+                        if [ -n "$old_dns_link" ] && [ "$old_dns_link" != "$dns_link" ] && ! resolvectl revert "$old_dns_link"; then
                             restore_after_failure || exit 1
                             exit 1
                         fi
-                    fi
-                    if ! printf '%s\n%s\n%s\n' "$dns_link" "$dns_server" "$domain" > "$dns_state_candidate"; then
-                        restore_after_failure || exit 1
-                        exit 1
-                    fi
-                    chmod 0600 "$dns_state_candidate"
-                    if ! mv -f -- "$dns_state_candidate" "$dns_state"; then
-                        restore_after_failure || exit 1
-                        exit 1
+                        if ! printf '%s\n%s\n%s\n' "$dns_link" "$dns_server" "$domain" > "$dns_state_candidate"; then
+                            restore_after_failure || exit 1
+                            exit 1
+                        fi
+                        chmod 0600 "$dns_state_candidate"
+                        if ! mv -f -- "$dns_state_candidate" "$dns_state"; then
+                            restore_after_failure || exit 1
+                            exit 1
+                        fi
                     fi
                     if ! active_public_key=$(wg show orbit public-key); then
                         restore_after_failure || exit 1

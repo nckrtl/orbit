@@ -46,9 +46,14 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
         Node $node,
         NodeProvisioningIdentity $identity,
         ?string $expectedSshHostFingerprint = null,
+        bool $rolelessOperator = false,
     ): void {
         [$hostKey, $wireguardAddress] = $this->prepare($node, $identity, $expectedSshHostFingerprint);
-        $this->wireGuard->converge($node, $this->connection($node, $identity->managedUser));
+        $this->wireGuard->converge(
+            $node,
+            $this->connection($node, $identity->managedUser),
+            $rolelessOperator,
+        );
         $this->finishWireGuard($node, $identity->managedUser, $hostKey, $wireguardAddress);
     }
 
@@ -57,11 +62,16 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
         NodeProvisioningIdentity $identity,
         ?string $expectedSshHostFingerprint,
         Closure $completion,
+        bool $rolelessOperator = false,
     ): void {
         [$hostKey, $wireguardAddress] = $this->prepare($node, $identity, $expectedSshHostFingerprint);
 
         if (! $this->wireGuard instanceof RecoverableWireGuardPeerConverger) {
-            $this->wireGuard->converge($node, $this->connection($node, $identity->managedUser));
+            $this->wireGuard->converge(
+                $node,
+                $this->connection($node, $identity->managedUser),
+                $rolelessOperator,
+            );
             $this->finishWireGuard($node, $identity->managedUser, $hostKey, $wireguardAddress);
             $completion();
 
@@ -75,6 +85,7 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
                 $this->finishWireGuard($node, $identity->managedUser, $hostKey, $wireguardAddress);
                 $completion();
             },
+            $rolelessOperator,
         );
     }
 

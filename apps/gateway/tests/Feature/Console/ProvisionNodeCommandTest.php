@@ -23,6 +23,7 @@ it('provisions the first peer from the gateway console', function (): void {
             Node $node,
             NodeProvisioningIdentity $identity,
             ?string $expectedSshHostFingerprint = null,
+            bool $rolelessOperator = false,
         ): void {}
     });
     app()->instance(RoleBaselineConverger::class, new class implements RoleBaselineConverger {
@@ -62,6 +63,7 @@ it('reports typed provisioning failures without leaking command output', functio
             Node $node,
             NodeProvisioningIdentity $identity,
             ?string $expectedSshHostFingerprint = null,
+            bool $rolelessOperator = false,
         ): void {
             throw new NodeProvisioningException(
                 step: 'base-packages',
@@ -101,6 +103,7 @@ it('passes explicit console user identities', function (): void {
             Node $node,
             NodeProvisioningIdentity $identity,
             ?string $expectedSshHostFingerprint = null,
+            bool $rolelessOperator = false,
         ): void {
             $this->identity = $identity;
         }

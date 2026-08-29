@@ -42,6 +42,7 @@ describe('POST /api/v1/nodes', function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
+                bool $rolelessOperator = false,
             ): void {}
         });
         $requestId = (string) Str::uuid();
@@ -89,6 +90,7 @@ describe('POST /api/v1/nodes', function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
+                bool $rolelessOperator = false,
             ): void {}
         });
         app()->instance(RoleBaselineConverger::class, new class implements RoleBaselineConverger {
@@ -139,6 +141,7 @@ describe('POST /api/v1/nodes', function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
+                bool $rolelessOperator = false,
             ): void {
                 $this->calls++;
                 $this->publicSshHost = $node->public_ssh_host;
@@ -186,6 +189,7 @@ describe('POST /api/v1/nodes', function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
+                bool $rolelessOperator = false,
             ): void {
                 $this->calls++;
             }
@@ -226,6 +230,7 @@ describe('POST /api/v1/nodes', function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
+                bool $rolelessOperator = false,
             ): void {
                 $this->expectedFingerprint = $expectedSshHostFingerprint;
                 $node->update(['ssh_host_fingerprint' => $this->observedFingerprint]);
@@ -260,6 +265,7 @@ describe('POST /api/v1/nodes', function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
+                bool $rolelessOperator = false,
             ): void {}
         });
         Node::query()->create([
@@ -422,6 +428,7 @@ describe('POST /api/v1/nodes', function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
+                bool $rolelessOperator = false,
             ): void {
                 $this->expectedFingerprint = $expectedSshHostFingerprint;
 
@@ -475,6 +482,7 @@ describe('POST /api/v1/nodes', function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
+                bool $rolelessOperator = false,
             ): void {
                 $node->update(['wireguard_public_key' => 'replacement-key']);
 
@@ -512,6 +520,7 @@ describe('POST /api/v1/nodes', function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
+                bool $rolelessOperator = false,
             ): void {
                 throw new SshHostKeyScanException(
                     message: 'ssh-keyscan could not connect to the target',
@@ -578,6 +587,7 @@ describe('POST /api/v1/nodes', function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
+                bool $rolelessOperator = false,
             ): void {}
         });
 
@@ -609,6 +619,7 @@ describe('POST /api/v1/nodes', function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
+                bool $rolelessOperator = false,
             ): void {
                 $this->calls++;
             }
@@ -701,6 +712,7 @@ describe('POST /api/v1/nodes', function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
+                bool $rolelessOperator = false,
             ): void {
                 throw new NodeProvisioningException(
                     step: 'base-host',
@@ -753,6 +765,7 @@ describe('POST /api/v1/nodes', function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
+                bool $rolelessOperator = false,
             ): void {
                 $this->identities[] = [$identity->bootstrapUser, $identity->managedUser];
             }
@@ -783,6 +796,7 @@ describe('POST /api/v1/nodes', function (): void {
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
+                bool $rolelessOperator = false,
             ): void {
                 $this->calls++;
             }

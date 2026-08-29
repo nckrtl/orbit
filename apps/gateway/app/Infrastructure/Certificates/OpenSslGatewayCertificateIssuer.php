@@ -163,7 +163,7 @@ final readonly class OpenSslGatewayCertificateIssuer implements GatewayCertifica
         $this->run(
             step: 'gateway-certificate-key',
             errorCode: 'gateway.certificate_key_failed',
-            arguments: ['openssl', 'genpkey', '-algorithm', 'ED25519', '-out', $paths->privateKeyPath],
+            arguments: ['openssl', 'genrsa', '-out', $paths->privateKeyPath, '2048'],
         );
         chmod(filename: $paths->privateKeyPath, permissions: 0o600);
         $this->run(
@@ -184,7 +184,7 @@ final readonly class OpenSslGatewayCertificateIssuer implements GatewayCertifica
         $contents = <<<EXTENSIONS
             [gateway]
             basicConstraints = critical,CA:FALSE
-            keyUsage = critical,digitalSignature
+            keyUsage = critical,digitalSignature,keyEncipherment
             extendedKeyUsage = serverAuth
             subjectAltName = DNS:{$hostname},IP:{$wireguardAddress}
             EXTENSIONS;

@@ -54,7 +54,7 @@ beforeEach(function (): void {
     app()->instance(WireGuardPeerConverger::class, new class implements WireGuardPeerConverger {
         public ?SshConnection $connection = null;
 
-        public function converge(Node $node, SshConnection $connection): void
+        public function converge(Node $node, SshConnection $connection, bool $rolelessOperator = false): void
         {
             $this->connection = $connection;
         }

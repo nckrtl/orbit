@@ -287,11 +287,10 @@ final readonly class BootstrapGatewayAction
             chmod(filename: $candidateDirectory, permissions: 0o700);
             $this->run('ca-private-key', 'ca.key_generation_failed', [
                 'openssl',
-                'genpkey',
-                '-algorithm',
-                'ED25519',
+                'genrsa',
                 '-out',
                 $candidatePrivateKey,
+                '4096',
             ]);
             chmod(filename: $candidatePrivateKey, permissions: 0o600);
             $this->run('ca-root-certificate', 'ca.certificate_generation_failed', [
@@ -346,6 +345,9 @@ final readonly class BootstrapGatewayAction
         /** @mago-expect analysis:invalid-argument OpenSSL accepts PEM strings at runtime. */
         $parsedCertificate = openssl_x509_read(certificate: $certificate);
         $parsedPrivateKey = openssl_pkey_get_private($privateKey);
+        $privateKeyDetails = $parsedPrivateKey !== false
+            ? openssl_pkey_get_details($parsedPrivateKey)
+            : false;
         $details = $parsedCertificate !== false ? openssl_x509_parse($parsedCertificate) : false;
         /** @mago-expect analysis:mixed-assignment OpenSSL certificate fields are untyped. */
         $basicConstraints = is_array($details)
@@ -358,6 +360,9 @@ final readonly class BootstrapGatewayAction
         return (
             $parsedCertificate !== false
             && $parsedPrivateKey !== false
+            && is_array($privateKeyDetails)
+            && ($privateKeyDetails['type'] ?? null) === OPENSSL_KEYTYPE_RSA
+            && ($privateKeyDetails['bits'] ?? null) === 4096
             && is_string($basicConstraints)
             && str_contains($basicConstraints, 'CA:TRUE')
             && is_int($validFrom)

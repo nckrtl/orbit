@@ -10,5 +10,10 @@ use Closure;
 
 interface RecoverableWireGuardPeerConverger
 {
-    public function convergeRecoverably(Node $node, SshConnection $connection, Closure $completion): void;
+    public function convergeRecoverably(
+        Node $node,
+        SshConnection $connection,
+        Closure $completion,
+        bool $rolelessOperator = false,
+    ): void;
 }

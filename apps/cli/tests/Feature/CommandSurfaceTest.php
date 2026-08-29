@@ -25,6 +25,7 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'app:new',
         'app:remove',
         'app:show',
+        'dns:resolve',
         'doctor',
         'firewall:allow',
         'firewall:deny',
@@ -73,7 +74,7 @@ it('does not register hidden Orbit product commands', function (): void {
     $orbitCommands = collect(app(Kernel::class)->all())
         ->filter(static fn (Command $command): bool => str_starts_with($command::class, 'App\\Commands\\'));
 
-    expect($orbitCommands)->toHaveCount(47);
+    expect($orbitCommands)->toHaveCount(48);
     expect($orbitCommands->every(
         static fn (Command $command): bool => ! $command->isHidden(),
     ))->toBeTrue();
@@ -112,6 +113,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'app:new' => [['slug', 'repository'], ['name' => null, 'json' => false]],
         'app:remove' => [['app'], ['json' => false]],
         'app:show' => [['app'], ['json' => false]],
+        'dns:resolve' => [['tld', 'target'], ['reset' => false, 'json' => false]],
         'doctor' => [[], ['node' => null, 'family' => [], 'json' => false]],
         'firewall:allow' => [
             ['name'],
@@ -123,7 +125,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         ],
         'firewall:list' => [[], ['node' => null, 'json' => false]],
         'firewall:remove' => [['name'], ['node' => null, 'json' => false]],
-        'gateway:add' => [['name', 'url'], ['ca' => null, 'use' => false, 'json' => false]],
+        'gateway:add' => [['gateway'], ['name' => 'default', 'ca' => null, 'use' => false, 'json' => false]],
         'gateway:status' => [[], ['json' => false]],
         'gateway:trust' => [[], ['accept-ca-change' => false, 'json' => false]],
         'gateway:use' => [['name'], ['json' => false]],
@@ -229,6 +231,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
 
         expect(array_keys($definition->getArguments()))->toBe($arguments);
         $optionalArguments = match ($name) {
+            'dns:resolve' => ['target'],
             'node:provision' => ['host'],
             'tool:install' => ['package'],
             default => [],
@@ -302,13 +305,18 @@ it('renders one exact json failure envelope for every Orbit product command', fu
         'app:new' => [['slug' => 'app', 'repository' => 'https://example.test/app.git'], ...$profileMissing],
         'app:remove' => [['app' => '1'], ...$profileMissing],
         'app:show' => [['app' => '1'], ...$profileMissing],
+        'dns:resolve' => [
+            ['tld' => '.validation-secret', 'target' => '127.0.0.1'],
+            'code' => 'dns.tld_invalid',
+            'message' => 'Development TLD must be one lowercase DNS label without a leading dot.',
+        ],
         'doctor' => [[], ...$profileMissing],
         'firewall:allow' => [['name' => 'web', '--node' => '1', '--port' => '443'], ...$profileMissing],
         'firewall:deny' => [['name' => 'web', '--node' => '1', '--port' => '443'], ...$profileMissing],
         'firewall:list' => [['--node' => '1'], ...$profileMissing],
         'firewall:remove' => [['name' => 'web', '--node' => '1'], ...$profileMissing],
         'gateway:add' => [
-            ['name' => 'test', 'url' => 'http://validation-secret'],
+            ['gateway' => 'http://validation-secret'],
             'code' => 'gateway.profile_invalid',
             'message' => 'Gateway URL must use HTTPS.',
         ],

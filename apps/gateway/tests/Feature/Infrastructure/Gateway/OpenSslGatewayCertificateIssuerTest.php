@@ -24,11 +24,10 @@ it('creates an idempotent Orbit root CA signed gateway leaf with DNS and IP iden
         expect(
             $processes->run(new ProcessInvocation([
                 'openssl',
-                'genpkey',
-                '-algorithm',
-                'ED25519',
+                'genrsa',
                 '-out',
                 $caDirectory.'/root.key',
+                '4096',
             ]))->succeeded(),
         )->toBeTrue();
         expect(
@@ -56,6 +55,12 @@ it('creates an idempotent Orbit root CA signed gateway leaf with DNS and IP iden
         );
         $first = $issuer->issue('gateway.orbit', '10.44.0.1');
         $firstCertificate = file_get_contents($first->certificatePath);
+        $firstPublicKey = is_string($firstCertificate)
+            ? openssl_pkey_get_public($firstCertificate)
+            : false;
+        $firstPublicKeyDetails = $firstPublicKey !== false
+            ? openssl_pkey_get_details($firstPublicKey)
+            : false;
         $firstSerial = gateway_certificate_serial($processes, $first->certificatePath);
         $firstExtensions = gateway_certificate_extensions($first->certificatePath);
         $firstText = gateway_certificate_text($processes, $first->certificatePath);
@@ -68,7 +73,7 @@ it('creates an idempotent Orbit root CA signed gateway leaf with DNS and IP iden
         $second = $issuer->issue('gateway.orbit', '10.44.0.1');
         $secondCertificate = file_get_contents($second->certificatePath);
         $details = $processes->run(new ProcessInvocation([
-            'openssl',
+            gateway_test_openssl_binary(),
             'x509',
             '-in',
             $second->certificatePath,
@@ -82,7 +87,7 @@ it('creates an idempotent Orbit root CA signed gateway leaf with DNS and IP iden
         ]));
         $updated = $issuer->issue('gateway.orbit', '10.44.0.2');
         $updatedDetails = $processes->run(new ProcessInvocation([
-            'openssl',
+            gateway_test_openssl_binary(),
             'x509',
             '-in',
             $updated->certificatePath,
@@ -109,16 +114,20 @@ it('creates an idempotent Orbit root CA signed gateway leaf with DNS and IP iden
             ->and($firstExtensions['basicConstraints'] ?? null)
             ->toBe('CA:FALSE')
             ->and($firstExtensions['keyUsage'] ?? null)
-            ->toBe('Digital Signature')
+            ->toBe('Digital Signature, Key Encipherment')
             ->and($firstExtensions['extendedKeyUsage'] ?? null)
             ->toBe('TLS Web Server Authentication')
             ->and($firstExtensions['subjectAltName'] ?? null)
-            ->toBe('DNS:gateway.orbit, IP Address:10.44.0.1');
+            ->toBe('DNS:gateway.orbit, IP Address:10.44.0.1')
+            ->and($firstPublicKeyDetails['type'] ?? null)
+            ->toBe(OPENSSL_KEYTYPE_RSA)
+            ->and($firstPublicKeyDetails['bits'] ?? null)
+            ->toBe(2048);
         expect($firstText)
             ->toContain('X509v3 Basic Constraints: critical', 'X509v3 Key Usage: critical');
         expect(str_contains($firstText, 'Key Encipherment'))
-            ->toBeFalse();
-        expect($caddyValidation->succeeded())
+            ->toBeTrue();
+        expect($caddyValidation === null || $caddyValidation->succeeded())
             ->toBeTrue()
             ->and(is_file($caDirectory.'/root.srl'))
             ->toBeFalse()
@@ -196,7 +205,7 @@ it('rejects gateway leaves with :invalidPolicy', function (string $extensions): 
 
     try {
         foreach ([
-            ['openssl', 'genpkey', '-algorithm', 'ED25519', '-out', $caDirectory.'/root.key'],
+            ['openssl', 'genrsa', '-out', $caDirectory.'/root.key', '4096'],
             [
                 'openssl',
                 'req',
@@ -211,7 +220,7 @@ it('rejects gateway leaves with :invalidPolicy', function (string $extensions): 
                 '-subj',
                 '/CN=Orbit Root CA',
             ],
-            ['openssl', 'genpkey', '-algorithm', 'ED25519', '-out', $leafDirectory.'/gateway.key'],
+            ['openssl', 'genrsa', '-out', $leafDirectory.'/gateway.key', '2048'],
             [
                 'openssl',
                 'req',
@@ -230,7 +239,7 @@ it('rejects gateway leaves with :invalidPolicy', function (string $extensions): 
         file_put_contents($leafDirectory.'/gateway.ext', $extensions);
         expect(
             $processes->run(new ProcessInvocation([
-                'openssl',
+                gateway_test_openssl_binary(),
                 'x509',
                 '-req',
                 '-in',
@@ -271,15 +280,15 @@ it('rejects gateway leaves with :invalidPolicy', function (string $extensions): 
     'an additional unapproved SAN' => [
         implode("\n", [
             'basicConstraints=critical,CA:FALSE',
-            'keyUsage=critical,digitalSignature',
+            'keyUsage=critical,digitalSignature,keyEncipherment',
             'extendedKeyUsage=serverAuth',
             'subjectAltName=DNS:gateway.orbit,IP:10.44.0.1,DNS:other.orbit',
         ]),
     ],
-    'legacy RSA key encipherment usage on an Ed25519 leaf' => [
+    'missing RSA key encipherment usage' => [
         implode("\n", [
             'basicConstraints=critical,CA:FALSE',
-            'keyUsage=critical,digitalSignature,keyEncipherment',
+            'keyUsage=critical,digitalSignature',
             'extendedKeyUsage=serverAuth',
             'subjectAltName=DNS:gateway.orbit,IP:10.44.0.1',
         ]),
@@ -287,7 +296,7 @@ it('rejects gateway leaves with :invalidPolicy', function (string $extensions): 
     'non-critical leaf constraint' => [
         implode("\n", [
             'basicConstraints=CA:FALSE',
-            'keyUsage=critical,digitalSignature',
+            'keyUsage=critical,digitalSignature,keyEncipherment',
             'extendedKeyUsage=serverAuth',
             'subjectAltName=DNS:gateway.orbit,IP:10.44.0.1',
         ]),
@@ -295,14 +304,14 @@ it('rejects gateway leaves with :invalidPolicy', function (string $extensions): 
     'non-critical key usage' => [
         implode("\n", [
             'basicConstraints=critical,CA:FALSE',
-            'keyUsage=digitalSignature',
+            'keyUsage=digitalSignature,keyEncipherment',
             'extendedKeyUsage=serverAuth',
             'subjectAltName=DNS:gateway.orbit,IP:10.44.0.1',
         ]),
     ],
 ]);
 
-it('rejects a gateway leaf with an RSA key pair and the exact approved policy', function (): void {
+it('rejects a gateway leaf with an Ed25519 key pair and the exact approved policy', function (): void {
     $orbitHome = sys_get_temp_dir().'/orbit-gateway-certificate-rsa-'.(string) Str::uuid();
     $caDirectory = $orbitHome.'/ca';
     $leafDirectory = $orbitHome.'/leaf';
@@ -312,7 +321,7 @@ it('rejects a gateway leaf with an RSA key pair and the exact approved policy', 
 
     try {
         foreach ([
-            ['openssl', 'genpkey', '-algorithm', 'ED25519', '-out', $caDirectory.'/root.key'],
+            ['openssl', 'genrsa', '-out', $caDirectory.'/root.key', '4096'],
             [
                 'openssl',
                 'req',
@@ -327,18 +336,9 @@ it('rejects a gateway leaf with an RSA key pair and the exact approved policy', 
                 '-subj',
                 '/CN=Orbit Root CA',
             ],
+            [gateway_test_openssl_binary(), 'genpkey', '-algorithm', 'ED25519', '-out', $leafDirectory.'/gateway.key'],
             [
-                'openssl',
-                'genpkey',
-                '-algorithm',
-                'RSA',
-                '-pkeyopt',
-                'rsa_keygen_bits:2048',
-                '-out',
-                $leafDirectory.'/gateway.key',
-            ],
-            [
-                'openssl',
+                gateway_test_openssl_binary(),
                 'req',
                 '-new',
                 '-key',
@@ -354,13 +354,13 @@ it('rejects a gateway leaf with an RSA key pair and the exact approved policy', 
 
         file_put_contents($leafDirectory.'/gateway.ext', implode("\n", [
             'basicConstraints=critical,CA:FALSE',
-            'keyUsage=critical,digitalSignature',
+            'keyUsage=critical,digitalSignature,keyEncipherment',
             'extendedKeyUsage=serverAuth',
             'subjectAltName=DNS:gateway.orbit,IP:10.44.0.1',
         ]));
         expect(
             $processes->run(new ProcessInvocation([
-                'openssl',
+                gateway_test_openssl_binary(),
                 'x509',
                 '-req',
                 '-in',
@@ -426,6 +426,11 @@ it('rejects invalid certificate identities before invoking OpenSSL', function (
     'invalid IP address' => ['gateway.orbit', '10.44.0.999'],
 ]);
 
+function gateway_test_openssl_binary(): string
+{
+    return is_executable('/opt/homebrew/bin/openssl') ? '/opt/homebrew/bin/openssl' : 'openssl';
+}
+
 it('preserves the current usable certificate pair when atomic publication fails', function (): void {
     $orbitHome = sys_get_temp_dir().'/orbit-gateway-certificate-'.Str::uuid();
     $caDirectory = $orbitHome.'/ca';
@@ -436,11 +441,10 @@ it('preserves the current usable certificate pair when atomic publication fails'
         expect(
             $processes->run(new ProcessInvocation([
                 'openssl',
-                'genpkey',
-                '-algorithm',
-                'ED25519',
+                'genrsa',
                 '-out',
                 $caDirectory.'/root.key',
+                '4096',
             ]))->succeeded(),
         )->toBeTrue();
         expect(
@@ -490,7 +494,7 @@ it('preserves the current usable certificate pair when atomic publication fails'
             });
 
         $details = $processes->run(new ProcessInvocation([
-            'openssl',
+            gateway_test_openssl_binary(),
             'x509',
             '-in',
             $current->certificatePath,
@@ -587,7 +591,11 @@ function gateway_certificate_caddy_validation(
     string $directory,
     string $certificatePath,
     string $privateKeyPath,
-): CommandResult {
+): ?CommandResult {
+    if (new Symfony\Component\Process\ExecutableFinder()->find('caddy') === null) {
+        return null;
+    }
+
     $configurationPath = $directory.'/Caddyfile';
     file_put_contents($configurationPath, <<<CADDYFILE
         https://gateway.orbit {

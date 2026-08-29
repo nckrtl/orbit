@@ -2,11 +2,10 @@
 
 declare(strict_types=1);
 
-it('documents the first-use gateway trust flow', function (): void {
+it('documents automatic gateway trust during first use', function (): void {
     $readme = file_get_contents(base_path('README.md'));
     $firstUseFlow = <<<'MARKDOWN'
-        ./orbit gateway:add local https://gateway.orbit --use
-        ./orbit gateway:trust
+        ./orbit gateway:add 10.70.0.1
         ./orbit gateway:status
         MARKDOWN;
 
@@ -14,7 +13,7 @@ it('documents the first-use gateway trust flow', function (): void {
         ->toBeString()
         ->toContain('## First Use')
         ->toContain($firstUseFlow)
-        ->toContain('visible local operating-system trust step')
+        ->toContain('installs its root CA in the local operating-system trust store')
         ->not->toContain('gateway:add local https://gateway.orbit --ca=');
 });
 
