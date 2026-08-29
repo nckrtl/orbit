@@ -30,7 +30,7 @@ Incus-backed development uses only `gateway_app-dev_app-prod`, with ordered
 nodes `gateway`, `app-dev`, and `app-prod`. The Gateway node has the `gateway`
 and `vpn` roles. Each feature receives disposable, issue-specific Gateway,
 app-dev, and app-prod VMs on an isolated network.
-Persistent standby VMs use the same three roles and remain stopped outside
+Persistent standby VMs use the same three-node layout and remain stopped outside
 refresh or recovery. The standby and feature namespaces are distinct from
 Orbit-old resources. The canonical standby identities are
 `orbit-e2e-standby-gateway`, `orbit-e2e-standby-app-dev`, and
