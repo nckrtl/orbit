@@ -873,7 +873,7 @@ describe('convergence guest scripts', function () {
                 '-o UserKnownHostsFile=/home/orbit/.orbit/ssh/known_hosts',
                 '-o BatchMode=yes',
                 '-o StrictHostKeyChecking=yes',
-                '-- orbit@"$2"',
+                '-- orbit@"$wireguard_address"',
             )
             ->not->toContain('ssh -o BatchMode=yes -- "$1"');
         expect(file_get_contents("{$guest}/converge-app-dev.sh"))
@@ -884,6 +884,8 @@ describe('convergence guest scripts', function () {
                 '[[ "$3" =~ ^(x86_64|aarch64)$ ]]',
                 '--architecture="$3"',
                 '--user=orbit',
+                'wireguard_address=10.44.0.2',
+                '--wireguard-address="$wireguard_address"',
             )
             ->not->toContain('uname -m');
         expect($production)
@@ -894,6 +896,8 @@ describe('convergence guest scripts', function () {
                 '[[ "$3" =~ ^(x86_64|aarch64)$ ]]',
                 '--architecture="$3"',
                 '--user=orbit',
+                'wireguard_address=10.44.0.3',
+                '--wireguard-address="$wireguard_address"',
             )
             ->not->toContain('uname -m');
     });
