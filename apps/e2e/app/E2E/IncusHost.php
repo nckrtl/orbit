@@ -1994,11 +1994,14 @@ final class IncusHost implements GuestTransport
             throw new RuntimeException("Incus command timed out or could not run: {$message}", 0, $exception);
         }
 
-        if ($failOnError && ! $result->successful()) {
+        if (! $result->successful()) {
+            // Record every non-zero exit, redacted, so guest failures leave evidence
+            // even when the caller inspects the exit code itself.
             $error = $this->redactor->redact(trim($result->errorOutput()."\n".$result->output()));
             $this->recordFailure($command, $result->exitCode(), $error);
-
-            throw new RuntimeException("Incus command failed with exit code {$result->exitCode()}: {$error}");
+            if ($failOnError) {
+                throw new RuntimeException("Incus command failed with exit code {$result->exitCode()}: {$error}");
+            }
         }
 
         if ($this->invalidatesOwnershipCache($arguments)) {
