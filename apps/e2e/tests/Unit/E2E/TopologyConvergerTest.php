@@ -203,6 +203,7 @@ describe('TopologyConverger', function () {
             'authorize.gateway-ssh',
             'provision.app-dev',
             'provision.app-prod',
+            'authorize.app-dev-operator',
             'configure.app-dev-cli',
             'create.sample-resources',
             'hydrate.sample-apps',
@@ -219,7 +220,7 @@ describe('TopologyConverger', function () {
             ->all();
 
         expect($guestCommands)
-            ->toHaveCount(16)
+            ->toHaveCount(17)
             ->and(array_column(array_slice($guestCommands, 0, 3), 4))
             ->toBe([
                 'lab:orbit-e2e-nck-123-gateway',
@@ -243,6 +244,7 @@ describe('TopologyConverger', function () {
                     '192.0.2.12',
                     'aarch64',
                 ],
+                ['/usr/local/bin/converge-sample-app.sh', 'grant-operator', 'app-dev', 'gateway'],
                 ['/usr/local/bin/converge-sample-app.sh', 'configure-cli', '10.44.0.1'],
                 [
                     '/usr/local/bin/converge-sample-app.sh',

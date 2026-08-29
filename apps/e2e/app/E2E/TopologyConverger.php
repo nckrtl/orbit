@@ -76,6 +76,16 @@ final readonly class TopologyConverger
         ]);
         $steps['provision.app-dev'] = true;
         $steps['provision.app-prod'] = true;
+        $this->run(
+            $instances['gateway'],
+            'converge-sample-app.sh',
+            [
+                'grant-operator',
+                'app-dev',
+                'gateway',
+            ],
+        );
+        $steps['authorize.app-dev-operator'] = true;
         $this->run($instances['app-dev'], 'converge-sample-app.sh', ['configure-cli', '10.44.0.1']);
         $steps['configure.app-dev-cli'] = true;
         $this->run($instances['app-dev'], 'converge-sample-app.sh', [

@@ -863,6 +863,7 @@ describe('convergence guest scripts', function () {
                 'caddy-ca-path',
             )->and($sample)->toContain(
                 'https://github.com/laravel/laravel.git',
+                'node:access:add',
                 'app:new laravel',
                 'instance:new',
                 'workspace:new',
