@@ -797,6 +797,14 @@ final class IncusHost implements GuestTransport
             foreach ($states as $instance => $state) {
                 $commands[$instance] = match ($state) {
                     'agent' => ['exec', $this->target($instance), '--', '/bin/true'],
+                    'pre-reset-ipv4', 'ipv4' => [
+                        'exec',
+                        $this->target($instance),
+                        '--',
+                        'sh',
+                        '-c',
+                        self::GLOBAL_IPV4_PROBE,
+                    ],
                     'reset' => [
                         'exec',
                         $this->target($instance),
@@ -804,14 +812,6 @@ final class IncusHost implements GuestTransport
                         'sh',
                         '-c',
                         $this->clonedHostStateResetScript($instance),
-                    ],
-                    'ipv4' => [
-                        'exec',
-                        $this->target($instance),
-                        '--',
-                        'sh',
-                        '-c',
-                        self::GLOBAL_IPV4_PROBE,
                     ],
                     default => throw new RuntimeException('Cloned host-state preparation entered an invalid state.'),
                 };
@@ -842,12 +842,21 @@ final class IncusHost implements GuestTransport
                     continue;
                 }
                 if ($state === 'agent') {
+                    $states[$instance] = 'pre-reset-ipv4';
+                    $advanced = true;
+
+                    continue;
+                }
+                if (! $this->hasUsableGlobalIpv4($result->output())) {
+                    continue;
+                }
+                if ($state === 'pre-reset-ipv4') {
                     $states[$instance] = 'reset';
                     $advanced = true;
 
                     continue;
                 }
-                if ($this->hasUsableGlobalIpv4($result->output())) {
+                if ($state === 'ipv4') {
                     unset($states[$instance]);
                     $advanced = true;
                 }

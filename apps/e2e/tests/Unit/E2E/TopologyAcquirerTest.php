@@ -805,6 +805,14 @@ function identityRefreshMutationResult(array $command, array &$events): \Illumin
 
         return Process::result();
     }
+    if (
+        in_array('exec', $command, true)
+        && str_contains(implode(' ', $command), 'ip -4 -o addr show dev "$interface" scope global')
+    ) {
+        $events[] = 'ipv4';
+
+        return Process::result("2: enp5s0    inet 10.44.0.10/24 scope global enp5s0\n");
+    }
     if (in_array('exec', $command, true) && in_array('sh', $command, true)) {
         $events[] = 'identity';
 
@@ -812,6 +820,32 @@ function identityRefreshMutationResult(array $command, array &$events): \Illumin
     }
 
     return Process::result();
+}
+
+/**
+ * @param  list<list<string>>  $events
+ * @param  callable(list<string>): bool  $matches
+ * @return list<int>
+ */
+function topology_command_indices(array $events, string $instance, callable $matches): array
+{
+    $indices = [];
+    foreach ($events as $index => $command) {
+        $targetsInstance = array_any(
+            $command,
+            static fn (mixed $argument): bool => (
+                is_string($argument)
+                && ($argument === $instance || str_ends_with($argument, ':'.$instance))
+            ),
+        );
+        if (! $targetsInstance || ! $matches($command)) {
+            continue;
+        }
+
+        $indices[] = $index;
+    }
+
+    return $indices;
 }
 
 /** @param list<string> $events */
@@ -3152,6 +3186,9 @@ it('batches clone and boot work before cloned host-state reset and preserves fai
             'readiness',
             'readiness',
             'readiness',
+            'ipv4',
+            'ipv4',
+            'ipv4',
             'identity',
             'identity',
             'identity',
@@ -3547,8 +3584,10 @@ it('keeps the promoted Laravel pin when feature worktrees change source', functi
         'mac' => [],
         'start' => [],
         'readiness' => [],
+        'ipv4-pre' => [],
         'identity' => [],
-        'ipv4' => [],
+        'ipv4-post' => [],
+        'ipv4-converge' => [],
     ];
     foreach (['gateway', 'app-dev', 'app-prod'] as $role) {
         $instance = $target->instance($role);
@@ -3566,16 +3605,31 @@ it('keeps the promoted Laravel pin when feature worktrees change source', functi
             $command,
             true,
         ));
-        $identity = $eventIndex($acquireEvents, $instance, static fn (array $command): bool => in_array(
-            'sh',
-            $command,
-            true,
-        ));
-        $ipv4 = $eventIndex($acquireEvents, $instance, static fn (array $command): bool => str_contains(
-            implode(' ', $command),
-            'ip -4 -o addr show dev "$interface" scope global',
-        ));
-        $indices = [$mac, $start, $readiness, $identity, $ipv4];
+        $identityIndices = topology_command_indices(
+            $acquireEvents,
+            $instance,
+            static fn (array $command): bool => str_contains(
+                implode(' ', $command),
+                "printf '%s\\n'",
+            ),
+        );
+        $ipv4Indices = topology_command_indices(
+            $acquireEvents,
+            $instance,
+            static fn (array $command): bool => str_contains(
+                implode(' ', $command),
+                'ip -4 -o addr show dev "$interface" scope global',
+            ),
+        );
+        expect($identityIndices)
+            ->toHaveCount(1)
+            ->and($ipv4Indices)
+            ->toHaveCount(3);
+        $identity = $identityIndices[0] ?? -1;
+        $preResetIpv4 = $ipv4Indices[0] ?? -1;
+        $postResetIpv4 = $ipv4Indices[1] ?? -1;
+        $convergenceIpv4 = $ipv4Indices[2] ?? -1;
+        $indices = [$mac, $start, $readiness, $preResetIpv4, $identity, $postResetIpv4, $convergenceIpv4];
         $orderedIndices = $indices;
         sort($orderedIndices);
         expect($indices)
@@ -3596,10 +3650,12 @@ it('keeps the promoted Laravel pin when feature worktrees change source', functi
         ->toBeLessThan(min($phaseIndices['start']))
         ->and(max($phaseIndices['start']))
         ->toBeLessThan(min($phaseIndices['readiness']))
-        ->and(max($phaseIndices['readiness']))
-        ->toBeLessThan(min($phaseIndices['identity']))
-        ->and(max($phaseIndices['identity']))
-        ->toBeLessThan(min($phaseIndices['ipv4']));
+        ->and($phaseIndices['ipv4-pre'])
+        ->toHaveCount(3)
+        ->and($phaseIndices['ipv4-post'])
+        ->toHaveCount(3)
+        ->and($phaseIndices['ipv4-converge'])
+        ->toHaveCount(3);
 
     expect($acquired->source->hostSha)
         ->toBe(new GitRepository($worktreeA)->commit())
