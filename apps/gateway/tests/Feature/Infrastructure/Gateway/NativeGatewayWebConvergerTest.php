@@ -153,10 +153,7 @@ it('adapts Caddy to a listener bound only to the gateway WireGuard address', fun
         wireguardAddress: '10.44.0.1',
         checkoutPath: '/home/orbit/orbit-gateway',
     );
-    $result = new NativeProcessRunner()->run(new ProcessInvocation(
-        arguments: ['caddy', 'adapt', '--config', '-', '--adapter', 'caddyfile'],
-        input: $configuration,
-    ));
+    $result = caddy_adapt($configuration);
     /** @var array{apps: array{http: array{servers: array<string, array{listen: list<string>}>}}} $adapted */
     $adapted = json_decode(json: $result->stdout, associative: true, flags: JSON_THROW_ON_ERROR);
     $listeners = Collection::make($adapted['apps']['http']['servers'])

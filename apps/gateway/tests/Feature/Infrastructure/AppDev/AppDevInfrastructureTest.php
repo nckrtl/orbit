@@ -69,10 +69,7 @@ it('renders isolated pools and private Caddy listeners for every active scope', 
     $sites = new AppDevSiteRepository()->forNode($node);
     $fpm = new AppDevPhpFpmConfigRenderer()->render($sites, new ManagedUserAccount('orbit', 'orbit', '/home/orbit'));
     $caddy = new AppDevCaddyConfigRenderer()->render($sites);
-    $adapted = new NativeProcessRunner()->run(new ProcessInvocation(
-        arguments: ['caddy', 'adapt', '--config', '-', '--adapter', 'caddyfile'],
-        input: $caddy,
-    ));
+    $adapted = caddy_adapt($caddy);
 
     expect($sites)
         ->toHaveCount(2)
