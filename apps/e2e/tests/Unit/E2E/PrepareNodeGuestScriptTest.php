@@ -97,7 +97,15 @@ describe('prepare node guest script', function () {
                 ['bash', "{$root}/prepare-node.sh", 'align-identity'],
                 env: [...$environment, 'ALIGN_ORBIT_UID' => '1000', 'ALIGN_ORBIT_GID' => '1000'],
             );
-            expect($process->run())->toBe(0)->and(file_exists("{$root}/commands"))->toBeFalse();
+            expect($process->run())
+                ->toBe(0)
+                ->and(array_values(preg_grep(
+                    '/^(userdel|groupmod|usermod|systemctl) /',
+                    file("{$root}/commands", FILE_IGNORE_NEW_LINES),
+                )))
+                ->toBe([])
+                ->and(file_get_contents("{$root}/commands"))
+                ->toContain('find /home/orbit ( -nouser -o -nogroup ) -exec python3 -c');
         } finally {
             new Illuminate\Filesystem\Filesystem()->deleteDirectory($root);
         }
