@@ -210,8 +210,19 @@ it('orders the gateway Caddy unit after the managed WireGuard interface', functi
         $orderingIndex = $commands->search(
             ['sudo', 'bash', '-seu', '--', 'caddy', '/etc/systemd/system'],
         );
-        $ordering = $calls->get($orderingIndex);
-        $orderingInput = $ordering?->input ?? '';
+        $ordering = $calls->firstOrFail(
+            static fn (ProcessInvocation $invocation): bool => (
+                $invocation->arguments === [
+                    'sudo',
+                    'bash',
+                    '-seu',
+                    '--',
+                    'caddy',
+                    '/etc/systemd/system',
+                ]
+            ),
+        );
+        $orderingInput = $ordering->input ?? '';
 
         expect($reloadIndex)
             ->toBeInt()

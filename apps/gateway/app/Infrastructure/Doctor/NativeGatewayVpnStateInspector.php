@@ -29,6 +29,11 @@ final readonly class NativeGatewayVpnStateInspector implements GatewayVpnStateIn
     private const string ACTIVE_SCRIPT = "if systemctl is-active --quiet wg-quick@orbit; then printf '1\\n'; else printf '0\\n'; fi";
 
     private const string COMPARE_SCRIPT = <<<'BASH'
+        if ! sudo test -f "$1"; then
+            cat > /dev/null
+            printf '0\n'
+            exit 0
+        fi
         if sudo cmp -s -- "$1" -; then
             printf '1\n'
         else

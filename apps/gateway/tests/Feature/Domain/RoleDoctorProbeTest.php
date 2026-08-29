@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 use App\Actions\Doctor\RoleDoctorProbe;
 use App\Data\Doctor\DoctorIssueData;
+use App\Domain\Doctor\DoctorFamilyStatus;
 use App\Domain\Doctor\DoctorInspectionException;
+use App\Domain\Doctor\DoctorIssueKind;
 use App\Domain\Doctor\DoctorNodeContext;
 use App\Domain\Doctor\GatewayVpnInspectionData;
 use App\Domain\Doctor\GatewayVpnStateInspector;
@@ -157,6 +159,31 @@ it('reports the complete role and VPN drift matrix in stable field order', funct
         ->toBe([$role->id])
         ->and(json_encode($report))
         ->not->toContain('package-output', 'service-output', 'private-key', 'vpn-setting');
+});
+
+it('reports a missing VPN ordering drop-in as bounded drift instead of an inspection failure', function (): void {
+    $node = role_probe_node('vpn-ordering');
+    $role = role_probe_assignment($node, RoleName::Vpn);
+    $roleCalls = 0;
+    $vpnCalls = 0;
+    $report = new RoleDoctorProbe(
+        role_probe_state_inspector($roleCalls),
+        role_probe_vpn_inspector($vpnCalls, new GatewayVpnInspectionData(true, true, true, false)),
+    )->inspect(role_probe_context($node));
+
+    expect($report->status)
+        ->toBe(DoctorFamilyStatus::Drift)
+        ->and(array_map(
+            static fn (DoctorIssueData $issue): array => [
+                $issue->resourceId,
+                $issue->code,
+                $issue->kind,
+                $issue->expected,
+                $issue->observed,
+            ],
+            $report->issues,
+        ))
+        ->toBe([[$role->id, 'role.vpn_ordering_missing', DoctorIssueKind::Drift, true, false]]);
 });
 
 it('retains SQLite findings and emits one bounded issue when the node is unreachable', function (): void {
