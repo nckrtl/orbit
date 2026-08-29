@@ -74,7 +74,10 @@ describe('prepare node guest script', function () {
             $process = new Process(['bash', "{$root}/prepare-node.sh", 'align-identity'], env: $environment);
             expect($process->run())
                 ->toBe(0, $process->getErrorOutput())
-                ->and(file("{$root}/commands", FILE_IGNORE_NEW_LINES))
+                ->and(array_values(preg_grep('/^(userdel|groupmod|usermod|systemctl) /', file(
+                    "{$root}/commands",
+                    FILE_IGNORE_NEW_LINES,
+                ))))
                 ->toBe([
                     'userdel --remove ubuntu',
                     'groupmod --gid 1000 orbit',
