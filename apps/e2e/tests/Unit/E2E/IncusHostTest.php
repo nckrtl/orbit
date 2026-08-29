@@ -642,11 +642,11 @@ describe('IncusHost reads', function () {
                 incusCommand('network', 'list', incusTarget(), '--format=json') => Process::result(json_encode([
                     ['name' => 'orbit-e2e-nck-123', 'config' => ['user.orbit.e2e.owner' => 'orbit-e2e']],
                 ], JSON_THROW_ON_ERROR)),
-                incusCommand('image', 'list', 'images:', 'ubuntu/24.04', '--format=json')
+                incusCommand('image', 'list', 'images:', 'ubuntu/26.04', '--format=json')
                     => Process::result(json_encode([[
                     'fingerprint' => $fingerprint,
                     'type' => 'virtual-machine',
-                    'aliases' => [['name' => 'ubuntu/24.04']],
+                    'aliases' => [['name' => 'ubuntu/26.04']],
                 ]], JSON_THROW_ON_ERROR)),
                 default => Process::result('', 'Unexpected command.', 1),
             };
@@ -663,7 +663,7 @@ describe('IncusHost reads', function () {
             ->toBeTrue()
             ->and($host->network('orbit-e2e-nck-123')?->name)
             ->toBe('orbit-e2e-nck-123')
-            ->and($host->imageFingerprint('images:ubuntu/24.04'))
+            ->and($host->imageFingerprint('images:ubuntu/26.04'))
             ->toBe($fingerprint);
     });
 

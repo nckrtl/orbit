@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Nodes\UbuntuRelease;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
 use App\Infrastructure\AppProd\AppProdSshExecutor;
 use App\Infrastructure\Nodes\RemotePhpPackageManager;
@@ -18,7 +19,7 @@ use Illuminate\Support\Collection;
 use Symfony\Component\Process\Process;
 use Tests\Support\AppDevFakeSshExecutor;
 
-it('converges the pinned Sury Noble or Resolute source before package installation', function (): void {
+it('converges the pinned Sury Resolute source before package installation', function (): void {
     $transport = new AppDevFakeSshExecutor;
 
     new RemotePhpPackageManager()->installForAppDev(
@@ -39,15 +40,14 @@ it('converges the pinned Sury Noble or Resolute source before package installati
         needle: "selected_codename=''",
     );
 
-    expect(array_slice(array: $sourceCommand->arguments, offset: 0, length: 16))
+    expect(array_slice(array: $sourceCommand->arguments, offset: 0, length: 15))
         ->toBe([
             'bash',
             '-seu',
             '--',
             'ubuntu',
-            'Orbit requires Ubuntu 24.04 Noble or Ubuntu 26.04 Resolute.',
-            '2',
-            'noble',
+            UbuntuRelease::unsupportedText(),
+            '1',
             'resolute',
             'https://packages.sury.org/php/',
             'https://packages.sury.org/php/apt.gpg',
@@ -97,16 +97,15 @@ it('converges the pinned Sury Noble or Resolute source before package installati
         )))->and(array_slice(
             array: $installCommand->arguments,
             offset: 0,
-            length: 9,
+            length: 8,
         ))->toBe([
             'bash',
             '-seu',
             '--',
             '8.4',
             'app-dev',
-            'Orbit requires Ubuntu 24.04 Noble or Ubuntu 26.04 Resolute.',
-            '2',
-            'noble',
+            UbuntuRelease::unsupportedText(),
+            '1',
             'resolute',
         ])->and($installScript)->toContain('dpkg-query', 'apt-get -o DPkg::Lock::Timeout=300 install')
         ->not->toContain('. /etc/os-release', '[ -x "/usr/sbin/php-fpm$version" ]', 'apt-key', 'add-apt-repository');
@@ -137,14 +136,14 @@ it('selects only the validated release suite for each role policy', function (
         ->and($requirement)
         ->toBeString();
 })->with([
-    'app-dev Noble and Resolute' => [
+    'app-dev Resolute' => [
         RoleName::AppDev,
-        'Orbit requires Ubuntu 24.04 Noble or Ubuntu 26.04 Resolute.',
-        ['noble', 'resolute'],
+        UbuntuRelease::unsupportedText(),
+        ['resolute'],
     ],
 ]);
 
-it('rejects app-prod Noble before package inspection or installation', function (): void {
+it('rejects an unsupported app-prod operating system before package inspection or installation', function (): void {
     $transport = new AppDevFakeSshExecutor;
     new RemotePhpPackageManager()->installForAppProd(
         php_package_node(RoleName::AppProd),
@@ -155,7 +154,7 @@ it('rejects app-prod Noble before package inspection or installation', function 
     try {
         mkdir($root.'/bin', 0777, true);
         mkdir($root.'/etc', 0777, true);
-        file_put_contents($root.'/etc/os-release', "ID=ubuntu\nVERSION_CODENAME=noble\n");
+        file_put_contents($root.'/etc/os-release', "ID=ubuntu\nVERSION_CODENAME=unsupported\n");
         $log = $root.'/calls.log';
         foreach (['dpkg-query', 'apt-get'] as $tool) {
             file_put_contents(
@@ -171,7 +170,9 @@ it('rejects app-prod Noble before package inspection or installation', function 
         $process->setInput($script);
         $process->run();
         expect($process->getExitCode())
-            ->not->toBe(0)->and(is_file($log) ? file_get_contents($log) : '')
+            ->not->toBe(0)->and($process->getErrorOutput())->toBe(
+                UbuntuRelease::unsupportedText('ubuntu', 'unsupported')."\n",
+            )->and(is_file($log) ? file_get_contents($log) : '')
             ->not->toContain('dpkg-query', 'apt-get');
     } finally {
         new Filesystem()->deleteDirectory($root);
@@ -229,7 +230,7 @@ it('rejects invalid release metadata before mutation markers', function (string 
         BASH;
 
     expect($source)->toContain('selected_codename', 'sudo install')->and($metadata)->toBeString();
-})->with(['missing' => '', 'malformed' => 'noble extra', 'debian' => 'bookworm', 'unknown' => 'jammy']);
+})->with(['missing' => '', 'malformed' => 'unsupported extra', 'debian' => 'bookworm', 'unknown' => 'unsupported']);
 
 it('does not treat package arguments as allowed release codenames', function (): void {
     $transport = new AppDevFakeSshExecutor;
@@ -260,7 +261,7 @@ it('does not treat package arguments as allowed release codenames', function ():
         $headerLength = str_contains($script, 'expected_id=$1') ? 3 : 4;
         $arguments = array_slice($command->arguments, 3, $headerLength);
         $arguments[$headerLength - 1] = '1';
-        $process = new Process(['bash', '-seu', '--', ...$arguments, 'noble', 'bookworm']);
+        $process = new Process(['bash', '-seu', '--', ...$arguments, 'resolute', 'bookworm']);
         $process->setInput($argumentBoundary);
         $process->run();
 
@@ -316,7 +317,7 @@ it('does not execute a malicious os-release payload in either remote script', fu
     }
 });
 
-it('accepts valid release metadata forms in both remote scripts', function (string $osRelease): void {
+it('rejects unsupported release metadata before mutation', function (string $osRelease): void {
     $transport = new AppDevFakeSshExecutor;
     new RemotePhpPackageManager()->installForAppDev(
         php_package_node(RoleName::AppDev),
@@ -351,17 +352,21 @@ it('accepts valid release metadata forms in both remote scripts', function (stri
             ]);
             $process->setInput($script);
             $process->run();
-            expect($process->getErrorOutput())->not->toContain('Orbit requires Ubuntu');
+            expect($process->getExitCode())
+                ->not
+                ->toBe(0)
+                ->and($process->getErrorOutput())
+                ->toBe(UbuntuRelease::unsupportedText('ubuntu', 'unsupported')."\n");
         }
     } finally {
         new Filesystem()->deleteDirectory($root);
     }
 })->with([
-    'bare values' => ["ID=ubuntu\nVERSION_CODENAME=noble\n"],
-    'paired double quotes' => ["ID=\"ubuntu\"\nVERSION_CODENAME=\"noble\"\n"],
-    'paired single quotes' => ["ID='ubuntu'\nVERSION_CODENAME='noble'\n"],
-    'mixed paired quotes' => ["ID=\"ubuntu\"\nVERSION_CODENAME='noble'\n"],
-    'final line without newline' => ["ID=ubuntu\nVERSION_CODENAME=noble"],
+    'bare values' => ["ID=ubuntu\nVERSION_CODENAME=unsupported\n"],
+    'paired double quotes' => ["ID=\"ubuntu\"\nVERSION_CODENAME=\"unsupported\"\n"],
+    'paired single quotes' => ["ID='ubuntu'\nVERSION_CODENAME='unsupported'\n"],
+    'mixed paired quotes' => ["ID=\"ubuntu\"\nVERSION_CODENAME='unsupported'\n"],
+    'final line without newline' => ["ID=ubuntu\nVERSION_CODENAME=unsupported"],
 ]);
 
 it('rejects invalid quoted release metadata in both remote scripts', function (string $id, string $codename): void {
@@ -372,7 +377,7 @@ it('rejects invalid quoted release metadata in both remote scripts', function (s
         php_package_app_dev_ssh($transport),
     );
     $root = sys_get_temp_dir().'/orbit-php-os-release-invalid-quotes-'.bin2hex(random_bytes(6));
-    $requirement = 'Orbit requires Ubuntu 24.04 Noble or Ubuntu 26.04 Resolute.';
+    $requirement = UbuntuRelease::unsupportedText();
     try {
         mkdir($root.'/etc/apt/sources.list.d', 0777, true);
         mkdir($root.'/usr/share/keyrings', 0777, true);
@@ -425,12 +430,12 @@ it('rejects invalid quoted release metadata in both remote scripts', function (s
         new Filesystem()->deleteDirectory($root);
     }
 })->with([
-    'unclosed double quote in ID' => ['"ubuntu', 'noble'],
-    'unclosed single quote in ID' => ["'ubuntu", 'noble'],
-    'mismatched quote in ID' => ['"ubuntu\'', 'noble'],
-    'unclosed double quote in VERSION_CODENAME' => ['ubuntu', '"noble'],
-    'unclosed single quote in VERSION_CODENAME' => ['ubuntu', "'noble"],
-    'mismatched quote in VERSION_CODENAME' => ['ubuntu', '"noble\''],
+    'unclosed double quote in ID' => ['"ubuntu', 'resolute'],
+    'unclosed single quote in ID' => ["'ubuntu", 'resolute'],
+    'mismatched quote in ID' => ['"ubuntu\'', 'resolute'],
+    'unclosed double quote in VERSION_CODENAME' => ['ubuntu', '"resolute'],
+    'unclosed single quote in VERSION_CODENAME' => ['ubuntu', "'resolute"],
+    'mismatched quote in VERSION_CODENAME' => ['ubuntu', '"resolute\''],
 ]);
 
 it('uses exact Laravel package profiles without duplicates', function (string $role, string $version): void {
@@ -602,7 +607,7 @@ it('keeps PCOV when app-prod convergence targets a dual-role node', function ():
 
 it('maps source failures to the stable role-specific contract', function (string $role): void {
     $transport = new AppDevFakeSshExecutor([
-        new CommandResult(1, '', 'Orbit requires Ubuntu 26.04 Resolute.', 1, false),
+        new CommandResult(1, '', UbuntuRelease::unsupportedText(), 1, false),
     ]);
     $manager = new RemotePhpPackageManager;
     $nodeRole = $role === 'app-dev' ? RoleName::AppDev : RoleName::AppProd;
@@ -747,16 +752,15 @@ it('executes the source program with the selected Ubuntu suite', function (
         new Filesystem()->deleteDirectory($root);
     }
 })->with([
-    'noble' => ['ubuntu', 'noble', true],
     'resolute' => ['ubuntu', 'resolute', true],
     'missing' => ['ubuntu', '', false],
-    'malformed' => ['ubuntu', 'noble extra', false],
+    'malformed' => ['ubuntu', 'unsupported extra', false],
     'debian' => ['debian', 'bookworm', false],
-    'jammy' => ['ubuntu', 'jammy', false],
-    'mismatched origin' => ['ubuntu', 'noble', false, 'resolute'],
-    'foreign origin for candidate' => ['ubuntu', 'noble', false, null, 'archive.ubuntu.com/ubuntu'],
-    'extra origin metadata' => ['ubuntu', 'noble', false, null, null, ' extra'],
-    'wrong candidate architecture' => ['ubuntu', 'noble', false, null, null, '', 'arm64'],
+    'unsupported' => ['ubuntu', 'unsupported', false],
+    'mismatched origin' => ['ubuntu', 'resolute', false, 'legacy'],
+    'foreign origin for candidate' => ['ubuntu', 'resolute', false, null, 'archive.ubuntu.com/ubuntu'],
+    'extra origin metadata' => ['ubuntu', 'resolute', false, null, null, ' extra'],
+    'wrong candidate architecture' => ['ubuntu', 'resolute', false, null, null, '', 'arm64'],
 ]);
 
 it('accepts an installed-only policy candidate when Sury publishes another version', function (): void {
@@ -771,7 +775,7 @@ it('accepts an installed-only policy candidate when Sury publishes another versi
         mkdir($root.'/bin', 0777, true);
         mkdir($root.'/etc/apt/sources.list.d', 0777, true);
         mkdir($root.'/usr/share/keyrings', 0777, true);
-        file_put_contents($root.'/etc/os-release', "ID=ubuntu\nVERSION_CODENAME=noble\n");
+        file_put_contents($root.'/etc/os-release', "ID=ubuntu\nVERSION_CODENAME=resolute\n");
         $script = str_replace(
             ['/etc/os-release', '/etc/apt', '/usr/share/keyrings'],
             [$root.'/etc/os-release', $root.'/etc/apt', $root.'/usr/share/keyrings'],
@@ -785,18 +789,18 @@ it('accepts an installed-only policy candidate when Sury publishes another versi
             ),
             array_slice($transport->commands[0]->arguments, 3),
         );
-        php_package_write_source_binaries($root, 'noble', null);
+        php_package_write_source_binaries($root, 'resolute', null);
         file_put_contents(
             $root.'/bin/dpkg-query',
-            "#!/usr/bin/env bash\nprintf '%s\\n' 'install ok installed 6.3.0-2+ubuntu24.04.1+deb.sury.org+1'\n",
+            "#!/usr/bin/env bash\nprintf '%s\\n' 'install ok installed 6.3.0-2+ubuntu26.04.1+deb.sury.org+1'\n",
         );
         chmod($root.'/bin/dpkg-query', 0755);
         file_put_contents($root.'/bin/apt-cache', <<<'BASH'
             #!/usr/bin/env bash
             package="${@: -1}"
             case "$1" in
-             policy) printf 'Candidate: 6.3.0-2+ubuntu24.04.1+deb.sury.org+1\n';;
-             madison) printf '%s | 6.3.0-2+0~20260711.1+ubuntu24.04~1.gbp123 | https://packages.sury.org/php noble/main amd64 Packages\n' "$package";;
+             policy) printf 'Candidate: 6.3.0-2+ubuntu26.04.1+deb.sury.org+1\n';;
+             madison) printf '%s | 6.3.0-2+0~20260711.1+ubuntu26.04~1.gbp123 | https://packages.sury.org/php resolute/main amd64 Packages\n' "$package";;
             esac
             BASH);
         chmod($root.'/bin/apt-cache', 0755);
@@ -821,7 +825,7 @@ it('rejects unsafe installed-only candidate fallback metadata', function (string
         mkdir($root.'/bin', 0777, true);
         mkdir($root.'/etc/apt/sources.list.d', 0777, true);
         mkdir($root.'/usr/share/keyrings', 0777, true);
-        file_put_contents($root.'/etc/os-release', "ID=ubuntu\nVERSION_CODENAME=noble\n");
+        file_put_contents($root.'/etc/os-release', "ID=ubuntu\nVERSION_CODENAME=resolute\n");
         $script = str_replace(
             ['/etc/os-release', '/etc/apt', '/usr/share/keyrings'],
             [$root.'/etc/os-release', $root.'/etc/apt', $root.'/usr/share/keyrings'],
@@ -835,15 +839,15 @@ it('rejects unsafe installed-only candidate fallback metadata', function (string
             ),
             array_slice($transport->commands[0]->arguments, 3),
         );
-        php_package_write_source_binaries($root, 'noble', null);
+        php_package_write_source_binaries($root, 'resolute', null);
         file_put_contents(
             $root.'/bin/dpkg-query',
-            "#!/usr/bin/env bash\nprintf '%s\\n' 'install ok installed 6.3.0-2+ubuntu24.04.1+deb.sury.org+1'\n",
+            "#!/usr/bin/env bash\nprintf '%s\\n' 'install ok installed 6.3.0-2+ubuntu26.04.1+deb.sury.org+1'\n",
         );
         chmod($root.'/bin/dpkg-query', 0755);
         file_put_contents(
             $root.'/bin/apt-cache',
-            "#!/usr/bin/env bash\npackage=\"\${@: -1}\"\ncase \"\$1\" in policy) printf 'Candidate: 6.3.0-2+ubuntu24.04.1+deb.sury.org+1\\n';; madison) printf '%s\\n' "
+            "#!/usr/bin/env bash\npackage=\"\${@: -1}\"\ncase \"\$1\" in policy) printf 'Candidate: 6.3.0-2+ubuntu26.04.1+deb.sury.org+1\\n';; madison) printf '%s\\n' "
             .escapeshellarg(str_replace('php8.5-cli', '{package}', $madison))
             .' | sed "s/{package}/$package/g";; esac'
             ."\n",
@@ -857,12 +861,12 @@ it('rejects unsafe installed-only candidate fallback metadata', function (string
         new Filesystem()->deleteDirectory($root);
     }
 })->with([
-    'foreign candidate' => 'php8.5-cli | 6.3.0-2+ubuntu24.04.1+deb.sury.org+1 | https://mirror.example noble/main amd64 Packages',
-    'extra pipe' => 'php8.5-cli | 6.3.0-2+0~20260711 | https://packages.sury.org/php noble/main amd64 Packages | extra',
-    'no Sury row' => 'php8.5-cli | 6.3.0-2+0~20260711 | https://mirror.example noble/main amd64 Packages',
-    'wrong architecture' => 'php8.5-cli | 6.3.0-2+0~20260711 | https://packages.sury.org/php noble/main arm64 Packages',
-    'malformed architecture' => 'php8.5-cli | 6.3.0-2+0~20260711 | https://packages.sury.org/php noble/main amd64:evil Packages',
-    'unexpected package' => 'unexpected-package | 6.3.0-2+0~20260711 | https://packages.sury.org/php noble/main amd64 Packages',
+    'foreign candidate' => 'php8.5-cli | 6.3.0-2+ubuntu26.04.1+deb.sury.org+1 | https://mirror.example resolute/main amd64 Packages',
+    'extra pipe' => 'php8.5-cli | 6.3.0-2+0~20260711 | https://packages.sury.org/php resolute/main amd64 Packages | extra',
+    'no Sury row' => 'php8.5-cli | 6.3.0-2+0~20260711 | https://mirror.example resolute/main amd64 Packages',
+    'wrong architecture' => 'php8.5-cli | 6.3.0-2+0~20260711 | https://packages.sury.org/php resolute/main arm64 Packages',
+    'malformed architecture' => 'php8.5-cli | 6.3.0-2+0~20260711 | https://packages.sury.org/php resolute/main amd64:evil Packages',
+    'unexpected package' => 'unexpected-package | 6.3.0-2+0~20260711 | https://packages.sury.org/php resolute/main amd64 Packages',
 ]);
 
 it('rejects lookalike origin hostnames', function (): void {
@@ -877,7 +881,7 @@ it('rejects lookalike origin hostnames', function (): void {
         mkdir($root.'/bin', 0777, true);
         mkdir($root.'/etc/apt/sources.list.d', 0777, true);
         mkdir($root.'/usr/share/keyrings', 0777, true);
-        file_put_contents($root.'/etc/os-release', "ID=ubuntu\nVERSION_CODENAME=noble\n");
+        file_put_contents($root.'/etc/os-release', "ID=ubuntu\nVERSION_CODENAME=resolute\n");
         $script = str_replace(
             ['/etc/os-release', '/etc/apt', '/usr/share/keyrings'],
             [$root.'/etc/os-release', $root.'/etc/apt', $root.'/usr/share/keyrings'],
@@ -891,11 +895,11 @@ it('rejects lookalike origin hostnames', function (): void {
             ),
             array_slice($transport->commands[0]->arguments, 3),
         );
-        php_package_write_source_binaries($root, 'noble', null);
+        php_package_write_source_binaries($root, 'resolute', null);
         $cache = file_get_contents($root.'/bin/apt-cache');
         file_put_contents($root.'/bin/apt-cache', str_replace(
-            'packages.sury.org/php noble/main',
-            'packagesXsuryXorg/php noble/main',
+            'packages.sury.org/php resolute/main',
+            'packagesXsuryXorg/php resolute/main',
             $cache,
         ));
         $process = new Process(['bash', '-seu', '--', ...$arguments], $root, ['PATH' => $root.'/bin:'.getenv('PATH')]);
@@ -920,7 +924,7 @@ it('removes root-owned candidates and restores managed state when publication fa
         mkdir($root.'/bin', 0777, true);
         mkdir($root.'/etc/apt/sources.list.d', 0777, true);
         mkdir($root.'/usr/share/keyrings', 0777, true);
-        file_put_contents($root.'/etc/os-release', "ID=ubuntu\nVERSION_CODENAME=noble\n");
+        file_put_contents($root.'/etc/os-release', "ID=ubuntu\nVERSION_CODENAME=resolute\n");
         file_put_contents($root.'/usr/share/keyrings/orbit-sury-php.gpg', 'old-key');
         file_put_contents($root.'/etc/apt/sources.list.d/orbit-php.sources', 'old-source');
         $script = str_replace(
@@ -936,7 +940,7 @@ it('removes root-owned candidates and restores managed state when publication fa
             ),
             array_slice($transport->commands[0]->arguments, 3),
         );
-        php_package_write_source_binaries($root, 'noble', null);
+        php_package_write_source_binaries($root, 'resolute', null);
         file_put_contents($root.'/bin/install', <<<'BASH'
             #!/usr/bin/env bash
             case "${@: -1}" in
@@ -977,7 +981,7 @@ it('restores key state when source publication mv fails', function (): void {
         mkdir($root.'/bin', 0777, true);
         mkdir($root.'/etc/apt/sources.list.d', 0777, true);
         mkdir($root.'/usr/share/keyrings', 0777, true);
-        file_put_contents($root.'/etc/os-release', "ID=ubuntu\nVERSION_CODENAME=noble\n");
+        file_put_contents($root.'/etc/os-release', "ID=ubuntu\nVERSION_CODENAME=resolute\n");
         file_put_contents($root.'/usr/share/keyrings/orbit-sury-php.gpg', 'old-key');
         file_put_contents($root.'/etc/apt/sources.list.d/orbit-php.sources', 'old-source');
         $script = str_replace(
@@ -993,7 +997,7 @@ it('restores key state when source publication mv fails', function (): void {
             ),
             array_slice($transport->commands[0]->arguments, 3),
         );
-        php_package_write_source_binaries($root, 'noble', null);
+        php_package_write_source_binaries($root, 'resolute', null);
         file_put_contents($root.'/bin/mv', <<<'BASH'
             #!/usr/bin/env bash
             case "$2" in *orbit-php.sources) exit 42;; esac

@@ -51,7 +51,7 @@ final readonly class NodeRoleOperatingSystemGuard
                     '--',
                     $role->value,
                     (string) count($requiredReleases),
-                    UbuntuRelease::requirementTextFor($requiredReleases),
+                    UbuntuRelease::unsupportedText(),
                     ...array_map(
                         static fn (UbuntuRelease $release): string => $release->value,
                         $requiredReleases,
@@ -62,12 +62,20 @@ final readonly class NodeRoleOperatingSystemGuard
                     shift
                     release_count=$1
                     shift
-                    requirement_text=$1
+                    unsupported_text=$1
                     shift
 
-                    if ! [ -r /etc/os-release ]; then
-                        printf '%s\n' "$requirement_text" >&2
+                    fail_os() {
+                        if [ "$#" -eq 2 ] && [ -n "$1" ] && [ -n "$2" ]; then
+                            printf 'Node operating system [%s/%s] is not supported.\n' "$1" "$2" >&2
+                        else
+                            printf '%s\n' "$unsupported_text" >&2
+                        fi
                         exit 1
+                    }
+
+                    if ! [ -r /etc/os-release ]; then
+                        fail_os
                     fi
 
                     os_id=
@@ -77,27 +85,26 @@ final readonly class NodeRoleOperatingSystemGuard
                     while IFS= read -r line || [ -n "$line" ]; do
                         case "$line" in
                     ID=*)
-                        [ "$found_id" = false ] || { printf '%s\n' "$requirement_text" >&2; exit 1; }
+                        [ "$found_id" = false ] || fail_os
                         os_id=${line#ID=}
                         if [[ "$os_id" =~ ^\"[A-Za-z0-9._-]+\"$ ]]; then os_id=${os_id:1:${#os_id}-2};
                         elif [[ "$os_id" =~ ^\'[A-Za-z0-9._-]+\'$ ]]; then os_id=${os_id:1:${#os_id}-2};
-                        elif [[ ! "$os_id" =~ ^[A-Za-z0-9._-]+$ ]]; then printf '%s\n' "$requirement_text" >&2; exit 1; fi
+                        elif [[ ! "$os_id" =~ ^[A-Za-z0-9._-]+$ ]]; then fail_os; fi
                         found_id=true
                                 ;;
                             VERSION_CODENAME=*)
-                                [ "$found_codename" = false ] || { printf '%s\n' "$requirement_text" >&2; exit 1; }
+                                [ "$found_codename" = false ] || fail_os
                                 os_codename=${line#VERSION_CODENAME=}
                         if [[ "$os_codename" =~ ^\"[A-Za-z0-9._-]+\"$ ]]; then os_codename=${os_codename:1:${#os_codename}-2};
                         elif [[ "$os_codename" =~ ^\'[A-Za-z0-9._-]+\'$ ]]; then os_codename=${os_codename:1:${#os_codename}-2};
-                        elif [[ ! "$os_codename" =~ ^[A-Za-z0-9._-]+$ ]]; then printf '%s\n' "$requirement_text" >&2; exit 1; fi
+                        elif [[ ! "$os_codename" =~ ^[A-Za-z0-9._-]+$ ]]; then fail_os; fi
                         found_codename=true
                                 ;;
                         esac
                     done < /etc/os-release
 
                     if [ "$found_id" != true ] || [ "$found_codename" != true ]; then
-                        printf '%s\n' "$requirement_text" >&2
-                        exit 1
+                        fail_os
                     fi
 
                     supported_release=false
@@ -110,8 +117,7 @@ final readonly class NodeRoleOperatingSystemGuard
                     done
 
                     if [ "$os_id" != 'ubuntu' ] || [ "$supported_release" != 'true' ]; then
-                        printf '%s\n' "$requirement_text" >&2
-                        exit 1
+                        fail_os "$os_id" "$os_codename"
                     fi
                     BASH,
             ),
@@ -122,7 +128,8 @@ final readonly class NodeRoleOperatingSystemGuard
                 'operating-system',
                 'node_role.convergence_failed',
                 'node_role.operating_system_unsupported',
-                "Node [{$node->name}] role [{$role->value}]. ".UbuntuRelease::requirementTextFor($requiredReleases),
+                "Node [{$node->name}] role [{$role->value}]. "
+                    .UbuntuRelease::unsupportedTextFromOutput($result->stderr),
                 result: $result,
             );
         }

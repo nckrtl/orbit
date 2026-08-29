@@ -145,7 +145,7 @@ final readonly class RemotePhpPackageManager
                     '-seu',
                     '--',
                     self::EXPECTED_DISTRIBUTION,
-                    UbuntuRelease::requirementTextFor(UbuntuRelease::forRole($role)),
+                    UbuntuRelease::unsupportedText(),
                     (string) count(UbuntuRelease::forRole($role)),
                     ...array_map(
                         static fn (UbuntuRelease $release): string => $release->value,
@@ -163,7 +163,7 @@ final readonly class RemotePhpPackageManager
                 ],
                 input: <<<'BASH'
                     expected_id=$1
-                    requirement=$2
+                    unsupported_text=$2
                     allowed_count=$3
                     shift 3
                     allowed_codenames=("${@:1:$allowed_count}")
@@ -179,7 +179,11 @@ final readonly class RemotePhpPackageManager
                     shift 8
 
                     fail_os() {
-                        printf '%s\n' "$requirement" >&2
+                        if [ "$#" -eq 2 ] && [ -n "$1" ] && [ -n "$2" ]; then
+                            printf 'Node operating system [%s/%s] is not supported.\n' "$1" "$2" >&2
+                        else
+                            printf '%s\n' "$unsupported_text" >&2
+                        fi
                         exit 1
                     }
 
@@ -219,7 +223,7 @@ final readonly class RemotePhpPackageManager
                         if [ "$os_codename" = "$allowed_codename" ]; then selected_codename=$allowed_codename; fi
                     done
                     if [ "$os_id" != "$expected_id" ] || [ -z "$selected_codename" ]; then
-                        fail_os
+                        fail_os "$os_id" "$os_codename"
                     fi
 
                     for configured_source in \
@@ -464,7 +468,7 @@ final readonly class RemotePhpPackageManager
                     '--',
                     $version,
                     $profile,
-                    UbuntuRelease::requirementTextFor(UbuntuRelease::forRole($role)),
+                    UbuntuRelease::unsupportedText(),
                     (string) count(UbuntuRelease::forRole($role)),
                     ...array_map(
                         static fn (UbuntuRelease $release): string => $release->value,
@@ -475,15 +479,23 @@ final readonly class RemotePhpPackageManager
                 input: <<<'BASH'
                     version=$1
                     profile=$2
-                    requirement=$3
+                    unsupported_text=$3
                     allowed_count=$4
                     shift 4
                     allowed_codenames=("${@:1:$allowed_count}")
                     shift "$allowed_count"
 
-                    if [ ! -r /etc/os-release ]; then
-                        printf '%s\n' "$requirement" >&2
+                    fail_os() {
+                        if [ "$#" -eq 2 ] && [ -n "$1" ] && [ -n "$2" ]; then
+                            printf 'Node operating system [%s/%s] is not supported.\n' "$1" "$2" >&2
+                        else
+                            printf '%s\n' "$unsupported_text" >&2
+                        fi
                         exit 1
+                    }
+
+                    if [ ! -r /etc/os-release ]; then
+                        fail_os
                     fi
 
                     os_id=''
@@ -500,12 +512,12 @@ final readonly class RemotePhpPackageManager
                         case "$os_value" in
                             \"*\") os_value=${os_value#\"}; os_value=${os_value%\"} ;;
                             \'*\') os_value=${os_value#\'}; os_value=${os_value%\'} ;;
-                            *\"|\"*) printf '%s\n' "$requirement" >&2; exit 1 ;;
-                            *\'|\'*) printf '%s\n' "$requirement" >&2; exit 1 ;;
+                            *\"|\"*) fail_os ;;
+                            *\'|\'*) fail_os ;;
                         esac
-                        case "$os_value" in ''|*[!A-Za-z0-9._-]*) printf '%s\n' "$requirement" >&2; exit 1 ;; esac
-                        if [ "$os_key" = ID ]; then [ "$id_seen" -eq 0 ] || { printf '%s\n' "$requirement" >&2; exit 1; }; os_id=$os_value; id_seen=1
-                        else [ "$codename_seen" -eq 0 ] || { printf '%s\n' "$requirement" >&2; exit 1; }; os_codename=$os_value; codename_seen=1
+                        case "$os_value" in ''|*[!A-Za-z0-9._-]*) fail_os ;; esac
+                        if [ "$os_key" = ID ]; then [ "$id_seen" -eq 0 ] || fail_os; os_id=$os_value; id_seen=1
+                        else [ "$codename_seen" -eq 0 ] || fail_os; os_codename=$os_value; codename_seen=1
                         fi
                     done < /etc/os-release
 
@@ -514,8 +526,7 @@ final readonly class RemotePhpPackageManager
                         if [ "$os_codename" = "$allowed_codename" ]; then selected_codename=$allowed_codename; fi
                     done
                     if [ "$os_id" != ubuntu ] || [ -z "$selected_codename" ]; then
-                        printf '%s\n' "$requirement" >&2
-                        exit 1
+                        fail_os "$os_id" "$os_codename"
                     fi
 
                     missing_packages=()

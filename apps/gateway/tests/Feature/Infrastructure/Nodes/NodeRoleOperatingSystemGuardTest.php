@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Nodes\UbuntuRelease;
 use App\Infrastructure\Nodes\Roles\NodeRoleOperatingSystemGuard;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
@@ -56,14 +57,14 @@ it('runs one fixed remote operating-system preflight through WireGuard as orbit'
             '--',
             'gateway',
             '1',
-            'Orbit requires Ubuntu 26.04 Resolute.',
+            UbuntuRelease::unsupportedText(),
             'resolute',
         ])
         ->and($calls[0]['input'])
         ->toContain(
             'if ! [ -r /etc/os-release ]; then',
             'release_count=$1',
-            'requirement_text=$1',
+            'unsupported_text=$1',
             'supported_release=false',
         );
 });
@@ -135,7 +136,6 @@ it('accepts every supported remote Ubuntu release for the role matrix', function
         $harness->cleanup();
     }
 })->with([
-    'app-dev Noble bare' => [RoleName::AppDev, "ID=ubuntu\nVERSION_CODENAME=noble\n"],
     'app-dev Resolute bare' => [RoleName::AppDev, "ID=ubuntu\nVERSION_CODENAME=resolute\n"],
     'gateway Resolute bare' => [RoleName::Gateway, "ID=ubuntu\nVERSION_CODENAME=resolute\n"],
     'gateway Resolute single quoted' => [RoleName::Gateway, "ID='ubuntu'\nVERSION_CODENAME='resolute'\n"],
@@ -161,7 +161,7 @@ it('rejects adversarial os-release input without executing payloads', function (
             ->and($harness->calls[0]['result']->stdout)
             ->toBeEmpty()
             ->and($harness->calls[0]['result']->stderr)
-            ->toBe('Orbit requires Ubuntu 26.04 Resolute.'."\n")
+            ->toBe(UbuntuRelease::unsupportedText()."\n")
             ->and($harness->calls[0]['mutationMarkerExists'])
             ->toBeFalse()
             ->and($harness->payloadMarkerExists())
@@ -173,7 +173,7 @@ it('rejects adversarial os-release input without executing payloads', function (
     'duplicate ID supported then supported' => "ID=ubuntu\nID=ubuntu\nVERSION_CODENAME=resolute\n",
     'duplicate ID supported then unsupported' => "ID=ubuntu\nID=debian\nVERSION_CODENAME=resolute\n",
     'duplicate codename supported then supported' => "ID=ubuntu\nVERSION_CODENAME=resolute\nVERSION_CODENAME=resolute\n",
-    'duplicate codename supported then unsupported' => "ID=ubuntu\nVERSION_CODENAME=resolute\nVERSION_CODENAME=jammy\n",
+    'duplicate codename supported then unsupported' => "ID=ubuntu\nVERSION_CODENAME=resolute\nVERSION_CODENAME=unsupported\n",
     'missing codename value' => "ID=ubuntu\nVERSION_CODENAME=\n",
     'empty ID value' => "ID=\nVERSION_CODENAME=resolute\n",
     'mismatched ID quotes' => "ID=\"ubuntu'\nVERSION_CODENAME=resolute\n",
@@ -230,37 +230,52 @@ it('rejects unsupported remote operating systems before a mutation marker with r
     'missing remote file' => [
         RoleName::Gateway,
         null,
-        'Node [guard-node] role [gateway]. Orbit requires Ubuntu 26.04 Resolute.',
+        'Node [guard-node] role [gateway]. Node operating system [unknown/unknown] is not supported.',
     ],
-    'Ubuntu Noble rejected for VPN' => [
+    'unsupported Ubuntu release rejected for VPN' => [
         RoleName::Vpn,
-        "ID=ubuntu\nVERSION_CODENAME=noble\n",
-        'Node [guard-node] role [vpn]. Orbit requires Ubuntu 26.04 Resolute.',
+        "ID=ubuntu\nVERSION_CODENAME=unsupported\n",
+        'Node [guard-node] role [vpn]. Node operating system [ubuntu/unsupported] is not supported.',
+    ],
+    'unsupported Ubuntu release rejected for app-dev' => [
+        RoleName::AppDev,
+        "ID=ubuntu\nVERSION_CODENAME=unsupported\n",
+        'Node [guard-node] role [app-dev]. Node operating system [ubuntu/unsupported] is not supported.',
+    ],
+    'unsupported Ubuntu release rejected for gateway' => [
+        RoleName::Gateway,
+        "ID=ubuntu\nVERSION_CODENAME=unsupported\n",
+        'Node [guard-node] role [gateway]. Node operating system [ubuntu/unsupported] is not supported.',
+    ],
+    'unsupported Ubuntu release rejected for app-prod' => [
+        RoleName::AppProd,
+        "ID=ubuntu\nVERSION_CODENAME=unsupported\n",
+        'Node [guard-node] role [app-prod]. Node operating system [ubuntu/unsupported] is not supported.',
     ],
     'Debian rejected for app-dev' => [
         RoleName::AppDev,
         "ID=debian\nVERSION_CODENAME=resolute\n",
-        'Node [guard-node] role [app-dev]. Orbit requires Ubuntu 24.04 Noble or Ubuntu 26.04 Resolute.',
+        'Node [guard-node] role [app-dev]. Node operating system [debian/resolute] is not supported.',
     ],
     'unknown release rejected for app-prod' => [
         RoleName::AppProd,
-        "ID=ubuntu\nVERSION_CODENAME=jammy\n",
-        'Node [guard-node] role [app-prod]. Orbit requires Ubuntu 26.04 Resolute.',
+        "ID=ubuntu\nVERSION_CODENAME=unsupported\n",
+        'Node [guard-node] role [app-prod]. Node operating system [ubuntu/unsupported] is not supported.',
     ],
     'malformed release rejected for app-dev' => [
         RoleName::AppDev,
         "ID=ubuntu\nVERSION_CODENAME='resolute extra'\n",
-        'Node [guard-node] role [app-dev]. Orbit requires Ubuntu 24.04 Noble or Ubuntu 26.04 Resolute.',
+        'Node [guard-node] role [app-dev]. Node operating system [unknown/unknown] is not supported.',
     ],
     'mismatched ID quotes rejected for gateway' => [
         RoleName::Gateway,
         "ID=\"ubuntu'\nVERSION_CODENAME=resolute\n",
-        'Node [guard-node] role [gateway]. Orbit requires Ubuntu 26.04 Resolute.',
+        'Node [guard-node] role [gateway]. Node operating system [unknown/unknown] is not supported.',
     ],
     'mismatched codename quotes rejected for gateway' => [
         RoleName::Gateway,
         "ID=ubuntu\nVERSION_CODENAME=\"resolute'\n",
-        'Node [guard-node] role [gateway]. Orbit requires Ubuntu 26.04 Resolute.',
+        'Node [guard-node] role [gateway]. Node operating system [unknown/unknown] is not supported.',
     ],
 ]);
 

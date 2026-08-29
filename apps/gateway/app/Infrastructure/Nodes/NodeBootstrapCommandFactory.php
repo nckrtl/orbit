@@ -38,15 +38,24 @@ final readonly class NodeBootstrapCommandFactory
                 '--',
                 'ubuntu',
                 implode(',', UbuntuRelease::supportedCodenames()),
-                UbuntuRelease::requirementText(),
+                UbuntuRelease::unsupportedText(),
                 $managedUser,
                 $this->keys->publicKey(),
                 ...$this->packages->forNode($node),
             ],
             input: <<<'BASH'
-                if [ ! -r /etc/os-release ]; then
-                    printf '%s\n' "$3" >&2
+                unsupported_text=$3
+                fail_os() {
+                    if [ "$#" -eq 2 ] && [ -n "$1" ] && [ -n "$2" ]; then
+                        printf 'Node operating system [%s/%s] is not supported.\n' "$1" "$2" >&2
+                    else
+                        printf '%s\n' "$unsupported_text" >&2
+                    fi
                     exit 1
+                }
+
+                if [ ! -r /etc/os-release ]; then
+                    fail_os
                 fi
 
                 os_id=''
@@ -59,23 +68,22 @@ final readonly class NodeBootstrapCommandFactory
                             os_release_value=${os_release_line#*=}
                             case "$os_release_value" in
                                 \"*)
-                                    [ "${os_release_value: -1}" = '"' ] || { printf '%s\n' "$3" >&2; exit 1; }
+                                    [ "${os_release_value: -1}" = '"' ] || fail_os
                                     os_release_value=${os_release_value:1:${#os_release_value}-2}
                                     ;;
                                 \'*)
-                                    [ "${os_release_value: -1}" = "'" ] || { printf '%s\n' "$3" >&2; exit 1; }
+                                    [ "${os_release_value: -1}" = "'" ] || fail_os
                                     os_release_value=${os_release_value:1:${#os_release_value}-2}
                                     ;;
                             esac
                             if [ -z "$os_release_value" ] || ! [[ "$os_release_value" =~ ^[A-Za-z0-9._-]+$ ]]; then
-                                printf '%s\n' "$3" >&2
-                                exit 1
+                                fail_os
                             fi
                             if [ "$os_release_key" = ID ]; then
-                                [ -z "$os_id" ] || { printf '%s\n' "$3" >&2; exit 1; }
+                                [ -z "$os_id" ] || fail_os
                                 os_id=$os_release_value
                             else
-                                [ -z "$os_codename" ] || { printf '%s\n' "$3" >&2; exit 1; }
+                                [ -z "$os_codename" ] || fail_os
                                 os_codename=$os_release_value
                             fi
                             ;;
@@ -84,6 +92,10 @@ final readonly class NodeBootstrapCommandFactory
                             ;;
                     esac
                 done < /etc/os-release
+
+                if [ -z "$os_id" ] || [ -z "$os_codename" ]; then
+                    fail_os
+                fi
 
                 selected_codename=''
                 IFS=',' read -r -a allowed_codenames <<< "$2"
@@ -94,8 +106,7 @@ final readonly class NodeBootstrapCommandFactory
                     fi
                 done
                 if [ -z "$selected_codename" ]; then
-                    printf '%s\n' "$3" >&2
-                    exit 1
+                    fail_os "$os_id" "$os_codename"
                 fi
 
                 managed_user=$4

@@ -515,9 +515,8 @@ it('rejects unsupported local gateway operating systems before any persistence o
         new Filesystem()->deleteDirectory($orbitHome);
     }
 })->with([
-    'Ubuntu Noble' => ["ID=ubuntu\nVERSION_CODENAME=noble\n"],
+    'unsupported Ubuntu release' => ["ID=ubuntu\nVERSION_CODENAME=unsupported\n"],
     'Debian' => ["ID=debian\nVERSION_CODENAME=resolute\n"],
-    'unknown release' => ["ID=ubuntu\nVERSION_CODENAME=jammy\n"],
     'malformed release' => ["ID=ubuntu\nVERSION_CODENAME='resolute extra'\n"],
     'missing release file' => [null],
 ]);

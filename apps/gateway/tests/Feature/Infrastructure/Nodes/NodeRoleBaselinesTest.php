@@ -11,6 +11,7 @@ use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\NodeRoleValidationException;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Nodes\UbuntuRelease;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
 use App\Infrastructure\AppProd\AppProdSshExecutor;
 use App\Infrastructure\Nodes\Roles\AppDevRoleBaseline;
@@ -192,9 +193,9 @@ it('passes a nondefault managed account into every baseline prerequisite command
 
     expect($events)
         ->toContain(
-            '["sudo","bash","-seu","--","vpn","nckrtl","nckrtl","\/srv\/users\/nckrtl","1","Orbit requires Ubuntu 26.04 Resolute.","resolute","dnsmasq","openssl"]',
-            '["sudo","bash","-seu","--","app-dev","nckrtl","nckrtl","\/srv\/users\/nckrtl","2","Orbit requires Ubuntu 24.04 Noble or Ubuntu 26.04 Resolute.","noble","resolute","acl","attr","caddy","composer","docker.io","git","openssl","unzip"]',
-            '["sudo","bash","-seu","--","app-prod","nckrtl","nckrtl","\/srv\/users\/nckrtl","1","Orbit requires Ubuntu 26.04 Resolute.","resolute","acl","attr","caddy","composer","docker.io","git","openssl","unzip"]',
+            '["sudo","bash","-seu","--","vpn","nckrtl","nckrtl","\/srv\/users\/nckrtl","1","Node operating system [unknown\/unknown] is not supported.","resolute","dnsmasq","openssl"]',
+            '["sudo","bash","-seu","--","app-dev","nckrtl","nckrtl","\/srv\/users\/nckrtl","1","Node operating system [unknown\/unknown] is not supported.","resolute","acl","attr","caddy","composer","docker.io","git","openssl","unzip"]',
+            '["sudo","bash","-seu","--","app-prod","nckrtl","nckrtl","\/srv\/users\/nckrtl","1","Node operating system [unknown\/unknown] is not supported.","resolute","acl","attr","caddy","composer","docker.io","git","openssl","unzip"]',
         );
 });
 
@@ -309,7 +310,7 @@ it('stops baseline convergence when the remote operating system guard fails', fu
                     return new CommandResult(
                         1,
                         '',
-                        'Orbit requires Ubuntu 24.04 Noble or Ubuntu 26.04 Resolute.',
+                        UbuntuRelease::unsupportedText(),
                         1,
                         false,
                     );

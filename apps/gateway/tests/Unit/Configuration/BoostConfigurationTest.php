@@ -282,8 +282,9 @@ it('keeps generated scoped guidance complete and de-duplicated', function (): vo
         );
     expect($infrastructureRules)
         ->toContain(
-            'Noble and Resolute',
-            'Gateway, VPN, and app-prod require Resolute',
+            'Ubuntu 26.04 Resolute for every managed node role',
+            'Node operating system [id/codename] is not supported.',
+            'never name retired releases in repository text',
             'validated release suite',
             'Never use a Launchpad PPA',
             'direct Sury PHP repository',

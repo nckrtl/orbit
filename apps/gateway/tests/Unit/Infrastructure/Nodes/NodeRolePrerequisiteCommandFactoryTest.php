@@ -102,14 +102,12 @@ it('validates the supported Ubuntu release before any non-gateway mutation', fun
         new NodeRolePrerequisiteCommandFactory()->make(new Node, $role, default_managed_user_account())->input ?? '';
     $preflight = Str::before($script, "export DEBIAN_FRONTEND=noninteractive\n");
     $marker = sys_get_temp_dir().'/orbit-role-marker-'.Str::uuid();
-    $requirement = UbuntuRelease::requirementTextFor(UbuntuRelease::forRole($role));
+    $requirement = UbuntuRelease::unsupportedText();
     $supportedReleases = array_map(
         static fn (UbuntuRelease $release): string => $release->value,
         UbuntuRelease::forRole($role),
     );
-    $unsupportedContents = $role === RoleName::AppDev
-        ? "ID=ubuntu\nVERSION_CODENAME=jammy\n"
-        : "ID=ubuntu\nVERSION_CODENAME=noble\n";
+    $unsupportedContents = "ID=ubuntu\nVERSION_CODENAME=unsupported\n";
     $supportedFixture = role_prerequisite_os_release_fixture(
         "ID='ubuntu'\nVERSION_CODENAME='{$supportedReleases[0]}'\n",
     );
@@ -170,7 +168,7 @@ it('validates the supported Ubuntu release before any non-gateway mutation', fun
         expect($unsupportedProcess->isSuccessful())
             ->toBeFalse()
             ->and($unsupportedProcess->getErrorOutput())
-            ->toContain($requirement)
+            ->toBe(UbuntuRelease::unsupportedText('ubuntu', 'unsupported')."\n")
             ->and(file_exists($marker))
             ->toBeFalse();
     } finally {
@@ -191,7 +189,7 @@ it('uses fixed managed account argv and dynamic paths for a nondefault home', fu
     $command = new NodeRolePrerequisiteCommandFactory()->make(new Node, RoleName::AppDev, $account);
 
     expect(array_slice($command->arguments, 0, 9))
-        ->toBe(['sudo', 'bash', '-seu', '--', 'app-dev', 'nckrtl', 'nckrtl', '/srv/users/nckrtl', '2'])
+        ->toBe(['sudo', 'bash', '-seu', '--', 'app-dev', 'nckrtl', 'nckrtl', '/srv/users/nckrtl', '1'])
         ->and($command->input ?? '')
         ->toContain(
             'managed_user=$1',
@@ -240,12 +238,12 @@ it('keeps app development directories and Caddy traversal ACLs role-owned', func
         ->not->toContain('/home/orbit/apps', '/opt/orbit/composer', '/opt/orbit/vite-plus', '/opt/orbit/bun');
 });
 
-it('prints the fixed requirement for malformed os-release quotes', function (): void {
+it('prints a generic operating system error for malformed os-release quotes', function (): void {
     $role = RoleName::Vpn;
     $script =
         new NodeRolePrerequisiteCommandFactory()->make(new Node, $role, default_managed_user_account())->input ?? '';
     $preflight = Str::before($script, "export DEBIAN_FRONTEND=noninteractive\n");
-    $requirement = UbuntuRelease::requirementTextFor(UbuntuRelease::forRole($role));
+    $requirement = UbuntuRelease::unsupportedText();
     $fixture = role_prerequisite_os_release_fixture("ID=\"ubuntu'\nVERSION_CODENAME=resolute\n");
 
     try {
@@ -269,7 +267,7 @@ it('prints the fixed requirement for malformed os-release quotes', function (): 
 
 it('rejects adversarial os-release values before the payload sentinel', function (string $contents): void {
     $role = RoleName::Vpn;
-    $requirement = UbuntuRelease::requirementTextFor(UbuntuRelease::forRole($role));
+    $requirement = UbuntuRelease::unsupportedText();
     $payloadMarker = sys_get_temp_dir().'/orbit-role-payload-'.Str::uuid();
     $fixture = role_prerequisite_os_release_fixture(str_replace('__PAYLOAD_MARKER__', $payloadMarker, $contents));
     $mutationMarker = sys_get_temp_dir().'/orbit-role-mutation-'.Str::uuid();
@@ -331,7 +329,7 @@ it('rejects adversarial os-release values before the payload sentinel', function
 
 it('accepts bare, single quoted, double quoted, and final unterminated supported values', function (string $contents): void {
     $role = RoleName::Vpn;
-    $requirement = UbuntuRelease::requirementTextFor(UbuntuRelease::forRole($role));
+    $requirement = UbuntuRelease::unsupportedText();
     $fixture = role_prerequisite_os_release_fixture($contents);
     $mutationMarker = sys_get_temp_dir().'/orbit-role-mutation-'.Str::uuid();
     $script =
@@ -1040,7 +1038,7 @@ function role_prerequisite_process_arguments(
         $account->group,
         $account->home,
         (string) count($releases),
-        $requirement ?? UbuntuRelease::requirementTextFor(UbuntuRelease::forRole($role)),
+        $requirement ?? UbuntuRelease::unsupportedText(),
         ...$releases,
         ...$packages,
     ];
