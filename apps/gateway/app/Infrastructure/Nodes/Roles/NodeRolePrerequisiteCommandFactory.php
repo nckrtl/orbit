@@ -117,34 +117,42 @@ final readonly class NodeRolePrerequisiteCommandFactory
                     exit 1
                 fi
 
-                for directory in /opt/orbit/vite-plus /opt/orbit/bun; do
-                    if { [ -e "$directory" ] || [ -L "$directory" ]; } \
-                        && { [ -L "$directory" ] || [ ! -d "$directory" ] || [ "$(stat -c '%U:%G' "$directory")" != "$managed_user:$managed_group" ]; }; then
-                        printf 'Orbit JavaScript runtime directory conflict: %s\n' "$directory" >&2
-                        exit 1
-                    fi
-                done
+                directory=/opt/orbit/bun
+                if { [ -e "$directory" ] || [ -L "$directory" ]; } \
+                    && { [ -L "$directory" ] || [ ! -d "$directory" ] || [ "$(stat -c '%U:%G' "$directory")" != "$managed_user:$managed_group" ]; }; then
+                    printf 'Orbit JavaScript runtime directory conflict: %s\n' "$directory" >&2
+                    exit 1
+                fi
 
                 install -d -m 0755 /opt/orbit
-                install -d -m 0755 -o "$managed_user" -g "$managed_group" /opt/orbit/vite-plus /opt/orbit/bun
-                chown -R --no-dereference "$managed_user:$managed_group" /opt/orbit/vite-plus /opt/orbit/bun
+                install -d -m 0755 -o "$managed_user" -g "$managed_group" /opt/orbit/bun
+                chown -R --no-dereference "$managed_user:$managed_group" /opt/orbit/bun
 
-                sudo -u "$managed_user" -H env VP_HOME=/opt/orbit/vite-plus bash -o pipefail -lc 'curl -fsSL https://vite.plus | bash'
-                vp_binary=/opt/orbit/vite-plus/bin/vp
+                vp_home="$managed_home/.vite-plus"
+                if { [ -e "$vp_home" ] || [ -L "$vp_home" ]; } \
+                    && { [ -L "$vp_home" ] || [ ! -d "$vp_home" ]; }; then
+                    printf 'Orbit Vite Plus directory conflict: %s\n' "$vp_home" >&2
+                    exit 1
+                fi
+                vp_binary="$vp_home/bin/vp"
+                if [ ! -x "$managed_home/.vite-plus/bin/vp" ]; then
+                    sudo -u "$managed_user" -H bash -o pipefail -c 'curl -fsSL https://vite.plus | bash'
+                    test -x "$vp_binary"
+                    sudo -u "$managed_user" -H "$vp_binary" env setup
+                    sudo -u "$managed_user" -H "$vp_binary" env on
+                    sudo -u "$managed_user" -H "$vp_binary" env install lts
+                    sudo -u "$managed_user" -H "$vp_binary" env default lts
+                    sudo -u "$managed_user" -H "$vp_binary" install -g --node lts pnpm
+                fi
                 test -x "$vp_binary"
-                sudo -u "$managed_user" -H env VP_HOME=/opt/orbit/vite-plus "$vp_binary" env setup
-                sudo -u "$managed_user" -H env VP_HOME=/opt/orbit/vite-plus "$vp_binary" env on
-                sudo -u "$managed_user" -H env VP_HOME=/opt/orbit/vite-plus "$vp_binary" env install lts
-                sudo -u "$managed_user" -H env VP_HOME=/opt/orbit/vite-plus "$vp_binary" env default lts
-                sudo -u "$managed_user" -H env VP_HOME=/opt/orbit/vite-plus "$vp_binary" install -g --node lts pnpm
-                pnpm_binary=/opt/orbit/vite-plus/bin/pnpm
+                pnpm_binary="$vp_home/bin/pnpm"
                 test -x "$pnpm_binary"
 
-                sudo -u "$managed_user" -H env BUN_INSTALL=/opt/orbit/bun bash -o pipefail -lc 'curl -fsSL https://bun.com/install | bash'
+                sudo -u "$managed_user" -H env BUN_INSTALL=/opt/orbit/bun bash -o pipefail -c 'curl -fsSL https://bun.com/install | bash'
                 bun_binary=/opt/orbit/bun/bin/bun
                 test -x "$bun_binary"
 
-                chmod -R a+rX /opt/orbit/vite-plus /opt/orbit/bun
+                chmod -R a+rX /opt/orbit/bun
 
                 launcher_candidates=$(mktemp -d "/usr/local/bin/.orbit-js-runtime.XXXXXX")
                 published_paths=
@@ -161,10 +169,10 @@ final readonly class NodeRolePrerequisiteCommandFactory
                 trap rollback_javascript_runtime EXIT
 
                 for binary in vp node pnpm npm npx; do
-                    target="/opt/orbit/vite-plus/bin/$binary"
+                    target="$managed_home/.vite-plus/bin/$binary"
                     candidate="$launcher_candidates/$binary"
                     test -x "$target"
-                    printf '%s\n' '#!/bin/sh' 'export VP_HOME=/opt/orbit/vite-plus' "exec \"$target\" \"\$@\"" > "$candidate"
+                    printf '%s\n' '#!/bin/sh' "exec \"$target\" \"\$@\"" > "$candidate"
                     chmod 0755 "$candidate"
                     chown root:root "$candidate"
                 done
@@ -204,7 +212,7 @@ final readonly class NodeRolePrerequisiteCommandFactory
                     published_paths="$published_paths /usr/local/bin/bun"
                 fi
 
-                sudo -u "$managed_user" -H env VP_HOME=/opt/orbit/vite-plus /usr/local/bin/vp --version
+                sudo -u "$managed_user" -H /usr/local/bin/vp --version
                 sudo -u "$managed_user" -H /usr/local/bin/node --version
                 sudo -u "$managed_user" -H /usr/local/bin/pnpm --version
                 sudo -u "$managed_user" -H /usr/local/bin/npm --version

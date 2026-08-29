@@ -51,7 +51,7 @@ it('renders isolated production FPM pools and public ACME Caddy sites', function
             'clear_env = yes',
             'env[HOME] = /var/www/acme',
             'env[USER] = orbit-acme',
-            'env[PATH] = /opt/orbit/vite-plus/bin:/opt/orbit/composer/vendor/bin:/usr/local/bin:/usr/bin:/bin',
+            'env[PATH] = /usr/local/bin:/opt/orbit/composer/vendor/bin:/usr/bin:/bin',
             'access.log = /var/log/orbit/php-fpm/instance-1.access.log',
             'slowlog = /var/log/orbit/php-fpm/instance-1.slow.log',
         )

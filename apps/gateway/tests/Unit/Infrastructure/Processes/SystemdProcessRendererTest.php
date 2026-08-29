@@ -36,7 +36,7 @@ it('renders an Orbit-owned systemd unit with fixed argv and the target identity'
         ->toContain('WorkingDirectory=/var/www/docs/main')
         ->toContain('EnvironmentFile=-/var/www/docs/main/.env')
         ->toContain(
-            'Environment=PATH=/opt/orbit/vite-plus/bin:/opt/orbit/composer/vendor/bin:/usr/local/bin:/usr/bin:/bin',
+            'Environment=PATH=/usr/local/bin:/opt/orbit/composer/vendor/bin:/usr/bin:/bin',
         )
         ->toContain('ExecStart="/usr/bin/php" "artisan" "queue:work" "--queue=high priority" "$$LITERAL" "%%n"')
         ->toContain('Restart=on-failure')

@@ -205,11 +205,9 @@ describe(VpToolManager::class, function (): void {
         expect($removalPlan->removesOnly('typescript'))->toBeTrue();
         expect($ssh->arguments())->toBe([
             ['/usr/local/bin/vp', '--version'],
-            ['env', 'VP_HOME=/opt/orbit/vite-plus', '/usr/local/bin/vp', 'info', 'typescript', 'version', '--json'],
-            ['env', 'VP_HOME=/opt/orbit/vite-plus', '/usr/local/bin/vp', 'list', '-g', 'typescript', '--json'],
+            ['/usr/local/bin/vp', 'info', 'typescript', 'version', '--json'],
+            ['/usr/local/bin/vp', 'list', '-g', 'typescript', '--json'],
             [
-                'env',
-                'VP_HOME=/opt/orbit/vite-plus',
                 '/usr/local/bin/vp',
                 'install',
                 '-g',
@@ -218,16 +216,14 @@ describe(VpToolManager::class, function (): void {
                 'lts',
             ],
             [
-                'env',
-                'VP_HOME=/opt/orbit/vite-plus',
                 '/usr/local/bin/vp',
                 'update',
                 '-g',
                 'typescript',
                 '--reinstall-node-mismatch',
             ],
-            ['env', 'VP_HOME=/opt/orbit/vite-plus', '/usr/local/bin/vp', 'remove', '-g', '--dry-run', 'typescript'],
-            ['env', 'VP_HOME=/opt/orbit/vite-plus', '/usr/local/bin/vp', 'remove', '-g', 'typescript'],
+            ['/usr/local/bin/vp', 'remove', '-g', '--dry-run', 'typescript'],
+            ['/usr/local/bin/vp', 'remove', '-g', 'typescript'],
         ]);
     });
 
@@ -249,7 +245,7 @@ describe(VpToolManager::class, function (): void {
 
         expect($version)->toBeNull();
         expect($ssh->arguments())->toBe([
-            ['env', 'VP_HOME=/opt/orbit/vite-plus', '/usr/local/bin/vp', 'list', '-g', 'typescript', '--json'],
+            ['/usr/local/bin/vp', 'list', '-g', 'typescript', '--json'],
         ]);
     });
 
@@ -378,8 +374,6 @@ describe(VpToolManager::class, function (): void {
                 $manager->install($node, 'typescript');
             },
             [
-                'env',
-                'VP_HOME=/opt/orbit/vite-plus',
                 '/usr/local/bin/vp',
                 'install',
                 '-g',
@@ -394,8 +388,6 @@ describe(VpToolManager::class, function (): void {
                 $manager->update($node, 'typescript');
             },
             [
-                'env',
-                'VP_HOME=/opt/orbit/vite-plus',
                 '/usr/local/bin/vp',
                 'update',
                 '-g',
@@ -406,14 +398,14 @@ describe(VpToolManager::class, function (): void {
         ],
         'removal plan' => [
             static fn (VpToolManager $manager, Node $node) => $manager->planRemoval($node, 'typescript'),
-            ['env', 'VP_HOME=/opt/orbit/vite-plus', '/usr/local/bin/vp', 'remove', '-g', '--dry-run', 'typescript'],
+            ['/usr/local/bin/vp', 'remove', '-g', '--dry-run', 'typescript'],
             'removal-plan',
         ],
         'remove' => [
             static function (VpToolManager $manager, Node $node): void {
                 $manager->remove($node, 'typescript');
             },
-            ['env', 'VP_HOME=/opt/orbit/vite-plus', '/usr/local/bin/vp', 'remove', '-g', 'typescript'],
+            ['/usr/local/bin/vp', 'remove', '-g', 'typescript'],
             'remove',
         ],
     ]);
@@ -424,7 +416,7 @@ describe(VpToolManager::class, function (): void {
         $manager->remove(vp_tool_node(), 'typescript');
 
         expect($ssh->arguments())->toBe([
-            ['env', 'VP_HOME=/opt/orbit/vite-plus', '/usr/local/bin/vp', 'remove', '-g', 'typescript'],
+            ['/usr/local/bin/vp', 'remove', '-g', 'typescript'],
         ]);
     });
 });

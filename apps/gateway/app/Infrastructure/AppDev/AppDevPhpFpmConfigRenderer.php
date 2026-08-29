@@ -29,7 +29,7 @@ final readonly class AppDevPhpFpmConfigRenderer
                 chdir = {$site->checkoutPath}
                 catch_workers_output = yes
                 clear_env = no
-                env[PATH] = /opt/orbit/vite-plus/bin:/opt/orbit/composer/vendor/bin:/usr/local/bin:/usr/bin:/bin
+                env[PATH] = /usr/local/bin:/opt/orbit/composer/vendor/bin:/usr/bin:/bin
 
                 FPM)
             ->implode(PHP_EOL);

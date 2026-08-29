@@ -199,7 +199,7 @@ it('uses fixed managed account argv and dynamic paths for a nondefault home', fu
             'managed_home=$3',
             'install -d -m 0755 -o "$managed_user" -g "$managed_group" "$managed_home/apps" "$managed_home/.orbit/worktrees"',
             'setfacl -m u:caddy:--x "$managed_home" "$managed_home/apps" "$managed_home/.orbit" "$managed_home/.orbit/worktrees"',
-            'sudo -u "$managed_user" -H env VP_HOME=/opt/orbit/vite-plus',
+            '"$managed_home/.vite-plus"',
             'sudo -u "$managed_user" -H env COMPOSER_HOME=/opt/orbit/composer /usr/bin/composer --version --no-ansi',
         )
         ->not->toContain('/home/orbit/apps', '/home/orbit/.orbit/worktrees', 'sudo -u orbit');
@@ -411,8 +411,10 @@ it('preserves the complete Vite Plus and Bun application-host runtime', function
 
     expect($script)
         ->toContain(
-            'VP_HOME=/opt/orbit/vite-plus',
+            '"$managed_home/.vite-plus"',
+            'if [ ! -x "$managed_home/.vite-plus/bin/vp" ]; then',
             'https://vite.plus',
+            'bash -o pipefail -c',
             'env setup',
             'env on',
             'env install lts',
@@ -426,20 +428,76 @@ it('preserves the complete Vite Plus and Bun application-host runtime', function
             '/usr/local/bin/npm',
             '/usr/local/bin/npx',
             '/usr/local/bin/bun',
-            'export VP_HOME=/opt/orbit/vite-plus',
             'Orbit JavaScript runtime directory conflict:',
             'Orbit JavaScript runtime launcher conflict:',
             'Orbit JavaScript runtime link conflict:',
             'rollback_javascript_runtime()',
         )
         ->not
-        ->toContain('vp env install bun', 'npm install -g', 'bun install')
+        ->toContain('VP_HOME=', '/opt/orbit/vite-plus', 'vp env install bun', 'npm install -g', 'bun install')
         ->and($syntax->isSuccessful())
         ->toBeTrue($syntax->getErrorOutput());
 })->with([
     'app development' => RoleName::AppDev,
     'app production' => RoleName::AppProd,
 ]);
+
+it('adopts an existing Vite Plus installation without running environment mutations', function (): void {
+    $script =
+        new NodeRolePrerequisiteCommandFactory()->make(
+            new Node,
+            RoleName::AppDev,
+            default_managed_user_account(),
+        )->input ?? '';
+    $fragment = role_vite_plus_fragment($script);
+    $root = sys_get_temp_dir().'/orbit-vite-plus-adoption-'.Str::uuid();
+    $filesystem = new Filesystem;
+    $filesystem->makeDirectory("{$root}/.vite-plus/bin", 0o755, true);
+    $filesystem->put("{$root}/.vite-plus/bin/vp", "#!/bin/sh\nprintf '%s\n' \"\$*\" >> \"\$VP_LOG\"\n");
+    $filesystem->put("{$root}/.vite-plus/bin/pnpm", "#!/bin/sh\nexit 0\n");
+    chmod("{$root}/.vite-plus/bin/vp", 0o755);
+    chmod("{$root}/.vite-plus/bin/pnpm", 0o755);
+    $log = "{$root}/vp.log";
+
+    try {
+        $process = new Process(['bash', '-seu']);
+        $process->setEnv(['VP_LOG' => $log]);
+        $process->setInput("managed_user=$(id -un)\nmanaged_group=$(id -gn)\nmanaged_home={$root}\n{$fragment}");
+        $process->run();
+
+        expect($process->isSuccessful())->toBeTrue($process->getErrorOutput())->and(is_file($log))->toBeFalse();
+    } finally {
+        $filesystem->deleteDirectory($root);
+    }
+});
+
+it('rejects Vite Plus home conflicts before adoption or installation', function (string $type): void {
+    $script =
+        new NodeRolePrerequisiteCommandFactory()->make(
+            new Node,
+            RoleName::AppDev,
+            default_managed_user_account(),
+        )->input ?? '';
+    $fragment = role_vite_plus_fragment($script);
+    $root = sys_get_temp_dir().'/orbit-vite-plus-conflict-'.Str::uuid();
+    $filesystem = new Filesystem;
+    $filesystem->makeDirectory($root, 0o755, true);
+    $vitePlus = "{$root}/.vite-plus";
+    $type === 'symlink' ? symlink('/tmp/foreign-vite-plus', $vitePlus) : $filesystem->put($vitePlus, "foreign\n");
+
+    try {
+        $process = new Process(['bash', '-seu']);
+        $process->setInput("managed_user=$(id -un)\nmanaged_group=$(id -gn)\nmanaged_home={$root}\n{$fragment}");
+        $process->run();
+
+        expect($process->isSuccessful())
+            ->toBeFalse()
+            ->and($process->getErrorOutput())
+            ->toContain('Orbit Vite Plus directory conflict:');
+    } finally {
+        $filesystem->deleteDirectory($root);
+    }
+})->with(['symlink', 'file']);
 
 it('propagates failures from both official runtime installer downloads', function (): void {
     expect(class_exists(NodeRolePrerequisiteCommandFactory::class))->toBeTrue();
@@ -457,10 +515,10 @@ it('propagates failures from both official runtime installer downloads', functio
 
         expect($installerLine)
             ->toBeString()
-            ->toContain('bash -o pipefail -lc');
+            ->toContain('bash -o pipefail -c');
 
         $failureCommand = preg_replace(
-            pattern: '/^sudo -u orbit -H env \S+ /',
+            pattern: '/^sudo -u (?:orbit|"\$managed_user") -H (?:env \S+ )?/',
             replacement: '',
             subject: trim($installerLine),
         );
@@ -539,7 +597,7 @@ it('repairs existing managed runtime ownership without following symlinks before
         ->toBeGreaterThan($repair)
         ->and($script)
         ->toContain(
-            'sudo -u "$managed_user" -H env VP_HOME=/opt/orbit/vite-plus /usr/local/bin/vp --version',
+            'sudo -u "$managed_user" -H /usr/local/bin/vp --version',
             'sudo -u "$managed_user" -H env BUN_INSTALL=/opt/orbit/bun /usr/local/bin/bun --version',
         )
         ->and($script)
@@ -692,7 +750,7 @@ function role_javascript_runtime_harness(
     $exactLauncherContents = '';
 
     if ($exactLauncher !== null) {
-        $exactLauncherContents = "#!/bin/sh\nexport VP_HOME=/opt/orbit/vite-plus\nexec \"{$sourceDirectory}/{$exactLauncher}\" \"\$@\"\n";
+        $exactLauncherContents = "#!/bin/sh\nexec \"{$sourceDirectory}/{$exactLauncher}\" \"\$@\"\n";
         $filesystem->put("{$stableDirectory}/{$exactLauncher}", $exactLauncherContents);
         chmod(filename: "{$stableDirectory}/{$exactLauncher}", permissions: 0o755);
     }
@@ -725,7 +783,7 @@ function role_javascript_runtime_harness(
     }
 
     $publicationScript = str_replace(
-        ['/opt/orbit/vite-plus/bin', '/usr/local/bin', "'root:root'", 'chown root:root "$candidate"'],
+        ['$managed_home/.vite-plus/bin', '/usr/local/bin', "'root:root'", 'chown root:root "$candidate"'],
         [$sourceDirectory, $stableDirectory, "'{$owner['name']}:{$group['name']}'", 'true'],
         $publicationScript,
     );
@@ -869,6 +927,18 @@ function role_prerequisite_os_release_fixture(string $contents): string
     file_put_contents($path, $contents);
 
     return $path;
+}
+
+function role_vite_plus_fragment(string $script): string
+{
+    $start = mb_strpos($script, 'vp_home="$managed_home/.vite-plus"');
+    $end = mb_strpos($script, 'sudo -u "$managed_user" -H env BUN_INSTALL=', $start === false ? 0 : $start);
+
+    if (! is_int($start) || ! is_int($end)) {
+        throw new RuntimeException('Could not isolate the Vite Plus runtime block.');
+    }
+
+    return str_replace('sudo -u "$managed_user" -H ', '', mb_substr($script, $start, $end - $start));
 }
 
 /**
