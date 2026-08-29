@@ -57,8 +57,9 @@ function assert_gateway_generated_files(GatewayVpnFakeProcessRunner $processes, 
     expect($processes->observedProjectionLock)->toBeTrue();
     expect(file_get_contents($orbitHome.'/generated/dnsmasq/orbit-vpn.conf'))
         ->toBe(
-            "# Managed by Orbit.\ninterface=orbit\nbind-dynamic\ndomain-needed\nbogus-priv\nlocal=/orbit/\nhost-record=gateway.orbit,10.44.0.1\n",
-        );
+            "# Managed by Orbit.\ninterface=orbit\nbind-interfaces\ndomain-needed\nbogus-priv\nlocal=/orbit/\nhost-record=gateway.orbit,10.44.0.1\n",
+        )
+        ->not->toContain('bind-dynamic');
 }
 
 /** @param list<list<string>> $arguments */
