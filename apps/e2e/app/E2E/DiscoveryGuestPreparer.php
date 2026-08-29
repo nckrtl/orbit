@@ -6,6 +6,7 @@ namespace App\E2E;
 
 use App\E2E\Value\GuestCommand;
 use App\E2E\Value\GuestCommandResult;
+use App\E2E\Value\MountPath;
 use App\E2E\Value\TopologyProfile;
 use App\E2E\Value\TopologyTarget;
 use RuntimeException;
@@ -14,9 +15,10 @@ use RuntimeException;
  * Prepare the cloned guests of one discovery attempt for a mounted worktree.
  *
  * Two ordered phases run after the clones boot: `mount.source` proves the
- * worktree is mounted on every checkout role and places the preserved gateway
+ * worktree is mounted on every checkout role, then places the preserved gateway
  * environment, and `repair.identity` points the nodes at the cloned gateway and
- * restarts PHP-FPM so no cache names the hidden snapshot checkout.
+ * restarts PHP-FPM so no cache names the hidden snapshot checkout. The mount
+ * proof alone is what verify and sync re-run before touching a mounted topology.
  */
 final readonly class DiscoveryGuestPreparer
 {
@@ -24,28 +26,32 @@ final readonly class DiscoveryGuestPreparer
         private IncusHost $host,
     ) {}
 
-    /**
-     * The mount hides the snapshot checkout, so the gateway `.env` the standby
-     * build preserved is placed into the mounted worktree when it is absent there.
-     * It lands in the host worktree (gitignored) and is never overwritten.
-     */
+    /** Prove the worktree is mounted on every checkout role; nothing is written. */
     public function assertSourceMounted(TopologyTarget $target): void
     {
         $commands = [];
         foreach (TopologyProfile::CHECKOUT_ROLES as $role) {
             $commands["mountpoint.{$role}"] = [
                 'instance' => $target->instance($role),
-                'command' => new GuestCommand(['mountpoint', '-q', '--', TopologyAcquirer::SOURCE_MOUNT_PATH], 30),
+                'command' => new GuestCommand(['mountpoint', '-q', '--', MountPath::GUEST_SOURCE], 30),
             ];
         }
         $this->assertGuestBatch($this->host->execAll($commands), 'The worktree is not mounted on');
+    }
 
+    /**
+     * The mount hides the snapshot checkout, so the gateway `.env` the standby
+     * build preserved is placed into the mounted worktree when it is absent there.
+     * It lands in the host worktree (gitignored) and is never overwritten.
+     */
+    public function placeGatewayEnvironment(TopologyTarget $target): void
+    {
         $environment = $this->host->exec($target->instance('gateway'), new GuestCommand([
             'sh',
             '-c',
             '[ -e "$1" ] || install -o 1000 -g 1000 -m 0600 -- "$2" "$1"',
             'orbit-e2e',
-            TopologyAcquirer::SOURCE_MOUNT_PATH.'/apps/gateway/.env',
+            MountPath::GUEST_SOURCE.'/apps/gateway/.env',
             WorktreeSynchronizer::GATEWAY_ENV_COPY,
         ], 30));
         if (! $environment->successful()) {

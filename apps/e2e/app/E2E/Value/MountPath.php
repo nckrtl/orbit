@@ -12,6 +12,15 @@ namespace App\E2E\Value;
  */
 final class MountPath
 {
+    /**
+     * The guest path every checkout role mounts the host worktree on.
+     *
+     * The virtiofs mount maps guest uid/gid 1000 (`orbit`) onto the host owner of
+     * the worktree, so files the guests create there (the gateway `.env`) land in
+     * the host worktree owned by the invoking user. Both sides assume uid 1000.
+     */
+    public const string GUEST_SOURCE = '/home/orbit/orbit';
+
     public static function isSafe(string $path): bool
     {
         return (

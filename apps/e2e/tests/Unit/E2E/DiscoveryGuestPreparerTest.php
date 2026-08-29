@@ -71,7 +71,7 @@ function preparerTarget(): TopologyTarget
 }
 
 describe('mount.source', function () {
-    it('proves the mount on every checkout role, then places the gateway environment once', function () {
+    it('proves the mount on every checkout role without writing to a guest', function () {
         $batches = [];
         $execs = [];
         fakePreparerGuests([], $batches, $execs);
@@ -89,6 +89,31 @@ describe('mount.source', function () {
             ->each
             ->toBe(['mountpoint', '-q', '--', '/home/orbit/orbit'])
             ->and($execs)
+            ->toBe([]);
+    });
+
+    it('names every role whose mount is missing', function () {
+        $batches = [];
+        $execs = [];
+        fakePreparerGuests(['mountpoint.gateway' => 32, 'mountpoint.app-dev' => 32], $batches, $execs);
+
+        expect(fn () => new DiscoveryGuestPreparer(new IncusHost)->assertSourceMounted(preparerTarget()))
+            ->toThrow(RuntimeException::class, 'The worktree is not mounted on mountpoint.gateway, mountpoint.app-dev.')
+            ->and($execs)
+            ->toBe([]);
+    });
+
+    it('places the preserved gateway environment into the mounted worktree only when absent', function () {
+        $batches = [];
+        $execs = [];
+        fakePreparerGuests([], $batches, $execs);
+        $target = preparerTarget();
+
+        new DiscoveryGuestPreparer(new IncusHost)->placeGatewayEnvironment($target);
+
+        expect($batches)
+            ->toBe([])
+            ->and($execs)
             ->toHaveCount(1)
             ->and($execs[0]['instance'])
             ->toBe('local:'.$target->instance('gateway'))
@@ -103,23 +128,12 @@ describe('mount.source', function () {
             ]);
     });
 
-    it('names every role whose mount is missing and never places the environment', function () {
-        $batches = [];
-        $execs = [];
-        fakePreparerGuests(['mountpoint.gateway' => 32, 'mountpoint.app-dev' => 32], $batches, $execs);
-
-        expect(fn () => new DiscoveryGuestPreparer(new IncusHost)->assertSourceMounted(preparerTarget()))
-            ->toThrow(RuntimeException::class, 'The worktree is not mounted on mountpoint.gateway, mountpoint.app-dev.')
-            ->and($execs)
-            ->toBe([]);
-    });
-
     it('names the refresh remedy when the preserved gateway environment is absent', function () {
         $batches = [];
         $execs = [];
         fakePreparerGuests(['environment' => 1], $batches, $execs);
 
-        expect(fn () => new DiscoveryGuestPreparer(new IncusHost)->assertSourceMounted(preparerTarget()))
+        expect(fn () => new DiscoveryGuestPreparer(new IncusHost)->placeGatewayEnvironment(preparerTarget()))
             ->toThrow(
                 RuntimeException::class,
                 'the promoted standby generation must be refreshed so it preserves /var/lib/orbit-e2e/gateway.env.',

@@ -36,15 +36,6 @@ use Throwable;
  */
 final readonly class TopologyAcquirer
 {
-    /**
-     * The guest path every checkout role mounts the host worktree on.
-     *
-     * The virtiofs mount maps guest uid/gid 1000 (`orbit`) onto the host owner of
-     * the worktree, so files the guests create there (the gateway `.env`) land in
-     * the host worktree owned by the invoking user. Both sides assume uid 1000.
-     */
-    public const string SOURCE_MOUNT_PATH = '/home/orbit/orbit';
-
     /** Host `bin/bootstrap` owns vendor; guests never run composer in discovery. */
     private const array REQUIRED_VENDOR_AUTOLOADS = [
         'apps/gateway/vendor/autoload.php',
@@ -492,7 +483,7 @@ final readonly class TopologyAcquirer
             $mounts[$role] = [
                 'device' => FeatureTopology::SOURCE_DEVICE,
                 'source' => $request->worktree,
-                'path' => self::SOURCE_MOUNT_PATH,
+                'path' => MountPath::GUEST_SOURCE,
             ];
         }
         try {
@@ -544,7 +535,10 @@ final readonly class TopologyAcquirer
             $phase = 'prepare.cloned-host-state';
             $this->measurePhase($phase, $phaseTimings, fn () => $this->host->prepareClonedHostStates($instances));
             $phase = 'mount.source';
-            $this->measurePhase($phase, $phaseTimings, fn () => $this->guests->assertSourceMounted($target));
+            $this->measurePhase($phase, $phaseTimings, function () use ($target): void {
+                $this->guests->assertSourceMounted($target);
+                $this->guests->placeGatewayEnvironment($target);
+            });
             $phase = 'repair.identity';
             $this->measurePhase($phase, $phaseTimings, fn () => $this->guests->repairCloneIdentity($target));
             $phase = 'sync.source';
