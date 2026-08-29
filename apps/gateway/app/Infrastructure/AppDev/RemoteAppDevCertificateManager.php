@@ -80,6 +80,7 @@ final readonly class RemoteAppDevCertificateManager implements AppDevCertificate
                     root="$managed_home/.orbit/certificates/$scope"
                     current="$root/current"
                     caddy_current="/etc/caddy/orbit-certificates/$scope/current"
+                    trust_anchor=/usr/local/share/ca-certificates/orbit-managed-root-ca.crt
                     validity_seconds=0
 
                     certificate_extension() {
@@ -122,6 +123,15 @@ final readonly class RemoteAppDevCertificateManager implements AppDevCertificate
                             "$(sudo openssl x509 -in "$caddy_current/cert.pem" -fingerprint -sha256 -noout)" ] && \
                         [ "$(sudo openssl pkey -in "$caddy_current/key.pem" -pubout 2>/dev/null)" = \
                             "$(sudo openssl x509 -in "$caddy_current/cert.pem" -pubkey -noout 2>/dev/null)" ]; then
+                        if ! sudo test -f "$trust_anchor" || \
+                            [ "$(sudo sha256sum "$trust_anchor" | cut -d ' ' -f 1)" != "$expected_root_hash" ]; then
+                            trust_staged=$(mktemp)
+                            trap 'rm -f -- "$trust_staged"' EXIT
+                            install -m 0644 -- "$current/root.pem" "$trust_staged"
+                            sudo install -o root -g root -m 0644 -- "$trust_staged" "$trust_anchor"
+                            sudo update-ca-certificates
+                            openssl verify -CAfile /etc/ssl/certs/ca-certificates.crt "$current/cert.pem" >/dev/null
+                        fi
                         printf 'CURRENT\n'
                         exit 0
                     fi
@@ -152,6 +162,7 @@ final readonly class RemoteAppDevCertificateManager implements AppDevCertificate
             version: $version,
             certificate: $certificate,
             rootCertificate: $rootCertificate,
+            rootHash: $rootHash,
             account: $account,
         );
     }
@@ -164,6 +175,7 @@ final readonly class RemoteAppDevCertificateManager implements AppDevCertificate
         string $version,
         string $certificate,
         string $rootCertificate,
+        string $rootHash,
         \App\Domain\Nodes\ManagedUserAccount $account,
     ): void {
         $this->ssh->execute(
@@ -177,6 +189,7 @@ final readonly class RemoteAppDevCertificateManager implements AppDevCertificate
                     $scope,
                     $hostname,
                     $version,
+                    $rootHash,
                     (string) strlen($certificate),
                     $account->user,
                     $account->group,
@@ -195,10 +208,11 @@ final readonly class RemoteAppDevCertificateManager implements AppDevCertificate
             scope=$1
             hostname=$2
             version=$3
-            certificate_length=$4
-            managed_user=$5
-            managed_group=$6
-            managed_home=$7
+            expected_root_hash=$4
+            certificate_length=$5
+            managed_user=$6
+            managed_group=$7
+            managed_home=$8
             root="$managed_home/.orbit/certificates/$scope"
             candidate="$root/versions/$version.candidate"
             published="$root/versions/$version"
@@ -211,9 +225,18 @@ final readonly class RemoteAppDevCertificateManager implements AppDevCertificate
             openssl pkey -in "$candidate/key.pem" -text_pub -noout 2>/dev/null | \
                 grep -qx 'ED25519 Public-Key:'
             openssl verify -CAfile "$candidate/root.pem" "$candidate/cert.pem"
+            test "$(sha256sum "$candidate/root.pem" | cut -d ' ' -f 1)" = "$expected_root_hash"
             openssl x509 -in "$candidate/cert.pem" -noout -checkhost "$hostname"
             test "$(openssl pkey -in "$candidate/key.pem" -pubout 2>/dev/null)" = \
                 "$(openssl x509 -in "$candidate/cert.pem" -pubkey -noout 2>/dev/null)"
+
+            trust_anchor=/usr/local/share/ca-certificates/orbit-managed-root-ca.crt
+            trust_staged=$(mktemp)
+            trap 'rm -f -- "$trust_staged"' EXIT
+            install -m 0644 -- "$candidate/root.pem" "$trust_staged"
+            sudo install -o root -g root -m 0644 -- "$trust_staged" "$trust_anchor"
+            sudo update-ca-certificates
+            openssl verify -CAfile /etc/ssl/certs/ca-certificates.crt "$candidate/cert.pem" >/dev/null
             mv -fT -- "$candidate" "$published"
             target_link="$root/.current-$version"
             ln -s -- "$published" "$target_link"

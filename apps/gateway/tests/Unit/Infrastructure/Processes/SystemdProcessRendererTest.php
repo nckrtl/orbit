@@ -38,12 +38,15 @@ it('renders an Orbit-owned systemd unit with fixed argv and the target identity'
         ->toContain(
             'Environment=PATH=/usr/local/bin:/opt/orbit/composer/vendor/bin:/usr/bin:/bin',
         )
+        ->toContain('Environment=NODE_USE_SYSTEM_CA=1')
         ->toContain('ExecStart="/usr/bin/php" "artisan" "queue:work" "--queue=high priority" "$$LITERAL" "%%n"')
         ->toContain('Restart=on-failure')
         ->not->toContain('/bin/bash')
         ->not->toContain('sh -c');
 
     expect(strpos(haystack: $unit, needle: 'Environment=PATH='))
+        ->toBeLessThan(strpos(haystack: $unit, needle: 'EnvironmentFile='));
+    expect(strpos(haystack: $unit, needle: 'Environment=NODE_USE_SYSTEM_CA=1'))
         ->toBeLessThan(strpos(haystack: $unit, needle: 'EnvironmentFile='));
 });
 

@@ -1405,6 +1405,8 @@ it('keeps leaf private keys on the target while publishing a gateway-signed cert
             '[ "$validity_seconds" -ge 34214400 ]',
             '[ "$validity_seconds" -le 34387200 ]',
             'sha256sum "$current/root.pem"',
+            'trust_anchor=/usr/local/share/ca-certificates/orbit-managed-root-ca.crt',
+            'sudo update-ca-certificates',
         )
         ->and($ssh->commands[0]->arguments)
         ->toContain(hash(algo: 'sha256', data: "ROOT CERTIFICATE\n"))
@@ -1417,6 +1419,8 @@ it('keeps leaf private keys on the target while publishing a gateway-signed cert
             'head -c "$certificate_length"',
             "grep -qx 'ED25519 Public-Key:'",
             'openssl verify -CAfile',
+            'test "$(sha256sum "$candidate/root.pem" | cut -d \' \' -f 1)" = "$expected_root_hash"',
+            'sudo install -o root -g root -m 0644',
             'sudo install -o root -g caddy -m 0640 -- "$published/key.pem"',
         )
         ->not->toContain('PRIVATE KEY');
@@ -1508,6 +1512,8 @@ it('reuses only current app-dev leaves with the exact Ed25519 extension policy',
         keyUsage: $keyUsage,
         keyAlgorithm: $keyAlgorithm,
     );
+    new Filesystem()->ensureDirectoryExists($root.'/usr/local/share/ca-certificates', recursive: true);
+    file_put_contents($root.'/usr/local/share/ca-certificates/orbit-managed-root-ca.crt', "STALE\n");
     $signer = new class($rootCertificate) implements LeafCertificateSigner {
         public function __construct(
             private readonly string $rootCertificate,
@@ -1532,6 +1538,13 @@ it('reuses only current app-dev leaves with the exact Ed25519 extension policy',
 
         expect($result->succeeded())->toBeTrue($result->stderr);
         expect($decision)->toBe($expectedDecision);
+
+        if ($expectedDecision === 'reuse') {
+            expect(file_get_contents($root.'/usr/local/share/ca-certificates/orbit-managed-root-ca.crt'))
+                ->toBe($rootCertificate)
+                ->and(is_file($root.'/usr/local/share/ca-certificates/orbit-managed-root-ca.crt.updated'))
+                ->toBeTrue();
+        }
 
         if ($expectedDecision === 'reissue') {
             expect($result->stdout)
@@ -2081,8 +2094,24 @@ function run_app_dev_certificate_probe_locally(RemoteCommand $command, string $r
         $command->arguments,
     );
     $input = str_replace(
-        ['/home/orbit', '/etc/caddy', 'sudo '],
-        [$root, $root.'/etc/caddy', ''],
+        [
+            '/home/orbit',
+            '/etc/caddy',
+            '/usr/local/share/ca-certificates',
+            '/etc/ssl/certs/ca-certificates.crt',
+            'sudo update-ca-certificates',
+            'install -o root -g root ',
+            'sudo ',
+        ],
+        [
+            $root,
+            $root.'/etc/caddy',
+            $root.'/usr/local/share/ca-certificates',
+            $root.'/usr/local/share/ca-certificates/orbit-managed-root-ca.crt',
+            'touch "$trust_anchor.updated"',
+            'install ',
+            '',
+        ],
         $command->input ?? '',
     );
 
