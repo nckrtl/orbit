@@ -79,11 +79,15 @@ describe('prepare node guest script', function () {
                     'userdel --remove ubuntu',
                     'groupmod --gid 1000 orbit',
                     'usermod --uid 1000 --gid 1000 orbit',
-                    'find / /run -xdev -uid 1002 -exec chown -h 1000 {} +',
-                    'find / /run -xdev -gid 1002 -exec chgrp -h 1000 {} +',
                     'systemctl is-active --quiet php8.5-fpm',
                     'systemctl restart php8.5-fpm',
                 ]);
+            expect(file_get_contents("{$root}/commands"))
+                ->toContain('find / /run -xdev ( -uid 1002 -o -gid 1002 ) -exec python3 -c')
+                ->toContain(
+                    'os.lchown(path, 1000 if st.st_uid == old_uid else -1, 1000 if st.st_gid == old_gid else -1)',
+                )
+                ->toContain(' 1002 1002 {} +');
 
             unlink("{$root}/commands");
             $process = new Process(

@@ -36,8 +36,14 @@ case "$mode" in
     [[ -z "$(getent passwd 1000)" && -z "$(getent group 1000)" ]] || exit 67
     groupmod --gid 1000 orbit
     usermod --uid 1000 --gid 1000 orbit
-    find / /run -xdev -uid "$current_uid" -exec chown -h 1000 {} + 2>/dev/null || true
-    find / /run -xdev -gid "$current_gid" -exec chgrp -h 1000 {} + 2>/dev/null || true
+    # uutils chown/chgrp -h (Ubuntu 26.04) silently skip symlinks; lchown does not.
+    find / /run -xdev \( -uid "$current_uid" -o -gid "$current_gid" \) -exec python3 -c '
+import os, sys
+old_uid, old_gid = int(sys.argv[1]), int(sys.argv[2])
+for path in sys.argv[3:]:
+    st = os.lstat(path)
+    os.lchown(path, 1000 if st.st_uid == old_uid else -1, 1000 if st.st_gid == old_gid else -1)
+' "$current_uid" "$current_gid" {} + 2>/dev/null || true
     if systemctl is-active --quiet php8.5-fpm; then systemctl restart php8.5-fpm; fi
     ;;
   *) exit 64 ;;
