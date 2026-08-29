@@ -29,6 +29,17 @@ Gateway profiles are stored in `$HOME/.orbit/config.json`. Set `ORBIT_HOME` to
 override that directory. `gateway:trust` is a visible local operating-system trust step.
 It can ask for local administrator privileges.
 
+## Doctor
+
+```bash
+./orbit doctor
+./orbit doctor --node=7 --family=instance --family=workspace
+./orbit doctor --family=firewall --json
+```
+
+Doctor only verifies state and never repairs it. Exit status 1 means unhealthy,
+unverifiable, or a transport failure.
+
 ## JavaScript processes
 
 ```bash
