@@ -892,7 +892,7 @@ describe('IncusHost mutations', function () {
                 '--',
                 'sh',
                 '-c',
-                "interface=\$(ip -4 route show default | awk '\$1 == \"default\" { for (i = 2; i < NF; i++) if (\$i == \"dev\") { print \$(i + 1); exit } }') && [ -n \"\$interface\" ] && rm -f /etc/machine-id /var/lib/dbus/machine-id && printf '%s\\n' '16c94783e841fe9f11e90d5323dc1974' > /etc/machine-id && ln -s /etc/machine-id /var/lib/dbus/machine-id && systemctl restart systemd-journald && for directory in /run/systemd/netif/leases /var/lib/systemd/network; do if [ -e \"\$directory\" ]; then [ -d \"\$directory\" ] && [ ! -L \"\$directory\" ] || exit 1; find \"\$directory\" -mindepth 1 -maxdepth 1 -type f -delete || exit 1; fi; done && ip -4 addr flush dev \"\$interface\" scope global && (systemctl restart systemd-networkd || systemctl restart NetworkManager)",
+                "interface=\$(ip -4 route show default | awk '\$1 == \"default\" { for (i = 2; i < NF; i++) if (\$i == \"dev\") { print \$(i + 1); exit } }') && [ -n \"\$interface\" ] && rm -f /etc/machine-id /var/lib/dbus/machine-id && printf '%s\\n' '16c94783e841fe9f11e90d5323dc1974' > /etc/machine-id && ln -s /etc/machine-id /var/lib/dbus/machine-id && systemctl restart systemd-journald && for directory in /run/systemd/netif/leases /var/lib/systemd/network; do if [ -e \"\$directory\" ]; then [ -d \"\$directory\" ] && [ ! -L \"\$directory\" ] || exit 1; find \"\$directory\" -mindepth 1 -maxdepth 1 -type f -delete || exit 1; fi; done && ip -4 addr flush dev \"\$interface\" scope global && ip link set dev \"\$interface\" down && ip link set dev \"\$interface\" up && (systemctl restart systemd-networkd || systemctl restart NetworkManager)",
             ));
 
             return Process::result();
@@ -906,7 +906,7 @@ describe('IncusHost mutations', function () {
             '--',
             'sh',
             '-c',
-            "interface=\$(ip -4 route show default | awk '\$1 == \"default\" { for (i = 2; i < NF; i++) if (\$i == \"dev\") { print \$(i + 1); exit } }') && [ -n \"\$interface\" ] && rm -f /etc/machine-id /var/lib/dbus/machine-id && printf '%s\\n' '16c94783e841fe9f11e90d5323dc1974' > /etc/machine-id && ln -s /etc/machine-id /var/lib/dbus/machine-id && systemctl restart systemd-journald && for directory in /run/systemd/netif/leases /var/lib/systemd/network; do if [ -e \"\$directory\" ]; then [ -d \"\$directory\" ] && [ ! -L \"\$directory\" ] || exit 1; find \"\$directory\" -mindepth 1 -maxdepth 1 -type f -delete || exit 1; fi; done && ip -4 addr flush dev \"\$interface\" scope global && (systemctl restart systemd-networkd || systemctl restart NetworkManager)",
+            "interface=\$(ip -4 route show default | awk '\$1 == \"default\" { for (i = 2; i < NF; i++) if (\$i == \"dev\") { print \$(i + 1); exit } }') && [ -n \"\$interface\" ] && rm -f /etc/machine-id /var/lib/dbus/machine-id && printf '%s\\n' '16c94783e841fe9f11e90d5323dc1974' > /etc/machine-id && ln -s /etc/machine-id /var/lib/dbus/machine-id && systemctl restart systemd-journald && for directory in /run/systemd/netif/leases /var/lib/systemd/network; do if [ -e \"\$directory\" ]; then [ -d \"\$directory\" ] && [ ! -L \"\$directory\" ] || exit 1; find \"\$directory\" -mindepth 1 -maxdepth 1 -type f -delete || exit 1; fi; done && ip -4 addr flush dev \"\$interface\" scope global && ip link set dev \"\$interface\" down && ip link set dev \"\$interface\" up && (systemctl restart systemd-networkd || systemctl restart NetworkManager)",
         ));
     });
 
