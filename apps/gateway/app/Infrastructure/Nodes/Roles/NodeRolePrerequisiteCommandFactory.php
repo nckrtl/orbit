@@ -128,21 +128,36 @@ final readonly class NodeRolePrerequisiteCommandFactory
                 install -d -m 0755 -o "$managed_user" -g "$managed_group" /opt/orbit/bun
                 chown -R --no-dereference "$managed_user:$managed_group" /opt/orbit/bun
 
-                vp_home="$managed_home/.vite-plus"
+                vp_home=
+                vp_environment=
+                launcher_environment=
+                for candidate in /opt/orbit/vite-plus "$managed_home/.vite-plus" "$managed_home/.local/share/vite-plus"; do
+                    if [ -e "$candidate" ] || [ -L "$candidate" ]; then
+                        vp_home="$candidate"
+                        break
+                    fi
+                done
+                if [ -z "$vp_home" ]; then
+                    vp_home="$managed_home/.local/share/vite-plus"
+                fi
+                if [ "$vp_home" = /opt/orbit/vite-plus ]; then
+                    vp_environment='VP_HOME=/opt/orbit/vite-plus'
+                    launcher_environment='export VP_HOME=/opt/orbit/vite-plus'
+                fi
                 if { [ -e "$vp_home" ] || [ -L "$vp_home" ]; } \
                     && { [ -L "$vp_home" ] || [ ! -d "$vp_home" ]; }; then
                     printf 'Orbit Vite Plus directory conflict: %s\n' "$vp_home" >&2
                     exit 1
                 fi
                 vp_binary="$vp_home/bin/vp"
-                if [ ! -x "$managed_home/.vite-plus/bin/vp" ]; then
-                    sudo -u "$managed_user" -H bash -o pipefail -c 'curl -fsSL https://vite.plus | bash'
+                if [ ! -x "$vp_binary" ]; then
+                    sudo -u "$managed_user" -H env -u VP_HOME bash -o pipefail -c 'curl -fsSL https://vite.plus | bash'
                     test -x "$vp_binary"
-                    sudo -u "$managed_user" -H "$vp_binary" env setup
-                    sudo -u "$managed_user" -H "$vp_binary" env on
-                    sudo -u "$managed_user" -H "$vp_binary" env install lts
-                    sudo -u "$managed_user" -H "$vp_binary" env default lts
-                    sudo -u "$managed_user" -H "$vp_binary" install -g --node lts pnpm
+                    sudo -u "$managed_user" -H env ${vp_environment:-} "$vp_binary" env setup
+                    sudo -u "$managed_user" -H env ${vp_environment:-} "$vp_binary" env on
+                    sudo -u "$managed_user" -H env ${vp_environment:-} "$vp_binary" env install lts
+                    sudo -u "$managed_user" -H env ${vp_environment:-} "$vp_binary" env default lts
+                    sudo -u "$managed_user" -H env ${vp_environment:-} "$vp_binary" install -g --node lts pnpm
                 fi
                 test -x "$vp_binary"
                 pnpm_binary="$vp_home/bin/pnpm"
@@ -169,10 +184,14 @@ final readonly class NodeRolePrerequisiteCommandFactory
                 trap rollback_javascript_runtime EXIT
 
                 for binary in vp node pnpm npm npx; do
-                    target="$managed_home/.vite-plus/bin/$binary"
+                    target="$vp_home/bin/$binary"
                     candidate="$launcher_candidates/$binary"
                     test -x "$target"
-                    printf '%s\n' '#!/bin/sh' "exec \"$target\" \"\$@\"" > "$candidate"
+                    launcher_header='#!/bin/sh'
+                    if [ -n "${launcher_environment:-}" ]; then
+                        launcher_header="$launcher_header\\n$launcher_environment"
+                    fi
+                    printf '%b\n' "$launcher_header" "exec \"$target\" \"\$@\"" > "$candidate"
                     chmod 0755 "$candidate"
                     chown root:root "$candidate"
                 done

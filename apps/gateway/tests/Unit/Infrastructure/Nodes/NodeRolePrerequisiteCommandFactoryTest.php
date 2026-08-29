@@ -412,7 +412,7 @@ it('preserves the complete Vite Plus and Bun application-host runtime', function
     expect($script)
         ->toContain(
             '"$managed_home/.vite-plus"',
-            'if [ ! -x "$managed_home/.vite-plus/bin/vp" ]; then',
+            'if [ ! -x "$vp_binary" ]; then',
             'https://vite.plus',
             'bash -o pipefail -c',
             'env setup',
@@ -468,6 +468,39 @@ it('adopts an existing Vite Plus installation without running environment mutati
         expect($process->isSuccessful())->toBeTrue($process->getErrorOutput())->and(is_file($log))->toBeFalse();
     } finally {
         $filesystem->deleteDirectory($root);
+    }
+});
+
+it('executes the default installer into the XDG Vite Plus home', function (): void {
+    $script = role_vite_plus_fragment(
+        new NodeRolePrerequisiteCommandFactory()->make(
+            new Node,
+            RoleName::AppDev,
+            default_managed_user_account(),
+        )->input ?? '',
+    );
+    $root = sys_get_temp_dir().'/orbit-vite-plus-xdg-'.Str::uuid();
+    new Filesystem()->makeDirectory($root, 0o755, true);
+    $script = str_replace('sudo -u "$managed_user" -H ', '', $script);
+    $script = str_replace(
+        "env -u VP_HOME bash -o pipefail -c 'curl -fsSL https://vite.plus | bash'",
+        "mkdir -p \"\$managed_home/.local/share/vite-plus/bin\"; printf '#!/bin/sh\\nexit 0\\n' > \"\$managed_home/.local/share/vite-plus/bin/vp\"; printf '#!/bin/sh\\nexit 0\\n' > \"\$managed_home/.local/share/vite-plus/bin/pnpm\"; chmod 755 \"\$managed_home/.local/share/vite-plus/bin/vp\" \"\$managed_home/.local/share/vite-plus/bin/pnpm\"",
+        $script,
+    );
+
+    try {
+        $process = new Process(['bash', '-seu']);
+        $process->setInput("managed_user=$(id -un)\nmanaged_group=$(id -gn)\nmanaged_home={$root}\n{$script}");
+        $process->run();
+
+        expect($process->isSuccessful())
+            ->toBeTrue($process->getErrorOutput())
+            ->and("{$root}/.local/share/vite-plus/bin/vp")
+            ->toBeFile()
+            ->and("{$root}/.vite-plus")
+            ->not->toBeDirectory();
+    } finally {
+        new Filesystem()->deleteDirectory($root);
     }
 });
 
@@ -636,6 +669,29 @@ it('rejects foreign launchers before publishing stable entry points', function (
     }
 });
 
+it('accepts existing Orbit launchers for the old Vite Plus home', function (): void {
+    $script =
+        new NodeRolePrerequisiteCommandFactory()->make(
+            new Node,
+            RoleName::AppProd,
+            default_managed_user_account(),
+        )->input ?? '';
+    $harness = role_javascript_runtime_harness($script, legacyLaunchers: true);
+
+    try {
+        expect($harness['process']->isSuccessful())->toBeTrue($harness['process']->getErrorOutput());
+
+        foreach (['vp', 'node', 'pnpm', 'npm', 'npx'] as $binary) {
+            expect(file_get_contents("{$harness['stableDirectory']}/{$binary}"))
+                ->toBe(
+                    "#!/bin/sh\nexport VP_HOME=/opt/orbit/vite-plus\nexec \"{$harness['sourceDirectory']}/{$binary}\" \"\$@\"\n",
+                );
+        }
+    } finally {
+        new Filesystem()->deleteDirectory($harness['root']);
+    }
+});
+
 it('preserves exact launchers while rolling back new entry points after verification fails', function (): void {
     $script =
         new NodeRolePrerequisiteCommandFactory()->make(
@@ -726,13 +782,14 @@ it('cleans Composer temp candidates after success, failure, and publication race
 });
 
 /**
- * @return array{root: string, stableDirectory: string, exactLauncherContents: string, process: Process}
+ * @return array{root: string, sourceDirectory: string, stableDirectory: string, exactLauncherContents: string, process: Process}
  */
 function role_javascript_runtime_harness(
     string $script,
     ?string $foreignLauncher = null,
     ?string $failingRuntime = null,
     ?string $exactLauncher = null,
+    bool $legacyLaunchers = false,
 ): array {
     $filesystem = new Filesystem;
     $root = sys_get_temp_dir().'/orbit-role-javascript-runtime-'.Str::random(16);
@@ -750,9 +807,19 @@ function role_javascript_runtime_harness(
     $exactLauncherContents = '';
 
     if ($exactLauncher !== null) {
-        $exactLauncherContents = "#!/bin/sh\nexec \"{$sourceDirectory}/{$exactLauncher}\" \"\$@\"\n";
+        $exactLauncherContents = "#!/bin/sh\nexport VP_HOME=/opt/orbit/vite-plus\nexec \"{$sourceDirectory}/{$exactLauncher}\" \"\$@\"\n";
         $filesystem->put("{$stableDirectory}/{$exactLauncher}", $exactLauncherContents);
         chmod(filename: "{$stableDirectory}/{$exactLauncher}", permissions: 0o755);
+    }
+
+    if ($legacyLaunchers) {
+        foreach (['vp', 'node', 'pnpm', 'npm', 'npx'] as $binary) {
+            $filesystem->put(
+                "{$stableDirectory}/{$binary}",
+                "#!/bin/sh\nexport VP_HOME=/opt/orbit/vite-plus\nexec \"{$sourceDirectory}/{$binary}\" \"\$@\"\n",
+            );
+            chmod(filename: "{$stableDirectory}/{$binary}", permissions: 0o755);
+        }
     }
 
     if ($foreignLauncher !== null) {
@@ -783,16 +850,25 @@ function role_javascript_runtime_harness(
     }
 
     $publicationScript = str_replace(
-        ['$managed_home/.vite-plus/bin', '/usr/local/bin', "'root:root'", 'chown root:root "$candidate"'],
-        [$sourceDirectory, $stableDirectory, "'{$owner['name']}:{$group['name']}'", 'true'],
+        [
+            '$managed_home/.vite-plus/bin',
+            '$vp_home/bin',
+            '/usr/local/bin',
+            "'root:root'",
+            'chown root:root "$candidate"',
+        ],
+        [$sourceDirectory, $sourceDirectory, $stableDirectory, "'{$owner['name']}:{$group['name']}'", 'true'],
         $publicationScript,
     );
     $process = new Process(['bash', '-seu']);
-    $process->setInput("bun_binary={$sourceDirectory}/bun\n{$publicationScript}\n");
+    $process->setInput(
+        "managed_user=$(id -un)\nvp_home={$sourceDirectory}\nvp_environment='VP_HOME=/opt/orbit/vite-plus'\nlauncher_environment='export VP_HOME=/opt/orbit/vite-plus'\nbun_binary={$sourceDirectory}/bun\n{$publicationScript}\n",
+    );
     $process->run();
 
     return [
         'root' => $root,
+        'sourceDirectory' => $sourceDirectory,
         'stableDirectory' => $stableDirectory,
         'exactLauncherContents' => $exactLauncherContents,
         'process' => $process,
@@ -931,7 +1007,7 @@ function role_prerequisite_os_release_fixture(string $contents): string
 
 function role_vite_plus_fragment(string $script): string
 {
-    $start = mb_strpos($script, 'vp_home="$managed_home/.vite-plus"');
+    $start = mb_strpos($script, 'vp_home=');
     $end = mb_strpos($script, 'sudo -u "$managed_user" -H env BUN_INSTALL=', $start === false ? 0 : $start);
 
     if (! is_int($start) || ! is_int($end)) {
