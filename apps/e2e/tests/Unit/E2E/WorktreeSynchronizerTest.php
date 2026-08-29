@@ -286,7 +286,7 @@ function removeSynchronizerFixture(string $path): void
 
 function createSynchronizerRepositoryFixture(string $issue): array
 {
-    $root = sys_get_temp_dir().'/orbit-sync-repo-'.bin2hex(random_bytes(5));
+    $root = temporaryPath('orbit-sync-repo-', 5);
     $worktree = $root.'/child';
 
     mkdir($root, 0700, true);
@@ -343,7 +343,7 @@ function destroySynchronizerRepositoryFixture(string $root, string $worktree): v
 
 function createSynchronizerPrimaryFixture(string $issue): string
 {
-    $root = sys_get_temp_dir().'/orbit-sync-primary-'.bin2hex(random_bytes(5));
+    $root = temporaryPath('orbit-sync-primary-', 5);
     mkdir($root, 0700, true);
     file_put_contents($root.'/README.md', "fixture\n");
     synchronizerGit($root, ['init', '-q']);

@@ -47,7 +47,7 @@ function standbyRefresherForPowerTests(
     $synchronizer = new WorktreeSynchronizer($host, $root, $operation);
     $converger = new TopologyConverger($host);
     $verifier = new TopologyVerifier($host, 1, 0);
-    $paths ??= new StatePaths(sys_get_temp_dir().'/orbit-refresh-'.bin2hex(random_bytes(4)));
+    $paths ??= new StatePaths(temporaryPath('orbit-refresh-', 4));
     $state ??= new AtomicJsonStore($paths);
     $manifests ??= new StandbyManifestStore($state, $paths);
 
@@ -195,7 +195,7 @@ function fakeStandbyRestoreProcesses(?int $failRestore = null, bool $failFinalPr
 
 function standbyRestoreFixture(bool $corrupt = true): array
 {
-    $paths = new StatePaths(sys_get_temp_dir().'/orbit-refresher-'.bin2hex(random_bytes(4)));
+    $paths = new StatePaths(temporaryPath('orbit-refresher-', 4));
     $state = new AtomicJsonStore($paths);
     $manifests = new StandbyManifestStore($state, $paths);
     if ($corrupt) {
@@ -646,7 +646,7 @@ describe('StandbyRefresher contracts', function () {
     });
 
     it('returns terminal failure with evidence when standby generation is locked', function () {
-        $paths = new StatePaths(sys_get_temp_dir().'/orbit-refresh-lock-'.bin2hex(random_bytes(4)));
+        $paths = new StatePaths(temporaryPath('orbit-refresh-lock-', 4));
         $state = new AtomicJsonStore($paths);
         $manifests = new StandbyManifestStore($state, $paths);
         $root = dirname(__DIR__, 4);
@@ -735,7 +735,7 @@ describe('StandbyRefresher contracts', function () {
 
     it('rejects cold construction before Incus or upstream release lookups', function () {
         $sourceRoot = dirname(__DIR__, 4);
-        $worktree = sys_get_temp_dir().'/orbit-refresh-cold-permission-'.bin2hex(random_bytes(4));
+        $worktree = temporaryPath('orbit-refresh-cold-permission-', 4);
         $branch = 'cold-permission-test-'.bin2hex(random_bytes(6));
         $processes = new ProcessFactory;
         expect(
@@ -794,7 +794,7 @@ describe('StandbyRefresher contracts', function () {
                 throw new RuntimeException('Unexpected external command: '.implode(' ', $command));
             });
             $paths = new StatePaths(
-                sys_get_temp_dir().'/orbit-refresh-cold-permission-state-'.bin2hex(random_bytes(4)),
+                temporaryPath('orbit-refresh-cold-permission-state-', 4),
             );
             $result = standbyRefresherForPowerTests(
                 new IncusHost(pool: 'orbit-e2e'),
@@ -817,7 +817,7 @@ describe('StandbyRefresher contracts', function () {
 
     it('journals a migration between rolling convergence and promoted verification', function () {
         $sourceRoot = dirname(__DIR__, 4);
-        $worktree = sys_get_temp_dir().'/orbit-refresh-migration-'.bin2hex(random_bytes(4));
+        $worktree = temporaryPath('orbit-refresh-migration-', 4);
         $branch = 'migration-test-'.bin2hex(random_bytes(6));
         $processes = new ProcessFactory;
         expect(
@@ -874,7 +874,7 @@ describe('StandbyRefresher contracts', function () {
             )->toBeTrue();
             $newSha = $git->commit('HEAD');
             $desiredFingerprint = new PreparedStateFingerprint($git)->forCommit($newSha, $release);
-            $paths = new StatePaths(sys_get_temp_dir().'/orbit-refresh-migration-state-'.bin2hex(random_bytes(4)));
+            $paths = new StatePaths(temporaryPath('orbit-refresh-migration-state-', 4));
             $state = new AtomicJsonStore($paths);
             $manifests = new StandbyManifestStore($state, $paths);
             $manifests->promote(new StandbyGeneration(
@@ -1019,7 +1019,7 @@ describe('StandbyRefresher contracts', function () {
 
     it('confirms an unchanged generation is stopped', function () {
         $sourceRoot = dirname(__DIR__, 4);
-        $cleanRoot = sys_get_temp_dir().'/orbit-refresh-worktree-'.bin2hex(random_bytes(4));
+        $cleanRoot = temporaryPath('orbit-refresh-worktree-', 4);
         $branch = 'refresh-test-'.bin2hex(random_bytes(6));
         $processes = new ProcessFactory;
         $worktree = $processes->run(['git', '-C', $sourceRoot, 'worktree', 'add', '--detach', $cleanRoot, 'HEAD']);
@@ -1053,7 +1053,7 @@ describe('StandbyRefresher contracts', function () {
             $release = new LaravelRelease('v13.10.1', '5aad4ddf34d5e21dfe6b4c07eeac67d5bd5e08b0');
             $prepared = new PreparedStateFingerprint($git)->forCommit($mainSha, $release);
             $structural = new PreparedStateFingerprint($git)->forCommit($mainSha);
-            $paths = new StatePaths(sys_get_temp_dir().'/orbit-refresh-stopped-'.bin2hex(random_bytes(4)));
+            $paths = new StatePaths(temporaryPath('orbit-refresh-stopped-', 4));
             $state = new AtomicJsonStore($paths);
             $manifests = new StandbyManifestStore($state, $paths);
             $manifests->promote(new \App\E2E\Value\StandbyGeneration(
@@ -1123,7 +1123,7 @@ describe('StandbyRefresher contracts', function () {
 
     it('requires cold recovery before mutating a promoted standby', function () {
         $sourceRoot = dirname(__DIR__, 4);
-        $worktree = sys_get_temp_dir().'/orbit-refresh-cold-'.bin2hex(random_bytes(4));
+        $worktree = temporaryPath('orbit-refresh-cold-', 4);
         $branch = 'cold-test-'.bin2hex(random_bytes(6));
         $processes = new ProcessFactory;
         expect(
@@ -1177,7 +1177,7 @@ describe('StandbyRefresher contracts', function () {
                 ])->successful(),
             )->toBeTrue();
             $newSha = $git->commit('HEAD');
-            $paths = new StatePaths(sys_get_temp_dir().'/orbit-refresh-cold-state-'.bin2hex(random_bytes(4)));
+            $paths = new StatePaths(temporaryPath('orbit-refresh-cold-state-', 4));
             $state = new AtomicJsonStore($paths);
             $manifests = new StandbyManifestStore($state, $paths);
             $generation = new \App\E2E\Value\StandbyGeneration(
@@ -1364,7 +1364,7 @@ describe('StandbyRefresher contracts', function () {
     });
 
     it('clears the corrupt marker only after an exact restore succeeds', function () {
-        $paths = new StatePaths(sys_get_temp_dir().'/orbit-refresher-'.bin2hex(random_bytes(4)));
+        $paths = new StatePaths(temporaryPath('orbit-refresher-', 4));
         $state = new AtomicJsonStore($paths);
         $manifests = new StandbyManifestStore($state, $paths);
         $state->write('standby/corrupt.json', ['schema' => 1, 'message' => 'restore required']);

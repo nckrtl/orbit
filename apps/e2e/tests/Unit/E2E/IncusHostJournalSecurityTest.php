@@ -22,7 +22,7 @@ beforeEach(function () {
 
 describe('IncusHost journal security', function () {
     it('does not retain arbitrary guest argv when exec fails', function () {
-        $state = new StatePaths(sys_get_temp_dir().'/orbit-incus-journal-'.bin2hex(random_bytes(6)));
+        $state = new StatePaths(temporaryPath('orbit-incus-journal-', 6));
         $operation = new OperationId(str_repeat('a', 32));
         $journal = new OperationJournal($state);
         $host = new IncusHost(
@@ -67,7 +67,7 @@ describe('IncusHost journal security', function () {
     });
 
     it('retains non-exec command context and error detail', function () {
-        $state = new StatePaths(sys_get_temp_dir().'/orbit-incus-journal-'.bin2hex(random_bytes(6)));
+        $state = new StatePaths(temporaryPath('orbit-incus-journal-', 6));
         $operation = new OperationId(str_repeat('b', 32));
         $journal = new OperationJournal($state);
         $host = new IncusHost(

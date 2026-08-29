@@ -8,7 +8,7 @@ use App\E2E\Value\OperationId;
 
 describe('OperationJournal', function () {
     it('keeps strict append order in private JSONL', function () {
-        $paths = new StatePaths(sys_get_temp_dir().'/orbit-journal-'.bin2hex(random_bytes(4)));
+        $paths = new StatePaths(temporaryPath('orbit-journal-', 4));
         $journal = new OperationJournal($paths);
         $operation = new OperationId(str_repeat('a', 32));
         $journal->append($operation, ['sequence' => 1]);
@@ -23,7 +23,7 @@ describe('OperationJournal', function () {
     });
 
     it('never persists command standard input', function () {
-        $paths = new StatePaths(sys_get_temp_dir().'/orbit-journal-'.bin2hex(random_bytes(4)));
+        $paths = new StatePaths(temporaryPath('orbit-journal-', 4));
         $journal = new OperationJournal($paths);
         $operation = new OperationId(str_repeat('b', 32));
 
@@ -40,7 +40,7 @@ describe('OperationJournal', function () {
     });
 
     it('rejects malformed and empty JSONL records', function (string $contents) {
-        $paths = new StatePaths(sys_get_temp_dir().'/orbit-journal-'.bin2hex(random_bytes(4)));
+        $paths = new StatePaths(temporaryPath('orbit-journal-', 4));
         $operation = new OperationId(str_repeat('c', 32));
         $file = $paths->ensureParent('journals/'.str_repeat('c', 32).'.jsonl');
         file_put_contents($file, $contents);
@@ -49,7 +49,7 @@ describe('OperationJournal', function () {
     })->with(["{broken\n", "{}\n\n"]);
 
     it('rejects a record belonging to another operation', function () {
-        $paths = new StatePaths(sys_get_temp_dir().'/orbit-journal-'.bin2hex(random_bytes(4)));
+        $paths = new StatePaths(temporaryPath('orbit-journal-', 4));
         $operation = new OperationId(str_repeat('f', 32));
         $file = $paths->ensureParent('journals/'.$operation->value.'.jsonl');
         file_put_contents($file, json_encode([
@@ -63,7 +63,7 @@ describe('OperationJournal', function () {
     });
 
     it('rolls back failed appends to the exact previous offset', function (string $phase) {
-        $paths = new StatePaths(sys_get_temp_dir().'/orbit-journal-'.bin2hex(random_bytes(4)));
+        $paths = new StatePaths(temporaryPath('orbit-journal-', 4));
         $operation = new OperationId(str_repeat('d', 32));
         $journal = new OperationJournal($paths);
         $journal->append($operation, ['sequence' => 1]);
@@ -84,7 +84,7 @@ describe('OperationJournal', function () {
     })->with(['after_append_write', 'after_append_persist']);
 
     it('does not append or leak its lock when private permissions fail', function () {
-        $paths = new StatePaths(sys_get_temp_dir().'/orbit-journal-'.bin2hex(random_bytes(4)));
+        $paths = new StatePaths(temporaryPath('orbit-journal-', 4));
         $operation = new OperationId(str_repeat('e', 32));
         $journal = new OperationJournal($paths);
         $journal->append($operation, ['sequence' => 1]);

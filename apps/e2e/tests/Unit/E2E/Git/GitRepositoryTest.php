@@ -13,7 +13,7 @@ use Illuminate\Support\Facades\Process;
 describe('GitRepository', function (): void {
     beforeEach(function (): void {
         configureProcessFacade();
-        $this->path = sys_get_temp_dir().'/orbit-git-'.bin2hex(random_bytes(6));
+        $this->path = temporaryPath('orbit-git-', 6);
         mkdir($this->path, 0700, true);
         git($this->path, ['init', '--quiet']);
         git($this->path, ['config', 'user.email', 'orbit@example.test']);

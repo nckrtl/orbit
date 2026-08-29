@@ -41,7 +41,7 @@ function promotedGenerationFixture(): StandbyGeneration
 
 function bindPromotedStandby(StandbyGeneration $generation): void
 {
-    $paths = new StatePaths(sys_get_temp_dir().'/orbit-standby-command-'.bin2hex(random_bytes(8)));
+    $paths = new StatePaths(temporaryPath('orbit-standby-command-', 8));
     $store = new AtomicJsonStore($paths);
     $manifests = new StandbyManifestStore($store, $paths);
     $manifests->promote($generation);
@@ -258,7 +258,7 @@ describe('standby commands', function () {
 /** @return array{path: string, old: string, new: string} */
 function standbyCommandFingerprintRepository(bool $changePreparedInput): array
 {
-    $path = sys_get_temp_dir().'/orbit-standby-fingerprint-'.bin2hex(random_bytes(6));
+    $path = temporaryPath('orbit-standby-fingerprint-', 6);
     mkdir($path.'/contracts', 0700, true);
     mkdir($path.'/resources', 0700, true);
     file_put_contents($path.'/contracts/prepared.php', "prepared-v1\n");

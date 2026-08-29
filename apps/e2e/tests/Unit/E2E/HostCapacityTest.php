@@ -22,7 +22,7 @@ beforeEach(function (): void {
 /** @return array{HostCapacity, AtomicJsonStore} */
 function hostCapacity(int $maxVms = 9, string $commandOperation = 'a', ?IncusHost $host = null): array
 {
-    $paths = new StatePaths(sys_get_temp_dir().'/orbit-capacity-'.bin2hex(random_bytes(5)));
+    $paths = new StatePaths(temporaryPath('orbit-capacity-', 5));
     $store = new AtomicJsonStore($paths);
 
     return [

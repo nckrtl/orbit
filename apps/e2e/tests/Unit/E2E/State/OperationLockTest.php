@@ -8,7 +8,7 @@ use App\E2E\Value\OperationId;
 
 describe('OperationLock', function () {
     it('allows shared generation pins and bounds an exclusive waiter', function () {
-        $paths = new StatePaths(sys_get_temp_dir().'/orbit-lock-'.bin2hex(random_bytes(4)));
+        $paths = new StatePaths(temporaryPath('orbit-lock-', 4));
         $first = new OperationLock($paths);
         $second = new OperationLock($paths);
         $refresh = new OperationLock($paths);
@@ -29,7 +29,7 @@ describe('OperationLock', function () {
     });
 
     it('persists caller ownership and verifies stale process identity', function () {
-        $paths = new StatePaths(sys_get_temp_dir().'/orbit-lock-'.bin2hex(random_bytes(4)));
+        $paths = new StatePaths(temporaryPath('orbit-lock-', 4));
         $lock = new OperationLock($paths);
         $operation = new OperationId(str_repeat('d', 32));
         $lock->acquire('feature-NCK-321', $operation, true, 0.05);
@@ -60,7 +60,7 @@ describe('OperationLock', function () {
     });
 
     it('clears only an exact stale owner when no process holds the lock', function () {
-        $paths = new StatePaths(sys_get_temp_dir().'/orbit-lock-'.bin2hex(random_bytes(4)));
+        $paths = new StatePaths(temporaryPath('orbit-lock-', 4));
         $file = $paths->ensureParent('locks/stale.lock');
         $owner = [
             'pid' => 999_999_999,
@@ -80,7 +80,7 @@ describe('OperationLock', function () {
     });
 
     it('uses an injected process identity when proc is unavailable', function () {
-        $paths = new StatePaths(sys_get_temp_dir().'/orbit-lock-'.bin2hex(random_bytes(4)));
+        $paths = new StatePaths(temporaryPath('orbit-lock-', 4));
         $lock = new OperationLock($paths, fn (int $pid): string => 'portable-start-'.$pid);
 
         expect($lock->acquire('portable', new OperationId(str_repeat('1', 32)), true, 0.05))->toBeTrue();
@@ -99,7 +99,7 @@ describe('OperationLock', function () {
     });
 
     it('does not leak a lock when process identity resolution fails', function () {
-        $paths = new StatePaths(sys_get_temp_dir().'/orbit-lock-'.bin2hex(random_bytes(4)));
+        $paths = new StatePaths(temporaryPath('orbit-lock-', 4));
         $failing = new OperationLock($paths, fn (): null => null);
 
         expect(fn () => $failing->acquire('recoverable', new OperationId(str_repeat('2', 32)), true, 0.05))
@@ -111,7 +111,7 @@ describe('OperationLock', function () {
     });
 
     it('closes stale-cleanup handles when another operation holds the lock', function () {
-        $paths = new StatePaths(sys_get_temp_dir().'/orbit-lock-'.bin2hex(random_bytes(4)));
+        $paths = new StatePaths(temporaryPath('orbit-lock-', 4));
         $holder = new OperationLock($paths, fn (int $pid): string => 'start-'.$pid);
         $holder->acquire('contended', new OperationId(str_repeat('4', 32)), true, 0.05);
         $staleOwner = [

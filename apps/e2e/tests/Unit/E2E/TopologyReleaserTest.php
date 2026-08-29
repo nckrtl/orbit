@@ -30,7 +30,7 @@ beforeEach(function () {
 describe('topology release', function () {
     it('removes an abandoned acquisition manifest after exact cleanup', function () {
         Process::fake(['*' => Process::result('[]')]);
-        $root = sys_get_temp_dir().'/orbit-release-'.bin2hex(random_bytes(8));
+        $root = temporaryPath('orbit-release-', 8);
         $paths = new StatePaths($root);
         $store = new AtomicJsonStore($paths);
         readyReleaseState($store);
@@ -145,7 +145,7 @@ describe('topology release', function () {
     }
 
     it('refuses retained evidence while active artifacts exist', function () {
-        $root = sys_get_temp_dir().'/orbit-release-'.bin2hex(random_bytes(8));
+        $root = temporaryPath('orbit-release-', 8);
         $paths = new StatePaths($root);
         $store = new AtomicJsonStore($paths);
         completedReleaseState($store);
@@ -167,7 +167,7 @@ describe('topology release', function () {
     });
 
     it('preserves a retained lease when the manifest is absent but lease is current', function () {
-        $root = sys_get_temp_dir().'/orbit-release-'.bin2hex(random_bytes(8));
+        $root = temporaryPath('orbit-release-', 8);
         $paths = new StatePaths($root);
         $store = new AtomicJsonStore($paths);
         completedReleaseState($store);
@@ -188,7 +188,7 @@ describe('topology release', function () {
     });
 
     it('refuses retained evidence when the manifest is malformed', function () {
-        $root = sys_get_temp_dir().'/orbit-release-'.bin2hex(random_bytes(8));
+        $root = temporaryPath('orbit-release-', 8);
         $paths = new StatePaths($root);
         $store = new AtomicJsonStore($paths);
         completedReleaseState($store);
@@ -216,7 +216,7 @@ describe('topology release', function () {
     });
 
     it('keeps evidence identity across a local state failure boundary', function () {
-        $root = sys_get_temp_dir().'/orbit-release-'.bin2hex(random_bytes(8));
+        $root = temporaryPath('orbit-release-', 8);
         $paths = new StatePaths($root);
         $store = new AtomicJsonStore($paths);
         completedReleaseState($store);
@@ -260,7 +260,7 @@ describe('topology release', function () {
 
     /** @mago-expect lint:cyclomatic-complexity The case tracks the complete release state transition. */
     it('persists the injected operation identity for a completed release', function () {
-        $paths = new StatePaths(sys_get_temp_dir().'/orbit-release-complete-'.bin2hex(random_bytes(8)));
+        $paths = new StatePaths(temporaryPath('orbit-release-complete-', 8));
         $store = new AtomicJsonStore($paths);
         $target = new TopologyTarget('NCK-123');
         readyReleaseState($store, $target->issue);
@@ -409,7 +409,7 @@ describe('topology release', function () {
     });
 
     it('refuses release when the deterministic topology MAC drifted', function () {
-        $paths = new StatePaths(sys_get_temp_dir().'/orbit-release-mac-'.bin2hex(random_bytes(8)));
+        $paths = new StatePaths(temporaryPath('orbit-release-mac-', 8));
         $store = new AtomicJsonStore($paths);
         $target = new TopologyTarget('NCK-123');
         readyReleaseState($store, $target->issue);
@@ -468,7 +468,7 @@ describe('topology release', function () {
     });
 
     it('refuses cleanup without the exact manifest', function () {
-        $root = sys_get_temp_dir().'/orbit-release-'.bin2hex(random_bytes(8));
+        $root = temporaryPath('orbit-release-', 8);
         $paths = new StatePaths($root);
         $store = new AtomicJsonStore($paths);
         $host = new IncusHost;
@@ -488,7 +488,7 @@ describe('topology release', function () {
     it('returns already absent evidence after an exact completed release', function () {
         Process::fake(['*' => Process::result('[]')]);
 
-        $root = sys_get_temp_dir().'/orbit-release-'.bin2hex(random_bytes(8));
+        $root = temporaryPath('orbit-release-', 8);
         $paths = new StatePaths($root);
         $store = new AtomicJsonStore($paths);
         $store->write(
@@ -521,7 +521,7 @@ describe('topology release', function () {
     });
 
     it('refuses success when network deletion leaves the exact network present', function () {
-        $paths = new StatePaths(sys_get_temp_dir().'/orbit-release-network-'.bin2hex(random_bytes(8)));
+        $paths = new StatePaths(temporaryPath('orbit-release-network-', 8));
         $store = new AtomicJsonStore($paths);
         readyReleaseState($store);
         Process::fake(function (\Illuminate\Process\PendingProcess $process) {
@@ -568,7 +568,7 @@ describe('topology release', function () {
     });
 
     it('finishes an exact pending release after local finalization was interrupted', function () {
-        $root = sys_get_temp_dir().'/orbit-release-'.bin2hex(random_bytes(8));
+        $root = temporaryPath('orbit-release-', 8);
         $paths = new StatePaths($root);
         $store = new AtomicJsonStore($paths);
         readyReleaseState($store);
@@ -617,7 +617,7 @@ describe('topology release', function () {
     });
 
     it('preserves active state that does not match pending release identity', function () {
-        $root = sys_get_temp_dir().'/orbit-release-'.bin2hex(random_bytes(8));
+        $root = temporaryPath('orbit-release-', 8);
         $paths = new StatePaths($root);
         $store = new AtomicJsonStore($paths);
         readyReleaseState($store);

@@ -10,7 +10,7 @@ use App\E2E\Value\StandbyGeneration;
 
 describe('StandbyManifestStore', function () {
     it('round-trips a typed generation with exact ordered snapshots', function () {
-        $paths = new StatePaths(sys_get_temp_dir().'/orbit-standby-'.bin2hex(random_bytes(4)));
+        $paths = new StatePaths(temporaryPath('orbit-standby-', 4));
         $store = new StandbyManifestStore(new AtomicJsonStore($paths), $paths);
         $generation = new StandbyGeneration(
             'g1',
@@ -78,14 +78,14 @@ describe('StandbyManifestStore', function () {
         )
             ->toThrow(InvalidArgumentException::class);
 
-        $paths = new StatePaths(sys_get_temp_dir().'/orbit-standby-'.bin2hex(random_bytes(4)));
+        $paths = new StatePaths(temporaryPath('orbit-standby-', 4));
         new AtomicJsonStore($paths)->write('standby/promoted.json', ['schema' => 99]);
         expect(fn () => new StandbyManifestStore(new AtomicJsonStore($paths), $paths)->promoted())
             ->toThrow(InvalidArgumentException::class);
     });
 
     it('retains current, previous, and topology-pinned generations when pruning', function () {
-        $paths = new StatePaths(sys_get_temp_dir().'/orbit-standby-'.bin2hex(random_bytes(4)));
+        $paths = new StatePaths(temporaryPath('orbit-standby-', 4));
         $json = new AtomicJsonStore($paths);
         $store = new StandbyManifestStore($json, $paths);
         $generation = fn (string $id, ?string $previous = null): StandbyGeneration => new StandbyGeneration(
@@ -118,7 +118,7 @@ describe('StandbyManifestStore', function () {
     });
 
     it('fails closed when a manifest collection cannot be inspected', function (string $collection) {
-        $paths = new StatePaths(sys_get_temp_dir().'/orbit-standby-'.bin2hex(random_bytes(4)));
+        $paths = new StatePaths(temporaryPath('orbit-standby-', 4));
         $json = new AtomicJsonStore($paths);
         $store = new StandbyManifestStore($json, $paths);
         $current = new StandbyGeneration(
@@ -144,7 +144,7 @@ describe('StandbyManifestStore', function () {
     })->with(['topologies', 'standby/generations']);
 
     it('fails closed when a manifest collection is a broken symbolic link', function (string $collection) {
-        $paths = new StatePaths(sys_get_temp_dir().'/orbit-standby-'.bin2hex(random_bytes(4)));
+        $paths = new StatePaths(temporaryPath('orbit-standby-', 4));
         $store = new StandbyManifestStore(new AtomicJsonStore($paths), $paths);
         $current = new StandbyGeneration(
             'g1',

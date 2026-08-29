@@ -37,7 +37,7 @@ uses(Tests\TestCase::class);
 
 it('successful verify persists the returned verification report', function () {
     $repositoryRoot = preparedTopologyRepository();
-    $paths = new StatePaths(sys_get_temp_dir().'/orbit-acquirer-state-'.bin2hex(random_bytes(8)));
+    $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));
     featureTopologyFixture($repositoryRoot, $paths);
     $events = [];
     fakePinnedWorktreeProcesses(new TopologyTarget('NCK-123'), $events);
@@ -54,7 +54,7 @@ it('successful verify persists the returned verification report', function () {
 
 it('journals successful execution with redacted argv and output without persisting stdin', function () {
     $repositoryRoot = preparedTopologyRepository();
-    $paths = new StatePaths(sys_get_temp_dir().'/orbit-acquirer-state-'.bin2hex(random_bytes(8)));
+    $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));
     featureTopologyFixture($repositoryRoot, $paths);
     $topology = new TopologyManifestStore(new AtomicJsonStore($paths))->read(new TopologyTarget('NCK-123'));
     expect($topology)->not->toBeNull();
@@ -130,7 +130,7 @@ it('journals successful execution with redacted argv and output without persisti
 
 it('nonzero execute writes a completed topology.exec entry', function () {
     $repositoryRoot = preparedTopologyRepository();
-    $paths = new StatePaths(sys_get_temp_dir().'/orbit-acquirer-state-'.bin2hex(random_bytes(8)));
+    $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));
     featureTopologyFixture($repositoryRoot, $paths);
     $topology = new TopologyManifestStore(new AtomicJsonStore($paths))->read(new TopologyTarget('NCK-123'));
     expect($topology)->not->toBeNull();
@@ -179,7 +179,7 @@ it('nonzero execute writes a completed topology.exec entry', function () {
 
 it('rejects a replaced VM before guest execution', function (string $mismatch) {
     $repositoryRoot = preparedTopologyRepository();
-    $paths = new StatePaths(sys_get_temp_dir().'/orbit-acquirer-state-'.bin2hex(random_bytes(8)));
+    $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));
     featureTopologyFixture($repositoryRoot, $paths);
     $topology = new TopologyManifestStore(new AtomicJsonStore($paths))->read(new TopologyTarget('NCK-123'));
     expect($topology)->not->toBeNull();
@@ -268,7 +268,7 @@ function topologyAcquisitionBoundaryFixture(Closure $inject): array
 {
     $repositoryRoot = preparedTopologyRepository();
     $worktree = pinnedFeatureWorktree($repositoryRoot, 'acquisition-boundary');
-    $paths = new StatePaths(sys_get_temp_dir().'/orbit-acquirer-state-'.bin2hex(random_bytes(8)));
+    $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));
     $fault = (object) ['ready_lease' => false];
     $leaseWrites = 0;
     $store = new AtomicJsonStore(
@@ -470,7 +470,7 @@ function topology_creation_failure_incus_result(
 
 function preparedTopologyRepository(): string
 {
-    $root = sys_get_temp_dir().'/orbit-prepared-topology-'.bin2hex(random_bytes(8));
+    $root = temporaryPath('orbit-prepared-topology-', 8);
     $e2e = dirname(__DIR__, 3);
     $manifestPath = 'apps/e2e/resources/prepared-state.json';
     mkdir($root.'/'.dirname($manifestPath), 0700, true);
@@ -903,7 +903,7 @@ function fakeIdentityRefreshFailure(
 
 function pinnedFeatureWorktree(string $repositoryRoot, string $suffix): string
 {
-    $worktree = sys_get_temp_dir().'/orbit-worktree-'.$suffix.'-'.bin2hex(random_bytes(8));
+    $worktree = temporaryPath('orbit-worktree-'.$suffix.'-');
     $sourcePath = $worktree.'/feature-source-'.$suffix.'.txt';
     foreach ([
         ['git', '-C', $repositoryRoot, 'worktree', 'add', '-q', '-b', 'feature/NCK-123-'.$suffix, $worktree, 'HEAD'],
@@ -1151,7 +1151,7 @@ function fakeOrdinaryPreparedChangeProcesses(string $repositoryRoot, TopologyTar
 it('holds the shared standby pin only through snapshot copy', function () {
     $repositoryRoot = preparedTopologyRepository();
     $worktree = pinnedFeatureWorktree($repositoryRoot, 'standby-pin');
-    $paths = new StatePaths(sys_get_temp_dir().'/orbit-acquirer-state-'.bin2hex(random_bytes(8)));
+    $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));
     $store = new AtomicJsonStore($paths);
     $prepared = topologyFinalPreparedFingerprint($repositoryRoot);
     $mainSha = new GitRepository($repositoryRoot)->commit();
@@ -1271,7 +1271,7 @@ it('binds proof to exact candidate and tree identities', function () {
 
 it('keeps the command operation identity separate from proof evidence', function () {
     $repositoryRoot = preparedTopologyRepository();
-    $paths = new StatePaths(sys_get_temp_dir().'/orbit-proof-operation-'.bin2hex(random_bytes(8)));
+    $paths = new StatePaths(temporaryPath('orbit-proof-operation-', 8));
     $worktree = pinnedFeatureWorktree($repositoryRoot, 'proof-operation');
     featureTopologyFixture($repositoryRoot, $paths);
     $target = new TopologyTarget('NCK-123');
@@ -1365,7 +1365,7 @@ it('limits proof checkout identity checks to the configured checkout roles', fun
 
 it('recovers a manifest-backed acquiring lease without mutating Incus', function () {
     $repositoryRoot = preparedTopologyRepository();
-    $paths = new StatePaths(sys_get_temp_dir().'/orbit-acquirer-state-'.bin2hex(random_bytes(8)));
+    $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));
     featureTopologyFixture($repositoryRoot, $paths);
     $store = new AtomicJsonStore($paths);
     $store->write('leases/NCK-123.json', [
@@ -1469,7 +1469,7 @@ it('refuses manifest-backed acquisition recovery when exact live identity drifte
         'network-issue',
         'network-operation',
     ] as $mismatch) {
-        $paths = new StatePaths(sys_get_temp_dir().'/orbit-acquirer-state-'.bin2hex(random_bytes(8)));
+        $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));
         featureTopologyFixture($repositoryRoot, $paths);
         $store = new AtomicJsonStore($paths);
         $operation = str_repeat('b', 32);
@@ -1586,7 +1586,7 @@ it('refuses manifest-backed acquisition recovery when exact live identity drifte
 /** @mago-expect lint:cyclomatic-complexity The scenario tracks every interrupted acquisition cleanup branch. */
 it('cleans an interrupted no-manifest acquisition before starting a new operation', function () {
     $repositoryRoot = preparedTopologyRepository();
-    $paths = new StatePaths(sys_get_temp_dir().'/orbit-acquirer-state-'.bin2hex(random_bytes(8)));
+    $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));
     $store = new AtomicJsonStore($paths);
     $prepared = topologyFinalPreparedFingerprint($repositoryRoot);
     $structural = new PreparedStateFingerprint(new GitRepository($repositoryRoot))->forCommit();
@@ -1755,7 +1755,7 @@ it('cleans an interrupted no-manifest acquisition before starting a new operatio
 
 it('refuses an unobservable interrupted acquisition without mutation', function () {
     $repositoryRoot = preparedTopologyRepository();
-    $paths = new StatePaths(sys_get_temp_dir().'/orbit-acquirer-state-'.bin2hex(random_bytes(8)));
+    $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));
     $store = new AtomicJsonStore($paths);
     $operation = str_repeat('c', 32);
     $lease = [
@@ -1822,7 +1822,7 @@ it('refuses an unobservable interrupted acquisition without mutation', function 
 
 it('refuses a drifted interrupted acquisition without mutation on repeated retries', function () {
     $repositoryRoot = preparedTopologyRepository();
-    $paths = new StatePaths(sys_get_temp_dir().'/orbit-acquirer-state-'.bin2hex(random_bytes(8)));
+    $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));
     $store = new AtomicJsonStore($paths);
     $lease = [
         'schema' => 1,
@@ -1894,7 +1894,7 @@ it('refuses a drifted interrupted acquisition without mutation on repeated retri
 
 it('fails closed for a malformed acquiring lease', function () {
     $repositoryRoot = preparedTopologyRepository();
-    $paths = new StatePaths(sys_get_temp_dir().'/orbit-acquirer-state-'.bin2hex(random_bytes(8)));
+    $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));
     $store = new AtomicJsonStore($paths);
     $store->write('leases/NCK-123.json', [
         'schema' => 1,
@@ -1911,7 +1911,7 @@ it('fails closed for a malformed acquiring lease', function () {
 
 it('fails closed when an acquiring lease has invalid expiry or extra fields', function (array $lease) {
     $repositoryRoot = preparedTopologyRepository();
-    $paths = new StatePaths(sys_get_temp_dir().'/orbit-acquirer-state-'.bin2hex(random_bytes(8)));
+    $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));
     new AtomicJsonStore($paths)->write('leases/NCK-123.json', $lease);
 
     expect(fn () => taskNineAcquirer($repositoryRoot, $paths)->acquire(
@@ -1945,7 +1945,7 @@ it('fails closed when an acquiring lease has invalid expiry or extra fields', fu
 
 it('keeps ready topology acquisition rejection unchanged', function () {
     $repositoryRoot = preparedTopologyRepository();
-    $paths = new StatePaths(sys_get_temp_dir().'/orbit-acquirer-state-'.bin2hex(random_bytes(8)));
+    $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));
     featureTopologyFixture($repositoryRoot, $paths);
 
     expect(fn () => taskNineAcquirer($repositoryRoot, $paths)->acquire(
@@ -1956,7 +1956,7 @@ it('keeps ready topology acquisition rejection unchanged', function () {
 
 it('recovers a manifest when acquiring lease keys use a different JSON order', function () {
     $repositoryRoot = preparedTopologyRepository();
-    $paths = new StatePaths(sys_get_temp_dir().'/orbit-acquirer-state-'.bin2hex(random_bytes(8)));
+    $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));
     featureTopologyFixture($repositoryRoot, $paths);
     $leasePath = $paths->path('leases/NCK-123.json');
     file_put_contents($leasePath, json_encode([
@@ -2146,7 +2146,7 @@ it('uses the preflight snapshot once before rollback mutation', function () {
 
 it('uses the acquisition rollback after a topology creation failure', function () {
     $repositoryRoot = preparedTopologyRepository();
-    $paths = new StatePaths(sys_get_temp_dir().'/orbit-acquirer-state-'.bin2hex(random_bytes(8)));
+    $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));
     $store = new AtomicJsonStore($paths);
     $fingerprints = new PreparedStateFingerprint(new GitRepository($repositoryRoot));
     $prepared = topologyFinalPreparedFingerprint($repositoryRoot);
@@ -2201,7 +2201,7 @@ it('uses the acquisition rollback after a topology creation failure', function (
 it('rolls back without parsing a manifest when the ready lease write fails', function () {
     $repositoryRoot = preparedTopologyRepository();
     $worktree = pinnedFeatureWorktree($repositoryRoot, 'ready-lease-failure');
-    $paths = new StatePaths(sys_get_temp_dir().'/orbit-acquirer-state-'.bin2hex(random_bytes(8)));
+    $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));
     $leaseWrites = 0;
     $store = new AtomicJsonStore(
         $paths,
@@ -2601,7 +2601,7 @@ it('reports multiple distinct secondary failures once and keeps cleanup recovery
 
 it('preflights all standby snapshots before any network or copy mutation', function () {
     $repositoryRoot = preparedTopologyRepository();
-    $paths = new StatePaths(sys_get_temp_dir().'/orbit-acquirer-state-'.bin2hex(random_bytes(8)));
+    $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));
     $store = new AtomicJsonStore($paths);
     $fingerprints = new PreparedStateFingerprint(new GitRepository($repositoryRoot));
     $prepared = topologyFinalPreparedFingerprint($repositoryRoot);
@@ -2668,7 +2668,7 @@ it('preflights all standby snapshots before any network or copy mutation', funct
 
 it('blocks acquisition when the standby is marked corrupt before Incus mutation', function () {
     $repositoryRoot = preparedTopologyRepository();
-    $paths = new StatePaths(sys_get_temp_dir().'/orbit-acquirer-state-'.bin2hex(random_bytes(8)));
+    $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));
     $store = new AtomicJsonStore($paths);
     $prepared = topologyFinalPreparedFingerprint($repositoryRoot);
     $structural = new PreparedStateFingerprint(new GitRepository($repositoryRoot))->forCommit();
@@ -2716,7 +2716,7 @@ it('blocks acquisition when the standby is marked corrupt before Incus mutation'
 
 it('blocks acquisition while an exact release still needs local finalization', function () {
     $repositoryRoot = preparedTopologyRepository();
-    $paths = new StatePaths(sys_get_temp_dir().'/orbit-acquirer-state-'.bin2hex(random_bytes(8)));
+    $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));
     $store = new AtomicJsonStore($paths);
     $store->write('release-pending/NCK-123.json', ['schema' => 1]);
     $commands = [];
@@ -2747,7 +2747,7 @@ it('blocks acquisition while an exact release still needs local finalization', f
 
 it('requires the promoted generation fingerprint to match its exact main commit', function () {
     $repositoryRoot = preparedTopologyRepository();
-    $paths = new StatePaths(sys_get_temp_dir().'/orbit-acquirer-state-'.bin2hex(random_bytes(8)));
+    $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));
     $store = new AtomicJsonStore($paths);
     $prepared = topologyFinalPreparedFingerprint($repositoryRoot);
     $structural = new PreparedStateFingerprint(new GitRepository($repositoryRoot))->forCommit();
@@ -2791,7 +2791,7 @@ it('requires the promoted generation fingerprint to match its exact main commit'
 
 it('blocks acquisition when current main requires a newer prepared generation', function () {
     $repositoryRoot = preparedTopologyRepository();
-    $paths = new StatePaths(sys_get_temp_dir().'/orbit-acquirer-state-'.bin2hex(random_bytes(8)));
+    $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));
     $store = new AtomicJsonStore($paths);
     $fingerprints = new PreparedStateFingerprint(new GitRepository($repositoryRoot));
     $prepared = topologyFinalPreparedFingerprint($repositoryRoot);
@@ -2845,7 +2845,7 @@ it('blocks acquisition when current main requires a newer prepared generation', 
 
 it('reuses a prepared generation when main advances with a source-only change', function () {
     $repositoryRoot = preparedTopologyRepository();
-    $paths = new StatePaths(sys_get_temp_dir().'/orbit-acquirer-state-'.bin2hex(random_bytes(8)));
+    $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));
     $store = new AtomicJsonStore($paths);
     $fingerprints = new PreparedStateFingerprint(new GitRepository($repositoryRoot));
     $prepared = topologyFinalPreparedFingerprint($repositoryRoot);
@@ -2911,7 +2911,7 @@ it('reuses a prepared generation when main advances with a source-only change', 
 /** @mago-expect lint:cyclomatic-complexity The integration case tracks the complete rollback state. */
 it('rolls back an exactly owned network when host forwarding setup fails', function () {
     $repositoryRoot = preparedTopologyRepository();
-    $paths = new StatePaths(sys_get_temp_dir().'/orbit-acquirer-state-'.bin2hex(random_bytes(8)));
+    $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));
     $store = new AtomicJsonStore($paths);
     $prepared = topologyFinalPreparedFingerprint($repositoryRoot);
     $structural = new PreparedStateFingerprint(new GitRepository($repositoryRoot))->forCommit();
@@ -3075,7 +3075,7 @@ it('rolls back an exactly owned network when host forwarding setup fails', funct
 
 it('uses the promoted base fingerprint when the base image alias moves', function () {
     $repositoryRoot = preparedTopologyRepository();
-    $paths = new StatePaths(sys_get_temp_dir().'/orbit-acquirer-state-'.bin2hex(random_bytes(8)));
+    $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));
     $store = new AtomicJsonStore($paths);
     $prepared = topologyFinalPreparedFingerprint($repositoryRoot);
     $structural = new PreparedStateFingerprint(new GitRepository($repositoryRoot))->forCommit();
@@ -3139,7 +3139,7 @@ it('uses the promoted base fingerprint when the base image alias moves', functio
 
 it('batches clone and boot work before cloned host-state reset and preserves failure through rollback', function () {
     $repositoryRoot = preparedTopologyRepository();
-    $paths = new StatePaths(sys_get_temp_dir().'/orbit-acquirer-state-'.bin2hex(random_bytes(8)));
+    $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));
     $store = new AtomicJsonStore($paths);
     $fingerprints = new PreparedStateFingerprint(new GitRepository($repositoryRoot));
     $prepared = topologyFinalPreparedFingerprint($repositoryRoot);
@@ -3201,7 +3201,7 @@ it('batches clone and boot work before cloned host-state reset and preserves fai
 
 it('rejects unrelated clean repositories before lock state or Incus access', function () {
     $repositoryRoot = dirname(__DIR__, 5);
-    $unrelated = sys_get_temp_dir().'/orbit-unrelated-'.bin2hex(random_bytes(8));
+    $unrelated = temporaryPath('orbit-unrelated-', 8);
     mkdir($unrelated, 0o700);
     foreach ([
         ['git', 'init', '-q', '-b', 'feature/NCK-12', $unrelated],
@@ -3211,7 +3211,7 @@ it('rejects unrelated clean repositories before lock state or Incus access', fun
     ] as $command) {
         expect(Process::run($command)->successful())->toBeTrue();
     }
-    $paths = new StatePaths(sys_get_temp_dir().'/orbit-acquirer-state-'.bin2hex(random_bytes(8)));
+    $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));
     $acquirer = taskNineAcquirer($repositoryRoot, $paths);
 
     expect(fn () => $acquirer->sync(new TopologyRequest('NCK-12', $unrelated)))
@@ -3228,7 +3228,7 @@ it('rejects a wrong issue branch before creating lifecycle state', function () {
     $repositoryRoot = dirname(__DIR__, 5);
     $suffix = 'wrong-issue-'.bin2hex(random_bytes(4));
     $branchWorktree = pinnedFeatureWorktree($repositoryRoot, $suffix);
-    $paths = new StatePaths(sys_get_temp_dir().'/orbit-acquirer-state-'.bin2hex(random_bytes(8)));
+    $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));
     $acquirer = taskNineAcquirer($branchWorktree, $paths);
 
     try {
@@ -3244,7 +3244,7 @@ it('rejects a wrong issue branch before creating lifecycle state', function () {
 
 it('sync rejects a feature HEAD cold epoch change before source sync or Incus', function () {
     $repositoryRoot = preparedTopologyRepository();
-    $paths = new StatePaths(sys_get_temp_dir().'/orbit-acquirer-state-'.bin2hex(random_bytes(8)));
+    $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));
     featureTopologyFixture($repositoryRoot, $paths);
     $manifest = json_decode(
         (string) file_get_contents($repositoryRoot.'/apps/e2e/resources/prepared-state.json'),
@@ -3285,7 +3285,7 @@ it('sync rejects a feature HEAD cold epoch change before source sync or Incus', 
 
 it('sync rejects a feature HEAD base image alias change before source sync or Incus', function () {
     $repositoryRoot = preparedTopologyRepository();
-    $paths = new StatePaths(sys_get_temp_dir().'/orbit-acquirer-state-'.bin2hex(random_bytes(8)));
+    $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));
     featureTopologyFixture($repositoryRoot, $paths);
     $manifest = json_decode(
         (string) file_get_contents($repositoryRoot.'/apps/e2e/resources/prepared-state.json'),
@@ -3327,7 +3327,7 @@ it('sync rejects a feature HEAD base image alias change before source sync or In
 it('allows an ordinary prepared-state change through the cold-base gate', function () {
     $repositoryRoot = preparedTopologyRepository();
     $featureWorktree = $repositoryRoot.'-worktree';
-    $paths = new StatePaths(sys_get_temp_dir().'/orbit-acquirer-state-'.bin2hex(random_bytes(8)));
+    $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));
     featureTopologyFixture($repositoryRoot, $paths);
     file_put_contents($repositoryRoot.'/apps/e2e/resources/guest/converge-gateway.sh', "ordinary change\n");
     Process::run(['git', '-C', $repositoryRoot, 'add', '.']);
@@ -3370,7 +3370,7 @@ it('allows an ordinary prepared-state change through the cold-base gate', functi
 
 it('preserves prior release evidence when acquisition preflight fails', function () {
     $repositoryRoot = preparedTopologyRepository();
-    $paths = new StatePaths(sys_get_temp_dir().'/orbit-acquirer-state-'.bin2hex(random_bytes(8)));
+    $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));
     $store = new AtomicJsonStore($paths);
     $priorRelease = [
         'state' => 'released',
@@ -3421,7 +3421,7 @@ it('preserves prior release evidence when acquisition preflight fails', function
 
 it('invalidates prior release evidence before reacquiring an issue', function () {
     $repositoryRoot = preparedTopologyRepository();
-    $paths = new StatePaths(sys_get_temp_dir().'/orbit-acquirer-state-'.bin2hex(random_bytes(8)));
+    $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));
     $worktree = pinnedFeatureWorktree($repositoryRoot, 'release-evidence');
     $store = new AtomicJsonStore($paths);
     $prepared = topologyFinalPreparedFingerprint($repositoryRoot);
@@ -3468,7 +3468,7 @@ it('invalidates prior release evidence before reacquiring an issue', function ()
 it('removes prior release evidence before the first acquisition mutation', function () {
     $repositoryRoot = preparedTopologyRepository();
     $worktree = pinnedFeatureWorktree($repositoryRoot, 'release-evidence-write-failure');
-    $paths = new StatePaths(sys_get_temp_dir().'/orbit-acquirer-state-'.bin2hex(random_bytes(8)));
+    $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));
     $store = new AtomicJsonStore($paths, failure: static function (
         string $phase,
         string $temporary,
@@ -3526,7 +3526,7 @@ it('removes prior release evidence before the first acquisition mutation', funct
 
 it('keeps the promoted Laravel pin when feature worktrees change source', function () {
     $repositoryRoot = preparedTopologyRepository();
-    $paths = new StatePaths(sys_get_temp_dir().'/orbit-acquirer-state-'.bin2hex(random_bytes(8)));
+    $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));
     $worktreeA = pinnedFeatureWorktree($repositoryRoot, 'a');
     $worktreeB = pinnedFeatureWorktree($repositoryRoot, 'b');
     $store = new AtomicJsonStore($paths);
@@ -3703,7 +3703,7 @@ it('retries sync from a valid interrupted lease and writes the refreshed manifes
     string $expiresAt,
 ) {
     $repositoryRoot = preparedTopologyRepository();
-    $paths = new StatePaths(sys_get_temp_dir().'/orbit-acquirer-state-'.bin2hex(random_bytes(8)));
+    $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));
     featureTopologyFixture($repositoryRoot, $paths);
     new AtomicJsonStore($paths)->write('leases/NCK-123.json', [
         'schema' => 1,
@@ -3738,7 +3738,7 @@ it('retries sync from a valid interrupted lease and writes the refreshed manifes
 
 it('fails closed for an unknown or malformed interrupted lease', function (mixed $lease) {
     $repositoryRoot = preparedTopologyRepository();
-    $paths = new StatePaths(sys_get_temp_dir().'/orbit-acquirer-state-'.bin2hex(random_bytes(8)));
+    $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));
     featureTopologyFixture($repositoryRoot, $paths);
     $leasePath = $paths->path('leases/NCK-123.json');
     if (is_string($lease)) {
@@ -3772,7 +3772,7 @@ it('fails closed for a syncing or failed lease with invalid manifest state', fun
     string $exception,
 ) {
     $repositoryRoot = preparedTopologyRepository();
-    $paths = new StatePaths(sys_get_temp_dir().'/orbit-acquirer-state-'.bin2hex(random_bytes(8)));
+    $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));
     featureTopologyFixture($repositoryRoot, $paths);
     $manifestPath = $paths->path('topologies/NCK-123.json');
     if ($manifestMode === 'missing') {
@@ -3811,7 +3811,7 @@ it('fails closed for a syncing or failed lease with invalid manifest state', fun
 
 it('fails closed for a malformed interrupted sync lease', function (array $lease) {
     $repositoryRoot = preparedTopologyRepository();
-    $paths = new StatePaths(sys_get_temp_dir().'/orbit-acquirer-state-'.bin2hex(random_bytes(8)));
+    $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));
     featureTopologyFixture($repositoryRoot, $paths);
     new AtomicJsonStore($paths)->write('leases/NCK-123.json', $lease);
     $events = [];
@@ -3850,7 +3850,7 @@ it('fails closed for a malformed interrupted sync lease', function (array $lease
 
 it('fails closed for a malformed ready lease on operational entry points', function (string $entryPoint) {
     $repositoryRoot = preparedTopologyRepository();
-    $paths = new StatePaths(sys_get_temp_dir().'/orbit-acquirer-state-'.bin2hex(random_bytes(8)));
+    $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));
     featureTopologyFixture($repositoryRoot, $paths);
     new AtomicJsonStore($paths)->write('leases/NCK-123.json', [
         'schema' => 1,
@@ -3878,7 +3878,7 @@ it('fails closed for a malformed ready lease on operational entry points', funct
 
 it('runs interrupted sync retry under the issue lock', function () {
     $repositoryRoot = preparedTopologyRepository();
-    $paths = new StatePaths(sys_get_temp_dir().'/orbit-acquirer-state-'.bin2hex(random_bytes(8)));
+    $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));
     featureTopologyFixture($repositoryRoot, $paths);
     new AtomicJsonStore($paths)->write('leases/NCK-123.json', [
         'schema' => 1,
@@ -3906,7 +3906,7 @@ it('runs interrupted sync retry under the issue lock', function () {
 
 it('blocks verification while the exact issue topology lock is held', function () {
     $repositoryRoot = preparedTopologyRepository();
-    $paths = new StatePaths(sys_get_temp_dir().'/orbit-acquirer-state-'.bin2hex(random_bytes(8)));
+    $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));
     featureTopologyFixture($repositoryRoot, $paths);
     $lock = new OperationLock($paths);
     expect($lock->acquire('topology-NCK-123', new OperationId(str_repeat('b', 32))))->toBeTrue();
@@ -3925,7 +3925,7 @@ it('blocks verification while the exact issue topology lock is held', function (
 
 it('blocks guest execution while the exact issue topology lock is held', function () {
     $repositoryRoot = preparedTopologyRepository();
-    $paths = new StatePaths(sys_get_temp_dir().'/orbit-acquirer-state-'.bin2hex(random_bytes(8)));
+    $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));
     featureTopologyFixture($repositoryRoot, $paths);
     $lock = new OperationLock($paths);
     expect($lock->acquire('topology-NCK-123', new OperationId(str_repeat('b', 32))))->toBeTrue();
@@ -3944,7 +3944,7 @@ it('blocks guest execution while the exact issue topology lock is held', functio
 
 it('reports the lock before malformed topology validation', function (string $entryPoint) {
     $repositoryRoot = preparedTopologyRepository();
-    $paths = new StatePaths(sys_get_temp_dir().'/orbit-acquirer-state-'.bin2hex(random_bytes(8)));
+    $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));
     featureTopologyFixture($repositoryRoot, $paths);
     new AtomicJsonStore($paths)->write('leases/NCK-123.json', ['invalid' => true]);
     $lock = new OperationLock($paths);
@@ -3967,7 +3967,7 @@ it('reports the lock before malformed topology validation', function (string $en
 
 it('releases the issue lock after interrupted sync retry fails', function () {
     $repositoryRoot = preparedTopologyRepository();
-    $paths = new StatePaths(sys_get_temp_dir().'/orbit-acquirer-state-'.bin2hex(random_bytes(8)));
+    $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));
     featureTopologyFixture($repositoryRoot, $paths);
     new AtomicJsonStore($paths)->write('leases/NCK-123.json', [
         'schema' => 1,
@@ -3995,7 +3995,7 @@ it('rejects operational entry points while a topology lease is syncing or failed
     string $entryPoint,
 ) {
     $repositoryRoot = preparedTopologyRepository();
-    $paths = new StatePaths(sys_get_temp_dir().'/orbit-acquirer-state-'.bin2hex(random_bytes(8)));
+    $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));
     featureTopologyFixture($repositoryRoot, $paths);
     new AtomicJsonStore($paths)->write('leases/NCK-123.json', [
         'schema' => 1,

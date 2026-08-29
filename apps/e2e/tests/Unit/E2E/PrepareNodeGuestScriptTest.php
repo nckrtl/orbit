@@ -7,7 +7,7 @@ use Symfony\Component\Process\Process;
 describe('prepare node guest script', function () {
     it('replaces orbit SSH authorization with the validated gateway public key', function () {
         $source = file_get_contents(dirname(__DIR__, 3).'/resources/guest/prepare-node.sh');
-        $root = sys_get_temp_dir().'/orbit-authorize-gateway-'.bin2hex(random_bytes(4));
+        $root = temporaryPath('orbit-authorize-gateway-', 4);
         mkdir("{$root}/bin", 0o700, true);
         mkdir("{$root}/home/orbit/.ssh", 0o700, true);
         file_put_contents("{$root}/home/orbit/.ssh/authorized_keys", "stale key\n");
@@ -31,7 +31,7 @@ describe('prepare node guest script', function () {
 
     it('rejects an invalid gateway public key without changing authorization', function () {
         $source = file_get_contents(dirname(__DIR__, 3).'/resources/guest/prepare-node.sh');
-        $root = sys_get_temp_dir().'/orbit-reject-gateway-key-'.bin2hex(random_bytes(4));
+        $root = temporaryPath('orbit-reject-gateway-key-', 4);
         mkdir("{$root}/home/orbit/.ssh", 0o700, true);
         file_put_contents("{$root}/home/orbit/.ssh/authorized_keys", "existing key\n");
         $path = "{$root}/prepare-node.sh";

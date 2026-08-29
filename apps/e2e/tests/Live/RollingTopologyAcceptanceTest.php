@@ -13,7 +13,7 @@ uses(TestCase::class);
 
 it('rejects an unknown public E2E wrapper action outside the repository', function (): void {
     $root = dirname(__DIR__, 4);
-    $outside = sys_get_temp_dir().'/orbit-e2e-wrapper-'.bin2hex(random_bytes(8));
+    $outside = temporaryPath('orbit-e2e-wrapper-', 8);
     mkdir($outside, 0700);
 
     foreach (['legacy', 'standby', 'topology'] as $tool) {

@@ -14,7 +14,7 @@ use App\E2E\Value\VerificationReport;
 
 describe('TopologyManifestStore', function () {
     it('accepts and returns only a fully typed topology manifest', function () {
-        $paths = new StatePaths(sys_get_temp_dir().'/orbit-topology-'.bin2hex(random_bytes(4)));
+        $paths = new StatePaths(temporaryPath('orbit-topology-', 4));
         $store = new TopologyManifestStore(new AtomicJsonStore($paths));
         $target = new TopologyTarget('NCK-321');
         $topology = topologyFixture($target);

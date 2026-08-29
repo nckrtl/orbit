@@ -8,7 +8,7 @@ use App\E2E\Value\OperationId;
 
 function legacyFixture(): array
 {
-    $root = sys_get_temp_dir().'/legacy-retirement-'.bin2hex(random_bytes(6));
+    $root = temporaryPath('legacy-retirement-', 6);
     mkdir($root.'/sources', 0700, true);
     mkdir($root.'/manifests', 0700, true);
     mkdir($root.'/locks', 0700, true);
@@ -106,7 +106,7 @@ function retirementService(
     string $now,
     ?Closure $observeCurrent = null,
 ): LegacyRetirement {
-    $paths = new \App\E2E\State\StatePaths(sys_get_temp_dir().'/legacy-retirement-lock-'.bin2hex(random_bytes(6)));
+    $paths = new \App\E2E\State\StatePaths(temporaryPath('legacy-retirement-lock-', 6));
 
     return new LegacyRetirement(
         function () use (&$observed): array {
@@ -141,10 +141,10 @@ it('revalidates only recorded resources from live state while resuming quarantin
     $observed = legacyFixture();
     $operations = [];
     $requests = [];
-    $journal = tempnam(sys_get_temp_dir(), 'legacy-journal-');
+    $journal = temporaryFile('legacy-journal-');
     chmod($journal, 0600);
     unlink($journal);
-    $evidence = tempnam(sys_get_temp_dir(), 'freeze-');
+    $evidence = temporaryFile('freeze-');
     file_put_contents($evidence, 'frozen');
     chmod($evidence, 0600);
     $initial = crashBeforeMutationRetirementService($observed, $operations, '2026-08-28T10:00:00+00:00', 'stop');
@@ -170,10 +170,10 @@ it('revalidates only recorded resources from live state while resuming quarantin
 it('uses the injected operation ID for the retirement lock', function () {
     $observed = legacyFixture();
     $operations = [];
-    $paths = new \App\E2E\State\StatePaths(sys_get_temp_dir().'/legacy-lock-'.bin2hex(random_bytes(4)));
+    $paths = new \App\E2E\State\StatePaths(temporaryPath('legacy-lock-', 4));
     $operation = new OperationId(str_repeat('e', 32));
     $seenOperation = null;
-    $evidence = tempnam(sys_get_temp_dir(), 'freeze-');
+    $evidence = temporaryFile('freeze-');
     file_put_contents($evidence, 'frozen');
     chmod($evidence, 0600);
 
@@ -208,7 +208,7 @@ function crashingRetirementService(
     string $crashOperation,
 ): LegacyRetirement {
     $crashed = false;
-    $paths = new \App\E2E\State\StatePaths(sys_get_temp_dir().'/legacy-retirement-lock-'.bin2hex(random_bytes(6)));
+    $paths = new \App\E2E\State\StatePaths(temporaryPath('legacy-retirement-lock-', 6));
 
     return new LegacyRetirement(
         function () use (&$observed): array {
@@ -250,7 +250,7 @@ function crashBeforeMutationRetirementService(
     string $crashOperation,
 ): LegacyRetirement {
     $crashed = false;
-    $paths = new \App\E2E\State\StatePaths(sys_get_temp_dir().'/legacy-retirement-lock-'.bin2hex(random_bytes(6)));
+    $paths = new \App\E2E\State\StatePaths(temporaryPath('legacy-retirement-lock-', 6));
 
     return new LegacyRetirement(
         function () use (&$observed): array {
@@ -328,7 +328,7 @@ describe('legacy retirement', function () {
     ]);
 
     it('rejects symbolic-link parents for every protected JSON input and provider observation', function () {
-        $root = sys_get_temp_dir().'/legacy-read-'.bin2hex(random_bytes(5));
+        $root = temporaryPath('legacy-read-', 5);
         mkdir($root.'/real', 0700, true);
         file_put_contents($root.'/real/state.json', '{}');
         chmod($root.'/real/state.json', 0600);
@@ -350,7 +350,7 @@ describe('legacy retirement', function () {
         $operations = [];
         $service = retirementService($observed, $operations, '2026-08-28T10:00:00+00:00');
         $inventory = $service->inventory();
-        $evidence = tempnam(sys_get_temp_dir(), 'freeze-');
+        $evidence = temporaryFile('freeze-');
         file_put_contents($evidence, 'frozen');
         chmod($evidence, 0600);
         $valid = $service->quarantine($inventory, $inventory->sha256(), $evidence)->toArray();
@@ -409,7 +409,7 @@ describe('legacy retirement', function () {
         $operations = [];
         $service = retirementService($observed, $operations, '2026-08-28T10:00:00+00:00');
         $inventory = $service->inventory();
-        $evidence = tempnam(sys_get_temp_dir(), 'freeze-');
+        $evidence = temporaryFile('freeze-');
         file_put_contents($evidence, 'frozen');
         chmod($evidence, 0600);
         $valid = $service->quarantine($inventory, $inventory->sha256(), $evidence)->toArray();
@@ -520,7 +520,7 @@ describe('legacy retirement', function () {
         $operations = [];
         $service = retirementService($observed, $operations, '2026-08-28T10:00:00+00:00');
         $inventory = $service->inventory();
-        $evidence = tempnam(sys_get_temp_dir(), 'freeze-');
+        $evidence = temporaryFile('freeze-');
         file_put_contents($evidence, 'old acquisition disabled');
         chmod($evidence, 0600);
 
@@ -540,7 +540,7 @@ describe('legacy retirement', function () {
         $operations = [];
         $service = retirementService($observed, $operations, '2026-08-28T10:00:00+00:00');
         $inventory = $service->inventory();
-        $evidence = tempnam(sys_get_temp_dir(), 'freeze-');
+        $evidence = temporaryFile('freeze-');
         file_put_contents($evidence, 'frozen');
         chmod($evidence, 0600);
         $manifest = $service->quarantine($inventory, $inventory->sha256(), $evidence);
@@ -551,7 +551,7 @@ describe('legacy retirement', function () {
     });
 
     it('stores exact filesystem types and rejects a reviewed file replaced by a directory', function () {
-        $root = sys_get_temp_dir().'/legacy-type-'.bin2hex(random_bytes(5));
+        $root = temporaryPath('legacy-type-', 5);
         mkdir($root.'/manifests', 0700, true);
         $path = $root.'/manifests/old.json';
         file_put_contents($path, '{}');
@@ -566,7 +566,7 @@ describe('legacy retirement', function () {
         $operations = [];
         $service = retirementService($observed, $operations, '2026-08-28T10:00:00+00:00');
         $inventory = $service->inventory();
-        $evidence = tempnam(sys_get_temp_dir(), 'freeze-');
+        $evidence = temporaryFile('freeze-');
         file_put_contents($evidence, 'frozen');
         chmod($evidence, 0600);
         $manifest = $service->quarantine($inventory, $inventory->sha256(), $evidence);
@@ -598,7 +598,7 @@ describe('legacy retirement', function () {
         $operations = [];
         $first = retirementService($observed, $operations, '2026-08-28T10:00:00+00:00');
         $inventory = $first->inventory();
-        $evidence = tempnam(sys_get_temp_dir(), 'freeze-');
+        $evidence = temporaryFile('freeze-');
         file_put_contents($evidence, 'frozen');
         chmod($evidence, 0600);
         $manifest = $first->quarantine($inventory, $inventory->sha256(), $evidence);
@@ -617,7 +617,7 @@ describe('legacy retirement', function () {
         $operations = [];
         $service = retirementService($observed, $operations, '2026-08-28T10:00:00+00:00');
         $inventory = $service->inventory();
-        $evidence = tempnam(sys_get_temp_dir(), 'freeze-');
+        $evidence = temporaryFile('freeze-');
         file_put_contents($evidence, 'frozen');
         chmod($evidence, 0600);
 
@@ -639,10 +639,10 @@ describe('legacy retirement', function () {
         $service = retirementService($observed, $operations, '2026-08-28T10:00:00+00:00');
         $inventory = $service->inventory();
         $observed['instances'][1]['status'] = 'STOPPED';
-        $journal = tempnam(sys_get_temp_dir(), 'legacy-journal-');
+        $journal = temporaryFile('legacy-journal-');
         chmod($journal, 0600);
         unlink($journal);
-        $evidence = tempnam(sys_get_temp_dir(), 'freeze-');
+        $evidence = temporaryFile('freeze-');
         file_put_contents($evidence, 'frozen');
         chmod($evidence, 0600);
 
@@ -659,12 +659,12 @@ describe('legacy retirement', function () {
     it('resumes quarantine after a crash before the stop and keeps the journal manifest timestamps', function () {
         $observed = legacyFixture();
         $operations = [];
-        $journal = tempnam(sys_get_temp_dir(), 'legacy-journal-');
+        $journal = temporaryFile('legacy-journal-');
         chmod($journal, 0600);
         unlink($journal);
         $service = crashBeforeMutationRetirementService($observed, $operations, '2026-08-28T10:00:00+00:00', 'stop');
         $inventory = $service->inventory();
-        $evidence = tempnam(sys_get_temp_dir(), 'freeze-');
+        $evidence = temporaryFile('freeze-');
         file_put_contents($evidence, 'frozen');
         chmod($evidence, 0600);
 
@@ -698,12 +698,12 @@ describe('legacy retirement', function () {
     it('resumes quarantine after a crash without repeating the stop', function () {
         $observed = legacyFixture();
         $operations = [];
-        $journal = tempnam(sys_get_temp_dir(), 'legacy-journal-');
+        $journal = temporaryFile('legacy-journal-');
         chmod($journal, 0600);
         unlink($journal);
         $service = crashingRetirementService($observed, $operations, '2026-08-28T10:00:00+00:00', 'stop');
         $inventory = $service->inventory();
-        $evidence = tempnam(sys_get_temp_dir(), 'freeze-');
+        $evidence = temporaryFile('freeze-');
         file_put_contents($evidence, 'frozen');
         chmod($evidence, 0600);
 
@@ -730,13 +730,13 @@ describe('legacy retirement', function () {
     it('resumes delete after a crash without repeating the deletion', function () {
         $observed = legacyFixture();
         $operations = [];
-        $evidence = tempnam(sys_get_temp_dir(), 'freeze-');
+        $evidence = temporaryFile('freeze-');
         file_put_contents($evidence, 'frozen');
         chmod($evidence, 0600);
         $prepared = retirementService($observed, $operations, '2026-08-28T10:00:00+00:00');
         $inventory = $prepared->inventory();
         $manifest = $prepared->quarantine($inventory, $inventory->sha256(), $evidence);
-        $journal = tempnam(sys_get_temp_dir(), 'legacy-journal-');
+        $journal = temporaryFile('legacy-journal-');
         chmod($journal, 0600);
         unlink($journal);
 
@@ -769,13 +769,13 @@ describe('legacy retirement', function () {
     it('resumes delete after a crash before the deletion and performs the mutation once on retry', function () {
         $observed = legacyFixture();
         $operations = [];
-        $evidence = tempnam(sys_get_temp_dir(), 'freeze-');
+        $evidence = temporaryFile('freeze-');
         file_put_contents($evidence, 'frozen');
         chmod($evidence, 0600);
         $prepared = retirementService($observed, $operations, '2026-08-28T10:00:00+00:00');
         $inventory = $prepared->inventory();
         $manifest = $prepared->quarantine($inventory, $inventory->sha256(), $evidence);
-        $journal = tempnam(sys_get_temp_dir(), 'legacy-journal-');
+        $journal = temporaryFile('legacy-journal-');
         chmod($journal, 0600);
         unlink($journal);
 
@@ -809,11 +809,11 @@ describe('legacy retirement', function () {
         $operations = [];
         $service = retirementService($observed, $operations, '2026-08-28T10:00:00+00:00');
         $inventory = $service->inventory();
-        $evidence = tempnam(sys_get_temp_dir(), 'freeze-');
+        $evidence = temporaryFile('freeze-');
         file_put_contents($evidence, 'frozen');
         chmod($evidence, 0600);
         $manifest = $service->quarantine($inventory, $inventory->sha256(), $evidence);
-        $journal = tempnam(sys_get_temp_dir(), 'legacy-journal-');
+        $journal = temporaryFile('legacy-journal-');
         chmod($journal, 0600);
 
         $service->write($journal, [
@@ -859,11 +859,11 @@ describe('legacy retirement', function () {
         $operations = [];
         $service = retirementService($observed, $operations, '2026-08-28T10:00:00+00:00');
         $inventory = $service->inventory();
-        $evidence = tempnam(sys_get_temp_dir(), 'freeze-');
+        $evidence = temporaryFile('freeze-');
         file_put_contents($evidence, 'frozen');
         chmod($evidence, 0600);
         $manifest = $service->quarantine($inventory, $inventory->sha256(), $evidence);
-        $journal = tempnam(sys_get_temp_dir(), 'legacy-journal-');
+        $journal = temporaryFile('legacy-journal-');
         chmod($journal, 0600);
 
         $service->write($journal, [
@@ -895,7 +895,7 @@ describe('legacy retirement', function () {
         expect(fn () => new \App\E2E\Value\RetirementInventory($groups, $inventory->preserved, $inventory->createdAt))
             ->toThrow(InvalidArgumentException::class, 'unique');
 
-        $pathRoot = sys_get_temp_dir().'/missing-legacy-'.bin2hex(random_bytes(4));
+        $pathRoot = temporaryPath('missing-legacy-', 4);
         mkdir($pathRoot, 0700);
         $source = ['path' => $pathRoot.'/gone', 'safe_root' => $pathRoot, 'classification' => 'legacy'];
         $smallObserved = [
@@ -906,7 +906,7 @@ describe('legacy retirement', function () {
         mkdir($source['path'], 0700);
         $early = retirementService($smallObserved, $smallOperations, '2026-08-28T10:00:00+00:00');
         $smallInventory = $early->inventory();
-        $evidence = tempnam(sys_get_temp_dir(), 'freeze-');
+        $evidence = temporaryFile('freeze-');
         file_put_contents($evidence, 'frozen');
         chmod($evidence, 0600);
         $manifest = $early->quarantine($smallInventory, $smallInventory->sha256(), $evidence);
@@ -927,7 +927,7 @@ describe('legacy retirement', function () {
         $operations = [];
         $first = retirementService($observed, $operations, '2026-08-28T10:00:00+00:00');
         $inventory = $first->inventory();
-        $evidence = tempnam(sys_get_temp_dir(), 'freeze-');
+        $evidence = temporaryFile('freeze-');
         file_put_contents($evidence, 'frozen');
         chmod($evidence, 0600);
         $manifest = $first->quarantine($inventory, $inventory->sha256(), $evidence);
@@ -964,14 +964,14 @@ describe('legacy retirement', function () {
     it('revalidates a later target at the process barrier after an earlier deletion', function () {
         $observed = legacyFixture();
         $operations = [];
-        $evidence = tempnam(sys_get_temp_dir(), 'freeze-');
+        $evidence = temporaryFile('freeze-');
         file_put_contents($evidence, 'frozen');
         chmod($evidence, 0600);
         $prepared = retirementService($observed, $operations, '2026-08-28T10:00:00+00:00');
         $inventory = $prepared->inventory();
         $manifest = $prepared->quarantine($inventory, $inventory->sha256(), $evidence);
         $observations = 0;
-        $paths = new \App\E2E\State\StatePaths(sys_get_temp_dir().'/legacy-barrier-'.bin2hex(random_bytes(5)));
+        $paths = new \App\E2E\State\StatePaths(temporaryPath('legacy-barrier-', 5));
         $service = new LegacyRetirement(
             fn (): array => $observed,
             function (string $operation, array $resource) use (&$observed, &$operations): void {

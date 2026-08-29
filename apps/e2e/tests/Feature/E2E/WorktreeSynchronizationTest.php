@@ -19,7 +19,7 @@ function syncGit(string $path, string ...$arguments): string
 
 function syncRepository(): string
 {
-    $path = sys_get_temp_dir().'/orbit-sync-test-'.bin2hex(random_bytes(8));
+    $path = temporaryPath('orbit-sync-test-', 8);
     mkdir($path, 0700);
     syncGit($path, 'init', '--quiet');
     syncGit($path, 'config', 'user.name', 'Orbit Test');
@@ -57,9 +57,9 @@ function runReceiveSource(string ...$arguments): array
 describe('worktree source preparation', function () {
     it('removes the temporary index when effective tree construction fails', function () {
         $host = syncRepository();
-        $guest = sys_get_temp_dir().'/orbit-sync-guest-'.bin2hex(random_bytes(8));
+        $guest = temporaryPath('orbit-sync-guest-', 8);
         mkdir($guest, 0700);
-        $transfer = sys_get_temp_dir().'/orbit-transfer-'.bin2hex(random_bytes(8));
+        $transfer = temporaryPath('orbit-transfer-', 8);
         mkdir($transfer, 0700);
         try {
             $repository = new GitRepository($host);
@@ -119,7 +119,7 @@ describe('worktree source preparation', function () {
 
     it('receives a bundle and replaces a dirty overlay with verified tree evidence', function () {
         $host = syncRepository();
-        $guest = sys_get_temp_dir().'/orbit-sync-guest-'.bin2hex(random_bytes(8));
+        $guest = temporaryPath('orbit-sync-guest-', 8);
         mkdir($guest, 0700);
 
         try {
@@ -134,7 +134,7 @@ describe('worktree source preparation', function () {
             $overlay = $repository->dirtyOverlay();
             $expectedTree = $overlay?->treeHash ?? $repository->effectiveTreeHash();
             $sha = $repository->commit();
-            $transfer = sys_get_temp_dir().'/orbit-transfer-'.bin2hex(random_bytes(8));
+            $transfer = temporaryPath('orbit-transfer-', 8);
             mkdir($transfer, 0700);
             $bundle = $transfer.'/source.bundle';
             $archive = $transfer.'/overlay.tar';
@@ -195,9 +195,9 @@ describe('worktree source preparation', function () {
 
     it('receives an overlay without a bundle only when the guest head still matches', function () {
         $host = syncRepository();
-        $guest = sys_get_temp_dir().'/orbit-sync-guest-'.bin2hex(random_bytes(8));
+        $guest = temporaryPath('orbit-sync-guest-', 8);
         mkdir($guest, 0700);
-        $transfer = sys_get_temp_dir().'/orbit-transfer-'.bin2hex(random_bytes(8));
+        $transfer = temporaryPath('orbit-transfer-', 8);
         mkdir($transfer, 0700);
 
         try {
@@ -344,9 +344,9 @@ describe('worktree source preparation', function () {
 
     it('preserves ignored dependency directories while cleaning the checkout', function () {
         $host = syncRepository();
-        $guest = sys_get_temp_dir().'/orbit-sync-guest-'.bin2hex(random_bytes(8));
+        $guest = temporaryPath('orbit-sync-guest-', 8);
         mkdir($guest, 0700);
-        $transfer = sys_get_temp_dir().'/orbit-transfer-'.bin2hex(random_bytes(8));
+        $transfer = temporaryPath('orbit-transfer-', 8);
         mkdir($transfer, 0700);
         try {
             file_put_contents($host.'/.gitignore', "ignored.txt\nvendor/\n");
@@ -404,7 +404,7 @@ describe('worktree source preparation', function () {
 
     it('never archives a regular file reached through a symlink parent', function () {
         $path = syncRepository();
-        $external = sys_get_temp_dir().'/orbit-archive-external-'.bin2hex(random_bytes(8));
+        $external = temporaryPath('orbit-archive-external-', 8);
         mkdir($external, 0700);
         file_put_contents($external.'/secret.txt', "outside\n");
         symlink($external, $path.'/linked');
@@ -426,7 +426,7 @@ describe('worktree source preparation', function () {
     it('refuses prior-overlay cleanup through a tracked symlink parent', function () {
         $host = syncRepository();
         $guest = syncRepository();
-        $external = sys_get_temp_dir().'/orbit-sync-external-'.bin2hex(random_bytes(8));
+        $external = temporaryPath('orbit-sync-external-', 8);
         mkdir($external, 0700);
         file_put_contents($external.'/target.txt', "preserve\n");
 

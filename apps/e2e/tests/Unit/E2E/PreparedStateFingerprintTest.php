@@ -18,7 +18,7 @@ describe('PreparedStateFingerprint', function (): void {
 
     beforeEach(function (): void {
         configureFingerprintProcessFacade();
-        $this->path = sys_get_temp_dir().'/orbit-fingerprint-'.bin2hex(random_bytes(6));
+        $this->path = temporaryPath('orbit-fingerprint-', 6);
         mkdir($this->path.'/resources', 0700, true);
         mkdir($this->path.'/contracts', 0700, true);
         mkdir($this->path.'/apps/e2e/app/E2E', 0700, true);

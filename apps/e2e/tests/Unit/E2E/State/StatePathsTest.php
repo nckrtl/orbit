@@ -8,7 +8,7 @@ use App\E2E\Value\TopologyTarget;
 
 describe('StatePaths', function () {
     it('uses XDG state and HOME fallback with private directories', function () {
-        $base = sys_get_temp_dir().'/orbit-paths-'.bin2hex(random_bytes(4));
+        $base = temporaryPath('orbit-paths-', 4);
         $xdg = StatePaths::fromEnvironment($base.'/xdg', $base.'/home');
         $fallback = StatePaths::fromEnvironment(null, $base.'/home');
 
@@ -21,7 +21,7 @@ describe('StatePaths', function () {
     });
 
     it('rejects absolute, dot, parent, NUL, backslash, and symbolic-link escapes', function () {
-        $base = sys_get_temp_dir().'/orbit-paths-'.bin2hex(random_bytes(4));
+        $base = temporaryPath('orbit-paths-', 4);
         $paths = new StatePaths($base.'/state');
         mkdir($base.'/outside');
         symlink($base.'/outside', $paths->root().'/escape');

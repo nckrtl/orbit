@@ -14,7 +14,7 @@ use Illuminate\Support\Facades\Process;
 /** @return array{LegacyRetirement, QuarantineManifest, string} */
 function providerDeletionFixture(string $kind = 'instances', string $name = 'old-vm'): array
 {
-    $root = sys_get_temp_dir().'/legacy-provider-delete-'.bin2hex(random_bytes(6));
+    $root = temporaryPath('legacy-provider-delete-', 6);
     mkdir($root, 0700);
     $observation = $root.'/observation.json';
     $evidence = $root.'/freeze.json';
@@ -54,7 +54,7 @@ describe('legacy commands', function () {
         string $kind,
         string $expectedType,
     ): void {
-        $root = sys_get_temp_dir().'/legacy-provider-type-'.bin2hex(random_bytes(5));
+        $root = temporaryPath('legacy-provider-type-', 5);
         mkdir($root, 0700);
         $path = $root.'/target';
         if ($expectedType === 'directory') {
@@ -100,7 +100,7 @@ describe('legacy commands', function () {
         string $kind,
         bool $finalLink,
     ): void {
-        $root = sys_get_temp_dir().'/legacy-provider-link-'.bin2hex(random_bytes(5));
+        $root = temporaryPath('legacy-provider-link-', 5);
         mkdir($root.'/real', 0700, true);
         file_put_contents($root.'/real/target', 'protected');
         $path = $root.'/real/target';
@@ -148,7 +148,7 @@ describe('legacy commands', function () {
     ]);
 
     it('rejects a provider observation manifest beneath a symbolic-link parent', function () {
-        $root = sys_get_temp_dir().'/legacy-provider-'.bin2hex(random_bytes(5));
+        $root = temporaryPath('legacy-provider-', 5);
         mkdir($root.'/real', 0700, true);
         file_put_contents($root.'/real/observation.json', '{}');
         chmod($root.'/real/observation.json', 0600);
@@ -168,7 +168,7 @@ describe('legacy commands', function () {
     });
 
     it('rejects symlink-parent inventory, quarantine, and retirement command inputs', function () {
-        $root = sys_get_temp_dir().'/legacy-inputs-'.bin2hex(random_bytes(5));
+        $root = temporaryPath('legacy-inputs-', 5);
         mkdir($root.'/real', 0700, true);
         file_put_contents($root.'/real/state.json', '{}');
         chmod($root.'/real/state.json', 0600);
@@ -247,7 +247,7 @@ describe('legacy commands', function () {
     });
 
     it('queries only the resources requested by one mutation barrier', function () {
-        $root = sys_get_temp_dir().'/legacy-provider-batch-'.bin2hex(random_bytes(5));
+        $root = temporaryPath('legacy-provider-batch-', 5);
         mkdir($root, 0700);
         $observation = $root.'/observation.json';
         $resource = static fn (string $name): array => [
@@ -343,7 +343,7 @@ describe('legacy commands', function () {
     });
 
     it('verifies retirement against the current Incus host instead of the frozen observation', function () {
-        $root = sys_get_temp_dir().'/legacy-provider-verify-'.bin2hex(random_bytes(5));
+        $root = temporaryPath('legacy-provider-verify-', 5);
         mkdir($root, 0700);
         $observation = $root.'/observation.json';
         $retirement = $root.'/retirement.json';

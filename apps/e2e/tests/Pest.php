@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Tests\Support\TemporaryPaths;
 use Tests\TestCase;
 
 uses(TestCase::class)->in('Feature');
@@ -22,3 +23,15 @@ function verificationProbeFixture(bool $passed = true, string $probe = 'fixture'
         'evidence_ref' => 'incus://orbit-e2e-fixture/'.$probe,
     ];
 }
+
+function temporaryPath(string $prefix, int $randomBytes = 8): string
+{
+    return TemporaryPaths::path($prefix, $randomBytes);
+}
+
+function temporaryFile(string $prefix): string
+{
+    return TemporaryPaths::file($prefix);
+}
+
+pest()->afterEach(fn () => TemporaryPaths::cleanup());

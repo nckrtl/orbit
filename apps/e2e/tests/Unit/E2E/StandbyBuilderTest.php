@@ -128,7 +128,7 @@ describe('StandbyBuilder', function () {
     it('requires explicit cold-build permission before touching Incus', function () {
         /** @mago-expect analysis:possibly-invalid-argument Test helpers resolve only known class names. */
         $uninitialized = fn (string $class): object => new ReflectionClass($class)->newInstanceWithoutConstructor();
-        $paths = new StatePaths(sys_get_temp_dir().'/orbit-builder-'.bin2hex(random_bytes(4)));
+        $paths = new StatePaths(temporaryPath('orbit-builder-', 4));
         $state = new AtomicJsonStore($paths);
         $manifests = new StandbyManifestStore($state, $paths);
         $builder = new StandbyBuilder(
@@ -157,7 +157,7 @@ describe('StandbyBuilder', function () {
 
     /** @mago-expect lint:cyclomatic-complexity The cold-build fixture keeps one complete lifecycle assertion. */
     it('starts every newly initialized VM before source synchronization', function () {
-        $paths = new StatePaths(sys_get_temp_dir().'/orbit-builder-'.bin2hex(random_bytes(4)));
+        $paths = new StatePaths(temporaryPath('orbit-builder-', 4));
         $state = new AtomicJsonStore($paths);
         $started = [];
         $initialized = [];
@@ -299,7 +299,7 @@ describe('StandbyBuilder', function () {
     });
 
     it('accepts a fully cleaned attempt recorded with the former standby network identity', function () {
-        $paths = new StatePaths(sys_get_temp_dir().'/orbit-builder-'.bin2hex(random_bytes(4)));
+        $paths = new StatePaths(temporaryPath('orbit-builder-', 4));
         $state = new AtomicJsonStore($paths);
         $previousEvidence = str_repeat('a', 32);
         $state->write("standby/cold-attempts/{$previousEvidence}.json", [
@@ -333,7 +333,7 @@ describe('StandbyBuilder', function () {
     });
 
     it('recovers an interrupted exact intent before cold construction', function () {
-        $paths = new StatePaths(sys_get_temp_dir().'/orbit-builder-'.bin2hex(random_bytes(4)));
+        $paths = new StatePaths(temporaryPath('orbit-builder-', 4));
         $state = new AtomicJsonStore($paths);
         $previousEvidence = str_repeat('a', 32);
         $previousOperation = str_repeat('b', 32);
@@ -408,7 +408,7 @@ describe('StandbyBuilder', function () {
     });
 
     it('accepts fully cleaned attempt evidence from schema two', function () {
-        $paths = new StatePaths(sys_get_temp_dir().'/orbit-builder-'.bin2hex(random_bytes(4)));
+        $paths = new StatePaths(temporaryPath('orbit-builder-', 4));
         $state = new AtomicJsonStore($paths);
         $previousEvidence = str_repeat('a', 32);
         $state->write(
@@ -430,7 +430,7 @@ describe('StandbyBuilder', function () {
     });
 
     it('rejects active attempt evidence from schema two', function () {
-        $paths = new StatePaths(sys_get_temp_dir().'/orbit-builder-'.bin2hex(random_bytes(4)));
+        $paths = new StatePaths(temporaryPath('orbit-builder-', 4));
         $state = new AtomicJsonStore($paths);
         $previousEvidence = str_repeat('a', 32);
         $attempt = legacy_cleaned_standby_attempt($previousEvidence);
@@ -452,7 +452,7 @@ describe('StandbyBuilder', function () {
     });
 
     it('rejects an active attempt recorded with the former standby network identity', function () {
-        $paths = new StatePaths(sys_get_temp_dir().'/orbit-builder-'.bin2hex(random_bytes(4)));
+        $paths = new StatePaths(temporaryPath('orbit-builder-', 4));
         $state = new AtomicJsonStore($paths);
         $previousEvidence = str_repeat('a', 32);
         $state->write("standby/cold-attempts/{$previousEvidence}.json", [
@@ -486,7 +486,7 @@ describe('StandbyBuilder', function () {
     });
 
     it('rejects a cold attempt with an unknown lifecycle status', function () {
-        $paths = new StatePaths(sys_get_temp_dir().'/orbit-builder-'.bin2hex(random_bytes(4)));
+        $paths = new StatePaths(temporaryPath('orbit-builder-', 4));
         $state = new AtomicJsonStore($paths);
         $evidence = str_repeat('a', 32);
         $state->write("standby/cold-attempts/{$evidence}.json", [
@@ -516,7 +516,7 @@ describe('StandbyBuilder', function () {
     });
 
     it('deletes only resources recorded by a failed cold attempt in reverse order', function (int $count) {
-        $paths = new StatePaths(sys_get_temp_dir().'/orbit-builder-'.bin2hex(random_bytes(4)));
+        $paths = new StatePaths(temporaryPath('orbit-builder-', 4));
         $state = new AtomicJsonStore($paths);
         $roles = array_slice(['gateway', 'app-dev', 'app-prod'], 0, $count);
         $instances = array_map(fn (string $role): string => "orbit-e2e-standby-{$role}", $roles);
@@ -650,7 +650,7 @@ describe('StandbyBuilder', function () {
     ]);
 
     it('adopts and deletes a planned VM when init reports failure after remote creation', function () {
-        $paths = new StatePaths(sys_get_temp_dir().'/orbit-builder-'.bin2hex(random_bytes(4)));
+        $paths = new StatePaths(temporaryPath('orbit-builder-', 4));
         $state = new AtomicJsonStore($paths);
         $existing = [];
         $instances = [
@@ -825,7 +825,7 @@ describe('StandbyBuilder', function () {
     });
 
     it('preflights the complete topology before any create when a later VM already exists', function () {
-        $paths = new StatePaths(sys_get_temp_dir().'/orbit-builder-'.bin2hex(random_bytes(4)));
+        $paths = new StatePaths(temporaryPath('orbit-builder-', 4));
         $state = new AtomicJsonStore($paths);
         $evidence = str_repeat('9', 32);
         $observed = [];
@@ -979,7 +979,7 @@ describe('StandbyBuilder', function () {
     });
 
     it('refuses all cleanup mutations when any recorded resource has mismatched ownership', function () {
-        $paths = new StatePaths(sys_get_temp_dir().'/orbit-builder-'.bin2hex(random_bytes(4)));
+        $paths = new StatePaths(temporaryPath('orbit-builder-', 4));
         $state = new AtomicJsonStore($paths);
         $evidence = str_repeat('b', 32);
         $state->write("standby/cold-attempts/{$evidence}.json", [
@@ -1052,7 +1052,7 @@ describe('StandbyBuilder', function () {
     });
 
     it('fails closed when a recorded resource persists after deletion', function () {
-        $paths = new StatePaths(sys_get_temp_dir().'/orbit-builder-'.bin2hex(random_bytes(4)));
+        $paths = new StatePaths(temporaryPath('orbit-builder-', 4));
         $state = new AtomicJsonStore($paths);
         $evidence = str_repeat('c', 32);
         $state->write("standby/cold-attempts/{$evidence}.json", [
@@ -1101,7 +1101,7 @@ describe('StandbyBuilder', function () {
     });
 
     it('clears only a corrupt marker with matching evidence after exact recovery', function () {
-        $paths = new StatePaths(sys_get_temp_dir().'/orbit-builder-'.bin2hex(random_bytes(4)));
+        $paths = new StatePaths(temporaryPath('orbit-builder-', 4));
         $state = new AtomicJsonStore($paths);
         $evidence = str_repeat('d', 32);
         $state->write("standby/cold-attempts/{$evidence}.json", [
@@ -1132,7 +1132,7 @@ describe('StandbyBuilder', function () {
     });
 
     it('retains a corrupt marker for different evidence after exact recovery', function () {
-        $paths = new StatePaths(sys_get_temp_dir().'/orbit-builder-'.bin2hex(random_bytes(4)));
+        $paths = new StatePaths(temporaryPath('orbit-builder-', 4));
         $state = new AtomicJsonStore($paths);
         $evidence = str_repeat('e', 32);
         $state->write("standby/cold-attempts/{$evidence}.json", [

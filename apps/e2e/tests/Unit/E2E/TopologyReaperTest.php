@@ -15,7 +15,7 @@ use App\E2E\Value\ReleaseResult;
 
 describe('topology reaping input', function () {
     it('rejects an impossible expiry before releasing any topology', function () {
-        $root = sys_get_temp_dir().'/orbit-reaper-'.bin2hex(random_bytes(8));
+        $root = temporaryPath('orbit-reaper-', 8);
         $paths = new StatePaths($root);
         $store = new AtomicJsonStore($paths);
         $store->write('leases/NCK-12.json', [
@@ -37,7 +37,7 @@ describe('topology reaping input', function () {
     });
 
     it('interprets canonical expiry timestamps as UTC', function () {
-        $root = sys_get_temp_dir().'/orbit-reaper-'.bin2hex(random_bytes(8));
+        $root = temporaryPath('orbit-reaper-', 8);
         $paths = new StatePaths($root);
         $store = new AtomicJsonStore($paths);
         $store->write('leases/NCK-12.json', [
@@ -69,7 +69,7 @@ describe('topology reaping input', function () {
     });
 
     it('preflights all leases before finalizing an expired lease', function () {
-        $root = sys_get_temp_dir().'/orbit-reaper-'.bin2hex(random_bytes(8));
+        $root = temporaryPath('orbit-reaper-', 8);
         $paths = new StatePaths($root);
         $store = new AtomicJsonStore($paths);
         $store->write('leases/NCK-12.json', ['issue' => 'NCK-12', 'expires_at' => '1970-01-01T00:00:00Z']);
@@ -99,7 +99,7 @@ describe('topology reaping input', function () {
     });
 
     it('records one release failure and continues with later expired issues', function () {
-        $root = sys_get_temp_dir().'/orbit-reaper-'.bin2hex(random_bytes(8));
+        $root = temporaryPath('orbit-reaper-', 8);
         $paths = new StatePaths($root);
         $store = new AtomicJsonStore($paths);
         foreach (['NCK-12', 'NCK-13'] as $issue) {
@@ -142,7 +142,7 @@ describe('topology reaping input', function () {
     });
 
     it('requires a private external issue snapshot with exact terminal entries', function () {
-        $path = sys_get_temp_dir().'/orbit-issues-'.bin2hex(random_bytes(8)).'.json';
+        $path = temporaryPath('orbit-issues-', 8).'.json';
         file_put_contents($path, json_encode([
             'schema' => 1,
             'issues' => ['NCK-12' => 'completed'],

@@ -2276,7 +2276,7 @@ describe('IncusHost mutations', function () {
     });
 
     it('starts all helper guest processes before the process barrier can pass', function () {
-        $directory = sys_get_temp_dir().'/orbit-exec-all-'.bin2hex(random_bytes(6));
+        $directory = temporaryPath('orbit-exec-all-', 6);
         mkdir($directory, 0700);
         $incus = $directory.'/incus';
         $barrier = $directory.'/barrier';
@@ -2393,7 +2393,7 @@ describe('IncusHost mutations', function () {
 
             return Process::result('ready');
         });
-        $paths = new StatePaths(sys_get_temp_dir().'/orbit-incus-cache-'.bin2hex(random_bytes(6)));
+        $paths = new StatePaths(temporaryPath('orbit-incus-cache-', 6));
         $operation = new OperationId(str_repeat('a', 32));
         $host = incusHost(journal: new OperationJournal($paths), operationId: $operation);
         $commands = [
@@ -2646,7 +2646,7 @@ describe('IncusHost failures', function () {
     });
 
     it('journals failures under the caller operation identity', function () {
-        $state = new StatePaths(sys_get_temp_dir().'/orbit-incus-host-'.bin2hex(random_bytes(6)));
+        $state = new StatePaths(temporaryPath('orbit-incus-host-', 6));
         $redactor = new SecretRedactor(['token-value']);
         $journal = new OperationJournal($state, $redactor);
         $operationId = new OperationId(str_repeat('a', 32));

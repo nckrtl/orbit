@@ -16,7 +16,7 @@ beforeEach(function (): void {
 
 describe('descriptor-relative host deletion', function (): void {
     it('rejects a symbolic-link ancestor of the safe root', function (): void {
-        $root = sys_get_temp_dir().'/orbit-safe-root-'.bin2hex(random_bytes(5));
+        $root = temporaryPath('orbit-safe-root-', 5);
         mkdir($root.'/real/safe', 0700, true);
         file_put_contents($root.'/real/safe/manifest.json', 'protected');
         symlink($root.'/real', $root.'/linked-parent');
@@ -40,7 +40,7 @@ describe('descriptor-relative host deletion', function (): void {
     });
 
     it('rejects a parent replaced with a symlink without touching outside the safe root', function (): void {
-        $root = sys_get_temp_dir().'/orbit-safe-root-'.bin2hex(random_bytes(5));
+        $root = temporaryPath('orbit-safe-root-', 5);
         $safe = $root.'/safe';
         $outside = $root.'/outside';
         mkdir($safe.'/parent', 0700, true);
@@ -67,7 +67,7 @@ describe('descriptor-relative host deletion', function (): void {
     });
 
     it('does not delete a final symbolic link', function (): void {
-        $root = sys_get_temp_dir().'/orbit-safe-root-'.bin2hex(random_bytes(5));
+        $root = temporaryPath('orbit-safe-root-', 5);
         mkdir($root.'/files', 0700, true);
         $outside = $root.'/outside.json';
         file_put_contents($outside, 'protected');
@@ -93,7 +93,7 @@ describe('descriptor-relative host deletion', function (): void {
     });
 
     it('deletes only the expected regular file or directory', function (): void {
-        $root = sys_get_temp_dir().'/orbit-safe-root-'.bin2hex(random_bytes(5));
+        $root = temporaryPath('orbit-safe-root-', 5);
         mkdir($root.'/files', 0700, true);
         mkdir($root.'/source', 0700);
         file_put_contents($root.'/files/manifest.json', '{}');
@@ -111,7 +111,7 @@ describe('descriptor-relative host deletion', function (): void {
     });
 
     it('recursively deletes non-empty source trees without following links', function (): void {
-        $root = sys_get_temp_dir().'/orbit-safe-root-'.bin2hex(random_bytes(5));
+        $root = temporaryPath('orbit-safe-root-', 5);
         $source = $root.'/checkout';
         $outside = $root.'/outside';
         mkdir($source.'/nested/deep', 0700, true);

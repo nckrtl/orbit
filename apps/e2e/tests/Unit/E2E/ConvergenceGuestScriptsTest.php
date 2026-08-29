@@ -6,7 +6,7 @@ use Symfony\Component\Process\Process;
 
 function gateway_prerequisite_fixture(): string
 {
-    $root = sys_get_temp_dir().'/orbit-gateway-prereqs-'.bin2hex(random_bytes(4));
+    $root = temporaryPath('orbit-gateway-prereqs-', 4);
     mkdir("{$root}/bin", 0o700, true);
     file_put_contents("{$root}/bin/dpkg-query", <<<'BASH'
         #!/usr/bin/env bash
@@ -32,7 +32,7 @@ function gateway_prerequisite_fixture(): string
 /** @return array{root:string, checkout:string, script:string, environment:array<string, string>} */
 function sample_hydration_fixture(bool $commitPresent = true): array
 {
-    $root = sys_get_temp_dir().'/orbit-sample-hydration-'.bin2hex(random_bytes(4));
+    $root = temporaryPath('orbit-sample-hydration-', 4);
     $checkout = "{$root}/checkout";
     mkdir("{$root}/bin", 0o700, true);
     mkdir("{$checkout}/.git", 0o700, true);
@@ -103,7 +103,7 @@ function sample_hydration_fixture(bool $commitPresent = true): array
 /** @return array{root:string,script:string,state:string,commands:string,caddy:string,ca:string} */
 function convergence_app_fixture(string $scriptName): array
 {
-    $root = sys_get_temp_dir().'/orbit-'.$scriptName.'-'.bin2hex(random_bytes(4));
+    $root = temporaryPath('orbit-'.$scriptName.'-', 4);
     $checkout = "{$root}/checkout/apps/gateway";
     $orbitHome = "{$root}/orbit-home";
     $state = "{$root}/state";
@@ -254,7 +254,7 @@ describe('Gateway host prerequisite convergence', function () {
 
 describe('convergence guest scripts', function () {
     it('runs Gateway Artisan commands from the Gateway checkout', function () {
-        $root = sys_get_temp_dir().'/orbit-gateway-converge-'.bin2hex(random_bytes(4));
+        $root = temporaryPath('orbit-gateway-converge-', 4);
         try {
             mkdir("{$root}/bin", 0o700, true);
             mkdir("{$root}/checkout/apps/gateway", 0o700, true);
@@ -368,7 +368,7 @@ describe('convergence guest scripts', function () {
     });
 
     it('repairs the node WireGuard endpoint only when the Gateway address changed', function (): void {
-        $root = sys_get_temp_dir().'/orbit-retarget-vpn-'.bin2hex(random_bytes(4));
+        $root = temporaryPath('orbit-retarget-vpn-', 4);
         mkdir("{$root}/bin", 0o700, true);
         mkdir("{$root}/etc/wireguard", 0o700, true);
         file_put_contents(
@@ -431,7 +431,7 @@ describe('convergence guest scripts', function () {
     });
 
     it('exits cleanly on an unprovisioned node without a WireGuard config', function (): void {
-        $root = sys_get_temp_dir().'/orbit-retarget-vpn-'.bin2hex(random_bytes(4));
+        $root = temporaryPath('orbit-retarget-vpn-', 4);
         mkdir($root, 0o700, true);
         $script = str_replace(
             '/etc/wireguard/orbit.conf',
@@ -495,7 +495,7 @@ describe('convergence guest scripts', function () {
     });
 
     it('returns complete structured evidence for a command-only VM probe', function () {
-        $root = sys_get_temp_dir().'/orbit-verifier-'.bin2hex(random_bytes(4));
+        $root = temporaryPath('orbit-verifier-', 4);
         mkdir("{$root}/bin", 0o700, true);
         file_put_contents("{$root}/bin/systemctl", "#!/usr/bin/env bash\nprintf 'running\\n'\n");
         chmod("{$root}/bin/systemctl", 0o700);
@@ -523,7 +523,7 @@ describe('convergence guest scripts', function () {
     });
 
     it('accepts degraded system state when systemctl returns a nonzero status', function () {
-        $root = sys_get_temp_dir().'/orbit-verifier-degraded-'.bin2hex(random_bytes(4));
+        $root = temporaryPath('orbit-verifier-degraded-', 4);
         mkdir("{$root}/bin", 0o700, true);
         file_put_contents("{$root}/bin/systemctl", "#!/usr/bin/env bash\nprintf 'degraded\\n'\nexit 1\n");
         chmod("{$root}/bin/systemctl", 0o700);
@@ -544,7 +544,7 @@ describe('convergence guest scripts', function () {
     });
 
     it('verifies the exact source manifest and effective guest tree', function () {
-        $root = sys_get_temp_dir().'/orbit-verifier-source-'.bin2hex(random_bytes(4));
+        $root = temporaryPath('orbit-verifier-source-', 4);
         $repository = "{$root}/orbit";
         mkdir($repository, 0o700, true);
 
@@ -616,7 +616,7 @@ describe('convergence guest scripts', function () {
     });
 
     it('accepts degraded system state but rejects other non-failed states', function () {
-        $root = sys_get_temp_dir().'/orbit-verifier-state-'.bin2hex(random_bytes(4));
+        $root = temporaryPath('orbit-verifier-state-', 4);
         mkdir("{$root}/bin", 0o700, true);
         file_put_contents("{$root}/bin/systemctl", "#!/usr/bin/env bash\nprintf '%s\\n' \"\$SYSTEM_STATE\"\n");
         chmod("{$root}/bin/systemctl", 0o700);
@@ -661,7 +661,7 @@ describe('convergence guest scripts', function () {
     });
 
     it('emits no JSON when an observable command fails', function () {
-        $root = sys_get_temp_dir().'/orbit-verifier-fail-'.bin2hex(random_bytes(4));
+        $root = temporaryPath('orbit-verifier-fail-', 4);
         mkdir("{$root}/bin", 0o700, true);
         file_put_contents("{$root}/bin/systemctl", "#!/usr/bin/env bash\nexit 1\n");
         chmod("{$root}/bin/systemctl", 0o700);
@@ -677,7 +677,7 @@ describe('convergence guest scripts', function () {
     });
 
     it('fails wireguard reachability before SSH when the app-prod route is missing', function () {
-        $root = sys_get_temp_dir().'/orbit-verifier-wireguard-'.bin2hex(random_bytes(4));
+        $root = temporaryPath('orbit-verifier-wireguard-', 4);
         mkdir("{$root}/bin", 0o700, true);
         mkdir("{$root}/home/orbit/.orbit/ssh", 0o700, true);
         file_put_contents("{$root}/gateway.sqlite", 'fixture');
@@ -745,7 +745,7 @@ describe('convergence guest scripts', function () {
     });
 
     it('proves the exact control-plane role assignments', function () {
-        $root = sys_get_temp_dir().'/orbit-verifier-roles-'.bin2hex(random_bytes(4));
+        $root = temporaryPath('orbit-verifier-roles-', 4);
         mkdir("{$root}/bin", 0o700, true);
         try {
             $db = "{$root}/gateway.sqlite";
@@ -1173,7 +1173,7 @@ describe('convergence guest scripts', function () {
     ]);
 
     it('does not create duplicate sample resources on a second run', function () {
-        $root = sys_get_temp_dir().'/orbit-task7-resources-'.bin2hex(random_bytes(6));
+        $root = temporaryPath('orbit-task7-resources-', 6);
         mkdir($root, 0o700, true);
         $source = file_get_contents(dirname(__DIR__, 3).'/resources/guest/converge-sample-app.sh');
         $script = str_replace('orbit=/home/orbit/orbit/apps/cli/orbit', "orbit={$root}/orbit", $source);
@@ -1234,7 +1234,7 @@ describe('convergence guest scripts', function () {
     });
 
     it('reuses the original rendered Caddy config without recursive imports', function () {
-        $root = sys_get_temp_dir().'/orbit-task7-caddy-'.bin2hex(random_bytes(6));
+        $root = temporaryPath('orbit-task7-caddy-', 6);
         mkdir("{$root}/etc/caddy", 0o700, true);
         mkdir("{$root}/state", 0o700, true);
         mkdir("{$root}/bin", 0o700, true);
