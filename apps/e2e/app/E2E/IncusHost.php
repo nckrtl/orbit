@@ -296,7 +296,7 @@ final class IncusHost implements GuestTransport
         );
     }
 
-    /** @param array<string, array{image:string,name:string,network:string,role:string,topology:string,metadata:array<string,string>}> $vms */
+    /** @param array<string, array{image:string,name:string,network:string,role:string,topology:string,slot:int,metadata:array<string,string>}> $vms */
     public function initVms(array $vms): array
     {
         if ($vms === []) {
@@ -342,6 +342,8 @@ final class IncusHost implements GuestTransport
                 '--device',
                 'eth0,network='.$vm['network'],
                 '--device',
+                'eth0,ipv4.address='.TopologyTarget::ipv4For($vm['slot'], $vm['role']),
+                '--device',
                 'eth0,hwaddr='.$this->deterministicMac($vm['topology'], $vm['role']),
             ];
             foreach ([...$this->ownershipMetadata, ...$vm['metadata']] as $key => $value) {
@@ -380,7 +382,7 @@ final class IncusHost implements GuestTransport
     }
 
     /**
-     * @param array<string, array{source:string,snapshot:string,target:string,metadata:array<string, string>,network?:string,role?:string,topology?:string}> $copies
+     * @param array<string, array{source:string,snapshot:string,target:string,metadata:array<string, string>,network?:string,role?:string,topology?:string,slot?:int}> $copies
      * @return array<string, IncusInstance>
      */
     public function copySnapshots(array $copies): array
@@ -416,6 +418,7 @@ final class IncusHost implements GuestTransport
                 $copy['network'] ?? null,
                 $copy['role'] ?? null,
                 $copy['topology'] ?? null,
+                $copy['slot'] ?? null,
                 false,
             );
             [$commands[$label], $instances[$label]] = $copyResult;
@@ -435,6 +438,7 @@ final class IncusHost implements GuestTransport
         }
 
         $this->assertOwned($resource->metadata, "network {$network}");
+        $slot = $this->networkSlot($resource);
         $this->run([
             'config',
             'device',
@@ -442,6 +446,7 @@ final class IncusHost implements GuestTransport
             $this->target($instance),
             'eth0',
             "network={$network}",
+            'ipv4.address='.TopologyTarget::ipv4For($slot, $role),
             'hwaddr='.$this->deterministicMac($network, $role),
         ]);
     }
@@ -456,6 +461,7 @@ final class IncusHost implements GuestTransport
             throw new RuntimeException("Incus network {$network} does not exist.");
         }
         $this->assertOwned($resource->metadata, "network {$network}");
+        $slot = $this->networkSlot($resource);
 
         $commands = [];
         $ownedInstances = $this->ownedInstances(array_values($instancesByRole), 'clone network configuration');
@@ -471,6 +477,7 @@ final class IncusHost implements GuestTransport
                 $this->target($instance),
                 'eth0',
                 "network={$network}",
+                'ipv4.address='.TopologyTarget::ipv4For($slot, $role),
                 'hwaddr='.$this->deterministicMac($network, $role),
             ];
         }
@@ -492,6 +499,7 @@ final class IncusHost implements GuestTransport
             throw new RuntimeException("Incus network {$network} does not exist.");
         }
         $this->assertOwned($resource->metadata, "network {$network}");
+        $slot = $this->networkSlot($resource);
 
         $resources = $this->instanceInventory(array_values($instancesByRole), 'topology network validation');
         foreach ($instancesByRole as $role => $instance) {
@@ -507,6 +515,9 @@ final class IncusHost implements GuestTransport
             }
             if (($eth0['hwaddr'] ?? null) !== $this->deterministicMac($network, $role)) {
                 throw new RuntimeException("Incus instance {$instance} MAC identity does not match topology.");
+            }
+            if (($eth0['ipv4.address'] ?? null) !== TopologyTarget::ipv4For($slot, $role)) {
+                throw new RuntimeException("Incus instance {$instance} IPv4 identity does not match topology.");
             }
         }
     }
@@ -1711,6 +1722,7 @@ final class IncusHost implements GuestTransport
         ?string $network = null,
         ?string $role = null,
         ?string $topology = null,
+        ?int $slot = null,
         bool $validateSource = true,
     ): array {
         $this->validateName($source, 'instance');
@@ -1732,8 +1744,11 @@ final class IncusHost implements GuestTransport
             $configuration[] = '--config';
             $configuration[] = "{$key}={$value}";
         }
-        if ($network !== null || $role !== null || $topology !== null) {
+        if ($network !== null || $role !== null || $topology !== null || $slot !== null) {
             if (! is_string($network) || ! is_string($role) || ! is_string($topology)) {
+                throw new RuntimeException('Incus snapshot copy network identity is incomplete.');
+            }
+            if ($slot === null) {
                 throw new RuntimeException('Incus snapshot copy network identity is incomplete.');
             }
             $this->validateName($network, 'network');
@@ -1741,6 +1756,8 @@ final class IncusHost implements GuestTransport
             $this->validateName($topology, 'topology');
             $configuration[] = '--device';
             $configuration[] = 'eth0,network='.$network;
+            $configuration[] = '--device';
+            $configuration[] = 'eth0,ipv4.address='.TopologyTarget::ipv4For($slot, $role);
             $configuration[] = '--device';
             $configuration[] = 'eth0,hwaddr='.$this->deterministicMac($topology, $role);
         }
@@ -1766,6 +1783,21 @@ final class IncusHost implements GuestTransport
         ];
     }
 
+    private function networkSlot(IncusNetwork $network): int
+    {
+        $address = $network->config['ipv4.address'] ?? null;
+        if (! is_string($address) || preg_match('/\A10\.232\.(\d{1,3})\.1\/24\z/D', $address, $matches) !== 1) {
+            throw new RuntimeException('Incus network IPv4 configuration does not contain a valid topology slot.');
+        }
+
+        $slot = (int) $matches[1];
+        if ($slot < 1 || $slot > 200) {
+            throw new RuntimeException('Incus network IPv4 configuration contains an invalid topology slot.');
+        }
+
+        return $slot;
+    }
+
     /**
      * @param array<string, array{
      *     source:string,
@@ -1774,7 +1806,8 @@ final class IncusHost implements GuestTransport
      *     metadata:array<string,string>,
      *     network?:string,
      *     role?:string,
-     *     topology?:string
+     *     topology?:string,
+     *     slot?:int
      * }> $copies
      */
     private function validateSnapshotCopies(array $copies): void

@@ -92,7 +92,7 @@ function topologyVerifierInventory(PendingProcess $process): ?ProcessResult
             'name' => 'oe-standby',
             'config' => [
                 'user.orbit.e2e.owner' => 'orbit-e2e',
-                'ipv4.address' => '192.0.2.0/24',
+                'ipv4.address' => '10.232.1.1/24',
             ],
         ]], JSON_THROW_ON_ERROR));
     }
@@ -111,6 +111,8 @@ function topologyVerifierInventory(PendingProcess $process): ?ProcessResult
         $name = 'orbit-e2e-standby-'.$role;
         $mac = implode(':', str_split(substr(sha1('oe-standby:'.$role), 0, 6), 2));
 
+        $ipv4 = ['gateway' => '10.232.1.10', 'app-dev' => '10.232.1.11', 'app-prod' => '10.232.1.12'][$role];
+
         return [
             'name' => $name,
             'type' => 'virtual-machine',
@@ -119,7 +121,11 @@ function topologyVerifierInventory(PendingProcess $process): ?ProcessResult
             'config' => ['user.orbit.e2e.owner' => 'orbit-e2e'],
             'devices' => [
                 'root' => ['pool' => 'orbit-e2e'],
-                'eth0' => ['network' => 'oe-standby', 'hwaddr' => '00:16:3e:'.$mac],
+                'eth0' => [
+                    'network' => 'oe-standby',
+                    'ipv4.address' => $ipv4,
+                    'hwaddr' => '00:16:3e:'.$mac,
+                ],
             ],
         ];
     }, $roles), JSON_THROW_ON_ERROR));

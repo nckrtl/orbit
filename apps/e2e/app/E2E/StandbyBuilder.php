@@ -113,6 +113,7 @@ final readonly class StandbyBuilder
                     'network' => $target->network(),
                     'role' => $role,
                     'topology' => $target->network(),
+                    'slot' => 1,
                     'metadata' => $resourceMetadata,
                 ];
             }

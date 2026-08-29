@@ -162,17 +162,31 @@ function fakeStandbyRestoreProcesses(?int $failRestore = null, bool $failFinalPr
                 ? array_map(TopologyTarget::standby()->instance(...), TopologyProfile::ROLES)
                 : [$name];
 
-            return Process::result(json_encode(array_map(static fn (string $instance): array => [
-                'name' => $instance,
-                'type' => 'virtual-machine',
-                'status' => 'Stopped',
-                'status_code' => 102,
-                'config' => ['user.orbit.e2e.owner' => 'orbit-e2e'],
-                'devices' => [
-                    'root' => ['pool' => 'orbit-e2e'],
-                    'eth0' => ['network' => 'oe-standby', 'hwaddr' => '00:16:3e:77:ee:5a'],
-                ],
-            ], $names), JSON_THROW_ON_ERROR));
+            return Process::result(json_encode(array_map(static function (string $instance): array {
+                $role = str_replace('orbit-e2e-standby-', '', $instance);
+                $address = match ($role) {
+                    'gateway' => '10',
+                    'app-dev' => '11',
+                    'app-prod' => '12',
+                    default => throw new RuntimeException('Unknown standby role.'),
+                };
+
+                return [
+                    'name' => $instance,
+                    'type' => 'virtual-machine',
+                    'status' => 'Stopped',
+                    'status_code' => 102,
+                    'config' => ['user.orbit.e2e.owner' => 'orbit-e2e'],
+                    'devices' => [
+                        'root' => ['pool' => 'orbit-e2e'],
+                        'eth0' => [
+                            'network' => 'oe-standby',
+                            'hwaddr' => '00:16:3e:77:ee:5a',
+                            'ipv4.address' => '10.232.1.'.$address,
+                        ],
+                    ],
+                ];
+            }, $names), JSON_THROW_ON_ERROR));
         }
 
         throw new RuntimeException('Unexpected Incus command: '.implode(' ', $command));
@@ -445,7 +459,15 @@ function rollingMigrationProcess(
                 'config' => ['user.orbit.e2e.owner' => 'orbit-e2e'],
                 'devices' => [
                     'root' => ['pool' => 'orbit-e2e'],
-                    'eth0' => ['network' => 'oe-standby', 'hwaddr' => $mac],
+                    'eth0' => [
+                        'network' => 'oe-standby',
+                        'hwaddr' => $mac,
+                        'ipv4.address' => '10.232.1.'.match ($role) {
+                            'gateway' => '10',
+                            'app-dev' => '11',
+                            'app-prod' => '12',
+                        },
+                    ],
                 ],
             ];
         }, $names), JSON_THROW_ON_ERROR));

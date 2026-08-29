@@ -5,6 +5,24 @@ declare(strict_types=1);
 use App\E2E\Value\TopologyTarget;
 
 describe('TopologyTarget', function () {
+    it('maps topology slots and roles to deterministic IPv4 addresses', function () {
+        expect(TopologyTarget::ipv4For(1, 'gateway'))
+            ->toBe('10.232.1.10')
+            ->and(TopologyTarget::ipv4For(200, 'app-dev'))
+            ->toBe('10.232.200.11')
+            ->and(TopologyTarget::ipv4For(100, 'app-prod'))
+            ->toBe('10.232.100.12');
+    });
+
+    it('rejects invalid topology slots and roles', function (int $slot, string $role) {
+        expect(fn () => TopologyTarget::ipv4For($slot, $role))
+            ->toThrow(InvalidArgumentException::class);
+    })->with([
+        'slot below range' => [0, 'gateway'],
+        'slot above range' => [201, 'gateway'],
+        'unknown role' => [1, 'unknown'],
+    ]);
+
     it('uses compact deterministic network names', function () {
         expect(TopologyTarget::standby()->network())
             ->toBe('oe-standby')

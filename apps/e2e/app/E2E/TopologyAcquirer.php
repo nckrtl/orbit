@@ -387,6 +387,7 @@ final readonly class TopologyAcquirer
                     'network' => $request->target->network(),
                     'role' => $role,
                     'topology' => $request->target->network(),
+                    'slot' => $networkSlot,
                 ];
             }
             $phase = 'clone';
@@ -559,7 +560,7 @@ final readonly class TopologyAcquirer
      * `copySnapshots()` repeats source and snapshot ownership checks while the
      * pin is held, so refresh cannot replace the source between proof and copy.
      *
-     * @param array<string, array{source:string,snapshot:string,target:string,metadata:array<string, string>,network?:string,role?:string,topology?:string}> $copies
+     * @param array<string, array{source:string,snapshot:string,target:string,metadata:array<string, string>,network?:string,role?:string,topology?:string,slot?:int}> $copies
      */
     private function copyPinnedSnapshots(
         \App\E2E\Value\StandbyGeneration $generation,

@@ -33,6 +33,7 @@ function task7_vm(string $name, string $owner = 'orbit-e2e'): string
     $network = 'oe-b32d6c83af72';
     $hash = substr(sha1("{$network}:{$role}"), 0, 6);
     $mac = '00:16:3e:'.implode(':', str_split($hash, 2));
+    $ipv4 = ['gateway' => '10.232.2.10', 'app-dev' => '10.232.2.11', 'app-prod' => '10.232.2.12'][$role];
 
     return json_encode([[
         'name' => $name,
@@ -40,7 +41,10 @@ function task7_vm(string $name, string $owner = 'orbit-e2e'): string
         'status' => 'Stopped',
         'status_code' => 102,
         'config' => ['user.orbit.e2e.owner' => $owner],
-        'devices' => ['root' => ['pool' => 'orbit-e2e'], 'eth0' => ['network' => $network, 'hwaddr' => $mac]],
+        'devices' => [
+            'root' => ['pool' => 'orbit-e2e'],
+            'eth0' => ['network' => $network, 'ipv4.address' => $ipv4, 'hwaddr' => $mac],
+        ],
     ]], JSON_THROW_ON_ERROR);
 }
 
@@ -143,7 +147,7 @@ function task7_process_result(PendingProcess $process, array &$recorded): Proces
     if (array_slice($command, -4) === ['network', 'list', 'lab:', '--format=json']) {
         return Process::result(json_encode([[
             'name' => 'oe-b32d6c83af72',
-            'config' => ['user.orbit.e2e.owner' => 'orbit-e2e', 'ipv4.address' => '192.0.2.0/24'],
+            'config' => ['user.orbit.e2e.owner' => 'orbit-e2e', 'ipv4.address' => '10.232.2.1/24'],
         ]], JSON_THROW_ON_ERROR));
     }
 
@@ -151,7 +155,7 @@ function task7_process_result(PendingProcess $process, array &$recorded): Proces
         if (in_array('network', $command, true)) {
             return Process::result(json_encode([[
                 'name' => 'oe-b32d6c83af72',
-                'config' => ['user.orbit.e2e.owner' => 'orbit-e2e'],
+                'config' => ['user.orbit.e2e.owner' => 'orbit-e2e', 'ipv4.address' => '10.232.2.1/24'],
             ]], JSON_THROW_ON_ERROR));
         }
         if (($command[count($command) - 2] ?? null) === 'lab:') {
@@ -298,7 +302,10 @@ describe('TopologyConverger', function () {
             if (array_slice($command, -4) === ['network', 'list', 'lab:', '--format=json']) {
                 return Process::result(json_encode([[
                     'name' => 'oe-b32d6c83af72',
-                    'config' => ['user.orbit.e2e.owner' => $foreignResource === 'network' ? 'foreign' : 'orbit-e2e'],
+                    'config' => [
+                        'user.orbit.e2e.owner' => $foreignResource === 'network' ? 'foreign' : 'orbit-e2e',
+                        'ipv4.address' => '10.232.2.1/24',
+                    ],
                 ]], JSON_THROW_ON_ERROR));
             }
 
