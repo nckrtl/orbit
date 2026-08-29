@@ -899,7 +899,12 @@ final readonly class TopologyAcquirer
             ),
         ));
         if ($lines === []) {
-            return " Guest exit code {$result->exitCode} with no suite verdict.";
+            $stderr = array_values(array_filter(array_map(trim(...), explode("\n", $result->stderr))));
+
+            return (
+                " Guest exit code {$result->exitCode} with no suite verdict."
+                .($stderr === [] ? '' : ' '.implode(' | ', array_slice($stderr, -3)))
+            );
         }
 
         return " Guest exit code {$result->exitCode}: ".implode(' | ', array_slice($lines, -12));

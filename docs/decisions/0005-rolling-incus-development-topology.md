@@ -2,10 +2,10 @@
 
 ## Status
 
-Accepted on 2026-08-29. The architecture is accepted, but the
-`gateway_app-dev_app-prod` profile is not registered for agent use yet. It
-becomes available only after the harness passes live acceptance and the
-topology registry is updated.
+Accepted on 2026-08-29. The `gateway_app-dev_app-prod` profile passed live
+acceptance on 2026-08-29 (cold standby build, rolling refresh, acquire, dirty
+and clean sync, verify, prove, release with verified absence) and is registered
+in `docs/reference/incus-topologies.md`.
 
 ## Context
 
