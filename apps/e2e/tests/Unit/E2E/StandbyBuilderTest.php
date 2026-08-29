@@ -332,6 +332,81 @@ describe('StandbyBuilder', function () {
             ->toThrow(RuntimeException::class, 'no base image alias');
     });
 
+    it('recovers an interrupted exact intent before cold construction', function () {
+        $paths = new StatePaths(sys_get_temp_dir().'/orbit-builder-'.bin2hex(random_bytes(4)));
+        $state = new AtomicJsonStore($paths);
+        $previousEvidence = str_repeat('a', 32);
+        $previousOperation = str_repeat('b', 32);
+        $state->write("standby/cold-attempts/{$previousEvidence}.json", [
+            'schema' => 3,
+            'operation_id' => $previousOperation,
+            'evidence_id' => $previousEvidence,
+            'remote' => 'local',
+            'project' => 'default',
+            'pool' => 'orbit-e2e',
+            'network' => ['name' => 'oe-standby', 'state' => 'created', 'absent_preflight' => true],
+            'base_image_fingerprint' => str_repeat('f', 64),
+            'instances' => [],
+            'status' => 'creating',
+        ]);
+        $networkExists = true;
+        Process::fake(function (PendingProcess $process) use (
+            &$networkExists,
+            $previousEvidence,
+            $previousOperation,
+        ): ProcessResult {
+            $command = $process->command;
+            assert(is_array($command), 'Incus uses argument arrays.');
+            if (($firewall = standby_firewall_result($command)) !== null) {
+                return $firewall;
+            }
+            if ($command === standby_incus_command('network', 'list', 'local:', '--format=json')) {
+                return Process::result(json_encode(
+                    $networkExists
+                        ? [[
+                            'name' => 'oe-standby',
+                            'config' => [
+                                'user.orbit.e2e.owner' => 'orbit-e2e',
+                                'user.orbit.e2e.operation' => $previousOperation,
+                                'user.orbit.e2e.evidence' => $previousEvidence,
+                            ],
+                        ]]
+                        : [],
+                    JSON_THROW_ON_ERROR,
+                ));
+            }
+            if ($command === standby_incus_command('network', 'delete', 'local:oe-standby')) {
+                $networkExists = false;
+
+                return Process::result();
+            }
+
+            throw new RuntimeException(json_encode($command, JSON_THROW_ON_ERROR));
+        });
+        $builder = cold_cleanup_builder(new IncusHost(pool: 'orbit-e2e'), $state, $paths);
+
+        expect(fn () => $builder->build(
+            str_repeat('c', 40),
+            new PreparedFingerprint(str_repeat('d', 64)),
+            str_repeat('e', 64),
+            new LaravelRelease('v13.0.0', str_repeat('f', 40)),
+            true,
+            new OperationId(str_repeat('1', 32)),
+            str_repeat('2', 32),
+        ))
+            ->toThrow(RuntimeException::class, 'no base image alias');
+        expect($networkExists)
+            ->toBeFalse()
+            ->and($state->read("standby/cold-attempts/{$previousEvidence}.json")['status'])
+            ->toBe('cleaned')
+            ->and($state->read("standby/recovery/{$previousEvidence}.json"))
+            ->toMatchArray([
+                'operation_id' => $previousOperation,
+                'recovered' => true,
+                'resources_deleted' => true,
+            ]);
+    });
+
     it('accepts fully cleaned attempt evidence from schema two', function () {
         $paths = new StatePaths(sys_get_temp_dir().'/orbit-builder-'.bin2hex(random_bytes(4)));
         $state = new AtomicJsonStore($paths);
