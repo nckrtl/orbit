@@ -6,6 +6,12 @@ namespace App\Infrastructure\AppProd;
 
 use Illuminate\Support\Collection;
 
+/**
+ * Production pools never stat cached files: compiled code stays in OPcache
+ * until the PHP-FPM service reloads. Every production deploy must therefore
+ * end with `systemctl reload php<version>-fpm`, which recreates the shared
+ * memory and flushes the cache. Sizing lives in PhpFpmRuntimeIniRenderer.
+ */
 final readonly class AppProdPhpFpmConfigRenderer
 {
     /** @param Collection<int, AppProdSite> $sites */
@@ -34,6 +40,7 @@ final readonly class AppProdPhpFpmConfigRenderer
                 env[HOME] = {$site->appRoot()}
                 env[USER] = {$site->user()}
                 env[PATH] = /usr/local/bin:/opt/orbit/composer/vendor/bin:/usr/bin:/bin
+                php_admin_value[opcache.validate_timestamps] = 0
 
                 FPM)
             ->implode(PHP_EOL);

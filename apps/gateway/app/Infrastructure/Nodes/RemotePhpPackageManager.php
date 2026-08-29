@@ -468,6 +468,7 @@ final readonly class RemotePhpPackageManager
                     '--',
                     $version,
                     $profile,
+                    base64_encode(new PhpFpmRuntimeIniRenderer()->render($profile)),
                     UbuntuRelease::unsupportedText(),
                     (string) count(UbuntuRelease::forRole($role)),
                     ...array_map(
@@ -479,9 +480,10 @@ final readonly class RemotePhpPackageManager
                 input: <<<'BASH'
                     version=$1
                     profile=$2
-                    unsupported_text=$3
-                    allowed_count=$4
-                    shift 4
+                    runtime_ini=$3
+                    unsupported_text=$4
+                    allowed_count=$5
+                    shift 5
                     allowed_codenames=("${@:1:$allowed_count}")
                     shift "$allowed_count"
 
@@ -554,7 +556,75 @@ final readonly class RemotePhpPackageManager
                         dpkg-query -W -f='${Status}' -- "$package" \
                             | grep -qxF 'install ok installed'
                     done
+
+                    runtime_module=orbit-runtime
+                    runtime_available="/etc/php/$version/mods-available/$runtime_module.ini"
+                    runtime_enabled="/etc/php/$version/fpm/conf.d/99-$runtime_module.ini"
+                    runtime_work=$(mktemp -d)
+                    runtime_candidate="$runtime_work/candidate.ini"
+                    runtime_backup="$runtime_work/previous.ini"
+                    printf '%s' "$runtime_ini" | base64 --decode > "$runtime_candidate"
+                    runtime_had_file=0
+                    if [ -f "$runtime_available" ]; then
+                        cp -- "$runtime_available" "$runtime_backup"
+                        runtime_had_file=1
+                    fi
+                    runtime_had_link=0
+                    if [ -L "$runtime_enabled" ]; then
+                        runtime_had_link=1
+                    fi
+                    runtime_changed=0
+                    restore_runtime() {
+                        status=$?
+                        trap - EXIT
+                        if [ "$status" -ne 0 ] && [ "$runtime_changed" = 1 ]; then
+                            if [ "$runtime_had_file" = 1 ]; then
+                                sudo install -o root -g root -m 0644 -- "$runtime_backup" "$runtime_available"
+                            else
+                                sudo rm -f -- "$runtime_available"
+                            fi
+                            if [ "$runtime_had_link" = 0 ]; then
+                                sudo rm -f -- "$runtime_enabled"
+                            fi
+                            if sudo systemctl is-active --quiet "php$version-fpm.service"; then
+                                sudo systemctl reload-or-restart "php$version-fpm.service" || true
+                            fi
+                        fi
+                        rm -rf -- "$runtime_work"
+                        exit "$status"
+                    }
+                    trap restore_runtime EXIT
+                    if [ "$runtime_had_file" = 0 ] || ! cmp -s -- "$runtime_candidate" "$runtime_available"; then
+                        sudo install -o root -g root -m 0644 -- "$runtime_candidate" "$runtime_available"
+                        runtime_changed=1
+                    fi
+                    if [ "$runtime_had_link" = 0 ] || [ "$(readlink -f -- "$runtime_enabled")" != "$runtime_available" ]; then
+                        sudo phpenmod -v "$version" -s fpm "$runtime_module"
+                        runtime_changed=1
+                    fi
+                    test -L "$runtime_enabled"
+                    test "$(readlink -f -- "$runtime_enabled")" = "$runtime_available"
+                    fpm_ini=$(/usr/sbin/php-fpm"$version" -i)
+                    printf '%s\n' "$fpm_ini" | grep -qF -- "$runtime_enabled"
+                    while IFS= read -r runtime_line || [ -n "$runtime_line" ]; do
+                        case "$runtime_line" in ''|';'*) continue ;; esac
+                        runtime_key=${runtime_line%%=*}
+                        runtime_key=${runtime_key%"${runtime_key##*[! ]}"}
+                        runtime_value=${runtime_line#*=}
+                        runtime_value=${runtime_value#"${runtime_value%%[! ]*}"}
+                        printf '%s\n' "$fpm_ini" | grep -qxF -- "$runtime_key => $runtime_value => $runtime_value"
+                    done < "$runtime_candidate"
+                    fpm_pcov_before=$(readlink -f -- /etc/php/"$version"/fpm/conf.d/*-pcov.ini 2>/dev/null || true)
                     BASH."\n".$pcovSetup."\n".<<<'BASH'
+                    fpm_pcov_after=$(readlink -f -- /etc/php/"$version"/fpm/conf.d/*-pcov.ini 2>/dev/null || true)
+                    if [ "$fpm_pcov_before" != "$fpm_pcov_after" ]; then
+                        runtime_changed=1
+                    fi
+                    if [ "$runtime_changed" = 1 ] && sudo systemctl is-active --quiet "php$version-fpm.service"; then
+                        sudo systemctl reload-or-restart "php$version-fpm.service"
+                    fi
+                    trap - EXIT
+                    rm -rf -- "$runtime_work"
                     sudo systemctl enable --now "php$version-fpm.service"
 
                     /usr/bin/php"$version" -v >/dev/null

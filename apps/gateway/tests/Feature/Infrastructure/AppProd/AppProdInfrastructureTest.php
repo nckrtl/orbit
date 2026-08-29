@@ -54,14 +54,23 @@ it('renders isolated production FPM pools and public ACME Caddy sites', function
             'env[PATH] = /usr/local/bin:/opt/orbit/composer/vendor/bin:/usr/bin:/bin',
             'access.log = /var/log/orbit/php-fpm/instance-1.access.log',
             'slowlog = /var/log/orbit/php-fpm/instance-1.slow.log',
+            'php_admin_value[opcache.validate_timestamps] = 0',
         )
-        ->not->toContain('opcache.')->and($caddy)->toContain(
+        ->not->toContain(
+            'opcache.revalidate_freq',
+            'opcache.memory_consumption',
+            'opcache.jit',
+        )->and($caddy)->toContain(
             "https://{$instance->hostname}",
             'root * /var/www/acme/main/public',
+            "@vite {\n        path /build/assets/*\n        file\n    }",
+            'header @vite Cache-Control "public, max-age=31536000, immutable"',
             'php_fastcgi unix//run/php/orbit-prod-instance-1.sock',
             'file_server',
         )
-        ->not->toContain('tls internal', 'orbit-certificates', 'frankenphp', 'docker', 'swarm', 'h3');
+        ->not->toContain('tls internal', 'orbit-certificates', 'frankenphp', 'docker', 'swarm', 'h3')->and(
+            caddy_adapt($caddy)->succeeded(),
+        )->toBeTrue();
 });
 
 it('uses fixed production identity, clone, ownership, and exact removal guards', function (): void {

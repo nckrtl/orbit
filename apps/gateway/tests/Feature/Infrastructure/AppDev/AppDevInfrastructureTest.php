@@ -81,9 +81,12 @@ it('renders isolated pools and private Caddy listeners for every active scope', 
             'listen = /run/php/orbit-workspace-1.sock',
             'listen.group = caddy',
             'env[PATH] = /usr/local/bin:/opt/orbit/composer/vendor/bin:/usr/bin:/bin',
+            'php_admin_value[opcache.validate_timestamps] = 1',
+            'php_admin_value[opcache.revalidate_freq] = 0',
         )
-        ->and($caddy)
-        ->toContain(
+        ->not->toContain('opcache.file_update_protection', 'opcache.memory_consumption', 'opcache.jit')->and(
+            $caddy,
+        )->toContain(
             "https://{$instance->hostname}",
             "https://{$workspace->hostname}",
             'bind 0.0.0.0',

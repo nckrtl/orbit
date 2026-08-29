@@ -7,6 +7,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\UbuntuRelease;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
 use App\Infrastructure\AppProd\AppProdSshExecutor;
+use App\Infrastructure\Nodes\PhpFpmRuntimeIniRenderer;
 use App\Infrastructure\Nodes\RemotePhpPackageManager;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
@@ -97,13 +98,14 @@ it('converges the pinned Sury Resolute source before package installation', func
         )))->and(array_slice(
             array: $installCommand->arguments,
             offset: 0,
-            length: 8,
+            length: 9,
         ))->toBe([
             'bash',
             '-seu',
             '--',
             '8.4',
             'app-dev',
+            base64_encode(new PhpFpmRuntimeIniRenderer()->render('app-dev')),
             UbuntuRelease::unsupportedText(),
             '1',
             'resolute',
@@ -258,7 +260,7 @@ it('does not treat package arguments as allowed release codenames', function ():
             printf '%s\n' "$selected_codename"
             BASH;
 
-        $headerLength = str_contains($script, 'expected_id=$1') ? 3 : 4;
+        $headerLength = str_contains($script, 'expected_id=$1') ? 3 : 5;
         $arguments = array_slice($command->arguments, 3, $headerLength);
         $arguments[$headerLength - 1] = '1';
         $process = new Process(['bash', '-seu', '--', ...$arguments, 'resolute', 'bookworm']);
@@ -493,6 +495,251 @@ it('enables PCOV only for app-dev CLI and verifies both SAPIs', function (): voi
             'systemctl is-active --quiet "php$version-fpm.service"',
         )
         ->not->toContain('xdebug', 'opentelemetry');
+});
+
+it('publishes and verifies the OPcache runtime module per profile ahead of explicit service activation', function (
+    string $role,
+    string $profile,
+): void {
+    $transport = new AppDevFakeSshExecutor;
+    $node = php_package_node($role === 'app-dev' ? RoleName::AppDev : RoleName::AppProd);
+    $manager = new RemotePhpPackageManager;
+
+    if ($role === 'app-dev') {
+        $manager->installForAppDev($node, collect(['8.5']), php_package_app_dev_ssh($transport));
+    } else {
+        $manager->installForAppProd($node, collect(['8.5']), php_package_app_prod_ssh($transport));
+    }
+
+    $arguments = $transport->commands[1]->arguments;
+    $script = $transport->commands[1]->input ?? '';
+    $decoded = base64_decode($arguments[5], strict: true);
+
+    expect($arguments[3])
+        ->toBe('8.5')
+        ->and($arguments[4])
+        ->toBe($profile)
+        ->and($decoded)
+        ->toBe(new PhpFpmRuntimeIniRenderer()->render($profile))
+        ->and($script)
+        ->toContain(
+            'runtime_ini=$3',
+            'runtime_available="/etc/php/$version/mods-available/$runtime_module.ini"',
+            'runtime_enabled="/etc/php/$version/fpm/conf.d/99-$runtime_module.ini"',
+            'sudo install -o root -g root -m 0644 -- "$runtime_candidate" "$runtime_available"',
+            'sudo phpenmod -v "$version" -s fpm "$runtime_module"',
+            'test "$(readlink -f -- "$runtime_enabled")" = "$runtime_available"',
+            'printf \'%s\\n\' "$fpm_ini" | grep -qxF -- "$runtime_key => $runtime_value => $runtime_value"',
+            'trap restore_runtime EXIT',
+            'if [ "$fpm_pcov_before" != "$fpm_pcov_after" ]; then',
+            'if [ "$runtime_changed" = 1 ] && sudo systemctl is-active --quiet "php$version-fpm.service"; then',
+        )
+        ->and(mb_strpos($script, 'sudo systemctl reload-or-restart "php$version-fpm.service"'))
+        ->toBeLessThan((int) mb_strpos($script, 'sudo systemctl enable --now "php$version-fpm.service"'));
+})->with([
+    'app-dev node' => ['app-dev', 'app-dev'],
+    'app-prod node' => ['app-prod', 'app-prod'],
+]);
+
+function php_runtime_block(string $script, string $root): string
+{
+    $start = (int) mb_strpos($script, 'runtime_module=orbit-runtime');
+    $end = (int) mb_strpos($script, 'sudo systemctl enable --now');
+    $block = substr($script, $start, $end - $start);
+    $block = str_replace(
+        [
+            'sudo phpenmod -v "$version" -s cli pcov',
+            'sudo phpdismod -v "$version" -s fpm pcov',
+            'sudo phpenmod',
+            'sudo install -o root -g root',
+            'sudo systemctl',
+            'sudo rm -f',
+            '/usr/sbin/php-fpm"$version"',
+        ],
+        ['true', 'true', 'phpenmod', 'install', 'systemctl', 'rm -f', 'php-fpm"$version"'],
+        $block,
+    );
+
+    return str_replace('/etc/php/', $root.'/etc/php/', $block);
+}
+
+/** @param array<string, string> $binaries */
+function php_runtime_fixture(string $root, array $binaries): void
+{
+    mkdir($root.'/bin', 0777, true);
+    mkdir($root.'/etc/php/8.5/mods-available', 0777, true);
+    mkdir($root.'/etc/php/8.5/fpm/conf.d', 0777, true);
+    $available = $root.'/etc/php/8.5/mods-available/orbit-runtime.ini';
+    $enabled = $root.'/etc/php/8.5/fpm/conf.d/99-orbit-runtime.ini';
+    $effective = "Additional .ini files parsed => {$enabled}\n";
+    foreach (explode("\n", new PhpFpmRuntimeIniRenderer()->render('app-dev')) as $line) {
+        if ($line === '' || str_starts_with($line, ';')) {
+            continue;
+        }
+        [$key, $value] = array_map(trim(...), explode('=', $line, 2));
+        $effective .= "{$key} => {$value} => {$value}\n";
+    }
+    $defaults = [
+        'phpenmod' =>
+            "#!/usr/bin/env bash\necho \"phpenmod \$*\" >> "
+                .escapeshellarg($root.'/calls')
+                ."\n"
+                .'case "$*" in *orbit-runtime*) ln -s '
+                .escapeshellarg($available)
+                .' '
+                .escapeshellarg($enabled)
+                .";; esac\n",
+        'php-fpm8.5' => "#!/usr/bin/env bash\nprintf '%s' ".escapeshellarg($effective)."\n",
+        'systemctl' => "#!/usr/bin/env bash\necho \"systemctl \$*\" >> ".escapeshellarg($root.'/calls')."\nexit 0\n",
+    ];
+    foreach ([...$defaults, ...$binaries] as $name => $body) {
+        file_put_contents($root.'/bin/'.$name, $body);
+        chmod($root.'/bin/'.$name, 0755);
+    }
+}
+
+function php_runtime_run(string $block, string $root): Process
+{
+    $encoded = base64_encode(new PhpFpmRuntimeIniRenderer()->render('app-dev'));
+    $process = new Process(['bash', '-seu', '--', '8.5', 'app-dev', $encoded], $root, [
+        'PATH' => $root.'/bin:'.getenv('PATH'),
+    ]);
+    $process->setInput("version=\$1\nprofile=\$2\nruntime_ini=\$3\n".$block);
+    $process->run();
+
+    return $process;
+}
+
+function php_runtime_calls(string $root): string
+{
+    $calls = is_file($root.'/calls') ? (string) file_get_contents($root.'/calls') : '';
+    file_put_contents($root.'/calls', '');
+
+    return $calls;
+}
+
+it('rewrites the runtime module and reloads FPM when the ini content or its enablement changed', function (): void {
+    $transport = new AppDevFakeSshExecutor;
+    new RemotePhpPackageManager()->installForAppDev(
+        php_package_node(RoleName::AppDev),
+        collect(['8.5']),
+        php_package_app_dev_ssh($transport),
+    );
+
+    $root = (string) realpath(sys_get_temp_dir()).'/orbit-php-runtime-ini-'.bin2hex(random_bytes(6));
+    $block = php_runtime_block($transport->commands[1]->input ?? '', $root);
+    $available = $root.'/etc/php/8.5/mods-available/orbit-runtime.ini';
+    $enabled = $root.'/etc/php/8.5/fpm/conf.d/99-orbit-runtime.ini';
+
+    try {
+        php_runtime_fixture($root, []);
+
+        $first = php_runtime_run($block, $root);
+        $firstCalls = php_runtime_calls($root);
+        $second = php_runtime_run($block, $root);
+        $secondCalls = php_runtime_calls($root);
+        unlink($enabled);
+        $third = php_runtime_run($block, $root);
+        $thirdCalls = php_runtime_calls($root);
+
+        expect($first->getExitCode())
+            ->toBe(0, $first->getErrorOutput())
+            ->and(file_get_contents($available))
+            ->toBe(new PhpFpmRuntimeIniRenderer()->render('app-dev'))
+            ->and(is_link($enabled))
+            ->toBeTrue()
+            ->and($firstCalls)
+            ->toContain(
+                'phpenmod -v 8.5 -s fpm orbit-runtime',
+                'systemctl is-active --quiet php8.5-fpm.service',
+                'systemctl reload-or-restart php8.5-fpm.service',
+            )
+            ->and($second->getExitCode())
+            ->toBe(0, $second->getErrorOutput())
+            ->and($secondCalls)
+            ->not
+            ->toContain('phpenmod', 'reload-or-restart')
+            ->and($third->getExitCode())
+            ->toBe(0, $third->getErrorOutput())
+            ->and(is_link($enabled))
+            ->toBeTrue()
+            ->and($thirdCalls)
+            ->toContain('phpenmod -v 8.5 -s fpm orbit-runtime', 'systemctl reload-or-restart php8.5-fpm.service');
+    } finally {
+        new Filesystem()->deleteDirectory($root);
+    }
+});
+
+it('restores the previous runtime module and enablement when publication fails', function (): void {
+    $transport = new AppDevFakeSshExecutor;
+    new RemotePhpPackageManager()->installForAppDev(
+        php_package_node(RoleName::AppDev),
+        collect(['8.5']),
+        php_package_app_dev_ssh($transport),
+    );
+
+    $root = (string) realpath(sys_get_temp_dir()).'/orbit-php-runtime-ini-'.bin2hex(random_bytes(6));
+    $block = php_runtime_block($transport->commands[1]->input ?? '', $root);
+    $available = $root.'/etc/php/8.5/mods-available/orbit-runtime.ini';
+    $enabled = $root.'/etc/php/8.5/fpm/conf.d/99-orbit-runtime.ini';
+    $previous = "; priority=99\nopcache.memory_consumption = 128\n";
+
+    try {
+        php_runtime_fixture($root, [
+            'phpenmod' => "#!/usr/bin/env bash\necho \"phpenmod \$*\" >> ".escapeshellarg($root.'/calls')."\nexit 1\n",
+        ]);
+        file_put_contents($available, $previous);
+
+        $failed = php_runtime_run($block, $root);
+        $calls = php_runtime_calls($root);
+
+        expect($failed->getExitCode())
+            ->not
+            ->toBe(0)
+            ->and(file_get_contents($available))
+            ->toBe($previous)
+            ->and(file_exists($enabled))
+            ->toBeFalse()
+            ->and($calls)
+            ->toContain('phpenmod -v 8.5 -s fpm orbit-runtime', 'systemctl reload-or-restart php8.5-fpm.service');
+    } finally {
+        new Filesystem()->deleteDirectory($root);
+    }
+});
+
+it('rejects a runtime module whose effective FPM values differ from the rendered ini', function (): void {
+    $transport = new AppDevFakeSshExecutor;
+    new RemotePhpPackageManager()->installForAppDev(
+        php_package_node(RoleName::AppDev),
+        collect(['8.5']),
+        php_package_app_dev_ssh($transport),
+    );
+
+    $root = (string) realpath(sys_get_temp_dir()).'/orbit-php-runtime-ini-'.bin2hex(random_bytes(6));
+    $block = php_runtime_block($transport->commands[1]->input ?? '', $root);
+    $available = $root.'/etc/php/8.5/mods-available/orbit-runtime.ini';
+    $enabled = $root.'/etc/php/8.5/fpm/conf.d/99-orbit-runtime.ini';
+
+    try {
+        php_runtime_fixture($root, [
+            'php-fpm8.5' =>
+                "#!/usr/bin/env bash\nprintf 'Additional .ini files parsed => %s\\nopcache.enable => On => On\\nopcache.memory_consumption => 128 => 128\\n' "
+                    .escapeshellarg($enabled)
+                    ."\n",
+        ]);
+
+        $failed = php_runtime_run($block, $root);
+
+        expect($failed->getExitCode())
+            ->not
+            ->toBe(0)
+            ->and(file_exists($available))
+            ->toBeFalse()
+            ->and(file_exists($enabled))
+            ->toBeFalse();
+    } finally {
+        new Filesystem()->deleteDirectory($root);
+    }
 });
 
 it('verifies the managed absolute PHP binaries', function (): void {
