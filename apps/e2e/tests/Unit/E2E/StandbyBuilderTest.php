@@ -160,13 +160,16 @@ describe('StandbyBuilder', function () {
             ->toThrow(RuntimeException::class, 'explicit permission');
     });
 
+    /** @mago-expect lint:cyclomatic-complexity The cold-build fixture keeps one complete lifecycle assertion. */
     it('starts every newly initialized VM before source synchronization', function () {
         $paths = new StatePaths(sys_get_temp_dir().'/orbit-builder-'.bin2hex(random_bytes(4)));
         $state = new AtomicJsonStore($paths);
         $started = [];
         $initialized = [];
         $events = [];
-        Process::fake(function (PendingProcess $process) use (&$started, &$initialized, &$events) {
+        $ipv4Probes = [];
+        /** @mago-expect lint:cyclomatic-complexity The process fake maps each Incus cold-build command explicitly. */
+        Process::fake(function (PendingProcess $process) use (&$started, &$initialized, &$events, &$ipv4Probes) {
             $command = $process->command;
             assert(is_array($command), 'Incus uses argument arrays.');
             if (($firewall = standby_firewall_result($command)) !== null) {
@@ -231,26 +234,30 @@ describe('StandbyBuilder', function () {
                 );
             }
             if (in_array('start', $command, true)) {
-                $events[] = 'start';
-                $started[] = array_values(array_filter(
+                $instance = array_values(array_filter(
                     $command,
                     fn (mixed $value): bool => is_string($value) && str_contains($value, 'standby-'),
                 ))[0];
+                $events[] = 'start:'.$instance;
+                $started[] = $instance;
 
                 return Process::result();
             }
             if (str_contains(implode(' ', $command), "printf '%s\\n'")) {
-                $events[] = 'reset';
+                $events[] = 'reset:'.($command[4] ?? '');
 
                 return Process::result();
             }
             if (standby_builder_is_global_ipv4_probe($command)) {
-                $events[] = 'ipv4';
+                $instance = (string) ($command[4] ?? '');
+                $ipv4Probes[$instance] = ($ipv4Probes[$instance] ?? 0) + 1;
+                $phase = $ipv4Probes[$instance] === 1 ? 'pre-reset-ipv4' : 'post-reset-ipv4';
+                $events[] = "{$phase}:{$instance}";
 
                 return Process::result("2: enp5s0    inet 10.232.1.10/24 scope global enp5s0\n");
             }
             if (in_array('/bin/true', $command, true)) {
-                $events[] = 'wait';
+                $events[] = 'wait:'.($command[4] ?? '');
 
                 return Process::result();
             }
@@ -277,12 +284,23 @@ describe('StandbyBuilder', function () {
                 'local:orbit-e2e-standby-app-prod',
             ])
             ->and($events)
-            ->toHaveCount(12)
-            ->and(array_slice($events, 0, 3))
-            ->each->toBe('start')->and(array_slice($events, 3, 3))
-            ->each->toBe('wait')->and(array_slice($events, 6, 3))
-            ->each->toBe('reset')->and(array_slice($events, 9))
-            ->each->toBe('ipv4');
+            ->toBe([
+                'start:local:orbit-e2e-standby-gateway',
+                'start:local:orbit-e2e-standby-app-dev',
+                'start:local:orbit-e2e-standby-app-prod',
+                'wait:local:orbit-e2e-standby-gateway',
+                'wait:local:orbit-e2e-standby-app-dev',
+                'wait:local:orbit-e2e-standby-app-prod',
+                'pre-reset-ipv4:local:orbit-e2e-standby-gateway',
+                'pre-reset-ipv4:local:orbit-e2e-standby-app-dev',
+                'pre-reset-ipv4:local:orbit-e2e-standby-app-prod',
+                'reset:local:orbit-e2e-standby-gateway',
+                'reset:local:orbit-e2e-standby-app-dev',
+                'reset:local:orbit-e2e-standby-app-prod',
+                'post-reset-ipv4:local:orbit-e2e-standby-gateway',
+                'post-reset-ipv4:local:orbit-e2e-standby-app-dev',
+                'post-reset-ipv4:local:orbit-e2e-standby-app-prod',
+            ]);
     });
 
     it('accepts a fully cleaned attempt recorded with the former standby network identity', function () {

@@ -1166,7 +1166,7 @@ describe('IncusHost mutations', function () {
         Process::assertRan(incusCommand('exec', incusTarget($instance), '--', ...guestIpv4Probe()));
     });
 
-    it('advances each cloned guest through readiness reset and IPv4 without a global role barrier', function () {
+    it('waits for IPv4 then resets each cloned guest without a global role barrier', function () {
         $gateway = 'orbit-e2e-nck-123-gateway';
         $appDev = 'orbit-e2e-nck-123-app-dev';
         $appDevAgentProbes = 0;
@@ -1212,8 +1212,10 @@ describe('IncusHost mutations', function () {
             'inventory',
             'agent:'.$gateway,
             'agent:'.$appDev,
-            'reset:'.$gateway,
+            'ipv4:'.$gateway,
             'agent:'.$appDev,
+            'reset:'.$gateway,
+            'ipv4:'.$appDev,
             'ipv4:'.$gateway,
             'reset:'.$appDev,
             'ipv4:'.$appDev,
@@ -1251,6 +1253,45 @@ describe('IncusHost mutations', function () {
         incusHost()->prepareClonedHostStates([$instance]);
 
         expect($resetAttempts)->toBe(2);
+    });
+
+    it('waits for default-route IPv4 before resetting a cloned guest identity', function () {
+        $instance = 'orbit-e2e-nck-123-gateway';
+        $ipv4Probes = 0;
+        $resetAttempts = 0;
+        Process::fake(function (PendingProcess $process) use ($instance, &$ipv4Probes, &$resetAttempts) {
+            if ($process->command === incusCommand('list', incusTarget(), '--format=json')) {
+                return Process::result(vmJson($instance));
+            }
+
+            $guest = array_slice($process->command, 6);
+            if ($guest === ['/bin/true']) {
+                return Process::result();
+            }
+            if (($guest[0] ?? null) === 'sh' && str_contains((string) ($guest[2] ?? ''), "printf '%s\\n'")) {
+                $resetAttempts++;
+
+                return $ipv4Probes >= 2
+                    ? Process::result()
+                    : Process::result('', 'default route is not ready', 1);
+            }
+            if ($guest === guestIpv4Probe()) {
+                $ipv4Probes++;
+
+                return $ipv4Probes === 1
+                    ? Process::result('', 'default route is not ready', 1)
+                    : Process::result("2: enp5s0 inet 10.232.2.10/24 scope global enp5s0\n");
+            }
+
+            return Process::result('', 'unexpected command', 1);
+        });
+
+        incusHost(guestReadinessTimeoutSeconds: 2)->prepareClonedHostStates([$instance]);
+
+        expect($ipv4Probes)
+            ->toBe(3)
+            ->and($resetAttempts)
+            ->toBe(1);
     });
 
     it('passes guest stdin through process input without adding it to argv', function () {
