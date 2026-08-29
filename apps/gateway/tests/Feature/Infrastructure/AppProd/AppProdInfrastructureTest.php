@@ -679,6 +679,37 @@ it('normalizes the unmanaged production fragment before app production configura
     }
 });
 
+it('fails closed when both unmanaged Caddy fragment names already exist', function (): void {
+    $harness = new AppDevCaddyPublishHarness;
+
+    try {
+        $publisher = new AppProdCaddyPublisher(
+            versionsDirectory: $harness->etcCaddyPath('orbit-versions'),
+            liveCaddyfilePath: $harness->etcCaddyPath('Caddyfile'),
+            caddyServiceName: 'caddy',
+            lockPath: $harness->etcCaddyPath('orbit-locks/caddy.lock'),
+        );
+        $result = $harness->run(
+            publisher: $publisher,
+            scenario: AppDevCaddyPublishScenario::orbitAggregate("import fragments/*.caddy\n", [
+                'unmanaged.caddy' => "legacy\n",
+                '00-unmanaged.caddy' => "current\n",
+                'custom.caddy' => "custom\n",
+            ]),
+        );
+
+        expect($result->exitCode)
+            ->not
+            ->toBe(0)
+            ->and($result->liveMainAfter)
+            ->toBe("import fragments/*.caddy\n")
+            ->and($result->publishedFragments)
+            ->toBeEmpty();
+    } finally {
+        $harness->cleanup();
+    }
+});
+
 it('restores the exact Caddy symlink before the recovery reload when activation fails', function (): void {
     $harness = new AppDevCaddyPublishHarness;
     $previousTarget = $harness->etcCaddyPath('orbit-versions/current/Caddyfile');
@@ -925,7 +956,10 @@ it('removes an app production fragment from a direct Caddyfile and restores that
         ->and($success['liveIsLink'])
         ->toBeTrue()
         ->and($success['publishedFragments'])
-        ->toBe(['custom.caddy' => "custom handler\n"]);
+        ->toBe([
+            '00-unmanaged.caddy' => "custom unmanaged\n",
+            'custom.caddy' => "custom handler\n",
+        ]);
 
     $failure = run_app_prod_direct_caddy_removal(failActivation: true);
 
@@ -957,6 +991,7 @@ function run_app_prod_direct_caddy_removal(bool $failActivation): array
     $files->ensureDirectoryExists(path: $bin, mode: 0o777, recursive: true);
     file_put_contents(filename: $etc.'/Caddyfile', data: "import fragments/*.caddy\n");
     file_put_contents(filename: $etc.'/fragments/app-prod.caddy', data: "owned\n");
+    file_put_contents(filename: $etc.'/fragments/unmanaged.caddy', data: "custom unmanaged\n");
     file_put_contents(filename: $etc.'/fragments/custom.caddy', data: "custom handler\n");
     file_put_contents(
         filename: $bin.'/install',

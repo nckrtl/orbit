@@ -1804,6 +1804,31 @@ it('leaves the live caddy aggregate unchanged when staged validation fails durin
     }
 });
 
+it('fails closed when both unmanaged Caddy fragment names already exist', function (): void {
+    $harness = new AppDevCaddyPublishHarness;
+
+    try {
+        $result = $harness->run(
+            publisher: zero_site_publisher($harness),
+            scenario: AppDevCaddyPublishScenario::orbitAggregate("import fragments/*.caddy\n", [
+                'unmanaged.caddy' => "legacy\n",
+                '00-unmanaged.caddy' => "current\n",
+                'custom.caddy' => "custom\n",
+            ]),
+        );
+
+        expect($result->exitCode)
+            ->not
+            ->toBe(0)
+            ->and($result->liveMainAfter)
+            ->toBe("import fragments/*.caddy\n")
+            ->and($result->publishedFragments)
+            ->toBeEmpty();
+    } finally {
+        $harness->cleanup();
+    }
+});
+
 it('restores the exact regular Caddyfile before the recovery reload when activation fails', function (): void {
     $harness = new AppDevCaddyPublishHarness;
 
