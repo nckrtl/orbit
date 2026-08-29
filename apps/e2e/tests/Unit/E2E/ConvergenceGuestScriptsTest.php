@@ -373,7 +373,7 @@ describe('convergence guest scripts', function () {
         mkdir("{$root}/etc/wireguard", 0o700, true);
         file_put_contents(
             "{$root}/etc/wireguard/orbit.conf",
-            "[Interface]\nPrivateKey = x\nAddress = 10.44.0.2/24\n\n[Peer]\nPublicKey = y\nEndpoint = 10.232.1.10:51820\nAllowedIPs = 10.44.0.0/24\n",
+            "[Interface]\nPrivateKey = x\nAddress = 10.44.0.2/24\n\n[Peer]\nPublicKey = FEfGSTB1q+e0ZqVAOz7SYf7ry6NiZDZxkvMlQS4QJ0w=\nEndpoint = 10.232.1.10:51820\nAllowedIPs = 10.44.0.0/24\n",
         );
         file_put_contents(
             "{$root}/bin/systemctl",
@@ -403,7 +403,10 @@ describe('convergence guest scripts', function () {
             expect(new Process(['bash', "{$root}/retarget-vpn.sh", '10.232.7.10'], env: $environment)->run())
                 ->toBe(0)
                 ->and(file("{$root}/commands", FILE_IGNORE_NEW_LINES))
-                ->toBe(['is-active --quiet wg-quick@orbit', 'wg set orbit peer y endpoint 10.232.7.10:51820'])
+                ->toBe([
+                    'is-active --quiet wg-quick@orbit',
+                    'wg set orbit peer FEfGSTB1q+e0ZqVAOz7SYf7ry6NiZDZxkvMlQS4QJ0w= endpoint 10.232.7.10:51820',
+                ])
                 ->and(file_get_contents("{$root}/etc/wireguard/orbit.conf"))
                 ->toContain("Endpoint = 10.232.7.10:51820\n")
                 ->and(fileperms("{$root}/etc/wireguard/orbit.conf") & 0o777)

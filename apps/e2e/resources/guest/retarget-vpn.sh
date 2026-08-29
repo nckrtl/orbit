@@ -8,11 +8,11 @@ umask 077
 [[ $# -eq 1 && "$1" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || exit 64
 conf=/etc/wireguard/orbit.conf
 [[ -f "$conf" ]] || exit 0
-current=$(awk -F' *= *' '$1 == "Endpoint" { print $2; exit }' "$conf")
+current=$(sed -n 's/^Endpoint *= *//p' "$conf" | head -n 1)
 [[ "$current" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}:[0-9]{1,5}$ ]] || exit 65
 port=${current##*:}
 desired="$1:$port"
-peer=$(awk -F' *= *' '$1 == "PublicKey" { print $2; exit }' "$conf")
+peer=$(sed -n 's/^PublicKey *= *//p' "$conf" | head -n 1)
 [[ -n "$peer" ]] || exit 65
 if [[ "$current" != "$desired" ]]; then
   candidate=$(mktemp "$conf.XXXXXX")
