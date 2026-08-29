@@ -279,7 +279,7 @@
         "packages/php-sdk/src/Support/GatewayOrigin.php",
         "packages/php-sdk/src/Support/GatewayRequestId.php"
     ],
-    "cold_epoch": "ubuntu-26.04-amd64-v1",
+    "cold_epoch": "ubuntu-26.04-amd64-v2",
     "base_image_alias": "orbit-base-ubuntu-26.04-runtime",
     "declared_epochs": {
         "base_image": 1,
