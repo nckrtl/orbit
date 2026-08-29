@@ -270,7 +270,9 @@ final class IncusHost implements GuestTransport
             '--config',
             'limits.memory='.$this->incusLimit('memory', '2GiB'),
             '--device',
-            'root,pool='.$this->pool.',size='.$this->incusLimit('root_size', '16GiB'),
+            'root,pool='.$this->pool,
+            '--device',
+            'root,size='.$this->incusLimit('root_size', '16GiB'),
             '--network',
             $network,
         ];
@@ -331,9 +333,13 @@ final class IncusHost implements GuestTransport
                 '--config',
                 'limits.memory='.$this->incusLimit('memory', '2GiB'),
                 '--device',
-                'root,pool='.$this->pool.',size='.$this->incusLimit('root_size', '16GiB'),
+                'root,pool='.$this->pool,
                 '--device',
-                'eth0,network='.$vm['network'].',hwaddr='.$this->deterministicMac($vm['topology'], $vm['role']),
+                'root,size='.$this->incusLimit('root_size', '16GiB'),
+                '--device',
+                'eth0,network='.$vm['network'],
+                '--device',
+                'eth0,hwaddr='.$this->deterministicMac($vm['topology'], $vm['role']),
             ];
             foreach ([...$this->ownershipMetadata, ...$vm['metadata']] as $key => $value) {
                 $arguments[] = '--config';
@@ -1748,7 +1754,9 @@ final class IncusHost implements GuestTransport
             $this->validateName($role, 'role');
             $this->validateName($topology, 'topology');
             $configuration[] = '--device';
-            $configuration[] = 'eth0,network='.$network.',hwaddr='.$this->deterministicMac($topology, $role);
+            $configuration[] = 'eth0,network='.$network;
+            $configuration[] = '--device';
+            $configuration[] = 'eth0,hwaddr='.$this->deterministicMac($topology, $role);
         }
 
         return [
@@ -1763,7 +1771,9 @@ final class IncusHost implements GuestTransport
                 '--config',
                 'limits.memory='.$this->incusLimit('memory', '2GiB'),
                 '--device',
-                'root,pool='.$this->pool.',size='.$this->incusLimit('root_size', '16GiB'),
+                'root,pool='.$this->pool,
+                '--device',
+                'root,size='.$this->incusLimit('root_size', '16GiB'),
                 ...$configuration,
             ],
             new IncusInstance($this->remote, $this->project, $target, $this->pool, $metadata),
