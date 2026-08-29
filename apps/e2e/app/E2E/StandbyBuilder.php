@@ -267,6 +267,55 @@ final readonly class StandbyBuilder
     private function attempt(string $evidenceId): array
     {
         $value = $this->state->read("standby/cold-attempts/{$evidenceId}.json");
+
+        if (is_array($value) && ($value['schema'] ?? null) === 2) {
+            $legacyNetwork = is_array($value['network'] ?? null) ? $value['network'] : null;
+            $legacyNetworkName = is_string($legacyNetwork['name'] ?? null) ? $legacyNetwork['name'] : null;
+            if (
+                array_keys($value) !== [
+                    'schema',
+                    'operation_id',
+                    'remote',
+                    'project',
+                    'pool',
+                    'network',
+                    'base_image_fingerprint',
+                    'instances',
+                    'status',
+                ]
+                || $value['operation_id'] !== $evidenceId
+                || ! is_string($value['remote'])
+                || ! is_string($value['project'])
+                || ! is_string($value['pool'])
+                || $legacyNetwork === null
+                || $legacyNetwork !== [
+                    'name' => $legacyNetworkName,
+                    'state' => 'cleaned',
+                    'absent_preflight' => true,
+                ]
+                || ! in_array($legacyNetworkName, ['oe-standby', 'orbit-e2e-standby'], true)
+                || ! is_string($value['base_image_fingerprint'])
+                || preg_match('/\A[a-f0-9]{64}\z/D', $value['base_image_fingerprint']) !== 1
+                || $value['instances'] !== []
+                || $value['status'] !== 'cleaned'
+            ) {
+                throw new RuntimeException('The cold-build attempt evidence is invalid.');
+            }
+
+            $value = [
+                'schema' => 3,
+                'operation_id' => $value['operation_id'],
+                'evidence_id' => $evidenceId,
+                'remote' => $value['remote'],
+                'project' => $value['project'],
+                'pool' => $value['pool'],
+                'network' => $legacyNetwork,
+                'base_image_fingerprint' => $value['base_image_fingerprint'],
+                'instances' => [],
+                'status' => 'cleaned',
+            ];
+        }
+
         $network = is_array($value['network'] ?? null) ? $value['network'] : null;
         $networkName = is_string($network['name'] ?? null) ? $network['name'] : null;
         if (
