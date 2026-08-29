@@ -61,11 +61,7 @@ final readonly class SshNodeStateInspector implements NodeStateInspector
             throw new DoctorInspectionException;
         }
         $lines = explode("\n", $result->stdout);
-        if (
-            ! is_array($lines)
-            || count($lines) !== 4
-            || $lines[3] !== ''
-        ) {
+        if (count($lines) !== 4 || $lines[3] !== '') {
             throw new DoctorInspectionException;
         }
         $platform = strtolower($lines[0]);

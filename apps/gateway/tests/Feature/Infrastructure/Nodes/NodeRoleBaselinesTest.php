@@ -5,6 +5,10 @@ declare(strict_types=1);
 use App\Domain\AppDev\AppDevCaddyManager;
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\AppProd\AppProdCaddyManager;
+use App\Domain\Metrics\MetricsExporterLifecycle;
+use App\Domain\Metrics\MetricsFleetReconciler;
+use App\Domain\Metrics\MetricsPublicationManager;
+use App\Domain\Metrics\MetricsRuntimeLifecycle;
 use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\NodeRoleValidationException;
 use App\Domain\Nodes\RoleName;
@@ -13,6 +17,7 @@ use App\Infrastructure\AppProd\AppProdSshExecutor;
 use App\Infrastructure\Nodes\Roles\AppDevRoleBaseline;
 use App\Infrastructure\Nodes\Roles\AppProdRoleBaseline;
 use App\Infrastructure\Nodes\Roles\GatewayRoleBaseline;
+use App\Infrastructure\Nodes\Roles\MetricsRoleBaseline;
 use App\Infrastructure\Nodes\Roles\NativeRoleBaselineConverger;
 use App\Infrastructure\Nodes\Roles\NodeRolePrerequisiteCommandFactory;
 use App\Infrastructure\Nodes\Roles\VpnRoleBaseline;
@@ -103,6 +108,8 @@ it('dispatches every assignment to its code-defined baseline', function (): void
     $events = [];
     $firewall = baseline_firewall($events);
     $ssh = baseline_ssh($events);
+    $metricsFleet = Mockery::mock(MetricsFleetReconciler::class);
+    $metricsFleet->shouldReceive('reconcile')->times(5);
     $dispatcher = new NativeRoleBaselineConverger(
         new GatewayRoleBaseline($firewall),
         new VpnRoleBaseline(
@@ -114,11 +121,26 @@ it('dispatches every assignment to its code-defined baseline', function (): void
         ),
         app_dev_role_baseline($events),
         app_prod_role_baseline($events),
+        new MetricsRoleBaseline(
+            Mockery::mock(MetricsRuntimeLifecycle::class)->shouldIgnoreMissing(),
+            Mockery::mock(MetricsExporterLifecycle::class)->shouldIgnoreMissing(),
+            Mockery::mock(MetricsPublicationManager::class)->shouldIgnoreMissing(),
+        ),
+        $metricsFleet,
     );
 
     foreach (RoleName::cases() as $role) {
         [$node, $assignment] = role_baseline_models($role, "dispatch-{$role->value}");
+
+        if ($role === RoleName::Gateway) {
+            $assignment->update(['status' => 'active']);
+        }
+
         $dispatcher->converge($node, $assignment);
+
+        if ($role === RoleName::AppProd) {
+            $dispatcher->remove($node, $assignment, purgeData: false);
+        }
     }
 
     expect($events)->toContain(

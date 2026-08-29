@@ -1,0 +1,244 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Infrastructure\Metrics;
+
+use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Firewall\UfwRuleOwnership;
+use App\Infrastructure\Firewall\UfwRuleShape;
+use App\Infrastructure\Firewall\UfwStatusParser;
+use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\Ssh\KnownHostsStore;
+use App\Infrastructure\Ssh\RemoteCommand;
+use App\Infrastructure\Ssh\SshConnection;
+use App\Infrastructure\Ssh\SshExecutor;
+use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Models\Node;
+
+/** @mago-expect lint:cyclomatic-complexity The adapter keeps firewall ownership, mutation, verification, and recovery together. */
+final readonly class MetricsPublicationSshExecutor
+{
+    private const string FirewallComment = 'orbit:metrics-grafana-upstream';
+
+    public function __construct(
+        private SshExecutor $ssh,
+        private SshKeyProvider $keys,
+        private KnownHostsStore $knownHosts,
+        private UfwStatusParser $parser = new UfwStatusParser,
+    ) {}
+
+    public function converge(Node $metricsNode, string $gatewayAddress): bool
+    {
+        $shape = $this->shape($metricsNode, $gatewayAddress);
+        $status = $this->status($metricsNode);
+        $ownership = $this->parser->ownership($status->stdout, $shape);
+
+        if ($ownership === UfwRuleOwnership::Drift) {
+            $this->ownershipDrift();
+        }
+
+        if ($ownership === UfwRuleOwnership::Exact) {
+            return false;
+        }
+
+        try {
+            $this->run(
+                $metricsNode,
+                new RemoteCommand([
+                    'sudo',
+                    'ufw',
+                    'allow',
+                    'in',
+                    'on',
+                    'wg0',
+                    'proto',
+                    'tcp',
+                    'from',
+                    $gatewayAddress,
+                    'to',
+                    $shape->destination,
+                    'port',
+                    '3000',
+                    'comment',
+                    self::FirewallComment,
+                ]),
+                'metrics.publication_firewall_apply_failed',
+                'The Metrics Grafana firewall rule could not be applied.',
+            );
+
+            if ($this->parser->ownership($this->status($metricsNode)->stdout, $shape) !== UfwRuleOwnership::Exact) {
+                throw new ResourceOperationException(
+                    'metrics.publication_firewall_verify_failed',
+                    'The Metrics Grafana firewall rule could not be verified.',
+                    502,
+                );
+            }
+        } catch (\Throwable $exception) {
+            try {
+                $this->remove($metricsNode, $gatewayAddress);
+            } catch (\Throwable) {
+                throw new ResourceOperationException(
+                    'metrics.publication_firewall_rollback_failed',
+                    'The Metrics Grafana firewall rule could not be restored.',
+                    502,
+                );
+            }
+
+            throw $exception;
+        }
+
+        return true;
+    }
+
+    public function remove(Node $metricsNode, string $gatewayAddress): void
+    {
+        $shape = $this->shape($metricsNode, $gatewayAddress);
+        $status = $this->status($metricsNode);
+        $ownership = $this->parser->ownership($status->stdout, $shape);
+
+        if ($ownership === UfwRuleOwnership::Drift) {
+            $this->ownershipDrift();
+        }
+
+        if ($ownership === UfwRuleOwnership::Missing) {
+            return;
+        }
+
+        $numbers = $this->ruleNumbers($status->stdout);
+
+        if (count($numbers) !== 1) {
+            $this->ownershipDrift();
+        }
+
+        $this->run(
+            $metricsNode,
+            new RemoteCommand(['sudo', 'ufw', '--force', 'delete', $numbers[0]]),
+            'metrics.publication_firewall_remove_failed',
+            'The Metrics Grafana firewall rule could not be removed.',
+        );
+
+        if ($this->parser->ownership($this->status($metricsNode)->stdout, $shape) !== UfwRuleOwnership::Missing) {
+            throw new ResourceOperationException(
+                'metrics.publication_firewall_remove_verify_failed',
+                'The Metrics Grafana firewall rule remained after removal.',
+                502,
+            );
+        }
+    }
+
+    private function shape(Node $metricsNode, string $gatewayAddress): UfwRuleShape
+    {
+        $metricsAddress = $this->address($metricsNode);
+
+        if (filter_var($gatewayAddress, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
+            throw new ResourceOperationException(
+                'metrics.publication_address_invalid',
+                'Metrics publication requires valid WireGuard IPv4 addresses.',
+                409,
+            );
+        }
+
+        return new UfwRuleShape(
+            comment: self::FirewallComment,
+            action: 'allow',
+            direction: 'in',
+            source: $gatewayAddress,
+            destination: $metricsAddress,
+            port: '3000',
+            protocol: 'tcp',
+            inInterface: 'wg0',
+            outInterface: null,
+            family: 'v4',
+        );
+    }
+
+    private function status(Node $node): CommandResult
+    {
+        $result = $this->run(
+            $node,
+            new RemoteCommand(['sudo', 'ufw', 'status', 'numbered']),
+            'metrics.publication_firewall_inspection_failed',
+            'The Metrics Grafana firewall state could not be inspected.',
+        );
+
+        if (preg_match('/^Status:\s+active$/mi', $result->stdout) !== 1) {
+            throw new ResourceOperationException(
+                'metrics.publication_firewall_inactive',
+                'UFW must be active for Metrics Grafana publication.',
+                409,
+            );
+        }
+
+        return $result;
+    }
+
+    private function address(Node $node): string
+    {
+        $address = $node->wireguard_address;
+
+        if (! is_string($address) || filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
+            throw new ResourceOperationException(
+                'metrics.publication_address_invalid',
+                'Metrics publication requires valid WireGuard IPv4 addresses.',
+                409,
+            );
+        }
+
+        return $address;
+    }
+
+    private function connection(Node $node): SshConnection
+    {
+        return new SshConnection(
+            host: $this->address($node),
+            user: 'orbit',
+            port: 22,
+            identityFile: $this->keys->privateKeyPath(),
+            knownHostsFile: $this->knownHosts->path(),
+        );
+    }
+
+    private function run(
+        Node $node,
+        RemoteCommand $command,
+        string $errorCode,
+        string $message,
+    ): CommandResult {
+        $result = $this->ssh->execute($this->connection($node), $command);
+
+        if (! $result->succeeded()) {
+            throw new ResourceOperationException($errorCode, $message, 502);
+        }
+
+        return $result;
+    }
+
+    /** @return list<string> */
+    private function ruleNumbers(string $status): array
+    {
+        $numbers = [];
+
+        foreach (explode("\n", $status) as $line) {
+            $matches = [];
+
+            if (
+                str_contains($line, '# '.self::FirewallComment)
+                && preg_match('/^\s*\[\s*(\d+)\]/', $line, $matches) === 1
+            ) {
+                $numbers[] = $matches[1];
+            }
+        }
+
+        return $numbers;
+    }
+
+    private function ownershipDrift(): never
+    {
+        throw new ResourceOperationException(
+            'metrics.publication_firewall_ownership_drift',
+            'Metrics Grafana firewall ownership cannot be proved.',
+            409,
+        );
+    }
+}

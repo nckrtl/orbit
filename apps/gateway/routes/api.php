@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\DoctorRunsController;
 use App\Http\Controllers\Api\FirewallRulesController;
 use App\Http\Controllers\Api\GatewayStatusesController;
 use App\Http\Controllers\Api\InstancesController;
+use App\Http\Controllers\Api\MetricsController;
 use App\Http\Controllers\Api\NodeAccessController;
 use App\Http\Controllers\Api\NodeRolesController;
 use App\Http\Controllers\Api\NodesController;
@@ -121,5 +122,17 @@ Route::prefix('v1')->group(function (): void {
         Route::delete('tools/{tool}', [ToolsController::class, 'destroy'])
             ->whereNumber('tool')
             ->name('tool:remove');
+        Route::post('metrics', [MetricsController::class, 'store'])->name('metrics:enable');
+        Route::delete('metrics', [MetricsController::class, 'destroy'])->name('metrics:remove');
+        Route::get('metrics/status', [MetricsController::class, 'status'])->name('metrics:status');
+        Route::get('metrics/credentials', [MetricsController::class, 'credentials'])->name('metrics:credentials');
+        Route::post('metrics/credentials/reset', [MetricsController::class, 'reset'])->name(
+            'metrics:credentials:reset',
+        );
+        Route::put('metrics/exporters/{node}', [MetricsController::class, 'enableExporter'])
+            ->whereNumber('node')->name('metrics:exporter:enable');
+        Route::delete('metrics/exporters/{node}', [MetricsController::class, 'disableExporter'])
+            ->whereNumber('node')
+            ->name('metrics:exporter:disable');
     });
 });

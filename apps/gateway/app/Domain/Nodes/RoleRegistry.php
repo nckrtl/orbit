@@ -14,6 +14,7 @@ final readonly class RoleRegistry
             RoleName::Vpn,
             RoleName::AppDev,
             RoleName::AppProd,
+            RoleName::Metrics,
         ];
     }
 
@@ -46,6 +47,12 @@ final readonly class RoleRegistry
                 assignableDuringProvisioning: true,
                 mutable: true,
                 conflicts: [RoleName::Gateway, RoleName::AppDev],
+            ),
+            RoleName::Metrics => new RoleDefinition(
+                name: $role,
+                singleton: true,
+                assignableDuringProvisioning: true,
+                mutable: true,
             ),
         };
     }

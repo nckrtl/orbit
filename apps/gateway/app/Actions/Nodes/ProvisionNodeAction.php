@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Nodes;
 
 use App\Data\Nodes\ProvisionNodeData;
+use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Nodes\NodeConverger;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\NodeTld;
@@ -27,6 +28,7 @@ final readonly class ProvisionNodeAction
         private NodeConverger $converger,
         private ToolManagerMaterializer $toolManagers,
         private WireGuardAddressAllocator $addresses,
+        private MetricsFleetReconciler $metrics,
     ) {}
 
     /** @mago-expect lint:halstead Ordered provisioning keeps persisted state and failure recovery in one transaction-like flow. */
@@ -119,6 +121,22 @@ final readonly class ProvisionNodeAction
 
         foreach ($data->roles as $role) {
             $this->roles->executeDuringProvisioning($node, $role);
+        }
+
+        if ($data->roles === []) {
+            try {
+                $this->metrics->reconcile();
+            } catch (Throwable $exception) {
+                $failure = new NodeProvisioningException(
+                    step: 'metrics-exporters',
+                    errorCode: 'node.metrics_reconcile_failed',
+                    message: 'Metrics fleet reconciliation failed.',
+                    previous: $exception,
+                );
+                $this->markFailed($node, $failure);
+
+                throw $failure;
+            }
         }
 
         return $node->refresh()->load('roles');

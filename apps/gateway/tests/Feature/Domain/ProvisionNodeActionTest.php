@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Actions\Nodes\ProvisionNodeAction;
 use App\Data\Nodes\ProvisionNodeData;
 use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Nodes\NodeConverger;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\NodeRoleOperationException;
@@ -60,6 +61,49 @@ describe(ProvisionNodeAction::class, function (): void {
             ->toBe([[ToolManagerName::Apt]])
             ->and($node->status)
             ->toBe(LifecycleStatus::Active);
+    });
+
+    it('reconciles a roleless provisioned node after activation', function (): void {
+        app()->instance(NodeConverger::class, new class implements NodeConverger {
+            public function converge(Node $node, ?string $expectedSshHostFingerprint = null): void {}
+        });
+        $metrics = Mockery::mock(MetricsFleetReconciler::class);
+        $metrics->shouldReceive('reconcile')->once()->withNoArgs();
+        app()->instance(MetricsFleetReconciler::class, $metrics);
+
+        $node = app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
+            name: 'roleless-exporter',
+            publicSshHost: '192.0.2.97',
+            architecture: 'x86_64',
+            expectedSshHostFingerprint: 'SHA256:pinned',
+        ));
+
+        expect($node->status)->toBe(LifecycleStatus::Active);
+    });
+
+    it('uses the node provisioning failure boundary when roleless Metrics reconciliation fails', function (): void {
+        app()->instance(NodeConverger::class, new class implements NodeConverger {
+            public function converge(Node $node, ?string $expectedSshHostFingerprint = null): void {}
+        });
+        $metrics = Mockery::mock(MetricsFleetReconciler::class);
+        $metrics->shouldReceive('reconcile')->once()->andThrow(new RuntimeException('metrics failure'));
+        app()->instance(MetricsFleetReconciler::class, $metrics);
+
+        expect(fn () => app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
+            name: 'roleless-exporter-failure',
+            publicSshHost: '192.0.2.98',
+            architecture: 'x86_64',
+            expectedSshHostFingerprint: 'SHA256:pinned',
+        )))
+            ->toThrow(NodeProvisioningException::class, 'Metrics fleet reconciliation failed.');
+
+        $node = Node::query()->where('name', 'roleless-exporter-failure')->sole();
+        expect($node->status)
+            ->toBe(LifecycleStatus::Failed)
+            ->and($node->failed_step)
+            ->toBe('metrics-exporters')
+            ->and($node->error_code)
+            ->toBe('node.metrics_reconcile_failed');
     });
 
     it('does not materialize managers after base convergence fails', function (): void {

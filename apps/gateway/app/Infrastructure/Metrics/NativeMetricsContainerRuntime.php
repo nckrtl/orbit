@@ -1,0 +1,83 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Infrastructure\Metrics;
+
+use App\Domain\Metrics\MetricsCredentialManager;
+use App\Domain\Metrics\MetricsExporterLifecycle;
+use App\Domain\Metrics\MetricsRuntimeLifecycle;
+use App\Domain\Shared\ResourceOperationException;
+use App\Models\Node;
+use App\Models\NodeRole;
+use Throwable;
+
+final readonly class NativeMetricsContainerRuntime implements MetricsRuntimeLifecycle
+{
+    public function __construct(
+        private MetricsRuntimeHost $host,
+        private MetricsRuntimeSpec $spec,
+        private MetricsConfigurationRenderer $configurations,
+        private MetricsCredentialManager $credentials,
+        private MetricsExporterLifecycle $exporters,
+    ) {}
+
+    public function converge(Node $node, NodeRole $assignment): void
+    {
+        $password = $this->credentials->passwordForConvergence($node);
+        $configuration = $this->configurations->render($this->exporters->targets($node), $password);
+        $specs = $this->specs($node, $assignment, $configuration->publicHash);
+        $snapshot = $this->host->snapshotConfiguration($node, $configuration);
+
+        try {
+            $this->host->publishConfiguration($node, $configuration);
+            $this->host->convergeContainers($node, $specs);
+            $this->credentials->verifyActive($node);
+        } catch (Throwable $exception) {
+            try {
+                $this->host->restoreConfiguration($node, $snapshot);
+            } catch (Throwable) {
+                throw new ResourceOperationException(
+                    'metrics.runtime_rollback_failed',
+                    'Metrics runtime convergence failed and configuration recovery did not complete.',
+                    502,
+                );
+            }
+
+            throw $exception;
+        }
+    }
+
+    public function remove(Node $node, NodeRole $assignment, bool $purgeData): void
+    {
+        $specs = $this->specs($node, $assignment, 'removal');
+
+        $this->host->removeContainers($node, $specs);
+        $this->host->removeConfiguration($node);
+
+        if (! $purgeData) {
+            return;
+        }
+
+        $this->host->purgeVolumes($node, $specs);
+        $this->credentials->purge($node);
+    }
+
+    public function health(Node $node, string $service): bool
+    {
+        $metricsService = MetricsService::tryFrom($service);
+
+        return $metricsService instanceof MetricsService && $this->host->health($node, $metricsService);
+    }
+
+    /** @return non-empty-list<MetricsContainerSpec> */
+    private function specs(Node $node, NodeRole $assignment, string $configurationHash): array
+    {
+        $address = is_string($node->wireguard_address) ? $node->wireguard_address : '';
+
+        return [
+            $this->spec->for(MetricsService::Prometheus, $assignment->id, $address, $configurationHash),
+            $this->spec->for(MetricsService::Grafana, $assignment->id, $address, $configurationHash),
+        ];
+    }
+}
