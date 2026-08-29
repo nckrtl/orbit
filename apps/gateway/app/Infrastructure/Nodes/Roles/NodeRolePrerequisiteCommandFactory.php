@@ -121,6 +121,7 @@ final readonly class NodeRolePrerequisiteCommandFactory
 
                 install -d -m 0755 /opt/orbit
                 install -d -m 0755 -o "$managed_user" -g "$managed_group" /opt/orbit/vite-plus /opt/orbit/bun
+                chown -R --no-dereference "$managed_user:$managed_group" /opt/orbit/vite-plus /opt/orbit/bun
 
                 sudo -u "$managed_user" -H env VP_HOME=/opt/orbit/vite-plus bash -o pipefail -lc 'curl -fsSL https://vite.plus | bash'
                 vp_binary=/opt/orbit/vite-plus/bin/vp
@@ -197,12 +198,12 @@ final readonly class NodeRolePrerequisiteCommandFactory
                     published_paths="$published_paths /usr/local/bin/bun"
                 fi
 
-                env VP_HOME=/opt/orbit/vite-plus /usr/local/bin/vp --version
-                /usr/local/bin/node --version
-                /usr/local/bin/pnpm --version
-                /usr/local/bin/npm --version
-                /usr/local/bin/npx --version
-                /usr/local/bin/bun --version
+                sudo -u "$managed_user" -H env VP_HOME=/opt/orbit/vite-plus /usr/local/bin/vp --version
+                sudo -u "$managed_user" -H /usr/local/bin/node --version
+                sudo -u "$managed_user" -H /usr/local/bin/pnpm --version
+                sudo -u "$managed_user" -H /usr/local/bin/npm --version
+                sudo -u "$managed_user" -H /usr/local/bin/npx --version
+                sudo -u "$managed_user" -H env BUN_INSTALL=/opt/orbit/bun /usr/local/bin/bun --version
 
                 rm -rf -- "$launcher_candidates"
                 launcher_candidates=

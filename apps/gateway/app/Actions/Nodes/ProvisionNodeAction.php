@@ -212,6 +212,7 @@ final readonly class ProvisionNodeAction
                 errorCode: 'node.role_convergence_failed',
                 message: 'Node role provisioning failed.',
                 previous: $exception,
+                result: $exception->result,
             );
         }
     }

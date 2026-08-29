@@ -83,6 +83,52 @@ describe('POST /api/v1/nodes', function (): void {
             ->toBe($node->id);
     });
 
+    it('returns 502 and redacts role convergence command output in activity', function (): void {
+        app()->instance(NodeConverger::class, new class implements NodeConverger {
+            public function converge(
+                Node $node,
+                NodeProvisioningIdentity $identity,
+                ?string $expectedSshHostFingerprint = null,
+            ): void {}
+        });
+        app()->instance(RoleBaselineConverger::class, new class implements RoleBaselineConverger {
+            public function converge(Node $node, NodeRole $assignment): void
+            {
+                throw new NodeProvisioningException(
+                    step: 'role-prerequisites',
+                    errorCode: 'node.role_prerequisites_failed',
+                    message: 'role failed',
+                    result: new CommandResult(42, 'sentinel stdout', 'sentinel stderr', 12, true),
+                );
+            }
+
+            public function remove(Node $node, NodeRole $assignment, bool $purgeData): void {}
+        });
+        $requestId = (string) Str::uuid();
+
+        $response = $this->withHeader('X-Orbit-Request-Id', $requestId)->postJson('/api/v1/nodes', [
+            'name' => 'role-output-redaction',
+            'public_ssh_host' => '192.0.2.70',
+            'architecture' => 'x86_64',
+            'roles' => ['app-prod'],
+            'host_key_fingerprint' => 'SHA256:'.str_repeat(string: 'A', times: 43),
+        ]);
+        $activity = Activity::query()->where('request_id', $requestId)->sole();
+
+        $response->assertStatus(502)->assertJsonPath('error.code', 'node.role_convergence_failed');
+        expect($response->getContent())
+            ->not
+            ->toContain('sentinel')
+            ->and($activity->exit_code)
+            ->toBe(42)
+            ->and($activity->properties?->get('stdout'))
+            ->toBeEmpty()
+            ->and($activity->properties?->get('stderr'))
+            ->toBeEmpty()
+            ->and($activity->properties?->get('output_truncated'))
+            ->toBeTrue();
+    });
+
     it('reuses the stored public SSH host when an existing Linux node omits it', function (): void {
         $converger = new class implements NodeConverger {
             public int $calls = 0;

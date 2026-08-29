@@ -496,6 +496,35 @@ it('guards managed JavaScript paths before publishing stable entry points', func
     expect(substr_count(haystack: $script, needle: '> "$candidate"'))->toBe(1);
 });
 
+it('repairs existing managed runtime ownership without following symlinks before installers', function (): void {
+    $script =
+        new NodeRolePrerequisiteCommandFactory()->make(RoleName::AppDev, default_managed_user_account())->input ?? '';
+    $repair = mb_strpos($script, 'chown -R --no-dereference "$managed_user:$managed_group"');
+    $viteInstaller = mb_strpos($script, 'https://vite.plus');
+    $bunInstaller = mb_strpos($script, 'https://bun.com/install');
+
+    expect($repair)
+        ->toBeInt()
+        ->and($viteInstaller)
+        ->toBeInt()
+        ->toBeGreaterThan($repair)
+        ->and($bunInstaller)
+        ->toBeInt()
+        ->toBeGreaterThan($repair)
+        ->and($script)
+        ->toContain(
+            'sudo -u "$managed_user" -H env VP_HOME=/opt/orbit/vite-plus /usr/local/bin/vp --version',
+            'sudo -u "$managed_user" -H env BUN_INSTALL=/opt/orbit/bun /usr/local/bin/bun --version',
+        )
+        ->and($script)
+        ->toContain(
+            'sudo -u "$managed_user" -H /usr/local/bin/node --version',
+            'sudo -u "$managed_user" -H /usr/local/bin/pnpm --version',
+            'sudo -u "$managed_user" -H /usr/local/bin/npm --version',
+            'sudo -u "$managed_user" -H /usr/local/bin/npx --version',
+        );
+});
+
 it('rejects foreign launchers before publishing stable entry points', function (): void {
     expect(class_exists(NodeRolePrerequisiteCommandFactory::class))->toBeTrue();
 
