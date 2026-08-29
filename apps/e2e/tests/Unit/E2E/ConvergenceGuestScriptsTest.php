@@ -815,6 +815,8 @@ describe('convergence guest scripts', function () {
             'gateway:status',
             'gateway.orbit',
             'caddy-ca-path',
+            '--retry 10 --retry-delay 2 --retry-connrefused --retry-all-errors',
+            '--resolve laravel.internal:443:127.0.0.1',
             'SELECT wireguard_address FROM nodes',
             '"orbit@$app_dev_address"',
             'StrictHostKeyChecking=yes',
@@ -1203,7 +1205,9 @@ describe('convergence guest scripts', function () {
         chmod("{$root}/bin/composer", 0o700);
         file_put_contents(
             "{$root}/bin/curl",
-            "#!/usr/bin/env bash\n[[ \" \$* \" == *' --resolve laravel.internal:443:127.0.0.1 '* ]]\n",
+            "#!/usr/bin/env bash\nset -euo pipefail\narguments=\" \$* \"\n"
+            ."[[ \"\$arguments\" == *' --retry 10 --retry-delay 2 --retry-connrefused --retry-all-errors --connect-timeout 10 --max-time 30 '* ]]\n"
+            ."[[ \"\$arguments\" == *' --resolve laravel.internal:443:127.0.0.1 '* ]]\n",
         );
         chmod("{$root}/bin/curl", 0o700);
         file_put_contents("{$root}/bin/systemctl", "#!/usr/bin/env bash\nprintf '%s\\n' \"\$*\" >>'{$root}/reloads'\n");

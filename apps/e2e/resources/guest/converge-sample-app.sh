@@ -114,7 +114,7 @@ case ${1-} in
         rm -f "$candidate"
         ca=$(cat /var/lib/orbit-e2e/caddy-ca-path)
         [[ -s "$ca" ]]
-        curl --fail --silent --show-error --cacert "$ca" --resolve laravel.internal:443:127.0.0.1 https://laravel.internal/ >/dev/null
+        curl --fail --silent --show-error --retry 10 --retry-delay 2 --retry-connrefused --retry-all-errors --connect-timeout 10 --max-time 30 --cacert "$ca" --resolve laravel.internal:443:127.0.0.1 https://laravel.internal/ >/dev/null
         exit 0
       fi
       mv -f "$candidate" /etc/caddy/Caddyfile.orbit-e2e
@@ -123,7 +123,7 @@ case ${1-} in
       sha256sum /etc/caddy/Caddyfile.orbit-e2e | awk '{print $1}' > /var/lib/orbit-e2e/caddy-config-sha256
       ca=$(cat /var/lib/orbit-e2e/caddy-ca-path)
       [[ -s "$ca" ]]
-      curl --fail --silent --show-error --cacert "$ca" --resolve laravel.internal:443:127.0.0.1 https://laravel.internal/ >/dev/null
+      curl --fail --silent --show-error --retry 10 --retry-delay 2 --retry-connrefused --retry-all-errors --connect-timeout 10 --max-time 30 --cacert "$ca" --resolve laravel.internal:443:127.0.0.1 https://laravel.internal/ >/dev/null
     fi
     ;;
   *) exit 64 ;;
