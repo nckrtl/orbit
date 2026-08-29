@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\AppDev;
 
+use App\Infrastructure\Processes\SystemdVpnOrderingDropIn;
 use App\Infrastructure\Ssh\RemoteCommand;
 
 final readonly class AppDevCaddyPublisher
@@ -13,7 +14,16 @@ final readonly class AppDevCaddyPublisher
         private string $liveCaddyfilePath = '/etc/caddy/Caddyfile',
         private string $caddyServiceName = 'caddy',
         private string $lockPath = '/run/lock/orbit/caddy.lock',
+        private SystemdVpnOrderingDropIn $vpnOrdering = new SystemdVpnOrderingDropIn,
     ) {}
+
+    public function serviceOrderingCommand(): RemoteCommand
+    {
+        return new RemoteCommand(
+            arguments: $this->vpnOrdering->arguments($this->caddyServiceName),
+            input: $this->vpnOrdering->script(),
+        );
+    }
 
     public function command(string $configuration, string $version): RemoteCommand
     {

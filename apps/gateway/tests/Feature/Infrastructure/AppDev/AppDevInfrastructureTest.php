@@ -1876,6 +1876,39 @@ it('restores the exact regular Caddyfile before the recovery reload when activat
     }
 });
 
+it('orders the app-dev Caddy unit after the managed WireGuard interface', function (): void {
+    [$node] = app_dev_runtime_models();
+    $ssh = new AppDevFakeSshExecutor;
+    $manager = new RemoteAppDevCaddyManager(
+        sites: new AppDevSiteRepository,
+        renderer: new AppDevCaddyConfigRenderer,
+        ssh: app_dev_ssh($ssh),
+    );
+
+    $manager->converge($node);
+
+    expect($ssh->commands)
+        ->toHaveCount(2)
+        ->and($ssh->commands[1]->arguments)
+        ->toBe(['sudo', 'bash', '-seu', '--', 'caddy', '/etc/systemd/system'])
+        ->and($ssh->commands[1]->input)
+        ->toContain(
+            'managed=$directory/orbit-vpn.conf',
+            'install -d -o root -g root -m 0755 -- "$directory"',
+            'if [ -f "$managed" ] && cmp -s -- "$staged" "$managed"; then',
+            'if systemctl is-active --quiet "$service"; then',
+            'install -o root -g root -m 0644 -- "$staged" "$candidate"',
+            'mv -fT -- "$candidate" "$managed"',
+            'systemctl daemon-reload',
+            'systemctl restart "$service"',
+        )
+        ->and(base64_decode(
+            Str::match('/\x27([A-Za-z0-9+\/=]+)\x27 \| base64 --decode/', $ssh->commands[1]->input ?? ''),
+            strict: true,
+        ))
+        ->toBe("# Managed by Orbit.\n[Unit]\nAfter=wg-quick@orbit.service\nWants=wg-quick@orbit.service\n");
+});
+
 it('keeps the live Caddy aggregate untouched when candidate validation fails', function (): void {
     [$node] = app_dev_runtime_models();
     $ssh = new AppDevFakeSshExecutor([

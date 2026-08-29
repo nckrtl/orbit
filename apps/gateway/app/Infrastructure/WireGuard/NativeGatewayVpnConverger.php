@@ -17,6 +17,7 @@ use App\Infrastructure\Firewall\UfwStoredRuleProbe;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
+use App\Infrastructure\Processes\SystemdVpnOrderingDropIn;
 use App\Models\Node;
 use Closure;
 
@@ -45,6 +46,7 @@ final readonly class NativeGatewayVpnConverger implements GatewayVpnConverger
         private UfwStatusParser $firewallParser,
         private string $orbitHome,
         private UfwStoredRuleParser $storedFirewallParser = new UfwStoredRuleParser,
+        private SystemdVpnOrderingDropIn $vpnOrdering = new SystemdVpnOrderingDropIn,
     ) {}
 
     public function converge(Node $gateway, BootstrapGatewayData $data): void
@@ -265,6 +267,12 @@ final readonly class NativeGatewayVpnConverger implements GatewayVpnConverger
                     exit 1
                 fi
                 BASH,
+        );
+        $this->run(
+            step: 'vpn-dns-ordering',
+            errorCode: 'vpn.dns_config_failed',
+            arguments: $this->vpnOrdering->arguments('dnsmasq'),
+            input: $this->vpnOrdering->script(),
         );
     }
 

@@ -135,7 +135,7 @@ it('reports the complete role and VPN drift matrix in stable field order', funct
     $vpnCalls = 0;
     $report = new RoleDoctorProbe(
         role_probe_state_inspector($roleCalls, new RoleInspectionData(false, false, false)),
-        role_probe_vpn_inspector($vpnCalls, new GatewayVpnInspectionData(false, false, false)),
+        role_probe_vpn_inspector($vpnCalls, new GatewayVpnInspectionData(false, false, false, false)),
     )->inspect(role_probe_context($node));
 
     expect($report->checked)
@@ -148,6 +148,7 @@ it('reports the complete role and VPN drift matrix in stable field order', funct
             'role.vpn_inactive',
             'role.vpn_projection_mismatch',
             'role.dns_projection_mismatch',
+            'role.vpn_ordering_missing',
         ])
         ->and(array_unique(array_map(
             static fn (DoctorIssueData $issue): int|string|null => $issue->resourceId,
@@ -315,7 +316,7 @@ function role_probe_vpn_inspector(
     ?GatewayVpnInspectionData $state = null,
     bool $throws = false,
 ): GatewayVpnStateInspector {
-    return new class($calls, $state ?? new GatewayVpnInspectionData(true, true, true), $throws) implements
+    return new class($calls, $state ?? new GatewayVpnInspectionData(true, true, true, true), $throws) implements
         GatewayVpnStateInspector {
         public function __construct(
             private int &$calls,

@@ -224,6 +224,11 @@ final readonly class RoleDoctorProbe implements DoctorFamilyProbe
                 $state->dnsConfigMatches,
                 'Private DNS projection does not match managed intent.',
             ],
+            [
+                RoleDoctorIssueCode::VpnOrderingMissing,
+                $state->dnsOrderingInstalled,
+                'Private DNS is not ordered after the managed VPN interface.',
+            ],
         ] as [$code, $matches, $summary]) {
             if ($matches) {
                 continue;

@@ -199,6 +199,43 @@ it('preserves live FPM disk and does not reload when complete effective validati
     }
 });
 
+it('orders the gateway Caddy unit after the managed WireGuard interface', function (): void {
+    [$converger, $processes, , $orbitHome] = gateway_web_converger();
+
+    try {
+        $converger->converge('gateway.orbit', '10.44.0.1');
+        $calls = Collection::make($processes->calls);
+        $commands = $calls->map(static fn (ProcessInvocation $invocation): array => $invocation->arguments);
+        $reloadIndex = $commands->search(['sudo', 'systemctl', 'reload-or-restart', 'caddy']);
+        $orderingIndex = $commands->search(
+            ['sudo', 'bash', '-seu', '--', 'caddy', '/etc/systemd/system'],
+        );
+        $ordering = $calls->get($orderingIndex);
+        $orderingInput = $ordering?->input ?? '';
+
+        expect($reloadIndex)
+            ->toBeInt()
+            ->and($orderingIndex)
+            ->toBeInt()
+            ->toBeGreaterThan($reloadIndex)
+            ->and($orderingInput)
+            ->toContain(
+                'managed=$directory/orbit-vpn.conf',
+                'if [ -f "$managed" ] && cmp -s -- "$staged" "$managed"; then',
+                'if systemctl is-active --quiet "$service"; then',
+                'mv -fT -- "$candidate" "$managed"',
+                'systemctl daemon-reload',
+            )
+            ->and(base64_decode(
+                Str::match('/\x27([A-Za-z0-9+\/=]+)\x27 \| base64 --decode/', $orderingInput),
+                strict: true,
+            ))
+            ->toBe("# Managed by Orbit.\n[Unit]\nAfter=wg-quick@orbit.service\nWants=wg-quick@orbit.service\n");
+    } finally {
+        new Filesystem()->deleteDirectory($orbitHome);
+    }
+});
+
 it('preserves the prior aggregate Caddy configuration when staged final validation fails', function (): void {
     [$converger, $processes, , $orbitHome] = gateway_web_converger(failure: 'caddy-validation');
 

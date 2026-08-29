@@ -30,6 +30,7 @@ it('compares the active interface and exact rendered server and DNS projections'
         gateway_vpn_result("1\n"),
         gateway_vpn_result("1\n"),
         gateway_vpn_result("1\n"),
+        gateway_vpn_result("1\n"),
     ]);
 
     try {
@@ -41,8 +42,10 @@ it('compares the active interface and exact rendered server and DNS projections'
             ->toBeTrue()
             ->and($state->dnsConfigMatches)
             ->toBeTrue()
+            ->and($state->dnsOrderingInstalled)
+            ->toBeTrue()
             ->and($ssh->calls)
-            ->toHaveCount(3)
+            ->toHaveCount(4)
             ->and($ssh->calls[0]['command']->arguments)
             ->toBe([
                 'bash',
@@ -53,6 +56,10 @@ it('compares the active interface and exact rendered server and DNS projections'
             ->toContain('/etc/wireguard/orbit.conf')
             ->and($ssh->calls[2]['command']->arguments)
             ->toContain('/etc/dnsmasq.d/orbit-records.conf')
+            ->and($ssh->calls[3]['command']->arguments)
+            ->toContain('/etc/systemd/system/dnsmasq.service.d/orbit-vpn.conf')
+            ->and($ssh->calls[3]['protected'])
+            ->toContain('After=wg-quick@orbit.service', 'Wants=wg-quick@orbit.service')
             ->and($ssh->calls[1]['protected'])
             ->toContain('PrivateKey = SERVER_PRIVATE')
             ->and($ssh->calls[2]['protected'])
@@ -74,6 +81,7 @@ it('compares the active interface and exact rendered server and DNS projections'
 
 it('inspects the explicitly selected VPN role when a lower fleet assignment exists', function (): void {
     [$inspector, $ssh, $orbitHome] = gateway_vpn_inspector([
+        gateway_vpn_result("1\n"),
         gateway_vpn_result("1\n"),
         gateway_vpn_result("1\n"),
         gateway_vpn_result("1\n"),
@@ -109,6 +117,7 @@ it('inspects the explicitly selected VPN role when a lower fleet assignment exis
 
 it('renders VPN peers in stable persisted order', function (): void {
     [$inspector, $ssh, $orbitHome, $role] = gateway_vpn_inspector([
+        gateway_vpn_result("1\n"),
         gateway_vpn_result("1\n"),
         gateway_vpn_result("1\n"),
         gateway_vpn_result("1\n"),
@@ -176,14 +185,28 @@ it('returns independent bounded mismatch observations', function (
             $state->interfaceActive,
             $state->serverConfigMatches,
             $state->dnsConfigMatches,
+            $state->dnsOrderingInstalled,
         ])->toBe($expected);
     } finally {
         new Filesystem()->deleteDirectory($orbitHome);
     }
 })->with([
-    'inactive interface' => [["0\n", "1\n", "1\n"], [false, true, true]],
-    'server mismatch' => [["1\n", "0\n", "1\n"], [true, false, true]],
-    'DNS mismatch' => [["1\n", "1\n", "0\n"], [true, true, false]],
+    'inactive interface' => [
+        ["0\n", "1\n", "1\n", "1\n"],
+        [false, true,  true,  true],
+    ],
+    'server mismatch' => [
+        ["1\n", "0\n", "1\n", "1\n"],
+        [true,  false, true,  true],
+    ],
+    'DNS mismatch' => [
+        ["1\n", "1\n", "0\n", "1\n"],
+        [true,  true,  false, true],
+    ],
+    'ordering drop-in missing' => [
+        ["1\n", "1\n", "1\n", "0\n"],
+        [true,  true,  true,  false],
+    ],
 ]);
 
 it('fails closed for command failure timeout truncation malformed output and transport errors', function (
