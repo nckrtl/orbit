@@ -34,7 +34,7 @@ it('keeps the approved workflow contracts aligned', function (): void {
     expect($workflow)->toMatch('/merged_refresh_blocked.*worktree removal and issue closure pending/s');
     expect($workflow)->toMatch('/Lock contention can be\s+retried by the external orchestrator/s');
     expect($workflow)->toMatch('/`unchanged` or `promoted` result.*`bin\/worktree-remove`/s');
-    expect($topologies)->toContain('Registered profiles: None.');
+    expect($topologies)->toContain('### `gateway_app-dev_app-prod`', 'Registered on 2026-08-29');
     expect($topologies)->toContain('bin/e2e-topology acquire ISSUE WORKTREE');
     expect($topologies)->toContain('bin/e2e-topology sync ISSUE WORKTREE');
     expect($topologies)->toContain('bin/e2e-topology prove ISSUE WORKTREE --candidate-sha=SHA');

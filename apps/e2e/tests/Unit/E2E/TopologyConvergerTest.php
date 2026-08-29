@@ -198,6 +198,7 @@ describe('TopologyConverger', function () {
 
         expect(array_keys($report->steps))->toBe([
             'validate.prerequisites',
+            'align.identity',
             'prerequisites.gateway',
             'bootstrap.gateway',
             'authorize.gateway-ssh',
@@ -221,16 +222,19 @@ describe('TopologyConverger', function () {
             ->all();
 
         expect($guestCommands)
-            ->toHaveCount(19)
-            ->and(array_column(array_slice($guestCommands, 0, 3), 4))
+            ->toHaveCount(22)
+            ->and(array_column(array_slice($guestCommands, 3, 3), 4))
             ->toBe([
                 'lab:orbit-e2e-nck-123-gateway',
                 'lab:orbit-e2e-nck-123-gateway',
                 'lab:orbit-e2e-nck-123-gateway',
             ]);
 
-        expect(array_map(fn (array $command): array => array_slice($command, 6), array_slice($guestCommands, 0, 19)))
+        expect(array_map(fn (array $command): array => array_slice($command, 6), array_slice($guestCommands, 0, 22)))
             ->toBe([
+                ['/usr/local/bin/prepare-node.sh', 'align-identity'],
+                ['/usr/local/bin/prepare-node.sh', 'align-identity'],
+                ['/usr/local/bin/prepare-node.sh', 'align-identity'],
                 ['/usr/local/bin/converge-gateway.sh', 'prerequisites'],
                 ['/usr/local/bin/converge-gateway.sh', 'bootstrap', '192.0.2.10'],
                 ['ssh-keygen', '-y', '-f', '/home/orbit/.orbit/ssh/id_ed25519'],

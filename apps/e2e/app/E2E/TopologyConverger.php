@@ -35,6 +35,17 @@ final readonly class TopologyConverger
 
         $steps = ['validate.prerequisites' => true];
 
+        $identityCommands = [];
+        foreach ($instances as $role => $instance) {
+            $identityCommands[$role] = [
+                'instance' => $instance,
+                'script' => 'prepare-node.sh',
+                'arguments' => ['align-identity'],
+            ];
+        }
+        $this->runAll($identityCommands);
+        $steps['align.identity'] = true;
+
         $this->run($instances['gateway'], 'converge-gateway.sh', ['prerequisites']);
         $steps['prerequisites.gateway'] = true;
         $this->run($instances['gateway'], 'converge-gateway.sh', ['bootstrap', $addresses['gateway']]);
