@@ -35,6 +35,16 @@ function incusTarget(string $identity = ''): string
     return 'lab:'.$identity;
 }
 
+/** @return list<string> */
+function guestIpv4Probe(): array
+{
+    return [
+        'sh',
+        '-c',
+        'interface=$(ip -4 route show default | awk \'$1 == "default" { for (i = 2; i < NF; i++) if ($i == "dev") { print $(i + 1); exit } }\') && [ -n "$interface" ] && ip -4 -o addr show dev "$interface" scope global',
+    ];
+}
+
 function isIncusGuestBatchHelper(PendingProcess $process): bool
 {
     return (
@@ -126,6 +136,7 @@ function incusHost(
     ?SecretRedactor $redactor = null,
     ?OperationJournal $journal = null,
     ?OperationId $operationId = null,
+    int $guestReadinessTimeoutSeconds = 600,
 ): IncusHost {
     return new IncusHost(
         remote: 'lab',
@@ -134,10 +145,43 @@ function incusHost(
         redactor: $redactor ?? new SecretRedactor,
         journal: $journal,
         operationId: $operationId,
+        guestReadinessTimeoutSeconds: $guestReadinessTimeoutSeconds,
     );
 }
 
 describe('IncusHost reads', function () {
+    it('resolves default-route dev tokens and stops before chained commands when none exists', function (
+        string $routes,
+        string $expectedOutput,
+        int $expectedExitCode,
+    ) {
+        $constant = new ReflectionClass(IncusHost::class)->getReflectionConstant(
+            'DEFAULT_ROUTE_INTERFACE_RESOLUTION',
+        );
+        expect($constant)->not->toBeFalse();
+        $resolver = $constant->getValue();
+        assert(is_string($resolver));
+        $script = 'ip() { printf \'%s\\n\' "$ROUTE_OUTPUT"; }; '.$resolver.' && printf \'resolved:%s\' "$interface"';
+        $process = new SymfonyProcess(['/bin/sh', '-c', $script], env: ['ROUTE_OUTPUT' => $routes]);
+
+        $process->run();
+
+        expect($process->getExitCode())
+            ->toBe($expectedExitCode)
+            ->and($process->getOutput())
+            ->toBe($expectedOutput);
+    })->with([
+        'gateway route' => ['default via 192.0.2.1 dev enp5s0 proto dhcp', 'resolved:enp5s0', 0],
+        'on-link route' => ['default dev enp5s0 scope link', 'resolved:enp5s0', 0],
+        'first default route' => [
+            "default via 192.0.2.1 dev enp5s0\ndefault via 198.51.100.1 dev eth9 metric 100",
+            'resolved:enp5s0',
+            0,
+        ],
+        'missing dev token' => ['default via 192.0.2.1 proto dhcp', '', 1],
+        'missing interface token' => ['default dev', '', 1],
+    ]);
+
     it('reads an exact instance set from one inventory request', function () {
         $reads = 0;
         /** @mago-expect lint:cyclomatic-complexity,kan-defect Inventory process responses stay in one exact boundary fixture. */
@@ -222,6 +266,7 @@ describe('IncusHost reads', function () {
             }
 
             return incusGuestHelperResult($process, static function (array $request): array {
+                expect($request['argv'])->toBe(guestIpv4Probe());
                 $address = match (true) {
                     str_contains($request['instance'], 'gateway') => '192.0.2.10',
                     str_contains($request['instance'], 'app-dev') => '192.0.2.11',
@@ -229,7 +274,7 @@ describe('IncusHost reads', function () {
                 };
 
                 return [
-                    'stdout' => "2: eth0 inet {$address}/24 scope global eth0\n",
+                    'stdout' => "2: enp5s0 inet {$address}/24 scope global enp5s0\n",
                     'stderr' => '',
                     'exit_code' => 0,
                 ];
@@ -254,14 +299,14 @@ describe('IncusHost reads', function () {
         Process::assertNotRan(isDirectIncusGuestCommand(...));
     });
 
-    it('ignores addresses outside the asserted eth0 topology NIC', function () {
+    it('reads the default-route topology NIC without assuming its interface name', function () {
         Process::fake(function (PendingProcess $process) {
             if (in_array('list', $process->command, true)) {
                 return Process::result(vmJson());
             }
 
             return incusGuestHelperResult($process, static fn (): array => [
-                'stdout' => "3: wg0    inet 10.0.0.1/24 scope global wg0\n4: docker0    inet 172.17.0.1/16 scope global docker0\n5: br-abcd    inet 172.18.0.1/16 scope global br-abcd\n2: eth0    inet 192.0.2.44/24 scope global eth0\n",
+                'stdout' => "2: enp5s0    inet 192.0.2.44/24 scope global enp5s0\n",
                 'stderr' => '',
                 'exit_code' => 0,
             ]);
@@ -293,7 +338,7 @@ describe('IncusHost reads', function () {
             }
 
             return incusGuestHelperResult($process, static fn (): array => [
-                'stdout' => "3: wg0    inet 10.0.0.1/24 scope global wg0\n",
+                'stdout' => '',
                 'stderr' => '',
                 'exit_code' => 0,
             ]);
@@ -302,7 +347,7 @@ describe('IncusHost reads', function () {
             ->toThrow(RuntimeException::class, 'has no usable global IPv4 address');
     });
 
-    it('fails closed when eth0 has more than one IPv4 address', function () {
+    it('fails closed when the default-route NIC has more than one IPv4 address', function () {
         Process::fake(function (PendingProcess $process) {
             if (in_array('list', $process->command, true)) {
                 return Process::result(vmJson());
@@ -310,8 +355,8 @@ describe('IncusHost reads', function () {
 
             return incusGuestHelperResult($process, static fn (): array => [
                 'stdout' =>
-                    "2: eth0    inet 192.0.2.44/24 scope global eth0\n"
-                        ."2: eth0    inet 198.51.100.44/24 scope global eth0\n",
+                    "2: enp5s0    inet 192.0.2.44/24 scope global enp5s0\n"
+                        ."2: enp5s0    inet 198.51.100.44/24 scope global enp5s0\n",
                 'stderr' => '',
                 'exit_code' => 0,
             ]);
@@ -321,21 +366,11 @@ describe('IncusHost reads', function () {
             ->toThrow(RuntimeException::class, 'does not have exactly one usable global IPv4 address');
     });
 
-    it('only excludes loopback and current WireGuard interfaces when checking global IPv4', function () {
+    it('rejects a loopback address returned by the default-route probe', function () {
         $host = incusHost();
         $method = new ReflectionMethod($host, 'hasUsableGlobalIpv4');
 
-        $virtualAddresses = implode("\n", [
-            '1: lo    inet 127.0.0.1/8',
-            '2: wg-orbit    inet 10.0.0.1/24',
-            '3: wg0    inet 10.0.0.2/24',
-            '4: docker0    inet 10.0.0.3/24',
-            '5: docker_gwbridge    inet 10.0.0.4/24',
-            '6: br-c9536c1    inet 10.0.0.5/24',
-            '7: veth5521    inet 10.0.0.6/24',
-        ]);
-
-        expect($method->invoke($host, $virtualAddresses))->toBeFalse();
+        expect($method->invoke($host, '1: lo inet 127.0.0.1/8'))->toBeFalse();
     });
 
     it('assigns the legacy deterministic Incus MAC address', function () {
@@ -857,7 +892,7 @@ describe('IncusHost mutations', function () {
                 '--',
                 'sh',
                 '-c',
-                "rm -f /etc/machine-id /var/lib/dbus/machine-id && printf '%s\\n' '16c94783e841fe9f11e90d5323dc1974' > /etc/machine-id && ln -s /etc/machine-id /var/lib/dbus/machine-id && systemctl restart systemd-journald && for directory in /run/systemd/netif/leases /var/lib/systemd/network; do if [ -e \"\$directory\" ]; then [ -d \"\$directory\" ] && [ ! -L \"\$directory\" ] || exit 1; find \"\$directory\" -mindepth 1 -maxdepth 1 -type f -delete || exit 1; fi; done && ip -4 addr flush dev eth0 scope global && (systemctl restart systemd-networkd || systemctl restart NetworkManager)",
+                "interface=\$(ip -4 route show default | awk '\$1 == \"default\" { for (i = 2; i < NF; i++) if (\$i == \"dev\") { print \$(i + 1); exit } }') && [ -n \"\$interface\" ] && rm -f /etc/machine-id /var/lib/dbus/machine-id && printf '%s\\n' '16c94783e841fe9f11e90d5323dc1974' > /etc/machine-id && ln -s /etc/machine-id /var/lib/dbus/machine-id && systemctl restart systemd-journald && for directory in /run/systemd/netif/leases /var/lib/systemd/network; do if [ -e \"\$directory\" ]; then [ -d \"\$directory\" ] && [ ! -L \"\$directory\" ] || exit 1; find \"\$directory\" -mindepth 1 -maxdepth 1 -type f -delete || exit 1; fi; done && ip -4 addr flush dev \"\$interface\" scope global && (systemctl restart systemd-networkd || systemctl restart NetworkManager)",
             ));
 
             return Process::result();
@@ -871,7 +906,7 @@ describe('IncusHost mutations', function () {
             '--',
             'sh',
             '-c',
-            "rm -f /etc/machine-id /var/lib/dbus/machine-id && printf '%s\\n' '16c94783e841fe9f11e90d5323dc1974' > /etc/machine-id && ln -s /etc/machine-id /var/lib/dbus/machine-id && systemctl restart systemd-journald && for directory in /run/systemd/netif/leases /var/lib/systemd/network; do if [ -e \"\$directory\" ]; then [ -d \"\$directory\" ] && [ ! -L \"\$directory\" ] || exit 1; find \"\$directory\" -mindepth 1 -maxdepth 1 -type f -delete || exit 1; fi; done && ip -4 addr flush dev eth0 scope global && (systemctl restart systemd-networkd || systemctl restart NetworkManager)",
+            "interface=\$(ip -4 route show default | awk '\$1 == \"default\" { for (i = 2; i < NF; i++) if (\$i == \"dev\") { print \$(i + 1); exit } }') && [ -n \"\$interface\" ] && rm -f /etc/machine-id /var/lib/dbus/machine-id && printf '%s\\n' '16c94783e841fe9f11e90d5323dc1974' > /etc/machine-id && ln -s /etc/machine-id /var/lib/dbus/machine-id && systemctl restart systemd-journald && for directory in /run/systemd/netif/leases /var/lib/systemd/network; do if [ -e \"\$directory\" ]; then [ -d \"\$directory\" ] && [ ! -L \"\$directory\" ] || exit 1; find \"\$directory\" -mindepth 1 -maxdepth 1 -type f -delete || exit 1; fi; done && ip -4 addr flush dev \"\$interface\" scope global && (systemctl restart systemd-networkd || systemctl restart NetworkManager)",
         ));
     });
 
@@ -1096,6 +1131,41 @@ describe('IncusHost mutations', function () {
         'duplicate' => [['orbit-e2e-nck-123-gateway', 'orbit-e2e-nck-123-gateway']],
     ]);
 
+    it('waits for IPv4 on the guest default-route interface', function () {
+        $instance = 'orbit-e2e-nck-123-gateway';
+        Process::fake(function (PendingProcess $process) use ($instance) {
+            return match ($process->command) {
+                incusCommand('list', incusTarget(), '--format=json') => Process::result(vmJson($instance)),
+                incusCommand('exec', incusTarget($instance), '--', ...guestIpv4Probe()) => Process::result(
+                    "2: enp5s0 inet 10.44.0.10/24 scope global enp5s0\n",
+                ),
+                default => Process::result('', 'unexpected command', 1),
+            };
+        });
+
+        incusHost(guestReadinessTimeoutSeconds: 1)->waitForGlobalIpv4([$instance]);
+
+        Process::assertRan(incusCommand('exec', incusTarget($instance), '--', ...guestIpv4Probe()));
+    });
+
+    it('waits for restored guests on their default-route interfaces', function () {
+        $instance = 'orbit-e2e-nck-123-gateway';
+        Process::fake(function (PendingProcess $process) use ($instance) {
+            return match ($process->command) {
+                incusCommand('list', incusTarget(), '--format=json') => Process::result(vmJson($instance)),
+                incusCommand('exec', incusTarget($instance), '--', '/bin/true') => Process::result(),
+                incusCommand('exec', incusTarget($instance), '--', ...guestIpv4Probe()) => Process::result(
+                    "2: enp5s0 inet 10.44.0.10/24 scope global enp5s0\n",
+                ),
+                default => Process::result('', 'unexpected command', 1),
+            };
+        });
+
+        incusHost(guestReadinessTimeoutSeconds: 1)->waitForRestoredHostStates([$instance]);
+
+        Process::assertRan(incusCommand('exec', incusTarget($instance), '--', ...guestIpv4Probe()));
+    });
+
     it('advances each cloned guest through readiness reset and IPv4 without a global role barrier', function () {
         $gateway = 'orbit-e2e-nck-123-gateway';
         $appDev = 'orbit-e2e-nck-123-app-dev';
@@ -1126,10 +1196,11 @@ describe('IncusHost mutations', function () {
 
                 return Process::result();
             }
-            if (($guest[0] ?? null) === 'ip') {
+            if (($guest[0] ?? null) === 'sh' && str_contains((string) ($guest[2] ?? ''), 'route show default')) {
+                expect($guest)->toBe(guestIpv4Probe());
                 $events[] = 'ipv4:'.$instance;
 
-                return Process::result("2: eth0 inet 10.44.0.10/24 scope global eth0\n");
+                return Process::result("2: enp5s0 inet 10.44.0.10/24 scope global enp5s0\n");
             }
 
             return Process::result('', 'unexpected command', 1);
@@ -1161,15 +1232,17 @@ describe('IncusHost mutations', function () {
             if ($guest === ['/bin/true']) {
                 return Process::result();
             }
-            if (($guest[0] ?? null) === 'sh') {
+            if (($guest[0] ?? null) === 'sh' && str_contains((string) ($guest[2] ?? ''), "printf '%s\\n'")) {
                 if (++$resetAttempts === 1) {
                     throw new RuntimeException('transient pool failure');
                 }
 
                 return Process::result();
             }
-            if (($guest[0] ?? null) === 'ip') {
-                return Process::result("2: eth0 inet 10.232.2.10/24 scope global eth0\n");
+            if (($guest[0] ?? null) === 'sh' && str_contains((string) ($guest[2] ?? ''), 'route show default')) {
+                expect($guest)->toBe(guestIpv4Probe());
+
+                return Process::result("2: enp5s0 inet 10.232.2.10/24 scope global enp5s0\n");
             }
 
             return Process::result('', 'unexpected command', 1);

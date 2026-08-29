@@ -956,10 +956,13 @@ function pinnedWorktreeGuestCommandResult(array $guest): \Illuminate\Contracts\P
         $guest = array_slice($guest, 6);
     }
     if (
-        $guest === ['ip', '-4', '-o', 'addr', 'show', 'scope', 'global']
-        || $guest === ['ip', '-4', '-o', 'addr', 'show', 'dev', 'eth0', 'scope', 'global']
+        $guest === [
+            'sh',
+            '-c',
+            'interface=$(ip -4 route show default | awk \'$1 == "default" { for (i = 2; i < NF; i++) if ($i == "dev") { print $(i + 1); exit } }\') && [ -n "$interface" ] && ip -4 -o addr show dev "$interface" scope global',
+        ]
     ) {
-        return Process::result("2: eth0    inet 10.44.0.10/24 scope global eth0\n");
+        return Process::result("2: enp5s0    inet 10.44.0.10/24 scope global enp5s0\n");
     }
     if (($guest[0] ?? null) === '/usr/local/bin/receive-source.sh') {
         $sha = collect($guest)->first(
@@ -3568,10 +3571,9 @@ it('keeps the promoted Laravel pin when feature worktrees change source', functi
             $command,
             true,
         ));
-        $ipv4 = $eventIndex($acquireEvents, $instance, static fn (array $command): bool => in_array(
-            'ip',
-            $command,
-            true,
+        $ipv4 = $eventIndex($acquireEvents, $instance, static fn (array $command): bool => str_contains(
+            implode(' ', $command),
+            'ip -4 -o addr show dev "$interface" scope global',
         ));
         $indices = [$mac, $start, $readiness, $identity, $ipv4];
         $orderedIndices = $indices;
