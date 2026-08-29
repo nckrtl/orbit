@@ -28,7 +28,7 @@ if [[ -e "$state" ]]; then
   fi
 fi
 sudo -u orbit -- env HOME=/home/orbit ORBIT_HOME=/home/orbit/.orbit ORBIT_GATEWAY_CHECKOUT=/home/orbit/orbit/apps/gateway DB_DATABASE=/home/orbit/.orbit/gateway.sqlite php /home/orbit/orbit/apps/gateway/artisan orbit:node-provision "$1" "$2" \
-  --role=app-dev --tld=beast --architecture="$3" --ssh-user=orbit \
+  --role=app-dev --tld=beast --architecture="$3" --user=orbit \
   --host-key-fingerprint="$fingerprint" --no-interaction
 install -d -m 0755 "$(dirname "$state")"
 printf '%s\n' "$prepared" | install -m 0644 /dev/stdin "$state"

@@ -882,7 +882,7 @@ describe('convergence guest scripts', function () {
                 'ssh-keyscan -t ed25519 -- "$2"',
                 '[[ "$3" =~ ^(x86_64|aarch64)$ ]]',
                 '--architecture="$3"',
-                '--ssh-user=orbit',
+                '--user=orbit',
             )
             ->not->toContain('uname -m');
         expect($production)
@@ -891,7 +891,7 @@ describe('convergence guest scripts', function () {
                 'ssh-keyscan -t ed25519 -- "$2"',
                 '[[ "$3" =~ ^(x86_64|aarch64)$ ]]',
                 '--architecture="$3"',
-                '--ssh-user=orbit',
+                '--user=orbit',
             )
             ->not->toContain('uname -m');
     });
