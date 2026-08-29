@@ -39,6 +39,51 @@ describe(ProvisionNodeAction::class, function (): void {
         });
     });
 
+    it('rejects an invalid stored managed user before mutating an existing node', function (): void {
+        $existing = Node::query()->create([
+            'name' => 'corrupt-managed-user',
+            'status' => LifecycleStatus::Failed,
+            'platform' => 'linux',
+            'architecture' => 'x86_64',
+            'public_ssh_host' => '192.0.2.71',
+            'wireguard_address' => '10.44.0.71',
+            'user' => 'invalid user',
+        ]);
+        $converged = false;
+        app()->instance(NodeConverger::class, new class($converged) implements NodeConverger {
+            public function __construct(
+                private bool &$converged,
+            ) {}
+
+            public function converge(
+                Node $node,
+                NodeProvisioningIdentity $identity,
+                ?string $expectedSshHostFingerprint = null,
+            ): void {
+                $this->converged = true;
+            }
+        });
+
+        expect(fn () => app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
+            name: $existing->name,
+            publicSshHost: $existing->public_ssh_host,
+            expectedSshHostFingerprint: 'SHA256:pinned',
+        )))
+            ->toThrow(
+                fn (ResourceOperationException $exception): bool => (
+                    $exception->errorCode === 'node.invalid_linux_user'
+                    && $exception->status === 422
+                ),
+            );
+
+        expect($converged)
+            ->toBeFalse()
+            ->and($existing->refresh()->user)
+            ->toBe('invalid user')
+            ->and($existing->status)
+            ->toBe(LifecycleStatus::Failed);
+    });
+
     it('rejects provisioning contention before creating or changing a node', function (): void {
         app()->instance(NodeProvisioningLock::class, new class implements NodeProvisioningLock {
             public function run(string $nodeName, Closure $callback): mixed

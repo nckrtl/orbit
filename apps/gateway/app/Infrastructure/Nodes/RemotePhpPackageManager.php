@@ -166,7 +166,7 @@ final readonly class RemotePhpPackageManager
                     requirement=$2
                     allowed_count=$3
                     shift 3
-                    allowed_codenames=("$@")
+                    allowed_codenames=("${@:1:$allowed_count}")
                     shift "$allowed_count"
                     expected_uri=$1
                     key_url=$2
@@ -478,7 +478,7 @@ final readonly class RemotePhpPackageManager
                     requirement=$3
                     allowed_count=$4
                     shift 4
-                    allowed_codenames=("$@")
+                    allowed_codenames=("${@:1:$allowed_count}")
                     shift "$allowed_count"
 
                     if [ ! -r /etc/os-release ]; then

@@ -1022,6 +1022,92 @@ it('removes peer rollback artifacts after successful publication', function (): 
     }
 });
 
+it('cleans finalize transaction artifacts when candidate validation fails', function (): void {
+    $harness = remote_wireguard_peer_install_harness(
+        filesPresent: true,
+        activeState: 'active',
+        enabledState: 'enabled',
+    );
+
+    try {
+        $harness->failStrip();
+        $result = $harness->converge(lateFailure: false);
+
+        expect($result['succeeded'])->toBeFalse()->and($result['rollback_artifacts'])->toBeEmpty();
+        $harness->allowStrip();
+        expect($harness->converge(lateFailure: false)['succeeded'])->toBeTrue();
+    } finally {
+        $harness->cleanup();
+    }
+});
+
+it('retains finalize artifacts when restoration fails after publication', function (): void {
+    $harness = remote_wireguard_peer_install_harness(
+        filesPresent: true,
+        activeState: 'active',
+        enabledState: 'enabled',
+    );
+
+    try {
+        $harness->failWireGuard();
+        $harness->failRestore();
+        $result = $harness->converge(lateFailure: true);
+
+        expect($result['succeeded'])
+            ->toBeFalse()
+            ->and($result['rollback_artifacts'])
+            ->not->toBeEmpty();
+    } finally {
+        $harness->cleanup();
+    }
+});
+
+it('retains pre-existing recovery artifacts when finalize is refused', function (): void {
+    $harness = remote_wireguard_peer_install_harness(
+        filesPresent: true,
+        activeState: 'active',
+        enabledState: 'enabled',
+    );
+
+    try {
+        $harness->failRollback();
+        $harness->convergeRecoverably(static function (): void {
+            throw new RuntimeException('completion failed');
+        });
+        $before = $harness->state()['rollback_artifacts'];
+        $result = $harness->converge(lateFailure: false);
+
+        expect($result['succeeded'])->toBeFalse()->and($result['rollback_artifacts'])->toBe($before);
+    } finally {
+        $harness->cleanup();
+    }
+});
+
+it('cleans owned retain artifacts when transaction publication fails', function (): void {
+    $harness = remote_wireguard_peer_install_harness(
+        filesPresent: true,
+        activeState: 'active',
+        enabledState: 'enabled',
+    );
+
+    try {
+        $harness->failTransactionPublication();
+        $result = $harness->convergeRecoverably();
+        expect($result['succeeded'])
+            ->toBeFalse()
+            ->and($result['live'])
+            ->toBe($harness->originalLive())
+            ->and($result['service_state'])
+            ->toBe(['active', 'enabled'])
+            ->and($result['rollback_artifacts'])
+            ->toBeEmpty();
+        $harness->allowTransactionPublication();
+        expect($harness->convergeRecoverably()['succeeded'])->toBeTrue();
+    } finally {
+        $harness->cleanup();
+    }
+});
+
 it('restores a DNS state symlink without dereferencing it', function (): void {
     $harness = remote_wireguard_peer_install_harness(
         filesPresent: true,
@@ -1456,6 +1542,14 @@ function remote_wireguard_peer_install_harness(
 
     remote_wireguard_peer_write_shim(
         root: $root,
+        name: 'mv',
+        body: <<<SH
+            if [ "\${4:-}" = "{$root}/wireguard/.orbit.peer-transaction" ] && [ -f "{$root}/state/transaction-failure" ]; then exit 1; fi
+            exec /usr/bin/mv "\$@"
+            SH,
+    );
+    remote_wireguard_peer_write_shim(
+        root: $root,
         name: 'systemctl',
         body: <<<SH
             printf '%s\n' "systemctl \$*" >> "{$root}/commands.log"
@@ -1501,6 +1595,7 @@ function remote_wireguard_peer_install_harness(
                     fi
                     ;;
                 start|restart)
+                    [ ! -f "{$root}/state/restore-failure" ] || exit 1
                     printf 'active' > "{$root}/state/active"
                     ;;
                 stop)
@@ -1516,6 +1611,7 @@ function remote_wireguard_peer_install_harness(
         body: <<<SH
             printf '%s\n' "wg-quick \$*" >> "{$root}/commands.log"
             if [ "\$1" = 'strip' ]; then
+                [ ! -f "{$root}/state/strip-failure" ] || exit 1
                 /usr/bin/cat -- "\$2"
             fi
             SH,
@@ -1739,6 +1835,21 @@ function remote_wireguard_peer_install_harness(
             file_put_contents(filename: $this->root.'/state/late-failure', data: '1');
         }
 
+        public function failStrip(): void
+        {
+            file_put_contents(filename: $this->root.'/state/strip-failure', data: '1');
+        }
+
+        public function failTransactionPublication(): void
+        {
+            file_put_contents($this->root.'/state/transaction-failure', '1');
+        }
+
+        public function allowTransactionPublication(): void
+        {
+            new Filesystem()->delete($this->root.'/state/transaction-failure');
+        }
+
         public function failCommitCleanup(): void
         {
             file_put_contents(filename: $this->root.'/state/commit-cleanup-failure', data: '1');
@@ -1751,6 +1862,16 @@ function remote_wireguard_peer_install_harness(
             if (is_file($path)) {
                 unlink($path);
             }
+        }
+
+        public function allowStrip(): void
+        {
+            new Filesystem()->delete($this->root.'/state/strip-failure');
+        }
+
+        public function failRestore(): void
+        {
+            file_put_contents(filename: $this->root.'/state/restore-failure', data: '1');
         }
 
         public function originalLive(): array

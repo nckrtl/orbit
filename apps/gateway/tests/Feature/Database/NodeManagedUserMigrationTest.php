@@ -6,6 +6,29 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 describe('managed node user migrations', function (): void {
+    it('preserves root when a legacy update derives the canonical orbit user', function (): void {
+        $contract = require base_path('database/migrations/2026_08_28_000001_drop_node_ssh_user.php');
+        $expand = require base_path('database/migrations/2026_08_28_000000_add_node_user.php');
+
+        $contract->down();
+        $expand->down();
+        $expand->up();
+
+        $timestamp = now();
+
+        DB::table('nodes')->insert([
+            ...legacyNode('legacy-canonical-root', '192.0.2.20', 'nckrtl', $timestamp),
+            'user' => 'nckrtl',
+        ]);
+
+        DB::table('nodes')->where('name', 'legacy-canonical-root')->update(['ssh_user' => 'root']);
+
+        expect(DB::table('nodes')->where('name', 'legacy-canonical-root')->value('ssh_user'))
+            ->toBe('root')
+            ->and(DB::table('nodes')->where('name', 'legacy-canonical-root')->value('user'))
+            ->toBe('orbit');
+    });
+
     it('expands, contracts, and rolls back with legacy write compatibility', function (): void {
         $contract = require base_path('database/migrations/2026_08_28_000001_drop_node_ssh_user.php');
         $expand = require base_path('database/migrations/2026_08_28_000000_add_node_user.php');
@@ -80,6 +103,46 @@ describe('managed node user migrations', function (): void {
         expect(fn () => DB::table('nodes')->where('name', 'legacy-write')->update(['ssh_user' => '9bad']))
             ->toThrow(RuntimeException::class, 'Invalid legacy node user.');
 
+        DB::table('nodes')->insert([
+            'name' => 'managed-write',
+            'status' => 'active',
+            'platform' => 'linux',
+            'public_ssh_host' => '192.0.2.10',
+            'user' => 'deploy',
+            'ssh_user' => 'root',
+            'created_at' => $timestamp,
+            'updated_at' => $timestamp,
+        ]);
+
+        expect(DB::table('nodes')->where('name', 'managed-write')->value('ssh_user'))
+            ->toBe('deploy');
+
+        DB::table('nodes')->where('name', 'managed-write')->update(['user' => 'release']);
+
+        expect(DB::table('nodes')->where('name', 'managed-write')->value('ssh_user'))
+            ->toBe('release');
+
+        DB::table('nodes')->insert([
+            'name' => 'managed-root',
+            'status' => 'active',
+            'platform' => 'linux',
+            'public_ssh_host' => '192.0.2.11',
+            'user' => 'deploy',
+            'ssh_user' => 'orbit',
+            'created_at' => $timestamp,
+            'updated_at' => $timestamp,
+        ]);
+
+        expect(DB::table('nodes')->where('name', 'managed-root')->value('ssh_user'))
+            ->toBe('deploy');
+
+        DB::table('nodes')->where('name', 'managed-root')->update(['user' => 'root']);
+
+        expect(DB::table('nodes')->where('name', 'managed-root')->value('user'))
+            ->toBe('root')
+            ->and(DB::table('nodes')->where('name', 'managed-root')->value('ssh_user'))
+            ->toBe('root');
+
         $contract->up();
 
         $columns = collect(Schema::getColumns('nodes'))->keyBy('name');
@@ -96,6 +159,19 @@ describe('managed node user migrations', function (): void {
             ->toBeFalse();
 
         $contract->down();
+
+        DB::table('nodes')->where('name', 'managed-write')->update(['user' => 'rollback-user']);
+
+        expect(DB::table('nodes')->where('name', 'managed-write')->value('ssh_user'))
+            ->toBe('rollback-user');
+
+        DB::table('nodes')->where('name', 'managed-root')->update(['user' => 'deploy']);
+        DB::table('nodes')->where('name', 'managed-root')->update(['user' => 'root']);
+
+        expect(DB::table('nodes')->where('name', 'managed-root')->value('user'))
+            ->toBe('root')
+            ->and(DB::table('nodes')->where('name', 'managed-root')->value('ssh_user'))
+            ->toBe('root');
 
         expect(Schema::hasColumn('nodes', 'ssh_user'))
             ->toBeTrue()

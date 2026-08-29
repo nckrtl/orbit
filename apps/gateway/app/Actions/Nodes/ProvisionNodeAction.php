@@ -69,6 +69,13 @@ final readonly class ProvisionNodeAction
         $node = Node::query()->firstOrNew(['name' => $data->name]);
         $managedUser = $data->orbitUser ?? ($node->exists ? $node->user : 'orbit');
 
+        if (! LinuxUserName::isValid($managedUser)) {
+            throw new ResourceOperationException(
+                errorCode: 'node.invalid_linux_user',
+                message: 'The node Linux user name is invalid.',
+            );
+        }
+
         if (
             $node->exists
             && $node->user !== $managedUser

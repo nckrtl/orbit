@@ -231,6 +231,43 @@ it('rejects invalid release metadata before mutation markers', function (string 
     expect($source)->toContain('selected_codename', 'sudo install')->and($metadata)->toBeString();
 })->with(['missing' => '', 'malformed' => 'noble extra', 'debian' => 'bookworm', 'unknown' => 'jammy']);
 
+it('does not treat package arguments as allowed release codenames', function (): void {
+    $transport = new AppDevFakeSshExecutor;
+
+    new RemotePhpPackageManager()->installForAppDev(
+        php_package_node(RoleName::AppDev),
+        collect(['8.5']),
+        php_package_app_dev_ssh($transport),
+    );
+
+    foreach ([$transport->commands[0], $transport->commands[1]] as $command) {
+        $script = $command->input ?? '';
+        $start = mb_strpos($script, str_contains($script, 'expected_id=$1') ? 'expected_id=$1' : 'version=$1');
+        $end = mb_strpos($script, 'shift "$allowed_count"') + mb_strlen('shift "$allowed_count"');
+
+        expect($start)->toBeInt()->and($end)->toBeInt();
+
+        $argumentBoundary = substr($script, (int) $start, (int) $end - (int) $start);
+        $argumentBoundary .= <<<'BASH'
+
+            selected_codename=''
+            for allowed_codename in "${allowed_codenames[@]}"; do
+                if [ "bookworm" = "$allowed_codename" ]; then selected_codename=$allowed_codename; fi
+            done
+            printf '%s\n' "$selected_codename"
+            BASH;
+
+        $headerLength = str_contains($script, 'expected_id=$1') ? 3 : 4;
+        $arguments = array_slice($command->arguments, 3, $headerLength);
+        $arguments[$headerLength - 1] = '1';
+        $process = new Process(['bash', '-seu', '--', ...$arguments, 'noble', 'bookworm']);
+        $process->setInput($argumentBoundary);
+        $process->run();
+
+        expect($process->getExitCode())->toBe(0)->and($process->getOutput())->toBe("\n");
+    }
+});
+
 it('does not execute a malicious os-release payload in either remote script', function (): void {
     $transport = new AppDevFakeSshExecutor;
     new RemotePhpPackageManager()->installForAppDev(

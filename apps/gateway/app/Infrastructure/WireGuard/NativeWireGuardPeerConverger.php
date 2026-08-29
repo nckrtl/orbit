@@ -414,7 +414,15 @@ final readonly class NativeWireGuardPeerConverger implements WireGuardPeerConver
                     dns_restore_candidate=/etc/wireguard/.orbit.dns-link.restore
                     live_present=0
                     dns_state_present=0
-                    trap 'rm -f -- "$candidate" "$dns_state_candidate" "$transaction_candidate" "$restore_candidate" "$dns_restore_candidate"' EXIT
+                    published=0
+                    transaction_owned=0
+                    cleanup_finalize() {
+                        rm -f -- "$candidate" "$dns_state_candidate" "$transaction_candidate" "$restore_candidate" "$dns_restore_candidate"
+                        if [ "$transaction_owned" -eq 1 ] && [ "$published" -eq 0 ]; then
+                            rm -f -- "$backup" "$dns_state_backup" "$transaction"
+                        fi
+                    }
+                    trap cleanup_finalize EXIT
 
                     case "$dns_mode:$transaction_mode" in
                         wireguard:retain|wireguard:finalize|underlay:retain|underlay:finalize) ;;
@@ -426,6 +434,7 @@ final readonly class NativeWireGuardPeerConverger implements WireGuardPeerConver
                         echo 'Existing peer recovery artifacts require manual recovery.' >&2
                         exit 42
                     fi
+                    transaction_owned=1
                     if [ -L "$live" ] || { [ -e "$live" ] && [ ! -f "$live" ]; }; then
                         exit 43
                     fi
@@ -561,6 +570,7 @@ final readonly class NativeWireGuardPeerConverger implements WireGuardPeerConver
                     if ! mv -f -- "$candidate" "$live"; then
                         exit 1
                     fi
+                    published=1
                     case "$enabled_state" in
                         masked)
                             if ! systemctl unmask wg-quick@orbit; then

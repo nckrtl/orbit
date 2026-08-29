@@ -55,7 +55,13 @@ return new class extends Migration {
             "CREATE TRIGGER nodes_sync_user_after_insert AFTER INSERT ON nodes WHEN NEW.user IS NULL OR NEW.user = '' BEGIN UPDATE nodes SET user = CASE WHEN NEW.ssh_user IS NULL OR NEW.ssh_user = '' OR NEW.ssh_user = 'root' THEN 'orbit' ELSE NEW.ssh_user END WHERE id = NEW.id; END",
         );
         DB::statement(
-            "CREATE TRIGGER nodes_sync_user_after_legacy_update AFTER UPDATE OF ssh_user ON nodes BEGIN UPDATE nodes SET user = CASE WHEN NEW.ssh_user IS NULL OR NEW.ssh_user = '' OR NEW.ssh_user = 'root' THEN 'orbit' ELSE NEW.ssh_user END WHERE id = NEW.id; END",
+            "CREATE TRIGGER nodes_sync_user_after_legacy_update AFTER UPDATE OF ssh_user ON nodes WHEN NEW.user IS NOT NEW.ssh_user BEGIN UPDATE nodes SET user = CASE WHEN NEW.ssh_user IS NULL OR NEW.ssh_user = '' OR NEW.ssh_user = 'root' THEN 'orbit' ELSE NEW.ssh_user END WHERE id = NEW.id; END",
+        );
+        DB::statement(
+            "CREATE TRIGGER nodes_sync_legacy_user_after_insert AFTER INSERT ON nodes WHEN NEW.user IS NOT NULL AND NEW.user <> '' AND NEW.ssh_user IS NOT NEW.user AND NOT (NEW.user = 'orbit' AND NEW.ssh_user = 'root') BEGIN UPDATE nodes SET ssh_user = NEW.user WHERE id = NEW.id; END",
+        );
+        DB::statement(
+            "CREATE TRIGGER nodes_sync_legacy_user_after_user_update AFTER UPDATE OF user ON nodes WHEN NEW.user IS NOT OLD.user AND NEW.ssh_user IS NOT NEW.user AND NOT (NEW.user = 'orbit' AND NEW.ssh_user = 'root') BEGIN UPDATE nodes SET ssh_user = NEW.user WHERE id = NEW.id; END",
         );
     }
 
@@ -65,5 +71,7 @@ return new class extends Migration {
         DB::statement('DROP TRIGGER IF EXISTS nodes_validate_legacy_user_before_update');
         DB::statement('DROP TRIGGER IF EXISTS nodes_sync_user_after_insert');
         DB::statement('DROP TRIGGER IF EXISTS nodes_sync_user_after_legacy_update');
+        DB::statement('DROP TRIGGER IF EXISTS nodes_sync_legacy_user_after_insert');
+        DB::statement('DROP TRIGGER IF EXISTS nodes_sync_legacy_user_after_user_update');
     }
 };

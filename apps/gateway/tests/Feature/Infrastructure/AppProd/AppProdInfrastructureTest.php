@@ -352,7 +352,9 @@ it('restores the previous app-prod pool when lower PHP activation fails', functi
         ->filter(static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'php-fpm.conf'))
         ->values();
 
-    expect($publishCalls->map(static fn (RemoteCommand $command): string => $command->arguments[4])->all())
+    expect($publishCalls->first()?->arguments)
+        ->toContain('/run/lock/orbit')
+        ->and($publishCalls->map(static fn (RemoteCommand $command): string => $command->arguments[4])->all())
         ->toBe(['8.5', '8.4', '8.5'])
         ->and($publishCalls->last()?->input)
         ->toContain(base64_encode($previousConfiguration));
@@ -443,7 +445,9 @@ it('validates aggregate FPM candidates and restores the managed pool after activ
         ->toContain('php8.5-pcov', 'php8.5-opcache')
         ->and($ssh->commands[4]->input)
         ->toContain(
-            'exec 9>"$lock_directory/orbit-php-fpm-$version.lock"',
+            'if [ "$lock_directory" = /run/lock/orbit ]; then',
+            'test "$(stat -c %u:%g:%a -- "$lock_directory")" = 0:0:700',
+            'lock="$lock_directory/orbit-php-fpm-$version.lock"',
             'flock -w 30 9',
             'cp -- "$pool" "$temporary_directory/pool.d/"',
             'php-fpm$version" -y "$temporary_directory/php-fpm.conf" -t',
@@ -456,6 +460,11 @@ it('validates aggregate FPM candidates and restores the managed pool after activ
         );
 
     $script = $ssh->commands[4]->input ?? '';
+    expect($script)
+        ->toContain('exec 9>>"$lock"')
+        ->not->toContain('exec 9>"$lock"', '/run/lock/orbit-php-fpm-');
+    $setup = mb_strpos(haystack: $script, needle: 'umask 0077');
+    $open = mb_strpos(haystack: $script, needle: 'exec 9>>"$lock"');
     $lock = mb_strpos(haystack: $script, needle: 'flock -w 30 9');
     $snapshot = mb_strpos(haystack: $script, needle: 'for pool in "$pool_directory"/*.conf');
     $validation = mb_strpos(
@@ -472,7 +481,13 @@ it('validates aggregate FPM candidates and restores the managed pool after activ
         needle: 'sudo mv -fT -- "$rollback" "$managed_configuration"',
     );
 
-    expect($lock)
+    expect($setup)
+        ->toBeInt()
+        ->toBeLessThan($open)
+        ->and($open)
+        ->toBeInt()
+        ->toBeLessThan($lock)
+        ->and($lock)
         ->toBeInt()
         ->toBeLessThan($snapshot)
         ->and($validation)

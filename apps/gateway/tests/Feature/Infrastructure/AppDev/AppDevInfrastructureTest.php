@@ -1209,9 +1209,13 @@ it('installs selected PHP versions and validates a complete staged FPM configura
         ->toContain('php8.4-fpm', 'php8.4-pcov', 'php8.4-opcache')
         ->and($publishCalls)
         ->toHaveCount(2)
+        ->and($publishCalls->first()?->arguments)
+        ->toContain('/run/lock/orbit')
         ->and($publishCalls->first()?->input)
         ->toContain(
-            'exec 9>"$lock_directory/orbit-php-fpm-$version.lock"',
+            'if [ "$lock_directory" = /run/lock/orbit ]; then',
+            'test "$(stat -c %u:%g:%a -- "$lock_directory")" = 0:0:700',
+            'lock="$lock_directory/orbit-php-fpm-$version.lock"',
             'flock -w 30 9',
             'cp -- "$pool" "$temporary_directory/pool.d/"',
             'sudo "php-fpm$version" -y "$temporary_directory/php-fpm.conf" -t',
@@ -1225,6 +1229,11 @@ it('installs selected PHP versions and validates a complete staged FPM configura
         );
 
     $script = $publishCalls->first()->input ?? '';
+    expect($script)
+        ->toContain('exec 9>>"$lock"')
+        ->not->toContain('exec 9>"$lock"', '/run/lock/orbit-php-fpm-');
+    $setup = mb_strpos(haystack: $script, needle: 'umask 0077');
+    $open = mb_strpos(haystack: $script, needle: 'exec 9>>"$lock"');
     $lock = mb_strpos(haystack: $script, needle: 'flock -w 30 9');
     $snapshot = mb_strpos(haystack: $script, needle: 'for pool in "$pool_directory"/*.conf');
     $validation = mb_strpos(
@@ -1241,7 +1250,13 @@ it('installs selected PHP versions and validates a complete staged FPM configura
         needle: 'sudo mv -fT -- "$rollback" "$managed_configuration"',
     );
 
-    expect($lock)
+    expect($setup)
+        ->toBeInt()
+        ->toBeLessThan($open)
+        ->and($open)
+        ->toBeInt()
+        ->toBeLessThan($lock)
+        ->and($lock)
         ->toBeInt()
         ->toBeLessThan($snapshot)
         ->and($validation)
