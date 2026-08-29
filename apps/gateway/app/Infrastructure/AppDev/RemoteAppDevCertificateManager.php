@@ -129,7 +129,7 @@ final readonly class RemoteAppDevCertificateManager implements AppDevCertificate
                             trap 'rm -f -- "$trust_staged"' EXIT
                             install -m 0644 -- "$current/root.pem" "$trust_staged"
                             sudo install -o root -g root -m 0644 -- "$trust_staged" "$trust_anchor"
-                            sudo update-ca-certificates
+                            sudo update-ca-certificates >/dev/null
                             openssl verify -CAfile /etc/ssl/certs/ca-certificates.crt "$current/cert.pem" >/dev/null
                         fi
                         printf 'CURRENT\n'

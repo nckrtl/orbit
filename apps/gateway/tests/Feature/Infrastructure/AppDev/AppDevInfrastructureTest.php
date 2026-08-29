@@ -2108,7 +2108,7 @@ function run_app_dev_certificate_probe_locally(RemoteCommand $command, string $r
             $root.'/etc/caddy',
             $root.'/usr/local/share/ca-certificates',
             $root.'/usr/local/share/ca-certificates/orbit-managed-root-ca.crt',
-            'touch "$trust_anchor.updated"',
+            '{ printf "Updating certificates\\n"; touch "$trust_anchor.updated"; }',
             'install ',
             '',
         ],
