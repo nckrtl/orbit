@@ -261,6 +261,12 @@ final readonly class WorktreeSynchronizer
             $commands["guest-sha.{$role}"] = [
                 'instance' => $target->instance($role),
                 'command' => new GuestCommand([
+                    'runuser',
+                    '-u',
+                    'orbit',
+                    '--',
+                    'env',
+                    'HOME=/home/orbit',
                     'git',
                     '-C',
                     '/home/orbit/orbit',
@@ -276,6 +282,12 @@ final readonly class WorktreeSynchronizer
             $commands["guest-status.{$role}"] = [
                 'instance' => $target->instance($role),
                 'command' => new GuestCommand([
+                    'runuser',
+                    '-u',
+                    'orbit',
+                    '--',
+                    'env',
+                    'HOME=/home/orbit',
                     'git',
                     '-C',
                     '/home/orbit/orbit',

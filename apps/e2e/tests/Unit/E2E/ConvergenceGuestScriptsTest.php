@@ -913,7 +913,8 @@ describe('convergence guest scripts', function () {
             ->toContain(
                 'cd /home/orbit/orbit/apps/gateway',
                 'orbit:node-provision "$1" "$2"',
-                'ssh-keyscan -t ed25519 -- "$2"',
+                'ssh-keyscan -T 5 -t ed25519 -- "$1"',
+                'scan_host_key "$2"',
                 '[[ "$3" =~ ^(x86_64|aarch64)$ ]]',
                 '--architecture="$3"',
                 '--user=orbit',
@@ -925,7 +926,8 @@ describe('convergence guest scripts', function () {
             ->toContain(
                 'cd /home/orbit/orbit/apps/gateway',
                 'orbit:node-provision "$1" "$2"',
-                'ssh-keyscan -t ed25519 -- "$2"',
+                'ssh-keyscan -T 5 -t ed25519 -- "$1"',
+                'scan_host_key "$2"',
                 '[[ "$3" =~ ^(x86_64|aarch64)$ ]]',
                 '--architecture="$3"',
                 '--user=orbit',

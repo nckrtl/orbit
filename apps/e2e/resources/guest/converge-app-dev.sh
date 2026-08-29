@@ -14,7 +14,15 @@ write_marker() {
 cd /home/orbit/orbit/apps/gateway
 [[ $# -eq 3 && "$1" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]{0,62}$ && "$2" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || exit 64
 wireguard_address=10.44.0.2
-fingerprint=$(ssh-keyscan -t ed25519 -- "$2" 2>/dev/null | ssh-keygen -lf - -E sha256 | awk 'NR == 1 { print $2 }')
+scan_host_key() {
+  local deadline=$((SECONDS + 60)) keys
+  until keys=$(ssh-keyscan -T 5 -t ed25519 -- "$1" 2>/dev/null) && [[ -n "$keys" ]]; do
+    if (( SECONDS >= deadline )); then return 1; fi
+    sleep 2
+  done
+  printf '%s\n' "$keys"
+}
+fingerprint=$(scan_host_key "$2" | ssh-keygen -lf - -E sha256 | awk 'NR == 1 { print $2 }')
 [[ "$fingerprint" =~ ^SHA256:[A-Za-z0-9+/]{43}$ ]]
 [[ "$3" =~ ^(x86_64|aarch64)$ ]] || exit 65
 state=/var/lib/orbit-e2e/node-provision-app-dev

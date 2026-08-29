@@ -90,7 +90,7 @@ final class WorktreeSynchronizerGuestFake implements GuestTransport
 
             return new GuestCommandResult($sha."\n", '', $sha === '' ? 1 : 0);
         }
-        if (($argv[0] ?? null) === 'git' && in_array('status', $argv, true)) {
+        if (in_array('git', $argv, true) && in_array('status', $argv, true)) {
             return new GuestCommandResult($this->guestStatuses[$instance] ?? '', '', 0);
         }
         if (($argv[0] ?? null) === 'cat' && str_ends_with($argv[1] ?? '', '/.git/orbit-source-state')) {
