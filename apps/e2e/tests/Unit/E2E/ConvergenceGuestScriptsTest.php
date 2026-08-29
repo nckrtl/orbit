@@ -878,6 +878,7 @@ describe('convergence guest scripts', function () {
             ->not->toContain('ssh -o BatchMode=yes -- "$1"');
         expect(file_get_contents("{$guest}/converge-app-dev.sh"))
             ->toContain(
+                'cd /home/orbit/orbit/apps/gateway',
                 'orbit:node-provision "$1" "$2"',
                 'ssh-keyscan -t ed25519 -- "$2"',
                 '[[ "$3" =~ ^(x86_64|aarch64)$ ]]',
@@ -887,6 +888,7 @@ describe('convergence guest scripts', function () {
             ->not->toContain('uname -m');
         expect($production)
             ->toContain(
+                'cd /home/orbit/orbit/apps/gateway',
                 'orbit:node-provision "$1" "$2"',
                 'ssh-keyscan -t ed25519 -- "$2"',
                 '[[ "$3" =~ ^(x86_64|aarch64)$ ]]',
