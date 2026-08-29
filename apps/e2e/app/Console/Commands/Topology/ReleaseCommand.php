@@ -4,34 +4,27 @@ declare(strict_types=1);
 
 namespace App\Console\Commands\Topology;
 
+use App\Console\Commands\E2ECommand;
 use App\E2E\TopologyReleaser;
-use Illuminate\Console\Command;
+use App\E2E\Value\OperationId;
 use Throwable;
 
-final class ReleaseCommand extends Command
+final class ReleaseCommand extends E2ECommand
 {
     #[\Override]
     protected $signature = 'topology:release {issue} {--json}';
     #[\Override]
     protected $description = 'Release one exact disposable feature topology';
 
-    public function handle(TopologyReleaser $releaser): int
+    public function handle(TopologyReleaser $releaser, OperationId $operation): int
     {
         try {
             $result = $releaser->release((string) $this->argument('issue'));
-            $this->line($this->option('json') ? json_encode($result->toArray(), JSON_THROW_ON_ERROR) : 'released');
+            $this->outputJson($result->toArray(), 'released');
 
             return self::SUCCESS;
         } catch (Throwable $exception) {
-            $identity = bin2hex(random_bytes(16));
-            $this->option('json')
-                ? $this->line(json_encode([
-                    'state' => 'failed',
-                    'operation_id' => $identity,
-                    'evidence_id' => $identity,
-                    'error' => $exception->getMessage(),
-                ], JSON_THROW_ON_ERROR))
-                : $this->error($exception->getMessage());
+            $this->outputFailure($exception, $operation);
 
             return self::FAILURE;
         }

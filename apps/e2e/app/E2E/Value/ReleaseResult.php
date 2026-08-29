@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\E2E\Value;
 
+use InvalidArgumentException;
+
 final readonly class ReleaseResult
 {
     /**
@@ -15,7 +17,14 @@ final readonly class ReleaseResult
         public string $evidenceId,
         public array $released,
         public array $alreadyAbsent,
-    ) {}
+    ) {
+        if (
+            preg_match('/\A[a-f0-9]{32}\z/D', $operationId) !== 1
+            || preg_match('/\A[a-f0-9]{32}\z/D', $evidenceId) !== 1
+        ) {
+            throw new InvalidArgumentException('The release evidence IDs are invalid.');
+        }
+    }
 
     /** @return array{state:string,operation_id:string,evidence_id:string,released:list<string>,already_absent:list<string>} */
     public function toArray(): array
@@ -40,7 +49,7 @@ final readonly class ReleaseResult
             || ! is_array($value['released'])
             || ! is_array($value['already_absent'])
         ) {
-            throw new \InvalidArgumentException('The release evidence schema is invalid.');
+            throw new InvalidArgumentException('The release evidence schema is invalid.');
         }
 
         /** @var list<string> $released */
@@ -48,7 +57,7 @@ final readonly class ReleaseResult
         /** @var list<string> $absent */
         $absent = array_values(array_filter($value['already_absent'], is_string(...)));
         if (count($released) !== count($value['released']) || count($absent) !== count($value['already_absent'])) {
-            throw new \InvalidArgumentException('The release evidence schema is invalid.');
+            throw new InvalidArgumentException('The release evidence schema is invalid.');
         }
 
         return new self($value['operation_id'], $value['evidence_id'], $released, $absent);

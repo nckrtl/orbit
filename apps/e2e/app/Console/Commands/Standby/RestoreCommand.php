@@ -4,27 +4,28 @@ declare(strict_types=1);
 
 namespace App\Console\Commands\Standby;
 
+use App\Console\Commands\E2ECommand;
 use App\E2E\StandbyRefresher;
-use Illuminate\Console\Command;
+use App\E2E\Value\OperationId;
 use Throwable;
 
-final class RestoreCommand extends Command
+final class RestoreCommand extends E2ECommand
 {
     #[\Override]
     protected $signature = 'standby:restore {--json}';
     #[\Override]
     protected $description = 'Restore the promoted standby generation and leave it stopped';
 
-    public function handle(StandbyRefresher $refresher): int
+    public function handle(StandbyRefresher $refresher, OperationId $operation): int
     {
         try {
             $generation = $refresher->restore();
-            $payload = ['state' => 'restored', 'generation_id' => $generation->id];
-            $this->line($this->option('json') ? json_encode($payload, JSON_THROW_ON_ERROR) : $generation->id);
+            $payload = ['state' => 'restored', 'operation_id' => $operation->value, 'generation_id' => $generation->id];
+            $this->outputJson($payload, $generation->id);
 
             return self::SUCCESS;
         } catch (Throwable $exception) {
-            $this->error($exception->getMessage());
+            $this->outputFailure($exception, $operation);
 
             return self::FAILURE;
         }

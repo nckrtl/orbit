@@ -27,6 +27,8 @@ describe('Composer configuration', function (): void {
                 ->toMatch('/DB_|QUEUE_|RefreshDatabase|APP_URL|Gateway|gateway|sqlite|database/i');
         }
 
+        expect(file_get_contents(base_path('config/e2e.php')))->not->toContain('ORBIT_E2E_PROFILE', "'profile'");
+
         foreach (['app', 'bootstrap', 'commands', 'state', 'tests', 'tooling'] as $rule) {
             expect(trim((string) file_get_contents(base_path(".ai/rules/{$rule}.md"))))->not->toBeEmpty();
         }

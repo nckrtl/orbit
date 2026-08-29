@@ -30,9 +30,22 @@ The future full profile is `gateway_app-dev_app-prod`. It will use the
 `gateway` and `app-dev` checkout roles and the `app-prod` standby target.
 Registration requires live proof of exact generation and topology identity,
 synchronization, candidate SHA and tree, clean prove, and release.
-Future commands: `bin/incus-profile acquire gateway_app-dev_app-prod --issue <ISSUE>`,
-`bin/incus-profile create gateway_app-dev_app-prod --issue <ISSUE>`,
-`bin/incus-profile sync gateway_app-dev_app-prod --worktree <WORKTREE> --role <ROLE>`,
-`bin/incus-profile prove gateway_app-dev_app-prod --sha <CANDIDATE_SHA> --tree <TREE>`,
-and `bin/incus-profile release gateway_app-dev_app-prod`. These commands do
-not register a live profile.
+The implemented, unregistered command surface is:
+
+```text
+bin/e2e-topology acquire ISSUE WORKTREE
+bin/e2e-topology sync ISSUE WORKTREE
+bin/e2e-topology verify ISSUE
+bin/e2e-topology exec ISSUE ROLE --argv-file=PATH
+bin/e2e-topology prove ISSUE WORKTREE --candidate-sha=SHA
+bin/e2e-topology release ISSUE
+```
+
+These commands always use the full profile. Their presence does not register
+the profile before live acceptance passes.
+
+`bin/e2e-standby refresh --allow-cold` permits only initial construction when
+no promoted generation or standby resources exist. It never replaces a
+promoted generation. An operating-system, base-image, cold-epoch, or corrupt
+standby change requires a separate reviewed disaster-recovery procedure before
+the harness mutates Incus resources.

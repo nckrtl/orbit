@@ -58,10 +58,14 @@ candidate.
 reviewed input allowlist. The merged SHA is source identity, not a fingerprint
 input. A matching fingerprint produces a no-op and must not start or verify
 standby VMs. A changed fingerprint refreshes the promoted generation by
-restoring, converging, verifying, stopping, and snapshotting the three VMs in
-role order. Normal refreshes start from the promoted generation, retain the
+restoring, starting, stopping, and snapshotting the three VMs in coordinated
+parallel batches, with convergence and verification between those lifecycle
+phases. Normal refreshes start from the promoted generation, retain the
 preceding generation, and use the generic base image only for initial
-construction, an explicit cold epoch change, corruption, or disaster recovery.
+construction. The `--allow-cold` refresh option permits only that initial
+construction and never replaces a promoted generation. An explicit cold epoch
+change, corruption, or disaster recovery requires a separate reviewed
+disaster-recovery procedure before Incus mutation.
 
 ### Keep promotion and recovery deterministic
 

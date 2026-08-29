@@ -1,3 +1,8 @@
+---
+paths:
+  - 'tests/**'
+---
+
 # Test rules
 
 Use Pest with focused unit and configuration tests. Test exact-ID validation,

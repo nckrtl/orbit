@@ -4,19 +4,20 @@ declare(strict_types=1);
 
 namespace App\Console\Commands\Topology;
 
+use App\Console\Commands\E2ECommand;
 use App\E2E\TopologyReaper;
 use App\E2E\Value\IssueStateSnapshot;
-use Illuminate\Console\Command;
+use App\E2E\Value\OperationId;
 use Throwable;
 
-final class ReapCommand extends Command
+final class ReapCommand extends E2ECommand
 {
     #[\Override]
     protected $signature = 'topology:reap {--issue-state-file=} {--json}';
     #[\Override]
     protected $description = 'Reap expired terminal issue topologies';
 
-    public function handle(TopologyReaper $reaper): int
+    public function handle(TopologyReaper $reaper, OperationId $operation): int
     {
         try {
             $path = $this->option('issue-state-file');
@@ -27,26 +28,17 @@ final class ReapCommand extends Command
                 static fn ($result): array => $result->toArray(),
                 $reaper->reap(IssueStateSnapshot::fromFile($path)),
             );
-            $identity = bin2hex(random_bytes(16));
+            $identity = $operation->value;
             $payload = [
                 'state' => 'reaped',
                 'operation_id' => $identity,
-                'evidence_id' => $identity,
                 'results' => $results,
             ];
             $this->line($this->option('json') ? json_encode($payload, JSON_THROW_ON_ERROR) : 'reaped '.count($results));
 
             return self::SUCCESS;
         } catch (Throwable $exception) {
-            $identity = bin2hex(random_bytes(16));
-            $this->option('json')
-                ? $this->line(json_encode([
-                    'state' => 'failed',
-                    'operation_id' => $identity,
-                    'evidence_id' => $identity,
-                    'error' => $exception->getMessage(),
-                ], JSON_THROW_ON_ERROR))
-                : $this->error($exception->getMessage());
+            $this->outputFailure($exception, $operation);
 
             return self::FAILURE;
         }

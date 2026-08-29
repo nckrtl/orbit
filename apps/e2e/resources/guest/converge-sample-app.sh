@@ -33,9 +33,9 @@ case ${1-} in
       "$orbit" instance:new "$app_id" "$prod_id" e2e-prod --environment=production --hostname=laravel.internal --json >/dev/null
     fi
     workspaces=$("$orbit" workspace:list --json)
-    workspace_id=$(php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); $m=array_values(array_filter($v["workspaces"], fn($x) => ($x["name"] ?? null)===$argv[1])); if(count($m)>1 || $m && (($m[0]["instance_id"] ?? null)!==(int)$argv[2] || ($m[0]["branch"] ?? null)!==$argv[3])) exit(65); echo $m[0]["id"] ?? "";' e2e "$dev_instance_id" "e2e-$4" <<<"$workspaces")
+    workspace_id=$(php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); $m=array_values(array_filter($v["workspaces"], fn($x) => ($x["name"] ?? null)===$argv[1])); if(count($m)>1 || $m && (($m[0]["instance_id"] ?? null)!==(int)$argv[2] || ($m[0]["branch"] ?? null)!==$argv[3])) exit(65); echo $m[0]["id"] ?? "";' e2e "$dev_instance_id" e2e <<<"$workspaces")
     if [[ -z "$workspace_id" ]]; then
-      "$orbit" workspace:new "$dev_instance_id" e2e --branch="e2e-$4" --json >/dev/null
+      "$orbit" workspace:new "$dev_instance_id" e2e --branch=e2e --json >/dev/null
     fi
     ;;
   hydrate)
@@ -52,14 +52,30 @@ case ${1-} in
         "$@"
       fi
     }
+    hydrate_composer_dependencies() {
+      local checkout=$1
+      local lock_hash marker marker_tmp
+      lock_hash=$(sha256sum "$checkout/composer.lock" | awk '{print $1}')
+      marker="$checkout/vendor/.orbit-e2e-composer-lock"
+      if [[ -s "$checkout/vendor/autoload.php" && -f "$marker" && "$(<"$marker")" == "$lock_hash" ]]; then
+        return
+      fi
+      run_as_runtime composer install --working-dir="$checkout" --no-interaction --no-progress
+      [[ -s "$checkout/vendor/autoload.php" ]]
+      marker_tmp=$(run_as_runtime mktemp "$checkout/vendor/.orbit-e2e-composer-lock.XXXXXX")
+      printf '%s' "$lock_hash" | run_as_runtime tee "$marker_tmp" >/dev/null
+      run_as_runtime mv -f "$marker_tmp" "$marker"
+    }
     for checkout in "${checkouts[@]}"; do
-      if [[ ! -d "$checkout/.git" ]]; then run_as_runtime git clone --quiet https://github.com/laravel/laravel.git "$checkout"; fi
+      [[ -d "$checkout/.git" || -f "$checkout/.git" ]] || exit 66
       [[ "$(run_as_runtime git -C "$checkout" remote get-url origin)" == https://github.com/laravel/laravel.git ]]
-      run_as_runtime git -C "$checkout" fetch --quiet origin "$2"
+      if ! run_as_runtime git -C "$checkout" cat-file -e "$2^{commit}"; then
+        run_as_runtime git -C "$checkout" fetch --quiet origin "$2"
+      fi
       run_as_runtime git -C "$checkout" reset --hard --quiet "$2"
       [[ "$(run_as_runtime git -C "$checkout" rev-parse HEAD)" == "$2" ]]
       [[ -f "$checkout/.env" ]] || run_as_runtime cp "$checkout/.env.example" "$checkout/.env"
-      run_as_runtime composer install --working-dir="$checkout" --no-interaction --no-progress
+      hydrate_composer_dependencies "$checkout"
       run_as_runtime grep -q '^APP_KEY=base64:' "$checkout/.env" || run_as_runtime php "$checkout/artisan" key:generate --force --no-interaction
       run_as_runtime install -d -m 0775 "$checkout/storage" "$checkout/bootstrap/cache"
       run_as_runtime chmod -R ug+rwX "$checkout/storage" "$checkout/bootstrap/cache"
@@ -78,9 +94,17 @@ case ${1-} in
       candidate=$(mktemp /etc/caddy/Caddyfile.orbit-e2e.XXXXXX)
       printf 'import %s\nimport %s\n' "$fragment" "$rendered" >"$candidate"
       caddy validate --config "$candidate" --adapter caddyfile
+      if [[ -f /var/lib/orbit-e2e/caddy-config-sha256 ]] && [[ "$(cat /var/lib/orbit-e2e/caddy-config-sha256)" == "$(sha256sum "$candidate" | awk '{print $1}')" ]]; then
+        rm -f "$candidate"
+        ca=$(cat /var/lib/orbit-e2e/caddy-ca-path)
+        [[ -s "$ca" ]]
+        curl --fail --silent --show-error --cacert "$ca" https://laravel.internal/ >/dev/null
+        exit 0
+      fi
       mv -f "$candidate" /etc/caddy/Caddyfile.orbit-e2e
       ln -sfn Caddyfile.orbit-e2e /etc/caddy/Caddyfile
       systemctl reload caddy
+      sha256sum /etc/caddy/Caddyfile.orbit-e2e | awk '{print $1}' > /var/lib/orbit-e2e/caddy-config-sha256
       ca=$(cat /var/lib/orbit-e2e/caddy-ca-path)
       [[ -s "$ca" ]]
       curl --fail --silent --show-error --cacert "$ca" https://laravel.internal/ >/dev/null

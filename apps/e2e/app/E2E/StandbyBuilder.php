@@ -7,9 +7,9 @@ namespace App\E2E;
 use App\E2E\State\AtomicJsonStore;
 use App\E2E\State\StatePaths;
 use App\E2E\Value\LaravelRelease;
+use App\E2E\Value\OperationId;
 use App\E2E\Value\PreparedFingerprint;
 use App\E2E\Value\SourceState;
-use App\E2E\Value\SyncMode;
 use App\E2E\Value\TopologyProfile;
 use App\E2E\Value\TopologyTarget;
 use App\E2E\Value\VerificationMode;
@@ -37,6 +37,7 @@ final readonly class StandbyBuilder
         string $baseImageFingerprint,
         LaravelRelease $laravel,
         bool $allowCold,
+        OperationId $operation,
         string $evidenceId,
     ): SourceState {
         if (! $allowCold) {
@@ -70,16 +71,16 @@ final readonly class StandbyBuilder
         if ($this->host->network($target->network()) !== null) {
             throw new RuntimeException('The standby network already exists without a promoted generation.');
         }
-        foreach (TopologyProfile::ROLES as $role) {
-            if ($this->host->instance($target->instance($role)) !== null) {
-                throw new RuntimeException('A standby VM already exists without a promoted generation.');
-            }
+        $instanceNames = array_map($target->instance(...), TopologyProfile::ROLES);
+        if ($this->host->instances($instanceNames) !== []) {
+            throw new RuntimeException('A standby VM already exists without a promoted generation.');
         }
 
         $scope = $this->host->scope();
         $attempt = [
-            'schema' => 2,
-            'operation_id' => $evidenceId,
+            'schema' => 3,
+            'operation_id' => $operation->value,
+            'evidence_id' => $evidenceId,
             'remote' => $scope['remote'],
             'project' => $scope['project'],
             'pool' => $scope['pool'],
@@ -97,45 +98,55 @@ final readonly class StandbyBuilder
         $this->recordAttempt($evidenceId, $attempt);
 
         try {
-            $this->networks->create($target->network());
+            $resourceMetadata = [
+                'user.orbit.e2e.operation' => $operation->value,
+                'user.orbit.e2e.evidence' => $evidenceId,
+            ];
+            $this->networks->create($target->network(), 1, $resourceMetadata);
             $attempt['network']['state'] = 'created';
             $this->recordAttempt($evidenceId, $attempt);
+            $vms = [];
+            foreach (TopologyProfile::ROLES as $role) {
+                $vms[$role] = [
+                    'image' => $alias,
+                    'name' => $target->instance($role),
+                    'network' => $target->network(),
+                    'role' => $role,
+                    'topology' => $target->network(),
+                    'metadata' => $resourceMetadata,
+                ];
+            }
+            $this->host->initVms($vms);
             foreach (TopologyProfile::ROLES as $index => $role) {
-                $this->host->initVm($alias, $target->instance($role), $target->network());
                 $attempt['instances'][$index]['state'] = 'created';
                 $this->recordAttempt($evidenceId, $attempt);
             }
-            foreach (TopologyProfile::ROLES as $role) {
-                $this->host->start($target->instance($role));
-            }
-            $this->host->waitForAgents(array_map(
-                $target->instance(...),
-                TopologyProfile::ROLES,
-            ));
-            $this->host->waitForGlobalIpv4(array_map($target->instance(...), TopologyProfile::ROLES));
+            $instances = array_map($target->instance(...), TopologyProfile::ROLES);
+            $this->host->startAll($instances);
+            $this->host->prepareClonedHostStates($instances);
 
-            $source = $this->synchronizer->sync($target, $this->mainWorktree, SyncMode::Full);
+            $source = $this->synchronizer->sync($target, $this->mainWorktree);
             if ($source->hostSha !== $mainSha || $source->guestSha !== $mainSha || $source->dirty) {
                 throw new RuntimeException('Cold standby source is not clean merged main.');
             }
 
             $this->converger->converge($target, $source, $laravel);
-            $report = $this->verifier->verify($target, VerificationMode::Readiness, $source);
-            if (! $report->passed) {
-                throw new RuntimeException('Cold standby verification failed.');
-            }
-
             $attempt['status'] = 'built';
             $this->recordAttempt($evidenceId, $attempt);
 
             return $source;
         } catch (Throwable $exception) {
-            $this->state->write("standby/failures/{$evidenceId}.json", [
-                'schema' => 1,
-                'phase' => 'cold-build',
-                'message' => $exception->getMessage(),
-            ]);
-            if (! $this->cleanupCold($evidenceId)) {
+            try {
+                $this->state->write("standby/failures/{$evidenceId}.json", [
+                    'schema' => 1,
+                    'operation_id' => $operation->value,
+                    'phase' => 'cold-build',
+                    'message' => $exception->getMessage(),
+                ]);
+            } catch (Throwable) {
+                // Cleanup remains mandatory even when evidence storage is unavailable.
+            }
+            if (! $this->cleanupCold($evidenceId, $operation)) {
                 throw new RuntimeException(
                     'Cold standby cleanup failed; explicit recovery is required.',
                     previous: $exception,
@@ -146,7 +157,7 @@ final readonly class StandbyBuilder
         }
     }
 
-    public function cleanupCold(string $evidenceId): bool
+    public function cleanupCold(string $evidenceId, OperationId $operation): bool
     {
         if ($this->state->read("standby/cold-attempts/{$evidenceId}.json") === null) {
             return true;
@@ -154,11 +165,19 @@ final readonly class StandbyBuilder
 
         try {
             $attempt = $this->attempt($evidenceId);
+            if ($attempt['operation_id'] !== $operation->value) {
+                throw new RuntimeException('The cold-build attempt operation identity does not match.');
+            }
             $instances = [];
+            $instanceNames = array_map(
+                static fn (array $intent): string => $intent['name'],
+                $attempt['instances'],
+            );
+            $observedInstances = $instanceNames === [] ? [] : $this->host->instances($instanceNames);
             foreach ($attempt['instances'] as $intent) {
-                $instance = $this->host->instance($intent['name']);
+                $instance = $observedInstances[$intent['name']] ?? null;
                 if ($instance !== null) {
-                    $this->assertOwned($instance->metadata);
+                    $this->assertAttemptResource($instance->metadata, $attempt);
                     if (
                         $instance->remote !== $attempt['remote']
                         || $instance->project !== $attempt['project']
@@ -172,29 +191,35 @@ final readonly class StandbyBuilder
             }
             $network = $this->host->network($attempt['network']['name']);
             if ($network !== null) {
-                $this->assertOwned($network->metadata);
+                $this->assertAttemptResource($network->metadata, $attempt);
                 if ($network->remote !== $attempt['remote'] || $network->project !== $attempt['project']) {
                     throw new RuntimeException('A planned cold-build network identity does not match.');
                 }
             }
 
-            foreach (array_reverse($attempt['instances']) as $name) {
-                $instance = $instances[$name['name']] ?? null;
-                if ($instance === null) {
-                    continue;
-                }
+            $running = [];
+            foreach ($instances as $name => $instance) {
                 if ($instance->isRunning()) {
-                    $this->host->stop($name['name']);
+                    $running[] = $name;
                 }
-                $this->host->deleteInstance($name['name']);
+            }
+            if ($running !== []) {
+                $this->host->stopAll($running);
+            }
+            $deletions = [];
+            foreach (array_reverse($attempt['instances']) as $intent) {
+                if (isset($instances[$intent['name']])) {
+                    $deletions[] = $intent['name'];
+                }
+            }
+            if ($deletions !== []) {
+                $this->host->deleteInstances($deletions);
             }
             if ($network !== null) {
                 $this->networks->delete($network->name);
             }
-            foreach ($attempt['instances'] as $intent) {
-                if ($this->host->instance($intent['name']) !== null) {
-                    throw new RuntimeException('A cold-build VM persisted after deletion.');
-                }
+            if ($instanceNames !== [] && $this->host->instances($instanceNames) !== []) {
+                throw new RuntimeException('A cold-build VM persisted after deletion.');
             }
             if ($this->host->network($attempt['network']['name']) !== null) {
                 throw new RuntimeException('A cold-build network persisted after deletion.');
@@ -205,6 +230,7 @@ final readonly class StandbyBuilder
             $this->recordAttempt($evidenceId, $attempt);
             $this->state->write("standby/recovery/{$evidenceId}.json", [
                 'schema' => 1,
+                'operation_id' => $operation->value,
                 'recovered' => true,
                 'resources_deleted' => true,
             ]);
@@ -217,6 +243,7 @@ final readonly class StandbyBuilder
         } catch (Throwable $exception) {
             $this->state->write("standby/recovery/{$evidenceId}.json", [
                 'schema' => 1,
+                'operation_id' => $operation->value,
                 'recovered' => false,
                 'message' => $exception->getMessage(),
             ]);
@@ -236,7 +263,7 @@ final readonly class StandbyBuilder
         $this->state->write("standby/cold-attempts/{$evidenceId}.json", $attempt);
     }
 
-    /** @return array{schema:int,operation_id:string,remote:string,project:string,pool:string,network:array{name:string,state:string,absent_preflight:bool},base_image_fingerprint:string,instances:list<array{role:string,name:string,network:string,state:string,absent_preflight:bool}>,status:string} */
+    /** @return array{schema:int,operation_id:string,evidence_id:string,remote:string,project:string,pool:string,network:array{name:string,state:string,absent_preflight:bool},base_image_fingerprint:string,instances:list<array{role:string,name:string,network:string,state:string,absent_preflight:bool}>,status:string} */
     private function attempt(string $evidenceId): array
     {
         $value = $this->state->read("standby/cold-attempts/{$evidenceId}.json");
@@ -247,6 +274,7 @@ final readonly class StandbyBuilder
             || array_keys($value) !== [
                 'schema',
                 'operation_id',
+                'evidence_id',
                 'remote',
                 'project',
                 'pool',
@@ -255,8 +283,10 @@ final readonly class StandbyBuilder
                 'instances',
                 'status',
             ]
-            || $value['schema'] !== 2
-            || $value['operation_id'] !== $evidenceId
+            || $value['schema'] !== 3
+            || ! is_string($value['operation_id'])
+            || preg_match('/\A[a-f0-9]{32}\z/D', $value['operation_id']) !== 1
+            || $value['evidence_id'] !== $evidenceId
             || ! is_string($value['remote'])
             || ! is_string($value['project'])
             || ! is_string($value['pool'])
@@ -273,6 +303,7 @@ final readonly class StandbyBuilder
             || ! is_array($value['instances'])
             || ! array_is_list($value['instances'])
             || ! is_string($value['status'])
+            || ! in_array($value['status'], ['creating', 'built', 'cleaned'], true)
         ) {
             throw new RuntimeException('The cold-build attempt evidence is invalid.');
         }
@@ -319,8 +350,9 @@ final readonly class StandbyBuilder
         }
 
         return [
-            'schema' => 2,
+            'schema' => 3,
             'operation_id' => $value['operation_id'],
+            'evidence_id' => $value['evidence_id'],
             'remote' => $value['remote'],
             'project' => $value['project'],
             'pool' => $value['pool'],
@@ -343,9 +375,26 @@ final readonly class StandbyBuilder
         }
     }
 
+    /** @param array<string, string> $metadata @param array<string, mixed> $attempt */
+    private function assertAttemptResource(array $metadata, array $attempt): void
+    {
+        $this->assertOwned($metadata);
+        if (
+            ($metadata['user.orbit.e2e.operation'] ?? null) !== $attempt['operation_id']
+            || ($metadata['user.orbit.e2e.evidence'] ?? null) !== $attempt['evidence_id']
+        ) {
+            throw new RuntimeException('A cold-build resource operation or evidence identity does not match.');
+        }
+    }
+
     private function assertNoActiveIntent(): void
     {
-        foreach (glob($this->paths->path('standby/cold-attempts').'/*.json') ?: [] as $file) {
+        $attempts = glob($this->paths->path('standby/cold-attempts').'/*.json');
+        if ($attempts === false) {
+            throw new RuntimeException('Cold-build resource intents cannot be inspected.');
+        }
+
+        foreach ($attempts as $file) {
             $id = pathinfo($file, PATHINFO_FILENAME);
             if (preg_match('/\A[a-f0-9]{32}\z/D', $id) !== 1) {
                 throw new RuntimeException('An invalid cold-build resource intent blocks construction.');

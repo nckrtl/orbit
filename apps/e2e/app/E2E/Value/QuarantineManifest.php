@@ -15,7 +15,7 @@ use InvalidArgumentException;
 final readonly class QuarantineManifest
 {
     /**
-     * @param array{path: string, sha256: string, mode: int} $freezeEvidence
+     * @param array{path: string, sha256: string, mode: int, filesystem_type: string} $freezeEvidence
      * @param list<array<string, mixed>> $targets
      * @param array<string, list<array<string, mixed>>> $preserved
      * @mago-expect lint:excessive-parameter-list Every reviewed quarantine fact is explicit and immutable.
@@ -30,9 +30,10 @@ final readonly class QuarantineManifest
     ) {
         if (
             preg_match('/\A[a-f0-9]{64}\z/', $inventorySha256) !== 1
-            || array_keys($freezeEvidence) !== ['path', 'sha256', 'mode']
+            || array_keys($freezeEvidence) !== ['path', 'sha256', 'mode', 'filesystem_type']
             || preg_match('/\A[a-f0-9]{64}\z/', $freezeEvidence['sha256'] ?? '') !== 1
             || ($freezeEvidence['mode'] ?? null) !== 0600
+            || ($freezeEvidence['filesystem_type'] ?? null) !== 'file'
             || ! is_string($freezeEvidence['path'] ?? null)
             || $targets === []
             || ! array_is_list($targets)
@@ -169,7 +170,7 @@ final readonly class QuarantineManifest
         }
 
         $inventorySha256 = $value['inventory_sha256'];
-        /** @var array{path: string, sha256: string, mode: int} $freezeEvidence */
+        /** @var array{path: string, sha256: string, mode: int, filesystem_type: string} $freezeEvidence */
         $freezeEvidence = $value['freeze_evidence'];
         $quarantinedAt = $value['quarantined_at'];
         $deleteAfter = $value['delete_after'];

@@ -4,20 +4,25 @@ declare(strict_types=1);
 
 namespace App\Console\Commands\Standby;
 
+use App\Console\Commands\E2ECommand;
 use App\E2E\StandbyRefresher;
 use App\E2E\Value\MigrationPlan;
-use Illuminate\Console\Command;
+use App\E2E\Value\OperationId;
 use JsonException;
 use Throwable;
 
-final class RefreshCommand extends Command
+final class RefreshCommand extends E2ECommand
 {
     #[\Override]
-    protected $signature = 'standby:refresh {--main-sha=} {--migration-file=} {--allow-cold} {--json}';
+    protected $signature = 'standby:refresh
+        {--main-sha=}
+        {--migration-file=}
+        {--allow-cold : Permit initial construction from the generic base image}
+        {--json}';
     #[\Override]
     protected $description = 'Refresh and promote the standby generation';
 
-    public function handle(StandbyRefresher $refresher): int
+    public function handle(StandbyRefresher $refresher, OperationId $operation): int
     {
         try {
             $sha = $this->option('main-sha');
@@ -25,12 +30,11 @@ final class RefreshCommand extends Command
                 throw new \InvalidArgumentException('The exact main SHA is required.');
             }
             $result = $refresher->request($sha, $this->migration(), (bool) $this->option('allow-cold'));
-            $payload = $result->toArray();
-            $this->line($this->option('json') ? json_encode($payload, JSON_THROW_ON_ERROR) : $result->state);
+            $this->line($this->option('json') ? json_encode($result->toArray(), JSON_THROW_ON_ERROR) : $result->state);
 
             return $result->successful() ? self::SUCCESS : self::FAILURE;
         } catch (Throwable $exception) {
-            $this->error($exception->getMessage());
+            $this->outputFailure($exception, $operation);
 
             return self::FAILURE;
         }

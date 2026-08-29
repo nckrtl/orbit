@@ -15,6 +15,30 @@ beforeEach(function (): void {
 });
 
 describe('descriptor-relative host deletion', function (): void {
+    it('rejects a symbolic-link ancestor of the safe root', function (): void {
+        $root = sys_get_temp_dir().'/orbit-safe-root-'.bin2hex(random_bytes(5));
+        mkdir($root.'/real/safe', 0700, true);
+        file_put_contents($root.'/real/safe/manifest.json', 'protected');
+        symlink($root.'/real', $root.'/linked-parent');
+
+        expect(
+            fn () => new HostRelativeDeleter(dirname(__DIR__, 3).'/resources/host/delete-relative.py')->delete(
+                'manifests',
+                $root.'/linked-parent/safe',
+                $root.'/linked-parent/safe/manifest.json',
+            ),
+        )
+            ->toThrow(RuntimeException::class, 'safe root')
+            ->and(is_file($root.'/real/safe/manifest.json'))
+            ->toBeTrue();
+
+        unlink($root.'/linked-parent');
+        unlink($root.'/real/safe/manifest.json');
+        rmdir($root.'/real/safe');
+        rmdir($root.'/real');
+        rmdir($root);
+    });
+
     it('rejects a parent replaced with a symlink without touching outside the safe root', function (): void {
         $root = sys_get_temp_dir().'/orbit-safe-root-'.bin2hex(random_bytes(5));
         $safe = $root.'/safe';
@@ -83,6 +107,31 @@ describe('descriptor-relative host deletion', function (): void {
             ->and(is_dir($root.'/source'))
             ->toBeFalse();
         rmdir($root.'/files');
+        rmdir($root);
+    });
+
+    it('recursively deletes non-empty source trees without following links', function (): void {
+        $root = sys_get_temp_dir().'/orbit-safe-root-'.bin2hex(random_bytes(5));
+        $source = $root.'/checkout';
+        $outside = $root.'/outside';
+        mkdir($source.'/nested/deep', 0700, true);
+        mkdir($outside, 0700);
+        file_put_contents($source.'/nested/deep/file.txt', 'retained checkout');
+        file_put_contents($outside.'/secret.txt', 'protected');
+        symlink($outside.'/secret.txt', $source.'/nested/link.txt');
+
+        new HostRelativeDeleter(dirname(__DIR__, 3).'/resources/host/delete-relative.py')->delete(
+            'source_paths',
+            $root,
+            $source,
+        );
+
+        expect(is_dir($source))
+            ->toBeFalse()
+            ->and(is_file($outside.'/secret.txt'))
+            ->toBeTrue();
+        unlink($outside.'/secret.txt');
+        rmdir($outside);
         rmdir($root);
     });
 

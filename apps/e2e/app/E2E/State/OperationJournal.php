@@ -46,7 +46,11 @@ final readonly class OperationJournal
                 throw new RuntimeException('Unable to protect the operation journal. No record was committed.');
             }
 
-            $record = $this->redactor->redactArray([...$entry, 'recorded_at' => gmdate('Y-m-d\TH:i:s\Z')]);
+            $record = $this->redactor->redactArray([
+                ...$entry,
+                'operation_id' => $operation->value,
+                'recorded_at' => gmdate('Y-m-d\TH:i:s\Z'),
+            ]);
             $line = json_encode($record, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)."\n";
             $written = fwrite($handle, $line);
 
@@ -105,6 +109,10 @@ final readonly class OperationJournal
 
             if (! is_array($entry) || array_is_list($entry)) {
                 throw new RuntimeException('The operation journal record is invalid.');
+            }
+
+            if (($entry['operation_id'] ?? null) !== $operation->value) {
+                throw new RuntimeException('The operation journal record belongs to a different operation.');
             }
 
             $entries[] = $entry;

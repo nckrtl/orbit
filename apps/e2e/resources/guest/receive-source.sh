@@ -4,16 +4,22 @@ umask 077
 [[ $# -eq 7 ]] || exit 64
 repo=$1; sha=$2; bundle=$3; archive=$4; manifest=$5; deletions=$6; expected_tree=$7
 [[ "$repo" == /* && "$sha" =~ ^[0-9a-f]{40}$ && "$expected_tree" =~ ^[0-9a-f]{64}$ ]] || exit 64
-for path in "$bundle" "$archive" "$manifest" "$deletions"; do [[ "$path" == /* && -f "$path" ]] || exit 64; done
-mkdir -p "$repo"
-git -C "$repo" init --quiet
-git -C "$repo" bundle verify "$bundle" >/dev/null
-mapfile -t bundle_heads < <(git -C "$repo" bundle list-heads "$bundle")
-[[ ${#bundle_heads[@]} -eq 1 ]] || exit 65
-read -r bundle_sha bundle_ref extra <<< "${bundle_heads[0]}"
-[[ -z "${extra:-}" && "$bundle_sha" == "$sha" && "$bundle_ref" =~ ^refs/orbit/e2e-source/[0-9a-f]{32}$ ]] || exit 65
-git -C "$repo" fetch --quiet "$bundle" "$bundle_ref:$bundle_ref"
-[[ "$(git -C "$repo" rev-parse --verify "$bundle_ref^{commit}")" == "$sha" ]] || exit 65
+for path in "$archive" "$manifest" "$deletions"; do [[ "$path" == /* && -f "$path" ]] || exit 64; done
+if [[ "$bundle" == - ]]; then
+    current_sha=$(git -C "$repo" rev-parse --verify 'HEAD^{commit}' 2>/dev/null) || exit 65
+    [[ "$current_sha" == "$sha" ]] || exit 65
+else
+    [[ "$bundle" == /* && -f "$bundle" ]] || exit 64
+    mkdir -p "$repo"
+    git -C "$repo" init --quiet
+    git -C "$repo" bundle verify "$bundle" >/dev/null
+    mapfile -t bundle_heads < <(git -C "$repo" bundle list-heads "$bundle")
+    [[ ${#bundle_heads[@]} -eq 1 ]] || exit 65
+    read -r bundle_sha bundle_ref extra <<< "${bundle_heads[0]}"
+    [[ -z "${extra:-}" && "$bundle_sha" == "$sha" && "$bundle_ref" =~ ^refs/orbit/e2e-source/[0-9a-f]{32}$ ]] || exit 65
+    git -C "$repo" fetch --quiet "$bundle" "$bundle_ref:$bundle_ref"
+    [[ "$(git -C "$repo" rev-parse --verify "$bundle_ref^{commit}")" == "$sha" ]] || exit 65
+fi
 previous="$repo/.git/orbit-overlay.paths"
 validate_overlay_path() {
     local path=$1 component parent=$repo index
@@ -54,4 +60,10 @@ rm -f "$index"
 trap - EXIT
 tree_hash=$(printf '%s' "$tree" | sha256sum | cut -d ' ' -f 1)
 [[ "$tree_hash" == "$expected_tree" ]] || exit 66
+marker="$repo/.git/orbit-source-state"
+marker_tmp=$(mktemp "$marker.XXXXXX")
+trap 'rm -f -- "$index" "$marker_tmp"' EXIT
+printf '{"sha":"%s","tree":"%s"}\n' "$sha" "$tree_hash" >"$marker_tmp"
+chmod 0600 "$marker_tmp"
+mv -f -- "$marker_tmp" "$marker"
 printf '{"sha":"%s","tree_hash":"%s"}\n' "$sha" "$tree_hash"

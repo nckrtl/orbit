@@ -33,10 +33,4 @@ final readonly class ConvergenceReport
     {
         return new self(true, $steps);
     }
-
-    /** @return array{converged:bool,steps:array<string,bool>} */
-    public function toArray(): array
-    {
-        return ['converged' => $this->converged, 'steps' => $this->steps];
-    }
 }

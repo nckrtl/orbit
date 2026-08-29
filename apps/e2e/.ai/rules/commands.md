@@ -1,3 +1,8 @@
+---
+paths:
+  - 'app/Console/Commands/**'
+---
+
 # Command rules
 
 Commands must use exact, validated resource IDs. Reject ambiguous names and

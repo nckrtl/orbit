@@ -1,3 +1,8 @@
+---
+paths:
+  - 'app/E2E/State/**'
+---
+
 # State rules
 
 Persist E2E state as private, atomic JSON files under the configured Orbit

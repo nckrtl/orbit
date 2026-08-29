@@ -7,6 +7,7 @@ namespace App\E2E;
 use App\E2E\Git\GitRepository;
 use App\E2E\Value\LaravelRelease;
 use App\E2E\Value\PreparedFingerprint;
+use App\E2E\Value\TopologyProfile;
 use InvalidArgumentException;
 use JsonException;
 
@@ -19,7 +20,6 @@ final readonly class PreparedStateFingerprint
         'cold_epoch',
         'base_image_alias',
         'declared_epochs',
-        'laravel_pin',
         'topology',
     ];
 
@@ -40,9 +40,6 @@ final readonly class PreparedStateFingerprint
         }
 
         $manifest = $this->validateManifest($manifest);
-        if ($laravel !== null) {
-            $manifest['laravel_pin'] = ['tag' => $laravel->tag, 'commit' => $laravel->commit];
-        }
         $hashes = [];
 
         foreach ($this->git->blobs($sha, $manifest['paths']) as $path => $content) {
@@ -55,15 +52,34 @@ final readonly class PreparedStateFingerprint
             'cold_epoch' => $manifest['cold_epoch'],
             'base_image_alias' => $manifest['base_image_alias'],
             'declared_epochs' => $manifest['declared_epochs'],
-            'laravel_pin' => $manifest['laravel_pin'],
             'topology' => $manifest['topology'],
         ]);
+        $encoded = json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+        $structural = new PreparedFingerprint(hash('sha256', $encoded), $payload);
+
+        return $laravel === null ? $structural : $this->withLaravel($structural, $laravel);
+    }
+
+    public function withLaravel(PreparedFingerprint $structural, LaravelRelease $laravel): PreparedFingerprint
+    {
+        $payload = $this->canonicalizeArray($structural->manifest);
+        $keys = array_keys($payload);
+        sort($keys, SORT_STRING);
+        $expected = self::ROOT_KEYS;
+        sort($expected, SORT_STRING);
+        $encoded = json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+        if ($keys !== $expected || hash('sha256', $encoded) !== $structural->value) {
+            throw new InvalidArgumentException('The structural prepared fingerprint is invalid.');
+        }
+
+        $payload['laravel_pin'] = ['tag' => $laravel->tag, 'commit' => $laravel->commit];
+        $payload = $this->canonicalizeArray($payload);
         $encoded = json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
 
         return new PreparedFingerprint(hash('sha256', $encoded), $payload);
     }
 
-    /** @return array{schema: int, paths: list<string>, cold_epoch: string, base_image_alias: string, declared_epochs: array<string, int>, laravel_pin: array{tag: string, commit: string}, topology: array{profile: string, roles: list<string>, checkout_roles: list<string>}} */
+    /** @return array{schema: int, paths: list<string>, cold_epoch: string, base_image_alias: string, declared_epochs: array<string, int>, topology: array{profile: string, roles: list<string>, checkout_roles: list<string>}} */
     private function validateManifest(mixed $manifest): array
     {
         if (! is_array($manifest) || array_is_list($manifest)) {
@@ -82,10 +98,9 @@ final readonly class PreparedStateFingerprint
         $this->validatePaths($manifest['paths']);
         $this->validateColdBase($manifest['cold_epoch'], $manifest['base_image_alias']);
         $this->validateEpochs($manifest['declared_epochs']);
-        $this->validateLaravelPin($manifest['laravel_pin']);
         $this->validateTopology($manifest['topology']);
 
-        /** @var array{schema: int, paths: list<string>, cold_epoch: string, base_image_alias: string, declared_epochs: array<string, int>, laravel_pin: array{tag: string, commit: string}, topology: array{profile: string, roles: list<string>, checkout_roles: list<string>}} $manifest */
+        /** @var array{schema: int, paths: list<string>, cold_epoch: string, base_image_alias: string, declared_epochs: array<string, int>, topology: array{profile: string, roles: list<string>, checkout_roles: list<string>}} $manifest */
         return $manifest;
     }
 
@@ -109,8 +124,11 @@ final readonly class PreparedStateFingerprint
     private function validateColdBase(mixed $coldEpoch, mixed $baseImageAlias): void
     {
         if (
-            $coldEpoch !== 'ubuntu-26.04-amd64-v1'
-            || $baseImageAlias !== 'orbit-base-ubuntu-26.04-runtime'
+            ! is_string($coldEpoch)
+            || preg_match('/\Aubuntu-[0-9]{2}\.[0-9]{2}-(?:amd64|arm64)-v[1-9][0-9]*\z/D', $coldEpoch) !== 1
+            || ! is_string($baseImageAlias)
+            || strlen($baseImageAlias) > 63
+            || preg_match('/\Aorbit-base-[A-Za-z0-9._-]+\z/D', $baseImageAlias) !== 1
         ) {
             throw new InvalidArgumentException('The prepared-state cold base contract is invalid.');
         }
@@ -126,28 +144,6 @@ final readonly class PreparedStateFingerprint
             if (preg_match('/\A[a-z][a-z0-9_]*\z/D', (string) $name) !== 1 || ! is_int($epoch) || $epoch < 1) {
                 throw new InvalidArgumentException('Every declared epoch must have a valid name and value.');
             }
-        }
-    }
-
-    private function validateLaravelPin(mixed $pin): void
-    {
-        if (! is_array($pin) || array_is_list($pin)) {
-            throw new InvalidArgumentException('The Laravel pin schema is invalid.');
-        }
-
-        $keys = array_keys($pin);
-        sort($keys, SORT_STRING);
-
-        if ($keys !== ['commit', 'tag']) {
-            throw new InvalidArgumentException('The Laravel pin schema is invalid.');
-        }
-
-        if (! is_string($pin['tag']) || preg_match('/\Av\d+\.\d+\.\d+\z/D', $pin['tag']) !== 1) {
-            throw new InvalidArgumentException('The Laravel pin tag is invalid.');
-        }
-
-        if (! is_string($pin['commit']) || preg_match('/\A[0-9a-f]{40}\z/D', $pin['commit']) !== 1) {
-            throw new InvalidArgumentException('The Laravel pin commit is invalid.');
         }
     }
 
@@ -185,12 +181,22 @@ final readonly class PreparedStateFingerprint
         /** @var list<string> $roles */
         /** @var list<string> $checkoutRoles */
 
-        sort($roles, SORT_STRING);
-        sort($checkoutRoles, SORT_STRING);
-
-        if ($roles !== ['app-dev', 'app-prod', 'gateway'] || $checkoutRoles !== ['app-dev', 'gateway']) {
+        if (
+            ! $this->isExactOrderedList($roles, TopologyProfile::ROLES)
+            || ! $this->isExactOrderedList($checkoutRoles, TopologyProfile::CHECKOUT_ROLES)
+        ) {
             throw new InvalidArgumentException('The prepared-state topology is invalid.');
         }
+    }
+
+    /** @param list<string> $actual @param list<string> $expected */
+    private function isExactOrderedList(array $actual, array $expected): bool
+    {
+        if (count($actual) !== count($expected)) {
+            return false;
+        }
+
+        return array_all($expected, fn ($value, $index) => ! ($actual[$index] !== $value));
     }
 
     /** @param array<array-key, mixed> $value
@@ -204,11 +210,6 @@ final readonly class PreparedStateFingerprint
         );
 
         if (array_is_list($canonical)) {
-            usort($canonical, fn (mixed $left, mixed $right): int => strcmp(
-                json_encode($left, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),
-                json_encode($right, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),
-            ));
-
             return $canonical;
         }
 

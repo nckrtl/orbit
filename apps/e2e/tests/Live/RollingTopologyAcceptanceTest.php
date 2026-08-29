@@ -36,6 +36,7 @@ it('proves the rolling topology contract through public wrappers', function (): 
     $inputs = liveInputs([
         'ORBIT_LIVE_PROFILE',
         'ORBIT_LIVE_ISSUE',
+        'ORBIT_LIVE_ISOLATION_ISSUE',
         'ORBIT_LIVE_MAIN_WORKTREE',
         'ORBIT_LIVE_FEATURE_WORKTREE',
         'ORBIT_LIVE_CANDIDATE_SHA',
@@ -52,6 +53,9 @@ it('proves the rolling topology contract through public wrappers', function (): 
 
     $issue = $inputs['ORBIT_LIVE_ISSUE'];
     $target = new TopologyTarget($issue);
+    $isolationIssue = $inputs['ORBIT_LIVE_ISOLATION_ISSUE'];
+    Assert::assertNotSame($issue, $isolationIssue);
+    $isolationTarget = new TopologyTarget($isolationIssue);
     $mainWorktree = $inputs['ORBIT_LIVE_MAIN_WORKTREE'];
     $featureWorktree = $inputs['ORBIT_LIVE_FEATURE_WORKTREE'];
     $candidateSha = $inputs['ORBIT_LIVE_CANDIDATE_SHA'];
@@ -81,6 +85,7 @@ it('proves the rolling topology contract through public wrappers', function (): 
 
     $initialMainSha = liveGit($mainWorktree, ['rev-parse', '--verify', 'HEAD^{commit}']);
     $acquired = false;
+    $isolationAcquired = false;
     $primaryFailure = null;
 
     try {
@@ -111,8 +116,30 @@ it('proves the rolling topology contract through public wrappers', function (): 
         ));
         $acquired = true;
         Assert::assertSame('ready', $acquire['state'] ?? null);
-        Assert::assertSame($acquire['operation_id'] ?? null, $acquire['evidence_id'] ?? null);
+        Assert::assertArrayNotHasKey('evidence_id', $acquire);
+        Assert::assertSame($acquire['operation_id'] ?? null, $acquire['topology']['source']['operation_id'] ?? null);
         liveAssertTopology($acquire['topology'] ?? null, $target, $candidateSha);
+        liveAssertIncusTopology($acquire['topology'] ?? null, $target);
+
+        $isolationAcquired = true;
+        $isolationAcquire = liveJsonPhase('acquire isolation topology', fn (): array => liveJsonWrapper(
+            'topology',
+            'acquire',
+            $isolationIssue,
+            $featureWorktree,
+        ));
+        Assert::assertSame('ready', $isolationAcquire['state'] ?? null);
+        liveAssertTopology($isolationAcquire['topology'] ?? null, $isolationTarget, $candidateSha);
+        liveAssertIncusTopology($isolationAcquire['topology'] ?? null, $isolationTarget);
+        liveAssertTopologyTrafficIsolation($target, $isolationTarget);
+
+        $isolationRelease = liveJsonPhase('release isolation topology', fn (): array => liveJsonWrapper(
+            'topology',
+            'release',
+            $isolationIssue,
+        ));
+        Assert::assertSame('released', $isolationRelease['state'] ?? null);
+        $isolationAcquired = false;
 
         $manifestPath = "{$stateRoot}/topologies/{$issue}.json";
         Assert::assertSame($acquire['topology'], liveJsonFile($manifestPath));
@@ -240,16 +267,9 @@ it('proves the rolling topology contract through public wrappers', function (): 
         Assert::assertSame($rolling['generation_id'], $unchangedStatus['generation']['id'] ?? null);
 
         $lease = liveJsonFile("{$stateRoot}/leases/{$issue}.json");
-        $sourceOperations = $lease['source_operation_ids'] ?? null;
-        Assert::assertIsArray($sourceOperations);
-        Assert::assertNotSame([], $sourceOperations);
+        Assert::assertArrayNotHasKey('source_operation_ids', $lease);
         $expectedReleased = [];
         foreach (TopologyProfile::ROLES as $role) {
-            foreach ($sourceOperations as $operation) {
-                $expectedReleased[] = "source:{$target->instance($role)}:{$operation}";
-            }
-        }
-        foreach (array_reverse(TopologyProfile::ROLES) as $role) {
             $expectedReleased[] = 'stopped:'.$target->instance($role);
         }
         foreach (array_reverse(TopologyProfile::ROLES) as $role) {
@@ -279,6 +299,18 @@ it('proves the rolling topology contract through public wrappers', function (): 
         $primaryFailure = $exception;
     } finally {
         $cleanupFailure = null;
+        if ($isolationAcquired) {
+            try {
+                $cleanup = liveProcessPhase('cleanup isolation topology release', fn (): ProcessResult => liveWrapper(
+                    'topology',
+                    'release',
+                    $isolationIssue,
+                ));
+                Assert::assertTrue($cleanup->successful(), $cleanup->errorOutput() ?: $cleanup->output());
+            } catch (Throwable $exception) {
+                $cleanupFailure = $exception;
+            }
+        }
         if ($acquired) {
             try {
                 $cleanup = liveProcessPhase('cleanup topology release', fn (): ProcessResult => liveWrapper(
@@ -456,4 +488,210 @@ function liveAssertTopology(mixed $topology, TopologyTarget $target, string $can
     Assert::assertSame($candidateSha, $topology['source']['guest_sha'] ?? null);
     Assert::assertFalse($topology['source']['dirty'] ?? true);
     Assert::assertTrue($topology['verification']['passed'] ?? false);
+}
+
+/** @mago-expect lint:cyclomatic-complexity The assertion verifies the complete live topology contract. */
+function liveAssertIncusTopology(mixed $topology, TopologyTarget $target): void
+{
+    Assert::assertIsArray($topology);
+    Assert::assertSame(15, strlen($target->network()));
+
+    $network = liveIncusResource('network', $target->network());
+    $networkConfiguration = $network['config'] ?? null;
+    Assert::assertIsArray($networkConfiguration);
+    Assert::assertSame('orbit-e2e', $networkConfiguration['user.orbit.e2e.owner'] ?? null);
+    Assert::assertSame($target->issue, $networkConfiguration['user.orbit.e2e.issue'] ?? null);
+    Assert::assertSame('true', $networkConfiguration['ipv4.nat'] ?? null);
+    Assert::assertSame('none', $networkConfiguration['ipv6.address'] ?? null);
+    Assert::assertSame('port=0', $networkConfiguration['raw.dnsmasq'] ?? null);
+
+    $generation = $topology['generation']['id'] ?? null;
+    Assert::assertIsString($generation);
+    $machineIds = [];
+    $addresses = [];
+
+    foreach (TopologyProfile::ROLES as $role) {
+        $name = $target->instance($role);
+        $instance = liveIncusResource('instance', $name);
+        $configuration = $instance['config'] ?? null;
+        Assert::assertIsArray($configuration);
+        Assert::assertSame('virtual-machine', $instance['type'] ?? null);
+        Assert::assertSame('RUNNING', strtoupper((string) ($instance['status'] ?? '')));
+        Assert::assertSame('orbit-e2e', $configuration['user.orbit.e2e.owner'] ?? null);
+        Assert::assertSame($target->issue, $configuration['user.orbit.e2e.issue'] ?? null);
+        Assert::assertSame($generation, $configuration['user.orbit.e2e.generation'] ?? null);
+
+        $devices = $instance['devices'] ?? $instance['expanded_devices'] ?? null;
+        Assert::assertIsArray($devices);
+        $eth0 = $devices['eth0'] ?? null;
+        Assert::assertIsArray($eth0);
+        Assert::assertSame($target->network(), $eth0['network'] ?? null);
+        Assert::assertSame(liveDeterministicMac($target->network(), $role), $eth0['hwaddr'] ?? null);
+
+        $machineId = strtolower(trim(liveIncusExec($name, ['cat', '/etc/machine-id'])->output()));
+        Assert::assertMatchesRegularExpression('/\A[a-f0-9]{32}\z/D', $machineId);
+        $machineIds[] = $machineId;
+
+        $addressOutput = liveIncusExec($name, ['ip', '-4', '-o', 'addr', 'show', 'scope', 'global'])->output();
+        $roleAddresses = liveGlobalIpv4Addresses($addressOutput);
+        Assert::assertCount(1, $roleAddresses);
+        $addresses[] = $roleAddresses[0];
+    }
+
+    Assert::assertCount(count(TopologyProfile::ROLES), array_unique($machineIds));
+    Assert::assertCount(count(TopologyProfile::ROLES), array_unique($addresses));
+    liveAssertForwardingIsolation($target->network());
+}
+
+/** @return array<array-key, mixed> */
+function liveIncusResource(string $type, string $name): array
+{
+    $remote = (string) config('e2e.incus.remote');
+    $arguments = $type === 'network'
+        ? ['network', 'list', "{$remote}:", '--format=json']
+        : ['list', "{$remote}:{$name}", '--format=json'];
+    $resources = liveJson(liveIncus($arguments)->output());
+    $matches = array_values(array_filter(
+        $resources,
+        static fn (mixed $resource): bool => is_array($resource) && ($resource['name'] ?? null) === $name,
+    ));
+    Assert::assertCount(1, $matches, "Incus {$type} {$name} was not observed exactly once.");
+
+    return $matches[0];
+}
+
+/** @param list<string> $arguments */
+function liveIncus(array $arguments): ProcessResult
+{
+    $result = liveIncusProcess($arguments);
+    Assert::assertTrue($result->successful(), $result->errorOutput() ?: $result->output());
+
+    return $result;
+}
+
+/** @param list<string> $arguments */
+function liveIncusProcess(array $arguments): ProcessResult
+{
+    return Process::timeout(300)->run([
+        'incus',
+        '--project',
+        (string) config('e2e.incus.project'),
+        ...$arguments,
+    ]);
+}
+
+/** @param list<string> $command */
+function liveIncusExec(string $instance, array $command): ProcessResult
+{
+    return liveIncus([
+        'exec',
+        (string) config('e2e.incus.remote').':'.$instance,
+        '--',
+        ...$command,
+    ]);
+}
+
+function liveDeterministicMac(string $topologyId, string $role): string
+{
+    $hash = substr(sha1("{$topologyId}:{$role}"), 0, 6);
+
+    return '00:16:3e:'.implode(':', str_split($hash, 2));
+}
+
+/** @return list<string> */
+function liveGlobalIpv4Addresses(string $output): array
+{
+    $addresses = [];
+    foreach (preg_split('/\R/', trim($output)) ?: [] as $line) {
+        $fields = preg_split('/\s+/', trim($line)) ?: [];
+        $interface = rtrim($fields[1] ?? '', ':');
+        if (in_array($interface, ['lo', 'wg-orbit', 'wg0'], true)) {
+            continue;
+        }
+        $inet = array_search('inet', $fields, true);
+        $address = is_int($inet) ? explode('/', $fields[$inet + 1] ?? '', 2)[0] : '';
+        if (
+            filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false
+            && ! str_starts_with($address, '127.')
+        ) {
+            $addresses[] = $address;
+        }
+    }
+
+    return array_values(array_unique($addresses));
+}
+
+function liveAssertForwardingIsolation(string $network): void
+{
+    $result = Process::timeout(30)->run(['sudo', '-n', 'iptables', '-w', '5', '-S', 'FORWARD']);
+    Assert::assertTrue($result->successful(), $result->errorOutput() ?: $result->output());
+    $rules = preg_split('/\R/', trim($result->output())) ?: [];
+    $sameNetwork = "-A FORWARD -i {$network} -o {$network} -j ACCEPT";
+    $crossTopology = "-A FORWARD -i {$network} -o oe+ -j DROP";
+    $sameNetworkIndex = array_search($sameNetwork, $rules, true);
+    $crossTopologyIndex = array_search($crossTopology, $rules, true);
+    Assert::assertIsInt($sameNetworkIndex, 'The same-topology forwarding rule is missing.');
+    Assert::assertIsInt($crossTopologyIndex, 'The cross-topology forwarding isolation rule is missing.');
+    Assert::assertLessThan($crossTopologyIndex, $sameNetworkIndex);
+}
+
+function liveAssertTopologyTrafficIsolation(TopologyTarget $first, TopologyTarget $second): void
+{
+    $firstNetwork = liveIncusResource('network', $first->network());
+    $secondNetwork = liveIncusResource('network', $second->network());
+    $firstSubnet = $firstNetwork['config']['ipv4.address'] ?? null;
+    $secondSubnet = $secondNetwork['config']['ipv4.address'] ?? null;
+    Assert::assertIsString($firstSubnet);
+    Assert::assertIsString($secondSubnet);
+    Assert::assertNotSame($firstSubnet, $secondSubnet);
+
+    $firstGateway = $first->instance('gateway');
+    $secondGateway = $second->instance('gateway');
+    $firstAppDev = liveTopologyRoleIpv4($first, 'app-dev');
+    $secondAppDev = liveTopologyRoleIpv4($second, 'app-dev');
+
+    Assert::assertTrue(
+        liveTcpProbe($firstGateway, $firstAppDev, 22)->successful(),
+        'Traffic inside the first topology did not reach app-dev SSH.',
+    );
+    Assert::assertTrue(
+        liveTcpProbe($secondGateway, $secondAppDev, 22)->successful(),
+        'Traffic inside the second topology did not reach app-dev SSH.',
+    );
+    Assert::assertFalse(
+        liveTcpProbe($firstGateway, $secondAppDev, 22)->successful(),
+        'The first topology reached the second topology.',
+    );
+    Assert::assertFalse(
+        liveTcpProbe($secondGateway, $firstAppDev, 22)->successful(),
+        'The second topology reached the first topology.',
+    );
+}
+
+function liveTopologyRoleIpv4(TopologyTarget $target, string $role): string
+{
+    $output = liveIncusExec(
+        $target->instance($role),
+        ['ip', '-4', '-o', 'addr', 'show', 'scope', 'global'],
+    )->output();
+    $addresses = liveGlobalIpv4Addresses($output);
+    Assert::assertCount(1, $addresses);
+
+    return $addresses[0];
+}
+
+function liveTcpProbe(string $source, string $address, int $port): ProcessResult
+{
+    Assert::assertNotFalse(filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4));
+
+    return liveIncusProcess([
+        'exec',
+        (string) config('e2e.incus.remote').':'.$source,
+        '--',
+        'timeout',
+        '5',
+        'bash',
+        '-c',
+        "exec 3<>/dev/tcp/{$address}/{$port}",
+    ]);
 }

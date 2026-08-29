@@ -6,11 +6,13 @@ namespace App\Providers;
 
 use App\E2E\Git\GitRepository;
 use App\E2E\GuestTransport;
+use App\E2E\HostCapacity;
 use App\E2E\HostRelativeDeleter;
 use App\E2E\IncusHost;
 use App\E2E\IncusNetworkLifecycle;
 use App\E2E\LegacyIncusRevalidator;
 use App\E2E\LegacyRetirement;
+use App\E2E\LegacyRetirementHost;
 use App\E2E\PreparedStateFingerprint;
 use App\E2E\StandbyBuilder;
 use App\E2E\StandbyManifestStore;
@@ -20,13 +22,15 @@ use App\E2E\State\OperationJournal;
 use App\E2E\State\OperationLock;
 use App\E2E\State\SecretRedactor;
 use App\E2E\State\StatePaths;
+use App\E2E\TopologyAcquirer;
 use App\E2E\TopologyConverger;
+use App\E2E\TopologyManifestStore;
+use App\E2E\TopologyReleaser;
 use App\E2E\TopologyVerifier;
 use App\E2E\Value\OperationId;
 use App\E2E\WorktreeSynchronizer;
 use Illuminate\Contracts\Config\Repository;
 use Illuminate\Contracts\Foundation\Application;
-use Illuminate\Support\Facades\Process;
 use Illuminate\Support\ServiceProvider;
 
 /** @mago-expect lint:cyclomatic-complexity,kan-defect Infrastructure bindings validate their complete configuration at startup. */
@@ -34,119 +38,40 @@ final class AppServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
+        $this->app->singleton(OperationId::class, function (Application $app): OperationId {
+            $value = $app->make(Repository::class)->get('e2e.incus.operation_id');
+            $value = is_string($value) && $value !== '' ? $value : bin2hex(random_bytes(16));
+
+            return new OperationId($value);
+        });
         $this->app->singleton(StatePaths::class, fn (): StatePaths => StatePaths::fromEnvironment());
         $this->app->singleton(AtomicJsonStore::class);
+        $this->app->singleton(HostCapacity::class, fn (Application $app): HostCapacity => new HostCapacity(
+            $app->make(AtomicJsonStore::class),
+            $app->make(StatePaths::class),
+            $app->make(OperationId::class),
+            (int) $app->make(Repository::class)->get('e2e.incus.max_vms', 12),
+            $app->make(IncusHost::class),
+        ));
+        $this->app->singleton(SecretRedactor::class);
         $this->app->singleton(OperationJournal::class);
         $this->app->bind(OperationLock::class);
-        $this->app->singleton(LegacyRetirement::class, function (): LegacyRetirement {
-            $revalidator = new LegacyIncusRevalidator;
-            $deleter = new HostRelativeDeleter(dirname(__DIR__, 2).'/resources/host/delete-relative.py');
-            /** @mago-expect lint:cyclomatic-complexity Observation manifests fail closed on each unsafe state. */
-            $observe = function (): array {
-                $path = getenv('ORBIT_E2E_LEGACY_OBSERVATION');
-                if (! is_string($path)) {
-                    throw new \RuntimeException('ORBIT_E2E_LEGACY_OBSERVATION must name a protected JSON manifest.');
-                }
-                $value = LegacyRetirement::readProtectedJson($path);
-
-                /** @var array<string, list<array<string, mixed>>> $value */
-                return $value;
-            };
-            $mutate = function (string $operation, array $resource) use ($deleter, $revalidator): void {
-                $identity = $resource['identity'] ?? $resource['name'] ?? $resource['path'] ?? null;
-                if (
-                    ! is_string($identity)
-                    || $identity === ''
-                    || str_contains($identity, '/')
-                    && ($operation !== 'delete_snapshots'
-                    || preg_match('/\A[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}\/[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}\z/D', $identity)
-                    !== 1)
-                    || str_contains($identity, ':')
-                    || str_starts_with($identity, '-')
-                    || str_contains($identity, '*')
-                    || str_contains($identity, '?')
-                ) {
-                    throw new \RuntimeException('The legacy mutation target is unsafe.');
-                }
-                $remote = $resource['remote'] ?? null;
-                $project = $resource['project'] ?? null;
-                $incusOperation = in_array(
-                    $operation,
-                    ['stop', 'delete_snapshots', 'delete_instances', 'delete_networks'],
-                    true,
-                );
-                if (
-                    $incusOperation
-                    && (! is_string($remote)
-                    || ! is_string($project)
-                    || preg_match('/\A[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}\z/', $remote) !== 1
-                    || preg_match('/\A[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}\z/', $project) !== 1)
-                ) {
-                    throw new \RuntimeException('The legacy Incus target has no exact remote and project identity.');
-                }
-                $snapshot = null;
-                if ($operation === 'delete_snapshots') {
-                    [$instance, $snapshot] = explode('/', $identity, 2);
-                    $target = "{$remote}:{$instance}";
-                } else {
-                    $target = is_string($remote) ? "{$remote}:{$identity}" : $identity;
-                }
-                $projectArgument = is_string($project) ? $project : '';
-                $arguments = match ($operation) {
-                    'stop' => ['incus', '--project', $projectArgument, 'stop', $target],
-                    'delete_snapshots' => [
-                        'incus',
-                        '--project',
-                        $projectArgument,
-                        'snapshot',
-                        'delete',
-                        $target,
-                        (string) $snapshot,
-                    ],
-                    'delete_instances' => ['incus', '--project', $projectArgument, 'delete', $target],
-                    'delete_networks' => ['incus', '--project', $projectArgument, 'network', 'delete', $target],
-                    default => null,
-                };
-                if ($arguments !== null) {
-                    $kind = match ($operation) {
-                        'stop', 'delete_instances' => 'instances',
-                        'delete_snapshots' => 'snapshots',
-                        'delete_networks' => 'networks',
-                        default => throw new \RuntimeException('The legacy Incus mutation operation is invalid.'),
-                    };
-                    /** @var array<string, mixed> $resource LegacyRetirement validates each target before mutation. */
-                    $revalidator->assertCurrent($kind, $resource, $operation);
-                    $result = Process::timeout(300)->run($arguments);
-                    if ($result->failed()) {
-                        throw new \RuntimeException('An exact legacy Incus mutation failed.');
-                    }
-
-                    return;
-                }
-                if (! in_array($operation, ['delete_source_paths', 'delete_manifests', 'delete_locks'], true)) {
-                    throw new \RuntimeException('The legacy mutation operation is invalid.');
-                }
-                $root = $resource['safe_root'] ?? null;
-                if (! is_string($root)) {
-                    throw new \RuntimeException('The legacy file target has no safe root.');
-                }
-                $kind = match ($operation) {
-                    'delete_source_paths' => 'source_paths',
-                    'delete_manifests' => 'manifests',
-                    'delete_locks' => 'locks',
-                    default => throw new \RuntimeException('The legacy file mutation operation is invalid.'),
-                };
-                $deleter->delete($kind, $root, $identity);
-            };
+        $this->app->singleton(LegacyRetirementHost::class, fn (): LegacyRetirementHost => new LegacyRetirementHost(
+            new LegacyIncusRevalidator,
+            new HostRelativeDeleter(dirname(__DIR__, 2).'/resources/host/delete-relative.py'),
+        ));
+        $this->app->singleton(LegacyRetirement::class, function (Application $app): LegacyRetirement {
+            $host = $app->make(LegacyRetirementHost::class);
 
             return new LegacyRetirement(
-                $observe,
-                $mutate,
+                $host->observe(...),
+                $host->mutate(...),
                 fn (): \DateTimeImmutable => new \DateTimeImmutable('now'),
-                $this->app->make(OperationLock::class),
+                $app->make(OperationLock::class),
+                $app->make(OperationId::class),
+                $host->observeCurrent(...),
             );
         });
-
         $repositoryRoot = dirname(__DIR__, 4);
         $this->app->singleton(GitRepository::class, fn (): GitRepository => new GitRepository($repositoryRoot));
         $this->app->singleton(
@@ -158,13 +83,13 @@ final class AppServiceProvider extends ServiceProvider
             fn (Application $app): WorktreeSynchronizer => new WorktreeSynchronizer(
                 $app->make(IncusHost::class),
                 $repositoryRoot,
+                $app->make(OperationId::class),
             ),
         );
 
         $this->app->singleton(IncusHost::class, function (Application $app): IncusHost {
             $configuration = $app->make(Repository::class);
             $ownership = $configuration->get('e2e.incus.ownership');
-            $operationId = $configuration->get('e2e.incus.operation_id');
             $remote = $configuration->get('e2e.incus.remote');
             $project = $configuration->get('e2e.incus.project');
             $pool = $configuration->get('e2e.incus.storage_pool');
@@ -191,12 +116,38 @@ final class AppServiceProvider extends ServiceProvider
                 pool: $pool,
                 ownershipMetadata: $ownership,
                 redactor: $app->make(SecretRedactor::class),
-                journal: is_string($operationId) ? $app->make(OperationJournal::class) : null,
-                operationId: is_string($operationId) ? new OperationId($operationId) : null,
+                journal: $app->make(OperationJournal::class),
+                operationId: $app->make(OperationId::class),
             );
         });
         $this->app->bind(GuestTransport::class, fn (Application $app): IncusHost => $app->make(IncusHost::class));
         $this->app->singleton(IncusNetworkLifecycle::class);
+        $this->app->singleton(TopologyAcquirer::class, fn (Application $app): TopologyAcquirer => new TopologyAcquirer(
+            host: $app->make(IncusHost::class),
+            networks: $app->make(IncusNetworkLifecycle::class),
+            fingerprints: $app->make(PreparedStateFingerprint::class),
+            standby: $app->make(StandbyManifestStore::class),
+            manifests: $app->make(TopologyManifestStore::class),
+            synchronizer: $app->make(WorktreeSynchronizer::class),
+            converger: $app->make(TopologyConverger::class),
+            verifier: $app->make(TopologyVerifier::class),
+            state: $app->make(AtomicJsonStore::class),
+            paths: $app->make(StatePaths::class),
+            commandOperation: $app->make(OperationId::class),
+            journal: $app->make(OperationJournal::class),
+            redactor: $app->make(SecretRedactor::class),
+            repositoryRoot: $repositoryRoot,
+            capacity: $app->make(HostCapacity::class),
+        ));
+        $this->app->singleton(TopologyReleaser::class, fn (Application $app): TopologyReleaser => new TopologyReleaser(
+            $app->make(IncusHost::class),
+            $app->make(IncusNetworkLifecycle::class),
+            $app->make(TopologyManifestStore::class),
+            $app->make(AtomicJsonStore::class),
+            $app->make(StatePaths::class),
+            $app->make(OperationId::class),
+            $app->make(HostCapacity::class),
+        ));
 
         $this->app->singleton(StandbyBuilder::class, fn (Application $app): StandbyBuilder => new StandbyBuilder(
             $app->make(IncusHost::class),
@@ -220,10 +171,12 @@ final class AppServiceProvider extends ServiceProvider
             $app->make(TopologyVerifier::class),
             $app->make(\App\E2E\LaravelReleaseResolver::class),
             $app->make(OperationLock::class),
+            new OperationLock($app->make(StatePaths::class)),
             $app->make(OperationJournal::class),
             $app->make(AtomicJsonStore::class),
             $app->make(GitRepository::class),
             $repositoryRoot,
+            $app->make(OperationId::class),
         ));
     }
 

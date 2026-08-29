@@ -11,6 +11,7 @@ use App\E2E\State\StatePaths;
 use App\E2E\TopologyConverger;
 use App\E2E\TopologyVerifier;
 use App\E2E\Value\LaravelRelease;
+use App\E2E\Value\OperationId;
 use App\E2E\Value\PreparedFingerprint;
 use App\E2E\Value\TopologyTarget;
 use App\E2E\WorktreeSynchronizer;
@@ -20,6 +21,16 @@ use Illuminate\Process\Factory as ProcessFactory;
 use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Facades\Facade;
 use Illuminate\Support\Facades\Process;
+
+function standby_dnsmasq(): string
+{
+    return implode("\n", [
+        'port=0',
+        'dhcp-host=00:16:3e:77:ee:5a,10.232.1.10',
+        'dhcp-host=00:16:3e:71:18:e5,10.232.1.11',
+        'dhcp-host=00:16:3e:a3:2d:6c,10.232.1.12',
+    ]);
+}
 
 function cold_cleanup_builder(IncusHost $host, AtomicJsonStore $state, StatePaths $paths): StandbyBuilder
 {
@@ -47,6 +58,13 @@ function standby_incus_command(string ...$arguments): array
 /** @param list<string> $command */
 function standby_firewall_result(array $command): ?ProcessResult
 {
+    if (
+        ($command[0] ?? null) === 'python3'
+        && str_ends_with((string) ($command[1] ?? ''), '/resources/host/reconcile-firewall.py')
+    ) {
+        return Process::result(json_encode(['changed' => true], JSON_THROW_ON_ERROR));
+    }
+
     if (array_slice($command, 0, 5) !== ['sudo', '-n', 'iptables', '-w', '5']) {
         return null;
     }
@@ -106,6 +124,7 @@ describe('StandbyBuilder', function () {
             str_repeat('d', 64),
             new LaravelRelease('v13.0.0', str_repeat('c', 40)),
             false,
+            new OperationId(str_repeat('e', 32)),
             str_repeat('e', 32),
         ))
             ->toThrow(RuntimeException::class, 'explicit permission');
@@ -146,6 +165,23 @@ describe('StandbyBuilder', function () {
                 return Process::result();
             }
             if (in_array('list', $command, true)) {
+                if ($command === standby_incus_command('list', 'local:', '--format=json')) {
+                    return Process::result(json_encode(array_map(
+                        static fn (string $name): array => [
+                            'name' => $name,
+                            'type' => 'virtual-machine',
+                            'status' => 'Stopped',
+                            'status_code' => 102,
+                            'config' => [
+                                'user.orbit.e2e.owner' => 'orbit-e2e',
+                                'user.orbit.e2e.operation' => str_repeat('a', 32),
+                                'user.orbit.e2e.evidence' => str_repeat('a', 32),
+                            ],
+                            'devices' => ['root' => ['pool' => 'orbit-e2e'], 'eth0' => ['network' => 'oe-standby']],
+                        ],
+                        $initialized,
+                    ), JSON_THROW_ON_ERROR));
+                }
                 $name = preg_replace('/\A[^:]+:/', '', $command[4]);
 
                 return Process::result(
@@ -155,7 +191,11 @@ describe('StandbyBuilder', function () {
                             'type' => 'virtual-machine',
                             'status' => 'Stopped',
                             'status_code' => 102,
-                            'config' => ['user.orbit.e2e.owner' => 'orbit-e2e'],
+                            'config' => [
+                                'user.orbit.e2e.owner' => 'orbit-e2e',
+                                'user.orbit.e2e.operation' => str_repeat('a', 32),
+                                'user.orbit.e2e.evidence' => str_repeat('a', 32),
+                            ],
                             'devices' => ['root' => ['pool' => 'orbit-e2e'], 'eth0' => ['network' => 'oe-standby']],
                         ]], JSON_THROW_ON_ERROR) : '[]',
                 );
@@ -169,10 +209,15 @@ describe('StandbyBuilder', function () {
 
                 return Process::result();
             }
+            if (str_contains(implode(' ', $command), 'systemd-machine-id-setup')) {
+                $events[] = 'reset';
+
+                return Process::result();
+            }
             if (in_array('ip', $command, true)) {
                 $events[] = 'ipv4';
 
-                return Process::result("2: eth0    inet 10.44.0.10/24 scope global eth0\n");
+                return Process::result("2: eth0    inet 10.232.1.10/24 scope global eth0\n");
             }
             if (in_array('/bin/true', $command, true)) {
                 $events[] = 'wait';
@@ -190,6 +235,7 @@ describe('StandbyBuilder', function () {
             str_repeat('f', 64),
             new LaravelRelease('v13.0.0', str_repeat('c', 40)),
             true,
+            new OperationId(str_repeat('d', 32)),
             str_repeat('d', 32),
         ))
             ->toThrow(RuntimeException::class, 'cleanup failed');
@@ -201,17 +247,12 @@ describe('StandbyBuilder', function () {
                 'local:orbit-e2e-standby-app-prod',
             ])
             ->and($events)
-            ->toBe([
-                'start',
-                'start',
-                'start',
-                'wait',
-                'wait',
-                'wait',
-                'ipv4',
-                'ipv4',
-                'ipv4',
-            ]);
+            ->toHaveCount(12)
+            ->and(array_slice($events, 0, 3))
+            ->each->toBe('start')->and(array_slice($events, 3, 3))
+            ->each->toBe('wait')->and(array_slice($events, 6, 3))
+            ->each->toBe('reset')->and(array_slice($events, 9))
+            ->each->toBe('ipv4');
     });
 
     it('accepts a fully cleaned attempt recorded with the former standby network identity', function () {
@@ -219,8 +260,9 @@ describe('StandbyBuilder', function () {
         $state = new AtomicJsonStore($paths);
         $previousEvidence = str_repeat('a', 32);
         $state->write("standby/cold-attempts/{$previousEvidence}.json", [
-            'schema' => 2,
+            'schema' => 3,
             'operation_id' => $previousEvidence,
+            'evidence_id' => $previousEvidence,
             'remote' => 'local',
             'project' => 'default',
             'pool' => 'orbit-e2e',
@@ -241,6 +283,7 @@ describe('StandbyBuilder', function () {
             str_repeat('d', 64),
             new LaravelRelease('v13.0.0', str_repeat('c', 40)),
             true,
+            new OperationId(str_repeat('e', 32)),
             str_repeat('e', 32),
         ))
             ->toThrow(RuntimeException::class, 'no base image alias');
@@ -251,8 +294,9 @@ describe('StandbyBuilder', function () {
         $state = new AtomicJsonStore($paths);
         $previousEvidence = str_repeat('a', 32);
         $state->write("standby/cold-attempts/{$previousEvidence}.json", [
-            'schema' => 2,
+            'schema' => 3,
             'operation_id' => $previousEvidence,
+            'evidence_id' => $previousEvidence,
             'remote' => 'local',
             'project' => 'default',
             'pool' => 'orbit-e2e',
@@ -273,6 +317,37 @@ describe('StandbyBuilder', function () {
             str_repeat('d', 64),
             new LaravelRelease('v13.0.0', str_repeat('c', 40)),
             true,
+            new OperationId(str_repeat('e', 32)),
+            str_repeat('e', 32),
+        ))
+            ->toThrow(RuntimeException::class, 'attempt evidence is invalid');
+    });
+
+    it('rejects a cold attempt with an unknown lifecycle status', function () {
+        $paths = new StatePaths(sys_get_temp_dir().'/orbit-builder-'.bin2hex(random_bytes(4)));
+        $state = new AtomicJsonStore($paths);
+        $evidence = str_repeat('a', 32);
+        $state->write("standby/cold-attempts/{$evidence}.json", [
+            'schema' => 3,
+            'operation_id' => $evidence,
+            'evidence_id' => $evidence,
+            'remote' => 'local',
+            'project' => 'default',
+            'pool' => 'orbit-e2e',
+            'network' => ['name' => 'oe-standby', 'state' => 'planned', 'absent_preflight' => true],
+            'base_image_fingerprint' => str_repeat('f', 64),
+            'instances' => [],
+            'status' => 'unexpected',
+        ]);
+        $builder = cold_cleanup_builder(new IncusHost(pool: 'orbit-e2e'), $state, $paths);
+
+        expect(fn () => $builder->build(
+            str_repeat('a', 40),
+            new PreparedFingerprint(str_repeat('b', 64)),
+            str_repeat('d', 64),
+            new LaravelRelease('v13.0.0', str_repeat('c', 40)),
+            true,
+            new OperationId(str_repeat('e', 32)),
             str_repeat('e', 32),
         ))
             ->toThrow(RuntimeException::class, 'attempt evidence is invalid');
@@ -284,8 +359,9 @@ describe('StandbyBuilder', function () {
         $roles = array_slice(['gateway', 'app-dev', 'app-prod'], 0, $count);
         $instances = array_map(fn (string $role): string => "orbit-e2e-standby-{$role}", $roles);
         $state->write('standby/cold-attempts/'.str_repeat('a', 32).'.json', [
-            'schema' => 2,
+            'schema' => 3,
             'operation_id' => str_repeat('a', 32),
+            'evidence_id' => str_repeat('a', 32),
             'remote' => 'local',
             'project' => 'default',
             'pool' => 'orbit-e2e',
@@ -317,10 +393,31 @@ describe('StandbyBuilder', function () {
                     $networkExists
                         ? [[
                             'name' => 'oe-standby',
-                            'config' => ['user.orbit.e2e.owner' => 'orbit-e2e'],
+                            'config' => [
+                                'user.orbit.e2e.owner' => 'orbit-e2e',
+                                'user.orbit.e2e.operation' => str_repeat('a', 32),
+                                'user.orbit.e2e.evidence' => str_repeat('a', 32),
+                            ],
                         ]] : [],
                     JSON_THROW_ON_ERROR,
                 ));
+            }
+            if ($command === standby_incus_command('list', 'local:', '--format=json')) {
+                return Process::result(json_encode(array_map(
+                    static fn (string $name): array => [
+                        'name' => $name,
+                        'type' => 'virtual-machine',
+                        'status' => 'Stopped',
+                        'status_code' => 102,
+                        'config' => [
+                            'user.orbit.e2e.owner' => 'orbit-e2e',
+                            'user.orbit.e2e.operation' => str_repeat('a', 32),
+                            'user.orbit.e2e.evidence' => str_repeat('a', 32),
+                        ],
+                        'devices' => ['root' => ['pool' => 'orbit-e2e'], 'eth0' => ['network' => 'oe-standby']],
+                    ],
+                    array_values(array_diff($instances, $deleted)),
+                ), JSON_THROW_ON_ERROR));
             }
             $instanceListCommands = array_fill_keys(array_map(
                 fn (string $name): string => json_encode(
@@ -340,7 +437,11 @@ describe('StandbyBuilder', function () {
                             'type' => 'virtual-machine',
                             'status' => 'Stopped',
                             'status_code' => 102,
-                            'config' => ['user.orbit.e2e.owner' => 'orbit-e2e'],
+                            'config' => [
+                                'user.orbit.e2e.owner' => 'orbit-e2e',
+                                'user.orbit.e2e.operation' => str_repeat('a', 32),
+                                'user.orbit.e2e.evidence' => str_repeat('a', 32),
+                            ],
                             'devices' => [
                                 'root' => ['pool' => 'orbit-e2e'],
                                 'eth0' => ['network' => 'oe-standby'],
@@ -367,7 +468,7 @@ describe('StandbyBuilder', function () {
         });
 
         $builder = cold_cleanup_builder(new IncusHost(pool: 'orbit-e2e'), $state, $paths);
-        $cleaned = $builder->cleanupCold(str_repeat('a', 32));
+        $cleaned = $builder->cleanupCold(str_repeat('a', 32), new OperationId(str_repeat('a', 32)));
 
         expect($cleaned)
             ->toBeTrue()
@@ -377,7 +478,7 @@ describe('StandbyBuilder', function () {
             ->toBeFalse()
             ->and($state->read('standby/recovery/'.str_repeat('a', 32).'.json')['recovered'])
             ->toBeTrue()
-            ->and($builder->cleanupCold(str_repeat('a', 32)))
+            ->and($builder->cleanupCold(str_repeat('a', 32), new OperationId(str_repeat('a', 32))))
             ->toBeTrue();
     })->with([
         'after one VM' => 1,
@@ -415,7 +516,11 @@ describe('StandbyBuilder', function () {
                     $networkExists
                         ? [[
                             'name' => 'oe-standby',
-                            'config' => ['user.orbit.e2e.owner' => 'orbit-e2e'],
+                            'config' => [
+                                'user.orbit.e2e.owner' => 'orbit-e2e',
+                                'user.orbit.e2e.operation' => str_repeat('d', 32),
+                                'user.orbit.e2e.evidence' => str_repeat('d', 32),
+                            ],
                         ]] : [],
                     JSON_THROW_ON_ERROR,
                 ));
@@ -425,15 +530,36 @@ describe('StandbyBuilder', function () {
                     'network',
                     'create',
                     'local:oe-standby',
-                    'ipv4.address=auto',
+                    'ipv4.address=10.232.1.1/24',
                     'ipv4.nat=true',
+                    'ipv4.dhcp.ranges=10.232.1.10-10.232.1.12',
                     'ipv6.address=none',
+                    'raw.dnsmasq='.standby_dnsmasq(),
+                    'user.orbit.e2e.operation=dddddddddddddddddddddddddddddddd',
+                    'user.orbit.e2e.evidence=dddddddddddddddddddddddddddddddd',
                     'user.orbit.e2e.owner=orbit-e2e',
                 )
             ) {
                 $networkExists = true;
 
                 return Process::result();
+            }
+            if ($command === standby_incus_command('list', 'local:', '--format=json')) {
+                return Process::result(json_encode(array_map(
+                    static fn (string $name): array => [
+                        'name' => $name,
+                        'type' => 'virtual-machine',
+                        'status' => 'Stopped',
+                        'status_code' => 102,
+                        'config' => [
+                            'user.orbit.e2e.owner' => 'orbit-e2e',
+                            'user.orbit.e2e.operation' => str_repeat('d', 32),
+                            'user.orbit.e2e.evidence' => str_repeat('d', 32),
+                        ],
+                        'devices' => ['root' => ['pool' => 'orbit-e2e'], 'eth0' => ['network' => 'oe-standby']],
+                    ],
+                    $existing,
+                ), JSON_THROW_ON_ERROR));
             }
             $instanceListCommands = array_fill_keys(array_map(
                 fn (string $name): string => json_encode(
@@ -452,7 +578,11 @@ describe('StandbyBuilder', function () {
                             'type' => 'virtual-machine',
                             'status' => 'Stopped',
                             'status_code' => 102,
-                            'config' => ['user.orbit.e2e.owner' => 'orbit-e2e'],
+                            'config' => [
+                                'user.orbit.e2e.owner' => 'orbit-e2e',
+                                'user.orbit.e2e.operation' => str_repeat('d', 32),
+                                'user.orbit.e2e.evidence' => str_repeat('d', 32),
+                            ],
                             'devices' => [
                                 'root' => ['pool' => 'orbit-e2e'],
                                 'eth0' => ['network' => 'oe-standby'],
@@ -469,10 +599,20 @@ describe('StandbyBuilder', function () {
                     '--vm',
                     '--storage',
                     'orbit-e2e',
-                    '--network',
-                    'oe-standby',
+                    '--config',
+                    'limits.cpu=1',
+                    '--config',
+                    'limits.memory=2GiB',
+                    '--device',
+                    'root,pool=orbit-e2e,size=16GiB',
+                    '--device',
+                    'eth0,network=oe-standby,hwaddr=00:16:3e:77:ee:5a',
                     '--config',
                     'user.orbit.e2e.owner=orbit-e2e',
+                    '--config',
+                    'user.orbit.e2e.operation=dddddddddddddddddddddddddddddddd',
+                    '--config',
+                    'user.orbit.e2e.evidence=dddddddddddddddddddddddddddddddd',
                 )
             ) {
                 $existing[] = 'orbit-e2e-standby-gateway';
@@ -505,9 +645,10 @@ describe('StandbyBuilder', function () {
             str_repeat('f', 64),
             new LaravelRelease('v13.0.0', str_repeat('c', 40)),
             true,
+            new OperationId(str_repeat('d', 32)),
             str_repeat('d', 32),
         ))
-            ->toThrow(RuntimeException::class, 'Incus command failed');
+            ->toThrow(RuntimeException::class, 'Incus VM initialization batch failed');
 
         expect($deleted)
             ->toBe(['orbit-e2e-standby-gateway', 'oe-standby'])
@@ -543,6 +684,22 @@ describe('StandbyBuilder', function () {
 
                 return Process::result('[]');
             }
+            if ($command === standby_incus_command('list', 'local:', '--format=json')) {
+                $observed[] = 'inventory';
+
+                return Process::result(json_encode([[
+                    'name' => 'orbit-e2e-standby-app-prod',
+                    'type' => 'virtual-machine',
+                    'status' => 'Stopped',
+                    'status_code' => 102,
+                    'config' => [
+                        'user.orbit.e2e.owner' => 'orbit-e2e',
+                        'user.orbit.e2e.operation' => str_repeat('e', 32),
+                        'user.orbit.e2e.evidence' => str_repeat('e', 32),
+                    ],
+                    'devices' => ['root' => ['pool' => 'orbit-e2e'], 'eth0' => ['network' => 'oe-standby']],
+                ]], JSON_THROW_ON_ERROR));
+            }
             $instanceListCommands = array_fill_keys(array_map(
                 fn (string $name): string => json_encode(
                     standby_incus_command('list', "local:{$name}", '--format=json'),
@@ -562,7 +719,11 @@ describe('StandbyBuilder', function () {
                     'type' => 'virtual-machine',
                     'status' => 'Stopped',
                     'status_code' => 102,
-                    'config' => ['user.orbit.e2e.owner' => 'orbit-e2e'],
+                    'config' => [
+                        'user.orbit.e2e.owner' => 'orbit-e2e',
+                        'user.orbit.e2e.operation' => str_repeat('e', 32),
+                        'user.orbit.e2e.evidence' => str_repeat('e', 32),
+                    ],
                     'devices' => ['root' => ['pool' => 'orbit-e2e'], 'eth0' => ['network' => 'oe-standby']],
                 ]], JSON_THROW_ON_ERROR));
             }
@@ -577,6 +738,7 @@ describe('StandbyBuilder', function () {
             str_repeat('f', 64),
             new LaravelRelease('v13.0.0', str_repeat('c', 40)),
             true,
+            new OperationId($evidence),
             $evidence,
         ))
             ->toThrow(RuntimeException::class, 'already exists');
@@ -584,9 +746,7 @@ describe('StandbyBuilder', function () {
         expect($observed)
             ->toBe([
                 'network',
-                'orbit-e2e-standby-gateway',
-                'orbit-e2e-standby-app-dev',
-                'orbit-e2e-standby-app-prod',
+                'inventory',
             ])
             ->and($state->read("standby/cold-attempts/{$evidence}.json"))
             ->toBeNull();
@@ -600,9 +760,11 @@ describe('StandbyBuilder', function () {
                             'network',
                             'create',
                             'local:oe-standby',
-                            'ipv4.address=auto',
+                            'ipv4.address=10.232.1.1/24',
                             'ipv4.nat=true',
+                            'ipv4.dhcp.ranges=10.232.1.10-10.232.1.12',
                             'ipv6.address=none',
+                            'raw.dnsmasq='.standby_dnsmasq(),
                             'user.orbit.e2e.owner=orbit-e2e',
                         ),
                         standby_incus_command(
@@ -653,8 +815,9 @@ describe('StandbyBuilder', function () {
         $state = new AtomicJsonStore($paths);
         $evidence = str_repeat('b', 32);
         $state->write("standby/cold-attempts/{$evidence}.json", [
-            'schema' => 2,
+            'schema' => 3,
             'operation_id' => $evidence,
+            'evidence_id' => $evidence,
             'remote' => 'local',
             'project' => 'default',
             'pool' => 'orbit-e2e',
@@ -692,7 +855,7 @@ describe('StandbyBuilder', function () {
         });
 
         $builder = cold_cleanup_builder(new IncusHost(pool: 'orbit-e2e'), $state, $paths);
-        $cleaned = $builder->cleanupCold($evidence);
+        $cleaned = $builder->cleanupCold($evidence, new OperationId($evidence));
 
         expect($cleaned)->toBeFalse()->and($state->read('standby/corrupt.json')['evidence_id'])->toBe($evidence);
         Process::assertDidntRun(
@@ -714,6 +877,7 @@ describe('StandbyBuilder', function () {
             str_repeat('c', 64),
             new LaravelRelease('v13.0.0', str_repeat('d', 40)),
             true,
+            new OperationId(str_repeat('e', 32)),
             str_repeat('e', 32),
         ))
             ->toThrow(RuntimeException::class, 'blocked until explicit recovery');
@@ -724,8 +888,9 @@ describe('StandbyBuilder', function () {
         $state = new AtomicJsonStore($paths);
         $evidence = str_repeat('c', 32);
         $state->write("standby/cold-attempts/{$evidence}.json", [
-            'schema' => 2,
+            'schema' => 3,
             'operation_id' => $evidence,
+            'evidence_id' => $evidence,
             'remote' => 'local',
             'project' => 'default',
             'pool' => 'orbit-e2e',
@@ -744,7 +909,14 @@ describe('StandbyBuilder', function () {
             if ($command === standby_incus_command('network', 'list', 'local:', '--format=json')) {
                 return Process::result(json_encode(
                     $networkExists
-                        ? [['name' => 'oe-standby', 'config' => ['user.orbit.e2e.owner' => 'orbit-e2e']]]
+                        ? [[
+                            'name' => 'oe-standby',
+                            'config' => [
+                                'user.orbit.e2e.owner' => 'orbit-e2e',
+                                'user.orbit.e2e.operation' => str_repeat('a', 32),
+                                'user.orbit.e2e.evidence' => str_repeat('a', 32),
+                            ],
+                        ]]
                         : [],
                     JSON_THROW_ON_ERROR,
                 ));
@@ -754,7 +926,7 @@ describe('StandbyBuilder', function () {
             throw new RuntimeException(json_encode($command, JSON_THROW_ON_ERROR));
         });
         $builder = cold_cleanup_builder(new IncusHost(pool: 'orbit-e2e'), $state, $paths);
-        expect($builder->cleanupCold($evidence))
+        expect($builder->cleanupCold($evidence, new OperationId($evidence)))
             ->toBeFalse()
             ->and($state->read("standby/recovery/{$evidence}.json")['recovered'])
             ->toBeFalse();
@@ -765,8 +937,9 @@ describe('StandbyBuilder', function () {
         $state = new AtomicJsonStore($paths);
         $evidence = str_repeat('d', 32);
         $state->write("standby/cold-attempts/{$evidence}.json", [
-            'schema' => 2,
+            'schema' => 3,
             'operation_id' => $evidence,
+            'evidence_id' => $evidence,
             'remote' => 'local',
             'project' => 'default',
             'pool' => 'orbit-e2e',
@@ -777,7 +950,10 @@ describe('StandbyBuilder', function () {
         ]);
         $state->write('standby/corrupt.json', ['schema' => 1, 'evidence_id' => $evidence, 'message' => 'x']);
         $builder = cold_cleanup_builder(new IncusHost(pool: 'orbit-e2e'), $state, $paths);
-        expect($builder->cleanupCold($evidence))->toBeTrue()->and($state->read('standby/corrupt.json'))->toBeNull();
+        expect($builder->cleanupCold($evidence, new OperationId($evidence)))
+            ->toBeTrue()
+            ->and($state->read('standby/corrupt.json'))
+            ->toBeNull();
     });
 
     it('retains a corrupt marker for different evidence after exact recovery', function () {
@@ -785,8 +961,9 @@ describe('StandbyBuilder', function () {
         $state = new AtomicJsonStore($paths);
         $evidence = str_repeat('e', 32);
         $state->write("standby/cold-attempts/{$evidence}.json", [
-            'schema' => 2,
+            'schema' => 3,
             'operation_id' => $evidence,
+            'evidence_id' => $evidence,
             'remote' => 'local',
             'project' => 'default',
             'pool' => 'orbit-e2e',
@@ -797,7 +974,7 @@ describe('StandbyBuilder', function () {
         ]);
         $state->write('standby/corrupt.json', ['schema' => 1, 'evidence_id' => str_repeat('f', 32), 'message' => 'x']);
         $builder = cold_cleanup_builder(new IncusHost(pool: 'orbit-e2e'), $state, $paths);
-        expect($builder->cleanupCold($evidence))
+        expect($builder->cleanupCold($evidence, new OperationId($evidence)))
             ->toBeTrue()
             ->and($state->read('standby/corrupt.json')['evidence_id'])
             ->toBe(str_repeat('f', 32));

@@ -9,6 +9,7 @@ use App\Console\Commands\Topology\ReapCommand;
 use App\Console\Commands\Topology\ReleaseCommand;
 use App\Console\Commands\Topology\SyncCommand;
 use App\Console\Commands\Topology\VerifyCommand;
+use App\E2E\Value\OperationId;
 
 describe('topology commands', function () {
     it('registers the complete thin topology command family', function () {
@@ -47,9 +48,32 @@ describe('topology commands', function () {
     });
 
     it('returns a structured JSON failure envelope', function () {
+        config(['e2e.incus.operation_id' => '0123456789abcdef0123456789abcdef']);
+        app()->forgetInstance(OperationId::class);
         $this
             ->artisan('topology:exec', ['issue' => 'NCK-12', 'role' => 'gateway', '--json' => true])
-            ->expectsOutputToContain('"operation_id"')
+            ->expectsOutput(json_encode([
+                'state' => 'failed',
+                'operation_id' => '0123456789abcdef0123456789abcdef',
+                'error' => 'An exact argv JSON file is required.',
+            ], JSON_THROW_ON_ERROR))
             ->assertFailed();
+    });
+
+    it('binds one command operation identity from the environment', function () {
+        config(['e2e.incus.operation_id' => '0123456789abcdef0123456789abcdef']);
+        app()->forgetInstance(OperationId::class);
+        $first = app(OperationId::class);
+        $second = app(OperationId::class);
+
+        expect($first->value)->toBe('0123456789abcdef0123456789abcdef')->and($second)->toBe($first);
+    });
+
+    it('generates one 32-character hex operation identity when absent', function () {
+        config(['e2e.incus.operation_id' => null]);
+        app()->forgetInstance(OperationId::class);
+        $id = app(OperationId::class);
+
+        expect($id->value)->toMatch('/\A[0-9a-f]{32}\z/');
     });
 });

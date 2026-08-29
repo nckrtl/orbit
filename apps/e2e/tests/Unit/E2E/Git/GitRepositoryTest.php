@@ -5,7 +5,9 @@ declare(strict_types=1);
 use App\E2E\Git\GitRepository;
 use Illuminate\Container\Container;
 use Illuminate\Process\Factory as ProcessFactory;
+use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Facades\Facade;
+use Illuminate\Support\Facades\Process;
 
 /** @property string $path */
 describe('GitRepository', function (): void {
@@ -40,6 +42,39 @@ describe('GitRepository', function (): void {
             'app/a.php' => "first\n",
             'app/b.php' => "second\n",
         ]);
+    });
+
+    it('reads all selected blob contents through one Git batch process', function (): void {
+        file_put_contents($this->path.'/first.txt', "first\n");
+        file_put_contents($this->path.'/second.txt', "second\n");
+        git($this->path, ['add', '.']);
+        git($this->path, ['commit', '--quiet', '-m', 'fixture']);
+        $real = new ProcessFactory;
+        $commands = [];
+        Process::fake(function (PendingProcess $process) use ($real, &$commands) {
+            $commands[] = $process->command;
+
+            return $real
+                ->path((string) $process->path)
+                ->input($process->input)
+                ->run($process->command);
+        });
+
+        $blobs = new GitRepository($this->path)->blobs(
+            new GitRepository($this->path)->commit(),
+            ['first.txt', 'second.txt'],
+        );
+
+        expect($blobs)
+            ->toBe([
+                'first.txt' => "first\n",
+                'second.txt' => "second\n",
+            ])
+            ->and(array_values(array_filter(
+                $commands,
+                static fn (array $command): bool => in_array('cat-file', $command, true),
+            )))
+            ->toHaveCount(1);
     });
 
     it('rejects unsafe or unmatched selectors and non-blob tree entries', function (string $selector): void {

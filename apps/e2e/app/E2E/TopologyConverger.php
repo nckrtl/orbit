@@ -6,6 +6,7 @@ namespace App\E2E;
 
 use App\E2E\Value\ConvergenceReport;
 use App\E2E\Value\GuestCommand;
+use App\E2E\Value\GuestCommandResult;
 use App\E2E\Value\LaravelRelease;
 use App\E2E\Value\SourceState;
 use App\E2E\Value\TopologyProfile;
@@ -18,57 +19,19 @@ use RuntimeException;
  */
 final readonly class TopologyConverger
 {
-    /** @param array<string, string> $ownershipMetadata */
     public function __construct(
         private IncusHost $host,
-        private array $ownershipMetadata = ['user.orbit.e2e.owner' => 'orbit-e2e'],
-    ) {
-        if ($ownershipMetadata === []) {
-            throw new RuntimeException('Incus convergence ownership metadata cannot be empty.');
-        }
-
-        foreach ($ownershipMetadata as $key => $value) {
-            if (! str_starts_with($key, 'user.orbit.e2e.') || $value === '') {
-                throw new RuntimeException('Incus convergence ownership metadata is invalid.');
-            }
-        }
-    }
+    ) {}
 
     public function converge(TopologyTarget $target, SourceState $source, LaravelRelease $laravel): ConvergenceReport
     {
-        $instances = [];
+        $instances = array_combine(
+            TopologyProfile::ROLES,
+            array_map($target->instance(...), TopologyProfile::ROLES),
+        );
 
-        $network = $this->host->network($target->network());
-
-        if ($network === null) {
-            throw new RuntimeException("Incus network {$target->network()} does not exist.");
-        }
-
-        $resources = [$target->network() => $network->metadata];
-
-        foreach (TopologyProfile::ROLES as $role) {
-            $instances[$role] = $target->instance($role);
-            $instance = $this->host->instance($instances[$role]);
-
-            if ($instance === null) {
-                throw new RuntimeException("Incus instance {$instances[$role]} does not exist.");
-            }
-
-            $resources[$instances[$role]] = $instance->metadata;
-        }
-
-        foreach ($resources as $resource => $metadata) {
-            foreach ($this->ownershipMetadata as $key => $value) {
-                if (($metadata[$key] ?? null) !== $value) {
-                    throw new RuntimeException("Incus resource {$resource} ownership metadata does not match.");
-                }
-            }
-        }
-
-        $addresses = [];
-        foreach (TopologyProfile::ROLES as $role) {
-            $addresses[$role] = $this->host->globalIpv4($instances[$role]);
-        }
+        $this->host->assertTopologyNetworkIdentity($instances, $target->network());
+        $addresses = $this->host->globalIpv4All($instances);
 
         $steps = ['validate.prerequisites' => true];
 
@@ -76,43 +39,151 @@ final readonly class TopologyConverger
         $steps['prerequisites.gateway'] = true;
         $this->run($instances['gateway'], 'converge-gateway.sh', ['bootstrap', $addresses['gateway']]);
         $steps['bootstrap.gateway'] = true;
-        $this->run(
-            $instances['gateway'],
-            'prepare-node.sh',
-            ['ssh-pins', $addresses['app-dev'], $addresses['app-prod']],
-        );
-        $steps['pin.ssh-hosts'] = true;
-        $this->run($instances['gateway'], 'converge-app-dev.sh', [$instances['app-dev'], $addresses['app-dev']]);
+        $gatewayPublicKey = $this->gatewayPublicKey($instances['gateway']);
+        $this->runAll([
+            'app-dev' => [
+                'instance' => $instances['app-dev'],
+                'script' => 'prepare-node.sh',
+                'arguments' => ['gateway-authorize', $gatewayPublicKey],
+            ],
+            'app-prod' => [
+                'instance' => $instances['app-prod'],
+                'script' => 'prepare-node.sh',
+                'arguments' => ['gateway-authorize', $gatewayPublicKey],
+            ],
+        ]);
+        $steps['authorize.gateway-ssh'] = true;
+        $architectures = $this->architectures($instances);
+        $appDevArchitecture = $architectures['app-dev'] ?? null;
+        $appProdArchitecture = $architectures['app-prod'] ?? null;
+        if (! is_string($appDevArchitecture) || ! is_string($appProdArchitecture)) {
+            throw new RuntimeException('Target node architectures are incomplete.');
+        }
+        // Both commands mutate the shared Gateway SQLite store. Keep this phase ordered.
+        $this->runAll([
+            'app-dev' => [
+                'instance' => $instances['gateway'],
+                'script' => 'converge-app-dev.sh',
+                'arguments' => ['app-dev', $addresses['app-dev'], $appDevArchitecture],
+            ],
+        ]);
+        $this->runAll([
+            'app-prod' => [
+                'instance' => $instances['gateway'],
+                'script' => 'converge-app-prod-internal-tls.sh',
+                'arguments' => ['app-prod', $addresses['app-prod'], $appProdArchitecture],
+            ],
+        ]);
         $steps['provision.app-dev'] = true;
-        $this->run(
-            $instances['gateway'],
-            'converge-app-prod-internal-tls.sh',
-            [$instances['app-prod'], $addresses['app-prod']],
-        );
         $steps['provision.app-prod'] = true;
         $this->run($instances['app-dev'], 'converge-sample-app.sh', ['configure-cli', $addresses['gateway']]);
         $steps['configure.app-dev-cli'] = true;
         $this->run($instances['app-dev'], 'converge-sample-app.sh', [
             'create-resources',
-            $instances['app-dev'],
-            $instances['app-prod'],
+            'app-dev',
+            'app-prod',
             $laravel->commit,
         ]);
         $steps['create.sample-resources'] = true;
 
-        foreach (['app-dev', 'app-prod'] as $role) {
-            $this->run($instances[$role], 'converge-sample-app.sh', ['hydrate', $laravel->commit, $role]);
-        }
+        $this->runAll([
+            'app-dev' => [
+                'instance' => $instances['app-dev'],
+                'script' => 'converge-sample-app.sh',
+                'arguments' => ['hydrate', $laravel->commit, 'app-dev'],
+            ],
+            'app-prod' => [
+                'instance' => $instances['app-prod'],
+                'script' => 'converge-sample-app.sh',
+                'arguments' => ['hydrate', $laravel->commit, 'app-prod'],
+            ],
+        ]);
 
         $steps['hydrate.sample-apps'] = true;
 
-        foreach ($instances as $instance) {
-            $this->run($instance, 'prepare-node.sh', ['permissions']);
+        $permissionCommands = [];
+        foreach ($instances as $role => $instance) {
+            $permissionCommands[$role] = [
+                'instance' => $instance,
+                'script' => 'prepare-node.sh',
+                'arguments' => ['permissions'],
+            ];
         }
+        $this->runAll($permissionCommands);
 
         $steps['normalize.permissions'] = true;
 
         return ConvergenceReport::successful($steps);
+    }
+
+    /** @param array<string, string> $instances @return array{app-dev:string,app-prod:string} */
+    private function architectures(array $instances): array
+    {
+        $results = $this->host->execAll([
+            'app-dev' => ['instance' => $instances['app-dev'], 'command' => new GuestCommand(['uname', '-m'], 10)],
+            'app-prod' => ['instance' => $instances['app-prod'], 'command' => new GuestCommand(['uname', '-m'], 10)],
+        ]);
+        $architectures = [];
+        foreach (['app-dev', 'app-prod'] as $role) {
+            $result = $results[$role] ?? null;
+            if (! $result instanceof GuestCommandResult) {
+                throw new RuntimeException("Target node {$instances[$role]} returned no architecture result.");
+            }
+            $architecture = trim($result->stdout);
+            if (! $result->successful() || preg_match('/\A(?:x86_64|aarch64)\z/', $architecture) !== 1) {
+                throw new RuntimeException("Target node {$instances[$role]} reported an invalid architecture.");
+            }
+            $architectures[$role] = $architecture;
+        }
+
+        return [
+            'app-dev' => $architectures['app-dev'],
+            'app-prod' => $architectures['app-prod'],
+        ];
+    }
+
+    /** @param array<string, array{instance:string,script:string,arguments:list<string>}> $commands */
+    private function runAll(array $commands): void
+    {
+        $requests = [];
+        foreach ($commands as $label => $command) {
+            $requests[$label] = [
+                'instance' => $command['instance'],
+                'command' => new GuestCommand(['/usr/local/bin/'.$command['script'], ...$command['arguments']], 900),
+            ];
+        }
+        $results = $this->host->execAll($requests);
+        foreach ($results as $label => $result) {
+            if (! $result->successful()) {
+                $script = $commands[$label]['script'];
+                $instance = $commands[$label]['instance'];
+
+                throw new RuntimeException(
+                    "Guest convergence script {$script} failed on {$instance} "
+                    ."with exit code {$result->exitCode}{$this->failureDetails($script, $result)}.",
+                );
+            }
+        }
+    }
+
+    private function gatewayPublicKey(string $gateway): string
+    {
+        $result = $this->host->exec($gateway, new GuestCommand([
+            'ssh-keygen',
+            '-y',
+            '-f',
+            '/home/orbit/.orbit/ssh/id_ed25519',
+        ], 10));
+        if (! $result->successful()) {
+            throw new RuntimeException('Failed to derive the Gateway SSH public key.');
+        }
+
+        $key = trim($result->stdout);
+        if (preg_match('/\Assh-ed25519 [A-Za-z0-9+\/]+={0,2}\z/D', $key) !== 1) {
+            throw new RuntimeException('The Gateway SSH public key is invalid.');
+        }
+
+        return $key;
     }
 
     /** @param list<string> $arguments */
@@ -124,23 +195,31 @@ final readonly class TopologyConverger
         );
 
         if (! $result->successful()) {
-            $details = '';
-            if (
-                $script === 'converge-gateway.sh'
-                && $result->exitCode === 71
-                && preg_match(
-                    '/(?:\A|\R)Gateway bootstrap failed at step \[([a-z0-9:-]+)\] with error \[([a-z0-9._-]+)\]\.(?:\R|\z)/D',
-                    $result->stdout."\n".$result->stderr,
-                    $failure,
-                ) === 1
-            ) {
-                $details = " at step {$failure[1]} ({$failure[2]})";
-            }
-
             throw new RuntimeException(
                 "Guest convergence script {$script} failed on {$instance} "
-                ."with exit code {$result->exitCode}{$details}.",
+                ."with exit code {$result->exitCode}{$this->failureDetails($script, $result)}.",
             );
         }
+    }
+
+    private function failureDetails(string $script, GuestCommandResult $result): string
+    {
+        $pattern = match (true) {
+            $script === 'converge-gateway.sh' && $result->exitCode === 71
+                => '/(?:\A|\R)Gateway bootstrap failed at step \[([a-z0-9:-]+)\] with error \[([a-z0-9._-]+)\]\.(?:\R|\z)/D',
+            in_array($script, ['converge-app-dev.sh', 'converge-app-prod-internal-tls.sh'], true)
+                && $result->exitCode === 1
+                => '/(?:\A|\R)Node provisioning failed at step \[([a-z0-9:-]+)\] with error \[([a-z0-9._-]+)\]\.(?:\R|\z)/D',
+            default => null,
+        };
+
+        if (
+            $pattern === null
+            || preg_match($pattern, $result->stdout."\n".$result->stderr, $failure) !== 1
+        ) {
+            return '';
+        }
+
+        return " at step {$failure[1]} ({$failure[2]})";
     }
 }

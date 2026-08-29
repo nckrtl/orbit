@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\E2E\State;
 
+/** @mago-expect lint:cyclomatic-complexity Redaction covers each supported secret representation at one boundary. */
 final readonly class SecretRedactor
 {
     private const string REDACTED = '[REDACTED]';
@@ -17,6 +18,7 @@ final readonly class SecretRedactor
         'private-key',
         'credential',
         'credentials',
+        'stdin',
     ];
 
     /** @param list<string> $secrets */
@@ -59,6 +61,32 @@ final readonly class SecretRedactor
         }
 
         return $value;
+    }
+
+    /** @param list<string> $argv @return list<string> */
+    public function redactArgv(array $argv): array
+    {
+        $redacted = [];
+        $redactNext = false;
+        foreach ($argv as $argument) {
+            if ($redactNext) {
+                $redacted[] = self::REDACTED;
+                $redactNext = false;
+                continue;
+            }
+            if (
+                preg_match('/^--([a-z0-9_-]+)(?:=(.*))?$/i', $argument, $matches) === 1
+                && $this->isSensitiveKey($matches[1])
+            ) {
+                $redacted[] = isset($matches[2]) ? '--'.$matches[1].'='.self::REDACTED : $argument;
+                $redactNext = ! isset($matches[2]);
+
+                continue;
+            }
+            $redacted[] = $this->redact($argument);
+        }
+
+        return $redacted;
     }
 
     private function isSensitiveKey(string $key): bool

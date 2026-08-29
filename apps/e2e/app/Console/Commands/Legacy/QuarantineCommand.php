@@ -22,7 +22,7 @@ final class QuarantineCommand extends Command
             $path = $this->required('inventory');
             $output = $path.'.quarantine.json';
             $manifest = $retirement->quarantine(
-                RetirementInventory::fromArray($retirement->read($path)),
+                RetirementInventory::fromArray(LegacyRetirement::readProtectedJson($path)),
                 $this->required('ack-sha256'),
                 $this->required('freeze-evidence'),
                 $output.'.journal.json',

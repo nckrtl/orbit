@@ -1,3 +1,8 @@
+---
+paths:
+  - 'app/**'
+---
+
 # Application rules
 
 Keep the E2E application console-only. Keep commands thin and move reusable

@@ -22,17 +22,15 @@ final class StatusCommand extends Command
     {
         try {
             $generation = $manifests->promoted();
-            $stopped = true;
             $target = TopologyTarget::standby();
+            $instanceNames = array_map($target->instance(...), TopologyProfile::ROLES);
             if ($generation !== null) {
-                foreach (TopologyProfile::ROLES as $role) {
-                    $host->assertOwnedSnapshot($target->instance($role), $generation->snapshots[$role]);
-                }
+                $host->assertOwnedSnapshots(array_combine($instanceNames, array_values($generation->snapshots)));
             }
-            foreach (TopologyProfile::ROLES as $role) {
-                $instance = $host->instance($target->instance($role));
-                $stopped = $stopped && $instance !== null && $instance->isStopped();
-            }
+            $instances = $host->instances($instanceNames);
+            $stopped =
+                count($instances) === count($instanceNames)
+                && array_all($instances, static fn ($instance): bool => $instance->isStopped());
             if ($generation !== null && ! $stopped) {
                 throw new \RuntimeException('The promoted standby topology is not stopped.');
             }
@@ -42,7 +40,7 @@ final class StatusCommand extends Command
                 'generation' => $generation?->toArray(),
             ];
             $this->line(
-                $this->option('json') ? json_encode($payload, JSON_THROW_ON_ERROR) : $generation?->id ?? 'missing',
+                $this->option('json') ? json_encode($payload, JSON_THROW_ON_ERROR) : $generation->id ?? 'missing',
             );
 
             return self::SUCCESS;

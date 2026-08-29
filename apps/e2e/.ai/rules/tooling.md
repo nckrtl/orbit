@@ -1,3 +1,10 @@
+---
+paths:
+  - 'composer.json'
+  - 'mago.toml'
+  - 'boost.json'
+---
+
 # Tooling rules
 
 Use Composer scripts, Mago, Rector, Pest, and Boost guidance. Scope analysis

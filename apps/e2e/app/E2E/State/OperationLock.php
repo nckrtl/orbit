@@ -185,6 +185,7 @@ final class OperationLock
             || ! is_int($owner['pid'])
             || ! is_string($owner['process_start_identity'])
             || ! is_string($owner['operation_id'])
+            || preg_match('/\A[a-f0-9]{32}\z/D', $owner['operation_id']) !== 1
             || ! is_string($owner['acquired_at'])
             || strtotime($owner['acquired_at']) === false
         ) {

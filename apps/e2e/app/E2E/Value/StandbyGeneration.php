@@ -9,7 +9,7 @@ use InvalidArgumentException;
 /** @mago-expect lint:cyclomatic-complexity,excessive-parameter-list The promoted generation validates one atomic identity record. */
 final readonly class StandbyGeneration
 {
-    public const int SCHEMA = 3;
+    public const int SCHEMA = 4;
 
     /** @param array<string, string> $snapshots */
     public function __construct(
@@ -19,6 +19,15 @@ final readonly class StandbyGeneration
         public string $preparedFingerprint,
         public string $baseImageFingerprint,
         public LaravelRelease $laravel,
+        public string $structuralFingerprint,
+        public int $preparedSchema,
+        public string $coldEpoch,
+        public string $baseImageAlias,
+        public string $topologyProfile,
+        /** @var list<string> */
+        public array $topologyRoles,
+        /** @var list<string> */
+        public array $checkoutRoles,
         public ?string $previousGenerationId = null,
     ) {
         if (
@@ -26,6 +35,11 @@ final readonly class StandbyGeneration
             || preg_match('/\A[a-f0-9]{40}\z/D', $mainSha) !== 1
             || preg_match('/\A[a-f0-9]{64}\z/D', $preparedFingerprint) !== 1
             || preg_match('/\A[a-f0-9]{64}\z/D', $baseImageFingerprint) !== 1
+            || preg_match('/\A[a-f0-9]{64}\z/D', $structuralFingerprint) !== 1
+            || $preparedSchema < 1
+            || $coldEpoch === ''
+            || $baseImageAlias === ''
+            || $topologyProfile === ''
             || $previousGenerationId !== null
             && preg_match('/\A[A-Za-z0-9][A-Za-z0-9._-]{0,63}\z/D', $previousGenerationId) !== 1
         ) {
@@ -34,6 +48,13 @@ final readonly class StandbyGeneration
 
         if (array_keys($snapshots) !== TopologyProfile::ROLES) {
             throw new InvalidArgumentException('The generation must contain each ordered role once.');
+        }
+
+        if (
+            serialize($topologyRoles) !== serialize(TopologyProfile::ROLES)
+            || serialize($checkoutRoles) !== serialize(TopologyProfile::CHECKOUT_ROLES)
+        ) {
+            throw new InvalidArgumentException('The generation topology profile is invalid.');
         }
 
         foreach ($snapshots as $snapshot) {
@@ -53,6 +74,15 @@ final readonly class StandbyGeneration
             'snapshots' => $this->snapshots,
             'prepared_fingerprint' => $this->preparedFingerprint,
             'base_image_fingerprint' => $this->baseImageFingerprint,
+            'structural_fingerprint' => $this->structuralFingerprint,
+            'prepared_schema' => $this->preparedSchema,
+            'cold_epoch' => $this->coldEpoch,
+            'base_image_alias' => $this->baseImageAlias,
+            'topology' => [
+                'profile' => $this->topologyProfile,
+                'roles' => $this->topologyRoles,
+                'checkout_roles' => $this->checkoutRoles,
+            ],
             'laravel_pin' => ['tag' => $this->laravel->tag, 'commit' => $this->laravel->commit],
             'previous_generation_id' => $this->previousGenerationId,
         ];
@@ -69,6 +99,11 @@ final readonly class StandbyGeneration
                 'snapshots',
                 'prepared_fingerprint',
                 'base_image_fingerprint',
+                'structural_fingerprint',
+                'prepared_schema',
+                'cold_epoch',
+                'base_image_alias',
+                'topology',
                 'laravel_pin',
                 'previous_generation_id',
             ]
@@ -78,6 +113,14 @@ final readonly class StandbyGeneration
             || ! is_array($value['snapshots'])
             || ! is_string($value['prepared_fingerprint'])
             || ! is_string($value['base_image_fingerprint'])
+            || ! is_string($value['structural_fingerprint'])
+            || ! is_int($value['prepared_schema'])
+            || ! is_string($value['cold_epoch'])
+            || ! is_string($value['base_image_alias'])
+            || ! is_array($value['topology'])
+            || ! is_string($value['topology']['profile'] ?? null)
+            || ! is_array($value['topology']['roles'] ?? null)
+            || ! is_array($value['topology']['checkout_roles'] ?? null)
             || ! is_array($value['laravel_pin'])
             || ! is_string($value['laravel_pin']['tag'] ?? null)
             || ! is_string($value['laravel_pin']['commit'] ?? null)
@@ -95,6 +138,20 @@ final readonly class StandbyGeneration
             $snapshots[$role] = $snapshot;
         }
 
+        if (
+            ! array_all($value['topology']['roles'], static fn (mixed $item, string|int $key): bool => is_string($item))
+            || ! array_all($value['topology']['checkout_roles'], static fn (
+                mixed $item,
+                string|int $key,
+            ): bool => is_string($item))
+        ) {
+            throw new InvalidArgumentException('The generation schema is invalid.');
+        }
+        /** @var list<string> $topologyRoles */
+        $topologyRoles = array_values($value['topology']['roles']);
+        /** @var list<string> $checkoutRoles */
+        $checkoutRoles = array_values($value['topology']['checkout_roles']);
+
         return new self(
             $value['id'],
             $value['main_sha'],
@@ -102,6 +159,13 @@ final readonly class StandbyGeneration
             $value['prepared_fingerprint'],
             $value['base_image_fingerprint'],
             new LaravelRelease($value['laravel_pin']['tag'], $value['laravel_pin']['commit']),
+            $value['structural_fingerprint'],
+            $value['prepared_schema'],
+            $value['cold_epoch'],
+            $value['base_image_alias'],
+            $value['topology']['profile'],
+            $topologyRoles,
+            $checkoutRoles,
             $value['previous_generation_id'],
         );
     }

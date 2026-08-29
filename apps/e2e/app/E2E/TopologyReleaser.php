@@ -7,14 +7,15 @@ namespace App\E2E;
 use App\E2E\State\AtomicJsonStore;
 use App\E2E\State\OperationLock;
 use App\E2E\State\StatePaths;
-use App\E2E\Value\GuestCommand;
+use App\E2E\Value\IncusInstance;
+use App\E2E\Value\IncusNetwork;
 use App\E2E\Value\OperationId;
 use App\E2E\Value\ReleaseResult;
 use App\E2E\Value\TopologyProfile;
 use App\E2E\Value\TopologyTarget;
 use RuntimeException;
 
-/** @mago-expect lint:cyclomatic-complexity,kan-defect Exact ordered cleanup keeps every ownership guard visible. */
+/** @mago-expect lint:cyclomatic-complexity,excessive-parameter-list,kan-defect,too-many-methods Exact ordered cleanup keeps every ownership guard visible. */
 final readonly class TopologyReleaser
 {
     public function __construct(
@@ -23,13 +24,16 @@ final readonly class TopologyReleaser
         private TopologyManifestStore $manifests,
         private AtomicJsonStore $state,
         private StatePaths $paths,
+        private OperationId $operation,
+        private ?HostCapacity $capacity = null,
+        private ?AcquisitionRollback $acquisitionRollback = null,
     ) {}
 
     public function release(string $issue): ReleaseResult
     {
         $target = new TopologyTarget($issue);
-        $operation = new OperationId(bin2hex(random_bytes(16)));
         $lock = new OperationLock($this->paths);
+        $operation = $this->operation;
         if (! $lock->acquire('topology-'.$issue, $operation)) {
             throw new RuntimeException('The issue topology is locked.');
         }
@@ -44,36 +48,73 @@ final readonly class TopologyReleaser
     private function releaseLocked(TopologyTarget $target): ReleaseResult
     {
         $issue = $target->issue;
-        $topology = $this->manifests->read($target);
-        if ($topology === null) {
-            $retained = $this->state->read('releases/'.$issue.'.json');
-            if ($retained !== null) {
-                $previous = ReleaseResult::fromArray($retained);
+        $retained = $this->state->read('releases/'.$issue.'.json');
+        if ($retained !== null) {
+            $previous = ReleaseResult::fromArray($retained);
 
-                return new ReleaseResult(
-                    bin2hex(random_bytes(16)),
-                    $previous->evidenceId,
-                    [],
-                    [...$previous->released, ...$previous->alreadyAbsent],
-                );
+            $this->assertActiveArtifactsAbsent($issue);
+            $pending = $this->state->read('release-pending/'.$issue.'.json');
+            if ($pending !== null) {
+                $pendingResult = $this->pendingRelease($pending, $issue);
+                if ($pendingResult->toArray() !== $previous->toArray()) {
+                    throw new RuntimeException('The pending and retained release evidence do not match.');
+                }
+                $this->state->delete('release-pending/'.$issue.'.json');
             }
+
+            return $this->replay($target, $previous);
+        }
+        $pending = $this->state->read('release-pending/'.$issue.'.json');
+        if ($pending !== null) {
+            return $this->replay($target, $this->finalizePending($target, $pending));
+        }
+        $topology = $this->manifests->read($target);
+        $lease = $this->state->read('leases/'.$issue.'.json');
+        if ($topology === null && $lease === null) {
             throw new RuntimeException('The exact feature topology manifest does not exist.');
         }
+        if ($lease === null || ($lease['issue'] ?? null) !== $issue || ! is_string($lease['operation_id'] ?? null)) {
+            throw new RuntimeException('The exact topology lease is invalid before release.');
+        }
+        if (($lease['state'] ?? null) === 'acquiring') {
+            return $this->releaseAbandonedAcquisition($target, $lease);
+        }
+        if ($topology === null) {
+            throw new RuntimeException('The exact feature topology manifest does not exist.');
+        }
+        if (! in_array($lease['state'] ?? null, ['ready', 'syncing', 'failed'], true)) {
+            throw new RuntimeException('The exact topology lease is invalid before release.');
+        }
+        $acquisitionOperation = new OperationId($lease['operation_id']);
 
         $released = [];
         $absent = [];
+        $instanceNames = [];
+        foreach (TopologyProfile::ROLES as $role) {
+            $instanceNames[$role] = $target->instance($role);
+        }
+        $observedInstances = $this->host->instances(array_values($instanceNames));
         $instances = [];
         foreach (TopologyProfile::ROLES as $role) {
-            $name = $target->instance($role);
+            $name = $instanceNames[$role];
             if (($topology->instances[$role] ?? null) !== $name) {
                 throw new RuntimeException('A manifest resource identity changed before release.');
             }
-            $instance = $this->host->instance($name);
+            $instance = $observedInstances[$name] ?? null;
             if ($instance === null) {
                 $absent[] = $name;
                 continue;
             }
-            $this->assertOwnership($instance->metadata, $issue, $name);
+            $this->assertOwnership(
+                $instance->metadata,
+                $issue,
+                $name,
+                $topology->generation->id,
+                $lease['operation_id'],
+            );
+            if ($instance->network !== $topology->network || $instance->mac !== $target->mac($role)) {
+                throw new RuntimeException("Incus instance {$name} identity does not match the topology manifest.");
+            }
             $instances[$role] = $instance;
         }
         if ($topology->network !== $target->network()) {
@@ -84,53 +125,36 @@ final readonly class TopologyReleaser
             $absent[] = $topology->network;
         }
         if ($network !== null) {
-            $this->assertOwnership($network->metadata, $issue, $target->network());
+            $this->assertOwnership($network->metadata, $issue, $target->network(), null, $lease['operation_id']);
         }
-        $sourceOperations = $this->sourceOperations($issue);
-        $sourceArtifacts = [];
-        foreach ($instances as $instance) {
-            foreach ($sourceOperations as $sourceOperation) {
-                $path = '/var/lib/orbit-e2e/source/'.$sourceOperation;
-                $probe = $this->host->exec($instance->name, new GuestCommand(['test', '-e', $path]));
-                $sourceArtifacts[$instance->name][$sourceOperation] = $probe->successful();
+        $running = [];
+        foreach (TopologyProfile::ROLES as $role) {
+            $instance = $instances[$role] ?? null;
+            if ($instance !== null && $instance->isRunning()) {
+                $running[] = $instance->name;
+            }
+        }
+        if ($running !== []) {
+            $this->host->forceStopAll($running);
+            foreach ($running as $name) {
+                $released[] = 'stopped:'.$name;
+            }
+        }
+        $deletions = [];
+        foreach (array_reverse(TopologyProfile::ROLES) as $role) {
+            if (isset($instances[$role])) {
+                $deletions[] = $instances[$role]->name;
+            }
+        }
+        if ($deletions !== []) {
+            $this->host->deleteInstances($deletions);
+            foreach ($deletions as $name) {
+                $released[] = 'deleted:'.$name;
             }
         }
 
-        foreach ($instances as $instance) {
-            foreach ($sourceOperations as $sourceOperation) {
-                if (! ($sourceArtifacts[$instance->name][$sourceOperation] ?? false)) {
-                    $absent[] = 'source:'.$instance->name.':'.$sourceOperation;
-                    continue;
-                }
-                $cleanup = $this->host->exec($instance->name, new GuestCommand([
-                    'rm',
-                    '-rf',
-                    '--',
-                    '/var/lib/orbit-e2e/source/'.$sourceOperation,
-                ]));
-                if (! $cleanup->successful()) {
-                    throw new RuntimeException('Exact transferred source cleanup failed.');
-                }
-                $released[] = 'source:'.$instance->name.':'.$sourceOperation;
-            }
-        }
-        foreach (array_reverse(TopologyProfile::ROLES) as $role) {
-            $instance = $instances[$role] ?? null;
-            if ($instance !== null && $instance->isRunning()) {
-                $this->host->stop($instance->name);
-                $released[] = 'stopped:'.$instance->name;
-            }
-        }
-        foreach (array_reverse(TopologyProfile::ROLES) as $role) {
-            $instance = $instances[$role] ?? null;
-            if ($instance === null) {
-                continue;
-            }
-            $this->host->deleteInstance($instance->name);
-            if ($this->host->instance($instance->name) !== null) {
-                throw new RuntimeException('Incus instance storage did not disappear after deletion.');
-            }
-            $released[] = 'deleted:'.$instance->name;
+        if ($this->host->instances(array_values($instanceNames)) !== []) {
+            throw new RuntimeException('Cannot delete the topology network while an exact VM remains.');
         }
 
         if ($network !== null) {
@@ -138,44 +162,293 @@ final readonly class TopologyReleaser
             $released[] = 'deleted:'.$target->network();
         }
 
-        foreach (['leases/'.$issue.'.json', 'topologies/'.$issue.'.json'] as $relative) {
-            $path = $this->paths->path($relative);
-            if (is_file($path) && ! unlink($path)) {
-                throw new RuntimeException('Unable to remove exact topology state.');
-            }
+        if ($this->host->network($target->network()) !== null) {
+            throw new RuntimeException('Exact topology resources remain after release deletion.');
         }
 
-        $result = new ReleaseResult(bin2hex(random_bytes(16)), bin2hex(random_bytes(16)), $released, $absent);
-        $this->state->write('releases/'.$issue.'.json', $result->toArray());
+        $result = new ReleaseResult($this->operation->value, bin2hex(random_bytes(16)), $released, $absent);
+        $leaseState = $this->state->read('leases/'.$issue.'.json');
+        $topologyState = $this->state->read('topologies/'.$issue.'.json');
+        if ($topologyState === null) {
+            throw new RuntimeException('The exact feature topology manifest disappeared before release finalization.');
+        }
+        $pending = [
+            'schema' => 1,
+            'issue' => $issue,
+            'operation_id' => $result->operationId,
+            'evidence_id' => $result->evidenceId,
+            'lease_sha256' => $leaseState === null ? null : $this->stateDigest($leaseState),
+            'topology_sha256' => $this->stateDigest($topologyState),
+            'result' => $result->toArray(),
+        ];
+        $this->state->write('release-pending/'.$issue.'.json', $pending);
+        $this->finalizePending($target, $pending, resourcesVerifiedAbsent: true);
 
         return $result;
     }
 
-    /** @return list<string> */
-    private function sourceOperations(string $issue): array
+    /** @param array<array-key, mixed> $lease */
+    private function releaseAbandonedAcquisition(TopologyTarget $target, array $lease): ReleaseResult
     {
-        $lease = $this->state->read('leases/'.$issue.'.json');
-        $operations = $lease['source_operation_ids'] ?? [];
-        if (! is_array($operations) || ! array_is_list($operations)) {
-            throw new RuntimeException('The topology source inventory is invalid.');
+        $required = [
+            'schema',
+            'issue',
+            'state',
+            'operation_id',
+            'expires_at',
+            'pid',
+            'process_start_identity',
+            'acquired_at',
+        ];
+        if (
+            array_diff(array_keys($lease), $required) !== []
+            || array_diff($required, array_keys($lease)) !== []
+            || $lease['schema'] !== 1
+            || ! is_int($lease['pid'])
+            || ! is_string($lease['process_start_identity'])
+            || ! is_string($lease['acquired_at'])
+            || ! OperationLock::isStale([
+                'pid' => $lease['pid'],
+                'process_start_identity' => $lease['process_start_identity'],
+                'operation_id' => $lease['operation_id'],
+                'acquired_at' => $lease['acquired_at'],
+            ])
+        ) {
+            throw new RuntimeException('The abandoned acquisition owner identity is invalid or still live.');
         }
-        $validated = [];
-        foreach ($operations as $operation) {
-            if (! is_string($operation) || preg_match('/\A[0-9a-f]{32}\z/D', $operation) !== 1) {
-                throw new RuntimeException('A topology source identity is invalid.');
+        $resources = [$target->network(), ...array_map($target->instance(...), TopologyProfile::ROLES)];
+        $observedResources = $this->host->instances(array_slice($resources, 1));
+        $network = $this->host->network($target->network());
+        $observedResources[$target->network()] = $network;
+        foreach (array_slice($resources, 1) as $resource) {
+            $observedResources[$resource] ??= null;
+        }
+        $identity = [];
+        foreach ($resources as $resource) {
+            $current = $observedResources[$resource] ?? null;
+            $identity[$resource] = $current === null
+                ? null
+                : [
+                    'remote' => $current->remote,
+                    'project' => $current->project,
+                    'name' => $current->name,
+                    'pool' => $current instanceof IncusInstance ? $current->pool : null,
+                    'network' => $current instanceof IncusInstance ? $current->network : null,
+                    'mac' => $current instanceof IncusInstance ? $current->mac : null,
+                    'metadata' => $current->metadata,
+                ];
+        }
+        $operationId = $lease['operation_id'] ?? null;
+        if (! is_string($operationId)) {
+            throw new RuntimeException('Lease operation identity is invalid.');
+        }
+        /** @return array<string, IncusInstance|IncusNetwork|null> */
+        $inventory = function (array $names) use ($target): array {
+            if (
+                ! array_is_list($names)
+                || array_filter($names, static fn (mixed $name): bool => ! is_string($name)) !== []
+            ) {
+                throw new RuntimeException('Rollback resource list is invalid.');
             }
-            $validated[] = $operation;
+
+            /** @var list<string> $names */
+            return $this->rollbackInventory($target, $names);
+        };
+        /** @mago-expect analysis:less-specific-argument The validated adapter narrows resources at runtime. */
+        $rollback = $this->acquisitionRollback ?? new AcquisitionRollback(
+            $inventory,
+            function (array $names): void {
+                $this->host->stopAll($names);
+            },
+            function (array $names): void {
+                $this->host->deleteInstances($names);
+            },
+            function (string $name): void {
+                $this->networks->delete($name);
+            },
+        );
+        $results = $rollback->cleanup($target, $resources, $identity, new OperationId($operationId));
+        if (
+            array_diff(
+                $resources,
+                array_keys(array_filter($results, static fn (string $result): bool => in_array(
+                    $result,
+                    ['removed', 'absent'],
+                    true,
+                ))),
+            ) !== []
+        ) {
+            throw new RuntimeException('Abandoned acquisition cleanup is incomplete.');
+        }
+        $remainingInstances = $this->host->instances(array_slice($resources, 1));
+        if ($remainingInstances !== [] || $this->host->network($target->network()) !== null) {
+            throw new RuntimeException('Abandoned acquisition resources remain after cleanup.');
+        }
+        $this->state->delete('topologies/'.$target->issue.'.json');
+        $this->capacity?->release($target->issue, new OperationId($operationId));
+        $this->state->delete('leases/'.$target->issue.'.json');
+        $result = new ReleaseResult(
+            $this->operation->value,
+            bin2hex(random_bytes(16)),
+            array_values(array_map(
+                static fn (string|int $resource): string => 'removed:'.$resource,
+                array_keys(array_filter($results, static fn (string $status): bool => $status === 'removed')),
+            )),
+            array_values(array_map(
+                static fn (string|int $resource): string => 'absent:'.$resource,
+                array_keys(array_filter($results, static fn (string $status): bool => $status === 'absent')),
+            )),
+        );
+        $this->state->write('releases/'.$target->issue.'.json', $result->toArray());
+
+        return $result;
+    }
+
+    /** @param list<string> $resources @return array<string, IncusInstance|IncusNetwork|null> */
+    private function rollbackInventory(TopologyTarget $target, array $resources): array
+    {
+        $instances = array_values(array_filter(
+            $resources,
+            static fn (string $resource): bool => $resource !== $target->network(),
+        ));
+        $inventory = $instances === [] ? [] : $this->host->instances($instances);
+        $inventory[$target->network()] = $this->host->network($target->network());
+        foreach ($instances as $instance) {
+            $inventory[$instance] ??= null;
         }
 
-        return $validated;
+        /** @var array<string, IncusInstance|IncusNetwork|null> $inventory */
+        return $inventory;
+    }
+
+    /** @param array<array-key, mixed> $pending */
+    private function finalizePending(
+        TopologyTarget $target,
+        array $pending,
+        bool $resourcesVerifiedAbsent = false,
+    ): ReleaseResult {
+        $issue = $target->issue;
+        $result = $this->pendingRelease($pending, $issue);
+        $lease = $this->state->read('leases/'.$issue.'.json');
+        $topology = $this->state->read('topologies/'.$issue.'.json');
+        $this->assertPendingState($lease, $pending['lease_sha256']);
+        $this->assertPendingState($topology, $pending['topology_sha256']);
+
+        if (! $resourcesVerifiedAbsent) {
+            $instances = array_map($target->instance(...), TopologyProfile::ROLES);
+            if ($this->host->instances($instances) !== [] || $this->host->network($target->network()) !== null) {
+                throw new RuntimeException('Cannot finalize pending release while an exact topology resource exists.');
+            }
+        }
+
+        if ($lease !== null && is_string($lease['operation_id'] ?? null)) {
+            $this->capacity?->release($issue, new OperationId($lease['operation_id']));
+        }
+
+        if ($lease !== null) {
+            $this->state->delete('leases/'.$issue.'.json');
+        }
+        if ($topology !== null) {
+            $this->state->delete('topologies/'.$issue.'.json');
+        }
+        $this->state->write('releases/'.$issue.'.json', $result->toArray());
+        $this->state->delete('release-pending/'.$issue.'.json');
+
+        return $result;
+    }
+
+    /** @param array<array-key, mixed> $pending */
+    private function pendingRelease(array $pending, string $issue): ReleaseResult
+    {
+        if (
+            array_keys($pending) !== [
+                'schema',
+                'issue',
+                'operation_id',
+                'evidence_id',
+                'lease_sha256',
+                'topology_sha256',
+                'result',
+            ]
+            || $pending['schema'] !== 1
+            || $pending['issue'] !== $issue
+            || ! is_string($pending['operation_id'])
+            || ! is_string($pending['evidence_id'])
+            || $pending['lease_sha256'] !== null
+            && (! is_string($pending['lease_sha256'])
+            || preg_match('/\A[a-f0-9]{64}\z/D', $pending['lease_sha256']) !== 1)
+            || ! is_string($pending['topology_sha256'])
+            || preg_match('/\A[a-f0-9]{64}\z/D', $pending['topology_sha256']) !== 1
+            || ! is_array($pending['result'])
+        ) {
+            throw new RuntimeException('The pending release evidence is invalid.');
+        }
+
+        $result = ReleaseResult::fromArray($pending['result']);
+        if ($pending['operation_id'] !== $result->operationId || $pending['evidence_id'] !== $result->evidenceId) {
+            throw new RuntimeException('The pending release evidence identity does not match.');
+        }
+
+        return $result;
+    }
+
+    /** @param array<array-key, mixed>|null $state */
+    private function assertPendingState(?array $state, mixed $expectedDigest): void
+    {
+        if ($state === null) {
+            return;
+        }
+        if (! is_string($expectedDigest) || $this->stateDigest($state) !== $expectedDigest) {
+            throw new RuntimeException('The pending release state does not match active topology state.');
+        }
+    }
+
+    /** @param array<array-key, mixed> $state */
+    private function stateDigest(array $state): string
+    {
+        return hash('sha256', json_encode($state, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
+    }
+
+    private function replay(TopologyTarget $target, ReleaseResult $previous): ReleaseResult
+    {
+        $names = array_map($target->instance(...), TopologyProfile::ROLES);
+        if ($this->host->instances($names) !== [] || $this->host->network($target->network()) !== null) {
+            throw new RuntimeException('Cannot replay retained evidence while an exact topology resource exists.');
+        }
+
+        return new ReleaseResult(
+            $this->operation->value,
+            $previous->evidenceId,
+            [],
+            [...$previous->released, ...$previous->alreadyAbsent],
+        );
+    }
+
+    private function assertActiveArtifactsAbsent(string $issue): void
+    {
+        foreach (['leases', 'topologies'] as $directory) {
+            $path = $this->paths->root().'/'.$directory.'/'.$issue.'.json';
+
+            if (file_exists($path) || is_link($path)) {
+                throw new RuntimeException('Cannot replay retained evidence while active topology state exists.');
+            }
+        }
     }
 
     /** @param array<string, string> $metadata */
-    private function assertOwnership(array $metadata, string $issue, string $resource): void
-    {
+    private function assertOwnership(
+        array $metadata,
+        string $issue,
+        string $resource,
+        ?string $generation,
+        string $operation,
+    ): void {
         if (
             ($metadata['user.orbit.e2e.owner'] ?? null) !== 'orbit-e2e'
             || ($metadata['user.orbit.e2e.issue'] ?? null) !== $issue
+            || $generation !== null
+            && ($metadata['user.orbit.e2e.generation'] ?? null) !== $generation
+            || ($metadata['user.orbit.e2e.operation'] ?? null) !== $operation
         ) {
             throw new RuntimeException("Incus resource {$resource} ownership does not match the exact issue.");
         }

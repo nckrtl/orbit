@@ -1,3 +1,9 @@
+---
+paths:
+  - 'bootstrap/**'
+  - 'config/**'
+---
+
 # Bootstrap rules
 
 Bootstrap only the Laravel console runtime and required bindings. Keep startup

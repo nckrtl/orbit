@@ -50,6 +50,103 @@ function providerDeletionFixture(string $kind = 'instances', string $name = 'old
 }
 
 describe('legacy commands', function () {
+    it('rejects file and directory substitution for every observed host path kind', function (
+        string $kind,
+        string $expectedType,
+    ): void {
+        $root = sys_get_temp_dir().'/legacy-provider-type-'.bin2hex(random_bytes(5));
+        mkdir($root, 0700);
+        $path = $root.'/target';
+        if ($expectedType === 'directory') {
+            file_put_contents($path, 'substituted file');
+        } else {
+            mkdir($path, 0700);
+        }
+        $resource = [
+            'path' => $path,
+            'filesystem_type' => $expectedType,
+            'classification' => $kind === 'evidence' ? 'preserve' : 'legacy',
+            'sha256' => str_repeat('a', 64),
+        ];
+        if ($kind !== 'evidence') {
+            $resource['safe_root'] = $root;
+        } else {
+            $resource['identity'] = 'proof-1';
+        }
+        $observation = $root.'/observation.json';
+        file_put_contents($observation, json_encode([$kind => [$resource]], JSON_THROW_ON_ERROR));
+        chmod($observation, 0600);
+        putenv('ORBIT_E2E_LEGACY_OBSERVATION='.$observation);
+
+        expect(fn () => app(\App\E2E\LegacyRetirementHost::class)->observeCurrent())
+            ->toThrow(RuntimeException::class, 'filesystem type');
+
+        putenv('ORBIT_E2E_LEGACY_OBSERVATION');
+        if (is_dir($path)) {
+            rmdir($path);
+        } else {
+            unlink($path);
+        }
+        unlink($observation);
+        rmdir($root);
+    })->with([
+        'source directory replaced by file' => ['source_paths', 'directory'],
+        'manifest file replaced by directory' => ['manifests', 'file'],
+        'lock file replaced by directory' => ['locks', 'file'],
+        'evidence file replaced by directory' => ['evidence', 'file'],
+    ]);
+
+    it('rejects every parent and final symbolic link for observed host paths', function (
+        string $kind,
+        bool $finalLink,
+    ): void {
+        $root = sys_get_temp_dir().'/legacy-provider-link-'.bin2hex(random_bytes(5));
+        mkdir($root.'/real', 0700, true);
+        file_put_contents($root.'/real/target', 'protected');
+        $path = $root.'/real/target';
+        if ($finalLink) {
+            symlink($path, $root.'/linked-target');
+            $path = $root.'/linked-target';
+        } else {
+            symlink($root.'/real', $root.'/linked-parent');
+            $path = $root.'/linked-parent/target';
+        }
+        $resource = [
+            'path' => $path,
+            'filesystem_type' => $kind === 'source_paths' ? 'directory' : 'file',
+            'classification' => $kind === 'evidence' ? 'preserve' : 'legacy',
+            'sha256' => str_repeat('a', 64),
+        ];
+        if ($kind !== 'evidence') {
+            $resource['safe_root'] = $root;
+        } else {
+            $resource['identity'] = 'proof-1';
+        }
+        $observation = $root.'/observation.json';
+        file_put_contents($observation, json_encode([$kind => [$resource]], JSON_THROW_ON_ERROR));
+        chmod($observation, 0600);
+        putenv('ORBIT_E2E_LEGACY_OBSERVATION='.$observation);
+
+        expect(fn () => app(\App\E2E\LegacyRetirementHost::class)->observeCurrent())
+            ->toThrow(RuntimeException::class, 'symbolic link');
+
+        putenv('ORBIT_E2E_LEGACY_OBSERVATION');
+        unlink($finalLink ? $root.'/linked-target' : $root.'/linked-parent');
+        unlink($root.'/real/target');
+        rmdir($root.'/real');
+        unlink($observation);
+        rmdir($root);
+    })->with([
+        'source parent link' => ['source_paths', false],
+        'source final link' => ['source_paths', true],
+        'manifest parent link' => ['manifests', false],
+        'manifest final link' => ['manifests', true],
+        'lock parent link' => ['locks', false],
+        'lock final link' => ['locks', true],
+        'evidence parent link' => ['evidence', false],
+        'evidence final link' => ['evidence', true],
+    ]);
+
     it('rejects a provider observation manifest beneath a symbolic-link parent', function () {
         $root = sys_get_temp_dir().'/legacy-provider-'.bin2hex(random_bytes(5));
         mkdir($root.'/real', 0700, true);
@@ -149,6 +246,48 @@ describe('legacy commands', function () {
         rmdir($root);
     });
 
+    it('queries only the resources requested by one mutation barrier', function () {
+        $root = sys_get_temp_dir().'/legacy-provider-batch-'.bin2hex(random_bytes(5));
+        mkdir($root, 0700);
+        $observation = $root.'/observation.json';
+        $resource = static fn (string $name): array => [
+            'name' => $name,
+            'remote' => 'lab',
+            'project' => 'orbit',
+            'status' => 'STOPPED',
+            'metadata' => [],
+            'dependencies' => [],
+            'classification' => 'legacy',
+        ];
+        $requested = $resource('old-vm');
+        file_put_contents($observation, json_encode([
+            'instances' => [$requested, $resource('unrelated-vm')],
+        ], JSON_THROW_ON_ERROR));
+        chmod($observation, 0600);
+        putenv('ORBIT_E2E_LEGACY_OBSERVATION='.$observation);
+        $commands = [];
+        Process::fake(function (PendingProcess $process) use (&$commands) {
+            $commands[] = $process->command;
+
+            return Process::result(json_encode([
+                'name' => 'old-vm',
+                'type' => 'virtual-machine',
+                'status' => 'STOPPED',
+                'config' => [],
+                'devices' => [],
+            ], JSON_THROW_ON_ERROR));
+        });
+
+        app(\App\E2E\LegacyRetirementHost::class)->observeCurrent(['instances' => [$requested]]);
+
+        expect($commands)->toBe([
+            ['incus', 'query', 'lab:/1.0/instances/old-vm?project=orbit'],
+        ]);
+        putenv('ORBIT_E2E_LEGACY_OBSERVATION');
+        unlink($observation);
+        rmdir($root);
+    });
+
     it('refuses provider deletion when the exact live resource drifted', function () {
         [$retirement, $manifest, $root] = providerDeletionFixture();
         $commands = [];
@@ -200,6 +339,64 @@ describe('legacy commands', function () {
         putenv('ORBIT_E2E_LEGACY_OBSERVATION');
         unlink($root.'/observation.json');
         unlink($root.'/freeze.json');
+        rmdir($root);
+    });
+
+    it('verifies retirement against the current Incus host instead of the frozen observation', function () {
+        $root = sys_get_temp_dir().'/legacy-provider-verify-'.bin2hex(random_bytes(5));
+        mkdir($root, 0700);
+        $observation = $root.'/observation.json';
+        $retirement = $root.'/retirement.json';
+        file_put_contents($observation, json_encode([
+            'instances' => [[
+                'name' => 'old-vm',
+                'remote' => 'lab',
+                'project' => 'orbit',
+                'status' => 'STOPPED',
+                'metadata' => ['owner' => 'old'],
+                'dependencies' => [],
+                'classification' => 'legacy',
+            ]],
+        ], JSON_THROW_ON_ERROR));
+        file_put_contents($retirement, json_encode([
+            'version' => 1,
+            'successful' => true,
+            'quarantine_sha256' => str_repeat('a', 64),
+            'deleted' => [[
+                'kind' => 'instances',
+                'identity' => 'old-vm',
+                'result' => 'deleted',
+            ]],
+            'remaining' => [],
+            'preserved' => [],
+        ], JSON_THROW_ON_ERROR));
+        chmod($observation, 0600);
+        chmod($retirement, 0600);
+        putenv('ORBIT_E2E_LEGACY_OBSERVATION='.$observation);
+        Process::fake([
+            '*' => Process::result(
+                json_encode([
+                    'type' => 'error',
+                    'status_code' => 404,
+                    'error' => 'Resource not found',
+                ], JSON_THROW_ON_ERROR),
+                '',
+                1,
+            ),
+        ]);
+
+        $this
+            ->artisan('legacy:verify', [
+                '--retirement' => $retirement,
+                '--json' => true,
+            ])
+            ->expectsOutputToContain('"successful":true')
+            ->assertSuccessful();
+        Process::assertRan(['incus', 'query', 'lab:/1.0/instances/old-vm?project=orbit']);
+
+        putenv('ORBIT_E2E_LEGACY_OBSERVATION');
+        unlink($retirement);
+        unlink($observation);
         rmdir($root);
     });
 });

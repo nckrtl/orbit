@@ -51,4 +51,6 @@ hydrate_composer_dependencies() {
 for project in apps/cli apps/gateway packages/php-sdk; do
     hydrate_composer_dependencies "$repo/$project"
 done
+printf '%s\n' "$sha" > "$repo/.git/orbit-hydrated.sha"
+chmod 0600 "$repo/.git/orbit-hydrated.sha"
 printf '{"sha":"%s","hydrated":["apps/cli","apps/gateway","packages/php-sdk"]}\n' "$sha"

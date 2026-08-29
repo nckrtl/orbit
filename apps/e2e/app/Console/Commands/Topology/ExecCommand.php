@@ -4,21 +4,22 @@ declare(strict_types=1);
 
 namespace App\Console\Commands\Topology;
 
+use App\Console\Commands\E2ECommand;
 use App\E2E\TopologyAcquirer;
-use Illuminate\Console\Command;
+use App\E2E\Value\OperationId;
 use InvalidArgumentException;
 use JsonException;
 use Throwable;
 
 /** @mago-expect lint:cyclomatic-complexity JSON argv validation remains at the command boundary. */
-final class ExecCommand extends Command
+final class ExecCommand extends E2ECommand
 {
     #[\Override]
     protected $signature = 'topology:exec {issue} {role} {--argv-file=} {--json}';
     #[\Override]
     protected $description = 'Execute an exact argv vector on one topology role';
 
-    public function handle(TopologyAcquirer $acquirer): int
+    public function handle(TopologyAcquirer $acquirer, OperationId $operation): int
     {
         try {
             [$argv, $stdin] = $this->commandInput();
@@ -28,11 +29,10 @@ final class ExecCommand extends Command
                 $argv,
                 $stdin,
             );
-            $identity = bin2hex(random_bytes(16));
+            $identity = $operation->value;
             $payload = [
                 'state' => 'executed',
                 'operation_id' => $identity,
-                'evidence_id' => $identity,
                 'exit_code' => $result->exitCode,
                 'stdout' => $result->stdout,
                 'stderr' => $result->stderr,
@@ -41,15 +41,7 @@ final class ExecCommand extends Command
 
             return $result->successful() ? self::SUCCESS : self::FAILURE;
         } catch (Throwable $exception) {
-            $identity = bin2hex(random_bytes(16));
-            $this->option('json')
-                ? $this->line(json_encode([
-                    'state' => 'failed',
-                    'operation_id' => $identity,
-                    'evidence_id' => $identity,
-                    'error' => $exception->getMessage(),
-                ], JSON_THROW_ON_ERROR))
-                : $this->error($exception->getMessage());
+            $this->outputFailure($exception, $operation);
 
             return self::FAILURE;
         }

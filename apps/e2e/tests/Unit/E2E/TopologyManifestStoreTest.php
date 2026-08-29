@@ -36,9 +36,16 @@ describe('TopologyManifestStore', function () {
             str_repeat('c', 64),
             str_repeat('d', 64),
             new LaravelRelease('v13.10.1', '5aad4ddf34d5e21dfe6b4c07eeac67d5bd5e08b0'),
+            str_repeat('e', 64),
+            1,
+            'ubuntu-26.04-amd64-v1',
+            'orbit-base-ubuntu-26.04-runtime',
+            'gateway_app-dev_app-prod',
+            ['gateway', 'app-dev', 'app-prod'],
+            ['gateway', 'app-dev'],
         );
         $source = new SourceState(str_repeat('b', 40), str_repeat('b', 40));
-        $report = new VerificationReport(true, ['gateway.ready' => true]);
+        $report = new VerificationReport(true, ['gateway.ready' => verificationProbeFixture(probe: 'gateway.ready')]);
 
         expect(
             fn () => new FeatureTopology(
@@ -57,7 +64,11 @@ describe('TopologyManifestStore', function () {
             ->toThrow(InvalidArgumentException::class)
             ->and(fn () => new SourceState('loose', str_repeat('b', 40)))
             ->toThrow(InvalidArgumentException::class)
-            ->and(fn () => new VerificationReport(true, ['gateway.ready' => false]))
+            ->and(
+                fn () => new VerificationReport(true, [
+                    'gateway.ready' => verificationProbeFixture(false, 'gateway.ready'),
+                ]),
+            )
             ->toThrow(InvalidArgumentException::class);
     });
 });
@@ -75,6 +86,13 @@ function topologyFixture(TopologyTarget $target): FeatureTopology
         str_repeat('c', 64),
         str_repeat('d', 64),
         new LaravelRelease('v13.10.1', '5aad4ddf34d5e21dfe6b4c07eeac67d5bd5e08b0'),
+        str_repeat('e', 64),
+        1,
+        'ubuntu-26.04-amd64-v1',
+        'orbit-base-ubuntu-26.04-runtime',
+        'gateway_app-dev_app-prod',
+        ['gateway', 'app-dev', 'app-prod'],
+        ['gateway', 'app-dev'],
     );
     $instances = [
         'gateway' => $target->instance('gateway'),
@@ -88,6 +106,6 @@ function topologyFixture(TopologyTarget $target): FeatureTopology
         $target->network(),
         $instances,
         new SourceState(str_repeat('b', 40), str_repeat('b', 40)),
-        new VerificationReport(true, ['gateway.ready' => true]),
+        new VerificationReport(true, ['gateway.ready' => verificationProbeFixture(probe: 'gateway.ready')]),
     );
 }

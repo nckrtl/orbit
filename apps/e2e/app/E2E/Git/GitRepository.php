@@ -58,11 +58,10 @@ final readonly class GitRepository
         return $gitDirectory !== $commonDirectory;
     }
 
-    public function isPrerequisite(string $prerequisite, string $commit): bool
+    public function hasCommit(string $commit): bool
     {
-        $this->validateSha($prerequisite);
         $this->validateSha($commit);
-        $result = Process::path($this->path)->run(['git', 'merge-base', '--is-ancestor', $prerequisite, $commit]);
+        $result = Process::path($this->path)->run(['git', 'cat-file', '-e', "{$commit}^{commit}"]);
 
         if ($result->exitCode() === 0) {
             return true;
@@ -71,7 +70,7 @@ final readonly class GitRepository
             return false;
         }
 
-        throw new InvalidArgumentException('Git could not verify the bundle prerequisite.');
+        throw new InvalidArgumentException('Git could not verify the bundle prerequisite commit.');
     }
 
     public function createBundle(string $destination, string $commit, ?string $prerequisite = null): void
@@ -305,10 +304,49 @@ final readonly class GitRepository
         }
 
         ksort($selected, SORT_STRING);
-        $blobs = [];
 
-        foreach ($selected as $path => $object) {
-            $blobs[$path] = $this->run(['cat-file', 'blob', $object]);
+        return $this->readBlobs($selected);
+    }
+
+    /**
+     * @param array<string, string> $selected
+     * @return array<string, string>
+     */
+    private function readBlobs(array $selected): array
+    {
+        $result = Process::path($this->path)
+            ->input(implode("\n", array_values($selected))."\n")
+            ->run(['git', 'cat-file', '--batch']);
+        if ($result->failed()) {
+            throw new InvalidArgumentException('The Git command failed.');
+        }
+
+        $output = $result->output();
+        $offset = 0;
+        $blobs = [];
+        foreach ($selected as $path => $expectedObject) {
+            $headerEnd = strpos($output, "\n", $offset);
+            if ($headerEnd === false) {
+                throw new InvalidArgumentException('Git returned an invalid blob batch.');
+            }
+            $header = substr($output, $offset, $headerEnd - $offset);
+            if (
+                preg_match('/\A([0-9a-f]{40}) blob ([0-9]+)\z/D', $header, $matches) !== 1
+                || $matches[1] !== $expectedObject
+            ) {
+                throw new InvalidArgumentException('Git returned an invalid blob batch.');
+            }
+            $length = (int) $matches[2];
+            $contentStart = $headerEnd + 1;
+            $delimiter = $contentStart + $length;
+            if ($delimiter >= strlen($output) || $output[$delimiter] !== "\n") {
+                throw new InvalidArgumentException('Git returned an invalid blob batch.');
+            }
+            $blobs[$path] = substr($output, $contentStart, $length);
+            $offset = $delimiter + 1;
+        }
+        if ($offset !== strlen($output)) {
+            throw new InvalidArgumentException('Git returned an invalid blob batch.');
         }
 
         return $blobs;

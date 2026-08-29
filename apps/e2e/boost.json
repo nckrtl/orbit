@@ -13,9 +13,8 @@
     "skills": [
         "laravel-best-practices",
         "testing-best-practices",
-        "pest-testing",
         "spatie-laravel-php",
         "spatie-security",
-        "spatie-version-control",
+        "spatie-version-control"
     ]
 }

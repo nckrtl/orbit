@@ -32,4 +32,22 @@ describe('SecretRedactor', function () {
             'nested' => [$tokenKey => '[REDACTED]', $passwordKey => '[REDACTED]'],
         ]);
     });
+
+    it('redacts sensitive long options in separated and equal forms', function () {
+        $redacted = new SecretRedactor(['configured-secret'])->redactArgv([
+            '--authorization',
+            'Bearer configured-secret',
+            '--password=configured-secret',
+            '--safe',
+            'value',
+        ]);
+
+        expect($redacted)->toBe([
+            '--authorization',
+            '[REDACTED]',
+            '--password=[REDACTED]',
+            '--safe',
+            'value',
+        ]);
+    });
 });

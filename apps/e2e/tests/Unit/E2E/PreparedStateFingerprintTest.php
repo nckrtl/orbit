@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\E2E\Git\GitRepository;
 use App\E2E\PreparedStateFingerprint;
+use App\E2E\Value\LaravelRelease;
 use App\E2E\Value\PreparedFingerprint;
 use Illuminate\Container\Container;
 use Illuminate\Process\Factory as ProcessFactory;
@@ -43,7 +44,7 @@ describe('PreparedStateFingerprint', function (): void {
         removeFingerprintFixture($this->path);
     });
 
-    it('canonicalizes prepared input and excludes source identity', function (): void {
+    it('canonicalizes prepared input while preserving the exact topology role order', function (): void {
         file_put_contents($this->path.'/contracts/a.php', "contract\n");
         writePreparedManifest($this->path, [
             'schema' => 1,
@@ -51,11 +52,10 @@ describe('PreparedStateFingerprint', function (): void {
             'cold_epoch' => 'ubuntu-26.04-amd64-v1',
             'base_image_alias' => 'orbit-base-ubuntu-26.04-runtime',
             'declared_epochs' => ['php' => 1, 'base_image' => 2],
-            'laravel_pin' => ['tag' => 'v13.2.1', 'commit' => str_repeat('a', 40)],
             'topology' => [
-                'roles' => ['app-prod', 'gateway', 'app-dev'],
+                'roles' => ['gateway', 'app-dev', 'app-prod'],
                 'profile' => 'gateway_app-dev_app-prod',
-                'checkout_roles' => ['app-dev', 'gateway'],
+                'checkout_roles' => ['gateway', 'app-dev'],
             ],
         ]);
         fingerprintGit($this->path, ['add', '.']);
@@ -68,7 +68,6 @@ describe('PreparedStateFingerprint', function (): void {
                 'profile' => 'gateway_app-dev_app-prod',
                 'roles' => ['gateway', 'app-dev', 'app-prod'],
             ],
-            'laravel_pin' => ['commit' => str_repeat('a', 40), 'tag' => 'v13.2.1'],
             'declared_epochs' => ['base_image' => 2, 'php' => 1],
             'base_image_alias' => 'orbit-base-ubuntu-26.04-runtime',
             'cold_epoch' => 'ubuntu-26.04-amd64-v1',
@@ -87,15 +86,36 @@ describe('PreparedStateFingerprint', function (): void {
             ->toBe([
                 'contracts/a.php' => hash('sha256', "contract\n"),
             ])
-            ->and($fingerprints->forCommit($second)->manifest['laravel_pin'])
-            ->toBe([
-                'commit' => str_repeat('a', 40),
-                'tag' => 'v13.2.1',
-            ])
+            ->and($fingerprints->forCommit($second)->manifest)
+            ->not
+            ->toHaveKey('laravel_pin')
             ->and($fingerprints->forCommit($second)->manifest['cold_epoch'])
             ->toBe('ubuntu-26.04-amd64-v1')
             ->and($fingerprints->forCommit($second)->manifest['base_image_alias'])
-            ->toBe('orbit-base-ubuntu-26.04-runtime');
+            ->toBe('orbit-base-ubuntu-26.04-runtime')
+            ->and($fingerprints->forCommit($second)->manifest['topology']['roles'])
+            ->toBe(['gateway', 'app-dev', 'app-prod'])
+            ->and($fingerprints->forCommit($second)->manifest['topology']['checkout_roles'])
+            ->toBe(['gateway', 'app-dev']);
+    });
+
+    it('adds the exact resolved Laravel pin only to a final fingerprint', function (): void {
+        file_put_contents($this->path.'/contracts/a.php', "contract\n");
+        writePreparedManifest($this->path, preparedManifest());
+        fingerprintGit($this->path, ['add', '.']);
+        fingerprintGit($this->path, ['commit', '--quiet', '-m', 'release']);
+        $fingerprints = new PreparedStateFingerprint(new GitRepository($this->path), 'resources/prepared-state.json');
+        $release = new LaravelRelease('v13.2.1', str_repeat('b', 40));
+        $structural = $fingerprints->forCommit();
+        $pinned = $fingerprints->withLaravel($structural, $release);
+
+        expect($structural->manifest)
+            ->not
+            ->toHaveKey('laravel_pin')
+            ->and($fingerprints->forCommit('HEAD', $release)->manifest['laravel_pin'])
+            ->toBe(['commit' => str_repeat('b', 40), 'tag' => 'v13.2.1'])
+            ->and($pinned)
+            ->toEqual($fingerprints->forCommit('HEAD', $release));
     });
 
     it('rejects malformed manifest schema and topology', function (array $change): void {
@@ -115,14 +135,15 @@ describe('PreparedStateFingerprint', function (): void {
             ->toThrow(InvalidArgumentException::class);
     })->with([
         'extra root key' => [['unexpected' => true]],
-        'invalid cold epoch' => [['cold_epoch' => 'ubuntu-24.04-amd64-v1']],
+        'invalid cold epoch' => [['cold_epoch' => 'ubuntu-24.04-amd64-v0']],
         'invalid base image alias' => [['base_image_alias' => 'ubuntu:26.04']],
         'invalid declared epoch' => [['declared_epochs' => ['php' => '1']]],
-        'invalid Laravel tag' => [['laravel_pin' => ['tag' => '13.0.0']]],
-        'invalid Laravel commit' => [['laravel_pin' => ['commit' => 'main']]],
+        'extra Laravel pin key' => [['laravel_pin' => ['tag' => 'v13.0.0', 'commit' => str_repeat('a', 40)]]],
         'invalid profile' => [['topology' => ['profile' => 'other']]],
         'invalid roles' => [['topology' => ['roles' => ['gateway', 'app-dev', 'other']]]],
+        'reordered roles' => [['topology' => ['roles' => ['app-dev', 'gateway', 'app-prod']]]],
         'invalid checkout roles' => [['topology' => ['checkout_roles' => ['gateway', 'app-prod']]]],
+        'reordered checkout roles' => [['topology' => ['checkout_roles' => ['app-dev', 'gateway']]]],
         'invalid path type' => [['paths' => [42]]],
     ]);
 
@@ -131,38 +152,74 @@ describe('PreparedStateFingerprint', function (): void {
         $manifest = json_decode((string) file_get_contents($path), true, 512, JSON_THROW_ON_ERROR);
         $paths = $manifest['paths'] ?? null;
 
+        $sorted = $paths;
+        sort($sorted, SORT_STRING);
+
         expect($paths)
-            ->toBeArray()
+            ->toBe($sorted)
             ->toContain(
                 'apps/e2e/app/E2E/TopologyConverger.php',
                 'apps/e2e/resources/guest/converge-app-dev.sh',
                 'apps/e2e/resources/guest/converge-app-prod-internal-tls.sh',
                 'apps/e2e/resources/guest/converge-gateway.sh',
                 'apps/e2e/resources/guest/converge-sample-app.sh',
-                'apps/gateway/app/Actions/Gateway/BootstrapGatewayAction.php',
-                'apps/gateway/app/Actions/Gateway/GatewayBootstrapIdentityValidator.php',
-                'apps/gateway/app/Infrastructure/Nodes/Roles/*.php',
-                'apps/gateway/app/Infrastructure/WireGuard/*.php',
-                'apps/gateway/app/Http/Middleware/RequireActiveWireGuardPeer.php',
-                'apps/gateway/app/Http/Middleware/RequireNodeAccess.php',
+                'apps/e2e/resources/guest/prepare-node.sh',
+                'apps/cli/app/Commands/Apps/CreateAppCommand.php',
+                'apps/cli/app/Commands/Instances/CreateInstanceCommand.php',
+                'apps/cli/app/Commands/Nodes/ShowNodeCommand.php',
+                'apps/cli/app/Commands/Workspaces/CreateWorkspaceCommand.php',
+                'apps/gateway/app/Console/Commands/ProvisionNodeCommand.php',
+                'apps/gateway/app/Actions/Nodes/ProvisionNodeAction.php',
+                'apps/gateway/app/Data/Nodes/ProvisionNodeData.php',
+                'apps/gateway/app/Infrastructure/Nodes/NativeNodeConverger.php',
+                'apps/gateway/app/Infrastructure/WireGuard/NativeWireGuardPeerConverger.php',
+                'packages/php-sdk/src/Requests/Apps/CreateAppRequest.php',
                 'packages/php-sdk/src/Requests/Instances/CreateInstanceRequest.php',
+                'packages/php-sdk/src/Requests/Nodes/ShowNodeRequest.php',
+                'packages/php-sdk/src/Requests/Workspaces/CreateWorkspaceRequest.php',
             )
             ->not->toContain(
                 'apps/e2e/app/E2E/StandbyBuilder.php',
                 'apps/e2e/app/E2E/StandbyRefresher.php',
                 'apps/e2e/app/E2E/TopologyAcquirer.php',
                 'apps/e2e/app/E2E/TopologyVerifier.php',
-                'apps/e2e/app/E2E/State/*.php',
-                'apps/e2e/resources/guest/prepare-node.sh',
                 'apps/e2e/resources/guest/verify-topology.sh',
-                'apps/e2e/resources/guest/hydrate-orbit.sh',
                 'apps/e2e/resources/guest/receive-source.sh',
-                'apps/cli/app/Commands/Gateway/GatewayStatusCommand.php',
-                'apps/gateway/app/Console/Commands/*.php',
-                'apps/gateway/app/Http/Controllers/Api/GatewayStatusesController.php',
-                'packages/php-sdk/src/Requests/Gateway/ShowGatewayStatusRequest.php',
-                'packages/php-sdk/src/Responses/Gateway/GatewayStatusResponse.php',
             );
+
+        foreach ($paths as $selector) {
+            expect($selector)->not->toMatch('/[*?\[]/');
+        }
+    });
+
+    it('changes for representative command action data and SDK request inputs', function (): void {
+        $inputs = [
+            'apps/gateway/app/Console/Commands/ProvisionNodeCommand.php',
+            'apps/gateway/app/Actions/Nodes/ProvisionNodeAction.php',
+            'apps/gateway/app/Data/Nodes/ProvisionNodeData.php',
+            'packages/php-sdk/src/Requests/Instances/CreateInstanceRequest.php',
+        ];
+        foreach ($inputs as $input) {
+            putFingerprintFixtureFile($this->path, $input, "v1\n");
+        }
+        writePreparedManifest($this->path, array_replace(preparedManifest(), ['paths' => $inputs]));
+        fingerprintGit($this->path, ['add', '.']);
+        fingerprintGit($this->path, ['commit', '--quiet', '-m', 'base']);
+        $fingerprints = new PreparedStateFingerprint(
+            new GitRepository($this->path),
+            'resources/prepared-state.json',
+        );
+        $previous = $fingerprints->forCommit();
+
+        foreach ($inputs as $index => $input) {
+            putFingerprintFixtureFile($this->path, $input, 'v'.($index + 2)."\n");
+            fingerprintGit($this->path, ['add', $input]);
+            fingerprintGit($this->path, ['commit', '--quiet', '-m', 'change-'.$index]);
+            $current = $fingerprints->forCommit();
+
+            expect($current->value)->not->toBe($previous->value);
+            $previous = $current;
+        }
     });
 
     it('requires every current manifest selector to match a tracked file', function (): void {
@@ -272,6 +329,16 @@ function writePreparedManifest(string $path, array $manifest): void
     );
 }
 
+function putFingerprintFixtureFile(string $root, string $path, string $contents): void
+{
+    $directory = dirname($root.'/'.$path);
+    if (! is_dir($directory)) {
+        mkdir($directory, 0700, true);
+    }
+
+    file_put_contents($root.'/'.$path, $contents);
+}
+
 /** @return array<string, mixed> */
 function preparedManifest(): array
 {
@@ -281,7 +348,6 @@ function preparedManifest(): array
         'cold_epoch' => 'ubuntu-26.04-amd64-v1',
         'base_image_alias' => 'orbit-base-ubuntu-26.04-runtime',
         'declared_epochs' => ['php' => 1],
-        'laravel_pin' => ['tag' => 'v13.0.0', 'commit' => str_repeat('a', 40)],
         'topology' => [
             'profile' => 'gateway_app-dev_app-prod',
             'roles' => ['gateway', 'app-dev', 'app-prod'],

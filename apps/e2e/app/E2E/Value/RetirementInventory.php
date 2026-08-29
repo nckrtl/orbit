@@ -177,11 +177,18 @@ final readonly class RetirementInventory
                 'namespace',
                 'sha256',
             ],
-            'source_paths', 'manifests', 'locks' => ['path', 'safe_root', 'classification', 'namespace', 'sha256'],
+            'source_paths', 'manifests', 'locks' => [
+                'path',
+                'safe_root',
+                'filesystem_type',
+                'classification',
+                'namespace',
+                'sha256',
+            ],
             'base_images' => ['name', 'identity', 'fingerprint', 'classification', 'sha256'],
             'pools' => ['name', 'identity', 'classification', 'sha256'],
             'new_namespace' => ['name', 'identity', 'remote', 'project', 'classification', 'namespace', 'sha256'],
-            'evidence' => ['path', 'identity', 'classification', 'sha256'],
+            'evidence' => ['path', 'identity', 'filesystem_type', 'classification', 'sha256'],
             default => throw new InvalidArgumentException('The retirement resource kind is invalid.'),
         };
         foreach (array_keys($resource) as $key) {
@@ -196,6 +203,17 @@ final readonly class RetirementInventory
                     'A retirement inventory resource is missing a required string field.',
                 );
             }
+        }
+        $expectedFilesystemType = match ($kind) {
+            'source_paths' => 'directory',
+            'manifests', 'locks', 'evidence' => 'file',
+            default => null,
+        };
+        if (
+            $expectedFilesystemType !== null
+            && ($resource['filesystem_type'] ?? null) !== $expectedFilesystemType
+        ) {
+            throw new InvalidArgumentException('A retirement inventory filesystem type is invalid.');
         }
         if (
             ! in_array($resource['classification'], ['legacy', 'preserve'], true)

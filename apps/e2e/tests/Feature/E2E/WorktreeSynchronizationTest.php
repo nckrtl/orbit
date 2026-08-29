@@ -193,6 +193,58 @@ describe('worktree source preparation', function () {
         }
     });
 
+    it('receives an overlay without a bundle only when the guest head still matches', function () {
+        $host = syncRepository();
+        $guest = sys_get_temp_dir().'/orbit-sync-guest-'.bin2hex(random_bytes(8));
+        mkdir($guest, 0700);
+        $transfer = sys_get_temp_dir().'/orbit-transfer-'.bin2hex(random_bytes(8));
+        mkdir($transfer, 0700);
+
+        try {
+            $repository = new GitRepository($host);
+            $sha = $repository->commit();
+            $archive = $transfer.'/overlay.tar';
+            $manifest = $transfer.'/overlay.paths';
+            $deletions = $transfer.'/overlay.deletions';
+            $repository->createOverlayArchive($archive, []);
+            file_put_contents($manifest, '');
+            file_put_contents($deletions, '');
+            syncGit($guest, 'init', '--quiet');
+            syncGit($guest, 'fetch', '--quiet', $host, $sha);
+            syncGit($guest, 'reset', '--hard', '--quiet', 'FETCH_HEAD');
+
+            $result = runReceiveSource(
+                $guest,
+                $sha,
+                '-',
+                $archive,
+                $manifest,
+                $deletions,
+                $repository->effectiveTreeHash(),
+            );
+            $staleResult = runReceiveSource(
+                $guest,
+                str_repeat('f', 40),
+                '-',
+                $archive,
+                $manifest,
+                $deletions,
+                $repository->effectiveTreeHash(),
+            );
+
+            expect($result['exitCode'])
+                ->toBe(0, $result['error'])
+                ->and(json_decode($result['output'], true, 16, JSON_THROW_ON_ERROR))
+                ->toEqual(['sha' => $sha, 'tree_hash' => $repository->effectiveTreeHash()])
+                ->and($staleResult['exitCode'])
+                ->toBe(65);
+        } finally {
+            removeSyncRepository($host);
+            removeSyncRepository($guest);
+            removeSyncRepository($transfer);
+        }
+    });
+
     it('creates complete and prerequisite bundles for an exact local commit', function () {
         $path = syncRepository();
         try {
@@ -207,7 +259,7 @@ describe('worktree source preparation', function () {
             $repository->createBundle($complete, $head);
             $repository->createBundle($incremental, $head, $base);
 
-            expect($repository->isPrerequisite($base, $head))
+            expect($repository->hasCommit($base))
                 ->toBeTrue()
                 ->and(filesize($complete))
                 ->toBeGreaterThan(0)

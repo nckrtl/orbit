@@ -9,6 +9,8 @@ use InvalidArgumentException;
 /** @mago-expect lint:excessive-parameter-list The normalized VM identity includes its validated power state. */
 final readonly class IncusInstance
 {
+    public ?string $mac;
+
     /** @param array<string, string> $metadata */
     public function __construct(
         public string $remote,
@@ -19,6 +21,7 @@ final readonly class IncusInstance
         public string $status = 'STOPPED',
         public int $statusCode = 102,
         public ?string $network = null,
+        ?string $mac = null,
     ) {
         foreach ([$remote, $project, $name, $pool] as $identity) {
             if (preg_match('/\A[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}\z/', $identity) !== 1) {
@@ -33,6 +36,12 @@ final readonly class IncusInstance
         if ($network !== null && preg_match('/\A[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}\z/', $network) !== 1) {
             throw new InvalidArgumentException('Invalid Incus instance network identity.');
         }
+
+        if ($mac !== null && preg_match('/\A[0-9a-f]{2}(?::[0-9a-f]{2}){5}\z/iD', $mac) !== 1) {
+            throw new InvalidArgumentException('Invalid Incus instance MAC identity.');
+        }
+
+        $this->mac = $mac === null ? null : strtolower($mac);
     }
 
     public function isRunning(): bool

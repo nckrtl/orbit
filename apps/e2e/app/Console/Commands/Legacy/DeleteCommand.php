@@ -22,7 +22,7 @@ final class DeleteCommand extends Command
             $path = $this->required('quarantine');
             $output = $path.'.retirement.json';
             $result = $retirement->delete(
-                QuarantineManifest::fromArray($retirement->read($path)),
+                QuarantineManifest::fromArray(LegacyRetirement::readProtectedJson($path)),
                 $this->required('ack-sha256'),
                 $output.'.journal.json',
             );

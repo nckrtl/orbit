@@ -28,20 +28,32 @@ final readonly class RetirementResult
         }
         $seenDeleted = [];
         foreach ($deleted as $resource) {
+            $kind = $resource['kind'] ?? null;
+            $filesystemType = is_string($kind)
+                ? match ($kind) {
+                    'source_paths' => 'directory',
+                    'manifests', 'locks' => 'file',
+                    default => null,
+                }
+                : null;
+            $expectedKeys = $filesystemType === null
+                ? ['kind', 'identity', 'result']
+                : ['kind', 'identity', 'filesystem_type', 'result'];
             if (
                 ! is_array($resource)
                 || array_is_list($resource)
-                || array_keys($resource) !== ['kind', 'identity', 'result']
+                || array_keys($resource) !== $expectedKeys
             ) {
                 throw new InvalidArgumentException('Each deleted retirement result must contain the exact schema.');
             }
-            $kind = $resource['kind'] ?? null;
             $identity = $resource['identity'] ?? null;
             if (
                 ! is_string($kind)
                 || ! in_array($kind, RetirementInventory::CANDIDATE_KINDS, true)
                 || ! is_string($identity)
                 || $identity === ''
+                || $filesystemType !== null
+                && ($resource['filesystem_type'] ?? null) !== $filesystemType
                 || ($resource['result'] ?? null) !== 'deleted'
             ) {
                 throw new InvalidArgumentException('The retirement result identity is invalid.');

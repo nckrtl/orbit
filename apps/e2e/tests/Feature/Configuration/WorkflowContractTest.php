@@ -39,8 +39,10 @@ it('keeps the approved workflow contracts aligned', function (): void {
     expect($workflow)->toMatch('/external orchestrator retries a failed refresh.*lock/s');
     expect($workflow)->toMatch('/releases the disposable Incus\s+topology first.*runs `bin\/worktree-remove`/s');
     expect($topologies)->toContain('Registered profiles: None.');
-    expect($topologies)->toMatch('/acquire gateway_app-dev_app-prod --issue <ISSUE>/');
-    expect($topologies)->toMatch('/sync gateway_app-dev_app-prod --worktree <WORKTREE> --role <ROLE>/');
-    expect($topologies)->toMatch('/prove gateway_app-dev_app-prod --sha <CANDIDATE_SHA> --tree <TREE>/');
-    expect($topologies)->toMatch('/prove.*\n.*and `bin\/incus-profile release gateway_app-dev_app-prod`/s');
+    expect($topologies)->toContain('bin/e2e-topology acquire ISSUE WORKTREE');
+    expect($topologies)->toContain('bin/e2e-topology sync ISSUE WORKTREE');
+    expect($topologies)->toContain('bin/e2e-topology prove ISSUE WORKTREE --candidate-sha=SHA');
+    expect($topologies)->toContain('bin/e2e-topology release ISSUE');
+    expect($topologies)->toMatch('/--allow-cold.*initial construction.*never replaces.*promoted generation/s');
+    expect($topologies)->toContain('reviewed disaster-recovery procedure');
 });

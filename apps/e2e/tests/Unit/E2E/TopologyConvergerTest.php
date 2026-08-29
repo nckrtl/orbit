@@ -29,14 +29,24 @@ function task7_host(): IncusHost
 
 function task7_vm(string $name, string $owner = 'orbit-e2e'): string
 {
+    $role = str_ends_with($name, '-gateway') ? 'gateway' : (str_ends_with($name, '-app-dev') ? 'app-dev' : 'app-prod');
+    $network = 'oe-b32d6c83af72';
+    $hash = substr(sha1("{$network}:{$role}"), 0, 6);
+    $mac = '00:16:3e:'.implode(':', str_split($hash, 2));
+
     return json_encode([[
         'name' => $name,
         'type' => 'virtual-machine',
         'status' => 'Stopped',
         'status_code' => 102,
         'config' => ['user.orbit.e2e.owner' => $owner],
-        'devices' => ['root' => ['pool' => 'orbit-e2e']],
+        'devices' => ['root' => ['pool' => 'orbit-e2e'], 'eth0' => ['network' => $network, 'hwaddr' => $mac]],
     ]], JSON_THROW_ON_ERROR);
+}
+
+function task7_gateway_public_key(): string
+{
+    return 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOJgN5jVtcfw7oASD2F6If4O5mQ/HZBqbrw4QC9PcHEO';
 }
 
 /** @param list<string> $command */
@@ -56,10 +66,53 @@ function task7_ipv4(array $command): ?string
 }
 
 /** @param list<list<string>> $recorded */
+/** @mago-expect lint:cyclomatic-complexity The process fake models all ordered convergence responses in one test boundary. */
 function task7_process_result(PendingProcess $process, array &$recorded): ProcessResult
 {
     $command = $process->command;
     assert(is_array($command));
+    if (str_ends_with((string) ($command[1] ?? ''), '/resources/host/exec-all.py')) {
+        $payload = json_decode((string) $process->input, true, 512, JSON_THROW_ON_ERROR);
+        $results = [];
+        foreach ($payload['requests'] as $request) {
+            $argv = $request['argv'];
+            $recorded[] = ['incus', '--project', 'orbit', 'exec', $request['instance'], '--', ...$argv];
+            if ($argv === ['uname', '-m']) {
+                $architecture = str_contains($request['instance'], 'app-dev') ? 'x86_64' : 'aarch64';
+                $results[] = [
+                    'label' => $request['label'],
+                    'stdout' => $architecture."\n",
+                    'stderr' => '',
+                    'exit_code' => 0,
+                ];
+                continue;
+            }
+            if (in_array('addr', $argv, true)) {
+                $address = str_contains($request['instance'], 'gateway')
+                    ? '192.0.2.10'
+                    : (str_contains($request['instance'], 'app-dev') ? '192.0.2.11' : '192.0.2.12');
+                $results[] = [
+                    'label' => $request['label'],
+                    'stdout' => "2: eth0    inet {$address}/24 scope global eth0\n",
+                    'stderr' => '',
+                    'exit_code' => 0,
+                ];
+                continue;
+            }
+            $nested = new PendingProcess(app(ProcessFactory::class));
+            $nested->command = $argv;
+            $nestedRecorded = [];
+            $result = task7_process_result($nested, $nestedRecorded);
+            $results[] = [
+                'label' => $request['label'],
+                'stdout' => $result->output(),
+                'stderr' => $result->errorOutput(),
+                'exit_code' => $result->exitCode(),
+            ];
+        }
+
+        return Process::result(json_encode($results, JSON_THROW_ON_ERROR));
+    }
     $recorded[] = $command;
 
     $address = task7_ipv4($command);
@@ -67,14 +120,46 @@ function task7_process_result(PendingProcess $process, array &$recorded): Proces
         return Process::result("2: eth0    inet {$address}/24 scope global eth0\n");
     }
 
+    if (in_array('ssh-keygen', $command, true) && in_array('-y', $command, true)) {
+        return Process::result(task7_gateway_public_key()."\n");
+    }
+
+    if (in_array('uname', $command, true) && str_contains(implode(' ', $command), 'app-dev')) {
+        return Process::result("x86_64\n");
+    }
+
+    if (in_array('uname', $command, true) && str_contains(implode(' ', $command), 'app-prod')) {
+        return Process::result("aarch64\n");
+    }
+
     if (array_slice($command, -4) === ['network', 'list', 'lab:', '--format=json']) {
         return Process::result(json_encode([[
             'name' => 'oe-b32d6c83af72',
-            'config' => ['user.orbit.e2e.owner' => 'orbit-e2e'],
+            'config' => ['user.orbit.e2e.owner' => 'orbit-e2e', 'ipv4.address' => '192.0.2.0/24'],
         ]], JSON_THROW_ON_ERROR));
     }
 
     if (($command[count($command) - 1] ?? null) === '--format=json') {
+        if (in_array('network', $command, true)) {
+            return Process::result(json_encode([[
+                'name' => 'oe-b32d6c83af72',
+                'config' => ['user.orbit.e2e.owner' => 'orbit-e2e'],
+            ]], JSON_THROW_ON_ERROR));
+        }
+        if (($command[count($command) - 2] ?? null) === 'lab:') {
+            return Process::result(json_encode(
+                array_map(
+                    static fn (string $role): array => json_decode(
+                        task7_vm('orbit-e2e-nck-123-'.$role),
+                        true,
+                        16,
+                        JSON_THROW_ON_ERROR,
+                    )[0],
+                    ['gateway', 'app-dev', 'app-prod'],
+                ),
+                JSON_THROW_ON_ERROR,
+            ));
+        }
         $target = $command[count($command) - 2];
 
         return Process::result(task7_vm(
@@ -103,7 +188,7 @@ describe('TopologyConverger', function () {
             'validate.prerequisites',
             'prerequisites.gateway',
             'bootstrap.gateway',
-            'pin.ssh-hosts',
+            'authorize.gateway-ssh',
             'provision.app-dev',
             'provision.app-prod',
             'configure.app-dev-cli',
@@ -112,44 +197,52 @@ describe('TopologyConverger', function () {
             'normalize.permissions',
         ]);
 
-        $mutations = collect($recorded)
+        $guestCommands = collect($recorded)
             ->filter(
                 fn (array $command): bool => in_array('exec', $command, true) && ! in_array('addr', $command, true),
             )
             ->values()
             ->all();
 
-        expect($mutations)
-            ->toHaveCount(12)
-            ->and(array_column(array_slice($mutations, 0, 4), 4))
+        expect($guestCommands)
+            ->toHaveCount(16)
+            ->and(array_column(array_slice($guestCommands, 0, 3), 4))
             ->toBe([
-                'lab:orbit-e2e-nck-123-gateway',
                 'lab:orbit-e2e-nck-123-gateway',
                 'lab:orbit-e2e-nck-123-gateway',
                 'lab:orbit-e2e-nck-123-gateway',
             ]);
 
-        expect(array_map(
-            fn (array $command): array => array_slice($command, 6),
-            array_slice($mutations, 0, 2),
-        ))->toBe([
-            ['/usr/local/bin/converge-gateway.sh', 'prerequisites'],
-            ['/usr/local/bin/converge-gateway.sh', 'bootstrap', '192.0.2.10'],
-        ]);
-
-        expect(array_map(fn (array $command): array => array_slice($command, 6), array_slice($mutations, 2, 5)))->toBe([
-            ['/usr/local/bin/prepare-node.sh', 'ssh-pins', '192.0.2.11', '192.0.2.12'],
-            ['/usr/local/bin/converge-app-dev.sh', 'orbit-e2e-nck-123-app-dev', '192.0.2.11'],
-            ['/usr/local/bin/converge-app-prod-internal-tls.sh', 'orbit-e2e-nck-123-app-prod', '192.0.2.12'],
-            ['/usr/local/bin/converge-sample-app.sh', 'configure-cli', '192.0.2.10'],
-            [
-                '/usr/local/bin/converge-sample-app.sh',
-                'create-resources',
-                'orbit-e2e-nck-123-app-dev',
-                'orbit-e2e-nck-123-app-prod',
-                str_repeat('b', 40),
-            ],
-        ]);
+        expect(array_map(fn (array $command): array => array_slice($command, 6), array_slice($guestCommands, 0, 17)))
+            ->toBe([
+                ['/usr/local/bin/converge-gateway.sh', 'prerequisites'],
+                ['/usr/local/bin/converge-gateway.sh', 'bootstrap', '192.0.2.10'],
+                ['ssh-keygen', '-y', '-f', '/home/orbit/.orbit/ssh/id_ed25519'],
+                ['/usr/local/bin/prepare-node.sh', 'gateway-authorize', task7_gateway_public_key()],
+                ['/usr/local/bin/prepare-node.sh', 'gateway-authorize', task7_gateway_public_key()],
+                ['uname', '-m'],
+                ['uname', '-m'],
+                ['/usr/local/bin/converge-app-dev.sh', 'app-dev', '192.0.2.11', 'x86_64'],
+                [
+                    '/usr/local/bin/converge-app-prod-internal-tls.sh',
+                    'app-prod',
+                    '192.0.2.12',
+                    'aarch64',
+                ],
+                ['/usr/local/bin/converge-sample-app.sh', 'configure-cli', '192.0.2.10'],
+                [
+                    '/usr/local/bin/converge-sample-app.sh',
+                    'create-resources',
+                    'app-dev',
+                    'app-prod',
+                    str_repeat('b', 40),
+                ],
+                ['/usr/local/bin/converge-sample-app.sh', 'hydrate', str_repeat('b', 40), 'app-dev'],
+                ['/usr/local/bin/converge-sample-app.sh', 'hydrate', str_repeat('b', 40), 'app-prod'],
+                ['/usr/local/bin/prepare-node.sh', 'permissions'],
+                ['/usr/local/bin/prepare-node.sh', 'permissions'],
+                ['/usr/local/bin/prepare-node.sh', 'permissions'],
+            ]);
 
         Process::assertDidntRun(
             fn (PendingProcess $process): bool => (
@@ -200,6 +293,20 @@ describe('TopologyConverger', function () {
             }
 
             $target = $command[count($command) - 2];
+            if ($target === 'lab:') {
+                return Process::result(json_encode(array_map(
+                    static fn (string $role): array => json_decode(
+                        task7_vm(
+                            "orbit-e2e-nck-123-{$role}",
+                            $foreignResource === $role ? 'foreign' : 'orbit-e2e',
+                        ),
+                        true,
+                        16,
+                        JSON_THROW_ON_ERROR,
+                    )[0],
+                    ['gateway', 'app-dev', 'app-prod'],
+                ), JSON_THROW_ON_ERROR));
+            }
             $name = str_contains($target, ':') ? substr($target, strpos($target, ':') + 1) : $target;
             $owner = $foreignResource === 'app-prod' && str_ends_with($name, '-app-prod') ? 'foreign' : 'orbit-e2e';
 
