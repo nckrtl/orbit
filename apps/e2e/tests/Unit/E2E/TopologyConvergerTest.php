@@ -133,7 +133,7 @@ function task7_process_result(PendingProcess $process, array &$recorded): Proces
     }
 
     if (in_array('ssh-keygen', $command, true) && in_array('-y', $command, true)) {
-        return Process::result(task7_gateway_public_key()."\n");
+        return Process::result(task7_gateway_public_key()." orbit-gateway\n");
     }
 
     if (in_array('uname', $command, true) && str_contains(implode(' ', $command), 'app-dev')) {

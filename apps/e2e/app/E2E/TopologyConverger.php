@@ -179,11 +179,11 @@ final readonly class TopologyConverger
         }
 
         $key = trim($result->stdout);
-        if (preg_match('/\Assh-ed25519 [A-Za-z0-9+\/]+={0,2}\z/D', $key) !== 1) {
+        if (preg_match('/\A(ssh-ed25519 [A-Za-z0-9+\/]+={0,2})(?: [^\r\n]+)?\z/D', $key, $matches) !== 1) {
             throw new RuntimeException('The Gateway SSH public key is invalid.');
         }
 
-        return $key;
+        return $matches[1];
     }
 
     /** @param list<string> $arguments */
