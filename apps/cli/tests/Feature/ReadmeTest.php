@@ -18,6 +18,26 @@ it('documents the first-use gateway trust flow', function (): void {
         ->not->toContain('gateway:add local https://gateway.orbit --ca=');
 });
 
+it('documents the doctor verification boundary', function (): void {
+    $readme = file_get_contents(base_path('README.md'));
+    $doctorSection = <<<'MARKDOWN'
+        ## Doctor
+
+        ```bash
+        ./orbit doctor
+        ./orbit doctor --node=7 --family=instance --family=workspace
+        ./orbit doctor --family=firewall --json
+        ```
+
+        Doctor only verifies state and never repairs it. Exit status 1 means unhealthy,
+        unverifiable, or a transport failure.
+        MARKDOWN;
+
+    expect($readme)
+        ->toBeString()
+        ->toContain($doctorSection);
+});
+
 it('documents JavaScript processes through the managed Vite+ entry point', function (): void {
     $readme = file_get_contents(base_path('README.md'));
     $viteProcess = <<<'MARKDOWN'

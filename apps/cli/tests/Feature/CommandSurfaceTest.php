@@ -25,6 +25,7 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'app:new',
         'app:remove',
         'app:show',
+        'doctor',
         'firewall:allow',
         'firewall:deny',
         'firewall:list',
@@ -72,7 +73,7 @@ it('does not register hidden Orbit product commands', function (): void {
     $orbitCommands = collect(app(Kernel::class)->all())
         ->filter(static fn (Command $command): bool => str_starts_with($command::class, 'App\\Commands\\'));
 
-    expect($orbitCommands)->toHaveCount(46);
+    expect($orbitCommands)->toHaveCount(47);
     expect($orbitCommands->every(
         static fn (Command $command): bool => ! $command->isHidden(),
     ))->toBeTrue();
@@ -111,6 +112,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'app:new' => [['slug', 'repository'], ['name' => null, 'json' => false]],
         'app:remove' => [['app'], ['json' => false]],
         'app:show' => [['app'], ['json' => false]],
+        'doctor' => [[], ['node' => null, 'family' => [], 'json' => false]],
         'firewall:allow' => [
             ['name'],
             ['node' => null, 'from' => null, 'protocol' => null, 'port' => null, 'json' => false],
@@ -299,6 +301,7 @@ it('renders one exact json failure envelope for every Orbit product command', fu
         'app:new' => [['slug' => 'app', 'repository' => 'https://example.test/app.git'], ...$profileMissing],
         'app:remove' => [['app' => '1'], ...$profileMissing],
         'app:show' => [['app' => '1'], ...$profileMissing],
+        'doctor' => [[], ...$profileMissing],
         'firewall:allow' => [['name' => 'web', '--node' => '1', '--port' => '443'], ...$profileMissing],
         'firewall:deny' => [['name' => 'web', '--node' => '1', '--port' => '443'], ...$profileMissing],
         'firewall:list' => [['--node' => '1'], ...$profileMissing],
