@@ -377,10 +377,13 @@ describe('convergence guest scripts', function () {
         );
         file_put_contents(
             "{$root}/bin/systemctl",
-            "#!/usr/bin/env bash\nprintf '%s\\n' \"\$*\" >> '{$root}/commands'\n",
+            "#!/usr/bin/env bash\nprintf '%s\\n' \"\$*\" >> '{$root}/commands'\n"
+            ."[[ \"\$1\" == is-active ]] && exit \"\${ORBIT_WG_INACTIVE:-0}\"\nexit 0\n",
         );
+        file_put_contents("{$root}/bin/wg", "#!/usr/bin/env bash\nprintf '%s\\n' \"wg \$*\" >> '{$root}/commands'\n");
         file_put_contents("{$root}/bin/ping", "#!/usr/bin/env bash\nexit 0\n");
         chmod("{$root}/bin/systemctl", 0o700);
+        chmod("{$root}/bin/wg", 0o700);
         chmod("{$root}/bin/ping", 0o700);
         $script = str_replace(
             '/etc/wireguard/orbit.conf',
@@ -393,13 +396,14 @@ describe('convergence guest scripts', function () {
         try {
             expect(new Process(['bash', "{$root}/retarget-vpn.sh", '10.232.1.10'], env: $environment)->run())
                 ->toBe(0)
-                ->and(file_exists("{$root}/commands"))
-                ->toBeFalse();
+                ->and(file("{$root}/commands", FILE_IGNORE_NEW_LINES))
+                ->toBe(['is-active --quiet wg-quick@orbit']);
+            unlink("{$root}/commands");
 
             expect(new Process(['bash', "{$root}/retarget-vpn.sh", '10.232.7.10'], env: $environment)->run())
                 ->toBe(0)
                 ->and(file("{$root}/commands", FILE_IGNORE_NEW_LINES))
-                ->toBe(['restart wg-quick@orbit'])
+                ->toBe(['is-active --quiet wg-quick@orbit', 'wg set orbit peer y endpoint 10.232.7.10:51820'])
                 ->and(file_get_contents("{$root}/etc/wireguard/orbit.conf"))
                 ->toContain("Endpoint = 10.232.7.10:51820\n")
                 ->and(fileperms("{$root}/etc/wireguard/orbit.conf") & 0o777)
@@ -407,6 +411,17 @@ describe('convergence guest scripts', function () {
 
             expect(new Process(['bash', "{$root}/retarget-vpn.sh", 'not-an-address'], env: $environment)->run())
                 ->toBe(64);
+
+            unlink("{$root}/commands");
+            expect(
+                new Process(
+                    ['bash', "{$root}/retarget-vpn.sh", '10.232.9.10'],
+                    env: [...$environment, 'ORBIT_WG_INACTIVE' => '3'],
+                )->run(),
+            )
+                ->toBe(0)
+                ->and(file("{$root}/commands", FILE_IGNORE_NEW_LINES))
+                ->toBe(['is-active --quiet wg-quick@orbit', 'restart wg-quick@orbit']);
         } finally {
             new Illuminate\Filesystem\Filesystem()->deleteDirectory($root);
         }

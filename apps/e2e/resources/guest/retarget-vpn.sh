@@ -12,12 +12,21 @@ current=$(awk -F' *= *' '$1 == "Endpoint" { print $2; exit }' "$conf")
 [[ "$current" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}:[0-9]{1,5}$ ]] || exit 65
 port=${current##*:}
 desired="$1:$port"
+peer=$(awk -F' *= *' '$1 == "PublicKey" { print $2; exit }' "$conf")
+[[ -n "$peer" ]] || exit 65
 if [[ "$current" != "$desired" ]]; then
   candidate=$(mktemp "$conf.XXXXXX")
   sed "s|^Endpoint *=.*|Endpoint = $desired|" "$conf" >"$candidate"
   chmod 0600 "$candidate"
   mv -f "$candidate" "$conf"
-  systemctl restart wg-quick@orbit
+fi
+if systemctl is-active --quiet wg-quick@orbit; then
+  if [[ "$current" != "$desired" ]]; then
+    wg set orbit peer "$peer" endpoint "$desired"
+  fi
+elif ! systemctl restart wg-quick@orbit; then
+  journalctl -u wg-quick@orbit --no-pager -n 30 >&2 || true
+  exit 1
 fi
 deadline=$((SECONDS + 60))
 until ping -c 1 -W 2 10.44.0.1 >/dev/null 2>&1; do
