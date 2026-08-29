@@ -961,12 +961,18 @@ final class IncusHost implements GuestTransport
 
     private function clonedHostStateResetScript(string $instance): string
     {
-        $machineId = substr(hash('sha256', implode(':', [$this->remote, $this->project, $this->pool, $instance])), 0, 32);
+        $machineId = substr(
+            hash('sha256', implode(':', [$this->remote, $this->project, $this->pool, $instance])),
+            0,
+            32,
+        );
 
-        return sprintf(
-            "rm -f /etc/machine-id /var/lib/dbus/machine-id && printf '%%s\\n' '%s' > /etc/machine-id && ln -s /etc/machine-id /var/lib/dbus/machine-id",
-            $machineId,
-        ).self::CLONED_HOST_STATE_RESET_SUFFIX;
+        return (
+            sprintf(
+                "rm -f /etc/machine-id /var/lib/dbus/machine-id && printf '%%s\\n' '%s' > /etc/machine-id && ln -s /etc/machine-id /var/lib/dbus/machine-id",
+                $machineId,
+            ).self::CLONED_HOST_STATE_RESET_SUFFIX
+        );
     }
 
     private function incusLimit(string $key, string $default): string
