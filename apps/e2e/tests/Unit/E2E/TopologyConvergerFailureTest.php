@@ -39,6 +39,14 @@ function failing_converger_vm(string $name): string
     ]], JSON_THROW_ON_ERROR);
 }
 
+/** @param list<string> $command */
+function failing_converger_is_global_ipv4_probe(array $command): bool
+{
+    return ($command[0] ?? null) === 'sh'
+    && ($command[1] ?? null) === '-c'
+    && str_contains((string) ($command[2] ?? ''), 'route show default');
+}
+
 function failing_converger_process_result(
     array $command,
     string $script,
@@ -69,7 +77,9 @@ function failing_converger_process_result(
                 ? substr($command[count($command) - 2], strpos($command[count($command) - 2], ':') + 1)
                 : $command[count($command) - 2],
         )),
-        in_array('addr', $command, true) => Process::result("2: eth0    inet 192.0.2.10/24 scope global eth0\n"),
+        failing_converger_is_global_ipv4_probe($command) => Process::result(
+            "2: enp5s0    inet 192.0.2.10/24 scope global enp5s0\n",
+        ),
         in_array('ssh-keygen', $command, true) && in_array('-y', $command, true) => Process::result(
             'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOJgN5jVtcfw7oASD2F6If4O5mQ/HZBqbrw4QC9PcHEO'."\n",
         ),
@@ -90,11 +100,11 @@ function failing_converger_batch(
     $results = [];
     foreach ($payload['requests'] as $request) {
         $argv = $request['argv'];
-        if (in_array('addr', $argv, true)) {
+        if (failing_converger_is_global_ipv4_probe($argv)) {
             $address = str_contains($request['instance'], 'gateway') ? '192.0.2.10' : '192.0.2.11';
             $results[] = [
                 'label' => $request['label'],
-                'stdout' => "2: eth0 inet {$address}/24 scope global eth0\n",
+                'stdout' => "2: enp5s0 inet {$address}/24 scope global enp5s0\n",
                 'stderr' => '',
                 'exit_code' => 0,
             ];
@@ -202,8 +212,8 @@ describe('TopologyConverger guest failures', function () {
                 return Process::result(failing_converger_vm($name));
             }
 
-            if (in_array('addr', $command, true)) {
-                return Process::result("2: eth0    inet 192.0.2.10/24 scope global eth0\n");
+            if (failing_converger_is_global_ipv4_probe($command)) {
+                return Process::result("2: enp5s0    inet 192.0.2.10/24 scope global enp5s0\n");
             }
 
             if (in_array('/usr/local/bin/converge-gateway.sh', $command, true)) {
@@ -289,8 +299,8 @@ describe('TopologyConverger diagnostic parsing', function () {
                 return Process::result(failing_converger_vm($name));
             }
 
-            if (in_array('addr', $command, true)) {
-                return Process::result("2: eth0    inet 192.0.2.10/24 scope global eth0\n");
+            if (failing_converger_is_global_ipv4_probe($command)) {
+                return Process::result("2: enp5s0    inet 192.0.2.10/24 scope global enp5s0\n");
             }
 
             if (in_array('ssh-keygen', $command, true) && in_array('-y', $command, true)) {

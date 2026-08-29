@@ -28,7 +28,10 @@ use Throwable;
 final class IncusHost implements GuestTransport
 {
     private const int GUEST_READINESS_POLL_INTERVAL_MICROSECONDS = 1_000_000;
-    private const string CLONED_HOST_STATE_RESET_SUFFIX = ' && systemctl restart systemd-journald && for directory in /run/systemd/netif/leases /var/lib/systemd/network; do if [ -e "$directory" ]; then [ -d "$directory" ] && [ ! -L "$directory" ] || exit 1; find "$directory" -mindepth 1 -maxdepth 1 -type f -delete || exit 1; fi; done && ip -4 addr flush dev eth0 scope global && (systemctl restart systemd-networkd || systemctl restart NetworkManager)';
+    private const string DEFAULT_ROUTE_INTERFACE_RESOLUTION = 'interface=$(ip -4 route show default | awk \'$1 == "default" { for (i = 2; i < NF; i++) if ($i == "dev") { print $(i + 1); exit } }\') && [ -n "$interface" ]';
+    private const string GLOBAL_IPV4_PROBE =
+        self::DEFAULT_ROUTE_INTERFACE_RESOLUTION.' && ip -4 -o addr show dev "$interface" scope global';
+    private const string CLONED_HOST_STATE_RESET_SUFFIX = ' && systemctl restart systemd-journald && for directory in /run/systemd/netif/leases /var/lib/systemd/network; do if [ -e "$directory" ]; then [ -d "$directory" ] && [ ! -L "$directory" ] || exit 1; find "$directory" -mindepth 1 -maxdepth 1 -type f -delete || exit 1; fi; done && ip -4 addr flush dev "$interface" scope global && (systemctl restart systemd-networkd || systemctl restart NetworkManager)';
 
     /** @var array<string, IncusInstance> */
     private array $ownedInstanceCache = [];
@@ -652,15 +655,9 @@ final class IncusHost implements GuestTransport
                     'exec',
                     $this->target($instance),
                     '--',
-                    'ip',
-                    '-4',
-                    '-o',
-                    'addr',
-                    'show',
-                    'dev',
-                    'eth0',
-                    'scope',
-                    'global',
+                    'sh',
+                    '-c',
+                    self::GLOBAL_IPV4_PROBE,
                 ];
             }
             try {
@@ -699,17 +696,14 @@ final class IncusHost implements GuestTransport
         foreach ($instances as $label => $instance) {
             $commands[$label] = [
                 'instance' => $instance,
-                'command' => new GuestCommand([
-                    'ip',
-                    '-4',
-                    '-o',
-                    'addr',
-                    'show',
-                    'dev',
-                    'eth0',
-                    'scope',
-                    'global',
-                ], 10),
+                'command' => new GuestCommand(
+                    [
+                        'sh',
+                        '-c',
+                        self::GLOBAL_IPV4_PROBE,
+                    ],
+                    10,
+                ),
             ];
         }
 
@@ -742,10 +736,6 @@ final class IncusHost implements GuestTransport
         $addresses = [];
         foreach (preg_split('/\R/', trim($output)) ?: [] as $line) {
             $fields = preg_split('/\s+/', trim($line)) ?: [];
-            $interface = rtrim($fields[1] ?? '', ':');
-            if ($interface !== 'eth0') {
-                continue;
-            }
             $inet = array_search('inet', $fields, true);
             $address = is_int($inet) ? explode('/', $fields[$inet + 1] ?? '', 2)[0] : '';
             if (
@@ -819,15 +809,9 @@ final class IncusHost implements GuestTransport
                         'exec',
                         $this->target($instance),
                         '--',
-                        'ip',
-                        '-4',
-                        '-o',
-                        'addr',
-                        'show',
-                        'dev',
-                        'eth0',
-                        'scope',
-                        'global',
+                        'sh',
+                        '-c',
+                        self::GLOBAL_IPV4_PROBE,
                     ],
                     default => throw new RuntimeException('Cloned host-state preparation entered an invalid state.'),
                 };
@@ -899,15 +883,9 @@ final class IncusHost implements GuestTransport
                         'exec',
                         $this->target($instance),
                         '--',
-                        'ip',
-                        '-4',
-                        '-o',
-                        'addr',
-                        'show',
-                        'dev',
-                        'eth0',
-                        'scope',
-                        'global',
+                        'sh',
+                        '-c',
+                        self::GLOBAL_IPV4_PROBE,
                     ],
                     default => throw new RuntimeException('Restored host-state readiness entered an invalid state.'),
                 };
@@ -972,13 +950,12 @@ final class IncusHost implements GuestTransport
             0,
             32,
         );
-
-        return (
-            sprintf(
-                "rm -f /etc/machine-id /var/lib/dbus/machine-id && printf '%%s\\n' '%s' > /etc/machine-id && ln -s /etc/machine-id /var/lib/dbus/machine-id",
-                $machineId,
-            ).self::CLONED_HOST_STATE_RESET_SUFFIX
+        $machineIdReset = sprintf(
+            "rm -f /etc/machine-id /var/lib/dbus/machine-id && printf '%%s\\n' '%s' > /etc/machine-id && ln -s /etc/machine-id /var/lib/dbus/machine-id",
+            $machineId,
         );
+
+        return self::DEFAULT_ROUTE_INTERFACE_RESOLUTION.' && '.$machineIdReset.self::CLONED_HOST_STATE_RESET_SUFFIX;
     }
 
     private function incusLimit(string $key, string $default): string

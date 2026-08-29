@@ -50,9 +50,17 @@ function task7_gateway_public_key(): string
 }
 
 /** @param list<string> $command */
+function task7_is_global_ipv4_probe(array $command): bool
+{
+    return ($command[0] ?? null) === 'sh'
+    && ($command[1] ?? null) === '-c'
+    && str_contains((string) ($command[2] ?? ''), 'route show default');
+}
+
+/** @param list<string> $command */
 function task7_ipv4(array $command): ?string
 {
-    if (! in_array('addr', $command, true)) {
+    if (! task7_is_global_ipv4_probe($command)) {
         return null;
     }
 
@@ -87,13 +95,13 @@ function task7_process_result(PendingProcess $process, array &$recorded): Proces
                 ];
                 continue;
             }
-            if (in_array('addr', $argv, true)) {
+            if (task7_is_global_ipv4_probe($argv)) {
                 $address = str_contains($request['instance'], 'gateway')
                     ? '192.0.2.10'
                     : (str_contains($request['instance'], 'app-dev') ? '192.0.2.11' : '192.0.2.12');
                 $results[] = [
                     'label' => $request['label'],
-                    'stdout' => "2: eth0    inet {$address}/24 scope global eth0\n",
+                    'stdout' => "2: enp5s0    inet {$address}/24 scope global enp5s0\n",
                     'stderr' => '',
                     'exit_code' => 0,
                 ];
@@ -117,7 +125,7 @@ function task7_process_result(PendingProcess $process, array &$recorded): Proces
 
     $address = task7_ipv4($command);
     if ($address !== null) {
-        return Process::result("2: eth0    inet {$address}/24 scope global eth0\n");
+        return Process::result("2: enp5s0    inet {$address}/24 scope global enp5s0\n");
     }
 
     if (in_array('ssh-keygen', $command, true) && in_array('-y', $command, true)) {
@@ -199,7 +207,9 @@ describe('TopologyConverger', function () {
 
         $guestCommands = collect($recorded)
             ->filter(
-                fn (array $command): bool => in_array('exec', $command, true) && ! in_array('addr', $command, true),
+                fn (array $command): bool => (
+                    in_array('exec', $command, true) && ! task7_is_global_ipv4_probe(array_slice($command, 6))
+                ),
             )
             ->values()
             ->all();

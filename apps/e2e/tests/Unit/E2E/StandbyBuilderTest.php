@@ -55,6 +55,16 @@ function standby_incus_command(string ...$arguments): array
     return ['incus', '--project', 'default', ...$arguments];
 }
 
+/** @param list<string> $command */
+function standby_builder_is_global_ipv4_probe(array $command): bool
+{
+    return (
+        ($command[3] ?? null) === 'exec'
+        && in_array('sh', $command, true)
+        && str_contains(implode(' ', $command), 'ip -4 route show default')
+    );
+}
+
 /** @return array{schema:int,operation_id:string,remote:string,project:string,pool:string,network:array{name:string,state:string,absent_preflight:bool},base_image_fingerprint:string,instances:list<mixed>,status:string} */
 function legacy_cleaned_standby_attempt(string $evidence): array
 {
@@ -234,10 +244,10 @@ describe('StandbyBuilder', function () {
 
                 return Process::result();
             }
-            if (in_array('ip', $command, true)) {
+            if (standby_builder_is_global_ipv4_probe($command)) {
                 $events[] = 'ipv4';
 
-                return Process::result("2: eth0    inet 10.232.1.10/24 scope global eth0\n");
+                return Process::result("2: enp5s0    inet 10.232.1.10/24 scope global enp5s0\n");
             }
             if (in_array('/bin/true', $command, true)) {
                 $events[] = 'wait';

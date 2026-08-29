@@ -541,13 +541,19 @@ function rollingMigrationGuestProcess(
         return Process::result(['migration applied'], ['migration warning']);
     }
 
-    if (in_array('addr', $guestArguments, true)) {
+    if (
+        $guestArguments === [
+            'sh',
+            '-c',
+            'interface=$(ip -4 route show default | awk \'$1 == "default" { for (i = 2; i < NF; i++) if ($i == "dev") { print $(i + 1); exit } }\') && [ -n "$interface" ] && ip -4 -o addr show dev "$interface" scope global',
+        ]
+    ) {
         $event = "ipv4:{$target}";
         if (! in_array($event, $state->events, true)) {
             $state->events[] = $event;
         }
 
-        return Process::result("2: eth0 inet 192.0.2.10/24 scope global eth0\n");
+        return Process::result("2: enp5s0 inet 192.0.2.10/24 scope global enp5s0\n");
     }
 
     if ($guestArguments === ['git', '-C', '/home/orbit/orbit', 'rev-parse', '--verify', 'HEAD^{commit}']) {

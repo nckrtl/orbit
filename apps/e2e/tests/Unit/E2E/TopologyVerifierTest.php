@@ -71,6 +71,15 @@ function isDirectTopologyVerifierProbe(PendingProcess $process): bool
     );
 }
 
+function isGlobalIpv4TopologyVerifierProbe(array $argv): bool
+{
+    return $argv === [
+        'sh',
+        '-c',
+        'interface=$(ip -4 route show default | awk \'$1 == "default" { for (i = 2; i < NF; i++) if ($i == "dev") { print $(i + 1); exit } }\') && [ -n "$interface" ] && ip -4 -o addr show dev "$interface" scope global',
+    ];
+}
+
 function topologyVerifierInventory(PendingProcess $process): ?ProcessResult
 {
     $command = $process->command;
@@ -190,11 +199,11 @@ describe('TopologyVerifier', function () {
             $batches[] = array_column($payload['requests'], 'label');
             $results = [];
             foreach ($payload['requests'] as $request) {
-                if (($request['argv'] ?? [])[0] === 'ip') {
+                if (isGlobalIpv4TopologyVerifierProbe($request['argv'] ?? [])) {
                     $results[] = [
                         'label' => $request['label'],
                         'stdout' =>
-                            '2: eth0    inet 192.0.2.'
+                            '2: enp5s0    inet 192.0.2.'
                                 .['gateway' => 1, 'app-dev' => 2, 'app-prod' => 3][$request['label']]
                                 .'/24 scope global',
                         'stderr' => '',
@@ -309,11 +318,11 @@ describe('TopologyVerifier', function () {
             $batches[] = array_column($payload['requests'], 'label');
             $results = [];
             foreach ($payload['requests'] as $request) {
-                if (($request['argv'] ?? [])[0] === 'ip') {
+                if (isGlobalIpv4TopologyVerifierProbe($request['argv'] ?? [])) {
                     $results[] = [
                         'label' => $request['label'],
                         'stdout' =>
-                            '2: eth0    inet 192.0.2.'
+                            '2: enp5s0    inet 192.0.2.'
                                 .['gateway' => 1, 'app-dev' => 2, 'app-prod' => 3][$request['label']]
                                 .'/24 scope global',
                         'stderr' => '',
