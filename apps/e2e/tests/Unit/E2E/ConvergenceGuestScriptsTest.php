@@ -459,13 +459,13 @@ describe('convergence guest scripts', function () {
 
         expect($production)
             ->toContain('orbit-e2e-global.caddy', 'local_certs', 'caddy-ca-path')
-            ->not->toContain('Caddyfile.orbit-e2e')
-            ->and($production)
-            ->not->toContain('readlink -f')
-            ->and($production)
-            ->not->toContain('systemctl reload caddy')
-            ->and($sample)
-            ->toContain('Caddyfile.orbit-e2e', 'readlink -f /etc/caddy/Caddyfile', 'systemctl reload caddy');
+            ->not->toContain('Caddyfile.orbit-e2e')->and($production)
+            ->not->toContain('readlink -f')->and($production)
+            ->not->toContain('systemctl reload caddy')->and($sample)->toContain(
+                'Caddyfile.orbit-e2e',
+                'readlink -f /etc/caddy/Caddyfile',
+                'systemctl reload caddy',
+            );
     });
 
     it('enforces the verifier argument and output contract', function () {

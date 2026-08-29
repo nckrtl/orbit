@@ -243,7 +243,7 @@ describe('TopologyConverger', function () {
                     '192.0.2.12',
                     'aarch64',
                 ],
-                ['/usr/local/bin/converge-sample-app.sh', 'configure-cli', '192.0.2.10'],
+                ['/usr/local/bin/converge-sample-app.sh', 'configure-cli', '10.44.0.1'],
                 [
                     '/usr/local/bin/converge-sample-app.sh',
                     'create-resources',
