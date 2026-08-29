@@ -118,7 +118,7 @@ final readonly class NativeWireGuardPeerConverger implements WireGuardPeerConver
         $vpn = $this->configuration->forPeer($node);
         $node->update(['wireguard_public_key' => $publicKey]);
         $this->gatewayPeers->converge($node);
-        $peerCommand = $this->peerCommand($vpn, $publicKey, $transactionMode);
+        $peerCommand = $this->peerCommand($vpn, $publicKey, $node->tld, $transactionMode);
         $peerResult = $this->ssh->execute($connection, $peerCommand);
         foreach (self::PEER_INSTALL_RETRY_DELAYS as $delay) {
             if (
@@ -356,6 +356,7 @@ final readonly class NativeWireGuardPeerConverger implements WireGuardPeerConver
     private function peerCommand(
         VpnConfiguration $vpn,
         string $peerPublicKey,
+        ?string $appDevTld,
         string $transactionMode,
     ): RemoteCommand {
         $cleanup = $transactionMode === 'retain'
@@ -383,6 +384,7 @@ final readonly class NativeWireGuardPeerConverger implements WireGuardPeerConver
                 $vpn->subnet,
                 $vpn->dnsServer,
                 $vpn->domain,
+                $appDevTld ?? '',
                 $vpn->dnsThroughWireGuard ? 'wireguard' : 'underlay',
                 $transactionMode,
             ],
@@ -397,8 +399,9 @@ final readonly class NativeWireGuardPeerConverger implements WireGuardPeerConver
                     subnet=$5
                     dns_server=$6
                     domain=$7
-                    dns_mode=$8
-                    transaction_mode=$9
+                    app_dev_tld=$8
+                    dns_mode=$9
+                    transaction_mode=${10}
                     exec 9>/run/lock/orbit-wireguard-peer.lock
                     flock -w 30 9
                     private_key=$(cat /etc/wireguard/orbit.key)
@@ -467,10 +470,15 @@ final readonly class NativeWireGuardPeerConverger implements WireGuardPeerConver
                     mv -fT -- "$transaction_candidate" "$transaction"
                     printf -v dns_server_escaped '%q' "$dns_server"
                     printf -v domain_escaped '%q' "~$domain"
+                    printf -v app_dev_tld_escaped '%q' "~$app_dev_tld"
 
                     dns_hooks=
                     if [ "$dns_mode" = wireguard ]; then
-                        dns_hooks="PostUp = resolvectl dns %i $dns_server_escaped; resolvectl domain %i $domain_escaped"$'\n'"PreDown = resolvectl revert %i"
+                        dns_domains="$domain_escaped"
+                        if [ -n "$app_dev_tld" ] && [ "$app_dev_tld" != "$domain" ]; then
+                            dns_domains="$dns_domains $app_dev_tld_escaped"
+                        fi
+                        dns_hooks="PostUp = resolvectl dns %i $dns_server_escaped; resolvectl domain %i $dns_domains"$'\n'"PreDown = resolvectl revert %i"
                     fi
 
                     old_dns_link=
@@ -607,7 +615,12 @@ final readonly class NativeWireGuardPeerConverger implements WireGuardPeerConver
                             restore_after_failure || exit 1
                             exit 1
                         fi
-                        if ! resolvectl domain "$dns_link" "~$domain"; then
+                        if [ -n "$app_dev_tld" ] && [ "$app_dev_tld" != "$domain" ]; then
+                            resolvectl_domain=("~$domain" "~$app_dev_tld")
+                        else
+                            resolvectl_domain=("~$domain")
+                        fi
+                        if ! resolvectl domain "$dns_link" "${resolvectl_domain[@]}"; then
                             restore_after_failure || exit 1
                             exit 1
                         fi

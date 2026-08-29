@@ -48,6 +48,7 @@ it('validates a candidate config under /etc/wireguard before replacing the live 
             'name' => 'app-dev',
             'public_ssh_host' => '94.237.40.75',
             'wireguard_address' => '10.44.0.2',
+            'tld' => 'custom.internal',
         ]);
         $settings = new VpnSettings(app(SettingRepository::class));
         $settings->configure(
@@ -163,17 +164,18 @@ it('validates a candidate config under /etc/wireguard before replacing the live 
                 'systemctl restart wg-quick@orbit || return 1',
                 'printf -v dns_server_escaped \'%q\' "$dns_server"',
                 'printf -v domain_escaped \'%q\' "~$domain"',
-                'dns_mode=$8',
+                'app_dev_tld=$8',
+                'dns_mode=$9',
                 'dns_state=/etc/wireguard/orbit.dns-link',
                 'restore_dns() {',
                 'if [ "$dns_mode" = wireguard ]; then',
-                'PostUp = resolvectl dns %i $dns_server_escaped; resolvectl domain %i $domain_escaped',
+                'PostUp = resolvectl dns %i $dns_server_escaped; resolvectl domain %i $dns_domains',
                 'PreDown = resolvectl revert %i',
                 'route=$(ip -o route get "$dns_server")',
                 'if [[ "$route" =~ [[:space:]]dev[[:space:]]([^[:space:]]+) ]]; then',
                 'Could not resolve DNS interface.',
                 'resolvectl dns "$dns_link" "$dns_server"',
-                'resolvectl domain "$dns_link" "~$domain"',
+                'resolvectl_domain=("~$domain" "~$app_dev_tld")',
                 'printf \'%s\\n%s\\n%s\\n\' "$dns_link" "$dns_server" "$domain" > "$dns_state_candidate"',
             )
             ->not->toContain(
@@ -182,6 +184,9 @@ it('validates a candidate config under /etc/wireguard before replacing the live 
                 'PreDown = route=',
                 '| sed ',
             );
+
+        expect($ssh->commands[1]->arguments)
+            ->toContain('custom.internal');
 
         expect(array_slice($ssh->commands[1]->arguments, -2))
             ->toBe(['underlay', 'finalize']);
@@ -1504,8 +1509,49 @@ function wireguard_peer_harness(ProcessRunner $processes, SshExecutor $ssh, ?\Cl
     ];
 }
 
+it('routes the peer TLD with the VPN domain in executable peer installs', function (
+    ?string $tld,
+    ?string $dnsServer,
+    string $expected,
+    string $unexpected,
+): void {
+    $harness = remote_wireguard_peer_install_harness(false, 'inactive', 'disabled', false, $tld, $dnsServer);
+
+    try {
+        $result = $harness->converge(false);
+
+        expect($result['succeeded'])->toBeTrue();
+        if ($dnsServer === null) {
+            expect($result['live']['contents'] ?? '')->toContain($expected);
+        } else {
+            expect(implode("\n", $result['command_log']))->toContain($expected);
+        }
+        if ($unexpected !== '') {
+            expect($result['live']['contents'] ?? '')->not->toContain($unexpected);
+        }
+    } finally {
+        new Filesystem()->deleteDirectory($harness->root());
+    }
+})->with([
+    'wireguard distinct TLD' => [
+        'custom.internal',
+        null,
+        'PostUp = resolvectl dns %i 10.43.0.53; resolvectl domain %i \\~orbit \\~custom.internal',
+        '',
+    ],
+    'underlay distinct TLD' => ['custom.internal', '192.0.2.53', 'resolvectl domain eth0 ~orbit ~custom.internal', ''],
+    'null TLD' => [null, null, 'PostUp = resolvectl dns %i 10.43.0.53; resolvectl domain %i \\~orbit', ''],
+    'equal TLD' => [
+        'orbit',
+        null,
+        'PostUp = resolvectl dns %i 10.43.0.53; resolvectl domain %i \\~orbit',
+        '\\~orbit \\~orbit',
+    ],
+]);
+
 /**
  * @mago-expect lint:halstead The harness keeps the complete remote transaction in one executable fixture.
+ * @mago-expect lint:excessive-parameter-list The fixture exposes optional DNS inputs for executable route cases.
  * @mago-expect lint:no-boolean-flag-parameter The flag sets the prior managed-file fixture state.
  * @mago-expect lint:cyclomatic-complexity The fixture models each supported file and service state through executable shims.
  */
@@ -1514,6 +1560,8 @@ function remote_wireguard_peer_install_harness(
     string $activeState,
     string $enabledState,
     bool $dnsSymlink = false,
+    ?string $peerTld = null,
+    ?string $dnsServer = null,
 ): object {
     $root = sys_get_temp_dir().'/orbit-wireguard-peer-shell-'.Str::uuid();
     $filesystem = new Filesystem;
@@ -1672,7 +1720,7 @@ function remote_wireguard_peer_install_harness(
     $settings->configure(
         subnet: '10.43.0.0/24',
         endpoint: '192.0.2.10:51820',
-        dnsServer: '10.43.0.53',
+        dnsServer: $dnsServer ?? '10.43.0.53',
     );
     $gateway = Node::query()->create([
         'name' => 'gateway-peer-shell',
@@ -1686,6 +1734,7 @@ function remote_wireguard_peer_install_harness(
         'public_ssh_host' => '192.0.2.7',
         'wireguard_address' => '10.43.0.7',
         'wireguard_public_key' => str_repeat(string: 'A', times: 43).'=',
+        'tld' => $peerTld,
     ]);
     $gatewayPeers = new class implements GatewayPeerProjectionManager {
         public function converge(Node $node): void {}
