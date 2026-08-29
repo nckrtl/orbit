@@ -69,7 +69,11 @@ final readonly class TopologyReleaser
         $leaseAttempt = $lease === null ? null : $this->leaseAttempt($lease);
         $pending = $this->state->read('release-pending/'.$issue.'.json');
         if ($pending !== null) {
-            $pendingTarget = $leaseAttempt === null ? null : TopologyTarget::feature($issue, $leaseAttempt);
+            // Prefer the lease attempt, then the active pointer: either one names
+            // the exact resources this release must still prove are gone.
+            $pendingTarget = $leaseAttempt === null
+                ? $this->manifests->active($issue)?->target
+                : TopologyTarget::feature($issue, $leaseAttempt);
 
             return $this->replay($pendingTarget, $this->finalizePending($issue, $pendingTarget, $pending));
         }
@@ -353,6 +357,7 @@ final readonly class TopologyReleaser
         $result = $this->pendingRelease($pending, $issue);
         $lease = $this->state->read('leases/'.$issue.'.json');
         $topology = $this->manifests->active($issue);
+        $target ??= $topology?->target;
         $topologyState = $this->topologyState($topology);
         $this->assertPendingState($lease, $pending['lease_sha256']);
         $this->assertPendingState($topologyState, $pending['topology_sha256']);
@@ -432,6 +437,11 @@ final readonly class TopologyReleaser
         return hash('sha256', json_encode($state, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
     }
 
+    /**
+     * A null target means no lease and no active pointer name an attempt, so no
+     * resource identity exists to re-check; `assertActiveArtifactsAbsent()` has
+     * already refused every case where active topology state still exists.
+     */
     private function replay(?TopologyTarget $target, ReleaseResult $previous): ReleaseResult
     {
         if ($target !== null) {
