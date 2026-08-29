@@ -31,6 +31,7 @@
         "apps/e2e/resources/guest/converge-sample-app.sh",
         "apps/e2e/resources/guest/hydrate-orbit.sh",
         "apps/e2e/resources/guest/prepare-node.sh",
+        "apps/e2e/resources/guest/retarget-vpn.sh",
         "apps/gateway/app/Actions/Apps/CreateAppAction.php",
         "apps/gateway/app/Actions/Apps/ListAppsAction.php",
         "apps/gateway/app/Actions/Gateway/BootstrapGatewayAction.php",

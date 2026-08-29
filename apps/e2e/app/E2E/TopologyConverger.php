@@ -53,6 +53,19 @@ final readonly class TopologyConverger
             ],
         ]);
         $steps['authorize.gateway-ssh'] = true;
+        $this->runAll([
+            'app-dev' => [
+                'instance' => $instances['app-dev'],
+                'script' => 'retarget-vpn.sh',
+                'arguments' => [$addresses['gateway']],
+            ],
+            'app-prod' => [
+                'instance' => $instances['app-prod'],
+                'script' => 'retarget-vpn.sh',
+                'arguments' => [$addresses['gateway']],
+            ],
+        ]);
+        $steps['retarget.vpn'] = true;
         $architectures = $this->architectures($instances);
         $appDevArchitecture = $architectures['app-dev'] ?? null;
         $appProdArchitecture = $architectures['app-prod'] ?? null;

@@ -201,6 +201,7 @@ describe('TopologyConverger', function () {
             'prerequisites.gateway',
             'bootstrap.gateway',
             'authorize.gateway-ssh',
+            'retarget.vpn',
             'provision.app-dev',
             'provision.app-prod',
             'authorize.app-dev-operator',
@@ -220,7 +221,7 @@ describe('TopologyConverger', function () {
             ->all();
 
         expect($guestCommands)
-            ->toHaveCount(17)
+            ->toHaveCount(19)
             ->and(array_column(array_slice($guestCommands, 0, 3), 4))
             ->toBe([
                 'lab:orbit-e2e-nck-123-gateway',
@@ -228,13 +229,15 @@ describe('TopologyConverger', function () {
                 'lab:orbit-e2e-nck-123-gateway',
             ]);
 
-        expect(array_map(fn (array $command): array => array_slice($command, 6), array_slice($guestCommands, 0, 17)))
+        expect(array_map(fn (array $command): array => array_slice($command, 6), array_slice($guestCommands, 0, 19)))
             ->toBe([
                 ['/usr/local/bin/converge-gateway.sh', 'prerequisites'],
                 ['/usr/local/bin/converge-gateway.sh', 'bootstrap', '192.0.2.10'],
                 ['ssh-keygen', '-y', '-f', '/home/orbit/.orbit/ssh/id_ed25519'],
                 ['/usr/local/bin/prepare-node.sh', 'gateway-authorize', task7_gateway_public_key()],
                 ['/usr/local/bin/prepare-node.sh', 'gateway-authorize', task7_gateway_public_key()],
+                ['/usr/local/bin/retarget-vpn.sh', '192.0.2.10'],
+                ['/usr/local/bin/retarget-vpn.sh', '192.0.2.10'],
                 ['uname', '-m'],
                 ['uname', '-m'],
                 ['/usr/local/bin/converge-app-dev.sh', 'app-dev', '192.0.2.11', 'x86_64'],

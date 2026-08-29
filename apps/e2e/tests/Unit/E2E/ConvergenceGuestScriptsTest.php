@@ -129,8 +129,11 @@ function convergence_app_fixture(string $scriptName): array
         #!/usr/bin/env bash
         printf '%s
         ' "$*" >> '__COMMANDS__'
+        if [[ "$*" == *'SELECT COUNT(*) FROM nodes'* ]]; then
+          printf '%s\n' "${ORBIT_PHP_NODE_ACTIVE:-0}"
+          exit 0
+        fi
         case ",${ORBIT_PHP_FAIL:-}," in
-          *",retarget,"*) [[ "$*" == *' orbit:node-retarget '* ]] && exit 1 ;;
           *",provision,"*) [[ "$*" == *' orbit:node-provision '* ]] && exit 1 ;;
         esac
         BASH));
@@ -310,10 +313,9 @@ describe('convergence guest scripts', function () {
         }
     });
 
-    it('reprovisions app-dev when the prepared marker changes and rewrites both markers only after success', function (): void {
+    it('provisions app-dev when the Gateway store has no active node role', function (): void {
         $fixture = convergence_app_fixture('converge-app-dev.sh');
-        file_put_contents($fixture['state'].'/node-provision-app-dev', str_repeat('a', 64));
-        file_put_contents($fixture['state'].'/node-provision-app-dev.address', str_repeat('b', 64));
+        file_put_contents("{$fixture['root']}/orbit-home/gateway.sqlite", 'fixture');
 
         try {
             $process = new Process(['bash', $fixture['script'], 'app-dev', '192.0.2.11', 'x86_64'], env: [
@@ -322,67 +324,36 @@ describe('convergence guest scripts', function () {
 
             expect($process->run())
                 ->toBe(0)
-                ->and(file($fixture['commands'], FILE_IGNORE_NEW_LINES))
-                ->toHaveCount(1)
-                ->and(file_get_contents($fixture['state'].'/node-provision-app-dev'))
-                ->toMatch('/\A[0-9a-f]{64}\n\z/')
-                ->and(file_get_contents($fixture['state'].'/node-provision-app-dev.address'))
-                ->toMatch('/\A[0-9a-f]{64}\n\z/');
-            expect(file_get_contents($fixture['commands']))
-                ->toContain('orbit:node-provision')
+                ->and(file_get_contents($fixture['commands']))
+                ->toContain('orbit:node-provision app-dev 192.0.2.11')
+                ->toContain('--wireguard-address=10.44.0.2')
                 ->not->toContain('orbit:node-retarget');
         } finally {
             new Illuminate\Filesystem\Filesystem()->deleteDirectory($fixture['root']);
         }
     });
 
-    it('retargets app-dev only when the prepared marker matches and the address marker changes', function (): void {
+    it('skips provisioning when the Gateway store already holds the active node role', function (): void {
         $fixture = convergence_app_fixture('converge-app-dev.sh');
+        file_put_contents("{$fixture['root']}/orbit-home/gateway.sqlite", 'fixture');
 
         try {
-            $first = new Process(['bash', $fixture['script'], 'app-dev', '192.0.2.11', 'x86_64'], env: [
+            $process = new Process(['bash', $fixture['script'], 'app-dev', '198.51.100.11', 'x86_64'], env: [
                 'PATH' => "{$fixture['root']}/bin:".getenv('PATH'),
-            ]);
-            expect($first->run())->toBe(0);
-            unlink($fixture['commands']);
-
-            $second = new Process(['bash', $fixture['script'], 'app-dev', '192.0.2.12', 'x86_64'], env: [
-                'PATH' => "{$fixture['root']}/bin:".getenv('PATH'),
+                'ORBIT_PHP_NODE_ACTIVE' => '1',
             ]);
 
-            expect($second->run())
+            expect($process->run())
                 ->toBe(0)
                 ->and(file_get_contents($fixture['commands']))
-                ->toContain('orbit:node-retarget')
                 ->not->toContain('orbit:node-provision');
         } finally {
             new Illuminate\Filesystem\Filesystem()->deleteDirectory($fixture['root']);
         }
     });
 
-    it('fails closed when a prepared marker is malformed', function (): void {
+    it('fails closed when provisioning fails', function (): void {
         $fixture = convergence_app_fixture('converge-app-dev.sh');
-        file_put_contents($fixture['state'].'/node-provision-app-dev', "bad-marker\n");
-
-        try {
-            $process = new Process(['bash', $fixture['script'], 'app-dev', '192.0.2.11', 'x86_64'], env: [
-                'PATH' => "{$fixture['root']}/bin:".getenv('PATH'),
-            ]);
-
-            expect($process->run())
-                ->not
-                ->toBe(0)
-                ->and(file_exists($fixture['commands']))
-                ->toBeFalse();
-        } finally {
-            new Illuminate\Filesystem\Filesystem()->deleteDirectory($fixture['root']);
-        }
-    });
-
-    it('does not update app-dev markers when provisioning fails', function (): void {
-        $fixture = convergence_app_fixture('converge-app-dev.sh');
-        file_put_contents($fixture['state'].'/node-provision-app-dev', str_repeat('a', 64));
-        file_put_contents($fixture['state'].'/node-provision-app-dev.address', str_repeat('b', 64));
 
         try {
             $process = new Process(['bash', $fixture['script'], 'app-dev', '192.0.2.11', 'x86_64'], env: [
@@ -390,52 +361,71 @@ describe('convergence guest scripts', function () {
                 'ORBIT_PHP_FAIL' => 'provision',
             ]);
 
-            expect($process->run())
-                ->not
-                ->toBe(0)
-                ->and(file_get_contents($fixture['state'].'/node-provision-app-dev'))
-                ->toBe(str_repeat('a', 64))
-                ->and(file_get_contents($fixture['state'].'/node-provision-app-dev.address'))
-                ->toBe(str_repeat('b', 64));
+            expect($process->run())->not->toBe(0);
         } finally {
             new Illuminate\Filesystem\Filesystem()->deleteDirectory($fixture['root']);
         }
     });
 
-    it('invalidates both app-dev markers when retarget fails so the next run reprovisions', function (): void {
-        $fixture = convergence_app_fixture('converge-app-dev.sh');
+    it('repairs the node WireGuard endpoint only when the Gateway address changed', function (): void {
+        $root = sys_get_temp_dir().'/orbit-retarget-vpn-'.bin2hex(random_bytes(4));
+        mkdir("{$root}/bin", 0o700, true);
+        mkdir("{$root}/etc/wireguard", 0o700, true);
+        file_put_contents(
+            "{$root}/etc/wireguard/orbit.conf",
+            "[Interface]\nPrivateKey = x\nAddress = 10.44.0.2/24\n\n[Peer]\nPublicKey = y\nEndpoint = 10.232.1.10:51820\nAllowedIPs = 10.44.0.0/24\n",
+        );
+        file_put_contents(
+            "{$root}/bin/systemctl",
+            "#!/usr/bin/env bash\nprintf '%s\\n' \"\$*\" >> '{$root}/commands'\n",
+        );
+        file_put_contents("{$root}/bin/ping", "#!/usr/bin/env bash\nexit 0\n");
+        chmod("{$root}/bin/systemctl", 0o700);
+        chmod("{$root}/bin/ping", 0o700);
+        $script = str_replace(
+            '/etc/wireguard/orbit.conf',
+            "{$root}/etc/wireguard/orbit.conf",
+            file_get_contents(dirname(__DIR__, 3).'/resources/guest/retarget-vpn.sh'),
+        );
+        file_put_contents("{$root}/retarget-vpn.sh", $script);
+        $environment = ['PATH' => "{$root}/bin:".getenv('PATH')];
 
         try {
-            $first = new Process(['bash', $fixture['script'], 'app-dev', '192.0.2.11', 'x86_64'], env: [
-                'PATH' => "{$fixture['root']}/bin:".getenv('PATH'),
-            ]);
-            expect($first->run())->toBe(0);
-            unlink($fixture['commands']);
-
-            $failure = new Process(['bash', $fixture['script'], 'app-dev', '192.0.2.12', 'x86_64'], env: [
-                'PATH' => "{$fixture['root']}/bin:".getenv('PATH'),
-                'ORBIT_PHP_FAIL' => 'retarget',
-            ]);
-            expect($failure->run())
-                ->not
+            expect(new Process(['bash', "{$root}/retarget-vpn.sh", '10.232.1.10'], env: $environment)->run())
                 ->toBe(0)
-                ->and(file_exists($fixture['state'].'/node-provision-app-dev'))
-                ->toBeFalse()
-                ->and(file_exists($fixture['state'].'/node-provision-app-dev.address'))
+                ->and(file_exists("{$root}/commands"))
                 ->toBeFalse();
 
-            unlink($fixture['commands']);
-            $recovery = new Process(['bash', $fixture['script'], 'app-dev', '192.0.2.12', 'x86_64'], env: [
-                'PATH' => "{$fixture['root']}/bin:".getenv('PATH'),
-            ]);
-
-            expect($recovery->run())
+            expect(new Process(['bash', "{$root}/retarget-vpn.sh", '10.232.7.10'], env: $environment)->run())
                 ->toBe(0)
-                ->and(file_get_contents($fixture['commands']))
-                ->toContain('orbit:node-provision')
-                ->not->toContain('orbit:node-retarget');
+                ->and(file("{$root}/commands", FILE_IGNORE_NEW_LINES))
+                ->toBe(['restart wg-quick@orbit'])
+                ->and(file_get_contents("{$root}/etc/wireguard/orbit.conf"))
+                ->toContain("Endpoint = 10.232.7.10:51820\n")
+                ->and(fileperms("{$root}/etc/wireguard/orbit.conf") & 0o777)
+                ->toBe(0o600);
+
+            expect(new Process(['bash', "{$root}/retarget-vpn.sh", 'not-an-address'], env: $environment)->run())
+                ->toBe(64);
         } finally {
-            new Illuminate\Filesystem\Filesystem()->deleteDirectory($fixture['root']);
+            new Illuminate\Filesystem\Filesystem()->deleteDirectory($root);
+        }
+    });
+
+    it('exits cleanly on an unprovisioned node without a WireGuard config', function (): void {
+        $root = sys_get_temp_dir().'/orbit-retarget-vpn-'.bin2hex(random_bytes(4));
+        mkdir($root, 0o700, true);
+        $script = str_replace(
+            '/etc/wireguard/orbit.conf',
+            "{$root}/missing.conf",
+            file_get_contents(dirname(__DIR__, 3).'/resources/guest/retarget-vpn.sh'),
+        );
+        file_put_contents("{$root}/retarget-vpn.sh", $script);
+
+        try {
+            expect(new Process(['bash', "{$root}/retarget-vpn.sh", '10.232.1.10'])->run())->toBe(0);
+        } finally {
+            new Illuminate\Filesystem\Filesystem()->deleteDirectory($root);
         }
     });
 
@@ -915,6 +905,7 @@ describe('convergence guest scripts', function () {
                 'orbit:node-provision "$1" "$2"',
                 'ssh-keyscan -T 5 -t ed25519 -- "$1"',
                 'scan_host_key "$2"',
+                'SELECT COUNT(*) FROM nodes n INNER JOIN node_roles r ON r.node_id = n.id',
                 '[[ "$3" =~ ^(x86_64|aarch64)$ ]]',
                 '--architecture="$3"',
                 '--user=orbit',
@@ -928,6 +919,7 @@ describe('convergence guest scripts', function () {
                 'orbit:node-provision "$1" "$2"',
                 'ssh-keyscan -T 5 -t ed25519 -- "$1"',
                 'scan_host_key "$2"',
+                'SELECT COUNT(*) FROM nodes n INNER JOIN node_roles r ON r.node_id = n.id',
                 '[[ "$3" =~ ^(x86_64|aarch64)$ ]]',
                 '--architecture="$3"',
                 '--user=orbit',

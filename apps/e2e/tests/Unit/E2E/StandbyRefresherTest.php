@@ -578,7 +578,7 @@ function rollingMigrationGuestProcess(
         return Process::result("2: enp5s0 inet 192.0.2.10/24 scope global enp5s0\n");
     }
 
-    if ($guestArguments === ['git', '-C', '/home/orbit/orbit', 'rev-parse', '--verify', 'HEAD^{commit}']) {
+    if (in_array('git', $guestArguments, true) && in_array('rev-parse', $guestArguments, true)) {
         return Process::result($oldSha."\n");
     }
 

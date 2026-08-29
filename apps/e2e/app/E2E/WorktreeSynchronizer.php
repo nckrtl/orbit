@@ -27,6 +27,7 @@ final readonly class WorktreeSynchronizer
         'hydrate-orbit.sh',
         'prepare-node.sh',
         'receive-source.sh',
+        'retarget-vpn.sh',
         'verify-topology.sh',
     ];
 

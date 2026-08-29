@@ -390,6 +390,7 @@ function synchronizerRequiredGuestScriptNames(): array
         'hydrate-orbit.sh',
         'prepare-node.sh',
         'receive-source.sh',
+        'retarget-vpn.sh',
         'verify-topology.sh',
     ];
 }
@@ -1098,7 +1099,7 @@ describe('WorktreeSynchronizer', function () {
                 new TopologyTarget('LUNA-126'),
                 $worktree,
             );
-            expect(synchronizerInstalledScripts($guest))->toHaveCount(24);
+            expect(synchronizerInstalledScripts($guest))->toHaveCount(27);
         } finally {
             destroySynchronizerRepositoryFixture($root, $worktree);
         }
@@ -1243,7 +1244,7 @@ describe('WorktreeSynchronizer', function () {
                 ),
             ));
             expect($scriptInstalls)
-                ->toHaveCount(24)
+                ->toHaveCount(27)
                 ->and(array_column($scriptInstalls, 'path'))
                 ->each
                 ->toStartWith('/usr/local/bin/')
@@ -1256,7 +1257,7 @@ describe('WorktreeSynchronizer', function () {
                         && ! str_ends_with($push['destination'], '/guest-scripts.sha256')
                     ),
                 ))
-                ->toHaveCount(24)
+                ->toHaveCount(27)
                 ->and(array_filter(
                     $guest->execs,
                     fn (array $exec): bool => ($exec['command']->command[0] ?? null) === 'rm',
