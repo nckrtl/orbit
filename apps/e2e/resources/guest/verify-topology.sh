@@ -19,6 +19,13 @@ if [[ "$probe" == wireguard.reachability ]]; then
 fi
 expected=healthy
 observed=healthy
+repo_git() {
+  if [[ "$(id -u)" -eq 0 ]]; then
+    sudo -u orbit -- env HOME=/home/orbit "$@"
+  else
+    "$@"
+  fi
+}
 
 case "$probe" in
   vm.gateway.running|vm.app-dev.running|vm.app-prod.running) state=$(systemctl is-system-running 2>/dev/null) || { [[ "$state" == degraded ]] || exit 1; }; expected='running|degraded'; observed=$state; [[ "$state" == running || "$state" == degraded ]] ;;
@@ -42,8 +49,8 @@ case "$probe" in
     key=/home/orbit/.orbit/ssh/id_ed25519
     known_hosts=/home/orbit/.orbit/ssh/known_hosts
     [[ -r "$db" && -r "$key" && -r "$known_hosts" ]]
-    app_dev_address=$(php -r '$pdo = new PDO("sqlite:".$argv[1]); $statement = $pdo->prepare("SELECT wireguard_address FROM nodes WHERE name = ? AND status = ?"); $statement->execute([$argv[2], "active"]); $address = $statement->fetchColumn(); if (!is_string($address) || !preg_match("/\\A(?:[0-9]{1,3}\\.){3}[0-9]{1,3}\\z/D", $address)) exit(1); echo $address, "\\n";' -- "$db" "$app_dev_name")
-    app_prod_address=$(php -r '$pdo = new PDO("sqlite:".$argv[1]); $statement = $pdo->prepare("SELECT wireguard_address FROM nodes WHERE name = ? AND status = ?"); $statement->execute([$argv[2], "active"]); $address = $statement->fetchColumn(); if (!is_string($address) || !preg_match("/\\A(?:[0-9]{1,3}\\.){3}[0-9]{1,3}\\z/D", $address)) exit(1); echo $address, "\\n";' -- "$db" "$app_prod_name")
+    app_dev_address=$(php -r '$pdo = new PDO("sqlite:".$argv[1]); $statement = $pdo->prepare("SELECT wireguard_address FROM nodes WHERE name = ? AND status = ?"); $statement->execute([$argv[2], "active"]); $address = $statement->fetchColumn(); if (!is_string($address) || !preg_match("/\\A(?:[0-9]{1,3}\\.){3}[0-9]{1,3}\\z/D", $address)) exit(1); echo $address;' -- "$db" "$app_dev_name")
+    app_prod_address=$(php -r '$pdo = new PDO("sqlite:".$argv[1]); $statement = $pdo->prepare("SELECT wireguard_address FROM nodes WHERE name = ? AND status = ?"); $statement->execute([$argv[2], "active"]); $address = $statement->fetchColumn(); if (!is_string($address) || !preg_match("/\\A(?:[0-9]{1,3}\\.){3}[0-9]{1,3}\\z/D", $address)) exit(1); echo $address;' -- "$db" "$app_prod_name")
     wg show orbit allowed-ips | awk -v expected="$app_dev_address/32" '{ for (i = 1; i <= NF; i++) if ($i == expected) found = 1 } END { exit !found }'
     wg show orbit allowed-ips | awk -v expected="$app_prod_address/32" '{ for (i = 1; i <= NF; i++) if ($i == expected) found = 1 } END { exit !found }'
     sudo -u orbit -- env HOME=/home/orbit ssh -n -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$known_hosts" -i "$key" "orbit@$app_dev_address" true
@@ -51,13 +58,19 @@ case "$probe" in
     expected='app-dev,app-prod:wireguard-route+ssh'
     observed=$expected
     ;;
-  https.gateway-internal) curl --fail --silent --show-error --max-time 5 --cacert /home/orbit/.orbit/e2e-gateway-root-ca.pem https://gateway.orbit/ >/dev/null; expected='https://gateway.orbit/:reachable'; observed=$expected ;;
+  https.gateway-internal)
+    resolved=$(dig +time=3 +tries=1 +short gateway.orbit @10.44.0.1 | awk 'NF { print; exit }')
+    [[ "$resolved" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]
+    curl --fail --silent --show-error --max-time 5 --cacert /home/orbit/.orbit/e2e-gateway-root-ca.pem --resolve "gateway.orbit:443:$resolved" https://gateway.orbit/up >/dev/null
+    expected='https://gateway.orbit/up:vpn-dns+reachable'
+    observed=$expected
+    ;;
   php-fpm.app-dev|php-fpm.app-prod) php_state=$(systemctl is-active php8.5-fpm 2>/dev/null); expected='php8.5-fpm=active'; observed="php8.5-fpm=$php_state"; [[ "$observed" == "$expected" ]] ;;
   caddy.app-dev|caddy.app-prod) caddy_state=$(systemctl is-active caddy 2>/dev/null); caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1; expected='caddy=active,config=valid'; observed="caddy=$caddy_state,config=valid"; [[ "$observed" == "$expected" ]] ;;
   laravel.dev) [[ -f /home/orbit/apps/laravel/artisan ]] && php /home/orbit/apps/laravel/artisan --version >/dev/null; expected='app-dev-laravel:operational'; observed=$expected ;;
   laravel.prod) [[ -f /var/www/laravel/e2e-prod/artisan ]] && php /var/www/laravel/e2e-prod/artisan --version >/dev/null && curl --fail --silent --show-error --retry 10 --retry-delay 2 --retry-connrefused --retry-all-errors --connect-timeout 10 --max-time 30 --cacert "$(cat /var/lib/orbit-e2e/caddy-ca-path)" --resolve laravel.internal:443:127.0.0.1 https://laravel.internal/ >/dev/null; expected='app-prod-laravel:https-operational'; observed=$expected ;;
   workspace.app-dev) [[ -d /home/orbit/.orbit/worktrees/laravel/e2e && -f /home/orbit/.orbit/worktrees/laravel/e2e/artisan ]]; expected='app-dev-workspace:operational'; observed=$expected ;;
-  source.gateway|source.app-dev) source_sha=$(git -C /home/orbit/orbit rev-parse HEAD 2>/dev/null); expected=$identity; observed=$source_sha; [[ "$observed" == "$expected" ]] ;;
+  source.gateway|source.app-dev) source_sha=$(repo_git git -C /home/orbit/orbit rev-parse HEAD 2>/dev/null); expected=$identity; observed=$source_sha; [[ "$observed" == "$expected" ]] ;;
   source.manifest)
     repo=/home/orbit/orbit
     expected_tree=$5
@@ -68,12 +81,12 @@ case "$probe" in
     printf '%s' "$expected_manifest" | base64 --decode | cmp -s - "$repo/.git/orbit-overlay.paths"
     read -r marker_sha marker_tree < <(/usr/bin/php -r '$state = json_decode(file_get_contents($argv[1]), true, 8, JSON_THROW_ON_ERROR); $sha = $state["sha"] ?? null; $tree = $state["tree"] ?? null; if (!is_string($sha) || !preg_match("/\\A[0-9a-f]{40}\\z/D", $sha) || !is_string($tree) || !preg_match("/\\A[0-9a-f]{64}\\z/D", $tree)) exit(65); echo $sha, " ", $tree, "\n";' -- "$repo/.git/orbit-source-state")
     [[ "$marker_sha" == "$identity" ]]
-    index=$(mktemp)
+    index=$(repo_git mktemp)
     trap 'rm -f -- "$index"' EXIT
     rm -f -- "$index"
-    GIT_INDEX_FILE="$index" git -C "$repo" read-tree HEAD
-    GIT_INDEX_FILE="$index" git -C "$repo" add -A -- .
-    actual_tree=$(GIT_INDEX_FILE="$index" git -C "$repo" write-tree)
+    repo_git env GIT_INDEX_FILE="$index" git -C "$repo" read-tree HEAD
+    repo_git env GIT_INDEX_FILE="$index" git -C "$repo" add -A -- .
+    actual_tree=$(repo_git env GIT_INDEX_FILE="$index" git -C "$repo" write-tree)
     actual_tree_hash=$(printf '%s' "$actual_tree" | sha256sum | cut -d ' ' -f 1)
     rm -f -- "$index"
     trap - EXIT

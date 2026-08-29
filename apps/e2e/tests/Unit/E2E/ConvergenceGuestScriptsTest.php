@@ -822,8 +822,14 @@ describe('convergence guest scripts', function () {
             'StrictHostKeyChecking=yes',
             'known_hosts=/home/orbit/.orbit/ssh/known_hosts',
             'UserKnownHostsFile="$known_hosts"',
+            'echo $address;',
+            'dig +time=3 +tries=1 +short gateway.orbit @10.44.0.1',
+            '--resolve "gateway.orbit:443:$resolved" https://gateway.orbit/up',
+            'repo_git git -C /home/orbit/orbit rev-parse HEAD',
+            'repo_git env GIT_INDEX_FILE="$index" git -C "$repo" write-tree',
         );
         expect($source)
+            ->not->toContain('echo $address, "\\n";')
             ->not->toContain('HostKeyAlias=')
             ->not->toContain('sqlite3')
             ->not->toContain('StrictHostKeyChecking=no')->toContain(
