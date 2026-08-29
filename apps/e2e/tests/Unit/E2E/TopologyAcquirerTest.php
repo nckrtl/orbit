@@ -3673,7 +3673,7 @@ it('sync rejects a feature HEAD cold epoch change before source sync or Incus', 
         512,
         JSON_THROW_ON_ERROR,
     );
-    $manifest['cold_epoch'] = 'ubuntu-26.04-amd64-v2';
+    $manifest['cold_epoch'] = $manifest['cold_epoch'].'-changed';
     file_put_contents($repositoryRoot.'/apps/e2e/resources/prepared-state.json', json_encode(
         $manifest,
         JSON_THROW_ON_ERROR,

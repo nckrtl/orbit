@@ -5,9 +5,9 @@ orbit=/home/orbit/orbit/apps/cli/orbit
 case ${1-} in
   grant-operator)
     [[ "$(id -u)" -eq 0 ]] && exec sudo -u orbit -- env HOME=/home/orbit ORBIT_HOME=/home/orbit/.orbit DB_DATABASE=/home/orbit/.orbit/gateway.sqlite bash "$0" "$@"
-    [[ $# -eq 3 && "$2" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]{0,62}$ && "$3" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]{0,62}$ ]]
+    [[ $# -eq 3 && "$2" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]{0,62}$ && "$3" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]{0,62}$ ]] || { echo "grant-operator: invalid arguments" >&2; exit 64; }
     ca=/home/orbit/.orbit/ca/root.pem
-    [[ -s "$ca" ]]
+    [[ -s "$ca" ]] || { echo "grant-operator: missing root CA at $ca ($(id -un))" >&2; ls -ln /home/orbit/.orbit/ca >&2; exit 66; }
     if ! output=$("$orbit" gateway:add e2e https://10.44.0.1 --ca="$ca" --use --json 2>&1); then
       printf 'gateway:add failed: %s\n' "$output" >&2
       exit 1
