@@ -15,6 +15,8 @@ use RuntimeException;
  *
  * Exact attempts live at `topologies/<issue>/<attempt>.json`; the active pointer
  * lives at `topologies/<issue>/active.json`.
+ *
+ * @mago-expect lint:cyclomatic-complexity Every pointer and legacy-layout check fails closed.
  */
 final readonly class TopologyManifestStore
 {
@@ -90,6 +92,7 @@ final readonly class TopologyManifestStore
     private function activeAttempt(string $issue): ?AttemptId
     {
         TopologyTarget::assertIssue($issue);
+        $this->assertNoLegacyManifest($issue);
         $pointer = $this->store->read($this->pointerPath($issue));
 
         if ($pointer === null) {
@@ -107,6 +110,19 @@ final readonly class TopologyManifestStore
         }
 
         return new AttemptId($pointer['attempt']);
+    }
+
+    /**
+     * Schema 1 kept one issue-only manifest and no attempt identity. Generating one
+     * here would invent cleanup ownership, so every attempt-scoped path refuses instead.
+     */
+    private function assertNoLegacyManifest(string $issue): void
+    {
+        if ($this->store->read('topologies/'.$issue.'.json') !== null) {
+            throw new RuntimeException(
+                'A schema 1 topology manifest exists for this issue; release it with the previous harness.',
+            );
+        }
     }
 
     private function attemptPath(string $issue, AttemptId $attempt): string

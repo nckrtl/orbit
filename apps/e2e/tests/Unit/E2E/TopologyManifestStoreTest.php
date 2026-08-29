@@ -154,6 +154,19 @@ describe('TopologyManifestStore', function () {
             ->toBeNull();
     });
 
+    it('refuses every attempt-scoped operation while a schema 1 manifest exists', function () {
+        $paths = new StatePaths(temporaryPath('orbit-topology-', 4));
+        $state = new AtomicJsonStore($paths);
+        $store = new TopologyManifestStore($state);
+        $state->write('topologies/NCK-321.json', ['schema' => 1, 'issue' => 'NCK-321']);
+        $topology = topologyFixture(TopologyTarget::feature('NCK-321', new AttemptId(str_repeat('a', 32))));
+
+        expect(fn () => $store->active('NCK-321'))
+            ->toThrow(RuntimeException::class, 'schema 1 topology manifest')
+            ->and(fn () => $store->writeActive($topology))
+            ->toThrow(RuntimeException::class, 'schema 1 topology manifest');
+    });
+
     it('rejects duplicate or loose resources and exact source and report schema errors', function () {
         $target = TopologyTarget::feature('NCK-321', new AttemptId(str_repeat('a', 32)));
         $source = new SourceState(str_repeat('b', 40), str_repeat('b', 40));
