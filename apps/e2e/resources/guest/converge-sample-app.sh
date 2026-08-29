@@ -8,11 +8,20 @@ case ${1-} in
     [[ $# -eq 3 && "$2" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]{0,62}$ && "$3" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]{0,62}$ ]]
     ca=/home/orbit/.orbit/ca/root.pem
     [[ -s "$ca" ]]
-    "$orbit" gateway:add e2e https://10.44.0.1 --ca="$ca" --use --json >/dev/null
-    nodes=$("$orbit" node:list --json)
+    if ! output=$("$orbit" gateway:add e2e https://10.44.0.1 --ca="$ca" --use --json 2>&1); then
+      printf 'gateway:add failed: %s\n' "$output" >&2
+      exit 1
+    fi
+    if ! nodes=$("$orbit" node:list --json 2>&1); then
+      printf 'node:list failed: %s\n' "$nodes" >&2
+      exit 1
+    fi
     operator_id=$(php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); $m=array_values(array_filter($v["nodes"], fn($x) => ($x["name"] ?? null)===$argv[1])); if(count($m)!==1 || !is_int($m[0]["id"] ?? null)) exit(65); echo $m[0]["id"];' "$2" <<<"$nodes")
     gateway_id=$(php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); $m=array_values(array_filter($v["nodes"], fn($x) => ($x["name"] ?? null)===$argv[1])); if(count($m)!==1 || !is_int($m[0]["id"] ?? null)) exit(65); echo $m[0]["id"];' "$3" <<<"$nodes")
-    "$orbit" node:access:add "$operator_id" "$gateway_id" --json >/dev/null
+    if ! output=$("$orbit" node:access:add "$operator_id" "$gateway_id" --json 2>&1); then
+      printf 'node:access:add failed: %s\n' "$output" >&2
+      exit 1
+    fi
     ;;
   configure-cli)
     [[ "$(id -u)" -eq 0 ]] && exec sudo -u orbit -- env HOME=/home/orbit ORBIT_HOME=/home/orbit/.orbit DB_DATABASE=/home/orbit/.orbit/gateway.sqlite bash "$0" "$@"
