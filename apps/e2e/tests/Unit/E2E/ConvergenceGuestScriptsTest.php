@@ -882,7 +882,9 @@ describe('convergence guest scripts', function () {
                 '/api/v1/ca/root',
                 '$v["data"]["root_ca"]',
                 'readlink -f /etc/caddy/Caddyfile',
-                'curl --fail --silent --show-error --cacert',
+                '--cacert "$ca" --resolve laravel.internal:443:127.0.0.1 https://laravel.internal/',
+                'artisan" migrate --force --no-interaction',
+                'database/database.sqlite',
             )
             ->not->toContain('/api/root-ca')->and($hydrate)->toContain(
                 '$ORBIT_HOME/gateway.app-key',
