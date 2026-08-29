@@ -40,6 +40,10 @@ behavior requires live proof. Live proof selects exact active applicable nodes
 with `orbit node:list --json` and records node identity, roles, access,
 ownership, recovery, and checkout identity requirements.
 
+Incus is optional development acceleration. The rolling topology, refresh, and
+retirement rules are defined in
+[ADR 0005](../decisions/0005-rolling-incus-development-topology.md).
+
 ## Work and compound
 
 1. The Slack project-manager agent claims a Ready issue.
@@ -70,6 +74,12 @@ ownership, recovery, and checkout identity requirements.
    pre-existing state must still match the ownership baseline. It then requests
    `post_proof` review. Automated proof goes directly to this review after step
    4.
+
+After worktree creation, the external orchestrator can acquire the registered
+`gateway_app-dev_app-prod` Incus profile. It records generation and topology
+identity and synchronizes Gateway and app-dev before each relevant iteration.
+The worker releases the disposable topology and verifies exact absence before
+`post_proof` review.
 
 Do not create documentation only to fill the Compound section. State why no
 durable update is needed when the work produced no reusable learning.
@@ -157,9 +167,14 @@ Official references:
 
 Task-owned live resources must be absent before final review and merge. After
 merge, the Slack project-manager agent verifies absence and shared-state
-integrity again, then runs `bin/worktree-remove`. It does not defer live-resource
-cleanup until after merge. The cleanup command refuses an unmerged or dirty
-branch.
+integrity again. It then fingerprints merged `main` and refreshes the stopped
+Incus standby only when prepared state changed. It records `unchanged`,
+`promoted`, or `failed`. A failed refresh produces `merged_refresh_blocked` and
+leaves worktree removal and issue closure pending. Lock contention can be
+retried by the external orchestrator. There is no repository refresh queue or
+worker. After an `unchanged` or `promoted` result, the orchestrator runs
+`bin/worktree-remove`. It does not defer live-resource cleanup until after
+merge. The cleanup command refuses an unmerged or dirty branch.
 
 The development issue closes after merge, the final absence check, and worktree
 removal. A separate operations process releases and verifies the merged code in

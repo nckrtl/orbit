@@ -34,6 +34,9 @@ All required ADRs must already exist on `main`.
   shared and pre-existing state unchanged
 - Final review: review ID, candidate SHA, `post_proof` and `approved`
 - Evidence:
+- Candidate SHA and tree:
+- Incus generation/topology identity (if used):
+- Checkout roles (if used):
 
 ## Compound
 
@@ -47,3 +50,4 @@ All required ADRs must already exist on `main`.
   final review
 - [ ] Ownership and shared-state drift checks pass without merge-verifier cleanup
 - [ ] No credentials, runtime state, or generated artifacts are committed
+- Merge refresh result: unchanged|promoted|failed|not-assessed

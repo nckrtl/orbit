@@ -50,6 +50,9 @@ candidate cannot be reviewed.
    absent; shared and pre-existing state matches the ownership baseline; and no
    state was deleted or adopted to make cleanup pass. Automated proof still
    requires reproducible commands and the candidate SHA.
+   When a pull request includes optional Incus diagnostic evidence, also confirm
+   its exact profile, generation, topology identity, and guest checkout SHA and
+   tree.
 6. Confirm that Compound updates are useful and correctly placed. Accept no
    documentation change only when the worker gives a specific durable-learning
    reason.

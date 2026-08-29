@@ -1,11 +1,12 @@
 # Orbit Monorepo
 
-This repository contains the Orbit CLI, Gateway, and PHP SDK.
+This repository contains the Orbit CLI, Gateway, PHP SDK, and Incus E2E
+harness.
 
 ## Scope
 
 - Read the nearest nested `AGENTS.md` before changing a project.
-- Keep the CLI, Gateway, and SDK as separate Composer projects.
+- Keep the CLI, Gateway, SDK, and E2E harness as separate Composer projects.
 - Use root commands only to coordinate projects.
 - Do not add a repository feature-plan document. Linear owns feature scope,
   acceptance criteria, the ADR decision, and the proof venue.
@@ -36,6 +37,10 @@ This repository contains the Orbit CLI, Gateway, and PHP SDK.
   absence again before it removes the worktree.
 - Incus is optional diagnostic tooling. It never gates readiness, proof, review,
   or merge.
+- After merge, the external orchestrator fingerprints merged `main` and refreshes
+  the stopped Incus standby only when prepared state changed. It removes the
+  worktree and closes the issue only after an `unchanged` or `promoted` result.
+  A `failed` refresh leaves both pending.
 - Keep project-manager orchestration outside this repository. The repository
   owns role behavior and handoff contracts only.
 - Candidate deployment and rollout to the registered live topology are part of

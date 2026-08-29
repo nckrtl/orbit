@@ -61,8 +61,12 @@ worktree path. Return `blocked` without merging when an input or gate is missing
 
 Do not close the Linear issue, clean or mutate live resources, remove the
 worktree, or perform a production release. After a successful merge, signal the
-external orchestrator. It verifies resource absence again, removes the
-worktree, then closes the issue. Production release is a separate cycle.
+external orchestrator. It verifies resource absence again, fingerprints merged
+`main`, and refreshes the stopped Incus standby only when prepared state
+changed. It records `unchanged`, `promoted`, or `failed`. A failed refresh
+blocks worktree removal and issue closure. After an `unchanged` or `promoted`
+result, the orchestrator removes the worktree and closes the issue. Production
+release is a separate cycle.
 
 ## Handoff
 
@@ -96,11 +100,15 @@ cleanup:
   absence_verification: text|null
   live_drift: text|null
   worktree: path|null
-  order: verify_absence_then_worktree
-external_issue_action: close_after_absence_and_worktree|none
+  order: verify_absence_then_refresh_then_worktree
+external_issue_action: close_after_absence_refresh_and_worktree|none
+standby:
+  result: unchanged|promoted|failed|not-assessed
 ```
 
 Use `merged` only after the hosting service confirms the merge and returns the
 merge commit SHA. `cleanup.action` is always `none`; the merge verifier never
-cleans live resources. Use `close_after_absence_and_worktree` only with
-`status: merged`. A blocked handoff uses `none` for the external issue action.
+cleans live resources. Use `close_after_absence_refresh_and_worktree` only with
+`status: merged`. The external orchestrator changes its own result to
+`merged_refresh_blocked` when standby refresh fails. A blocked merge handoff
+uses `none` for the external issue action.

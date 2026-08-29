@@ -214,7 +214,7 @@ final readonly class NativeGatewayVpnConverger implements GatewayVpnConverger
         $configuration = implode(PHP_EOL, [
             '# Managed by Orbit.',
             ...array_map(static fn (string $interface): string => "interface={$interface}", $interfaces),
-            'bind-dynamic',
+            'bind-interfaces',
             'domain-needed',
             'bogus-priv',
             "local=/{$data->domain}/",
