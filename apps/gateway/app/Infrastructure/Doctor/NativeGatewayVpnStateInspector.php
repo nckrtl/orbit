@@ -12,6 +12,7 @@ use App\Infrastructure\AppDev\AppDevDnsConfigRenderer;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProtectedInput;
+use App\Infrastructure\Processes\SystemdVpnOrderingDropIn;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
@@ -28,6 +29,11 @@ final readonly class NativeGatewayVpnStateInspector implements GatewayVpnStateIn
     private const string ACTIVE_SCRIPT = "if systemctl is-active --quiet wg-quick@orbit; then printf '1\\n'; else printf '0\\n'; fi";
 
     private const string COMPARE_SCRIPT = <<<'BASH'
+        if ! sudo test -f "$1"; then
+            cat > /dev/null
+            printf '0\n'
+            exit 0
+        fi
         if sudo cmp -s -- "$1" -; then
             printf '1\n'
         else
@@ -49,6 +55,7 @@ final readonly class NativeGatewayVpnStateInspector implements GatewayVpnStateIn
         private WireGuardServerConfigRenderer $serverRenderer,
         private AppDevDnsConfigRenderer $dnsRenderer,
         private CommandDeadline $deadline,
+        private SystemdVpnOrderingDropIn $vpnOrdering = new SystemdVpnOrderingDropIn,
     ) {}
 
     public function inspect(NodeRole $role): GatewayVpnInspectionData
@@ -70,6 +77,11 @@ final readonly class NativeGatewayVpnStateInspector implements GatewayVpnStateIn
                 )),
                 $this->compare($connection, '/etc/wireguard/orbit.conf', $serverConfig),
                 $this->compare($connection, '/etc/dnsmasq.d/orbit-records.conf', $dnsConfig),
+                $this->compare(
+                    $connection,
+                    $this->vpnOrdering->path('dnsmasq'),
+                    $this->vpnOrdering->contents(),
+                ),
             );
         } catch (DoctorInspectionException $exception) {
             throw $exception;

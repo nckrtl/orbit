@@ -24,9 +24,11 @@ use App\Models\NodeRole;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Symfony\Component\Process\Process;
 
 it('compares the active interface and exact rendered server and DNS projections', function (): void {
     [$inspector, $ssh, $orbitHome, $role] = gateway_vpn_inspector([
+        gateway_vpn_result("1\n"),
         gateway_vpn_result("1\n"),
         gateway_vpn_result("1\n"),
         gateway_vpn_result("1\n"),
@@ -41,8 +43,10 @@ it('compares the active interface and exact rendered server and DNS projections'
             ->toBeTrue()
             ->and($state->dnsConfigMatches)
             ->toBeTrue()
+            ->and($state->dnsOrderingInstalled)
+            ->toBeTrue()
             ->and($ssh->calls)
-            ->toHaveCount(3)
+            ->toHaveCount(4)
             ->and($ssh->calls[0]['command']->arguments)
             ->toBe([
                 'bash',
@@ -53,6 +57,10 @@ it('compares the active interface and exact rendered server and DNS projections'
             ->toContain('/etc/wireguard/orbit.conf')
             ->and($ssh->calls[2]['command']->arguments)
             ->toContain('/etc/dnsmasq.d/orbit-records.conf')
+            ->and($ssh->calls[3]['command']->arguments)
+            ->toContain('/etc/systemd/system/dnsmasq.service.d/orbit-vpn.conf')
+            ->and($ssh->calls[3]['protected'])
+            ->toContain('After=wg-quick@orbit.service', 'Wants=wg-quick@orbit.service')
             ->and($ssh->calls[1]['protected'])
             ->toContain('PrivateKey = SERVER_PRIVATE')
             ->and($ssh->calls[2]['protected'])
@@ -74,6 +82,7 @@ it('compares the active interface and exact rendered server and DNS projections'
 
 it('inspects the explicitly selected VPN role when a lower fleet assignment exists', function (): void {
     [$inspector, $ssh, $orbitHome] = gateway_vpn_inspector([
+        gateway_vpn_result("1\n"),
         gateway_vpn_result("1\n"),
         gateway_vpn_result("1\n"),
         gateway_vpn_result("1\n"),
@@ -109,6 +118,7 @@ it('inspects the explicitly selected VPN role when a lower fleet assignment exis
 
 it('renders VPN peers in stable persisted order', function (): void {
     [$inspector, $ssh, $orbitHome, $role] = gateway_vpn_inspector([
+        gateway_vpn_result("1\n"),
         gateway_vpn_result("1\n"),
         gateway_vpn_result("1\n"),
         gateway_vpn_result("1\n"),
@@ -176,15 +186,81 @@ it('returns independent bounded mismatch observations', function (
             $state->interfaceActive,
             $state->serverConfigMatches,
             $state->dnsConfigMatches,
+            $state->dnsOrderingInstalled,
         ])->toBe($expected);
     } finally {
         new Filesystem()->deleteDirectory($orbitHome);
     }
 })->with([
-    'inactive interface' => [["0\n", "1\n", "1\n"], [false, true, true]],
-    'server mismatch' => [["1\n", "0\n", "1\n"], [true, false, true]],
-    'DNS mismatch' => [["1\n", "1\n", "0\n"], [true, true, false]],
+    'inactive interface' => [
+        ["0\n", "1\n", "1\n", "1\n"],
+        [false, true,  true,  true],
+    ],
+    'server mismatch' => [
+        ["1\n", "0\n", "1\n", "1\n"],
+        [true,  false, true,  true],
+    ],
+    'DNS mismatch' => [
+        ["1\n", "1\n", "0\n", "1\n"],
+        [true,  true,  false, true],
+    ],
+    'ordering drop-in missing' => [
+        ["1\n", "1\n", "1\n", "0\n"],
+        [true,  true,  true,  false],
+    ],
 ]);
+
+it('probes for the compared file before running cmp so an absent projection is drift', function (): void {
+    [$inspector, $ssh, $orbitHome, $role] = gateway_vpn_inspector([
+        gateway_vpn_result("1\n"),
+        gateway_vpn_result("1\n"),
+        gateway_vpn_result("1\n"),
+        gateway_vpn_result("0\n"),
+    ]);
+
+    try {
+        $inspector->inspect($role);
+        $command = $ssh->calls[3]['command'];
+
+        expect($command->arguments[0])
+            ->toBe('bash')
+            ->and($command->arguments[1])
+            ->toBe('-ceu')
+            ->and($command->arguments[2])
+            ->toContain('if ! sudo test -f "$1"; then')
+            ->and(mb_strpos(haystack: $command->arguments[2], needle: 'sudo test -f "$1"'))
+            ->toBeLessThan(mb_strpos(haystack: $command->arguments[2], needle: 'sudo cmp -s -- "$1" -'));
+    } finally {
+        new Filesystem()->deleteDirectory($orbitHome);
+    }
+});
+
+it('yields a bounded mismatch rather than an error when the compared file does not exist', function (): void {
+    [$inspector, $ssh, $orbitHome, $role] = gateway_vpn_inspector([
+        gateway_vpn_result("1\n"),
+        gateway_vpn_result("1\n"),
+        gateway_vpn_result("1\n"),
+        gateway_vpn_result("0\n"),
+    ]);
+
+    try {
+        $inspector->inspect($role);
+        $script = $ssh->calls[3]['command']->arguments[2];
+        $path = $ssh->calls[3]['command']->arguments[4];
+        $expected = $ssh->calls[3]['protected'];
+
+        expect($path)
+            ->toBe('/etc/systemd/system/dnsmasq.service.d/orbit-vpn.conf')
+            ->and(gateway_vpn_compare_script($script, $path, $expected, present: null))
+            ->toBe([0, "0\n"])
+            ->and(gateway_vpn_compare_script($script, $path, $expected, present: $expected))
+            ->toBe([0, "1\n"])
+            ->and(gateway_vpn_compare_script($script, $path, $expected, present: "[Unit]\n"))
+            ->toBe([0, "0\n"]);
+    } finally {
+        new Filesystem()->deleteDirectory($orbitHome);
+    }
+});
 
 it('fails closed for command failure timeout truncation malformed output and transport errors', function (
     array $results,
@@ -203,6 +279,12 @@ it('fails closed for command failure timeout truncation malformed output and tra
     'timeout' => [[new CommandResult(124, '', 'timeout secret', 30_000, false)]],
     'truncation' => [[new CommandResult(0, "1\n", '', 1, true)]],
     'malformed output' => [[gateway_vpn_result("1\nsecret-config\n")]],
+    'unreadable ordering drop-in' => [[
+        gateway_vpn_result("1\n"),
+        gateway_vpn_result("1\n"),
+        gateway_vpn_result("1\n"),
+        new CommandResult(2, '', 'cmp: secret path: Permission denied', 1, false),
+    ]],
     'transport error' => [[], true],
 ]);
 
@@ -249,6 +331,39 @@ function gateway_vpn_inspector(array $results): array
 function gateway_vpn_result(string $stdout): CommandResult
 {
     return new CommandResult(0, $stdout, '', 1, false);
+}
+
+/**
+ * Run the rendered compare script with a transparent `sudo` shim against a real
+ * file that is absent, identical, or different.
+ *
+ * @return array{int, string}
+ */
+function gateway_vpn_compare_script(string $script, string $path, string $expected, ?string $present): array
+{
+    $root = sys_get_temp_dir().'/orbit-doctor-compare-'.Str::uuid();
+    $target = $root.$path;
+    mkdir(directory: $root.'/bin', permissions: 0o700, recursive: true);
+    mkdir(directory: dirname($target), permissions: 0o700, recursive: true);
+
+    if ($present !== null) {
+        file_put_contents(filename: $target, data: $present);
+    }
+
+    file_put_contents(filename: $root.'/bin/sudo', data: "#!/usr/bin/env bash\nexec \"\$@\"\n");
+    chmod($root.'/bin/sudo', permissions: 0o755);
+
+    try {
+        $process = new Process(['bash', '-ceu', $script, '--', $target], $root, [
+            'PATH' => $root.'/bin:'.getenv('PATH'),
+        ]);
+        $process->setInput($expected);
+        $process->run();
+
+        return [$process->getExitCode() ?? 1, $process->getOutput()];
+    } finally {
+        new Filesystem()->deleteDirectory($root);
+    }
 }
 
 final class GatewayVpnInspectorSsh implements SshExecutor

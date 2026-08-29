@@ -7,11 +7,13 @@ namespace App\Infrastructure\Gateway;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
+use App\Infrastructure\Processes\SystemdVpnOrderingDropIn;
 
 final readonly class NativeGatewayCaddyConverger
 {
     public function __construct(
         private ProcessRunner $processes,
+        private SystemdVpnOrderingDropIn $vpnOrdering = new SystemdVpnOrderingDropIn,
     ) {}
 
     public function converge(string $generatedCaddy): void
@@ -61,6 +63,12 @@ final readonly class NativeGatewayCaddyConverger
             step: 'gateway-caddy-reload',
             errorCode: 'gateway.caddy_start_failed',
             arguments: ['sudo', 'systemctl', 'reload-or-restart', 'caddy'],
+        );
+        $this->run(
+            step: 'gateway-caddy-ordering',
+            errorCode: 'gateway.caddy_start_failed',
+            arguments: $this->vpnOrdering->arguments('caddy'),
+            input: $this->vpnOrdering->script(),
         );
     }
 
