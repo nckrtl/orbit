@@ -145,6 +145,16 @@ it('fails closed without mutation when an owned comment has drifted', function (
     expect($ssh->mutations())->toBeEmpty();
 });
 
+it('rejects missing WireGuard addresses before firewall mutation', function (): void {
+    $ssh = new RoleFirewallSshExecutor;
+    $node = role_firewall_node();
+    $node->wireguard_address = null;
+
+    expect(fn () => role_firewall_manager($ssh)->converge($node, RoleName::Vpn))
+        ->toThrow(FirewallOperationException::class);
+    expect($ssh->calls)->toBeEmpty();
+});
+
 function role_firewall_node(): Node
 {
     return new Node([

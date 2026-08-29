@@ -5,10 +5,15 @@ declare(strict_types=1);
 namespace App\Infrastructure\Nodes\Roles;
 
 use App\Domain\Nodes\RoleName;
+use App\Infrastructure\Nodes\NodeBootstrapPackageCatalog;
 use App\Infrastructure\Ssh\RemoteCommand;
 
 final readonly class NodeRolePrerequisiteCommandFactory
 {
+    public function __construct(
+        private NodeBootstrapPackageCatalog $packages = new NodeBootstrapPackageCatalog,
+    ) {}
+
     public function make(RoleName $role): RemoteCommand
     {
         if ($role === RoleName::Gateway) {
@@ -204,28 +209,11 @@ final readonly class NodeRolePrerequisiteCommandFactory
                 '-seu',
                 '--',
                 $role->value,
-                ...$this->packages($role),
+                ...$this->packages->forRole(new \App\Models\Node, $role),
             ],
             input: $input,
         );
     }
 
     /** @return non-empty-list<string> */
-    private function packages(RoleName $role): array
-    {
-        return match ($role) {
-            RoleName::AppDev, RoleName::AppProd => [
-                'acl',
-                'attr',
-                'caddy',
-                'composer',
-                'docker.io',
-                'git',
-                'openssl',
-                'unzip',
-            ],
-            RoleName::Vpn => ['dnsmasq', 'openssl'],
-            RoleName::Gateway => ['ca-certificates'],
-        };
-    }
 }

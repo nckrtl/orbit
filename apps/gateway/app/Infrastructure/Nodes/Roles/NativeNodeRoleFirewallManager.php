@@ -7,9 +7,9 @@ namespace App\Infrastructure\Nodes\Roles;
 use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\RoleName;
+use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
 use App\Infrastructure\Firewall\UfwManagedRule;
 use App\Infrastructure\Firewall\UfwRuleOwnership;
-use App\Infrastructure\Firewall\UfwRuleShape;
 use App\Infrastructure\Firewall\UfwStatusParser;
 use App\Infrastructure\Firewall\UfwStoredRuleParser;
 use App\Infrastructure\Firewall\UfwStoredRuleProbe;
@@ -23,6 +23,7 @@ use App\Models\Node;
 
 /**
  * @mago-expect lint:cyclomatic-complexity Exact UFW ownership keeps convergence and deletion fail closed.
+ * @mago-expect lint:excessive-parameter-list The manager receives active and stored UFW parsers plus the shared catalog.
  * @mago-expect lint:kan-defect Each branch protects recovery access or rejects ambiguous owned state.
  * @mago-expect lint:too-many-methods Narrow methods keep each UFW mutation independently verifiable.
  */
@@ -34,6 +35,7 @@ final readonly class NativeNodeRoleFirewallManager implements NodeRoleFirewallMa
         private KnownHostsStore $knownHosts,
         private UfwStatusParser $statusParser = new UfwStatusParser,
         private UfwStoredRuleParser $storedParser = new UfwStoredRuleParser,
+        private NodeFirewallRuleCatalog $catalog = new NodeFirewallRuleCatalog,
     ) {}
 
     public function convergeBase(Node $node): void
@@ -43,7 +45,7 @@ final readonly class NativeNodeRoleFirewallManager implements NodeRoleFirewallMa
 
     public function converge(Node $node, RoleName $role): void
     {
-        $rules = [$this->wireguardSshRule($node), ...$this->roleRules($node, $role)];
+        $rules = $this->uniqueRules([$this->wireguardSshRule($node), ...$this->roleRules($node, $role)]);
 
         $this->convergeRules($node, $rules, publicConnection: false, enable: false);
         $this->removeRules($node, [$this->publicSshRule($node)]);
@@ -277,106 +279,49 @@ final readonly class NativeNodeRoleFirewallManager implements NodeRoleFirewallMa
 
     private function publicSshRule(Node $node): UfwManagedRule
     {
-        return $this->incomingRule(
-            comment: 'orbit:public-ssh-recovery',
-            port: (string) $node->public_ssh_port,
-        );
+        return $this->catalog->forNode($node)[0];
     }
 
     private function wireguardSshRule(Node $node): UfwManagedRule
     {
-        return $this->incomingRule(
-            comment: 'orbit:vpn-ssh',
-            port: '22',
-            destination: $this->wireguardAddress($node),
-            interface: 'orbit',
-        );
+        return $this->catalog->forNode($node)[1];
     }
 
     /** @return list<UfwManagedRule> */
     private function roleRules(Node $node, RoleName $role): array
     {
-        return match ($role) {
-            RoleName::AppDev => [
-                $this->incomingRule(
-                    comment: 'orbit:app-dev-http',
-                    port: '80',
-                    destination: $this->wireguardAddress($node),
-                    interface: 'orbit',
-                ),
-                $this->incomingRule(
-                    comment: 'orbit:app-dev-https',
-                    port: '443',
-                    destination: $this->wireguardAddress($node),
-                    interface: 'orbit',
-                ),
-            ],
-            RoleName::AppProd => [
-                $this->incomingRule(comment: 'orbit:app-prod-http', port: '80'),
-                $this->incomingRule(comment: 'orbit:app-prod-https', port: '443'),
-            ],
-            RoleName::Gateway => [
-                $this->incomingRule(
-                    comment: 'orbit:gateway-https',
-                    port: '443',
-                    destination: $this->wireguardAddress($node),
-                    interface: 'orbit',
-                ),
-            ],
-            RoleName::Vpn => [],
-        };
+        $baselineComments = array_map(
+            static fn (UfwManagedRule $rule): string => $rule->shape->comment,
+            $this->catalog->forNode($node),
+        );
+
+        return array_values(array_filter(
+            $this->catalog->forRole($node, $role),
+            static fn (UfwManagedRule $rule): bool => ! in_array(
+                $rule->shape->comment,
+                $baselineComments,
+                strict: true,
+            ),
+        ));
     }
 
-    private function wireguardAddress(Node $node): string
+    /**
+     * @param non-empty-list<UfwManagedRule> $rules
+     * @return non-empty-list<UfwManagedRule>
+     */
+    private function uniqueRules(array $rules): array
     {
-        if (is_string($node->wireguard_address) && $node->wireguard_address !== '') {
-            return $node->wireguard_address;
+        $unique = [];
+        foreach ($rules as $rule) {
+            $unique[$rule->shape->comment] = $rule;
         }
 
-        throw new FirewallOperationException(
-            step: 'host-firewall',
-            errorCode: 'node.firewall_convergence_failed',
-            message: "Node [{$node->name}] has no WireGuard address.",
-        );
-    }
+        $values = array_values($unique);
+        if ($values === []) {
+            throw new \LogicException('At least one managed firewall rule is required.');
+        }
 
-    private function incomingRule(
-        string $comment,
-        string $port,
-        string $destination = 'any',
-        ?string $interface = null,
-    ): UfwManagedRule {
-        $interfaceArguments = $interface === null ? [] : ['on', $interface];
-
-        return new UfwManagedRule(
-            shape: new UfwRuleShape(
-                comment: $comment,
-                action: 'allow',
-                direction: 'in',
-                source: 'any',
-                destination: $destination,
-                port: $port,
-                protocol: 'tcp',
-                inInterface: $interface,
-                outInterface: null,
-                family: $destination === 'any' ? null : 'v4',
-            ),
-            arguments: [
-                'sudo',
-                'ufw',
-                'allow',
-                'in',
-                ...$interfaceArguments,
-                'proto',
-                'tcp',
-                'to',
-                $destination,
-                'port',
-                $port,
-                'comment',
-                $comment,
-            ],
-        );
+        return $values;
     }
 
     /** @return list<int> */

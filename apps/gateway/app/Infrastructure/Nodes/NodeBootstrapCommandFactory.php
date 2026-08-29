@@ -11,32 +11,23 @@ use App\Models\Node;
 final readonly class NodeBootstrapCommandFactory
 {
     /** @var non-empty-list<string> */
-    private const array PACKAGES = [
-        'ca-certificates',
-        'curl',
-        'gnupg',
-        'openssh-client',
-        'sudo',
-        'ufw',
-        'wireguard',
-    ];
-
     public function __construct(
         private SshKeyProvider $keys,
+        private NodeBootstrapPackageCatalog $packages = new NodeBootstrapPackageCatalog,
     ) {}
 
     public function make(Node $node): RemoteCommand
     {
-        return $this->command();
+        return $this->command($node);
     }
 
     public function makeWithPasswordlessSudo(Node $node): RemoteCommand
     {
-        return $this->command(['sudo', '-n', '--']);
+        return $this->command($node, ['sudo', '-n', '--']);
     }
 
     /** @param list<string> $argumentPrefix */
-    private function command(array $argumentPrefix = []): RemoteCommand
+    private function command(Node $node, array $argumentPrefix = []): RemoteCommand
     {
         return new RemoteCommand(
             arguments: [
@@ -45,7 +36,7 @@ final readonly class NodeBootstrapCommandFactory
                 '-seu',
                 '--',
                 $this->keys->publicKey(),
-                ...self::PACKAGES,
+                ...$this->packages->forNode($node),
             ],
             input: <<<'BASH'
                 if [ ! -r /etc/os-release ]; then
