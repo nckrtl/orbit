@@ -1550,7 +1550,7 @@ it('publishes private Caddy and DNS configurations through complete preserved va
     expect($ssh->commands[0]->input)
         ->toContain(
             base64_encode($expectedCaddy),
-            'exec 9>"$lock"',
+            'exec 9>>"$lock"',
             'flock -w 30 9',
             'source_main=$(readlink -f "$live_caddyfile")',
             'previous_fragments=$(dirname "$source_main")/fragments',
@@ -1568,7 +1568,14 @@ it('publishes private Caddy and DNS configurations through complete preserved va
         ->and(array_slice(array: $ssh->commands[0]->arguments, offset: 0, length: 3))
         ->toBe(['sudo', 'bash', '-seu'])
         ->and($ssh->commands[0]->arguments)
-        ->toContain('/run/lock/orbit-caddy.lock')
+        ->toContain('/run/lock/orbit/caddy.lock');
+
+    $lockSetup = mb_strpos(haystack: $ssh->commands[0]->input, needle: 'lock_directory=$(dirname "$lock")');
+    $lockOpen = mb_strpos(haystack: $ssh->commands[0]->input, needle: 'exec 9>>"$lock"');
+
+    expect($lockSetup)
+        ->toBeInt()
+        ->toBeLessThan($lockOpen)
         ->and($processes->invocations)
         ->toHaveCount(1)
         ->and($processes->invocations[0]->input)
@@ -1709,6 +1716,8 @@ it('retires only the exact package-default caddyfile while preserving modified c
             ->toHaveKey('unmanaged.caddy')
             ->and($defaultResult->liveMainAfter)
             ->toBe('import '.$harness->etcCaddyPath('orbit-versions/test-version/fragments/*.caddy')."\n");
+        expect(fileperms($harness->etcCaddyPath('orbit-locks')) & 0o777)->toBe(0o700);
+        expect(fileperms($harness->etcCaddyPath('orbit-locks/caddy.lock')) & 0o777)->toBe(0o600);
 
         $orbitResult = $harness->run(
             publisher: zero_site_publisher($harness),
@@ -1818,7 +1827,8 @@ it('keeps the live Caddy aggregate untouched when candidate validation fails', f
             expect($exception->errorCode)->toBe('app-dev.caddy_config_failed');
         });
 
-    $script = $ssh->commands[0]->input ?? '';
+    $command = $ssh->commands[0];
+    $script = $command->input ?? '';
     $validation = mb_strpos(haystack: $script, needle: 'caddy validate --config "$candidate/Caddyfile"');
     $liveSwitch = mb_strpos(
         haystack: $script,
@@ -1833,6 +1843,16 @@ it('keeps the live Caddy aggregate untouched when candidate validation fails', f
         ->toBeLessThan($liveSwitch)
         ->and($script)
         ->toContain(
+            '/run/lock/orbit/caddy.lock',
+            'umask 0077',
+            'lock_directory=$(dirname "$lock")',
+            'if ! mkdir -- "$lock_directory" 2>/dev/null; then',
+            'test "$(stat -c %u:%g:%a -- "$lock_directory")" = 0:0:700',
+            'test ! -L "$lock_directory"',
+            'test ! -L "$lock"',
+            'test "$(stat -c %u:%g -- "$lock")" = 0:0',
+            'chmod 0600 -- "$lock"',
+            'test "$(stat -c %a -- "$lock")" = 600',
             'rm -rf -- "$candidate"',
             'rm -f -- "$candidate_link" "$rollback_link" "$rollback_file" "$previous_main"',
         );
@@ -2311,11 +2331,22 @@ it('removes only the app development Caddy fragment through an atomic preserved 
 
     $manager->remove($node);
 
-    $script = $ssh->commands[0]->input ?? '';
+    $command = $ssh->commands[0];
+    $script = $command->input ?? '';
 
     expect($script)
         ->toContain(
-            'exec 9>"$lock"',
+            '/run/lock/orbit/caddy.lock',
+            'umask 0077',
+            'lock_directory=$(dirname "$lock")',
+            'if ! mkdir -- "$lock_directory" 2>/dev/null; then',
+            'test "$(stat -c %u:%g:%a -- "$lock_directory")" = 0:0:700',
+            'test ! -L "$lock_directory"',
+            'test ! -L "$lock"',
+            'test "$(stat -c %u:%g -- "$lock")" = 0:0',
+            'chmod 0600 -- "$lock"',
+            'test "$(stat -c %a -- "$lock")" = 600',
+            'exec 9>>"$lock"',
             'flock -w 30 9',
             'source_main=$(readlink -f "$live_caddyfile")',
             'test ! -f "$current_fragments/app-dev.caddy"',
@@ -2325,11 +2356,16 @@ it('removes only the app development Caddy fragment through an atomic preserved 
             'mv -fT -- "$rollback_link" "$live_caddyfile"',
         )
         ->not->toContain(
+            'exec 9>"$lock"',
             'apt-get remove',
             'apt-get purge',
             'rm -rf -- /home/orbit',
             'rm -rf -- "$current_fragments"',
         );
+
+    $setup = mb_strpos(haystack: $script, needle: 'lock_directory=$(dirname "$lock")');
+    $open = mb_strpos(haystack: $script, needle: 'exec 9>>"$lock"');
+    expect($setup)->toBeInt()->toBeLessThan($open);
 });
 
 it('removes an app development fragment from a direct Caddyfile and restores that file on activation failure', function (): void {
@@ -2388,7 +2424,12 @@ function run_app_dev_direct_caddy_removal(bool $failActivation): array
         chmod(filename: $bin.'/'.$shim, permissions: 0o755);
     }
 
-    $caddyPublisher = new AppDevCaddyPublisher($etc.'/orbit-versions', $etc.'/Caddyfile', 'caddy', $etc.'/lock');
+    $caddyPublisher = new AppDevCaddyPublisher(
+        $etc.'/orbit-versions',
+        $etc.'/Caddyfile',
+        'caddy',
+        $etc.'/orbit-locks/caddy.lock',
+    );
     $command = $caddyPublisher->removeCommand('remove-version');
     $process = new \Symfony\Component\Process\Process(
         command: array_slice(array: $command->arguments, offset: 1),
@@ -2433,7 +2474,7 @@ function zero_site_publisher(AppDevCaddyPublishHarness $harness): AppDevCaddyPub
         versionsDirectory: $harness->etcCaddyPath('orbit-versions'),
         liveCaddyfilePath: $harness->etcCaddyPath('Caddyfile'),
         caddyServiceName: 'caddy',
-        lockPath: $harness->etcCaddyPath('orbit-caddy.lock'),
+        lockPath: $harness->etcCaddyPath('orbit-locks/caddy.lock'),
     );
 }
 
