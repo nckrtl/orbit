@@ -57,10 +57,12 @@ final readonly class WorktreeSynchronizer
         $overlay = $repository->dirtyOverlay();
         $paths = $overlay === null ? [] : $overlay->paths;
         $treeHash = $overlay === null ? $repository->effectiveTreeHash() : $overlay->treeHash;
+        $pointerHash = $this->gitPointerHash($worktree);
         $marker = json_encode([
             'sha' => $hostSha,
             'tree' => $treeHash,
             'mounted' => true,
+            'git_pointer_sha256' => $pointerHash,
         ], JSON_THROW_ON_ERROR);
 
         $commands = [];
@@ -88,7 +90,27 @@ final readonly class WorktreeSynchronizer
             $paths,
             $this->operation->value,
             true,
+            $pointerHash,
         );
+    }
+
+    /**
+     * A linked worktree keeps a `.git` pointer file naming its repository; the
+     * guests hash the same file through the mount, so its content is the one
+     * piece of tree evidence both sides can compute independently.
+     */
+    private function gitPointerHash(string $worktree): string
+    {
+        $pointer = $worktree.'/.git';
+        if (is_link($pointer) || ! is_file($pointer)) {
+            throw new RuntimeException('The mounted source must be a linked git worktree with a `.git` pointer file.');
+        }
+        $content = file_get_contents($pointer);
+        if ($content === false || $content === '') {
+            throw new RuntimeException('The worktree `.git` pointer file cannot be read.');
+        }
+
+        return hash('sha256', $content);
     }
 
     public function sync(TopologyTarget $target, string $worktree): SourceState

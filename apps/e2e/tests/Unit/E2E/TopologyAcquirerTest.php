@@ -294,6 +294,97 @@ it('rolls back discovery when the worktree is not mounted or the gateway environ
     promoteDiscoveryGeneration($repositoryRoot, $paths);
     $target = featureTarget('NCK-123');
     $events = [];
+    fakeDiscoveryMountFailureProcesses($target, $failure, $events);
+    $mutations = [];
+    $rollback = discoveryRollback($target, $mutations);
+
+    try {
+        expect(fn () => taskNineAcquirer($repositoryRoot, $paths, $rollback)->acquireDiscovery(
+            new TopologyRequest('NCK-123', $worktree),
+        ))
+            ->toThrow(RuntimeException::class, $message)
+            ->and(collect($events)->contains(
+                static fn (array $command): bool => str_contains(implode(' ', $command), 'retarget-vpn.sh'),
+            ))
+            ->toBeFalse()
+            ->and($mutations)
+            ->toContain('delete:'.$target->instance('gateway'), 'network:'.$target->network())
+            ->and(new AtomicJsonStore($paths)->read('leases/NCK-123.json'))
+            ->toBeNull()
+            ->and(new AtomicJsonStore($paths)->read('failures/NCK-123.json')['phase'] ?? null)
+            ->toBe('mount.source')
+            ->and(new TopologyManifestStore(new AtomicJsonStore($paths), $paths)->active('NCK-123'))
+            ->toBeNull();
+    } finally {
+        Process::run(['git', '-C', $repositoryRoot, 'worktree', 'remove', '--force', $worktree]);
+    }
+})->with([
+    'mountpoint' => ['mountpoint', 'The worktree is not mounted on mountpoint.gateway, mountpoint.app-dev.'],
+    'environment' => ['environment', 'promoted standby generation must be refreshed'],
+]);
+
+it('refuses a worktree path that cannot become an Incus mount source before any Incus mutation', function () {
+    $repositoryRoot = preparedTopologyRepository();
+    $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));
+    // Incus receives the source inside `key=value` device configuration.
+    $worktree = pinnedFeatureWorktree($repositoryRoot, 'unmount=able');
+    promoteDiscoveryGeneration($repositoryRoot, $paths);
+    $events = [];
+    fakePinnedWorktreeProcesses(featureTarget('NCK-123'), $events);
+
+    try {
+        expect(fn () => taskNineAcquirer($repositoryRoot, $paths)->acquireDiscovery(
+            new TopologyRequest('NCK-123', $worktree),
+        ))
+            ->toThrow(RuntimeException::class, 'The worktree cannot be mounted')
+            ->and(collect($events)->contains(
+                static fn (array $command): bool => (
+                    array_intersect($command, ['create', 'copy', 'start', 'exec']) !== []
+                ),
+            ))
+            ->toBeFalse()
+            ->and(new AtomicJsonStore($paths)->read('leases/NCK-123.json'))
+            ->toBeNull();
+    } finally {
+        Process::run(['git', '-C', $repositoryRoot, 'worktree', 'remove', '--force', $worktree]);
+    }
+});
+
+it('refuses discovery while a legacy flat pending release record exists', function () {
+    $repositoryRoot = preparedTopologyRepository();
+    $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));
+    $worktree = pinnedFeatureWorktree($repositoryRoot, 'legacy-pending');
+    promoteDiscoveryGeneration($repositoryRoot, $paths);
+    new AtomicJsonStore($paths)->write('release-pending/NCK-123.json', ['schema' => 2, 'issue' => 'NCK-123']);
+    $events = [];
+    fakePinnedWorktreeProcesses(featureTarget('NCK-123'), $events);
+
+    try {
+        expect(fn () => taskNineAcquirer($repositoryRoot, $paths)->acquireDiscovery(
+            new TopologyRequest('NCK-123', $worktree),
+        ))
+            ->toThrow(RuntimeException::class, 'legacy pending record; release with the previous harness')
+            ->and(collect($events)->contains(
+                static fn (array $command): bool => (
+                    array_intersect($command, ['create', 'copy', 'start', 'exec']) !== []
+                ),
+            ))
+            ->toBeFalse()
+            ->and(new AtomicJsonStore($paths)->read('leases/NCK-123.json'))
+            ->toBeNull();
+    } finally {
+        Process::run(['git', '-C', $repositoryRoot, 'worktree', 'remove', '--force', $worktree]);
+    }
+});
+
+/**
+ * Discovery guest preparation fails at one exact point; every Incus read then
+ * answers with the acquiring identity so rollback revalidates exact ownership.
+ *
+ * @param list<array<array-key, mixed>> $events
+ */
+function fakeDiscoveryMountFailureProcesses(TopologyTarget $target, string $failure, array &$events): void
+{
     $realProcess = new ProcessFactory;
     Process::fake(function (\Illuminate\Process\PendingProcess $process) use (
         &$events,
@@ -323,64 +414,72 @@ it('rolls back discovery when the worktree is not mounted or the gateway environ
         if ($failure === 'environment' && in_array('/var/lib/orbit-e2e/gateway.env', $command, true)) {
             return Process::result('', 'install: cannot stat', 1);
         }
-        $inventory = pinnedWorktreeInventoryResult($command, $target);
-        if ($inventory !== null && ($command[3] ?? null) === 'network' && ($command[4] ?? null) === 'list') {
-            return Process::result(json_encode([[
-                'name' => $target->network(),
-                'config' => [
-                    'user.orbit.e2e.owner' => 'orbit-e2e',
-                    'user.orbit.e2e.issue' => 'NCK-123',
-                    'user.orbit.e2e.attempt' => attemptId()->value,
-                    'user.orbit.e2e.operation' => str_repeat('a', 32),
-                    'ipv4.address' => '10.232.2.1/24',
-                ],
-            ]], JSON_THROW_ON_ERROR));
-        }
-        if ($inventory !== null && ($command[3] ?? null) === 'list') {
-            // Rollback revalidates exact ownership, so the cloned VMs carry the acquiring identity.
-            $resources = json_decode($inventory->output(), true, 16, JSON_THROW_ON_ERROR);
-            foreach ($resources as &$resource) {
-                if (str_starts_with((string) ($resource['name'] ?? ''), 'orbit-e2e-nck-123-')) {
-                    $resource['config'] += [
-                        'user.orbit.e2e.issue' => 'NCK-123',
-                        'user.orbit.e2e.attempt' => attemptId()->value,
-                        'user.orbit.e2e.operation' => str_repeat('a', 32),
-                    ];
-                }
-            }
-            unset($resource);
 
-            return Process::result(json_encode($resources, JSON_THROW_ON_ERROR));
-        }
-
-        return $inventory ?? pinnedWorktreeGuestResult($command);
+        return discoveryAcquiringInventoryResult($command, $target) ?? pinnedWorktreeGuestResult($command);
     });
+}
 
-    $mutations = [];
-    $rollback = serialAcquisitionRollback(
-        static fn (string $resource): IncusInstance|IncusNetwork => (
-            $resource === $target->network()
-                ? new IncusNetwork('local', 'default', $resource, [
-                    'user.orbit.e2e.owner' => 'orbit-e2e',
-                    'user.orbit.e2e.issue' => 'NCK-123',
-                    'user.orbit.e2e.attempt' => attemptId()->value,
-                    'user.orbit.e2e.operation' => str_repeat('a', 32),
-                ])
-                : new IncusInstance(
-                    'local',
-                    'default',
-                    $resource,
-                    'default',
-                    [
-                        'user.orbit.e2e.owner' => 'orbit-e2e',
-                        'user.orbit.e2e.issue' => 'NCK-123',
-                        'user.orbit.e2e.attempt' => attemptId()->value,
-                        'user.orbit.e2e.operation' => str_repeat('a', 32),
-                    ],
-                    network: $target->network(),
-                    mac: $target->mac(substr($resource, strlen($target->instance('gateway')) - strlen('gateway'))),
-                )
-        ),
+/**
+ * The pinned inventory with the acquiring issue, attempt, and operation stamped on
+ * every resource of the attempt.
+ *
+ * @param list<string> $command
+ */
+function discoveryAcquiringInventoryResult(
+    array $command,
+    TopologyTarget $target,
+): ?\Illuminate\Contracts\Process\ProcessResult {
+    $inventory = pinnedWorktreeInventoryResult($command, $target);
+    if ($inventory === null) {
+        return null;
+    }
+    $identity = [
+        'user.orbit.e2e.issue' => 'NCK-123',
+        'user.orbit.e2e.attempt' => attemptId()->value,
+        'user.orbit.e2e.operation' => str_repeat('a', 32),
+    ];
+    if (($command[3] ?? null) === 'network' && ($command[4] ?? null) === 'list') {
+        return Process::result(json_encode([[
+            'name' => $target->network(),
+            'config' => ['user.orbit.e2e.owner' => 'orbit-e2e', 'ipv4.address' => '10.232.2.1/24', ...$identity],
+        ]], JSON_THROW_ON_ERROR));
+    }
+    if (($command[3] ?? null) !== 'list') {
+        return $inventory;
+    }
+    $resources = json_decode($inventory->output(), true, 16, JSON_THROW_ON_ERROR);
+    foreach ($resources as &$resource) {
+        if (str_starts_with((string) ($resource['name'] ?? ''), 'orbit-e2e-nck-123-')) {
+            $resource['config'] += $identity;
+        }
+    }
+    unset($resource);
+
+    return Process::result(json_encode($resources, JSON_THROW_ON_ERROR));
+}
+
+/** @param list<string> $mutations */
+function discoveryRollback(TopologyTarget $target, array &$mutations): AcquisitionRollback
+{
+    $identity = [
+        'user.orbit.e2e.owner' => 'orbit-e2e',
+        'user.orbit.e2e.issue' => 'NCK-123',
+        'user.orbit.e2e.attempt' => attemptId()->value,
+        'user.orbit.e2e.operation' => str_repeat('a', 32),
+    ];
+
+    return serialAcquisitionRollback(
+        static fn (string $resource): IncusInstance|IncusNetwork => $resource === $target->network()
+            ? new IncusNetwork('local', 'default', $resource, $identity)
+            : new IncusInstance(
+                'local',
+                'default',
+                $resource,
+                'default',
+                $identity,
+                network: $target->network(),
+                mac: $target->mac(substr($resource, strlen($target->instance('gateway')) - strlen('gateway'))),
+            ),
         static function (string $resource) use (&$mutations): void {
             $mutations[] = 'stop:'.$resource;
         },
@@ -391,31 +490,7 @@ it('rolls back discovery when the worktree is not mounted or the gateway environ
             $mutations[] = 'network:'.$resource;
         },
     );
-
-    try {
-        expect(fn () => taskNineAcquirer($repositoryRoot, $paths, $rollback)->acquireDiscovery(
-            new TopologyRequest('NCK-123', $worktree),
-        ))
-            ->toThrow(RuntimeException::class, $message)
-            ->and(collect($events)->contains(
-                static fn (array $command): bool => str_contains(implode(' ', $command), 'retarget-vpn.sh'),
-            ))
-            ->toBeFalse()
-            ->and($mutations)
-            ->toContain('delete:'.$target->instance('gateway'), 'network:'.$target->network())
-            ->and(new AtomicJsonStore($paths)->read('leases/NCK-123.json'))
-            ->toBeNull()
-            ->and(new AtomicJsonStore($paths)->read('failures/NCK-123.json')['phase'] ?? null)
-            ->toBe('mount.source')
-            ->and(new TopologyManifestStore(new AtomicJsonStore($paths), $paths)->active('NCK-123'))
-            ->toBeNull();
-    } finally {
-        Process::run(['git', '-C', $repositoryRoot, 'worktree', 'remove', '--force', $worktree]);
-    }
-})->with([
-    'mountpoint' => ['mountpoint', 'The worktree is not mounted on mountpoint.gateway, mountpoint.app-dev.'],
-    'environment' => ['environment', 'promoted standby generation must be refreshed'],
-]);
+}
 
 it('refuses to touch a proved attempt or one the lease and active pointer do not name', function (string $case) {
     $repositoryRoot = preparedTopologyRepository();
@@ -514,6 +589,7 @@ function taskNineAcquirer(
         $journal,
         $redactor,
         new \App\E2E\HostCapacity($store, $paths, $operation, 12),
+        new \App\E2E\ProofRecordReader($store),
         $repositoryRoot,
         $rollback,
         attempts: static fn (): \App\E2E\Value\AttemptId => attemptId(),
@@ -3714,7 +3790,8 @@ it('preserves prior release evidence when acquisition preflight fails', function
         'released' => ['orbit-e2e-nck-123-aaaaaaaa-gateway'],
         'already_absent' => [],
     ];
-    $store->write('releases/NCK-123.json', $priorRelease);
+    $priorReceiptPath = 'evidence/releases/NCK-123/'.attemptId('e')->value.'.json';
+    $store->write($priorReceiptPath, $priorRelease);
     $fingerprint = topologyFinalPreparedFingerprint($repositoryRoot);
     $structural = new PreparedStateFingerprint(new GitRepository($repositoryRoot))->forCommit();
     new StandbyManifestStore($store, $paths, new TopologyManifestStore($store, $paths))->promote(new StandbyGeneration(
@@ -3750,7 +3827,7 @@ it('preserves prior release evidence when acquisition preflight fails', function
         new TopologyRequest('NCK-123', $repositoryRoot),
     ))
         ->toThrow(RuntimeException::class, 'fingerprint is stale or corrupt')
-        ->and($store->read('releases/NCK-123.json'))
+        ->and($store->read($priorReceiptPath))
         ->toBe($priorRelease)
         ->and($commands)
         ->toBeEmpty();
@@ -3946,7 +4023,12 @@ it('mounts the worktree, repairs clone identity, and records the host source wit
         ->and(array_map($instanceOf, $markers))
         ->toBe([$target->instance('gateway'), $target->instance('app-dev')])
         ->and($markers[0])
-        ->toContain(json_encode(['sha' => $hostSha, 'tree' => $treeHash, 'mounted' => true], JSON_THROW_ON_ERROR))
+        ->toContain(json_encode([
+            'sha' => $hostSha,
+            'tree' => $treeHash,
+            'mounted' => true,
+            'git_pointer_sha256' => hash('sha256', (string) file_get_contents($worktreeA.'/.git')),
+        ], JSON_THROW_ON_ERROR))
         ->and($eventsMatching($acquireEvents, 'converge-'))
         ->toBe([])
         ->and($eventsMatching($acquireEvents, 'hydrate-orbit.sh'))
@@ -4041,13 +4123,30 @@ it('mounts the worktree, repairs clone identity, and records the host source wit
         ->and(array_map($instanceOf, $syncMarkers))
         ->toBe([$target->instance('gateway'), $target->instance('app-dev')])
         ->and($syncMarkers[0])
-        ->toContain(json_encode(['sha' => $hostSha, 'tree' => $dirtyTree, 'mounted' => true], JSON_THROW_ON_ERROR))
+        ->toContain(json_encode([
+            'sha' => $hostSha,
+            'tree' => $dirtyTree,
+            'mounted' => true,
+            'git_pointer_sha256' => hash('sha256', (string) file_get_contents($worktreeA.'/.git')),
+        ], JSON_THROW_ON_ERROR))
         ->and($eventsMatching($events, 'file push'))
         ->toBe([])
         ->and($eventsMatching($events, 'converge-'))
         ->toBe([])
         ->and($store->read('leases/NCK-123.json')['state'] ?? null)
         ->toBe('ready');
+
+    // Verify and sync re-prove the mount before they touch a mounted topology.
+    $unmountedEvents = [];
+    fakeDiscoveryMountFailureProcesses($target, 'mountpoint', $unmountedEvents);
+    expect(fn () => $acquirer->verify('NCK-123', attemptId()))
+        ->toThrow(RuntimeException::class, 'The worktree is not mounted on mountpoint.gateway, mountpoint.app-dev.')
+        ->and(fn () => $acquirer->sync('NCK-123', attemptId(), $worktreeA))
+        ->toThrow(RuntimeException::class, 'The worktree is not mounted on mountpoint.gateway, mountpoint.app-dev.')
+        ->and($eventsMatching($unmountedEvents, 'verify-topology.sh'))
+        ->toBe([])
+        ->and($eventsMatching($unmountedEvents, '/var/lib/orbit-e2e/source-state'))
+        ->toBe([]);
 });
 
 it('retries sync from a valid interrupted lease and writes the refreshed manifest', function (

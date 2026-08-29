@@ -40,9 +40,9 @@ final readonly class TopologyReleaser
         private AtomicJsonStore $state,
         private StatePaths $paths,
         private OperationId $operation,
+        private ReleaseReceiptStore $receipts,
         private ?HostCapacity $capacity = null,
         private ?AcquisitionRollback $acquisitionRollback = null,
-        private ?ReleaseReceiptStore $receipts = null,
     ) {}
 
     public function release(string $issue, AttemptId $attempt): ReleaseResult
@@ -64,7 +64,7 @@ final readonly class TopologyReleaser
     {
         $issue = $target->issue;
         $attempt = $target->requireAttempt();
-        $receipt = $this->receipts()->read($issue, $attempt);
+        $receipt = $this->receipts->read($issue, $attempt);
         if ($receipt !== null) {
             $this->assertAttemptArtifactsAbsent($target);
             $pending = $this->state->read($this->pendingPath($target));
@@ -304,14 +304,24 @@ final readonly class TopologyReleaser
         ) {
             throw new RuntimeException('The abandoned acquisition owner identity is invalid or still live.');
         }
-        $resources = [$target->network(), ...array_map($target->instance(...), TopologyProfile::ROLES)];
-        $observedResources = $this->rollbackInventory($target, array_slice($resources, 1));
+        $instanceRoles = array_combine(
+            array_map($target->instance(...), TopologyProfile::ROLES),
+            TopologyProfile::ROLES,
+        );
+        $resources = [$target->network(), ...array_keys($instanceRoles)];
+        $observedResources = $this->rollbackInventory($target, array_keys($instanceRoles));
+        // An interrupted acquisition may already have written its record; when it
+        // did, every live VM must carry exactly the source mount the record names.
+        $topology = $this->manifests->read($target->issue, $target->requireAttempt());
         $identity = [];
         foreach ($resources as $resource) {
             $current = $observedResources[$resource] ?? null;
             if (! $current instanceof IncusInstance && ! $current instanceof IncusNetwork) {
                 $identity[$resource] = null;
                 continue;
+            }
+            if ($topology !== null && $current instanceof IncusInstance) {
+                $this->assertMount($current, $topology->mounts[$instanceRoles[$resource]] ?? null);
             }
             $identity[$resource] = [
                 'remote' => $current->remote,
@@ -369,7 +379,6 @@ final readonly class TopologyReleaser
         if ($remainingInstances !== [] || $this->host->network($target->network()) !== null) {
             throw new RuntimeException('Abandoned acquisition resources remain after cleanup.');
         }
-        $topology = $this->manifests->read($target->issue, $target->requireAttempt());
         if ($topology !== null) {
             $this->manifests->forgetActive($topology);
         }
@@ -392,7 +401,7 @@ final readonly class TopologyReleaser
             [...array_slice($resources, 1), $target->network()],
             ReleaseResult::now(),
         );
-        $this->receipts()->write($result);
+        $this->receipts->write($result);
 
         return $result;
     }
@@ -447,7 +456,7 @@ final readonly class TopologyReleaser
         if ($topology !== null) {
             $this->manifests->forgetActive($topology);
         }
-        $this->receipts()->write($result);
+        $this->receipts->write($result);
         $this->state->delete($this->pendingPath($target));
 
         return $result;
@@ -596,11 +605,6 @@ final readonly class TopologyReleaser
     private function pendingPath(TopologyTarget $target): string
     {
         return 'release-pending/'.$target->issue.'/'.$target->requireAttempt()->value.'.json';
-    }
-
-    private function receipts(): ReleaseReceiptStore
-    {
-        return $this->receipts ?? new ReleaseReceiptStore($this->state, $this->paths);
     }
 
     /** @param array<string, string> $metadata */

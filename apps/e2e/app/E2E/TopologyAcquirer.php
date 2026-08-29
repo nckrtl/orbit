@@ -17,6 +17,7 @@ use App\E2E\Value\GuestCommand;
 use App\E2E\Value\GuestCommandResult;
 use App\E2E\Value\IncusInstance;
 use App\E2E\Value\IncusNetwork;
+use App\E2E\Value\MountPath;
 use App\E2E\Value\OperationId;
 use App\E2E\Value\ProofResult;
 use App\E2E\Value\SourceState;
@@ -35,7 +36,13 @@ use Throwable;
  */
 final readonly class TopologyAcquirer
 {
-    /** The guest path every checkout role mounts the host worktree on. */
+    /**
+     * The guest path every checkout role mounts the host worktree on.
+     *
+     * The virtiofs mount maps guest uid/gid 1000 (`orbit`) onto the host owner of
+     * the worktree, so files the guests create there (the gateway `.env`) land in
+     * the host worktree owned by the invoking user. Both sides assume uid 1000.
+     */
     public const string SOURCE_MOUNT_PATH = '/home/orbit/orbit';
 
     /** Host `bin/bootstrap` owns vendor; guests never run composer in discovery. */
@@ -60,9 +67,9 @@ final readonly class TopologyAcquirer
         private OperationJournal $journal,
         private SecretRedactor $redactor,
         private HostCapacity $capacity,
+        private ProofRecordReader $proofs,
         private string $repositoryRoot = '',
         private ?AcquisitionRollback $rollback = null,
-        private ?ProofRecordReader $proofs = null,
         /** @var (Closure(): AttemptId)|null Mints the attempt identity; injectable so tests pin resource names. */
         private ?Closure $attempts = null,
     ) {}
@@ -165,6 +172,7 @@ final readonly class TopologyAcquirer
         $target = $topology->target;
         if ($topology->source->mounted) {
             $this->assertWorktreeIsMounted($topology, $worktree);
+            $this->assertSourceMounted($target);
 
             return $this->synchronizer->syncWorkingTree($target, $worktree);
         }
@@ -196,6 +204,9 @@ final readonly class TopologyAcquirer
             $topology = $this->requireTopology($issue, $attempt);
             $target = $topology->target;
             $this->networks->reconcile($target->network());
+            if ($topology->source->mounted) {
+                $this->assertSourceMounted($target);
+            }
             $report = $this->verifier->verify($target, VerificationMode::Readiness, $topology->source);
             if (! $report->passed) {
                 throw new RuntimeException('Feature topology verification failed.'.$report->failedSummary());
@@ -468,6 +479,7 @@ final readonly class TopologyAcquirer
             $generation->snapshots,
         ));
 
+        $this->assertMountableWorktree($request->worktree);
         $this->assertVendorHydrated($request->worktree);
 
         $created = [];
@@ -665,6 +677,14 @@ final readonly class TopologyAcquirer
     /** Any attempt of the issue whose release finalization was interrupted blocks a new attempt. */
     private function hasPendingRelease(string $issue): bool
     {
+        // The previous harness kept one flat pending record per issue; it names no
+        // attempt, so only that harness can finalize it.
+        $legacy = $this->paths->path('release-pending/'.$issue.'.json');
+        if (file_exists($legacy) || is_link($legacy)) {
+            throw new RuntimeException(
+                'The issue has a legacy pending record; release with the previous harness.',
+            );
+        }
         $directory = $this->paths->path('release-pending/'.$issue);
         if (! file_exists($directory)) {
             return false;
@@ -678,6 +698,17 @@ final readonly class TopologyAcquirer
         }
 
         return $pending !== [];
+    }
+
+    /** The worktree becomes an Incus disk source verbatim, so it must satisfy the mount path rule. */
+    private function assertMountableWorktree(string $worktree): void
+    {
+        if (! MountPath::isMountableDirectory($worktree)) {
+            throw new RuntimeException(
+                'The worktree cannot be mounted: it must be an existing absolute directory path '
+                .'without symlinks, commas, equals signs, or line breaks.',
+            );
+        }
     }
 
     /** Discovery guests never run composer, so the host worktree must already carry every vendor tree. */
@@ -926,7 +957,7 @@ final readonly class TopologyAcquirer
         if ($active === null || $active->attempt->value !== $attempt->value) {
             throw new RuntimeException('The topology attempt is not the active topology attempt.');
         }
-        if (($this->proofs ?? new ProofRecordReader($this->state))->isProved($issue, $attempt)) {
+        if ($this->proofs->isProved($issue, $attempt)) {
             throw new RuntimeException('The topology attempt is proved and cannot be changed.');
         }
 

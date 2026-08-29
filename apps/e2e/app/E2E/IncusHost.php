@@ -10,6 +10,7 @@ use App\E2E\Value\GuestCommand;
 use App\E2E\Value\GuestCommandResult;
 use App\E2E\Value\IncusInstance;
 use App\E2E\Value\IncusNetwork;
+use App\E2E\Value\MountPath;
 use App\E2E\Value\OperationId;
 use App\E2E\Value\TopologyTarget;
 use Illuminate\Contracts\Process\ProcessResult;
@@ -1846,18 +1847,11 @@ final class IncusHost implements GuestTransport
             throw new RuntimeException('Invalid Incus device identity.');
         }
         foreach (['source', 'path'] as $key) {
-            $value = $mount[$key];
-            if (
-                ! str_starts_with($value, '/')
-                || str_contains($value, "\0")
-                || str_contains($value, "\n")
-                || str_contains($value, ',')
-                || str_contains($value, '=')
-            ) {
+            if (! MountPath::isSafe($mount[$key])) {
                 throw new RuntimeException("Invalid Incus mount {$key}.");
             }
         }
-        if (is_link($mount['source']) || ! is_dir($mount['source'])) {
+        if (! MountPath::isMountableDirectory($mount['source'])) {
             throw new RuntimeException('The Incus mount source must be an existing directory.');
         }
     }

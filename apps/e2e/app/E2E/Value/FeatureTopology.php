@@ -9,7 +9,7 @@ use InvalidArgumentException;
 /** @mago-expect lint:cyclomatic-complexity The manifest schema fails closed on every field. */
 final readonly class FeatureTopology
 {
-    public const int SCHEMA = 2;
+    public const int SCHEMA = 3;
 
     /** The one disk device name a mounted worktree uses on every checkout role. */
     public const string SOURCE_DEVICE = 'orbit-source';
@@ -79,8 +79,8 @@ final readonly class FeatureTopology
                 || $mount['device'] !== self::SOURCE_DEVICE
                 || ! is_string($mount['source'])
                 || ! is_string($mount['path'])
-                || ! self::isSafeAbsolutePath($mount['source'])
-                || ! self::isSafeAbsolutePath($mount['path'])
+                || ! MountPath::isSafe($mount['source'])
+                || ! MountPath::isSafe($mount['path'])
             ) {
                 throw new InvalidArgumentException('A topology mount is invalid.');
             }
@@ -90,17 +90,6 @@ final readonly class FeatureTopology
         if (count($sources) > 1) {
             throw new InvalidArgumentException('Every topology mount must share one source and one path.');
         }
-    }
-
-    public static function isSafeAbsolutePath(string $path): bool
-    {
-        return (
-            str_starts_with($path, '/')
-            && ! str_contains($path, "\0")
-            && ! str_contains($path, "\n")
-            && ! str_contains($path, ',')
-            && $path === rtrim($path, characters: '/')
-        );
     }
 
     /** @return array<string, mixed> */
@@ -138,9 +127,16 @@ final readonly class FeatureTopology
             'verification',
         ];
 
+        if (($value['schema'] ?? null) !== self::SCHEMA) {
+            $version = json_encode($value['schema'] ?? null, JSON_THROW_ON_ERROR);
+
+            throw new InvalidArgumentException(
+                "The feature topology schema {$version} is not supported; release with the previous harness.",
+            );
+        }
+
         if (
             array_keys($value) !== $keys
-            || $value['schema'] !== self::SCHEMA
             || $value['profile'] !== TopologyProfile::NAME
             || ! is_string($value['issue'])
             || ! is_string($value['attempt_id'])

@@ -183,6 +183,58 @@ function assertTopologyVerifierRequest(array $request, array $probeRoles, string
     ]);
 }
 
+describe('TopologyVerifier mounted source', function () {
+    it('passes the expected git pointer hash only to the source probes of a mounted source', function () {
+        setUpTopologyVerifierProcessFacade();
+        $sha = str_repeat('a', 40);
+        $pointer = str_repeat('f', 64);
+        $argv = [];
+
+        Process::fake(function (PendingProcess $process) use ($sha, &$argv) {
+            $inventory = topologyVerifierInventory($process);
+            if ($inventory instanceof ProcessResult) {
+                return $inventory;
+            }
+            $payload = json_decode((string) $process->input, true, 512, JSON_THROW_ON_ERROR);
+            $results = [];
+            foreach ($payload['requests'] as $request) {
+                $argv[$request['label']] = $request['argv'];
+                $results[] = [
+                    'label' => $request['label'],
+                    'stdout' => isGlobalIpv4TopologyVerifierProbe($request['argv'] ?? [])
+                        ? '2: enp5s0    inet 192.0.2.1/24 scope global'
+                        : topologyVerifierEvidence($request, $sha),
+                    'stderr' => '',
+                    'exit_code' => 0,
+                ];
+            }
+
+            return Process::result(json_encode($results, JSON_THROW_ON_ERROR));
+        });
+
+        $target = TopologyTarget::standby();
+        new TopologyVerifier(
+            new IncusHost(pool: 'orbit-e2e'),
+            readinessTimeoutSeconds: 60,
+            readinessPollIntervalMicroseconds: 0,
+        )->verify(
+            $target,
+            VerificationMode::Readiness,
+            new SourceState($sha, $sha, mounted: true, pointerHash: $pointer),
+        );
+
+        $script = '/usr/local/bin/verify-topology.sh';
+        expect($argv['source.gateway'] ?? null)
+            ->toBe([$script, 'source.gateway', 'readiness', $sha, $target->instance('gateway'), $pointer])
+            ->and($argv['source.app-dev'] ?? null)
+            ->toBe([$script, 'source.app-dev', 'readiness', $sha, $target->instance('app-dev'), $pointer])
+            ->and($argv['source.manifest'] ?? null)
+            ->toBe([$script, 'source.manifest', 'readiness', $sha, $target->instance('gateway'), '-', '', $pointer])
+            ->and($argv['role.gateway'] ?? null)
+            ->toBe([$script, 'role.gateway', 'readiness', $sha, $target->instance('gateway')]);
+    });
+});
+
 describe('TopologyVerifier', function () {
     it('runs all named probes through one concurrent host helper and preserves evidence', function () {
         setUpTopologyVerifierProcessFacade();

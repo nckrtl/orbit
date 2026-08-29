@@ -7,6 +7,8 @@ use App\E2E\IncusNetworkLifecycle;
 use App\E2E\ProofRecordReader;
 use App\E2E\ReleaseReceiptStore;
 use App\E2E\State\AtomicJsonStore;
+use App\E2E\State\OperationJournal;
+use App\E2E\State\SecretRedactor;
 use App\E2E\State\StatePaths;
 use App\E2E\TopologyManifestStore;
 use App\E2E\TopologyReaper;
@@ -39,7 +41,25 @@ function reaperReleaser(AtomicJsonStore $store, StatePaths $paths): TopologyRele
         $store,
         $paths,
         new OperationId(str_repeat('a', 32)),
+        new ReleaseReceiptStore($store, $paths),
     );
+}
+
+function reaper(AtomicJsonStore $store, StatePaths $paths): TopologyReaper
+{
+    return new TopologyReaper(
+        $store,
+        $paths,
+        reaperReleaser($store, $paths),
+        new ProofRecordReader($store),
+        new OperationJournal($paths, new SecretRedactor),
+        reaperOperation(),
+    );
+}
+
+function reaperOperation(): OperationId
+{
+    return new OperationId(str_repeat('a', 32));
 }
 
 function reaperAttempt(string $character = 'a'): AttemptId
@@ -73,7 +93,7 @@ describe('topology reaping input', function () {
         ]);
         $snapshot = new IssueStateSnapshot(['NCK-12' => 'completed']);
 
-        expect(fn () => new TopologyReaper($store, $paths, reaperReleaser($store, $paths))->reap($snapshot))
+        expect(fn () => reaper($store, $paths)->reap($snapshot))
             ->toThrow(RuntimeException::class, 'invalid');
     });
 
@@ -82,7 +102,7 @@ describe('topology reaping input', function () {
         $store = new AtomicJsonStore($paths);
         $store->write('leases/NCK-12.json', ['issue' => 'NCK-12', 'expires_at' => '1970-01-01T00:00:00Z']);
 
-        expect(fn () => new TopologyReaper($store, $paths, reaperReleaser($store, $paths))->reap(
+        expect(fn () => reaper($store, $paths)->reap(
             new IssueStateSnapshot(['NCK-12' => 'completed']),
         ))
             ->toThrow(RuntimeException::class, 'invalid')
@@ -101,7 +121,7 @@ describe('topology reaping input', function () {
         $previous = date_default_timezone_get();
         date_default_timezone_set('Pacific/Kiritimati');
         try {
-            expect(new TopologyReaper($store, $paths, reaperReleaser($store, $paths))->reap(new IssueStateSnapshot([
+            expect(reaper($store, $paths)->reap(new IssueStateSnapshot([
                 'NCK-12' => 'completed',
             ])))->toBe([]);
             expect($store->read('leases/NCK-12.json'))->not->toBeNull();
@@ -125,7 +145,7 @@ describe('topology reaping input', function () {
             'expires_at' => '2026-99-99T99:99:99Z',
         ]);
 
-        expect(fn () => new TopologyReaper($store, $paths, reaperReleaser($store, $paths))->reap(
+        expect(fn () => reaper($store, $paths)->reap(
             new IssueStateSnapshot(['NCK-12' => 'completed', 'NCK-13' => 'completed']),
         ))
             ->toThrow(RuntimeException::class, 'invalid');
@@ -145,7 +165,7 @@ describe('topology reaping input', function () {
             ]);
         }
 
-        $results = new TopologyReaper($store, $paths, reaperReleaser($store, $paths))->reap(new IssueStateSnapshot([
+        $results = reaper($store, $paths)->reap(new IssueStateSnapshot([
             'NCK-12' => 'completed',
             'NCK-13' => 'completed',
         ]));
@@ -178,7 +198,7 @@ describe('topology reaping input', function () {
         // A receipt of another attempt of the same issue never stands in for the expired one.
         new ReleaseReceiptStore($store, $paths)->write(reaperReceipt('NCK-14', reaperAttempt('c')));
 
-        $results = new TopologyReaper($store, $paths, reaperReleaser($store, $paths))->reap(new IssueStateSnapshot([
+        $results = reaper($store, $paths)->reap(new IssueStateSnapshot([
             'NCK-14' => 'completed',
         ]));
 
@@ -212,8 +232,8 @@ describe('topology reaping input', function () {
         ]);
         Process::preventStrayProcesses();
 
-        $results = new TopologyReaper($store, $paths, reaperReleaser($store, $paths), new ProofRecordReader($store))
-            ->reap(new IssueStateSnapshot(['NCK-12' => 'completed']));
+        $results = reaper($store, $paths)->reap(new IssueStateSnapshot(['NCK-12' => 'completed']));
+        $journal = new OperationJournal($paths, new SecretRedactor)->entries(reaperOperation());
 
         expect($results)
             ->toBe([])
@@ -221,7 +241,17 @@ describe('topology reaping input', function () {
             ->not
             ->toBeNull()
             ->and($store->read('reaping-failures/NCK-12.json'))
-            ->toBeNull();
+            ->toBeNull()
+            ->and($journal)
+            ->toHaveCount(1)
+            ->and($journal[0])
+            ->toMatchArray([
+                'event' => 'topology.reap',
+                'state' => 'skipped',
+                'reason' => 'proved',
+                'issue' => 'NCK-12',
+                'attempt' => reaperAttempt()->value,
+            ]);
         Process::assertNothingRan();
     });
 

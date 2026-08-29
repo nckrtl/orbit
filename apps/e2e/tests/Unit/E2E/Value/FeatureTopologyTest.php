@@ -7,6 +7,7 @@ use App\E2E\Value\AttemptPurpose;
 use App\E2E\Value\FeatureTopology;
 use App\E2E\Value\IncusInstance;
 use App\E2E\Value\LaravelRelease;
+use App\E2E\Value\MountPath;
 use App\E2E\Value\SourceState;
 use App\E2E\Value\StandbyGeneration;
 use App\E2E\Value\TopologyProfile;
@@ -43,7 +44,12 @@ function mountedTopologyFixture(bool $mounted = true, ?array $mounts = null): Fe
         ),
         $target->network(),
         array_combine(TopologyProfile::ROLES, array_map($target->instance(...), TopologyProfile::ROLES)),
-        new SourceState(str_repeat('b', 40), str_repeat('b', 40), mounted: $mounted),
+        new SourceState(
+            str_repeat('b', 40),
+            str_repeat('b', 40),
+            mounted: $mounted,
+            pointerHash: $mounted ? str_repeat('e', 64) : null,
+        ),
         new VerificationReport(true, ['fixture' => verificationProbeFixture()]),
         $mounts,
     );
@@ -108,17 +114,76 @@ describe('feature topology mounts', function () {
         expect(fn () => FeatureTopology::fromArray($value))
             ->toThrow(InvalidArgumentException::class, 'schema is invalid');
     });
+
+    it('names the previous harness for any other manifest schema', function (mixed $schema) {
+        $value = mountedTopologyFixture()->toArray();
+        $value['schema'] = $schema;
+        $version = json_encode($schema, JSON_THROW_ON_ERROR);
+
+        expect(FeatureTopology::SCHEMA)
+            ->toBe(3)
+            ->and(fn () => FeatureTopology::fromArray($value))
+            ->toThrow(
+                InvalidArgumentException::class,
+                "schema {$version} is not supported; release with the previous harness",
+            );
+    })->with(['schema 2' => [2], 'schema 1' => [1], 'string schema' => ['3']]);
+});
+
+describe('mount paths', function () {
+    it('accepts only absolute separator-free paths', function (string $path, bool $safe) {
+        expect(MountPath::isSafe($path))->toBe($safe);
+    })->with([
+        'absolute' => ['/srv/wt', true],
+        'relative' => ['srv/wt', false],
+        'comma' => ['/srv/a,b', false],
+        'equals' => ['/srv/a=b', false],
+        'newline' => ["/srv/a\nb", false],
+        'nul' => ["/srv/a\0b", false],
+        'trailing slash' => ['/srv/wt/', false],
+    ]);
+
+    it('requires a mountable source to be a real directory', function () {
+        $root = temporaryPath('orbit-mount-path-', 4);
+        mkdir($root.'/tree', 0o700, true);
+        symlink($root.'/tree', $root.'/link');
+        file_put_contents($root.'/file', '');
+
+        try {
+            expect(MountPath::isMountableDirectory($root.'/tree'))
+                ->toBeTrue()
+                ->and(MountPath::isMountableDirectory($root.'/link'))
+                ->toBeFalse()
+                ->and(MountPath::isMountableDirectory($root.'/file'))
+                ->toBeFalse()
+                ->and(MountPath::isMountableDirectory($root.'/missing'))
+                ->toBeFalse()
+                ->and(MountPath::isMountableDirectory($root.'/tree/'))
+                ->toBeFalse();
+        } finally {
+            new Illuminate\Filesystem\Filesystem()->deleteDirectory($root);
+        }
+    });
 });
 
 describe('source state', function () {
     it('serializes and validates the mounted flag', function () {
-        $state = new SourceState(str_repeat('b', 40), str_repeat('b', 40), mounted: true);
+        $state = new SourceState(
+            str_repeat('b', 40),
+            str_repeat('b', 40),
+            mounted: true,
+            pointerHash: str_repeat('e', 64),
+        );
         $value = $state->toArray();
 
         expect($value['mounted'])
             ->toBeTrue()
+            ->and($value['git_pointer_sha256'])
+            ->toBe(str_repeat('e', 64))
             ->and(SourceState::fromArray($value)->mounted)
             ->toBeTrue()
+            ->and(SourceState::fromArray($value)->pointerHash)
+            ->toBe(str_repeat('e', 64))
             ->and(new SourceState(str_repeat('b', 40), str_repeat('b', 40))->mounted)
             ->toBeFalse();
 
@@ -127,6 +192,30 @@ describe('source state', function () {
             ->toThrow(InvalidArgumentException::class, 'schema is invalid');
         unset($value['mounted']);
         expect(fn () => SourceState::fromArray($value))
+            ->toThrow(InvalidArgumentException::class, 'schema is invalid');
+    });
+
+    it('binds the git pointer hash to the mounted flag', function () {
+        $value = new SourceState(
+            str_repeat('b', 40),
+            str_repeat('b', 40),
+            mounted: true,
+            pointerHash: str_repeat('e', 64),
+        )->toArray();
+        unset($value['git_pointer_sha256']);
+
+        expect(fn () => new SourceState(str_repeat('b', 40), str_repeat('b', 40), mounted: true))
+            ->toThrow(InvalidArgumentException::class, 'exactly one git pointer hash')
+            ->and(fn () => new SourceState(str_repeat('b', 40), str_repeat('b', 40), pointerHash: str_repeat('e', 64)))
+            ->toThrow(InvalidArgumentException::class, 'exactly one git pointer hash')
+            ->and(fn () => new SourceState(
+                str_repeat('b', 40),
+                str_repeat('b', 40),
+                mounted: true,
+                pointerHash: 'short',
+            ))
+            ->toThrow(InvalidArgumentException::class, 'git pointer hash is invalid')
+            ->and(fn () => SourceState::fromArray($value))
             ->toThrow(InvalidArgumentException::class, 'schema is invalid');
     });
 });

@@ -2802,6 +2802,14 @@ describe('IncusHost failures', function () {
             ['device' => 'orbit-source', 'source' => '/tmp', 'path' => "/home/orbit\n/orbit"],
             'mount path',
         ],
+        'equals in path' => [
+            ['device' => 'orbit-source', 'source' => '/tmp', 'path' => '/home/orbit=orbit'],
+            'mount path',
+        ],
+        'symlinked source' => [
+            ['device' => 'orbit-source', 'source' => '/proc/self/cwd', 'path' => '/home/orbit/orbit'],
+            'existing directory',
+        ],
         'missing directory' => [
             ['device' => 'orbit-source', 'source' => '/nonexistent/orbit-worktree', 'path' => '/home/orbit/orbit'],
             'existing directory',

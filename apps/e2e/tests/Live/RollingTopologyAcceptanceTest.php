@@ -124,6 +124,7 @@ it('proves the rolling topology contract through public wrappers', function (): 
         Assert::assertSame($acquire['operation_id'] ?? null, $acquire['topology']['source']['operation_id'] ?? null);
         liveAssertTopology($acquire['topology'] ?? null, $target, $candidateSha);
         liveAssertIncusTopology($acquire['topology'] ?? null, $target);
+        liveAssertMountedGatewayEnvironment($featureWorktree);
 
         $isolationAcquired = true;
         $isolationAcquire = liveJsonPhase('acquire isolation topology', fn (): array => liveJsonWrapper(
@@ -487,6 +488,17 @@ function liveAssertStandbyStatus(array $payload, string $state): void
     Assert::assertSame($state, $payload['state']);
     Assert::assertTrue($payload['stopped']);
     Assert::assertIsArray($payload['generation']);
+}
+
+/**
+ * The gateway guest places its `.env` through the virtiofs mount, so the file must
+ * land in the host worktree owned by the invoking user (guest uid 1000 maps to it).
+ */
+function liveAssertMountedGatewayEnvironment(string $featureWorktree): void
+{
+    $environment = $featureWorktree.'/apps/gateway/.env';
+    Assert::assertFileExists($environment);
+    Assert::assertSame(posix_geteuid(), fileowner($environment));
 }
 
 /** @param array<array-key, mixed> $acquire */

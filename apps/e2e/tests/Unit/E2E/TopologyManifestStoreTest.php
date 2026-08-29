@@ -34,7 +34,7 @@ describe('TopologyManifestStore', function () {
 
         expect($topology->toArray())
             ->toMatchArray([
-                'schema' => 2,
+                'schema' => 3,
                 'issue' => 'NCK-321',
                 'attempt_id' => str_repeat('a', 32),
                 'purpose' => 'proof',

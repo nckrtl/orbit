@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace App\E2E;
 
 use App\E2E\State\AtomicJsonStore;
+use App\E2E\State\OperationJournal;
 use App\E2E\State\StatePaths;
 use App\E2E\Value\AttemptId;
 use App\E2E\Value\IssueStateSnapshot;
+use App\E2E\Value\OperationId;
 use App\E2E\Value\ReleaseResult;
 use RuntimeException;
 
@@ -16,6 +18,7 @@ use RuntimeException;
  * its topology is the evidence behind a merge decision.
  *
  * @mago-expect lint:cyclomatic-complexity Lease expiry and cleanup retain one auditable recovery boundary.
+ * @mago-expect lint:excessive-parameter-list The reaping dependencies are explicit trust boundaries.
  */
 final readonly class TopologyReaper
 {
@@ -23,7 +26,9 @@ final readonly class TopologyReaper
         private AtomicJsonStore $state,
         private StatePaths $paths,
         private TopologyReleaser $releaser,
-        private ?ProofRecordReader $proofs = null,
+        private ProofRecordReader $proofs,
+        private OperationJournal $journal,
+        private OperationId $operation,
     ) {}
 
     /** @return list<ReleaseResult> */
@@ -76,10 +81,16 @@ final readonly class TopologyReaper
             }
         }
 
-        $proofs = $this->proofs ?? new ProofRecordReader($this->state);
         $results = [];
         foreach ($expired as $issue => $attempt) {
-            if ($proofs->isProved($issue, $attempt)) {
+            if ($this->proofs->isProved($issue, $attempt)) {
+                $this->journal->append($this->operation, [
+                    'event' => 'topology.reap',
+                    'state' => 'skipped',
+                    'reason' => 'proved',
+                    'issue' => $issue,
+                    'attempt' => $attempt->value,
+                ]);
                 continue;
             }
             try {

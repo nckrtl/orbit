@@ -74,7 +74,7 @@ function readyReleaseState(AtomicJsonStore $store, string $issue = 'NCK-12', str
         'operation_id' => str_repeat('a', 32),
     ]);
     $store->write(releaseTopologyPath($issue, $character), [
-        'schema' => 2,
+        'schema' => 3,
         'issue' => $issue,
         'attempt_id' => releaseAttempt($character)->value,
         'purpose' => 'discovery',
@@ -116,6 +116,7 @@ function readyReleaseState(AtomicJsonStore $store, string $issue = 'NCK-12', str
             'overlay_paths' => [],
             'operation_id' => null,
             'mounted' => true,
+            'git_pointer_sha256' => str_repeat('f', 64),
         ],
         'verification' => [
             'passed' => true,
@@ -129,22 +130,27 @@ function readyReleaseState(AtomicJsonStore $store, string $issue = 'NCK-12', str
     ]);
 }
 
-function releaseReceipt(
-    string $operation = 'a',
-    string $evidence = 'b',
-    array $released = ['deleted:old'],
-    array $absent = [],
-    string $issue = 'NCK-12',
-    string $character = 'a',
-): ReleaseResult {
+/** @param array{operation?:string,evidence?:string,released?:list<string>,absent?:list<string>,issue?:string,character?:string} $overrides */
+function releaseReceipt(array $overrides = []): ReleaseResult
+{
+    $receipt = $overrides
+    + [
+        'operation' => 'a',
+        'evidence' => 'b',
+        'released' => ['deleted:old'],
+        'absent' => [],
+        'issue' => 'NCK-12',
+        'character' => 'a',
+    ];
+
     return new ReleaseResult(
-        str_repeat($operation, 32),
-        str_repeat($evidence, 32),
-        $issue,
-        releaseAttempt($character),
+        str_repeat($receipt['operation'], 32),
+        str_repeat($receipt['evidence'], 32),
+        $receipt['issue'],
+        releaseAttempt($receipt['character']),
         AttemptPurpose::Discovery,
-        $released,
-        $absent,
+        $receipt['released'],
+        $receipt['absent'],
         ['verified:old'],
         '2026-08-29T10:00:00Z',
     );
@@ -178,9 +184,9 @@ function releaser(
         $store,
         $paths,
         new OperationId(str_repeat($operation, 32)),
+        new ReleaseReceiptStore($store, $paths),
         $capacity,
         $rollback,
-        new ReleaseReceiptStore($store, $paths),
     );
 }
 
@@ -331,6 +337,49 @@ describe('topology release', function () {
             ->toBeNull()
             ->and($store->read(releaseReceiptPath()))
             ->toBe($result->toArray());
+    });
+
+    it('refuses an abandoned acquisition whose recorded VM carries another source mount', function () {
+        $paths = new StatePaths(temporaryPath('orbit-release-', 8));
+        $store = new AtomicJsonStore($paths);
+        readyReleaseState($store);
+        $store->write('leases/NCK-12.json', [
+            'schema' => 2,
+            'issue' => 'NCK-12',
+            'attempt' => releaseAttempt()->value,
+            'state' => 'acquiring',
+            'operation_id' => str_repeat('a', 32),
+            'expires_at' => '2020-01-01T00:00:00+00:00',
+            'pid' => 999999,
+            'process_start_identity' => 'dead-test-owner',
+            'acquired_at' => '2020-01-01T00:00:00+00:00',
+        ]);
+        $target = featureTarget('NCK-12');
+        $instances = [
+            $target->instance('gateway') => releaseInstanceJson($target, 'gateway', [
+                'source' => '/srv/worktrees/other',
+                'path' => '/home/orbit/orbit',
+            ]),
+        ];
+        $networkExists = true;
+        $commands = [];
+        fakeReleaseIncus($target, $instances, $networkExists, $commands);
+
+        expect(fn () => releaser($store, $paths, operation: 'b')->release('NCK-12', releaseAttempt()))
+            ->toThrow(RuntimeException::class, 'source mount does not match the topology manifest')
+            ->and(collect($commands)->contains(
+                static fn (array $command): bool => (
+                    in_array('delete', $command, true) || in_array('stop', $command, true)
+                ),
+            ))
+            ->toBeFalse()
+            ->and($instances)
+            ->toHaveCount(1)
+            ->and($store->read(releaseTopologyPath()))
+            ->not
+            ->toBeNull()
+            ->and($store->read(releaseReceiptPath()))
+            ->toBeNull();
     });
 
     it('refuses retained evidence while active artifacts exist', function () {
@@ -582,8 +631,9 @@ describe('topology release', function () {
         $paths = new StatePaths(temporaryPath('orbit-release-', 8));
         $store = new AtomicJsonStore($paths);
         $target = featureTarget('NCK-12');
-        $receipt = releaseReceipt(released: ['deleted:orbit-e2e-nck-12'], absent: [
-            'orbit-e2e-nck-12-aaaaaaaa-app-prod',
+        $receipt = releaseReceipt([
+            'released' => ['deleted:orbit-e2e-nck-12'],
+            'absent' => ['orbit-e2e-nck-12-aaaaaaaa-app-prod'],
         ]);
         new ReleaseReceiptStore($store, $paths)->write($receipt);
         $commands = [];
@@ -691,7 +741,7 @@ describe('topology release', function () {
         $paths = new StatePaths(temporaryPath('orbit-release-', 8));
         $store = new AtomicJsonStore($paths);
         readyReleaseState($store);
-        $result = releaseReceipt('c', 'b', ['deleted:old'], ['already-absent:old']);
+        $result = releaseReceipt(['operation' => 'c', 'absent' => ['already-absent:old']]);
         $store->write(releasePendingPath(), [
             'schema' => 3,
             'issue' => 'NCK-12',
@@ -733,7 +783,7 @@ describe('topology release', function () {
      */
     function interruptedPendingRelease(AtomicJsonStore $store, string $issue = 'NCK-12'): void
     {
-        $result = releaseReceipt('c', 'b', ['deleted:old'], [], $issue);
+        $result = releaseReceipt(['operation' => 'c', 'issue' => $issue]);
         $store->write(releasePendingPath($issue), [
             'schema' => 3,
             'issue' => $issue,
@@ -810,7 +860,7 @@ describe('topology release', function () {
         $paths = new StatePaths(temporaryPath('orbit-release-', 8));
         $store = new AtomicJsonStore($paths);
         readyReleaseState($store);
-        $result = releaseReceipt('c', 'b', [], []);
+        $result = releaseReceipt(['operation' => 'c', 'released' => []]);
         $store->write(releasePendingPath(), [
             'schema' => 3,
             'issue' => 'NCK-12',

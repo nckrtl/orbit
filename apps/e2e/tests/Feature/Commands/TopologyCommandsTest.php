@@ -266,7 +266,7 @@ function commandTopologyFixture(string $issue): FeatureTopology
         ),
         $target->network(),
         array_combine(TopologyProfile::ROLES, array_map($target->instance(...), TopologyProfile::ROLES)),
-        new SourceState(str_repeat('a', 40), str_repeat('a', 40), mounted: true),
+        new SourceState(str_repeat('a', 40), str_repeat('a', 40), mounted: true, pointerHash: str_repeat('f', 64)),
         new VerificationReport(true, ['fixture' => verificationProbeFixture()]),
         [
             'gateway' => ['device' => 'orbit-source', 'source' => '/srv/worktree', 'path' => '/home/orbit/orbit'],

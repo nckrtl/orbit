@@ -15,7 +15,10 @@ use Illuminate\Container\Container;
 use Illuminate\Process\Factory as ProcessFactory;
 use Illuminate\Support\Facades\Facade;
 
-/** @mago-expect lint:cyclomatic-complexity,kan-defect The fake models all guest transport outcomes at one test boundary. */
+/**
+ * @mago-expect lint:cyclomatic-complexity,kan-defect The fake models all guest transport outcomes at one test boundary.
+ * @mago-expect lint:too-many-properties Each recorded interaction kind is asserted separately by the synchronizer tests.
+ */
 final class WorktreeSynchronizerGuestFake implements GuestTransport
 {
     /** @var list<array{instance:string, command:GuestCommand}> */
@@ -1510,6 +1513,8 @@ describe('WorktreeSynchronizer', function () {
 
             $clean = $synchronizer->syncWorkingTree($target, $worktree);
             $cleanTree = new GitRepository($worktree)->effectiveTreeHash();
+            $pointer = hash('sha256', (string) file_get_contents($worktree.'/.git'));
+            $marker = ['sha' => $sha, 'tree' => $cleanTree, 'mounted' => true, 'git_pointer_sha256' => $pointer];
 
             expect($clean->toArray())
                 ->toBe([
@@ -1520,12 +1525,12 @@ describe('WorktreeSynchronizer', function () {
                     'overlay_paths' => [],
                     'operation_id' => str_repeat('a', 32),
                     'mounted' => true,
+                    'git_pointer_sha256' => $pointer,
                 ])
+                ->and($pointer)
+                ->toMatch('/\A[0-9a-f]{64}\z/')
                 ->and($guest->sourceMarkers)
-                ->toBe([
-                    $target->instance('gateway') => ['sha' => $sha, 'tree' => $cleanTree, 'mounted' => true],
-                    $target->instance('app-dev') => ['sha' => $sha, 'tree' => $cleanTree, 'mounted' => true],
-                ])
+                ->toBe([$target->instance('gateway') => $marker, $target->instance('app-dev') => $marker])
                 ->and($guest->execBatches)
                 ->toBe([['source-marker.gateway', 'source-marker.app-dev']])
                 ->and($guest->pushes)
@@ -1544,9 +1549,10 @@ describe('WorktreeSynchronizer', function () {
                     'tree_hash' => $dirtyTree,
                     'overlay_paths' => ['overlay.txt'],
                     'mounted' => true,
+                    'git_pointer_sha256' => $pointer,
                 ])
                 ->and($guest->sourceMarkers[$target->instance('app-dev')])
-                ->toBe(['sha' => $sha, 'tree' => $dirtyTree, 'mounted' => true])
+                ->toBe(['sha' => $sha, 'tree' => $dirtyTree, 'mounted' => true, 'git_pointer_sha256' => $pointer])
                 ->and($guest->pushes)
                 ->toBe([]);
         } finally {
