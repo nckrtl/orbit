@@ -263,6 +263,19 @@ final readonly class GitRepository
         return $commit;
     }
 
+    /** The tree object of one exact commit that a repository reference still reaches. */
+    public function tree(string $commit): string
+    {
+        $this->validateReachableCommit($commit);
+        $tree = strtolower(trim($this->run(['rev-parse', '--verify', "{$commit}^{tree}"])));
+
+        if (preg_match('/\A[0-9a-f]{40}\z/D', $tree) !== 1) {
+            throw new InvalidArgumentException('Git did not return a full tree SHA.');
+        }
+
+        return $tree;
+    }
+
     /** @param list<string> $patterns
      * @return array<string, string>
      */

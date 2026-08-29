@@ -54,6 +54,9 @@ final class WorktreeSynchronizerGuestFake implements GuestTransport
     /** @var array<string, array<string, mixed>> */
     public array $sourceMarkers = [];
 
+    /** The commit each checkout received; later HEAD probes answer with it. @var array<string, string> */
+    public array $receivedShas = [];
+
     /** @param string|array<string, string> $sha */
     /** @mago-expect lint:excessive-parameter-list Explicit fake state keeps each transport outcome independently configurable. */
     public function __construct(
@@ -66,6 +69,8 @@ final class WorktreeSynchronizerGuestFake implements GuestTransport
         private array $evidenceShas = [],
         /** @var array<string, string> */
         private array $guestStatuses = [],
+        /** @var array<string, string> */
+        private array $guestTrees = [],
     ) {}
 
     public function exec(string $instance, GuestCommand $command): GuestCommandResult
@@ -94,13 +99,28 @@ final class WorktreeSynchronizerGuestFake implements GuestTransport
     {
         $this->execs[] = ['instance' => $instance, 'command' => $command];
         $argv = $command->command;
+        if (in_array('rev-parse', $argv, true) && in_array('HEAD^{tree}', $argv, true)) {
+            $tree = $this->guestTrees[$instance] ?? '';
+
+            return new GuestCommandResult($tree."\n", '', $tree === '' ? 1 : 0);
+        }
         if (in_array('rev-parse', $argv, true)) {
             $sha = is_array($this->sha) ? $this->sha[$instance] ?? '' : $this->sha;
+            if (isset($this->receivedShas[$instance])) {
+                $sha = $this->fails('source-head', $instance) ? str_repeat('f', 40) : $this->receivedShas[$instance];
+            }
 
             return new GuestCommandResult($sha."\n", '', $sha === '' ? 1 : 0);
         }
         if (in_array('git', $argv, true) && in_array('status', $argv, true)) {
+            if (isset($this->receivedShas[$instance])) {
+                return new GuestCommandResult($this->fails('source-status', $instance) ? " M drift.txt\n" : '', '', 0);
+            }
+
             return new GuestCommandResult($this->guestStatuses[$instance] ?? '', '', 0);
+        }
+        if (in_array('git', $argv, true) && in_array('checkout', $argv, true) && in_array('--detach', $argv, true)) {
+            return new GuestCommandResult('', '', $this->fails('source-detach', $instance) ? 1 : 0);
         }
         if (($argv[0] ?? null) === 'cat' && str_ends_with($argv[1] ?? '', '/.git/orbit-source-state')) {
             $state = $this->sourceStates[$instance] ?? null;
@@ -162,6 +182,7 @@ final class WorktreeSynchronizerGuestFake implements GuestTransport
                 'sha' => $argv[8],
                 'tree' => $argv[array_key_last($argv)],
             ];
+            $this->receivedShas[$instance] = $argv[8];
 
             return new GuestCommandResult(
                 json_encode([
@@ -1595,4 +1616,326 @@ describe('WorktreeSynchronizer', function () {
             destroySynchronizerRepositoryFixture($root, $worktree);
         }
     });
+});
+
+/**
+ * A worktree whose HEAD is the clean candidate commit, then a dirty overlay and
+ * a later commit on top; the candidate stays reachable from the branch.
+ *
+ * @return array{root:string, worktree:string, candidate:string, candidateTree:string, later:string}
+ */
+function createSynchronizerCandidateFixture(string $issue): array
+{
+    [$root, $worktree] = createSynchronizerRepositoryFixture($issue);
+    $candidate = trim(synchronizerGit($worktree, ['rev-parse', 'HEAD'])[0]);
+    $candidateTree = trim(synchronizerGit($worktree, ['rev-parse', 'HEAD^{tree}'])[0]);
+    file_put_contents($worktree.'/later.txt', "later\n");
+    synchronizerGit($worktree, ['add', 'later.txt']);
+    synchronizerGit($worktree, [
+        '-c',
+        'user.name=Test',
+        '-c',
+        'user.email=test@example.test',
+        'commit',
+        '-q',
+        '-m',
+        'later',
+    ]);
+    $later = trim(synchronizerGit($worktree, ['rev-parse', 'HEAD'])[0]);
+    file_put_contents($worktree.'/README.md', "dirty overlay\n");
+    file_put_contents($worktree.'/untracked.txt', "untracked\n");
+
+    return compact('root', 'worktree', 'candidate', 'candidateTree', 'later');
+}
+
+/** The marker hash the host publishes for the guest scripts of one checkout. */
+function synchronizerGuestScriptMarker(string $worktree): string
+{
+    $scripts = array_map(
+        static fn (string $name): string => $worktree.'/apps/e2e/resources/guest/'.$name,
+        synchronizerRequiredGuestScriptNames(),
+    );
+
+    return hash('sha256', implode('', array_map(
+        static fn (string $path): string => (
+            basename($path)."\0".sprintf('%o', fileperms($path) & 07777)."\0".file_get_contents($path)."\0"
+        ),
+        $scripts,
+    )));
+}
+
+/**
+ * The `runuser` git or script invocations that carry one exact argument.
+ *
+ * @return list<list<string>>
+ */
+function synchronizerOrbitCommands(WorktreeSynchronizerGuestFake $guest, string $argument): array
+{
+    return array_values(array_map(
+        static fn (array $exec): array => $exec['command']->command,
+        array_filter(
+            $guest->execs,
+            static fn (array $exec): bool => (
+                ($exec['command']->command[0] ?? null) === 'runuser'
+                && in_array($argument, $exec['command']->command, true)
+            ),
+        ),
+    ));
+}
+
+describe('WorktreeSynchronizer::syncCommit', function () {
+    it('transfers only the exact candidate commit and ignores later host worktree state', function () {
+        $fixture = createSynchronizerCandidateFixture('LUNA-150');
+        ['root' => $root, 'worktree' => $worktree, 'candidate' => $candidate] = $fixture;
+        try {
+            $target = featureTarget('LUNA-150');
+            $treeHash = hash('sha256', $fixture['candidateTree']);
+            $guest = new WorktreeSynchronizerGuestFake(
+                '',
+                synchronizerGuestScriptMarker($worktree),
+                installedScriptsHash: synchronizerScriptContentHashes($worktree),
+                guestTrees: [
+                    $target->instance('gateway') => $fixture['candidateTree'],
+                    $target->instance('app-dev') => $fixture['candidateTree'],
+                ],
+            );
+
+            $state = new WorktreeSynchronizer($guest, $root, new OperationId(str_repeat('a', 32)))
+                ->syncCommit($target, $worktree, $candidate);
+
+            $emptyFile = hash('sha256', '');
+            $receives = synchronizerOrbitCommands($guest, '/usr/local/bin/receive-source.sh');
+            $detaches = synchronizerOrbitCommands($guest, '--detach');
+            expect($state->toArray())
+                ->toBe([
+                    'host_sha' => $candidate,
+                    'guest_sha' => $candidate,
+                    'dirty' => false,
+                    'tree_hash' => null,
+                    'overlay_paths' => [],
+                    'operation_id' => str_repeat('a', 32),
+                    'mounted' => false,
+                    'git_pointer_sha256' => null,
+                ])
+                ->and($fixture['later'])
+                ->not->toBe($candidate)->and(trim(synchronizerGit($worktree, ['rev-parse', 'HEAD'])[0]))->toBe(
+                    $fixture['later'],
+                )->and(trim(synchronizerGit($worktree, ['status', '--porcelain'])[0]))
+                ->not->toBe('')->and($guest->bundlePushes)->toHaveCount(2)->and(array_column(
+                    $guest->bundlePushes,
+                    'header',
+                ))
+                ->each->toMatch(
+                    '/\A# v2 git bundle\n'.$candidate.' refs\/orbit\/e2e-source\/[0-9a-f]{32}\z/',
+                )->and(array_column($guest->bundlePushes, 'header'))
+                ->each->not->toContain($fixture['later'])->and(array_map(static fn (array $push): string => basename(
+                    $push['destination'],
+                ), $guest->pushes))->toContain("{$emptyFile}.tar", "{$emptyFile}.paths", "{$emptyFile}.deletions")->and(
+                    $receives,
+                )->toHaveCount(2)->and(array_column($receives, 8))->toBe([$candidate, $candidate])->and(array_map(
+                    static fn (array $argv): string => (string) end($argv),
+                    $receives,
+                ))->toBe([$treeHash, $treeHash])->and($detaches)->toHaveCount(2)->and($detaches[0])->toBe([
+                    'runuser',
+                    '-u',
+                    'orbit',
+                    '--',
+                    'env',
+                    'HOME=/home/orbit',
+                    'git',
+                    '-C',
+                    '/home/orbit/orbit',
+                    'checkout',
+                    '--detach',
+                    '--quiet',
+                    $candidate,
+                ])->and($guest->sourceStates)->toBe([
+                    $target->instance('gateway') => ['sha' => $candidate, 'tree' => $treeHash],
+                    $target->instance('app-dev') => ['sha' => $candidate, 'tree' => $treeHash],
+                ])->and($guest->hydratedShas)->toBe([
+                    $target->instance('gateway') => $candidate,
+                    $target->instance('app-dev') => $candidate,
+                ])->and($guest->preservedEnvironments)->toBe([$target->instance(
+                    'gateway',
+                )])->and($guest->execBatches)->toBe([
+                    [
+                        'guest-sha.gateway',
+                        'guest-marker.gateway',
+                        'guest-status.gateway',
+                        'guest-hydration.gateway',
+                        'guest-sha.app-dev',
+                        'guest-marker.app-dev',
+                        'guest-status.app-dev',
+                        'guest-hydration.app-dev',
+                        'script-marker.gateway',
+                        'script-content.gateway',
+                        'script-marker.app-dev',
+                        'script-content.app-dev',
+                        'script-marker.app-prod',
+                        'script-content.app-prod',
+                    ],
+                    ['source-prepare.gateway', 'source-prepare.app-dev'],
+                    ['source-ownership.gateway', 'source-ownership.app-dev'],
+                    ['source-receive.gateway', 'source-receive.app-dev'],
+                    ['source-detach.gateway', 'source-detach.app-dev'],
+                    [
+                        'source-head.gateway',
+                        'source-tree.gateway',
+                        'source-status.gateway',
+                        'source-head.app-dev',
+                        'source-tree.app-dev',
+                        'source-status.app-dev',
+                    ],
+                    ['source-hydrate.gateway', 'source-hydrate.app-dev'],
+                    ['source-preserve-env.gateway'],
+                    ['source-cleanup.gateway', 'source-cleanup.app-dev'],
+                ])->and($guest->sourceMarkers)->toBe([])->and($guest->directExecs)->toBe([]);
+        } finally {
+            destroySynchronizerRepositoryFixture($root, $worktree);
+        }
+    });
+
+    it('uses a known guest commit as the bundle prerequisite and resets a guest already at the candidate', function () {
+        $fixture = createSynchronizerCandidateFixture('LUNA-151');
+        ['root' => $root, 'worktree' => $worktree, 'candidate' => $candidate] = $fixture;
+        try {
+            $target = featureTarget('LUNA-151');
+            $ancestor = trim(synchronizerGit($worktree, ['rev-parse', $candidate.'^'])[0]);
+            $guest = new WorktreeSynchronizerGuestFake(
+                [$target->instance('gateway') => $ancestor, $target->instance('app-dev') => $candidate],
+                installedScriptsHash: synchronizerScriptContentHashes($worktree),
+                guestStatuses: [$target->instance('app-dev') => "?? stray.txt\n"],
+                guestTrees: [
+                    $target->instance('gateway') => $fixture['candidateTree'],
+                    $target->instance('app-dev') => $fixture['candidateTree'],
+                ],
+            );
+
+            $state = new WorktreeSynchronizer($guest, $root, new OperationId(str_repeat('a', 32)))
+                ->syncCommit($target, $worktree, $candidate);
+
+            $receives = synchronizerOrbitCommands($guest, '/usr/local/bin/receive-source.sh');
+            expect($state->guestSha)
+                ->toBe($candidate)
+                ->and($guest->bundlePushes)
+                ->toHaveCount(1)
+                ->and($guest->bundlePushes[0]['instance'])
+                ->toBe($target->instance('gateway'))
+                ->and($guest->bundlePushes[0]['header'])
+                ->toContain("-{$ancestor} ")
+                ->and(array_column($receives, 9))
+                ->toBe([$guest->bundlePushes[0]['destination'], '-'])
+                ->and($guest->receivedShas)
+                ->toBe([$target->instance('gateway') => $candidate, $target->instance('app-dev') => $candidate]);
+        } finally {
+            destroySynchronizerRepositoryFixture($root, $worktree);
+        }
+    });
+
+    it('rejects an unreachable, inexact, or foreign candidate before any guest interaction', function () {
+        $fixture = createSynchronizerCandidateFixture('LUNA-152');
+        ['root' => $root, 'worktree' => $worktree, 'candidate' => $candidate] = $fixture;
+        $foreign = createSynchronizerPrimaryFixture('LUNA-153');
+        try {
+            $unreachable = trim(synchronizerGit($worktree, ['commit-tree', $candidate.'^{tree}', '-m', 'orphan'])[0]);
+            $guest = new WorktreeSynchronizerGuestFake('');
+            $synchronizer = new WorktreeSynchronizer($guest, $root, new OperationId(str_repeat('a', 32)));
+            $target = featureTarget('LUNA-152');
+
+            expect(fn () => $synchronizer->syncCommit($target, $worktree, $unreachable))
+                ->toThrow(InvalidArgumentException::class, 'not reachable')
+                ->and(fn () => $synchronizer->syncCommit($target, $worktree, substr($candidate, 0, 12)))
+                ->toThrow(InvalidArgumentException::class, 'exact full SHA')
+                ->and(fn () => $synchronizer->syncCommit($target, $worktree, strtoupper($candidate)))
+                ->toThrow(InvalidArgumentException::class, 'exact full SHA')
+                ->and(fn () => $synchronizer->syncCommit(
+                    $target,
+                    $foreign,
+                    trim(
+                        synchronizerGit($foreign, ['rev-parse', 'HEAD'])[0],
+                    ),
+                ))
+                ->toThrow(InvalidArgumentException::class, 'repository identity does not match')
+                ->and($guest->execs)
+                ->toBe([])
+                ->and($guest->pushes)
+                ->toBe([]);
+        } finally {
+            destroySynchronizerRepositoryFixture($root, $worktree);
+            removeSynchronizerFixture($foreign);
+        }
+    });
+
+    it('accepts the candidate from the primary checkout without a worktree or branch rule', function () {
+        $root = createSynchronizerPrimaryFixture('LUNA-154');
+        try {
+            $candidate = trim(synchronizerGit($root, ['rev-parse', 'HEAD'])[0]);
+            $candidateTree = trim(synchronizerGit($root, ['rev-parse', 'HEAD^{tree}'])[0]);
+            file_put_contents($root.'/README.md', "dirty primary\n");
+            $target = featureTarget('LUNA-999');
+            $guest = new WorktreeSynchronizerGuestFake(
+                $candidate,
+                installedScriptsHash: synchronizerScriptContentHashes($root),
+                guestTrees: [
+                    $target->instance('gateway') => $candidateTree,
+                    $target->instance('app-dev') => $candidateTree,
+                ],
+            );
+
+            $state = new WorktreeSynchronizer($guest, $root, new OperationId(str_repeat('a', 32)))
+                ->syncCommit($target, $root, $candidate);
+
+            expect($state->hostSha)
+                ->toBe($candidate)
+                ->and($guest->bundlePushes)
+                ->toBe([])
+                ->and($guest->receivedShas)
+                ->toHaveCount(2);
+        } finally {
+            removeSynchronizerFixture($root);
+        }
+    });
+
+    it('fails closed and cleans staging when a guest checkout does not prove the candidate', function (
+        string $failure,
+        string $message,
+    ) {
+        $fixture = createSynchronizerCandidateFixture('LUNA-155');
+        ['root' => $root, 'worktree' => $worktree, 'candidate' => $candidate] = $fixture;
+        try {
+            $target = featureTarget('LUNA-155');
+            $trees = [
+                $target->instance('gateway') => $fixture['candidateTree'],
+                $target->instance('app-dev') => $failure === 'source-tree'
+                    ? str_repeat('e', 40)
+                    : $fixture['candidateTree'],
+            ];
+            $guest = new WorktreeSynchronizerGuestFake(
+                '',
+                failure: $failure === 'source-tree' ? null : $failure.':'.$target->instance('app-dev'),
+                installedScriptsHash: synchronizerScriptContentHashes($worktree),
+                guestTrees: $trees,
+            );
+
+            expect(
+                fn () => new WorktreeSynchronizer($guest, $root, new OperationId(str_repeat('a', 32)))
+                    ->syncCommit($target, $worktree, $candidate),
+            )
+                ->toThrow(RuntimeException::class, $message)
+                ->and($guest->hydratedShas)
+                ->toBe([])
+                ->and(end($guest->execBatches))
+                ->toBe(['source-cleanup.gateway', 'source-cleanup.app-dev']);
+        } finally {
+            destroySynchronizerRepositoryFixture($root, $worktree);
+        }
+    })->with([
+        'detach failure' => [
+            'source-detach',
+            'Guest checkout detach failed. Failed operations: source-detach.app-dev.',
+        ],
+        'HEAD drift' => ['source-head', 'Guest checkout [app-dev] HEAD does not match the candidate commit.'],
+        'tree drift' => ['source-tree', 'Guest checkout [app-dev] tree does not match the candidate tree.'],
+        'dirty checkout' => ['source-status', 'Guest checkout [app-dev] is not clean after the candidate checkout.'],
+    ]);
 });

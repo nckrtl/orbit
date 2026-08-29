@@ -125,34 +125,13 @@ final readonly class WorktreeSynchronizer
         try {
             $guestScripts = $this->guestScripts($repository->root());
             $guestScriptHash = $this->guestScriptHash($guestScripts);
-            $archive = $temporaryDirectory.'/overlay.tar';
-            $manifest = $temporaryDirectory.'/overlay.paths';
-            $deletions = $temporaryDirectory.'/overlay.deletions';
-            $markerFile = $temporaryDirectory.'/guest-scripts.sha256';
-            if (
-                file_put_contents($markerFile, $guestScriptHash."\n", LOCK_EX) === false
-                || ! chmod($markerFile, 0600)
-            ) {
-                throw new RuntimeException('Could not create the guest script marker.');
-            }
             $paths = $overlay?->paths ?? [];
-            $repository->createOverlayArchive($archive, $paths);
-            if (file_put_contents($manifest, $paths === [] ? '' : implode("\0", $paths)."\0", LOCK_EX) === false) {
-                throw new RuntimeException('Could not create the source manifest.');
-            }
-            $deletedPaths = array_values(array_filter(
-                $paths,
-                fn (string $path): bool => ! file_exists($repository->root().'/'.$path),
-            ));
-            if (
-                file_put_contents($deletions, $deletedPaths === [] ? '' : implode("\0", $deletedPaths)."\0", LOCK_EX)
-                === false
-            ) {
-                throw new RuntimeException('Could not create the source deletion manifest.');
-            }
-            if (! chmod($archive, 0600) || ! chmod($manifest, 0600) || ! chmod($deletions, 0600)) {
-                throw new RuntimeException('Could not secure the source transfer files.');
-            }
+            [
+                'archive' => $archive,
+                'manifest' => $manifest,
+                'deletions' => $deletions,
+                'markerFile' => $markerFile,
+            ] = $this->stageTransferFiles($repository, $temporaryDirectory, $paths, $guestScriptHash);
 
             $effectiveTreeHash = $overlay?->treeHash ?? $repository->effectiveTreeHash();
             [$guestShas, $scriptStatus] = $this->guestPreflight($target, $guestScripts, $guestScriptHash);
@@ -201,18 +180,7 @@ final readonly class WorktreeSynchronizer
 
                 return $state;
             }
-            $bundles = [];
-            foreach ($roles as $role => $transfer) {
-                if (! $transfer['bundleRequired']) {
-                    continue;
-                }
-                $bundleKey = $transfer['prerequisite'] ?? 'full';
-                if (! isset($bundles[$bundleKey])) {
-                    $bundles[$bundleKey] = $temporaryDirectory.'/source-'.$bundleKey.'.bundle';
-                    $repository->createBundle($bundles[$bundleKey], $hostSha, $transfer['prerequisite']);
-                }
-                $roles[$role]['bundle'] = $bundles[$bundleKey];
-            }
+            $roles = $this->createBundles($repository, $roles, $hostSha, $temporaryDirectory);
             $guestShas = $this->transfer(
                 $roles,
                 $hostSha,
@@ -236,23 +204,173 @@ final readonly class WorktreeSynchronizer
                 $operationId,
             );
         } catch (\Throwable $primary) {
-            try {
-                $this->cleanupTemporaryDirectory($temporaryDirectory);
-            } catch (\Throwable $cleanupFailure) {
-                throw new RuntimeException(
-                    'Source synchronization failed; temporary-directory cleanup also failed: '
-                        .$cleanupFailure->getMessage(),
-                    0,
-                    $primary,
-                );
-            }
-
-            throw $primary;
+            $this->failAfterTemporaryCleanup($temporaryDirectory, $primary);
         }
 
         $this->cleanupTemporaryDirectory($temporaryDirectory);
 
         return $state;
+    }
+
+    /**
+     * Transfer one exact candidate commit into every checkout role for a proof.
+     *
+     * Only the requested commit travels: the host worktree may be dirty or moved
+     * on past the candidate, and neither is read. Each checkout ends detached at
+     * the candidate with a clean status, proved by the guest before hydration.
+     * The candidate must be a full SHA that a repository reference still reaches.
+     */
+    public function syncCommit(TopologyTarget $target, string $repository, string $candidateSha): SourceState
+    {
+        $git = new GitRepository($repository);
+        $this->validateRepositoryIdentity($git);
+        $candidateTree = $git->tree($candidateSha);
+        $treeHash = hash('sha256', $candidateTree);
+        $operationId = $this->operation->value;
+        $temporaryDirectory = $this->temporaryDirectory();
+
+        try {
+            $guestScripts = $this->guestScripts($git->root());
+            $guestScriptHash = $this->guestScriptHash($guestScripts);
+            [
+                'archive' => $archive,
+                'manifest' => $manifest,
+                'deletions' => $deletions,
+                'markerFile' => $markerFile,
+            ] = $this->stageTransferFiles($git, $temporaryDirectory, [], $guestScriptHash);
+
+            [$guestShas, $scriptStatus] = $this->guestPreflight($target, $guestScripts, $guestScriptHash);
+            $roles = [];
+            foreach (TopologyProfile::CHECKOUT_ROLES as $role) {
+                $guestSha = is_array($guestShas[$role]) ? $guestShas[$role]['sha'] : null;
+                $bundleRequired = $guestSha !== $candidateSha;
+                $roles[$role] = [
+                    'instance' => $target->instance($role),
+                    'bundleRequired' => $bundleRequired,
+                    'prerequisite' => $bundleRequired
+                        ? $this->bundlePrerequisite($git, $guestSha, $candidateSha)
+                        : null,
+                    'bundle' => null,
+                ];
+            }
+            $changedScriptRoles = [];
+            foreach (TopologyProfile::ROLES as $role) {
+                if (! $scriptStatus[$role]) {
+                    $changedScriptRoles[$role] = $target->instance($role);
+                }
+            }
+            $this->installGuestScripts($changedScriptRoles, $guestScripts, $markerFile, $operationId);
+            $roles = $this->createBundles($git, $roles, $candidateSha, $temporaryDirectory);
+            $guestShas = $this->transfer(
+                $roles,
+                $candidateSha,
+                $treeHash,
+                $archive,
+                $manifest,
+                $deletions,
+                $operationId,
+                $candidateTree,
+            );
+            if (array_unique($guestShas) !== [$candidateSha]) {
+                throw new RuntimeException('Guest source SHAs do not match the candidate SHA.');
+            }
+
+            $state = new SourceState($candidateSha, $candidateSha, false, null, [], $operationId);
+        } catch (\Throwable $primary) {
+            $this->failAfterTemporaryCleanup($temporaryDirectory, $primary);
+        }
+
+        $this->cleanupTemporaryDirectory($temporaryDirectory);
+
+        return $state;
+    }
+
+    private function failAfterTemporaryCleanup(string $temporaryDirectory, \Throwable $primary): never
+    {
+        try {
+            $this->cleanupTemporaryDirectory($temporaryDirectory);
+        } catch (\Throwable $cleanupFailure) {
+            throw new RuntimeException(
+                'Source synchronization failed; temporary-directory cleanup also failed: '
+                    .$cleanupFailure->getMessage(),
+                0,
+                $primary,
+            );
+        }
+
+        throw $primary;
+    }
+
+    /**
+     * Write the overlay archive, path manifest, deletion manifest, and guest script
+     * marker the guests receive; an empty path list produces empty overlay files.
+     *
+     * @param list<string> $paths
+     * @return array{archive:string, manifest:string, deletions:string, markerFile:string}
+     */
+    private function stageTransferFiles(
+        GitRepository $repository,
+        string $temporaryDirectory,
+        array $paths,
+        string $guestScriptHash,
+    ): array {
+        $archive = $temporaryDirectory.'/overlay.tar';
+        $manifest = $temporaryDirectory.'/overlay.paths';
+        $deletions = $temporaryDirectory.'/overlay.deletions';
+        $markerFile = $temporaryDirectory.'/guest-scripts.sha256';
+        if (
+            file_put_contents($markerFile, $guestScriptHash."\n", LOCK_EX) === false
+            || ! chmod($markerFile, 0600)
+        ) {
+            throw new RuntimeException('Could not create the guest script marker.');
+        }
+        $repository->createOverlayArchive($archive, $paths);
+        if (file_put_contents($manifest, $paths === [] ? '' : implode("\0", $paths)."\0", LOCK_EX) === false) {
+            throw new RuntimeException('Could not create the source manifest.');
+        }
+        $deletedPaths = array_values(array_filter(
+            $paths,
+            fn (string $path): bool => ! file_exists($repository->root().'/'.$path),
+        ));
+        if (
+            file_put_contents($deletions, $deletedPaths === [] ? '' : implode("\0", $deletedPaths)."\0", LOCK_EX)
+            === false
+        ) {
+            throw new RuntimeException('Could not create the source deletion manifest.');
+        }
+        if (! chmod($archive, 0600) || ! chmod($manifest, 0600) || ! chmod($deletions, 0600)) {
+            throw new RuntimeException('Could not secure the source transfer files.');
+        }
+
+        return compact('archive', 'manifest', 'deletions', 'markerFile');
+    }
+
+    /**
+     * Create one bundle per distinct prerequisite for the roles that need the commit.
+     *
+     * @param array<string, array{instance:string, bundleRequired:bool, prerequisite:?string, bundle:?string}> $roles
+     * @return array<string, array{instance:string, bundleRequired:bool, prerequisite:?string, bundle:?string}>
+     */
+    private function createBundles(
+        GitRepository $repository,
+        array $roles,
+        string $sha,
+        string $temporaryDirectory,
+    ): array {
+        $bundles = [];
+        foreach ($roles as $role => $transfer) {
+            if (! $transfer['bundleRequired']) {
+                continue;
+            }
+            $bundleKey = $transfer['prerequisite'] ?? 'full';
+            if (! isset($bundles[$bundleKey])) {
+                $bundles[$bundleKey] = $temporaryDirectory.'/source-'.$bundleKey.'.bundle';
+                $repository->createBundle($bundles[$bundleKey], $sha, $transfer['prerequisite']);
+            }
+            $roles[$role]['bundle'] = $bundles[$bundleKey];
+        }
+
+        return $roles;
     }
 
     private function bundlePrerequisite(GitRepository $repository, ?string $guestSha, string $hostSha): ?string
@@ -293,21 +411,7 @@ final readonly class WorktreeSynchronizer
 
     private function validateWorktree(GitRepository $repository, TopologyTarget $target): void
     {
-        $expected = realpath($this->repositoryRoot);
-        $worktreeRoot = $repository->root();
-        if ($expected === false) {
-            throw new InvalidArgumentException('The expected repository does not exist.');
-        }
-
-        $common = trim($this->git($worktreeRoot, ['rev-parse', '--git-common-dir']));
-        $expectedCommon = trim($this->git($expected, ['rev-parse', '--git-common-dir']));
-        $commonReal = realpath(str_starts_with($common, '/') ? $common : $worktreeRoot.'/'.$common);
-        $expectedReal = realpath(
-            str_starts_with($expectedCommon, '/') ? $expectedCommon : $expected.'/'.$expectedCommon,
-        );
-        if ($commonReal === false || $expectedReal === false || $commonReal !== $expectedReal) {
-            throw new InvalidArgumentException('The worktree repository identity does not match.');
-        }
+        $this->validateRepositoryIdentity($repository);
 
         if ($target->isStandby()) {
             if ($repository->dirtyOverlay() !== null) {
@@ -323,6 +427,26 @@ final readonly class WorktreeSynchronizer
 
         if (! $target->matchesBranch($repository->branch())) {
             throw new InvalidArgumentException('The worktree branch does not match the issue.');
+        }
+    }
+
+    /** The source must share the Git common directory of the repository this harness serves. */
+    private function validateRepositoryIdentity(GitRepository $repository): void
+    {
+        $expected = realpath($this->repositoryRoot);
+        $worktreeRoot = $repository->root();
+        if ($expected === false) {
+            throw new InvalidArgumentException('The expected repository does not exist.');
+        }
+
+        $common = trim($this->git($worktreeRoot, ['rev-parse', '--git-common-dir']));
+        $expectedCommon = trim($this->git($expected, ['rev-parse', '--git-common-dir']));
+        $commonReal = realpath(str_starts_with($common, '/') ? $common : $worktreeRoot.'/'.$common);
+        $expectedReal = realpath(
+            str_starts_with($expectedCommon, '/') ? $expectedCommon : $expected.'/'.$expectedCommon,
+        );
+        if ($commonReal === false || $expectedReal === false || $commonReal !== $expectedReal) {
+            throw new InvalidArgumentException('The worktree repository identity does not match.');
         }
     }
 
@@ -478,6 +602,7 @@ final readonly class WorktreeSynchronizer
      *     prerequisite:?string,
      *     bundle:?string
      * }> $roles
+     * @param ?string $candidateTree When set, each checkout is detached at `$sha` and must prove this tree.
      * @return list<string>
      * @mago-expect lint:excessive-parameter-list Transfer inputs remain explicit at the Incus trust boundary.
      */
@@ -489,6 +614,7 @@ final readonly class WorktreeSynchronizer
         string $manifest,
         string $deletions,
         string $operationId,
+        ?string $candidateTree = null,
     ): array {
         $prefix = "/var/lib/orbit-e2e/source/{$operationId}";
         $archiveName = $this->fileHash($archive).'.tar';
@@ -585,6 +711,9 @@ final readonly class WorktreeSynchronizer
             $receiveResults = $this->incus->execAll($receive);
             $this->assertBatchSuccessful($receiveResults, 'Guest source installation failed.');
             $this->validateSourceEvidence($receiveResults, $transfers, $sha, $treeHash);
+            if ($candidateTree !== null) {
+                $this->detachCheckouts($transfers, $sha, $candidateTree);
+            }
 
             $hydrate = [];
             foreach ($transfers as $role => $transfer) {
@@ -625,6 +754,64 @@ final readonly class WorktreeSynchronizer
                 $this->cleanupSourceAfterFailure($staged, $prefix, 'Guest source staging cleanup failed.', $primary);
             }
             throw $primary;
+        }
+    }
+
+    /**
+     * Detach every checkout at the exact commit, then let each guest prove its
+     * `HEAD`, `HEAD^{tree}`, and an empty status before hydration continues.
+     *
+     * @param array<string, array{instance:string, files:array<string, array{string, string}>}> $transfers
+     */
+    private function detachCheckouts(array $transfers, string $sha, string $candidateTree): void
+    {
+        $git = ['runuser', '-u', 'orbit', '--', 'env', 'HOME=/home/orbit', 'git', '-C', '/home/orbit/orbit'];
+        $detach = [];
+        foreach ($transfers as $role => $transfer) {
+            $detach["source-detach.{$role}"] = [
+                'instance' => $transfer['instance'],
+                'command' => new GuestCommand([...$git, 'checkout', '--detach', '--quiet', $sha], 300),
+            ];
+        }
+        $this->assertBatchSuccessful($this->incus->execAll($detach), 'Guest checkout detach failed.');
+
+        $probes = [];
+        foreach ($transfers as $role => $transfer) {
+            $probes["source-head.{$role}"] = [
+                'instance' => $transfer['instance'],
+                'command' => new GuestCommand([...$git, 'rev-parse', '--verify', 'HEAD^{commit}']),
+            ];
+            $probes["source-tree.{$role}"] = [
+                'instance' => $transfer['instance'],
+                'command' => new GuestCommand([...$git, 'rev-parse', '--verify', 'HEAD^{tree}']),
+            ];
+            $probes["source-status.{$role}"] = [
+                'instance' => $transfer['instance'],
+                'command' => new GuestCommand([...$git, 'status', '--porcelain=v1', '--untracked-files=all']),
+            ];
+        }
+        $results = $this->incus->execAll($probes);
+        $this->assertBatchSuccessful($results, 'Guest checkout identity probes failed.');
+        foreach (array_keys($transfers) as $role) {
+            $head = $results["source-head.{$role}"] ?? null;
+            $tree = $results["source-tree.{$role}"] ?? null;
+            $status = $results["source-status.{$role}"] ?? null;
+            if (
+                ! $head instanceof GuestCommandResult
+                || ! $tree instanceof GuestCommandResult
+                || ! $status instanceof GuestCommandResult
+            ) {
+                throw new RuntimeException('Guest checkout identity batch result is invalid.');
+            }
+            if (strtolower(trim($head->stdout)) !== $sha) {
+                throw new RuntimeException("Guest checkout [{$role}] HEAD does not match the candidate commit.");
+            }
+            if (strtolower(trim($tree->stdout)) !== $candidateTree) {
+                throw new RuntimeException("Guest checkout [{$role}] tree does not match the candidate tree.");
+            }
+            if (trim($status->stdout) !== '') {
+                throw new RuntimeException("Guest checkout [{$role}] is not clean after the candidate checkout.");
+            }
         }
     }
 

@@ -96,6 +96,23 @@ describe('GitRepository', function (): void {
         'unsupported glob' => 'tracked[.]txt',
     ]);
 
+    it('reads the tree of an exact reachable commit and refuses an unreachable one', function (): void {
+        file_put_contents($this->path.'/tracked.txt', "tracked\n");
+        git($this->path, ['add', '.']);
+        git($this->path, ['commit', '--quiet', '-m', 'tracked']);
+        $repository = new GitRepository($this->path);
+        $commit = $repository->commit();
+        $unreachable = git($this->path, ['commit-tree', 'HEAD^{tree}', '-m', 'unreachable']);
+
+        expect($repository->tree($commit))
+            ->toBe(git($this->path, ['rev-parse', 'HEAD^{tree}']))
+            ->toMatch('/\A[0-9a-f]{40}\z/')
+            ->and(fn (): string => $repository->tree($unreachable))
+            ->toThrow(InvalidArgumentException::class, 'not reachable')
+            ->and(fn (): string => $repository->tree(substr($commit, 0, 7)))
+            ->toThrow(InvalidArgumentException::class, 'exact full SHA');
+    });
+
     it('rejects symlinks, submodules, and unreachable commits', function (): void {
         file_put_contents($this->path.'/target.txt', "target\n");
         symlink('target.txt', $this->path.'/link.txt');
