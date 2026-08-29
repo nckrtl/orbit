@@ -39,7 +39,7 @@ final readonly class AppDevSshExecutor
         $result = $this->ssh->execute(
             new SshConnection(
                 host: $node->wireguard_address,
-                user: 'orbit',
+                user: $node->user,
                 port: 22,
                 identityFile: $this->keys->privateKeyPath(),
                 knownHostsFile: $this->knownHosts->path(),

@@ -40,7 +40,7 @@ final readonly class NativeUfwFirewallInspector implements FirewallInspector
             $r = $this->ssh->execute(
                 new SshConnection(
                     $host,
-                    'orbit',
+                    $node->user,
                     22,
                     $this->keys->privateKeyPath(),
                     $this->knownHosts->path(),

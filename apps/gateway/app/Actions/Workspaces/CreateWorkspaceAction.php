@@ -7,6 +7,7 @@ namespace App\Actions\Workspaces;
 use App\Data\Workspaces\CreateWorkspaceData;
 use App\Domain\AppDev\AppDevRuntimeConverger;
 use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -14,11 +15,13 @@ use App\Models\Instance;
 use App\Models\Workspace;
 use Throwable;
 
+/** @mago-expect lint:cyclomatic-complexity Workspace creation keeps role, path, and immutable identity gates together. */
 final readonly class CreateWorkspaceAction
 {
     public function __construct(
         private AppDevRuntimeConverger $runtime,
         private EnsureWorkspaceCheckoutPathAvailableAction $ensureCheckoutPathAvailable,
+        private ManagedUserAccountResolver $managedUserAccountResolver,
     ) {}
 
     /** @return array{workspace: Workspace, created: bool} */
@@ -31,7 +34,21 @@ final readonly class CreateWorkspaceAction
             'name' => $data->name,
         ]);
         $created = ! $workspace->exists;
-        $checkoutPath = $data->checkoutPath ?? "/home/orbit/.orbit/worktrees/{$instance->app->slug}/{$data->name}";
+        try {
+            $account = $this->managedUserAccountResolver->resolve($instance->node);
+        } catch (Throwable $exception) {
+            throw new ResourceOperationException(
+                'node.managed_user_unavailable',
+                'Managed user account is unavailable.',
+            );
+        }
+        $checkoutPath = $data->checkoutPath ?? "{$account->home}/.orbit/worktrees/{$instance->app->slug}/{$data->name}";
+        if (! $this->isAllowedPath($checkoutPath, $account->home)) {
+            throw new ResourceOperationException(
+                'workspace.checkout_path_invalid',
+                'Workspace checkout path is not allowed.',
+            );
+        }
         $hostname = "{$data->name}.{$instance->hostname}";
 
         if (filter_var($hostname, FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME) === false) {
@@ -106,6 +123,34 @@ final readonly class CreateWorkspaceAction
         ]);
 
         return ['workspace' => $workspace->refresh()->load('instance'), 'created' => $created];
+    }
+
+    private function isAllowedPath(string $path, string $home): bool
+    {
+        $prefix = rtrim($home, '/').'/';
+        if (! str_starts_with($path, $prefix)) {
+            return false;
+        }
+        $relative = substr($path, strlen($prefix));
+        $segments = explode('/', $relative);
+        if (
+            $relative === ''
+            || str_contains($relative, "\n")
+            || str_contains($relative, "\0")
+            || in_array('', $segments, true)
+            || in_array('.', $segments, true)
+            || in_array('..', $segments, true)
+        ) {
+            return false;
+        }
+        if ($segments[0] === 'apps') {
+            return false;
+        }
+        if (str_starts_with($segments[0], '.')) {
+            return $segments[0] === '.orbit' && ($segments[1] ?? null) === 'worktrees' && isset($segments[2]);
+        }
+
+        return true;
     }
 
     private function ensureAppDevInstance(Instance $instance): void

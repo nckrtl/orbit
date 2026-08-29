@@ -44,7 +44,7 @@ beforeEach(function (): void {
         'platform' => 'linux',
         'public_ssh_host' => '192.0.2.20',
         'public_ssh_port' => 22,
-        'ssh_user' => 'orbit',
+        'user' => 'nckrtl',
         'wireguard_address' => '10.44.0.3',
     ]);
     $node->roles()->create(['role' => 'app-dev', 'status' => LifecycleStatus::Active]);
@@ -107,7 +107,7 @@ it('installs and manages a systemd process through fixed SSH argv', function ():
         ->each(
             fn ($connection) => $connection
                 ->host->toBe('10.44.0.3')
-                ->user->toBe('orbit')
+                ->user->toBe('nckrtl')
                 ->identityFile->toBe('/orbit/ssh/id_ed25519')
                 ->knownHostsFile->toBe('/orbit/ssh/known_hosts'),
         )
@@ -1503,7 +1503,7 @@ it('removes an instance process after its role and resources enter removing stat
     $this->manager->remove($process);
 
     expect($this->ssh->connections)
-        ->each(fn ($connection) => $connection->user->toBe('orbit'))
+        ->each(fn ($connection) => $connection->user->toBe('nckrtl'))
         ->and($this->ssh->commands)
         ->toHaveCount(5);
 });
@@ -1563,7 +1563,7 @@ it('removes a workspace process after its role and resources enter removing stat
     $this->manager->remove($process);
 
     expect($this->ssh->connections)
-        ->each(fn ($connection) => $connection->user->toBe('orbit'))
+        ->each(fn ($connection) => $connection->user->toBe('nckrtl'))
         ->and($this->ssh->commands)
         ->toHaveCount(5);
 });

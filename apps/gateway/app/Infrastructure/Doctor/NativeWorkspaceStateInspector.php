@@ -7,6 +7,7 @@ namespace App\Infrastructure\Doctor;
 use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Doctor\WorkspaceInspectionData;
 use App\Domain\Doctor\WorkspaceStateInspector;
+use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Infrastructure\AppDev\AppDevCaddyConfigRenderer;
 use App\Infrastructure\AppDev\AppDevPhpFpmConfigRenderer;
 use App\Infrastructure\AppDev\AppDevSite;
@@ -19,6 +20,7 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Workspace;
 use Illuminate\Support\Collection;
 
+/** @mago-expect lint:excessive-parameter-list Read-only workspace projection checks reuse the production renderers. */
 final readonly class NativeWorkspaceStateInspector implements WorkspaceStateInspector
 {
     public function __construct(
@@ -27,6 +29,7 @@ final readonly class NativeWorkspaceStateInspector implements WorkspaceStateInsp
         private AppDevCaddyConfigRenderer $caddy,
         private AppDevPhpFpmConfigRenderer $phpFpm,
         private CommandDeadline $deadline,
+        private ManagedUserAccountResolver $accounts,
     ) {}
 
     public function inspect(Workspace $workspace): WorkspaceInspectionData
@@ -46,6 +49,7 @@ final readonly class NativeWorkspaceStateInspector implements WorkspaceStateInsp
         $sites = collect([$site]);
 
         try {
+            $account = $this->accounts->resolve($instance->node);
             $result = $this->ssh->execute(
                 $instance->node,
                 new RemoteCommand(
@@ -59,9 +63,10 @@ final readonly class NativeWorkspaceStateInspector implements WorkspaceStateInsp
                         $workspace->branch,
                         $instance->document_root,
                         base64_encode($this->caddy->render($sites)),
-                        base64_encode($this->phpFpm->render($sites)),
+                        base64_encode($this->phpFpm->render($sites, $account)),
                         "/etc/php/{$site->phpVersion}/fpm/pool.d/orbit-scopes.conf",
                         $site->certificateDirectory(),
+                        $account->home,
                     ],
                     input: $this->remoteScript(),
                 ),
@@ -138,6 +143,7 @@ final readonly class NativeWorkspaceStateInspector implements WorkspaceStateInsp
             expected_php_fpm_base64=$6
             php_fpm_path=$7
             certificate_directory=$8
+            managed_home=$9
 
             emit() {
                 if "$@"; then printf '1\n'; else printf '0\n'; fi
@@ -145,7 +151,7 @@ final readonly class NativeWorkspaceStateInspector implements WorkspaceStateInsp
 
             safe_directory() {
                 path=$1
-                case "$path" in /home/orbit|/home/orbit/*) ;; *) return 1 ;; esac
+                case "$path" in "$managed_home"|"$managed_home"/*) ;; *) return 1 ;; esac
                 test -d "$path" && test ! -L "$path"
             }
 

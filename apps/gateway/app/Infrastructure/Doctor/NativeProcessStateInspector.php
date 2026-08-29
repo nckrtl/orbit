@@ -198,7 +198,7 @@ final readonly class NativeProcessStateInspector implements ProcessStateInspecto
 
         return new SshConnection(
             $host,
-            'orbit',
+            $node->user,
             22,
             $this->keys->privateKeyPath(),
             $this->knownHosts->path(),

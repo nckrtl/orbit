@@ -59,7 +59,7 @@ it('compares the active interface and exact rendered server and DNS projections'
             ->toStartWith('# Managed by Orbit.')
             ->and(array_column($ssh->calls, 'connection'))
             ->each(fn ($connection) => $connection->toEqual(
-                new SshConnection('10.44.0.1', 'orbit', 22, '/key', '/known', commandTimeout: 30.0),
+                new SshConnection('10.44.0.1', 'nckrtl', 22, '/key', '/known', commandTimeout: 30.0),
             ));
 
         foreach ($ssh->calls as $call) {
@@ -84,7 +84,7 @@ it('inspects the explicitly selected VPN role when a lower fleet assignment exis
         'platform' => 'linux',
         'public_ssh_host' => '192.0.2.2',
         'public_ssh_port' => 2022,
-        'ssh_user' => 'root',
+        'user' => 'nckrtl',
         'wireguard_address' => '10.44.0.2',
         'wireguard_public_key' => 'SELECTED_PUBLIC',
     ]);
@@ -100,7 +100,7 @@ it('inspects the explicitly selected VPN role when a lower fleet assignment exis
 
         expect(array_column($ssh->calls, 'connection'))
             ->each(fn ($connection) => $connection->toEqual(
-                new SshConnection('10.44.0.2', 'orbit', 22, '/key', '/known', commandTimeout: 30.0),
+                new SshConnection('10.44.0.2', 'nckrtl', 22, '/key', '/known', commandTimeout: 30.0),
             ));
     } finally {
         new Filesystem()->deleteDirectory($orbitHome);
@@ -118,6 +118,7 @@ it('renders VPN peers in stable persisted order', function (): void {
         'status' => LifecycleStatus::Active,
         'platform' => 'linux',
         'public_ssh_host' => '192.0.2.9',
+        'user' => 'nckrtl',
         'wireguard_address' => '10.44.0.9',
         'wireguard_public_key' => 'PEER_Z_PUBLIC',
     ]);
@@ -126,6 +127,7 @@ it('renders VPN peers in stable persisted order', function (): void {
         'status' => LifecycleStatus::Active,
         'platform' => 'linux',
         'public_ssh_host' => '192.0.2.8',
+        'user' => 'nckrtl',
         'wireguard_address' => '10.44.0.8',
         'wireguard_public_key' => 'PEER_A_PUBLIC',
     ]);
@@ -218,7 +220,7 @@ function gateway_vpn_inspector(array $results): array
         'platform' => 'linux',
         'public_ssh_host' => '192.0.2.1',
         'public_ssh_port' => 2022,
-        'ssh_user' => 'root',
+        'user' => 'nckrtl',
         'wireguard_address' => '10.44.0.1',
         'wireguard_public_key' => 'SERVER_PUBLIC',
     ]);

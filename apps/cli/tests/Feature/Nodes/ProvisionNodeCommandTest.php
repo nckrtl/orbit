@@ -37,7 +37,7 @@ it('sends node provisioning to the active gateway', function (): void {
                 'tld' => 'app-dev.orbit',
                 'public_ssh_host' => '94.237.40.75',
                 'public_ssh_port' => 22,
-                'ssh_user' => 'orbit',
+                'user' => 'orbit',
                 'wireguard_address' => '10.44.0.2',
                 'wireguard_public_key' => 'app-dev-public-key',
                 'wireguard_endpoint_override' => '10.0.0.2:51820',
@@ -59,7 +59,7 @@ it('sends node provisioning to the active gateway', function (): void {
         'tld' => 'app-dev.orbit',
         'public_ssh_host' => '94.237.40.75',
         'public_ssh_port' => 22,
-        'ssh_user' => 'orbit',
+        'user' => 'orbit',
         'wireguard_address' => '10.44.0.2',
         'wireguard_public_key' => 'app-dev-public-key',
         'wireguard_endpoint_override' => '10.0.0.2:51820',
@@ -100,13 +100,44 @@ it('sends node provisioning to the active gateway', function (): void {
             'architecture' => 'x86_64',
             'tld' => '.App-Dev.Orbit',
             'public_ssh_port' => 22,
-            'ssh_user' => 'root',
+            'user' => 'root',
             'roles' => ['app-dev'],
             'wireguard_address' => '10.44.0.2',
             'wireguard_endpoint_override' => '10.0.0.2:51820',
             'dns_server_override' => '10.0.0.2',
             'host_key_fingerprint' => 'SHA256:5jCWsPXzMnd5zy5xVxZ2gzyjH9N3wVfL6n5X0M8W3uQ',
         ]);
+});
+
+it('passes bootstrap and managed users to the SDK', function (): void {
+    app(GatewayConfigRepository::class)->add(new GatewayProfile(
+        name: 'test',
+        url: 'https://10.44.0.1',
+    ));
+    $mockClient = MockClient::global([
+        '*/api/v1/nodes' => MockResponse::make([
+            'data' => [
+                'id' => 1,
+                'name' => 'app-dev',
+                'status' => 'active',
+                'public_ssh_host' => '94.237.40.75',
+                'public_ssh_port' => 22,
+                'user' => 'nckrtl',
+                'roles' => [],
+            ],
+            'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844'],
+        ], 201),
+    ]);
+
+    $this->artisan('node:provision', [
+        'name' => 'app-dev',
+        '--user' => 'deployer',
+        '--orbit-user' => 'nckrtl',
+    ])->assertExitCode(0);
+
+    expect($mockClient->getLastRequest()?->body()->all())
+        ->toHaveKey('user', 'deployer')
+        ->toHaveKey('orbit_user', 'nckrtl');
 });
 
 it('rejects non-Linux platform input before making an API request', function (string $platform): void {

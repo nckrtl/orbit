@@ -7,6 +7,8 @@ namespace App\Infrastructure\AppDev;
 use App\Domain\AppDev\AppDevSourceManager;
 use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\Nodes\ManagedUserAccount;
+use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\SourceControl\GitRepositoryOrigin;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Instance;
@@ -17,14 +19,16 @@ final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
     public function __construct(
         private AppDevSshExecutor $ssh,
         private AppDevSourceOperationLock $lock,
+        private ManagedUserAccountResolver $accounts,
     ) {}
 
     public function convergeInstance(Instance $instance): void
     {
         $instance->loadMissing(['app', 'node']);
+        $account = $this->accounts->resolve($instance->node);
         $repository = GitRepositoryOrigin::validate($instance->app->repository_url);
-        $this->guardInstancePath($instance);
-        $this->lock->synchronized($instance->node_id, function () use ($instance, $repository): void {
+        $this->guardInstancePath($instance, $account);
+        $this->lock->synchronized($instance->node_id, function () use ($instance, $repository, $account): void {
             $this->ssh->execute(
                 $instance->node,
                 new RemoteCommand(
@@ -35,15 +39,21 @@ final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
                         $repository,
                         $instance->checkout_path,
                         $instance->document_root,
+                        $account->user,
+                        $account->group,
+                        $account->home,
                     ],
                     input: <<<'BASH'
                         repository=$1
                         checkout=$2
                         document_root=$3
+                        managed_user=$4
+                        managed_group=$5
+                        managed_home=$6
                         guard_checkout_parent() {
                             parent=$(dirname "$1")
                             case "$parent" in
-                                /home/orbit|/home/orbit/*) ;;
+                                "$managed_home"|"$managed_home"/*) ;;
                                 *) return 1 ;;
                             esac
 
@@ -53,12 +63,12 @@ final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
                             done
                             test ! -L "$existing_parent"
                             case "$(realpath -e "$existing_parent")" in
-                                /home/orbit|/home/orbit/*) ;;
+                                "$managed_home"|"$managed_home"/*) ;;
                                 *) return 1 ;;
                             esac
 
-                            current=/home/orbit
-                            IFS=/ read -r -a segments <<< "${parent#/home/orbit/}"
+                            current=$managed_home
+                            IFS=/ read -r -a segments <<< "${parent#"$managed_home"/}"
                             for segment in "${segments[@]}"; do
                                 current="$current/$segment"
                                 if [ -e "$current" ] || [ -L "$current" ]; then
@@ -102,7 +112,7 @@ final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
                         }
 
                         grant_caddy_access() {
-                            setfacl -m u:caddy:--x /home/orbit /home/orbit/apps "$checkout"
+                            setfacl -m u:caddy:--x "$managed_home" "$managed_home/apps" "$checkout"
 
                             current=$checkout_root
                             if [ "$document_root_real" = "$checkout_root" ]; then
@@ -130,9 +140,9 @@ final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
                             fi
                         }
                         guard_checkout_parent "$checkout"
-                        install -d -m 0755 -- /home/orbit/apps "$(dirname "$checkout")"
+                        install -d -m 0755 -- "$managed_home/apps" "$(dirname "$checkout")"
                         case "$(realpath -e "$(dirname "$checkout")")" in
-                            /home/orbit|/home/orbit/*) ;;
+                            "$managed_home"|"$managed_home"/*) ;;
                             *) exit 1 ;;
                         esac
 
@@ -158,9 +168,10 @@ final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
     public function removeInstance(Instance $instance): void
     {
         $instance->loadMissing(['app', 'node']);
+        $account = $this->accounts->resolve($instance->node);
         $repository = GitRepositoryOrigin::validate($instance->app->repository_url);
-        $this->guardInstancePath($instance);
-        $this->lock->synchronized($instance->node_id, function () use ($instance, $repository): void {
+        $this->guardInstancePath($instance, $account);
+        $this->lock->synchronized($instance->node_id, function () use ($instance, $repository, $account): void {
             $this->ssh->execute(
                 $instance->node,
                 new RemoteCommand(
@@ -170,15 +181,21 @@ final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
                         '--',
                         $repository,
                         $instance->checkout_path,
+                        $account->user,
+                        $account->group,
+                        $account->home,
                     ],
                     input: <<<'BASH'
                         repository=$1
                         checkout=$2
+                        managed_user=$3
+                        managed_group=$4
+                        managed_home=$5
                         parent=$(dirname "$checkout")
 
                         test ! -L "$parent"
                         case "$(realpath -e "$parent")" in
-                            /home/orbit|/home/orbit/*) ;;
+                            "$managed_home"|"$managed_home"/*) ;;
                             *) exit 1 ;;
                         esac
 
@@ -201,9 +218,14 @@ final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
     public function convergeWorkspace(Workspace $workspace): void
     {
         $workspace->loadMissing(['instance.app', 'instance.node']);
+        $account = $this->accounts->resolve($workspace->instance->node);
         $repository = GitRepositoryOrigin::validate($workspace->instance->app->repository_url);
-        $this->lock->synchronized($workspace->instance->node_id, function () use ($repository, $workspace): void {
-            $traversalPaths = $this->workspaceTraversalPaths($workspace);
+        $this->lock->synchronized($workspace->instance->node_id, function () use (
+            $repository,
+            $workspace,
+            $account,
+        ): void {
+            $traversalPaths = $this->workspaceTraversalPaths($workspace, $account);
             $this->ssh->execute(
                 $workspace->instance->node,
                 new RemoteCommand(
@@ -216,6 +238,9 @@ final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
                         $workspace->checkout_path,
                         $workspace->branch,
                         $workspace->instance->document_root,
+                        $account->user,
+                        $account->group,
+                        $account->home,
                         ...$traversalPaths,
                     ],
                     input: <<<'BASH'
@@ -224,12 +249,15 @@ final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
                         checkout=$3
                         branch=$4
                         document_root=$5
-                        shift 5
+                        managed_user=$6
+                        managed_group=$7
+                        managed_home=$8
+                        shift 8
                         traversal_paths=("$@")
                         guard_checkout_parent() {
                             parent=$(dirname "$1")
                             case "$parent" in
-                                /home/orbit|/home/orbit/*) ;;
+                                "$managed_home"|"$managed_home"/*) ;;
                                 *) return 1 ;;
                             esac
 
@@ -239,12 +267,12 @@ final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
                             done
                             test ! -L "$existing_parent"
                             case "$(realpath -e "$existing_parent")" in
-                                /home/orbit|/home/orbit/*) ;;
+                                "$managed_home"|"$managed_home"/*) ;;
                                 *) return 1 ;;
                             esac
 
-                            current=/home/orbit
-                            IFS=/ read -r -a segments <<< "${parent#/home/orbit/}"
+                            current=$managed_home
+                            IFS=/ read -r -a segments <<< "${parent#"$managed_home"/}"
                             for segment in "${segments[@]}"; do
                                 current="$current/$segment"
                                 if [ -e "$current" ] || [ -L "$current" ]; then
@@ -253,8 +281,9 @@ final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
                             done
                         }
                         guard_workspace_path() {
-                            relative=${checkout#/home/orbit/}
+                            relative=${checkout#"$managed_home"/}
                             test "$relative" != "$checkout"
+                            relative=${relative#/}
                             IFS=/ read -r -a path_segments <<< "$relative"
                             for segment in "${path_segments[@]}"; do
                                 case "$segment" in
@@ -262,14 +291,14 @@ final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
                                 esac
                             done
                             case "$checkout" in
-                                /home/orbit/.orbit/worktrees/*) ;;
-                                /home/orbit/.*|/home/orbit/apps|/home/orbit/apps/*) return 1 ;;
-                                /home/orbit/*) ;;
+                                "$managed_home/.orbit/worktrees/"*) ;;
+                                "$managed_home/."*|"$managed_home/apps"|"$managed_home/apps/"*) return 1 ;;
+                                "$managed_home/"*) ;;
                                 *) return 1 ;;
                             esac
                         }
                         prepare_traversal_paths() {
-                            state_directory=/home/orbit/.orbit/caddy-traversal-state
+                            state_directory="$managed_home/.orbit/caddy-traversal-state"
                             marker_name=user.orbit.caddy_traversal
                             install -d -m 0700 -- "$state_directory"
                             test -d "$state_directory"
@@ -278,7 +307,7 @@ final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
                             find "$state_directory" -maxdepth 1 -type f -name '.state.*' -delete
                             for path in "${traversal_paths[@]}"; do
                                 case "$path" in
-                                    /home/orbit|/home/orbit/*) ;;
+                                    "$managed_home"|"$managed_home"/*) ;;
                                     *) return 1 ;;
                                 esac
                                 case "$checkout" in
@@ -293,7 +322,7 @@ final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
                                 test "$(realpath -e "$path")" = "$path"
 
                                 case "$path" in
-                                    /home/orbit|/home/orbit/apps|/home/orbit/.orbit|/home/orbit/.orbit/worktrees) ;;
+                                    "$managed_home"|"$managed_home/apps"|"$managed_home/.orbit"|"$managed_home/.orbit/worktrees") ;;
                                     *)
                                         state_key=$(printf '%s' "$path" | sha256sum | cut -d' ' -f1)
                                         state="$state_directory/$state_key"
@@ -423,7 +452,7 @@ final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
                             test ! -e "$checkout"
                             guard_checkout_parent "$checkout"
                             case "$(realpath -e "$(dirname "$checkout")")" in
-                                /home/orbit|/home/orbit/*) ;;
+                                "$managed_home"|"$managed_home"/*) ;;
                                 *) exit 1 ;;
                             esac
 
@@ -447,10 +476,15 @@ final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
     public function removeWorkspace(Workspace $workspace): void
     {
         $workspace->loadMissing(['instance.app', 'instance.node']);
+        $account = $this->accounts->resolve($workspace->instance->node);
         $repository = GitRepositoryOrigin::validate($workspace->instance->app->repository_url);
-        $this->lock->synchronized($workspace->instance->node_id, function () use ($repository, $workspace): void {
-            $this->guardWorkspacePath($workspace);
-            $releasePaths = $this->releasableWorkspaceTraversalPaths($workspace);
+        $this->lock->synchronized($workspace->instance->node_id, function () use (
+            $repository,
+            $workspace,
+            $account,
+        ): void {
+            $this->guardWorkspacePath($workspace, $account);
+            $releasePaths = $this->releasableWorkspaceTraversalPaths($workspace, $account);
             $this->ssh->execute(
                 $workspace->instance->node,
                 new RemoteCommand(
@@ -461,25 +495,31 @@ final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
                         $workspace->instance->checkout_path,
                         $repository,
                         $workspace->checkout_path,
+                        $account->user,
+                        $account->group,
+                        $account->home,
                         ...$releasePaths,
                     ],
                     input: <<<'BASH'
                             instance=$1
                             repository=$2
                             checkout=$3
-                            shift 3
+                            managed_user=$4
+                            managed_group=$5
+                            managed_home=$6
+                            shift 6
                             release_paths=("$@")
                             marker_name=user.orbit.caddy_traversal
                         parent=$(dirname "$checkout")
                         case "$parent" in
-                            /home/orbit|/home/orbit/*) ;;
+                            "$managed_home"|"$managed_home"/*) ;;
                             *) exit 1 ;;
                         esac
                         if [ -e "$parent" ] || [ -L "$parent" ]; then
                             test -d "$parent"
                             test ! -L "$parent"
                             case "$(realpath -e "$parent")" in
-                                /home/orbit|/home/orbit/*) ;;
+                                "$managed_home"|"$managed_home"/*) ;;
                                 *) exit 1 ;;
                             esac
                         fi
@@ -495,10 +535,10 @@ final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
 
                         for path in "${release_paths[@]}"; do
                             case "$path" in
-                                /home/orbit/*) ;;
+                                "$managed_home/"*) ;;
                                 *) exit 1 ;;
                                 esac
-                                state_directory=/home/orbit/.orbit/caddy-traversal-state
+                                state_directory="$managed_home/.orbit/caddy-traversal-state"
                                 state_key=$(printf '%s' "$path" | sha256sum | cut -d' ' -f1)
                                 state="$state_directory/$state_key"
                                 if [ ! -e "$state" ] && [ ! -L "$state" ]; then
@@ -574,12 +614,13 @@ final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
         });
     }
 
-    private function guardInstancePath(Instance $instance): void
+    private function guardInstancePath(Instance $instance, ManagedUserAccount $account): void
     {
-        $expected = "/home/orbit/apps/{$instance->app->slug}";
+        $escapedHome = preg_quote($account->home, delimiter: '/');
+        $expected = "{$account->home}/apps/{$instance->app->slug}";
 
         if (
-            preg_match('/\A\/home\/orbit\/apps\/[A-Za-z0-9_-]+\z/', $expected) === 1
+            preg_match("/\\A{$escapedHome}\\/apps\\/[A-Za-z0-9_-]+\\z/", $expected) === 1
             && $instance->checkout_path === $expected
         ) {
             return;
@@ -593,14 +634,15 @@ final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
     }
 
     /** @return list<string> */
-    private function workspaceTraversalPaths(Workspace $workspace): array
+    private function workspaceTraversalPaths(Workspace $workspace, ManagedUserAccount $account): array
     {
-        $this->guardWorkspacePath($workspace);
+        $this->guardWorkspacePath($workspace, $account);
+        $home = $account->home;
         $parent = dirname($workspace->checkout_path);
-        $relativeParent = mb_substr($parent, mb_strlen('/home/orbit'));
+        $relativeParent = mb_substr($parent, mb_strlen($home));
         $segments = array_values(array_filter(explode('/', $relativeParent)));
-        $paths = ['/home/orbit'];
-        $path = '/home/orbit';
+        $paths = [$home];
+        $path = $home;
 
         foreach ($segments as $segment) {
             $path .= "/{$segment}";
@@ -611,8 +653,9 @@ final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
     }
 
     /** @return list<string> */
-    private function releasableWorkspaceTraversalPaths(Workspace $workspace): array
+    private function releasableWorkspaceTraversalPaths(Workspace $workspace, ManagedUserAccount $account): array
     {
+        $home = $account->home;
         $remainingPaths = Workspace::query()
             ->with('instance')
             ->whereKeyNot($workspace->id)
@@ -620,21 +663,32 @@ final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
             ->filter(
                 static fn (Workspace $other): bool => $other->instance->node_id === $workspace->instance->node_id,
             )
-            ->flatMap($this->workspaceTraversalPaths(...))
+            ->flatMap(fn (Workspace $other): array => $this->workspaceTraversalPaths($other, $account))
             ->unique()
             ->all();
-        $fixedPaths = ['/home/orbit', '/home/orbit/apps', '/home/orbit/.orbit', '/home/orbit/.orbit/worktrees'];
-        $releasePaths = array_diff($this->workspaceTraversalPaths($workspace), $remainingPaths, $fixedPaths);
+        $fixedPaths = [$home, "{$home}/apps", "{$home}/.orbit", "{$home}/.orbit/worktrees"];
+        $releasePaths = array_diff($this->workspaceTraversalPaths($workspace, $account), $remainingPaths, $fixedPaths);
 
         return array_values(array_reverse($releasePaths));
     }
 
-    private function guardWorkspacePath(Workspace $workspace): void
+    private function guardWorkspacePath(Workspace $workspace, ManagedUserAccount $account): void
     {
         $path = $workspace->checkout_path;
-        $relative = mb_substr($path, mb_strlen('/home/orbit/'));
+        $home = $account->home;
+
+        if (! str_starts_with($path, "{$home}/")) {
+            throw new RuntimeConvergenceException(
+                step: 'workspace-source-path',
+                errorCode: 'workspace.checkout_path_unsafe',
+                message: "Workspace [{$workspace->name}] has an unsafe checkout path.",
+            );
+        }
+
+        $relative = mb_substr($path, mb_strlen("{$home}/"));
         $segments = explode('/', $relative);
-        $protected = preg_match('#\A/home/orbit/(?:apps(?:/|\z)|\.(?!orbit/worktrees/))#', $path) === 1;
+        $escapedHome = preg_quote($home, delimiter: '#');
+        $protected = preg_match("#\\A{$escapedHome}/(?:apps(?:/|\\z)|\\.(?!orbit/worktrees/))#", $path) === 1;
         $segmentsAreSafe = collect($segments)->every(
             static fn (string $segment): bool => (
                 $segment !== ''
@@ -644,7 +698,7 @@ final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
             ),
         );
 
-        if (str_starts_with($path, '/home/orbit/') && ! $protected && $segmentsAreSafe) {
+        if (! $protected && $segmentsAreSafe) {
             return;
         }
 

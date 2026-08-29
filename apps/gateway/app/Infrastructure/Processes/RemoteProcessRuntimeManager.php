@@ -1359,7 +1359,7 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
             return $this->ssh->execute(
                 new SshConnection(
                     host: $target->node->wireguard_address,
-                    user: 'orbit',
+                    user: $target->node->user,
                     port: 22,
                     identityFile: $this->keys->privateKeyPath(),
                     knownHostsFile: $this->knownHosts->path(),

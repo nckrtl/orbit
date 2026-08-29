@@ -43,7 +43,7 @@ final readonly class SshNodeStateInspector implements NodeStateInspector
             $result = $this->ssh->execute(
                 new SshConnection(
                     $address,
-                    'orbit',
+                    $node->user,
                     22,
                     $this->keys->privateKeyPath(),
                     $this->knownHosts->path(),

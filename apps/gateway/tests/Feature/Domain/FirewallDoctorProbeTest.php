@@ -28,7 +28,7 @@ it('returns a healthy empty report without calling the inspector', function (): 
         'platform' => 'linux',
         'wireguard_address' => '10.0.0.9',
         'public_ssh_host' => '192.0.2.9',
-        'ssh_user' => 'orbit',
+        'user' => 'orbit',
     ]);
     $calls = 0;
     $report = new FirewallDoctorProbe(new class($calls) implements FirewallInspector {
@@ -51,7 +51,7 @@ it('short-circuits unreachable nodes without inspector calls', function (): void
         'platform' => 'linux',
         'wireguard_address' => '10.0.0.8',
         'public_ssh_host' => '192.0.2.8',
-        'ssh_user' => 'orbit',
+        'user' => 'orbit',
     ]);
     FirewallRule::create([
         'node_id' => $node->id,
@@ -88,7 +88,7 @@ it('checks real database rows in id order and emits bounded lifecycle issues', f
         'platform' => 'linux',
         'wireguard_address' => '10.0.0.1',
         'public_ssh_host' => '192.0.2.1',
-        'ssh_user' => 'orbit',
+        'user' => 'orbit',
     ]);
     $late = FirewallRule::create([
         'node_id' => $node->id,
@@ -135,14 +135,14 @@ it('maps backend, rule, exact, typed failure, and excludes other nodes', functio
         'platform' => 'linux',
         'wireguard_address' => '10.0.0.2',
         'public_ssh_host' => '192.0.2.2',
-        'ssh_user' => 'orbit',
+        'user' => 'orbit',
     ]);
     $other = Node::create([
         'name' => 'other',
         'platform' => 'linux',
         'wireguard_address' => '10.0.0.3',
         'public_ssh_host' => '192.0.2.3',
-        'ssh_user' => 'orbit',
+        'user' => 'orbit',
     ]);
     foreach ([
         ['inactive', FirewallBackendStatus::Inactive],

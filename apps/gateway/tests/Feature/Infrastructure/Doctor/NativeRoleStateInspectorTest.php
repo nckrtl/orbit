@@ -56,7 +56,7 @@ it('inspects each role with exact package service and firewall requirements', fu
             $ssh->calls,
             'connection',
         ))->each(fn ($connection) => $connection->toEqual(
-            new SshConnection('10.44.0.2', 'orbit', 22, '/key', '/known', commandTimeout: 30.0),
+            new SshConnection('10.44.0.2', 'nckrtl', 22, '/key', '/known', commandTimeout: 30.0),
         ));
 })->with([
     'gateway' => [
@@ -156,6 +156,7 @@ function role_inspector_assignment(RoleName $role): NodeRole
         'platform' => 'linux',
         'public_ssh_host' => '192.0.2.2',
         'public_ssh_port' => 2022,
+        'user' => 'nckrtl',
         'wireguard_address' => '10.44.0.2',
     ]);
     $node->id = 7;

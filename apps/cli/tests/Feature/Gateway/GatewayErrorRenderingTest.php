@@ -486,9 +486,9 @@ it('renders local validation failures through the exact json boundary', function
     ],
     'workspace checkout path' => [
         'workspace:new',
-        ['instance' => '1', 'name' => 'workspace', '--path' => '/validation-secret'],
+        ['instance' => '1', 'name' => 'workspace', '--path' => 'validation-secret'],
         'workspace.checkout_path_invalid',
-        'Workspace checkout path must be a safe child of /home/orbit.',
+        'Workspace checkout path must be a safe absolute path.',
     ],
     'multiple firewall values fail at the first error' => [
         'firewall:allow',

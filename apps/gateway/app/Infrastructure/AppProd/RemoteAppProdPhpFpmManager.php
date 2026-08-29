@@ -21,7 +21,7 @@ final readonly class RemoteAppProdPhpFpmManager implements AppProdPhpFpmManager
         private AppProdPhpFpmConfigRenderer $renderer,
         private AppProdSshExecutor $ssh,
         private string $phpRoot = '/etc/php',
-        private string $lockDirectory = '/run/lock',
+        private string $lockDirectory = '/run/lock/orbit',
         private string $logDirectory = '/var/log/orbit/php-fpm',
         private RemotePhpPackageManager $packages = new RemotePhpPackageManager,
     ) {}
@@ -170,10 +170,30 @@ final readonly class RemoteAppProdPhpFpmManager implements AppProdPhpFpmManager
             php_root=\$2
             lock_directory=\$3
             log_directory=\$4
+            umask 0077
+            if ! mkdir -- "\$lock_directory" 2>/dev/null; then
+                test -d "\$lock_directory"
+                test ! -L "\$lock_directory"
+            fi
+            if [ "\$lock_directory" = /run/lock/orbit ]; then
+                test "\$(stat -c %u:%g:%a -- "\$lock_directory")" = 0:0:700
+            fi
             pool_directory="\$php_root/\$version/fpm/pool.d"
             main_configuration="\$php_root/\$version/fpm/php-fpm.conf"
             managed_configuration="\$pool_directory/orbit-prod-scopes.conf"
-            exec 9>"\$lock_directory/orbit-php-fpm-\$version.lock"
+            lock="\$lock_directory/orbit-php-fpm-\$version.lock"
+            if [ -e "\$lock" ] || [ -L "\$lock" ]; then
+                test ! -L "\$lock"
+                test -f "\$lock"
+                if [ "\$lock_directory" = /run/lock/orbit ]; then
+                    test "\$(stat -c %u:%g -- "\$lock")" = 0:0
+                fi
+            fi
+            exec 9>>"\$lock"
+            if [ "\$lock_directory" = /run/lock/orbit ]; then
+                chmod 0600 -- "\$lock"
+                test "\$(stat -c %a -- "\$lock")" = 600
+            fi
             flock -w 30 9
             temporary_directory=\$(mktemp -d)
             candidate="\$temporary_directory/orbit-prod-scopes.conf"

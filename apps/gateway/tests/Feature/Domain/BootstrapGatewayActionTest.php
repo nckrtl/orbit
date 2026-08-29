@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\Gateway\BootstrapGatewayAction;
+use App\Actions\Gateway\GatewayOperatingSystemGuard;
 use App\Data\Gateway\BootstrapGatewayData;
 use App\Domain\Gateway\GatewayVpnConverger;
 use App\Domain\Gateway\GatewayWebConverger;
@@ -20,7 +21,7 @@ use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 
 it('initializes the portable gateway authority idempotently', function (): void {
-    $orbitHome = sys_get_temp_dir().'/orbit-bootstrap-'.Str::uuid();
+    $orbitHome = sys_get_temp_dir().'/orbit-bootstrap-'.(string) Str::uuid();
     $web = new class implements GatewayWebConverger {
         /** @var list<array{hostname: string, address: string}> */
         public array $calls = [];
@@ -33,6 +34,7 @@ it('initializes the portable gateway authority idempotently', function (): void 
     $action = new BootstrapGatewayAction(
         assignRole: app(App\Actions\Nodes\AssignRoleAction::class),
         identity: new App\Actions\Gateway\GatewayBootstrapIdentityValidator,
+        operatingSystem: bootstrap_gateway_resolute_guard(),
         vpnSettings: app(VpnSettings::class),
         processes: new NativeProcessRunner,
         files: new ProtectedFileWriter,
@@ -120,6 +122,7 @@ it('fails closed without mutating a partial root CA containing only :filename', 
     $action = new BootstrapGatewayAction(
         assignRole: app(App\Actions\Nodes\AssignRoleAction::class),
         identity: new App\Actions\Gateway\GatewayBootstrapIdentityValidator,
+        operatingSystem: bootstrap_gateway_resolute_guard(),
         vpnSettings: app(VpnSettings::class),
         processes: $processes,
         files: new ProtectedFileWriter,
@@ -170,7 +173,7 @@ it('fails closed without mutating a partial root CA containing only :filename', 
 ]);
 
 it('rejects a mismatched complete root CA pair without replacing it', function (): void {
-    $orbitHome = sys_get_temp_dir().'/orbit-bootstrap-'.Str::uuid();
+    $orbitHome = sys_get_temp_dir().'/orbit-bootstrap-'.(string) Str::uuid();
     $ca = $orbitHome.'/ca';
     mkdir(directory: $ca, permissions: 0o700, recursive: true);
     $processes = new NativeProcessRunner;
@@ -209,6 +212,7 @@ it('rejects a mismatched complete root CA pair without replacing it', function (
     $action = new BootstrapGatewayAction(
         assignRole: app(App\Actions\Nodes\AssignRoleAction::class),
         identity: new App\Actions\Gateway\GatewayBootstrapIdentityValidator,
+        operatingSystem: bootstrap_gateway_resolute_guard(),
         vpnSettings: app(VpnSettings::class),
         processes: $processes,
         files: new ProtectedFileWriter,
@@ -223,13 +227,16 @@ it('rejects a mismatched complete root CA pair without replacing it', function (
     );
 
     try {
-        expect(fn () => $action->execute(bootstrap_gateway_action_data()))
-            ->toThrow(function (NodeProvisioningException $exception): void {
-                expect($exception->step)
-                    ->toBe('ca-root-validate')
-                    ->and($exception->errorCode)
-                    ->toBe('ca.invalid_state');
-            });
+        try {
+            $action->execute(bootstrap_gateway_action_data());
+
+            throw new LogicException('A mismatched root CA pair must fail closed.');
+        } catch (NodeProvisioningException $exception) {
+            expect($exception->step)
+                ->toBe('ca-root-validate')
+                ->and($exception->errorCode)
+                ->toBe('ca.invalid_state');
+        }
 
         expect(file_get_contents($ca.'/root.key'))
             ->toBe($originalKey)
@@ -241,7 +248,7 @@ it('rejects a mismatched complete root CA pair without replacing it', function (
 });
 
 it('rejects an invalid static identity before persistence or host side effects', function (): void {
-    $orbitHome = sys_get_temp_dir().'/orbit-bootstrap-'.Str::uuid();
+    $orbitHome = sys_get_temp_dir().'/orbit-bootstrap-'.(string) Str::uuid();
     $processes = new class implements ProcessRunner {
         public int $calls = 0;
 
@@ -255,6 +262,7 @@ it('rejects an invalid static identity before persistence or host side effects',
     $action = new BootstrapGatewayAction(
         assignRole: app(App\Actions\Nodes\AssignRoleAction::class),
         identity: new App\Actions\Gateway\GatewayBootstrapIdentityValidator,
+        operatingSystem: bootstrap_gateway_resolute_guard(),
         vpnSettings: app(VpnSettings::class),
         processes: $processes,
         files: new ProtectedFileWriter,
@@ -286,7 +294,7 @@ it('rejects an invalid static identity before persistence or host side effects',
 });
 
 it('records provisioning and failed host convergence state and activates an idempotent retry', function (): void {
-    $orbitHome = sys_get_temp_dir().'/orbit-bootstrap-'.Str::uuid();
+    $orbitHome = sys_get_temp_dir().'/orbit-bootstrap-'.(string) Str::uuid();
     $web = new class implements GatewayWebConverger {
         public bool $shouldFail = true;
 
@@ -296,9 +304,11 @@ it('records provisioning and failed host convergence state and activates an idem
         public function converge(string $hostname, string $wireguardAddress): void
         {
             $node = Node::query()->where('name', 'gateway')->firstOrFail();
+            /** @var list<LifecycleStatus> $roleStatuses */
+            $roleStatuses = $node->roles()->orderBy('role')->pluck('status')->all();
             $this->observedStates[] = [
                 'node' => $node->status,
-                'roles' => $node->roles()->orderBy('role')->pluck('status')->all(),
+                'roles' => $roleStatuses,
             ];
 
             if ($this->shouldFail) {
@@ -313,6 +323,7 @@ it('records provisioning and failed host convergence state and activates an idem
     $action = new BootstrapGatewayAction(
         assignRole: app(App\Actions\Nodes\AssignRoleAction::class),
         identity: new App\Actions\Gateway\GatewayBootstrapIdentityValidator,
+        operatingSystem: bootstrap_gateway_resolute_guard(),
         vpnSettings: app(VpnSettings::class),
         processes: new NativeProcessRunner,
         files: new ProtectedFileWriter,
@@ -342,9 +353,9 @@ it('records provisioning and failed host convergence state and activates an idem
             ])
             ->and($failed->status)
             ->toBe(LifecycleStatus::Failed)
-            ->and($failed->failed_step)
+            ->and($failed->getAttribute('failed_step'))
             ->toBe('gateway-caddy-validate')
-            ->and($failed->error_code)
+            ->and($failed->getAttribute('error_code'))
             ->toBe('gateway.caddy_config_invalid')
             ->and($failed->roles()->pluck('status')->all())
             ->each->toBe(LifecycleStatus::Failed)->and($failed->roles()->pluck('failed_step')->all())
@@ -357,7 +368,7 @@ it('records provisioning and failed host convergence state and activates an idem
             ->toBeTrue()
             ->and($active->status)
             ->toBe(LifecycleStatus::Active)
-            ->and($active->failed_step)
+            ->and($active->getAttribute('failed_step'))
             ->toBeNull()
             ->and($active->roles()->pluck('status')->all())
             ->each
@@ -370,10 +381,11 @@ it('records provisioning and failed host convergence state and activates an idem
 });
 
 it('records stable gateway failure state when bootstrap throws an unexpected exception', function (): void {
-    $orbitHome = sys_get_temp_dir().'/orbit-bootstrap-'.Str::uuid();
+    $orbitHome = sys_get_temp_dir().'/orbit-bootstrap-'.(string) Str::uuid();
     $action = new BootstrapGatewayAction(
         assignRole: app(App\Actions\Nodes\AssignRoleAction::class),
         identity: new App\Actions\Gateway\GatewayBootstrapIdentityValidator,
+        operatingSystem: bootstrap_gateway_resolute_guard(),
         vpnSettings: app(VpnSettings::class),
         processes: new NativeProcessRunner,
         files: new ProtectedFileWriter,
@@ -396,23 +408,26 @@ it('records stable gateway failure state when bootstrap throws an unexpected exc
     );
 
     try {
-        expect(fn () => $action->execute($data))
-            ->toThrow(function (NodeProvisioningException $exception): void {
-                expect($exception->step)
-                    ->toBe('unknown')
-                    ->and($exception->errorCode)
-                    ->toBe('gateway.bootstrap_failed')
-                    ->and($exception->getPrevious())
-                    ->toBeInstanceOf(RuntimeException::class);
-            });
+        try {
+            $action->execute($data);
+
+            throw new LogicException('Unexpected bootstrap exceptions must be wrapped.');
+        } catch (NodeProvisioningException $exception) {
+            expect($exception->step)
+                ->toBe('unknown')
+                ->and($exception->errorCode)
+                ->toBe('gateway.bootstrap_failed')
+                ->and($exception->getPrevious())
+                ->toBeInstanceOf(RuntimeException::class);
+        }
 
         $failed = Node::query()->where('name', 'gateway')->firstOrFail();
 
         expect($failed->status)
             ->toBe(LifecycleStatus::Failed)
-            ->and($failed->failed_step)
+            ->and($failed->getAttribute('failed_step'))
             ->toBe('unknown')
-            ->and($failed->error_code)
+            ->and($failed->getAttribute('error_code'))
             ->toBe('gateway.bootstrap_failed')
             ->and($failed->roles()->count())
             ->toBe(2)
@@ -425,11 +440,101 @@ it('records stable gateway failure state when bootstrap throws an unexpected exc
     }
 });
 
+it('rejects unsupported local gateway operating systems before any persistence or host mutation', function (?string $fixtureContents): void {
+    $orbitHome = sys_get_temp_dir().'/orbit-bootstrap-'.(string) Str::uuid();
+    $osReleasePath = sys_get_temp_dir().'/orbit-gateway-os-release-'.(string) Str::uuid();
+
+    if ($fixtureContents !== null) {
+        file_put_contents($osReleasePath, $fixtureContents);
+    }
+
+    $processes = new class implements ProcessRunner {
+        public int $calls = 0;
+
+        public function run(ProcessInvocation $invocation): CommandResult
+        {
+            $this->calls++;
+
+            return new CommandResult(0, '', '', 1, false);
+        }
+    };
+    $vpn = new class implements GatewayVpnConverger {
+        public int $calls = 0;
+
+        public function converge(Node $gateway, BootstrapGatewayData $data): void
+        {
+            $this->calls++;
+        }
+    };
+    $web = new class implements GatewayWebConverger {
+        public int $calls = 0;
+
+        public function converge(string $hostname, string $wireguardAddress): void
+        {
+            $this->calls++;
+        }
+    };
+    $action = new BootstrapGatewayAction(
+        assignRole: app(App\Actions\Nodes\AssignRoleAction::class),
+        identity: new App\Actions\Gateway\GatewayBootstrapIdentityValidator,
+        operatingSystem: new GatewayOperatingSystemGuard($osReleasePath),
+        vpnSettings: app(VpnSettings::class),
+        processes: $processes,
+        files: new ProtectedFileWriter,
+        vpn: $vpn,
+        web: $web,
+        orbitHome: $orbitHome,
+    );
+
+    try {
+        try {
+            $action->execute(bootstrap_gateway_action_data());
+
+            throw new LogicException('Unsupported local gateway operating systems must fail.');
+        } catch (NodeProvisioningException $exception) {
+            expect($exception->step)
+                ->toBe('operating-system')
+                ->and($exception->errorCode)
+                ->toBe('gateway.operating_system_unsupported');
+        }
+
+        expect(Node::query()->count())
+            ->toBe(0)
+            ->and(is_dir($orbitHome))
+            ->toBeFalse()
+            ->and($processes->calls)
+            ->toBe(0)
+            ->and($vpn->calls)
+            ->toBe(0)
+            ->and($web->calls)
+            ->toBe(0);
+    } finally {
+        if (is_file($osReleasePath)) {
+            unlink($osReleasePath);
+        }
+        new Filesystem()->deleteDirectory($orbitHome);
+    }
+})->with([
+    'Ubuntu Noble' => ["ID=ubuntu\nVERSION_CODENAME=noble\n"],
+    'Debian' => ["ID=debian\nVERSION_CODENAME=resolute\n"],
+    'unknown release' => ["ID=ubuntu\nVERSION_CODENAME=jammy\n"],
+    'malformed release' => ["ID=ubuntu\nVERSION_CODENAME='resolute extra'\n"],
+    'missing release file' => [null],
+]);
+
 function gateway_vpn_noop(): GatewayVpnConverger
 {
     return new class implements GatewayVpnConverger {
         public function converge(Node $gateway, BootstrapGatewayData $data): void {}
     };
+}
+
+function bootstrap_gateway_resolute_guard(): GatewayOperatingSystemGuard
+{
+    $path = sys_get_temp_dir().'/orbit-gateway-os-release-'.(string) Str::uuid();
+    file_put_contents($path, data: "ID=ubuntu\nVERSION_CODENAME=resolute\n");
+
+    return new GatewayOperatingSystemGuard($path);
 }
 
 function bootstrap_gateway_action_data(): BootstrapGatewayData

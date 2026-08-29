@@ -19,7 +19,7 @@ final readonly class GatewayRoleBaseline implements RoleBaseline
 
     public function converge(Node $node, NodeRole $assignment): void
     {
-        $this->firewall->converge($node, RoleName::Gateway);
+        $this->firewall->converge($node, RoleName::Gateway, $node->user);
     }
 
     public function remove(Node $node, NodeRole $assignment, bool $purgeData): never

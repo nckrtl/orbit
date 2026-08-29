@@ -8,6 +8,7 @@ use App\Domain\Doctor\AppInspectionData;
 use App\Domain\Doctor\AppStateInspector;
 use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Instances\CertificateMode;
+use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\SourceControl\GitRepositoryOrigin;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -18,6 +19,7 @@ use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\App;
 use App\Models\Node;
 
+/** @mago-expect lint:cyclomatic-complexity The inspector validates both application modes and every managed checkout. */
 final readonly class NativeAppStateInspector implements AppStateInspector
 {
     public function __construct(
@@ -25,6 +27,7 @@ final readonly class NativeAppStateInspector implements AppStateInspector
         private SshKeyProvider $keys,
         private KnownHostsStore $knownHosts,
         private CommandDeadline $deadline,
+        private ManagedUserAccountResolver $accounts,
     ) {}
 
     public function inspect(App $app, Node $node): AppInspectionData
@@ -34,12 +37,13 @@ final readonly class NativeAppStateInspector implements AppStateInspector
         }
 
         try {
+            $account = null;
             $repository = GitRepositoryOrigin::validate($app->repository_url);
         } catch (\Throwable) {
             throw new DoctorInspectionException;
         }
 
-        /** @var list<array{path: string, root: string, user: string, slug: string, instance: string}> $checkouts */
+        /** @var list<array{path: string, root: string, user: string, slug: string, instance: string, mode: string}> $checkouts */
         $checkouts = [];
         $instances = $app
             ->instances()
@@ -48,21 +52,40 @@ final readonly class NativeAppStateInspector implements AppStateInspector
             ->get();
         foreach ($instances as $instance) {
             $production = $instance->certificate_mode === CertificateMode::Acme;
-            $checkouts[] = [
-                'path' => $instance->checkout_path,
-                'root' => $production ? "/var/www/{$app->slug}" : '/home/orbit',
-                'user' => $production ? "orbit-{$app->slug}" : 'orbit',
-                'slug' => $production ? $app->slug : '',
-                'instance' => $production ? $instance->name : '',
-            ];
-            $workspaces = $instance->workspaces;
-            foreach ($workspaces as $workspace) {
+            if ($production) {
                 $checkouts[] = [
-                    'path' => $workspace->checkout_path,
-                    'root' => '/home/orbit',
-                    'user' => 'orbit',
+                    'path' => $instance->checkout_path,
+                    'root' => "/var/www/{$app->slug}",
+                    'user' => "orbit-{$app->slug}",
+                    'slug' => $app->slug,
+                    'instance' => $instance->name,
+                    'mode' => 'app-prod',
+                ];
+            } else {
+                if ($account === null) {
+                    $account = $this->accounts->resolve($node);
+                }
+                $checkouts[] = [
+                    'path' => $instance->checkout_path,
+                    'root' => $account->home,
+                    'user' => $account->user,
                     'slug' => '',
                     'instance' => '',
+                    'mode' => 'app-dev',
+                ];
+            }
+            $workspaces = $instance->workspaces;
+            foreach ($workspaces as $workspace) {
+                if ($account === null) {
+                    $account = $this->accounts->resolve($node);
+                }
+                $checkouts[] = [
+                    'path' => $workspace->checkout_path,
+                    'root' => $account->home,
+                    'user' => $account->user,
+                    'slug' => '',
+                    'instance' => '',
+                    'mode' => 'app-dev',
                 ];
             }
         }
@@ -72,7 +95,7 @@ final readonly class NativeAppStateInspector implements AppStateInspector
                 $result = $this->ssh->execute(
                     new SshConnection(
                         $node->wireguard_address,
-                        'orbit',
+                        $node->user,
                         22,
                         $this->keys->privateKeyPath(),
                         $this->knownHosts->path(),
@@ -89,6 +112,8 @@ final readonly class NativeAppStateInspector implements AppStateInspector
                             $checkout['user'],
                             $checkout['slug'],
                             $checkout['instance'],
+                            $checkout['mode'],
+                            $account?->home ?? '',
                         ],
                         input: 'repository=$1'
                         ."\n"
@@ -102,13 +127,17 @@ final readonly class NativeAppStateInspector implements AppStateInspector
                         ."\n"
                         .'instance=$6'
                         ."\n"
-                        .'if [ "$user" = orbit ]; then'
+                        .'mode=$7'
+                        ."\n"
+                        .'expected_root=$8'
+                        ."\n"
+                        .'if [ "$mode" = app-dev ]; then'
                         ."\n"
                         .'  test -z "$slug" && test -z "$instance"'
                         ."\n"
-                        .'  test "$root" = /home/orbit'
+                        .'  test "$root" = "$expected_root"'
                         ."\n"
-                        .'  case "$checkout" in /home/orbit|/home/orbit/*) ;; *) exit 1 ;; esac'
+                        .'  case "$checkout" in "$expected_root"|"$expected_root"/*) ;; *) exit 1 ;; esac'
                         ."\n"
                         .'  if test -d "$checkout" && test ! -L "$checkout" && test "$(git -C "$checkout" remote get-url origin 2>/dev/null)" = "$repository"; then printf "1\\n"; else printf "0\\n"; fi'
                         ."\n"

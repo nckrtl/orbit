@@ -294,7 +294,7 @@ function doctor_api_node(
         'architecture' => 'amd64',
         'public_ssh_host' => "192.0.2.{$number}",
         'public_ssh_port' => 22,
-        'ssh_user' => 'orbit',
+        'user' => 'orbit',
         'wireguard_address' => "10.44.0.{$number}",
     ]);
 }

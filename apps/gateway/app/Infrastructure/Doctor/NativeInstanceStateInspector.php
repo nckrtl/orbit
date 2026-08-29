@@ -8,6 +8,8 @@ use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Doctor\InstanceInspectionData;
 use App\Domain\Doctor\InstanceStateInspector;
 use App\Domain\Instances\CertificateMode;
+use App\Domain\Nodes\ManagedUserAccount;
+use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AppDev\AppDevCaddyConfigRenderer;
@@ -26,7 +28,10 @@ use App\Models\Instance;
 use App\Models\NodeRole;
 use Illuminate\Support\Collection;
 
-/** @mago-expect lint:excessive-parameter-list Read-only projection checks reuse all four production renderers. */
+/**
+ * @mago-expect lint:cyclomatic-complexity The inspector validates both explicit runtime modes and their projections.
+ * @mago-expect lint:excessive-parameter-list Read-only projection checks reuse all four production renderers.
+ */
 final readonly class NativeInstanceStateInspector implements InstanceStateInspector
 {
     public function __construct(
@@ -37,18 +42,19 @@ final readonly class NativeInstanceStateInspector implements InstanceStateInspec
         private AppProdCaddyConfigRenderer $appProdCaddy,
         private AppProdPhpFpmConfigRenderer $appProdPhpFpm,
         private CommandDeadline $deadline,
+        private ManagedUserAccountResolver $accounts,
     ) {}
 
     public function inspect(Instance $instance): InstanceInspectionData
     {
         $instance->loadMissing(['app', 'node']);
         $appDevelopment = $this->isAppDevelopment($instance);
-        [$mode, $caddy, $phpFpm, $caddyFragment, $phpFpmPath, $certificateDirectory, $expectedCheckout] =
-            $appDevelopment
-                ? $this->appDevelopmentProjection($instance)
-                : $this->appProductionProjection($instance);
-
         try {
+            $account = $appDevelopment ? $this->accounts->resolve($instance->node) : null;
+            [$mode, $caddy, $phpFpm, $caddyFragment, $phpFpmPath, $certificateDirectory, $expectedCheckout] =
+                $appDevelopment
+                    ? $this->appDevelopmentProjection($instance, $account)
+                    : $this->appProductionProjection($instance);
             $result = $this->ssh->execute(
                 $instance->node,
                 new RemoteCommand(
@@ -66,6 +72,7 @@ final readonly class NativeInstanceStateInspector implements InstanceStateInspec
                         base64_encode($phpFpm),
                         $certificateDirectory,
                         $expectedCheckout,
+                        $account?->home ?? '',
                     ],
                     input: $this->remoteScript(),
                 ),
@@ -122,8 +129,11 @@ final readonly class NativeInstanceStateInspector implements InstanceStateInspec
     }
 
     /** @return array{string, string, string, string, string, string, string} */
-    private function appDevelopmentProjection(Instance $instance): array
+    private function appDevelopmentProjection(Instance $instance, ?ManagedUserAccount $account): array
     {
+        if ($account === null) {
+            throw new DoctorInspectionException;
+        }
         $site = new AppDevSite(
             nodeId: $instance->node_id,
             nodeAddress: $instance->node->wireguard_address ?? '',
@@ -139,7 +149,7 @@ final readonly class NativeInstanceStateInspector implements InstanceStateInspec
         return [
             'app-dev',
             $this->appDevCaddy->render($sites),
-            $this->appDevPhpFpm->render($sites),
+            $this->appDevPhpFpm->render($sites, $account),
             'app-dev.caddy',
             "/etc/php/{$instance->php_version}/fpm/pool.d/orbit-scopes.conf",
             $site->certificateDirectory(),
@@ -226,6 +236,7 @@ final readonly class NativeInstanceStateInspector implements InstanceStateInspec
             expected_php_fpm_base64=$7
             certificate_directory=$8
             expected_checkout=$9
+            managed_home=${10}
 
             emit() {
                 if "$@"; then printf '1\n'; else printf '0\n'; fi
@@ -234,7 +245,7 @@ final readonly class NativeInstanceStateInspector implements InstanceStateInspec
             checkout_matches() {
                 test "$checkout" = "$expected_checkout" || return 1
                 case "$mode:$checkout" in
-                    app-dev:/home/orbit|app-dev:/home/orbit/*|app-prod:/var/www/*) ;;
+                    app-dev:"$managed_home"|app-dev:"$managed_home"/*|app-prod:/var/www/*) ;;
                     *) return 1 ;;
                 esac
                 test -d "$checkout" && test ! -L "$checkout"

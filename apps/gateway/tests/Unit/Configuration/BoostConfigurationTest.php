@@ -242,7 +242,7 @@ it('keeps generated scoped guidance complete and de-duplicated', function (): vo
         '## Keep secrets out of command arguments',
         '## Publish managed state atomically',
         '## Search proven behavior before infrastructure design',
-        '## Use only pinned Sury Resolute PHP packages',
+        '## Use only pinned Sury PHP packages',
         '## Route project JavaScript work through Vite+',
         '## Run the Pest and Mago gates',
         '## Track tool intent, not host inventory',
@@ -282,7 +282,10 @@ it('keeps generated scoped guidance complete and de-duplicated', function (): vo
         );
     expect($infrastructureRules)
         ->toContain(
-            'Ubuntu Resolute',
+            'Noble and Resolute',
+            'Gateway, VPN, and app-prod require Resolute',
+            'validated release suite',
+            'Never use a Launchpad PPA',
             'direct Sury PHP repository',
             'pinned key digest and fingerprints',
             'exact candidate-origin checks',

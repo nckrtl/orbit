@@ -6,6 +6,8 @@ namespace App\Infrastructure\AppDev;
 
 use App\Domain\AppDev\AppDevPhpFpmManager;
 use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\Nodes\ManagedUserAccount;
+use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Infrastructure\Nodes\PhpFpmInstalledProjection;
 use App\Infrastructure\Nodes\PhpFpmPublicationPlan;
 use App\Infrastructure\Nodes\RemotePhpPackageManager;
@@ -20,13 +22,15 @@ final readonly class RemoteAppDevPhpFpmManager implements AppDevPhpFpmManager
         private AppDevSiteRepository $sites,
         private AppDevPhpFpmConfigRenderer $renderer,
         private AppDevSshExecutor $ssh,
+        private ManagedUserAccountResolver $accounts,
+        private RemotePhpPackageManager $packages,
         private string $phpRoot = '/etc/php',
-        private string $lockDirectory = '/run/lock',
-        private RemotePhpPackageManager $packages = new RemotePhpPackageManager,
+        private string $lockDirectory = '/run/lock/orbit',
     ) {}
 
     public function converge(Node $node): void
     {
+        $account = $this->accounts->resolve($node);
         $desiredSites = $this->sites->forNode($node);
         $desiredVersions = $desiredSites
             ->map(static fn (AppDevSite $site): string => $site->phpVersion)
@@ -43,7 +47,7 @@ final readonly class RemoteAppDevPhpFpmManager implements AppDevPhpFpmManager
             );
         }
 
-        $installedProjection = $this->installedProjection($node);
+        $installedProjection = $this->installedProjection($node, $account);
         $this->packages->installForAppDev($node, $desiredVersions, $this->ssh);
 
         $desiredPoolVersions = $desiredSites
@@ -70,8 +74,9 @@ final readonly class RemoteAppDevPhpFpmManager implements AppDevPhpFpmManager
                 $version = $publication['version'];
                 $configuration = $this->renderer->render(
                     $sites->where('phpVersion', $version)->values(),
+                    $account,
                 );
-                $this->publishVersion($node, $version, $configuration);
+                $this->publishVersion($node, $version, $configuration, $account);
                 $publishedVersions[] = $version;
             }
         } catch (RuntimeConvergenceException $exception) {
@@ -79,20 +84,32 @@ final readonly class RemoteAppDevPhpFpmManager implements AppDevPhpFpmManager
                 node: $node,
                 publishedVersions: $publishedVersions,
                 installedProjection: $installedProjection,
+                account: $account,
             );
 
             throw $recoveryFailure ?? $exception;
         }
     }
 
-    private function installedProjection(Node $node): PhpFpmInstalledProjection
+    private function installedProjection(Node $node, ManagedUserAccount $account): PhpFpmInstalledProjection
     {
         $result = $this->ssh->execute(
             $node,
             new RemoteCommand(
-                arguments: ['bash', '-seu', '--', $this->phpRoot],
+                arguments: [
+                    'bash',
+                    '-seu',
+                    '--',
+                    $this->phpRoot,
+                    $account->user,
+                    $account->group,
+                    $account->home,
+                ],
                 input: <<<'BASH'
                     php_root=$1
+                    managed_user=$2
+                    managed_group=$3
+                    managed_home=$4
                     for path in "$php_root"/*/fpm/pool.d/orbit-scopes.conf; do
                         if [ -e "$path" ]; then
                             version=$(basename "$(dirname "$(dirname "$(dirname "$path")")")")
@@ -117,6 +134,7 @@ final readonly class RemoteAppDevPhpFpmManager implements AppDevPhpFpmManager
         Node $node,
         array $publishedVersions,
         PhpFpmInstalledProjection $installedProjection,
+        ManagedUserAccount $account,
     ): ?RuntimeConvergenceException {
         $restoredVersions = [];
         $recoveryFailure = null;
@@ -127,7 +145,7 @@ final readonly class RemoteAppDevPhpFpmManager implements AppDevPhpFpmManager
             }
 
             try {
-                $this->publishVersion($node, $version, $installedProjection->previousConfiguration($version));
+                $this->publishVersion($node, $version, $installedProjection->previousConfiguration($version), $account);
             } catch (RuntimeConvergenceException $exception) {
                 $recoveryFailure ??= $exception;
             }
@@ -138,8 +156,12 @@ final readonly class RemoteAppDevPhpFpmManager implements AppDevPhpFpmManager
         return $recoveryFailure;
     }
 
-    private function publishVersion(Node $node, string $version, string $configuration): void
-    {
+    private function publishVersion(
+        Node $node,
+        string $version,
+        string $configuration,
+        ManagedUserAccount $account,
+    ): void {
         $this->ssh->execute(
             $node,
             new RemoteCommand(
@@ -151,6 +173,9 @@ final readonly class RemoteAppDevPhpFpmManager implements AppDevPhpFpmManager
                     $version,
                     $this->phpRoot,
                     $this->lockDirectory,
+                    $account->user,
+                    $account->group,
+                    $account->home,
                 ],
                 input: $this->publishScript($configuration),
             ),
@@ -167,10 +192,33 @@ final readonly class RemoteAppDevPhpFpmManager implements AppDevPhpFpmManager
             version=\$1
             php_root=\$2
             lock_directory=\$3
+            managed_user=\$4
+            managed_group=\$5
+            managed_home=\$6
+            umask 0077
+            if ! mkdir -- "\$lock_directory" 2>/dev/null; then
+                test -d "\$lock_directory"
+                test ! -L "\$lock_directory"
+            fi
+            if [ "\$lock_directory" = /run/lock/orbit ]; then
+                test "\$(stat -c %u:%g:%a -- "\$lock_directory")" = 0:0:700
+            fi
             pool_directory="\$php_root/\$version/fpm/pool.d"
             main_configuration="\$php_root/\$version/fpm/php-fpm.conf"
             managed_configuration="\$pool_directory/orbit-scopes.conf"
-            exec 9>"\$lock_directory/orbit-php-fpm-\$version.lock"
+            lock="\$lock_directory/orbit-php-fpm-\$version.lock"
+            if [ -e "\$lock" ] || [ -L "\$lock" ]; then
+                test ! -L "\$lock"
+                test -f "\$lock"
+                if [ "\$lock_directory" = /run/lock/orbit ]; then
+                    test "\$(stat -c %u:%g -- "\$lock")" = 0:0
+                fi
+            fi
+            exec 9>>"\$lock"
+            if [ "\$lock_directory" = /run/lock/orbit ]; then
+                chmod 0600 -- "\$lock"
+                test "\$(stat -c %a -- "\$lock")" = 600
+            fi
             flock -w 30 9
             temporary_directory=\$(mktemp -d)
             candidate="\$temporary_directory/orbit-scopes.conf"

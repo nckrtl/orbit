@@ -12,7 +12,7 @@ final readonly class AppProdCaddyPublisher
         private string $versionsDirectory = '/etc/caddy/orbit-versions',
         private string $liveCaddyfilePath = '/etc/caddy/Caddyfile',
         private string $caddyServiceName = 'caddy',
-        private string $lockPath = '/run/lock/orbit-caddy.lock',
+        private string $lockPath = '/run/lock/orbit/caddy.lock',
     ) {}
 
     public function command(string $configuration, string $version): RemoteCommand
@@ -37,7 +37,27 @@ final readonly class AppProdCaddyPublisher
                 live_caddyfile=\$3
                 caddy_service=\$4
                 lock=\$5
-                exec 9>"\$lock"
+                umask 0077
+                lock_directory=\$(dirname "\$lock")
+                if ! mkdir -- "\$lock_directory" 2>/dev/null; then
+                    test -d "\$lock_directory"
+                    test ! -L "\$lock_directory"
+                fi
+                if [ "\$lock" = /run/lock/orbit/caddy.lock ]; then
+                    test "\$(stat -c %u:%g:%a -- "\$lock_directory")" = 0:0:700
+                fi
+                if [ -e "\$lock" ] || [ -L "\$lock" ]; then
+                    test ! -L "\$lock"
+                    test -f "\$lock"
+                    if [ "\$lock" = /run/lock/orbit/caddy.lock ]; then
+                        test "\$(stat -c %u:%g -- "\$lock")" = 0:0
+                    fi
+                fi
+                exec 9>>"\$lock"
+                if [ "\$lock" = /run/lock/orbit/caddy.lock ]; then
+                    chmod 0600 -- "\$lock"
+                    test "\$(stat -c %a -- "\$lock")" = 600
+                fi
                 flock -w 30 9
                 candidate="\$versions/\$version.candidate"
                 published="\$versions/\$version"
@@ -60,10 +80,17 @@ final readonly class AppProdCaddyPublisher
                 case "\$source_main" in
                     "\$versions"/*/Caddyfile)
                         for fragment in "\$current_fragments"/*.caddy; do
-                            if [ ! -e "\$fragment" ] || [ "\$(basename "\$fragment")" = app-prod.caddy ]; then
+                            fragment_name=\$(basename "\$fragment")
+                            if [ ! -e "\$fragment" ] || [ "\$fragment_name" = app-prod.caddy ]; then
                                 continue
                             fi
-                            cp --preserve=mode,ownership -- "\$fragment" "\$candidate/fragments/"
+                            destination="\$candidate/fragments/\$fragment_name"
+                            if [ "\$fragment_name" = unmanaged.caddy ]; then
+                                destination="\$candidate/fragments/00-unmanaged.caddy"
+                                test ! -e "\$destination"
+                            fi
+
+                            cp --preserve=mode,ownership -- "\$fragment" "\$destination"
                         done
                         ;;
                     *)
@@ -75,7 +102,7 @@ final readonly class AppProdCaddyPublisher
                             fi
                         fi
                         if [ "\$preserve_source_main" = 1 ]; then
-                            cp --preserve=mode,ownership -- "\$source_main" "\$candidate/fragments/unmanaged.caddy"
+                            cp --preserve=mode,ownership -- "\$source_main" "\$candidate/fragments/00-unmanaged.caddy"
                         fi
                         ;;
                 esac
@@ -133,7 +160,27 @@ final readonly class AppProdCaddyPublisher
                 caddy_service=$4
                 lock=$5
                 owned_fragment=$6
-                exec 9>"$lock"
+                umask 0077
+                lock_directory=$(dirname "$lock")
+                if ! mkdir -- "$lock_directory" 2>/dev/null; then
+                    test -d "$lock_directory"
+                    test ! -L "$lock_directory"
+                fi
+                if [ "$lock" = /run/lock/orbit/caddy.lock ]; then
+                    test "$(stat -c %u:%g:%a -- "$lock_directory")" = 0:0:700
+                fi
+                if [ -e "$lock" ] || [ -L "$lock" ]; then
+                    test ! -L "$lock"
+                    test -f "$lock"
+                    if [ "$lock" = /run/lock/orbit/caddy.lock ]; then
+                        test "$(stat -c %u:%g -- "$lock")" = 0:0
+                    fi
+                fi
+                exec 9>>"$lock"
+                if [ "$lock" = /run/lock/orbit/caddy.lock ]; then
+                    chmod 0600 -- "$lock"
+                    test "$(stat -c %a -- "$lock")" = 600
+                fi
                 flock -w 30 9
                 source_main=$(readlink -f "$live_caddyfile")
                 test -f "$source_main"
@@ -154,10 +201,17 @@ final readonly class AppProdCaddyPublisher
                 trap 'rm -rf -- "$candidate"; rm -f -- "$candidate_link" "$rollback_link" "$rollback_file" "$previous_main"' EXIT
                 install -d -o root -g caddy -m 0750 -- "$candidate/fragments"
                 for fragment in "$current_fragments"/*.caddy; do
-                    if [ ! -e "$fragment" ] || [ "$(basename "$fragment")" = "$owned_fragment" ]; then
+                    fragment_name=$(basename "$fragment")
+                    if [ ! -e "$fragment" ] || [ "$fragment_name" = "$owned_fragment" ]; then
                         continue
                     fi
-                    cp --preserve=mode,ownership -- "$fragment" "$candidate/fragments/"
+                    destination="$candidate/fragments/$fragment_name"
+                    if [ "$fragment_name" = unmanaged.caddy ]; then
+                        destination="$candidate/fragments/00-unmanaged.caddy"
+                        test ! -e "$destination"
+                    fi
+
+                    cp --preserve=mode,ownership -- "$fragment" "$destination"
                 done
                 printf 'import %s/fragments/*.caddy\n' "$candidate" > "$candidate/Caddyfile"
                 chown -R root:caddy "$candidate"
