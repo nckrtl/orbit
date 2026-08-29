@@ -68,6 +68,20 @@ final readonly class ProvisionNodeAction
         $this->validateEndpointOverride($data);
         $node = Node::query()->firstOrNew(['name' => $data->name]);
         $managedUser = $data->orbitUser ?? ($node->exists ? $node->user : 'orbit');
+
+        if (
+            $node->exists
+            && $node->user !== $managedUser
+            && ($node->roles()->exists()
+            || $node->instances()->exists())
+        ) {
+            throw new ResourceOperationException(
+                errorCode: 'node.user_change_unsupported',
+                message: "Node [{$data->name}] cannot change managed user while it owns roles or instances.",
+                status: 409,
+            );
+        }
+
         $identity = new NodeProvisioningIdentity($data->user, $managedUser);
         $platform = $this->platform($node, $data);
         $architecture = $this->architecture($node, $data);
@@ -135,6 +149,7 @@ final readonly class ProvisionNodeAction
             'platform' => $platform,
             'architecture' => $architecture,
             'tld' => $tld,
+            'user' => $priorActiveState !== null ? $node->user : $managedUser,
             'public_ssh_host' => $publicSshHost,
             'public_ssh_port' => $node->exists ? $node->public_ssh_port : $data->publicSshPort,
             'wireguard_address' => $wireguardAddress,

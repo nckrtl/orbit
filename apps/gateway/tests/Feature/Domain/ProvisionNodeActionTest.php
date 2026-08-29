@@ -854,6 +854,54 @@ describe(ProvisionNodeAction::class, function (): void {
             ->toBe('node.tool_manager_probe_failed');
     });
 
+    it('persists a requested managed user when a new node fails late and uses it on retry', function (): void {
+        app()->instance(NodeConverger::class, new class implements NodeConverger {
+            public function converge(
+                Node $node,
+                NodeProvisioningIdentity $identity,
+                ?string $expectedSshHostFingerprint = null,
+            ): void {
+                throw new NodeProvisioningException('late-step', 'node.late_failed', 'Late failure.');
+            }
+        });
+
+        expect(fn () => app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
+            name: 'new-managed-user',
+            publicSshHost: '192.0.2.120',
+            architecture: 'x86_64',
+            expectedSshHostFingerprint: 'SHA256:pinned',
+            orbitUser: 'nckrtl',
+        )))
+            ->toThrow(NodeProvisioningException::class);
+
+        $node = Node::query()->where('name', 'new-managed-user')->sole();
+        expect($node->user)->toBe('nckrtl');
+
+        $identity = null;
+        app()->instance(NodeConverger::class, new class($identity) implements NodeConverger {
+            public function __construct(
+                private mixed &$identity,
+            ) {}
+
+            public function converge(
+                Node $node,
+                NodeProvisioningIdentity $identity,
+                ?string $expectedSshHostFingerprint = null,
+            ): void {
+                $this->identity = $identity;
+            }
+        });
+
+        app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
+            name: 'new-managed-user',
+            publicSshHost: '192.0.2.120',
+            expectedSshHostFingerprint: 'SHA256:pinned',
+            orbitUser: null,
+        ));
+
+        expect($identity)->toBeInstanceOf(NodeProvisioningIdentity::class)->and($identity->managedUser)->toBe('nckrtl');
+    });
+
     it('activates a node after its requested roles converge', function (): void {
         $events = [];
         $converger = new class($events) implements NodeConverger {
@@ -1172,6 +1220,110 @@ describe(ProvisionNodeAction::class, function (): void {
             ->toBe(0);
     });
 
+    it('rejects a managed user change while the node owns instances', function (): void {
+        $converger = new class implements NodeConverger {
+            public int $calls = 0;
+
+            public function converge(
+                Node $node,
+                NodeProvisioningIdentity $identity,
+                ?string $expectedSshHostFingerprint = null,
+            ): void {
+                $this->calls++;
+            }
+        };
+        app()->instance(NodeConverger::class, $converger);
+        $node = Node::query()->create([
+            'name' => 'app-dev',
+            'status' => LifecycleStatus::Active,
+            'platform' => 'linux',
+            'architecture' => 'x86_64',
+            'user' => 'orbit',
+            'public_ssh_host' => '192.0.2.20',
+            'wireguard_address' => '10.44.0.3',
+            'ssh_host_fingerprint' => 'SHA256:pinned',
+        ]);
+        $app = App::query()->create([
+            'name' => 'Orbit',
+            'slug' => 'orbit',
+            'repository_url' => 'git@example.test:orbit.git',
+        ]);
+        $node->instances()->create([
+            'app_id' => $app->id,
+            'name' => 'main',
+            'environment' => 'development',
+            'checkout_path' => '/home/orbit/apps/orbit/main',
+            'hostname' => 'main.app-dev.orbit',
+            'certificate_mode' => 'orbit-ca',
+        ]);
+
+        expect(fn () => app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
+            name: 'app-dev',
+            publicSshHost: '192.0.2.20',
+            orbitUser: 'deploy',
+        )))->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)
+                ->toBe('node.user_change_unsupported')
+                ->and($exception->status)
+                ->toBe(409)
+                ->and($exception->getMessage())
+                ->toBe('Node [app-dev] cannot change managed user while it owns roles or instances.');
+        });
+
+        expect($node->refresh()->user)
+            ->toBe('orbit')
+            ->and($converger->calls)
+            ->toBe(0);
+    });
+
+    it('rejects a managed user change while the node owns roles', function (): void {
+        $converger = new class implements NodeConverger {
+            public int $calls = 0;
+
+            public function converge(
+                Node $node,
+                NodeProvisioningIdentity $identity,
+                ?string $expectedSshHostFingerprint = null,
+            ): void {
+                $this->calls++;
+            }
+        };
+        app()->instance(NodeConverger::class, $converger);
+        $node = Node::query()->create([
+            'name' => 'role-node',
+            'status' => LifecycleStatus::Active,
+            'platform' => 'linux',
+            'architecture' => 'x86_64',
+            'user' => 'orbit',
+            'tld' => 'role-node.orbit',
+            'public_ssh_host' => '192.0.2.21',
+            'wireguard_address' => '10.44.0.4',
+            'ssh_host_fingerprint' => 'SHA256:pinned',
+        ]);
+        $node->roles()->create([
+            'role' => RoleName::AppDev,
+            'status' => LifecycleStatus::Active,
+        ]);
+
+        expect(fn () => app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
+            name: 'role-node',
+            publicSshHost: '192.0.2.21',
+            orbitUser: 'deploy',
+        )))->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)
+                ->toBe('node.user_change_unsupported')
+                ->and($exception->status)
+                ->toBe(409)
+                ->and($exception->getMessage())
+                ->toBe('Node [role-node] cannot change managed user while it owns roles or instances.');
+        });
+
+        expect($node->refresh()->user)
+            ->toBe('orbit')
+            ->and($converger->calls)
+            ->toBe(0);
+    });
+
     it('requires a TLD when the node already owns the app-dev role', function (): void {
         $converger = new class implements NodeConverger {
             public int $calls = 0;
@@ -1257,7 +1409,7 @@ describe(ProvisionNodeAction::class, function (): void {
         expect(Node::query()->where('name', 'linux-node')->exists())->toBeFalse();
     });
 
-    it('keeps the node active when initial role convergence fails', function (): void {
+    it('marks the node failed when initial role convergence fails', function (): void {
         app()->instance(NodeConverger::class, new class implements NodeConverger {
             public function converge(
                 Node $node,

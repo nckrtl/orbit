@@ -143,8 +143,11 @@ final readonly class CreateWorkspaceAction
         ) {
             return false;
         }
-        if ($relative === 'apps' || $relative === '.orbit') {
+        if ($segments[0] === 'apps') {
             return false;
+        }
+        if (str_starts_with($segments[0], '.')) {
+            return $segments[0] === '.orbit' && ($segments[1] ?? null) === 'worktrees' && isset($segments[2]);
         }
 
         return true;

@@ -202,6 +202,18 @@ it('observes every app-development instance projection with shared renderers', f
         ->not->toContain($instance->hostname);
 });
 
+it('uses the tenth positional argument as the managed home in the instance script', function (): void {
+    [, , $instance] = application_inspector_models();
+    $ssh = new AppDevFakeSshExecutor([app_inspector_result("1\n1\n1\n1\n1\n")]);
+
+    application_instance_inspector($ssh, new ApplicationInspectorProcessRunner(app_inspector_result("1\n")))
+        ->inspect($instance);
+
+    expect($ssh->commands[0]->input)
+        ->toContain('managed_home=${10}')
+        ->not->toContain('managed_home=$10');
+});
+
 it('maps each app-development instance observation without retaining diagnostics', function (
     string $remote,
     string $dns,

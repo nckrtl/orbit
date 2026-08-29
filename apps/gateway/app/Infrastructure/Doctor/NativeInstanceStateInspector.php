@@ -236,7 +236,7 @@ final readonly class NativeInstanceStateInspector implements InstanceStateInspec
             expected_php_fpm_base64=$7
             certificate_directory=$8
             expected_checkout=$9
-            managed_home=$10
+            managed_home=${10}
 
             emit() {
                 if "$@"; then printf '1\n'; else printf '0\n'; fi

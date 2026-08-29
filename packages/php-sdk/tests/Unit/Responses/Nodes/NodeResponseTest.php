@@ -85,6 +85,33 @@ it('does not invent an SSH port for malformed gateway data', function (): void {
     expect($response->publicSshPort)->toBe(0);
 });
 
+it('defaults managed user to orbit when gateway user is missing, invalid, or empty', function (): void {
+    $missingUser = node_response_gateway_data();
+    unset($missingUser['user']);
+
+    foreach ([
+        $missingUser,
+        node_response_gateway_data(['user' => 123]),
+        node_response_gateway_data(['user' => '']),
+    ] as $data) {
+        $response = NodeResponse::fromGatewayData(
+            $data,
+            '0198e15c-bf97-7c23-8f1f-61b8fe67a844',
+        );
+
+        expect($response->user)->toBe('orbit');
+    }
+});
+
+it('preserves a non-empty managed user from gateway data', function (): void {
+    $response = NodeResponse::fromGatewayData(
+        node_response_gateway_data(['user' => 'deploy-user']),
+        '0198e15c-bf97-7c23-8f1f-61b8fe67a844',
+    );
+
+    expect($response->user)->toBe('deploy-user');
+});
+
 it('omits access when the gateway does not send an access key', function (): void {
     $response = NodeResponse::fromGatewayData(node_response_gateway_data(), '0198e15c-bf97-7c23-8f1f-61b8fe67a844');
 

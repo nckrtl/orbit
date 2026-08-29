@@ -30,7 +30,7 @@ return new class extends Migration {
         });
 
         DB::statement(
-            "UPDATE nodes SET user = CASE WHEN ssh_user IS NULL OR ssh_user = '' THEN 'orbit' ELSE ssh_user END",
+            "UPDATE nodes SET user = CASE WHEN ssh_user IS NULL OR ssh_user = '' OR ssh_user = 'root' THEN 'orbit' ELSE ssh_user END",
         );
         self::createTriggers();
     }
@@ -52,10 +52,10 @@ return new class extends Migration {
             "CREATE TRIGGER nodes_validate_legacy_user_before_update BEFORE UPDATE OF ssh_user ON nodes WHEN NEW.ssh_user IS NOT NULL AND NEW.ssh_user <> '' AND (NEW.ssh_user GLOB '*[^a-z0-9_-]*' OR length(CAST(NEW.ssh_user AS BLOB)) > 32 OR instr(NEW.ssh_user, char(0)) > 0 OR substr(NEW.ssh_user, 1, 1) NOT GLOB '[a-z_]') BEGIN SELECT RAISE(ABORT, 'Invalid legacy node user.'); END",
         );
         DB::statement(
-            "CREATE TRIGGER nodes_sync_user_after_insert AFTER INSERT ON nodes WHEN NEW.user IS NULL OR NEW.user = '' BEGIN UPDATE nodes SET user = CASE WHEN NEW.ssh_user IS NULL OR NEW.ssh_user = '' THEN 'orbit' ELSE NEW.ssh_user END WHERE id = NEW.id; END",
+            "CREATE TRIGGER nodes_sync_user_after_insert AFTER INSERT ON nodes WHEN NEW.user IS NULL OR NEW.user = '' BEGIN UPDATE nodes SET user = CASE WHEN NEW.ssh_user IS NULL OR NEW.ssh_user = '' OR NEW.ssh_user = 'root' THEN 'orbit' ELSE NEW.ssh_user END WHERE id = NEW.id; END",
         );
         DB::statement(
-            "CREATE TRIGGER nodes_sync_user_after_legacy_update AFTER UPDATE OF ssh_user ON nodes BEGIN UPDATE nodes SET user = CASE WHEN NEW.ssh_user IS NULL OR NEW.ssh_user = '' THEN 'orbit' ELSE NEW.ssh_user END WHERE id = NEW.id; END",
+            "CREATE TRIGGER nodes_sync_user_after_legacy_update AFTER UPDATE OF ssh_user ON nodes BEGIN UPDATE nodes SET user = CASE WHEN NEW.ssh_user IS NULL OR NEW.ssh_user = '' OR NEW.ssh_user = 'root' THEN 'orbit' ELSE NEW.ssh_user END WHERE id = NEW.id; END",
         );
     }
 

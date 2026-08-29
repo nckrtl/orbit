@@ -22,6 +22,7 @@ describe('managed node user migrations', function (): void {
 
         DB::table('nodes')->insert([
             legacyNode('legacy-orbit', '192.0.2.1', 'orbit', $timestamp),
+            legacyNode('legacy-root', '192.0.2.9', 'root', $timestamp),
             legacyNode('legacy-nckrtl', '192.0.2.2', 'nckrtl', $timestamp),
             legacyNode('legacy-empty', '192.0.2.3', '', $timestamp),
             legacyNode('legacy-whitespace', '192.0.2.4', ' nckrtl ', $timestamp),
@@ -41,6 +42,8 @@ describe('managed node user migrations', function (): void {
             ->toBeTrue()
             ->and(DB::table('nodes')->where('name', 'legacy-orbit')->value('user'))
             ->toBe('orbit')
+            ->and(DB::table('nodes')->where('name', 'legacy-root')->value('user'))
+            ->toBe('orbit')
             ->and(DB::table('nodes')->where('name', 'legacy-nckrtl')->value('user'))
             ->toBe('nckrtl')
             ->and(DB::table('nodes')->where('name', 'legacy-empty')->value('user'))
@@ -54,6 +57,11 @@ describe('managed node user migrations', function (): void {
             ->toBe('nckrtl');
 
         DB::table('nodes')->where('name', 'legacy-write')->update(['ssh_user' => '']);
+
+        expect(DB::table('nodes')->where('name', 'legacy-write')->value('user'))
+            ->toBe('orbit');
+
+        DB::table('nodes')->where('name', 'legacy-write')->update(['ssh_user' => 'root']);
 
         expect(DB::table('nodes')->where('name', 'legacy-write')->value('user'))
             ->toBe('orbit');

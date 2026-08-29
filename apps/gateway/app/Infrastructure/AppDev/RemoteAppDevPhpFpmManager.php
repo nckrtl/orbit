@@ -239,7 +239,7 @@ final readonly class RemoteAppDevPhpFpmManager implements AppDevPhpFpmManager
 
             if [ -s "\$candidate" ]; then
                 staged="\$pool_directory/.orbit-scopes.\$\$.candidate"
-                sudo install -o "\$managed_user" -g "\$managed_group" -m 0644 -- "\$candidate" "\$staged"
+                sudo install -o root -g root -m 0644 -- "\$candidate" "\$staged"
                 sudo mv -fT -- "\$staged" "\$managed_configuration"
             else
                 sudo rm -f -- "\$managed_configuration"

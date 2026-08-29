@@ -1289,6 +1289,7 @@ it('renders and publishes AppDev FPM pools with the nondefault managed account',
         ->toBeNull()
         ->and($publishCall->input ?? '')
         ->toContain(base64_encode($rendered))
+        ->toContain('sudo install -o root -g root -m 0644 -- "$candidate" "$staged"')
         ->and($publishCall->arguments ?? [])
         ->toContain('8.5');
 });

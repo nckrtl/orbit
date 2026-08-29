@@ -52,7 +52,7 @@ final readonly class NodeResponse
             tld: is_string($data['tld'] ?? null) ? $data['tld'] : null,
             publicSshHost: is_string($data['public_ssh_host'] ?? null) ? $data['public_ssh_host'] : '',
             publicSshPort: is_int($data['public_ssh_port'] ?? null) ? $data['public_ssh_port'] : 0,
-            user: is_string($data['user'] ?? null) ? $data['user'] : '',
+            user: is_string($data['user'] ?? null) && $data['user'] !== '' ? $data['user'] : 'orbit',
             wireguardAddress: is_string($data['wireguard_address'] ?? null) ? $data['wireguard_address'] : null,
             wireguardPublicKey: is_string($data['wireguard_public_key'] ?? null)
                 ? $data['wireguard_public_key']

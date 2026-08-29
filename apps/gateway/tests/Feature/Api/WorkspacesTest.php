@@ -288,7 +288,7 @@ describe('workspace API', function (): void {
             ->postJson('/api/v1/workspaces', [
                 'instance_id' => $this->instance->id,
                 'name' => 'feature-three',
-                'checkout_path' => '/srv/users/nckrtl/apps/acme',
+                'checkout_path' => '/srv/users/nckrtl/.orbit/worktrees/acme',
             ])
             ->assertConflict()
             ->assertJsonPath('error.code', 'workspace.path_taken');
@@ -332,13 +332,13 @@ describe('workspace API', function (): void {
     })->with([
         'relative path' => [['checkout_path' => '../worktree'], 'checkout_path'],
         'system path' => [['checkout_path' => '/etc/orbit'], 'checkout_path'],
-        'parent segment' => [['checkout_path' => '/home/orbit/worktrees/../escape'], 'checkout_path'],
-        'dot segment' => [['checkout_path' => '/home/orbit/worktrees/./feature'], 'checkout_path'],
-        'repeated separator' => [['checkout_path' => '/home/orbit/worktrees//feature'], 'checkout_path'],
-        'trailing separator' => [['checkout_path' => '/home/orbit/worktrees/feature/'], 'checkout_path'],
-        'SSH directory' => [['checkout_path' => '/home/orbit/.ssh/feature'], 'checkout_path'],
-        'Orbit SSH directory' => [['checkout_path' => '/home/orbit/.orbit/ssh/feature'], 'checkout_path'],
-        'app directory' => [['checkout_path' => '/home/orbit/apps/other/feature'], 'checkout_path'],
+        'parent segment' => [['checkout_path' => '/srv/users/nckrtl/worktrees/../escape'], 'checkout_path'],
+        'dot segment' => [['checkout_path' => '/srv/users/nckrtl/worktrees/./feature'], 'checkout_path'],
+        'repeated separator' => [['checkout_path' => '/srv/users/nckrtl/worktrees//feature'], 'checkout_path'],
+        'trailing separator' => [['checkout_path' => '/srv/users/nckrtl/worktrees/feature/'], 'checkout_path'],
+        'SSH directory' => [['checkout_path' => '/srv/users/nckrtl/.ssh/feature'], 'checkout_path'],
+        'Orbit SSH directory' => [['checkout_path' => '/srv/users/nckrtl/.orbit/ssh/feature'], 'checkout_path'],
+        'app directory' => [['checkout_path' => '/srv/users/nckrtl/apps/other/feature'], 'checkout_path'],
         'option branch' => [['branch' => '--upload-pack=bad'], 'branch'],
         'invalid php version' => [['php_version' => 'latest'], 'php_version'],
         'PHP version below the floor' => [['php_version' => '8.3'], 'php_version'],
