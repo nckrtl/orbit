@@ -57,7 +57,7 @@ final readonly class StandbyBuilder
         if (preg_match('/\A[a-f0-9]{32}\z/D', $evidenceId) !== 1) {
             throw new RuntimeException('The cold-build evidence identity is invalid.');
         }
-        $this->assertNoActiveIntent();
+        $this->recoverInterruptedColdBuilds();
 
         $alias = $fingerprint->manifest['base_image_alias'] ?? null;
         if (! is_string($alias) || $alias === '') {
@@ -437,7 +437,7 @@ final readonly class StandbyBuilder
         }
     }
 
-    private function assertNoActiveIntent(): void
+    private function recoverInterruptedColdBuilds(): void
     {
         $attempts = glob($this->paths->path('standby/cold-attempts').'/*.json');
         if ($attempts === false) {
@@ -449,8 +449,12 @@ final readonly class StandbyBuilder
             if (preg_match('/\A[a-f0-9]{32}\z/D', $id) !== 1) {
                 throw new RuntimeException('An invalid cold-build resource intent blocks construction.');
             }
-            if ($this->attempt($id)['status'] !== 'cleaned') {
-                throw new RuntimeException('An active cold-build resource intent blocks construction.');
+            $attempt = $this->attempt($id);
+            if (
+                $attempt['status'] !== 'cleaned'
+                && ! $this->cleanupCold($id, new OperationId($attempt['operation_id']))
+            ) {
+                throw new RuntimeException('Interrupted cold-build recovery failed; explicit recovery is required.');
             }
         }
     }
