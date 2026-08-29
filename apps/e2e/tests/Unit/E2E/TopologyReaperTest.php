@@ -26,7 +26,7 @@ describe('topology reaping input', function () {
         $releaser = new TopologyReleaser(
             new IncusHost,
             new IncusNetworkLifecycle(new IncusHost),
-            new TopologyManifestStore($store),
+            new TopologyManifestStore($store, $paths),
             $store,
             $paths,
             new OperationId(str_repeat('a', 32)),
@@ -54,7 +54,7 @@ describe('topology reaping input', function () {
             $releaser = new TopologyReleaser(
                 new IncusHost,
                 new IncusNetworkLifecycle(new IncusHost),
-                new TopologyManifestStore($store),
+                new TopologyManifestStore($store, $paths),
                 $store,
                 $paths,
                 new OperationId(str_repeat('a', 32)),
@@ -82,7 +82,7 @@ describe('topology reaping input', function () {
         $releaser = new TopologyReleaser(
             new IncusHost,
             new IncusNetworkLifecycle(new IncusHost),
-            new TopologyManifestStore($store),
+            new TopologyManifestStore($store, $paths),
             $store,
             $paths,
             new OperationId(str_repeat('a', 32)),
@@ -122,7 +122,7 @@ describe('topology reaping input', function () {
         $releaser = new TopologyReleaser(
             new IncusHost,
             new IncusNetworkLifecycle(new IncusHost),
-            new TopologyManifestStore($store),
+            new TopologyManifestStore($store, $paths),
             $store,
             $paths,
             new OperationId(str_repeat('a', 32)),

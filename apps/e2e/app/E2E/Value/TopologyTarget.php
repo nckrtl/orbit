@@ -36,11 +36,6 @@ final readonly class TopologyTarget
         }
     }
 
-    public static function isIssue(string $issue): bool
-    {
-        return preg_match(self::ISSUE_PATTERN, $issue) === 1;
-    }
-
     public static function ipv4For(int $slot, string $role): string
     {
         if ($slot < 1 || $slot > 200) {

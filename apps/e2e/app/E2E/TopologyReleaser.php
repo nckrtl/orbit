@@ -20,6 +20,10 @@ use RuntimeException;
 /** @mago-expect lint:cyclomatic-complexity,excessive-parameter-list,kan-defect,too-many-methods Exact ordered cleanup keeps every ownership guard visible. */
 final readonly class TopologyReleaser
 {
+    private const string ATTEMPT_PATTERN = '/\A[0-9a-f]{32}\z/D';
+
+    private const int PENDING_SCHEMA = 2;
+
     public function __construct(
         private IncusHost $host,
         private IncusNetworkLifecycle $networks,
@@ -55,28 +59,27 @@ final readonly class TopologyReleaser
 
             $this->assertActiveArtifactsAbsent($issue);
             $pending = $this->state->read('release-pending/'.$issue.'.json');
+            $retainedTarget = null;
             if ($pending !== null) {
                 $pendingResult = $this->pendingRelease($pending, $issue);
                 if ($pendingResult->toArray() !== $previous->toArray()) {
                     throw new RuntimeException('The pending and retained release evidence do not match.');
                 }
+                $retainedTarget = $this->pendingTarget($pending, $issue);
                 $this->state->delete('release-pending/'.$issue.'.json');
             }
 
-            return $this->replay(null, $previous);
+            return $this->replay($retainedTarget, $previous);
         }
-        $lease = $this->state->read('leases/'.$issue.'.json');
-        $leaseAttempt = $lease === null ? null : $this->leaseAttempt($lease);
         $pending = $this->state->read('release-pending/'.$issue.'.json');
         if ($pending !== null) {
-            // Prefer the lease attempt, then the active pointer: either one names
-            // the exact resources this release must still prove are gone.
-            $pendingTarget = $leaseAttempt === null
-                ? $this->manifests->active($issue)?->target
-                : TopologyTarget::feature($issue, $leaseAttempt);
+            // The pending record names its own attempt, so the exact resources this
+            // release must still prove are gone stay known without any live state.
+            $pendingTarget = $this->pendingTarget($pending, $issue);
 
-            return $this->replay($pendingTarget, $this->finalizePending($issue, $pendingTarget, $pending));
+            return $this->replay($pendingTarget, $this->finalizePending($issue, $pending));
         }
+        $lease = $this->state->read('leases/'.$issue.'.json');
         $topology = $this->manifests->active($issue);
         if ($topology === null && $lease === null) {
             throw new RuntimeException('The exact feature topology manifest does not exist.');
@@ -85,10 +88,10 @@ final readonly class TopologyReleaser
             $lease === null
             || ($lease['issue'] ?? null) !== $issue
             || ! is_string($lease['operation_id'] ?? null)
-            || $leaseAttempt === null
         ) {
             throw new RuntimeException('The exact topology lease is invalid before release.');
         }
+        $leaseAttempt = $this->leaseAttempt($lease);
         if (($lease['state'] ?? null) === 'acquiring') {
             return $this->releaseAbandonedAcquisition(TopologyTarget::feature($issue, $leaseAttempt), $lease);
         }
@@ -198,8 +201,10 @@ final readonly class TopologyReleaser
             throw new RuntimeException('The exact feature topology manifest disappeared before release finalization.');
         }
         $pending = [
-            'schema' => 1,
+            'schema' => self::PENDING_SCHEMA,
             'issue' => $issue,
+            'attempt' => $topology->attempt->value,
+            'acquisition_operation_id' => $acquisitionOperation->value,
             'operation_id' => $result->operationId,
             'evidence_id' => $result->evidenceId,
             'lease_sha256' => $leaseState === null ? null : $this->stateDigest($leaseState),
@@ -207,7 +212,7 @@ final readonly class TopologyReleaser
             'result' => $result->toArray(),
         ];
         $this->state->write('release-pending/'.$issue.'.json', $pending);
-        $this->finalizePending($issue, $target, $pending, resourcesVerifiedAbsent: true);
+        $this->finalizePending($issue, $pending, resourcesVerifiedAbsent: true);
 
         return $result;
     }
@@ -350,28 +355,31 @@ final readonly class TopologyReleaser
     /** @param array<array-key, mixed> $pending */
     private function finalizePending(
         string $issue,
-        ?TopologyTarget $target,
         array $pending,
         bool $resourcesVerifiedAbsent = false,
     ): ReleaseResult {
         $result = $this->pendingRelease($pending, $issue);
+        $target = $this->pendingTarget($pending, $issue);
         $lease = $this->state->read('leases/'.$issue.'.json');
         $topology = $this->manifests->active($issue);
-        $target ??= $topology?->target;
         $topologyState = $this->topologyState($topology);
         $this->assertPendingState($lease, $pending['lease_sha256']);
         $this->assertPendingState($topologyState, $pending['topology_sha256']);
 
-        if (! $resourcesVerifiedAbsent && $target !== null) {
+        if (! $resourcesVerifiedAbsent) {
             $instances = array_map($target->instance(...), TopologyProfile::ROLES);
             if ($this->host->instances($instances) !== [] || $this->host->network($target->network()) !== null) {
                 throw new RuntimeException('Cannot finalize pending release while an exact topology resource exists.');
             }
         }
 
-        if ($lease !== null && is_string($lease['operation_id'] ?? null) && $target !== null) {
-            $this->capacity?->release($issue, $target->requireAttempt(), new OperationId($lease['operation_id']));
-        }
+        // The pending record carries the acquisition operation, so the ledger slots
+        // are returned even when the lease was already deleted by an earlier attempt.
+        $this->capacity?->release(
+            $issue,
+            $target->requireAttempt(),
+            $this->pendingAcquisitionOperation($pending),
+        );
 
         if ($lease !== null) {
             $this->state->delete('leases/'.$issue.'.json');
@@ -392,14 +400,19 @@ final readonly class TopologyReleaser
             array_keys($pending) !== [
                 'schema',
                 'issue',
+                'attempt',
+                'acquisition_operation_id',
                 'operation_id',
                 'evidence_id',
                 'lease_sha256',
                 'topology_sha256',
                 'result',
             ]
-            || $pending['schema'] !== 1
+            || $pending['schema'] !== self::PENDING_SCHEMA
             || $pending['issue'] !== $issue
+            || ! is_string($pending['attempt'])
+            || preg_match(self::ATTEMPT_PATTERN, $pending['attempt']) !== 1
+            || ! is_string($pending['acquisition_operation_id'])
             || ! is_string($pending['operation_id'])
             || ! is_string($pending['evidence_id'])
             || $pending['lease_sha256'] !== null
@@ -420,6 +433,29 @@ final readonly class TopologyReleaser
         return $result;
     }
 
+    /**
+     * The exact attempt a pending release finishes. The record names it, so the
+     * resources this release must prove are gone stay known without any live state.
+     *
+     * @param array<array-key, mixed> $pending
+     */
+    private function pendingTarget(array $pending, string $issue): TopologyTarget
+    {
+        return TopologyTarget::feature($issue, self::requireAttempt(
+            $pending['attempt'] ?? null,
+            'The pending release evidence is invalid.',
+        ));
+    }
+
+    /** @param array<array-key, mixed> $pending */
+    private function pendingAcquisitionOperation(array $pending): OperationId
+    {
+        return new OperationId(self::requireString(
+            $pending['acquisition_operation_id'] ?? null,
+            'The pending release evidence is invalid.',
+        ));
+    }
+
     /** @param array<array-key, mixed>|null $state */
     private function assertPendingState(?array $state, mixed $expectedDigest): void
     {
@@ -438,9 +474,9 @@ final readonly class TopologyReleaser
     }
 
     /**
-     * A null target means no lease and no active pointer name an attempt, so no
-     * resource identity exists to re-check; `assertActiveArtifactsAbsent()` has
-     * already refused every case where active topology state still exists.
+     * A null target means retained evidence with no pending record left to name an
+     * attempt, so no resource identity exists to re-check; `assertActiveArtifactsAbsent()`
+     * has already refused every case where active topology state still exists.
      */
     private function replay(?TopologyTarget $target, ReleaseResult $previous): ReleaseResult
     {
@@ -474,16 +510,38 @@ final readonly class TopologyReleaser
         }
     }
 
-    /** @param array<array-key, mixed> $lease */
-    private function leaseAttempt(array $lease): ?AttemptId
+    /**
+     * A lease without an exact attempt names no resources, so release refuses it
+     * instead of falling back to whichever attempt the active pointer happens to name.
+     *
+     * @param array<array-key, mixed> $lease
+     */
+    private function leaseAttempt(array $lease): AttemptId
     {
-        $attempt = $lease['attempt'] ?? null;
+        return self::requireAttempt(
+            $lease['attempt'] ?? null,
+            'The exact topology lease is invalid before release.',
+        );
+    }
 
-        if (! is_string($attempt) || preg_match('/\A[0-9a-f]{32}\z/D', $attempt) !== 1) {
-            return null;
+    private static function requireAttempt(mixed $value, string $message): AttemptId
+    {
+        $attempt = self::requireString($value, $message);
+
+        if (preg_match(self::ATTEMPT_PATTERN, $attempt) !== 1) {
+            throw new RuntimeException($message);
         }
 
         return new AttemptId($attempt);
+    }
+
+    private static function requireString(mixed $value, string $message): string
+    {
+        if (! is_string($value)) {
+            throw new RuntimeException($message);
+        }
+
+        return $value;
     }
 
     /** @return array<array-key, mixed>|null */

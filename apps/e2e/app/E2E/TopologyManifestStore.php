@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\E2E;
 
 use App\E2E\State\AtomicJsonStore;
+use App\E2E\State\StatePaths;
 use App\E2E\Value\AttemptId;
 use App\E2E\Value\FeatureTopology;
 use App\E2E\Value\TopologyTarget;
@@ -16,7 +17,7 @@ use RuntimeException;
  * Exact attempts live at `topologies/<issue>/<attempt>.json`; the active pointer
  * lives at `topologies/<issue>/active.json`.
  *
- * @mago-expect lint:cyclomatic-complexity Every pointer and legacy-layout check fails closed.
+ * @mago-expect lint:cyclomatic-complexity,too-many-methods Every pointer and legacy-layout check fails closed.
  */
 final readonly class TopologyManifestStore
 {
@@ -24,6 +25,7 @@ final readonly class TopologyManifestStore
 
     public function __construct(
         private AtomicJsonStore $store,
+        private StatePaths $paths,
     ) {}
 
     public function active(string $issue): ?FeatureTopology
@@ -59,6 +61,27 @@ final readonly class TopologyManifestStore
         return $topology;
     }
 
+    /**
+     * Every generation an active topology attempt pins. Standby pruning must not
+     * delete a generation a live topology still runs on, so an unreadable pointer
+     * or a missing attempt record fails closed instead of shrinking this list.
+     *
+     * @return list<string>
+     */
+    public function activeGenerationIds(): array
+    {
+        $ids = [];
+
+        foreach ($this->activeIssues() as $issue) {
+            $topology = $this->active($issue) ?? throw new RuntimeException(
+                'An active topology attempt disappeared during inventory.',
+            );
+            $ids[] = $topology->generation->id;
+        }
+
+        return $ids;
+    }
+
     public function writeActive(FeatureTopology $topology): void
     {
         $issue = $topology->target->issue;
@@ -85,8 +108,49 @@ final readonly class TopologyManifestStore
             throw new RuntimeException('The topology is not the active topology attempt.');
         }
 
-        $this->store->delete($this->pointerPath($issue));
+        // Drop the exact record first: a partial failure then leaves the pointer
+        // behind, which every read refuses, instead of a silently orphaned record.
         $this->store->delete($this->attemptPath($issue, $topology->attempt));
+        $this->store->delete($this->pointerPath($issue));
+    }
+
+    /** @return list<string> */
+    private function activeIssues(): array
+    {
+        $directory = $this->paths->path('topologies');
+
+        if (! file_exists($directory)) {
+            return [];
+        }
+
+        if (! is_dir($directory) || is_link($directory) || ! is_readable($directory)) {
+            throw new RuntimeException('A manifest collection cannot be inspected.');
+        }
+
+        $pointers = glob($directory.'/*/active.json');
+        $legacy = glob($directory.'/*.json');
+
+        if ($pointers === false || $legacy === false) {
+            throw new RuntimeException('A manifest collection cannot be inspected.');
+        }
+
+        // A schema 1 manifest names no attempt, so its pins cannot be inventoried.
+        if ($legacy !== []) {
+            throw new RuntimeException(
+                'A schema 1 topology manifest exists; release it with the previous harness.',
+            );
+        }
+
+        sort($pointers, SORT_STRING);
+        $issues = [];
+
+        foreach ($pointers as $pointer) {
+            $issue = basename(dirname($pointer));
+            TopologyTarget::assertIssue($issue);
+            $issues[] = $issue;
+        }
+
+        return $issues;
     }
 
     private function activeAttempt(string $issue): ?AttemptId

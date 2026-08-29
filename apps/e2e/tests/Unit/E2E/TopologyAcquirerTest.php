@@ -44,7 +44,7 @@ it('successful verify persists the returned verification report', function () {
     fakePinnedWorktreeProcesses(featureTarget('NCK-123'), $events);
 
     $verified = taskNineAcquirer($repositoryRoot, $paths)->verify('NCK-123');
-    $persisted = new TopologyManifestStore(new AtomicJsonStore($paths))->active('NCK-123');
+    $persisted = new TopologyManifestStore(new AtomicJsonStore($paths), $paths)->active('NCK-123');
 
     expect($verified->verification->probes)
         ->not->toBe(['fixture' => true])->and($persisted?->verification->toArray())->toBe(
@@ -57,7 +57,7 @@ it('journals successful execution with redacted argv and output without persisti
     $repositoryRoot = preparedTopologyRepository();
     $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));
     featureTopologyFixture($repositoryRoot, $paths);
-    $topology = new TopologyManifestStore(new AtomicJsonStore($paths))->active('NCK-123');
+    $topology = new TopologyManifestStore(new AtomicJsonStore($paths), $paths)->active('NCK-123');
     expect($topology)->not->toBeNull();
     $target = featureTarget('NCK-123');
     $instance = $target->instance('gateway');
@@ -134,7 +134,7 @@ it('nonzero execute writes a completed topology.exec entry', function () {
     $repositoryRoot = preparedTopologyRepository();
     $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));
     featureTopologyFixture($repositoryRoot, $paths);
-    $topology = new TopologyManifestStore(new AtomicJsonStore($paths))->active('NCK-123');
+    $topology = new TopologyManifestStore(new AtomicJsonStore($paths), $paths)->active('NCK-123');
     expect($topology)->not->toBeNull();
     $target = featureTarget('NCK-123');
     $instance = $target->instance('gateway');
@@ -184,7 +184,7 @@ it('rejects a replaced VM before guest execution', function (string $mismatch) {
     $repositoryRoot = preparedTopologyRepository();
     $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));
     featureTopologyFixture($repositoryRoot, $paths);
-    $topology = new TopologyManifestStore(new AtomicJsonStore($paths))->active('NCK-123');
+    $topology = new TopologyManifestStore(new AtomicJsonStore($paths), $paths)->active('NCK-123');
     expect($topology)->not->toBeNull();
     $target = featureTarget('NCK-123');
     $instance = $target->instance('gateway');
@@ -249,7 +249,7 @@ function taskNineAcquirer(
         new IncusNetworkLifecycle($host),
         new PreparedStateFingerprint(new GitRepository($repositoryRoot)),
         new StandbyManifestStore($store, $paths),
-        new TopologyManifestStore($store),
+        new TopologyManifestStore($store, $paths),
         new WorktreeSynchronizer($host, $repositoryRoot, $operation),
         new TopologyConverger($host),
         new TopologyVerifier($host, readinessTimeoutSeconds: 1, readinessPollIntervalMicroseconds: 0),
@@ -638,7 +638,7 @@ function featureTopologyFixture(string $repositoryRoot, StatePaths $paths): void
         $structural->manifest['topology']['roles'],
         $structural->manifest['topology']['checkout_roles'],
     );
-    new TopologyManifestStore($store)->writeActive(new FeatureTopology(
+    new TopologyManifestStore($store, $paths)->writeActive(new FeatureTopology(
         $target,
         AttemptPurpose::Discovery,
         $generation,
@@ -1391,7 +1391,7 @@ it('recovers a manifest-backed acquiring lease without mutating Incus', function
         'acquired_at' => gmdate('Y-m-d\\TH:i:s\\Z'),
         'expires_at' => gmdate('Y-m-d\\TH:i:s\\Z', time() + 604800),
     ]);
-    $topology = new TopologyManifestStore($store)->active('NCK-123');
+    $topology = new TopologyManifestStore($store, $paths)->active('NCK-123');
     expect($topology)->not->toBeNull();
     $target = $topology->target;
     $operation = str_repeat('b', 32);
@@ -1501,7 +1501,7 @@ it('refuses manifest-backed acquisition recovery when exact live identity drifte
             'expires_at' => gmdate('Y-m-d\\TH:i:s\\Z', time() + 604800),
         ];
         $store->write('leases/NCK-123.json', $lease);
-        $topology = new TopologyManifestStore($store)->active('NCK-123');
+        $topology = new TopologyManifestStore($store, $paths)->active('NCK-123');
         expect($topology)->not->toBeNull();
         $target = $topology->target;
         $commands = [];
@@ -2005,7 +2005,7 @@ it('recovers a manifest when acquiring lease keys use a different JSON order', f
     ], JSON_THROW_ON_ERROR));
 
     $target = featureTarget('NCK-123');
-    $topology = new TopologyManifestStore(new AtomicJsonStore($paths))->active('NCK-123');
+    $topology = new TopologyManifestStore(new AtomicJsonStore($paths), $paths)->active('NCK-123');
     $realProcess = new ProcessFactory;
     Process::fake(function (\Illuminate\Process\PendingProcess $process) use (
         $target,
@@ -2757,6 +2757,38 @@ it('blocks acquisition when the standby is marked corrupt before Incus mutation'
         ->toThrow(RuntimeException::class, 'marked corrupt')
         ->and($commands)
         ->toBeEmpty();
+});
+
+it('refuses acquisition while a schema 1 topology manifest exists', function () {
+    $repositoryRoot = preparedTopologyRepository();
+    $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));
+    $store = new AtomicJsonStore($paths);
+    $store->write('topologies/NCK-123.json', ['schema' => 1, 'issue' => 'NCK-123']);
+    $commands = [];
+    $realProcess = new ProcessFactory;
+    Process::fake(function (\Illuminate\Process\PendingProcess $process) use (
+        &$commands,
+        $repositoryRoot,
+        $realProcess,
+    ) {
+        if (($process->command[0] ?? null) === 'git') {
+            return $realProcess->path($repositoryRoot)->input($process->input)->run($process->command);
+        }
+
+        $commands[] = $process->command;
+
+        return Process::result();
+    });
+
+    expect(fn () => taskNineAcquirer($repositoryRoot, $paths)->acquire(
+        new TopologyRequest('NCK-123', $repositoryRoot),
+        attemptId(),
+    ))
+        ->toThrow(RuntimeException::class, 'schema 1 topology manifest')
+        ->and($commands)
+        ->toBeEmpty()
+        ->and($store->read('topologies/NCK-123.json'))
+        ->not->toBeNull();
 });
 
 it('blocks acquisition while an exact release still needs local finalization', function () {
@@ -3775,7 +3807,7 @@ it('retries sync from a valid interrupted lease and writes the refreshed manifes
     $topology = taskNineAcquirer($repositoryRoot, $paths)->sync(
         new TopologyRequest('NCK-123', pinnedFeatureWorktree($repositoryRoot, 'retry')),
     );
-    $persisted = new TopologyManifestStore(new AtomicJsonStore($paths))->active('NCK-123');
+    $persisted = new TopologyManifestStore(new AtomicJsonStore($paths), $paths)->active('NCK-123');
 
     expect($topology->source->hostSha)
         ->toMatch('/\\A[0-9a-f]{40}\\z/')

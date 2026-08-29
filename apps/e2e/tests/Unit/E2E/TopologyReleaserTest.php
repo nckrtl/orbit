@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\E2E\AcquisitionRollback;
+use App\E2E\HostCapacity;
 use App\E2E\IncusHost;
 use App\E2E\IncusNetworkLifecycle;
 use App\E2E\State\AtomicJsonStore;
@@ -56,7 +57,7 @@ describe('topology release', function () {
         $releaser = new TopologyReleaser(
             new IncusHost,
             new IncusNetworkLifecycle(new IncusHost),
-            new TopologyManifestStore($store),
+            new TopologyManifestStore($store, $paths),
             $store,
             $paths,
             new OperationId(str_repeat('b', 32)),
@@ -172,7 +173,7 @@ describe('topology release', function () {
         $releaser = new TopologyReleaser(
             new IncusHost,
             new IncusNetworkLifecycle(new IncusHost),
-            new TopologyManifestStore($store),
+            new TopologyManifestStore($store, $paths),
             $store,
             $paths,
             new OperationId(str_repeat('a', 32)),
@@ -197,7 +198,7 @@ describe('topology release', function () {
         $releaser = new TopologyReleaser(
             new IncusHost,
             new IncusNetworkLifecycle(new IncusHost),
-            new TopologyManifestStore($store),
+            new TopologyManifestStore($store, $paths),
             $store,
             $paths,
             new OperationId(str_repeat('a', 32)),
@@ -219,7 +220,7 @@ describe('topology release', function () {
         $releaser = new TopologyReleaser(
             new IncusHost,
             new IncusNetworkLifecycle(new IncusHost),
-            new TopologyManifestStore($store),
+            new TopologyManifestStore($store, $paths),
             $store,
             $paths,
             new OperationId(str_repeat('a', 32)),
@@ -246,7 +247,7 @@ describe('topology release', function () {
         $releaser = new TopologyReleaser(
             new IncusHost,
             new IncusNetworkLifecycle(new IncusHost),
-            new TopologyManifestStore($store),
+            new TopologyManifestStore($store, $paths),
             $store,
             $paths,
             new OperationId(str_repeat('a', 32)),
@@ -402,7 +403,7 @@ describe('topology release', function () {
         $result = new TopologyReleaser(
             $host,
             new IncusNetworkLifecycle($host),
-            new TopologyManifestStore($store),
+            new TopologyManifestStore($store, $paths),
             $store,
             $paths,
             $operation,
@@ -473,7 +474,7 @@ describe('topology release', function () {
         $releaser = new TopologyReleaser(
             $host,
             new IncusNetworkLifecycle($host),
-            new TopologyManifestStore($store),
+            new TopologyManifestStore($store, $paths),
             $store,
             $paths,
             new OperationId(str_repeat('a', 32)),
@@ -500,7 +501,7 @@ describe('topology release', function () {
         $releaser = new TopologyReleaser(
             $host,
             new IncusNetworkLifecycle($host),
-            new TopologyManifestStore($store),
+            new TopologyManifestStore($store, $paths),
             $store,
             $paths,
             new OperationId(str_repeat('a', 32)),
@@ -529,7 +530,7 @@ describe('topology release', function () {
         $releaser = new TopologyReleaser(
             $host,
             new IncusNetworkLifecycle($host),
-            new TopologyManifestStore($store),
+            new TopologyManifestStore($store, $paths),
             $store,
             $paths,
             new OperationId(str_repeat('a', 32)),
@@ -582,7 +583,7 @@ describe('topology release', function () {
         $releaser = new TopologyReleaser(
             $host,
             new IncusNetworkLifecycle($host),
-            new TopologyManifestStore($store),
+            new TopologyManifestStore($store, $paths),
             $store,
             $paths,
             new OperationId(str_repeat('a', 32)),
@@ -605,8 +606,10 @@ describe('topology release', function () {
             ['already-absent:old'],
         );
         $store->write('release-pending/NCK-12.json', [
-            'schema' => 1,
+            'schema' => 2,
             'issue' => 'NCK-12',
+            'attempt' => releaseAttempt()->value,
+            'acquisition_operation_id' => str_repeat('a', 32),
             'operation_id' => $result->operationId,
             'evidence_id' => $result->evidenceId,
             'lease_sha256' => releaseStateDigest($store->read('leases/NCK-12.json')),
@@ -618,7 +621,7 @@ describe('topology release', function () {
         $replayed = new TopologyReleaser(
             new IncusHost,
             new IncusNetworkLifecycle(new IncusHost),
-            new TopologyManifestStore($store),
+            new TopologyManifestStore($store, $paths),
             $store,
             $paths,
             new OperationId(str_repeat('a', 32)),
@@ -642,6 +645,103 @@ describe('topology release', function () {
             ->toBeNull();
     });
 
+    /**
+     * The crash window `finalizePending()` must survive: the pending record is written and
+     * the lease and the active pointer are already deleted, but no release evidence exists.
+     */
+    function interruptedPendingRelease(AtomicJsonStore $store, string $issue = 'NCK-12'): void
+    {
+        $result = new ReleaseResult(str_repeat('c', 32), str_repeat('b', 32), ['deleted:old'], []);
+        $store->write('release-pending/'.$issue.'.json', [
+            'schema' => 2,
+            'issue' => $issue,
+            'attempt' => releaseAttempt()->value,
+            'acquisition_operation_id' => str_repeat('a', 32),
+            'operation_id' => $result->operationId,
+            'evidence_id' => $result->evidenceId,
+            'lease_sha256' => releaseStateDigest($store->read('leases/'.$issue.'.json')),
+            'topology_sha256' => releaseStateDigest($store->read(releaseTopologyPath($issue))),
+            'result' => $result->toArray(),
+        ]);
+        $store->delete('leases/'.$issue.'.json');
+        $store->delete('topologies/'.$issue.'/active.json');
+        $store->delete(releaseTopologyPath($issue));
+    }
+
+    it('finalizes a pending release whose lease and active pointer are already gone', function () {
+        $paths = new StatePaths(temporaryPath('orbit-release-', 8));
+        $store = new AtomicJsonStore($paths);
+        readyReleaseState($store);
+        $capacity = new HostCapacity($store, $paths, new OperationId(str_repeat('f', 32)), 12);
+        $capacity->reserve('NCK-12', releaseAttempt(), new OperationId(str_repeat('a', 32)));
+        interruptedPendingRelease($store);
+        Process::fake(['*' => Process::result('[]')]);
+
+        $replayed = new TopologyReleaser(
+            new IncusHost,
+            new IncusNetworkLifecycle(new IncusHost),
+            new TopologyManifestStore($store, $paths),
+            $store,
+            $paths,
+            new OperationId(str_repeat('a', 32)),
+            $capacity,
+        )->release('NCK-12');
+
+        expect($replayed->evidenceId)
+            ->toBe(str_repeat('b', 32))
+            ->and($store->read('releases/NCK-12.json'))
+            ->not
+            ->toBeNull()
+            ->and($store->read('release-pending/NCK-12.json'))
+            ->toBeNull()
+            ->and($store->read('capacity/incus.json'))
+            ->toBe(['schema' => 2, 'reservations' => []]);
+    });
+
+    it('refuses a pending release without a lease while an exact resource remains', function () {
+        $paths = new StatePaths(temporaryPath('orbit-release-', 8));
+        $store = new AtomicJsonStore($paths);
+        readyReleaseState($store);
+        $capacity = new HostCapacity($store, $paths, new OperationId(str_repeat('f', 32)), 12);
+        $capacity->reserve('NCK-12', releaseAttempt(), new OperationId(str_repeat('a', 32)));
+        $ledger = $store->read('capacity/incus.json');
+        interruptedPendingRelease($store);
+        Process::fake(function (\Illuminate\Process\PendingProcess $process) {
+            $command = $process->command;
+            if (($command[3] ?? null) === 'network' && ($command[4] ?? null) === 'list') {
+                return Process::result(json_encode(
+                    [['name' => featureTarget('NCK-12')->network(), 'config' => []]],
+                    JSON_THROW_ON_ERROR,
+                ));
+            }
+
+            return Process::result('[]');
+        });
+
+        $releaser = new TopologyReleaser(
+            new IncusHost,
+            new IncusNetworkLifecycle(new IncusHost),
+            new TopologyManifestStore($store, $paths),
+            $store,
+            $paths,
+            new OperationId(str_repeat('a', 32)),
+            $capacity,
+        );
+
+        expect(fn () => $releaser->release('NCK-12'))
+            ->toThrow(
+                RuntimeException::class,
+                'Cannot finalize pending release while an exact topology resource exists',
+            )
+            ->and($store->read('releases/NCK-12.json'))
+            ->toBeNull()
+            ->and($store->read('release-pending/NCK-12.json'))
+            ->not
+            ->toBeNull()
+            ->and($store->read('capacity/incus.json'))
+            ->toBe($ledger);
+    });
+
     it('preserves active state that does not match pending release identity', function () {
         $root = temporaryPath('orbit-release-', 8);
         $paths = new StatePaths($root);
@@ -649,8 +749,10 @@ describe('topology release', function () {
         readyReleaseState($store);
         $result = new ReleaseResult(str_repeat('c', 32), str_repeat('b', 32), [], []);
         $store->write('release-pending/NCK-12.json', [
-            'schema' => 1,
+            'schema' => 2,
             'issue' => 'NCK-12',
+            'attempt' => releaseAttempt()->value,
+            'acquisition_operation_id' => str_repeat('a', 32),
             'operation_id' => $result->operationId,
             'evidence_id' => $result->evidenceId,
             'lease_sha256' => releaseStateDigest(['state' => 'different']),
@@ -661,7 +763,7 @@ describe('topology release', function () {
         $releaser = new TopologyReleaser(
             new IncusHost,
             new IncusNetworkLifecycle(new IncusHost),
-            new TopologyManifestStore($store),
+            new TopologyManifestStore($store, $paths),
             $store,
             $paths,
             new OperationId(str_repeat('a', 32)),

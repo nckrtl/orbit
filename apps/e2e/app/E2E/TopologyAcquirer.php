@@ -733,12 +733,20 @@ final readonly class TopologyAcquirer
     /** @param array<array-key, mixed> $lease */
     private function leaseAttempt(array $lease, string $issue, string $context): AttemptId
     {
-        $attempt = $lease['attempt'] ?? null;
-        if (! is_string($attempt) || preg_match('/\A[0-9a-f]{32}\z/D', $attempt) !== 1) {
-            throw new RuntimeException("The {$context} lease is invalid.");
+        return $this->requireAttempt($lease['attempt'] ?? null, "The {$context} lease is invalid.");
+    }
+
+    private function requireAttempt(mixed $value, string $message): AttemptId
+    {
+        if (! is_string($value)) {
+            throw new RuntimeException($message);
         }
 
-        return new AttemptId($attempt);
+        if (preg_match('/\A[0-9a-f]{32}\z/D', $value) !== 1) {
+            throw new RuntimeException($message);
+        }
+
+        return new AttemptId($value);
     }
 
     /** @param list<string> $states */

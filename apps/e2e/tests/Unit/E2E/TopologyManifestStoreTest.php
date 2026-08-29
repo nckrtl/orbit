@@ -17,7 +17,7 @@ use App\E2E\Value\VerificationReport;
 describe('TopologyManifestStore', function () {
     it('accepts and returns only a fully typed topology manifest', function () {
         $paths = new StatePaths(temporaryPath('orbit-topology-', 4));
-        $store = new TopologyManifestStore(new AtomicJsonStore($paths));
+        $store = new TopologyManifestStore(new AtomicJsonStore($paths), $paths);
         $attempt = new AttemptId(str_repeat('a', 32));
         $topology = topologyFixture(TopologyTarget::feature('NCK-321', $attempt));
         $store->writeActive($topology);
@@ -45,7 +45,7 @@ describe('TopologyManifestStore', function () {
 
     it('stores exact attempts beside one active pointer', function () {
         $paths = new StatePaths(temporaryPath('orbit-topology-', 4));
-        $store = new TopologyManifestStore(new AtomicJsonStore($paths));
+        $store = new TopologyManifestStore(new AtomicJsonStore($paths), $paths);
         $attempt = new AttemptId(str_repeat('a', 32));
         $store->writeActive(topologyFixture(TopologyTarget::feature('NCK-321', $attempt)));
 
@@ -57,7 +57,7 @@ describe('TopologyManifestStore', function () {
 
     it('permits only one active topology per issue', function () {
         $paths = new StatePaths(temporaryPath('orbit-topology-', 4));
-        $store = new TopologyManifestStore(new AtomicJsonStore($paths));
+        $store = new TopologyManifestStore(new AtomicJsonStore($paths), $paths);
         $first = topologyFixture(TopologyTarget::feature('NCK-321', new AttemptId(str_repeat('a', 32))));
         $second = topologyFixture(TopologyTarget::feature('NCK-321', new AttemptId(str_repeat('b', 32))));
         $store->writeActive($first);
@@ -70,7 +70,7 @@ describe('TopologyManifestStore', function () {
 
     it('updates the active attempt in place', function () {
         $paths = new StatePaths(temporaryPath('orbit-topology-', 4));
-        $store = new TopologyManifestStore(new AtomicJsonStore($paths));
+        $store = new TopologyManifestStore(new AtomicJsonStore($paths), $paths);
         $attempt = new AttemptId(str_repeat('a', 32));
         $store->writeActive(topologyFixture(TopologyTarget::feature('NCK-321', $attempt)));
         $updated = topologyFixture(TopologyTarget::feature('NCK-321', $attempt), AttemptPurpose::Proof);
@@ -81,7 +81,7 @@ describe('TopologyManifestStore', function () {
 
     it('reads an exact attempt only with its own issue and attempt', function () {
         $paths = new StatePaths(temporaryPath('orbit-topology-', 4));
-        $store = new TopologyManifestStore(new AtomicJsonStore($paths));
+        $store = new TopologyManifestStore(new AtomicJsonStore($paths), $paths);
         $attempt = new AttemptId(str_repeat('a', 32));
         $store->writeActive(topologyFixture(TopologyTarget::feature('NCK-321', $attempt)));
 
@@ -94,7 +94,7 @@ describe('TopologyManifestStore', function () {
     it('refuses a manifest whose recorded identity does not match its path', function () {
         $paths = new StatePaths(temporaryPath('orbit-topology-', 4));
         $state = new AtomicJsonStore($paths);
-        $store = new TopologyManifestStore($state);
+        $store = new TopologyManifestStore($state, $paths);
         $topology = topologyFixture(TopologyTarget::feature('NCK-321', new AttemptId(str_repeat('a', 32))));
         $state->write('topologies/NCK-321/'.str_repeat('b', 32).'.json', $topology->toArray());
 
@@ -105,7 +105,7 @@ describe('TopologyManifestStore', function () {
     it('refuses an active pointer without its exact attempt record', function () {
         $paths = new StatePaths(temporaryPath('orbit-topology-', 4));
         $state = new AtomicJsonStore($paths);
-        $store = new TopologyManifestStore($state);
+        $store = new TopologyManifestStore($state, $paths);
         $state->write('topologies/NCK-321/active.json', [
             'schema' => 2,
             'issue' => 'NCK-321',
@@ -119,7 +119,7 @@ describe('TopologyManifestStore', function () {
     it('refuses a malformed active pointer', function (array $pointer) {
         $paths = new StatePaths(temporaryPath('orbit-topology-', 4));
         $state = new AtomicJsonStore($paths);
-        $store = new TopologyManifestStore($state);
+        $store = new TopologyManifestStore($state, $paths);
         $state->write('topologies/NCK-321/active.json', $pointer);
 
         expect(fn () => $store->active('NCK-321'))
@@ -135,7 +135,7 @@ describe('TopologyManifestStore', function () {
 
     it('forgets only the exact active attempt', function () {
         $paths = new StatePaths(temporaryPath('orbit-topology-', 4));
-        $store = new TopologyManifestStore(new AtomicJsonStore($paths));
+        $store = new TopologyManifestStore(new AtomicJsonStore($paths), $paths);
         $attempt = new AttemptId(str_repeat('a', 32));
         $active = topologyFixture(TopologyTarget::feature('NCK-321', $attempt));
         $store->writeActive($active);
@@ -151,13 +151,43 @@ describe('TopologyManifestStore', function () {
         expect($store->active('NCK-321'))
             ->toBeNull()
             ->and($store->read('NCK-321', $attempt))
-            ->toBeNull();
+            ->toBeNull()
+            ->and(file_exists($paths->path('topologies/NCK-321/'.$attempt->value.'.json')))
+            ->toBeFalse()
+            ->and(file_exists($paths->path('topologies/NCK-321/active.json')))
+            ->toBeFalse();
+    });
+
+    it('inventories the generation every active attempt pins', function () {
+        $paths = new StatePaths(temporaryPath('orbit-topology-', 4));
+        $store = new TopologyManifestStore(new AtomicJsonStore($paths), $paths);
+
+        expect($store->activeGenerationIds())->toBeEmpty();
+
+        $store->writeActive(topologyFixture(
+            TopologyTarget::feature('NCK-321', new AttemptId(str_repeat('a', 32))),
+        ));
+        $store->writeActive(topologyFixture(
+            TopologyTarget::feature('NCK-322', new AttemptId(str_repeat('b', 32))),
+        ));
+
+        expect($store->activeGenerationIds())->toBe(['g1', 'g1']);
+    });
+
+    it('refuses to inventory pinned generations beside a schema 1 manifest', function () {
+        $paths = new StatePaths(temporaryPath('orbit-topology-', 4));
+        $state = new AtomicJsonStore($paths);
+        $store = new TopologyManifestStore($state, $paths);
+        $state->write('topologies/NCK-321.json', ['schema' => 1, 'issue' => 'NCK-321']);
+
+        expect($store->activeGenerationIds(...))
+            ->toThrow(RuntimeException::class, 'schema 1 topology manifest');
     });
 
     it('refuses every attempt-scoped operation while a schema 1 manifest exists', function () {
         $paths = new StatePaths(temporaryPath('orbit-topology-', 4));
         $state = new AtomicJsonStore($paths);
-        $store = new TopologyManifestStore($state);
+        $store = new TopologyManifestStore($state, $paths);
         $state->write('topologies/NCK-321.json', ['schema' => 1, 'issue' => 'NCK-321']);
         $topology = topologyFixture(TopologyTarget::feature('NCK-321', new AttemptId(str_repeat('a', 32))));
 

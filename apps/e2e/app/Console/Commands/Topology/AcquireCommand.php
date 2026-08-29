@@ -14,17 +14,16 @@ use Throwable;
 final class AcquireCommand extends E2ECommand
 {
     #[\Override]
-    protected $signature = 'topology:acquire {issue} {worktree} {--attempt=} {--json}';
+    protected $signature = 'topology:acquire {issue} {worktree} {--json}';
     #[\Override]
     protected $description = 'Acquire one disposable feature topology';
 
     public function handle(TopologyAcquirer $acquirer, OperationId $operation): int
     {
         try {
-            $attempt = $this->option('attempt');
             $topology = $acquirer->acquire(
                 new TopologyRequest((string) $this->argument('issue'), (string) $this->argument('worktree')),
-                is_string($attempt) && $attempt !== '' ? new AttemptId($attempt) : AttemptId::generate(),
+                AttemptId::generate(),
             );
             $payload = [
                 'state' => 'ready',

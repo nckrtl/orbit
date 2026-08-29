@@ -31,6 +31,6 @@ final readonly class AttemptId implements Stringable
     /** The readable prefix used inside resource names; the exact value stays the identity. */
     public function short(): string
     {
-        return substr($this->value, 0, 8);
+        return substr($this->value, offset: 0, length: 8);
     }
 }

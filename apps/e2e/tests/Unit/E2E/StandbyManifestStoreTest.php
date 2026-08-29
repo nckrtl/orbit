@@ -5,8 +5,14 @@ declare(strict_types=1);
 use App\E2E\StandbyManifestStore;
 use App\E2E\State\AtomicJsonStore;
 use App\E2E\State\StatePaths;
+use App\E2E\TopologyManifestStore;
+use App\E2E\Value\AttemptPurpose;
+use App\E2E\Value\FeatureTopology;
 use App\E2E\Value\LaravelRelease;
+use App\E2E\Value\SourceState;
 use App\E2E\Value\StandbyGeneration;
+use App\E2E\Value\TopologyProfile;
+use App\E2E\Value\VerificationReport;
 
 describe('StandbyManifestStore', function () {
     it('round-trips a typed generation with exact ordered snapshots', function () {
@@ -88,34 +94,60 @@ describe('StandbyManifestStore', function () {
         $paths = new StatePaths(temporaryPath('orbit-standby-', 4));
         $json = new AtomicJsonStore($paths);
         $store = new StandbyManifestStore($json, $paths);
-        $generation = fn (string $id, ?string $previous = null): StandbyGeneration => new StandbyGeneration(
-            $id,
-            str_repeat(substr($id, -1), 40),
-            ['gateway' => "main-{$id}", 'app-dev' => "main-{$id}", 'app-prod' => "main-{$id}"],
-            str_repeat('a', 64),
-            str_repeat('b', 64),
-            new LaravelRelease('v13.10.1', '5aad4ddf34d5e21dfe6b4c07eeac67d5bd5e08b0'),
-            str_repeat('d', 64),
-            1,
-            'ubuntu-26.04-amd64-v1',
-            'orbit-base-ubuntu-26.04-runtime',
-            'gateway_app-dev_app-prod',
-            ['gateway', 'app-dev', 'app-prod'],
-            ['gateway', 'app-dev'],
-            $previous,
-        );
-        $old = $generation('g1');
-        $pinned = $generation('g2');
-        $previous = $generation('g3');
-        $current = $generation('g4', 'g3');
+        $old = standbyPruneGeneration('g1');
+        $pinned = standbyPruneGeneration('g2');
+        $previous = standbyPruneGeneration('g3');
+        $current = standbyPruneGeneration('g4', 'g3');
         foreach ([$old, $pinned, $previous, $current] as $item) {
             $json->write("standby/generations/{$item->id}.json", $item->toArray());
         }
-        $json->write('topologies/NCK-123.json', ['generation' => $pinned->toArray()]);
+        pinnedTopologyState($json, $paths, $pinned);
 
         expect(array_map(fn (StandbyGeneration $item): string => $item->id, $store->prunable($current)))
             ->toBe(['g1']);
     });
+
+    it('never prunes the generation a live topology attempt pins', function () {
+        $paths = new StatePaths(temporaryPath('orbit-standby-', 4));
+        $json = new AtomicJsonStore($paths);
+        $store = new StandbyManifestStore($json, $paths);
+        $pinned = standbyPruneGeneration('g1');
+        $current = standbyPruneGeneration('g2');
+        foreach ([$pinned, $current] as $item) {
+            $json->write("standby/generations/{$item->id}.json", $item->toArray());
+        }
+        pinnedTopologyState($json, $paths, $pinned);
+
+        expect($store->prunable($current))->toBeEmpty();
+    });
+
+    it('fails closed when an active topology pointer cannot be resolved', function (Closure $corrupt) {
+        $paths = new StatePaths(temporaryPath('orbit-standby-', 4));
+        $json = new AtomicJsonStore($paths);
+        $store = new StandbyManifestStore($json, $paths);
+        $pinned = standbyPruneGeneration('g1');
+        $current = standbyPruneGeneration('g2');
+        foreach ([$pinned, $current] as $item) {
+            $json->write("standby/generations/{$item->id}.json", $item->toArray());
+        }
+        pinnedTopologyState($json, $paths, $pinned);
+        $corrupt($json);
+
+        expect(fn () => $store->prunable($current))->toThrow(RuntimeException::class);
+    })->with([
+        'missing attempt record' => [
+            fn (AtomicJsonStore $json) => $json->delete(
+                'topologies/NCK-123/'.attemptId()->value.'.json',
+            ),
+        ],
+        'malformed pointer' => [
+            fn (AtomicJsonStore $json) => $json->write('topologies/NCK-123/active.json', [
+                'schema' => 2,
+                'issue' => 'NCK-123',
+                'attempt' => 'not-an-attempt',
+            ]),
+        ],
+    ]);
 
     it('fails closed when a manifest collection cannot be inspected', function (string $collection) {
         $paths = new StatePaths(temporaryPath('orbit-standby-', 4));
@@ -171,3 +203,46 @@ describe('StandbyManifestStore', function () {
             ->toThrow(InvalidArgumentException::class, 'cannot be a symbolic link');
     })->with(['topologies', 'standby/generations']);
 });
+
+/** Record one active attempt-scoped topology that pins the given generation. */
+function pinnedTopologyState(
+    AtomicJsonStore $json,
+    StatePaths $paths,
+    StandbyGeneration $generation,
+    string $issue = 'NCK-123',
+): void {
+    $target = featureTarget($issue);
+
+    new TopologyManifestStore($json, $paths)->writeActive(new FeatureTopology(
+        $target,
+        AttemptPurpose::Discovery,
+        $generation,
+        $target->network(),
+        array_combine(
+            TopologyProfile::ROLES,
+            array_map($target->instance(...), TopologyProfile::ROLES),
+        ),
+        new SourceState(str_repeat('d', 40), str_repeat('d', 40)),
+        new VerificationReport(true, ['ready' => verificationProbeFixture(probe: 'ready')]),
+    ));
+}
+
+function standbyPruneGeneration(string $id, ?string $previous = null): StandbyGeneration
+{
+    return new StandbyGeneration(
+        $id,
+        str_repeat(substr($id, offset: -1), 40),
+        ['gateway' => "main-{$id}", 'app-dev' => "main-{$id}", 'app-prod' => "main-{$id}"],
+        str_repeat('a', 64),
+        str_repeat('b', 64),
+        new LaravelRelease('v13.10.1', '5aad4ddf34d5e21dfe6b4c07eeac67d5bd5e08b0'),
+        str_repeat('d', 64),
+        1,
+        'ubuntu-26.04-amd64-v1',
+        'orbit-base-ubuntu-26.04-runtime',
+        'gateway_app-dev_app-prod',
+        ['gateway', 'app-dev', 'app-prod'],
+        ['gateway', 'app-dev'],
+        $previous,
+    );
+}

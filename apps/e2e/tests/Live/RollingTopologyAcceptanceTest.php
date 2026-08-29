@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\E2E\Value\AttemptId;
+use App\E2E\Value\FeatureTopology;
 use App\E2E\Value\TopologyProfile;
 use App\E2E\Value\TopologyTarget;
 use Illuminate\Contracts\Process\ProcessResult;
@@ -485,7 +486,7 @@ function liveAcquiredTarget(array $acquire, string $issue): TopologyTarget
 function liveAssertTopology(mixed $topology, TopologyTarget $target, string $candidateSha): void
 {
     Assert::assertIsArray($topology);
-    Assert::assertSame(1, $topology['schema'] ?? null);
+    Assert::assertSame(FeatureTopology::SCHEMA, $topology['schema'] ?? null);
     Assert::assertSame($target->issue, $topology['issue'] ?? null);
     Assert::assertSame($target->requireAttempt()->value, $topology['attempt_id'] ?? null);
     Assert::assertSame(TopologyProfile::NAME, $topology['profile'] ?? null);

@@ -62,13 +62,7 @@ final readonly class StandbyManifestStore
             $protected[] = $current->previousGenerationId;
         }
 
-        foreach ($this->manifestFiles('topologies') as $file) {
-            $relative = 'topologies/'.basename($file);
-            $topology = $this->store->read($relative);
-            $generationId = $topology['generation']['id'] ?? null;
-            if (! is_string($generationId)) {
-                throw new RuntimeException('A topology generation pin is uncertain.');
-            }
+        foreach (new TopologyManifestStore($this->store, $this->paths)->activeGenerationIds() as $generationId) {
             $protected[] = $generationId;
         }
 
