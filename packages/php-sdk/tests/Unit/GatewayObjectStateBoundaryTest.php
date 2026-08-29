@@ -6,12 +6,158 @@ use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\GatewayRequest;
 use Orbit\Sdk\GatewayRootCaClient;
 use Orbit\Sdk\Requests\Apps\CreateAppRequest;
+use Orbit\Sdk\Requests\Doctor\RunDoctorRequest;
 use Orbit\Sdk\Requests\Processes\AddProcessRequest;
+use Orbit\Sdk\Requests\Tools\InstallToolRequest;
+use Orbit\Sdk\Responses\Tools\ToolManagerResponse;
+use Orbit\Sdk\Responses\Tools\ToolManagersResponse;
+use Orbit\Sdk\Responses\Tools\ToolResponse;
+use Orbit\Sdk\Responses\Tools\ToolsResponse;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
 /** @mago-expect lint:halstead Security-boundary assertions stay visible together. */
 describe('gateway object-state boundary', function (): void {
+    it('hides invalid Doctor family credentials while preserving the transport body', function (): void {
+        $credential = gateway_object_state_credential('doctor-family');
+        $families = ["token={$credential}", '', 7, false];
+        $expectedBody = ['node_id' => 0, 'families' => $families];
+        $request = new RunDoctorRequest(nodeId: 0, families: $families);
+        $needles = ['credential' => $credential, 'family' => $families[0]];
+
+        expect(gateway_object_state_leaks(gateway_object_state_debug_outputs($request), $needles))
+            ->toBeEmpty()
+            ->and(json_decode((string) $request->body(), associative: true, flags: JSON_THROW_ON_ERROR))
+            ->toBe($expectedBody);
+
+        $serializationException = gateway_object_state_serialization_exception($request);
+        expect(gateway_object_state_leaks([
+            'message' => $serializationException->getMessage(),
+            'string' => (string) $serializationException,
+            'SDK trace' => gateway_object_state_sdk_trace($serializationException),
+        ], $needles))->toBeEmpty();
+
+        $mockClient = new MockClient([MockResponse::make(['data' => []])]);
+        $connector = new GatewayConnector('https://gateway.test');
+        $connector->withMockClient($mockClient);
+        $connector->send($request);
+        expect(json_decode(
+            (string) $mockClient->getLastPendingRequest()?->body()->__toString(),
+            associative: true,
+            flags: JSON_THROW_ON_ERROR,
+        ))
+            ->toBe($expectedBody);
+
+        $familiesParameter = new ReflectionParameter([RunDoctorRequest::class, '__construct'], 'families');
+        expect($familiesParameter->getAttributes(SensitiveParameter::class))->toHaveCount(1);
+    });
+
+    it('hides Tool install credentials while preserving its transport body', function (): void {
+        $credential = gateway_object_state_credential('tool-install');
+        $manager = "token={$credential}";
+        $package = "https://operator:{$credential}@packages.test/tool?api_token={$credential}";
+        $versionConstraint = "Bearer {$credential}";
+        $expectedBody = [
+            'node_id' => 7,
+            'manager' => $manager,
+            'package' => $package,
+            'version_constraint' => $versionConstraint,
+        ];
+        $request = new InstallToolRequest(7, $manager, $package, $versionConstraint);
+        $needles = [
+            'credential' => $credential,
+            'manager' => $manager,
+            'package' => $package,
+            'constraint' => $versionConstraint,
+        ];
+
+        expect(gateway_object_state_leaks(gateway_object_state_debug_outputs($request), $needles))
+            ->toBeEmpty()
+            ->and($request->body()->all())
+            ->toBe($expectedBody);
+
+        $serializationException = gateway_object_state_serialization_exception($request);
+        expect($serializationException->getMessage())
+            ->toBe('Orbit gateway requests cannot be serialized.');
+        expect(gateway_object_state_leaks([
+            'serialization message' => $serializationException->getMessage(),
+            'serialization string' => (string) $serializationException,
+            'serialization SDK trace' => gateway_object_state_sdk_trace($serializationException),
+        ], $needles))->toBeEmpty();
+
+        foreach (['debug', 'debugRequest', 'debugResponse'] as $operation) {
+            expect(fn (): object => gateway_object_state_raw_debug_operation($request, $operation))
+                ->toThrow(LogicException::class, 'Orbit SDK raw transport debugging is disabled.');
+        }
+
+        $mockClient = new MockClient([MockResponse::make(['data' => []])]);
+        $connector = new GatewayConnector('https://gateway.test');
+        $connector->withMockClient($mockClient);
+        $connector->send($request);
+
+        expect($mockClient->getLastPendingRequest()?->body()?->all())->toBe($expectedBody);
+
+        $constructor = new ReflectionMethod(InstallToolRequest::class, '__construct');
+        foreach (['manager', 'package', 'versionConstraint'] as $parameterName) {
+            $parameter = array_find(
+                $constructor->getParameters(),
+                static fn (ReflectionParameter $parameter): bool => $parameter->getName() === $parameterName,
+            );
+
+            expect($parameter)
+                ->toBeInstanceOf(ReflectionParameter::class)
+                ->and($parameter?->getAttributes(SensitiveParameter::class))
+                ->toHaveCount(1);
+        }
+    });
+
+    it('stores only redacted Tool response state', function (): void {
+        $credential = 'tool-state-cred-7f3a';
+        $requestId = '11111111-1111-4111-8111-111111111111';
+        $tool = ToolResponse::fromGatewayData([
+            'id' => 41,
+            'node_id' => 7,
+            'manager' => "token={$credential}",
+            'package' => "https://operator:{$credential}@packages.test/tool",
+            'version_constraint' => "api_token={$credential}",
+            'protected' => false,
+            'status' => 'installed',
+            'installed_version' => "Bearer {$credential}",
+            'failed_operation' => null,
+            'error_code' => null,
+            'outcome' => null,
+        ], $requestId);
+        $manager = ToolManagerResponse::fromGatewayData([
+            'id' => 9,
+            'node_id' => 7,
+            'name' => "token={$credential}",
+            'status' => 'active',
+            'installed_version' => "api_token={$credential}",
+            'failed_step' => null,
+            'error_code' => null,
+        ], $requestId);
+        $tools = new ToolsResponse([$tool], $requestId);
+        $managers = new ToolManagersResponse([$manager], $requestId);
+        $diagnostics = implode("\n", [
+            print_r($tool, return: true),
+            serialize($tool),
+            json_encode($tool->toArray(), flags: JSON_THROW_ON_ERROR),
+            print_r($tools, return: true),
+            serialize($tools),
+            json_encode($tools->toArray(), flags: JSON_THROW_ON_ERROR),
+            print_r($manager, return: true),
+            serialize($manager),
+            json_encode($manager->toArray(), flags: JSON_THROW_ON_ERROR),
+            print_r($managers, return: true),
+            serialize($managers),
+            json_encode($managers->toArray(), flags: JSON_THROW_ON_ERROR),
+        ]);
+
+        expect($diagnostics)
+            ->toContain('[REDACTED]')
+            ->not->toContain($credential);
+    });
+
     it('hides app request credentials while preserving the exact fake transport body', function (): void {
         $repositoryCredential = gateway_object_state_credential('repository');
         $defaultCredential = gateway_object_state_credential('defaults');

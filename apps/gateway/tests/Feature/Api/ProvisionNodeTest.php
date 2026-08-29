@@ -4,18 +4,23 @@ declare(strict_types=1);
 
 use App\Domain\Nodes\NodeConverger;
 use App\Domain\Nodes\NodeProvisioningException;
+use App\Domain\Nodes\NodeProvisioningIdentity;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Tools\ToolManagerMaterializer;
+use App\Domain\WireGuard\GatewayPeerProjectionManager;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\SshHostKeyScanException;
 use App\Models\Activity;
 use App\Models\Node;
 use App\Models\NodeRole;
 use Illuminate\Support\Str;
+use Tests\Support\FakeToolManagerMaterializer;
 
 /** @mago-expect lint:halstead The API matrix keeps registration, recovery, and activity contracts together. */
 describe('POST /api/v1/nodes', function (): void {
     beforeEach(function (): void {
+        app()->instance(ToolManagerMaterializer::class, new FakeToolManagerMaterializer);
         app()->instance(RoleBaselineConverger::class, new class implements RoleBaselineConverger {
             public function converge(Node $node, NodeRole $assignment): void {}
 
@@ -33,7 +38,11 @@ describe('POST /api/v1/nodes', function (): void {
 
     it('provisions a node through the gateway action', function (): void {
         app()->instance(NodeConverger::class, new class implements NodeConverger {
-            public function converge(Node $node, ?string $expectedSshHostFingerprint = null): void {}
+            public function converge(
+                Node $node,
+                NodeProvisioningIdentity $identity,
+                ?string $expectedSshHostFingerprint = null,
+            ): void {}
         });
         $requestId = (string) Str::uuid();
 
@@ -74,14 +83,63 @@ describe('POST /api/v1/nodes', function (): void {
             ->toBe($node->id);
     });
 
+    it('returns 502 and redacts role convergence command output in activity', function (): void {
+        app()->instance(NodeConverger::class, new class implements NodeConverger {
+            public function converge(
+                Node $node,
+                NodeProvisioningIdentity $identity,
+                ?string $expectedSshHostFingerprint = null,
+            ): void {}
+        });
+        app()->instance(RoleBaselineConverger::class, new class implements RoleBaselineConverger {
+            public function converge(Node $node, NodeRole $assignment): void
+            {
+                throw new NodeProvisioningException(
+                    step: 'role-prerequisites',
+                    errorCode: 'node.role_prerequisites_failed',
+                    message: 'role failed',
+                    result: new CommandResult(42, 'sentinel stdout', 'sentinel stderr', 12, true),
+                );
+            }
+
+            public function remove(Node $node, NodeRole $assignment, bool $purgeData): void {}
+        });
+        $requestId = (string) Str::uuid();
+
+        $response = $this->withHeader('X-Orbit-Request-Id', $requestId)->postJson('/api/v1/nodes', [
+            'name' => 'role-output-redaction',
+            'public_ssh_host' => '192.0.2.70',
+            'architecture' => 'x86_64',
+            'roles' => ['app-prod'],
+            'host_key_fingerprint' => 'SHA256:'.str_repeat(string: 'A', times: 43),
+        ]);
+        $activity = Activity::query()->where('request_id', $requestId)->sole();
+
+        $response->assertStatus(502)->assertJsonPath('error.code', 'node.role_convergence_failed');
+        expect($response->getContent())
+            ->not
+            ->toContain('sentinel')
+            ->and($activity->exit_code)
+            ->toBe(42)
+            ->and($activity->properties?->get('stdout'))
+            ->toBeEmpty()
+            ->and($activity->properties?->get('stderr'))
+            ->toBeEmpty()
+            ->and($activity->properties?->get('output_truncated'))
+            ->toBeTrue();
+    });
+
     it('reuses the stored public SSH host when an existing Linux node omits it', function (): void {
         $converger = new class implements NodeConverger {
             public int $calls = 0;
 
             public ?string $publicSshHost = null;
 
-            public function converge(Node $node, ?string $expectedSshHostFingerprint = null): void
-            {
+            public function converge(
+                Node $node,
+                NodeProvisioningIdentity $identity,
+                ?string $expectedSshHostFingerprint = null,
+            ): void {
                 $this->calls++;
                 $this->publicSshHost = $node->public_ssh_host;
             }
@@ -124,8 +182,11 @@ describe('POST /api/v1/nodes', function (): void {
         $converger = new class implements NodeConverger {
             public int $calls = 0;
 
-            public function converge(Node $node, ?string $expectedSshHostFingerprint = null): void
-            {
+            public function converge(
+                Node $node,
+                NodeProvisioningIdentity $identity,
+                ?string $expectedSshHostFingerprint = null,
+            ): void {
                 $this->calls++;
             }
         };
@@ -161,8 +222,11 @@ describe('POST /api/v1/nodes', function (): void {
                 private string $observedFingerprint,
             ) {}
 
-            public function converge(Node $node, ?string $expectedSshHostFingerprint = null): void
-            {
+            public function converge(
+                Node $node,
+                NodeProvisioningIdentity $identity,
+                ?string $expectedSshHostFingerprint = null,
+            ): void {
                 $this->expectedFingerprint = $expectedSshHostFingerprint;
                 $node->update(['ssh_host_fingerprint' => $this->observedFingerprint]);
             }
@@ -192,7 +256,11 @@ describe('POST /api/v1/nodes', function (): void {
 
     it('requires a unique valid TLD for app-dev nodes', function (): void {
         app()->instance(NodeConverger::class, new class implements NodeConverger {
-            public function converge(Node $node, ?string $expectedSshHostFingerprint = null): void {}
+            public function converge(
+                Node $node,
+                NodeProvisioningIdentity $identity,
+                ?string $expectedSshHostFingerprint = null,
+            ): void {}
         });
         Node::query()->create([
             'name' => 'existing-dev',
@@ -350,8 +418,11 @@ describe('POST /api/v1/nodes', function (): void {
         $converger = new class implements NodeConverger {
             public ?string $expectedFingerprint = null;
 
-            public function converge(Node $node, ?string $expectedSshHostFingerprint = null): void
-            {
+            public function converge(
+                Node $node,
+                NodeProvisioningIdentity $identity,
+                ?string $expectedSshHostFingerprint = null,
+            ): void {
                 $this->expectedFingerprint = $expectedSshHostFingerprint;
 
                 throw new NodeProvisioningException(
@@ -391,10 +462,57 @@ describe('POST /api/v1/nodes', function (): void {
             ->toBe('node.ssh_host_key_mismatch');
     });
 
+    it('keeps an active reprovisioning caller authorized after convergence failure', function (): void {
+        app()->instance(GatewayPeerProjectionManager::class, new class implements GatewayPeerProjectionManager {
+            public function converge(Node $node): void {}
+
+            public function remove(Node $node): void {}
+
+            public function restore(Node $node): void {}
+        });
+        app()->instance(NodeConverger::class, new class implements NodeConverger {
+            public function converge(
+                Node $node,
+                NodeProvisioningIdentity $identity,
+                ?string $expectedSshHostFingerprint = null,
+            ): void {
+                $node->update(['wireguard_public_key' => 'replacement-key']);
+
+                throw new NodeProvisioningException('wireguard', 'node.wireguard_failed', 'WireGuard failed.');
+            }
+        });
+        $operator = Node::query()->where('name', 'operator')->sole();
+        $operator->update([
+            'platform' => 'linux',
+            'architecture' => 'x86_64',
+            'wireguard_public_key' => 'prior-key',
+            'ssh_host_fingerprint' => 'SHA256:pinned',
+        ]);
+
+        $this->postJson('/api/v1/nodes', [
+            'name' => 'operator',
+            'public_ssh_host' => '192.0.2.2',
+            'architecture' => 'x86_64',
+        ])->assertStatus(502);
+
+        $this
+            ->getJson('/api/v1/nodes')
+            ->assertOk()
+            ->assertJsonPath('data.0.name', 'operator');
+
+        expect($operator->refresh()->status)
+            ->toBe(LifecycleStatus::Active)
+            ->and($operator->wireguard_public_key)
+            ->toBe('prior-key');
+    });
+
     it('persists a stable host key scan failure before first-contact SSH', function (): void {
         app()->instance(NodeConverger::class, new class implements NodeConverger {
-            public function converge(Node $node, ?string $expectedSshHostFingerprint = null): void
-            {
+            public function converge(
+                Node $node,
+                NodeProvisioningIdentity $identity,
+                ?string $expectedSshHostFingerprint = null,
+            ): void {
                 throw new SshHostKeyScanException(
                     message: 'ssh-keyscan could not connect to the target',
                     result: new CommandResult(
@@ -456,7 +574,11 @@ describe('POST /api/v1/nodes', function (): void {
 
     it('keeps empty-string normalization for other nullable node fields', function (): void {
         app()->instance(NodeConverger::class, new class implements NodeConverger {
-            public function converge(Node $node, ?string $expectedSshHostFingerprint = null): void {}
+            public function converge(
+                Node $node,
+                NodeProvisioningIdentity $identity,
+                ?string $expectedSshHostFingerprint = null,
+            ): void {}
         });
 
         $this
@@ -483,8 +605,11 @@ describe('POST /api/v1/nodes', function (): void {
         $converger = new class implements NodeConverger {
             public int $calls = 0;
 
-            public function converge(Node $node, ?string $expectedSshHostFingerprint = null): void
-            {
+            public function converge(
+                Node $node,
+                NodeProvisioningIdentity $identity,
+                ?string $expectedSshHostFingerprint = null,
+            ): void {
                 $this->calls++;
             }
         };
@@ -572,8 +697,11 @@ describe('POST /api/v1/nodes', function (): void {
 
     it('records bounded native failure metadata', function (): void {
         app()->instance(NodeConverger::class, new class implements NodeConverger {
-            public function converge(Node $node, ?string $expectedSshHostFingerprint = null): void
-            {
+            public function converge(
+                Node $node,
+                NodeProvisioningIdentity $identity,
+                ?string $expectedSshHostFingerprint = null,
+            ): void {
                 throw new NodeProvisioningException(
                     step: 'base-host',
                     errorCode: 'node.bootstrap_failed',
@@ -613,5 +741,68 @@ describe('POST /api/v1/nodes', function (): void {
             ->toBe('partial')
             ->and($activity->properties?->get('stderr'))
             ->toBe('apt failed');
+    });
+    it('passes default and explicit Linux user identities', function (): void {
+        $identities = [];
+        app()->instance(NodeConverger::class, new class($identities) implements NodeConverger {
+            public function __construct(
+                private array &$identities,
+            ) {}
+
+            public function converge(
+                Node $node,
+                NodeProvisioningIdentity $identity,
+                ?string $expectedSshHostFingerprint = null,
+            ): void {
+                $this->identities[] = [$identity->bootstrapUser, $identity->managedUser];
+            }
+        });
+        $common = ['architecture' => 'x86_64', 'host_key_fingerprint' => 'SHA256:'.str_repeat('A', 43)];
+        $this->postJson('/api/v1/nodes', ['name' => 'identity-default-api', 'public_ssh_host' => '192.0.2.91']
+        + $common)->assertCreated();
+        $this->postJson('/api/v1/nodes', [
+            'name' => 'identity-explicit-api',
+            'public_ssh_host' => '192.0.2.92',
+            'user' => 'deployer',
+            'orbit_user' => 'nckrtl',
+        ] + $common)->assertCreated();
+        expect($identities)->toBe([
+            ['root',     'orbit'],
+            ['deployer', 'nckrtl'],
+        ]);
+    });
+
+    it('rejects invalid user values before convergence', function (): void {
+        $calls = 0;
+        app()->instance(NodeConverger::class, new class($calls) implements NodeConverger {
+            public function __construct(
+                private int &$calls,
+            ) {}
+
+            public function converge(
+                Node $node,
+                NodeProvisioningIdentity $identity,
+                ?string $expectedSshHostFingerprint = null,
+            ): void {
+                $this->calls++;
+            }
+        });
+        foreach (['', ' ', 'bad/name', "bad\nname", '1name', str_repeat('a', 33)] as $invalid) {
+            $this->postJson('/api/v1/nodes', [
+                'name' => 'invalid-user-'.md5($invalid),
+                'public_ssh_host' => '192.0.2.93',
+                'architecture' => 'x86_64',
+                'host_key_fingerprint' => 'SHA256:'.str_repeat('A', 43),
+                'user' => $invalid,
+            ])->assertUnprocessable();
+            $this->postJson('/api/v1/nodes', [
+                'name' => 'invalid-orbit-'.md5($invalid),
+                'public_ssh_host' => '192.0.2.94',
+                'architecture' => 'x86_64',
+                'host_key_fingerprint' => 'SHA256:'.str_repeat('A', 43),
+                'orbit_user' => $invalid,
+            ])->assertUnprocessable();
+        }
+        expect($calls)->toBe(0);
     });
 });

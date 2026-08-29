@@ -28,7 +28,7 @@ use Throwable;
 final class IncusHost implements GuestTransport
 {
     private const int GUEST_READINESS_POLL_INTERVAL_MICROSECONDS = 1_000_000;
-    private const string CLONED_HOST_STATE_RESET_SCRIPT = 'rm -f /etc/machine-id /var/lib/dbus/machine-id && systemd-machine-id-setup && systemctl restart systemd-journald && for directory in /run/systemd/netif/leases /var/lib/systemd/network; do if [ -e "$directory" ]; then [ -d "$directory" ] && [ ! -L "$directory" ] || exit 1; find "$directory" -mindepth 1 -maxdepth 1 -type f -delete || exit 1; fi; done && ip -4 addr flush dev eth0 scope global && (systemctl restart systemd-networkd || systemctl restart NetworkManager)';
+    private const string CLONED_HOST_STATE_RESET_SUFFIX = ' && systemctl restart systemd-journald && for directory in /run/systemd/netif/leases /var/lib/systemd/network; do if [ -e "$directory" ]; then [ -d "$directory" ] && [ ! -L "$directory" ] || exit 1; find "$directory" -mindepth 1 -maxdepth 1 -type f -delete || exit 1; fi; done && ip -4 addr flush dev eth0 scope global && (systemctl restart systemd-networkd || systemctl restart NetworkManager)';
 
     /** @var array<string, IncusInstance> */
     private array $ownedInstanceCache = [];
@@ -772,7 +772,7 @@ final class IncusHost implements GuestTransport
                 '--',
                 'sh',
                 '-c',
-                self::CLONED_HOST_STATE_RESET_SCRIPT,
+                $this->clonedHostStateResetScript($instance),
             ];
         }
 
@@ -807,7 +807,7 @@ final class IncusHost implements GuestTransport
                         '--',
                         'sh',
                         '-c',
-                        self::CLONED_HOST_STATE_RESET_SCRIPT,
+                        $this->clonedHostStateResetScript($instance),
                     ],
                     'ipv4' => [
                         'exec',
@@ -957,6 +957,16 @@ final class IncusHost implements GuestTransport
         $this->validateName($role, 'role');
 
         return TopologyTarget::macFor($topologyId, $role);
+    }
+
+    private function clonedHostStateResetScript(string $instance): string
+    {
+        $machineId = substr(hash('sha256', implode(':', [$this->remote, $this->project, $this->pool, $instance])), 0, 32);
+
+        return sprintf(
+            "rm -f /etc/machine-id /var/lib/dbus/machine-id && printf '%%s\\n' '%s' > /etc/machine-id && ln -s /etc/machine-id /var/lib/dbus/machine-id",
+            $machineId,
+        ).self::CLONED_HOST_STATE_RESET_SUFFIX;
     }
 
     private function incusLimit(string $key, string $default): string

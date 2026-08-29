@@ -67,7 +67,7 @@ it('retargets a node from the gateway console', function (): void {
         'status' => LifecycleStatus::Active,
         'public_ssh_host' => '192.0.2.10',
         'public_ssh_port' => 22,
-        'ssh_user' => 'orbit',
+        'user' => 'nckrtl',
         'wireguard_address' => '10.44.0.3',
         'ssh_host_fingerprint' => 'SHA256:pinned',
     ]);
@@ -84,6 +84,8 @@ it('retargets a node from the gateway console', function (): void {
     $node = Node::query()->where('name', 'app-dev')->sole();
     /** @var WireGuardPeerConverger&object{connection:?SshConnection} $wireGuard */
     $wireGuard = app(WireGuardPeerConverger::class);
+    /** @var SshExecutor&object{connections:list<SshConnection>} $ssh */
+    $ssh = app(SshExecutor::class);
 
     expect($node->public_ssh_host)
         ->toBe('198.51.100.25')
@@ -92,7 +94,13 @@ it('retargets a node from the gateway console', function (): void {
         ->and($wireGuard->connection?->host)
         ->toBe('198.51.100.25')
         ->and($wireGuard->connection?->port)
-        ->toBe(2202);
+        ->toBe(2202)
+        ->and($wireGuard->connection?->user)
+        ->toBe('nckrtl')
+        ->and($ssh->connections)
+        ->toHaveCount(1)
+        ->and($ssh->connections[0]->user)
+        ->toBe('nckrtl');
 });
 
 it('reports typed retarget failures without leaking command output', function (): void {

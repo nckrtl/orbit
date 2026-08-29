@@ -295,7 +295,7 @@ function remove_node_record(string $name, string $wireguardAddress): Node
             subject: $wireguardAddress,
         ),
         'public_ssh_port' => 22,
-        'ssh_user' => 'orbit',
+        'user' => 'orbit',
         'wireguard_address' => $wireguardAddress,
     ]);
 }

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Middleware;
 
 use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\Doctor\DoctorFamily;
 use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\NodeRemovalException;
@@ -14,6 +15,7 @@ use App\Domain\Nodes\RoleAssignmentException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Processes\ProcessOperationException;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tools\ToolOperationException;
 use App\Http\Requests\TopLevelJsonObjectInspector;
 use App\Infrastructure\Activity\CommandActivityInputSanitizer;
 use App\Infrastructure\Activity\CommandActivityTargetResolver;
@@ -27,6 +29,8 @@ use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Validation\ValidationException;
+use JsonException;
+use stdClass;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Throwable;
@@ -65,7 +69,7 @@ final readonly class RecordCommandActivity
         try {
             /** @var Response $response */
             $response = $next($request);
-            $this->complete($activity, $request, $response->getStatusCode(), $startedAt);
+            $this->complete($activity, $request, $response, $startedAt);
 
             return $response;
         } catch (Throwable $exception) {
@@ -82,14 +86,15 @@ final readonly class RecordCommandActivity
         $command = $request->route()->getName();
         $callerIp = $this->callerIp($request);
 
+        $toolCommand = str_starts_with((string) $command, 'tool:');
+
         return Activity::query()->create([
             'log_name' => 'commands',
             'description' => is_string($command) ? $command : 'unknown',
             'event' => 'command',
             'properties' => [
-                'method' => $request->method(),
-                'path' => $request->path(),
-                'input' => $this->activityInput($request),
+                ...($toolCommand ? [] : ['method' => $request->method(), 'path' => $request->path()]),
+                'input' => $toolCommand ? [] : $this->activityInput($request),
             ],
             'request_id' => is_string($requestId) ? $requestId : '',
             'command' => is_string($command) ? $command : 'unknown',
@@ -100,10 +105,16 @@ final readonly class RecordCommandActivity
     }
 
     /** @mago-expect analysis:mixed-assignment Request attributes are an untyped boundary. */
-    private function complete(Activity $activity, Request $request, int $statusCode, float $startedAt): void
-    {
+    private function complete(
+        Activity $activity,
+        Request $request,
+        Response $response,
+        float $startedAt,
+    ): void {
+        $statusCode = $response->getStatusCode();
         $requestErrorCode = $request->attributes->get('orbit.error_code');
         $commandResult = $request->attributes->get('orbit.command_result');
+        $toolException = $request->attributes->get('orbit.tool_exception');
         $errorCode = null;
 
         if ($statusCode >= 400) {
@@ -116,10 +127,28 @@ final readonly class RecordCommandActivity
             'error_code' => $errorCode,
         ];
 
+        $toolActivity = $request->attributes->get('orbit.tool_activity');
+
+        if (is_array($toolActivity)) {
+            $updates['properties'] = [
+                ...($activity->properties?->toArray() ?? []),
+                'tool' => $this->inputSanitizer->sanitizeProperties($toolActivity),
+            ];
+        }
+
+        if ($toolException instanceof ToolOperationException) {
+            $updates['properties'] = [
+                ...($activity->properties?->toArray() ?? []),
+                'tool' => $this->inputSanitizer->sanitizeProperties($this->toolProjection($toolException)),
+            ];
+            $commandResult = null;
+        }
+
         $activity->update($this->withTarget(
             $activity,
             $request,
             $this->withResult($activity, $request, $updates, $commandResult),
+            $toolException instanceof ToolOperationException ? $toolException : null,
         ));
     }
 
@@ -144,6 +173,7 @@ final readonly class RecordCommandActivity
                 $exception instanceof ResourceOperationException => $exception->errorCode,
                 $exception instanceof NodeRoleOperationException => $exception->errorCode,
                 $exception instanceof RoleAssignmentException => 'node.role_conflict',
+                $exception instanceof ToolOperationException => $exception->errorCode,
                 $exception instanceof ModelNotFoundException, $exception instanceof NotFoundHttpException => 'http.404',
                 default => 'gateway.unhandled',
             },
@@ -158,11 +188,34 @@ final readonly class RecordCommandActivity
             default => null,
         };
 
+        if ($exception instanceof ToolOperationException) {
+            $updates['properties'] = [
+                ...($activity->properties?->toArray() ?? []),
+                'tool' => $this->inputSanitizer->sanitizeProperties($this->toolProjection($exception)),
+            ];
+            $result = null;
+        }
+
         $activity->update($this->withTarget(
             $activity,
             $request,
             $this->withResult($activity, $request, $updates, $result),
+            $exception instanceof ToolOperationException ? $exception : null,
         ));
+    }
+
+    /** @return array<string, mixed> */
+    private function toolProjection(ToolOperationException $exception): array
+    {
+        return [
+            'node_id' => $exception->nodeId,
+            'manager' => $exception->manager,
+            'package' => $exception->package,
+            'operation' => $exception->step,
+            'outcome' => $exception->outcome->value,
+            'version_constraint' => $exception->versionConstraint,
+            'error_code' => $exception->errorCode,
+        ];
     }
 
     /**
@@ -207,6 +260,10 @@ final readonly class RecordCommandActivity
     {
         $command = $request->route()?->getName();
 
+        if ($command === 'doctor:run') {
+            return $this->doctorInput($request);
+        }
+
         if (! in_array($command, ['node:role:add', 'node:role:remove'], strict: true)) {
             return $this->inputSanitizer->sanitizeProperties($request->collect()->all());
         }
@@ -229,6 +286,54 @@ final readonly class RecordCommandActivity
 
         if ($command === 'node:role:remove' && is_string($routeRole)) {
             $input['role'] = $routeRole;
+        }
+
+        return $this->inputSanitizer->sanitizeProperties($input);
+    }
+
+    /** @return array<array-key, mixed> */
+    private function doctorInput(Request $request): array
+    {
+        try {
+            $input = $this->jsonInspector->inspect($request->getContent(), ['node_id', 'families']);
+        } catch (UnexpectedValueException) {
+            return [];
+        }
+
+        if (array_key_exists('node_id', $input)) {
+            $nodeId = $input['node_id'];
+
+            if (! is_int($nodeId) || $nodeId < 1) {
+                return [];
+            }
+        }
+
+        if (array_key_exists('families', $input)) {
+            $families = $input['families'];
+
+            try {
+                $raw = json_decode($request->getContent(), flags: JSON_THROW_ON_ERROR);
+            } catch (JsonException) {
+                return [];
+            }
+
+            if (! $raw instanceof stdClass || ! is_array($raw->families)) {
+                return [];
+            }
+
+            if (! is_array($families) || $families === [] || ! array_is_list($families)) {
+                return [];
+            }
+
+            foreach ($families as $family) {
+                if (! is_string($family) || ! DoctorFamily::tryFrom($family) instanceof DoctorFamily) {
+                    return [];
+                }
+            }
+
+            if (count(array_unique($families)) !== count($families)) {
+                return [];
+            }
         }
 
         return $this->inputSanitizer->sanitizeProperties($input);
@@ -284,9 +389,13 @@ final readonly class RecordCommandActivity
      *
      * @mago-expect analysis:mixed-assignment Request attributes are an untyped transport boundary.
      */
-    private function withTarget(Activity $activity, Request $request, array $updates): array
-    {
-        $target = $this->targetResolver->resolve($request);
+    private function withTarget(
+        Activity $activity,
+        Request $request,
+        array $updates,
+        ?ToolOperationException $exception = null,
+    ): array {
+        $target = $this->targetResolver->resolve($request, $exception);
 
         if ($target !== null) {
             $updates = [...$updates, ...$target];

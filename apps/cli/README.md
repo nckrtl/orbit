@@ -29,6 +29,17 @@ Gateway profiles are stored in `$HOME/.orbit/config.json`. Set `ORBIT_HOME` to
 override that directory. `gateway:trust` is a visible local operating-system trust step.
 It can ask for local administrator privileges.
 
+## Doctor
+
+```bash
+./orbit doctor
+./orbit doctor --node=7 --family=instance --family=workspace
+./orbit doctor --family=firewall --json
+```
+
+Doctor only verifies state and never repairs it. Exit status 1 means unhealthy,
+unverifiable, or a transport failure.
+
 ## JavaScript processes
 
 ```bash
@@ -50,6 +61,22 @@ defaults projects without a manager signal to pnpm. Bun is used only when
 project state selects it. Orbit installs pnpm by default.
 Orbit installs Bun separately from the Vite+-managed Node runtime. PHP
 dependencies continue to use Composer.
+
+## Tool Management
+
+```bash
+./orbit tool:manager:list --node=12
+./orbit tool:install @openai/codex --node=12 --manager=vp --constraint='^0.150'
+./orbit tool:list --node=12
+./orbit tool:update 41
+./orbit tool:show 41
+./orbit tool:remove 41
+```
+
+Use `vp` for npm-compatible global tools such as Codex and Claude Code. Use
+Composer for `vendor/package` tools and APT for Ubuntu packages. A constraint
+only blocks an unsafe normal candidate. The Gateway owns all package-manager
+and version decisions.
 
 ## Quality
 

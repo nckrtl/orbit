@@ -9,6 +9,32 @@ gateway application.
 During monorepo development, `apps/cli` consumes this package through a
 Composer path repository with symlinking enabled.
 
+The SDK exposes exactly 45 public Gateway operations (the original 38 plus
+tool manager list, tool list, show, install, update, remove, and Doctor run). It preserves
+manager, package, nullable version constraints, outcomes, structured errors,
+and request IDs without applying policy. It does not define CLI presentation
+or manager command behavior.
+
+For example, typed Tool transport stays small and explicit:
+
+```php
+use Orbit\Sdk\Requests\Tools\InstallToolRequest;
+use Orbit\Sdk\Responses\Tools\ToolResponse;
+
+$response = $connector
+    ->send(new InstallToolRequest(7, 'composer', 'vendor/package', '^1.2'))
+    ->dto();
+
+assert($response instanceof ToolResponse);
+```
+
+## Doctor
+
+The SDK exposes `RunDoctorRequest` and bounded typed report responses. It sends
+`POST /api/v1/doctor` as JSON. It omits null filters and preserves explicit
+filter values so the Gateway can validate them. It transports received health,
+order, issues, and summary aggregates without applying Doctor policy.
+
 ## Requirements
 
 - PHP 8.5

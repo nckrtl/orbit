@@ -29,7 +29,7 @@ final class StoreWorkspaceRequest extends FormRequest
                 'nullable',
                 'string',
                 'max:1024',
-                'regex:/\A\/home\/orbit\/.+\z/',
+                'regex:/\A\/[^\n\0]*\z/',
             ],
             'php_version' => [
                 'nullable',
@@ -72,15 +72,11 @@ final class StoreWorkspaceRequest extends FormRequest
 
     private function checkoutPathIsSafe(string $path): bool
     {
-        if (! str_starts_with($path, '/home/orbit/')) {
+        if (! str_starts_with($path, '/')) {
             return false;
         }
 
-        $segments = explode('/', mb_substr($path, mb_strlen('/home/orbit/')));
-
-        if (preg_match('#\A/home/orbit/(?:apps(?:/|\z)|\.(?!orbit/worktrees/))#', $path) === 1) {
-            return false;
-        }
+        $segments = explode('/', mb_substr($path, 1));
 
         foreach ($segments as $segment) {
             if ($segment === '' || $segment === '.' || $segment === '..') {

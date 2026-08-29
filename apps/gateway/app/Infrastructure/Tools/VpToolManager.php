@@ -21,8 +21,6 @@ use App\Models\Node;
  */
 final readonly class VpToolManager implements ToolManager
 {
-    private const string VP_HOME = '/opt/orbit/vite-plus';
-
     private const string VP_BINARY = '/usr/local/bin/vp';
 
     private const int MAX_PACKAGE_LENGTH = 214;
@@ -320,8 +318,6 @@ final readonly class VpToolManager implements ToolManager
     private function vpArguments(string ...$arguments): array
     {
         return [
-            'env',
-            'VP_HOME='.self::VP_HOME,
             self::VP_BINARY,
             ...$arguments,
         ];

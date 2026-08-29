@@ -851,7 +851,7 @@ describe('IncusHost mutations', function () {
                 '--',
                 'sh',
                 '-c',
-                'rm -f /etc/machine-id /var/lib/dbus/machine-id && systemd-machine-id-setup && systemctl restart systemd-journald && for directory in /run/systemd/netif/leases /var/lib/systemd/network; do if [ -e "$directory" ]; then [ -d "$directory" ] && [ ! -L "$directory" ] || exit 1; find "$directory" -mindepth 1 -maxdepth 1 -type f -delete || exit 1; fi; done && ip -4 addr flush dev eth0 scope global && (systemctl restart systemd-networkd || systemctl restart NetworkManager)',
+                "rm -f /etc/machine-id /var/lib/dbus/machine-id && printf '%s\\n' '16c94783e841fe9f11e90d5323dc1974' > /etc/machine-id && ln -s /etc/machine-id /var/lib/dbus/machine-id && systemctl restart systemd-journald && for directory in /run/systemd/netif/leases /var/lib/systemd/network; do if [ -e \"\$directory\" ]; then [ -d \"\$directory\" ] && [ ! -L \"\$directory\" ] || exit 1; find \"\$directory\" -mindepth 1 -maxdepth 1 -type f -delete || exit 1; fi; done && ip -4 addr flush dev eth0 scope global && (systemctl restart systemd-networkd || systemctl restart NetworkManager)",
             ));
 
             return Process::result();
@@ -865,7 +865,7 @@ describe('IncusHost mutations', function () {
             '--',
             'sh',
             '-c',
-            'rm -f /etc/machine-id /var/lib/dbus/machine-id && systemd-machine-id-setup && systemctl restart systemd-journald && for directory in /run/systemd/netif/leases /var/lib/systemd/network; do if [ -e "$directory" ]; then [ -d "$directory" ] && [ ! -L "$directory" ] || exit 1; find "$directory" -mindepth 1 -maxdepth 1 -type f -delete || exit 1; fi; done && ip -4 addr flush dev eth0 scope global && (systemctl restart systemd-networkd || systemctl restart NetworkManager)',
+            "rm -f /etc/machine-id /var/lib/dbus/machine-id && printf '%s\\n' '16c94783e841fe9f11e90d5323dc1974' > /etc/machine-id && ln -s /etc/machine-id /var/lib/dbus/machine-id && systemctl restart systemd-journald && for directory in /run/systemd/netif/leases /var/lib/systemd/network; do if [ -e \"\$directory\" ]; then [ -d \"\$directory\" ] && [ ! -L \"\$directory\" ] || exit 1; find \"\$directory\" -mindepth 1 -maxdepth 1 -type f -delete || exit 1; fi; done && ip -4 addr flush dev eth0 scope global && (systemctl restart systemd-networkd || systemctl restart NetworkManager)",
         ));
     });
 
@@ -1115,7 +1115,7 @@ describe('IncusHost mutations', function () {
 
                 return Process::result();
             }
-            if (($guest[0] ?? null) === 'sh' && str_contains((string) ($guest[2] ?? ''), 'systemd-machine-id-setup')) {
+            if (($guest[0] ?? null) === 'sh' && str_contains((string) ($guest[2] ?? ''), "printf '%s\\n'")) {
                 $events[] = 'reset:'.$instance;
 
                 return Process::result();

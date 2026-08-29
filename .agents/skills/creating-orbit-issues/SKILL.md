@@ -33,8 +33,10 @@ Components:
 ADR: none
 
 Proof venue: automated
-Incus topology: none
-Checkout roles: none
+Live topology: none
+Live nodes: none
+Proof access: none
+Checkout evidence: none
 
 Source: none
 ```
@@ -54,22 +56,18 @@ Implementation agents do not introduce an ADR inside the feature PR.
 
 ## Proof Venue
 
-Use `automated` when tests can prove the behavior. Set both Incus fields to
+Use `automated` when tests can prove the behavior. Set all live fields to
 `none`.
 
-Use `incus` when acceptance depends on a real OS, service manager, privilege
+Use `live` when acceptance depends on a real OS, service manager, privilege
 boundary, network, certificate, filesystem ownership, or multi-node behavior.
-Use only the registered topology profile ID
-`gateway_app-dev_app-prod`. Copy its checkout roles exactly; do not infer them
-from changed components. A prose description or role list is not a profile ID.
-Do not invent or expand a profile. Keep the issue in preparation until this
-profile and its roles are registered. The closed registry and lifecycle
-requirements are in `docs/reference/incus-topologies.md`.
-
-The full `gateway_app-dev_app-prod` profile is Incus-only and remains pending
-live registration. Its ordered roles are `gateway`, `app-dev`, `app-prod`;
-checkout roles are exactly `gateway` and `app-dev`. Automated issues always
-use `Incus topology: none` and `Checkout roles: none`.
+Select exact active applicable nodes with `orbit node:list --json`. Record each
+numeric ID, name, role, and access method. Define the checkout identity
+evidence to record during proof; candidate or deployed SHA and path do not yet
+exist at issue creation. Prefer Orbit CLI or Gateway API; pinned direct SSH is
+allowed for proof. Record the approved SSH SHA256 host-key fingerprint when
+direct SSH is selected. Capture recovery, ownership, and cleanup evidence.
+Never require Incus.
 
 ## Production Reports
 
@@ -80,9 +78,10 @@ deployment identity, expected and observed behavior, evidence, and containment.
 ## Ready Gate
 
 Move the issue to Ready only when all fields are complete, linked ADRs are on
-`main`, and criteria are verifiable. For `Proof venue: incus`, the selected
-profile and exact checkout roles must also exist in the registry. Otherwise,
-name the missing item and use `Status: Preparation`.
+`main`, and criteria are verifiable. For `live`, exact applicable node IDs,
+names, roles, an access method, and required checkout identity evidence must be
+recorded. Direct SSH also requires an approved SSH SHA256 host-key fingerprint.
+Otherwise, name the missing item and use `Status: Preparation`.
 
 ## Example
 
@@ -110,8 +109,10 @@ Components:
 ADR: none
 
 Proof venue: automated
-Incus topology: none
-Checkout roles: none
+Live topology: none
+Live nodes: none
+Proof access: none
+Checkout evidence: none
 
 Source: none
 ```
@@ -119,5 +120,5 @@ Source: none
 ## Common Mistakes
 
 - Good prose without the explicit ADR and proof fields is not Ready.
-- `Incus required` without a profile and checkout roles is not executable.
+- `live` without exact nodes and an access method is not executable.
 - A GitHub URL without production evidence loses the feedback context.

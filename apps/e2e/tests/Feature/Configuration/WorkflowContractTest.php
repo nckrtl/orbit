@@ -15,29 +15,25 @@ it('keeps the approved workflow contracts aligned', function (): void {
     $workflow = File::get($root.'/docs/reference/development-workflow.md');
     $topologies = File::get($root.'/docs/reference/incus-topologies.md');
 
-    expect($issue)->toMatch('/Use `automated`.*Set both Incus fields to\s+`none`/s');
-    expect($issue)->toMatch('/Proof venue: incus.*selected\s+profile and exact checkout roles/s');
-    expect($issue)->toMatch('/Keep the issue in preparation until.*registered/s');
-    expect($issue)->toContain('gateway_app-dev_app-prod', 'ordered roles', '`gateway`, `app-dev`, `app-prod`');
-    expect($issue)->not->toContain('smallest registered profile');
-    expect($review)->toContain('`gateway_app-dev_app-prod` profile');
-    expect($worker)->toMatch('/after the\s+worktree exists.*synchronize.*never releases Incus/s');
-    expect($review)->toMatch('/generation and topology identity.*candidate SHA and tree/s');
-    expect($merge)->toMatch('/status: merged\|merged_refresh_blocked\|blocked/');
-    expect($merge)->toMatch('/merged_refresh_blocked.*cleanup.*none/s');
-    expect($merge)->toMatch('/fingerprints.*refreshes.*only when.*changed/s');
-    expect($merge)->toMatch('/release Incus.*before the worktree.*closes the issue/s');
+    expect($issue)->toMatch('/Use `automated`.*Set all live fields to\s+`none`/s');
+    expect($issue)->toMatch('/Use `live`.*`orbit node:list --json`/s');
+    expect($issue)->toContain('Never require Incus.');
+    expect($issue)->not->toContain('Proof venue: incus', 'smallest registered profile');
+    expect($review)->toMatch('/optional Incus diagnostic evidence.*profile, generation, topology identity/s');
+    expect($worker)->toMatch('/after the\s+worktree exists.*synchronize.*Release it.*before `post_proof`/s');
+    expect($merge)->toMatch('/status: merged\|blocked/');
+    expect($merge)->toMatch('/cleanup:\s+action: none/s');
+    expect($merge)->toMatch('/fingerprints merged\s+`main`.*refreshes.*only when prepared state\s+changed/s');
+    expect($merge)->toMatch('/failed refresh\s+blocks worktree removal and issue closure/s');
     expect($pr)->toContain(
         'Candidate SHA and tree:',
         'Incus generation/topology identity (if used):',
         'Checkout roles (if used):',
     );
-    expect($rootGuidance)->toMatch(
-        '/releases Incus first, then the worktree, and closes\s+only after unchanged or promoted/s',
-    );
-    expect($workflow)->toMatch('/merged_refresh_blocked.*cleanup untouched.*does not close/s');
-    expect($workflow)->toMatch('/external orchestrator retries a failed refresh.*lock/s');
-    expect($workflow)->toMatch('/releases the disposable Incus\s+topology first.*runs `bin\/worktree-remove`/s');
+    expect($rootGuidance)->toMatch('/refreshes\s+the stopped Incus standby.*`failed` refresh leaves both pending/s');
+    expect($workflow)->toMatch('/merged_refresh_blocked.*worktree removal and issue closure pending/s');
+    expect($workflow)->toMatch('/Lock contention can be\s+retried by the external orchestrator/s');
+    expect($workflow)->toMatch('/`unchanged` or `promoted` result.*`bin\/worktree-remove`/s');
     expect($topologies)->toContain('Registered profiles: None.');
     expect($topologies)->toContain('bin/e2e-topology acquire ISSUE WORKTREE');
     expect($topologies)->toContain('bin/e2e-topology sync ISSUE WORKTREE');

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Http\Controllers\Api\ActivitiesController;
 use App\Http\Controllers\Api\AppsController;
+use App\Http\Controllers\Api\DoctorRunsController;
 use App\Http\Controllers\Api\FirewallRulesController;
 use App\Http\Controllers\Api\GatewayStatusesController;
 use App\Http\Controllers\Api\InstancesController;
@@ -12,6 +13,8 @@ use App\Http\Controllers\Api\NodeRolesController;
 use App\Http\Controllers\Api\NodesController;
 use App\Http\Controllers\Api\ProcessesController;
 use App\Http\Controllers\Api\RootCaCertificatesController;
+use App\Http\Controllers\Api\ToolManagersController;
+use App\Http\Controllers\Api\ToolsController;
 use App\Http\Controllers\Api\WorkspacesController;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Http\Middleware\RequireNodeAccess;
@@ -29,6 +32,8 @@ Route::prefix('v1')->group(function (): void {
     ])->group(function (): void {
         Route::get('nodes', [NodesController::class, 'index'])
             ->name('node:list');
+        Route::post('doctor', [DoctorRunsController::class, 'store'])
+            ->name('doctor:run');
         Route::get('nodes/{node}', [NodesController::class, 'show'])
             ->name('node:show');
         Route::get('nodes/{node}/roles', [NodeRolesController::class, 'index'])
@@ -103,5 +108,18 @@ Route::prefix('v1')->group(function (): void {
             ->name('process:restart');
         Route::delete('processes/{process}', [ProcessesController::class, 'destroy'])
             ->name('process:remove');
+        Route::get('tool-managers', [ToolManagersController::class, 'index'])
+            ->name('tool:manager:list');
+        Route::get('tools', [ToolsController::class, 'index'])->name('tool:list');
+        Route::get('tools/{tool}', [ToolsController::class, 'show'])
+            ->whereNumber('tool')
+            ->name('tool:show');
+        Route::post('tools', [ToolsController::class, 'store'])->name('tool:install');
+        Route::post('tools/{tool}/update', [ToolsController::class, 'update'])
+            ->whereNumber('tool')
+            ->name('tool:update');
+        Route::delete('tools/{tool}', [ToolsController::class, 'destroy'])
+            ->whereNumber('tool')
+            ->name('tool:remove');
     });
 });

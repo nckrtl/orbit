@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+/** @mago-expect lint:halstead Repository guidance assertions stay visible together. */
 describe('repository guidance bootstrap', function (): void {
     it('indexes every required readable rule file', function (): void {
         $index = repository_guidance_contents('.ai/rules/index.md');
@@ -108,15 +109,93 @@ describe('repository guidance bootstrap', function (): void {
         }
     });
 
-    it('documents the 38-operation SDK surface and the binary node access boundary', function (): void {
+    it('inventories every Tool transport operation and response DTO', function (): void {
+        $expectedRequests = [
+            'Orbit\\Sdk\\Requests\\Tools\\ListToolManagersRequest',
+            'Orbit\\Sdk\\Requests\\Tools\\ListToolsRequest',
+            'Orbit\\Sdk\\Requests\\Tools\\ShowToolRequest',
+            'Orbit\\Sdk\\Requests\\Tools\\InstallToolRequest',
+            'Orbit\\Sdk\\Requests\\Tools\\UpdateToolRequest',
+            'Orbit\\Sdk\\Requests\\Tools\\RemoveToolRequest',
+        ];
+        $expectedResponses = [
+            'Orbit\\Sdk\\Responses\\Tools\\ToolManagerResponse',
+            'Orbit\\Sdk\\Responses\\Tools\\ToolManagersResponse',
+            'Orbit\\Sdk\\Responses\\Tools\\ToolResponse',
+            'Orbit\\Sdk\\Responses\\Tools\\ToolsResponse',
+        ];
+        $root = dirname(__DIR__, levels: 2);
+        $requestFiles = glob("{$root}/src/Requests/Tools/*.php");
+        $responseFiles = glob("{$root}/src/Responses/Tools/*.php");
+
+        if (! is_array($requestFiles) || ! is_array($responseFiles)) {
+            $this->fail('Could not read the Tool transport inventory.');
+        }
+
+        $toolRequestClasses = array_map(
+            static fn (string $file): string => 'Orbit\\Sdk\\Requests\\Tools\\'.pathinfo($file, PATHINFO_FILENAME),
+            $requestFiles,
+        );
+        $toolResponseClasses = array_map(
+            static fn (string $file): string => 'Orbit\\Sdk\\Responses\\Tools\\'.pathinfo($file, PATHINFO_FILENAME),
+            $responseFiles,
+        );
+
+        expect($toolRequestClasses)
+            ->toHaveCount(6)
+            ->toEqualCanonicalizing($expectedRequests)
+            ->and($toolResponseClasses)
+            ->toHaveCount(4)
+            ->toEqualCanonicalizing($expectedResponses);
+
+        foreach (array_merge($expectedRequests, $expectedResponses) as $class) {
+            expect(class_exists($class))->toBeTrue();
+        }
+
+        $requestDirectory = "{$root}/src/Requests";
+        $requestClasses = [];
+        $requestFileCount = 0;
+        $files = new RecursiveIteratorIterator(
+            new RecursiveDirectoryIterator($requestDirectory, FilesystemIterator::SKIP_DOTS),
+        );
+
+        foreach ($files as $file) {
+            if (! $file instanceof SplFileInfo || $file->getExtension() !== 'php') {
+                continue;
+            }
+
+            $requestFileCount++;
+
+            $relative = str_replace(
+                search: $requestDirectory.'/',
+                replace: '',
+                subject: $file->getPathname(),
+            );
+            $class = 'Orbit\\Sdk\\Requests\\'.str_replace(['/', '.php'], ['\\', ''], $relative);
+            $reflection = new ReflectionClass($class);
+
+            if (! $reflection->isAbstract()) {
+                $requestClasses[] = $class;
+            }
+        }
+
+        expect($requestFileCount)
+            ->toBe(47)
+            ->and($requestClasses)
+            ->toHaveCount(45)
+            ->toContain(Orbit\Sdk\Requests\Doctor\RunDoctorRequest::class);
+    });
+
+    it('documents the 45-operation SDK surface, Doctor, and the binary node access boundary', function (): void {
         $publicContract = repository_guidance_contents('.ai/rules/public-contract.md');
         $normalizedPublicContract = repository_guidance_normalized_contents('.ai/rules/public-contract.md');
 
         expect($publicContract)
-            ->toContain('The SDK models exactly 38 concrete public Gateway API operations:')
+            ->toContain('The SDK models exactly 45 concrete public Gateway API operations:')
             ->toContain(
                 '- Node: list, show, provision, remove, access add, access remove, role list, role add, and role remove.',
             )
+            ->toContain('- Doctor: run the complete typed Gateway report.')
             ->not->toContain('Docker Swarm, permissions, role add/remove')->toContain(
                 'Do not restore the retired Agent, generic executor, direct SSH execution,',
             )->toContain('Docker Swarm, Compose, image-building, stream, database,')
@@ -128,6 +207,13 @@ describe('repository guidance bootstrap', function (): void {
             ->toContain(
                 'Model binary node access add/remove and node-show access lists. Do not model granular permissions, presets, wildcards, permission editing, or legacy grant/revoke compatibility.',
             );
+
+        preg_match(
+            '/Do not restore the retired .*? surfaces\./',
+            $normalizedPublicContract,
+            $retiredSurfaceMatch,
+        );
+        expect($retiredSurfaceMatch[0] ?? '')->not->toContain('Tool', 'tool', 'VPN');
     });
 });
 

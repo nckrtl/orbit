@@ -53,6 +53,7 @@ final readonly class SystemdProcessRenderer
             'Type=simple',
             "User={$target->user}",
             'WorkingDirectory='.$this->escapeDirectivePath($process->working_directory),
+            'Environment=PATH=/usr/local/bin:/opt/orbit/composer/vendor/bin:/usr/bin:/bin',
             'EnvironmentFile=-'.$this->escapeDirectivePath($environmentFile),
             'ExecStart='.implode(' ', array_map($this->quoteArgument(...), $command)),
             'Restart='.$this->restartPolicy($process),

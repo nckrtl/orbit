@@ -7,9 +7,9 @@ namespace App\Infrastructure\Nodes\Roles;
 use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\RoleName;
+use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
 use App\Infrastructure\Firewall\UfwManagedRule;
 use App\Infrastructure\Firewall\UfwRuleOwnership;
-use App\Infrastructure\Firewall\UfwRuleShape;
 use App\Infrastructure\Firewall\UfwStatusParser;
 use App\Infrastructure\Firewall\UfwStoredRuleParser;
 use App\Infrastructure\Firewall\UfwStoredRuleProbe;
@@ -23,6 +23,7 @@ use App\Models\Node;
 
 /**
  * @mago-expect lint:cyclomatic-complexity Exact UFW ownership keeps convergence and deletion fail closed.
+ * @mago-expect lint:excessive-parameter-list The manager receives active and stored UFW parsers plus the shared catalog.
  * @mago-expect lint:kan-defect Each branch protects recovery access or rejects ambiguous owned state.
  * @mago-expect lint:too-many-methods Narrow methods keep each UFW mutation independently verifiable.
  */
@@ -34,22 +35,29 @@ final readonly class NativeNodeRoleFirewallManager implements NodeRoleFirewallMa
         private KnownHostsStore $knownHosts,
         private UfwStatusParser $statusParser = new UfwStatusParser,
         private UfwStoredRuleParser $storedParser = new UfwStoredRuleParser,
+        private NodeFirewallRuleCatalog $catalog = new NodeFirewallRuleCatalog,
     ) {}
 
-    public function convergeBase(Node $node): void
+    public function convergeBase(Node $node, string $managedUser): void
     {
-        $this->convergeRules($node, [$this->publicSshRule($node)], publicConnection: true, enable: true);
+        $this->convergeRules(
+            $node,
+            [$this->publicSshRule($node)],
+            publicConnection: true,
+            enable: true,
+            managedUser: $managedUser,
+        );
     }
 
-    public function converge(Node $node, RoleName $role): void
+    public function converge(Node $node, RoleName $role, string $managedUser): void
     {
-        $rules = [$this->wireguardSshRule($node), ...$this->roleRules($node, $role)];
+        $rules = $this->uniqueRules([$this->wireguardSshRule($node), ...$this->roleRules($node, $role)]);
 
-        $this->convergeRules($node, $rules, publicConnection: false, enable: false);
-        $this->removeRules($node, [$this->publicSshRule($node)]);
+        $this->convergeRules($node, $rules, publicConnection: false, enable: false, managedUser: $managedUser);
+        $this->removeRules($node, [$this->publicSshRule($node)], $managedUser);
     }
 
-    public function remove(Node $node, RoleName $role): void
+    public function remove(Node $node, RoleName $role, string $managedUser): void
     {
         $rules = $this->roleRules($node, $role);
 
@@ -57,13 +65,13 @@ final readonly class NativeNodeRoleFirewallManager implements NodeRoleFirewallMa
             return;
         }
 
-        $this->removeRules($node, $rules);
+        $this->removeRules($node, $rules, $managedUser);
     }
 
     /** @param non-empty-list<UfwManagedRule> $rules */
-    private function removeRules(Node $node, array $rules): void
+    private function removeRules(Node $node, array $rules, string $managedUser): void
     {
-        [$status, $inactive] = $this->status($node, publicConnection: false);
+        [$status, $inactive] = $this->status($node, publicConnection: false, managedUser: $managedUser);
 
         if ($inactive) {
             $this->fail($node, 'UFW is inactive during role-rule removal.', $status);
@@ -92,6 +100,7 @@ final readonly class NativeNodeRoleFirewallManager implements NodeRoleFirewallMa
                 $node,
                 new RemoteCommand(['sudo', 'ufw', '--force', 'delete', (string) $number]),
                 publicConnection: false,
+                managedUser: $managedUser,
             );
 
             if (! $result->succeeded()) {
@@ -99,7 +108,7 @@ final readonly class NativeNodeRoleFirewallManager implements NodeRoleFirewallMa
             }
         }
 
-        [$verification, $inactive] = $this->status($node, publicConnection: false);
+        [$verification, $inactive] = $this->status($node, publicConnection: false, managedUser: $managedUser);
 
         if ($inactive) {
             $this->fail($node, 'UFW became inactive after role-rule removal.', $verification);
@@ -118,21 +127,26 @@ final readonly class NativeNodeRoleFirewallManager implements NodeRoleFirewallMa
      * @param non-empty-list<UfwManagedRule> $rules
      * @mago-expect lint:no-boolean-flag-parameter Connection and activation flags keep one exact UFW protocol.
      */
-    private function convergeRules(Node $node, array $rules, bool $publicConnection, bool $enable): void
-    {
-        [$status, $inactive] = $this->status($node, $publicConnection);
+    private function convergeRules(
+        Node $node,
+        array $rules,
+        bool $publicConnection,
+        bool $enable,
+        string $managedUser,
+    ): void {
+        [$status, $inactive] = $this->status($node, $publicConnection, $managedUser);
 
         if ($inactive) {
             if (! $enable) {
                 $this->fail($node, 'UFW is inactive during role-rule convergence.', $status);
             }
 
-            $stored = $this->storedRules($node);
+            $stored = $this->storedRules($node, $managedUser);
             $this->guardStoredDrift($node, $stored, $rules);
 
             if ($this->storedParser->ownership($stored->stdout, $rules[0]->shape) === UfwRuleOwnership::Missing) {
-                $this->apply($node, $rules[0], publicConnection: true);
-                $stored = $this->storedRules($node);
+                $this->apply($node, $rules[0], publicConnection: true, managedUser: $managedUser);
+                $stored = $this->storedRules($node, $managedUser);
             }
 
             if ($this->storedParser->ownership($stored->stdout, $rules[0]->shape) !== UfwRuleOwnership::Exact) {
@@ -143,13 +157,14 @@ final readonly class NativeNodeRoleFirewallManager implements NodeRoleFirewallMa
                 $node,
                 new RemoteCommand(['sudo', 'ufw', '--force', 'enable']),
                 publicConnection: true,
+                managedUser: $managedUser,
             );
 
             if (! $enabled->succeeded()) {
                 $this->fail($node, 'Could not enable UFW.', $enabled);
             }
 
-            [$status, $inactive] = $this->status($node, publicConnection: true);
+            [$status, $inactive] = $this->status($node, publicConnection: true, managedUser: $managedUser);
 
             if ($inactive) {
                 $this->fail($node, 'UFW remained inactive after it was enabled.', $status);
@@ -171,10 +186,10 @@ final readonly class NativeNodeRoleFirewallManager implements NodeRoleFirewallMa
         }
 
         foreach ($missing as $rule) {
-            $this->apply($node, $rule, $publicConnection);
+            $this->apply($node, $rule, $publicConnection, $managedUser);
         }
 
-        [$verification, $inactive] = $this->status($node, $publicConnection);
+        [$verification, $inactive] = $this->status($node, $publicConnection, $managedUser);
 
         if ($inactive) {
             $this->fail($node, 'UFW was inactive after convergence.', $verification);
@@ -190,12 +205,13 @@ final readonly class NativeNodeRoleFirewallManager implements NodeRoleFirewallMa
     }
 
     /** @return array{CommandResult, bool} */
-    private function status(Node $node, bool $publicConnection): array
+    private function status(Node $node, bool $publicConnection, string $managedUser): array
     {
         $result = $this->execute(
             $node,
             new RemoteCommand(['sudo', 'ufw', 'status', 'numbered']),
             $publicConnection,
+            $managedUser,
         );
 
         if (! $result->succeeded()) {
@@ -211,12 +227,13 @@ final readonly class NativeNodeRoleFirewallManager implements NodeRoleFirewallMa
         return [$result, $inactive];
     }
 
-    private function storedRules(Node $node): CommandResult
+    private function storedRules(Node $node, string $managedUser): CommandResult
     {
         $result = $this->execute(
             $node,
             new RemoteCommand(UfwStoredRuleProbe::arguments()),
             publicConnection: true,
+            managedUser: $managedUser,
         );
 
         if (! $result->succeeded()) {
@@ -238,22 +255,26 @@ final readonly class NativeNodeRoleFirewallManager implements NodeRoleFirewallMa
         }
     }
 
-    private function apply(Node $node, UfwManagedRule $rule, bool $publicConnection): void
+    private function apply(Node $node, UfwManagedRule $rule, bool $publicConnection, string $managedUser): void
     {
-        $result = $this->execute($node, new RemoteCommand($rule->arguments), $publicConnection);
+        $result = $this->execute($node, new RemoteCommand($rule->arguments), $publicConnection, $managedUser);
 
         if (! $result->succeeded()) {
             $this->fail($node, "Could not apply [{$rule->shape->comment}].", $result);
         }
     }
 
-    private function execute(Node $node, RemoteCommand $command, bool $publicConnection): CommandResult
-    {
-        return $this->ssh->execute($this->connection($node, $publicConnection), $command);
+    private function execute(
+        Node $node,
+        RemoteCommand $command,
+        bool $publicConnection,
+        string $managedUser,
+    ): CommandResult {
+        return $this->ssh->execute($this->connection($node, $publicConnection, $managedUser), $command);
     }
 
     /** @mago-expect lint:no-boolean-flag-parameter The flag selects the public recovery or private role boundary. */
-    private function connection(Node $node, bool $publicConnection): SshConnection
+    private function connection(Node $node, bool $publicConnection, string $managedUser): SshConnection
     {
         $host = $publicConnection ? $node->public_ssh_host : $node->wireguard_address;
         $port = $publicConnection ? $node->public_ssh_port : 22;
@@ -268,7 +289,7 @@ final readonly class NativeNodeRoleFirewallManager implements NodeRoleFirewallMa
 
         return new SshConnection(
             host: $host,
-            user: 'orbit',
+            user: $managedUser,
             port: $port,
             identityFile: $this->keys->privateKeyPath(),
             knownHostsFile: $this->knownHosts->path(),
@@ -277,106 +298,49 @@ final readonly class NativeNodeRoleFirewallManager implements NodeRoleFirewallMa
 
     private function publicSshRule(Node $node): UfwManagedRule
     {
-        return $this->incomingRule(
-            comment: 'orbit:public-ssh-recovery',
-            port: (string) $node->public_ssh_port,
-        );
+        return $this->catalog->forNode($node)[0];
     }
 
     private function wireguardSshRule(Node $node): UfwManagedRule
     {
-        return $this->incomingRule(
-            comment: 'orbit:vpn-ssh',
-            port: '22',
-            destination: $this->wireguardAddress($node),
-            interface: 'orbit',
-        );
+        return $this->catalog->forNode($node)[1];
     }
 
     /** @return list<UfwManagedRule> */
     private function roleRules(Node $node, RoleName $role): array
     {
-        return match ($role) {
-            RoleName::AppDev => [
-                $this->incomingRule(
-                    comment: 'orbit:app-dev-http',
-                    port: '80',
-                    destination: $this->wireguardAddress($node),
-                    interface: 'orbit',
-                ),
-                $this->incomingRule(
-                    comment: 'orbit:app-dev-https',
-                    port: '443',
-                    destination: $this->wireguardAddress($node),
-                    interface: 'orbit',
-                ),
-            ],
-            RoleName::AppProd => [
-                $this->incomingRule(comment: 'orbit:app-prod-http', port: '80'),
-                $this->incomingRule(comment: 'orbit:app-prod-https', port: '443'),
-            ],
-            RoleName::Gateway => [
-                $this->incomingRule(
-                    comment: 'orbit:gateway-https',
-                    port: '443',
-                    destination: $this->wireguardAddress($node),
-                    interface: 'orbit',
-                ),
-            ],
-            RoleName::Vpn => [],
-        };
+        $baselineComments = array_map(
+            static fn (UfwManagedRule $rule): string => $rule->shape->comment,
+            $this->catalog->forNode($node),
+        );
+
+        return array_values(array_filter(
+            $this->catalog->forRole($node, $role),
+            static fn (UfwManagedRule $rule): bool => ! in_array(
+                $rule->shape->comment,
+                $baselineComments,
+                strict: true,
+            ),
+        ));
     }
 
-    private function wireguardAddress(Node $node): string
+    /**
+     * @param non-empty-list<UfwManagedRule> $rules
+     * @return non-empty-list<UfwManagedRule>
+     */
+    private function uniqueRules(array $rules): array
     {
-        if (is_string($node->wireguard_address) && $node->wireguard_address !== '') {
-            return $node->wireguard_address;
+        $unique = [];
+        foreach ($rules as $rule) {
+            $unique[$rule->shape->comment] = $rule;
         }
 
-        throw new FirewallOperationException(
-            step: 'host-firewall',
-            errorCode: 'node.firewall_convergence_failed',
-            message: "Node [{$node->name}] has no WireGuard address.",
-        );
-    }
+        $values = array_values($unique);
+        if ($values === []) {
+            throw new \LogicException('At least one managed firewall rule is required.');
+        }
 
-    private function incomingRule(
-        string $comment,
-        string $port,
-        string $destination = 'any',
-        ?string $interface = null,
-    ): UfwManagedRule {
-        $interfaceArguments = $interface === null ? [] : ['on', $interface];
-
-        return new UfwManagedRule(
-            shape: new UfwRuleShape(
-                comment: $comment,
-                action: 'allow',
-                direction: 'in',
-                source: 'any',
-                destination: $destination,
-                port: $port,
-                protocol: 'tcp',
-                inInterface: $interface,
-                outInterface: null,
-                family: $destination === 'any' ? null : 'v4',
-            ),
-            arguments: [
-                'sudo',
-                'ufw',
-                'allow',
-                'in',
-                ...$interfaceArguments,
-                'proto',
-                'tcp',
-                'to',
-                $destination,
-                'port',
-                $port,
-                'comment',
-                $comment,
-            ],
-        );
+        return $values;
     }
 
     /** @return list<int> */

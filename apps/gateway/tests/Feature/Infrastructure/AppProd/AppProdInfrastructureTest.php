@@ -51,7 +51,7 @@ it('renders isolated production FPM pools and public ACME Caddy sites', function
             'clear_env = yes',
             'env[HOME] = /var/www/acme',
             'env[USER] = orbit-acme',
-            'env[PATH] = /usr/local/bin:/usr/bin:/bin',
+            'env[PATH] = /usr/local/bin:/opt/orbit/composer/vendor/bin:/usr/bin:/bin',
             'access.log = /var/log/orbit/php-fpm/instance-1.access.log',
             'slowlog = /var/log/orbit/php-fpm/instance-1.slow.log',
         )
@@ -352,7 +352,9 @@ it('restores the previous app-prod pool when lower PHP activation fails', functi
         ->filter(static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'php-fpm.conf'))
         ->values();
 
-    expect($publishCalls->map(static fn (RemoteCommand $command): string => $command->arguments[4])->all())
+    expect($publishCalls->first()?->arguments)
+        ->toContain('/run/lock/orbit')
+        ->and($publishCalls->map(static fn (RemoteCommand $command): string => $command->arguments[4])->all())
         ->toBe(['8.5', '8.4', '8.5'])
         ->and($publishCalls->last()?->input)
         ->toContain(base64_encode($previousConfiguration));
@@ -443,7 +445,9 @@ it('validates aggregate FPM candidates and restores the managed pool after activ
         ->toContain('php8.5-pcov', 'php8.5-opcache')
         ->and($ssh->commands[4]->input)
         ->toContain(
-            'exec 9>"$lock_directory/orbit-php-fpm-$version.lock"',
+            'if [ "$lock_directory" = /run/lock/orbit ]; then',
+            'test "$(stat -c %u:%g:%a -- "$lock_directory")" = 0:0:700',
+            'lock="$lock_directory/orbit-php-fpm-$version.lock"',
             'flock -w 30 9',
             'cp -- "$pool" "$temporary_directory/pool.d/"',
             'php-fpm$version" -y "$temporary_directory/php-fpm.conf" -t',
@@ -456,6 +460,11 @@ it('validates aggregate FPM candidates and restores the managed pool after activ
         );
 
     $script = $ssh->commands[4]->input ?? '';
+    expect($script)
+        ->toContain('exec 9>>"$lock"')
+        ->not->toContain('exec 9>"$lock"', '/run/lock/orbit-php-fpm-');
+    $setup = mb_strpos(haystack: $script, needle: 'umask 0077');
+    $open = mb_strpos(haystack: $script, needle: 'exec 9>>"$lock"');
     $lock = mb_strpos(haystack: $script, needle: 'flock -w 30 9');
     $snapshot = mb_strpos(haystack: $script, needle: 'for pool in "$pool_directory"/*.conf');
     $validation = mb_strpos(
@@ -472,7 +481,13 @@ it('validates aggregate FPM candidates and restores the managed pool after activ
         needle: 'sudo mv -fT -- "$rollback" "$managed_configuration"',
     );
 
-    expect($lock)
+    expect($setup)
+        ->toBeInt()
+        ->toBeLessThan($open)
+        ->and($open)
+        ->toBeInt()
+        ->toBeLessThan($lock)
+        ->and($lock)
         ->toBeInt()
         ->toBeLessThan($snapshot)
         ->and($validation)
@@ -575,13 +590,24 @@ it('publishes one Orbit-owned Caddy fragment and restores the prior aggregate af
 
     $manager->converge($node);
 
-    $script = $ssh->commands[0]->input ?? '';
+    $command = $ssh->commands[0];
+    $script = $command->input ?? '';
 
     expect($script)
         ->toContain(
+            '/run/lock/orbit/caddy.lock',
+            'umask 0077',
+            'lock_directory=$(dirname "$lock")',
+            'if ! mkdir -- "$lock_directory" 2>/dev/null; then',
+            'test "$(stat -c %u:%g:%a -- "$lock_directory")" = 0:0:700',
+            'test ! -L "$lock_directory"',
+            'test ! -L "$lock"',
+            'test "$(stat -c %u:%g -- "$lock")" = 0:0',
+            'chmod 0600 -- "$lock"',
+            'test "$(stat -c %a -- "$lock")" = 600',
             'app-prod.caddy',
             'unmanaged.caddy',
-            'exec 9>"$lock"',
+            'exec 9>>"$lock"',
             'flock -w 30 9',
             'caddy validate --config "$candidate/Caddyfile" --adapter caddyfile',
             'cmp -s -- "$candidate/fragments/app-prod.caddy" "$current_fragments/app-prod.caddy"',
@@ -595,7 +621,14 @@ it('publishes one Orbit-owned Caddy fragment and restores the prior aggregate af
         ->not
         ->toContain('rm -rf -- "$live_caddyfile"')
         ->and($ssh->commands[0]->arguments)
-        ->toContain('/run/lock/orbit-caddy.lock');
+        ->toContain('/run/lock/orbit/caddy.lock');
+
+    $lockSetup = mb_strpos(haystack: $script, needle: 'lock_directory=$(dirname "$lock")');
+    $lockOpen = mb_strpos(haystack: $script, needle: 'exec 9>>"$lock"');
+
+    expect($lockSetup)
+        ->toBeInt()
+        ->toBeLessThan($lockOpen);
 
     $lock = mb_strpos(haystack: $script, needle: 'flock -w 30 9');
     $snapshot = mb_strpos(haystack: $script, needle: 'source_main=$(readlink -f "$live_caddyfile")');
@@ -618,6 +651,65 @@ it('publishes one Orbit-owned Caddy fragment and restores the prior aggregate af
         ->toBeLessThan($rollback);
 });
 
+it('normalizes the unmanaged production fragment before app production configuration', function (): void {
+    $harness = new AppDevCaddyPublishHarness;
+
+    try {
+        $publisher = new AppProdCaddyPublisher(
+            versionsDirectory: $harness->etcCaddyPath('orbit-versions'),
+            liveCaddyfilePath: $harness->etcCaddyPath('Caddyfile'),
+            caddyServiceName: 'caddy',
+            lockPath: $harness->etcCaddyPath('orbit-locks/caddy.lock'),
+        );
+        $result = $harness->run(
+            publisher: $publisher,
+            scenario: AppDevCaddyPublishScenario::orbitAggregate("import fragments/*.caddy\n", [
+                'unmanaged.caddy' => "{\n    local_certs\n}\n",
+                'app-prod.caddy' => "stale production\n",
+            ]),
+        );
+
+        expect($result->exitCode)
+            ->toBe(0)
+            ->and($result->publishedFragments)
+            ->toHaveKey('00-unmanaged.caddy')
+            ->not->toHaveKey('unmanaged.caddy');
+    } finally {
+        $harness->cleanup();
+    }
+});
+
+it('fails closed when both unmanaged Caddy fragment names already exist', function (): void {
+    $harness = new AppDevCaddyPublishHarness;
+
+    try {
+        $publisher = new AppProdCaddyPublisher(
+            versionsDirectory: $harness->etcCaddyPath('orbit-versions'),
+            liveCaddyfilePath: $harness->etcCaddyPath('Caddyfile'),
+            caddyServiceName: 'caddy',
+            lockPath: $harness->etcCaddyPath('orbit-locks/caddy.lock'),
+        );
+        $result = $harness->run(
+            publisher: $publisher,
+            scenario: AppDevCaddyPublishScenario::orbitAggregate("import fragments/*.caddy\n", [
+                'unmanaged.caddy' => "legacy\n",
+                '00-unmanaged.caddy' => "current\n",
+                'custom.caddy' => "custom\n",
+            ]),
+        );
+
+        expect($result->exitCode)
+            ->not
+            ->toBe(0)
+            ->and($result->liveMainAfter)
+            ->toBe("import fragments/*.caddy\n")
+            ->and($result->publishedFragments)
+            ->toBeEmpty();
+    } finally {
+        $harness->cleanup();
+    }
+});
+
 it('restores the exact Caddy symlink before the recovery reload when activation fails', function (): void {
     $harness = new AppDevCaddyPublishHarness;
     $previousTarget = $harness->etcCaddyPath('orbit-versions/current/Caddyfile');
@@ -627,7 +719,7 @@ it('restores the exact Caddy symlink before the recovery reload when activation 
             versionsDirectory: $harness->etcCaddyPath('orbit-versions'),
             liveCaddyfilePath: $harness->etcCaddyPath('Caddyfile'),
             caddyServiceName: 'caddy',
-            lockPath: $harness->etcCaddyPath('orbit-caddy.lock'),
+            lockPath: $harness->etcCaddyPath('orbit-locks/caddy.lock'),
         );
         $result = $harness->run(
             publisher: $publisher,
@@ -645,6 +737,10 @@ it('restores the exact Caddy symlink before the recovery reload when activation 
             ->toBe(0)
             ->and($result->liveMainAfter)
             ->toBe("import fragments/*.caddy\n")
+            ->and(fileperms($harness->etcCaddyPath('orbit-locks')) & 0o777)
+            ->toBe(0o700)
+            ->and(fileperms($harness->etcCaddyPath('orbit-locks/caddy.lock')) & 0o777)
+            ->toBe(0o600)
             ->and($result->liveLinkTargetAfter)
             ->toBe($previousTarget)
             ->and($result->publishedFragments)
@@ -816,25 +912,40 @@ it('removes only the app production Caddy fragment through an atomic preserved a
 
     $manager->remove($node);
 
-    $script = $ssh->commands[0]->input ?? '';
+    $command = $ssh->commands[0];
+    $script = $command->input ?? '';
 
     expect($script)
         ->toContain(
-            'exec 9>"$lock"',
+            '/run/lock/orbit/caddy.lock',
+            'umask 0077',
+            'lock_directory=$(dirname "$lock")',
+            'if ! mkdir -- "$lock_directory" 2>/dev/null; then',
+            'test "$(stat -c %u:%g:%a -- "$lock_directory")" = 0:0:700',
+            'test ! -L "$lock_directory"',
+            'test ! -L "$lock"',
+            'test "$(stat -c %u:%g -- "$lock")" = 0:0',
+            'chmod 0600 -- "$lock"',
+            'test "$(stat -c %a -- "$lock")" = 600',
+            'exec 9>>"$lock"',
             'flock -w 30 9',
             'source_main=$(readlink -f "$live_caddyfile")',
             'test ! -f "$current_fragments/app-prod.caddy"',
-            'cp --preserve=mode,ownership -- "$fragment" "$candidate/fragments/"',
             'caddy validate --config "$candidate/Caddyfile" --adapter caddyfile',
             'mv -fT -- "$candidate_link" "$live_caddyfile"',
             'mv -fT -- "$rollback_link" "$live_caddyfile"',
         )
         ->not->toContain(
+            'exec 9>"$lock"',
             'apt-get remove',
             'apt-get purge',
             'rm -rf -- /var/www',
             'rm -rf -- "$current_fragments"',
         );
+
+    $setup = mb_strpos(haystack: $script, needle: 'lock_directory=$(dirname "$lock")');
+    $open = mb_strpos(haystack: $script, needle: 'exec 9>>"$lock"');
+    expect($setup)->toBeInt()->toBeLessThan($open);
 });
 
 it('removes an app production fragment from a direct Caddyfile and restores that file on activation failure', function (): void {
@@ -845,7 +956,10 @@ it('removes an app production fragment from a direct Caddyfile and restores that
         ->and($success['liveIsLink'])
         ->toBeTrue()
         ->and($success['publishedFragments'])
-        ->toBe(['custom.caddy' => "custom handler\n"]);
+        ->toBe([
+            '00-unmanaged.caddy' => "custom unmanaged\n",
+            'custom.caddy' => "custom handler\n",
+        ]);
 
     $failure = run_app_prod_direct_caddy_removal(failActivation: true);
 
@@ -877,6 +991,7 @@ function run_app_prod_direct_caddy_removal(bool $failActivation): array
     $files->ensureDirectoryExists(path: $bin, mode: 0o777, recursive: true);
     file_put_contents(filename: $etc.'/Caddyfile', data: "import fragments/*.caddy\n");
     file_put_contents(filename: $etc.'/fragments/app-prod.caddy', data: "owned\n");
+    file_put_contents(filename: $etc.'/fragments/unmanaged.caddy', data: "custom unmanaged\n");
     file_put_contents(filename: $etc.'/fragments/custom.caddy', data: "custom handler\n");
     file_put_contents(
         filename: $bin.'/install',
@@ -893,7 +1008,12 @@ function run_app_prod_direct_caddy_removal(bool $failActivation): array
         chmod(filename: $bin.'/'.$shim, permissions: 0o755);
     }
 
-    $publisher = new AppProdCaddyPublisher($etc.'/orbit-versions', $etc.'/Caddyfile', 'caddy', $etc.'/lock');
+    $publisher = new AppProdCaddyPublisher(
+        $etc.'/orbit-versions',
+        $etc.'/Caddyfile',
+        'caddy',
+        $etc.'/orbit-locks/caddy.lock',
+    );
     $command = $publisher->removeCommand('remove-version');
     $process = new \Symfony\Component\Process\Process(array_slice(array: $command->arguments, offset: 1), $root, [
         'PATH' => $bin.':'.getenv('PATH'),
@@ -936,7 +1056,7 @@ function app_prod_runtime_models(): array
         'status' => LifecycleStatus::Active,
         'public_ssh_host' => '192.0.2.20',
         'wireguard_address' => '10.44.0.5',
-        'ssh_user' => 'orbit',
+        'user' => 'nckrtl',
     ]);
     $app = OrbitApp::query()->create([
         'name' => 'Acme',

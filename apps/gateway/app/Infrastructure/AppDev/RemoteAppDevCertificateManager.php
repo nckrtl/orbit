@@ -6,6 +6,7 @@ namespace App\Infrastructure\AppDev;
 
 use App\Domain\AppDev\AppDevCertificateManager;
 use App\Domain\Certificates\LeafCertificateSigner;
+use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Instance;
 use App\Models\Node;
@@ -16,6 +17,7 @@ final readonly class RemoteAppDevCertificateManager implements AppDevCertificate
     public function __construct(
         private AppDevSshExecutor $ssh,
         private LeafCertificateSigner $signer,
+        private ManagedUserAccountResolver $accounts,
     ) {}
 
     public function convergeInstance(Instance $instance): void
@@ -48,19 +50,34 @@ final readonly class RemoteAppDevCertificateManager implements AppDevCertificate
 
     private function converge(Node $node, string $scope, string $hostname): void
     {
+        $account = $this->accounts->resolve($node);
         $version = bin2hex(random_bytes(8));
         $rootCertificate = $this->signer->rootCertificate();
         $rootHash = hash('sha256', $rootCertificate);
         $request = $this->ssh->execute(
             $node,
             new RemoteCommand(
-                arguments: ['bash', '-seu', '--', $scope, $hostname, $version, $rootHash],
+                arguments: [
+                    'bash',
+                    '-seu',
+                    '--',
+                    $scope,
+                    $hostname,
+                    $version,
+                    $rootHash,
+                    $account->user,
+                    $account->group,
+                    $account->home,
+                ],
                 input: <<<'BASH'
                     scope=$1
                     hostname=$2
                     version=$3
                     expected_root_hash=$4
-                    root="/home/orbit/.orbit/certificates/$scope"
+                    managed_user=$5
+                    managed_group=$6
+                    managed_home=$7
+                    root="$managed_home/.orbit/certificates/$scope"
                     current="$root/current"
                     caddy_current="/etc/caddy/orbit-certificates/$scope/current"
                     validity_seconds=0
@@ -135,6 +152,7 @@ final readonly class RemoteAppDevCertificateManager implements AppDevCertificate
             version: $version,
             certificate: $certificate,
             rootCertificate: $rootCertificate,
+            account: $account,
         );
     }
 
@@ -146,6 +164,7 @@ final readonly class RemoteAppDevCertificateManager implements AppDevCertificate
         string $version,
         string $certificate,
         string $rootCertificate,
+        \App\Domain\Nodes\ManagedUserAccount $account,
     ): void {
         $this->ssh->execute(
             $node,
@@ -159,6 +178,9 @@ final readonly class RemoteAppDevCertificateManager implements AppDevCertificate
                     $hostname,
                     $version,
                     (string) strlen($certificate),
+                    $account->user,
+                    $account->group,
+                    $account->home,
                 ],
                 input: $certificate.$rootCertificate,
             ),
@@ -174,7 +196,10 @@ final readonly class RemoteAppDevCertificateManager implements AppDevCertificate
             hostname=$2
             version=$3
             certificate_length=$4
-            root="/home/orbit/.orbit/certificates/$scope"
+            managed_user=$5
+            managed_group=$6
+            managed_home=$7
+            root="$managed_home/.orbit/certificates/$scope"
             candidate="$root/versions/$version.candidate"
             published="$root/versions/$version"
             test -d "$candidate"
@@ -209,13 +234,25 @@ final readonly class RemoteAppDevCertificateManager implements AppDevCertificate
 
     private function remove(Node $node, string $scope): void
     {
+        $account = $this->accounts->resolve($node);
         $this->ssh->execute(
             $node,
             new RemoteCommand(
-                arguments: ['bash', '-seu', '--', $scope],
+                arguments: [
+                    'bash',
+                    '-seu',
+                    '--',
+                    $scope,
+                    $account->user,
+                    $account->group,
+                    $account->home,
+                ],
                 input: <<<'BASH'
                     scope=$1
-                    rm -rf -- "/home/orbit/.orbit/certificates/$scope"
+                    managed_user=$2
+                    managed_group=$3
+                    managed_home=$4
+                    rm -rf -- "$managed_home/.orbit/certificates/$scope"
                     sudo rm -rf -- "/etc/caddy/orbit-certificates/$scope"
                     BASH,
             ),

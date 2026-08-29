@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Requests\Nodes;
 
 use App\Data\Nodes\ProvisionNodeData;
+use App\Domain\Nodes\LinuxUserName;
 use App\Domain\Nodes\NodeTld;
 use App\Domain\Nodes\RoleName;
 use App\Domain\WireGuard\WireGuardEndpoint;
@@ -76,7 +77,24 @@ final class ProvisionNodeRequest extends FormRequest
                 'regex:/\A[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*\z/D',
             ],
             'public_ssh_port' => ['sometimes', 'integer', 'between:1,65535'],
-            'ssh_user' => ['sometimes', 'string', 'max:32'],
+            'user' => [
+                'sometimes',
+                'string',
+                static function (string $attribute, mixed $value, Closure $fail): void {
+                    if (! is_string($value) || ! LinuxUserName::isValid($value)) {
+                        $fail("The {$attribute} field must be a valid Linux user name.");
+                    }
+                },
+            ],
+            'orbit_user' => [
+                'sometimes',
+                'string',
+                static function (string $attribute, mixed $value, Closure $fail): void {
+                    if (! is_string($value) || ! LinuxUserName::isValid($value)) {
+                        $fail("The {$attribute} field must be a valid Linux user name.");
+                    }
+                },
+            ],
             'roles' => ['sometimes', 'array'],
             'roles.*' => ['required', Rule::enum(RoleName::class)],
             // The allocator owns format, family, subnet, and uniqueness errors.
@@ -122,7 +140,8 @@ final class ProvisionNodeRequest extends FormRequest
                 $roles,
             )),
             publicSshPort: is_int($validated['public_ssh_port'] ?? null) ? $validated['public_ssh_port'] : 22,
-            sshUser: is_string($validated['ssh_user'] ?? null) ? $validated['ssh_user'] : 'root',
+            user: is_string($validated['user'] ?? null) ? $validated['user'] : 'root',
+            orbitUser: is_string($validated['orbit_user'] ?? null) ? $validated['orbit_user'] : null,
             wireguardAddress: $this->wireguardAddress($validated),
             wireguardEndpointOverride: is_string($validated['wireguard_endpoint_override'] ?? null)
                 ? $validated['wireguard_endpoint_override']

@@ -100,7 +100,7 @@ final readonly class RetargetNodeAction
             $this->knownHosts->put($data->publicSshHost, $data->publicSshPort, $key);
             $connection = new SshConnection(
                 $data->publicSshHost,
-                $node->ssh_user,
+                $node->user,
                 $data->publicSshPort,
                 $this->sshKeys->privateKeyPath(),
                 $this->knownHosts->path(),
@@ -116,7 +116,7 @@ final readonly class RetargetNodeAction
             $private = $this->ssh->execute(
                 new SshConnection(
                     $node->wireguard_address,
-                    'orbit',
+                    $node->user,
                     22,
                     $this->sshKeys->privateKeyPath(),
                     $this->knownHosts->path(),

@@ -5,32 +5,91 @@ declare(strict_types=1);
 namespace App\Actions\Nodes;
 
 use App\Data\Nodes\ProvisionNodeData;
+use App\Domain\Nodes\LinuxUserName;
 use App\Domain\Nodes\NodeConverger;
 use App\Domain\Nodes\NodeProvisioningException;
+use App\Domain\Nodes\NodeProvisioningIdentity;
+use App\Domain\Nodes\NodeProvisioningLock;
+use App\Domain\Nodes\NodeProvisioningLockException;
+use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\NodeTld;
+use App\Domain\Nodes\RecoverableNodeConverger;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tools\ToolManagerMaterializer;
+use App\Domain\Tools\ToolManagerName;
+use App\Domain\WireGuard\GatewayPeerProjectionManager;
 use App\Domain\WireGuard\WireGuardAddressAllocator;
 use App\Domain\WireGuard\WireGuardEndpoint;
 use App\Infrastructure\Ssh\SshHostKeyScanException;
 use App\Models\Node;
 use Throwable;
 
-/** @mago-expect lint:cyclomatic-complexity Node provisioning keeps its ordered identity, role, and recovery gates together. */
+/** @mago-expect lint:cyclomatic-complexity,kan-defect,too-many-methods Node provisioning keeps its ordered identity, role, and recovery gates together. */
 final readonly class ProvisionNodeAction
 {
+    /** @mago-expect lint:excessive-parameter-list The action coordinates its complete provisioning boundary. */
     public function __construct(
         private AddNodeRoleAction $roles,
         private NodeConverger $converger,
+        private ToolManagerMaterializer $toolManagers,
         private WireGuardAddressAllocator $addresses,
+        private GatewayPeerProjectionManager $gatewayPeers,
+        private NodeProvisioningLock $provisioningLock,
     ) {}
 
-    /** @mago-expect lint:halstead Ordered provisioning keeps persisted state and failure recovery in one transaction-like flow. */
     public function execute(ProvisionNodeData $data): Node
     {
+        try {
+            return $this->provisioningLock->run($data->name, fn (): Node => $this->provision($data));
+        } catch (NodeProvisioningLockException) {
+            throw new ResourceOperationException(
+                errorCode: 'node.provisioning_busy',
+                message: "Node [{$data->name}] is already being provisioned.",
+                status: 409,
+            );
+        }
+    }
+
+    /** @mago-expect lint:halstead Ordered provisioning keeps persisted state and failure recovery in one transaction-like flow. */
+    private function provision(ProvisionNodeData $data): Node
+    {
+        if (
+            ! LinuxUserName::isValid($data->user)
+            || $data->orbitUser !== null
+            && ! LinuxUserName::isValid($data->orbitUser)
+        ) {
+            throw new ResourceOperationException(
+                errorCode: 'node.invalid_linux_user',
+                message: 'The node Linux user name is invalid.',
+            );
+        }
         $this->validateEndpointOverride($data);
         $node = Node::query()->firstOrNew(['name' => $data->name]);
+        $managedUser = $data->orbitUser ?? ($node->exists ? $node->user : 'orbit');
+
+        if (! LinuxUserName::isValid($managedUser)) {
+            throw new ResourceOperationException(
+                errorCode: 'node.invalid_linux_user',
+                message: 'The node Linux user name is invalid.',
+            );
+        }
+
+        if (
+            $node->exists
+            && $node->user !== $managedUser
+            && ($node->roles()->exists()
+            || $node->instances()->exists())
+        ) {
+            throw new ResourceOperationException(
+                errorCode: 'node.user_change_unsupported',
+                message: "Node [{$data->name}] cannot change managed user while it owns roles or instances.",
+                status: 409,
+            );
+        }
+
+        $identity = new NodeProvisioningIdentity($data->user, $managedUser);
         $platform = $this->platform($node, $data);
         $architecture = $this->architecture($node, $data);
         $tld = $this->tld($node, $data);
@@ -50,6 +109,35 @@ final readonly class ProvisionNodeAction
             $data->wireguardAddress ?? (is_string($node->wireguard_address) ? $node->wireguard_address : null);
         $wireguardAddress = $this->addresses->forProvisioning($requestedAddress, $node);
         $publicSshHost = $data->publicSshHost;
+        /** @var ?string $failedStep */
+        $failedStep = $node->getAttribute('failed_step');
+        /** @var ?string $errorCode */
+        $errorCode = $node->getAttribute('error_code');
+        /** @var ?string $sshHostKeyType */
+        $sshHostKeyType = $node->getAttribute('ssh_host_key_type');
+        /** @var ?string $sshHostKey */
+        $sshHostKey = $node->getAttribute('ssh_host_key');
+        /** @var ?array<string, mixed> $priorActiveState */
+        $priorActiveState = $node->exists && $node->status === LifecycleStatus::Active
+            ? [
+                'status' => $node->status,
+                'platform' => $node->platform,
+                'architecture' => $node->architecture,
+                'tld' => $node->tld,
+                'public_ssh_host' => $node->public_ssh_host,
+                'public_ssh_port' => $node->public_ssh_port,
+                'user' => $node->user,
+                'wireguard_address' => $node->wireguard_address,
+                'wireguard_endpoint_override' => $node->wireguard_endpoint_override,
+                'dns_server_override' => $node->dns_server_override,
+                'failed_step' => $failedStep,
+                'error_code' => $errorCode,
+                'ssh_host_key_type' => $sshHostKeyType,
+                'ssh_host_key' => $sshHostKey,
+                'ssh_host_fingerprint' => $node->ssh_host_fingerprint,
+                'wireguard_public_key' => $node->wireguard_public_key,
+            ]
+            : null;
 
         if ($publicSshHost === '' && $node->exists && $node->public_ssh_host !== '') {
             $publicSshHost = $node->public_ssh_host;
@@ -68,9 +156,9 @@ final readonly class ProvisionNodeAction
             'platform' => $platform,
             'architecture' => $architecture,
             'tld' => $tld,
+            'user' => $priorActiveState !== null ? $node->user : $managedUser,
             'public_ssh_host' => $publicSshHost,
             'public_ssh_port' => $node->exists ? $node->public_ssh_port : $data->publicSshPort,
-            'ssh_user' => $node->exists ? $node->ssh_user : $data->sshUser,
             'wireguard_address' => $wireguardAddress,
             'wireguard_endpoint_override' => $data->wireguardEndpointOverride ?? $node->wireguard_endpoint_override,
             'dns_server_override' => $data->dnsServerOverride ?? $node->dns_server_override,
@@ -79,9 +167,25 @@ final readonly class ProvisionNodeAction
         ])->save();
 
         try {
-            $this->converger->converge($node, $data->expectedSshHostFingerprint);
+            if ($priorActiveState !== null && $this->converger instanceof RecoverableNodeConverger) {
+                $this->converger->convergeRecoverably(
+                    $node,
+                    $identity,
+                    $data->expectedSshHostFingerprint,
+                    function () use ($node, $managedUser, $data): void {
+                        $node->user = $managedUser;
+                        $this->toolManagers->converge($node, ToolManagerName::Apt);
+                        $this->convergeRoles($node, $data->roles);
+                    },
+                );
+            } else {
+                $this->converger->converge($node, $identity, $data->expectedSshHostFingerprint);
+                $node->user = $managedUser;
+                $this->toolManagers->converge($node, ToolManagerName::Apt);
+                $this->convergeRoles($node, $data->roles);
+            }
         } catch (NodeProvisioningException $exception) {
-            $this->markFailed($node, $exception);
+            $this->handleFailure($node, $exception, $priorActiveState);
 
             throw $exception;
         } catch (SshHostKeyScanException $exception) {
@@ -92,7 +196,7 @@ final readonly class ProvisionNodeAction
                 previous: $exception,
                 result: $exception->result,
             );
-            $this->markFailed($node, $failure);
+            $this->handleFailure($node, $failure, $priorActiveState);
 
             throw $failure;
         } catch (Throwable $exception) {
@@ -102,22 +206,37 @@ final readonly class ProvisionNodeAction
                 message: 'Node provisioning failed.',
                 previous: $exception,
             );
-            $this->markFailed($node, $failure);
+            $this->handleFailure($node, $failure, $priorActiveState);
 
             throw $failure;
         }
 
         $node->update([
+            'user' => $managedUser,
             'status' => LifecycleStatus::Active,
             'failed_step' => null,
             'error_code' => null,
         ]);
 
-        foreach ($data->roles as $role) {
-            $this->roles->executeDuringProvisioning($node, $role);
-        }
-
         return $node->refresh()->load('roles');
+    }
+
+    /** @param list<RoleName> $roles */
+    private function convergeRoles(Node $node, array $roles): void
+    {
+        try {
+            foreach ($roles as $role) {
+                $this->roles->executeDuringProvisioning($node, $role);
+            }
+        } catch (NodeRoleOperationException $exception) {
+            throw new NodeProvisioningException(
+                step: "role:{$exception->step}",
+                errorCode: 'node.role_convergence_failed',
+                message: 'Node role provisioning failed.',
+                previous: $exception,
+                result: $exception->result,
+            );
+        }
     }
 
     private function tld(Node $node, ProvisionNodeData $data): ?string
@@ -236,5 +355,46 @@ final readonly class ProvisionNodeAction
         ];
 
         $node->update($failure);
+    }
+
+    /** @param ?array<string, mixed> $priorActiveState */
+    private function handleFailure(
+        Node $node,
+        NodeProvisioningException $failure,
+        ?array $priorActiveState,
+    ): void {
+        if ($priorActiveState === null) {
+            $this->markFailed($node, $failure);
+
+            return;
+        }
+
+        try {
+            $node->update($priorActiveState);
+        } catch (Throwable) {
+            throw new NodeProvisioningException(
+                step: 'node-rollback',
+                errorCode: 'node.reprovision_rollback_failed',
+                message: 'Node reprovisioning rollback failed.',
+            );
+        }
+
+        try {
+            $this->gatewayPeers->restore($node->refresh());
+        } catch (Throwable) {
+            throw new NodeProvisioningException(
+                step: 'node-rollback',
+                errorCode: 'node.reprovision_rollback_failed',
+                message: 'Node reprovisioning rollback failed.',
+            );
+        }
+
+        if ($failure->errorCode === 'vpn.peer_rollback_failed') {
+            throw new NodeProvisioningException(
+                step: 'node-rollback',
+                errorCode: 'node.reprovision_rollback_failed',
+                message: 'Node reprovisioning rollback failed.',
+            );
+        }
     }
 }

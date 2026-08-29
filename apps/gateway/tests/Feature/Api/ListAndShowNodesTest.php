@@ -51,7 +51,7 @@ describe('GET /api/v1/nodes serialization', function (): void {
             'tld' => 'zulu.orbit',
             'public_ssh_host' => '203.0.113.20',
             'public_ssh_port' => 2202,
-            'ssh_user' => 'orbit',
+            'user' => 'orbit',
             'wireguard_address' => '10.0.0.22',
             'wireguard_public_key' => 'wg-zulu-public',
             'wireguard_endpoint_override' => 'vpn.example.com:51820',
@@ -70,7 +70,7 @@ describe('GET /api/v1/nodes serialization', function (): void {
             'tld' => 'alpha.orbit',
             'public_ssh_host' => '203.0.113.10',
             'public_ssh_port' => 22,
-            'ssh_user' => 'root',
+            'user' => 'root',
             'wireguard_address' => '10.0.0.11',
             'wireguard_public_key' => 'wg-alpha-public',
             'wireguard_endpoint_override' => 'private.example.com:51820',
@@ -116,7 +116,7 @@ describe('GET /api/v1/nodes serialization', function (): void {
             ->assertJsonPath('data.0.tld', 'alpha.orbit')
             ->assertJsonPath('data.0.public_ssh_host', '203.0.113.10')
             ->assertJsonPath('data.0.public_ssh_port', 22)
-            ->assertJsonPath('data.0.ssh_user', 'root')
+            ->assertJsonPath('data.0.user', 'root')
             ->assertJsonPath('data.0.wireguard_address', '10.0.0.11')
             ->assertJsonPath('data.0.ssh_host_fingerprint', 'SHA256:alpha')
             ->assertJsonMissingPath('data.0.host_key_fingerprint')
@@ -134,7 +134,7 @@ describe('GET /api/v1/nodes serialization', function (): void {
                     'tld',
                     'public_ssh_host',
                     'public_ssh_port',
-                    'ssh_user',
+                    'user',
                     'wireguard_address',
                     'wireguard_public_key',
                     'wireguard_endpoint_override',
@@ -160,7 +160,7 @@ describe('GET /api/v1/nodes/{node}', function (): void {
             'tld' => 'alpha.orbit',
             'public_ssh_host' => '203.0.113.10',
             'public_ssh_port' => 22,
-            'ssh_user' => 'root',
+            'user' => 'root',
             'wireguard_address' => '10.0.0.11',
             'wireguard_public_key' => 'wg-alpha-public',
             'wireguard_endpoint_override' => 'private.example.com:51820',

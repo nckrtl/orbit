@@ -416,6 +416,16 @@ describe(ComposerToolManager::class, function (): void {
         expect($version)->toBeNull();
     });
 
+    it('returns null for Composer empty global-root output', function (): void {
+        [$manager] = composer_tool_manager([
+            composer_result('[]'),
+        ]);
+
+        $version = $manager->installedVersion(composer_tool_node(), 'laravel/installer');
+
+        expect($version)->toBeNull();
+    });
+
     it('fails closed on malformed installed-version output', function (CommandResult $result, string $step): void {
         [$manager] = composer_tool_manager([$result]);
 
@@ -431,6 +441,10 @@ describe(ComposerToolManager::class, function (): void {
         'invalid JSON' => [composer_result('{'), 'installed-version'],
         'missing installed list' => [composer_result('{}'), 'installed-version'],
         'non-list installed value' => [composer_result('{"installed":{}}'), 'installed-version'],
+        'non-empty root list' => [
+            composer_result('[{"name":"laravel/installer","version":"v5.16.0"}]'),
+            'installed-version',
+        ],
         'malformed entry' => [
             composer_result(composer_show_entries([['name' => 'laravel/installer']])),
             'installed-version',
@@ -543,7 +557,7 @@ function composer_tool_node(
         'status' => $status,
         'platform' => $platform,
         'public_ssh_host' => '127.0.0.1',
-        'ssh_user' => 'orbit',
+        'user' => 'orbit',
         'wireguard_address' => '10.8.0.45',
     ]);
     $roles = [];

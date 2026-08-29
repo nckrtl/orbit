@@ -36,7 +36,7 @@ describe('workspace:new', function (): void {
         $this
             ->artisan('help', ['command_name' => 'workspace:new'])
             ->expectsOutputToContain(
-                'Absolute target-node checkout path; Linux default: /home/orbit/.orbit/worktrees/<app>/<workspace>',
+                'Absolute target-node checkout path',
             )
             ->assertExitCode(0);
     });
@@ -71,6 +71,33 @@ describe('workspace:new', function (): void {
                 'branch' => 'feature/auth',
                 'checkout_path' => '/home/orbit/.orbit/worktrees/orbit-docs/feature-auth',
                 'php_version' => '8.4',
+            ]);
+    });
+
+    it('creates a workspace with an explicit safe target-node path', function (): void {
+        $mockClient = MockClient::global([
+            CreateWorkspaceRequest::class => workspace_mock_response(201),
+        ]);
+
+        $this
+            ->artisan('workspace:new', [
+                'instance' => '5',
+                'name' => 'feature-auth',
+                '--path' => '/srv/users/nckrtl/projects/acme',
+                '--json' => true,
+            ])
+            ->expectsOutput(workspace_json())
+            ->assertExitCode(0);
+
+        expect($mockClient->getLastRequest())
+            ->toBeInstanceOf(CreateWorkspaceRequest::class)
+            ->and($mockClient->getLastPendingRequest()?->getUrl())
+            ->toBe('https://10.44.0.1/api/v1/workspaces')
+            ->and($mockClient->getLastRequest()?->body()->all())
+            ->toBe([
+                'instance_id' => 5,
+                'name' => 'feature-auth',
+                'checkout_path' => '/srv/users/nckrtl/projects/acme',
             ]);
     });
 
@@ -289,16 +316,13 @@ it('rejects an unsafe checkout path before creating a workspace', function (stri
             'name' => 'feature-auth',
             '--path' => $path,
         ])
-        ->expectsOutputToContain('Workspace checkout path must be a safe child of /home/orbit.')
+        ->expectsOutputToContain('Workspace checkout path must be a safe absolute path.')
         ->assertExitCode(1);
 
     expect($mockClient->getLastPendingRequest())->toBeNull();
 })->with([
     'relative' => 'apps/orbit/feature-auth',
-    'home root' => '/home/orbit',
-    'srv root' => '/srv/orbit/feature-auth',
-    'system path' => '/etc/orbit',
-    'prefix lookalike' => '/home/orbital/feature-auth',
+    'home root' => '/',
     'parent segment' => '/home/orbit/apps/../feature-auth',
     'dot segment' => '/home/orbit/apps/./feature-auth',
     'duplicate separator' => '/home/orbit/apps//feature-auth',

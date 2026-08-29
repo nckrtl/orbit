@@ -17,7 +17,8 @@ final class ProvisionNodeCommand extends Command
         {name : Node name}
         {host : Public SSH host}
         {--ssh-port=22 : Public SSH port}
-        {--ssh-user=root : Initial SSH user}
+        {--user=root : Initial SSH user}
+        {--orbit-user= : Managed Orbit user}
         {--architecture= : Node machine architecture}
         {--tld= : Unique development TLD for app-dev}
         {--role=* : Initial role assignment}
@@ -34,10 +35,10 @@ final class ProvisionNodeCommand extends Command
         $name = $this->stringArgument('name');
         $host = $this->stringArgument('host');
         $sshPort = $this->option('ssh-port');
-        $sshUser = $this->stringOption('ssh-user');
+        $user = $this->stringOption('user');
         $roles = $this->roles();
 
-        if ($name === null || $host === null || ! is_numeric($sshPort) || $sshUser === null || $roles === null) {
+        if ($name === null || $host === null || ! is_numeric($sshPort) || $user === null || $roles === null) {
             $this->error('Node provisioning arguments are invalid.');
 
             return self::FAILURE;
@@ -49,7 +50,8 @@ final class ProvisionNodeCommand extends Command
                 publicSshHost: $host,
                 roles: $roles,
                 publicSshPort: (int) $sshPort,
-                sshUser: $sshUser,
+                user: $user,
+                orbitUser: $this->stringOption('orbit-user'),
                 wireguardAddress: $this->stringOption('wireguard-address'),
                 wireguardEndpointOverride: $this->stringOption('wireguard-endpoint'),
                 dnsServerOverride: $this->stringOption('dns-server'),

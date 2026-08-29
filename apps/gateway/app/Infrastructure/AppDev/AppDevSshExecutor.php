@@ -26,6 +26,7 @@ final readonly class AppDevSshExecutor
         RemoteCommand $command,
         string $step,
         string $errorCode,
+        ?float $commandTimeout = null,
     ): CommandResult {
         if (! is_string($node->wireguard_address) || $node->wireguard_address === '') {
             throw new RuntimeConvergenceException(
@@ -38,10 +39,11 @@ final readonly class AppDevSshExecutor
         $result = $this->ssh->execute(
             new SshConnection(
                 host: $node->wireguard_address,
-                user: 'orbit',
+                user: $node->user,
                 port: 22,
                 identityFile: $this->keys->privateKeyPath(),
                 knownHostsFile: $this->knownHosts->path(),
+                commandTimeout: $commandTimeout ?? 900.0,
             ),
             $command,
         );

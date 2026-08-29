@@ -28,6 +28,8 @@ final class FakeToolManager implements ToolManager
 
     public bool $supports = true;
 
+    public bool $requiresAppRole = false;
+
     public bool $validPackage = true;
 
     public ToolRemovalPlan $removalPlan;
@@ -45,6 +47,14 @@ final class FakeToolManager implements ToolManager
 
     public function supportsNode(Node $node): bool
     {
+        if ($this->requiresAppRole) {
+            return $node
+                ->loadMissing('roles')
+                ->roles->contains(
+                    static fn ($role): bool => in_array($role->role->value, ['app-dev', 'app-prod'], strict: true),
+                );
+        }
+
         return $this->supports;
     }
 

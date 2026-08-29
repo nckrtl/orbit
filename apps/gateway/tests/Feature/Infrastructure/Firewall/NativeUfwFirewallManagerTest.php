@@ -218,7 +218,7 @@ function firewall_rule(array $attributes = []): FirewallRule
         'platform' => 'linux',
         'public_ssh_host' => '192.0.2.20',
         'public_ssh_port' => 22,
-        'ssh_user' => 'orbit',
+        'user' => 'nckrtl',
         'wireguard_address' => '10.44.0.3',
     ]);
     $node->id = 7;

@@ -242,9 +242,12 @@ it('keeps generated scoped guidance complete and de-duplicated', function (): vo
         '## Keep secrets out of command arguments',
         '## Publish managed state atomically',
         '## Search proven behavior before infrastructure design',
-        '## Use only pinned Sury Resolute PHP packages',
+        '## Use only pinned Sury PHP packages',
         '## Route project JavaScript work through Vite+',
         '## Run the Pest and Mago gates',
+        '## Track tool intent, not host inventory',
+        '## Keep tool input narrow',
+        '## Use the closed tool manager registry',
     ];
 
     foreach ($expectedDecisionHeadings as $expectedDecisionHeading) {
@@ -260,7 +263,13 @@ it('keeps generated scoped guidance complete and de-duplicated', function (): vo
             'no product-code edits',
         );
     expect($databaseRules)
-        ->toContain('SQLite', 'migration', 'preserve existing control-plane state');
+        ->toContain(
+            'SQLite',
+            'migration',
+            'preserve existing control-plane state',
+            'Tool rows store managed intent, not observed host inventory.',
+            'The tool identity is node, manager, and package.',
+        );
     expect($httpRules)
         ->toContain(
             'active WireGuard peer',
@@ -268,14 +277,23 @@ it('keeps generated scoped guidance complete and de-duplicated', function (): vo
             'stable error envelopes',
             'redact',
             'colon-delimited route names',
+            'Tool install input is limited to node_id, manager, package, and version_constraint.',
+            'Do not expose manager argv, scripts, repositories, environment variables, or options.',
         );
     expect($infrastructureRules)
         ->toContain(
-            'Ubuntu Resolute',
+            'Noble and Resolute',
+            'Gateway, VPN, and app-prod require Resolute',
+            'validated release suite',
+            'Never use a Launchpad PPA',
             'direct Sury PHP repository',
             'pinned key digest and fingerprints',
             'exact candidate-origin checks',
             'Never use a Launchpad PPA',
+            'The closed tool manager registry contains apt, vp, and composer.',
+            'Use Vite+ global packages instead of exposing npm as a manager.',
+            'Never persist or return raw manager stdout or stderr.',
+            'APT removal must remove only the exact recorded package.',
         );
     expect($infrastructureRules)
         ->toContain(

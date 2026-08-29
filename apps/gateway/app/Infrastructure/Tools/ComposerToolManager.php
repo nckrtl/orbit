@@ -168,6 +168,10 @@ final readonly class ComposerToolManager implements ToolManager
             );
         }
 
+        if ($decoded === []) {
+            return null;
+        }
+
         if (
             ! $decoded instanceof stdClass
             || ! property_exists($decoded, 'installed')

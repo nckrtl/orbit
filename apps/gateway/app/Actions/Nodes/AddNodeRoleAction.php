@@ -6,23 +6,32 @@ namespace App\Actions\Nodes;
 
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Firewall\FirewallOperationException;
+use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\RoleAssignmentException;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\RoleRegistry;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Tools\ToolManagerMaterializer;
+use App\Domain\Tools\ToolManagerName;
+use App\Domain\Tools\ToolManagerScopeLock;
+use App\Domain\Tools\ToolManagerScopeLockException;
 use App\Models\Node;
 use App\Models\NodeRole;
+use Closure;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
+/** @mago-expect lint:cyclomatic-complexity,too-many-methods Role lifecycle keeps its ordered claim, convergence, and failure transitions together. */
 final readonly class AddNodeRoleAction
 {
     public function __construct(
         private AssignRoleAction $assignRole,
         private RoleRegistry $registry,
         private RoleBaselineConverger $baselines,
+        private ToolManagerMaterializer $toolManagers,
+        private ToolManagerScopeLock $managerScope,
     ) {}
 
     /**
@@ -37,22 +46,26 @@ final readonly class AddNodeRoleAction
             throw new RoleAssignmentException("Role [{$role->value}] is protected from generic mutation.");
         }
 
-        $claim = $convergeExisting
-            ? $this->claimExisting($node, $role)
-            : $this->claimNew($node, $role);
+        return $this->withAppManagerScope($node, $role, function () use ($node, $role, $convergeExisting): array {
+            $claim = $convergeExisting ? $this->claimExisting($node, $role) : $this->claimNew($node, $role);
 
-        return $this->convergeClaim($node, $role, $claim);
+            return $this->convergeClaim($node, $role, $claim);
+        });
     }
 
     public function executeDuringProvisioning(Node $node, RoleName $role): NodeRole
     {
-        $this->guardActiveNode($node);
+        $this->guardProvisioningNode($node);
 
         if (! $this->registry->definition($role)->assignableDuringProvisioning) {
             throw new RoleAssignmentException("Role [{$role->value}] cannot be assigned during provisioning.");
         }
 
-        return $this->convergeClaim($node, $role, $this->claimExisting($node, $role))['assignment'];
+        return $this->withAppManagerScope(
+            $node,
+            $role,
+            fn (): NodeRole => $this->convergeClaim($node, $role, $this->claimExisting($node, $role))['assignment'],
+        );
     }
 
     /** @param list<RoleName> $prospectiveRoles */
@@ -125,6 +138,16 @@ final readonly class AddNodeRoleAction
     {
         try {
             $this->baselines->converge($node, $claim['assignment']);
+            $this->materializeAppManagers($node, $role, $claim['assignment']);
+        } catch (NodeProvisioningException $exception) {
+            $this->failConvergence($claim['assignment'], new NodeRoleOperationException(
+                step: $exception->step,
+                errorCode: 'node_role.convergence_failed',
+                underlyingErrorCode: $exception->errorCode,
+                message: $exception->getMessage(),
+                result: $exception->result,
+                previous: $exception,
+            ));
         } catch (NodeRoleOperationException $exception) {
             $step = $this->unnamespacedStep($exception->step);
 
@@ -170,9 +193,68 @@ final readonly class AddNodeRoleAction
         }
     }
 
+    private function guardProvisioningNode(Node $node): void
+    {
+        if (
+            ! $node->exists
+            || ! in_array(
+                $node->status,
+                [LifecycleStatus::Provisioning, LifecycleStatus::Active],
+                strict: true,
+            )
+        ) {
+            throw new RoleAssignmentException('Roles can be changed only on a provisioning or active node.');
+        }
+    }
+
+    private function materializeAppManagers(Node $node, RoleName $role, NodeRole $assignment): void
+    {
+        if ($role !== RoleName::AppDev && $role !== RoleName::AppProd) {
+            return;
+        }
+
+        $this->toolManagers->convergeWithFailureHandler(
+            $node,
+            static function (NodeProvisioningException $failure) use ($assignment): void {
+                $assignment->markConvergenceFailed($failure->step, $failure->errorCode);
+            },
+            ToolManagerName::Vp,
+            ToolManagerName::Composer,
+        );
+    }
+
     private function unnamespacedStep(string $step): string
     {
         return str_starts_with($step, 'converge:') ? substr($step, offset: 9) : $step;
+    }
+
+    /**
+     * @template T
+     *
+     * @param Closure(): T $callback
+     * @return T
+     */
+    private function withAppManagerScope(Node $node, RoleName $role, Closure $callback): mixed
+    {
+        if ($role !== RoleName::AppDev && $role !== RoleName::AppProd) {
+            return $callback();
+        }
+
+        try {
+            return $this->managerScope->run($node->id, ToolManagerName::Vp, fn () => $this->managerScope->run(
+                $node->id,
+                ToolManagerName::Composer,
+                $callback,
+            ));
+        } catch (ToolManagerScopeLockException $exception) {
+            throw new NodeRoleOperationException(
+                step: 'converge:tool-manager-lock',
+                errorCode: 'node_role.convergence_failed',
+                underlyingErrorCode: 'node_role.tool_manager_locked',
+                message: "Tool manager state is busy on node [{$node->name}].",
+                previous: $exception,
+            );
+        }
     }
 
     private function failConvergence(NodeRole $assignment, NodeRoleOperationException $exception): never

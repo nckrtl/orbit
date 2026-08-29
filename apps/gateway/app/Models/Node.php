@@ -17,7 +17,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property string|null $architecture
  * @property string $public_ssh_host
  * @property int $public_ssh_port
- * @property string $ssh_user
+ * @property string $user
  * @property string|null $tld
  * @property string|null $wireguard_address
  * @property string|null $wireguard_public_key
@@ -48,7 +48,7 @@ final class Node extends Model
         'tld',
         'public_ssh_host',
         'public_ssh_port',
-        'ssh_user',
+        'user',
         'wireguard_address',
         'wireguard_public_key',
         'wireguard_endpoint_override',

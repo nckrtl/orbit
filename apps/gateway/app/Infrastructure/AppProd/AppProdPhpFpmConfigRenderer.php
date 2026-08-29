@@ -33,7 +33,7 @@ final readonly class AppProdPhpFpmConfigRenderer
                 clear_env = yes
                 env[HOME] = {$site->appRoot()}
                 env[USER] = {$site->user()}
-                env[PATH] = /usr/local/bin:/usr/bin:/bin
+                env[PATH] = /usr/local/bin:/opt/orbit/composer/vendor/bin:/usr/bin:/bin
 
                 FPM)
             ->implode(PHP_EOL);
