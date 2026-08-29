@@ -3186,20 +3186,20 @@ it('rejects unrelated clean repositories before lock state or Incus access', fun
 
 it('rejects a wrong issue branch before creating lifecycle state', function () {
     $repositoryRoot = dirname(__DIR__, 5);
-    $inventory = Process::run(['git', '-C', $repositoryRoot, 'worktree', 'list', '--porcelain']);
-    preg_match('/\Aworktree ([^\r\n]+)/', $inventory->output(), $matches);
-    $branchWorktree = $matches[1] ?? '';
-    expect($inventory->successful())
-        ->toBeTrue()
-        ->and($branchWorktree)
-        ->not->toBe('');
+    $suffix = 'wrong-issue-'.bin2hex(random_bytes(4));
+    $branchWorktree = pinnedFeatureWorktree($repositoryRoot, $suffix);
     $paths = new StatePaths(sys_get_temp_dir().'/orbit-acquirer-state-'.bin2hex(random_bytes(8)));
     $acquirer = taskNineAcquirer($branchWorktree, $paths);
 
-    expect(fn () => $acquirer->sync(new TopologyRequest('NCK-999999', $branchWorktree)))
-        ->toThrow(InvalidArgumentException::class, 'branch does not match')
-        ->and(is_dir($paths->root().'/locks'))
-        ->toBeFalse();
+    try {
+        expect(fn () => $acquirer->sync(new TopologyRequest('NCK-999999', $branchWorktree)))
+            ->toThrow(InvalidArgumentException::class, 'branch does not match')
+            ->and(is_dir($paths->root().'/locks'))
+            ->toBeFalse();
+    } finally {
+        Process::run(['git', '-C', $repositoryRoot, 'worktree', 'remove', '--force', $branchWorktree]);
+        Process::run(['git', '-C', $repositoryRoot, 'branch', '-D', 'feature/NCK-123-'.$suffix]);
+    }
 });
 
 it('sync rejects a feature HEAD cold epoch change before source sync or Incus', function () {

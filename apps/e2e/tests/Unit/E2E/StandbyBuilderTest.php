@@ -949,6 +949,13 @@ describe('StandbyBuilder', function () {
             'status' => 'cleaned',
         ]);
         $state->write('standby/corrupt.json', ['schema' => 1, 'evidence_id' => $evidence, 'message' => 'x']);
+        Process::fake(function (PendingProcess $process): ProcessResult {
+            if ($process->command === standby_incus_command('network', 'list', 'local:', '--format=json')) {
+                return Process::result('[]');
+            }
+
+            throw new RuntimeException(json_encode($process->command, JSON_THROW_ON_ERROR));
+        });
         $builder = cold_cleanup_builder(new IncusHost(pool: 'orbit-e2e'), $state, $paths);
         expect($builder->cleanupCold($evidence, new OperationId($evidence)))
             ->toBeTrue()
@@ -973,6 +980,13 @@ describe('StandbyBuilder', function () {
             'status' => 'cleaned',
         ]);
         $state->write('standby/corrupt.json', ['schema' => 1, 'evidence_id' => str_repeat('f', 32), 'message' => 'x']);
+        Process::fake(function (PendingProcess $process): ProcessResult {
+            if ($process->command === standby_incus_command('network', 'list', 'local:', '--format=json')) {
+                return Process::result('[]');
+            }
+
+            throw new RuntimeException(json_encode($process->command, JSON_THROW_ON_ERROR));
+        });
         $builder = cold_cleanup_builder(new IncusHost(pool: 'orbit-e2e'), $state, $paths);
         expect($builder->cleanupCold($evidence, new OperationId($evidence)))
             ->toBeTrue()
