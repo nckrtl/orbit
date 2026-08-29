@@ -6,6 +6,7 @@ use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\GatewayRequest;
 use Orbit\Sdk\GatewayRootCaClient;
 use Orbit\Sdk\Requests\Apps\CreateAppRequest;
+use Orbit\Sdk\Requests\Doctor\RunDoctorRequest;
 use Orbit\Sdk\Requests\Processes\AddProcessRequest;
 use Orbit\Sdk\Requests\Tools\InstallToolRequest;
 use Orbit\Sdk\Responses\Tools\ToolManagerResponse;
@@ -17,6 +18,40 @@ use Saloon\Http\Faking\MockResponse;
 
 /** @mago-expect lint:halstead Security-boundary assertions stay visible together. */
 describe('gateway object-state boundary', function (): void {
+    it('hides invalid Doctor family credentials while preserving the transport body', function (): void {
+        $credential = gateway_object_state_credential('doctor-family');
+        $families = ["token={$credential}", '', 7, false];
+        $expectedBody = ['node_id' => 0, 'families' => $families];
+        $request = new RunDoctorRequest(nodeId: 0, families: $families);
+        $needles = ['credential' => $credential, 'family' => $families[0]];
+
+        expect(gateway_object_state_leaks(gateway_object_state_debug_outputs($request), $needles))
+            ->toBeEmpty()
+            ->and(json_decode((string) $request->body(), associative: true, flags: JSON_THROW_ON_ERROR))
+            ->toBe($expectedBody);
+
+        $serializationException = gateway_object_state_serialization_exception($request);
+        expect(gateway_object_state_leaks([
+            'message' => $serializationException->getMessage(),
+            'string' => (string) $serializationException,
+            'SDK trace' => gateway_object_state_sdk_trace($serializationException),
+        ], $needles))->toBeEmpty();
+
+        $mockClient = new MockClient([MockResponse::make(['data' => []])]);
+        $connector = new GatewayConnector('https://gateway.test');
+        $connector->withMockClient($mockClient);
+        $connector->send($request);
+        expect(json_decode(
+            (string) $mockClient->getLastPendingRequest()?->body()->__toString(),
+            associative: true,
+            flags: JSON_THROW_ON_ERROR,
+        ))
+            ->toBe($expectedBody);
+
+        $familiesParameter = new ReflectionParameter([RunDoctorRequest::class, '__construct'], 'families');
+        expect($familiesParameter->getAttributes(SensitiveParameter::class))->toHaveCount(1);
+    });
+
     it('hides Tool install credentials while preserving its transport body', function (): void {
         $credential = gateway_object_state_credential('tool-install');
         $manager = "token={$credential}";
