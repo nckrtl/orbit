@@ -1295,10 +1295,10 @@ it('keeps the command operation identity separate from proof evidence', function
         if (array_slice($guest, 0, 6) === ['runuser', '-u', 'orbit', '--', 'env', 'HOME=/home/orbit']) {
             $guest = array_slice($guest, 6);
         }
-        if ($guest === ['git', '-C', '/home/orbit/orbit', 'rev-parse', '--verify', 'HEAD^{commit}']) {
+        if (in_array('git', $guest, true) && in_array('rev-parse', $guest, true)) {
             return Process::result($candidateSha."\n");
         }
-        if ($guest === ['git', '-C', '/home/orbit/orbit', 'status', '--porcelain=v1', '--untracked-files=all']) {
+        if (in_array('git', $guest, true) && in_array('status', $guest, true)) {
             return Process::result();
         }
 

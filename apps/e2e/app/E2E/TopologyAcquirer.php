@@ -86,7 +86,14 @@ final readonly class TopologyAcquirer
         $topology = $allowInterrupted
             ? $this->requireTopologyForSync($request->target)
             : $this->requireTopology($request->target);
-        $operationId = $this->commandOperation->value;
+        // The lease keeps the acquiring operation: Incus resources are stamped
+        // with it, and release verifies ownership against that exact value.
+        // The synchronizing operation is recorded in the manifest source.
+        $lease = $this->state->read('leases/'.$request->issue.'.json');
+        $operationId = $lease['operation_id'] ?? null;
+        if (! is_string($operationId) || preg_match('/\A[a-f0-9]{32}\z/D', $operationId) !== 1) {
+            throw new RuntimeException('The topology lease has no valid acquiring operation.');
+        }
         $this->writeLease($request->issue, $operationId, 'syncing');
         try {
             $this->assertColdBaseMatchesMain($request->worktree);
@@ -224,6 +231,12 @@ final readonly class TopologyAcquirer
         }
         foreach (TopologyProfile::CHECKOUT_ROLES as $role) {
             $identity = $this->host->exec($request->target->instance($role), new GuestCommand([
+                'runuser',
+                '-u',
+                'orbit',
+                '--',
+                'env',
+                'HOME=/home/orbit',
                 'git',
                 '-C',
                 '/home/orbit/orbit',
@@ -235,6 +248,12 @@ final readonly class TopologyAcquirer
                 throw new RuntimeException("The {$role} checkout is not at the candidate SHA.");
             }
             $result = $this->host->exec($request->target->instance($role), new GuestCommand([
+                'runuser',
+                '-u',
+                'orbit',
+                '--',
+                'env',
+                'HOME=/home/orbit',
                 'git',
                 '-C',
                 '/home/orbit/orbit',
@@ -250,6 +269,12 @@ final readonly class TopologyAcquirer
             $request->target->instance('gateway'),
             new GuestCommand(
                 [
+                    'runuser',
+                    '-u',
+                    'orbit',
+                    '--',
+                    'env',
+                    'HOME=/home/orbit',
                     '/home/orbit/orbit/bin/test',
                 ],
                 3_600,
