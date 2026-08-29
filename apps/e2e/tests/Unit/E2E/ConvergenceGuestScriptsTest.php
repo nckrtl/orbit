@@ -1100,7 +1100,7 @@ describe('convergence guest scripts', function () {
             state=$(dirname "$0")
             printf '%s\n' "$*" >>"$state/commands"
             case "$1" in
-              node:show) [[ "$2" == app-dev ]] && printf '{"id":2}' || printf '{"id":3}' ;;
+              node:list) printf '{"nodes":[{"id":2,"name":"app-dev"},{"id":3,"name":"app-prod"}]}' ;;
               app:list)
                 if [[ -s "$state/app" ]]; then printf '{"apps":[{"id":1,"slug":"laravel","name":"Laravel","repository_url":"https://example.invalid/wrong.git"}]}'
                 elif [[ -e "$state/app" ]]; then printf '{"apps":[{"id":1,"slug":"laravel","name":"Laravel","repository_url":"https://github.com/laravel/laravel.git"}]}'
@@ -1131,8 +1131,8 @@ describe('convergence guest scripts', function () {
             'app-prod',
             str_repeat('a', 40),
         ];
-        new Process($arguments)->mustRun();
-        new Process($arguments)->mustRun();
+        expect(new Process($arguments)->run())->toBe(0);
+        expect(new Process($arguments)->run())->toBe(0);
         $commands = file("{$root}/commands", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
 
         expect(array_filter($commands, fn (string $command): bool => str_starts_with($command, 'app:new ')))
