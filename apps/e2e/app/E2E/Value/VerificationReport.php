@@ -79,4 +79,22 @@ final readonly class VerificationReport
 
         return new self($value['passed'], $value['probes']);
     }
+
+    /** One line naming every failed probe with its expected and observed values. */
+    public function failedSummary(): string
+    {
+        $failed = [];
+        foreach ($this->probes as $name => $result) {
+            if (is_array($result) && ($result['passed'] ?? true) === false) {
+                $failed[] = sprintf(
+                    '%s (expected %s, observed %s)',
+                    (string) $name,
+                    (string) ($result['expected'] ?? '?'),
+                    (string) ($result['observed'] ?? '?'),
+                );
+            }
+        }
+
+        return $failed === [] ? '' : ' Failed probes: '.implode('; ', $failed).'.';
+    }
 }

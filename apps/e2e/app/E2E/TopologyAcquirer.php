@@ -102,7 +102,7 @@ final readonly class TopologyAcquirer
             $this->converger->converge($request->target, $source, $topology->generation->laravel);
             $verification = $this->verifier->verify($request->target, VerificationMode::Readiness, $source);
             if (! $verification->passed) {
-                throw new RuntimeException('Feature topology verification failed.');
+                throw new RuntimeException('Feature topology verification failed.'.$verification->failedSummary());
             }
 
             $updated = new FeatureTopology(
@@ -135,7 +135,7 @@ final readonly class TopologyAcquirer
             $this->networks->reconcile($target->network());
             $report = $this->verifier->verify($target, VerificationMode::Readiness, $topology->source);
             if (! $report->passed) {
-                throw new RuntimeException('Feature topology verification failed.');
+                throw new RuntimeException('Feature topology verification failed.'.$report->failedSummary());
             }
 
             $updated = new FeatureTopology(
@@ -274,6 +274,8 @@ final readonly class TopologyAcquirer
                     'orbit',
                     '--',
                     'env',
+                    '-C',
+                    '/home/orbit/orbit',
                     'HOME=/home/orbit',
                     '/home/orbit/orbit/bin/test',
                 ],
@@ -281,7 +283,9 @@ final readonly class TopologyAcquirer
             ),
         );
         if (! $automated->successful()) {
-            throw new RuntimeException('Candidate automated checks failed.');
+            throw new RuntimeException(
+                'Candidate automated checks failed.'.$this->automatedCheckSummary($automated),
+            );
         }
 
         $verification = $this->verifier->verify($request->target, VerificationMode::Proof, $topology->source);
@@ -445,7 +449,9 @@ final readonly class TopologyAcquirer
                 fn () => $this->verifier->verify($request->target, VerificationMode::Readiness, $source),
             );
             if (! $verification->passed) {
-                throw new RuntimeException('Feature topology readiness verification failed.');
+                throw new RuntimeException(
+                    'Feature topology readiness verification failed.'.$verification->failedSummary(),
+                );
             }
             $instances = [];
             foreach (TopologyProfile::ROLES as $role) {
@@ -877,5 +883,25 @@ final readonly class TopologyAcquirer
             ];
         }
         $this->state->write('leases/'.$issue.'.json', $lease);
+    }
+
+    /** Keep only the suite verdict lines so the failure evidence stays short and free of progress noise. */
+    private function automatedCheckSummary(GuestCommandResult $result): string
+    {
+        $output = preg_replace('/\e\[[0-9;]*m/', '', $result->stdout."\n".$result->stderr) ?? '';
+        $lines = array_values(array_filter(
+            array_map(trim(...), explode("\n", $output)),
+            static fn (string $line): bool => (
+                preg_match(
+                    '/^(\[[a-z0-9\/-]+\] (?:passed|failed)|FAILED |Tests: |.+ is not installed\.|.+:\d+$)/',
+                    $line,
+                ) === 1
+            ),
+        ));
+        if ($lines === []) {
+            return " Guest exit code {$result->exitCode} with no suite verdict.";
+        }
+
+        return " Guest exit code {$result->exitCode}: ".implode(' | ', array_slice($lines, -12));
     }
 }

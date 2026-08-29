@@ -3,6 +3,7 @@
 set -euo pipefail
 
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$repository_root"
 projects=("apps/cli" "apps/gateway" "apps/e2e" "packages/php-sdk")
 available_processes="${ORBIT_TEST_PROCESSES:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || printf '3')}"
 
