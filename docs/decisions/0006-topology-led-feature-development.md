@@ -5,6 +5,12 @@
 Superseded on 2026-08-30 by [ADR 0007](0007-nine-step-feature-flow.md). Kept as
 the record of the topology-led decision and its ceremony.
 
+Amended on 2026-08-30 (before supersession): proof plans moved to
+`proofs/<ISSUE>.json`; harness state moved to `<worktree>/.e2e/` and
+`<primary>/.e2e/`; the reviewer re-proves and the merge agent promotes the
+reviewer's topology; YAML handoffs, gate checklists, evidence archives, and the
+rolling acceptance suite were withdrawn.
+
 This decision supersedes the shared-live feature-development boundary of
 [ADR 0002](0002-candidate-deployment-proof-boundary.md): its shared-live
 rollout, pre-rollout review, live mutation, restored-pre-state, and post-proof
