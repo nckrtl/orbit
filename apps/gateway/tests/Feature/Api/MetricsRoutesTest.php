@@ -6,6 +6,7 @@ use App\Data\Metrics\MetricsCredentialsData;
 use App\Data\Metrics\MetricsMutationData;
 use App\Data\Metrics\MetricsStatusData;
 use App\Domain\Metrics\MetricsCredentialManager;
+use App\Domain\Metrics\MetricsPublicationCleanup;
 use App\Domain\Metrics\MetricsRoleManager;
 use App\Domain\Metrics\MetricsStatusReader;
 use App\Domain\Nodes\RoleName;
@@ -233,7 +234,7 @@ it('passes focused enable and purge mutations to the Metrics role manager', func
         ->shouldReceive('remove')
         ->once()
         ->with(true, true)
-        ->andReturn(new MetricsMutationData($target->id, 'removed'));
+        ->andReturn(new MetricsMutationData($target->id, 'removed', MetricsPublicationCleanup::Uncleaned));
     app()->instance(MetricsRoleManager::class, $manager);
 
     $this
@@ -246,7 +247,8 @@ it('passes focused enable and purge mutations to the Metrics role manager', func
         ->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_address])
         ->deleteJson('/api/v1/metrics', ['force' => true, 'purge_data' => true])
         ->assertOk()
-        ->assertJsonPath('data.status', 'removed');
+        ->assertJsonPath('data.status', 'removed')
+        ->assertJsonPath('data.publication', 'uncleaned');
 });
 
 it('rejects unauthorized metrics requests before reading credentials', function (): void {

@@ -40,6 +40,8 @@ it('renders grafana, publication, and secret contracts', function (): void {
     expect(new GrafanaConfigRenderer()->datasource())
         ->toContain('uid: orbit-prometheus')
         ->toContain('url: http://127.0.0.1:9090')
+        ->and(new GrafanaConfigRenderer()->dashboardProvider())
+        ->toContain('updateIntervalSeconds: 10')
         ->and(new MetricsPublicationRenderer()->caddy('10.0.0.3'))
         ->toContain('metrics.orbit')
         ->and(new NodeResourcesDashboardRenderer()->render())

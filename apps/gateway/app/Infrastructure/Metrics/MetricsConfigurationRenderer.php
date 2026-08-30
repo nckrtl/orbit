@@ -23,11 +23,24 @@ final readonly class MetricsConfigurationRenderer
             throw new InvalidArgumentException('The Grafana admin password is unavailable.');
         }
 
-        $publicFiles = [
+        $prometheusFiles = [
             '/etc/orbit/metrics/prometheus.yml' => $this->prometheus->render($targets),
+        ];
+        // Grafana reads grafana.ini and its provisioning directory once, at
+        // start, so only these files justify replacing the container. The
+        // provisioned dashboard is deliberately absent: it carries the scraped
+        // node names, so hashing it would replace Grafana on every fleet
+        // change and drop every live session. It does not need to be hashed,
+        // because the provider polls the bind mount and reloads the dashboard
+        // while Grafana runs. See GrafanaConfigRenderer::dashboardProvider().
+        $grafanaFiles = [
             '/etc/orbit/metrics/grafana/grafana.ini' => $this->grafana->rootUrl(),
             '/etc/orbit/metrics/grafana/provisioning/datasources/prometheus.yml' => $this->grafana->datasource(),
             '/etc/orbit/metrics/grafana/provisioning/dashboards/provider.yml' => $this->grafana->dashboardProvider(),
+        ];
+        $publicFiles = [
+            ...$prometheusFiles,
+            ...$grafanaFiles,
             '/etc/orbit/metrics/grafana/dashboards/orbit-node-resources.json' => $this->dashboard->render(
                 array_map(static fn (array $target): string => $target['name'], $targets),
             ),
@@ -50,7 +63,8 @@ final readonly class MetricsConfigurationRenderer
 
         return new MetricsConfigurationBundle(
             files: $files,
-            publicHash: hash('sha256', $this->encode($publicFiles)),
+            prometheusHash: hash('sha256', $this->encode($prometheusFiles)),
+            grafanaHash: hash('sha256', $this->encode($grafanaFiles)),
         );
     }
 

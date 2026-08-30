@@ -83,6 +83,64 @@ it('removes only the proven Grafana firewall rule and verifies absence', functio
     ]);
 });
 
+it('abandons the single commented Grafana firewall rule without a Gateway address', function (): void {
+    $ssh = new MetricsPublicationCapturingSshExecutor([
+        metricsPublicationResult(stdout: metricsPublicationFirewallStatus()),
+        metricsPublicationResult(),
+        metricsPublicationResult(stdout: "Status: active\n"),
+    ]);
+    $publication = metricsPublicationSshExecutor($ssh);
+
+    $publication->abandon(metricsPublicationNode('metrics', '10.44.0.3'));
+
+    expect(array_map(
+        static fn (RemoteCommand $command): array => $command->arguments,
+        $ssh->commands,
+    ))->toBe([
+        ['sudo', 'ufw', 'status', 'numbered'],
+        ['sudo', 'ufw', '--force', 'delete', '7'],
+        ['sudo', 'ufw', 'status', 'numbered'],
+    ]);
+});
+
+it('does nothing when abandoning with no commented Grafana firewall rule present', function (): void {
+    $ssh = new MetricsPublicationCapturingSshExecutor([
+        metricsPublicationResult(stdout: "Status: active\n"),
+    ]);
+    $publication = metricsPublicationSshExecutor($ssh);
+
+    $publication->abandon(metricsPublicationNode('metrics', '10.44.0.3'));
+
+    expect($ssh->commands)->toHaveCount(1);
+});
+
+it('fails closed when an abandoned Grafana firewall rule survives removal', function (): void {
+    $ssh = new MetricsPublicationCapturingSshExecutor([
+        metricsPublicationResult(stdout: metricsPublicationFirewallStatus()),
+        metricsPublicationResult(),
+        metricsPublicationResult(stdout: metricsPublicationFirewallStatus()),
+    ]);
+    $publication = metricsPublicationSshExecutor($ssh);
+
+    try {
+        $publication->abandon(metricsPublicationNode('metrics', '10.44.0.3'));
+        test()->fail('Expected abandon to fail closed when the rule survives removal.');
+    } catch (ResourceOperationException $exception) {
+        expect($exception->errorCode)->toBe('metrics.publication_firewall_remove_verify_failed');
+    }
+});
+
+it('leaves a neighbouring rule whose comment only starts with the Orbit marker', function (): void {
+    $ssh = new MetricsPublicationCapturingSshExecutor([
+        metricsPublicationResult(stdout: metricsPublicationNeighbourFirewallStatus()),
+    ]);
+    $publication = metricsPublicationSshExecutor($ssh);
+
+    $publication->abandon(metricsPublicationNode('metrics', '10.44.0.3'));
+
+    expect($ssh->commands)->toHaveCount(1);
+});
+
 function metricsPublicationSshExecutor(
     MetricsPublicationCapturingSshExecutor $ssh,
 ): MetricsPublicationSshExecutor {
@@ -154,4 +212,13 @@ final readonly class MetricsPublicationKnownHostsStoreFake implements KnownHosts
     }
 
     public function put(string $host, int $port, HostKey $key): void {}
+}
+
+function metricsPublicationNeighbourFirewallStatus(): string
+{
+    return <<<'STATUS'
+        Status: active
+
+        [ 9] 10.44.0.3 3000/tcp on orbit ALLOW IN 10.44.0.1 # orbit:metrics-grafana-upstream-v2
+        STATUS;
 }

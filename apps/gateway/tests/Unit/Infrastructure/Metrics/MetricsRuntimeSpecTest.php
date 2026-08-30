@@ -60,6 +60,25 @@ describe(MetricsRuntimeSpec::class, function (): void {
         expect($first->specHash)->not->toBe($second->specHash);
     });
 
+    it('bounds container logging and re-converges when the policy changes', function (): void {
+        $spec = new MetricsRuntimeSpec;
+        $narrower = new MetricsRuntimeSpec(logOptions: ['max-size' => '1m', 'max-file' => '3']);
+
+        $prometheus = $spec->for(MetricsService::Prometheus, 41, '10.44.0.3', 'config');
+        $grafana = $spec->for(MetricsService::Grafana, 41, '10.44.0.3', 'config');
+
+        expect($prometheus->logDriver)
+            ->toBe('json-file')
+            ->and($prometheus->logOptions)
+            ->toBe(['max-size' => '10m', 'max-file' => '3'])
+            ->and($grafana->logDriver)
+            ->toBe($prometheus->logDriver)
+            ->and($grafana->logOptions)
+            ->toBe($prometheus->logOptions)
+            ->and($narrower->for(MetricsService::Prometheus, 41, '10.44.0.3', 'config')->specHash)
+            ->not->toBe($prometheus->specHash);
+    });
+
     it('rejects an unsafe metrics address before building container arguments', function (): void {
         expect(
             fn () => new MetricsRuntimeSpec()->for(

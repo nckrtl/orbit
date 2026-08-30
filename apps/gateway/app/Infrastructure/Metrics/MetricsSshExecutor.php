@@ -658,7 +658,14 @@ final readonly class MetricsSshExecutor implements MetricsRuntimeHost, MetricsCr
             'unless-stopped',
             '--network',
             'host',
+            '--log-driver',
+            $spec->logDriver,
         ];
+
+        foreach ($spec->logOptions as $key => $value) {
+            $arguments[] = '--log-opt';
+            $arguments[] = "{$key}={$value}";
+        }
 
         foreach ($spec->labels as $key => $value) {
             $arguments[] = '--label';
