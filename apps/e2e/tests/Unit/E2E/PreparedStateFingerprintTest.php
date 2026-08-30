@@ -199,6 +199,9 @@ describe('PreparedStateFingerprint', function (): void {
                 'apps/gateway/app/Domain/Metrics/ExporterSelector.php',
                 'apps/gateway/app/Domain/Metrics/ExporterPreferenceRepository.php',
                 'apps/gateway/app/Infrastructure/Metrics/NativeMetricsCredentialManager.php',
+                // Rendered onto every selected node during convergence, so its bytes are prepared state.
+                'apps/gateway/app/Infrastructure/Metrics/MetricsUninstallScript.php',
+                'apps/gateway/app/Infrastructure/Metrics/MetricsFootprint.php',
             )
             ->not->toContain(
                 'apps/e2e/app/E2E/StandbyBuilder.php',
