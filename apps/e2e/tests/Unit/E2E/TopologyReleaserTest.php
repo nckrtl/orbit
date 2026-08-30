@@ -273,6 +273,12 @@ function fakeReleaseIncus(
             ($command[0] ?? null) === 'python3'
             && str_ends_with((string) ($command[1] ?? ''), '/resources/host/reconcile-firewall.py')
         ) {
+            $input = json_decode((string) $process->input, true, 8, JSON_THROW_ON_ERROR);
+            $network = is_array($input) ? $input['network'] ?? '' : '';
+            if (! is_string($network) || preg_match('/\Aoe-[a-z0-9](?:[a-z0-9-]{0,10}[a-z0-9])?\z/D', $network) !== 1) {
+                return Process::result('', 'invalid network', 2);
+            }
+
             return Process::result('{"changed":true}');
         }
         if (array_slice($command, 0, 5) === ['sudo', '-n', 'iptables', '-w', '5']) {
@@ -301,6 +307,9 @@ function fakeReleaseIncus(
         }
         if (($command[3] ?? null) === 'network' && ($command[4] ?? null) === 'delete') {
             $name = preg_replace('/\A[^:]+:/', '', (string) ($command[5] ?? ''));
+            if (str_starts_with((string) $name, 'oe-stuck')) {
+                return Process::result('', 'Error: network in use', 1);
+            }
             if ($name === $target->network()) {
                 $networkExists = false;
             } else {
@@ -631,6 +640,29 @@ describe('topology release', function () {
             ->toBe(['oe-orphan1', 'oe-orphan2', 'orbit-e2e-n-legacy'])
             ->and($orphans)
             ->toBe([]);
+
+        // A failing deletion is reported, the sweep continues, and every success is on the receipt.
+        $orphans = ['oe-orphan3', 'oe-stuck', 'orbit-e2e-n-legacy2'];
+        $replay = $build()->release('NCK-123', releaseAttempt());
+        expect($replay->networksReaped)
+            ->toBe(['oe-orphan3', 'orbit-e2e-n-legacy2'])
+            ->and($replay->networksFailed)
+            ->toHaveCount(1)
+            ->and($replay->networksFailed[0])
+            ->toStartWith('oe-stuck: ')
+            ->and($store->read(releaseReceiptPath('NCK-123'))['networks_reaped'] ?? null)
+            ->toBe(['oe-orphan1', 'oe-orphan2', 'oe-orphan3', 'orbit-e2e-n-legacy', 'orbit-e2e-n-legacy2'])
+            ->and($store->read(releaseReceiptPath('NCK-123'))['networks_failed'] ?? null)
+            ->toBe($replay->networksFailed)
+            ->and($orphans)
+            ->toBe(['oe-stuck']);
+
+        // A repeated failure of the same network is recorded once on the receipt.
+        $replay = $build()->release('NCK-123', releaseAttempt());
+        expect($replay->networksFailed)
+            ->toHaveCount(1)
+            ->and($store->read(releaseReceiptPath('NCK-123'))['networks_failed'] ?? null)
+            ->toBe($replay->networksFailed);
     });
 
     it('retains the proof record and writes a receipt when a proved attempt is released', function () {

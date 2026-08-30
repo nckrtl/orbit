@@ -33,10 +33,15 @@ network before the first VM attaches). The sweep never touches a network
 outside those prefixes, a network with users, or another Incus project. Each
 deleted name is recorded as `networks_reaped` in the command output, in the
 release receipt under `evidence/releases/ISSUE/ATTEMPT.json`, and in the
-operation journal (`network.sweep`). A repeated `release` sweeps again and
-reports the new deletions only, appending them to the receipt. The
-project-manager post-merge cleanup names `networks_reaped: n` from its release
-of the proof topology in its handoff.
+operation journal (`network.sweep`, one entry per network), each written as
+the deletion happens. A managed `oe-*` orphan also loses its host firewall
+rules; a legacy `orbit-e2e-*` orphan never had harness rules (the firewall
+helper refuses its name), so it is deleted directly. A network the sweep
+cannot delete is reported as `name: message` under `networks_failed` and does
+not stop the sweep or fail the command; the operator resolves it by hand. A
+repeated `release` sweeps again and reports the new deletions only, appending
+them to the receipt. The project-manager post-merge cleanup names
+`networks_reaped: n` from its release of the proof topology in its handoff.
 
 ## Supported platform
 

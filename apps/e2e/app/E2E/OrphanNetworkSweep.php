@@ -9,9 +9,12 @@ use App\E2E\State\OperationJournal;
 use App\E2E\State\StatePaths;
 use App\E2E\Value\AttemptId;
 use App\E2E\Value\IncusNetwork;
+use App\E2E\Value\NetworkSweepResult;
 use App\E2E\Value\OperationId;
 use App\E2E\Value\TopologyTarget;
+use Closure;
 use RuntimeException;
+use Throwable;
 
 /**
  * Remove harness-owned Incus networks that no topology uses any more.
@@ -20,6 +23,8 @@ use RuntimeException;
  * current harness, `orbit-e2e-` for the legacy one), Incus reports no user, it
  * is not the standby network, and no active lease names it. The sweep never
  * touches a network outside those prefixes or a network with users.
+ *
+ * @mago-expect lint:cyclomatic-complexity Each orphan is deleted, verified, and journaled on its own so one failure never hides another deletion.
  */
 final readonly class OrphanNetworkSweep
 {
@@ -70,28 +75,55 @@ final readonly class OrphanNetworkSweep
     }
 
     /**
-     * Delete every orphan and return the deleted names.
+     * Delete every orphan. Each deletion is journaled and handed to `$onDeleted`
+     * as soon as it happens, so evidence survives a later failure. A network
+     * whose deletion fails is reported in the result and does not stop the
+     * sweep of the remaining orphans.
      *
-     * @return list<string>
+     * @param null|Closure(string): void $onDeleted
      */
-    public function sweep(): array
+    public function sweep(?Closure $onDeleted = null): NetworkSweepResult
     {
         $orphans = self::orphans($this->host->networks(), $this->leasedNetworks());
         $reaped = [];
+        $failed = [];
         foreach ($orphans as $name) {
-            $this->networks->deleteOrphan($name);
+            try {
+                $this->networks->deleteOrphan($name);
+            } catch (Throwable $exception) {
+                $failed[$name] = $exception->getMessage();
+                $this->journal->append($this->operation, [
+                    'event' => 'network.sweep',
+                    'state' => 'failed',
+                    'network' => $name,
+                    'error' => $exception->getMessage(),
+                ]);
+                continue;
+            }
             $reaped[] = $name;
+            $this->journal->append($this->operation, [
+                'event' => 'network.sweep',
+                'state' => 'deleted',
+                'network' => $name,
+            ]);
+            if ($onDeleted !== null) {
+                $onDeleted($name);
+            }
         }
-        if ($reaped !== [] && array_intersect($reaped, array_keys($this->host->networks())) !== []) {
-            throw new RuntimeException('Orphaned harness networks remain after the sweep.');
+        if ($reaped !== []) {
+            foreach (array_intersect($reaped, array_keys($this->host->networks())) as $name) {
+                $failed[$name] = 'The network is still listed after deletion.';
+                $this->journal->append($this->operation, [
+                    'event' => 'network.sweep',
+                    'state' => 'failed',
+                    'network' => $name,
+                    'error' => $failed[$name],
+                ]);
+            }
+            $reaped = array_values(array_diff($reaped, array_keys($failed)));
         }
-        $this->journal->append($this->operation, [
-            'event' => 'network.sweep',
-            'state' => 'swept',
-            'networks_reaped' => $reaped,
-        ]);
 
-        return $reaped;
+        return new NetworkSweepResult($reaped, $failed);
     }
 
     /**
