@@ -15,8 +15,8 @@ expect_error node.settings_path_invalid orbit node:settings app-dev --setting=in
 expect_error node.settings_path_invalid orbit node:settings app-dev --setting=instance.path:/srv/../orbit/instances --json
 expect_error node.settings_path_managed orbit node:settings app-dev --setting=instance.path:/home/orbit/apps/laravel --json
 
-gateway_checkout=${ORBIT_GATEWAY_CHECKOUT:-/home/orbit/orbit-gateway}
-gateway_checkout=${gateway_checkout%/}
+gateway_checkout=/home/orbit/orbit/apps/gateway
+test -d "$gateway_checkout" || fail "configured Gateway checkout is missing: $gateway_checkout"
 expect_error node.settings_path_protected orbit node:settings app-dev --setting=instance.path:"$gateway_checkout" --json
 expect_error node.settings_path_protected orbit node:settings app-dev --setting=instance.path:"$gateway_checkout/nested" --json
 expect_error node.settings_path_protected orbit node:settings app-dev --setting=instance.path:"$(dirname "$gateway_checkout")" --json
