@@ -192,6 +192,7 @@ it('pins the host and converges only base node identity and connectivity', funct
     expect(interface_exists(NodeRoleFirewallManager::class))->toBeTrue();
 
     $node = base_provisionable_node();
+    $node->roles()->delete();
     $knownHosts = new class implements KnownHostsStore {
         /** @var list<string> */
         public array $hosts = [];
@@ -257,8 +258,79 @@ it('pins the host and converges only base node identity and connectivity', funct
         ->toBe(['true']);
 });
 
-it('commits recoverable peer publication before activating orbit SSH for active reprovisioning', function (): void {
+it('reprovisions active role-bearing nodes only through WireGuard', function (): void {
     $node = base_provisionable_node();
+    $node->update(['status' => \App\Domain\Shared\LifecycleStatus::Active, 'ssh_host_fingerprint' => 'SHA256:pinned']);
+    $scans = [];
+    $scanner = new class($scans) implements HostKeyScanner {
+        /** @param list<string> $scans */
+        public function __construct(
+            private array &$scans,
+        ) {}
+
+        public function scan(string $host, int $port): HostKey
+        {
+            $this->scans[] = "{$host}:{$port}";
+
+            return new HostKey('ssh-ed25519', 'PUBLICKEY', 'SHA256:pinned');
+        }
+    };
+    $ssh = new BaseNodeSshExecutor;
+    $wireGuardConnections = [];
+    $wireGuard = new class($wireGuardConnections) implements WireGuardPeerConverger, RecoverableWireGuardPeerConverger {
+        /** @param list<string> $connections */
+        public function __construct(
+            private array &$connections,
+        ) {}
+
+        public function converge(Node $node, SshConnection $connection, bool $rolelessOperator = false): void {}
+
+        public function convergeRecoverably(
+            Node $node,
+            SshConnection $connection,
+            Closure $completion,
+            bool $rolelessOperator = false,
+        ): void {
+            $this->connections[] = "{$connection->host}:{$connection->port}";
+            $completion();
+        }
+    };
+    $baseFirewallNodes = [];
+    $firewallRoles = [];
+    $converger = new NativeNodeConverger(
+        hostKeys: $scanner,
+        knownHosts: base_test_known_hosts(),
+        sshKeys: base_test_keys(),
+        ssh: $ssh,
+        bootstrapCommand: new NodeBootstrapCommandFactory(base_test_keys()),
+        wireGuard: $wireGuard,
+        firewall: base_firewall_spy($baseFirewallNodes, $firewallRoles),
+    );
+
+    $completed = false;
+
+    $converger->convergeRecoverably($node, base_identity(), null, static function () use (&$completed): void {
+        $completed = true;
+    });
+
+    expect($scans)->toBe(['10.44.0.2:22']);
+    expect($wireGuardConnections)->toBe([]);
+    expect($baseFirewallNodes)->toBe([]);
+    expect($firewallRoles)->toBe([RoleName::Vpn]);
+    expect($completed)->toBeTrue();
+    expect(array_map(
+        static fn (array $call): string => "{$call['connection']->host}:{$call['connection']->port}",
+        $ssh->calls,
+    ))->toBe([
+        '10.44.0.2:22',
+        '10.44.0.2:22',
+        '10.44.0.2:22',
+    ]);
+});
+
+it('commits recoverable peer publication before activating orbit SSH for active roleless reprovisioning', function (): void {
+    $node = base_provisionable_node();
+    $node->roles()->delete();
     $node->update(['status' => \App\Domain\Shared\LifecycleStatus::Active, 'ssh_host_fingerprint' => 'SHA256:pinned']);
     $events = [];
     $wireGuard = new class($events) implements WireGuardPeerConverger, RecoverableWireGuardPeerConverger {
@@ -306,8 +378,9 @@ it('commits recoverable peer publication before activating orbit SSH for active 
     expect($ssh->calls)->toHaveCount(3);
 });
 
-it('rolls back recoverable peer publication when late private ssh verification fails', function (): void {
+it('rolls back recoverable peer publication when roleless private ssh verification fails', function (): void {
     $node = base_provisionable_node();
+    $node->roles()->delete();
     $node->update(['status' => \App\Domain\Shared\LifecycleStatus::Active, 'ssh_host_fingerprint' => 'SHA256:pinned']);
     $events = [];
     $wireGuard = new class($events) implements WireGuardPeerConverger, RecoverableWireGuardPeerConverger {
@@ -573,6 +646,7 @@ it('translates base firewall failures to node provisioning failures', function (
     expect(interface_exists(NodeRoleFirewallManager::class))->toBeTrue();
 
     $node = base_provisionable_node();
+    $node->roles()->delete();
     $result = new CommandResult(1, '', 'ufw failed', 10, false);
     $firewall = new class($result) implements NodeRoleFirewallManager {
         public function __construct(
