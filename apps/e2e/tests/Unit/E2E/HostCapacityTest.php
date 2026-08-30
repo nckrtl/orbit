@@ -118,7 +118,28 @@ describe('HostCapacity', function () {
 
         expect(fn () => new HostCapacity(new IncusHost, 9)->reserveSlot())
             ->toThrow(RuntimeException::class, 'capacity is exhausted: 9 harness VMs exist and the limit is 9')
+            ->and(fn () => new HostCapacity(new IncusHost, 9)->reserveSlot())
+            ->toThrow(RuntimeException::class, 'Raise ORBIT_E2E_INCUS_MAX_VMS, or release a topology.')
             ->and(fn () => new HostCapacity(new IncusHost, 8))
             ->toThrow(RuntimeException::class, 'cannot fit');
+    });
+
+    it('ships a default budget of six feature topologies beside both standbys', function () {
+        // Read the shipped literal rather than the resolved value: an operator who
+        // exported ORBIT_E2E_INCUS_MAX_VMS for one run must still be able to run the suite.
+        $source = (string) file_get_contents(dirname(__DIR__, 3).'/config/e2e.php');
+
+        expect($source)->toMatch("/'max_vms'\s*=>\s*\(int\)\s*env\(\s*'ORBIT_E2E_INCUS_MAX_VMS'\s*,\s*24\s*\)/");
+    });
+
+    it('admits one more topology at the shipped budget when two standbys are present', function () {
+        fakeCapacityHost([
+            ...array_map(static fn (int $i): string => "orbit-e2e-standby-role{$i}", range(1, 3)),
+            ...array_map(static fn (int $i): string => "orbit-e2e-live-standby-role{$i}", range(1, 3)),
+            ...array_map(static fn (int $i): string => "orbit-e2e-nck-1-aaaaaaaa-role{$i}", range(1, 3)),
+            ...array_map(static fn (int $i): string => "orbit-e2e-nck-2-bbbbbbbb-role{$i}", range(1, 3)),
+        ], ['10.232.1.1/24']);
+
+        expect(new HostCapacity(new IncusHost, 24)->reserveSlot())->toBeGreaterThan(1);
     });
 });
