@@ -13,6 +13,7 @@ final readonly class MetricsContainerSpec
      * @param list<string> $mounts
      * @param array<string, string> $environment
      * @param non-empty-list<string> $healthCommand
+     * @param array<string, string> $logOptions
      * @mago-expect lint:excessive-parameter-list The immutable value keeps the complete bounded container specification.
      */
     public function __construct(
@@ -26,6 +27,8 @@ final readonly class MetricsContainerSpec
         public array $mounts,
         public array $environment,
         public array $healthCommand,
+        public string $logDriver,
+        public array $logOptions,
         public string $specHash,
     ) {}
 }

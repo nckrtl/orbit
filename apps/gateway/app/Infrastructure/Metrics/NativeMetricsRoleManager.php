@@ -10,6 +10,7 @@ use App\Data\Metrics\MetricsMutationData;
 use App\Domain\Metrics\ExporterPreference;
 use App\Domain\Metrics\ExporterPreferenceRepository;
 use App\Domain\Metrics\MetricsFleetReconciler;
+use App\Domain\Metrics\MetricsPublicationReport;
 use App\Domain\Metrics\MetricsRoleManager;
 use App\Domain\Nodes\RoleAssignmentException;
 use App\Domain\Nodes\RoleName;
@@ -24,6 +25,7 @@ final readonly class NativeMetricsRoleManager implements MetricsRoleManager
         private RemoveNodeRoleAction $remove,
         private ExporterPreferenceRepository $preferences,
         private MetricsFleetReconciler $fleet,
+        private MetricsPublicationReport $report,
     ) {}
 
     public function enable(int $nodeId): MetricsMutationData
@@ -61,7 +63,10 @@ final readonly class NativeMetricsRoleManager implements MetricsRoleManager
         $node = $nodes->sole();
         $this->remove->execute($node, RoleName::Metrics, $force, $purge);
 
-        return new MetricsMutationData($node->id, 'removed');
+        // The baseline records what it did to the publication. Reading the
+        // Gateway state again here would report a guess, and the guess is
+        // wrong whenever that state moved between the two reads.
+        return new MetricsMutationData($node->id, 'removed', $this->report->take());
     }
 
     public function enableExporter(int $nodeId): MetricsMutationData

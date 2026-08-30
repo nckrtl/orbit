@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Data\Metrics\MetricsCredentialsData;
 use App\Domain\Metrics\MetricsCredentialManager;
 use App\Domain\Metrics\MetricsExporterLifecycle;
+use App\Infrastructure\Metrics\GrafanaConfigRenderer;
 use App\Infrastructure\Metrics\MetricsConfigurationBundle;
 use App\Infrastructure\Metrics\MetricsConfigurationRenderer;
 use App\Infrastructure\Metrics\MetricsConfigurationSnapshot;
@@ -40,6 +41,57 @@ describe(NativeMetricsContainerRuntime::class, function (): void {
             ->toBe(MetricsService::Grafana)
             ->and($credentials->verified)
             ->toBe([$node->id]);
+    });
+
+    it('moves only the Prometheus spec hash when the scrape targets change', function (): void {
+        $host = new MetricsRuntimeHostFake;
+        $exporters = new MetricsExporterLifecycleFake;
+        $runtime = metricsContainerRuntime($host, new MetricsCredentialManagerFake, $exporters);
+        [$node, $assignment] = metricsRuntimeModels();
+
+        $runtime->converge($node, $assignment);
+        $before = $host->specs;
+        $exporters->targets[] = ['name' => 'app-prod', 'address' => '10.44.0.4'];
+        $runtime->converge($node, $assignment);
+
+        expect($host->specs[0]->specHash)
+            ->not
+            ->toBe($before[0]->specHash)
+            ->and($host->specs[1]->specHash)
+            ->toBe($before[1]->specHash);
+    });
+
+    it('gives each container the hash of the configuration that container reads', function (): void {
+        $host = new MetricsRuntimeHostFake;
+        $exporters = new MetricsExporterLifecycleFake;
+        $runtime = metricsContainerRuntime($host, new MetricsCredentialManagerFake, $exporters);
+        [$node, $assignment] = metricsRuntimeModels();
+
+        $runtime->converge($node, $assignment);
+        $configuration = new MetricsConfigurationRenderer()->render($exporters->targets, 'runtime-admin-password');
+        $spec = new MetricsRuntimeSpec;
+
+        expect($configuration->prometheusHash)
+            ->not
+            ->toBe($configuration->grafanaHash)
+            ->and($host->specs[0]->specHash)
+            ->toBe(
+                $spec->for(
+                    MetricsService::Prometheus,
+                    $assignment->id,
+                    '10.44.0.3',
+                    $configuration->prometheusHash,
+                )->specHash,
+            )
+            ->and($host->specs[1]->specHash)
+            ->toBe(
+                $spec->for(
+                    MetricsService::Grafana,
+                    $assignment->id,
+                    '10.44.0.3',
+                    $configuration->grafanaHash,
+                )->specHash,
+            );
     });
 
     it('restores the exact configuration snapshot when container convergence fails', function (): void {
@@ -223,6 +275,12 @@ final class MetricsCredentialManagerFake implements MetricsCredentialManager
 
 final class MetricsExporterLifecycleFake implements MetricsExporterLifecycle
 {
+    /** @var list<array{name: string, address: string}> */
+    public array $targets = [
+        ['name' => 'gateway', 'address' => '10.44.0.1'],
+        ['name' => 'metrics-runtime', 'address' => '10.44.0.3'],
+    ];
+
     public function converge(Node $node, NodeRole $assignment): void {}
 
     public function remove(Node $node, NodeRole $assignment): void {}
@@ -236,9 +294,6 @@ final class MetricsExporterLifecycleFake implements MetricsExporterLifecycle
 
     public function targets(Node $metricsNode): array
     {
-        return [
-            ['name' => 'gateway', 'address' => '10.44.0.1'],
-            ['name' => 'metrics-runtime', 'address' => '10.44.0.3'],
-        ];
+        return $this->targets;
     }
 }
