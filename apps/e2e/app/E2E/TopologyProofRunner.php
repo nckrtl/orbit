@@ -135,7 +135,7 @@ final readonly class TopologyProofRunner
             $phase = 'acceptance';
             $this->runActions($target, 'acceptance', $plan->acceptance, $actions);
             $phase = 'verify';
-            $verification = $this->verifier->verify($target, VerificationMode::Proof, $source);
+            $verification = $this->verifier->verify($target, VerificationMode::Proof, $source, $plan->endsWith);
             if (! $verification->passed) {
                 throw new RuntimeException('Candidate proof verification failed.'.$verification->failedSummary());
             }
@@ -154,6 +154,8 @@ final readonly class TopologyProofRunner
             $actions,
             $error,
             ProofResult::now(),
+            $plan->endsWith,
+            TopologyVerifier::skippedProbes($plan->endsWith),
         );
         $this->record($state, $target, $generation, $source, $verification);
         $state->writeProof($result->toArray());
