@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Actions\Gateway\BootstrapGatewayAction;
 use App\Actions\Gateway\GatewayOperatingSystemGuard;
 use App\Data\Gateway\BootstrapGatewayData;
+use App\Domain\Gateway\GatewaySelfAccessConverger;
 use App\Domain\Gateway\GatewayVpnConverger;
 use App\Domain\Gateway\GatewayWebConverger;
 use App\Domain\Nodes\NodeProvisioningException;
@@ -31,6 +32,15 @@ it('initializes the portable gateway authority idempotently', function (): void 
             $this->calls[] = ['hostname' => $hostname, 'address' => $wireguardAddress];
         }
     };
+    $selfAccess = new class implements GatewaySelfAccessConverger {
+        /** @var list<string> */
+        public array $calls = [];
+
+        public function converge(Node $node): void
+        {
+            $this->calls[] = $node->name;
+        }
+    };
     $action = new BootstrapGatewayAction(
         assignRole: app(App\Actions\Nodes\AssignRoleAction::class),
         identity: new App\Actions\Gateway\GatewayBootstrapIdentityValidator,
@@ -40,6 +50,7 @@ it('initializes the portable gateway authority idempotently', function (): void 
         files: new ProtectedFileWriter,
         vpn: gateway_vpn_noop(),
         web: $web,
+        selfAccess: $selfAccess,
         orbitHome: $orbitHome,
     );
     $data = new BootstrapGatewayData(
@@ -96,6 +107,8 @@ it('initializes the portable gateway authority idempotently', function (): void 
                 ['hostname' => 'gateway.test', 'address' => '10.44.0.1'],
                 ['hostname' => 'gateway.test', 'address' => '10.44.0.1'],
             ])
+            ->and($selfAccess->calls)
+            ->toBe(['gateway', 'gateway'])
             ->and(Node::query()->count())
             ->toBe(1);
     } finally {
@@ -145,6 +158,7 @@ it('fails closed without mutating a partial root CA containing only :filename', 
                 throw new LogicException('Web convergence must not run after CA generation fails.');
             }
         },
+        selfAccess: gateway_self_access_noop(),
         orbitHome: $orbitHome,
     );
 
@@ -233,6 +247,7 @@ it('rejects a mismatched complete root CA pair without replacing it', function (
                 throw new LogicException('Web convergence must not run for an invalid CA pair.');
             }
         },
+        selfAccess: gateway_self_access_noop(),
         orbitHome: $orbitHome,
     );
 
@@ -298,6 +313,7 @@ it('rejects an existing root CA that is not RSA 4096', function (): void {
         web: new class implements GatewayWebConverger {
             public function converge(string $hostname, string $wireguardAddress): void {}
         },
+        selfAccess: gateway_self_access_noop(),
         orbitHome: $orbitHome,
     );
 
@@ -340,6 +356,7 @@ it('rejects an invalid static identity before persistence or host side effects',
                 throw new LogicException('Web convergence must not run.');
             }
         },
+        selfAccess: gateway_self_access_noop(),
         orbitHome: $orbitHome,
     );
 
@@ -396,6 +413,7 @@ it('records provisioning and failed host convergence state and activates an idem
         files: new ProtectedFileWriter,
         vpn: gateway_vpn_noop(),
         web: $web,
+        selfAccess: gateway_self_access_noop(),
         orbitHome: $orbitHome,
     );
     $data = new BootstrapGatewayData(
@@ -463,6 +481,7 @@ it('records stable gateway failure state when bootstrap throws an unexpected exc
                 throw new RuntimeException('Unexpected gateway web failure.');
             }
         },
+        selfAccess: gateway_self_access_noop(),
         orbitHome: $orbitHome,
     );
     $data = new BootstrapGatewayData(
@@ -550,6 +569,7 @@ it('rejects unsupported local gateway operating systems before any persistence o
         files: new ProtectedFileWriter,
         vpn: $vpn,
         web: $web,
+        selfAccess: gateway_self_access_noop(),
         orbitHome: $orbitHome,
     );
 
@@ -592,6 +612,13 @@ function gateway_vpn_noop(): GatewayVpnConverger
 {
     return new class implements GatewayVpnConverger {
         public function converge(Node $gateway, BootstrapGatewayData $data): void {}
+    };
+}
+
+function gateway_self_access_noop(): GatewaySelfAccessConverger
+{
+    return new class implements GatewaySelfAccessConverger {
+        public function converge(Node $node): void {}
     };
 }
 

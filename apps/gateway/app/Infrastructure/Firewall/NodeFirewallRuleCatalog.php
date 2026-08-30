@@ -22,7 +22,7 @@ final class NodeFirewallRuleCatalog
     {
         return match ($role) {
             RoleName::Gateway => [
-                $this->rule('orbit:gateway-https', '443', $this->wireguardAddress($node), 'orbit'),
+                $this->rule('orbit:gateway-https', '443', 'any', 'orbit'),
             ],
             RoleName::Vpn => [$this->rule('orbit:vpn-ssh', '22', $this->wireguardAddress($node), 'orbit')],
             RoleName::AppDev => [

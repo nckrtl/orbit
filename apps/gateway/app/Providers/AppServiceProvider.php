@@ -32,6 +32,7 @@ use App\Domain\Doctor\RoleStateInspector;
 use App\Domain\Doctor\WorkspaceStateInspector;
 use App\Domain\Firewall\FirewallInspector;
 use App\Domain\Firewall\FirewallManager;
+use App\Domain\Gateway\GatewaySelfAccessConverger;
 use App\Domain\Gateway\GatewayVpnConverger;
 use App\Domain\Gateway\GatewayWebConverger;
 use App\Domain\Nodes\ManagedUserAccountResolver;
@@ -84,6 +85,7 @@ use App\Infrastructure\Gateway\GatewayFpmConfigRenderer;
 use App\Infrastructure\Gateway\NativeGatewayCaddyConverger;
 use App\Infrastructure\Gateway\NativeGatewayCertificatePublisher;
 use App\Infrastructure\Gateway\NativeGatewayFpmConverger;
+use App\Infrastructure\Gateway\NativeGatewaySelfAccessConverger;
 use App\Infrastructure\Gateway\NativeGatewayWebConverger;
 use App\Infrastructure\Nodes\EloquentNodeRoleDependencyInspector;
 use App\Infrastructure\Nodes\NativeNodeConverger;
@@ -236,6 +238,15 @@ final class AppServiceProvider extends ServiceProvider
             ),
         );
         $this->app->singleton(
+            GatewaySelfAccessConverger::class,
+            static fn (): GatewaySelfAccessConverger => new NativeGatewaySelfAccessConverger(
+                processes: app(ProcessRunner::class),
+                knownHosts: app(KnownHostsStore::class),
+                sshKeys: app(SshKeyProvider::class),
+                homeDirectory: self::resolveManagedUserHomeDirectory(...),
+            ),
+        );
+        $this->app->singleton(
             BootstrapGatewayAction::class,
             static fn (): BootstrapGatewayAction => new BootstrapGatewayAction(
                 assignRole: app(AssignRoleAction::class),
@@ -246,6 +257,7 @@ final class AppServiceProvider extends ServiceProvider
                 files: app(ProtectedFileWriter::class),
                 vpn: app(GatewayVpnConverger::class),
                 web: app(GatewayWebConverger::class),
+                selfAccess: app(GatewaySelfAccessConverger::class),
                 orbitHome: rtrim(string: (string) config('orbit.home'), characters: '/'),
             ),
         );
@@ -295,5 +307,12 @@ final class AppServiceProvider extends ServiceProvider
     public function boot(ActivityPropertiesObserver $activityPropertiesObserver): void
     {
         Activity::observe($activityPropertiesObserver);
+    }
+
+    private static function resolveManagedUserHomeDirectory(string $user): string|false
+    {
+        $account = posix_getpwnam($user);
+
+        return is_array($account) ? (string) $account['dir'] : false;
     }
 }

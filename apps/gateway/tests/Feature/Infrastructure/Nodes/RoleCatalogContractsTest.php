@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Nodes\RoleName;
 use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
 use App\Infrastructure\Firewall\UfwManagedRule;
+use App\Infrastructure\Firewall\UfwRuleShape;
 use App\Infrastructure\Nodes\NodeBootstrapPackageCatalog;
 use App\Infrastructure\Nodes\NodeRoleServiceCatalog;
 use App\Models\Node;
@@ -51,4 +52,27 @@ it('keeps public app-production rules independent of a WireGuard address', funct
 
     expect(array_map(static fn (UfwManagedRule $rule): ?string => $rule->shape->destination, $rules))
         ->toBe(['any', 'any']);
+});
+
+it('matches the gateway writer exact shape independently of a WireGuard address', function (): void {
+    $rules = new NodeFirewallRuleCatalog()->forRole(
+        new Node(['public_ssh_port' => 22, 'wireguard_address' => null]),
+        RoleName::Gateway,
+    );
+
+    expect($rules)
+        ->toHaveCount(1)
+        ->and($rules[0]->shape)
+        ->toEqual(new UfwRuleShape(
+            comment: 'orbit:gateway-https',
+            action: 'allow',
+            direction: 'in',
+            source: 'any',
+            destination: 'any',
+            port: '443',
+            protocol: 'tcp',
+            inInterface: 'orbit',
+            outInterface: null,
+            family: null,
+        ));
 });

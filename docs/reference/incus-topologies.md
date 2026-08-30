@@ -97,6 +97,28 @@ transport failure before checkout identity is verified; any later failure
 moves the attempt to `diagnosis`. A proved attempt rejects sync, exec, and
 state changes.
 
+## Proof fixtures
+
+Proof plans may call a fixture script from the candidate checkout, for example
+`/home/orbit/orbit/apps/e2e/resources/proof/doctor-proof.sh`, on the checkout
+roles `gateway` and `app-dev`. The guest-script inventory under
+`apps/e2e/resources/guest` is closed: `WorktreeSynchronizer` requires the exact
+list, so a proof-only script must not be added there. `app-prod` has no
+checkout; declare its actions as short `sudo bash -c` argument vectors.
+
+Known prepared-state limits (first observed on 2026-08-30, NCK-58):
+
+- A rolling refresh restores the promoted snapshots and skips provisioning, so
+  projections rendered by older Gateway code (for example PHP-FPM pools) stay
+  stale after a renderer change. Doctor reports that as drift. Re-project
+  through product commands in proof setup, or rebuild the standby cold.
+- `converge-sample-app.sh` replaces the product-managed `/etc/caddy/Caddyfile`
+  symlink on `app-prod` with an e2e wrapper for internal TLS. The product's
+  Caddy publisher then fails validation on the next publish, and Doctor's
+  fragment lookup misses. Restore the managed symlink and keep the
+  `local_certs` block as `fragments/00-orbit-e2e-global.caddy` inside the
+  managed version instead; the publisher copies unmanaged fragments forward.
+
 ## Standby
 
 Refresh the standby with `bin/e2e-standby refresh --main-sha=SHA` after a
