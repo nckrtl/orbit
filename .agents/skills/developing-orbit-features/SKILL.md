@@ -5,8 +5,8 @@ description: Use when implementing a Ready Orbit Linear issue from its worktree.
 
 # Developing Orbit Features
 
-You implement one Linear issue in its worktree and open a pull request. The
-project manager owns the issue state, the worktree, review, merge, and cleanup.
+You implement one Linear issue in its worktree and open a pull request.
+Issue state, the worktree, review, merge, and cleanup belong to other agents.
 
 ## Inputs
 
