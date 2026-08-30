@@ -1,0 +1,24 @@
+{
+    "setup": [
+        {
+            "id": "converge-metrics",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/converge.sh"],
+            "timeout_seconds": 900
+        }
+    ],
+    "acceptance": [
+        {
+            "id": "dashboard-contract",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/dashboard-contract.sh"],
+            "timeout_seconds": 300
+        },
+        {
+            "id": "panel-queries",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/panel-queries.sh"],
+            "timeout_seconds": 600
+        }
+    ]
+}
