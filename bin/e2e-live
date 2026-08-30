@@ -5,29 +5,24 @@ set -euo pipefail
 
 usage() {
     cat <<'EOF'
-usage: bin/e2e-live <candidate-sha> [--rolling]
+usage: bin/e2e-live <candidate-sha>
 
 Runs apps/e2e/tests/Live/TopologyLedLifecycleAcceptanceTest.php (issue ACC-1)
-against real Incus resources from a validation clone. With --rolling it also
-runs apps/e2e/tests/Live/RollingTopologyAcceptanceTest.php (isolation issue
-ACC-2) with generated marker commits and a failing migration file, then
-restores the promoted standby generation to the candidate.
+against real Incus resources from a validation clone.
 
 The wrapper owns the validation clone:
   ORBIT_E2E_VALIDATE_ROOT  clone path (default: $HOME/orbit-validate); cloned
                            from this repository when absent
-  XDG_STATE_HOME           harness state root (default: $HOME/.local/state)
 
 It fetches the candidate, checks the clone out on `main` at the candidate,
-resets linked worktrees .worktrees/acc-1 (branch acc-1-live) and, with
---rolling, .worktrees/acc-2 (branch acc-2-live), bootstraps them, refreshes
-the standby when the prepared-state fingerprint changed, exports every
-ORBIT_LIVE_* input, and uses apps/e2e/resources/proof/ACC-1/plan.json as the
-harness plan. It refuses to run while any feature topology other than the
-suites' own ACC-1 or ACC-2 is active, releases stale ACC-1/ACC-2 attempts, and
-holds <XDG_STATE_HOME>/orbit/e2e/live.lock so only one run drives the clone.
+resets the linked worktree .worktrees/acc-1 (branch acc-1-live), bootstraps
+it, refreshes the standby when the prepared-state fingerprint changed, exports
+every ORBIT_LIVE_* input, and uses proofs/ACC-1.json as the harness plan. It
+refuses to run while any other worktree of the clone holds a live topology,
+releases a stale ACC-1 attempt, and holds <clone>/.e2e/locks/live.lock so only
+one run drives the clone.
 
-Each suite ends with one summary line to paste into the handoff:
+The suite ends with one summary line to paste into the pull request:
   <suite>: passed, <assertions> assertions, <seconds>s
 EOF
 }
@@ -42,15 +37,11 @@ log() {
 }
 
 candidate=''
-rolling=0
 for argument in "$@"; do
     case "$argument" in
         --help|-h)
             usage
             exit 0
-            ;;
-        --rolling)
-            rolling=1
             ;;
         --*)
             usage >&2
@@ -76,23 +67,20 @@ fi
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 validate=${ORBIT_E2E_VALIDATE_ROOT:-$HOME/orbit-validate}
-export XDG_STATE_HOME=${XDG_STATE_HOME:-$HOME/.local/state}
 export PYTHONDONTWRITEBYTECODE=1
-state_root=$XDG_STATE_HOME/orbit/e2e
+lock_directory=$validate/.e2e/locks
 profile=gateway_app-dev_app-prod
 issue=ACC-1
-isolation_issue=ACC-2
 feature_worktree=$validate/.worktrees/acc-1
-isolation_worktree=$validate/.worktrees/acc-2
-plan=apps/e2e/resources/proof/ACC-1/plan.json
+plan=proofs/ACC-1.json
 summaries=()
 
 # One live run at a time: two runs would race on the clone, the standby, and ACC-1.
 # The lock comes before every other prerequisite so a held lock always exits 75.
 command -v flock >/dev/null 2>&1 || fail 'flock is required'
-mkdir -p "$state_root"
-exec 9>"$state_root/live.lock"
-flock --nonblocking 9 || fail "another bin/e2e-live run holds $state_root/live.lock" 75
+mkdir -p "$lock_directory"
+exec 9>"$lock_directory/live.lock"
+flock --nonblocking 9 || fail "another bin/e2e-live run holds $lock_directory/live.lock" 75
 
 for tool in git jq composer php incus; do
     command -v "$tool" >/dev/null 2>&1 || fail "$tool is required"
@@ -103,19 +91,16 @@ if [[ -e "$validate" && "$(cd "$validate" && pwd -P)" == "$(cd "$root" && pwd -P
     fail 'the validation clone must not be this repository'
 fi
 
-# Refuse while any feature topology other than the suites' own is active.
+# Refuse while any other worktree of the clone holds a live topology.
 active_issues=()
-for pointer in "$state_root"/topologies/*/active.json "$state_root"/leases/*.json; do
-    [[ -e "$pointer" ]] || continue
-    active=$(jq -r '.issue // empty' "$pointer" 2>/dev/null || true)
-    [[ -n "$active" ]] || continue
-    case "$active" in
-        "$issue"|"$isolation_issue") ;;
-        *) active_issues+=("$active") ;;
-    esac
+for lease in "$validate"/.worktrees/*/.e2e/attempt.json; do
+    [[ -e "$lease" ]] || continue
+    active=$(jq -r '.issue // empty' "$lease" 2>/dev/null || true)
+    [[ -n "$active" && "$active" != "$issue" ]] || continue
+    active_issues+=("$active")
 done
 if ((${#active_issues[@]} > 0)); then
-    fail "a feature topology is active (${active_issues[*]}); release it before running the live suites"
+    fail "a feature topology is active (${active_issues[*]}); release it before running the live suite"
 fi
 
 # Validation clone on main at the candidate.
@@ -143,14 +128,8 @@ prepare_worktree() {
 }
 
 prepare_worktree "$feature_worktree" acc-1-live
-if ((rolling)); then
-    prepare_worktree "$isolation_worktree" acc-2-live
-fi
 
 bootstrap_targets=("$validate" "$feature_worktree")
-if ((rolling)); then
-    bootstrap_targets+=("$isolation_worktree")
-fi
 bootstrap_logs=$(mktemp -d)
 bootstrap_pids=()
 for target in "${bootstrap_targets[@]}"; do
@@ -170,14 +149,12 @@ harness() {
     "$validate/bin/e2e-$1" "${@:2}" --json
 }
 
-# Stale attempts of the suites' own issues block their first assertion.
-for own in "$issue" "$isolation_issue"; do
-    stale=$(harness topology status "$own" | jq -r '.attempt_id // empty')
-    if [[ -n "$stale" ]]; then
-        log "releasing stale $own attempt $stale"
-        harness topology release "$own" "$stale" >/dev/null
-    fi
-done
+# A stale attempt of the suite's own issue blocks its first assertion.
+stale=$(harness topology status "$issue" "--worktree=$feature_worktree" | jq -r '.attempt_id // empty')
+if [[ -n "$stale" ]]; then
+    log "releasing stale $issue attempt $stale"
+    harness topology release "$issue" "--worktree=$feature_worktree" >/dev/null
+fi
 
 standby_state=$(harness standby status | jq -r '.state')
 if [[ "$standby_state" != promoted ]]; then
@@ -208,8 +185,6 @@ export ORBIT_LIVE_MAIN_WORKTREE=$validate
 export ORBIT_LIVE_FEATURE_WORKTREE=$feature_worktree
 export ORBIT_LIVE_CANDIDATE_SHA=$candidate
 export ORBIT_LIVE_PROOF_PLAN=$validate/$plan
-export ORBIT_LIVE_ISOLATION_ISSUE=$isolation_issue
-export ORBIT_LIVE_ISOLATION_WORKTREE=$isolation_worktree
 export ORBIT_LIVE_BASE_SHA=$base_sha
 
 run_suite() {
@@ -234,45 +209,6 @@ run_suite() {
 }
 
 run_suite lifecycle tests/Live/TopologyLedLifecycleAcceptanceTest.php
-
-if ((rolling)); then
-    rolling_branch=acc-1-rolling
-    rolling_worktree=$validate/.worktrees/$rolling_branch
-    marker_file=apps/e2e/resources/guest/prepare-node.sh
-    stamp=$(date -u +%Y%m%dT%H%M%SZ)
-    if [[ -d "$rolling_worktree" ]]; then
-        git -C "$validate" worktree remove --force "$rolling_worktree"
-    fi
-    git -C "$validate" worktree add --quiet --detach "$rolling_worktree" "$candidate"
-    marker_commit() {
-        printf '\n# rolling-live marker %s-%s\n' "$stamp" "$1" >>"$rolling_worktree/$marker_file"
-        git -C "$rolling_worktree" -c user.name=orbit-e2e -c user.email=e2e@orbit.invalid \
-            commit --quiet --all --message "test: rolling live marker $stamp-$1"
-        git -C "$rolling_worktree" rev-parse --verify 'HEAD^{commit}'
-    }
-    rolling_sha=$(marker_commit roll)
-    failure_sha=$(marker_commit fail)
-    git -C "$validate" branch --force "$rolling_branch" "$failure_sha" >/dev/null
-    git -C "$validate" worktree remove --force "$rolling_worktree"
-    migration_file=$(mktemp -t orbit-e2e-live-migration.XXXXXX.json)
-    harness standby fingerprint "--main-sha=$failure_sha" \
-        | jq '{fingerprint: .fingerprint, steps: [{role: "gateway", argv: ["/bin/false"], stdin: ""}]}' \
-        >"$migration_file"
-    export ORBIT_LIVE_ROLLING_SHA=$rolling_sha
-    export ORBIT_LIVE_FAILURE_SHA=$failure_sha
-    export ORBIT_LIVE_FAILURE_MIGRATION=$migration_file
-    log "rolling markers: base $base_sha, rolling $rolling_sha, failure $failure_sha"
-
-    restore_after_rolling() {
-        trap - EXIT
-        refresh_standby "$candidate"
-        git -C "$validate" branch --delete --force "$rolling_branch" >/dev/null 2>&1 || true
-        rm -f "$migration_file"
-    }
-    trap restore_after_rolling EXIT
-    run_suite rolling tests/Live/RollingTopologyAcceptanceTest.php
-    restore_after_rolling
-fi
 
 printf '\n'
 printf '%s\n' "${summaries[@]}"

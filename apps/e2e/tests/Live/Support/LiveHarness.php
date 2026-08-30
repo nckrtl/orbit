@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\Process;
 use PHPUnit\Framework\Assert;
 
 /**
- * The public wrappers, state files, git, and read-only Incus queries every live
+ * The public wrappers, worktree state files, git, and read-only Incus queries every live
  * acceptance test drives. Each helper asserts its own success so a phase reads
  * as its evidence chain and nothing else.
  *
@@ -89,22 +89,6 @@ final class LiveHarness
         Assert::assertFileExists($path);
 
         return self::json((string) file_get_contents($path));
-    }
-
-    /** @return list<array<array-key, mixed>> */
-    /** @mago-expect analysis:mixed-assignment Each journal line is asserted as an object record. */
-    public static function journalEntries(string $stateRoot, string $operationId): array
-    {
-        $path = "{$stateRoot}/journals/{$operationId}.jsonl";
-        Assert::assertFileExists($path);
-        $entries = [];
-        foreach (preg_split('/\R/', trim((string) file_get_contents($path))) ?: [] as $line) {
-            $entry = self::json($line);
-            Assert::assertSame($operationId, $entry['operation_id'] ?? null);
-            $entries[] = $entry;
-        }
-
-        return $entries;
     }
 
     /** @param callable(): array<array-key, mixed> $action
