@@ -12,12 +12,6 @@ out=$(orbit node:settings app-dev --setting=instance.path: --json)
 [[ "$(sql_node_settings app-dev)" == '{"worktree":{"path":"/srv/orbit/worktrees"}}' ]] \
   || fail "SQL did not keep remaining worktree override"
 
-before=$(sql_node_settings app-dev)
-sudo chown root:root -- /home/orbit/apps
-expect_error node.settings_root_failed orbit node:settings app-dev --setting=worktree.path: --json
-[[ "$(sql_node_settings app-dev)" == "$before" ]] || fail "failed last unset persisted settings"
-sudo chown orbit:orbit -- /home/orbit/apps
-
 out=$(orbit node:settings app-dev --setting=worktree.path: --json)
 [[ "$(echo "$out" | json_get settings)" == null ]] || fail "clearing last override did not return settings null: $out"
 [[ "$(sql_node_settings app-dev)" == null ]] || fail "clearing last override did not store SQL null"

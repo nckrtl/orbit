@@ -15,4 +15,14 @@ out=$(orbit node:settings app-dev --setting=instance.path:/mnt/orbit-ok --json)
 test "$(stat -c '%U:%G %a' /mnt/orbit-ok)" = 'orbit:orbit 750'
 
 restore_default_roots
-echo "ownership: missing 755, pre-existing 750 unchanged, foreign rejected"
+
+orbit node:settings app-dev --setting=instance.path: --json >/dev/null
+before=$(app_dev_settings)
+test -d /home/orbit/apps
+sudo chown root:root -- /home/orbit/apps
+expect_error node.settings_root_failed orbit node:settings app-dev --setting=worktree.path: --json
+[[ "$(app_dev_settings)" == "$before" ]] || fail "failed last unset persisted settings"
+sudo chown orbit:orbit -- /home/orbit/apps
+restore_default_roots
+
+echo "ownership: missing 755, pre-existing 750 unchanged, foreign rejected, last unset fails closed"

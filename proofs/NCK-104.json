@@ -18,7 +18,7 @@
             "id": "patch-omit-null",
             "node": "gateway",
             "argv": ["bash", "/var/lib/orbit-e2e/proof/patch-omit-null.sh"],
-            "timeout_seconds": 180
+            "timeout_seconds": 120
         },
         {
             "id": "cli-setting-parse",
@@ -48,7 +48,7 @@
             "id": "root-ownership",
             "node": "app-dev",
             "argv": ["bash", "/var/lib/orbit-e2e/proof/root-ownership.sh"],
-            "timeout_seconds": 120
+            "timeout_seconds": 180
         },
         {
             "id": "caddy-acl-sharing",
