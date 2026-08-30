@@ -40,6 +40,7 @@ it('proves the rolling topology contract through public wrappers', function (): 
         'ORBIT_LIVE_PROFILE',
         'ORBIT_LIVE_ISSUE',
         'ORBIT_LIVE_ISOLATION_ISSUE',
+        'ORBIT_LIVE_ISOLATION_WORKTREE',
         'ORBIT_LIVE_MAIN_WORKTREE',
         'ORBIT_LIVE_FEATURE_WORKTREE',
         'ORBIT_LIVE_CANDIDATE_SHA',
@@ -56,9 +57,11 @@ it('proves the rolling topology contract through public wrappers', function (): 
 
     $issue = $inputs['ORBIT_LIVE_ISSUE'];
     $isolationIssue = $inputs['ORBIT_LIVE_ISOLATION_ISSUE'];
+    $isolationWorktree = $inputs['ORBIT_LIVE_ISOLATION_WORKTREE'];
     Assert::assertNotSame($issue, $isolationIssue);
     $mainWorktree = $inputs['ORBIT_LIVE_MAIN_WORKTREE'];
     $featureWorktree = $inputs['ORBIT_LIVE_FEATURE_WORKTREE'];
+    Assert::assertNotSame(realpath($featureWorktree), realpath($isolationWorktree));
     $candidateSha = $inputs['ORBIT_LIVE_CANDIDATE_SHA'];
     $baseSha = $inputs['ORBIT_LIVE_BASE_SHA'];
     $rollingSha = $inputs['ORBIT_LIVE_ROLLING_SHA'];
@@ -135,7 +138,7 @@ it('proves the rolling topology contract through public wrappers', function (): 
             'topology',
             'acquire',
             $isolationIssue,
-            $featureWorktree,
+            $isolationWorktree,
         ));
         $isolationTarget = liveAcquiredTarget($isolationAcquire, $isolationIssue);
         Assert::assertSame('discovery', $isolationAcquire['state'] ?? null);
