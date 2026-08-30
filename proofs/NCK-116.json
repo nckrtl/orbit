@@ -77,6 +77,15 @@
             "timeout_seconds": 300
         },
         {
+            "id": "refuses-a-rule-number-that-shifted-under-the-plan",
+            "node": "app-prod",
+            "argv": [
+                "bash",
+                "/var/lib/orbit-e2e/proof/refuses-a-shifted-rule-number.sh"
+            ],
+            "timeout_seconds": 300
+        },
+        {
             "id": "gateway-online",
             "node": "gateway",
             "argv": [

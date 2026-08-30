@@ -470,33 +470,90 @@ final readonly class MetricsUninstallScript
                 note_removed "${CONFIG_DIR} and every file Orbit generated in it"
             }
 
+            # Deletes one approved rule, after proving the plan's number still
+            # addresses the rule the operator approved.
+            #
+            # Re-verify is not re-plan. A UFW rule number is a position, not an
+            # identity: if anything below the rule goes away between the plan
+            # and the delete, the planned number addresses somebody else's
+            # rule. So the numbering is re-read here and the planned number
+            # must still resolve to the planned rule. When it does not, this
+            # refuses and reports; it never retargets onto a new number,
+            # because the operator approved a rule, not a number. This is the
+            # same re-check `remove_containers` and `remove_volumes` make
+            # through `container_owned` and `volume_owned`.
+            remove_firewall_rule() {
+                local number="$1" port="$2" comment="$3"
+                local -a numbers=()
+                local candidate
+
+                inspect_firewall
+
+                if [ "${firewall_state}" != 'active' ]; then
+                    note_refused "UFW stopped being active before the rule commented ${comment} was removed; nothing was deleted."
+
+                    return
+                fi
+
+                while IFS= read -r candidate; do
+                    [ -n "${candidate}" ] && numbers+=("${candidate}")
+                done <<<"$(firewall_comment_numbers "${comment}")"
+
+                if [ "${#numbers[@]}" -ne 1 ] || [ "${numbers[0]}" != "${number}" ]; then
+                    note_refused "the rules changed between the plan and the removal, so UFW rule [${number}] no longer addresses the rule commented ${comment}; nothing was deleted. Re-run to plan again."
+
+                    return
+                fi
+
+                if ! firewall_rule_matches "${number}" "${port}"; then
+                    note_refused "UFW rule [${number}] commented ${comment} no longer matches the rule Orbit writes; nothing was deleted."
+
+                    return
+                fi
+
+                ufw --force delete "${number}" >/dev/null 2>&1
+
+                # `ufw --force delete` exits 0 for a number that matched
+                # nothing, so its status proves nothing. Read the rules back
+                # and report what is actually gone.
+                inspect_firewall
+
+                if [ -n "$(firewall_comment_numbers "${comment}")" ]; then
+                    note_refused "UFW rule commented ${comment} survived removal"
+
+                    return
+                fi
+
+                note_removed "UFW rule commented ${comment}"
+            }
+
             remove_firewall() {
                 local -a entries=()
-                local entry number comment
+                local entry number port comment
 
                 if [ "${exporter_rule_state}" = 'ok' ]; then
-                    entries+=("${exporter_rule_number} ${EXPORTER_COMMENT}")
+                    entries+=("${exporter_rule_number} ${EXPORTER_PORT} ${EXPORTER_COMMENT}")
                 fi
 
                 if [ "${grafana_rule_state}" = 'ok' ]; then
-                    entries+=("${grafana_rule_number} ${GRAFANA_COMMENT}")
+                    entries+=("${grafana_rule_number} ${GRAFANA_PORT} ${GRAFANA_COMMENT}")
                 fi
 
                 if [ "${#entries[@]}" -eq 0 ]; then
                     return
                 fi
 
-                # Highest number first: every delete renumbers the rules below it.
+                # Highest number first: every delete renumbers the rules below
+                # it, and Orbit's own second rule must not be the thing that
+                # invalidates its own plan.
                 while IFS= read -r entry; do
                     [ -n "${entry}" ] || continue
                     number="${entry%% *}"
+                    entry="${entry#* }"
+                    port="${entry%% *}"
                     comment="${entry#* }"
 
-                    if ufw --force delete "${number}" >/dev/null 2>&1; then
-                        note_removed "UFW rule commented ${comment}"
-                    else
-                        note_refused "UFW rule [${number}] commented ${comment} could not be removed"
-                    fi
+                    remove_firewall_rule "${number}" "${port}" "${comment}"
                 done <<<"$(printf '%s\n' "${entries[@]}" | sort -rn)"
             }
 
@@ -521,22 +578,6 @@ final readonly class MetricsUninstallScript
 
                     if [ -n "${volumes}" ]; then
                         note_refused "Orbit Metrics volumes survived removal: $(echo "${volumes}" | tr '\n' ' ')"
-                    fi
-                fi
-
-                # Only the rules this run planned to delete. A rule left alone
-                # for drift is already reported, and is not a survivor.
-                if [ "${firewall_state}" = 'active' ]; then
-                    inspect_firewall
-
-                    if [ "${exporter_rule_state}" = 'ok' ] \
-                        && [ -n "$(firewall_comment_numbers "${EXPORTER_COMMENT}")" ]; then
-                        note_refused "UFW rules commented ${EXPORTER_COMMENT} survived removal"
-                    fi
-
-                    if [ "${grafana_rule_state}" = 'ok' ] \
-                        && [ -n "$(firewall_comment_numbers "${GRAFANA_COMMENT}")" ]; then
-                        note_refused "UFW rules commented ${GRAFANA_COMMENT} survived removal"
                     fi
                 fi
             }

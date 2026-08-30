@@ -174,6 +174,14 @@ under `Proved with less evidence than usual:`, marks each such rule
 `(destination address not verified)` in the list the operator approves, and
 repeats both in the final report.
 
+A UFW rule number is a position, not an identity. Immediately before each
+delete the escape re-reads the numbering and requires the planned number to
+still resolve to the planned rule. If anything below the rule went away in the
+meantime, the number now addresses somebody else's rule, so the escape refuses
+and reports it rather than retargeting onto a new number: the operator
+approved a rule, not a number. `ufw --force delete` exits `0` for a number that
+matched nothing, so removal is reported only after reading the rules back.
+
 Anything without a proof is reported, never removed, and the script exits `3`.
 
 The script discovers its own scope rather than being told. An exporter-only

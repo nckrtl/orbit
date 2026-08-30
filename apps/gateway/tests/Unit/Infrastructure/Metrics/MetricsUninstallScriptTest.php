@@ -147,6 +147,24 @@ it('names the reduced proof in the plan, before the operator confirms', function
     expect($plan)->toContain("report_list 'Proved with less evidence than usual:'");
 });
 
+it('re-reads the numbering immediately before deleting a firewall rule', function (): void {
+    $rendered = metricsUninstallScriptRendered();
+    $remove = substr($rendered, (int) strpos($rendered, 'remove_firewall_rule() {'));
+    $remove = substr($remove, 0, (int) strpos($remove, 'remove_firewall() {'));
+
+    expect($remove)->toContain('inspect_firewall');
+});
+
+it('refuses a planned rule number that no longer addresses the planned rule', function (): void {
+    expect(metricsUninstallScriptRendered())
+        ->toContain('if [ "${#numbers[@]}" -ne 1 ] || [ "${numbers[0]}" != "${number}" ]; then');
+});
+
+it('reports a firewall removal only after reading the rule back', function (): void {
+    expect(metricsUninstallScriptRendered())
+        ->toContain('if [ -n "$(firewall_comment_numbers "${comment}")" ]; then');
+});
+
 it('marks each rule whose destination it could not verify', function (): void {
     expect(metricsUninstallScriptRendered())->toContain(' (destination address not verified)');
 });
