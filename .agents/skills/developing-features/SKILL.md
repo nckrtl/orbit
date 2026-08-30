@@ -3,7 +3,7 @@ name: developing-features
 description: Use when implementing a Ready Orbit Linear issue from its worktree.
 ---
 
-# Developing Orbit Features
+# Developing Features
 
 You implement one Linear issue in its worktree and open a pull request.
 Issue state, the worktree, review, merge, and cleanup belong to other agents.
@@ -55,12 +55,11 @@ is missing.
 
 ## Delegation
 
-You are the orchestrator for the issue. Delegate bounded pieces — a component's
-implementation, its tests, a targeted code review — to subagents with the
-client's available reasoning model, and give each one the issue, the worktree,
-and the exact scope. Integrate their work yourself. Keep steps 2, 3, 6, and 7
-(topology, proof, pull request) in your own hands. Do the work directly when
-the change touches at most 5 files.
+You are the orchestrator for the issue. Delegate bounded pieces to subagents:
+a component's implementation, its tests, a targeted code read. Give each
+subagent the issue, the worktree, and the exact scope. Integrate their work
+yourself. Keep steps 2, 3, 6, and 7 (topology, proof, pull request) in your
+own hands. Do the work directly when the change touches at most five files.
 
 ## Corrections
 
