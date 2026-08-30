@@ -2064,7 +2064,15 @@ describe('WorktreeSynchronizer::syncCommit', function () {
         ['root' => $root, 'worktree' => $worktree, 'candidate' => $candidate] = $fixture;
         $foreign = createSynchronizerPrimaryFixture('LUNA-153');
         try {
-            $unreachable = trim(synchronizerGit($worktree, ['commit-tree', $candidate.'^{tree}', '-m', 'orphan'])[0]);
+            $orphanOutput = implode("\n", synchronizerGit($worktree, [
+                'commit-tree',
+                $candidate.'^{tree}',
+                '-m',
+                'orphan',
+            ]));
+            preg_match('/[0-9a-f]{40}/', $orphanOutput, $orphan);
+            $unreachable = $orphan[0] ?? '';
+            expect($unreachable)->toMatch('/\A[0-9a-f]{40}\z/');
             $guest = new WorktreeSynchronizerGuestFake('');
             $synchronizer = new WorktreeSynchronizer($guest, $root, new OperationId(str_repeat('a', 32)));
             $target = featureTarget('LUNA-152');
