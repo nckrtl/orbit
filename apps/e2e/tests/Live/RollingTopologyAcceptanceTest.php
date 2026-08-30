@@ -9,6 +9,7 @@ use App\E2E\Value\TopologyTarget;
 use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Support\Facades\Process;
 use PHPUnit\Framework\Assert;
+use Tests\Live\Support\LiveHarness;
 use Tests\TestCase;
 
 uses(TestCase::class);
@@ -35,7 +36,7 @@ it('proves the rolling topology contract through public wrappers', function (): 
         test()->markTestSkipped('Set ORBIT_LIVE_INCUS=1 to run.');
     }
 
-    $inputs = liveInputs([
+    $inputs = LiveHarness::inputs([
         'ORBIT_LIVE_PROFILE',
         'ORBIT_LIVE_ISSUE',
         'ORBIT_LIVE_ISOLATION_ISSUE',
@@ -68,14 +69,14 @@ it('proves the rolling topology contract through public wrappers', function (): 
     foreach ([$candidateSha, $baseSha, $rollingSha, $failureSha] as $sha) {
         Assert::assertMatchesRegularExpression('/\A[a-f0-9]{40}\z/D', $sha);
     }
-    Assert::assertSame($candidateSha, liveGit($featureWorktree, ['rev-parse', '--verify', 'HEAD^{commit}']));
-    Assert::assertSame([], liveGitStatus($featureWorktree));
+    Assert::assertSame($candidateSha, LiveHarness::git($featureWorktree, ['rev-parse', '--verify', 'HEAD^{commit}']));
+    Assert::assertSame([], LiveHarness::gitStatus($featureWorktree));
     foreach ([$baseSha, $rollingSha, $failureSha] as $sha) {
-        Assert::assertSame($sha, liveGit($mainWorktree, ['rev-parse', '--verify', "{$sha}^{commit}"]));
+        Assert::assertSame($sha, LiveHarness::git($mainWorktree, ['rev-parse', '--verify', "{$sha}^{commit}"]));
     }
     Assert::assertNotSame($baseSha, $rollingSha);
     Assert::assertNotSame($rollingSha, $failureSha);
-    $migration = liveJsonFile($migrationFile);
+    $migration = LiveHarness::jsonFile($migrationFile);
     Assert::assertSame(['fingerprint', 'steps'], array_keys($migration));
     Assert::assertSame([[
         'role' => 'gateway',
@@ -83,7 +84,7 @@ it('proves the rolling topology contract through public wrappers', function (): 
         'stdin' => '',
     ]], $migration['steps']);
 
-    $initialMainSha = liveGit($mainWorktree, ['rev-parse', '--verify', 'HEAD^{commit}']);
+    $initialMainSha = LiveHarness::git($mainWorktree, ['rev-parse', '--verify', 'HEAD^{commit}']);
     $acquired = false;
     $isolationAcquired = false;
     $primaryFailure = null;
@@ -91,14 +92,17 @@ it('proves the rolling topology contract through public wrappers', function (): 
     $isolationTarget = null;
 
     try {
-        $initial = liveJsonPhase('standby status', fn (): array => liveJsonWrapper('standby', 'status'));
+        $initial = LiveHarness::jsonPhase('standby status', fn (): array => LiveHarness::jsonWrapper(
+            'standby',
+            'status',
+        ));
         Assert::assertContains($initial['state'] ?? null, ['missing', 'promoted']);
         Assert::assertIsBool($initial['stopped'] ?? null);
         Assert::assertSame($initial['state'] === 'missing', $initial['generation'] === null);
 
         if ($initial['state'] === 'missing') {
-            liveCheckout($mainWorktree, $baseSha);
-            $bootstrap = liveJsonPhase('bootstrap standby generation', fn (): array => liveJsonWrapper(
+            LiveHarness::checkout($mainWorktree, $baseSha);
+            $bootstrap = LiveHarness::jsonPhase('bootstrap standby generation', fn (): array => LiveHarness::jsonWrapper(
                 'standby',
                 'refresh',
                 "--main-sha={$baseSha}",
@@ -107,10 +111,10 @@ it('proves the rolling topology contract through public wrappers', function (): 
             liveAssertRefresh($bootstrap, 'promoted');
         }
 
-        $standby = liveJsonWrapper('standby', 'status');
+        $standby = LiveHarness::jsonWrapper('standby', 'status');
         liveAssertStandbyStatus($standby, 'promoted');
         Assert::assertSame($baseSha, $standby['generation']['main_sha'] ?? null);
-        $acquire = liveJsonPhase('acquire topology', fn (): array => liveJsonWrapper(
+        $acquire = LiveHarness::jsonPhase('acquire topology', fn (): array => LiveHarness::jsonWrapper(
             'topology',
             'acquire',
             $issue,
@@ -127,7 +131,7 @@ it('proves the rolling topology contract through public wrappers', function (): 
         liveAssertMountedGatewayEnvironment($featureWorktree);
 
         $isolationAcquired = true;
-        $isolationAcquire = liveJsonPhase('acquire isolation topology', fn (): array => liveJsonWrapper(
+        $isolationAcquire = LiveHarness::jsonPhase('acquire isolation topology', fn (): array => LiveHarness::jsonWrapper(
             'topology',
             'acquire',
             $isolationIssue,
@@ -139,7 +143,7 @@ it('proves the rolling topology contract through public wrappers', function (): 
         liveAssertIncusTopology($isolationAcquire['topology'] ?? null, $isolationTarget);
         liveAssertTopologyTrafficIsolation($target, $isolationTarget);
 
-        $isolationRelease = liveJsonPhase('release isolation topology', fn (): array => liveJsonWrapper(
+        $isolationRelease = LiveHarness::jsonPhase('release isolation topology', fn (): array => LiveHarness::jsonWrapper(
             'topology',
             'release',
             $isolationIssue,
@@ -149,9 +153,9 @@ it('proves the rolling topology contract through public wrappers', function (): 
         $isolationAcquired = false;
 
         $manifestPath = "{$stateRoot}/topologies/{$issue}/{$target->requireAttempt()->value}.json";
-        Assert::assertSame($acquire['topology'], liveJsonFile($manifestPath));
-        liveVoidPhase('verify services', function () use ($issue, $target): void {
-            $verified = liveJsonWrapper('topology', 'verify', $issue, $target->requireAttempt()->value);
+        Assert::assertSame($acquire['topology'], LiveHarness::jsonFile($manifestPath));
+        LiveHarness::voidPhase('verify services', function () use ($issue, $target): void {
+            $verified = LiveHarness::jsonWrapper('topology', 'verify', $issue, $target->requireAttempt()->value);
             Assert::assertSame('verified', $verified['state'] ?? null);
             Assert::assertTrue($verified['verification']['passed'] ?? false);
             Assert::assertNotContains(false, $verified['verification']['probes'] ?? []);
@@ -162,7 +166,7 @@ it('proves the rolling topology contract through public wrappers', function (): 
         Assert::assertFileDoesNotExist($overlayFile);
         file_put_contents($overlayFile, "harmless live overlay\n", LOCK_EX);
         try {
-            $dirty = liveJsonPhase('dirty source sync', fn (): array => liveJsonWrapper(
+            $dirty = LiveHarness::jsonPhase('dirty source sync', fn (): array => LiveHarness::jsonWrapper(
                 'topology',
                 'sync',
                 $issue,
@@ -170,7 +174,7 @@ it('proves the rolling topology contract through public wrappers', function (): 
                 $featureWorktree,
             ));
             Assert::assertSame('ready', $dirty['state'] ?? null);
-            $dirtyManifest = liveJsonFile($manifestPath);
+            $dirtyManifest = LiveHarness::jsonFile($manifestPath);
             Assert::assertTrue($dirtyManifest['source']['dirty'] ?? false);
             Assert::assertSame([$overlayPath], $dirtyManifest['source']['overlay_paths'] ?? null);
             Assert::assertMatchesRegularExpression(
@@ -183,16 +187,16 @@ it('proves the rolling topology contract through public wrappers', function (): 
         } finally {
             Assert::assertTrue(unlink($overlayFile));
         }
-        Assert::assertSame([], liveGitStatus($featureWorktree));
+        Assert::assertSame([], LiveHarness::gitStatus($featureWorktree));
 
-        $clean = liveJsonPhase('clean source sync', fn (): array => liveJsonWrapper(
+        $clean = LiveHarness::jsonPhase('clean source sync', fn (): array => LiveHarness::jsonWrapper(
             'topology',
             'sync',
             $issue,
             $target->requireAttempt()->value,
             $featureWorktree,
         ));
-        $cleanManifest = liveJsonFile($manifestPath);
+        $cleanManifest = LiveHarness::jsonFile($manifestPath);
         Assert::assertSame('ready', $clean['state'] ?? null);
         Assert::assertFalse($cleanManifest['source']['dirty'] ?? true);
         Assert::assertNull($cleanManifest['source']['tree_hash'] ?? 'missing');
@@ -200,7 +204,7 @@ it('proves the rolling topology contract through public wrappers', function (): 
         Assert::assertSame($candidateSha, $cleanManifest['source']['host_sha'] ?? null);
         Assert::assertSame($candidateSha, $cleanManifest['source']['guest_sha'] ?? null);
 
-        $proof = liveJsonPhase('prove exact candidate', fn (): array => liveJsonWrapper(
+        $proof = LiveHarness::jsonPhase('prove exact candidate', fn (): array => LiveHarness::jsonWrapper(
             'topology',
             'prove',
             $issue,
@@ -210,23 +214,23 @@ it('proves the rolling topology contract through public wrappers', function (): 
         Assert::assertSame('proved', $proof['state'] ?? null);
         Assert::assertSame($candidateSha, $proof['candidate_sha'] ?? null);
         Assert::assertSame(
-            liveGit($featureWorktree, ['rev-parse', '--verify', 'HEAD^{tree}']),
+            LiveHarness::git($featureWorktree, ['rev-parse', '--verify', 'HEAD^{tree}']),
             $proof['candidate_tree'] ?? null,
         );
         Assert::assertMatchesRegularExpression('/\A[a-f0-9]{64}\z/D', (string) ($proof['tree_hash'] ?? ''));
         Assert::assertTrue($proof['verification']['passed'] ?? false);
-        Assert::assertSame($proof, liveJsonFile("{$stateRoot}/proof/{$issue}.json"));
+        Assert::assertSame($proof, LiveHarness::jsonFile("{$stateRoot}/proof/{$issue}.json"));
 
-        liveCheckout($mainWorktree, $rollingSha);
-        $rollingFingerprint = liveJsonWrapper('standby', 'fingerprint', "--main-sha={$rollingSha}");
-        $rolling = liveJsonPhase('rolling standby refresh', fn (): array => liveJsonWrapper(
+        LiveHarness::checkout($mainWorktree, $rollingSha);
+        $rollingFingerprint = LiveHarness::jsonWrapper('standby', 'fingerprint', "--main-sha={$rollingSha}");
+        $rolling = LiveHarness::jsonPhase('rolling standby refresh', fn (): array => LiveHarness::jsonWrapper(
             'standby',
             'refresh',
             "--main-sha={$rollingSha}",
         ));
         liveAssertRefresh($rolling, 'promoted');
         Assert::assertNotSame($standby['generation']['id'] ?? null, $rolling['generation_id']);
-        $promoted = liveJsonWrapper('standby', 'status');
+        $promoted = LiveHarness::jsonWrapper('standby', 'status');
         liveAssertStandbyStatus($promoted, 'promoted');
         Assert::assertSame($rolling['generation_id'], $promoted['generation']['id'] ?? null);
         Assert::assertSame($rollingSha, $promoted['generation']['main_sha'] ?? null);
@@ -235,21 +239,21 @@ it('proves the rolling topology contract through public wrappers', function (): 
             $promoted['generation']['prepared_fingerprint'] ?? null,
         );
 
-        liveCheckout($mainWorktree, $failureSha);
-        $failureFingerprint = liveJsonWrapper('standby', 'fingerprint', "--main-sha={$failureSha}");
+        LiveHarness::checkout($mainWorktree, $failureSha);
+        $failureFingerprint = LiveHarness::jsonWrapper('standby', 'fingerprint', "--main-sha={$failureSha}");
         Assert::assertNotSame($rollingFingerprint['fingerprint'] ?? null, $failureFingerprint['fingerprint'] ?? null);
         Assert::assertSame($failureFingerprint['fingerprint'] ?? null, $migration['fingerprint'] ?? null);
-        $failedResult = liveProcessPhase('injected migration failure', fn (): ProcessResult => liveWrapper(
+        $failedResult = LiveHarness::processPhase('injected migration failure', fn (): ProcessResult => LiveHarness::wrapper(
             'standby',
             'refresh',
             "--main-sha={$failureSha}",
             "--migration-file={$migrationFile}",
         ));
         Assert::assertFalse($failedResult->successful());
-        $failed = liveJson($failedResult->output());
+        $failed = LiveHarness::json($failedResult->output());
         liveAssertRefresh($failed, 'failed');
         Assert::assertSame($rolling['generation_id'], $failed['generation_id'] ?? null);
-        $failureEvidence = liveJsonFile("{$stateRoot}/standby/failures/{$failed['evidence_id']}.json");
+        $failureEvidence = LiveHarness::jsonFile("{$stateRoot}/standby/failures/{$failed['evidence_id']}.json");
         Assert::assertSame(1, $failureEvidence['schema'] ?? null);
         Assert::assertSame($failureSha, $failureEvidence['main_sha'] ?? null);
         Assert::assertSame('A standby migration step failed.', $failureEvidence['message'] ?? null);
@@ -258,24 +262,24 @@ it('proves the rolling topology contract through public wrappers', function (): 
             'recovered' => true,
             'stopped' => true,
             'generation_id' => $rolling['generation_id'],
-        ], liveJsonFile("{$stateRoot}/standby/recovery/{$failed['evidence_id']}.json"));
-        $recovered = liveJsonWrapper('standby', 'status');
+        ], LiveHarness::jsonFile("{$stateRoot}/standby/recovery/{$failed['evidence_id']}.json"));
+        $recovered = LiveHarness::jsonWrapper('standby', 'status');
         liveAssertStandbyStatus($recovered, 'promoted');
         Assert::assertSame($rolling['generation_id'], $recovered['generation']['id'] ?? null);
 
-        liveCheckout($mainWorktree, $rollingSha);
-        $unchanged = liveJsonPhase('no-op standby refresh', fn (): array => liveJsonWrapper(
+        LiveHarness::checkout($mainWorktree, $rollingSha);
+        $unchanged = LiveHarness::jsonPhase('no-op standby refresh', fn (): array => LiveHarness::jsonWrapper(
             'standby',
             'refresh',
             "--main-sha={$rollingSha}",
         ));
         liveAssertRefresh($unchanged, 'unchanged');
         Assert::assertSame($rolling['generation_id'], $unchanged['generation_id']);
-        $unchangedStatus = liveJsonWrapper('standby', 'status');
+        $unchangedStatus = LiveHarness::jsonWrapper('standby', 'status');
         liveAssertStandbyStatus($unchangedStatus, 'promoted');
         Assert::assertSame($rolling['generation_id'], $unchangedStatus['generation']['id'] ?? null);
 
-        $lease = liveJsonFile("{$stateRoot}/leases/{$issue}.json");
+        $lease = LiveHarness::jsonFile("{$stateRoot}/leases/{$issue}.json");
         Assert::assertArrayNotHasKey('source_operation_ids', $lease);
         $expectedReleased = [];
         foreach (TopologyProfile::ROLES as $role) {
@@ -290,7 +294,7 @@ it('proves the rolling topology contract through public wrappers', function (): 
         $expectedReleased[] = 'deleted:'.$target->network();
         $attemptId = $target->requireAttempt()->value;
 
-        $release = liveJsonPhase('release exact topology', fn (): array => liveJsonWrapper(
+        $release = LiveHarness::jsonPhase('release exact topology', fn (): array => LiveHarness::jsonWrapper(
             'topology',
             'release',
             $issue,
@@ -301,10 +305,13 @@ it('proves the rolling topology contract through public wrappers', function (): 
         Assert::assertSame('discovery', $release['purpose'] ?? null);
         Assert::assertSame($expectedReleased, $release['released'] ?? null);
         Assert::assertSame([], $release['already_absent'] ?? null);
-        Assert::assertSame($release, liveJsonFile("{$stateRoot}/evidence/releases/{$issue}/{$attemptId}.json"));
+        Assert::assertSame(
+            $release,
+            LiveHarness::jsonFile("{$stateRoot}/evidence/releases/{$issue}/{$attemptId}.json"),
+        );
         Assert::assertFileDoesNotExist($manifestPath);
         Assert::assertFileDoesNotExist("{$stateRoot}/leases/{$issue}.json");
-        $repeated = liveJsonWrapper('topology', 'release', $issue, $attemptId);
+        $repeated = LiveHarness::jsonWrapper('topology', 'release', $issue, $attemptId);
         Assert::assertSame('released', $repeated['state'] ?? null);
         Assert::assertSame([], $repeated['released'] ?? null);
         Assert::assertSame($expectedReleased, $repeated['already_absent'] ?? null);
@@ -317,7 +324,7 @@ it('proves the rolling topology contract through public wrappers', function (): 
         $cleanupFailure = null;
         if ($isolationAcquired && $isolationTarget !== null) {
             try {
-                $cleanup = liveProcessPhase('cleanup isolation topology release', fn (): ProcessResult => liveWrapper(
+                $cleanup = LiveHarness::processPhase('cleanup isolation topology release', fn (): ProcessResult => LiveHarness::wrapper(
                     'topology',
                     'release',
                     $isolationIssue,
@@ -330,7 +337,7 @@ it('proves the rolling topology contract through public wrappers', function (): 
         }
         if ($acquired && $target !== null) {
             try {
-                $cleanup = liveProcessPhase('cleanup topology release', fn (): ProcessResult => liveWrapper(
+                $cleanup = LiveHarness::processPhase('cleanup topology release', fn (): ProcessResult => LiveHarness::wrapper(
                     'topology',
                     'release',
                     $issue,
@@ -342,7 +349,7 @@ it('proves the rolling topology contract through public wrappers', function (): 
             }
         }
         try {
-            liveCheckout($mainWorktree, $initialMainSha);
+            LiveHarness::checkout($mainWorktree, $initialMainSha);
         } catch (Throwable $exception) {
             $cleanupFailure ??= $exception;
         }
@@ -361,114 +368,6 @@ it('proves the rolling topology contract through public wrappers', function (): 
         throw $primaryFailure;
     }
 })->group('incus-live');
-
-/** @param list<string> $names
- * @return array<string, string>
- */
-function liveInputs(array $names): array
-{
-    $inputs = [];
-    foreach ($names as $name) {
-        $value = getenv($name);
-        Assert::assertNotFalse($value, "Missing required live input: {$name}");
-        Assert::assertNotSame('', $value, "Missing required live input: {$name}");
-        $inputs[$name] = $value;
-    }
-
-    return $inputs;
-}
-
-function liveWrapper(string $tool, string $action, string ...$arguments): ProcessResult
-{
-    return Process::timeout(3_600)->run([dirname(__DIR__, 4).'/bin/e2e-'.$tool, $action, ...$arguments, '--json']);
-}
-
-/** @return array<array-key, mixed> */
-function liveJsonWrapper(string $tool, string $action, string ...$arguments): array
-{
-    $result = liveWrapper($tool, $action, ...$arguments);
-    Assert::assertTrue($result->successful(), $result->errorOutput() ?: $result->output());
-
-    return liveJson($result->output());
-}
-
-/** @return array<array-key, mixed> */
-/** @mago-expect analysis:mixed-assignment Decoded JSON is asserted as an array immediately. */
-function liveJson(string $json): array
-{
-    $value = json_decode($json, true, 64, JSON_THROW_ON_ERROR);
-    Assert::assertIsArray($value);
-
-    return $value;
-}
-
-/** @return array<array-key, mixed> */
-function liveJsonFile(string $path): array
-{
-    Assert::assertFileExists($path);
-
-    return liveJson((string) file_get_contents($path));
-}
-
-/** @param callable(): array<array-key, mixed> $action
- * @return array<array-key, mixed>
- */
-function liveJsonPhase(string $name, callable $action): array
-{
-    $started = microtime(true);
-    try {
-        return $action();
-    } finally {
-        /** @mago-expect analysis:non-documented-method Pest exposes notes through its test proxy. */
-        test()->note(sprintf('%s: %.3fs', $name, microtime(true) - $started));
-    }
-}
-
-/** @param callable(): ProcessResult $action */
-function liveProcessPhase(string $name, callable $action): ProcessResult
-{
-    $started = microtime(true);
-    try {
-        return $action();
-    } finally {
-        test()->note(sprintf('%s: %.3fs', $name, microtime(true) - $started));
-    }
-}
-
-/** @param callable(): void $action */
-function liveVoidPhase(string $name, callable $action): void
-{
-    $started = microtime(true);
-    try {
-        $action();
-    } finally {
-        test()->note(sprintf('%s: %.3fs', $name, microtime(true) - $started));
-    }
-}
-
-/** @param list<string> $arguments */
-function liveGit(string $worktree, array $arguments): string
-{
-    $result = Process::path($worktree)->run(['git', ...$arguments]);
-    Assert::assertTrue($result->successful(), $result->errorOutput() ?: $result->output());
-
-    return strtolower(trim($result->output()));
-}
-
-/** @return list<string> */
-function liveGitStatus(string $worktree): array
-{
-    $status = liveGit($worktree, ['status', '--porcelain=v1', '--untracked-files=all']);
-
-    return $status === '' ? [] : explode("\n", $status);
-}
-
-function liveCheckout(string $worktree, string $sha): void
-{
-    Assert::assertSame([], liveGitStatus($worktree));
-    Assert::assertSame('', liveGit($worktree, ['checkout', '--quiet', '--detach', $sha]));
-    Assert::assertSame($sha, liveGit($worktree, ['rev-parse', '--verify', 'HEAD^{commit}']));
-}
 
 /** @param array<array-key, mixed> $payload */
 /** @mago-expect analysis:mixed-argument Exact scalar schemas are asserted before use by the live process. */
@@ -535,7 +434,7 @@ function liveAssertIncusTopology(mixed $topology, TopologyTarget $target): void
     Assert::assertIsArray($topology);
     Assert::assertSame(15, strlen($target->network()));
 
-    $network = liveIncusResource('network', $target->network());
+    $network = LiveHarness::incusResource('network', $target->network());
     $networkConfiguration = $network['config'] ?? null;
     Assert::assertIsArray($networkConfiguration);
     Assert::assertSame('orbit-e2e', $networkConfiguration['user.orbit.e2e.owner'] ?? null);
@@ -565,7 +464,7 @@ function liveAssertIncusTopology(mixed $topology, TopologyTarget $target): void
 
     foreach (TopologyProfile::ROLES as $role) {
         $name = $target->instance($role);
-        $instance = liveIncusResource('instance', $name);
+        $instance = LiveHarness::incusResource('instance', $name);
         $configuration = $instance['config'] ?? null;
         Assert::assertIsArray($configuration);
         Assert::assertSame('virtual-machine', $instance['type'] ?? null);
@@ -583,11 +482,11 @@ function liveAssertIncusTopology(mixed $topology, TopologyTarget $target): void
         Assert::assertSame(liveDeterministicMac($target->network(), $role), $eth0['hwaddr'] ?? null);
         Assert::assertSame(TopologyTarget::ipv4For($slot, $role), $eth0['ipv4.address'] ?? null);
 
-        $machineId = strtolower(trim(liveIncusExec($name, ['cat', '/etc/machine-id'])->output()));
+        $machineId = strtolower(trim(LiveHarness::incusExec($name, ['cat', '/etc/machine-id'])->output()));
         Assert::assertMatchesRegularExpression('/\A[a-f0-9]{32}\z/D', $machineId);
         $machineIds[] = $machineId;
 
-        $addressOutput = liveIncusExec($name, ['ip', '-4', '-o', 'addr', 'show', 'scope', 'global'])->output();
+        $addressOutput = LiveHarness::incusExec($name, ['ip', '-4', '-o', 'addr', 'show', 'scope', 'global'])->output();
         $roleAddresses = liveGlobalIpv4Addresses($addressOutput);
         Assert::assertCount(1, $roleAddresses);
         Assert::assertSame(TopologyTarget::ipv4For($slot, $role), $roleAddresses[0]);
@@ -597,54 +496,6 @@ function liveAssertIncusTopology(mixed $topology, TopologyTarget $target): void
     Assert::assertCount(count(TopologyProfile::ROLES), array_unique($machineIds));
     Assert::assertCount(count(TopologyProfile::ROLES), array_unique($addresses));
     liveAssertForwardingIsolation($target->network());
-}
-
-/** @return array<array-key, mixed> */
-function liveIncusResource(string $type, string $name): array
-{
-    $remote = (string) config('e2e.incus.remote');
-    $arguments = $type === 'network'
-        ? ['network', 'list', "{$remote}:", '--format=json']
-        : ['list', "{$remote}:{$name}", '--format=json'];
-    $resources = liveJson(liveIncus($arguments)->output());
-    $matches = array_values(array_filter(
-        $resources,
-        static fn (mixed $resource): bool => is_array($resource) && ($resource['name'] ?? null) === $name,
-    ));
-    Assert::assertCount(1, $matches, "Incus {$type} {$name} was not observed exactly once.");
-
-    return $matches[0];
-}
-
-/** @param list<string> $arguments */
-function liveIncus(array $arguments): ProcessResult
-{
-    $result = liveIncusProcess($arguments);
-    Assert::assertTrue($result->successful(), $result->errorOutput() ?: $result->output());
-
-    return $result;
-}
-
-/** @param list<string> $arguments */
-function liveIncusProcess(array $arguments): ProcessResult
-{
-    return Process::timeout(300)->run([
-        'incus',
-        '--project',
-        (string) config('e2e.incus.project'),
-        ...$arguments,
-    ]);
-}
-
-/** @param list<string> $command */
-function liveIncusExec(string $instance, array $command): ProcessResult
-{
-    return liveIncus([
-        'exec',
-        (string) config('e2e.incus.remote').':'.$instance,
-        '--',
-        ...$command,
-    ]);
 }
 
 function liveDeterministicMac(string $topologyId, string $role): string
@@ -693,8 +544,8 @@ function liveAssertForwardingIsolation(string $network): void
 
 function liveAssertTopologyTrafficIsolation(TopologyTarget $first, TopologyTarget $second): void
 {
-    $firstNetwork = liveIncusResource('network', $first->network());
-    $secondNetwork = liveIncusResource('network', $second->network());
+    $firstNetwork = LiveHarness::incusResource('network', $first->network());
+    $secondNetwork = LiveHarness::incusResource('network', $second->network());
     $firstSubnet = $firstNetwork['config']['ipv4.address'] ?? null;
     $secondSubnet = $secondNetwork['config']['ipv4.address'] ?? null;
     Assert::assertIsString($firstSubnet);
@@ -726,7 +577,7 @@ function liveAssertTopologyTrafficIsolation(TopologyTarget $first, TopologyTarge
 
 function liveTopologyRoleIpv4(TopologyTarget $target, string $role): string
 {
-    $output = liveIncusExec(
+    $output = LiveHarness::incusExec(
         $target->instance($role),
         ['ip', '-4', '-o', 'addr', 'show', 'scope', 'global'],
     )->output();
@@ -740,7 +591,7 @@ function liveTcpProbe(string $source, string $address, int $port): ProcessResult
 {
     Assert::assertNotFalse(filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4));
 
-    return liveIncusProcess([
+    return LiveHarness::incusProcess([
         'exec',
         (string) config('e2e.incus.remote').':'.$source,
         '--',
