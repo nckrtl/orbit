@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\NodeConverger;
@@ -278,6 +279,139 @@ describe('node storage settings', function (): void {
                 'instance' => ['path' => '/srv/orbit/instances'],
             ]);
     });
+
+    it('rejects roots that overlap the configured Gateway checkout', function (string $path): void {
+        config()->set('orbit.gateway_checkout', '/srv/orbit-gateway');
+        $node = Node::query()->create([
+            'name' => 'app-dev',
+            'status' => LifecycleStatus::Active,
+            'public_ssh_host' => '192.0.2.10',
+            'user' => 'orbit',
+            'wireguard_address' => '10.44.0.3',
+        ]);
+        $node->roles()->create([
+            'role' => RoleName::AppDev,
+            'status' => LifecycleStatus::Active,
+        ]);
+
+        $this
+            ->patchJson("/api/v1/nodes/{$node->id}/settings", [
+                'instance' => ['path' => $path],
+            ])
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'node.settings_path_protected');
+
+        expect($node->refresh()->settings)->toBeNull();
+    })->with([
+        'equal' => '/srv/orbit-gateway',
+        'inside' => '/srv/orbit-gateway/app',
+        'contains' => '/srv',
+    ]);
+
+    it('accepts a sibling of the configured Gateway checkout', function (): void {
+        config()->set('orbit.gateway_checkout', '/srv/orbit-gateway');
+        $inspected = [];
+        $prepared = [];
+        app()->instance(NodeStorageRootPreparer::class, recording_storage_preparer($inspected, $prepared));
+        $node = Node::query()->create([
+            'name' => 'app-dev',
+            'status' => LifecycleStatus::Active,
+            'public_ssh_host' => '192.0.2.10',
+            'user' => 'orbit',
+            'wireguard_address' => '10.44.0.3',
+        ]);
+        $node->roles()->create([
+            'role' => RoleName::AppDev,
+            'status' => LifecycleStatus::Active,
+        ]);
+
+        $this
+            ->patchJson("/api/v1/nodes/{$node->id}/settings", [
+                'instance' => ['path' => '/srv/orbit-apps'],
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.settings.instance.path', '/srv/orbit-apps');
+
+        expect($node->refresh()->settings)
+            ->toBe([
+                'instance' => ['path' => '/srv/orbit-apps'],
+            ]);
+    });
+
+    it('prepares both managed-home defaults before storing the last override as SQL null', function (): void {
+        $inspected = [];
+        $prepared = [];
+        app()->instance(NodeStorageRootPreparer::class, recording_storage_preparer($inspected, $prepared));
+        $node = Node::query()->create([
+            'name' => 'app-dev',
+            'status' => LifecycleStatus::Active,
+            'public_ssh_host' => '192.0.2.10',
+            'user' => 'orbit',
+            'wireguard_address' => '10.44.0.3',
+            'settings' => [
+                'instance' => ['path' => '/srv/orbit/instances'],
+            ],
+        ]);
+        $node->roles()->create([
+            'role' => RoleName::AppDev,
+            'status' => LifecycleStatus::Active,
+        ]);
+
+        $this
+            ->patchJson("/api/v1/nodes/{$node->id}/settings", [
+                'instance' => null,
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.settings', null);
+
+        expect($node->refresh()->settings)
+            ->toBeNull()
+            ->and($inspected)
+            ->toBe([])
+            ->and($prepared)
+            ->toBe(['/home/orbit/apps', '/home/orbit/.orbit/worktrees']);
+    });
+
+    it('leaves stored settings unchanged when preparing defaults for the last unset fails', function (): void {
+        app()->instance(NodeStorageRootPreparer::class, new class implements NodeStorageRootPreparer {
+            public function inspect(Node $node, ManagedUserAccount $account, StoragePath $path): void {}
+
+            public function prepare(Node $node, ManagedUserAccount $account, EffectiveStorageRoots $roots): void
+            {
+                throw new RuntimeConvergenceException(
+                    step: 'node-storage-root',
+                    errorCode: 'node.settings_root_failed',
+                    message: 'Storage root failed.',
+                );
+            }
+        });
+        $node = Node::query()->create([
+            'name' => 'app-dev',
+            'status' => LifecycleStatus::Active,
+            'public_ssh_host' => '192.0.2.10',
+            'user' => 'orbit',
+            'wireguard_address' => '10.44.0.3',
+            'settings' => [
+                'worktree' => ['path' => '/srv/orbit/worktrees'],
+            ],
+        ]);
+        $node->roles()->create([
+            'role' => RoleName::AppDev,
+            'status' => LifecycleStatus::Active,
+        ]);
+
+        $this
+            ->patchJson("/api/v1/nodes/{$node->id}/settings", [
+                'worktree' => null,
+            ])
+            ->assertStatus(502)
+            ->assertJsonPath('error.code', 'node.settings_root_failed');
+
+        expect($node->refresh()->settings)
+            ->toBe([
+                'worktree' => ['path' => '/srv/orbit/worktrees'],
+            ]);
+    });
 });
 
 function recording_storage_preparer(array &$inspected, array &$prepared): NodeStorageRootPreparer
@@ -300,6 +434,7 @@ function recording_storage_preparer(array &$inspected, array &$prepared): NodeSt
         public function prepare(Node $node, ManagedUserAccount $account, EffectiveStorageRoots $roots): void
         {
             $this->prepared[] = $roots->instance->value;
+            $this->prepared[] = $roots->worktree->value;
         }
     };
 }

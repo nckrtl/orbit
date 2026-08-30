@@ -32,4 +32,20 @@ orbit workspace:remove "$(workspace_id nck104-acl-b)" --json >/dev/null
 [[ "$(getfacl -cp /home/orbit/projects-nck104)" == "$original" ]] \
   || fail "pre-existing parent ACL was not restored after the last dependent"
 
+sudo install -d -o root -g root -m 0700 -- /srv/restricted
+original_restricted=$(sudo getfacl -cp /srv/restricted)
+orbit node:settings app-dev --setting=worktree.path:/srv/restricted/root --json >/dev/null
+restricted=$(orbit workspace:new "$dev_id" nck104-restricted --json)
+[[ "$(echo "$restricted" | json_get checkout_path)" == /srv/restricted/root/laravel/nck104-restricted ]] \
+  || fail "restricted workspace was not derived under the foreign ancestor: $restricted"
+sudo getfacl -cp /srv/restricted | grep -Eq '^user:caddy:--x$' \
+  || fail "non-traversable ancestor above the configured root missing Caddy traverse ACL"
+getfacl -cp /srv | grep -Eq '^user:caddy:--x$' \
+  || fail "filesystem ancestor above the configured root missing Caddy traverse ACL"
+orbit workspace:remove "$(workspace_id nck104-restricted)" --json >/dev/null
+test ! -e /srv/restricted/root/laravel/nck104-restricted
+[[ "$(sudo getfacl -cp /srv/restricted)" == "$original_restricted" ]] \
+  || fail "restricted ancestor ACL was not restored after the last dependent"
+restore_default_roots
+
 echo "caddy: shared grants survive; last dependent restores pre-existing ACLs"

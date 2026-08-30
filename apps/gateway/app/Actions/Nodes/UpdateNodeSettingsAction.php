@@ -43,17 +43,36 @@ final readonly class UpdateNodeSettingsAction
     {
         $this->validator->validateGrammar($normalized);
 
-        if ($normalized instanceof NodeSettingsData) {
-            $account = $this->accounts->resolve($node);
-            $roots = $this->validator->validateEffective($normalized, $node, $account);
+        if ($this->hasActiveAppDevRole($node)) {
+            $this->prepareEffectiveRoots($node, $normalized);
+            $this->persist($node, $normalized);
 
-            if ($this->hasActiveAppDevRole($node)) {
-                $this->preparer->prepare($node, $account, $roots);
-            } else {
-                $this->inspectExplicitRoots($node, $account, $normalized);
-            }
+            return;
         }
 
+        if ($normalized instanceof NodeSettingsData) {
+            $this->inspectConfiguredRoots($node, $normalized);
+        }
+
+        $this->persist($node, $normalized);
+    }
+
+    private function prepareEffectiveRoots(Node $node, ?NodeSettingsData $normalized): void
+    {
+        $account = $this->accounts->resolve($node);
+        $roots = $this->validator->validateEffective($normalized, $node, $account);
+        $this->preparer->prepare($node, $account, $roots);
+    }
+
+    private function inspectConfiguredRoots(Node $node, NodeSettingsData $settings): void
+    {
+        $account = $this->accounts->resolve($node);
+        $this->validator->validateEffective($settings, $node, $account);
+        $this->inspectExplicitRoots($node, $account, $settings);
+    }
+
+    private function persist(Node $node, ?NodeSettingsData $normalized): void
+    {
         $node->settings = $this->normalizer->stored($normalized);
         $node->save();
     }

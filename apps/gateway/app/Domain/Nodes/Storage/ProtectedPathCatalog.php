@@ -34,6 +34,12 @@ final readonly class ProtectedPathCatalog
             }
         }
 
+        $gatewayCheckout = StoragePath::tryParse(rtrim((string) config('orbit.gateway_checkout'), '/'));
+
+        if ($gatewayCheckout instanceof StoragePath && $path->overlaps($gatewayCheckout)) {
+            return true;
+        }
+
         return $this->isHiddenControlPath($path, $home);
     }
 

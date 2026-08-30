@@ -19,6 +19,11 @@ test -d /home/orbit/custom-worktrees
 expect_error workspace.checkout_path_unsafe orbit workspace:remove "$(workspace_id nck104-unsafe)" --json
 test -d /home/orbit/custom-worktrees/nck104-unsafe
 
+owned_instance=/srv/orbit/instances/nck104
+sudo chown root:root -- "$owned_instance"
+expect_error instance.remove_failed orbit instance:remove "$(instance_id nck104-dev)" --json
+test -d "$owned_instance"
+sudo chown orbit:orbit -- "$owned_instance"
 orbit instance:remove "$(instance_id nck104-dev)" --json >/dev/null
 test ! -e /srv/orbit/instances/nck104
 test -d /srv/orbit/instances

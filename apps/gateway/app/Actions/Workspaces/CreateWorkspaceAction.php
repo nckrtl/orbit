@@ -64,6 +64,17 @@ final readonly class CreateWorkspaceAction
             $checkoutPath = $roots->worktree->append($instance->app->slug, $data->name)->value;
             $origin = CheckoutPathOrigin::Derived->value;
         }
+        if (! $workspace->exists) {
+            $checkout = StoragePath::tryParse($checkoutPath);
+
+            if ($checkout instanceof StoragePath) {
+                $this->checkoutOverlap->assertAvailable(
+                    $instance->node_id,
+                    $checkout,
+                    'workspace.path_taken',
+                );
+            }
+        }
         if (
             ! $workspace->exists
             && $origin === CheckoutPathOrigin::Explicit->value
@@ -101,13 +112,6 @@ final readonly class CreateWorkspaceAction
 
         if ($workspace->exists) {
             $this->ensureCheckoutPathAvailable->execute($instance, $workspace, $checkoutPath);
-        } else {
-            $this->checkoutOverlap->assertAvailable(
-                $instance->node_id,
-                StoragePath::parse($checkoutPath),
-                'workspace.path_taken',
-                $instance->id,
-            );
         }
         $collision = Workspace::query()
             ->where('hostname', $hostname)

@@ -161,6 +161,8 @@ it('uses only generated instance paths and registered Git worktrees for source r
             'setfacl -m u:caddy:--x "$managed_home/apps"',
             'setfacl -P -R -m u:caddy:r-X "$document_root_real"',
             'find -P "$document_root_real" -type d -exec setfacl -m d:u:caddy:r-x -- {} +',
+            'acl() {',
+            'sudo -n "$@"',
         )
         ->not->toContain('sudo setfacl')->and($ssh->commands[1]->input)->toContain(
             'git -C "$checkout" symbolic-ref --quiet --short HEAD',
@@ -189,9 +191,10 @@ it('uses only generated instance paths and registered Git worktrees for source r
             'release_traversal_paths',
             'test ! -L "$checkout"',
             'git -C "$checkout" rev-parse --show-toplevel',
+            '%U:%G',
             'test "$(git -C "$checkout" remote get-url origin)" = "$repository"',
             'rm -rf -- "$checkout"',
-            'tail -n +4 "$state" | setfacl --set-file=- "$path"',
+            'tail -n +4 "$state" | acl setfacl --set-file=- "$path"',
         )->and($ssh->commands[2]->arguments)->toContain(
             'git@github.com:acme/site.git',
         )->and($ssh->commands[3]->arguments)->toContain('git@github.com:acme/site.git');
@@ -337,6 +340,21 @@ it('uses a nondefault managed home for source converge and removal commands', fu
             '/srv/users/nckrtl',
         )->and($ssh->commands[3]->input)->toContain('managed_home=$5')
         ->not->toContain('/home/orbit');
+});
+
+it('accounts Caddy traversal for ancestors above a configured root outside managed home', function (): void {
+    [, $instance] = app_dev_runtime_models();
+    $instance->update(['checkout_path' => '/srv/restricted/root/acme']);
+    [$manager, $ssh] = source_manager();
+
+    $manager->convergeInstance($instance);
+
+    expect($ssh->commands[0]->arguments)
+        ->toContain('/srv', '/srv/restricted', '/srv/restricted/root')
+        ->not
+        ->toContain('/home')
+        ->and($ssh->commands[0]->input)
+        ->toContain('sudo -n "$@"', 'acl setfacl');
 });
 
 it('rejects an unsafe stored repository origin before app-dev SSH execution', function (): void {
@@ -2270,6 +2288,7 @@ function run_app_dev_command_locally(RemoteCommand $command, string $root): Comm
         $command->arguments,
     );
     $input = str_replace('/home/orbit', $root, $command->input ?? '');
+    $input = str_replace('sudo -n ', '', $input);
     $input = str_replace(
         ['u:caddy:', 'user:caddy:'],
         ['u:nobody:', 'user:nobody:'],

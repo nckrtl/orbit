@@ -316,6 +316,24 @@ describe('workspace API', function (): void {
             ->toBeEmpty();
     });
 
+    it('rejects an explicit workspace nested under its own instance checkout', function (): void {
+        $this->instance->update(['checkout_path' => '/srv/users/nckrtl/projects/acme']);
+
+        $this
+            ->postJson('/api/v1/workspaces', [
+                'instance_id' => $this->instance->id,
+                'name' => 'nested',
+                'checkout_path' => '/srv/users/nckrtl/projects/acme/nested',
+            ])
+            ->assertConflict()
+            ->assertJsonPath('error.code', 'workspace.path_taken');
+
+        expect(Workspace::query()->count())
+            ->toBe(0)
+            ->and($this->runtime->calls)
+            ->toBeEmpty();
+    });
+
     it('rejects branch drift when resuming a workspace', function (): void {
         create_workspace_for_api_test($this->instance);
 
