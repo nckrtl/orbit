@@ -106,7 +106,7 @@ function proofFixtureRepository(string $issue, array $files): array
     }
     file_put_contents($path.'/README.md', "fixture\n");
     if ($files !== []) {
-        $directory = $path.'/apps/e2e/resources/proof/'.$issue;
+        $directory = $path.'/proofs/'.$issue;
         mkdir($directory, 0700, true);
         foreach ($files as $name => [$content, $mode]) {
             file_put_contents($directory.'/'.$name, $content);

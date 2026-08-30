@@ -9,7 +9,7 @@ use Closure;
 use RuntimeException;
 use Throwable;
 
-/** @mago-expect lint:cyclomatic-complexity,kan-defect Lock ownership requires explicit failure checks. */
+/** @mago-expect lint:cyclomatic-complexity Lock ownership requires explicit failure checks. */
 final class OperationLock
 {
     /** @var resource|null */
@@ -110,50 +110,6 @@ final class OperationLock
         }
     }
 
-    /** @param array<string, mixed> $expectedOwner */
-    public function clearStaleOwner(string $name, array $expectedOwner): bool
-    {
-        if (preg_match('/\A[A-Za-z0-9][A-Za-z0-9._-]{0,127}\z/D', $name) !== 1 || ! self::isStale($expectedOwner)) {
-            return false;
-        }
-
-        $file = $this->paths->path('locks/'.$name.'.lock');
-        $handle = fopen($file, 'c+b');
-
-        if ($handle === false) {
-            return false;
-        }
-
-        $locked = false;
-
-        try {
-            $locked = flock($handle, LOCK_EX | LOCK_NB);
-
-            if (! $locked) {
-                return false;
-            }
-
-            rewind($handle);
-            $contents = stream_get_contents($handle);
-            $persisted = json_decode($contents === false ? '' : $contents, true);
-
-            if ($persisted !== $expectedOwner) {
-                return false;
-            }
-
-            ftruncate($handle, 0);
-            fflush($handle);
-
-            return true;
-        } finally {
-            if ($locked) {
-                flock($handle, LOCK_UN);
-            }
-
-            fclose($handle);
-        }
-    }
-
     /** @return array{pid:int,process_start_identity:string,operation_id:string,acquired_at:string} */
     public static function currentOwner(OperationId $operationId, ?Closure $resolver = null): array
     {
@@ -175,26 +131,6 @@ final class OperationLock
             'operation_id' => $operationId->value,
             'acquired_at' => gmdate('Y-m-d\TH:i:s\Z'),
         ];
-    }
-
-    /** @param array<string, mixed> $owner */
-    public static function isStale(array $owner, ?Closure $resolver = null): bool
-    {
-        if (
-            array_keys($owner) !== ['pid', 'process_start_identity', 'operation_id', 'acquired_at']
-            || ! is_int($owner['pid'])
-            || ! is_string($owner['process_start_identity'])
-            || ! is_string($owner['operation_id'])
-            || preg_match('/\A[a-f0-9]{32}\z/D', $owner['operation_id']) !== 1
-            || ! is_string($owner['acquired_at'])
-            || strtotime($owner['acquired_at']) === false
-        ) {
-            return false;
-        }
-
-        $identity = self::processStartIdentity($owner['pid'], $resolver);
-
-        return $identity === null || ! hash_equals($owner['process_start_identity'], $identity);
     }
 
     public function __destruct()

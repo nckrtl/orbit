@@ -5,31 +5,34 @@ declare(strict_types=1);
 namespace App\E2E;
 
 use App\E2E\Git\GitRepository;
-use App\E2E\State\AtomicJsonStore;
-use App\E2E\State\OperationJournal;
 use App\E2E\State\OperationLock;
-use App\E2E\State\SecretRedactor;
 use App\E2E\State\StatePaths;
 use App\E2E\Value\AttemptId;
 use App\E2E\Value\AttemptPurpose;
 use App\E2E\Value\FeatureTopology;
 use App\E2E\Value\GuestCommand;
 use App\E2E\Value\GuestCommandResult;
-use App\E2E\Value\IncusInstance;
-use App\E2E\Value\IncusNetwork;
 use App\E2E\Value\MountPath;
 use App\E2E\Value\OperationId;
+use App\E2E\Value\PreparedFingerprint;
 use App\E2E\Value\SourceState;
+use App\E2E\Value\StandbyGeneration;
 use App\E2E\Value\TopologyProfile;
 use App\E2E\Value\TopologyRequest;
 use App\E2E\Value\TopologyTarget;
 use App\E2E\Value\VerificationMode;
 use Closure;
-use Illuminate\Support\Facades\Process;
+use InvalidArgumentException;
 use RuntimeException;
 use Throwable;
 
 /**
+ * Acquire, sync, verify, and exec on one issue's discovery topology.
+ *
+ * The attempt lives in `<worktree>/.e2e/`. The three VMs are cloned from the
+ * promoted standby snapshot, the worktree is mounted on the checkout roles, and
+ * the topology stays alive until `release`.
+ *
  * @mago-expect lint:excessive-parameter-list The lifecycle dependencies are explicit trust boundaries.
  * @mago-expect lint:cyclomatic-complexity,kan-defect,too-many-methods The lifecycle keeps its exact ordered operations together.
  */
@@ -47,176 +50,75 @@ final readonly class TopologyAcquirer
         private IncusNetworkLifecycle $networks,
         private PreparedStateFingerprint $fingerprints,
         private StandbyManifestStore $standby,
-        private TopologyManifestStore $manifests,
         private WorktreeSynchronizer $synchronizer,
-        private TopologyConverger $converger,
         private TopologyVerifier $verifier,
-        private AtomicJsonStore $state,
-        private StatePaths $paths,
-        private OperationId $commandOperation,
-        private OperationJournal $journal,
-        private SecretRedactor $redactor,
-        private HostCapacity $capacity,
-        private ProofRecordReader $proofs,
         private DiscoveryGuestPreparer $guests,
+        private HostCapacity $capacity,
+        private StatePaths $hostPaths,
+        private OperationId $operation,
         private string $repositoryRoot = '',
-        private ?AcquisitionRollback $rollback = null,
         /** @var (Closure(): AttemptId)|null Mints the attempt identity; injectable so tests pin resource names. */
         private ?Closure $attempts = null,
     ) {}
 
-    /**
-     * Acquire one disposable discovery attempt: clone the promoted generation,
-     * mount the worktree on the checkout roles, repair the clone identity, record
-     * the host source identity, and verify readiness. No source is bundled and no
-     * repository convergence runs.
-     */
-    public function acquireDiscovery(TopologyRequest $request): FeatureTopology
+    public function acquire(TopologyRequest $request): FeatureTopology
     {
-        $this->validateRequestOwnership($request);
-        $operation = $this->commandOperation;
-        $issueLock = new OperationLock($this->paths);
-        if (! $issueLock->acquire('topology-'.$request->issue, $operation)) {
-            throw new RuntimeException('The issue topology is locked.');
-        }
-
+        $this->assertRequestOwnership($request);
+        $state = IssueState::forWorktree($request->issue, $request->worktree);
+        $lock = $this->issueLock($request->issue);
         try {
-            return $this->acquirePinned(
-                $request,
-                TopologyTarget::feature($request->issue, $this->mintAttempt()),
-                $operation,
-            );
-        } finally {
-            $issueLock->release();
-        }
-    }
+            if ($state->hasAttempt()) {
+                throw new RuntimeException(
+                    "{$request->issue} already has attempt {$state->attemptId()->value}; release it first.",
+                );
+            }
 
-    public function sync(string $issue, AttemptId $attempt, string $worktree): FeatureTopology
-    {
-        $request = new TopologyRequest($issue, $worktree);
-        $this->validateRequestOwnership($request);
-        $operation = $this->commandOperation;
-        $lock = new OperationLock($this->paths);
-        if (! $lock->acquire('topology-'.$request->issue, $operation)) {
-            throw new RuntimeException('The issue topology is locked.');
-        }
-        try {
-            return $this->syncUnlocked($request, $attempt, true);
+            return $this->create($request, $state);
         } finally {
             $lock->release();
         }
     }
 
-    private function syncUnlocked(
-        TopologyRequest $request,
-        AttemptId $attempt,
-        bool $allowInterrupted = false,
-    ): FeatureTopology {
-        $topology = $allowInterrupted
-            ? $this->requireTopologyForSync($request->issue, $attempt)
-            : $this->requireTopology($request->issue, $attempt);
-        $target = $topology->target;
-        // The lease keeps the acquiring operation: Incus resources are stamped
-        // with it, and release verifies ownership against that exact value.
-        // The synchronizing operation is recorded in the manifest source.
-        $lease = $this->state->read('leases/'.$request->issue.'.json');
-        $operationId = $lease['operation_id'] ?? null;
-        if (! is_string($operationId) || preg_match('/\A[a-f0-9]{32}\z/D', $operationId) !== 1) {
-            throw new RuntimeException('The topology lease has no valid acquiring operation.');
-        }
-        $this->writeLease($request->issue, $topology->attempt, $operationId, 'syncing');
+    public function sync(TopologyRequest $request): FeatureTopology
+    {
+        $this->assertRequestOwnership($request);
+        $state = IssueState::forWorktree($request->issue, $request->worktree);
+        $lock = $this->issueLock($request->issue);
         try {
+            $topology = $this->mutableTopology($state);
             $this->assertColdBaseMatchesMain($request->worktree);
-            $this->networks->reconcile($target->network());
-            $source = $this->synchronizeSource($topology, $request->worktree);
-            $verification = $this->verifier->verify($target, VerificationMode::Readiness, $source);
+            $this->networks->reconcile($topology->target->network());
+            $this->guests->assertSourceMounted($topology->target);
+            $source = $this->synchronizer->syncWorkingTree($topology->target, $request->worktree);
+            $verification = $this->verifier->verify($topology->target, VerificationMode::Readiness, $source);
             if (! $verification->passed) {
                 throw new RuntimeException('Feature topology verification failed.'.$verification->failedSummary());
             }
-
-            $updated = new FeatureTopology(
-                $target,
-                $topology->purpose,
-                $topology->generation,
-                $topology->network,
-                $topology->instances,
-                $source,
-                $verification,
-                $topology->mounts,
-            );
-            $this->manifests->writeActive($updated);
-            $this->writeLease($request->issue, $topology->attempt, $operationId, 'ready');
+            $updated = $this->withSource($topology, $source, $verification);
+            $state->writeTopology($updated);
 
             return $updated;
-        } catch (Throwable $exception) {
-            $this->writeLease($request->issue, $topology->attempt, $operationId, 'failed');
-            throw $exception;
+        } finally {
+            $lock->release();
         }
     }
 
-    /**
-     * A mounted topology reads the host worktree directly, so only its identity is
-     * re-recorded; a transferred checkout receives the source and converges again.
-     */
-    private function synchronizeSource(FeatureTopology $topology, string $worktree): SourceState
+    public function verify(TopologyRequest $request): FeatureTopology
     {
-        $target = $topology->target;
-        if ($topology->source->mounted) {
-            $this->assertWorktreeIsMounted($topology, $worktree);
-            $this->guests->assertSourceMounted($target);
-
-            return $this->synchronizer->syncWorkingTree($target, $worktree);
-        }
-
-        $source = $this->synchronizer->sync($target, $worktree);
-        $this->converger->converge($target, $source, $topology->generation->laravel);
-
-        return $source;
-    }
-
-    /** A mounted topology serves exactly one host worktree; another path cannot be synchronized into it. */
-    private function assertWorktreeIsMounted(FeatureTopology $topology, string $worktree): void
-    {
-        foreach ($topology->mounts as $mount) {
-            if ($mount['source'] !== $worktree) {
-                throw new RuntimeException('The worktree is not the source mounted on the topology attempt.');
-            }
-        }
-    }
-
-    public function verify(string $issue, AttemptId $attempt): FeatureTopology
-    {
-        TopologyTarget::assertIssue($issue);
-        $lock = new OperationLock($this->paths);
-        if (! $lock->acquire('topology-'.$issue, $this->commandOperation)) {
-            throw new RuntimeException('The issue topology is locked.');
-        }
+        $state = IssueState::forWorktree($request->issue, $request->worktree);
+        $lock = $this->issueLock($request->issue);
         try {
-            $topology = $this->requireTopology($issue, $attempt, mutating: false);
-            $target = $topology->target;
-            $this->networks->reconcile($target->network());
+            $topology = $state->requireTopology();
+            $this->networks->reconcile($topology->target->network());
             if ($topology->source->mounted) {
-                $this->guests->assertSourceMounted($target);
+                $this->guests->assertSourceMounted($topology->target);
             }
-            $report = $this->verifier->verify($target, VerificationMode::Readiness, $topology->source);
+            $report = $this->verifier->verify($topology->target, VerificationMode::Readiness, $topology->source);
             if (! $report->passed) {
                 throw new RuntimeException('Feature topology verification failed.'.$report->failedSummary());
             }
-
-            $updated = new FeatureTopology(
-                $target,
-                $topology->purpose,
-                $topology->generation,
-                $topology->network,
-                $topology->instances,
-                $topology->source,
-                $report,
-                $topology->mounts,
-            );
-            // A proved attempt is immutable: its record keeps the proof verification.
-            if (! $this->proofs->isProved($issue, $attempt)) {
-                $this->manifests->writeActive($updated);
-            }
+            $updated = $this->withSource($topology, $topology->source, $report);
+            $state->writeTopology($updated);
 
             return $updated;
         } finally {
@@ -226,147 +128,38 @@ final readonly class TopologyAcquirer
 
     /** @param list<string> $argv */
     public function execute(
-        string $issue,
-        AttemptId $attempt,
+        TopologyRequest $request,
         string $role,
         array $argv,
         ?string $stdin = null,
     ): GuestCommandResult {
-        TopologyTarget::assertIssue($issue);
-        $lock = new OperationLock($this->paths);
-        if (! $lock->acquire('topology-'.$issue, $this->commandOperation)) {
-            throw new RuntimeException('The issue topology is locked.');
-        }
-
+        $state = IssueState::forWorktree($request->issue, $request->worktree);
+        $lock = $this->issueLock($request->issue);
         try {
-            $topology = $this->requireTopology($issue, $attempt);
-            $instance = $topology->target->instance($role);
-            $owned = $this->host->instance($instance);
-            if (
-                $owned === null
-                || ($owned->metadata['user.orbit.e2e.owner'] ?? null) !== 'orbit-e2e'
-                || ($owned->metadata['user.orbit.e2e.issue'] ?? null) !== $issue
-                || ($owned->metadata['user.orbit.e2e.attempt'] ?? null) !== $topology->attempt->value
-                || ($owned->metadata['user.orbit.e2e.generation'] ?? null) !== $topology->generation->id
-                || $owned->network !== $topology->network
-            ) {
-                throw new RuntimeException('Incus instance identity does not match the topology manifest.');
-            }
-            $this->journal->append($this->commandOperation, [
-                'event' => 'topology.exec',
-                'state' => 'started',
-                'issue' => $issue,
-                'attempt' => $attempt->value,
-                'role' => $role,
-                'target' => $instance,
-                'argv' => $this->redactor->redactArgv($argv),
-            ]);
-            // The argv runs as the orbit runtime user; the journal keeps it as given.
-            $result = $this->host->exec($instance, GuestCommand::asOrbitUser($argv, stdin: $stdin));
-            $this->journal->append($this->commandOperation, [
-                'event' => 'topology.exec',
-                'state' => 'completed',
-                'target' => $instance,
-                'exit_code' => $result->exitCode,
-                'stdout' => $this->redactor->redact($result->stdout),
-                'stderr' => $this->redactor->redact($result->stderr),
-            ]);
+            $instance = $this->ownedInstance($this->mutableTopology($state), $role);
 
-            return $result;
+            return $this->host->exec($instance, GuestCommand::asOrbitUser($argv, stdin: $stdin));
         } finally {
             $lock->release();
         }
     }
 
-    private function acquirePinned(
-        TopologyRequest $request,
-        TopologyTarget $target,
-        OperationId $operation,
-    ): FeatureTopology {
-        if ($this->hasPendingRelease($request->issue)) {
-            throw new RuntimeException('The issue has a pending release finalization.');
-        }
-        $manifest = $this->manifests->active($request->issue);
-        $lease = $this->state->read('leases/'.$request->issue.'.json');
-        if (($lease['state'] ?? null) === 'acquiring') {
-            if ($lease === null) {
-                throw new RuntimeException('Acquiring lease data is missing.');
-            }
-            $acquiringOperation = $this->acquiringLeaseOperation($lease, $request->issue);
-            $acquiringTarget = TopologyTarget::feature(
-                $request->issue,
-                $this->leaseAttempt($lease, $request->issue, 'acquiring'),
-            );
-            if (! $this->acquiringLeaseIsStale($lease)) {
-                throw new RuntimeException('The acquiring topology lease is still owned by a live process.');
-            }
-            if ($manifest !== null) {
-                if ($manifest->attempt->value !== $acquiringTarget->attempt?->value) {
-                    throw new RuntimeException('The interrupted topology manifest belongs to another attempt.');
-                }
-                $this->assertInterruptedManifestLive($manifest, $acquiringOperation);
-                $this->writeLease($request->issue, $manifest->attempt, $acquiringOperation->value, 'ready');
+    /** The exact VM of one role, revalidated against the record; `shell` attaches to it. */
+    public function instance(TopologyRequest $request, string $role): string
+    {
+        $state = IssueState::forWorktree($request->issue, $request->worktree);
 
-                return $manifest;
-            }
+        return $this->ownedInstance($state->requireTopology(), $role);
+    }
 
-            $resources = [
-                $acquiringTarget->network(),
-                ...array_map(
-                    $acquiringTarget->instance(...),
-                    TopologyProfile::ROLES,
-                ),
-            ];
-            $observed = $this->observedResources($acquiringTarget, $resources);
-            $cleanup = $this->rollbackFor($acquiringTarget)->cleanup(
-                $acquiringTarget,
-                $resources,
-                $observed,
-                $acquiringOperation,
-            );
-            if (array_any(
-                $cleanup,
-                static fn (string $result): bool => ! in_array($result, ['absent', 'removed'], true),
-            )) {
-                throw new RuntimeException('Interrupted topology acquisition cleanup was refused.');
-            }
-            $this->capacity->release($request->issue, $acquiringTarget->requireAttempt(), $acquiringOperation);
-        } elseif ($manifest !== null) {
-            throw new RuntimeException('The issue already has a topology manifest.');
-        }
-        if ($this->state->read('standby/corrupt.json') !== null) {
-            throw new RuntimeException('The promoted standby is marked corrupt.');
-        }
-        $generation = $this->standby->promoted();
-        if ($generation === null) {
-            throw new RuntimeException('No promoted standby generation is available.');
-        }
-        $expectedGenerationId = substr($generation->mainSha, 0, 12).'-'.substr($generation->preparedFingerprint, 0, 12);
-        if ($generation->id !== $expectedGenerationId) {
-            throw new RuntimeException('The promoted standby fingerprint is stale or corrupt.');
-        }
-        $structural = $this->fingerprints->forCommit('main');
-        $main = $this->fingerprints->withLaravel($structural, $generation->laravel);
-        if ($structural->value !== $generation->structuralFingerprint) {
-            throw new RuntimeException('The promoted standby structural fingerprint is stale.');
-        }
-        if ($generation->preparedFingerprint !== $main->value) {
-            throw new RuntimeException('The promoted standby prepared state is stale.');
-        }
-        $this->assertColdBaseMatchesMain($request->worktree, $main);
-        $standbyTarget = TopologyTarget::standby();
-        $this->host->assertOwnedSnapshots(array_combine(
-            array_map($standbyTarget->instance(...), TopologyProfile::ROLES),
-            $generation->snapshots,
-        ));
-
+    private function create(TopologyRequest $request, IssueState $state): FeatureTopology
+    {
+        $generation = $this->promotedGeneration($request->worktree);
         $this->assertMountableWorktree($request->worktree);
         $this->assertVendorHydrated($request->worktree);
 
-        $created = [];
-        $phaseTimings = [];
-        $attempt = $target->requireAttempt();
-        $writtenTopology = null;
+        $attempt = $this->mintAttempt();
+        $target = TopologyTarget::feature($request->issue, $attempt);
         $mounts = [];
         foreach (TopologyProfile::CHECKOUT_ROLES as $role) {
             $mounts[$role] = [
@@ -375,214 +168,226 @@ final readonly class TopologyAcquirer
                 'path' => MountPath::GUEST_SOURCE,
             ];
         }
+        $metadata = [
+            'user.orbit.e2e.issue' => $request->issue,
+            'user.orbit.e2e.attempt' => $attempt->value,
+            'user.orbit.e2e.operation' => $this->operation->value,
+        ];
+        $state->writeAttempt($attempt, AttemptPurpose::Discovery, $this->operation);
+        $instances = array_map($target->instance(...), TopologyProfile::ROLES);
         try {
-            $this->writeLease($request->issue, $attempt, $operation->value, 'acquiring');
-            $networkSlot = $this->capacity->reserve($request->issue, $attempt, $operation);
-            $phase = 'create.network';
-            $created[] = $target->network();
-            $this->measurePhase($phase, $phaseTimings, fn () => $this->networks->create(
-                $target->network(),
-                $networkSlot,
-                [
-                    'user.orbit.e2e.issue' => $request->issue,
-                    'user.orbit.e2e.attempt' => $attempt->value,
-                    'user.orbit.e2e.operation' => $operation->value,
-                ],
-            ));
-            $copies = [];
-            foreach (TopologyProfile::ROLES as $role) {
-                $name = $target->instance($role);
-                $created[] = $name;
-                $copies[$role] = [
-                    'source' => TopologyTarget::standby()->instance($role),
-                    'snapshot' => $generation->snapshots[$role],
-                    'target' => $name,
-                    'metadata' => [
-                        'user.orbit.e2e.issue' => $request->issue,
-                        'user.orbit.e2e.attempt' => $attempt->value,
-                        'user.orbit.e2e.generation' => $generation->id,
-                        'user.orbit.e2e.operation' => $operation->value,
-                    ],
-                    'network' => $target->network(),
-                    'role' => $role,
-                    'topology' => $target->network(),
-                    'slot' => $networkSlot,
-                ];
-                if (array_key_exists($role, $mounts)) {
-                    $copies[$role]['mount'] = $mounts[$role];
-                }
-            }
-            $phase = 'clone';
-            $this->measurePhase(
-                $phase,
-                $phaseTimings,
-                fn () => $this->copyPinnedSnapshots($generation, $copies, $operation),
-            );
-            $instances = array_map($target->instance(...), TopologyProfile::ROLES);
-            $phase = 'start';
-            $this->measurePhase($phase, $phaseTimings, fn () => $this->host->startAll($instances));
-            $phase = 'prepare.cloned-host-state';
-            $this->measurePhase($phase, $phaseTimings, fn () => $this->host->prepareClonedHostStates($instances));
-            $phase = 'mount.source';
-            $this->measurePhase($phase, $phaseTimings, function () use ($target): void {
-                $this->guests->assertSourceMounted($target);
-                $this->guests->placeGatewayEnvironment($target);
-                $this->guests->exposeOrbitCli($target);
-            });
-            $phase = 'repair.identity';
-            $this->measurePhase($phase, $phaseTimings, fn () => $this->guests->repairCloneIdentity($target));
-            $phase = 'sync.source';
-            $source = $this->measurePhase(
-                $phase,
-                $phaseTimings,
-                fn () => $this->synchronizer->syncWorkingTree($target, $request->worktree),
-            );
-            $phase = 'verify';
-            $verification = $this->measurePhase(
-                $phase,
-                $phaseTimings,
-                fn () => $this->verifier->verify($target, VerificationMode::Readiness, $source),
-            );
+            $this->createResources($target, $generation, $metadata, $mounts);
+            $this->host->startAll($instances);
+            $this->host->prepareClonedHostStates($instances);
+            $this->guests->assertSourceMounted($target);
+            $this->guests->placeGatewayEnvironment($target);
+            $this->guests->exposeOrbitCli($target);
+            $this->guests->repairCloneIdentity($target);
+            $source = $this->synchronizer->syncWorkingTree($target, $request->worktree);
+            $verification = $this->verifier->verify($target, VerificationMode::Readiness, $source);
             if (! $verification->passed) {
                 throw new RuntimeException(
                     'Feature topology readiness verification failed.'.$verification->failedSummary(),
                 );
-            }
-            $instances = [];
-            foreach (TopologyProfile::ROLES as $role) {
-                $instances[$role] = $target->instance($role);
             }
             $topology = new FeatureTopology(
                 $target,
                 AttemptPurpose::Discovery,
                 $generation,
                 $target->network(),
-                $instances,
+                array_combine(TopologyProfile::ROLES, $instances),
                 $source,
                 $verification,
                 $mounts,
             );
-            $this->manifests->writeActive($topology);
-            $writtenTopology = $topology;
-            $this->writeLease($request->issue, $attempt, $operation->value, 'ready');
-            $this->journal->append($operation, [
-                'event' => 'topology.acquire.phases',
-                'state' => 'completed',
-                'issue' => $request->issue,
-                'duration_ms' => $phaseTimings,
-            ]);
+            $state->writeTopology($topology);
 
             return $topology;
         } catch (Throwable $exception) {
-            $secondaryFailures = [];
-            $recoveryRequired = false;
-            if ($writtenTopology !== null) {
-                try {
-                    $this->manifests->forgetActive($writtenTopology);
-                } catch (Throwable $manifestFailure) {
-                    $recoveryRequired = true;
-                    $secondaryFailures[] = 'manifest deletion: '.$manifestFailure->getMessage();
-                }
-            }
-            $cleanup = [];
-            $cleanupFailed = false;
-            try {
-                $observed = $this->observedResources($target, $created);
-                $cleanup = $this->rollbackFor($target)->cleanup($target, $created, $observed, $operation);
-            } catch (Throwable $cleanupFailure) {
-                $cleanupFailed = true;
-                $recoveryRequired = true;
-                $observed ??= [];
-                $cleanup = ['failed:'.$cleanupFailure->getMessage()];
-                $secondaryFailures[] = 'resource cleanup: '.$cleanupFailure->getMessage();
-            }
-            foreach ($cleanup as $result) {
-                if (! $cleanupFailed && ! in_array($result, ['absent', 'removed'], true)) {
-                    $recoveryRequired = true;
-                    $secondaryFailures[] =
-                        'resource cleanup result: '.(is_string($result) ? $result : json_encode($result));
-                }
-            }
-            if (! $recoveryRequired) {
-                try {
-                    $this->capacity->release($request->issue, $attempt, $operation);
-                    $this->state->delete('leases/'.$request->issue.'.json');
-                } catch (Throwable $leaseFailure) {
-                    $secondaryFailures[] = 'lease deletion: '.$leaseFailure->getMessage();
-                }
-            }
-            $redactedSecondaryFailures = array_values(array_unique(array_map(
-                $this->redactor->redact(...),
-                $secondaryFailures,
-            )));
-            try {
-                $this->state->write('failures/'.$request->issue.'.json', [
-                    'schema' => 2,
-                    'operation_id' => $operation->value,
-                    'issue' => $request->issue,
-                    'attempt' => $attempt->value,
-                    'resources' => $created,
-                    'phase' => $phase ?? 'preflight',
-                    'duration_ms' => $phaseTimings,
-                    'observed' => $this->redactor->redactArray($observed ?? []),
-                    'cleanup' => array_map($this->redactor->redact(...), $cleanup),
-                    'error' => $this->redactor->redact($exception->getMessage()),
-                    'secondary_failures' => $redactedSecondaryFailures,
-                ]);
-            } catch (Throwable $evidenceFailure) {
-                $secondaryFailures[] = 'failure evidence write: '.$evidenceFailure->getMessage();
-            }
-            if ($secondaryFailures === []) {
-                throw $exception;
-            }
+            $this->rollback($target, $state, $exception);
+        }
+    }
 
-            $redactedSecondaryFailures = array_values(array_unique(array_map(
-                $this->redactor->redact(...),
-                $secondaryFailures,
-            )));
+    /**
+     * Network and clones exist only after this returns; the creation lock keeps
+     * the orphan sweep away from a network whose first VM is not attached yet.
+     *
+     * @param array<string, string> $metadata
+     * @param array<string, array{device:string,source:string,path:string}> $mounts
+     */
+    private function createResources(
+        TopologyTarget $target,
+        StandbyGeneration $generation,
+        array $metadata,
+        array $mounts,
+    ): void {
+        $creation = new OperationLock($this->hostPaths);
+        if (! $creation->acquire(OrphanNetworkSweep::CREATION_LOCK, $this->operation, timeoutSeconds: 600)) {
+            throw new RuntimeException('Another topology creation holds the host.');
+        }
+        try {
+            $slot = $this->capacity->reserveSlot();
+            $this->networks->create($target->network(), $slot, $metadata);
+            $copies = [];
+            foreach (TopologyProfile::ROLES as $role) {
+                $copies[$role] = [
+                    'source' => TopologyTarget::standby()->instance($role),
+                    'snapshot' => $generation->snapshots[$role],
+                    'target' => $target->instance($role),
+                    'metadata' => [...$metadata, 'user.orbit.e2e.generation' => $generation->id],
+                    'network' => $target->network(),
+                    'role' => $role,
+                    'topology' => $target->network(),
+                    'slot' => $slot,
+                ];
+                if (array_key_exists($role, $mounts)) {
+                    $copies[$role]['mount'] = $mounts[$role];
+                }
+            }
+            $this->copyPinnedSnapshots($generation, $copies);
+        } finally {
+            $creation->release();
+        }
+    }
 
+    /** Roll every intended resource back, drop the lease, and rethrow. */
+    private function rollback(TopologyTarget $target, IssueState $state, Throwable $exception): never
+    {
+        $resources = [$target->network(), ...array_map($target->instance(...), TopologyProfile::ROLES)];
+        $rollback = AcquisitionRollback::forHost($this->host, $this->networks, $target);
+        $refused = [];
+        try {
+            $cleanup = $rollback->cleanup($target, $resources, $rollback->observe($resources), $this->operation);
+            foreach ($cleanup as $resource => $result) {
+                if (! in_array($result, ['absent', 'removed'], true)) {
+                    $refused[] = "{$resource}={$result}";
+                }
+            }
+        } catch (Throwable $cleanupFailure) {
+            $refused[] = 'cleanup: '.$cleanupFailure->getMessage();
+        }
+        if ($refused !== []) {
+            // The lease stays so `release` can finish the cleanup.
             throw new RuntimeException(
-                $this->redactor->redact('Topology acquisition failed: '.$exception->getMessage())
-                    .'; secondary failures: '
-                    .implode('; ', $redactedSecondaryFailures),
+                'Topology acquisition failed: '.$exception->getMessage().'; rollback was refused: '
+                    .implode('; ', $refused),
                 previous: $exception,
             );
         }
+        $state->forgetAttempt();
+
+        throw new RuntimeException('Topology acquisition failed: '.$exception->getMessage(), previous: $exception);
+    }
+
+    /** A proved attempt stays as proved: nothing may change it before release. */
+    private function mutableTopology(IssueState $state): FeatureTopology
+    {
+        $topology = $state->requireTopology();
+        if ($state->isProved()) {
+            throw new RuntimeException(
+                "{$state->issue} attempt {$topology->attempt->value} is proved; release it before changing it.",
+            );
+        }
+
+        return $topology;
+    }
+
+    private function ownedInstance(FeatureTopology $topology, string $role): string
+    {
+        $instance = $topology->target->instance($role);
+        $owned = $this->host->instance($instance);
+        if (
+            $owned === null
+            || ($owned->metadata['user.orbit.e2e.owner'] ?? null) !== 'orbit-e2e'
+            || ($owned->metadata['user.orbit.e2e.issue'] ?? null) !== $topology->target->issue
+            || ($owned->metadata['user.orbit.e2e.attempt'] ?? null) !== $topology->attempt->value
+            || $owned->network !== $topology->network
+        ) {
+            throw new RuntimeException('Incus instance identity does not match the topology record.');
+        }
+
+        return $instance;
+    }
+
+    private function withSource(
+        FeatureTopology $topology,
+        SourceState $source,
+        \App\E2E\Value\VerificationReport $verification,
+    ): FeatureTopology {
+        return new FeatureTopology(
+            $topology->target,
+            $topology->purpose,
+            $topology->generation,
+            $topology->network,
+            $topology->instances,
+            $source,
+            $verification,
+            $topology->mounts,
+        );
+    }
+
+    private function promotedGeneration(string $worktree): StandbyGeneration
+    {
+        $generation = $this->standby->promoted() ?? throw new RuntimeException(
+            'No promoted standby generation is available.',
+        );
+        $expectedId = substr($generation->mainSha, 0, 12).'-'.substr($generation->preparedFingerprint, 0, 12);
+        if ($generation->id !== $expectedId) {
+            throw new RuntimeException('The promoted standby fingerprint is stale or corrupt.');
+        }
+        $structural = $this->fingerprints->forCommit('main');
+        $main = $this->fingerprints->withLaravel($structural, $generation->laravel);
+        if (
+            $structural->value !== $generation->structuralFingerprint
+            || $generation->preparedFingerprint !== $main->value
+        ) {
+            throw new RuntimeException('The promoted standby is stale; refresh it from main first.');
+        }
+        $this->assertColdBaseMatchesMain($worktree, $main);
+        $standbyTarget = TopologyTarget::standby();
+        $this->host->assertOwnedSnapshots(array_combine(
+            array_map($standbyTarget->instance(...), TopologyProfile::ROLES),
+            $generation->snapshots,
+        ));
+
+        return $generation;
+    }
+
+    /**
+     * Hold the shared generation pin only across the exact snapshot copy, so a
+     * refresh cannot replace the source between the check and the copy.
+     *
+     * @param array<string, array{source:string,snapshot:string,target:string,metadata:array<string, string>,network?:string,role?:string,topology?:string,slot?:int,mount?:array{device:string,source:string,path:string}}> $copies
+     */
+    private function copyPinnedSnapshots(StandbyGeneration $generation, array $copies): void
+    {
+        $lock = new OperationLock($this->hostPaths);
+        if (! $lock->acquire('standby-generation', $this->operation, exclusive: false, timeoutSeconds: 3600)) {
+            throw new RuntimeException('The promoted standby generation is locked.');
+        }
+        try {
+            if ($this->standby->promoted()?->toArray() !== $generation->toArray()) {
+                throw new RuntimeException('The promoted standby generation changed before snapshot copy.');
+            }
+            $this->host->copySnapshots($copies);
+        } finally {
+            $lock->release();
+        }
+    }
+
+    private function issueLock(string $issue): OperationLock
+    {
+        $lock = new OperationLock($this->hostPaths);
+        if (! $lock->acquire('topology-'.$issue, $this->operation)) {
+            throw new RuntimeException('The issue topology is locked by another harness command.');
+        }
+
+        return $lock;
     }
 
     private function mintAttempt(): AttemptId
     {
-        if ($this->attempts === null) {
-            return AttemptId::generate();
-        }
-
-        return ($this->attempts)();
-    }
-
-    /** Any attempt of the issue whose release finalization was interrupted blocks a new attempt. */
-    private function hasPendingRelease(string $issue): bool
-    {
-        // The previous harness kept one flat pending record per issue; it names no
-        // attempt, so only that harness can finalize it.
-        $legacy = $this->paths->path('release-pending/'.$issue.'.json');
-        if (file_exists($legacy) || is_link($legacy)) {
-            throw new RuntimeException(
-                'The issue has a legacy pending record; release with the previous harness.',
-            );
-        }
-        $directory = $this->paths->path('release-pending/'.$issue);
-        if (! file_exists($directory)) {
-            return false;
-        }
-        if (! is_dir($directory) || is_link($directory)) {
-            throw new RuntimeException('The pending release collection cannot be inspected.');
-        }
-        $pending = glob($directory.'/*.json');
-        if ($pending === false) {
-            throw new RuntimeException('The pending release collection cannot be inspected.');
-        }
-
-        return $pending !== [];
+        return $this->attempts === null ? AttemptId::generate() : ($this->attempts)();
     }
 
     /** The worktree becomes an Incus disk source verbatim, so it must satisfy the mount path rule. */
@@ -596,7 +401,6 @@ final readonly class TopologyAcquirer
         }
     }
 
-    /** Discovery guests never run composer, so the host worktree must already carry every vendor tree. */
     private function assertVendorHydrated(string $worktree): void
     {
         foreach (self::REQUIRED_VENDOR_AUTOLOADS as $autoload) {
@@ -608,397 +412,30 @@ final readonly class TopologyAcquirer
         }
     }
 
-    /**
-     * @template T
-     * @param array<string, float> $timings
-     * @param callable(): T $operation
-     * @return T
-     */
-    private function measurePhase(string $phase, array &$timings, callable $operation): mixed
-    {
-        $started = hrtime(true);
-        try {
-            return $operation();
-        } finally {
-            $timings[$phase] = round((hrtime(true) - $started) / 1_000_000, 3);
-        }
-    }
-
-    private function acquiringLeaseOperation(array $lease, string $issue): OperationId
-    {
-        return $this->leaseOperation($lease, $issue, ['acquiring'], 'acquiring');
-    }
-
-    /** Cleanup is safe only when the recorded owner PID and /proc start time are dead or changed. */
-    private function acquiringLeaseIsStale(array $lease): bool
-    {
-        $owner = [
-            'pid' => $lease['pid'] ?? null,
-            'process_start_identity' => $lease['process_start_identity'] ?? null,
-            'operation_id' => $lease['operation_id'] ?? null,
-            'acquired_at' => $lease['acquired_at'] ?? null,
-        ];
-
-        return OperationLock::isStale($owner);
-    }
-
-    /**
-     * Hold the shared generation pin only across the exact snapshot copy.
-     * `copySnapshots()` repeats source and snapshot ownership checks while the
-     * pin is held, so refresh cannot replace the source between proof and copy.
-     *
-     * @param array<string, array{source:string,snapshot:string,target:string,metadata:array<string, string>,network?:string,role?:string,topology?:string,slot?:int,mount?:array{device:string,source:string,path:string}}> $copies
-     */
-    private function copyPinnedSnapshots(
-        \App\E2E\Value\StandbyGeneration $generation,
-        array $copies,
-        OperationId $operation,
-    ): void {
-        $lock = new OperationLock($this->paths);
-        if (! $lock->acquire('standby-generation', $operation, exclusive: false, timeoutSeconds: 3600)) {
-            throw new RuntimeException('The promoted standby generation is locked.');
-        }
-
-        try {
-            if ($this->standby->promoted()?->toArray() !== $generation->toArray()) {
-                throw new RuntimeException('The promoted standby generation changed before snapshot copy.');
-            }
-            $this->host->copySnapshots($copies);
-        } finally {
-            $lock->release();
-        }
-    }
-
-    private function assertInterruptedManifestLive(FeatureTopology $manifest, OperationId $operation): void
-    {
-        $target = $manifest->target;
-        $expectedNames = [];
-        foreach (TopologyProfile::ROLES as $role) {
-            $expectedNames[$role] = $target->instance($role);
-            if (($manifest->instances[$role] ?? null) !== $expectedNames[$role]) {
-                throw new RuntimeException('Interrupted topology manifest resource identity changed.');
-            }
-        }
-        if ($manifest->network !== $target->network()) {
-            throw new RuntimeException('Interrupted topology manifest network identity changed.');
-        }
-
-        $instances = $this->host->instances(array_values($expectedNames));
-        if (count($instances) !== count($expectedNames)) {
-            throw new RuntimeException('Interrupted topology live inventory is incomplete.');
-        }
-        foreach ($expectedNames as $role => $name) {
-            $instance = $instances[$name] ?? null;
-            if (
-                $instance === null
-                || ! $instance->isRunning()
-                || $instance->network !== $manifest->network
-                || $instance->mac !== $target->mac($role)
-                || ($instance->metadata['user.orbit.e2e.owner'] ?? null) !== 'orbit-e2e'
-                || ($instance->metadata['user.orbit.e2e.issue'] ?? null) !== $target->issue
-                || ($instance->metadata['user.orbit.e2e.attempt'] ?? null) !== $manifest->attempt->value
-                || ($instance->metadata['user.orbit.e2e.generation'] ?? null) !== $manifest->generation->id
-                || ($instance->metadata['user.orbit.e2e.operation'] ?? null) !== $operation->value
-            ) {
-                throw new RuntimeException('Interrupted topology live instance identity does not match the manifest.');
-            }
-        }
-
-        $network = $this->host->network($manifest->network);
-        if (
-            $network === null
-            || ($network->metadata['user.orbit.e2e.owner'] ?? null) !== 'orbit-e2e'
-            || ($network->metadata['user.orbit.e2e.issue'] ?? null) !== $target->issue
-            || ($network->metadata['user.orbit.e2e.attempt'] ?? null) !== $manifest->attempt->value
-            || ($network->metadata['user.orbit.e2e.operation'] ?? null) !== $operation->value
-        ) {
-            throw new RuntimeException('Interrupted topology live network identity does not match the manifest.');
-        }
-    }
-
-    private function requireTopology(string $issue, AttemptId $attempt, bool $mutating = true): FeatureTopology
-    {
-        $lease = $this->requireLease($issue);
-        if (($lease['state'] ?? null) !== 'ready') {
-            throw new RuntimeException('The feature topology lease is not ready.');
-        }
-        $this->leaseOperation($lease, $issue, ['ready'], 'topology');
-
-        return $this->exactTopology($issue, $attempt, $this->leaseAttempt($lease, $issue, 'topology'), $mutating);
-    }
-
-    private function requireTopologyForSync(string $issue, AttemptId $attempt): FeatureTopology
-    {
-        $lease = $this->requireLease($issue);
-        $state = $lease['state'] ?? null;
-        if ($state === 'ready') {
-            return $this->requireTopology($issue, $attempt);
-        }
-        if (! in_array($state, ['syncing', 'failed'], true)) {
-            throw new RuntimeException('The feature topology lease is not ready.');
-        }
-
-        $this->leaseOperation($lease, $issue, ['syncing', 'failed'], 'sync');
-
-        return $this->exactTopology($issue, $attempt, $this->leaseAttempt($lease, $issue, 'sync'));
-    }
-
-    /**
-     * The exact attempt record, the lease, and the active pointer must all name the
-     * requested attempt before any command touches it; a proved attempt is immutable,
-     * so only a read-only command may reach it.
-     */
-    private function exactTopology(
-        string $issue,
-        AttemptId $attempt,
-        AttemptId $leaseAttempt,
-        bool $mutating = true,
-    ): FeatureTopology {
-        if ($leaseAttempt->value !== $attempt->value) {
-            throw new RuntimeException('The topology lease names another attempt.');
-        }
-
-        $topology = $this->manifests->read($issue, $attempt) ?? throw new RuntimeException(
-            'The exact topology attempt does not exist.',
-        );
-        $active = $this->manifests->active($issue);
-        if ($active === null || $active->attempt->value !== $attempt->value) {
-            throw new RuntimeException('The topology attempt is not the active topology attempt.');
-        }
-        if ($mutating && $this->proofs->isProved($issue, $attempt)) {
-            throw new RuntimeException('The topology attempt is proved and cannot be changed.');
-        }
-
-        return $topology;
-    }
-
-    /**
-     * An absent lease means the issue has no attempt at all, which is the common
-     * operator mistake; a present but malformed lease is reported as invalid later.
-     *
-     * @return array<array-key, mixed>
-     */
-    private function requireLease(string $issue): array
-    {
-        return (
-            $this->state->read('leases/'.$issue.'.json') ?? throw new RuntimeException(
-                "{$issue} has no active attempt.",
-            )
-        );
-    }
-
-    /** @param array<array-key, mixed> $lease */
-    private function leaseAttempt(array $lease, string $issue, string $context): AttemptId
-    {
-        return $this->requireAttempt($lease['attempt'] ?? null, "The {$context} lease is invalid.");
-    }
-
-    private function requireAttempt(mixed $value, string $message): AttemptId
-    {
-        if (! is_string($value)) {
-            throw new RuntimeException($message);
-        }
-
-        if (preg_match('/\A[0-9a-f]{32}\z/D', $value) !== 1) {
-            throw new RuntimeException($message);
-        }
-
-        return new AttemptId($value);
-    }
-
-    /** @param list<string> $states */
-    private function leaseOperation(array $lease, string $issue, array $states, string $context): OperationId
-    {
-        $expiresAt = $lease['expires_at'] ?? null;
-        if (
-            array_diff(array_keys($lease), [
-                'schema',
-                'issue',
-                'attempt',
-                'state',
-                'operation_id',
-                'expires_at',
-                'pid',
-                'process_start_identity',
-                'acquired_at',
-            ]) !== []
-            || count($lease) < 6
-            || ($lease['schema'] ?? null) !== 2
-            || ($lease['issue'] ?? null) !== $issue
-            || ! in_array($lease['state'] ?? null, $states, true)
-            || ! is_string($expiresAt)
-            || preg_match('/\A\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\z/D', $expiresAt) !== 1
-            || ($parsedExpiry = \DateTimeImmutable::createFromFormat('!Y-m-d\\TH:i:s\\Z', $expiresAt)) === false
-            || $parsedExpiry->format('Y-m-d\\TH:i:s\\Z') !== $expiresAt
-        ) {
-            throw new RuntimeException("The {$context} lease is invalid.");
-        }
-        $operation = $lease['operation_id'] ?? null;
-        if (! is_string($operation) || preg_match('/\A[0-9a-f]{32}\z/D', $operation) !== 1) {
-            throw new RuntimeException("The {$context} lease is invalid.");
-        }
-
-        return new OperationId($operation);
-    }
-
-    private function validateRequestOwnership(TopologyRequest $request): void
+    private function assertRequestOwnership(TopologyRequest $request): void
     {
         $repository = new GitRepository($request->worktree);
         $expectedRoot = $this->repositoryRoot !== '' ? $this->repositoryRoot : dirname(__DIR__, 4);
-        $expected = new GitRepository($expectedRoot);
-        if ($this->gitCommonDirectory($repository->root()) !== $this->gitCommonDirectory($expected->root())) {
-            throw new \InvalidArgumentException('The worktree repository identity does not match Orbit.');
+        if ($repository->commonDirectory() !== new GitRepository($expectedRoot)->commonDirectory()) {
+            throw new InvalidArgumentException('The worktree repository identity does not match Orbit.');
         }
         if (! TopologyTarget::issueMatchesBranch($request->issue, $repository->branch())) {
-            throw new \InvalidArgumentException('The worktree branch does not match the issue.');
+            throw new InvalidArgumentException('The worktree branch does not match the issue.');
         }
         if (function_exists('posix_geteuid') && fileowner($request->worktree) !== posix_geteuid()) {
-            throw new \InvalidArgumentException('The worktree ownership does not match the current user.');
+            throw new InvalidArgumentException('The worktree ownership does not match the current user.');
         }
     }
 
-    private function gitCommonDirectory(string $root): string
-    {
-        $result = Process::path($root)->run(['git', 'rev-parse', '--git-common-dir']);
-        if ($result->failed()) {
-            throw new \InvalidArgumentException('Git repository identity validation failed.');
-        }
-        $path = trim($result->output());
-        $resolved = realpath(str_starts_with($path, '/') ? $path : $root.'/'.$path);
-        if ($resolved === false) {
-            throw new \InvalidArgumentException('Git repository identity validation failed.');
-        }
-
-        return $resolved;
-    }
-
-    private function fingerprintsForWorktree(string $worktree): PreparedStateFingerprint
-    {
-        return new PreparedStateFingerprint(new GitRepository($worktree));
-    }
-
-    private function assertColdBaseMatchesMain(string $worktree, ?\App\E2E\Value\PreparedFingerprint $main = null): void
+    private function assertColdBaseMatchesMain(string $worktree, ?PreparedFingerprint $main = null): void
     {
         $main ??= $this->fingerprints->forCommit('main');
-        $feature = $this->fingerprintsForWorktree($worktree)->forCommit();
+        $feature = new PreparedStateFingerprint(new GitRepository($worktree))->forCommit();
         if (
             ($feature->manifest['cold_epoch'] ?? null) !== ($main->manifest['cold_epoch'] ?? null)
             || ($feature->manifest['base_image_alias'] ?? null) !== ($main->manifest['base_image_alias'] ?? null)
         ) {
             throw new RuntimeException('The feature prepared state changes the cold base contract.');
         }
-    }
-
-    /**
-     * @param list<string> $resources
-     * @return array<string, array<string, mixed>|null>
-     */
-    private function observedResources(TopologyTarget $target, array $resources): array
-    {
-        $observed = [];
-        try {
-            $inventory = $this->rollbackInventory($target, $resources);
-            foreach ($resources as $resource) {
-                $value = $inventory[$resource] ?? null;
-                $observed[$resource] = $value === null
-                    ? null
-                    : (
-                        $value instanceof IncusInstance || $value instanceof IncusNetwork
-                            ? $this->rollbackIdentity($value)
-                            : ['observation_error' => 'Invalid resource inventory value.']
-                    );
-            }
-        } catch (Throwable $exception) {
-            foreach ($resources as $resource) {
-                $observed[$resource] = ['observation_error' => $exception->getMessage()];
-            }
-        }
-
-        return $observed;
-    }
-
-    /** @return array<string, mixed> */
-    private function rollbackIdentity(\App\E2E\Value\IncusInstance|\App\E2E\Value\IncusNetwork $resource): array
-    {
-        return [
-            'remote' => $resource->remote,
-            'project' => $resource->project,
-            'name' => $resource->name,
-            'pool' => $resource instanceof \App\E2E\Value\IncusInstance ? $resource->pool : null,
-            'network' => $resource instanceof \App\E2E\Value\IncusInstance ? $resource->network : null,
-            'mac' => $resource instanceof \App\E2E\Value\IncusInstance ? $resource->mac : null,
-            'metadata' => $resource->metadata,
-        ];
-    }
-
-    private function rollbackFor(TopologyTarget $target): AcquisitionRollback
-    {
-        /** @return array<string, IncusInstance|IncusNetwork|null> */
-        $inventory = function (array $resources) use ($target): array {
-            if (
-                ! array_is_list($resources)
-                || array_filter($resources, static fn (mixed $resource): bool => ! is_string($resource)) !== []
-            ) {
-                throw new RuntimeException('Rollback resource list is invalid.');
-            }
-
-            /** @var list<string> $resources */
-            return $this->rollbackInventory($target, $resources);
-        };
-
-        return (
-            /** @mago-expect analysis:less-specific-argument The validated adapter narrows resources at runtime. */
-            $this->rollback ?? new AcquisitionRollback(
-                $inventory,
-                function (array $resources): void {
-                    $this->host->stopAll($resources);
-                },
-                function (array $resources): void {
-                    $this->host->deleteInstances($resources);
-                },
-                function (string $resource): void {
-                    $this->networks->delete($resource);
-                },
-            )
-        );
-    }
-
-    private function rollbackInventory(TopologyTarget $target, array $resources): array
-    {
-        /** @var list<string> $instances */
-        $instances = array_values(array_filter(
-            $resources,
-            fn (string $resource): bool => $resource !== $target->network(),
-        ));
-        $inventory = $instances === [] ? [] : $this->host->instances($instances);
-        $network = $this->host->network($target->network());
-        $inventory[$target->network()] = $network;
-        foreach ($instances as $instance) {
-            $inventory[$instance] ??= null;
-        }
-
-        /** @var array<string, IncusInstance|IncusNetwork|null> $inventory */
-        return $inventory;
-    }
-
-    private function writeLease(string $issue, AttemptId $attempt, string $operationId, string $state): void
-    {
-        $lease = [
-            'schema' => 2,
-            'issue' => $issue,
-            'attempt' => $attempt->value,
-            'state' => $state,
-            'operation_id' => $operationId,
-            'expires_at' => gmdate('Y-m-d\TH:i:s\Z', time() + 604_800),
-        ];
-        if ($state === 'acquiring') {
-            $owner = OperationLock::currentOwner(new OperationId($operationId));
-            $lease += [
-                'pid' => $owner['pid'],
-                'process_start_identity' => $owner['process_start_identity'],
-                'acquired_at' => $owner['acquired_at'],
-            ];
-        }
-        $this->state->write('leases/'.$issue.'.json', $lease);
     }
 }

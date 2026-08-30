@@ -32,12 +32,16 @@ final readonly class StatePaths
         $this->root = rtrim($resolved, '/');
     }
 
-    public static function fromEnvironment(?string $xdgStateHome = null, ?string $home = null): self
+    /** The primary checkout keeps the promoted standby generation and the host locks under `.e2e/`. */
+    public static function forPrimary(string $repositoryRoot): self
     {
-        $base = $xdgStateHome ?? getenv('XDG_STATE_HOME') ?: null;
-        $base ??= ($home ?? getenv('HOME') ?: sys_get_temp_dir()).'/.local/state';
+        return new self(rtrim($repositoryRoot, '/').'/.e2e');
+    }
 
-        return new self(rtrim($base, '/').'/orbit/e2e');
+    /** A worktree keeps the state of its one issue attempt under `.e2e/`; it dies with the worktree. */
+    public static function forWorktree(string $worktree): self
+    {
+        return new self(rtrim($worktree, '/').'/.e2e');
     }
 
     public function root(): string

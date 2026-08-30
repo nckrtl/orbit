@@ -5,54 +5,50 @@ declare(strict_types=1);
 namespace App\Console\Commands\Topology;
 
 use App\Console\Commands\E2ECommand;
-use App\E2E\TopologyManifestStore;
-use App\E2E\Value\AttemptId;
-use App\E2E\Value\OperationId;
-use App\E2E\Value\TopologyTarget;
 use Throwable;
 
-/** Read-only: reports the active attempt of an issue, or one exact attempt record. */
+/** Read-only: reports the live attempt of an issue from its worktree state. */
 final class StatusCommand extends E2ECommand
 {
     #[\Override]
-    protected $signature = 'topology:status {issue} {attempt?} {--json}';
+    protected $signature = 'topology:status {issue} '.self::WORKTREE_OPTION.' {--json}';
     #[\Override]
-    protected $description = 'Report the active or exact topology attempt without touching infrastructure';
+    protected $description = 'Report the live topology attempt of the issue without touching infrastructure';
 
-    public function handle(TopologyManifestStore $manifests, OperationId $operation): int
+    public function handle(): int
     {
         try {
-            $issue = (string) $this->argument('issue');
-            TopologyTarget::assertIssue($issue);
-            $attemptArgument = $this->argument('attempt');
-            $attempt = is_string($attemptArgument) ? new AttemptId($attemptArgument) : null;
-            $topology = $attempt === null ? $manifests->active($issue) : $manifests->read($issue, $attempt);
-
-            if ($topology === null) {
+            $request = $this->request();
+            $state = $this->state($request);
+            if (! $state->hasAttempt()) {
                 $this->outputJson([
                     'state' => 'absent',
-                    'operation_id' => $operation->value,
-                    'issue' => $issue,
-                    'attempt_id' => $attempt?->value,
+                    'issue' => $request->issue,
+                    'worktree' => $request->worktree,
+                    'proof' => $state->proof(),
                 ], 'absent');
 
                 return self::SUCCESS;
             }
-
+            $attempt = $state->attempt();
+            $topology = $state->topology();
             $this->outputJson(
                 [
-                    'state' => $topology->purpose->value,
-                    'operation_id' => $operation->value,
-                    'issue' => $issue,
-                    'attempt_id' => $topology->attempt->value,
-                    'topology' => $topology->toArray(),
+                    'state' => $attempt['purpose'],
+                    'issue' => $request->issue,
+                    'attempt_id' => $attempt['attempt_id'],
+                    'worktree' => $request->worktree,
+                    'acquired_at' => $attempt['acquired_at'],
+                    'proved' => $state->isProved(),
+                    'topology' => $topology?->toArray(),
+                    'proof' => $state->proof(),
                 ],
-                $topology->purpose->value.' '.$topology->attempt->value,
+                $attempt['purpose'].' '.$attempt['attempt_id'].($state->isProved() ? ' proved' : ''),
             );
 
             return self::SUCCESS;
         } catch (Throwable $exception) {
-            $this->outputFailure($exception, $operation);
+            $this->outputFailure($exception);
 
             return self::FAILURE;
         }

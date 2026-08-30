@@ -8,16 +8,17 @@ use App\E2E\Value\TopologyProfile;
 use App\E2E\Value\TopologyTarget;
 
 describe('StatePaths', function () {
-    it('uses XDG state and HOME fallback with private directories', function () {
+    it('keeps host state in the primary checkout and issue state in the worktree', function () {
         $base = temporaryPath('orbit-paths-', 4);
-        $xdg = StatePaths::fromEnvironment($base.'/xdg', $base.'/home');
-        $fallback = StatePaths::fromEnvironment(null, $base.'/home');
+        mkdir($base.'/primary/.worktrees/nck-1-slug', 0700, true);
+        $primary = StatePaths::forPrimary($base.'/primary/');
+        $worktree = StatePaths::forWorktree($base.'/primary/.worktrees/nck-1-slug');
 
-        expect($xdg->root())
-            ->toBe($base.'/xdg/orbit/e2e')
-            ->and($fallback->root())
-            ->toBe($base.'/home/.local/state/orbit/e2e')
-            ->and(fileperms($xdg->root()) & 0777)
+        expect($primary->root())
+            ->toBe($base.'/primary/.e2e')
+            ->and($worktree->root())
+            ->toBe($base.'/primary/.worktrees/nck-1-slug/.e2e')
+            ->and(fileperms($primary->root()) & 0777)
             ->toBe(0700);
     });
 

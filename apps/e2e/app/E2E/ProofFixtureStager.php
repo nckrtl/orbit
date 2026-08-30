@@ -17,7 +17,7 @@ use Throwable;
 /**
  * Stage the proof-only fixtures of one issue on every role of a proof attempt.
  *
- * The files come from `apps/e2e/resources/proof/<issue>/` at the exact candidate
+ * The files come from `proofs/<issue>/` at the exact candidate
  * commit, never from the host working tree, and land root-owned and read-only
  * for the orbit user at `/var/lib/orbit-e2e/proof/<name>` on every role,
  * including roles without a checkout. Each role then reports the installed

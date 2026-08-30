@@ -1,3 +1,4 @@
 /.worktrees/
 /vendor/
 __pycache__/
+/.e2e/

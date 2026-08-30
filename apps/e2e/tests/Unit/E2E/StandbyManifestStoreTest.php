@@ -2,26 +2,29 @@
 
 declare(strict_types=1);
 
+use App\E2E\IncusHost;
 use App\E2E\StandbyManifestStore;
 use App\E2E\State\AtomicJsonStore;
 use App\E2E\State\StatePaths;
-use App\E2E\TopologyManifestStore;
-use App\E2E\Value\AttemptPurpose;
-use App\E2E\Value\FeatureTopology;
 use App\E2E\Value\LaravelRelease;
-use App\E2E\Value\SourceState;
 use App\E2E\Value\StandbyGeneration;
 use App\E2E\Value\TopologyProfile;
-use App\E2E\Value\VerificationReport;
+use Illuminate\Container\Container;
+use Illuminate\Process\Factory as ProcessFactory;
+use Illuminate\Support\Facades\Facade;
+use Illuminate\Support\Facades\Process;
 
 describe('StandbyManifestStore', function () {
+    beforeEach(function () {
+        $container = new Container;
+        $container->instance(ProcessFactory::class, new ProcessFactory);
+        Facade::clearResolvedInstances();
+        Facade::setFacadeApplication($container);
+    });
+
     it('round-trips a typed generation with exact ordered snapshots', function () {
         $paths = new StatePaths(temporaryPath('orbit-standby-', 4));
-        $store = new StandbyManifestStore(
-            $json = new AtomicJsonStore($paths),
-            $paths,
-            new TopologyManifestStore($json, $paths),
-        );
+        $store = new StandbyManifestStore($json = new AtomicJsonStore($paths), $paths, new IncusHost);
         $generation = new StandbyGeneration(
             'g1',
             str_repeat('a', 40),
@@ -94,7 +97,7 @@ describe('StandbyManifestStore', function () {
             fn () => new StandbyManifestStore(
                 $json = new AtomicJsonStore($paths),
                 $paths,
-                new TopologyManifestStore($json, $paths),
+                new IncusHost,
             )->promoted(),
         )
             ->toThrow(InvalidArgumentException::class);
@@ -103,7 +106,7 @@ describe('StandbyManifestStore', function () {
     it('retains current, previous, and topology-pinned generations when pruning', function () {
         $paths = new StatePaths(temporaryPath('orbit-standby-', 4));
         $json = new AtomicJsonStore($paths);
-        $store = new StandbyManifestStore($json, $paths, new TopologyManifestStore($json, $paths));
+        $store = new StandbyManifestStore($json, $paths, new IncusHost);
         $old = standbyPruneGeneration('g1');
         $pinned = standbyPruneGeneration('g2');
         $previous = standbyPruneGeneration('g3');
@@ -111,7 +114,7 @@ describe('StandbyManifestStore', function () {
         foreach ([$old, $pinned, $previous, $current] as $item) {
             $json->write("standby/generations/{$item->id}.json", $item->toArray());
         }
-        pinnedTopologyState($json, $paths, $pinned);
+        pinnedTopologyState($pinned);
 
         expect(array_map(fn (StandbyGeneration $item): string => $item->id, $store->prunable($current)))
             ->toBe(['g1']);
@@ -120,49 +123,21 @@ describe('StandbyManifestStore', function () {
     it('never prunes the generation a live topology attempt pins', function () {
         $paths = new StatePaths(temporaryPath('orbit-standby-', 4));
         $json = new AtomicJsonStore($paths);
-        $store = new StandbyManifestStore($json, $paths, new TopologyManifestStore($json, $paths));
+        $store = new StandbyManifestStore($json, $paths, new IncusHost);
         $pinned = standbyPruneGeneration('g1');
         $current = standbyPruneGeneration('g2');
         foreach ([$pinned, $current] as $item) {
             $json->write("standby/generations/{$item->id}.json", $item->toArray());
         }
-        pinnedTopologyState($json, $paths, $pinned);
+        pinnedTopologyState($pinned);
 
         expect($store->prunable($current))->toBeEmpty();
     });
 
-    it('fails closed when an active topology pointer cannot be resolved', function (Closure $corrupt) {
-        $paths = new StatePaths(temporaryPath('orbit-standby-', 4));
-        $json = new AtomicJsonStore($paths);
-        $store = new StandbyManifestStore($json, $paths, new TopologyManifestStore($json, $paths));
-        $pinned = standbyPruneGeneration('g1');
-        $current = standbyPruneGeneration('g2');
-        foreach ([$pinned, $current] as $item) {
-            $json->write("standby/generations/{$item->id}.json", $item->toArray());
-        }
-        pinnedTopologyState($json, $paths, $pinned);
-        $corrupt($json);
-
-        expect(fn () => $store->prunable($current))->toThrow(RuntimeException::class);
-    })->with([
-        'missing attempt record' => [
-            fn (AtomicJsonStore $json) => $json->delete(
-                'topologies/NCK-123/'.attemptId()->value.'.json',
-            ),
-        ],
-        'malformed pointer' => [
-            fn (AtomicJsonStore $json) => $json->write('topologies/NCK-123/active.json', [
-                'schema' => 2,
-                'issue' => 'NCK-123',
-                'attempt' => 'not-an-attempt',
-            ]),
-        ],
-    ]);
-
     it('fails closed when a manifest collection cannot be inspected', function (string $collection) {
         $paths = new StatePaths(temporaryPath('orbit-standby-', 4));
         $json = new AtomicJsonStore($paths);
-        $store = new StandbyManifestStore($json, $paths, new TopologyManifestStore($json, $paths));
+        $store = new StandbyManifestStore($json, $paths, new IncusHost);
         $current = new StandbyGeneration(
             'g1',
             str_repeat('a', 40),
@@ -183,15 +158,11 @@ describe('StandbyManifestStore', function () {
 
         expect(fn () => $store->prunable($current))
             ->toThrow(RuntimeException::class, 'manifest collection cannot be inspected');
-    })->with(['topologies', 'standby/generations']);
+    })->with(['standby/generations']);
 
     it('fails closed when a manifest collection is a broken symbolic link', function (string $collection) {
         $paths = new StatePaths(temporaryPath('orbit-standby-', 4));
-        $store = new StandbyManifestStore(
-            $json = new AtomicJsonStore($paths),
-            $paths,
-            new TopologyManifestStore($json, $paths),
-        );
+        $store = new StandbyManifestStore($json = new AtomicJsonStore($paths), $paths, new IncusHost);
         $current = new StandbyGeneration(
             'g1',
             str_repeat('a', 40),
@@ -215,30 +186,27 @@ describe('StandbyManifestStore', function () {
 
         expect(fn () => $store->prunable($current))
             ->toThrow(InvalidArgumentException::class, 'cannot be a symbolic link');
-    })->with(['topologies', 'standby/generations']);
+    })->with(['standby/generations']);
 });
 
-/** Record one active attempt-scoped topology that pins the given generation. */
-function pinnedTopologyState(
-    AtomicJsonStore $json,
-    StatePaths $paths,
-    StandbyGeneration $generation,
-    string $issue = 'NCK-123',
-): void {
+/** Fake one live harness VM whose metadata pins the given generation. */
+function pinnedTopologyState(StandbyGeneration $generation, string $issue = 'NCK-123'): void
+{
     $target = featureTarget($issue);
-
-    new TopologyManifestStore($json, $paths)->writeActive(new FeatureTopology(
-        $target,
-        AttemptPurpose::Discovery,
-        $generation,
-        $target->network(),
-        array_combine(
-            TopologyProfile::ROLES,
-            array_map($target->instance(...), TopologyProfile::ROLES),
-        ),
-        new SourceState(str_repeat('d', 40), str_repeat('d', 40)),
-        new VerificationReport(true, ['ready' => verificationProbeFixture(probe: 'ready')]),
-    ));
+    Process::fake([
+        '*' => Process::result(json_encode([[
+            'name' => $target->instance('gateway'),
+            'type' => 'virtual-machine',
+            'status' => 'Running',
+            'status_code' => 103,
+            'config' => [
+                'user.orbit.e2e.owner' => 'orbit-e2e',
+                'user.orbit.e2e.issue' => $issue,
+                'user.orbit.e2e.generation' => $generation->id,
+            ],
+            'devices' => ['root' => ['pool' => 'default'], 'eth0' => ['network' => $target->network()]],
+        ]], JSON_THROW_ON_ERROR)),
+    ]);
 }
 
 function standbyPruneGeneration(string $id, ?string $previous = null): StandbyGeneration

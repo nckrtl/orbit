@@ -6,12 +6,9 @@ namespace App\E2E;
 
 use App\E2E\Git\GitRepository;
 use App\E2E\State\AtomicJsonStore;
-use App\E2E\State\OperationJournal;
 use App\E2E\State\OperationLock;
-use App\E2E\Value\GuestCommand;
 use App\E2E\Value\IncusInstance;
 use App\E2E\Value\LaravelRelease;
-use App\E2E\Value\MigrationPlan;
 use App\E2E\Value\OperationId;
 use App\E2E\Value\PreparedFingerprint;
 use App\E2E\Value\RefreshResult;
@@ -39,7 +36,6 @@ final readonly class StandbyRefresher
         private LaravelReleaseResolver $laravel,
         private OperationLock $lock,
         private OperationLock $generationLock,
-        private OperationJournal $journal,
         private AtomicJsonStore $state,
         private GitRepository $git,
         private string $mainWorktree,
@@ -47,40 +43,29 @@ final readonly class StandbyRefresher
         private int $refreshLockTimeoutSeconds = 3600,
     ) {}
 
-    public function request(string $mainSha, ?MigrationPlan $migration = null, bool $allowCold = false): RefreshResult
+    public function request(string $mainSha, bool $allowCold = false): RefreshResult
     {
         if (preg_match('/\A[a-f0-9]{40}\z/D', $mainSha) !== 1) {
             throw new RuntimeException('The refresh SHA is invalid.');
         }
 
-        $evidence = bin2hex(random_bytes(16));
         if (! $this->lock->acquire(
             'standby-refresh',
             $this->operation,
             timeoutSeconds: $this->refreshLockTimeoutSeconds,
         )) {
-            $this->writeFailureIfMissing("standby/failures/{$evidence}.json", [
-                'schema' => 1,
-                'operation_id' => $this->operation->value,
-                'main_sha' => $mainSha,
-                'message' => 'Unable to acquire the standby refresh lock.',
-            ]);
-
-            return new RefreshResult('failed', $this->operation->value, $evidence);
+            return new RefreshResult(
+                'failed',
+                $this->operation->value,
+                error: 'Unable to acquire the standby refresh lock.',
+            );
         }
 
         try {
             try {
-                return $this->refresh($mainSha, $migration, $allowCold, $this->operation, $evidence);
+                return $this->refresh($mainSha, $allowCold, $this->operation);
             } catch (Throwable $exception) {
-                $this->writeFailureIfMissing("standby/failures/{$evidence}.json", [
-                    'schema' => 1,
-                    'operation_id' => $this->operation->value,
-                    'main_sha' => $mainSha,
-                    'message' => $exception->getMessage(),
-                ]);
-
-                return new RefreshResult('failed', $this->operation->value, $evidence);
+                return new RefreshResult('failed', $this->operation->value, error: $exception->getMessage());
             }
         } finally {
             $this->lock->release();
@@ -117,13 +102,8 @@ final readonly class StandbyRefresher
         }
     }
 
-    private function refresh(
-        string $mainSha,
-        ?MigrationPlan $migration,
-        bool $allowCold,
-        OperationId $operation,
-        string $evidence,
-    ): RefreshResult {
+    private function refresh(string $mainSha, bool $allowCold, OperationId $operation): RefreshResult
+    {
         if ($this->git->commit('HEAD') !== $mainSha || $this->git->dirtyOverlay() !== null) {
             throw new RuntimeException('The host main checkout does not match the requested clean SHA.');
         }
@@ -181,7 +161,7 @@ final readonly class StandbyRefresher
                     $this->generationLock->release();
                 }
 
-                return new RefreshResult('unchanged', $operation->value, $evidence, $promoted->id);
+                return new RefreshResult('unchanged', $operation->value, $promoted->id);
             }
 
             $release =
@@ -200,7 +180,6 @@ final readonly class StandbyRefresher
                     $release,
                     $allowCold,
                     $operation,
-                    $evidence,
                 );
             } else {
                 if (! $this->generationLock->acquire(
@@ -227,7 +206,6 @@ final readonly class StandbyRefresher
                 $this->measure($timings, 'converge', fn () => $this->converger->converge($target, $source, $release));
             }
 
-            $this->migrate($target, $migration, $desired->value, $operation);
             $verification = $this->measure($timings, 'verify', fn () => $this->verifier->verify(
                 $target,
                 VerificationMode::Readiness,
@@ -256,15 +234,6 @@ final readonly class StandbyRefresher
             ));
             $this->generationLock->release();
             $generationMutationLockHeld = false;
-            $this->state->write("standby/evidence/{$evidence}.json", [
-                'schema' => 1,
-                'operation_id' => $operation->value,
-                'evidence_id' => $evidence,
-                'readiness' => $verification->toArray(),
-                'proof' => $proof->toArray(),
-                'stopped' => true,
-                'timings' => $timings,
-            ]);
             if (! $this->generationLock->acquire('standby-generation', $operation, timeoutSeconds: 3600)) {
                 throw new RuntimeException('Unable to acquire the standby generation lock for promotion.');
             }
@@ -278,35 +247,21 @@ final readonly class StandbyRefresher
             } finally {
                 $this->generationLock->release();
             }
-            $this->prune($generation, $evidence);
+            $this->prune($generation);
 
-            return new RefreshResult('promoted', $operation->value, $evidence, $generation->id);
+            return new RefreshResult('promoted', $operation->value, $generation->id);
         } catch (Throwable $exception) {
-            try {
-                $this->writeFailureIfMissing("standby/failures/{$evidence}.json", [
-                    'schema' => 1,
-                    'operation_id' => $operation->value,
-                    'main_sha' => $mainSha,
-                    'message' => $exception->getMessage(),
-                    'timings' => $timings,
-                ]);
-            } catch (Throwable) {
-                // Recovery must run even when failure evidence storage is unavailable.
-            }
             if ($generationMutationLockHeld) {
                 $this->generationLock->release();
                 $generationMutationLockHeld = false;
             }
-            $recovered = ! $mutated || $this->rollback($promoted, $evidence);
-            $this->state->write("standby/recovery/{$evidence}.json", [
-                'schema' => 1,
-                'operation_id' => $operation->value,
-                'recovered' => $recovered,
-                'stopped' => $recovered,
-                'generation_id' => $promoted?->id,
-            ]);
+            $recovered = ! $mutated || $this->rollback($promoted);
+            $error = $exception->getMessage();
+            if (! $recovered) {
+                $error .= ' The previous snapshot could not be restored; the standby is marked corrupt.';
+            }
 
-            return new RefreshResult('failed', $operation->value, $evidence, $promoted?->id);
+            return new RefreshResult('failed', $operation->value, $promoted?->id, $error);
         }
     }
 
@@ -343,16 +298,6 @@ final readonly class StandbyRefresher
             $snapshots[$target->instance($role)] = $generation->snapshots[$role];
         }
         $this->host->assertOwnedSnapshots($snapshots);
-    }
-
-    /** @param array<array-key, mixed> $failure */
-    private function writeFailureIfMissing(string $path, array $failure): void
-    {
-        if ($this->state->read($path) !== null) {
-            return;
-        }
-
-        $this->state->write($path, $failure);
     }
 
     private function startAll(): void
@@ -504,43 +449,11 @@ final readonly class StandbyRefresher
         ));
     }
 
-    private function migrate(
-        TopologyTarget $target,
-        ?MigrationPlan $migration,
-        string $fingerprint,
-        OperationId $operation,
-    ): void {
-        if ($migration === null) {
-            return;
-        }
-        if ($migration->fingerprint !== $fingerprint) {
-            throw new RuntimeException('The migration fingerprint does not match the desired state.');
-        }
-
-        foreach ($migration->steps as $step) {
-            $result = $this->host->exec(
-                $target->instance($step['role']),
-                new GuestCommand($step['argv'], 900, $step['stdin']),
-            );
-            $this->journal->append($operation, [
-                'step' => 'migration',
-                'role' => $step['role'],
-                'argv' => $step['argv'],
-                'stdin' => $step['stdin'],
-                'stdout' => $result->stdout,
-                'stderr' => $result->stderr,
-                'exit_code' => $result->exitCode,
-            ]);
-            if (! $result->successful()) {
-                throw new RuntimeException('A standby migration step failed.');
-            }
-        }
-    }
-
-    private function rollback(?StandbyGeneration $generation, string $evidence): bool
+    /** Restore the promoted snapshot after a failed mutation; a failed restore marks the standby corrupt. */
+    private function rollback(?StandbyGeneration $generation): bool
     {
         if ($generation === null) {
-            return $this->builder->cleanupCold($evidence, $this->operation);
+            return $this->builder->cleanupCold($this->operation);
         }
 
         try {
@@ -553,7 +466,7 @@ final readonly class StandbyRefresher
 
             return true;
         } catch (Throwable $exception) {
-            $this->markCorrupt($evidence, $exception);
+            $this->markCorrupt($exception);
 
             return false;
         }
@@ -633,7 +546,7 @@ final readonly class StandbyRefresher
         return $snapshots;
     }
 
-    private function prune(StandbyGeneration $current, string $evidence): void
+    private function prune(StandbyGeneration $current): void
     {
         try {
             foreach ($this->manifests->prunable($current) as $generation) {
@@ -644,25 +557,16 @@ final readonly class StandbyRefresher
                 $this->host->deleteSnapshotsIfExist($snapshots);
                 $this->manifests->forget($generation);
             }
-        } catch (Throwable $exception) {
+        } catch (Throwable) {
             // Uncertain or failed pruning never invalidates the promoted generation.
-            $this->writeFailureIfMissing("standby/failures/{$evidence}.json", [
-                'schema' => 1,
-                'operation_id' => $this->operation->value,
-                'phase' => 'pruning',
-                'generation_id' => $current->id,
-                'main_sha' => $current->mainSha,
-                'message' => $exception->getMessage(),
-            ]);
         }
     }
 
-    private function markCorrupt(string $evidence, Throwable $exception): void
+    private function markCorrupt(Throwable $exception): void
     {
         $this->state->write('standby/corrupt.json', [
-            'schema' => 1,
+            'schema' => 2,
             'operation_id' => $this->operation->value,
-            'evidence_id' => $evidence,
             'message' => $exception->getMessage(),
         ]);
     }

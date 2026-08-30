@@ -15,7 +15,7 @@ it('prints usage and exits 64 without a candidate SHA', function () use ($wrappe
     expect($result->exitCode())
         ->toBe(64)
         ->and($result->errorOutput())
-        ->toContain('usage: bin/e2e-live <candidate-sha> [--rolling]');
+        ->toContain('usage: bin/e2e-live <candidate-sha>');
 });
 
 it('rejects a candidate that is not a full commit SHA', function () use ($wrapper): void {
@@ -28,17 +28,17 @@ it('rejects a candidate that is not a full commit SHA', function () use ($wrappe
 });
 
 it('rejects an unknown option before touching any repository', function () use ($wrapper): void {
-    $result = Process::run([$wrapper, str_repeat('a', 40), '--rolling', '--force']);
+    $result = Process::run([$wrapper, str_repeat('a', 40), '--force']);
 
     expect($result->exitCode())->toBe(64)->and($result->errorOutput())->toContain('unknown option: --force');
 });
 
 it('refuses a second run while the live lock is held', function () use ($wrapper): void {
-    $state = temporaryPath('orbit-e2e-live-state-', 8);
-    mkdir($state.'/orbit/e2e', 0700, true);
-    $lock = $state.'/orbit/e2e/live.lock';
+    $clone = temporaryPath('orbit-e2e-live-clone-', 8);
+    mkdir($clone.'/.e2e/locks', 0700, true);
+    $lock = $clone.'/.e2e/locks/live.lock';
 
-    $result = Process::env(['XDG_STATE_HOME' => $state])->run([
+    $result = Process::env(['ORBIT_E2E_VALIDATE_ROOT' => $clone])->run([
         'flock',
         $lock,
         $wrapper,
@@ -57,12 +57,6 @@ it('describes the validation clone, suites, and inputs with --help', function ()
     expect($result->exitCode())
         ->toBe(0)
         ->and($result->output())
-        ->toContain(
-            'ORBIT_E2E_VALIDATE_ROOT',
-            'TopologyLedLifecycleAcceptanceTest',
-            'RollingTopologyAcceptanceTest',
-            '--rolling',
-            'ACC-1',
-            'ACC-2',
-        );
+        ->toContain('ORBIT_E2E_VALIDATE_ROOT', 'TopologyLedLifecycleAcceptanceTest', 'proofs/ACC-1.json', 'ACC-1')
+        ->not->toContain('--rolling');
 });
