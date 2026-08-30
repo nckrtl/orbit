@@ -104,7 +104,7 @@ it('proves the rolling topology contract through public wrappers', function (): 
         Assert::assertSame($initial['state'] === 'missing', $initial['generation'] === null);
 
         if ($initial['state'] === 'missing') {
-            LiveHarness::checkout($mainWorktree, $baseSha);
+            LiveHarness::checkoutMain($mainWorktree, $baseSha);
             $bootstrap = LiveHarness::jsonPhase('bootstrap standby generation', fn (): array => LiveHarness::jsonWrapper(
                 'standby',
                 'refresh',
@@ -167,7 +167,7 @@ it('proves the rolling topology contract through public wrappers', function (): 
             Assert::assertNotContains(false, $verified['verification']['probes'] ?? []);
         });
 
-        LiveHarness::checkout($mainWorktree, $rollingSha);
+        LiveHarness::checkoutMain($mainWorktree, $rollingSha);
         $rollingFingerprint = LiveHarness::jsonWrapper('standby', 'fingerprint', "--main-sha={$rollingSha}");
         $rolling = LiveHarness::jsonPhase('rolling standby refresh', fn (): array => LiveHarness::jsonWrapper(
             'standby',
@@ -185,7 +185,7 @@ it('proves the rolling topology contract through public wrappers', function (): 
             $promoted['generation']['prepared_fingerprint'] ?? null,
         );
 
-        LiveHarness::checkout($mainWorktree, $failureSha);
+        LiveHarness::checkoutMain($mainWorktree, $failureSha);
         $failureFingerprint = LiveHarness::jsonWrapper('standby', 'fingerprint', "--main-sha={$failureSha}");
         Assert::assertNotSame($rollingFingerprint['fingerprint'] ?? null, $failureFingerprint['fingerprint'] ?? null);
         Assert::assertSame($failureFingerprint['fingerprint'] ?? null, $migration['fingerprint'] ?? null);
@@ -214,7 +214,7 @@ it('proves the rolling topology contract through public wrappers', function (): 
         liveAssertStandbyStatus($recovered, 'promoted');
         Assert::assertSame($rolling['generation_id'], $recovered['generation']['id'] ?? null);
 
-        LiveHarness::checkout($mainWorktree, $rollingSha);
+        LiveHarness::checkoutMain($mainWorktree, $rollingSha);
         $unchanged = LiveHarness::jsonPhase('no-op standby refresh', fn (): array => LiveHarness::jsonWrapper(
             'standby',
             'refresh',
@@ -347,7 +347,7 @@ it('proves the rolling topology contract through public wrappers', function (): 
             }
         }
         try {
-            LiveHarness::checkout($mainWorktree, $initialMainSha);
+            LiveHarness::checkoutMain($mainWorktree, $initialMainSha);
         } catch (Throwable $exception) {
             $cleanupFailure ??= $exception;
         }
