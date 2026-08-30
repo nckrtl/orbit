@@ -1,0 +1,31 @@
+{
+    "setup": [
+        {
+            "id": "expire-the-published-metrics-leaf",
+            "node": "gateway",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/plant-leaf.sh", "expired"],
+            "timeout_seconds": 120
+        }
+    ],
+    "acceptance": [
+        {
+            "id": "expired-leaf-is-reissued-and-served",
+            "node": "gateway",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/expired-leaf-reissued.sh"],
+            "timeout_seconds": 600
+        },
+        {
+            "id": "near-expiry-leaf-is-reissued-before-it-lapses",
+            "node": "gateway",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/near-expiry-leaf-reissued.sh"],
+            "timeout_seconds": 600
+        },
+        {
+            "id": "current-leaf-is-left-alone",
+            "node": "gateway",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/current-leaf-untouched.sh"],
+            "timeout_seconds": 600
+        }
+    ],
+    "mutates": true
+}

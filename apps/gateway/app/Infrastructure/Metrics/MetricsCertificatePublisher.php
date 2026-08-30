@@ -74,6 +74,9 @@ final readonly class MetricsCertificatePublisher
                 mv -fT -- "$candidate" "$directory"
                 ln -s -- "$directory" "$link"
                 mv -fT -- "$link" "$current"
+                if systemctl is-active --quiet caddy; then
+                    systemctl reload-or-restart caddy
+                fi
                 printf 'changed\n'
                 BASH,
         ));
