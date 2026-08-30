@@ -67,6 +67,24 @@
             "node": "app-dev",
             "argv": ["bash", "/var/lib/orbit-e2e/proof/removal-recorded-origin.sh"],
             "timeout_seconds": 900
+        },
+        {
+            "id": "repair-removal-origin",
+            "node": "gateway",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/repair-removal-origin.sh"],
+            "timeout_seconds": 30
+        },
+        {
+            "id": "removal-restoration",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/removal-restoration.sh"],
+            "timeout_seconds": 900
+        },
+        {
+            "id": "restore-legacy-origin",
+            "node": "gateway",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/restore-legacy-origin.sh"],
+            "timeout_seconds": 30
         }
     ]
 }
