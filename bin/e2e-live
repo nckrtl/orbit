@@ -109,7 +109,8 @@ if [[ ! -d "$validate/.git" ]]; then
     log "cloning $root into $validate"
     git clone --quiet "$root" "$validate"
 fi
-if [[ -n "$(git -C "$validate" status --porcelain --untracked-files=all)" ]]; then
+# The harness state under .e2e/ is not part of the checkout, whatever the candidate's .gitignore says.
+if [[ -n "$(git -C "$validate" status --porcelain --untracked-files=all -- . ':!.e2e')" ]]; then
     fail "the validation clone $validate is dirty"
 fi
 log "fetching $candidate into $validate"
@@ -117,7 +118,7 @@ git -C "$validate" fetch --quiet --no-tags "$root" "$candidate"
 git -C "$validate" checkout --quiet -B main "$candidate"
 
 if [[ -d "$feature_worktree" ]]; then
-    if [[ -n "$(git -C "$feature_worktree" status --porcelain --untracked-files=all)" ]]; then
+    if [[ -n "$(git -C "$feature_worktree" status --porcelain --untracked-files=all -- . ':!.e2e')" ]]; then
         fail "the linked worktree $feature_worktree is dirty"
     fi
     git -C "$feature_worktree" checkout --quiet -B acc-1-live "$candidate"
