@@ -2065,6 +2065,10 @@ describe('WorktreeSynchronizer::syncCommit', function () {
         $foreign = createSynchronizerPrimaryFixture('LUNA-153');
         try {
             $orphanOutput = implode("\n", synchronizerGit($worktree, [
+                '-c',
+                'user.name=Test',
+                '-c',
+                'user.email=test@example.test',
                 'commit-tree',
                 $candidate.'^{tree}',
                 '-m',
