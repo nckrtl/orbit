@@ -733,6 +733,8 @@ it('rejects a runtime module whose effective FPM values differ from the rendered
         expect($failed->getExitCode())
             ->not
             ->toBe(0)
+            ->and($failed->getErrorOutput())
+            ->toContain('does not apply opcache.memory_consumption = 512')
             ->and(file_exists($available))
             ->toBeFalse()
             ->and(file_exists($enabled))

@@ -612,7 +612,11 @@ final readonly class RemotePhpPackageManager
                         runtime_key=${runtime_key%"${runtime_key##*[! ]}"}
                         runtime_value=${runtime_line#*=}
                         runtime_value=${runtime_value#"${runtime_value%%[! ]*}"}
-                        printf '%s\n' "$fpm_ini" | grep -qxF -- "$runtime_key => $runtime_value => $runtime_value"
+                        if ! printf '%s\n' "$fpm_ini" | grep -qxF -- "$runtime_key => $runtime_value => $runtime_value"; then
+                            printf 'PHP %s fpm does not apply %s = %s from %s; an unmanaged ini overrides it.\n' \
+                                "$version" "$runtime_key" "$runtime_value" "$runtime_enabled" >&2
+                            exit 1
+                        fi
                     done < "$runtime_candidate"
                     fpm_pcov_before=$(readlink -f -- /etc/php/"$version"/fpm/conf.d/*-pcov.ini 2>/dev/null || true)
                     BASH."\n".$pcovSetup."\n".<<<'BASH'
