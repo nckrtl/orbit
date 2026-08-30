@@ -7,10 +7,8 @@ namespace App\E2E;
 use App\E2E\Git\GitRepository;
 use App\E2E\State\AtomicJsonStore;
 use App\E2E\State\OperationLock;
-use App\E2E\Value\GuestCommand;
 use App\E2E\Value\IncusInstance;
 use App\E2E\Value\LaravelRelease;
-use App\E2E\Value\MigrationPlan;
 use App\E2E\Value\OperationId;
 use App\E2E\Value\PreparedFingerprint;
 use App\E2E\Value\RefreshResult;
@@ -45,7 +43,7 @@ final readonly class StandbyRefresher
         private int $refreshLockTimeoutSeconds = 3600,
     ) {}
 
-    public function request(string $mainSha, ?MigrationPlan $migration = null, bool $allowCold = false): RefreshResult
+    public function request(string $mainSha, bool $allowCold = false): RefreshResult
     {
         if (preg_match('/\A[a-f0-9]{40}\z/D', $mainSha) !== 1) {
             throw new RuntimeException('The refresh SHA is invalid.');
@@ -65,7 +63,7 @@ final readonly class StandbyRefresher
 
         try {
             try {
-                return $this->refresh($mainSha, $migration, $allowCold, $this->operation);
+                return $this->refresh($mainSha, $allowCold, $this->operation);
             } catch (Throwable $exception) {
                 return new RefreshResult('failed', $this->operation->value, error: $exception->getMessage());
             }
@@ -104,12 +102,8 @@ final readonly class StandbyRefresher
         }
     }
 
-    private function refresh(
-        string $mainSha,
-        ?MigrationPlan $migration,
-        bool $allowCold,
-        OperationId $operation,
-    ): RefreshResult {
+    private function refresh(string $mainSha, bool $allowCold, OperationId $operation): RefreshResult
+    {
         if ($this->git->commit('HEAD') !== $mainSha || $this->git->dirtyOverlay() !== null) {
             throw new RuntimeException('The host main checkout does not match the requested clean SHA.');
         }
@@ -212,7 +206,6 @@ final readonly class StandbyRefresher
                 $this->measure($timings, 'converge', fn () => $this->converger->converge($target, $source, $release));
             }
 
-            $this->migrate($target, $migration, $desired->value, $operation);
             $verification = $this->measure($timings, 'verify', fn () => $this->verifier->verify(
                 $target,
                 VerificationMode::Readiness,
@@ -454,33 +447,6 @@ final readonly class StandbyRefresher
             array_keys($failures),
             $failures,
         ));
-    }
-
-    private function migrate(
-        TopologyTarget $target,
-        ?MigrationPlan $migration,
-        string $fingerprint,
-        OperationId $operation,
-    ): void {
-        if ($migration === null) {
-            return;
-        }
-        if ($migration->fingerprint !== $fingerprint) {
-            throw new RuntimeException('The migration fingerprint does not match the desired state.');
-        }
-
-        foreach ($migration->steps as $step) {
-            $result = $this->host->exec(
-                $target->instance($step['role']),
-                new GuestCommand($step['argv'], 900, $step['stdin']),
-            );
-            if (! $result->successful()) {
-                throw new RuntimeException(
-                    "A standby migration step failed on {$step['role']} with exit code {$result->exitCode}: "
-                        .trim($result->stderr),
-                );
-            }
-        }
     }
 
     /** Restore the promoted snapshot after a failed mutation; a failed restore marks the standby corrupt. */

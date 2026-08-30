@@ -16,7 +16,6 @@ use App\E2E\State\StatePaths;
 use App\E2E\TopologyConverger;
 use App\E2E\TopologyVerifier;
 use App\E2E\Value\LaravelRelease;
-use App\E2E\Value\MigrationPlan;
 use App\E2E\Value\OperationId;
 use App\E2E\Value\RefreshResult;
 use App\E2E\Value\StandbyGeneration;
@@ -303,8 +302,8 @@ function candidateSnapshotDelete(array $command, object $state): ProcessResult
     return Process::result();
 }
 
-/** @return object{events: list<string>, running: array<string, bool>, snapshots: array<string, string>, migrationInput: mixed} */
-function rollingMigrationProcessState(StatePaths $paths): object
+/** @return object{events: list<string>, running: array<string, bool>, snapshots: array<string, string>, staleSnapshots: array<string, string>, pruneLockResults: list<bool>, failReadiness: bool, paths: StatePaths} */
+function refreshProcessState(StatePaths $paths, bool $failReadiness = false): object
 {
     $staleSnapshots = [];
     foreach (TopologyProfile::ROLES as $role) {
@@ -317,22 +316,20 @@ function rollingMigrationProcessState(StatePaths $paths): object
         'snapshots' => [],
         'staleSnapshots' => $staleSnapshots,
         'pruneLockResults' => [],
-        'migrationInput' => null,
+        'failReadiness' => $failReadiness,
         'paths' => $paths,
     ];
 }
 
 /**
- * @param object{events: list<string>, running: array<string, bool>, snapshots: array<string, string>, staleSnapshots: array<string, string>, pruneLockResults: list<bool>, migrationInput: mixed, paths: StatePaths} $state
- * @param list<string> $migrationArguments
- * @mago-expect lint:cyclomatic-complexity,halstead,kan-defect The fake maps one complete rolling-refresh process boundary.
+ * @param object{events: list<string>, running: array<string, bool>, snapshots: array<string, string>, staleSnapshots: array<string, string>, pruneLockResults: list<bool>, failReadiness: bool, paths: StatePaths} $state
+ * @mago-expect lint:cyclomatic-complexity,halstead,kan-defect The fake maps one complete refresh process boundary.
  */
-function rollingMigrationProcess(
+function refreshProcess(
     PendingProcess $process,
     object $state,
     ProcessFactory $realProcess,
     string $oldSha,
-    array $migrationArguments,
 ): ProcessResult {
     $command = $process->command;
     assert(is_array($command), 'Processes use argument arrays.');
@@ -344,14 +341,7 @@ function rollingMigrationProcess(
         $payload = json_decode((string) $process->input, true, 512, JSON_THROW_ON_ERROR);
         $results = [];
         foreach ($payload['requests'] as $request) {
-            $result = rollingMigrationGuestProcess(
-                $request['argv'],
-                $request['instance'],
-                $request['stdin'],
-                $state,
-                $oldSha,
-                $migrationArguments,
-            );
+            $result = refreshGuestProcess($request['argv'], $request['instance'], $state, $oldSha);
             $results[] = [
                 'label' => $request['label'],
                 'stdout' => $result->output(),
@@ -496,6 +486,12 @@ function rollingMigrationProcess(
         return Process::result();
     }
 
+    if (($command[3] ?? null) === 'snapshot' && ($command[4] ?? null) === 'restore') {
+        $state->events[] = 'restore:'.preg_replace('/\A[^:]+:/', '', $command[5] ?? '').'/'.($command[6] ?? '');
+
+        return Process::result();
+    }
+
     if (($command[3] ?? null) === 'snapshot' && ($command[4] ?? null) === 'delete') {
         $instance = preg_replace('/\A[^:]+:/', '', $command[5] ?? '');
         $snapshot = $command[6] ?? null;
@@ -523,41 +519,20 @@ function rollingMigrationProcess(
         return Process::result();
     }
 
-    return rollingMigrationGuestProcess(
-        array_slice($command, 6),
-        $command[4],
-        $process->input,
-        $state,
-        $oldSha,
-        $migrationArguments,
-    );
+    return refreshGuestProcess(array_slice($command, 6), $command[4], $state, $oldSha);
 }
 
 /**
  * @param list<string> $guestArguments
- * @param object{events: list<string>, running: array<string, bool>, snapshots: array<string, string>, staleSnapshots: array<string, string>, pruneLockResults: list<bool>, migrationInput: mixed, paths: StatePaths} $state
- * @param list<string> $migrationArguments
+ * @param object{events: list<string>, running: array<string, bool>, snapshots: array<string, string>, staleSnapshots: array<string, string>, pruneLockResults: list<bool>, failReadiness: bool, paths: StatePaths} $state
  */
-/** @mago-expect lint:cyclomatic-complexity,excessive-parameter-list The fake models the complete guest migration protocol at one test boundary. */
-function rollingMigrationGuestProcess(
-    array $guestArguments,
-    string $target,
-    ?string $input,
-    object $state,
-    string $oldSha,
-    array $migrationArguments,
-): ProcessResult {
+/** @mago-expect lint:cyclomatic-complexity The fake models the complete guest refresh protocol at one test boundary. */
+function refreshGuestProcess(array $guestArguments, string $target, object $state, string $oldSha): ProcessResult
+{
     if ($guestArguments === ['/bin/true']) {
         $state->events[] = "agent:{$target}";
 
         return Process::result();
-    }
-
-    if ($guestArguments === $migrationArguments) {
-        $state->events[] = 'migration';
-        $state->migrationInput = $input;
-
-        return Process::result(['migration applied'], ['migration warning']);
     }
 
     if (
@@ -617,7 +592,7 @@ function rollingMigrationGuestProcess(
 
         return Process::result(json_encode([
             'probe' => $guestArguments[1],
-            'passed' => true,
+            'passed' => ! ($mode === 'readiness' && $state->failReadiness),
             'identity' => $guestArguments[3],
             'checked_at' => '2026-08-29T12:34:56+00:00',
             'expected' => 'healthy',
@@ -631,6 +606,107 @@ function rollingMigrationGuestProcess(
     }
 
     return Process::result();
+}
+
+/**
+ * A detached worktree whose second commit changes the prepared state, a promoted
+ * old generation, one recorded rollback generation, and one stale manifest.
+ *
+ * @return array{sourceRoot: string, worktree: string, branch: string, processes: ProcessFactory, oldSha: string, newSha: string, paths: StatePaths, state: AtomicJsonStore, manifests: StandbyManifestStore}
+ */
+function refreshFixture(): array
+{
+    $sourceRoot = dirname(__DIR__, 4);
+    $worktree = temporaryPath('orbit-refresh-fixture-', 4);
+    $branch = 'refresh-fixture-'.bin2hex(random_bytes(6));
+    $processes = new ProcessFactory;
+    expect(
+        $processes->run(['git', '-C', $sourceRoot, 'worktree', 'add', '--detach', $worktree, 'HEAD'])->successful(),
+    )->toBeTrue();
+    expect($processes->run(['git', '-C', $worktree, 'switch', '-c', $branch])->successful())->toBeTrue();
+    $git = new GitRepository($worktree);
+    $manifestPath = $worktree.'/apps/e2e/resources/prepared-state.json';
+    $manifest = json_decode((string) file_get_contents($manifestPath), true, 512, JSON_THROW_ON_ERROR);
+    unset($manifest['laravel_pin']);
+    expect(file_put_contents(
+        $manifestPath,
+        json_encode($manifest, JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT)."\n",
+    ))->not->toBeFalse();
+    refreshFixtureCommit($processes, $worktree, [$manifestPath], 'refresh fixture baseline');
+    $oldSha = $git->commit('HEAD');
+    $release = new LaravelRelease('v13.10.1', str_repeat('e', 40));
+    $oldFingerprint = new PreparedStateFingerprint($git)->forCommit($oldSha, $release);
+    $oldStructuralFingerprint = new PreparedStateFingerprint($git)->forCommit($oldSha);
+    $convergerPath = $worktree.'/apps/e2e/app/E2E/TopologyConverger.php';
+    expect(file_put_contents($convergerPath, "\n", FILE_APPEND))->not->toBeFalse();
+    refreshFixtureCommit($processes, $worktree, [$convergerPath], 'refresh fixture change');
+    $newSha = $git->commit('HEAD');
+    $paths = new StatePaths(temporaryPath('orbit-refresh-fixture-state-', 4));
+    $state = new AtomicJsonStore($paths);
+    $manifests = new StandbyManifestStore($state, $paths, new IncusHost);
+    $generation = static fn (string $id, string $snapshotPrefix, ?string $previous = null): StandbyGeneration => new StandbyGeneration(
+        $id,
+        $oldSha,
+        [
+            'gateway' => "main-{$snapshotPrefix}-gateway",
+            'app-dev' => "main-{$snapshotPrefix}-app-dev",
+            'app-prod' => "main-{$snapshotPrefix}-app-prod",
+        ],
+        $oldFingerprint->value,
+        str_repeat('d', 64),
+        $release,
+        $oldStructuralFingerprint->value,
+        $oldStructuralFingerprint->manifest['schema'],
+        $oldStructuralFingerprint->manifest['cold_epoch'],
+        $oldStructuralFingerprint->manifest['base_image_alias'],
+        $oldStructuralFingerprint->manifest['topology']['profile'],
+        $oldStructuralFingerprint->manifest['topology']['roles'],
+        $oldStructuralFingerprint->manifest['topology']['checkout_roles'],
+        $previous,
+    );
+    $manifests->promote($generation('old-generation', 'old', 'rollback-generation'));
+    $manifests->record($generation('rollback-generation', 'rollback'));
+    $manifests->record($generation('stale-generation', 'stale'));
+
+    return [
+        'sourceRoot' => $sourceRoot,
+        'worktree' => $worktree,
+        'branch' => $branch,
+        'processes' => $processes,
+        'oldSha' => $oldSha,
+        'newSha' => $newSha,
+        'paths' => $paths,
+        'state' => $state,
+        'manifests' => $manifests,
+    ];
+}
+
+/** @param list<string> $paths */
+function refreshFixtureCommit(ProcessFactory $processes, string $worktree, array $paths, string $message): void
+{
+    expect($processes->run(['git', '-C', $worktree, 'add', ...$paths])->successful())->toBeTrue();
+    expect(
+        $processes->run([
+            'git',
+            '-C',
+            $worktree,
+            '-c',
+            'user.name=Test',
+            '-c',
+            'user.email=test@example.test',
+            'commit',
+            '-q',
+            '-m',
+            $message,
+        ])->successful(),
+    )->toBeTrue();
+}
+
+/** @param array{sourceRoot: string, worktree: string, branch: string, processes: ProcessFactory} $fixture */
+function removeRefreshFixture(array $fixture): void
+{
+    $fixture['processes']->run(['git', '-C', $fixture['sourceRoot'], 'worktree', 'remove', '--force', $fixture['worktree']]);
+    $fixture['processes']->run(['git', '-C', $fixture['sourceRoot'], 'branch', '-D', $fixture['branch']]);
 }
 
 /** @mago-expect lint:cyclomatic-complexity,halstead Test cases share one contract fixture and remain independently asserted. */
@@ -696,22 +772,10 @@ describe('StandbyRefresher contracts', function () {
         }
     });
 
-    it('keeps result and external migration identities exact', function () {
-        $plan = MigrationPlan::fromArray([
-            'fingerprint' => str_repeat('a', 64),
-            'steps' => [[
-                'role' => 'gateway',
-                'argv' => ['install', '-m', '0600', '/dev/stdin', '/tmp/config'],
-                'stdin' => "value=yes\n",
-            ]],
-        ]);
+    it('keeps refresh result identities exact', function () {
         $result = new RefreshResult('promoted', str_repeat('b', 32), 'generation-1');
 
-        expect($plan->steps[0]['role'])
-            ->toBe('gateway')
-            ->and($plan->steps[0]['stdin'])
-            ->toBe("value=yes\n")
-            ->and($result->toArray()['state'])
+        expect($result->toArray()['state'])
             ->toBe('promoted')
             ->and($result->successful())
             ->toBeTrue()
@@ -802,161 +866,32 @@ describe('StandbyRefresher contracts', function () {
         }
     });
 
-    it('runs a migration between rolling convergence and promoted verification', function () {
-        $sourceRoot = dirname(__DIR__, 4);
-        $worktree = temporaryPath('orbit-refresh-migration-', 4);
-        $branch = 'migration-test-'.bin2hex(random_bytes(6));
-        $processes = new ProcessFactory;
-        expect(
-            $processes->run(['git', '-C', $sourceRoot, 'worktree', 'add', '--detach', $worktree, 'HEAD'])->successful(),
-        )->toBeTrue();
+    it('promotes a refreshed generation and prunes the stale manifests', function () {
+        $fixture = refreshFixture();
 
         try {
-            expect($processes->run(['git', '-C', $worktree, 'switch', '-c', $branch])->successful())->toBeTrue();
-            $git = new GitRepository($worktree);
-            $manifestPath = $worktree.'/apps/e2e/resources/prepared-state.json';
-            $manifest = json_decode((string) file_get_contents($manifestPath), true, 512, JSON_THROW_ON_ERROR);
-            unset($manifest['laravel_pin']);
-            expect(file_put_contents(
-                $manifestPath,
-                json_encode($manifest, JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT)."\n",
-            ))->not->toBeFalse();
-            expect($processes->run(['git', '-C', $worktree, 'add', $manifestPath])->successful())->toBeTrue();
-            expect(
-                $processes->run([
-                    'git',
-                    '-C',
-                    $worktree,
-                    '-c',
-                    'user.name=Test',
-                    '-c',
-                    'user.email=test@example.test',
-                    'commit',
-                    '-q',
-                    '-m',
-                    'migration fixture baseline',
-                ])->successful(),
-            )->toBeTrue();
-            $oldSha = $git->commit('HEAD');
-            $release = new LaravelRelease('v13.10.1', str_repeat('e', 40));
-            $oldFingerprint = new PreparedStateFingerprint($git)->forCommit($oldSha, $release);
-            $oldStructuralFingerprint = new PreparedStateFingerprint($git)->forCommit($oldSha);
-            $convergerPath = $worktree.'/apps/e2e/app/E2E/TopologyConverger.php';
-            expect(file_put_contents($convergerPath, "\n", FILE_APPEND))->not->toBeFalse();
-            expect($processes->run(['git', '-C', $worktree, 'add', $convergerPath])->successful())->toBeTrue();
-            expect(
-                $processes->run([
-                    'git',
-                    '-C',
-                    $worktree,
-                    '-c',
-                    'user.name=Test',
-                    '-c',
-                    'user.email=test@example.test',
-                    'commit',
-                    '-q',
-                    '-m',
-                    'rolling migration fixture',
-                ])->successful(),
-            )->toBeTrue();
-            $newSha = $git->commit('HEAD');
-            $desiredFingerprint = new PreparedStateFingerprint($git)->forCommit($newSha, $release);
-            $paths = new StatePaths(temporaryPath('orbit-refresh-migration-state-', 4));
-            $state = new AtomicJsonStore($paths);
-            $manifests = new StandbyManifestStore($state, $paths, new IncusHost);
-            $manifests->promote(new StandbyGeneration(
-                'old-generation',
-                $oldSha,
-                [
-                    'gateway' => 'main-old-gateway',
-                    'app-dev' => 'main-old-app-dev',
-                    'app-prod' => 'main-old-app-prod',
-                ],
-                $oldFingerprint->value,
-                str_repeat('d', 64),
-                $release,
-                $oldStructuralFingerprint->value,
-                $oldStructuralFingerprint->manifest['schema'],
-                $oldStructuralFingerprint->manifest['cold_epoch'],
-                $oldStructuralFingerprint->manifest['base_image_alias'],
-                $oldStructuralFingerprint->manifest['topology']['profile'],
-                $oldStructuralFingerprint->manifest['topology']['roles'],
-                $oldStructuralFingerprint->manifest['topology']['checkout_roles'],
-                'rollback-generation',
-            ));
-            $manifests->record(new StandbyGeneration(
-                'rollback-generation',
-                $oldSha,
-                [
-                    'gateway' => 'main-rollback-gateway',
-                    'app-dev' => 'main-rollback-app-dev',
-                    'app-prod' => 'main-rollback-app-prod',
-                ],
-                $oldFingerprint->value,
-                str_repeat('d', 64),
-                $release,
-                $oldStructuralFingerprint->value,
-                $oldStructuralFingerprint->manifest['schema'],
-                $oldStructuralFingerprint->manifest['cold_epoch'],
-                $oldStructuralFingerprint->manifest['base_image_alias'],
-                $oldStructuralFingerprint->manifest['topology']['profile'],
-                $oldStructuralFingerprint->manifest['topology']['roles'],
-                $oldStructuralFingerprint->manifest['topology']['checkout_roles'],
-            ));
-            $manifests->record(new StandbyGeneration(
-                'stale-generation',
-                $oldSha,
-                [
-                    'gateway' => 'main-stale-gateway',
-                    'app-dev' => 'main-stale-app-dev',
-                    'app-prod' => 'main-stale-app-prod',
-                ],
-                $oldFingerprint->value,
-                str_repeat('d', 64),
-                $release,
-                $oldStructuralFingerprint->value,
-                $oldStructuralFingerprint->manifest['schema'],
-                $oldStructuralFingerprint->manifest['cold_epoch'],
-                $oldStructuralFingerprint->manifest['base_image_alias'],
-                $oldStructuralFingerprint->manifest['topology']['profile'],
-                $oldStructuralFingerprint->manifest['topology']['roles'],
-                $oldStructuralFingerprint->manifest['topology']['checkout_roles'],
-            ));
-            $migrationArguments = ['install', '-m', '0600', '/dev/stdin', '/tmp/orbit-migration'];
-            $migrationInput = "schema=2\nmode=rolling\n";
-            $migration = new MigrationPlan($desiredFingerprint->value, [[
-                'role' => 'gateway',
-                'argv' => $migrationArguments,
-                'stdin' => $migrationInput,
-            ]]);
-            $processState = rollingMigrationProcessState($paths);
-            Process::fake(function (PendingProcess $process) use (
+            $processState = refreshProcessState($fixture['paths']);
+            Process::fake(fn (PendingProcess $process): ProcessResult => refreshProcess(
+                $process,
                 $processState,
-                $processes,
-                $oldSha,
-                $migrationArguments,
-            ): ProcessResult {
-                return rollingMigrationProcess(
-                    $process,
-                    $processState,
-                    $processes,
-                    $oldSha,
-                    $migrationArguments,
-                );
-            });
+                $fixture['processes'],
+                $fixture['oldSha'],
+            ));
 
             $result = standbyRefresherForPowerTests(
                 new IncusHost(pool: 'orbit-e2e'),
-                $state,
-                $manifests,
-                $paths,
-                $worktree,
-            )->request($newSha, $migration);
-            $promoted = $manifests->promoted();
+                $fixture['state'],
+                $fixture['manifests'],
+                $fixture['paths'],
+                $fixture['worktree'],
+            )->request($fixture['newSha']);
+            $promoted = $fixture['manifests']->promoted();
 
             expect($result->state)->toBe('promoted');
-            expect($processState->migrationInput)->toBe($migrationInput);
             expect($processState->events)->toBe([
+                'restore:orbit-e2e-standby-gateway/main-old-gateway',
+                'restore:orbit-e2e-standby-app-dev/main-old-app-dev',
+                'restore:orbit-e2e-standby-app-prod/main-old-app-prod',
                 'start:local:orbit-e2e-standby-gateway',
                 'start:local:orbit-e2e-standby-app-dev',
                 'start:local:orbit-e2e-standby-app-prod',
@@ -967,7 +902,6 @@ describe('StandbyRefresher contracts', function () {
                 'ipv4:local:orbit-e2e-standby-app-dev',
                 'ipv4:local:orbit-e2e-standby-app-prod',
                 'convergence',
-                'migration',
                 'readiness',
                 'proof',
                 'snapshot',
@@ -978,11 +912,58 @@ describe('StandbyRefresher contracts', function () {
                 ->toBe('old-generation')
                 ->and($processState->pruneLockResults)
                 ->toBe([false, false, false, true, true, true])
-                ->and($state->read('standby/generations/stale-generation.json'))
+                ->and($fixture['state']->read('standby/generations/stale-generation.json'))
                 ->toBeNull();
         } finally {
-            $processes->run(['git', '-C', $sourceRoot, 'worktree', 'remove', '--force', $worktree]);
-            $processes->run(['git', '-C', $sourceRoot, 'branch', '-D', $branch]);
+            removeRefreshFixture($fixture);
+        }
+    });
+
+    it('restores the promoted snapshot when the refreshed standby fails verification', function () {
+        $fixture = refreshFixture();
+
+        try {
+            $processState = refreshProcessState($fixture['paths'], failReadiness: true);
+            Process::fake(fn (PendingProcess $process): ProcessResult => refreshProcess(
+                $process,
+                $processState,
+                $fixture['processes'],
+                $fixture['oldSha'],
+            ));
+
+            $result = standbyRefresherForPowerTests(
+                new IncusHost(pool: 'orbit-e2e'),
+                $fixture['state'],
+                $fixture['manifests'],
+                $fixture['paths'],
+                $fixture['worktree'],
+            )->request($fixture['newSha']);
+
+            $readiness = array_search('readiness', $processState->events, true);
+            expect($result->state)
+                ->toBe('failed')
+                ->and($result->error)
+                ->toBe('Standby verification failed.')
+                ->and($result->generationId)
+                ->toBe('old-generation')
+                ->and($readiness)
+                ->toBeInt()
+                ->and(array_slice($processState->events, $readiness + 1))
+                ->toBe([
+                    'restore:orbit-e2e-standby-gateway/main-old-gateway',
+                    'restore:orbit-e2e-standby-app-dev/main-old-app-dev',
+                    'restore:orbit-e2e-standby-app-prod/main-old-app-prod',
+                ])
+                ->and($processState->events)
+                ->not->toContain('proof')
+                ->and($processState->snapshots)
+                ->toBe([])
+                ->and($fixture['manifests']->promoted()?->id)
+                ->toBe('old-generation')
+                ->and($fixture['state']->read('standby/corrupt.json'))
+                ->toBeNull();
+        } finally {
+            removeRefreshFixture($fixture);
         }
     });
 
@@ -1190,15 +1171,6 @@ describe('StandbyRefresher contracts', function () {
             )->toBeTrue();
             expect($processes->run(['git', '-C', $sourceRoot, 'branch', '-D', $branch])->successful())->toBeTrue();
         }
-    });
-
-    it('rejects migration targets outside the fixed standby roles', function () {
-        expect(fn () => new MigrationPlan(str_repeat('a', 64), [[
-            'role' => 'database',
-            'argv' => ['true'],
-            'stdin' => '',
-        ]]))
-            ->toThrow(InvalidArgumentException::class);
     });
 
     it('cleans every partial candidate snapshot and retries the same generation', function () {
