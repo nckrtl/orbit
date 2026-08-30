@@ -21,6 +21,12 @@ drift=$(workspace_checkout nck104-branch-drift)
 git -C "$drift" checkout nck104-branch-drift >/dev/null
 orbit workspace:remove "$(workspace_id nck104-branch-drift)" --json >/dev/null
 
+runtime_state=$(mktemp -d /tmp/orbit-nck104-laravel.XXXXXX)
+test -d /home/orbit/apps/laravel/vendor
+mv /home/orbit/apps/laravel/vendor "$runtime_state/vendor"
+if [[ -e /home/orbit/apps/laravel/.env || -L /home/orbit/apps/laravel/.env ]]; then
+  mv /home/orbit/apps/laravel/.env "$runtime_state/.env"
+fi
 orbit instance:remove "$(instance_id e2e-dev)" --json >/dev/null
 test ! -e /home/orbit/apps/laravel
 
@@ -57,6 +63,12 @@ recreated_instance=$(orbit instance:new "$(app_id laravel)" "$(node_id app-dev)"
 recreated_instance_id=$(echo "$recreated_instance" | json_get id)
 [[ "$(echo "$recreated_instance" | json_get checkout_path)" == /home/orbit/apps/laravel ]] \
   || fail "recreated e2e-dev used the wrong checkout: $recreated_instance"
+mv "$runtime_state/vendor" /home/orbit/apps/laravel/vendor
+if [[ -e "$runtime_state/.env" || -L "$runtime_state/.env" ]]; then
+  mv "$runtime_state/.env" /home/orbit/apps/laravel/.env
+fi
+rmdir "$runtime_state"
+php /home/orbit/apps/laravel/artisan --version >/dev/null
 orbit workspace:new "$recreated_instance_id" e2e --branch=e2e --json >/dev/null
 
 echo "removal: fixtures cleaned; exact checkout removal restored the managed-home ancestor ACL"
