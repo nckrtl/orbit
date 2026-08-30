@@ -173,7 +173,8 @@ it('proves the topology-led lifecycle through public wrappers', function (): voi
         );
         Assert::assertSame('ready', $clean['state'] ?? null);
         Assert::assertFalse($clean['source']['dirty'] ?? true);
-        Assert::assertNull($clean['source']['tree_hash'] ?? 'missing');
+        Assert::assertArrayHasKey('tree_hash', $clean['source']);
+        Assert::assertNull($clean['source']['tree_hash']);
         Assert::assertSame([], $clean['source']['overlay_paths'] ?? null);
         Assert::assertSame($clean['source'], LiveHarness::jsonFile($discoveryManifest)['source'] ?? null);
 
@@ -240,7 +241,8 @@ it('proves the topology-led lifecycle through public wrappers', function (): voi
         lifecycleAssertTopology($proofStatus['topology'] ?? null, $proof, 'proof', $candidateSha);
         Assert::assertSame([], $proofStatus['topology']['mounts'] ?? null);
         Assert::assertFalse($proofStatus['topology']['source']['mounted'] ?? true);
-        Assert::assertNull($proofStatus['topology']['source']['git_pointer_sha256'] ?? 'missing');
+        Assert::assertArrayHasKey('git_pointer_sha256', $proofStatus['topology']['source']);
+        Assert::assertNull($proofStatus['topology']['source']['git_pointer_sha256']);
         foreach (TopologyProfile::ROLES as $role) {
             $instance = LiveHarness::incusResource('instance', $proof->instance($role));
             Assert::assertSame('RUNNING', strtoupper((string) ($instance['status'] ?? '')));
