@@ -34,6 +34,12 @@ reviewed.
 4. Confirm focused checks and every affected-project full suite and quality
    check passed for the candidate SHA. Record current-head CI as `pending`
    when it has not finished; a failed CI run blocks approval.
+   When the diff touches `apps/e2e/app/**`, `apps/e2e/resources/guest/**`,
+   `apps/e2e/tests/Live/**`, or `bin/e2e-*`, require live-suite evidence for
+   the candidate SHA in the handoff `checks` and the pull request body: the
+   `bin/e2e-live <candidate-sha> --rolling` command with the assertion count
+   and duration of both the lifecycle and the rolling suite. A
+   harness-touching diff without that evidence is a blocking finding.
 5. For `venue: incus`, read `bin/e2e-topology status ISSUE ATTEMPT --json`.
    Confirm the active proof topology uses the issue's recipe, its proof record
    has status `proved`, and its candidate commit equals the pull-request head.

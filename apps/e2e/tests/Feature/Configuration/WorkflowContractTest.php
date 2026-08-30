@@ -73,6 +73,25 @@ it('keeps the topology-led workflow contracts aligned', function (): void {
     expect($topologies)->not->toContain('The Orbit CLI is not on that `PATH`');
     expect($worker)->not->toContain('the Orbit CLI is not on that');
 
+    // Harness-touching diffs: both live suites through bin/e2e-live, blocking without evidence
+    expect($worker)->toMatch(
+        '/when the diff touches\s+`apps\/e2e\/app\/\*\*`, `apps\/e2e\/resources\/guest\/\*\*`, `apps\/e2e\/tests\/Live\/\*\*`,\s+or `bin\/e2e-\*`/',
+    );
+    expect($worker)->toContain('tests/Live/TopologyLedLifecycleAcceptanceTest.php');
+    expect($worker)->toContain('tests/Live/RollingTopologyAcceptanceTest.php');
+    expect($worker)->toMatch('/validation clone\s+whose `main` is the frozen candidate/');
+    expect($worker)->toContain('bin/e2e-live <candidate-sha> --rolling');
+    expect($worker)->toMatch(
+        '/record the command,\s+assertion count, and duration of each suite in the handoff `checks` and\s+the pull request body/',
+    );
+    expect($review)->toMatch('/harness-touching diff without that evidence is a blocking finding/');
+    expect($review)->toContain('bin/e2e-live <candidate-sha> --rolling');
+    expect($merge)->toMatch('/harness-touching diff without that evidence blocks the merge/');
+    expect($merge)->toContain('bin/e2e-live <candidate-sha> --rolling');
+    expect($workflow)->toContain('bin/e2e-live <candidate-sha>');
+    expect($topologies)->toContain('bin/e2e-live SHA [--rolling]', '### `bin/e2e-live`', 'ORBIT_E2E_VALIDATE_ROOT');
+    expect($pr)->toContain('bin/e2e-live <sha> --rolling');
+
     // Reviewer: review can approve while CI is pending
     expect($review)->toMatch('/approve while CI is\s+pending/');
     expect($review)->toMatch('/checks: pass\|pending\|fail\|not-assessed/');

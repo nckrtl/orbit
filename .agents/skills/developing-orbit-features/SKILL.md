@@ -145,6 +145,18 @@ Automated-only work skips them and continues at step 10 with
    commit; rerun the gates on it before the next proof. The proof plan and
    the fixtures under `apps/e2e/resources/proof/<issue>/` may change between
    rounds, because they are proof input rather than product state.
+   A harness-touching diff adds one more gate: when the diff touches
+   `apps/e2e/app/**`, `apps/e2e/resources/guest/**`, `apps/e2e/tests/Live/**`,
+   or `bin/e2e-*`, run both live acceptance suites,
+   `tests/Live/TopologyLedLifecycleAcceptanceTest.php` and
+   `tests/Live/RollingTopologyAcceptanceTest.php`, from a validation clone
+   whose `main` is the frozen candidate with
+   `bin/e2e-live <candidate-sha> --rolling`, and record the command,
+   assertion count, and duration of each suite in the handoff `checks` and
+   the pull request body. The wrapper refuses to run while the issue's
+   discovery attempt is active, so run it after step 8 and before step 9. A
+   new code freeze reruns the suites. Review and merge treat a harness-touching
+   diff without this evidence as blocking.
 8. **Remove discovery.** The worker runs
    `bin/e2e-topology release ISSUE ATTEMPT --json` for its own discovery
    attempt; no project-manager round trip is needed. Wait for verified
