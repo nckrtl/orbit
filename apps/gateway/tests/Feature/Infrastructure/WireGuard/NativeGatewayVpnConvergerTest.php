@@ -57,9 +57,9 @@ function assert_gateway_generated_files(GatewayVpnFakeProcessRunner $processes, 
     expect($processes->observedProjectionLock)->toBeTrue();
     expect(file_get_contents($orbitHome.'/generated/dnsmasq/orbit-vpn.conf'))
         ->toBe(
-            "# Managed by Orbit.\ninterface=orbit\nbind-interfaces\ndomain-needed\nbogus-priv\nlocal=/orbit/\nhost-record=gateway.orbit,10.44.0.1\n",
+            "# Managed by Orbit.\ninterface=orbit\nbind-dynamic\ndomain-needed\nbogus-priv\nlocal=/orbit/\nhost-record=gateway.orbit,10.44.0.1\n",
         )
-        ->not->toContain('bind-dynamic');
+        ->not->toContain('bind-interfaces');
 }
 
 /** @param list<list<string>> $arguments */
@@ -127,8 +127,20 @@ function assert_gateway_publication_commands(
             'mv -fT -- "$backup" "$live"',
             'systemctl restart wg-quick@orbit || true',
         );
-    expect($arguments[8])->toBe(['sudo', 'bash', '-seu']);
+    expect($arguments[8])
+        ->toBe(['sudo', 'bash', '-seu', '--', 'dnsmasq', '/etc/systemd/system']);
     expect($processes->calls[8]->input)
+        ->toContain(
+            'managed=$directory/orbit-vpn.conf',
+            'if [ ! -e "$managed" ]; then',
+            'rm -f -- "$managed"',
+            'rmdir --ignore-fail-on-non-empty -- "$directory"',
+            'systemctl daemon-reload',
+            'systemctl restart "$service"',
+        )
+        ->not->toContain('After=wg-quick@orbit.service');
+    expect($arguments[9])->toBe(['sudo', 'bash', '-seu']);
+    expect($processes->calls[9]->input)
         ->toContain(
             'exec 9>/run/lock/orbit-dnsmasq.lock',
             'flock -w 30 9',
@@ -138,23 +150,10 @@ function assert_gateway_publication_commands(
             'if ! systemctl restart dnsmasq; then',
             'systemctl restart dnsmasq || true',
         );
-    expect($arguments[9])
-        ->toBe(['sudo', 'bash', '-seu', '--', 'dnsmasq', '/etc/systemd/system']);
-    expect($processes->calls[9]->input)
-        ->toContain(
-            'managed=$directory/orbit-vpn.conf',
-            'install -d -o root -g root -m 0755 -- "$directory"',
-            'if [ -f "$managed" ] && cmp -s -- "$staged" "$managed"; then',
-            'if systemctl is-active --quiet "$service"; then',
-            'install -o root -g root -m 0644 -- "$staged" "$candidate"',
-            'mv -fT -- "$candidate" "$managed"',
-            'systemctl daemon-reload',
-            'systemctl restart "$service"',
-        );
     expect(base64_decode(
         Str::match('/\x27([A-Za-z0-9+\/=]+)\x27 \| base64 --decode/', $processes->calls[9]->input ?? ''),
         strict: true,
-    ))->toBe("# Managed by Orbit.\n[Unit]\nAfter=wg-quick@orbit.service\nWants=wg-quick@orbit.service\n");
+    ))->toContain('bind-dynamic');
 }
 
 /** @param list<list<string>> $arguments */

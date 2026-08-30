@@ -212,11 +212,12 @@ final readonly class NativeGatewayVpnConverger implements GatewayVpnConverger
 
     private function convergeDns(BootstrapGatewayData $data): void
     {
+        $this->removeDnsOrderingDropIn();
         $interfaces = $this->privateInterfaces($data);
         $configuration = implode(PHP_EOL, [
             '# Managed by Orbit.',
             ...array_map(static fn (string $interface): string => "interface={$interface}", $interfaces),
-            'bind-interfaces',
+            'bind-dynamic',
             'domain-needed',
             'bogus-priv',
             "local=/{$data->domain}/",
@@ -268,11 +269,22 @@ final readonly class NativeGatewayVpnConverger implements GatewayVpnConverger
                 fi
                 BASH,
         );
+    }
+
+    /**
+     * Removes the drop-in that earlier Orbit versions installed to order
+     * dnsmasq after `wg-quick@orbit.service`. dnsmasq provides
+     * `nss-lookup.target`, which `wg-quick@.service` is ordered after, so the
+     * drop-in closed an ordering cycle that systemd broke by deleting a job.
+     * The managed fragment binds `orbit` dynamically instead.
+     */
+    private function removeDnsOrderingDropIn(): void
+    {
         $this->run(
             step: 'vpn-dns-ordering',
             errorCode: 'vpn.dns_config_failed',
-            arguments: $this->vpnOrdering->arguments('dnsmasq'),
-            input: $this->vpnOrdering->script(),
+            arguments: $this->vpnOrdering->removalArguments('dnsmasq'),
+            input: $this->vpnOrdering->removalScript(),
         );
     }
 

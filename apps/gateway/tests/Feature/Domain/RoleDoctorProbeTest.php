@@ -137,7 +137,7 @@ it('reports the complete role and VPN drift matrix in stable field order', funct
     $vpnCalls = 0;
     $report = new RoleDoctorProbe(
         role_probe_state_inspector($roleCalls, new RoleInspectionData(false, false, false)),
-        role_probe_vpn_inspector($vpnCalls, new GatewayVpnInspectionData(false, false, false, false)),
+        role_probe_vpn_inspector($vpnCalls, new GatewayVpnInspectionData(false, false, false)),
     )->inspect(role_probe_context($node));
 
     expect($report->checked)
@@ -150,7 +150,6 @@ it('reports the complete role and VPN drift matrix in stable field order', funct
             'role.vpn_inactive',
             'role.vpn_projection_mismatch',
             'role.dns_projection_mismatch',
-            'role.vpn_ordering_missing',
         ])
         ->and(array_unique(array_map(
             static fn (DoctorIssueData $issue): int|string|null => $issue->resourceId,
@@ -161,14 +160,14 @@ it('reports the complete role and VPN drift matrix in stable field order', funct
         ->not->toContain('package-output', 'service-output', 'private-key', 'vpn-setting');
 });
 
-it('reports a missing VPN ordering drop-in as bounded drift instead of an inspection failure', function (): void {
-    $node = role_probe_node('vpn-ordering');
+it('reports a mismatched private DNS projection as bounded drift instead of an inspection failure', function (): void {
+    $node = role_probe_node('vpn-dns-projection');
     $role = role_probe_assignment($node, RoleName::Vpn);
     $roleCalls = 0;
     $vpnCalls = 0;
     $report = new RoleDoctorProbe(
         role_probe_state_inspector($roleCalls),
-        role_probe_vpn_inspector($vpnCalls, new GatewayVpnInspectionData(true, true, true, false)),
+        role_probe_vpn_inspector($vpnCalls, new GatewayVpnInspectionData(true, true, false)),
     )->inspect(role_probe_context($node));
 
     expect($report->status)
@@ -183,7 +182,7 @@ it('reports a missing VPN ordering drop-in as bounded drift instead of an inspec
             ],
             $report->issues,
         ))
-        ->toBe([[$role->id, 'role.vpn_ordering_missing', DoctorIssueKind::Drift, true, false]]);
+        ->toBe([[$role->id, 'role.dns_projection_mismatch', DoctorIssueKind::Drift, true, false]]);
 });
 
 it('retains SQLite findings and emits one bounded issue when the node is unreachable', function (): void {
@@ -343,7 +342,7 @@ function role_probe_vpn_inspector(
     ?GatewayVpnInspectionData $state = null,
     bool $throws = false,
 ): GatewayVpnStateInspector {
-    return new class($calls, $state ?? new GatewayVpnInspectionData(true, true, true, true), $throws) implements
+    return new class($calls, $state ?? new GatewayVpnInspectionData(true, true, true), $throws) implements
         GatewayVpnStateInspector {
         public function __construct(
             private int &$calls,

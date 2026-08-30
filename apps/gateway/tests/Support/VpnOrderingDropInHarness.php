@@ -4,13 +4,17 @@ declare(strict_types=1);
 
 namespace Tests\Support;
 
+use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\SystemdVpnOrderingDropIn;
 use Illuminate\Filesystem\Filesystem;
 use Symfony\Component\Process\Process;
 
 /**
- * Runs the rendered VPN ordering drop-in script against a sandboxed unit
- * directory with shimmed root-owned `install`, `chown`, and `systemctl`.
+ * Runs the rendered VPN ordering drop-in install and removal scripts against a
+ * sandboxed unit directory with shimmed root-owned `install`, `chown`, and
+ * `systemctl`.
+ *
+ * @mago-expect lint:too-many-methods The harness exposes one seam per sandboxed host observation.
  */
 final class VpnOrderingDropInHarness
 {
@@ -73,10 +77,30 @@ final class VpnOrderingDropInHarness
      */
     public function run(string $service, bool $serviceActive = true): array
     {
+        return $this->execute($this->dropIn()->invocation($service), $serviceActive);
+    }
+
+    /** @return array{int, list<string>} */
+    public function runRemoval(string $service): array
+    {
+        return $this->execute($this->dropIn()->removalInvocation($service), serviceActive: true);
+    }
+
+    public function cleanup(): void
+    {
+        $this->files->deleteDirectory($this->root);
+    }
+
+    /**
+     * @return array{int, list<string>}
+     *
+     * @mago-expect lint:no-boolean-flag-parameter The flag models the observed unit activation state.
+     */
+    private function execute(ProcessInvocation $command, bool $serviceActive): array
+    {
         $log = $this->root.'/systemctl.log';
         $this->files->delete($log);
 
-        $command = $this->dropIn()->invocation($service);
         $process = new Process(array_slice(array: $command->arguments, offset: 1), $this->root, [
             'PATH' => $this->root.'/bin:'.getenv('PATH'),
             'HARNESS_SERVICE_LOG' => $log,
@@ -86,11 +110,6 @@ final class VpnOrderingDropInHarness
         $process->run();
 
         return [$process->getExitCode() ?? 1, $this->serviceCalls($log)];
-    }
-
-    public function cleanup(): void
-    {
-        $this->files->deleteDirectory($this->root);
     }
 
     private function writeShims(): void

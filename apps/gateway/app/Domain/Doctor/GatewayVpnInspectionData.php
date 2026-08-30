@@ -10,6 +10,5 @@ final readonly class GatewayVpnInspectionData
         public bool $interfaceActive,
         public bool $serverConfigMatches,
         public bool $dnsConfigMatches,
-        public bool $dnsOrderingInstalled,
     ) {}
 }
