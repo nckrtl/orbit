@@ -51,7 +51,7 @@ done
 ! getent ahostsv4 "$old_workspace_host" >/dev/null
 test -z "$(dig +short "$old_instance_host" @10.44.0.1 | awk 'NF {print; exit}')"
 test -z "$(dig +short "$old_workspace_host" @10.44.0.1 | awk 'NF {print; exit}')"
-active_caddy=$(readlink -f /etc/caddy/Caddyfile)
+active_caddy=$(sudo readlink -f /etc/caddy/Caddyfile)
 active_fragments=/etc/caddy/orbit-versions/"$(basename "$(dirname "$active_caddy")")"/fragments
 for host in "$instance_host" "$workspace_host"; do
   sudo grep -FRq "$host" "$active_caddy" "$active_fragments"

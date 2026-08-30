@@ -33,9 +33,13 @@ app_id=$(json_id <<<"$app_json")
 orbit node:list --json >/dev/null
 instance_json=$(orbit instance:new "$app_id" "$node_id" web --json)
 instance_id=$(json_id <<<"$instance_json")
+instance_path=$(json_field checkout_path <<<"$instance_json")
 orbit node:list --json >/dev/null
 workspace_json=$(orbit workspace:new "$instance_id" preview --json)
 workspace_id=$(json_id <<<"$workspace_json")
+workspace_path=$(json_field checkout_path <<<"$workspace_json")
+printf '%s\n' '<?php echo "orbit-nck-103";' > "$instance_path/public/index.php"
+printf '%s\n' '<?php echo "orbit-nck-103";' > "$workspace_path/public/index.php"
 printf '%s\n' "$slug" "$node_id" "$app_id" "$instance_id" "$workspace_id" "$old_tld" > "$state"
 orbit node:list --json >/dev/null
 orbit node:provision app-dev --user=orbit --orbit-user=orbit --tld=.TEST --json >/dev/null
