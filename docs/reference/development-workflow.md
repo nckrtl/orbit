@@ -2,144 +2,164 @@
 
 The Orbit development cycle starts with a Ready Linear issue and ends when its
 approved pull request is merged and its development resources are removed.
-Candidate deployment and rollout to the registered live topology are part of
-feature development. Production release and post-deploy operations remain a
-separate cycle. Development proof venues are automated checks or live proof.
+Automated proof is mandatory for every change. An issue that needs a real OS,
+service manager, privilege boundary, network, certificate, filesystem
+ownership, or multi-node behavior adds Incus proof on a disposable topology.
+Production release and post-deploy operations remain a separate cycle.
+
 The development-proof boundary is governed by
 [ADR 0006](../decisions/0006-topology-led-feature-development.md): separate
 disposable discovery, fresh proof of the exact candidate commit, immutable
 successful proof, review in parallel with CI, and exact cleanup before
 prepared-state refresh.
+[ADR 0005](../decisions/0005-rolling-incus-development-topology.md) defines the
+prepared topology and its refresh rules.
 [ADR 0002](../decisions/0002-candidate-deployment-proof-boundary.md) is
-historical context. Its shared-live rollout, pre-rollout review, and
-restored-pre-state rules are superseded; its ownership and
-production-separation principles continue in ADR 0006. The role contracts
-below still describe the ADR 0002 flow until a dependent change activates the
-ADR 0006 commands and handoffs.
+historical context; its ownership and production-separation principles
+continue in ADR 0006.
 
 ## Agent contracts
 
 Project-manager orchestration stays outside this repository. It claims issues,
-starts role sessions, routes GitHub events, and owns resource cleanup. This
-repository supplies the versioned behavior and machine-readable handoff for
-each development role:
+starts role sessions, routes GitHub events, creates and releases topologies on
+request, and owns post-merge cleanup. This repository supplies the versioned
+behavior and machine-readable handoff for each development role:
 
 | Role | Repository skill | Successful signal |
 | --- | --- | --- |
 | Issue author | `.agents/skills/creating-orbit-issues` | Ready Linear issue |
-| Feature worker | `.agents/skills/developing-orbit-features` | staged `review_ready` |
-| Reviewer | `.agents/skills/reviewing-orbit-pull-requests` | `rollout_approved`, then `approved` |
+| Feature worker | `.agents/skills/developing-orbit-features` | `review_ready`, then `changes_addressed` |
+| Reviewer | `.agents/skills/reviewing-orbit-pull-requests` | `approved` |
 | Merge verifier | `.agents/skills/merging-orbit-pull-requests` | `merged` |
 
-The external orchestrator must pass each skill's required input and consume its
+The project manager must pass each skill's required input and consume its
 YAML handoff. It must send `changes_requested` back to the same feature-worker
 session. It must not infer success from Slack message text.
 
 ## Issue contract
 
 Use `.agents/skills/creating-orbit-issues` to create the issue. Linear owns the
-outcome, scope, acceptance criteria, component list, ADR links, proof venue,
-applicable live nodes, and required checkout identity evidence.
+outcome, scope, acceptance criteria, component list, ADR links, and the Incus
+proof contract. An Incus issue adds exactly two lines:
+
+```text
+Proof: incus
+Composition: gateway + app-dev + app-prod
+```
+
+Automated-only work omits both lines. `Composition` names physical nodes only;
+repository code owns resource names, images, sizes, and networks. A normal
+issue cannot use an unsupported operating system, role combination, or
+topology. An issue that adds official support must include Gateway support,
+Gateway tests, an E2E recipe, harness support, and live acceptance in scope.
 
 Every linked or otherwise governing ADR must already be on `main` before the
 issue becomes Ready, implementation starts, or a dependent workflow contract
 changes. A feature pull request must not introduce or modify its governing ADR.
-An issue uses automated proof unless live operating-system or multi-node
-behavior requires live proof. Live proof selects exact active applicable nodes
-with `orbit node:list --json` and records node identity, roles, access,
-ownership, recovery, and checkout identity requirements.
 
-Incus is optional development acceleration. The rolling topology, refresh, and
-retirement rules are defined in
-[ADR 0005](../decisions/0005-rolling-incus-development-topology.md).
+## The 14-step flow
 
-## Work and compound
+1. **Prepare issue.** The issue author prepares the Linear issue.
+2. **Claim issue.** The project manager claims the Ready issue, creates one
+   monorepo worktree with `bin/worktree-create`, and starts the feature worker.
+3. **Select recipe.** The worker maps the `Composition` to Gateway-supported
+   node types and the `apps/e2e` recipe `gateway_app-dev_app-prod`. An
+   unsupported requirement blocks normal feature work.
+4. **Create discovery.** The project manager runs
+   `bin/e2e-topology acquire ISSUE WORKTREE --json`. Discovery mounts the
+   worktree read-write at `/home/orbit/orbit` on `gateway` and `app-dev`
+   (about 21 to 23 s from the promoted standby).
+5. **Learn desired state.** The worker changes code and task-owned guest state
+   until the topology shows the required behavior, with
+   `bin/e2e-topology exec ISSUE ATTEMPT ROLE --argv-file=PATH --json`. It can
+   use subagents at any point. Discovery output is not proof evidence.
+6. **Codify required state.** Every manual action becomes repository
+   behavior, proof setup, a `post_deployment_action`, or diagnostic-only work.
+7. **Harden candidate.** The worker implements, tests, runs each changed
+   project's `composer check` and root `bin/test`, compounds durable
+   learning, and commits the clean candidate. That commit is the code freeze.
+8. **Remove discovery.** The project manager runs
+   `bin/e2e-topology release ISSUE ATTEMPT --json`. The worker waits for
+   verified absence before proof.
+9. **Prove fresh.** The worker runs
+   `bin/e2e-topology prove ISSUE WORKTREE --candidate-sha=SHA --proof-plan-file=PATH --json`
+   (about 33 s). The harness creates a new proof attempt, synchronizes the
+   exact commit from Git, verifies clean guest checkout identity, converges,
+   runs the declared setup and acceptance checks, and records `proved` or
+   `diagnosis`. Proof never mounts host state. A proved attempt is immutable
+   through review and merge.
+10. **Open a normal pull request.** The worker pushes and opens the pull
+    request from its template only after proof succeeds. Orbit does not use
+    draft pull requests. CI and review start immediately and run in parallel.
+11. **Handle corrections.** A new commit changes the head, so the prior proof
+    is stale. The worker moves the old proof to diagnosis only when useful,
+    requests its release, reruns local gates, completes fresh proof, then
+    pushes the new candidate and posts one comment for that SHA:
 
-1. The Slack project-manager agent claims a Ready issue.
-2. It creates one monorepo worktree with `bin/worktree-create`.
-3. The feature worker uses `.agents/skills/developing-orbit-features`. For live
-   proof, it selects active applicable nodes with `orbit node:list --json` for
-   read-only preflight. It inspects the gap via Orbit CLI, Gateway API, or pinned
-   direct SSH and records rollout intent, ownership, recovery, and cleanup plans
-   before changing code. It does not deploy or mutate live state at this stage.
-   It then inspects `/home/nckrtl/orbit-old` for applicable prior implementation.
-4. The feature worker implements the change and compounds durable learning into
-   an existing ADR, reference document, solution note, or repository rule when
-   appropriate. It then runs focused checks, each affected project's full suite
-   and quality check, and root `bin/test`. It commits and pushes a clean
-   candidate, creates or updates the pull request, and waits for current-head CI.
-5. For live proof, a separate reviewer approves the exact candidate and rollout
-   intent with `review_phase: pre_rollout` and `status: rollout_approved`. Any
-   later commit invalidates this event. No rollout or live mutation occurs before
-   this review.
-6. Immediately before every rollout command and every other live mutation, the
-   feature worker runs and inspects `orbit node:list --json`. A prior listing
-   cannot authorize a later mutation. It fails closed on identity, topology,
-   access, applicability, or ownership drift. Mutations are serial. Each record
-   names the fresh topology request or snapshot, exact node, candidate SHA,
-   mutation, task-owned resources, pre-state, recovery, result, and cleanup.
-7. After live proof, the feature worker restores the pre-state, removes every
-   task-owned proof and recovery resource, and verifies absence. Shared and
-   pre-existing state must still match the ownership baseline. It then requests
-   `post_proof` review. Automated proof goes directly to this review after step
-   4.
+    ```text
+    Review feedback addressed in <full-sha>. Ready for re-review.
+    ```
 
-After worktree creation, the external orchestrator can acquire the registered
-`gateway_app-dev_app-prod` Incus profile. It records generation and topology
-identity and synchronizes Gateway and app-dev before each relevant iteration.
-The worker releases the disposable topology and verifies exact absence before
-`post_proof` review.
-
-Do not create documentation only to fill the Compound section. State why no
-durable update is needed when the work produced no reusable learning.
+12. **Merge.** The merge verifier merges only when every gate passes.
+13. **Clean development resources.** The project manager cleans up in the
+    order below.
+14. **Deploy separately.** The production process deploys the merged code and
+    performs and verifies `post_deployment_actions`.
 
 ## Review loop
 
 Review is independent from implementation: a separate review agent session,
-not necessarily a separate GitHub account. A reviewer uses
-`.agents/skills/reviewing-orbit-pull-requests`. Live proof has two review events
-anchored to the exact candidate. The `pre_rollout` event posts a comment-type
-review whose body is exactly `Rollout approved.` and returns
-`rollout_approved`. It authorizes live proof only. The `post_proof` event occurs
-after proof and verified task-resource absence and can return final `approved`.
-Automated proof uses only `post_proof`. The Slack project-manager agent sends
-each review signal back to the same feature worker.
+not necessarily a separate GitHub account. The reviewer uses
+`.agents/skills/reviewing-orbit-pull-requests`. One review is anchored to the
+candidate commit. It verifies the exact candidate, the Linear contract, the
+active proof topology, the proof result, the acceptance mapping, manual-action
+dispositions, Compound, and existing comments. It performs no mutation and can
+approve while CI is pending.
 
-After the feature worker commits and pushes requested corrections and
-current-head CI passes, it posts this pull request conversation comment once
-for that candidate SHA:
+Approval is a formal GitHub approval when the review account differs from the
+pull request author. When the account is the same, GitHub rejects a formal
+approval on its own pull request, so the reviewer posts a comment-type review
+whose body is exactly `Approved.`. A non-approving review posts only a
+`Changes requested:` line followed by one `path:line — required correction`
+bullet per finding.
 
-```text
-Review feedback addressed in <full-sha>. Ready for re-review.
-```
+The `issue_comment.created` event with the worker's re-review comment tells
+the project manager to send the new candidate to the reviewer.
 
-The resulting `issue_comment.created` event tells the project-manager agent to
-send the new candidate to the reviewer. The feature worker records the comment
-URL in its handoff.
+## Merge gate
 
-Neither successful review body carries a gate table, verification recap, or
-findings. Final `post_proof` approval is a formal GitHub approval when the review
-account differs from the pull request author. When the account is the same,
-GitHub rejects a formal approval on its own pull request, so the reviewer posts
-a comment-type review whose body is exactly `Approved.`. A non-approving review
-posts only a `Changes requested:` line followed by one
-`path:line — required correction` bullet per finding, with no verdict preamble,
-account explanation, evidence recap, gate output, or non-blocking observation.
+The merge verifier uses `.agents/skills/merging-orbit-pull-requests` and
+requires:
 
-The merge agent uses `.agents/skills/merging-orbit-pull-requests` and verifies:
+- the current pull-request head equal to the candidate SHA;
+- approval for that head and no unresolved actionable comments;
+- passing current-head CI;
+- an active proof topology whose proof status is `proved` for that candidate,
+  with observed results for every acceptance check;
+- every ADR link already on `main`;
+- a useful or correctly marked Compound result; and
+- complete post-deployment actions.
 
-- the Linear outcome and acceptance criteria;
-- required checks and proof evidence;
-- the exact-SHA `post_proof` reviewer handoff with final approval and, for live
-  proof, its retained `pre_rollout` review event;
-- every ADR link is already on `main`; and
-- the Compound result is useful or correctly marked as not needed;
-- read-only verification that every task-owned resource is absent; and
-- no ownership or shared-state drift from the recorded baseline.
+The merge verifier performs no cleanup and no topology mutation.
 
-Any remaining resource, uncertain ownership, stale absence evidence, or live
-drift blocks merge. The merge verifier never cleans or mutates live state. Only
-after all gates pass can it merge the pull request.
+## Post-merge cleanup order
+
+After merge, the project manager:
+
+1. releases the proof topology with `bin/e2e-topology release ISSUE ATTEMPT
+   --json` and verifies its exact absence;
+2. computes `bin/e2e-standby fingerprint --main-sha=SHA` for merged `main` and
+   refreshes prepared state with `bin/e2e-standby refresh --main-sha=SHA`
+   only when the fingerprint changed, recording `unchanged`, `promoted`, or
+   `failed`;
+3. removes the worktree with `bin/worktree-remove`; and
+4. closes the Linear issue.
+
+A refresh failure produces `merged_refresh_blocked`. It leaves proof absent
+and keeps the worktree and issue open for maintenance triage. It does not
+revert merged code. Lock contention can be retried by the project manager;
+there is no repository refresh queue or worker. `bin/worktree-remove` refuses
+an unmerged or dirty branch.
 
 ## GitHub and Slack events
 
@@ -172,21 +192,10 @@ Official references:
 - [GitHub webhook events and payloads](https://docs.github.com/en/webhooks/webhook-events-and-payloads)
 - [GitHub App webhook handling](https://docs.github.com/en/apps/creating-github-apps/writing-code-for-a-github-app/building-a-github-app-that-responds-to-webhook-events)
 
-## Cleanup and boundary
+## Boundary
 
-Task-owned live resources must be absent before final review and merge. After
-merge, the Slack project-manager agent verifies absence and shared-state
-integrity again. It then fingerprints merged `main` and refreshes the stopped
-Incus standby only when prepared state changed. It records `unchanged`,
-`promoted`, or `failed`. A failed refresh produces `merged_refresh_blocked` and
-leaves worktree removal and issue closure pending. Lock contention can be
-retried by the external orchestrator. There is no repository refresh queue or
-worker. After an `unchanged` or `promoted` result, the orchestrator runs
-`bin/worktree-remove`. It does not defer live-resource cleanup until after
-merge. The cleanup command refuses an unmerged or dirty branch.
-
-The development issue closes after merge, the final absence check, and worktree
-removal. A separate operations process releases and verifies the merged code in
-production. A post-deploy defect creates a GitHub issue with deployment
-evidence. Planning then creates a new Linear bug; it does not reopen the
-completed feature.
+A separate operations process releases the merged code in production,
+performs and verifies `post_deployment_actions`, and completes post-deploy
+verification. Production never reuses a disposable proof topology. A
+post-deploy defect creates a GitHub issue with deployment evidence. Planning
+then creates a new Linear bug; it does not reopen the completed feature.
