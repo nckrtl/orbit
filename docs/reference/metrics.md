@@ -4,9 +4,9 @@ Orbit provides private fleet host metrics through one mutable `metrics` role.
 The role runs Prometheus and Grafana as standalone Docker containers. It runs
 `prometheus-node-exporter` under systemd on selected active nodes. Orbit does
 not use Docker Swarm, Compose, public `Process` rows, or public `Tool` rows for
-this role. The containers share one proven Metrics-owned private Docker
-network so Grafana can reach Prometheus without publishing Prometheus to the
-fleet.
+this role. The containers use Docker host networking: Prometheus listens only
+on loopback on the Metrics node, and Grafana listens only on the node's
+WireGuard address, with UFW governing both ports.
 
 ## Placement and recovery
 
@@ -19,8 +19,9 @@ Enable Metrics on an active node:
 orbit metrics:enable [node]
 ```
 
-The command prompts for a node only in an interactive terminal. JSON and other
-non-interactive calls must supply the node ID.
+The node is a numeric ID or a registered node name. The command prompts for a
+node only in an interactive terminal. JSON and other non-interactive calls must
+supply the node.
 
 Use the generic role command to retry a failed assignment:
 
@@ -51,6 +52,12 @@ orbit metrics:exporter:disable <node>
 
 Preferences survive role changes and periods when Metrics is disabled. Orbit
 refuses to disable the current Metrics node exporter.
+
+A selected node runs the packaged `prometheus-node-exporter` unit with the
+Orbit drop-in at
+`/etc/systemd/system/prometheus-node-exporter.service.d/orbit.conf`. The
+drop-in binds the exporter to the node's WireGuard address on port 9100, and a
+Metrics-owned UFW rule opens that port to the Metrics node only.
 
 ## Private access and credentials
 

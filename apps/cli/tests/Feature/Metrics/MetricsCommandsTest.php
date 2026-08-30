@@ -178,7 +178,7 @@ it('requires a node id in non-interactive enable mode', function (): void {
 
     $this
         ->artisan('metrics:enable', ['--json' => true])
-        ->expectsOutputToContain('Node ID is required.')
+        ->expectsOutputToContain('Node ID or name is required.')
         ->assertExitCode(1);
 });
 
@@ -281,7 +281,7 @@ it('prompts from the active eligible node list before enabling Metrics', functio
                 [7, 'orbit-ops', '-'],
             ],
         )
-        ->expectsQuestion('Node ID', '3')
+        ->expectsQuestion('Node ID or name', '3')
         ->expectsOutput('Metrics operation completed for node #3: active.')
         ->expectsOutput('Request ID: '.metrics_cli_request_id())
         ->assertSuccessful();
@@ -334,7 +334,7 @@ it('returns field=node when non-interactive enable omits the node', function ():
         ->expectsOutput(json_encode([
             'error' => [
                 'code' => 'validation_failed',
-                'message' => 'Node ID is required.',
+                'message' => 'Node ID or name is required.',
                 'details' => ['field' => 'node'],
                 'request_id' => null,
             ],
@@ -429,6 +429,77 @@ it('resets credentials through the focused request and renders exact JSON', func
         ->toBe(Method::POST)
         ->and($mock->getLastPendingRequest()?->getUrl())
         ->toBe('https://10.44.0.1/api/v1/metrics/credentials/reset');
+});
+
+it('enables Metrics on a node given by name', function (): void {
+    $mock = MockClient::global([
+        ShowMetricsStatusRequest::class => MockResponse::make([
+            'data' => metrics_cli_status_payload(),
+            'meta' => ['request_id' => metrics_cli_request_id()],
+        ]),
+        ListNodesRequest::class => MockResponse::make([
+            'data' => [
+                metrics_cli_node_payload(1, 'gateway', 'active', ['gateway', 'vpn']),
+                metrics_cli_node_payload(2, 'app-dev', 'active', ['app-dev']),
+            ],
+            'meta' => ['request_id' => metrics_cli_request_id()],
+        ]),
+        EnableMetricsRequest::class => MockResponse::make([
+            'data' => ['node_id' => 2, 'status' => 'active'],
+            'meta' => ['request_id' => metrics_cli_request_id()],
+        ]),
+    ]);
+
+    $this
+        ->artisan('metrics:enable', ['node' => 'app-dev', '--json' => true])
+        ->expectsOutput(json_encode([
+            'node_id' => 2,
+            'status' => 'active',
+            'request_id' => metrics_cli_request_id(),
+        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))
+        ->assertSuccessful();
+
+    expect($mock->getLastRequest()?->body()->all())->toBe(['node_id' => 2]);
+});
+
+it('rejects an unknown node name before any Metrics mutation', function (): void {
+    $mock = MockClient::global([
+        ShowMetricsStatusRequest::class => MockResponse::make([
+            'data' => metrics_cli_status_payload(),
+            'meta' => ['request_id' => metrics_cli_request_id()],
+        ]),
+        ListNodesRequest::class => MockResponse::make([
+            'data' => [metrics_cli_node_payload(2, 'app-dev', 'active', ['app-dev'])],
+            'meta' => ['request_id' => metrics_cli_request_id()],
+        ]),
+    ]);
+
+    $this
+        ->artisan('metrics:enable', ['node' => 'missing', '--json' => true])
+        ->expectsOutputToContain('"code":"node.not_found"')
+        ->assertExitCode(1);
+
+    $mock->assertNotSent(EnableMetricsRequest::class);
+});
+
+it('resolves exporter node names through the node list', function (): void {
+    $mock = MockClient::global([
+        ListNodesRequest::class => MockResponse::make([
+            'data' => [metrics_cli_node_payload(3, 'app-prod', 'active', ['app-prod'])],
+            'meta' => ['request_id' => metrics_cli_request_id()],
+        ]),
+        DisableMetricsExporterRequest::class => MockResponse::make([
+            'data' => ['node_id' => 3, 'status' => 'active'],
+            'meta' => ['request_id' => metrics_cli_request_id()],
+        ]),
+    ]);
+
+    $this
+        ->artisan('metrics:exporter:disable', ['node' => 'app-prod', '--json' => true])
+        ->assertSuccessful();
+
+    expect($mock->getLastPendingRequest()?->getUrl())
+        ->toBe('https://10.44.0.1/api/v1/metrics/exporters/3');
 });
 
 it('sends the selected node through each exporter request', function (

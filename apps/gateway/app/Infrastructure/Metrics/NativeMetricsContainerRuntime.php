@@ -36,11 +36,17 @@ final readonly class NativeMetricsContainerRuntime implements MetricsRuntimeLife
         } catch (Throwable $exception) {
             try {
                 $this->host->restoreConfiguration($node, $snapshot);
-            } catch (Throwable) {
+            } catch (Throwable $rollback) {
                 throw new ResourceOperationException(
                     'metrics.runtime_rollback_failed',
                     'Metrics runtime convergence failed and configuration recovery did not complete.',
                     502,
+                    new ResourceOperationException(
+                        'metrics.runtime_convergence_failed',
+                        $exception->getMessage(),
+                        502,
+                        $rollback,
+                    ),
                 );
             }
 

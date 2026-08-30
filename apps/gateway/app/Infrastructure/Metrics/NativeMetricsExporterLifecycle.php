@@ -148,11 +148,17 @@ final readonly class NativeMetricsExporterLifecycle implements MetricsExporterLi
                 foreach (array_reverse($mutated) as $snapshot) {
                     $this->executor->restore($snapshot['node'], $metricsNode, $snapshot['state']);
                 }
-            } catch (Throwable) {
+            } catch (Throwable $rollback) {
                 throw new ResourceOperationException(
                     'metrics.exporter_fleet_rollback_failed',
                     'Metrics exporter fleet state could not be restored.',
                     502,
+                    new ResourceOperationException(
+                        'metrics.exporter_fleet_convergence_failed',
+                        $exception->getMessage(),
+                        502,
+                        $rollback,
+                    ),
                 );
             }
 

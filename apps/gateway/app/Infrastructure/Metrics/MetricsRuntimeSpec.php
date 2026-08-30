@@ -13,8 +13,6 @@ final readonly class MetricsRuntimeSpec
 
     public const string GrafanaImage = 'grafana/grafana:12.1.1';
 
-    private const string Network = 'orbit-metrics-runtime';
-
     public function for(
         MetricsService $service,
         int $assignmentId,
@@ -27,16 +25,13 @@ final readonly class MetricsRuntimeSpec
 
         $definition = match ($service) {
             MetricsService::Prometheus => $this->prometheusDefinition(),
-            MetricsService::Grafana => $this->grafanaDefinition(),
+            MetricsService::Grafana => $this->grafanaDefinition($wireguardAddress),
         };
-        $publishedAddress = $service === MetricsService::Prometheus ? '127.0.0.1' : $wireguardAddress;
         $publicSpec = [
             'service' => $service->value,
             'image' => $definition['image'],
             'name' => $definition['name'],
             'volume' => $definition['volume'],
-            'network' => self::Network,
-            'published_address' => $publishedAddress,
             'command' => $definition['command'],
             'mounts' => $definition['mounts'],
             'environment' => $definition['environment'],
@@ -56,16 +51,10 @@ final readonly class MetricsRuntimeSpec
             image: $definition['image'],
             name: $definition['name'],
             volume: $definition['volume'],
-            network: self::Network,
-            publishedAddress: $publishedAddress,
             labels: $labels,
             volumeLabels: [
                 'com.orbit.managed' => 'metrics',
                 'com.orbit.metrics.volume' => $service->value,
-            ],
-            networkLabels: [
-                'com.orbit.managed' => 'metrics',
-                'com.orbit.metrics.network' => 'runtime',
             ],
             command: $definition['command'],
             mounts: $definition['mounts'],
@@ -86,6 +75,7 @@ final readonly class MetricsRuntimeSpec
                 '--config.file=/etc/prometheus/prometheus.yml',
                 '--storage.tsdb.path=/prometheus',
                 '--storage.tsdb.retention.time=15d',
+                '--web.listen-address=127.0.0.1:9090',
             ],
             'mounts' => [
                 '/etc/orbit/metrics/prometheus.yml:/etc/prometheus/prometheus.yml:ro',
@@ -103,7 +93,7 @@ final readonly class MetricsRuntimeSpec
     }
 
     /** @return array{image: string, name: string, volume: string, command: list<string>, mounts: list<string>, environment: array<string, string>, health_command: non-empty-list<string>} */
-    private function grafanaDefinition(): array
+    private function grafanaDefinition(string $wireguardAddress): array
     {
         return [
             'image' => self::GrafanaImage,
@@ -119,6 +109,8 @@ final readonly class MetricsRuntimeSpec
             'environment' => [
                 'GF_SECURITY_ADMIN_USER' => 'admin',
                 'GF_SECURITY_ADMIN_PASSWORD__FILE' => '/run/orbit/grafana-admin-password',
+                'GF_SERVER_HTTP_ADDR' => $wireguardAddress,
+                'GF_SERVER_HTTP_PORT' => '3000',
             ],
             'health_command' => [
                 'CMD',
@@ -126,7 +118,7 @@ final readonly class MetricsRuntimeSpec
                 '--no-verbose',
                 '--tries=1',
                 '--spider',
-                'http://127.0.0.1:3000/api/health',
+                "http://{$wireguardAddress}:3000/api/health",
             ],
         ];
     }

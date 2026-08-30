@@ -169,7 +169,7 @@ function metrics_publication_manager_firewall(): string
     return <<<'STATUS'
         Status: active
 
-        [ 7] 10.44.0.3 3000/tcp on wg0 ALLOW IN 10.44.0.1 # orbit:metrics-grafana-upstream
+        [ 7] 10.44.0.3 3000/tcp on orbit ALLOW IN 10.44.0.1 # orbit:metrics-grafana-upstream
         STATUS;
 }
 

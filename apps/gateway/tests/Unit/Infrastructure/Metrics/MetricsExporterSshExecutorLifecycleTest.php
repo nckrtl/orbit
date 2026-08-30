@@ -23,6 +23,10 @@ it('converges protected exporter configuration and exact Metrics-owned firewall 
         metricsExporterResult(),
         metricsExporterResult(),
         metricsExporterResult(),
+        metricsExporterResult(),
+        metricsExporterResult(),
+        metricsExporterResult(),
+        metricsExporterResult(),
         metricsExporterResult(stdout: metricsExporterConfiguration('10.44.0.4')),
         metricsExporterResult(stdout: "active\n"),
         metricsExporterResult(stdout: metricsExporterFirewallStatus('10.44.0.4')),
@@ -40,13 +44,15 @@ it('converges protected exporter configuration and exact Metrics-owned firewall 
     ))
         ->toContain(
             ['sudo', 'apt-get', 'install', '--yes', '--no-install-recommends', '--', 'prometheus-node-exporter'],
+            ['sudo', 'systemctl', 'daemon-reload'],
+            ['sudo', 'systemctl', 'restart', 'prometheus-node-exporter'],
             [
                 'sudo',
                 'ufw',
                 'allow',
                 'in',
                 'on',
-                'wg0',
+                'orbit',
                 'proto',
                 'tcp',
                 'from',
@@ -59,15 +65,61 @@ it('converges protected exporter configuration and exact Metrics-owned firewall 
                 'orbit:metrics-node-exporter',
             ],
         )
-        ->and($ssh->commands[4]->protectedInput)
-        ->not->toBeNull()->and(var_export($ssh->commands[4], true))
+        ->and($ssh->commands[5]->protectedInput)
+        ->not->toBeNull()->and(var_export($ssh->commands[5], true))
         ->not->toContain('10.44.0.4');
+});
+
+it('stages the exporter drop-in beside its target and moves it into place', function (): void {
+    $ssh = new MetricsExporterStatefulSsh(
+        configuration: metricsExporterConfiguration('10.44.0.4'),
+        serviceActive: true,
+        firewall: true,
+    );
+    $executor = metricsExporterExecutor($ssh);
+
+    $executor->converge(
+        metricsExporterNode('app-prod', '10.44.0.4'),
+        metricsExporterNode('metrics', '10.44.0.3'),
+    );
+
+    $arguments = array_map(
+        static fn (RemoteCommand $command): array => $command->arguments,
+        $ssh->commands,
+    );
+    $target = '/etc/systemd/system/prometheus-node-exporter.service.d/orbit.conf';
+
+    expect($arguments)
+        ->toContain(
+            ['sudo', 'rm', '-f', '--', $target.'.orbit-candidate'],
+            [
+                'sudo',
+                'install',
+                '-D',
+                '-o',
+                'root',
+                '-g',
+                'root',
+                '-m',
+                '0644',
+                '/dev/stdin',
+                $target.'.orbit-candidate',
+            ],
+            ['sudo', 'mv', '-fT', '--', $target.'.orbit-candidate', $target],
+        )
+        ->and($arguments)
+        ->not
+        ->toContain(
+            ['sudo', 'install', '-D', '-o', 'root', '-g', 'root', '-m', '0644', '/dev/stdin', $target],
+        )
+        ->and($ssh->configuration)
+        ->toBe(metricsExporterConfiguration('10.44.0.4'));
 });
 
 it('refuses foreign exporter configuration before any mutation', function (): void {
     $ssh = new MetricsExporterCapturingSsh([
         metricsExporterResult(),
-        metricsExporterResult(stdout: "ARGS=--web.listen-address=0.0.0.0:9100\n"),
+        metricsExporterResult(stdout: "[Service]\nExecStart=/usr/bin/prometheus-node-exporter\n"),
     ]);
     $executor = metricsExporterExecutor($ssh);
 
@@ -89,6 +141,7 @@ it('removes only proven exporter configuration and firewall state', function ():
         metricsExporterResult(),
         metricsExporterResult(),
         metricsExporterResult(),
+        metricsExporterResult(),
         metricsExporterResult(exitCode: 1),
         metricsExporterResult(exitCode: 3, stdout: "inactive\n"),
         metricsExporterResult(stdout: "Status: active\n"),
@@ -105,7 +158,7 @@ it('removes only proven exporter configuration and firewall state', function ():
         $ssh->commands,
     ))->toContain(
         ['sudo', 'systemctl', 'disable', '--now', 'prometheus-node-exporter'],
-        ['sudo', 'rm', '-f', '--', '/etc/default/prometheus-node-exporter'],
+        ['sudo', 'rm', '-f', '--', '/etc/systemd/system/prometheus-node-exporter.service.d/orbit.conf'],
         ['sudo', 'ufw', '--force', 'delete', '5'],
     );
 });
@@ -140,7 +193,7 @@ it('restores active exporter state when removal fails after service disablement'
         configuration: $configuration,
         serviceActive: true,
         firewall: true,
-        failArguments: ['sudo', 'rm', '-f', '--', '/etc/default/prometheus-node-exporter'],
+        failArguments: ['sudo', 'rm', '-f', '--', '/etc/systemd/system/prometheus-node-exporter.service.d/orbit.conf'],
     );
     $executor = metricsExporterExecutor($ssh);
 
@@ -199,7 +252,7 @@ function metricsExporterResult(int $exitCode = 0, string $stdout = ''): CommandR
 
 function metricsExporterConfiguration(string $address): string
 {
-    return "# Managed by Orbit: metrics\nARGS=--web.listen-address={$address}:9100\n";
+    return "# Managed by Orbit: metrics\n[Service]\nExecStart=\nExecStart=/usr/bin/prometheus-node-exporter --web.listen-address={$address}:9100\n";
 }
 
 function metricsExporterFirewallStatus(string $destination): string
@@ -207,7 +260,7 @@ function metricsExporterFirewallStatus(string $destination): string
     return <<<STATUS
         Status: active
 
-        [ 5] {$destination} 9100/tcp on wg0 ALLOW IN 10.44.0.3 # orbit:metrics-node-exporter
+        [ 5] {$destination} 9100/tcp on orbit ALLOW IN 10.44.0.3 # orbit:metrics-node-exporter
         STATUS;
 }
 
@@ -231,8 +284,13 @@ final class MetricsExporterCapturingSsh implements SshExecutor
 
 final class MetricsExporterStatefulSsh implements SshExecutor
 {
+    /** @var list<RemoteCommand> */
+    public array $commands = [];
+
     /** @var array<string, int> */
     private array $occurrences = [];
+
+    private ?string $candidate = null;
 
     /**
      * @param list<string>|null $failArguments
@@ -249,6 +307,7 @@ final class MetricsExporterStatefulSsh implements SshExecutor
 
     public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
     {
+        $this->commands[] = $command;
         $key = implode("\0", $command->arguments);
         $occurrence = ($this->occurrences[$key] ?? 0) + 1;
         $this->occurrences[$key] = $occurrence;
@@ -258,10 +317,12 @@ final class MetricsExporterStatefulSsh implements SshExecutor
         }
 
         return match ($command->arguments) {
-            ['sudo', 'test', '-e', '/etc/default/prometheus-node-exporter'] => metricsExporterResult(
+            ['sudo', 'test', '-e', '/etc/systemd/system/prometheus-node-exporter.service.d/orbit.conf']
+                => metricsExporterResult(
                 exitCode: $this->configuration === null ? 1 : 0,
             ),
-            ['sudo', 'cat', '--', '/etc/default/prometheus-node-exporter'] => metricsExporterResult(
+            ['sudo', 'cat', '--', '/etc/systemd/system/prometheus-node-exporter.service.d/orbit.conf']
+                => metricsExporterResult(
                 stdout: $this->configuration ?? '',
             ),
             ['sudo', 'ufw', 'status', 'numbered'] => metricsExporterResult(
@@ -274,6 +335,7 @@ final class MetricsExporterStatefulSsh implements SshExecutor
             [
                 'sudo',
                 'install',
+                '-D',
                 '-o',
                 'root',
                 '-g',
@@ -281,12 +343,32 @@ final class MetricsExporterStatefulSsh implements SshExecutor
                 '-m',
                 '0644',
                 '/dev/stdin',
-                '/etc/default/prometheus-node-exporter',
+                '/etc/systemd/system/prometheus-node-exporter.service.d/orbit.conf.orbit-candidate',
             ]
-                => $this->install($command),
+                => $this->stage($command),
+            [
+                'sudo',
+                'rm',
+                '-f',
+                '--',
+                '/etc/systemd/system/prometheus-node-exporter.service.d/orbit.conf.orbit-candidate',
+            ]
+                => $this->discardCandidate(),
+            [
+                'sudo',
+                'mv',
+                '-fT',
+                '--',
+                '/etc/systemd/system/prometheus-node-exporter.service.d/orbit.conf.orbit-candidate',
+                '/etc/systemd/system/prometheus-node-exporter.service.d/orbit.conf',
+            ]
+                => $this->publishCandidate(),
             ['sudo', 'systemctl', 'enable', '--now', 'prometheus-node-exporter'] => $this->enable(),
+            ['sudo', 'systemctl', 'restart', 'prometheus-node-exporter'] => $this->enable(),
+            ['sudo', 'systemctl', 'daemon-reload'] => metricsExporterResult(),
             ['sudo', 'systemctl', 'disable', '--now', 'prometheus-node-exporter'] => $this->disable(),
-            ['sudo', 'rm', '-f', '--', '/etc/default/prometheus-node-exporter'] => $this->removeConfiguration(),
+            ['sudo', 'rm', '-f', '--', '/etc/systemd/system/prometheus-node-exporter.service.d/orbit.conf']
+                => $this->removeConfiguration(),
             ['systemctl', 'is-active', 'prometheus-node-exporter'] => metricsExporterResult(
                 exitCode: $this->serviceActive ? 0 : 3,
                 stdout: $this->serviceActive ? "active\n" : "inactive\n",
@@ -297,7 +379,7 @@ final class MetricsExporterStatefulSsh implements SshExecutor
                 'allow',
                 'in',
                 'on',
-                'wg0',
+                'orbit',
                 'proto',
                 'tcp',
                 'from',
@@ -315,9 +397,28 @@ final class MetricsExporterStatefulSsh implements SshExecutor
         };
     }
 
-    private function install(RemoteCommand $command): CommandResult
+    private function stage(RemoteCommand $command): CommandResult
     {
-        $this->configuration = stream_get_contents($command->protectedInput?->stream()) ?: '';
+        $this->candidate = stream_get_contents($command->protectedInput?->stream()) ?: '';
+
+        return metricsExporterResult();
+    }
+
+    private function discardCandidate(): CommandResult
+    {
+        $this->candidate = null;
+
+        return metricsExporterResult();
+    }
+
+    private function publishCandidate(): CommandResult
+    {
+        if ($this->candidate === null) {
+            return metricsExporterResult(exitCode: 1);
+        }
+
+        $this->configuration = $this->candidate;
+        $this->candidate = null;
 
         return metricsExporterResult();
     }

@@ -48,11 +48,17 @@ final readonly class MetricsRoleBaseline implements RoleBaseline
                 if ($exporters) {
                     $this->exporters->remove($node, $assignment);
                 }
-            } catch (\Throwable) {
+            } catch (\Throwable $rollback) {
                 throw new ResourceOperationException(
                     'metrics.rollback_failed',
                     'Metrics convergence rollback failed.',
                     502,
+                    new ResourceOperationException(
+                        'metrics.convergence_failed',
+                        $exception->getMessage(),
+                        502,
+                        $rollback,
+                    ),
                 );
             }
 

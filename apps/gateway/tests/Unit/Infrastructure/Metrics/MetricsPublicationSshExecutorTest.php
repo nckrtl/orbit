@@ -34,7 +34,7 @@ it('publishes and verifies the exact Gateway-only Grafana firewall rule', functi
             'allow',
             'in',
             'on',
-            'wg0',
+            'orbit',
             'proto',
             'tcp',
             'from',
@@ -111,7 +111,7 @@ function metricsPublicationFirewallStatus(): string
     return <<<'STATUS'
         Status: active
 
-        [ 7] 10.44.0.3 3000/tcp on wg0 ALLOW IN 10.44.0.1 # orbit:metrics-grafana-upstream
+        [ 7] 10.44.0.3 3000/tcp on orbit ALLOW IN 10.44.0.1 # orbit:metrics-grafana-upstream
         STATUS;
 }
 

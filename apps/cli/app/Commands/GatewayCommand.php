@@ -15,6 +15,8 @@ use LaravelZero\Framework\Commands\Command;
 use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\GatewayRequest;
+use Orbit\Sdk\Requests\Nodes\ListNodesRequest;
+use Orbit\Sdk\Responses\Nodes\NodesResponse;
 use Saloon\Exceptions\Request\FatalRequestException;
 use Saloon\Http\Response;
 use Symfony\Component\Console\Exception\ExceptionInterface;
@@ -95,6 +97,52 @@ abstract class GatewayCommand extends Command
         }
 
         return $id;
+    }
+
+    /**
+     * Resolves one node reference given as a numeric ID or a registered node name.
+     */
+    protected function resolveNodeId(GatewayConnector $connector, mixed $reference): ?int
+    {
+        if (is_int($reference)) {
+            $reference = (string) $reference;
+        }
+
+        if (! is_string($reference) || trim($reference) === '') {
+            $this->renderGatewayFailure('node.reference_required', 'Node ID or name is required.');
+
+            return null;
+        }
+
+        $reference = trim($reference);
+
+        if (preg_match('/\A-?[0-9]+\z/D', $reference) === 1) {
+            $id = filter_var($reference, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+
+            if (! is_int($id)) {
+                $this->renderGatewayFailure('node.id_invalid', 'Node ID must be a positive integer.');
+
+                return null;
+            }
+
+            return $id;
+        }
+
+        $nodes = $this->send($connector, new ListNodesRequest, NodesResponse::class);
+
+        if (! $nodes instanceof NodesResponse) {
+            return null;
+        }
+
+        foreach ($nodes->nodes as $node) {
+            if ($node->name === $reference) {
+                return $node->id;
+            }
+        }
+
+        $this->renderGatewayFailure('node.not_found', "Node [{$reference}] is not registered.");
+
+        return null;
     }
 
     protected function stringArgument(string $argument, string $label, string $errorCode): ?string

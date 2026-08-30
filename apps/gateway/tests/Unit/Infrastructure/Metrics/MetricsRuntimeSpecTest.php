@@ -28,13 +28,8 @@ describe(MetricsRuntimeSpec::class, function (): void {
             ->toBe('orbit-metrics-prometheus')
             ->and($prometheus->volume)
             ->toBe('orbit-metrics-prometheus-data')
-            ->and($prometheus->network)
-            ->toBe('orbit-metrics-runtime')
-            ->and($prometheus->networkLabels)
-            ->toBe([
-                'com.orbit.managed' => 'metrics',
-                'com.orbit.metrics.network' => 'runtime',
-            ])
+            ->and($prometheus->command)
+            ->toContain('--web.listen-address=127.0.0.1:9090')
             ->and($prometheus->labels)
             ->toMatchArray([
                 'com.orbit.managed' => 'metrics',
@@ -45,8 +40,13 @@ describe(MetricsRuntimeSpec::class, function (): void {
             ->toMatch('/^[a-f0-9]{64}$/')
             ->and($grafana->image)
             ->toBe('grafana/grafana:12.1.1')
-            ->and($grafana->publishedAddress)
-            ->toBe('10.44.0.3')
+            ->and($grafana->environment)
+            ->toMatchArray([
+                'GF_SERVER_HTTP_ADDR' => '10.44.0.3',
+                'GF_SERVER_HTTP_PORT' => '3000',
+            ])
+            ->and($grafana->healthCommand)
+            ->toContain('http://10.44.0.3:3000/api/health')
             ->and($grafana->labels['com.orbit.metrics.spec-hash'])
             ->toBe($grafana->specHash);
     });

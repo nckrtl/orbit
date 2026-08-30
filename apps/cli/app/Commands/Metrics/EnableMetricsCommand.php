@@ -16,7 +16,7 @@ use Orbit\Sdk\Responses\Nodes\NodesResponse;
 final class EnableMetricsCommand extends MetricsCommand
 {
     #[\Override]
-    protected $signature = 'metrics:enable {node? : Numeric node ID} {--json : Return machine-readable JSON}';
+    protected $signature = 'metrics:enable {node? : Node ID or name} {--json : Return machine-readable JSON}';
     #[\Override]
     protected $description = 'Enable Metrics on one node.';
 
@@ -55,15 +55,15 @@ final class EnableMetricsCommand extends MetricsCommand
                 $node->roles === [] ? '-' : implode(', ', $node->roles),
             ], $eligible));
             /** @var string|null $answer */
-            $answer = $this->ask('Node ID');
+            $answer = $this->ask('Node ID or name');
             $value = $answer;
         }
         if ($value === null || $value === '') {
-            return $this->validationFailure('node', 'Node ID is required.');
+            return $this->validationFailure('node', 'Node ID or name is required.');
         }
-        $nodeId = filter_var($value, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
-        if (! is_int($nodeId)) {
-            return $this->renderGatewayFailure('node.id_invalid', 'Node ID must be a positive integer.');
+        $nodeId = $this->resolveNodeId($connector, $value);
+        if ($nodeId === null) {
+            return self::FAILURE;
         }
 
         $response = $this->send($connector, new EnableMetricsRequest($nodeId), MetricsMutationResponse::class);

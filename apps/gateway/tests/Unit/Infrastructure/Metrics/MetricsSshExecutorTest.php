@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Infrastructure\Metrics\MetricsConfigurationRenderer;
 use App\Infrastructure\Metrics\MetricsConfigurationSnapshot;
 use App\Infrastructure\Metrics\MetricsRuntimeSpec;
 use App\Infrastructure\Metrics\MetricsService;
@@ -42,11 +43,6 @@ describe(MetricsSshExecutor::class, function (): void {
     it('refuses a foreign container before any destructive runtime command', function (): void {
         $foreignLabels = json_encode(['com.orbit.managed' => 'someone-else'], JSON_THROW_ON_ERROR)."\n";
         $ssh = new MetricsCapturingSshExecutor([
-            metricsCommandResult(stdout: json_encode([
-                'com.orbit.managed' => 'metrics',
-                'com.orbit.metrics.network' => 'runtime',
-            ], JSON_THROW_ON_ERROR)
-                ."\n"),
             metricsCommandResult(stdout: $foreignLabels),
         ]);
         $executor = metricsSshExecutor($ssh);
@@ -66,7 +62,7 @@ describe(MetricsSshExecutor::class, function (): void {
             ->not->toContain("'docker' 'container' 'rm'");
     });
 
-    it('uses one proven private Docker network for both Metrics containers', function (): void {
+    it('runs both Metrics containers on host networking with no published ports', function (): void {
         $prometheus = new MetricsRuntimeSpec()->for(
             MetricsService::Prometheus,
             41,
@@ -87,14 +83,12 @@ describe(MetricsSshExecutor::class, function (): void {
             ...$absent,
             ...$absent,
             ...$absent,
-            ...$absent,
             metricsCommandResult(),
             metricsCommandResult(),
+            metricsCommandResult(stdout: "running healthy\n"),
             metricsCommandResult(),
-            metricsCommandResult(stdout: "healthy\n"),
             metricsCommandResult(),
-            metricsCommandResult(),
-            metricsCommandResult(stdout: "healthy\n"),
+            metricsCommandResult(stdout: "running healthy\n"),
         ]);
 
         metricsSshExecutor($ssh)->convergeContainers(
@@ -110,24 +104,25 @@ describe(MetricsSshExecutor::class, function (): void {
             $commands,
             static fn (string $command): bool => str_contains($command, "'docker' 'container' 'run'"),
         ));
-        $networkCreates = array_values(array_filter(
-            $commands,
-            static fn (string $command): bool => str_contains($command, "'docker' 'network' 'create'"),
-        ));
 
-        expect($networkCreates)
-            ->toHaveCount(1)
-            ->and($networkCreates[0])
-            ->toContain("'com.orbit.metrics.network=runtime'")
-            ->and($containerRuns)
-            ->toHaveCount(2);
+        expect($containerRuns)->toHaveCount(2);
 
         foreach ($containerRuns as $command) {
-            expect($command)->toContain("'--network' 'orbit-metrics-runtime'");
+            expect($command)
+                ->toContain("'--network' 'host'")
+                ->not->toContain("'--publish'");
         }
+
+        $prometheusRun = $containerRuns[0];
+        $grafanaRun = $containerRuns[1];
+
+        expect($prometheusRun)
+            ->toContain("'--web.listen-address=127.0.0.1:9090'")
+            ->and($grafanaRun)
+            ->toContain("'GF_SERVER_HTTP_ADDR=10.44.0.3'");
     });
 
-    it('removes a proven recovery container before removing the runtime network', function (): void {
+    it('removes a proven recovery container', function (): void {
         $spec = new MetricsRuntimeSpec()->for(
             MetricsService::Prometheus,
             41,
@@ -135,11 +130,9 @@ describe(MetricsSshExecutor::class, function (): void {
             'configuration',
         );
         $ssh = new MetricsCapturingSshExecutor([
-            metricsCommandResult(stdout: json_encode($spec->networkLabels, JSON_THROW_ON_ERROR)."\n"),
             metricsCommandResult(exitCode: 1),
             metricsCommandResult(),
             metricsCommandResult(stdout: json_encode($spec->labels, JSON_THROW_ON_ERROR)."\n"),
-            metricsCommandResult(),
             metricsCommandResult(),
         ]);
 
@@ -150,12 +143,81 @@ describe(MetricsSshExecutor::class, function (): void {
             $ssh->commands,
         );
         expect($commands)
-            ->toContain("'docker' 'container' 'rm' '--force' '--' 'orbit-metrics-prometheus-orbit-rollback'")
-            ->and(array_key_last($commands))
-            ->not
-            ->toBeNull()
-            ->and($commands[array_key_last($commands)])
-            ->toContain("'docker' 'network' 'rm' '--' 'orbit-metrics-runtime'");
+            ->toContain("'docker' 'container' 'rm' '--force' '--' 'orbit-metrics-prometheus-orbit-rollback'");
+    });
+
+    it('validates the generated Prometheus configuration through the pinned promtool entrypoint', function (): void {
+        $ssh = new MetricsCapturingSshExecutor([]);
+        $executor = metricsSshExecutor($ssh);
+        $bundle = new MetricsConfigurationRenderer()->render(
+            [['name' => 'metrics-runtime', 'address' => '10.44.0.3']],
+            'admin-password-sentinel',
+        );
+
+        $executor->publishConfiguration(metricsSshNode(), $bundle);
+
+        expect($ssh->commands[0]->shellCommand())
+            ->toBe(
+                "'docker' 'container' 'run' '--rm' '--interactive' '--entrypoint' '/bin/promtool' "
+                ."'prom/prometheus:v3.5.0' 'check' 'config' '/dev/stdin'",
+            );
+    });
+
+    it('stages a generated file as root-only then chowns it for the container identity', function (): void {
+        $ssh = new MetricsCapturingSshExecutor([]);
+        $executor = metricsSshExecutor($ssh);
+        $bundle = new MetricsConfigurationRenderer()->render(
+            [['name' => 'metrics-runtime', 'address' => '10.44.0.3']],
+            'admin-password-sentinel',
+        );
+
+        $executor->publishConfiguration(metricsSshNode(), $bundle);
+
+        $commands = array_map(
+            static fn (RemoteCommand $command): string => $command->shellCommand(),
+            $ssh->commands,
+        );
+
+        expect($commands)
+            ->toContain(
+                "'sudo' 'install' '-m' '0400' '/dev/stdin' '/etc/orbit/metrics/grafana/admin-password.orbit-candidate'",
+            )
+            ->toContain(
+                "'sudo' 'chown' '--' '472:472' '/etc/orbit/metrics/grafana/admin-password.orbit-candidate'",
+            );
+    });
+
+    it('never writes standard input straight onto a live configuration path', function (): void {
+        $ssh = new MetricsCapturingSshExecutor([]);
+        $executor = metricsSshExecutor($ssh);
+        $bundle = new MetricsConfigurationRenderer()->render(
+            [['name' => 'metrics-runtime', 'address' => '10.44.0.3']],
+            'admin-password-sentinel',
+        );
+
+        $executor->publishConfiguration(metricsSshNode(), $bundle);
+
+        $installed = [];
+        $moved = [];
+
+        foreach ($ssh->commands as $command) {
+            $arguments = $command->arguments;
+
+            if (in_array('/dev/stdin', $arguments, true) && in_array('install', $arguments, true)) {
+                $installed[] = $arguments[array_key_last($arguments)];
+            }
+
+            if (array_slice($arguments, 0, 4) === ['sudo', 'mv', '-fT', '--']) {
+                $moved[] = $arguments[count($arguments) - 2];
+            }
+        }
+
+        expect($installed)
+            ->toContain('/etc/orbit/metrics/.orbit-owner.orbit-candidate')
+            ->each
+            ->toEndWith('.orbit-candidate')
+            ->and($moved)
+            ->toBe($installed);
     });
 
     it('removes all task-owned configuration artifacts after first-convergence rollback', function (): void {
@@ -192,9 +254,6 @@ describe(MetricsSshExecutor::class, function (): void {
             metricsCommandResult(),
             metricsCommandResult(exitCode: 1),
             metricsCommandResult(),
-            metricsCommandResult(exitCode: 1),
-            metricsCommandResult(),
-            metricsCommandResult(),
             metricsCommandResult(),
             metricsCommandResult(),
             metricsCommandResult(stdout: "unhealthy\n"),
@@ -218,6 +277,8 @@ function metricsSshExecutor(MetricsCapturingSshExecutor $ssh): MetricsSshExecuto
         ssh: $ssh,
         keys: new MetricsSshKeyProviderFake,
         knownHosts: new MetricsKnownHostsStoreFake,
+        healthAttempts: 3,
+        healthPollMicroseconds: 0,
     );
 }
 
@@ -277,3 +338,38 @@ final readonly class MetricsKnownHostsStoreFake implements KnownHostsStore
 
     public function put(string $host, int $port, HostKey $key): void {}
 }
+
+describe('credential file snapshots', function (): void {
+    it('snapshots a lagging Grafana credential file as protected content instead of refusing', function (): void {
+        $renderer = new App\Infrastructure\Metrics\MetricsConfigurationRenderer;
+        $bundle = $renderer->render([['name' => 'app-dev', 'address' => '10.44.0.3']], 'rotated-credential-sentinel');
+        $results = [metricsCommandResult(), metricsCommandResult(stdout: "metrics\n")];
+
+        foreach ($bundle->files as $file) {
+            $results[] = metricsCommandResult();
+            $results[] = metricsCommandResult(
+                stdout: str_ends_with($file->path, 'admin-password')
+                    ? 'stale-credential-sentinel'
+                    : 'public',
+            );
+        }
+
+        $ssh = new MetricsCapturingSshExecutor($results);
+
+        $snapshot = metricsSshExecutor($ssh)->snapshotConfiguration(metricsSshNode(), $bundle);
+
+        $credential = $snapshot->files['/etc/orbit/metrics/grafana/admin-password'];
+        expect($snapshot->directoryExisted)
+            ->toBeTrue()
+            ->and($credential?->contents->sha256())
+            ->toBe(hash('sha256', 'stale-credential-sentinel'))
+            ->and($credential?->mode)
+            ->toBe(0o400)
+            ->and(print_r($snapshot, true))
+            ->not->toContain('stale-credential-sentinel')->and(array_map(
+                static fn (RemoteCommand $command): array => $command->arguments,
+                $ssh->commands,
+            ))
+            ->not->toContain(['sudo', 'sha256sum', '--', '/etc/orbit/metrics/grafana/admin-password']);
+    });
+});

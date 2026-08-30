@@ -51,7 +51,7 @@ final readonly class MetricsPublicationSshExecutor
                     'allow',
                     'in',
                     'on',
-                    'wg0',
+                    'orbit',
                     'proto',
                     'tcp',
                     'from',
@@ -77,11 +77,17 @@ final readonly class MetricsPublicationSshExecutor
         } catch (\Throwable $exception) {
             try {
                 $this->remove($metricsNode, $gatewayAddress);
-            } catch (\Throwable) {
+            } catch (\Throwable $rollback) {
                 throw new ResourceOperationException(
                     'metrics.publication_firewall_rollback_failed',
                     'The Metrics Grafana firewall rule could not be restored.',
                     502,
+                    new ResourceOperationException(
+                        'metrics.publication_firewall_failed',
+                        $exception->getMessage(),
+                        502,
+                        $rollback,
+                    ),
                 );
             }
 
@@ -147,7 +153,7 @@ final readonly class MetricsPublicationSshExecutor
             destination: $metricsAddress,
             port: '3000',
             protocol: 'tcp',
-            inInterface: 'wg0',
+            inInterface: 'orbit',
             outInterface: null,
             family: 'v4',
         );

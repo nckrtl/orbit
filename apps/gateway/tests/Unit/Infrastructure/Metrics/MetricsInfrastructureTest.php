@@ -6,7 +6,6 @@ use App\Infrastructure\Metrics\GrafanaConfigRenderer;
 use App\Infrastructure\Metrics\MetricsPublicationRenderer;
 use App\Infrastructure\Metrics\MetricsRuntimeSpec;
 use App\Infrastructure\Metrics\MetricsService;
-use App\Infrastructure\Metrics\NodeExporterRenderer;
 use App\Infrastructure\Metrics\NodeResourcesDashboardRenderer;
 use App\Infrastructure\Metrics\PrometheusConfigRenderer;
 use App\Infrastructure\Metrics\ProtectedMetricsSecret;
@@ -37,11 +36,10 @@ it('renders stable prometheus targets and labels', function (): void {
         ->and(strpos($config, '"alpha"'))
         ->toBeLessThan(strpos($config, '"zulu"'));
 });
-it('renders grafana, exporter, publication, and secret contracts', function (): void {
+it('renders grafana, publication, and secret contracts', function (): void {
     expect(new GrafanaConfigRenderer()->datasource())
         ->toContain('uid: orbit-prometheus')
-        ->and(new NodeExporterRenderer()->unit())
-        ->toContain('systemd')
+        ->toContain('url: http://127.0.0.1:9090')
         ->and(new MetricsPublicationRenderer()->caddy('10.0.0.3'))
         ->toContain('metrics.orbit')
         ->and(new NodeResourcesDashboardRenderer()->render())
@@ -56,8 +54,6 @@ it('rejects unsafe metrics publication inputs', function (): void {
     expect(fn () => $renderer->caddy('10.0.0.3', '10.0.0.1; rm -rf /'))
         ->toThrow(InvalidArgumentException::class)
         ->and(fn () => $renderer->caddy('10.0.0.3', '10.0.0.1', '/tmp/cert.pem'))
-        ->toThrow(InvalidArgumentException::class)
-        ->and(fn () => new NodeExporterRenderer()->environment('10.0.0.3; evil'))
         ->toThrow(InvalidArgumentException::class);
 });
 

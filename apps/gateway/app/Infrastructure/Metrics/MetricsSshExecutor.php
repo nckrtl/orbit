@@ -54,6 +54,8 @@ final readonly class MetricsSshExecutor implements MetricsRuntimeHost, MetricsCr
         private SshExecutor $ssh,
         private SshKeyProvider $keys,
         private KnownHostsStore $knownHosts,
+        private int $healthAttempts = 30,
+        private int $healthPollMicroseconds = 2_000_000,
     ) {}
 
     public function snapshotConfiguration(
@@ -91,28 +93,10 @@ final readonly class MetricsSshExecutor implements MetricsRuntimeHost, MetricsCr
                 continue;
             }
 
-            if (hash_equals('/etc/orbit/metrics/grafana/admin-password', $file->path)) {
-                $digest = $this->run(
-                    $node,
-                    new RemoteCommand(['sudo', 'sha256sum', '--', $file->path]),
-                    'metrics.credential_file_probe_failed',
-                    'The Grafana credential file could not be verified.',
-                );
-                $actualDigest = explode(' ', trim($digest->stdout), 2)[0];
-
-                if (! hash_equals($file->contents->sha256(), $actualDigest)) {
-                    throw new ResourceOperationException(
-                        'metrics.credential_file_drift',
-                        'The Grafana credential file does not match the encrypted setting.',
-                        409,
-                    );
-                }
-
-                $files[$file->path] = $file;
-
-                continue;
-            }
-
+            // The ownership marker above proves every file in the directory is
+            // Orbit-generated, including the Grafana admin-password file, which
+            // Grafana reads only at first start and which therefore lags behind
+            // a credential reset until the next convergence re-renders it.
             $contents = $this->run(
                 $node,
                 new RemoteCommand(['sudo', 'cat', '--', $file->path]),
@@ -143,8 +127,9 @@ final readonly class MetricsSshExecutor implements MetricsRuntimeHost, MetricsCr
                     'run',
                     '--rm',
                     '--interactive',
+                    '--entrypoint',
+                    '/bin/promtool',
                     MetricsRuntimeSpec::PrometheusImage,
-                    'promtool',
                     'check',
                     'config',
                     '/dev/stdin',
@@ -167,7 +152,7 @@ final readonly class MetricsSshExecutor implements MetricsRuntimeHost, MetricsCr
                     '-g',
                     'root',
                     '-m',
-                    '0750',
+                    '0755',
                     '--',
                     $directory,
                 ]),
@@ -176,15 +161,11 @@ final readonly class MetricsSshExecutor implements MetricsRuntimeHost, MetricsCr
             );
         }
 
-        $this->run(
-            $node,
-            new RemoteCommand(
-                ['sudo', 'install', '-o', 'root', '-g', 'root', '-m', '0640', '/dev/stdin', self::OwnershipMarker],
-                protectedInput: ProtectedInput::fromString("metrics\n"),
-            ),
-            'metrics.configuration_publish_failed',
-            'Metrics configuration ownership could not be published.',
-        );
+        $this->publishFile($node, new MetricsGeneratedFile(
+            path: self::OwnershipMarker,
+            contents: new ProtectedMetricsSecret("metrics\n"),
+            mode: 0o640,
+        ));
 
         foreach ($configuration->files as $file) {
             $this->publishFile($node, $file);
@@ -229,6 +210,10 @@ final readonly class MetricsSshExecutor implements MetricsRuntimeHost, MetricsCr
         );
 
         foreach (array_reverse(self::ConfigurationDirectories) as $directory) {
+            if (! $this->pathExists($node, $directory, directory: true)) {
+                continue;
+            }
+
             $this->run(
                 $node,
                 new RemoteCommand(['sudo', 'rmdir', '--ignore-fail-on-non-empty', '--', $directory]),
@@ -240,9 +225,6 @@ final readonly class MetricsSshExecutor implements MetricsRuntimeHost, MetricsCr
 
     public function convergeContainers(Node $node, array $specs): void
     {
-        $networkSpec = $this->networkSpec($specs);
-        $networkState = $this->inspectNetwork($node, $networkSpec->network);
-        $this->assertNetworkOwnership($networkState, $networkSpec);
         $states = [];
         $backupStates = [];
         $volumeStates = [];
@@ -260,14 +242,8 @@ final readonly class MetricsSshExecutor implements MetricsRuntimeHost, MetricsCr
 
         $createdVolumes = [];
         $replacements = [];
-        $createdNetwork = false;
 
         try {
-            if ($networkState === null) {
-                $this->createNetwork($node, $networkSpec);
-                $createdNetwork = true;
-            }
-
             foreach ($specs as $spec) {
                 $key = $spec->service->value;
                 $state = $states[$key];
@@ -304,7 +280,7 @@ final readonly class MetricsSshExecutor implements MetricsRuntimeHost, MetricsCr
                 $replacements[] = [$spec, $hadPrevious];
                 $this->runContainer($node, $spec);
 
-                if (! $this->healthy($node, $spec->name)) {
+                if (! $this->awaitHealthy($node, $spec->name)) {
                     throw new RuntimeException("Metrics service [{$spec->service->value}] is unhealthy.");
                 }
             }
@@ -314,7 +290,7 @@ final readonly class MetricsSshExecutor implements MetricsRuntimeHost, MetricsCr
                     $this->removeContainer($node, $this->backupName($spec));
                 }
             }
-        } catch (Throwable) {
+        } catch (Throwable $exception) {
             try {
                 foreach (array_reverse($replacements) as [$spec, $hadPrevious]) {
                     $this->removeReplacementContainer($node, $spec);
@@ -333,15 +309,12 @@ final readonly class MetricsSshExecutor implements MetricsRuntimeHost, MetricsCr
                         'A created Metrics volume could not be removed during recovery.',
                     );
                 }
-
-                if ($createdNetwork) {
-                    $this->removeNetwork($node, $networkSpec->network);
-                }
-            } catch (Throwable) {
+            } catch (Throwable $rollback) {
                 throw new ResourceOperationException(
                     'metrics.container_rollback_failed',
                     'Metrics container convergence failed and runtime recovery did not complete.',
                     502,
+                    $rollback,
                 );
             }
 
@@ -349,15 +322,13 @@ final readonly class MetricsSshExecutor implements MetricsRuntimeHost, MetricsCr
                 'metrics.container_convergence_failed',
                 'Metrics container convergence did not complete.',
                 502,
+                $exception,
             );
         }
     }
 
     public function removeContainers(Node $node, array $specs): void
     {
-        $networkSpec = $this->networkSpec($specs);
-        $networkState = $this->inspectNetwork($node, $networkSpec->network);
-        $this->assertNetworkOwnership($networkState, $networkSpec);
         $states = [];
         $backupStates = [];
 
@@ -376,10 +347,6 @@ final readonly class MetricsSshExecutor implements MetricsRuntimeHost, MetricsCr
             if ($backupStates[$spec->service->value] !== null) {
                 $this->removeContainer($node, $this->backupName($spec));
             }
-        }
-
-        if ($networkState !== null) {
-            $this->removeNetwork($node, $networkSpec->network);
         }
     }
 
@@ -503,18 +470,39 @@ final readonly class MetricsSshExecutor implements MetricsRuntimeHost, MetricsCr
         )->succeeded();
     }
 
+    /**
+     * Writes one generated file through a candidate beside its target.
+     *
+     * `install` reads `/dev/stdin` and refuses an existing destination on the
+     * uutils coreutils that Ubuntu ships, so every write lands on a fresh
+     * candidate path and is moved into place. The move is atomic, which the
+     * running containers need anyway.
+     */
     private function publishFile(Node $node, MetricsGeneratedFile $file): void
     {
         $candidate = $file->path.'.orbit-candidate';
-        $mode = sprintf('%04o', $file->mode);
+        $this->run(
+            $node,
+            new RemoteCommand(['sudo', 'rm', '-f', '--', $candidate]),
+            'metrics.configuration_publish_failed',
+            'Metrics configuration could not be staged.',
+        );
         $this->run(
             $node,
             new RemoteCommand(
-                ['sudo', 'install', '-o', $file->owner, '-g', $file->group, '-m', $mode, '/dev/stdin', $candidate],
+                ['sudo', 'install', '-m', sprintf('%04o', $file->mode), '/dev/stdin', $candidate],
                 protectedInput: $file->contents->input(),
             ),
             'metrics.configuration_publish_failed',
             'Metrics configuration could not be staged.',
+        );
+        // Numeric container identities such as the Grafana UID have no passwd
+        // entry on the host; chown accepts them where install rejects them.
+        $this->run(
+            $node,
+            new RemoteCommand(['sudo', 'chown', '--', "{$file->owner}:{$file->group}", $candidate]),
+            'metrics.configuration_publish_failed',
+            'Metrics configuration ownership could not be staged.',
         );
         $this->run(
             $node,
@@ -588,34 +576,6 @@ final readonly class MetricsSshExecutor implements MetricsRuntimeHost, MetricsCr
         );
     }
 
-    /** @return array<string, string>|null */
-    private function inspectNetwork(Node $node, string $name): ?array
-    {
-        $result = $this->raw(
-            $node,
-            new RemoteCommand(['docker', 'network', 'inspect', '--format={{json .Labels}}', '--', $name]),
-        );
-
-        if ($result->succeeded()) {
-            return $this->labels($result->stdout, 'network');
-        }
-
-        $absence = $this->raw(
-            $node,
-            new RemoteCommand(['docker', 'network', 'ls', '--filter', "name=^{$name}$", '--format={{.Name}}']),
-        );
-
-        if ($absence->succeeded() && trim($absence->stdout) === '') {
-            return null;
-        }
-
-        throw new ResourceOperationException(
-            'metrics.network_inspection_failed',
-            'Metrics network state could not be inspected.',
-            502,
-        );
-    }
-
     /** @param array<string, string>|null $labels */
     private function assertContainerOwnership(?array $labels, MetricsContainerSpec $spec): void
     {
@@ -654,25 +614,6 @@ final readonly class MetricsSshExecutor implements MetricsRuntimeHost, MetricsCr
         }
     }
 
-    /** @param array<string, string>|null $labels */
-    private function assertNetworkOwnership(?array $labels, MetricsContainerSpec $spec): void
-    {
-        if ($labels === null) {
-            return;
-        }
-
-        if (
-            ($labels['com.orbit.managed'] ?? null) !== 'metrics'
-            || ($labels['com.orbit.metrics.network'] ?? null) !== 'runtime'
-        ) {
-            throw new ResourceOperationException(
-                'metrics.network_ownership_drift',
-                "Refusing to adopt a foreign Metrics network [{$spec->network}].",
-                409,
-            );
-        }
-    }
-
     /** @param array<string, string> $labels */
     private function containerMatches(array $labels, MetricsContainerSpec $spec): bool
     {
@@ -698,35 +639,6 @@ final readonly class MetricsSshExecutor implements MetricsRuntimeHost, MetricsCr
         );
     }
 
-    private function createNetwork(Node $node, MetricsContainerSpec $spec): void
-    {
-        $arguments = ['docker', 'network', 'create', '--driver', 'bridge'];
-
-        foreach ($spec->networkLabels as $key => $value) {
-            $arguments[] = '--label';
-            $arguments[] = "{$key}={$value}";
-        }
-
-        $arguments[] = '--';
-        $arguments[] = $spec->network;
-        $this->run(
-            $node,
-            new RemoteCommand($arguments),
-            'metrics.network_create_failed',
-            'The Metrics runtime network could not be created.',
-        );
-    }
-
-    private function removeNetwork(Node $node, string $name): void
-    {
-        $this->run(
-            $node,
-            new RemoteCommand(['docker', 'network', 'rm', '--', $name]),
-            'metrics.network_remove_failed',
-            'The proven Metrics runtime network could not be removed.',
-        );
-    }
-
     private function runContainer(Node $node, MetricsContainerSpec $spec): void
     {
         $arguments = [
@@ -739,7 +651,7 @@ final readonly class MetricsSshExecutor implements MetricsRuntimeHost, MetricsCr
             '--restart',
             'unless-stopped',
             '--network',
-            $spec->network,
+            'host',
         ];
 
         foreach ($spec->labels as $key => $value) {
@@ -761,9 +673,6 @@ final readonly class MetricsSshExecutor implements MetricsRuntimeHost, MetricsCr
             $arguments[] = "{$key}={$value}";
         }
 
-        $port = $spec->service === MetricsService::Prometheus ? 9090 : 3000;
-        $arguments[] = '--publish';
-        $arguments[] = "{$spec->publishedAddress}:{$port}:{$port}";
         $arguments[] = '--health-cmd';
         $arguments[] = implode(' ', array_slice($spec->healthCommand, 1));
         $arguments[] = '--health-interval';
@@ -832,6 +741,55 @@ final readonly class MetricsSshExecutor implements MetricsRuntimeHost, MetricsCr
         }
     }
 
+    /**
+     * A freshly started container reports `starting` until its first health
+     * probe succeeds, so a single inspection right after `run` never passes.
+     */
+    private function awaitHealthy(Node $node, string $name): bool
+    {
+        for ($attempt = 1; $attempt <= $this->healthAttempts; $attempt++) {
+            $status = $this->healthStatus($node, $name);
+
+            if ($status === 'healthy') {
+                return true;
+            }
+
+            if ($status !== 'starting') {
+                return false;
+            }
+
+            if ($attempt < $this->healthAttempts && $this->healthPollMicroseconds > 0) {
+                usleep($this->healthPollMicroseconds);
+            }
+        }
+
+        return false;
+    }
+
+    /** Returns the health status while the container runs; anything else ends the wait. */
+    private function healthStatus(Node $node, string $name): ?string
+    {
+        $result = $this->raw(
+            $node,
+            new RemoteCommand([
+                'docker',
+                'container',
+                'inspect',
+                '--format={{.State.Status}} {{.State.Health.Status}}',
+                '--',
+                $name,
+            ]),
+        );
+
+        if (! $result->succeeded()) {
+            return null;
+        }
+
+        [$state, $health] = array_pad(explode(' ', trim($result->stdout), 2), 2, null);
+
+        return $state === 'running' ? $health : null;
+    }
+
     private function healthy(Node $node, string $name): bool
     {
         $result = $this->raw(
@@ -865,20 +823,6 @@ final readonly class MetricsSshExecutor implements MetricsRuntimeHost, MetricsCr
     private function backupName(MetricsContainerSpec $spec): string
     {
         return $spec->name.'-orbit-rollback';
-    }
-
-    /** @param non-empty-list<MetricsContainerSpec> $specs */
-    private function networkSpec(array $specs): MetricsContainerSpec
-    {
-        $networkSpec = $specs[0];
-
-        foreach ($specs as $spec) {
-            if ($spec->network !== $networkSpec->network || $spec->networkLabels !== $networkSpec->networkLabels) {
-                throw new RuntimeException('Metrics container specifications require one shared runtime network.');
-            }
-        }
-
-        return $networkSpec;
     }
 
     private function connection(Node $node): SshConnection

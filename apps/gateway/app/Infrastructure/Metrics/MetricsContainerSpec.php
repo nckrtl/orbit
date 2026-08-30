@@ -9,7 +9,6 @@ final readonly class MetricsContainerSpec
     /**
      * @param array<string, string> $labels
      * @param array<string, string> $volumeLabels
-     * @param array<string, string> $networkLabels
      * @param list<string> $command
      * @param list<string> $mounts
      * @param array<string, string> $environment
@@ -21,11 +20,8 @@ final readonly class MetricsContainerSpec
         public string $image,
         public string $name,
         public string $volume,
-        public string $network,
-        public string $publishedAddress,
         public array $labels,
         public array $volumeLabels,
-        public array $networkLabels,
         public array $command,
         public array $mounts,
         public array $environment,

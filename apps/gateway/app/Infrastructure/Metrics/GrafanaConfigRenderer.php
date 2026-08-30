@@ -6,7 +6,7 @@ namespace App\Infrastructure\Metrics;
 
 final readonly class GrafanaConfigRenderer
 {
-    public function datasource(string $url = 'http://orbit-metrics-prometheus:9090'): string
+    public function datasource(string $url = 'http://127.0.0.1:9090'): string
     {
         if (! filter_var($url, FILTER_VALIDATE_URL)) {
             throw new \InvalidArgumentException('Invalid datasource URL.');

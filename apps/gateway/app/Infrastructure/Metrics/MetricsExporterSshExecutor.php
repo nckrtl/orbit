@@ -25,7 +25,9 @@ use Throwable;
  */
 final readonly class MetricsExporterSshExecutor implements MetricsExporterRuntime
 {
-    private const string ConfigurationPath = '/etc/default/prometheus-node-exporter';
+    private const string ConfigurationPath = '/etc/systemd/system/prometheus-node-exporter.service.d/orbit.conf';
+
+    private const string WireGuardInterface = 'orbit';
 
     private const string FirewallComment = 'orbit:metrics-node-exporter';
 
@@ -183,7 +185,7 @@ final readonly class MetricsExporterSshExecutor implements MetricsExporterRuntim
                 : $this->removeConfiguration($node, 'metrics.exporter_configuration_rollback_failed');
         }
 
-        if ($this->serviceActive($node) !== $state->serviceActive) {
+        if ($state->serviceActive || $this->serviceActive($node)) {
             $this->setServiceActive($node, $state->serviceActive, 'metrics.exporter_service_rollback_failed');
         }
 
@@ -242,7 +244,12 @@ final readonly class MetricsExporterSshExecutor implements MetricsExporterRuntim
 
     private function expectedConfiguration(Node $node): string
     {
-        return self::OwnershipMarker."\nARGS=--web.listen-address={$this->address($node)}:9100\n";
+        return (
+            self::OwnershipMarker
+            ."\n[Service]\nExecStart=\nExecStart=/usr/bin/prometheus-node-exporter --web.listen-address={$this->address(
+                $node,
+            )}:9100\n"
+        );
     }
 
     private function configuration(Node $node): ?string
@@ -292,7 +299,7 @@ final readonly class MetricsExporterSshExecutor implements MetricsExporterRuntim
             destination: $this->address($node),
             port: '9100',
             protocol: 'tcp',
-            inInterface: 'wg0',
+            inInterface: self::WireGuardInterface,
             outInterface: null,
             family: 'v4',
         );
@@ -327,14 +334,41 @@ final readonly class MetricsExporterSshExecutor implements MetricsExporterRuntim
 
     private function publishConfiguration(Node $node, string $configuration, string $errorCode): void
     {
+        // `install` reads `/dev/stdin` and refuses an existing destination on
+        // the uutils coreutils that Ubuntu ships, so the drop-in lands on a
+        // candidate path and is moved into place.
+        $candidate = self::ConfigurationPath.'.orbit-candidate';
+        $this->run(
+            $node,
+            new RemoteCommand(['sudo', 'rm', '-f', '--', $candidate]),
+            $errorCode,
+            'The Metrics exporter configuration could not be staged.',
+        );
         $this->run(
             $node,
             new RemoteCommand(
-                ['sudo', 'install', '-o', 'root', '-g', 'root', '-m', '0644', '/dev/stdin', self::ConfigurationPath],
+                ['sudo', 'install', '-D', '-o', 'root', '-g', 'root', '-m', '0644', '/dev/stdin', $candidate],
                 protectedInput: ProtectedInput::fromString($configuration),
             ),
             $errorCode,
+            'The Metrics exporter configuration could not be staged.',
+        );
+        $this->run(
+            $node,
+            new RemoteCommand(['sudo', 'mv', '-fT', '--', $candidate, self::ConfigurationPath]),
+            $errorCode,
             'The Metrics exporter configuration could not be published.',
+        );
+        $this->reloadUnits($node, $errorCode);
+    }
+
+    private function reloadUnits(Node $node, string $errorCode): void
+    {
+        $this->run(
+            $node,
+            new RemoteCommand(['sudo', 'systemctl', 'daemon-reload']),
+            $errorCode,
+            'The Metrics exporter unit could not be reloaded.',
         );
     }
 
@@ -346,6 +380,7 @@ final readonly class MetricsExporterSshExecutor implements MetricsExporterRuntim
             $errorCode,
             'The Metrics exporter configuration could not be removed.',
         );
+        $this->reloadUnits($node, $errorCode);
     }
 
     private function setServiceActive(Node $node, bool $active, string $errorCode): void
@@ -362,6 +397,17 @@ final readonly class MetricsExporterSshExecutor implements MetricsExporterRuntim
                 ? 'The Metrics exporter service could not be enabled.'
                 : 'The Metrics exporter service could not be disabled.',
         );
+
+        if ($active) {
+            // The package starts the service on install with its own arguments;
+            // a restart applies the Orbit drop-in to an already running unit.
+            $this->run(
+                $node,
+                new RemoteCommand(['sudo', 'systemctl', 'restart', 'prometheus-node-exporter']),
+                $errorCode,
+                'The Metrics exporter service could not be restarted.',
+            );
+        }
     }
 
     private function serviceActive(Node $node): bool
@@ -393,7 +439,7 @@ final readonly class MetricsExporterSshExecutor implements MetricsExporterRuntim
                 'allow',
                 'in',
                 'on',
-                'wg0',
+                self::WireGuardInterface,
                 'proto',
                 'tcp',
                 'from',
@@ -434,11 +480,17 @@ final readonly class MetricsExporterSshExecutor implements MetricsExporterRuntim
     ): never {
         try {
             $this->restore($node, $metricsNode, $state);
-        } catch (Throwable) {
+        } catch (Throwable $rollback) {
             throw new ResourceOperationException(
                 'metrics.exporter_rollback_failed',
                 'Metrics exporter state could not be restored.',
                 502,
+                new ResourceOperationException(
+                    'metrics.exporter_convergence_failed',
+                    $previous->getMessage(),
+                    502,
+                    $rollback,
+                ),
             );
         }
 

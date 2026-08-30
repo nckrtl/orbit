@@ -33,7 +33,9 @@ final readonly class MetricsConfigurationRenderer
         $files = [];
 
         foreach ($publicFiles as $path => $contents) {
-            $files[] = new MetricsGeneratedFile($path, new ProtectedMetricsSecret($contents));
+            // Prometheus (nobody) and Grafana (472) read these bind mounts inside
+            // their containers, so the public files stay world-readable.
+            $files[] = new MetricsGeneratedFile($path, new ProtectedMetricsSecret($contents), mode: 0o644);
         }
 
         $files[] = new MetricsGeneratedFile(
