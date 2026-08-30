@@ -36,11 +36,15 @@ final readonly class RemoveNodeAction
         private NodeSideResidue $residue,
     ) {}
 
-    /** @mago-expect lint:no-boolean-flag-parameter The public removal contract carries the explicit offline claim. */
-    public function execute(Node $node, Node $caller, bool $offline = false): RemoveNodeData
-    {
+    /** @mago-expect lint:no-boolean-flag-parameter The public removal contract carries the explicit claim and consent. */
+    public function execute(
+        Node $node,
+        Node $caller,
+        bool $offline = false,
+        bool $force = false,
+    ): RemoveNodeData {
         $this->guardProtected($node, $caller);
-        $shed = $offline ? $this->shedRoles($node) : null;
+        $shed = $offline ? $this->shedRoles($node, $force) : null;
         $this->guardRemoval($node);
         $peerRemoved = false;
         $result = new RemoveNodeData(
@@ -55,8 +59,9 @@ final readonly class RemoveNodeAction
                 ? []
                 : $this->residue->describe(
                     array_values(array_map(RoleName::from(...), $shed)),
+                    nodeLeavesFleet: true,
                 ),
-            followUp: $shed === null ? null : NodeSideResidue::FOLLOW_UP,
+            followUp: $shed === null ? null : $this->residue->followUp(nodeLeavesFleet: true),
         );
         $node->update(['status' => LifecycleStatus::Removing]);
 
@@ -206,17 +211,33 @@ final readonly class RemoveNodeAction
     /**
      * Sheds every role a proven-unreachable node still holds.
      *
-     * This is what makes removal one command rather than two. The probe runs
-     * first and once: a node that answers gets `null` back and falls through
-     * to the ordinary `node.has_roles` refusal, so `--offline` never quietly
-     * tears roles off a node that is merely slow.
+     * This is what makes removal one command rather than two. The probe gates
+     * the whole shed: a node that answers gets `null` back and falls through
+     * to the ordinary `node.has_roles` refusal, so the claim never tears roles
+     * off a node that is merely answering slowly.
+     *
+     * Each role then probes again on its own, inside `RemoveNodeRoleAction`.
+     * That is deliberate -- liveness is re-checked immediately before every
+     * destructive step rather than trusted from one reading -- but it means a
+     * node that wakes mid-shed stops the removal partway: the roles already
+     * shed stay shed and are reported, the waking role takes the ordinary
+     * fail-closed path and lands in `Failed`, and the call fails. Retrying
+     * once the node is properly up, or properly down, resolves it.
      *
      * @return list<string>|null the roles shed, or null when the node answered
      */
-    private function shedRoles(Node $node): ?array
+    private function shedRoles(Node $node, bool $force): ?array
     {
         if ($this->reachability->degradation($node) === null) {
             return null;
+        }
+
+        if (! $force) {
+            throw new ResourceOperationException(
+                'node.confirmation_required',
+                "Removing unreachable node [{$node->name}] sheds its roles and their resources. Use --force.",
+                422,
+            );
         }
 
         $shed = [];

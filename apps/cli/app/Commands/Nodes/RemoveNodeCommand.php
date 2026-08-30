@@ -44,7 +44,9 @@ final class RemoveNodeCommand extends GatewayCommand
 
         $node = $this->send(
             $connector,
-            new RemoveNodeRequest($nodeId, offline: $this->option('offline') === true),
+            // confirmed() only returns true after --force or an interactive "yes",
+            // either of which is the consent the Gateway requires, so force is always true here.
+            new RemoveNodeRequest($nodeId, force: true, offline: $this->option('offline') === true),
             RemovedNodeResponse::class,
         );
 

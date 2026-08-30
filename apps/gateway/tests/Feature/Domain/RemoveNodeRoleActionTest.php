@@ -769,6 +769,9 @@ describe(RemoveNodeRoleAction::class, function (): void {
             ->toBe(ExporterDegradationReason::Unreachable)
             ->and($removed->retained)
             ->toContain('Caddy site configuration and certificates for the app-dev role')
+            // The node keeps its registration, so the fleet still owns its
+            // exporter; naming it would send the operator to wipe live state.
+            ->not
             ->toContain('Metrics node exporter package, its Orbit systemd drop-in and its firewall rule for port 9100')
             ->and(NodeRole::query()->whereKey($assignment->id)->exists())
             ->toBeFalse()

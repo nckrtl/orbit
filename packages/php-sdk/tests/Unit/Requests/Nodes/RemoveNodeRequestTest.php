@@ -36,7 +36,7 @@ describe(RemoveNodeRequest::class, function (): void {
             ->and($request?->resolveEndpoint())
             ->toBe('/api/v1/nodes/12')
             ->and($mockClient->getLastPendingRequest()?->body()->all())
-            ->toBe(['offline' => false])
+            ->toBe(['force' => false, 'offline' => false])
             ->and($response)
             ->toBeInstanceOf(RemovedNodeResponse::class)
             ->and($response->id)
@@ -51,7 +51,11 @@ describe(RemoveNodeRequest::class, function (): void {
             ->toBe('11111111-1111-4111-8111-111111111111');
     });
 
-    it('sends the offline claim in the request body', function (): void {
+    it('sends the force and offline claims in the request body', function (
+        bool $force,
+        bool $offline,
+        array $expectedBody,
+    ): void {
         $mockClient = new MockClient([
             RemoveNodeRequest::class => MockResponse::make([
                 'data' => [
@@ -65,11 +69,16 @@ describe(RemoveNodeRequest::class, function (): void {
         $connector = new GatewayConnector('https://10.44.0.1');
         $connector->withMockClient($mockClient);
 
-        $connector->send(new RemoveNodeRequest(12, offline: true))->dto();
+        $connector->send(new RemoveNodeRequest(12, force: $force, offline: $offline))->dto();
 
         expect($mockClient->getLastPendingRequest()?->body()->all())
-            ->toBe(['offline' => true]);
-    });
+            ->toBe($expectedBody);
+    })->with([
+        'default (both false)' => [false, false, ['force' => false, 'offline' => false]],
+        'force alone' => [true, false, ['force' => true, 'offline' => false]],
+        'offline alone' => [false, true, ['force' => false, 'offline' => true]],
+        'both true' => [true, true, ['force' => true, 'offline' => true]],
+    ]);
 
     it('preserves stable gateway failure context', function (): void {
         $mockClient = new MockClient([

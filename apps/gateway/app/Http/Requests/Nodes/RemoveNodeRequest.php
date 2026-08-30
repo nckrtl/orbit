@@ -8,6 +8,7 @@ use App\Http\Requests\TopLevelJsonObjectInspector;
 use Closure;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\ValidationException;
+use Illuminate\Validation\Validator;
 use UnexpectedValueException;
 
 final class RemoveNodeRequest extends FormRequest
@@ -15,6 +16,7 @@ final class RemoveNodeRequest extends FormRequest
     public function rules(): array
     {
         return [
+            'force' => ['sometimes', $this->strictBoolean(...)],
             'offline' => ['sometimes', $this->strictBoolean(...)],
         ];
     }
@@ -22,10 +24,37 @@ final class RemoveNodeRequest extends FormRequest
     public function validationData(): array
     {
         try {
-            return app(TopLevelJsonObjectInspector::class)->inspect($this->getContent(), ['offline']);
+            return app(TopLevelJsonObjectInspector::class)->inspect(
+                $this->getContent(),
+                ['force', 'offline'],
+            );
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
         }
+    }
+
+    /** @return list<callable(Validator): void> */
+    public function after(): array
+    {
+        return [function (Validator $validator): void {
+            if ($this->input('offline') !== true || $this->input('force') === true) {
+                return;
+            }
+
+            // Offline removal sheds the node's roles and deletes their
+            // instances, workspaces and processes. That blast radius needs
+            // consent at the Gateway, exactly as the role route requires it.
+            $validator->errors()->add(
+                'force',
+                'The force field must be true when offline removal is requested.',
+            );
+        }];
+    }
+
+    /** Consent to the blast radius, which offline removal widens. */
+    public function force(): bool
+    {
+        return $this->validated('force', false) === true;
     }
 
     /**

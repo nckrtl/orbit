@@ -73,7 +73,7 @@ final class NodesController extends Controller
         ]);
 
         return response()->json([
-            'data' => $action->execute($node, $caller, $removal->offline())->toArray(),
+            'data' => $action->execute($node, $caller, $removal->offline(), $removal->force())->toArray(),
             'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')],
         ]);
     }

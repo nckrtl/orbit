@@ -157,7 +157,7 @@ final readonly class RemoveNodeRoleAction
             dependencies: $dependencies,
             degradation: $degradation,
             retained: $degradation instanceof ExporterDegradationReason
-                ? $this->residue->describe([$role])
+                ? $this->residue->describe([$role], nodeLeavesFleet: false)
                 : [],
         );
     }

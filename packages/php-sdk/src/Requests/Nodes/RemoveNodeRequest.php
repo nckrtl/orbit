@@ -20,6 +20,7 @@ final class RemoveNodeRequest extends GatewayRequest implements HasBody
 
     public function __construct(
         private readonly int $nodeId,
+        private readonly bool $force = false,
         private readonly bool $offline = false,
     ) {}
 
@@ -36,10 +37,11 @@ final class RemoveNodeRequest extends GatewayRequest implements HasBody
         return RemovedNodeResponse::fromGatewayData($data, $requestId);
     }
 
-    /** @return array{offline: bool} */
+    /** @return array{force: bool, offline: bool} */
     protected function defaultBody(): array
     {
         return [
+            'force' => $this->force,
             'offline' => $this->offline,
         ];
     }

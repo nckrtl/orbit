@@ -436,7 +436,7 @@ it('removes an unreachable node holding a role in one command', function (): voi
 
     $response = $this
         ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
-        ->deleteJson("/api/v1/nodes/{$target->id}", ['offline' => true]);
+        ->deleteJson("/api/v1/nodes/{$target->id}", ['force' => true, 'offline' => true]);
 
     $response
         ->assertOk()
@@ -499,7 +499,7 @@ it('leaves a reachable node alone even when the offline claim is made', function
 
     $this
         ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
-        ->deleteJson("/api/v1/nodes/{$target->id}", ['offline' => true])
+        ->deleteJson("/api/v1/nodes/{$target->id}", ['force' => true, 'offline' => true])
         ->assertConflict()
         ->assertJsonPath('error.code', 'node.has_roles');
 
@@ -531,7 +531,7 @@ it('never sheds roles from a protected node, whatever the offline claim says', f
 
     $this
         ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
-        ->deleteJson("/api/v1/nodes/{$target->id}", ['offline' => true])
+        ->deleteJson("/api/v1/nodes/{$target->id}", ['force' => true, 'offline' => true])
         ->assertConflict()
         ->assertJsonPath('error.code', match ($role) {
             RoleName::Gateway => 'node.gateway_removal_forbidden',
@@ -557,10 +557,57 @@ it('rejects an offline claim that is not a boolean', function (): void {
 
     $this
         ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
-        ->deleteJson("/api/v1/nodes/{$target->id}", ['offline' => 'yes'])
+        ->deleteJson("/api/v1/nodes/{$target->id}", ['force' => true, 'offline' => 'yes'])
         ->assertStatus(422);
 
     expect($target->fresh())->not->toBeNull();
+});
+
+it('refuses to shed roles from an unreachable node without consent', function (): void {
+    $caller = remove_node_record(name: 'operator', wireguardAddress: '10.44.0.2');
+    $target = remove_node_record(name: 'retired', wireguardAddress: '10.44.0.3');
+    $caller->accessibleNodes()->attach($target);
+    remove_node_offline_probe($target);
+    remove_node_role_fixture($target, RoleName::AppProd);
+
+    // Offline removal deletes the node's instances, workspaces and processes.
+    // Before it existed this call was refused outright, so the widened blast
+    // radius must not be reachable on the claim alone.
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
+        ->deleteJson("/api/v1/nodes/{$target->id}", ['offline' => true])
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'validation.failed')
+        ->assertJsonPath(
+            'error.details.force.0',
+            'The force field must be true when offline removal is requested.',
+        );
+
+    expect($target->fresh())
+        ->not
+        ->toBeNull()
+        ->and(NodeRole::query()->where('node_id', $target->id)->sole()->status)
+        ->toBe(LifecycleStatus::Active)
+        ->and(Instance::query()->where('node_id', $target->id)->exists())
+        ->toBeTrue()
+        ->and($this->dns->convergences)
+        ->toBe(0);
+});
+
+it('enforces consent in the action itself, not only at the request boundary', function (): void {
+    $caller = remove_node_record(name: 'operator', wireguardAddress: '10.44.0.2');
+    $target = remove_node_record(name: 'retired', wireguardAddress: '10.44.0.3');
+    remove_node_offline_probe($target);
+    remove_node_role_fixture($target, RoleName::AppProd);
+
+    expect(fn () => app(App\Actions\Nodes\RemoveNodeAction::class)->execute($target, $caller, offline: true))
+        ->toThrow(ResourceOperationException::class);
+
+    expect($target->fresh())
+        ->not
+        ->toBeNull()
+        ->and(NodeRole::query()->where('node_id', $target->id)->sole()->status)
+        ->toBe(LifecycleStatus::Active);
 });
 
 function remove_node_offline_probe(Node $unreachable): void

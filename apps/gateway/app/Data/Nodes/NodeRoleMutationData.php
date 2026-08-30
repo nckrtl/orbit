@@ -53,7 +53,9 @@ final class NodeRoleMutationData extends Data
             removed: true,
             degradation: $outcome->degradation?->value,
             retainedOnNode: $outcome->retained,
-            followUp: $outcome->retained === [] ? null : NodeSideResidue::FOLLOW_UP,
+            // The node keeps its registration, so only this role's leftovers
+            // are stranded; the node-local wipe would take managed state too.
+            followUp: $outcome->retained === [] ? null : NodeSideResidue::FOLLOW_UP_ROLE_REMOVED,
         );
     }
 }

@@ -81,7 +81,7 @@ it('sends node removal to the active gateway as json', function (): void {
         ->and($mockClient->getLastPendingRequest()?->getUrl())
         ->toBe('https://10.44.0.1/api/v1/nodes/2')
         ->and($mockClient->getLastPendingRequest()?->body()->all())
-        ->toBe(['offline' => false])
+        ->toBe(['force' => true, 'offline' => false])
         ->and($mockClient->getRecordedResponses())
         ->toHaveCount(1);
 });
@@ -101,7 +101,24 @@ it('sends the offline claim and returns the full degraded json payload', functio
         ->assertExitCode(0);
 
     expect($mockClient->getLastPendingRequest()?->body()->all())
-        ->toBe(['offline' => true]);
+        ->toBe(['force' => true, 'offline' => true]);
+});
+
+it('sends force true when an interactive confirmation grants consent', function (): void {
+    $mockClient = MockClient::global([
+        RemoveNodeRequest::class => MockResponse::make([
+            'data' => removed_node_degraded_payload(),
+            'meta' => ['request_id' => remove_node_request_id()],
+        ]),
+    ]);
+
+    $this
+        ->artisan('node:remove', ['node' => '3', '--offline' => true])
+        ->expectsConfirmation('Remove this node from the gateway?', 'yes')
+        ->assertExitCode(0);
+
+    expect($mockClient->getLastPendingRequest()?->body()->all())
+        ->toBe(['force' => true, 'offline' => true]);
 });
 
 it('shows deterministic human output for node removal', function (): void {
