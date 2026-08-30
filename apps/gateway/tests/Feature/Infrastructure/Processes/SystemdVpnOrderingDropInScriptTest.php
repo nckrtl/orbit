@@ -77,3 +77,64 @@ it('replaces a drifted drop-in and reloads systemd again', function (): void {
         $harness->cleanup();
     }
 });
+
+it('leaves the host untouched when no stale dnsmasq drop-in is installed', function (): void {
+    $harness = new VpnOrderingDropInHarness;
+
+    try {
+        [$exitCode, $serviceCalls] = $harness->runRemoval('dnsmasq');
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($serviceCalls)
+            ->toBeEmpty()
+            ->and($harness->installedContents('dnsmasq'))
+            ->toBeNull();
+    } finally {
+        $harness->cleanup();
+    }
+});
+
+it('removes a stale dnsmasq drop-in, reloads systemd, and restarts dnsmasq', function (): void {
+    $harness = new VpnOrderingDropInHarness;
+
+    try {
+        $harness->run('dnsmasq');
+        [$exitCode, $serviceCalls] = $harness->runRemoval('dnsmasq');
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($harness->installedContents('dnsmasq'))
+            ->toBeNull()
+            ->and($serviceCalls)
+            ->toBe(['daemon-reload', 'restart dnsmasq'])
+            ->and(is_dir(dirname($harness->dropIn()->path('dnsmasq'))))
+            ->toBeFalse();
+    } finally {
+        $harness->cleanup();
+    }
+});
+
+it('removes a drifted stale drop-in and then stays quiet on the next convergence', function (): void {
+    $harness = new VpnOrderingDropInHarness;
+
+    try {
+        $harness->run('dnsmasq');
+        file_put_contents(filename: $harness->dropIn()->path('dnsmasq'), data: "[Unit]\n");
+        [$firstExitCode, $firstServiceCalls] = $harness->runRemoval('dnsmasq');
+        [$secondExitCode, $secondServiceCalls] = $harness->runRemoval('dnsmasq');
+
+        expect($firstExitCode)
+            ->toBe(0)
+            ->and($firstServiceCalls)
+            ->toBe(['daemon-reload', 'restart dnsmasq'])
+            ->and($secondExitCode)
+            ->toBe(0)
+            ->and($secondServiceCalls)
+            ->toBeEmpty()
+            ->and($harness->installedContents('dnsmasq'))
+            ->toBeNull();
+    } finally {
+        $harness->cleanup();
+    }
+});

@@ -204,7 +204,6 @@ it('defines the exact stable issue-code catalog for every Doctor family', functi
             'role.vpn_inactive',
             'role.vpn_projection_mismatch',
             'role.dns_projection_mismatch',
-            'role.vpn_ordering_missing',
             'role.inspection_failed',
             'role.node_unreachable',
         ],

@@ -57,3 +57,27 @@ it('honours an alternative unit directory for both the path and the script argum
         ->and($dropIn->invocation('dnsmasq')->timeout)
         ->toBe(60.0);
 });
+
+it('renders a removal script that only converges the unit when a stale drop-in existed', function (): void {
+    $dropIn = new SystemdVpnOrderingDropIn;
+    $script = $dropIn->removalScript();
+
+    expect($script)
+        ->toContain(
+            'directory=$unit_directory/$service.service.d',
+            'managed=$directory/orbit-vpn.conf',
+            'if [ ! -e "$managed" ]; then',
+            'rm -f -- "$managed"',
+            'rmdir --ignore-fail-on-non-empty -- "$directory"',
+            'systemctl daemon-reload',
+            'systemctl restart "$service"',
+        )
+        ->and($dropIn->removalArguments('dnsmasq'))
+        ->toBe(['sudo', 'bash', '-seu', '--', 'dnsmasq', '/etc/systemd/system'])
+        ->and($dropIn->removalInvocation('dnsmasq')->arguments)
+        ->toBe(['sudo', 'bash', '-seu', '--', 'dnsmasq', '/etc/systemd/system'])
+        ->and($dropIn->removalInvocation('dnsmasq')->input)
+        ->toBe($script)
+        ->and($dropIn->removalInvocation('dnsmasq')->timeout)
+        ->toBe(60.0);
+});

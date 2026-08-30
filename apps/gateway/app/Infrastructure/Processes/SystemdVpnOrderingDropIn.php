@@ -9,6 +9,12 @@ namespace App\Infrastructure\Processes;
  * after the managed WireGuard interface. Services that bind a WireGuard
  * address fail on a cold boot when systemd starts them before
  * `wg-quick@orbit.service` brings that address up.
+ *
+ * A service that itself provides `nss-lookup.target` must not carry this
+ * drop-in: `wg-quick@.service` is ordered after that target, so the drop-in
+ * closes an ordering cycle that systemd breaks by deleting a job. Those
+ * services use the removal script instead and bind their interface
+ * dynamically.
  */
 final readonly class SystemdVpnOrderingDropIn
 {
@@ -75,6 +81,40 @@ final readonly class SystemdVpnOrderingDropIn
             arguments: $this->arguments($service),
             timeout: 60.0,
             input: $this->script(),
+        );
+    }
+
+    /** @return non-empty-list<string> */
+    public function removalArguments(string $service): array
+    {
+        return $this->arguments($service);
+    }
+
+    public function removalScript(): string
+    {
+        $fileName = self::FILE_NAME;
+
+        return <<<BASH
+            service=\$1
+            unit_directory=\$2
+            directory=\$unit_directory/\$service.service.d
+            managed=\$directory/{$fileName}
+            if [ ! -e "\$managed" ]; then
+                exit 0
+            fi
+            rm -f -- "\$managed"
+            rmdir --ignore-fail-on-non-empty -- "\$directory"
+            systemctl daemon-reload
+            systemctl restart "\$service"
+            BASH;
+    }
+
+    public function removalInvocation(string $service): ProcessInvocation
+    {
+        return new ProcessInvocation(
+            arguments: $this->removalArguments($service),
+            timeout: 60.0,
+            input: $this->removalScript(),
         );
     }
 }
