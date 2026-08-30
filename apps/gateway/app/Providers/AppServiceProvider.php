@@ -6,6 +6,7 @@ namespace App\Providers;
 
 use App\Actions\Gateway\BootstrapGatewayAction;
 use App\Actions\Gateway\GatewayBootstrapIdentityValidator;
+use App\Actions\Gateway\GatewayOperatingSystemGuard;
 use App\Actions\Nodes\AssignRoleAction;
 use App\Console\GatewayBoostInstallCommand;
 use App\Domain\AppDev\AppDevCaddyManager;
@@ -31,6 +32,7 @@ use App\Domain\Doctor\RoleStateInspector;
 use App\Domain\Doctor\WorkspaceStateInspector;
 use App\Domain\Firewall\FirewallInspector;
 use App\Domain\Firewall\FirewallManager;
+use App\Domain\Gateway\GatewaySelfAccessConverger;
 use App\Domain\Gateway\GatewayVpnConverger;
 use App\Domain\Gateway\GatewayWebConverger;
 use App\Domain\Metrics\MetricsCredentialManager;
@@ -41,7 +43,9 @@ use App\Domain\Metrics\MetricsPublicationManager as MetricsPublicationManagerCon
 use App\Domain\Metrics\MetricsRoleManager;
 use App\Domain\Metrics\MetricsRuntimeLifecycle;
 use App\Domain\Metrics\MetricsStatusReader;
+use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\NodeConverger;
+use App\Domain\Nodes\NodeProvisioningLock;
 use App\Domain\Nodes\NodeRoleDependencyInspector;
 use App\Domain\Nodes\NodeRoleDependentCleaner;
 use App\Domain\Nodes\NodeRoleFirewallManager;
@@ -89,6 +93,7 @@ use App\Infrastructure\Gateway\GatewayFpmConfigRenderer;
 use App\Infrastructure\Gateway\NativeGatewayCaddyConverger;
 use App\Infrastructure\Gateway\NativeGatewayCertificatePublisher;
 use App\Infrastructure\Gateway\NativeGatewayFpmConverger;
+use App\Infrastructure\Gateway\NativeGatewaySelfAccessConverger;
 use App\Infrastructure\Gateway\NativeGatewayWebConverger;
 use App\Infrastructure\Metrics\MetricsExporterRuntime;
 use App\Infrastructure\Metrics\MetricsExporterSshExecutor;
@@ -103,9 +108,11 @@ use App\Infrastructure\Metrics\NativeMetricsRoleManager;
 use App\Infrastructure\Metrics\NativeMetricsStatusReader;
 use App\Infrastructure\Nodes\EloquentNodeRoleDependencyInspector;
 use App\Infrastructure\Nodes\NativeNodeConverger;
+use App\Infrastructure\Nodes\NativeNodeProvisioningLock;
 use App\Infrastructure\Nodes\NativeNodeRoleDependentCleaner;
 use App\Infrastructure\Nodes\Roles\NativeNodeRoleFirewallManager;
 use App\Infrastructure\Nodes\Roles\NativeRoleBaselineConverger;
+use App\Infrastructure\Nodes\SshManagedUserAccountResolver;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\ProcessRunner;
@@ -188,6 +195,8 @@ final class AppServiceProvider extends ServiceProvider
 
     public function register(): void
     {
+        $this->app->singleton(ManagedUserAccountResolver::class, SshManagedUserAccountResolver::class);
+        $this->app->scoped(NodeProvisioningLock::class, NativeNodeProvisioningLock::class);
         $this->app->scoped(ToolManagerScopeLock::class, NativeToolManagerScopeLock::class);
 
         if (class_exists(GuidelineComposer::class)) {
@@ -258,15 +267,26 @@ final class AppServiceProvider extends ServiceProvider
             ),
         );
         $this->app->singleton(
+            GatewaySelfAccessConverger::class,
+            static fn (): GatewaySelfAccessConverger => new NativeGatewaySelfAccessConverger(
+                processes: app(ProcessRunner::class),
+                knownHosts: app(KnownHostsStore::class),
+                sshKeys: app(SshKeyProvider::class),
+                homeDirectory: self::resolveManagedUserHomeDirectory(...),
+            ),
+        );
+        $this->app->singleton(
             BootstrapGatewayAction::class,
             static fn (): BootstrapGatewayAction => new BootstrapGatewayAction(
                 assignRole: app(AssignRoleAction::class),
                 identity: app(GatewayBootstrapIdentityValidator::class),
+                operatingSystem: app(GatewayOperatingSystemGuard::class),
                 vpnSettings: app(VpnSettings::class),
                 processes: app(ProcessRunner::class),
                 files: app(ProtectedFileWriter::class),
                 vpn: app(GatewayVpnConverger::class),
                 web: app(GatewayWebConverger::class),
+                selfAccess: app(GatewaySelfAccessConverger::class),
                 orbitHome: rtrim(string: (string) config('orbit.home'), characters: '/'),
             ),
         );
@@ -316,5 +336,12 @@ final class AppServiceProvider extends ServiceProvider
     public function boot(ActivityPropertiesObserver $activityPropertiesObserver): void
     {
         Activity::observe($activityPropertiesObserver);
+    }
+
+    private static function resolveManagedUserHomeDirectory(string $user): string|false
+    {
+        $account = posix_getpwnam($user);
+
+        return is_array($account) ? (string) $account['dir'] : false;
     }
 }

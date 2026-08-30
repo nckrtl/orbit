@@ -2,6 +2,8 @@
 
 - Issue:
 - Outcome:
+- Proof: automated or incus
+- Composition (incus only): gateway + app-dev + app-prod
 
 ## Decision context
 
@@ -9,31 +11,28 @@
 
 All required ADRs must already exist on `main`.
 
-## Verification
+## Candidate and proof
+
+- Candidate SHA:
+- Topology: `gateway_app-dev_app-prod` or none
+- Attempt ID:
+- Proof status: proved or not-applicable
+- Acceptance evidence: one line per acceptance criterion with its observed
+  result from the proof record or the automated check
+
+## Checks
 
 - [ ] Focused tests pass
 - [ ] Full affected project suites pass without TIA
 - [ ] Project quality checks pass
-- [ ] Current-head CI passes before any candidate rollout or live mutation
-- Proof venue: automated or live
-- Live nodes (if applicable): exact IDs, names, and roles from
-  `orbit node:list --json`
-- Live access method (if applicable): Orbit CLI, Gateway API, or pinned direct
-  SSH
-- Pre-rollout review (live only): review ID, candidate SHA, `rollout_approved`
-- Checkout identity (if applicable): candidate and deployed paths/commit SHAs
-- Ownership baseline (if applicable): task-owned, shared, and pre-existing
-  resources
-- Mutation evidence (if applicable): one entry per live write, including recovery
-  artifacts, candidate files, Caddy or PHP-FPM files and symlinks, and service
-  reloads. Immediately before each write, record and inspect a fresh
-  `orbit node:list --json` request. Record the exact node, candidate SHA,
-  mutation, task-owned resources, pre-state, recovery, result, and cleanup
-- Recovery evidence (if applicable): verified recovery action and owned recovery artifacts
-- Post-proof absence evidence (if applicable): task-owned resources absent;
-  shared and pre-existing state unchanged
-- Final review: review ID, candidate SHA, `post_proof` and `approved`
-- Evidence:
+- Checks: command and result per check
+- Live suites (harness-touching diff only): `bin/e2e-live <sha> --rolling`
+  summary line per suite, or not-applicable
+- CI: run URL and SHA, or pending
+
+## Review
+
+- Review: review ID, candidate SHA, `approved`
 
 ## Compound
 
@@ -41,9 +40,8 @@ All required ADRs must already exist on `main`.
 - Reusable solution notes: none
 - Why no durable documentation is needed, if none:
 
-## Absence and drift
+## Post-deployment actions
 
-- [ ] Every task-owned proof and recovery resource is verified absent before
-  final review
-- [ ] Ownership and shared-state drift checks pass without merge-verifier cleanup
+- Post-deployment actions: none, or one entry per action with `target`,
+  `operation`, `reason`, `recovery`, and `verification`
 - [ ] No credentials, runtime state, or generated artifacts are committed

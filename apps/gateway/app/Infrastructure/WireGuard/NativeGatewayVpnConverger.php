@@ -17,6 +17,7 @@ use App\Infrastructure\Firewall\UfwStoredRuleProbe;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
+use App\Infrastructure\Processes\SystemdVpnOrderingDropIn;
 use App\Models\Node;
 use Closure;
 
@@ -45,6 +46,8 @@ final readonly class NativeGatewayVpnConverger implements GatewayVpnConverger
         private UfwStatusParser $firewallParser,
         private string $orbitHome,
         private UfwStoredRuleParser $storedFirewallParser = new UfwStoredRuleParser,
+        private SystemdVpnOrderingDropIn $vpnOrdering = new SystemdVpnOrderingDropIn,
+        private RetiredDnsmasqSnippets $stockDnsSnippets = new RetiredDnsmasqSnippets,
     ) {}
 
     public function converge(Node $gateway, BootstrapGatewayData $data): void
@@ -210,6 +213,8 @@ final readonly class NativeGatewayVpnConverger implements GatewayVpnConverger
 
     private function convergeDns(BootstrapGatewayData $data): void
     {
+        $this->removeDnsOrderingDropIn();
+        $this->retireStockDnsSnippets();
         $interfaces = $this->privateInterfaces($data);
         $configuration = implode(PHP_EOL, [
             '# Managed by Orbit.',
@@ -217,6 +222,9 @@ final readonly class NativeGatewayVpnConverger implements GatewayVpnConverger
             'bind-dynamic',
             'domain-needed',
             'bogus-priv',
+            'no-resolv',
+            'server=1.1.1.1',
+            'server=8.8.8.8',
             "local=/{$data->domain}/",
             "host-record={$data->name}.{$data->domain},{$data->wireguardAddress}",
             '',
@@ -235,6 +243,14 @@ final readonly class NativeGatewayVpnConverger implements GatewayVpnConverger
                 backup=\$(mktemp /etc/dnsmasq.d/.orbit-vpn.backup.XXXXXX)
                 had_managed=0
                 trap 'rm -rf -- "\$validation"; rm -f -- "\$candidate" "\$backup"' EXIT
+                restart_dnsmasq() {
+                    if systemctl restart dnsmasq; then
+                        return 0
+                    fi
+                    printf 'dnsmasq did not restart. Last journal lines:\\n' >&2
+                    journalctl --unit=dnsmasq --lines=20 --no-pager >&2 || true
+                    return 1
+                }
                 exec 9>/run/lock/orbit-dnsmasq.lock
                 flock -w 30 9
                 if [ -f "\$managed" ]; then
@@ -250,12 +266,12 @@ final readonly class NativeGatewayVpnConverger implements GatewayVpnConverger
                     if systemctl is-active --quiet dnsmasq; then
                         exit 0
                     fi
-                    systemctl restart dnsmasq
+                    restart_dnsmasq
                     exit 0
                 fi
                 install -o root -g root -m 0644 -- "\$validation/fragments/orbit-vpn.conf" "\$candidate"
                 mv -fT -- "\$candidate" "\$managed"
-                if ! systemctl restart dnsmasq; then
+                if ! restart_dnsmasq; then
                     if [ "\$had_managed" = 1 ]; then
                         install -o root -g root -m 0644 -- "\$backup" "\$managed"
                     else
@@ -265,6 +281,40 @@ final readonly class NativeGatewayVpnConverger implements GatewayVpnConverger
                     exit 1
                 fi
                 BASH,
+        );
+    }
+
+    /**
+     * Retires the stock dnsmasq snippets that cannot coexist with the managed
+     * fragment. `dnsmasq --test` accepts a conf directory that mixes
+     * `bind-interfaces` and `bind-dynamic`, so only the restart in the
+     * fragment step exposes the conflict. That restart runs because
+     * `systemctl is-active` also reports a failed unit as inactive.
+     */
+    private function retireStockDnsSnippets(): void
+    {
+        $this->run(
+            step: 'vpn-dns-conflicts',
+            errorCode: 'vpn.dns_config_failed',
+            arguments: $this->stockDnsSnippets->arguments(),
+            input: $this->stockDnsSnippets->script(),
+        );
+    }
+
+    /**
+     * Removes the drop-in that earlier Orbit versions installed to order
+     * dnsmasq after `wg-quick@orbit.service`. dnsmasq provides
+     * `nss-lookup.target`, which `wg-quick@.service` is ordered after, so the
+     * drop-in closed an ordering cycle that systemd broke by deleting a job.
+     * The managed fragment binds `orbit` dynamically instead.
+     */
+    private function removeDnsOrderingDropIn(): void
+    {
+        $this->run(
+            step: 'vpn-dns-ordering',
+            errorCode: 'vpn.dns_config_failed',
+            arguments: $this->vpnOrdering->removalArguments('dnsmasq'),
+            input: $this->vpnOrdering->removalScript(),
         );
     }
 

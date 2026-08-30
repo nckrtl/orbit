@@ -9,6 +9,7 @@ use App\Domain\AppDev\AppDevRuntimeConverger;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\AppProd\AppProdRuntimeConverger;
 use App\Domain\Instances\CertificateMode;
+use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -23,6 +24,7 @@ final readonly class CreateInstanceAction
     public function __construct(
         private AppDevRuntimeConverger $runtime,
         private AppProdRuntimeConverger $productionRuntime,
+        private ManagedUserAccountResolver $managedUserAccountResolver,
     ) {}
 
     /** @return array{instance: Instance, created: bool} */
@@ -62,13 +64,15 @@ final readonly class CreateInstanceAction
             );
         }
 
+        $checkoutPath = $role === RoleName::AppProd
+            ? "/var/www/{$app->slug}/{$data->name}"
+            : $this->developmentCheckoutPath($node, $app);
+
         $instance->fill([
             'name' => $data->name,
             'node_id' => $node->id,
             'environment' => $data->environment ?? ($role === RoleName::AppProd ? 'production' : 'development'),
-            'checkout_path' => $role === RoleName::AppProd
-                ? "/var/www/{$app->slug}/{$data->name}"
-                : "/home/orbit/apps/{$app->slug}",
+            'checkout_path' => $checkoutPath,
             'document_root' => $data->documentRoot,
             'php_version' => $data->phpVersion,
             'hostname' => $hostname,
@@ -100,6 +104,20 @@ final readonly class CreateInstanceAction
         $this->markActive($instance);
 
         return ['instance' => $instance->refresh(), 'created' => $created];
+    }
+
+    private function developmentCheckoutPath(Node $node, OrbitApp $app): string
+    {
+        try {
+            $account = $this->managedUserAccountResolver->resolve($node);
+        } catch (Throwable) {
+            throw new ResourceOperationException(
+                'node.managed_user_unavailable',
+                'Managed user account is unavailable.',
+            );
+        }
+
+        return "{$account->home}/apps/{$app->slug}";
     }
 
     private function resolveAppRole(Node $node, CreateInstanceData $data): RoleName

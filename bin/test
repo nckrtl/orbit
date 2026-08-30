@@ -3,7 +3,8 @@
 set -euo pipefail
 
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-projects=("apps/cli" "apps/gateway" "packages/php-sdk")
+cd "$repository_root"
+projects=("apps/cli" "apps/gateway" "apps/e2e" "packages/php-sdk")
 available_processes="${ORBIT_TEST_PROCESSES:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || printf '3')}"
 
 if [[ ! "$available_processes" =~ ^[1-9][0-9]*$ ]]; then
@@ -37,7 +38,7 @@ trap cleanup EXIT
 for project in "${projects[@]}"; do
     (
         cd "$repository_root/$project"
-        vendor/bin/pest --parallel --processes="$suite_processes" --no-tia --compact
+        vendor/bin/pest --parallel --processes="$suite_processes" --no-tia --compact --exclude-group=incus-live
     ) >"$log_directory/${project//\//-}.log" 2>&1 &
     pids+=("$!")
 done

@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 use App\Actions\Doctor\RoleDoctorProbe;
 use App\Data\Doctor\DoctorIssueData;
+use App\Domain\Doctor\DoctorFamilyStatus;
 use App\Domain\Doctor\DoctorInspectionException;
+use App\Domain\Doctor\DoctorIssueKind;
 use App\Domain\Doctor\DoctorNodeContext;
 use App\Domain\Doctor\GatewayVpnInspectionData;
 use App\Domain\Doctor\GatewayVpnStateInspector;
@@ -135,7 +137,7 @@ it('reports the complete role and VPN drift matrix in stable field order', funct
     $vpnCalls = 0;
     $report = new RoleDoctorProbe(
         role_probe_state_inspector($roleCalls, new RoleInspectionData(false, false, false)),
-        role_probe_vpn_inspector($vpnCalls, new GatewayVpnInspectionData(false, false, false)),
+        role_probe_vpn_inspector($vpnCalls, new GatewayVpnInspectionData(false, false, false, false)),
     )->inspect(role_probe_context($node));
 
     expect($report->checked)
@@ -148,6 +150,7 @@ it('reports the complete role and VPN drift matrix in stable field order', funct
             'role.vpn_inactive',
             'role.vpn_projection_mismatch',
             'role.dns_projection_mismatch',
+            'role.dns_snippet_conflict',
         ])
         ->and(array_unique(array_map(
             static fn (DoctorIssueData $issue): int|string|null => $issue->resourceId,
@@ -156,6 +159,56 @@ it('reports the complete role and VPN drift matrix in stable field order', funct
         ->toBe([$role->id])
         ->and(json_encode($report))
         ->not->toContain('package-output', 'service-output', 'private-key', 'vpn-setting');
+});
+
+it('reports a mismatched private DNS projection as bounded drift instead of an inspection failure', function (): void {
+    $node = role_probe_node('vpn-dns-projection');
+    $role = role_probe_assignment($node, RoleName::Vpn);
+    $roleCalls = 0;
+    $vpnCalls = 0;
+    $report = new RoleDoctorProbe(
+        role_probe_state_inspector($roleCalls),
+        role_probe_vpn_inspector($vpnCalls, new GatewayVpnInspectionData(true, true, false, true)),
+    )->inspect(role_probe_context($node));
+
+    expect($report->status)
+        ->toBe(DoctorFamilyStatus::Drift)
+        ->and(array_map(
+            static fn (DoctorIssueData $issue): array => [
+                $issue->resourceId,
+                $issue->code,
+                $issue->kind,
+                $issue->expected,
+                $issue->observed,
+            ],
+            $report->issues,
+        ))
+        ->toBe([[$role->id, 'role.dns_projection_mismatch', DoctorIssueKind::Drift, true, false]]);
+});
+
+it('reports a returned stock DNS snippet as bounded drift', function (): void {
+    $node = role_probe_node('vpn-dns-snippet');
+    $role = role_probe_assignment($node, RoleName::Vpn);
+    $roleCalls = 0;
+    $vpnCalls = 0;
+    $report = new RoleDoctorProbe(
+        role_probe_state_inspector($roleCalls),
+        role_probe_vpn_inspector($vpnCalls, new GatewayVpnInspectionData(true, true, true, false)),
+    )->inspect(role_probe_context($node));
+
+    expect($report->status)
+        ->toBe(DoctorFamilyStatus::Drift)
+        ->and(array_map(
+            static fn (DoctorIssueData $issue): array => [
+                $issue->resourceId,
+                $issue->code,
+                $issue->kind,
+                $issue->expected,
+                $issue->observed,
+            ],
+            $report->issues,
+        ))
+        ->toBe([[$role->id, 'role.dns_snippet_conflict', DoctorIssueKind::Drift, true, false]]);
 });
 
 it('retains SQLite findings and emits one bounded issue when the node is unreachable', function (): void {
@@ -266,7 +319,7 @@ function role_probe_node(string $name): Node
         'platform' => 'linux',
         'public_ssh_host' => "192.0.2.{$number}",
         'public_ssh_port' => 22,
-        'ssh_user' => 'orbit',
+        'user' => 'orbit',
         'wireguard_address' => "10.44.0.{$number}",
     ]);
 }
@@ -315,7 +368,7 @@ function role_probe_vpn_inspector(
     ?GatewayVpnInspectionData $state = null,
     bool $throws = false,
 ): GatewayVpnStateInspector {
-    return new class($calls, $state ?? new GatewayVpnInspectionData(true, true, true), $throws) implements
+    return new class($calls, $state ?? new GatewayVpnInspectionData(true, true, true, true), $throws) implements
         GatewayVpnStateInspector {
         public function __construct(
             private int &$calls,

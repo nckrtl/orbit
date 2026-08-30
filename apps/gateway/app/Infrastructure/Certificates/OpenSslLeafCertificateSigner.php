@@ -42,7 +42,7 @@ final readonly class OpenSslLeafCertificateSigner implements LeafCertificateSign
             input: $certificateRequest,
         ));
 
-        if (! $validation->succeeded() || ! $this->hasEd25519PublicKey($certificateRequest)) {
+        if (! $validation->succeeded() || ! $this->hasRsa2048PublicKey($certificateRequest)) {
             throw new RuntimeConvergenceException(
                 step: 'certificate-request-validate',
                 errorCode: 'app-dev.certificate_request_invalid',
@@ -149,6 +149,9 @@ final readonly class OpenSslLeafCertificateSigner implements LeafCertificateSign
         /** @mago-expect analysis:invalid-argument OpenSSL accepts PEM strings at runtime. */
         $parsedCertificate = openssl_x509_read(certificate: $certificate);
         $parsedPrivateKey = openssl_pkey_get_private($privateKey);
+        $privateKeyDetails = $parsedPrivateKey !== false
+            ? openssl_pkey_get_details($parsedPrivateKey)
+            : false;
         $details = $parsedCertificate !== false ? openssl_x509_parse($parsedCertificate) : false;
         /** @mago-expect analysis:mixed-assignment OpenSSL certificate extension values are untyped. */
         $basicConstraints = is_array($details)
@@ -161,6 +164,9 @@ final readonly class OpenSslLeafCertificateSigner implements LeafCertificateSign
         if (
             $parsedCertificate === false
             || $parsedPrivateKey === false
+            || ! is_array($privateKeyDetails)
+            || ($privateKeyDetails['type'] ?? null) !== OPENSSL_KEYTYPE_RSA
+            || ($privateKeyDetails['bits'] ?? null) !== 4096
             || ! is_string($basicConstraints)
             || ! str_contains($basicConstraints, 'CA:TRUE')
             || ! is_int($validFrom)
@@ -180,7 +186,7 @@ final readonly class OpenSslLeafCertificateSigner implements LeafCertificateSign
         $contents = <<<EXTENSIONS
             [leaf]
             basicConstraints = critical,CA:FALSE
-            keyUsage = critical,digitalSignature
+            keyUsage = critical,digitalSignature,keyEncipherment
             extendedKeyUsage = serverAuth
             subjectAltName = DNS:{$hostname}
             EXTENSIONS;
@@ -192,7 +198,7 @@ final readonly class OpenSslLeafCertificateSigner implements LeafCertificateSign
         chmod(filename: $path, permissions: 0o600);
     }
 
-    private function hasEd25519PublicKey(string $certificateRequest): bool
+    private function hasRsa2048PublicKey(string $certificateRequest): bool
     {
         $publicKey = openssl_csr_get_public_key($certificateRequest);
 
@@ -202,6 +208,10 @@ final readonly class OpenSslLeafCertificateSigner implements LeafCertificateSign
 
         $details = openssl_pkey_get_details($publicKey);
 
-        return is_array($details) && ($details['type'] ?? null) === OPENSSL_KEYTYPE_ED25519;
+        return (
+            is_array($details)
+            && ($details['type'] ?? null) === OPENSSL_KEYTYPE_RSA
+            && ($details['bits'] ?? null) === 2048
+        );
     }
 }

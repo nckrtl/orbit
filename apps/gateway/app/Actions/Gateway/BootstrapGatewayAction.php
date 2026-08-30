@@ -6,6 +6,7 @@ namespace App\Actions\Gateway;
 
 use App\Actions\Nodes\AssignRoleAction;
 use App\Data\Gateway\BootstrapGatewayData;
+use App\Domain\Gateway\GatewaySelfAccessConverger;
 use App\Domain\Gateway\GatewayVpnConverger;
 use App\Domain\Gateway\GatewayWebConverger;
 use App\Domain\Nodes\NodeProvisioningException;
@@ -29,17 +30,20 @@ final readonly class BootstrapGatewayAction
     public function __construct(
         private AssignRoleAction $assignRole,
         private GatewayBootstrapIdentityValidator $identity,
+        private GatewayOperatingSystemGuard $operatingSystem,
         private VpnSettings $vpnSettings,
         private ProcessRunner $processes,
         private ProtectedFileWriter $files,
         private GatewayVpnConverger $vpn,
         private GatewayWebConverger $web,
+        private GatewaySelfAccessConverger $selfAccess,
         private string $orbitHome,
     ) {}
 
     public function execute(BootstrapGatewayData $data): Node
     {
         $this->identity->validate($data);
+        $this->operatingSystem->assertSupported();
 
         $node = Node::query()->updateOrCreate(
             ['name' => $data->name],
@@ -49,7 +53,7 @@ final readonly class BootstrapGatewayAction
                 'architecture' => php_uname('m'),
                 'public_ssh_host' => $data->publicHost,
                 'public_ssh_port' => 22,
-                'ssh_user' => 'orbit',
+                'user' => 'orbit',
                 'wireguard_address' => $data->wireguardAddress,
                 'failed_step' => null,
                 'error_code' => null,
@@ -78,6 +82,7 @@ final readonly class BootstrapGatewayAction
 
             $this->ensureDirectories();
             $this->ensureSshKeys();
+            $this->selfAccess->converge($node);
             $wireGuardPublicKey = $this->ensureWireGuardKeys();
             $node->update(['wireguard_public_key' => $wireGuardPublicKey]);
             $this->ensureCertificateAuthority();
@@ -285,11 +290,10 @@ final readonly class BootstrapGatewayAction
             chmod(filename: $candidateDirectory, permissions: 0o700);
             $this->run('ca-private-key', 'ca.key_generation_failed', [
                 'openssl',
-                'genpkey',
-                '-algorithm',
-                'ED25519',
+                'genrsa',
                 '-out',
                 $candidatePrivateKey,
+                '4096',
             ]);
             chmod(filename: $candidatePrivateKey, permissions: 0o600);
             $this->run('ca-root-certificate', 'ca.certificate_generation_failed', [
@@ -344,6 +348,9 @@ final readonly class BootstrapGatewayAction
         /** @mago-expect analysis:invalid-argument OpenSSL accepts PEM strings at runtime. */
         $parsedCertificate = openssl_x509_read(certificate: $certificate);
         $parsedPrivateKey = openssl_pkey_get_private($privateKey);
+        $privateKeyDetails = $parsedPrivateKey !== false
+            ? openssl_pkey_get_details($parsedPrivateKey)
+            : false;
         $details = $parsedCertificate !== false ? openssl_x509_parse($parsedCertificate) : false;
         /** @mago-expect analysis:mixed-assignment OpenSSL certificate fields are untyped. */
         $basicConstraints = is_array($details)
@@ -356,6 +363,9 @@ final readonly class BootstrapGatewayAction
         return (
             $parsedCertificate !== false
             && $parsedPrivateKey !== false
+            && is_array($privateKeyDetails)
+            && ($privateKeyDetails['type'] ?? null) === OPENSSL_KEYTYPE_RSA
+            && ($privateKeyDetails['bits'] ?? null) === 4096
             && is_string($basicConstraints)
             && str_contains($basicConstraints, 'CA:TRUE')
             && is_int($validFrom)

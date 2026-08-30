@@ -6,6 +6,7 @@ namespace App\Console\Commands;
 
 use App\Actions\Gateway\BootstrapGatewayAction;
 use App\Data\Gateway\BootstrapGatewayData;
+use App\Domain\Nodes\NodeProvisioningException;
 use Illuminate\Console\Command;
 
 final class BootstrapGatewayCommand extends Command
@@ -45,17 +46,25 @@ final class BootstrapGatewayCommand extends Command
 
         $port = (int) $wireguardPort;
         $endpoint = $this->stringOption('wireguard-endpoint') ?? "{$publicHost}:{$port}";
-        $node = $action->execute(new BootstrapGatewayData(
-            publicHost: $publicHost,
-            wireguardAddress: $wireguardAddress,
-            wireguardSubnet: $wireguardSubnet,
-            wireguardEndpoint: $endpoint,
-            dnsServer: $this->stringOption('dns-server') ?? $wireguardAddress,
-            domain: $this->stringOption('domain') ?? 'orbit',
-            privateInterface: $this->stringOption('private-interface'),
-            wireguardPort: $port,
-            name: $this->stringOption('name') ?? 'gateway',
-        ));
+        try {
+            $node = $action->execute(new BootstrapGatewayData(
+                publicHost: $publicHost,
+                wireguardAddress: $wireguardAddress,
+                wireguardSubnet: $wireguardSubnet,
+                wireguardEndpoint: $endpoint,
+                dnsServer: $this->stringOption('dns-server') ?? $wireguardAddress,
+                domain: $this->stringOption('domain') ?? 'orbit',
+                privateInterface: $this->stringOption('private-interface'),
+                wireguardPort: $port,
+                name: $this->stringOption('name') ?? 'gateway',
+            ));
+        } catch (NodeProvisioningException $exception) {
+            $this->error(
+                "Gateway bootstrap failed at step [{$exception->step}] with error [{$exception->errorCode}].",
+            );
+
+            return self::FAILURE;
+        }
 
         $this->info("Gateway [{$node->name}] initialized.");
 

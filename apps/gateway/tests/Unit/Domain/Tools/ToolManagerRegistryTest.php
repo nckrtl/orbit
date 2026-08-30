@@ -50,6 +50,6 @@ function tool_manager_registry_node(string $platform): Node
         'status' => 'active',
         'platform' => $platform,
         'public_ssh_host' => '127.0.0.1',
-        'ssh_user' => 'orbit',
+        'user' => 'orbit',
     ]);
 }

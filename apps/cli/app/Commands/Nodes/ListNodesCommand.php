@@ -51,7 +51,7 @@ final class ListNodesCommand extends GatewayCommand
                 $node->roles === [] ? '-' : implode(', ', $node->roles),
                 $node->platform ?? '-',
                 $node->tld ?? '-',
-                NodeOutput::sshEndpoint($node),
+                $node->user,
                 $node->wireguardAddress ?? '-',
             ];
         }
@@ -63,7 +63,7 @@ final class ListNodesCommand extends GatewayCommand
             return self::SUCCESS;
         }
 
-        $this->table(['ID', 'Name', 'Status', 'Roles', 'Platform', 'TLD', 'SSH', 'WireGuard'], $rows);
+        $this->table(['ID', 'Name', 'Status', 'Roles', 'Platform', 'TLD', 'User', 'WireGuard'], $rows);
 
         $this->line("Request ID: {$response->requestId}");
 

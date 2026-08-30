@@ -7,6 +7,8 @@ use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Doctor\InstanceInspectionData;
 use App\Domain\Doctor\WorkspaceInspectionData;
 use App\Domain\Instances\CertificateMode;
+use App\Domain\Nodes\ManagedUserAccount;
+use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AppDev\AppDevCaddyConfigRenderer;
@@ -54,17 +56,19 @@ it('checks only selected-node app projections through the fixed SSH boundary', f
             '--',
             'https://github.com/acme/project.git',
             $instance->checkout_path,
-            '/home/orbit',
-            'orbit',
+            '/srv/users/nckrtl',
+            'nckrtl',
             '',
             '',
+            'app-dev',
+            '/srv/users/nckrtl',
         ])
         ->and($ssh->commands[1]->arguments[4])
         ->toBe($workspace->checkout_path)
         ->and($ssh->connections[0]->host)
         ->toBe($node->wireguard_address)
         ->and($ssh->connections[0]->user)
-        ->toBe('orbit')
+        ->toBe('nckrtl')
         ->and($ssh->connections[0]->port)
         ->toBe(22)
         ->and($ssh->connections[0]->identityFile)
@@ -91,7 +95,7 @@ it('checks app-production origins as the app owner within its production root', 
     expect($inspection)
         ->toEqual(new AppInspectionData(1, true))
         ->and($ssh->connections[0]->user)
-        ->toBe('orbit')
+        ->toBe('nckrtl')
         ->and($ssh->commands[0]->arguments)
         ->toBe([
             'bash',
@@ -103,6 +107,8 @@ it('checks app-production origins as the app owner within its production root', 
             "orbit-{$app->slug}",
             $app->slug,
             $instance->name,
+            'app-prod',
+            '',
         ])
         ->and($ssh->commands[0]->input)
         ->toContain('sudo -u "$user" -H -- git -C "$checkout" remote get-url origin');
@@ -194,6 +200,18 @@ it('observes every app-development instance projection with shared renderers', f
             "host-record={$instance->hostname},{$node->wireguard_address}",
         ])->and($processes->invocations[0]->timeout)->toBe(30.0)->and($processes->invocations[0]->input)
         ->not->toContain($instance->hostname);
+});
+
+it('uses the tenth positional argument as the managed home in the instance script', function (): void {
+    [, , $instance] = application_inspector_models();
+    $ssh = new AppDevFakeSshExecutor([app_inspector_result("1\n1\n1\n1\n1\n")]);
+
+    application_instance_inspector($ssh, new ApplicationInspectorProcessRunner(app_inspector_result("1\n")))
+        ->inspect($instance);
+
+    expect($ssh->commands[0]->input)
+        ->toContain('managed_home=${10}')
+        ->not->toContain('managed_home=$10');
 });
 
 it('maps each app-development instance observation without retaining diagnostics', function (
@@ -510,7 +528,7 @@ function application_inspector_node(): Node
         'architecture' => 'amd64',
         'public_ssh_host' => "192.0.2.{$number}",
         'public_ssh_port' => 22,
-        'ssh_user' => 'orbit',
+        'user' => 'nckrtl',
         'wireguard_address' => "10.44.0.{$number}",
         'tld' => "node-{$number}.test",
     ]);
@@ -533,7 +551,7 @@ function application_inspector_instance(App $app, Node $node, CertificateMode $m
     $name = $mode === CertificateMode::Acme ? 'production' : 'development';
     $checkout = $mode === CertificateMode::Acme
         ? "/var/www/{$app->slug}/{$name}"
-        : "/home/orbit/apps/{$app->slug}";
+        : "/srv/users/nckrtl/apps/{$app->slug}";
 
     $instance = Instance::query()->create([
         'app_id' => $app->id,
@@ -564,6 +582,7 @@ function application_app_inspector(AppDevFakeSshExecutor $ssh): NativeAppStateIn
         application_inspector_keys(),
         application_inspector_hosts(),
         new CommandDeadline,
+        application_inspector_accounts(),
     );
 }
 
@@ -579,6 +598,7 @@ function application_instance_inspector(
         new AppProdCaddyConfigRenderer,
         new AppProdPhpFpmConfigRenderer,
         new CommandDeadline,
+        application_inspector_accounts(),
     );
 }
 
@@ -592,7 +612,18 @@ function application_workspace_inspector(
         new AppDevCaddyConfigRenderer,
         new AppDevPhpFpmConfigRenderer,
         new CommandDeadline,
+        application_inspector_accounts(),
     );
+}
+
+function application_inspector_accounts(): ManagedUserAccountResolver
+{
+    return new class implements ManagedUserAccountResolver {
+        public function resolve(Node $node): ManagedUserAccount
+        {
+            return new ManagedUserAccount('nckrtl', 'nckrtl', '/srv/users/nckrtl');
+        }
+    };
 }
 
 function application_inspector_keys(): SshKeyProvider
@@ -651,7 +682,10 @@ function application_dev_caddy(Instance $instance): string
 
 function application_dev_fpm(Instance $instance): string
 {
-    return new AppDevPhpFpmConfigRenderer()->render(collect([application_dev_site($instance)]));
+    return new AppDevPhpFpmConfigRenderer()->render(
+        collect([application_dev_site($instance)]),
+        new ManagedUserAccount('nckrtl', 'nckrtl', '/srv/users/nckrtl'),
+    );
 }
 
 function application_prod_site(Instance $instance): AppProdSite
@@ -700,7 +734,10 @@ function application_workspace_caddy(Workspace $workspace): string
 
 function application_workspace_fpm(Workspace $workspace): string
 {
-    return new AppDevPhpFpmConfigRenderer()->render(collect([application_workspace_site($workspace)]));
+    return new AppDevPhpFpmConfigRenderer()->render(
+        collect([application_workspace_site($workspace)]),
+        new ManagedUserAccount('nckrtl', 'nckrtl', '/srv/users/nckrtl'),
+    );
 }
 
 final class ApplicationInspectorProcessRunner implements ProcessRunner

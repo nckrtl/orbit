@@ -9,5 +9,9 @@ use App\Models\Node;
 
 interface WireGuardPeerConverger
 {
-    public function converge(Node $node, SshConnection $connection): void;
+    public function converge(
+        Node $node,
+        SshConnection $connection,
+        bool $rolelessOperator = false,
+    ): void;
 }

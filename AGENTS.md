@@ -1,11 +1,12 @@
 # Orbit Monorepo
 
-This repository contains the Orbit CLI, Gateway, and PHP SDK.
+This repository contains the Orbit CLI, Gateway, PHP SDK, and Incus E2E
+harness.
 
 ## Scope
 
 - Read the nearest nested `AGENTS.md` before changing a project.
-- Keep the CLI, Gateway, and SDK as separate Composer projects.
+- Keep the CLI, Gateway, SDK, and E2E harness as separate Composer projects.
 - Use root commands only to coordinate projects.
 - Do not add a repository feature-plan document. Linear owns feature scope,
   acceptance criteria, the ADR decision, and the proof venue.
@@ -14,33 +15,32 @@ This repository contains the Orbit CLI, Gateway, and PHP SDK.
 
 - Start feature work in a worktree created by `bin/worktree-create`.
 - Use `.agents/skills/creating-orbit-issues` to prepare Linear issues.
-- Use `.agents/skills/developing-orbit-features` for Work and Compound.
+- Use `.agents/skills/developing-orbit-features` for Work and Compound. It
+  encodes the 14-step topology-led flow from
+  `docs/reference/development-workflow.md`.
 - Use `.agents/skills/reviewing-orbit-pull-requests` for independent review.
 - Use `.agents/skills/merging-orbit-pull-requests` for the final merge gate.
 - Merge every governing ADR to `main` before implementation or a dependent
   workflow-contract change starts. A feature pull request must not introduce,
   modify, or rely on an unmerged governing ADR.
 - The implementation agent owns Work and Compound for its pull request.
-- Review is a separate agent cycle. For live proof, review the exact candidate
-  after full gates and current-head CI but before rollout, then review it again
-  after proof and task-resource cleanup. The same implementation agent addresses
-  review comments.
-- The merge agent verifies checks, post-proof approval, proof, task-resource
-  absence, live-state drift, and compound learning without mutating live state.
-- For live proof, inspect the registered topology read-only before changing
-  code. Immediately before every rollout or other live mutation, run and inspect
-  `orbit node:list --json`; a prior listing cannot authorize a later mutation.
-- Shared live nodes and pre-existing resources are never removed or adopted by
-  feature cleanup. The feature worker removes only recorded task-owned proof
-  resources before final review. After merge, the external orchestrator verifies
-  absence again before it removes the worktree.
-- Incus is optional diagnostic tooling. It never gates readiness, proof, review,
-  or merge.
+- Incus proof follows ADR 0006: discovery on one disposable topology, verified
+  release, then one-shot proof of the exact candidate on a fresh topology. The
+  agent opens a normal pull request only after proof succeeds.
+- Review is a separate agent cycle. CI and review start when the pull request
+  opens and run in parallel. The same implementation agent addresses review
+  comments and proves each corrected candidate again.
+- The merge agent verifies passing current-head CI, approval for the current
+  head, the active proved attempt for that head, acceptance results, Compound,
+  and post-deployment actions without mutating any topology.
+- After merge, the external project manager releases the proof topology and
+  verifies exact absence, runs the standby refresh only when the prepared-state
+  fingerprint changed, removes the worktree, and closes the issue. A failed
+  refresh keeps the worktree and issue open and does not revert merged code.
 - Keep project-manager orchestration outside this repository. The repository
   owns role behavior and handoff contracts only.
-- Candidate deployment and rollout to the registered live topology are part of
-  feature development. Production release and post-deploy operations remain
-  separate.
+- Production release and `post_deployment_actions` remain a separate
+  operations process. Production never reuses a proof topology.
 
 ## Verification
 

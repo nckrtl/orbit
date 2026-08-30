@@ -8,6 +8,14 @@ paths:
 ## Use fixed typed argv
 Build remote operations from fixed, typed argv in narrow infrastructure contracts. Never add a generic executor, arbitrary script endpoint, Agent, or caller-supplied shell program.
 
+## Preserve an existing healthy Docker CE prerequisite
+Install Ubuntu `docker.io` as the fixed default for app-role hosts. When the
+fixed `docker-ce`, `docker-ce-cli`, and `containerd.io` packages, the fixed
+Docker executable, and the Docker service are already healthy, treat that
+stack only as a satisfied private host prerequisite. Do not create Tool intent,
+change its repositories or packages, or adopt it for public removal. Run role
+prerequisite APT installs with removal disabled.
+
 ## Keep secrets out of command arguments
 Transport secrets through stdin or narrowly scoped mode-0600 protected files. Secret bytes must never enter local or remote argv, ProcessInvocation state, exception or debug text, API responses, or activity data.
 
@@ -20,8 +28,8 @@ Search matching repository implementations and tests before inventing infrastruc
 ## Keep node access binary
 Enforce binary directed node access at the HTTP boundary. One access edge permits all commands for its serving node. The active Gateway peer is implicit authority, and access to the Gateway is fleet-wide. Do not add granular permissions, presets, wildcards, or permission compatibility code.
 
-## Use only pinned Sury Resolute PHP packages
-Require Ubuntu Resolute before remote mutation. Use the direct Sury PHP repository with an Orbit-owned scoped keyring, pinned key digest and fingerprints, exact candidate-origin checks, and atomic recovery. Never use a Launchpad PPA, mix Ubuntu suites, or accept caller-provided package sources.
+## Use only pinned Sury PHP packages
+Require Ubuntu 26.04 Resolute for every managed node role before remote mutation. Report unsupported systems as `Node operating system [id/codename] is not supported.` only after strict parsing. Use `unknown` for missing, malformed, or untrusted values, and never name retired releases in repository text. Use the direct Sury PHP repository with an Orbit-owned scoped keyring, pinned key digest and fingerprints, exact candidate-origin checks against the validated release suite, and atomic recovery. Never use a Launchpad PPA, mix Ubuntu suites, or accept caller-provided package sources.
 
 ## Route project JavaScript work through Vite+
 

@@ -36,7 +36,7 @@ final readonly class RemoteToolCommandRunner
         $result = $this->ssh->execute(
             new SshConnection(
                 host: $host,
-                user: 'orbit',
+                user: $node->user,
                 port: 22,
                 identityFile: $this->keys->privateKeyPath(),
                 knownHostsFile: $this->knownHosts->path(),

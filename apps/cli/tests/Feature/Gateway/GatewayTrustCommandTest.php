@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\Trust\LinuxTrustStoreInstaller;
+use App\Services\Trust\MacOsTrustStoreInstaller;
 use App\Services\Trust\RootCertificate;
 use App\Services\Trust\TrustStoreInstallerResolver;
 use Illuminate\Filesystem\Filesystem;
@@ -175,6 +176,57 @@ it('does not trust a copied Linux CA until the operating-system bundle verifies 
             ]
         ),
     );
+});
+
+it('matches the exact macOS keychain certificate by fingerprint', function (): void {
+    Process::fake([
+        '*' => Process::result(output: $this->certificate),
+    ]);
+    Process::preventStrayProcesses();
+
+    $trusted = new MacOsTrustStoreInstaller()->isTrusted(
+        RootCertificate::fromPem($this->certificate),
+        'production-gateway',
+    );
+
+    expect($trusted)->toBeTrue();
+    Process::assertRan(
+        fn (PendingProcess $process): bool => (
+            $process->command === [
+                'security',
+                'find-certificate',
+                '-a',
+                '-p',
+                '/Library/Keychains/System.keychain',
+            ]
+            && $process->tty === false
+        ),
+    );
+});
+
+it('installs the macOS root CA through typed sudo arguments with a visible tty', function (): void {
+    $certificatePath = $this->orbitHome.'/ca/secret-ca-path.pem';
+    $result = Process::result();
+    $process = Mockery::mock(PendingProcess::class);
+    $process->shouldReceive('tty')->once()->withNoArgs()->andReturnSelf();
+    $process
+        ->shouldReceive('run')
+        ->once()
+        ->with([
+            'sudo',
+            'security',
+            'add-trusted-cert',
+            '-d',
+            '-r',
+            'trustRoot',
+            '-k',
+            '/Library/Keychains/System.keychain',
+            $certificatePath,
+        ])
+        ->andReturn($result);
+    Process::shouldReceive('timeout')->once()->with(120)->andReturn($process);
+
+    new MacOsTrustStoreInstaller()->install($certificatePath, 'test-gateway');
 });
 
 it('rejects invalid CA material without logging or installing it', function (): void {
@@ -639,34 +691,41 @@ function gateway_trust_test_certificate(string $orbitHome): string
 {
     $directory = $orbitHome.'/fixture';
     mkdir(directory: $directory, permissions: 0o700, recursive: true);
-    $key = $directory.'/root.key';
-    $certificate = $directory.'/root.pem';
-    $keyCommand = new Symfony\Component\Process\Process([
-        'openssl',
-        'genpkey',
-        '-algorithm',
-        'ED25519',
-        '-out',
-        $key,
-    ]);
-    $keyCommand->mustRun();
-    $certificateCommand = new Symfony\Component\Process\Process([
-        'openssl',
-        'req',
-        '-x509',
-        '-new',
-        '-key',
-        $key,
-        '-out',
-        $certificate,
-        '-days',
-        '1',
-        '-subj',
-        '/CN=Orbit Test Root CA',
-    ]);
-    $certificateCommand->mustRun();
+    $configPath = $directory.'/openssl.cnf';
+    file_put_contents($configPath, <<<'OPENSSL'
+        [req]
+        distinguished_name = subject
+        x509_extensions = v3_ca
+        prompt = no
 
-    return (string) file_get_contents($certificate);
+        [subject]
+        CN = Orbit Test Root CA
+
+        [v3_ca]
+        basicConstraints = critical, CA:TRUE
+        keyUsage = critical, keyCertSign, cRLSign
+        subjectKeyIdentifier = hash
+        authorityKeyIdentifier = keyid:always
+        OPENSSL);
+    $privateKey = openssl_pkey_new([
+        'config' => $configPath,
+        'private_key_bits' => 2048,
+        'private_key_type' => OPENSSL_KEYTYPE_RSA,
+    ]);
+    $certificate = openssl_csr_sign(
+        openssl_csr_new(
+            ['commonName' => 'Orbit Test Root CA'],
+            $privateKey,
+            ['config' => $configPath],
+        ),
+        ca_certificate: null,
+        private_key: $privateKey,
+        days: 1,
+        options: ['config' => $configPath, 'x509_extensions' => 'v3_ca'],
+    );
+    openssl_x509_export($certificate, $pem);
+
+    return $pem;
 }
 
 function gateway_trust_pin_profile(string $orbitHome, string $certificate): string

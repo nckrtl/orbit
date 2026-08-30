@@ -56,7 +56,7 @@ it('inspects each role with exact package service and firewall requirements', fu
             $ssh->calls,
             'connection',
         ))->each(fn ($connection) => $connection->toEqual(
-            new SshConnection('10.44.0.2', 'orbit', 22, '/key', '/known', commandTimeout: 30.0),
+            new SshConnection('10.44.0.2', 'nckrtl', 22, '/key', '/known', commandTimeout: 30.0),
         ));
 })->with([
     'gateway' => [
@@ -75,7 +75,12 @@ it('inspects each role with exact package service and firewall requirements', fu
         RoleName::AppDev,
         ['acl', 'attr', 'caddy', 'composer', 'docker.io', 'git', 'openssl', 'unzip'],
         ['caddy', 'docker'],
-        ['orbit:app-dev-http', 'orbit:app-dev-https'],
+        [
+            'orbit:app-dev-http',
+            'orbit:app-dev-https',
+            'orbit:app-dev-direct-http',
+            'orbit:app-dev-direct-https',
+        ],
     ],
     'app production' => [
         RoleName::AppProd,
@@ -105,8 +110,28 @@ it('returns independent false projections for one missing requirement', function
         $state->firewallProjectionMatches,
     ])->toBe($expected);
 })->with([
-    'missing package' => ["0\n", "1\n", ['orbit:app-dev-http', 'orbit:app-dev-https'], [false, true, true]],
-    'inactive service' => ["1\n", "0\n", ['orbit:app-dev-http', 'orbit:app-dev-https'], [true, false, true]],
+    'missing package' => [
+        "0\n",
+        "1\n",
+        [
+            'orbit:app-dev-http',
+            'orbit:app-dev-https',
+            'orbit:app-dev-direct-http',
+            'orbit:app-dev-direct-https',
+        ],
+        [false, true, true],
+    ],
+    'inactive service' => [
+        "1\n",
+        "0\n",
+        [
+            'orbit:app-dev-http',
+            'orbit:app-dev-https',
+            'orbit:app-dev-direct-http',
+            'orbit:app-dev-direct-https',
+        ],
+        [true, false, true],
+    ],
     'missing firewall rule' => ["1\n", "1\n", ['orbit:app-dev-http'], [true, true, false]],
 ]);
 
@@ -156,6 +181,7 @@ function role_inspector_assignment(RoleName $role): NodeRole
         'platform' => 'linux',
         'public_ssh_host' => '192.0.2.2',
         'public_ssh_port' => 2022,
+        'user' => 'nckrtl',
         'wireguard_address' => '10.44.0.2',
     ]);
     $node->id = 7;
@@ -184,9 +210,11 @@ function role_inspector_ufw(array $comments): string
     foreach ($comments as $comment) {
         $targets = match ($comment) {
             'orbit:vpn-ssh' => ['10.44.0.2 22/tcp on orbit'],
-            'orbit:gateway-https' => ['10.44.0.2 443/tcp on orbit'],
+            'orbit:gateway-https' => ['443/tcp on orbit', '443/tcp (v6) on orbit'],
             'orbit:app-dev-http' => ['10.44.0.2 80/tcp on orbit'],
             'orbit:app-dev-https' => ['10.44.0.2 443/tcp on orbit'],
+            'orbit:app-dev-direct-http' => ['80/tcp', '80/tcp (v6)'],
+            'orbit:app-dev-direct-https' => ['443/tcp', '443/tcp (v6)'],
             'orbit:app-prod-http' => ['80/tcp', '80/tcp (v6)'],
             'orbit:app-prod-https' => ['443/tcp', '443/tcp (v6)'],
             default => throw new LogicException("Unknown role inspector rule [{$comment}]."),

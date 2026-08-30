@@ -26,6 +26,12 @@ final readonly class RemoteAppDevCaddyManager implements AppDevCaddyManager
             step: 'caddy-config',
             errorCode: 'app-dev.caddy_config_failed',
         );
+        $this->ssh->execute(
+            $node,
+            $this->publisher->serviceOrderingCommand(),
+            step: 'caddy-service-ordering',
+            errorCode: 'app-dev.caddy_config_failed',
+        );
     }
 
     public function remove(Node $node): void

@@ -104,7 +104,7 @@ final readonly class NativeRoleStateInspector implements RoleStateInspector
 
         return new SshConnection(
             $host,
-            'orbit',
+            $node->user,
             22,
             $this->keys->privateKeyPath(),
             $this->knownHosts->path(),

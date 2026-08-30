@@ -36,8 +36,6 @@ final readonly class OpenSslGatewayCertificateValidator
                 '-checkend',
                 self::RENEW_IF_WITHIN_SECONDS,
             ],
-            ['openssl', 'x509', '-in', $paths->certificatePath, '-noout', '-checkhost', $hostname],
-            ['openssl', 'x509', '-in', $paths->certificatePath, '-noout', '-checkip', $wireguardAddress],
         ];
 
         foreach ($checks as $arguments) {
@@ -66,7 +64,7 @@ final readonly class OpenSslGatewayCertificateValidator
             ! $certificatePublicKey->succeeded()
             || ! $privatePublicKey->succeeded()
             || trim($certificatePublicKey->stdout) !== trim($privatePublicKey->stdout)
-            || ! $this->hasEd25519KeyPair($paths)
+            || ! $this->hasRsa2048KeyPair($paths)
         ) {
             return false;
         }
@@ -138,7 +136,10 @@ final readonly class OpenSslGatewayCertificateValidator
         return (
             ($extensions['basicConstraints'] ?? null) === 'CA:FALSE'
             && $this->hasCriticalExtension($text->stdout, 'Basic Constraints')
-            && $this->hasExactUsage($extensions['keyUsage'] ?? null, ['Digital Signature'])
+            && $this->hasExactUsage($extensions['keyUsage'] ?? null, [
+                'Digital Signature',
+                'Key Encipherment',
+            ])
             && $this->hasCriticalExtension($text->stdout, 'Key Usage')
             && $this->hasExactUsage($extensions['extendedKeyUsage'] ?? null, [
                 'TLS Web Server Authentication',
@@ -200,7 +201,7 @@ final readonly class OpenSslGatewayCertificateValidator
         return false;
     }
 
-    private function hasEd25519KeyPair(GatewayCertificatePaths $paths): bool
+    private function hasRsa2048KeyPair(GatewayCertificatePaths $paths): bool
     {
         if (! is_file($paths->certificatePath) || ! is_file($paths->privateKeyPath)) {
             return false;
@@ -225,9 +226,11 @@ final readonly class OpenSslGatewayCertificateValidator
 
         return (
             is_array($publicDetails)
-            && ($publicDetails['type'] ?? null) === OPENSSL_KEYTYPE_ED25519
+            && ($publicDetails['type'] ?? null) === OPENSSL_KEYTYPE_RSA
+            && ($publicDetails['bits'] ?? null) === 2048
             && is_array($privateDetails)
-            && ($privateDetails['type'] ?? null) === OPENSSL_KEYTYPE_ED25519
+            && ($privateDetails['type'] ?? null) === OPENSSL_KEYTYPE_RSA
+            && ($privateDetails['bits'] ?? null) === 2048
         );
     }
 }

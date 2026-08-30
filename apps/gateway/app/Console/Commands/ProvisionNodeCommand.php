@@ -6,6 +6,7 @@ namespace App\Console\Commands;
 
 use App\Actions\Nodes\ProvisionNodeAction;
 use App\Data\Nodes\ProvisionNodeData;
+use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\RoleName;
 use Illuminate\Console\Command;
 
@@ -16,7 +17,8 @@ final class ProvisionNodeCommand extends Command
         {name : Node name}
         {host : Public SSH host}
         {--ssh-port=22 : Public SSH port}
-        {--ssh-user=root : Initial SSH user}
+        {--user=root : Initial SSH user}
+        {--orbit-user= : Managed Orbit user}
         {--architecture= : Node machine architecture}
         {--tld= : Unique development TLD for app-dev}
         {--role=* : Initial role assignment}
@@ -33,29 +35,38 @@ final class ProvisionNodeCommand extends Command
         $name = $this->stringArgument('name');
         $host = $this->stringArgument('host');
         $sshPort = $this->option('ssh-port');
-        $sshUser = $this->stringOption('ssh-user');
+        $user = $this->stringOption('user');
         $roles = $this->roles();
 
-        if ($name === null || $host === null || ! is_numeric($sshPort) || $sshUser === null || $roles === null) {
+        if ($name === null || $host === null || ! is_numeric($sshPort) || $user === null || $roles === null) {
             $this->error('Node provisioning arguments are invalid.');
 
             return self::FAILURE;
         }
 
-        $node = $action->execute(new ProvisionNodeData(
-            name: $name,
-            publicSshHost: $host,
-            roles: $roles,
-            publicSshPort: (int) $sshPort,
-            sshUser: $sshUser,
-            wireguardAddress: $this->stringOption('wireguard-address'),
-            wireguardEndpointOverride: $this->stringOption('wireguard-endpoint'),
-            dnsServerOverride: $this->stringOption('dns-server'),
-            expectedSshHostFingerprint: $this->stringOption('host-key-fingerprint'),
-            platform: 'linux',
-            architecture: $this->stringOption('architecture'),
-            tld: $this->stringOption('tld'),
-        ));
+        try {
+            $node = $action->execute(new ProvisionNodeData(
+                name: $name,
+                publicSshHost: $host,
+                roles: $roles,
+                publicSshPort: (int) $sshPort,
+                user: $user,
+                orbitUser: $this->stringOption('orbit-user'),
+                wireguardAddress: $this->stringOption('wireguard-address'),
+                wireguardEndpointOverride: $this->stringOption('wireguard-endpoint'),
+                dnsServerOverride: $this->stringOption('dns-server'),
+                expectedSshHostFingerprint: $this->stringOption('host-key-fingerprint'),
+                platform: 'linux',
+                architecture: $this->stringOption('architecture'),
+                tld: $this->stringOption('tld'),
+            ));
+        } catch (NodeProvisioningException $exception) {
+            $this->error(
+                "Node provisioning failed at step [{$exception->step}] with error [{$exception->errorCode}].",
+            );
+
+            return self::FAILURE;
+        }
 
         $this->info("Node [{$node->name}] is {$node->status->value}.");
 

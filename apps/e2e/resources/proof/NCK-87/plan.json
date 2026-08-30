@@ -1,0 +1,23 @@
+{
+    "setup": [],
+    "acceptance": [
+        {
+            "id": "node-list-json-app-dev",
+            "node": "app-dev",
+            "argv": ["/var/lib/orbit-e2e/proof/node-list.sh"],
+            "timeout_seconds": 60
+        },
+        {
+            "id": "staged-fixture-app-prod",
+            "node": "app-prod",
+            "argv": [
+                "sudo",
+                "bash",
+                "-c",
+                "set -eu; f=/var/lib/orbit-e2e/proof/node-list.sh; test -s \"$f\"; test \"$(stat -c %U \"$f\")\" = root; test -x \"$f\"; echo \"staged $f root-owned and executable on app-prod\""
+            ],
+            "timeout_seconds": 30
+        }
+    ],
+    "post_deployment_actions": []
+}

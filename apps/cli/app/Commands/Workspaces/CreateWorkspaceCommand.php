@@ -17,7 +17,7 @@ final class CreateWorkspaceCommand extends GatewayCommand
         {instance : Numeric instance ID}
         {name : Workspace name}
         {--branch= : Optional Git branch}
-        {--path= : Absolute target-node checkout path; Linux default: /home/orbit/.orbit/worktrees/<app>/<workspace>}
+        {--path= : Absolute target-node checkout path}
         {--php= : Optional PHP major.minor override}
         {--json : Return machine-readable JSON}';
 
@@ -47,7 +47,7 @@ final class CreateWorkspaceCommand extends GatewayCommand
         if ($checkoutPath !== null && ! $this->isSafeCheckoutPath($checkoutPath)) {
             return $this->renderGatewayFailure(
                 'workspace.checkout_path_invalid',
-                'Workspace checkout path must be a safe child of /home/orbit.',
+                'Workspace checkout path must be a safe absolute path.',
             );
         }
 
@@ -93,7 +93,7 @@ final class CreateWorkspaceCommand extends GatewayCommand
     {
         return (
             preg_match(
-                '/\A\/home\/orbit\/(?!\.{1,2}(?:\/|\z))[A-Za-z0-9._-]+(?:\/(?!\.{1,2}(?:\/|\z))[A-Za-z0-9._-]+)*\z/D',
+                '/\A\/(?!\z)(?:(?!\.{1,2}(?:\/|\z))[A-Za-z0-9._-]+\/)*(?!\.{1,2}\z)[A-Za-z0-9._-]+\z/D',
                 $path,
             ) === 1
         );

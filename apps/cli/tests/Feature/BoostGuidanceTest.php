@@ -8,10 +8,55 @@ use Illuminate\Support\Str;
 use Laravel\Boost\Install\GuidelineComposer;
 use Laravel\Boost\Install\GuidelineConfig;
 use Laravel\Boost\Mcp\Boost;
+use Laravel\Boost\Mcp\ToolExecutor;
+use Laravel\Boost\Mcp\Tools\ApplicationInfo;
 use Laravel\Boost\Support\Config as BoostConfig;
+use Laravel\Mcp\Server\Tool;
+use Laravel\Mcp\Server\Transport\FakeTransporter;
 use Symfony\Component\Finder\Finder;
 use Symfony\Component\Finder\SplFileInfo;
 use Symfony\Component\Yaml\Yaml;
+
+it('lists the supported Boost MCP tools with the Laravel Zero logger', function (): void {
+    $server = app()->make(Boost::class, [
+        'transport' => new FakeTransporter,
+    ]);
+    $server->start();
+
+    $toolNames = $server
+        ->createContext()
+        ->tools()
+        ->map(static fn (Tool $tool): string => $tool->name())
+        ->all();
+
+    expect($toolNames)
+        ->toContain('application-info', 'search-docs')
+        ->not->toContain('last-error');
+});
+
+it('executes Boost MCP tools through the Orbit entry point', function (): void {
+    $server = app()->make(Boost::class, [
+        'transport' => new FakeTransporter,
+    ]);
+    $server->start();
+
+    $response = app(ToolExecutor::class)->execute(ApplicationInfo::class);
+
+    expect($response->isError())
+        ->toBeFalse();
+
+    $applicationInfo = json_decode(
+        json: (string) $response->content(),
+        associative: true,
+        flags: JSON_THROW_ON_ERROR,
+    );
+
+    expect($applicationInfo)
+        ->toMatchArray([
+            'php_version' => PHP_MAJOR_VERSION.'.'.PHP_MINOR_VERSION,
+            'laravel_version' => app()->version(),
+        ]);
+});
 
 it('keeps scoped Boost guidance enabled and discoverable', function (): void {
     expect(config('boost.rules.enabled'))
@@ -195,8 +240,9 @@ it('keeps Boost setup and repository-owned skills reproducible', function (): vo
         ->toBe('vendor/bin/pest --parallel --no-tia --compact')
         ->and($composer['scripts']['test:full'] ?? null)
         ->toBeNull()
-        ->and($composer['scripts']['check'][0] ?? null)
-        ->toBe('@guidance:check');
+        ->and($composer['scripts']['check'] ?? null)
+        ->toContain('@test')
+        ->not->toContain('@guidance:check');
     foreach ([
         'AGENTS.md',
         'README.md',

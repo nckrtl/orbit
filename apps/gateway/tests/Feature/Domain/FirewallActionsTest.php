@@ -161,7 +161,7 @@ function firewall_action_node(
         'platform' => 'linux',
         'public_ssh_host' => $publicHost,
         'public_ssh_port' => 22,
-        'ssh_user' => 'orbit',
+        'user' => 'orbit',
         'wireguard_address' => $wireguardAddress,
     ]);
 }

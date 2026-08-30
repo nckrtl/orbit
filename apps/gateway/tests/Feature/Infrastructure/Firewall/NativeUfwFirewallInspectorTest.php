@@ -40,7 +40,7 @@ it('inspects an exact active rule with the fixed read-only command', function ()
         ->and($ssh->arguments)
         ->toBe([['sudo', 'ufw', 'status', 'numbered']])
         ->and($ssh->connections[0])
-        ->toEqual(new SshConnection('10.44.0.3', 'orbit', 22, '/key', '/known', commandTimeout: 30.0));
+        ->toEqual(new SshConnection('10.44.0.3', 'nckrtl', 22, '/key', '/known', commandTimeout: 30.0));
 });
 
 it('does not mutate persisted firewall rule attributes', function (): void {
@@ -105,7 +105,7 @@ it('fails closed for command errors and transport timeouts without redaction lea
 
 function inspector_rule(): FirewallRule
 {
-    $node = new Node(['platform' => 'linux', 'wireguard_address' => '10.44.0.3']);
+    $node = new Node(['platform' => 'linux', 'user' => 'nckrtl', 'wireguard_address' => '10.44.0.3']);
     $node->id = 7;
     $rule = new FirewallRule([
         'node_id' => 7,

@@ -55,7 +55,7 @@ it('inspects an owned systemd unit with exact read-only commands on the selected
         ])
         ->and(array_column($ssh->calls, 'connection'))
         ->each(fn ($connection) => $connection->toEqual(
-            new SshConnection('10.44.0.51', 'orbit', 22, '/managed-key', '/pinned-hosts', commandTimeout: 12.5),
+            new SshConnection('10.44.0.51', 'nckrtl', 22, '/managed-key', '/pinned-hosts', commandTimeout: 12.5),
         ));
 });
 
@@ -100,7 +100,7 @@ it('inspects an owned Docker container with one exact bounded command', function
         ->and($ssh->calls[0]['connection'])
         ->toEqual(new SshConnection(
             '10.44.0.51',
-            'orbit',
+            'nckrtl',
             22,
             '/managed-key',
             '/pinned-hosts',
@@ -225,7 +225,7 @@ function native_process_inspector(
         'platform' => 'linux',
         'public_ssh_host' => '192.0.2.51',
         'public_ssh_port' => 2022,
-        'ssh_user' => 'root',
+        'user' => 'nckrtl',
         'wireguard_address' => '10.44.0.51',
     ]);
     $app = OrbitApp::query()->create([

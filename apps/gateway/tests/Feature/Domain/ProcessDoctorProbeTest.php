@@ -39,7 +39,7 @@ it('compares selected process runtimes in process id order', function (): void {
         'platform' => 'linux',
         'public_ssh_host' => '192.0.2.20',
         'public_ssh_port' => 22,
-        'ssh_user' => 'orbit',
+        'user' => 'orbit',
         'wireguard_address' => '10.44.0.3',
     ]);
     $app = OrbitApp::query()->create([
@@ -106,7 +106,7 @@ it('does not inspect runtimes when the node is unreachable', function (): void {
         'platform' => 'linux',
         'public_ssh_host' => '192.0.2.21',
         'public_ssh_port' => 22,
-        'ssh_user' => 'orbit',
+        'user' => 'orbit',
         'wireguard_address' => '10.44.0.4',
     ]);
     doctor_process($node, ProcessRuntime::Systemd, DesiredProcessState::Running, name: 'unreachable-process');
@@ -279,7 +279,7 @@ function doctor_process_node(): Node
         'platform' => 'linux',
         'public_ssh_host' => "192.0.2.{$address}",
         'public_ssh_port' => 22,
-        'ssh_user' => 'orbit',
+        'user' => 'orbit',
         'wireguard_address' => "10.44.0.{$address}",
     ]);
 }

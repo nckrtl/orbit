@@ -8,9 +8,9 @@ use App\Models\Node;
 
 interface NodeRoleFirewallManager
 {
-    public function convergeBase(Node $node): void;
+    public function convergeBase(Node $node, string $managedUser): void;
 
-    public function converge(Node $node, RoleName $role): void;
+    public function converge(Node $node, RoleName $role, string $managedUser): void;
 
-    public function remove(Node $node, RoleName $role): void;
+    public function remove(Node $node, RoleName $role, string $managedUser): void;
 }

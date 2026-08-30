@@ -1,0 +1,18 @@
+{
+    "setup": [],
+    "acceptance": [
+        {
+            "id": "node-list-json",
+            "node": "app-dev",
+            "argv": ["orbit", "node:list", "--json"],
+            "timeout_seconds": 60
+        },
+        {
+            "id": "staged-plan-app-prod",
+            "node": "app-prod",
+            "argv": ["test", "-s", "/var/lib/orbit-e2e/proof/plan.json"],
+            "timeout_seconds": 30
+        }
+    ],
+    "post_deployment_actions": []
+}

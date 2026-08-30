@@ -21,10 +21,12 @@ final readonly class NativeRoleBaselineConverger implements RoleBaselineConverge
         private AppProdRoleBaseline $appProd,
         private MetricsRoleBaseline $metrics,
         private MetricsFleetReconciler $metricsFleet,
+        private NodeRoleOperatingSystemGuard $operatingSystem,
     ) {}
 
     public function converge(Node $node, NodeRole $assignment): void
     {
+        $this->operatingSystem->assert($node, $assignment->role);
         $this->baseline($assignment->role)->converge($node, $assignment);
 
         if ($assignment->role !== RoleName::Metrics) {

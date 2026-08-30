@@ -126,11 +126,10 @@ function root_ca_endpoint_certificate(): array
     $certificate = $ca.'/root.pem';
     $keyResult = $processes->run(new ProcessInvocation([
         'openssl',
-        'genpkey',
-        '-algorithm',
-        'ED25519',
+        'genrsa',
         '-out',
         $key,
+        '4096',
     ]));
     $certificateResult = $processes->run(new ProcessInvocation([
         'openssl',
@@ -145,6 +144,10 @@ function root_ca_endpoint_certificate(): array
         '1',
         '-subj',
         '/CN=Orbit Test Root CA',
+        '-addext',
+        'basicConstraints=critical,CA:TRUE',
+        '-addext',
+        'keyUsage=critical,keyCertSign,cRLSign',
     ]));
 
     if (! $keyResult->succeeded() || ! $certificateResult->succeeded()) {

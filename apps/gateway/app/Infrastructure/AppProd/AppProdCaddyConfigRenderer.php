@@ -21,6 +21,11 @@ final readonly class AppProdCaddyConfigRenderer
                 https://{$site->hostname} {
                     root * {$site->checkoutPath}/{$site->documentRoot}
                     encode zstd gzip
+                    @vite {
+                        path /build/assets/*
+                        file
+                    }
+                    header @vite Cache-Control "public, max-age=31536000, immutable"
                     php_fastcgi unix/{$site->socketPath()}
                     file_server
                 }

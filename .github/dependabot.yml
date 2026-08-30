@@ -9,6 +9,10 @@ updates:
     schedule:
       interval: weekly
   - package-ecosystem: composer
+    directory: /apps/e2e
+    schedule:
+      interval: weekly
+  - package-ecosystem: composer
     directory: /packages/php-sdk
     schedule:
       interval: weekly

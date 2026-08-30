@@ -386,7 +386,7 @@ final readonly class NativeUfwFirewallManager implements FirewallManager
 
         return new SshConnection(
             host: $host,
-            user: 'orbit',
+            user: $node->user,
             port: 22,
             identityFile: $this->keys->privateKeyPath(),
             knownHostsFile: $this->knownHosts->path(),

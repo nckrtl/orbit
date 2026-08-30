@@ -55,7 +55,7 @@ final readonly class AddNodeRoleAction
 
     public function executeDuringProvisioning(Node $node, RoleName $role): NodeRole
     {
-        $this->guardActiveNode($node);
+        $this->guardProvisioningNode($node);
 
         if (! $this->registry->definition($role)->assignableDuringProvisioning) {
             throw new RoleAssignmentException("Role [{$role->value}] cannot be assigned during provisioning.");
@@ -190,6 +190,20 @@ final readonly class AddNodeRoleAction
     {
         if (! $node->exists || $node->status !== LifecycleStatus::Active) {
             throw new RoleAssignmentException('Roles can be changed only on an active node.');
+        }
+    }
+
+    private function guardProvisioningNode(Node $node): void
+    {
+        if (
+            ! $node->exists
+            || ! in_array(
+                $node->status,
+                [LifecycleStatus::Provisioning, LifecycleStatus::Active],
+                strict: true,
+            )
+        ) {
+            throw new RoleAssignmentException('Roles can be changed only on a provisioning or active node.');
         }
     }
 

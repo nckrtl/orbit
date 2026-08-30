@@ -8,5 +8,10 @@ use App\Models\Node;
 
 interface NodeConverger
 {
-    public function converge(Node $node, ?string $expectedSshHostFingerprint = null): void;
+    public function converge(
+        Node $node,
+        NodeProvisioningIdentity $identity,
+        ?string $expectedSshHostFingerprint = null,
+        bool $rolelessOperator = false,
+    ): void;
 }

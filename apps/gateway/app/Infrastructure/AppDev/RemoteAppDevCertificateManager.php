@@ -6,6 +6,7 @@ namespace App\Infrastructure\AppDev;
 
 use App\Domain\AppDev\AppDevCertificateManager;
 use App\Domain\Certificates\LeafCertificateSigner;
+use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Instance;
 use App\Models\Node;
@@ -16,6 +17,7 @@ final readonly class RemoteAppDevCertificateManager implements AppDevCertificate
     public function __construct(
         private AppDevSshExecutor $ssh,
         private LeafCertificateSigner $signer,
+        private ManagedUserAccountResolver $accounts,
     ) {}
 
     public function convergeInstance(Instance $instance): void
@@ -48,21 +50,37 @@ final readonly class RemoteAppDevCertificateManager implements AppDevCertificate
 
     private function converge(Node $node, string $scope, string $hostname): void
     {
+        $account = $this->accounts->resolve($node);
         $version = bin2hex(random_bytes(8));
         $rootCertificate = $this->signer->rootCertificate();
         $rootHash = hash('sha256', $rootCertificate);
         $request = $this->ssh->execute(
             $node,
             new RemoteCommand(
-                arguments: ['bash', '-seu', '--', $scope, $hostname, $version, $rootHash],
+                arguments: [
+                    'bash',
+                    '-seu',
+                    '--',
+                    $scope,
+                    $hostname,
+                    $version,
+                    $rootHash,
+                    $account->user,
+                    $account->group,
+                    $account->home,
+                ],
                 input: <<<'BASH'
                     scope=$1
                     hostname=$2
                     version=$3
                     expected_root_hash=$4
-                    root="/home/orbit/.orbit/certificates/$scope"
+                    managed_user=$5
+                    managed_group=$6
+                    managed_home=$7
+                    root="$managed_home/.orbit/certificates/$scope"
                     current="$root/current"
                     caddy_current="/etc/caddy/orbit-certificates/$scope/current"
+                    trust_anchor=/usr/local/share/ca-certificates/orbit-managed-root-ca.crt
                     validity_seconds=0
 
                     certificate_extension() {
@@ -90,11 +108,11 @@ final readonly class RemoteAppDevCertificateManager implements AppDevCertificate
                         [ "$validity_seconds" -ge 34214400 ] && [ "$validity_seconds" -le 34387200 ] && \
                         openssl x509 -in "$current/cert.pem" -noout -checkhost "$hostname" >/dev/null && \
                         openssl pkey -in "$current/key.pem" -text_pub -noout 2>/dev/null | \
-                            grep -qx 'ED25519 Public-Key:' && \
+                            grep -Eq '^(RSA )?Public-Key: \(2048 bit\)' && \
                         [ "$(certificate_extension basicConstraints)" = \
                             'X509v3 Basic Constraints: critical CA:FALSE' ] && \
                         [ "$(certificate_extension keyUsage)" = \
-                            'X509v3 Key Usage: critical Digital Signature' ] && \
+                            'X509v3 Key Usage: critical Digital Signature, Key Encipherment' ] && \
                         [ "$(certificate_extension extendedKeyUsage)" = \
                             'X509v3 Extended Key Usage: TLS Web Server Authentication' ] && \
                         [ "$(certificate_extension subjectAltName)" = \
@@ -105,6 +123,15 @@ final readonly class RemoteAppDevCertificateManager implements AppDevCertificate
                             "$(sudo openssl x509 -in "$caddy_current/cert.pem" -fingerprint -sha256 -noout)" ] && \
                         [ "$(sudo openssl pkey -in "$caddy_current/key.pem" -pubout 2>/dev/null)" = \
                             "$(sudo openssl x509 -in "$caddy_current/cert.pem" -pubkey -noout 2>/dev/null)" ]; then
+                        if ! sudo test -f "$trust_anchor" || \
+                            [ "$(sudo sha256sum "$trust_anchor" | cut -d ' ' -f 1)" != "$expected_root_hash" ]; then
+                            trust_staged=$(mktemp)
+                            trap 'rm -f -- "$trust_staged"' EXIT
+                            install -m 0644 -- "$current/root.pem" "$trust_staged"
+                            sudo install -o root -g root -m 0644 -- "$trust_staged" "$trust_anchor"
+                            sudo update-ca-certificates >/dev/null
+                            openssl verify -CAfile /etc/ssl/certs/ca-certificates.crt "$current/cert.pem" >/dev/null
+                        fi
                         printf 'CURRENT\n'
                         exit 0
                     fi
@@ -113,7 +140,7 @@ final readonly class RemoteAppDevCertificateManager implements AppDevCertificate
                     find "$root/versions" -mindepth 1 -maxdepth 1 -type d -name '*.candidate' -exec rm -rf -- {} +
                     candidate="$root/versions/$version.candidate"
                     install -d -m 0700 -- "$candidate"
-                    openssl genpkey -algorithm ED25519 -out "$candidate/key.pem"
+                    openssl genrsa -out "$candidate/key.pem" 2048
                     chmod 0600 "$candidate/key.pem"
                     openssl req -new -key "$candidate/key.pem" -subj "/CN=$hostname" -out "$candidate/request.pem"
                     cat "$candidate/request.pem"
@@ -135,6 +162,8 @@ final readonly class RemoteAppDevCertificateManager implements AppDevCertificate
             version: $version,
             certificate: $certificate,
             rootCertificate: $rootCertificate,
+            rootHash: $rootHash,
+            account: $account,
         );
     }
 
@@ -146,6 +175,8 @@ final readonly class RemoteAppDevCertificateManager implements AppDevCertificate
         string $version,
         string $certificate,
         string $rootCertificate,
+        string $rootHash,
+        \App\Domain\Nodes\ManagedUserAccount $account,
     ): void {
         $this->ssh->execute(
             $node,
@@ -158,7 +189,11 @@ final readonly class RemoteAppDevCertificateManager implements AppDevCertificate
                     $scope,
                     $hostname,
                     $version,
+                    $rootHash,
                     (string) strlen($certificate),
+                    $account->user,
+                    $account->group,
+                    $account->home,
                 ],
                 input: $certificate.$rootCertificate,
             ),
@@ -173,8 +208,12 @@ final readonly class RemoteAppDevCertificateManager implements AppDevCertificate
             scope=$1
             hostname=$2
             version=$3
-            certificate_length=$4
-            root="/home/orbit/.orbit/certificates/$scope"
+            expected_root_hash=$4
+            certificate_length=$5
+            managed_user=$6
+            managed_group=$7
+            managed_home=$8
+            root="$managed_home/.orbit/certificates/$scope"
             candidate="$root/versions/$version.candidate"
             published="$root/versions/$version"
             test -d "$candidate"
@@ -184,11 +223,20 @@ final readonly class RemoteAppDevCertificateManager implements AppDevCertificate
             chmod 0600 "$candidate/key.pem"
             chmod 0644 "$candidate/cert.pem" "$candidate/root.pem"
             openssl pkey -in "$candidate/key.pem" -text_pub -noout 2>/dev/null | \
-                grep -qx 'ED25519 Public-Key:'
+                grep -Eq '^(RSA )?Public-Key: \(2048 bit\)'
             openssl verify -CAfile "$candidate/root.pem" "$candidate/cert.pem"
+            test "$(sha256sum "$candidate/root.pem" | cut -d ' ' -f 1)" = "$expected_root_hash"
             openssl x509 -in "$candidate/cert.pem" -noout -checkhost "$hostname"
             test "$(openssl pkey -in "$candidate/key.pem" -pubout 2>/dev/null)" = \
                 "$(openssl x509 -in "$candidate/cert.pem" -pubkey -noout 2>/dev/null)"
+
+            trust_anchor=/usr/local/share/ca-certificates/orbit-managed-root-ca.crt
+            trust_staged=$(mktemp)
+            trap 'rm -f -- "$trust_staged"' EXIT
+            install -m 0644 -- "$candidate/root.pem" "$trust_staged"
+            sudo install -o root -g root -m 0644 -- "$trust_staged" "$trust_anchor"
+            sudo update-ca-certificates
+            openssl verify -CAfile /etc/ssl/certs/ca-certificates.crt "$candidate/cert.pem" >/dev/null
             mv -fT -- "$candidate" "$published"
             target_link="$root/.current-$version"
             ln -s -- "$published" "$target_link"
@@ -204,18 +252,33 @@ final readonly class RemoteAppDevCertificateManager implements AppDevCertificate
             caddy_link="$caddy_root/.current-$version"
             sudo ln -s -- "$caddy_published" "$caddy_link"
             sudo mv -fT -- "$caddy_link" "$caddy_root/current"
+            if sudo systemctl is-active --quiet caddy; then
+                sudo systemctl reload-or-restart caddy
+            fi
             BASH;
     }
 
     private function remove(Node $node, string $scope): void
     {
+        $account = $this->accounts->resolve($node);
         $this->ssh->execute(
             $node,
             new RemoteCommand(
-                arguments: ['bash', '-seu', '--', $scope],
+                arguments: [
+                    'bash',
+                    '-seu',
+                    '--',
+                    $scope,
+                    $account->user,
+                    $account->group,
+                    $account->home,
+                ],
                 input: <<<'BASH'
                     scope=$1
-                    rm -rf -- "/home/orbit/.orbit/certificates/$scope"
+                    managed_user=$2
+                    managed_group=$3
+                    managed_home=$4
+                    rm -rf -- "$managed_home/.orbit/certificates/$scope"
                     sudo rm -rf -- "/etc/caddy/orbit-certificates/$scope"
                     BASH,
             ),

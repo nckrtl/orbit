@@ -1,0 +1,154 @@
+{
+  "setup": [
+    {
+      "id": "baseline-healthy-report",
+      "node": "app-dev",
+      "argv": [
+        "/var/lib/orbit-e2e/proof/doctor-proof.sh",
+        "expect-healthy"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "id": "inject-drift",
+      "node": "app-dev",
+      "argv": [
+        "/var/lib/orbit-e2e/proof/doctor-proof.sh",
+        "inject-drift"
+      ],
+      "timeout_seconds": 120
+    },
+    {
+      "id": "inject-unverifiable",
+      "node": "app-prod",
+      "argv": [
+        "sudo",
+        "bash",
+        "-c",
+        "set -eu; f=/etc/sudoers.d/zz-orbit-doctor-proof; printf 'orbit ALL=(ALL) NOPASSWD:ALL, !/usr/sbin/ufw\\n' > \"$f.tmp\"; chmod 0440 \"$f.tmp\"; visudo -cf \"$f.tmp\" >/dev/null; mv -f \"$f.tmp\" \"$f\"; if sudo -n -u orbit sudo -n /usr/sbin/ufw status >/dev/null 2>&1; then echo 'ufw is still permitted for orbit' >&2; exit 1; fi; echo 'app-prod: orbit may no longer run ufw through sudo (role inspector must fail closed)'"
+      ],
+      "timeout_seconds": 120
+    }
+  ],
+  "acceptance": [
+    {
+      "id": "report-drift-and-unverifiable",
+      "node": "app-dev",
+      "argv": [
+        "/var/lib/orbit-e2e/proof/doctor-proof.sh",
+        "expect-issues"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "id": "api-http-200-with-issues",
+      "node": "app-dev",
+      "argv": [
+        "/var/lib/orbit-e2e/proof/doctor-proof.sh",
+        "expect-api",
+        "issues"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "id": "restore-drift",
+      "node": "app-dev",
+      "argv": [
+        "/var/lib/orbit-e2e/proof/doctor-proof.sh",
+        "restore-drift"
+      ],
+      "timeout_seconds": 120
+    },
+    {
+      "id": "restore-unverifiable",
+      "node": "app-prod",
+      "argv": [
+        "sudo",
+        "bash",
+        "-c",
+        "set -eu; rm -f /etc/sudoers.d/zz-orbit-doctor-proof; sudo -n -u orbit sudo -n /usr/sbin/ufw status >/dev/null; echo 'app-prod: sudo access for orbit restored'"
+      ],
+      "timeout_seconds": 120
+    },
+    {
+      "id": "mutation-snapshot-gateway",
+      "node": "gateway",
+      "argv": [
+        "/var/lib/orbit-e2e/proof/doctor-proof.sh",
+        "mutation-snapshot",
+        "gateway"
+      ],
+      "timeout_seconds": 120
+    },
+    {
+      "id": "mutation-snapshot-app-dev",
+      "node": "app-dev",
+      "argv": [
+        "/var/lib/orbit-e2e/proof/doctor-proof.sh",
+        "mutation-snapshot",
+        "app-dev"
+      ],
+      "timeout_seconds": 120
+    },
+    {
+      "id": "report-healthy-after-recovery",
+      "node": "app-dev",
+      "argv": [
+        "/var/lib/orbit-e2e/proof/doctor-proof.sh",
+        "expect-healthy"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "id": "api-http-200-healthy",
+      "node": "app-dev",
+      "argv": [
+        "/var/lib/orbit-e2e/proof/doctor-proof.sh",
+        "expect-api",
+        "healthy"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "id": "mutation-compare-gateway",
+      "node": "gateway",
+      "argv": [
+        "/var/lib/orbit-e2e/proof/doctor-proof.sh",
+        "mutation-compare",
+        "gateway",
+        "3"
+      ],
+      "timeout_seconds": 120
+    },
+    {
+      "id": "mutation-compare-app-dev",
+      "node": "app-dev",
+      "argv": [
+        "/var/lib/orbit-e2e/proof/doctor-proof.sh",
+        "mutation-compare",
+        "app-dev",
+        "0"
+      ],
+      "timeout_seconds": 120
+    },
+    {
+      "id": "cli-exit-codes",
+      "node": "app-dev",
+      "argv": [
+        "/var/lib/orbit-e2e/proof/doctor-proof.sh",
+        "exit-codes"
+      ],
+      "timeout_seconds": 600
+    },
+    {
+      "id": "architecture-coverage",
+      "node": "gateway",
+      "argv": [
+        "/var/lib/orbit-e2e/proof/doctor-proof.sh",
+        "architecture-coverage"
+      ],
+      "timeout_seconds": 300
+    }
+  ],
+  "post_deployment_actions": []
+}

@@ -17,17 +17,28 @@ available at once.
 
 ## First Use
 
-Register the gateway, trust its root CA locally, then verify the connection:
+Register the gateway and verify the connection:
 
 ```bash
-./orbit gateway:add local https://gateway.orbit --use
-./orbit gateway:trust
+./orbit gateway:add 10.70.0.1
 ./orbit gateway:status
 ```
 
 Gateway profiles are stored in `$HOME/.orbit/config.json`. Set `ORBIT_HOME` to
-override that directory. `gateway:trust` is a visible local operating-system trust step.
+override that directory. `gateway:add` installs its root CA in the local operating-system trust store.
 It can ask for local administrator privileges.
+
+## Local DNS overrides
+
+On macOS, route one development TLD directly to an IP address:
+
+```bash
+./orbit dns:resolve beast 192.168.6.20
+./orbit dns:resolve beast --reset
+```
+
+The command uses Homebrew dnsmasq and `/etc/resolver/<tld>`. Restart open
+browsers after a change so they do not reuse an existing connection.
 
 ## Doctor
 

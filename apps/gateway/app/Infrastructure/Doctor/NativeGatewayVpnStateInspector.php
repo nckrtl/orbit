@@ -17,6 +17,7 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Infrastructure\WireGuard\RetiredDnsmasqSnippets;
 use App\Infrastructure\WireGuard\VpnConfigurationRepository;
 use App\Infrastructure\WireGuard\WireGuardServerConfigRenderer;
 use App\Models\Node;
@@ -27,7 +28,22 @@ final readonly class NativeGatewayVpnStateInspector implements GatewayVpnStateIn
 {
     private const string ACTIVE_SCRIPT = "if systemctl is-active --quiet wg-quick@orbit; then printf '1\\n'; else printf '0\\n'; fi";
 
+    private const string CONFLICT_SCRIPT = <<<'BASH'
+        for path in "$@"; do
+            if sudo test -e "$path"; then
+                printf '0\n'
+                exit 0
+            fi
+        done
+        printf '1\n'
+        BASH;
+
     private const string COMPARE_SCRIPT = <<<'BASH'
+        if ! sudo test -f "$1"; then
+            cat > /dev/null
+            printf '0\n'
+            exit 0
+        fi
         if sudo cmp -s -- "$1" -; then
             printf '1\n'
         else
@@ -49,6 +65,7 @@ final readonly class NativeGatewayVpnStateInspector implements GatewayVpnStateIn
         private WireGuardServerConfigRenderer $serverRenderer,
         private AppDevDnsConfigRenderer $dnsRenderer,
         private CommandDeadline $deadline,
+        private RetiredDnsmasqSnippets $stockDnsSnippets = new RetiredDnsmasqSnippets,
     ) {}
 
     public function inspect(NodeRole $role): GatewayVpnInspectionData
@@ -70,6 +87,7 @@ final readonly class NativeGatewayVpnStateInspector implements GatewayVpnStateIn
                 )),
                 $this->compare($connection, '/etc/wireguard/orbit.conf', $serverConfig),
                 $this->compare($connection, '/etc/dnsmasq.d/orbit-records.conf', $dnsConfig),
+                $this->conflictFree($connection),
             );
         } catch (DoctorInspectionException $exception) {
             throw $exception;
@@ -99,7 +117,7 @@ final readonly class NativeGatewayVpnStateInspector implements GatewayVpnStateIn
 
         return new SshConnection(
             $host,
-            'orbit',
+            $node->user,
             22,
             $this->keys->privateKeyPath(),
             $this->knownHosts->path(),
@@ -115,6 +133,28 @@ final readonly class NativeGatewayVpnStateInspector implements GatewayVpnStateIn
                 ['bash', '-ceu', self::COMPARE_SCRIPT, '--', $path],
                 protectedInput: ProtectedInput::fromString($expected),
             ),
+        ));
+    }
+
+    /**
+     * Reports whether every stock dnsmasq snippet the VPN converger retires is
+     * absent from the conf directory. A returned snippet would keep dnsmasq
+     * from starting with the managed `bind-dynamic` fragment.
+     */
+    private function conflictFree(SshConnection $connection): bool
+    {
+        return $this->booleanResult($this->ssh->execute(
+            $connection,
+            new RemoteCommand([
+                'bash',
+                '-ceu',
+                self::CONFLICT_SCRIPT,
+                '--',
+                ...array_map(
+                    $this->stockDnsSnippets->path(...),
+                    RetiredDnsmasqSnippets::NAMES,
+                ),
+            ]),
         ));
     }
 
