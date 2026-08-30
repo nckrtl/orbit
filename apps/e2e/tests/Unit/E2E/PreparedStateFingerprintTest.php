@@ -202,6 +202,10 @@ describe('PreparedStateFingerprint', function (): void {
                 // Rendered onto every selected node during convergence, so its bytes are prepared state.
                 'apps/gateway/app/Infrastructure/Metrics/MetricsUninstallScript.php',
                 'apps/gateway/app/Infrastructure/Metrics/MetricsFootprint.php',
+                // The carrier of every byte written under /etc/orbit/metrics, and the
+                // resolver that decides which host the publication lands on.
+                'apps/gateway/app/Infrastructure/Metrics/ProtectedMetricsSecret.php',
+                'apps/gateway/app/Domain/Metrics/MetricsGatewayResolver.php',
             )
             ->not->toContain(
                 'apps/e2e/app/E2E/StandbyBuilder.php',
