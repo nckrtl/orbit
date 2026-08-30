@@ -15,7 +15,7 @@ it('covers exact package and service matrices', function (): void {
     $p = new NodeBootstrapPackageCatalog;
     $s = new NodeRoleServiceCatalog;
     expect($p->forNode($node))
-        ->toBe(['ca-certificates', 'curl', 'gnupg', 'openssh-client', 'sudo', 'ufw', 'wireguard'])
+        ->toBe(['ca-certificates', 'curl', 'gnupg', 'libnss-resolve', 'openssh-client', 'sudo', 'ufw', 'wireguard'])
         ->and($p->forRole($node, RoleName::Gateway))
         ->toBe(['ca-certificates'])
         ->and($p->forRole($node, RoleName::Vpn))

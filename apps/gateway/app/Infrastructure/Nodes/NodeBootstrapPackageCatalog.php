@@ -11,7 +11,7 @@ final class NodeBootstrapPackageCatalog
 {
     /** @return list<string> */ public function forNode(Node $node): array
     {
-        return ['ca-certificates', 'curl', 'gnupg', 'openssh-client', 'sudo', 'ufw', 'wireguard'];
+        return ['ca-certificates', 'curl', 'gnupg', 'libnss-resolve', 'openssh-client', 'sudo', 'ufw', 'wireguard'];
     }
 
     /** @return list<string> */ public function forRole(Node $node, RoleName $role): array
