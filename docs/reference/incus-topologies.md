@@ -79,6 +79,14 @@ discovery and proof lifecycle passed live acceptance on 2026-08-30 (ADR 0006).
 
 Issue IDs match `[A-Z][A-Z0-9]{1,9}-[1-9][0-9]{0,8}`.
 
+## Host budget
+
+Each VM is 1 vCPU and 2 GiB (`e2e.incus.cpu`, `e2e.incus.memory`). The harness
+refuses to acquire past `e2e.incus.max_vms`, which defaults to 24: the three
+standby VMs plus seven feature topologies. Raise it for one run with
+`ORBIT_E2E_INCUS_MAX_VMS`. Network slots are not the constraint — the
+`10.232.<slot>.0/24` range holds about 199 topologies.
+
 ## Command surface
 
 Every command takes the issue only; the attempt is whatever

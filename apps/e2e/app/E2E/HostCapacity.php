@@ -28,7 +28,8 @@ final readonly class HostCapacity
         $existing = count($this->host->harnessInstanceMetadata());
         if (($existing + count(TopologyProfile::ROLES)) > $this->maxVms) {
             throw new RuntimeException(
-                "Incus host capacity is exhausted: {$existing} harness VMs exist and the limit is {$this->maxVms}.",
+                "Incus host capacity is exhausted: {$existing} harness VMs exist and the limit is "
+                ."{$this->maxVms}. Raise ORBIT_E2E_INCUS_MAX_VMS, or release a topology.",
             );
         }
 

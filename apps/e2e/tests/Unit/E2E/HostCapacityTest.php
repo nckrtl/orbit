@@ -71,7 +71,15 @@ describe('HostCapacity', function () {
 
         expect(fn () => new HostCapacity(new IncusHost, 6)->reserveSlot())
             ->toThrow(RuntimeException::class, 'capacity is exhausted: 4 harness VMs exist and the limit is 6')
+            ->and(fn () => new HostCapacity(new IncusHost, 6)->reserveSlot())
+            ->toThrow(RuntimeException::class, 'Raise ORBIT_E2E_INCUS_MAX_VMS, or release a topology.')
             ->and(fn () => new HostCapacity(new IncusHost, 5))
             ->toThrow(RuntimeException::class, 'cannot fit');
+    });
+
+    it('budgets seven feature topologies beside the standby by default', function () {
+        $config = require dirname(__DIR__, 3).'/config/e2e.php';
+
+        expect($config['incus']['max_vms'])->toBe(24);
     });
 });
