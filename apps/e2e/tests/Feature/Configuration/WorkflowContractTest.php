@@ -25,7 +25,7 @@ it('keeps the topology-led workflow contracts aligned', function (): void {
     // Worker: discovery -> cleanup -> fresh proof -> normal PR
     expect($worker)->toMatch('/Create discovery.*Remove discovery.*Prove fresh.*Open a normal pull request/s');
     expect($worker)->toMatch('/waits? for verified\s+absence before proof/si');
-    expect($worker)->toContain('bin/e2e-topology prove ISSUE WORKTREE --candidate-sha=SHA --proof-plan-file=PATH');
+    expect($worker)->toContain('bin/e2e-topology prove ISSUE --plan=proofs/ISSUE.json --json');
     expect($worker)->toMatch('/status: review_ready\|changes_addressed\|blocked/');
     expect($worker)->toMatch('/venue: automated\|incus/');
     expect($worker)->toMatch('/topology: gateway_app-dev_app-prod\|null/');
@@ -58,7 +58,7 @@ it('keeps the topology-led workflow contracts aligned', function (): void {
     }
     // Worker-owned discovery release and proof; the project manager keeps post-merge cleanup only
     expect($worker)->toMatch(
-        '/Remove discovery\.\*\* The worker runs\s+`bin\/e2e-topology release ISSUE ATTEMPT --json`/',
+        '/Remove discovery\.\*\* The worker runs\s+`bin\/e2e-topology release ISSUE --json`/',
     );
     expect($worker)->toMatch('/worker runs the one-shot proof command/');
     expect($worker)->toMatch('/project manager keeps post-merge\s+cleanup only/');
@@ -78,19 +78,19 @@ it('keeps the topology-led workflow contracts aligned', function (): void {
         '/when the diff touches\s+`apps\/e2e\/app\/\*\*`, `apps\/e2e\/resources\/guest\/\*\*`, `apps\/e2e\/tests\/Live\/\*\*`,\s+or `bin\/e2e-\*`/',
     );
     expect($worker)->toContain('tests/Live/TopologyLedLifecycleAcceptanceTest.php');
-    expect($worker)->toContain('tests/Live/RollingTopologyAcceptanceTest.php');
+    expect($worker)->not->toContain('RollingTopologyAcceptanceTest', '--rolling');
     expect($worker)->toMatch('/validation clone\s+whose `main` is the frozen candidate/');
-    expect($worker)->toContain('bin/e2e-live <candidate-sha> --rolling');
+    expect($worker)->toContain('bin/e2e-live <candidate-sha>');
     expect($worker)->toMatch(
-        '/record the command,\s+assertion count, and duration of each suite in the handoff `checks` and\s+the pull request body/',
+        '/record the command, assertion count,\s+and duration of the suite in the handoff `checks` and the pull request\s+body/',
     );
     expect($review)->toMatch('/harness-touching diff without that evidence is a blocking finding/');
-    expect($review)->toContain('bin/e2e-live <candidate-sha> --rolling');
+    expect($review)->toContain('bin/e2e-live <candidate-sha>');
     expect($merge)->toMatch('/harness-touching diff without that evidence blocks the merge/');
-    expect($merge)->toContain('bin/e2e-live <candidate-sha> --rolling');
+    expect($merge)->toContain('bin/e2e-live <candidate-sha>');
     expect($workflow)->toContain('bin/e2e-live <candidate-sha>');
-    expect($topologies)->toContain('bin/e2e-live SHA [--rolling]', '### `bin/e2e-live`', 'ORBIT_E2E_VALIDATE_ROOT');
-    expect($pr)->toContain('bin/e2e-live <sha> --rolling');
+    expect($topologies)->toContain('bin/e2e-live SHA', '### `bin/e2e-live`', 'ORBIT_E2E_VALIDATE_ROOT');
+    expect($pr)->toContain('bin/e2e-live <sha>');
 
     // Reviewer: review can approve while CI is pending
     expect($review)->toMatch('/approve while CI is\s+pending/');
@@ -100,7 +100,7 @@ it('keeps the topology-led workflow contracts aligned', function (): void {
 
     // Merge: active proved attempt + current candidate + passing current-head CI
     expect($merge)->toMatch('/status: merged\|blocked/');
-    expect($merge)->toMatch('/active proof topology.*`proved`.*equals the current pull-request head/s');
+    expect($merge)->toMatch('/live proof topology.*`proved`.*equals the current pull-request head/s');
     expect($merge)->toMatch('/passing\s+current-head CI/');
     expect($merge)->toMatch('/performs\s+no cleanup/');
 
@@ -123,26 +123,32 @@ it('keeps the topology-led workflow contracts aligned', function (): void {
 
     expect($topologies)->toContain('### `gateway_app-dev_app-prod`', 'Ubuntu 26.04');
     expect($topologies)->toContain('bin/e2e-topology acquire ISSUE WORKTREE');
-    expect($topologies)->toContain('bin/e2e-topology sync ISSUE ATTEMPT WORKTREE');
-    expect($topologies)->toContain('bin/e2e-topology verify ISSUE ATTEMPT');
-    expect($topologies)->toContain('bin/e2e-topology exec ISSUE ATTEMPT ROLE --argv-file=PATH');
+    expect($topologies)->toContain('bin/e2e-topology shell ISSUE ROLE');
+    expect($topologies)->toContain('bin/e2e-topology sync ISSUE');
+    expect($topologies)->toContain('bin/e2e-topology verify ISSUE');
+    expect($topologies)->toContain('bin/e2e-topology exec ISSUE ROLE --argv=JSON');
+    // State lives with the worktree; the XDG state root and the evidence archive are gone
+    expect($topologies)->toContain('<worktree>/.e2e/', 'attempt.json', 'proof.json', '<primary checkout>/.e2e/');
+    expect($topologies)->not->toContain('evidence/proofs', 'reap ');
     // Exec: inline argv, mutually exclusive with the file, resolved through env on the guest PATH
     expect($topologies)->toContain('--argv=', 'argv[0]', 'Passing both is refused');
     expect($worker)->toContain('--argv=', 'mutually exclusive', 'absolute path');
     // Proof fixtures: per-issue host directory staged to one fixed guest path on every role
-    expect($topologies)->toContain('apps/e2e/resources/proof/<issue>/', '/var/lib/orbit-e2e/proof/', 'proof_fixtures');
-    expect($worker)->toContain('apps/e2e/resources/proof/<issue>/', '/var/lib/orbit-e2e/proof/', 'proof_fixtures');
-    expect($review)->toContain('/var/lib/orbit-e2e/proof/', 'proof_fixtures');
+    expect($topologies)->toContain('proofs/<issue>/', '/var/lib/orbit-e2e/proof/');
+    expect($worker)->toContain('proofs/<issue>/', '/var/lib/orbit-e2e/proof/', 'proofs/<issue>.json');
+    expect($review)->toContain('/var/lib/orbit-e2e/proof/', 'proofs/<issue>/');
+    foreach ([$topologies, $worker, $review, $merge] as $document) {
+        expect($document)->not->toContain('apps/e2e/resources/proof', 'ATTEMPT');
+    }
     // Proof output: no plan echo, diagnosis ends with the failed action
     expect($topologies)->toContain('failed_action', 'stdout_tail', 'stderr_tail');
     expect($worker)->toContain('failed_action');
     expect($worker)->toMatch('/diagnosis round.*moves the code freeze/s');
     expect($worker)->toMatch('/proof plan.*may change between\s+rounds/s');
-    expect($topologies)->toContain('bin/e2e-topology prove ISSUE WORKTREE --candidate-sha=SHA --proof-plan-file=PATH');
-    expect($topologies)->toContain('bin/e2e-topology diagnose ISSUE ATTEMPT');
-    expect($topologies)->toContain('bin/e2e-topology status ISSUE [ATTEMPT]');
-    expect($topologies)->toContain('bin/e2e-topology release ISSUE ATTEMPT');
-    expect($topologies)->toContain('bin/e2e-topology reap --issue-state-file=PATH');
+    expect($topologies)->toContain('bin/e2e-topology prove ISSUE --plan=PATH');
+    expect($topologies)->toContain('bin/e2e-topology status ISSUE');
+    expect($topologies)->toContain('bin/e2e-topology release ISSUE');
+    expect($topologies)->not->toContain('diagnose', 'reap --issue-state-file');
     expect($topologies)->toContain('/home/orbit/orbit');
     expect($topologies)->toMatch('/[Pp]roof never\s+mounts/');
     expect($topologies)->not->toMatch('/unregistered|No registered profiles is acceptable/');

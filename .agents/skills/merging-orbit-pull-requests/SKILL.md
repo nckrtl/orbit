@@ -28,8 +28,8 @@ post-deployment actions, Compound disposition, and worktree path. Return
    result invalidates it. A pending or failed run blocks the merge.
    When the diff touches `apps/e2e/app/**`, `apps/e2e/resources/guest/**`,
    `apps/e2e/tests/Live/**`, or `bin/e2e-*`, confirm that the worker handoff
-   and the pull request body record `bin/e2e-live <candidate-sha> --rolling`
-   for that SHA with the assertion count and duration of both live suites. A
+   and the pull request body record `bin/e2e-live <candidate-sha>` for that
+   SHA with the assertion count and duration of the live suite. A
    harness-touching diff without that evidence blocks the merge.
 3. Confirm the reviewer handoff has `status: approved` for that SHA. Approval
    is either a formal GitHub approval from a review account different from the
@@ -42,14 +42,13 @@ post-deployment actions, Compound disposition, and worktree path. Return
 4. Verify the Linear scope and acceptance criteria against the diff and proof.
    Every linked or otherwise governing ADR must already be on `main`; an ADR
    introduced by the feature pull request blocks the merge.
-5. For `Proof: incus`, read `bin/e2e-topology status ISSUE ATTEMPT --json`.
-   Require an active proof topology whose proof record has status `proved`
-   and whose candidate commit equals the current pull-request head. Require
-   observed results for every acceptance check in that record. A released,
-   diagnosis, or stale attempt blocks the merge. Do not release, diagnose,
-   sync, or exec.
-6. Confirm every `post_deployment_actions` entry has `target`, `operation`,
-   `reason`, `recovery`, and `verification`.
+5. For `Proof: incus`, read `bin/e2e-topology status ISSUE --json`. Require
+   a live proof topology whose `proof` has status `proved` and whose
+   `candidate_sha` equals the current pull-request head, with every declared
+   action at exit code 0. A released, diagnosis, or stale attempt blocks the
+   merge. Do not release, sync, or exec.
+6. Confirm every post-deployment action in the pull request body has
+   `target`, `operation`, `reason`, `recovery`, and `verification`.
 7. Confirm a useful Compound update in the correct durable location, or a
    specific reason why the work produced no durable learning.
 8. Re-read the pull request head and all gates immediately before merging. If
@@ -60,14 +59,15 @@ Do not close the Linear issue, release or mutate any topology, remove the
 worktree, or perform a production release. After a successful merge, signal
 the project manager. It then, in this order:
 
-1. releases the proof topology with `bin/e2e-topology release ISSUE ATTEMPT
-   --json`, verifies its exact absence, and records the orphan network sweep
+1. releases the proof topology with `bin/e2e-topology release ISSUE --json`,
+   verifies its exact absence, and records the orphan network sweep
    result from that output as `networks_reaped: n` in its handoff (the sweep
    deletes unused `oe-*` and `orbit-e2e-*` networks, never `oe-standby`);
 2. computes `bin/e2e-standby fingerprint --main-sha=SHA` for merged `main` and
    runs `bin/e2e-standby refresh --main-sha=SHA` only when the fingerprint
    changed;
-3. removes the worktree with `bin/worktree-remove`; and
+3. removes the worktree with `bin/worktree-remove`, which releases any
+   topology the worktree still holds; and
 4. closes the Linear issue.
 
 A refresh failure leaves proof absent and keeps the worktree and issue open

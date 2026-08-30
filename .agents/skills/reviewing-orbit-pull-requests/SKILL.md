@@ -37,17 +37,15 @@ reviewed.
    When the diff touches `apps/e2e/app/**`, `apps/e2e/resources/guest/**`,
    `apps/e2e/tests/Live/**`, or `bin/e2e-*`, require live-suite evidence for
    the candidate SHA in the handoff `checks` and the pull request body: the
-   `bin/e2e-live <candidate-sha> --rolling` command with the assertion count
-   and duration of both the lifecycle and the rolling suite. A
+   `bin/e2e-live <candidate-sha>` command with the assertion count and
+   duration of the lifecycle suite. A
    harness-touching diff without that evidence is a blocking finding.
-5. For `venue: incus`, read `bin/e2e-topology status ISSUE ATTEMPT --json`.
-   Confirm the active proof topology uses the issue's recipe, its proof record
-   has status `proved`, and its candidate commit equals the pull-request head.
-   Do not sync, exec, diagnose, or release it.
+5. For `venue: incus`, read `bin/e2e-topology status ISSUE --json`. Confirm
+   the live proof topology uses the issue's recipe, its `proof` has status
+   `proved`, and its `candidate_sha` equals the pull-request head. Do not
+   sync, exec, or release it.
    When the plan calls a fixture under `/var/lib/orbit-e2e/proof/`, confirm
-   the file exists in `apps/e2e/resources/proof/<issue>/` at the candidate
-   and that the record's `proof_fixtures.roles` lists the same digest for
-   every role.
+   the file exists in `proofs/<issue>/` at the candidate.
 6. Map every acceptance criterion to an observed result in the proof record or
    to reproducible automated evidence in the pull request. Focused evidence
    states the command, the observed result, and a link or attached output when

@@ -72,7 +72,8 @@ changes. A feature pull request must not introduce or modify its governing ADR.
    (about 21 to 23 s from the promoted standby).
 5. **Learn desired state.** The worker changes code and task-owned guest state
    until the topology shows the required behavior, with
-   `bin/e2e-topology exec ISSUE ATTEMPT ROLE --argv=JSON --json`; `orbit`
+   `bin/e2e-topology shell ISSUE ROLE` or
+   `bin/e2e-topology exec ISSUE ROLE --argv=JSON --json`; `orbit`
    resolves by name on `gateway` and `app-dev`. It can use subagents at any
    point. Discovery output is not proof evidence.
 6. **Codify required state.** Every manual action becomes repository
@@ -82,20 +83,20 @@ changes. A feature pull request must not introduce or modify its governing ADR.
    learning, and commits the clean candidate. That commit is the code freeze.
    A diff that touches `apps/e2e/app/**`, `apps/e2e/resources/guest/**`,
    `apps/e2e/tests/Live/**`, or `bin/e2e-*` also runs both live acceptance
-   suites on the frozen candidate with `bin/e2e-live <candidate-sha>
-   --rolling` (after discovery release, before proof) and records each
-   suite's command, assertion count, and duration in the handoff and the
-   pull request body; review and merge block without that evidence.
+   suite on the frozen candidate with `bin/e2e-live <candidate-sha>` (after
+   discovery release, before proof) and records the suite's command,
+   assertion count, and duration in the handoff and the pull request body;
+   review and merge block without that evidence.
 8. **Remove discovery.** The worker runs
-   `bin/e2e-topology release ISSUE ATTEMPT --json` for its own discovery
-   attempt and waits for verified absence before proof.
+   `bin/e2e-topology release ISSUE --json` for its own discovery attempt and
+   waits for verified absence before proof.
 9. **Prove fresh.** The worker runs
-   `bin/e2e-topology prove ISSUE WORKTREE --candidate-sha=SHA --proof-plan-file=PATH --json`
-   (about 33 s). The harness creates a new proof attempt, synchronizes the
-   exact commit from Git, verifies clean guest checkout identity, converges,
-   runs the declared setup and acceptance checks, and records `proved` or
-   `diagnosis`. Proof never mounts host state. A proved attempt is immutable
-   through review and merge.
+   `bin/e2e-topology prove ISSUE --plan=proofs/ISSUE.json --json` (about
+   33 s). The harness creates a new proof attempt, synchronizes the worktree
+   HEAD from Git, verifies clean guest checkout identity, converges, runs the
+   declared setup and acceptance checks, and records `proved` or `diagnosis`
+   in `<worktree>/.e2e/proof.json`. Proof never mounts host state. A proved
+   attempt refuses `sync` and `exec` and stays alive until `release`.
 10. **Open a normal pull request.** The worker pushes and opens the pull
     request from its template only after proof succeeds. Orbit does not use
     draft pull requests. CI and review start immediately and run in parallel.
@@ -154,13 +155,14 @@ The merge verifier performs no cleanup and no topology mutation.
 
 After merge, the project manager:
 
-1. releases the proof topology with `bin/e2e-topology release ISSUE ATTEMPT
-   --json` and verifies its exact absence;
+1. releases the proof topology with `bin/e2e-topology release ISSUE --json`
+   and verifies its exact absence;
 2. computes `bin/e2e-standby fingerprint --main-sha=SHA` for merged `main` and
    refreshes prepared state with `bin/e2e-standby refresh --main-sha=SHA`
    only when the fingerprint changed, recording `unchanged`, `promoted`, or
    `failed`;
-3. removes the worktree with `bin/worktree-remove`; and
+3. removes the worktree with `bin/worktree-remove`, which releases any
+   topology the worktree still holds; and
 4. closes the Linear issue.
 
 A refresh failure produces `merged_refresh_blocked`. It leaves proof absent

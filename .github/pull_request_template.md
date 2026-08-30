@@ -26,8 +26,8 @@ All required ADRs must already exist on `main`.
 - [ ] Full affected project suites pass without TIA
 - [ ] Project quality checks pass
 - Checks: command and result per check
-- Live suites (harness-touching diff only): `bin/e2e-live <sha> --rolling`
-  summary line per suite, or not-applicable
+- Live suite (harness-touching diff only): the `bin/e2e-live <sha>` summary
+  line, or not-applicable
 - CI: run URL and SHA, or pending
 
 ## Review

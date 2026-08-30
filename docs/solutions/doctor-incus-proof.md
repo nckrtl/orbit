@@ -53,7 +53,8 @@ Three separate causes, found by comparing each issue with the live files:
   `-shm` sidecars from the inventory: SQLite creates and removes them for any
   connection, including a read-only one, so they appear and disappear between
   two snapshots without any Doctor write.
-- Self-checking actions live in `apps/e2e/resources/proof/NCK-58/doctor-proof.sh`.
+- Self-checking actions lived in `proofs/NCK-58/doctor-proof.sh` (the fixture
+  directory of the proof plan `proofs/NCK-58.json`).
   It runs from the candidate checkout on the checkout roles, so the closed
   guest-script inventory in `WorktreeSynchronizer` stays unchanged. Actions
   on app-prod, which has no checkout, are short `sudo bash -c` argv strings.
@@ -70,5 +71,5 @@ Three separate causes, found by comparing each issue with the live files:
 
 ## Verification
 
-`bin/e2e-topology prove NCK-58 <worktree> --candidate-sha=<sha> --proof-plan-file=apps/e2e/resources/proof/NCK-58/plan.json --json`
+`bin/e2e-topology prove NCK-58 --plan=proofs/NCK-58.json --json`
 records `proved` with every setup and acceptance action at exit 0.

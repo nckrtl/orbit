@@ -102,13 +102,14 @@ Automated-only work skips them and continues at step 10 with
    `gateway_app-dev_app-prod`. An unsupported requirement blocks normal
    feature work; return `blocked`.
 4. **Create discovery.** Request a discovery attempt from the project manager.
-   It runs `bin/e2e-topology acquire ISSUE WORKTREE --json` and returns the
-   attempt ID. Discovery mounts the worktree read-write at `/home/orbit/orbit`
+   It runs `bin/e2e-topology acquire ISSUE WORKTREE --json`; the attempt
+   lives in `<worktree>/.e2e/`. Discovery mounts the worktree read-write at `/home/orbit/orbit`
    on `gateway` and `app-dev`, so every host edit is live in both guests.
    Guests never run composer in discovery; host `bin/bootstrap` owns vendor.
 5. **Learn desired state.** Change code and task-owned guest state until the
-   topology shows the required behavior. Run exact commands with
-   `bin/e2e-topology exec ISSUE ATTEMPT ROLE --argv='["program","arg"]' --json`
+   topology shows the required behavior. Open a shell as `orbit` with
+   `bin/e2e-topology shell ISSUE ROLE`, or run exact commands with
+   `bin/e2e-topology exec ISSUE ROLE --argv='["program","arg"]' --json`
    or, when the command needs stdin, `--argv-file=PATH` where the file holds
    `{"argv":[...],"stdin":null}`; the two options are mutually exclusive. The
    vector runs as the orbit user through `env`, so `argv[0]` must resolve on
@@ -117,13 +118,13 @@ Automated-only work skips them and continues at step 10 with
    resolves by name in discovery and proof alike. Example:
 
    ```bash
-   bin/e2e-topology exec NCK-82 ATTEMPT app-dev \
+   bin/e2e-topology exec NCK-82 app-dev \
      --argv='["orbit","doctor","--json"]' --json
    ```
 
    An issue with no active attempt fails with `ISSUE has no active attempt.`
 
-   Use `bin/e2e-topology verify ISSUE ATTEMPT --json` and
+   Use `bin/e2e-topology verify ISSUE --json` and
    `bin/e2e-topology status ISSUE --json` to inspect. Discovery output is not
    proof evidence.
 6. **Codify required state.** Every manual action from discovery becomes one
@@ -143,60 +144,53 @@ Automated-only work skips them and continues at step 10 with
    both the Incus path and the automated-only path.
    A diagnosis round that changes code moves the code freeze to the new
    commit; rerun the gates on it before the next proof. The proof plan and
-   the fixtures under `apps/e2e/resources/proof/<issue>/` may change between
+   the fixtures under `proofs/<issue>/` may change between
    rounds, because they are proof input rather than product state.
    A harness-touching diff adds one more gate: when the diff touches
    `apps/e2e/app/**`, `apps/e2e/resources/guest/**`, `apps/e2e/tests/Live/**`,
-   or `bin/e2e-*`, run both live acceptance suites,
-   `tests/Live/TopologyLedLifecycleAcceptanceTest.php` and
-   `tests/Live/RollingTopologyAcceptanceTest.php`, from a validation clone
+   or `bin/e2e-*`, run the live acceptance suite
+   `tests/Live/TopologyLedLifecycleAcceptanceTest.php` from a validation clone
    whose `main` is the frozen candidate with
-   `bin/e2e-live <candidate-sha> --rolling`, and record the command,
-   assertion count, and duration of each suite in the handoff `checks` and
-   the pull request body. The wrapper refuses to run while the issue's
+   `bin/e2e-live <candidate-sha>`, and record the command, assertion count,
+   and duration of the suite in the handoff `checks` and the pull request
+   body. The wrapper refuses to run while the issue's
    discovery attempt is active, so run it after step 8 and before step 9. A
    new code freeze reruns the suites. Review and merge treat a harness-touching
    diff without this evidence as blocking.
 8. **Remove discovery.** The worker runs
-   `bin/e2e-topology release ISSUE ATTEMPT --json` for its own discovery
-   attempt; no project-manager round trip is needed. Wait for verified
+   `bin/e2e-topology release ISSUE --json` for its own discovery attempt; no
+   project-manager round trip is needed. Wait for verified
    absence before proof. Proof cannot start while a discovery attempt exists.
-9. **Prove fresh.** Write the proof plan file:
+9. **Prove fresh.** Write the proof plan file `proofs/<issue>.json`:
 
    ```json
    {
      "setup": [{"id": "text", "node": "gateway", "argv": [], "timeout_seconds": 60}],
-     "acceptance": [{"id": "text", "node": "app-dev", "argv": [], "timeout_seconds": 60}],
-     "post_deployment_actions": [
-       {"target": "text", "operation": "text", "reason": "text", "recovery": "text", "verification": "text"}
-     ]
+     "acceptance": [{"id": "text", "node": "app-dev", "argv": [], "timeout_seconds": 60}]
    }
    ```
 
-   Put proof-only scripts and data in `apps/e2e/resources/proof/<issue>/` and
-   commit them with the candidate; `prove` stages them root-owned at
-   `/var/lib/orbit-e2e/proof/<name>` on every role, including `app-prod`, and
-   the record lists the staged digest per role under `proof_fixtures`. The
-   worker runs the one-shot proof command for the exact candidate itself:
-   `bin/e2e-topology prove ISSUE WORKTREE --candidate-sha=SHA --proof-plan-file=PATH --json`.
-   The harness creates a fresh proof attempt, synchronizes the exact commit
+   Put proof-only scripts and data in `proofs/<issue>/` and commit them with
+   the candidate; `prove` stages them root-owned at
+   `/var/lib/orbit-e2e/proof/<name>` on every role, including `app-prod`. The
+   worker runs the one-shot proof command for the committed, clean worktree
+   HEAD itself: `bin/e2e-topology prove ISSUE --plan=proofs/ISSUE.json --json`.
+   The harness creates a fresh proof attempt, synchronizes the HEAD commit
    from Git, verifies clean guest checkout identity, stages the fixtures,
-   converges, runs setup and acceptance, and records the proof. Proof never
-   mounts the worktree. The output carries the record without its plan; a
-   failed proof becomes `diagnosis` and the output ends with `failed_action`
-   (`id`, `node`, `exit_code`, `stdout_tail`, `stderr_tail`). Inspect it,
-   release it, and prove again after a fix. A proved attempt is immutable; do
-   not sync, exec, or change it.
+   converges, runs setup and acceptance, and writes the compact result to
+   `<worktree>/.e2e/proof.json`. Proof never mounts the worktree. A failed
+   proof becomes `diagnosis`, the output ends with `failed_action` (`id`,
+   `node`, `exit_code`, `stdout_tail`, `stderr_tail`), and the topology stays
+   alive to inspect with `shell`; release it and prove again after a fix. A
+   proved attempt refuses `sync` and `exec` and stays alive until `release`.
 10. **Open a normal pull request.** Push the candidate and create the pull
     request from its template only after proof succeeds. Orbit does not use
     draft pull requests. CI and independent review start immediately and run
     in parallel. Return `review_ready`.
 11. **Handle corrections.** On review resumption, assign every unresolved
     comment in the same worktree. Any new commit changes the pull-request head,
-    so the prior proof is stale. Move the old proof to diagnosis with
-    `bin/e2e-topology diagnose ISSUE ATTEMPT --json` only when it helps the
-    investigation. Release the old topology with
-    `bin/e2e-topology release ISSUE ATTEMPT --json`, rerun the local gates
+    so the prior proof is stale. Release the old topology with
+    `bin/e2e-topology release ISSUE --json`, rerun the local gates
     from step 7, complete fresh proof from step 9, and then push the new
     candidate. After the push, post one pull request conversation comment for
     that candidate SHA and return `changes_addressed`:
