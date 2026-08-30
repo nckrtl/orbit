@@ -75,6 +75,13 @@ Orbit stores the resulting checkout path on the instance or workspace. That
 path is immutable. A later node setting change affects only checkouts created
 after the change. It never moves, rewrites, or deletes an existing checkout.
 
+A workspace also stores an immutable nullable `checkout_path_origin` value.
+Orbit sets it to `derived` when it derives the path from the effective
+worktree root and to `explicit` when the create request supplies
+`checkout_path`. Null is reserved for workspaces created before this contract;
+it is never written for a new workspace. This is internal removal metadata,
+not a public workspace setting.
+
 ### Expose provisioning and partial updates
 
 `POST /api/v1/nodes` accepts an optional `settings` member with the complete
@@ -142,10 +149,14 @@ contained by any other managed instance or workspace checkout on that node.
 Provisioning or convergence of an app-dev role prepares both effective roots.
 A settings update on an active app-dev node prepares a new root before that
 root becomes stored intent. Orbit can create missing directories in the
-configured path, but it changes ownership and mode only on directories that
-it creates and on the configured root itself. The root is a real directory
-owned by the managed user and group with mode `0755`. Orbit never recursively
-changes ownership of pre-existing contents.
+configured path. Each directory that Orbit creates is owned by the managed
+user and group with mode `0755`.
+
+Orbit does not change the owner, group, or mode of a pre-existing configured
+root. Such a root must already be a real directory owned by the managed user
+and group, give its owner read, write, and execute access, and give neither
+group nor other write access. Orbit fails closed when these conditions do not
+hold. It never recursively changes ownership or mode of pre-existing contents.
 
 Orbit gives Caddy traverse-only access to each required ancestor and gives it
 the existing site-specific access inside a checkout. It records whether an
@@ -164,17 +175,20 @@ operator-selected root as rollback.
 Removal uses the immutable checkout path recorded when the checkout was
 created. It does not compare that path with the node's current effective root.
 For an instance, Orbit strips and verifies the exact `<app>` suffix. For a
-workspace with a derived path, it strips and verifies the exact
-`<app>/<workspace>` suffix. The remaining historical root must pass the same
-protected-path boundary, and the checkout must be a strict descendant of it.
+workspace whose `checkout_path_origin` is `derived`, it strips and verifies
+the exact `<app>/<workspace>` suffix. The remaining historical root must pass
+the same protected-path boundary, and the checkout must be a strict descendant
+of it.
 
-An explicitly overridden workspace path does not need that derived suffix.
-Its removal keeps the existing explicit-path containment rule: the recorded
-path must be a strict descendant of the managed user's home, every relative
-segment must match the closed safe-segment grammar, and the path must remain
-outside `<managed-user-home>/apps` and hidden control directories other than
-`<managed-user-home>/.orbit/worktrees`. This check uses the recorded immutable
-path and does not use the current worktree setting.
+A workspace whose origin is `explicit` does not need that derived suffix. Its
+removal keeps the existing explicit-path containment rule: the recorded path
+must be a strict descendant of the managed user's home, every relative segment
+must match the closed safe-segment grammar, and the path must remain outside
+`<managed-user-home>/apps` and hidden control directories other than
+`<managed-user-home>/.orbit/worktrees`. A null legacy origin uses this same
+stricter explicit-path rule. Any other origin value fails closed. These checks
+use the recorded immutable path and origin and do not use the current worktree
+setting.
 
 Before deletion, Orbit proves that the checkout and its existing parents are
 not symlinks, their canonical paths match the recorded paths, and the Git
@@ -197,6 +211,8 @@ content. Ambiguous ownership or containment fails closed.
   CLI output.
 - Settings changes are non-migrating. Operators must remove or move old
   checkouts through separate explicit workflows.
+- Immutable workspace path origin selects the correct removal boundary.
+  Legacy workspaces retain the stricter managed-home containment rule.
 - External roots require privileged preparation and ACL accounting, but the
   closed path and containment rules keep that privilege narrow.
 - The dependent Gateway, SDK, and CLI implementation needs live proof for
