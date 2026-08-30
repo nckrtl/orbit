@@ -868,7 +868,7 @@ describe('convergence guest scripts', function () {
             ->toBeNull();
     });
 
-    it('proves the exact control-plane role assignments', function () {
+    it('proves the base control-plane role assignments and accepts active extras', function () {
         $root = temporaryPath('orbit-verifier-roles-', 4);
         mkdir("{$root}/bin", 0o700, true);
         try {
@@ -922,8 +922,26 @@ describe('convergence guest scripts', function () {
             $pdo->exec("UPDATE node_roles SET status = 'failed' WHERE role = 'app-dev'");
             expect(new Process($command, env: $environment)->run())->not->toBe(0);
 
+            // A proof may add a role. An active extra passes and is named in the evidence.
             $pdo->exec("UPDATE node_roles SET status = 'active' WHERE role = 'app-dev'");
-            $pdo->exec("INSERT INTO node_roles VALUES (2, 'gateway', 'active')");
+            $pdo->exec("INSERT INTO node_roles VALUES (2, 'metrics', 'active')");
+            $withExtra = json_decode(
+                new Process($command, env: $environment)->mustRun()->getOutput(),
+                true,
+                16,
+                JSON_THROW_ON_ERROR,
+            );
+            expect($withExtra)->toMatchArray([
+                'passed' => true,
+                'observed' => 'gateway:gateway+vpn,app-dev:app-dev,app-prod:app-prod:active+app-dev:metrics',
+            ]);
+
+            // An extra that is not active fails, and so does a missing base assignment.
+            $pdo->exec("UPDATE node_roles SET status = 'failed' WHERE role = 'metrics'");
+            expect(new Process($command, env: $environment)->run())->not->toBe(0);
+
+            $pdo->exec("DELETE FROM node_roles WHERE role = 'metrics'");
+            $pdo->exec("DELETE FROM node_roles WHERE role = 'vpn'");
             expect(new Process($command, env: $environment)->run())->not->toBe(0);
         } finally {
             new Illuminate\Filesystem\Filesystem()->deleteDirectory($root);
