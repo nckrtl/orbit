@@ -182,16 +182,12 @@ Known prepared-state limits (first observed on 2026-08-30, NCK-58):
   the app-dev runtime converger publishes the Gateway DNS records for every
   active site). The prepared-state allowlist tracks the projection renderers
   and this command closure, so a renderer change invalidates the promoted
-  generation. Before that step, `converge-sample-app.sh unwrap-caddy` on
-  `app-prod` points `/etc/caddy/Caddyfile` back at the remembered managed
-  version so the product publisher can validate; `hydrate` re-wraps it and
-  remembers the newly published version.
-- `converge-sample-app.sh` replaces the product-managed `/etc/caddy/Caddyfile`
-  symlink on `app-prod` with an e2e wrapper for internal TLS. The product's
-  Caddy publisher then fails validation on the next publish, and Doctor's
-  fragment lookup misses. Restore the managed symlink and keep the
-  `local_certs` block as `fragments/00-orbit-e2e-global.caddy` inside the
-  managed version instead; the publisher copies unmanaged fragments forward.
+  generation. Before that step, `converge-sample-app.sh internal-tls` on
+  `app-prod` places the e2e `local_certs` global block as
+  `fragments/00-orbit-e2e-global.caddy` inside the managed Caddy version
+  behind the product-owned `/etc/caddy/Caddyfile` symlink (NCK-84); the
+  product publisher copies unmanaged fragments forward, so Doctor reports no
+  Caddy drift and the harness never replaces the managed symlink.
 
 ## Standby
 

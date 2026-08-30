@@ -305,14 +305,7 @@ it('proves the rolling topology contract through public wrappers', function (): 
         Assert::assertCount(3, $report['nodes'] ?? []);
         Assert::assertSame(
             [],
-            array_values(array_filter(
-                $issues,
-                static fn (array $reported): bool => $reported !== [
-                    'app-prod',
-                    'instance',
-                    'instance.caddy_projection_mismatch',
-                ],
-            )),
+            $issues,
             'Doctor reported projection drift on a fresh topology: '.json_encode($issues),
         );
         $freshRelease = LiveHarness::jsonPhase('release fresh topology', fn (): array => LiveHarness::jsonWrapper(

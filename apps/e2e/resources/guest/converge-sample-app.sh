@@ -62,17 +62,43 @@ case ${1-} in
       "$orbit" workspace:new "$dev_instance_id" e2e --branch=e2e --json >/dev/null
     fi
     ;;
-  unwrap-caddy)
-    # Re-projection runs the product's app-prod Caddy publisher, which reads
-    # the managed version behind /etc/caddy/Caddyfile. Point the live symlink
-    # back at that version while the e2e wrapper is live; Caddy keeps its
-    # running configuration until the publisher or hydrate reloads it.
+  internal-tls)
+    # Internal TLS for the sample production site lives inside the product's
+    # own Caddy layout: the `local_certs` global block becomes an unmanaged
+    # fragment of the managed version behind /etc/caddy/Caddyfile, and the
+    # product publisher carries unmanaged fragments forward on every publish.
+    # Runs before re-projection so the publisher validates a managed layout.
     [[ $# -eq 1 ]] || exit 64
-    rendered_state=/var/lib/orbit-e2e/caddy-rendered-path
-    if [[ "$(readlink -f /etc/caddy/Caddyfile)" == /etc/caddy/Caddyfile.orbit-e2e && -s "$rendered_state" ]]; then
-      rendered=$(cat "$rendered_state")
-      [[ -f "$rendered" ]]
-      ln -sfn "$rendered" /etc/caddy/Caddyfile
+    [[ "$(id -u)" -eq 0 ]] || exit 77
+    source=/etc/caddy/orbit-e2e-global.caddy
+    live=/etc/caddy/Caddyfile
+    legacy_wrapper=/etc/caddy/Caddyfile.orbit-e2e
+    target=$(readlink -f "$live")
+    if [[ "$target" == "$legacy_wrapper" ]]; then
+      # A promoted snapshot may still carry the retired e2e wrapper; resolve
+      # the managed version it imported and restore the product symlink.
+      target=$(sed -n 's#^import \(/etc/caddy/orbit-versions/[0-9a-f]\{16\}/Caddyfile\)$#\1#p' "$target" | tail -n 1)
+    fi
+    case "$target" in
+      /etc/caddy/orbit-versions/*/Caddyfile) ;;
+      *) printf 'internal-tls: unexpected Caddyfile target: %s\n' "$target" >&2; exit 65 ;;
+    esac
+    [[ -f "$target" && -s "$source" ]]
+    fragment=$(dirname "$target")/fragments/00-orbit-e2e-global.caddy
+    changed=0
+    if ! cmp -s -- "$source" "$fragment"; then
+      install -m 0640 -- "$source" "$fragment"
+      chown --reference="$target" -- "$fragment"
+      changed=1
+    fi
+    if [[ "$(readlink -f "$live")" != "$target" ]]; then
+      ln -sfn "$target" "$live"
+      changed=1
+    fi
+    rm -f -- "$legacy_wrapper" /var/lib/orbit-e2e/caddy-rendered-path /var/lib/orbit-e2e/caddy-config-sha256
+    caddy validate --config "$live" --adapter caddyfile
+    if [[ "$changed" -eq 1 ]]; then
+      systemctl reload caddy
     fi
     ;;
   reproject)
@@ -142,35 +168,8 @@ case ${1-} in
       run_as_runtime php "$checkout/artisan" migrate --force --no-interaction
     done
     if [[ "$3" == app-prod ]]; then
-      fragment=/etc/caddy/orbit-e2e-global.caddy
-      rendered_state=/var/lib/orbit-e2e/caddy-rendered-path
-      # A managed version behind the live symlink is the current product
-      # render (re-projection publishes a new one); remember it. Behind the
-      # wrapper, reuse the remembered version.
-      rendered=$(readlink -f /etc/caddy/Caddyfile)
-      if [[ "$rendered" != /etc/caddy/Caddyfile && "$rendered" != /etc/caddy/Caddyfile.orbit-e2e ]]; then
-        printf '%s\n' "$rendered" >"$rendered_state"
-      else
-        [[ -s "$rendered_state" ]]
-        rendered=$(cat "$rendered_state")
-      fi
-      [[ -f "$fragment" && -f "$rendered" ]]
-      candidate=$(mktemp /etc/caddy/Caddyfile.orbit-e2e.XXXXXX)
-      printf 'import %s\nimport %s\n' "$fragment" "$rendered" >"$candidate"
-      chmod 0644 "$candidate"
-      caddy validate --config "$candidate" --adapter caddyfile
-      if [[ -f /var/lib/orbit-e2e/caddy-config-sha256 ]] && [[ "$(cat /var/lib/orbit-e2e/caddy-config-sha256)" == "$(sha256sum "$candidate" | awk '{print $1}')" ]]; then
-        rm -f "$candidate"
-        ln -sfn Caddyfile.orbit-e2e /etc/caddy/Caddyfile
-        ca=$(cat /var/lib/orbit-e2e/caddy-ca-path)
-        [[ -s "$ca" ]]
-        curl --fail --silent --show-error --retry 10 --retry-delay 2 --retry-connrefused --retry-all-errors --connect-timeout 10 --max-time 30 --cacert "$ca" --resolve laravel.internal:443:127.0.0.1 https://laravel.internal/ >/dev/null
-        exit 0
-      fi
-      mv -f "$candidate" /etc/caddy/Caddyfile.orbit-e2e
-      ln -sfn Caddyfile.orbit-e2e /etc/caddy/Caddyfile
-      systemctl reload caddy
-      sha256sum /etc/caddy/Caddyfile.orbit-e2e | awk '{print $1}' > /var/lib/orbit-e2e/caddy-config-sha256
+      # The product-managed Caddyfile serves the site with the internal CA that
+      # `internal-tls` placed inside the managed version.
       ca=$(cat /var/lib/orbit-e2e/caddy-ca-path)
       [[ -s "$ca" ]]
       curl --fail --silent --show-error --retry 10 --retry-delay 2 --retry-connrefused --retry-all-errors --connect-timeout 10 --max-time 30 --cacert "$ca" --resolve laravel.internal:443:127.0.0.1 https://laravel.internal/ >/dev/null

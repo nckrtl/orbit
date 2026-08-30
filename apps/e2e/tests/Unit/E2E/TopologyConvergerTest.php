@@ -261,7 +261,7 @@ describe('TopologyConverger', function () {
                     'app-prod',
                     str_repeat('b', 40),
                 ],
-                ['/usr/local/bin/converge-sample-app.sh', 'unwrap-caddy'],
+                ['/usr/local/bin/converge-sample-app.sh', 'internal-tls'],
                 ['/usr/local/bin/converge-sample-app.sh', 'reproject'],
                 ['/usr/local/bin/converge-sample-app.sh', 'hydrate', str_repeat('b', 40), 'app-dev'],
                 ['/usr/local/bin/converge-sample-app.sh', 'hydrate', str_repeat('b', 40), 'app-prod'],

@@ -100,6 +100,34 @@ function sample_hydration_fixture(bool $commitPresent = true): array
     ];
 }
 
+/** @return array{environment: array<string, string>} */
+function internal_tls_fixture(string $root): array
+{
+    $version = "{$root}/etc/caddy/orbit-versions/1234567890abcdef";
+    mkdir("{$version}/fragments", 0o700, true);
+    mkdir("{$root}/state", 0o700, true);
+    mkdir("{$root}/bin", 0o700, true);
+    file_put_contents("{$version}/Caddyfile", "import {$version}/fragments/*.caddy\n");
+    file_put_contents("{$version}/fragments/app-prod.caddy", "laravel.internal {\n}\n");
+    file_put_contents("{$root}/etc/caddy/orbit-e2e-global.caddy", "{\n    local_certs\n}\n");
+    file_put_contents("{$root}/bin/systemctl", "#!/usr/bin/env bash\nprintf '%s\\n' \"\$*\" >>'{$root}/reloads'\n");
+    file_put_contents(
+        "{$root}/bin/caddy",
+        "#!/usr/bin/env bash\nset -euo pipefail\nprintf '%s\\n' \"\$*\" >>'{$root}/validations'\n[[ -f \"\$3\" ]]\n",
+    );
+    file_put_contents("{$root}/bin/id", "#!/usr/bin/env bash\necho 0\n");
+    chmod("{$root}/bin/systemctl", 0o700);
+    chmod("{$root}/bin/caddy", 0o700);
+    chmod("{$root}/bin/id", 0o700);
+    file_put_contents("{$root}/converge.sh", str_replace(
+        ['/etc/caddy', '/var/lib/orbit-e2e'],
+        ["{$root}/etc/caddy", "{$root}/state"],
+        (string) file_get_contents(dirname(__DIR__, 3).'/resources/guest/converge-sample-app.sh'),
+    ));
+
+    return ['environment' => ['PATH' => "{$root}/bin:".getenv('PATH')]];
+}
+
 /** @return array{root:string,script:string,state:string,commands:string,caddy:string,ca:string} */
 function convergence_app_fixture(string $scriptName): array
 {
@@ -464,20 +492,22 @@ describe('convergence guest scripts', function () {
         }
     });
 
-    it('defers the app-prod Caddy wrapper until the sample instance exists', function (): void {
+    it('keeps the product-managed Caddyfile and places internal TLS as an unmanaged fragment', function (): void {
         $guest = dirname(__DIR__, 3).'/resources/guest';
         $production = file_get_contents("{$guest}/converge-app-prod-internal-tls.sh");
         $sample = file_get_contents("{$guest}/converge-sample-app.sh");
 
         expect($production)
             ->toContain('orbit-e2e-global.caddy', 'local_certs', 'caddy-ca-path')
-            ->not->toContain('Caddyfile.orbit-e2e')->and($production)
             ->not->toContain('readlink -f')->and($production)
             ->not->toContain('systemctl reload caddy')->and($sample)->toContain(
-                'Caddyfile.orbit-e2e',
-                'readlink -f /etc/caddy/Caddyfile',
+                'internal-tls)',
+                'fragments/00-orbit-e2e-global.caddy',
+                'readlink -f "$live"',
+                'caddy validate --config "$live" --adapter caddyfile',
                 'systemctl reload caddy',
-            );
+            )
+            ->not->toContain('ln -sfn Caddyfile.orbit-e2e', 'caddy-rendered-path"', 'unwrap-caddy');
     });
 
     it('enforces the verifier argument and output contract', function () {
@@ -898,7 +928,8 @@ describe('convergence guest scripts', function () {
                 '/home/orbit/.orbit/e2e-gateway-root-ca.pem',
                 '/api/v1/ca/root',
                 '$v["data"]["root_ca"]',
-                'readlink -f /etc/caddy/Caddyfile',
+                'live=/etc/caddy/Caddyfile',
+                'readlink -f "$live"',
                 '--cacert "$ca" --resolve laravel.internal:443:127.0.0.1 https://laravel.internal/',
                 'artisan" migrate --force --no-interaction',
                 'database/database.sqlite',
@@ -1280,46 +1311,79 @@ describe('convergence guest scripts', function () {
             ->toBe(64);
     });
 
-    it('points the live Caddyfile back at the remembered managed version only while the wrapper is live', function () {
-        $root = temporaryPath('orbit-task7-unwrap-', 6);
-        mkdir("{$root}/etc/caddy/orbit-versions/v1", 0o700, true);
-        mkdir("{$root}/state", 0o700, true);
-        file_put_contents("{$root}/etc/caddy/orbit-versions/v1/Caddyfile", "import fragments/*.caddy\n");
-        file_put_contents(
-            "{$root}/etc/caddy/Caddyfile.orbit-e2e",
-            "import global\nimport {$root}/etc/caddy/orbit-versions/v1/Caddyfile\n",
-        );
-        file_put_contents("{$root}/state/caddy-rendered-path", "{$root}/etc/caddy/orbit-versions/v1/Caddyfile\n");
-        $source = file_get_contents(dirname(__DIR__, 3).'/resources/guest/converge-sample-app.sh');
-        file_put_contents("{$root}/converge.sh", str_replace(
-            ['/etc/caddy', '/var/lib/orbit-e2e'],
-            ["{$root}/etc/caddy", "{$root}/state"],
-            $source,
-        ));
+    it('installs the local_certs fragment inside the managed Caddy version and keeps the product symlink', function () {
+        $root = temporaryPath('orbit-task7-internal-tls-', 6);
+        $fixture = internal_tls_fixture($root);
+        $version = "{$root}/etc/caddy/orbit-versions/1234567890abcdef";
+        symlink("{$version}/Caddyfile", "{$root}/etc/caddy/Caddyfile");
 
-        symlink('Caddyfile.orbit-e2e', "{$root}/etc/caddy/Caddyfile");
-        expect(new Process(['bash', "{$root}/converge.sh", 'unwrap-caddy'])->run())
-            ->toBe(0)
+        new Process(['bash', "{$root}/converge.sh", 'internal-tls'], env: $fixture['environment'])->mustRun();
+        $fragment = "{$version}/fragments/00-orbit-e2e-global.caddy";
+        expect(file_get_contents($fragment))
+            ->toBe("{\n    local_certs\n}\n")
+            ->and(fileperms($fragment) & 0o777)
+            ->toBe(0o640)
             ->and(readlink("{$root}/etc/caddy/Caddyfile"))
-            ->toBe("{$root}/etc/caddy/orbit-versions/v1/Caddyfile");
+            ->toBe("{$version}/Caddyfile")
+            ->and(file("{$root}/validations", FILE_IGNORE_NEW_LINES))
+            ->toBe(["validate --config {$root}/etc/caddy/Caddyfile --adapter caddyfile"])
+            ->and(file("{$root}/reloads", FILE_IGNORE_NEW_LINES))
+            ->toBe(['reload caddy']);
 
-        expect(new Process(['bash', "{$root}/converge.sh", 'unwrap-caddy'])->run())
-            ->toBe(0)
-            ->and(readlink("{$root}/etc/caddy/Caddyfile"))
-            ->toBe("{$root}/etc/caddy/orbit-versions/v1/Caddyfile");
-
-        unlink("{$root}/etc/caddy/Caddyfile");
-        symlink('Caddyfile.orbit-e2e', "{$root}/etc/caddy/Caddyfile");
-        unlink("{$root}/state/caddy-rendered-path");
-        expect(new Process(['bash', "{$root}/converge.sh", 'unwrap-caddy'])->run())
-            ->toBe(0)
-            ->and(readlink("{$root}/etc/caddy/Caddyfile"))
-            ->toBe('Caddyfile.orbit-e2e')
-            ->and(new Process(['bash', "{$root}/converge.sh", 'unwrap-caddy', 'extra'])->run())
+        // A repeat run validates again but does not reload a settled node.
+        new Process(['bash', "{$root}/converge.sh", 'internal-tls'], env: $fixture['environment'])->mustRun();
+        expect(file("{$root}/validations", FILE_IGNORE_NEW_LINES))
+            ->toHaveCount(2)
+            ->and(file("{$root}/reloads", FILE_IGNORE_NEW_LINES))
+            ->toHaveCount(1)
+            ->and(
+                new Process([
+                    'bash',
+                    "{$root}/converge.sh",
+                    'internal-tls',
+                    'extra',
+                ], env: $fixture['environment'])->run(),
+            )
             ->toBe(64);
+
+        // A managed Caddyfile outside the product layout is refused.
+        unlink("{$root}/etc/caddy/Caddyfile");
+        file_put_contents("{$root}/etc/caddy/Caddyfile", "laravel.internal {\n}\n");
+        $process = new Process(['bash', "{$root}/converge.sh", 'internal-tls'], env: $fixture['environment']);
+        expect($process->run())->toBe(65)->and($process->getErrorOutput())->toContain('unexpected Caddyfile target');
     });
 
-    it('reuses the original rendered Caddy config without recursive imports', function () {
+    it('retires a live e2e wrapper Caddyfile from an older snapshot', function () {
+        $root = temporaryPath('orbit-task7-internal-tls-legacy-', 6);
+        $fixture = internal_tls_fixture($root);
+        $version = "{$root}/etc/caddy/orbit-versions/1234567890abcdef";
+        file_put_contents(
+            "{$root}/etc/caddy/Caddyfile.orbit-e2e",
+            "import {$root}/etc/caddy/orbit-e2e-global.caddy\nimport {$version}/Caddyfile\n",
+        );
+        symlink('Caddyfile.orbit-e2e', "{$root}/etc/caddy/Caddyfile");
+        file_put_contents(
+            "{$root}/state/caddy-rendered-path",
+            "/etc/caddy/orbit-versions/1234567890abcdef/Caddyfile\n",
+        );
+        file_put_contents("{$root}/state/caddy-config-sha256", "abc\n");
+
+        new Process(['bash', "{$root}/converge.sh", 'internal-tls'], env: $fixture['environment'])->mustRun();
+        expect(readlink("{$root}/etc/caddy/Caddyfile"))
+            ->toBe("{$version}/Caddyfile")
+            ->and(file_get_contents("{$version}/fragments/00-orbit-e2e-global.caddy"))
+            ->toBe("{\n    local_certs\n}\n")
+            ->and(file_exists("{$root}/etc/caddy/Caddyfile.orbit-e2e"))
+            ->toBeFalse()
+            ->and(file_exists("{$root}/state/caddy-rendered-path"))
+            ->toBeFalse()
+            ->and(file_exists("{$root}/state/caddy-config-sha256"))
+            ->toBeFalse()
+            ->and(file("{$root}/reloads", FILE_IGNORE_NEW_LINES))
+            ->toBe(['reload caddy']);
+    });
+
+    it('probes the production site over the internal CA after hydration without touching Caddy', function () {
         $root = temporaryPath('orbit-task7-caddy-', 6);
         mkdir("{$root}/etc/caddy", 0o700, true);
         mkdir("{$root}/state", 0o700, true);
@@ -1337,7 +1401,6 @@ describe('convergence guest scripts', function () {
             hash_file('sha256', "{$root}/prod/composer.lock"),
         );
         file_put_contents("{$root}/etc/caddy/rendered.caddy", "laravel.internal { respond ok }\n");
-        file_put_contents("{$root}/etc/caddy/orbit-e2e-global.caddy", "{\n local_certs\n}\n");
         symlink('rendered.caddy', "{$root}/etc/caddy/Caddyfile");
         file_put_contents("{$root}/state/caddy-ca-path", "{$root}/ca.crt\n");
         file_put_contents("{$root}/ca.crt", 'ca');
@@ -1346,13 +1409,18 @@ describe('convergence guest scripts', function () {
         chmod("{$root}/bin/composer", 0o700);
         file_put_contents(
             "{$root}/bin/curl",
-            "#!/usr/bin/env bash\nset -euo pipefail\narguments=\" \$* \"\n"
+            "#!/usr/bin/env bash\nset -euo pipefail\narguments=\" \$* \"\nprintf '%s\\n' \"\$*\" >>'{$root}/probes'\n"
             ."[[ \"\$arguments\" == *' --retry 10 --retry-delay 2 --retry-connrefused --retry-all-errors --connect-timeout 10 --max-time 30 '* ]]\n"
-            ."[[ \"\$arguments\" == *' --resolve laravel.internal:443:127.0.0.1 '* ]]\n",
+            ."[[ \"\$arguments\" == *\" --cacert {$root}/ca.crt --resolve laravel.internal:443:127.0.0.1 https://laravel.internal/ \"* ]]\n",
         );
         chmod("{$root}/bin/curl", 0o700);
-        file_put_contents("{$root}/bin/systemctl", "#!/usr/bin/env bash\nprintf '%s\\n' \"\$*\" >>'{$root}/reloads'\n");
-        chmod("{$root}/bin/systemctl", 0o700);
+        foreach (['systemctl', 'caddy'] as $forbidden) {
+            file_put_contents(
+                "{$root}/bin/{$forbidden}",
+                "#!/usr/bin/env bash\nprintf '%s\\n' \"\$*\" >>'{$root}/{$forbidden}-calls'\nexit 1\n",
+            );
+            chmod("{$root}/bin/{$forbidden}", 0o700);
+        }
         file_put_contents(
             "{$root}/bin/git",
             "#!/usr/bin/env bash\n[[ \"\$*\" == *'remote get-url origin'* ]] && printf '%s\\n' https://github.com/laravel/laravel.git\n[[ \"\$*\" == *'rev-parse HEAD'* ]] && printf '%s\\n' "
@@ -1360,65 +1428,30 @@ describe('convergence guest scripts', function () {
             ."\nexit 0\n",
         );
         chmod("{$root}/bin/git", 0o700);
-        file_put_contents("{$root}/bin/caddy", <<<'BASH'
-            #!/usr/bin/env bash
-            set -euo pipefail
-            printf '%s\n' "$*" >>__VALIDATIONS__
-            config=
-            while [[ $# -gt 0 ]]; do [[ "$1" == --config ]] && config=$2 && shift; shift; done
-            [[ -f "$config" ]]
-            [[ $(grep -c '^import ' "$config") -le 2 ]]
-            grep -q 'rendered' "$config" || [[ "$config" == *orbit-e2e-global.caddy ]]
-            BASH);
-        $caddy = str_replace('__VALIDATIONS__', "{$root}/validations", file_get_contents("{$root}/bin/caddy"));
-        file_put_contents("{$root}/bin/caddy", $caddy);
-        chmod("{$root}/bin/caddy", 0o700);
 
         $source = file_get_contents(dirname(__DIR__, 3).'/resources/guest/converge-sample-app.sh');
-        $script = str_replace(
+        file_put_contents("{$root}/converge.sh", str_replace(
             ['/var/www/laravel/e2e-prod', '/etc/caddy', '/var/lib/orbit-e2e'],
             ["{$root}/prod", "{$root}/etc/caddy", "{$root}/state"],
             $source,
-        );
-        file_put_contents("{$root}/converge.sh", $script);
+        ));
         $environment = ['PATH' => "{$root}/bin:".getenv('PATH')];
         $arguments = ['bash', "{$root}/converge.sh", 'hydrate', str_repeat('b', 40), 'app-prod'];
         new Process($arguments, env: $environment)->mustRun();
         new Process($arguments, env: $environment)->mustRun();
 
-        // Re-projection publishes a new managed version behind the live symlink;
-        // hydrate remembers it, re-wraps it, and relinks the wrapper on a no-op run.
-        file_put_contents("{$root}/etc/caddy/rendered-v2.caddy", "laravel.internal { respond ok2 }\n");
-        unlink("{$root}/etc/caddy/Caddyfile");
-        symlink('rendered-v2.caddy', "{$root}/etc/caddy/Caddyfile");
-        new Process($arguments, env: $environment)->mustRun();
-        expect(trim((string) file_get_contents("{$root}/state/caddy-rendered-path")))
-            ->toBe("{$root}/etc/caddy/rendered-v2.caddy")
+        expect(file("{$root}/probes", FILE_IGNORE_NEW_LINES))
+            ->toHaveCount(2)
             ->and(readlink("{$root}/etc/caddy/Caddyfile"))
-            ->toBe('Caddyfile.orbit-e2e')
-            ->and(file_get_contents("{$root}/etc/caddy/Caddyfile.orbit-e2e"))
-            ->toContain("import {$root}/etc/caddy/rendered-v2.caddy");
-        unlink("{$root}/etc/caddy/Caddyfile");
-        symlink('rendered-v2.caddy', "{$root}/etc/caddy/Caddyfile");
-        new Process($arguments, env: $environment)->mustRun();
-        expect(readlink("{$root}/etc/caddy/Caddyfile"))->toBe('Caddyfile.orbit-e2e');
-        unlink("{$root}/etc/caddy/Caddyfile");
-        symlink('rendered.caddy', "{$root}/etc/caddy/Caddyfile");
-        new Process($arguments, env: $environment)->mustRun();
-
-        $wrapper = file_get_contents("{$root}/etc/caddy/Caddyfile.orbit-e2e");
-        expect($wrapper)
-            ->toContain("import {$root}/etc/caddy/rendered.caddy")
-            ->and($wrapper)
-            ->not
-            ->toContain('import '.$root.'/etc/caddy/Caddyfile.orbit-e2e')
+            ->toBe('rendered.caddy')
             ->and(file_get_contents("{$root}/etc/caddy/rendered.caddy"))
             ->toBe("laravel.internal { respond ok }\n")
-            ->and(file("{$root}/validations", FILE_IGNORE_NEW_LINES))
-            ->toHaveCount(5)
-            ->and(file("{$root}/reloads", FILE_IGNORE_NEW_LINES))
-            ->toHaveCount(3);
-        expect(fileperms("{$root}/etc/caddy/Caddyfile.orbit-e2e") & 0o777)->toBe(0o644);
+            ->and(file_exists("{$root}/systemctl-calls"))
+            ->toBeFalse()
+            ->and(file_exists("{$root}/caddy-calls"))
+            ->toBeFalse()
+            ->and(glob("{$root}/etc/caddy/Caddyfile.orbit-e2e*"))
+            ->toBe([]);
     });
     it('proves a mounted source through the mountpoint and the git pointer hash', function () {
         $root = temporaryPath('orbit-verifier-mounted-', 4);
