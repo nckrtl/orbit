@@ -273,8 +273,9 @@ topology the new generation instead of rebuilding it:
    candidate changes the cold base.
 2. Under the standby refresh, generation, and issue locks it stops the three
    proved VMs and copies each one (`incus copy --instance-only`) to
-   `orbit-e2e-standby-<role>-next`, attached to `oe-standby` with the fixed
-   standby address and MAC, with the attempt metadata removed, and snapshots
+   `<standby instance>-next` of the checkout's own standby, attached to that
+   standby's network with its fixed address and MAC, with the attempt metadata
+   removed, and snapshots
    the copies as `main-<generation>`. The old standby instances are untouched
    until here; a failure deletes the copies and leaves the proved topology
    stopped.
