@@ -1897,6 +1897,153 @@ describe('IncusHost mutations', function () {
         ));
     });
 
+    it('copies stopped instances without snapshots onto the standby network', function () {
+        Process::fake(function (PendingProcess $process) {
+            if ($process->command === incusCommand('list', incusTarget(), '--format=json')) {
+                return Process::result(json_encode(array_map(
+                    static fn (string $role): array => json_decode(
+                        vmJson("orbit-e2e-nck-123-aaaaaaaa-{$role}", network: 'oe-b32d6c83af72'),
+                        true,
+                        16,
+                        JSON_THROW_ON_ERROR,
+                    )[0],
+                    ['gateway', 'app-dev', 'app-prod'],
+                ), JSON_THROW_ON_ERROR));
+            }
+
+            return Process::result();
+        });
+
+        $instances = incusHost()->copyInstances([
+            'gateway' => [
+                'source' => 'orbit-e2e-nck-123-aaaaaaaa-gateway',
+                'target' => 'orbit-e2e-standby-gateway-next',
+                'metadata' => ['user.orbit.e2e.operation' => 'op-2'],
+                'network' => 'oe-standby',
+                'role' => 'gateway',
+                'topology' => 'oe-standby',
+                'slot' => 1,
+            ],
+        ]);
+
+        expect(array_keys($instances))->toBe(['gateway']);
+        Process::assertRan(incusCommand(
+            'copy',
+            incusTarget('orbit-e2e-nck-123-aaaaaaaa-gateway'),
+            incusTarget('orbit-e2e-standby-gateway-next'),
+            '--instance-only',
+            '--storage',
+            'orbit-e2e',
+            '--config',
+            'limits.cpu=1',
+            '--config',
+            'limits.memory=2GiB',
+            '--device',
+            'root,pool=orbit-e2e',
+            '--device',
+            'root,size=16GiB',
+            '--config',
+            'user.orbit.e2e.owner=orbit-e2e',
+            '--config',
+            'user.orbit.e2e.operation=op-2',
+            '--device',
+            'eth0,network=oe-standby',
+            '--device',
+            'eth0,ipv4.address=10.232.1.10',
+            '--device',
+            'eth0,hwaddr='.\App\E2E\Value\TopologyTarget::macFor('oe-standby', 'gateway'),
+        ));
+        Process::assertNotRan(
+            static fn (PendingProcess $process): bool => array_slice($process->command, 3, 2) === ['snapshot', 'list'],
+        );
+    });
+
+    it('refuses to copy a running instance', function () {
+        Process::fake(fn (): ProcessResult => Process::result(json_encode([[
+            'name' => 'orbit-e2e-nck-123-aaaaaaaa-gateway',
+            'type' => 'virtual-machine',
+            'status' => 'Running',
+            'status_code' => 103,
+            'config' => ['user.orbit.e2e.owner' => 'orbit-e2e'],
+            'devices' => ['root' => ['pool' => 'orbit-e2e']],
+        ]], JSON_THROW_ON_ERROR)));
+
+        expect(fn () => incusHost()->copyInstances([
+            'gateway' => [
+                'source' => 'orbit-e2e-nck-123-aaaaaaaa-gateway',
+                'target' => 'orbit-e2e-standby-gateway-next',
+                'metadata' => [],
+                'network' => 'oe-standby',
+                'role' => 'gateway',
+                'topology' => 'oe-standby',
+                'slot' => 1,
+            ],
+        ]))
+            ->toThrow(RuntimeException::class, 'must be stopped before it is copied');
+        Process::assertNotRan(static fn (PendingProcess $process): bool => ($process->command[3] ?? null) === 'copy');
+    });
+
+    it('renames a stopped owned instance onto a free name and proves the result', function () {
+        $renamed = false;
+        Process::fake(function (PendingProcess $process) use (&$renamed) {
+            if (($process->command[3] ?? null) === 'rename') {
+                $renamed = true;
+
+                return Process::result();
+            }
+            $name = preg_replace('/\A[^:]+:/', '', (string) ($process->command[4] ?? ''));
+            if ($name === 'orbit-e2e-standby-gateway') {
+                return Process::result($renamed ? vmJson('orbit-e2e-standby-gateway') : '[]');
+            }
+
+            return Process::result(vmJson('orbit-e2e-standby-gateway-next'));
+        });
+
+        incusHost()->renameInstance('orbit-e2e-standby-gateway-next', 'orbit-e2e-standby-gateway');
+
+        Process::assertRan(incusCommand(
+            'rename',
+            incusTarget('orbit-e2e-standby-gateway-next'),
+            'orbit-e2e-standby-gateway',
+        ));
+    });
+
+    it('refuses to rename onto an existing instance', function () {
+        Process::fake(function (PendingProcess $process) {
+            $name = preg_replace('/\A[^:]+:/', '', (string) ($process->command[4] ?? ''));
+
+            return Process::result(vmJson($name));
+        });
+
+        expect(fn () => incusHost()->renameInstance('orbit-e2e-standby-gateway-next', 'orbit-e2e-standby-gateway'))
+            ->toThrow(RuntimeException::class, 'already exists');
+        Process::assertNotRan(static fn (PendingProcess $process): bool => ($process->command[3] ?? null) === 'rename');
+    });
+
+    it('unsets harness metadata keys but never the ownership key', function () {
+        Process::fake(fn (): ProcessResult => Process::result(vmJson('orbit-e2e-standby-gateway-next')));
+        $host = incusHost();
+
+        $host->unsetMetadata('orbit-e2e-standby-gateway-next', ['user.orbit.e2e.issue', 'user.orbit.e2e.attempt']);
+
+        Process::assertRan(incusCommand(
+            'config',
+            'unset',
+            incusTarget('orbit-e2e-standby-gateway-next'),
+            'user.orbit.e2e.issue',
+        ));
+        Process::assertRan(incusCommand(
+            'config',
+            'unset',
+            incusTarget('orbit-e2e-standby-gateway-next'),
+            'user.orbit.e2e.attempt',
+        ));
+        expect(fn () => $host->unsetMetadata('orbit-e2e-standby-gateway-next', ['user.orbit.e2e.owner']))
+            ->toThrow(RuntimeException::class, 'ownership metadata cannot be unset');
+        expect(fn () => $host->unsetMetadata('orbit-e2e-standby-gateway-next', ['limits.cpu']))
+            ->toThrow(RuntimeException::class, 'Invalid Incus ownership metadata');
+    });
+
     it('reads identity from expanded devices when local devices are empty', function () {
         Process::fake(function (PendingProcess $process) {
             expect($process->command)

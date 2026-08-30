@@ -19,6 +19,7 @@ use App\E2E\PreparedStateFingerprint;
 use App\E2E\ProofFixtureStager;
 use App\E2E\StandbyBuilder;
 use App\E2E\StandbyManifestStore;
+use App\E2E\StandbyPromoter;
 use App\E2E\StandbyRefresher;
 use App\E2E\State\AtomicJsonStore;
 use App\E2E\State\OperationLock;
@@ -185,6 +186,17 @@ final class AppServiceProvider extends ServiceProvider
             $app->make(StandbyManifestStore::class),
             $app->make(AtomicJsonStore::class),
             $repositoryRoot,
+        ));
+        $this->app->singleton(StandbyPromoter::class, fn (Application $app): StandbyPromoter => new StandbyPromoter(
+            $app->make(IncusHost::class),
+            $app->make(PreparedStateFingerprint::class),
+            $app->make(StandbyManifestStore::class),
+            $app->make(TopologyReleaser::class),
+            $app->make(OperationLock::class),
+            new OperationLock($app->make(StatePaths::class)),
+            $app->make(StatePaths::class),
+            new GitRepository(self::primaryCheckout($repositoryRoot)),
+            $app->make(OperationId::class),
         ));
         $this->app->singleton(StandbyRefresher::class, fn (Application $app): StandbyRefresher => new StandbyRefresher(
             $app->make(IncusHost::class),

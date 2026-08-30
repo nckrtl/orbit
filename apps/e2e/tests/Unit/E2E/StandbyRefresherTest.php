@@ -644,7 +644,11 @@ function refreshFixture(): array
     $paths = new StatePaths(temporaryPath('orbit-refresh-fixture-state-', 4));
     $state = new AtomicJsonStore($paths);
     $manifests = new StandbyManifestStore($state, $paths, new IncusHost);
-    $generation = static fn (string $id, string $snapshotPrefix, ?string $previous = null): StandbyGeneration => new StandbyGeneration(
+    $generation = static fn (
+        string $id,
+        string $snapshotPrefix,
+        ?string $previous = null,
+    ): StandbyGeneration => new StandbyGeneration(
         $id,
         $oldSha,
         [
@@ -705,7 +709,15 @@ function refreshFixtureCommit(ProcessFactory $processes, string $worktree, array
 /** @param array{sourceRoot: string, worktree: string, branch: string, processes: ProcessFactory} $fixture */
 function removeRefreshFixture(array $fixture): void
 {
-    $fixture['processes']->run(['git', '-C', $fixture['sourceRoot'], 'worktree', 'remove', '--force', $fixture['worktree']]);
+    $fixture['processes']->run([
+        'git',
+        '-C',
+        $fixture['sourceRoot'],
+        'worktree',
+        'remove',
+        '--force',
+        $fixture['worktree'],
+    ]);
     $fixture['processes']->run(['git', '-C', $fixture['sourceRoot'], 'branch', '-D', $fixture['branch']]);
 }
 
@@ -955,7 +967,8 @@ describe('StandbyRefresher contracts', function () {
                     'restore:orbit-e2e-standby-app-prod/main-old-app-prod',
                 ])
                 ->and($processState->events)
-                ->not->toContain('proof')
+                ->not
+                ->toContain('proof')
                 ->and($processState->snapshots)
                 ->toBe([])
                 ->and($fixture['manifests']->promoted()?->id)

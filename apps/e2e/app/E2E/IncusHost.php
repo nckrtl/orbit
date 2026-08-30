@@ -469,6 +469,95 @@ final class IncusHost implements GuestTransport
         return $instances;
     }
 
+    /**
+     * Copy whole stopped instances, without their snapshots, under new names on
+     * one network. The copies carry the source configuration; the ownership
+     * metadata and the given metadata override it.
+     *
+     * @param array<string, array{source:string,target:string,metadata:array<string, string>,network:string,role:string,topology:string,slot:int}> $copies
+     * @return array<string, IncusInstance>
+     */
+    public function copyInstances(array $copies): array
+    {
+        if ($copies === []) {
+            throw new RuntimeException('Incus instance copy batch must be non-empty.');
+        }
+        $sources = array_values(array_unique(array_column($copies, 'source')));
+        foreach ($this->ownedInstances($sources, 'instance copy') as $name => $instance) {
+            if (! $instance->isStopped()) {
+                throw new RuntimeException("Incus instance {$name} must be stopped before it is copied.");
+            }
+        }
+
+        /** @var array<string, list<string>> $commands */
+        $commands = [];
+        /** @var array<string, IncusInstance> $instances */
+        $instances = [];
+        $targets = [];
+        foreach ($copies as $label => $copy) {
+            $this->validateName($label, 'instance copy label');
+            if (isset($targets[$copy['target']])) {
+                throw new RuntimeException('Incus instance copy targets must be unique.');
+            }
+            $targets[$copy['target']] = true;
+            /** @var array{0:list<string>,1:IncusInstance} $copyResult */
+            $copyResult = $this->snapshotCopy(
+                $copy['source'],
+                null,
+                $copy['target'],
+                $copy['metadata'],
+                $copy['network'],
+                $copy['role'],
+                $copy['topology'],
+                $copy['slot'],
+                false,
+            );
+            [$commands[$label], $instances[$label]] = $copyResult;
+        }
+
+        $this->runParallel($commands, 900, failureMessage: 'Incus instance copy batch failed');
+
+        return $instances;
+    }
+
+    /** Rename one stopped Orbit-owned instance; the new name must be free. */
+    public function renameInstance(string $from, string $to): void
+    {
+        $this->validateName($to, 'instance');
+        if (! $this->validatedOwnedVm($from)->isStopped()) {
+            throw new RuntimeException("Incus instance {$from} must be stopped before it is renamed.");
+        }
+        if ($this->instance($to) !== null) {
+            throw new RuntimeException("Incus instance {$to} already exists.");
+        }
+        $this->run(['rename', $this->target($from), $to], 300);
+        if ($this->instance($to) === null) {
+            throw new RuntimeException("Incus instance {$to} does not exist after rename.");
+        }
+    }
+
+    /**
+     * Drop harness metadata keys from one Orbit-owned instance; the ownership keys stay.
+     *
+     * @param list<string> $keys
+     */
+    public function unsetMetadata(string $instance, array $keys): void
+    {
+        if ($keys === []) {
+            throw new RuntimeException('Incus metadata keys cannot be empty.');
+        }
+        foreach ($keys as $key) {
+            $this->validateMetadata($key, '');
+            if (array_key_exists($key, $this->ownershipMetadata)) {
+                throw new RuntimeException('Incus ownership metadata cannot be unset.');
+            }
+        }
+        $this->validatedOwnedVm($instance);
+        foreach ($keys as $key) {
+            $this->run(['config', 'unset', $this->target($instance), $key]);
+        }
+    }
+
     public function setNetwork(string $instance, string $network, string $role): void
     {
         $this->validatedOwnedVm($instance);
@@ -1794,7 +1883,7 @@ final class IncusHost implements GuestTransport
      */
     private function snapshotCopy(
         string $source,
-        string $snapshot,
+        ?string $snapshot,
         string $target,
         array $acquisitionMetadata,
         ?string $network = null,
@@ -1805,7 +1894,9 @@ final class IncusHost implements GuestTransport
         ?array $mount = null,
     ): array {
         $this->validateName($source, 'instance');
-        $this->validateName($snapshot, 'snapshot');
+        if ($snapshot !== null) {
+            $this->validateName($snapshot, 'snapshot');
+        }
         $this->validateName($target, 'instance');
         $this->validateStringMap($acquisitionMetadata, 'acquisition metadata');
         foreach ($acquisitionMetadata as $key => $value) {
@@ -1814,7 +1905,7 @@ final class IncusHost implements GuestTransport
                 throw new RuntimeException('Incus acquisition metadata cannot override ownership metadata.');
             }
         }
-        if ($validateSource) {
+        if ($validateSource && $snapshot !== null) {
             $this->assertOwnedSnapshot($source, $snapshot);
         }
         $metadata = [...$this->ownershipMetadata, ...$acquisitionMetadata];
@@ -1856,8 +1947,9 @@ final class IncusHost implements GuestTransport
         return [
             [
                 'copy',
-                "{$this->target($source)}/{$snapshot}",
+                $snapshot === null ? $this->target($source) : "{$this->target($source)}/{$snapshot}",
                 $this->target($target),
+                ...($snapshot === null ? ['--instance-only'] : []),
                 '--storage',
                 $this->pool,
                 '--config',

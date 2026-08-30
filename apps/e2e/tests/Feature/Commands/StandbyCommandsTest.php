@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Console\Commands\Standby\FingerprintCommand;
+use App\Console\Commands\Standby\PromoteCommand;
 use App\Console\Commands\Standby\RefreshCommand;
 use App\Console\Commands\Standby\RestoreCommand;
 use App\Console\Commands\Standby\StatusCommand;
@@ -61,9 +62,10 @@ describe('standby commands', function () {
         expect([
             new StatusCommand()->getName(),
             new FingerprintCommand()->getName(),
+            new PromoteCommand()->getName(),
             new RefreshCommand()->getName(),
             new RestoreCommand()->getName(),
-        ])->toBe(['standby:status', 'standby:fingerprint', 'standby:refresh', 'standby:restore']);
+        ])->toBe(['standby:status', 'standby:fingerprint', 'standby:promote', 'standby:refresh', 'standby:restore']);
     });
 
     it('limits cold permission to initial standby construction', function () {
@@ -73,6 +75,27 @@ describe('standby commands', function () {
             ->getDescription();
 
         expect($description)->toBe('Permit initial construction from the generic base image');
+    });
+
+    it('refuses promote for an issue with no live attempt before touching Incus', function () {
+        $worktree = temporaryPath('orbit-standby-promote-', 8);
+        mkdir($worktree.'/proofs', 0700, true);
+        file_put_contents($worktree.'/proofs/NCK-123.json', json_encode([
+            'setup' => [],
+            'acceptance' => [[
+                'id' => 'doctor',
+                'node' => 'app-dev',
+                'argv' => ['orbit', 'doctor'],
+                'timeout_seconds' => 60,
+            ]],
+        ], JSON_THROW_ON_ERROR));
+        Process::fake();
+
+        $this
+            ->artisan('standby:promote', ['issue' => 'NCK-123', '--worktree' => $worktree, '--json' => true])
+            ->expectsOutputToContain('NCK-123 has no active attempt.')
+            ->assertFailed();
+        Process::assertNothingRan();
     });
 
     it('rejects refresh without an exact main SHA', function () {
