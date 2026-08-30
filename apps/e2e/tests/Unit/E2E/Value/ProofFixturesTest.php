@@ -22,7 +22,7 @@ describe('ProofFixtures', function (): void {
             ->and(ProofFixtures::fromArray($fixtures->toArray())->toArray())
             ->toBe($fixtures->toArray())
             ->and(ProofFixtures::hostDirectory('NCK-82'))
-            ->toBe('apps/e2e/resources/proof/NCK-82')
+            ->toBe('proofs/NCK-82')
             ->and(ProofFixtures::guestPath('check.sh'))
             ->toBe('/var/lib/orbit-e2e/proof/check.sh');
     });

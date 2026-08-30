@@ -8,7 +8,7 @@ use InvalidArgumentException;
 
 /**
  * The proof-only fixture inventory one proof staged on every role: each file
- * of `apps/e2e/resources/proof/<issue>/` at the candidate commit, installed
+ * of `proofs/<issue>/` at the candidate commit, installed
  * root-owned at the fixed guest directory, plus the digest every role reported
  * after installation. A plan references a fixture by its guest path on any node.
  *
@@ -18,7 +18,7 @@ final readonly class ProofFixtures
 {
     public const string GUEST_DIRECTORY = '/var/lib/orbit-e2e/proof';
 
-    public const string HOST_DIRECTORY = 'apps/e2e/resources/proof';
+    public const string HOST_DIRECTORY = 'proofs';
 
     private const array MODES = ['644', '755'];
 

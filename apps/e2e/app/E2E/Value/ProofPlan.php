@@ -10,8 +10,7 @@ use stdClass;
 
 /**
  * The declared input of one proof: ordered setup and acceptance actions the
- * runner executes as exact argument vectors, plus the post-deployment actions a
- * reviewer approved for the release.
+ * runner executes as exact argument vectors.
  *
  * The plan is validated once at construction and never carries stdin: a proof
  * must not hold secrets, and the record stores the plan verbatim.
@@ -23,21 +22,17 @@ final readonly class ProofPlan
 
     public const int MAX_ID_LENGTH = 64;
 
-    private const array SECTIONS = ['setup', 'acceptance', 'post_deployment_actions'];
+    private const array SECTIONS = ['setup', 'acceptance'];
 
     private const array ACTION_KEYS = ['id', 'node', 'argv', 'timeout_seconds'];
-
-    private const array POST_DEPLOYMENT_KEYS = ['target', 'operation', 'reason', 'recovery', 'verification'];
 
     /**
      * @param list<array{id:string,node:string,argv:list<string>,timeout_seconds:int}> $setup
      * @param list<array{id:string,node:string,argv:list<string>,timeout_seconds:int}> $acceptance
-     * @param list<array{target:string,operation:string,reason:string,recovery:string,verification:string}> $postDeploymentActions
      */
     private function __construct(
         public array $setup,
         public array $acceptance,
-        public array $postDeploymentActions,
     ) {}
 
     public static function fromFile(string $path): self
@@ -79,9 +74,7 @@ final readonly class ProofPlan
         $expected = self::SECTIONS;
         sort($expected, SORT_STRING);
         if ($keys !== $expected) {
-            throw new InvalidArgumentException(
-                'The proof plan must have exactly the keys setup, acceptance, and post_deployment_actions.',
-            );
+            throw new InvalidArgumentException('The proof plan must have exactly the keys setup and acceptance.');
         }
         $sections = [];
         foreach (self::SECTIONS as $section) {
@@ -99,13 +92,8 @@ final readonly class ProofPlan
         $ids = [];
         $setup = self::actions('setup', $sections['setup'], $ids);
         $acceptance = self::actions('acceptance', $sections['acceptance'], $ids);
-        $postDeploymentActions = [];
-        /** @mago-expect analysis:mixed-assignment Each declared action is validated one field at a time. */
-        foreach ($sections['post_deployment_actions'] as $index => $action) {
-            $postDeploymentActions[] = self::postDeploymentAction($index, $action);
-        }
 
-        return new self($setup, $acceptance, $postDeploymentActions);
+        return new self($setup, $acceptance);
     }
 
     /**
@@ -186,35 +174,6 @@ final readonly class ProofPlan
         return $actions;
     }
 
-    /** @return array{target:string,operation:string,reason:string,recovery:string,verification:string} */
-    private static function postDeploymentAction(int $index, mixed $action): array
-    {
-        if (! is_array($action) || ! self::hasExactKeys($action, self::POST_DEPLOYMENT_KEYS)) {
-            throw new InvalidArgumentException(
-                "Post-deployment action [#{$index}] must have exactly the keys target, operation, reason, recovery, and verification.",
-            );
-        }
-        $fields = [];
-        foreach (self::POST_DEPLOYMENT_KEYS as $key) {
-            /** @var mixed $value */
-            $value = $action[$key];
-            if (! is_string($value) || trim($value) === '' || str_contains($value, "\0")) {
-                throw new InvalidArgumentException(
-                    "Post-deployment action [#{$index}] field [{$key}] must be a non-empty string free of NUL bytes.",
-                );
-            }
-            $fields[$key] = $value;
-        }
-
-        return [
-            'target' => $fields['target'],
-            'operation' => $fields['operation'],
-            'reason' => $fields['reason'],
-            'recovery' => $fields['recovery'],
-            'verification' => $fields['verification'],
-        ];
-    }
-
     /**
      * @param array<array-key, mixed> $value
      * @param list<string> $keys
@@ -228,13 +187,9 @@ final readonly class ProofPlan
         return $actual === $keys;
     }
 
-    /** @return array{setup:list<array{id:string,node:string,argv:list<string>,timeout_seconds:int}>,acceptance:list<array{id:string,node:string,argv:list<string>,timeout_seconds:int}>,post_deployment_actions:list<array{target:string,operation:string,reason:string,recovery:string,verification:string}>} */
+    /** @return array{setup:list<array{id:string,node:string,argv:list<string>,timeout_seconds:int}>,acceptance:list<array{id:string,node:string,argv:list<string>,timeout_seconds:int}>} */
     public function toArray(): array
     {
-        return [
-            'setup' => $this->setup,
-            'acceptance' => $this->acceptance,
-            'post_deployment_actions' => $this->postDeploymentActions,
-        ];
+        return ['setup' => $this->setup, 'acceptance' => $this->acceptance];
     }
 }
