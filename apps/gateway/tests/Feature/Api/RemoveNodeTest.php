@@ -3,10 +3,17 @@
 declare(strict_types=1);
 
 use App\Domain\AppDev\PrivateDnsManager;
+use App\Domain\Metrics\ExporterDegradationReason;
+use App\Domain\Metrics\ExporterDegradationRepository;
 use App\Domain\Metrics\MetricsFleetReconciler;
+use App\Domain\Metrics\MetricsRuntimeLifecycle;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WireGuard\GatewayPeerProjectionManager;
+use App\Infrastructure\Firewall\UfwRuleOwnership;
+use App\Infrastructure\Metrics\MetricsExporterRuntime;
+use App\Infrastructure\Metrics\MetricsExporterState;
 use App\Models\Activity;
 use App\Models\App as OrbitApp;
 use App\Models\FirewallRule;
@@ -66,6 +73,75 @@ it('restores active Metrics selection when exporter retirement fails', function 
         ->toBeEmpty()
         ->and($this->dns->convergences)
         ->toBe(0);
+});
+
+it('removes an unreachable node while Metrics is enabled', function (): void {
+    $caller = remove_node_record(name: 'operator', wireguardAddress: '10.44.0.2');
+    $target = remove_node_record(name: 'unreachable', wireguardAddress: '10.44.0.3');
+    $metricsNode = remove_node_record(name: 'metrics', wireguardAddress: '10.44.0.4');
+    NodeRole::query()->create([
+        'node_id' => $metricsNode->id,
+        'role' => RoleName::Metrics->value,
+        'status' => LifecycleStatus::Active->value,
+    ]);
+    $caller->accessibleNodes()->attach($target);
+    $target->update(['wireguard_public_key' => 'TARGET_PUBLIC_KEY']);
+    // Every SSH call to the removed node fails, exactly as it would while the
+    // node is powered off.
+    $exporters = new RemoveNodeUnreachableExporterRuntime('unreachable');
+    app()->instance(MetricsExporterRuntime::class, $exporters);
+    app()->instance(MetricsRuntimeLifecycle::class, new RemoveNodeFakeMetricsRuntime);
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
+        ->deleteJson("/api/v1/nodes/{$target->id}")
+        ->assertOk();
+
+    // The retire of the dead node is attempted and fails, and the remaining
+    // fleet still converges afterwards rather than the removal aborting.
+    expect($target->fresh())
+        ->toBeNull()
+        ->and($this->peers->removed)
+        ->toBe([$target->id])
+        ->and($exporters->events)
+        ->toContain('remove:unreachable')
+        ->toContain('converge:metrics')
+        ->toContain('snapshot:operator')
+        ->and(array_filter(
+            $exporters->events,
+            static fn (string $event): bool => str_ends_with($event, ':unreachable') && $event !== 'remove:unreachable',
+        ))
+        ->toBeEmpty();
+});
+
+it('reconciles a fleet peer that is unreachable without failing the removal', function (): void {
+    $caller = remove_node_record(name: 'operator', wireguardAddress: '10.44.0.2');
+    $target = remove_node_record(name: 'retired', wireguardAddress: '10.44.0.3');
+    $metricsNode = remove_node_record(name: 'metrics', wireguardAddress: '10.44.0.4');
+    $peer = remove_node_record(name: 'dead-peer', wireguardAddress: '10.44.0.5');
+    NodeRole::query()->create([
+        'node_id' => $metricsNode->id,
+        'role' => RoleName::Metrics->value,
+        'status' => LifecycleStatus::Active->value,
+    ]);
+    NodeRole::query()->create([
+        'node_id' => $peer->id,
+        'role' => RoleName::AppProd->value,
+        'status' => LifecycleStatus::Active->value,
+    ]);
+    $caller->accessibleNodes()->attach($target);
+    app()->instance(MetricsExporterRuntime::class, new RemoveNodeUnreachableExporterRuntime('dead-peer'));
+    app()->instance(MetricsRuntimeLifecycle::class, new RemoveNodeFakeMetricsRuntime);
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
+        ->deleteJson("/api/v1/nodes/{$target->id}")
+        ->assertOk();
+
+    expect($target->fresh())
+        ->toBeNull()
+        ->and(app(ExporterDegradationRepository::class)->get($peer->id))
+        ->toBe(ExporterDegradationReason::Unreachable);
 });
 
 it('removes only the target WireGuard peer before reconciling DNS', function (): void {
@@ -407,5 +483,73 @@ final class RemoveNodeFakePeerProjection implements GatewayPeerProjectionManager
         if ($this->restoreFailure instanceof Throwable) {
             throw $this->restoreFailure;
         }
+    }
+}
+
+/** @mago-expect lint:single-class-per-file Test-local fakes keep projection state visible to this API suite. */
+final class RemoveNodeFakeMetricsRuntime implements MetricsRuntimeLifecycle
+{
+    public function converge(Node $node, NodeRole $assignment): void {}
+
+    public function remove(Node $node, NodeRole $assignment, bool $purgeData): void {}
+
+    public function health(Node $node, string $service): bool
+    {
+        return true;
+    }
+}
+
+/** @mago-expect lint:single-class-per-file Test-local fakes keep projection state visible to this API suite. */
+final class RemoveNodeUnreachableExporterRuntime implements MetricsExporterRuntime
+{
+    /** @var list<string> */
+    public array $events = [];
+
+    public function __construct(
+        private readonly string $unreachableNode,
+    ) {}
+
+    public function snapshot(Node $node, Node $metricsNode): MetricsExporterState
+    {
+        $this->events[] = "snapshot:{$node->name}";
+        $this->guard($node);
+
+        return new MetricsExporterState(null, false, UfwRuleOwnership::Missing);
+    }
+
+    public function converge(Node $node, Node $metricsNode): void
+    {
+        $this->events[] = "converge:{$node->name}";
+        $this->guard($node);
+    }
+
+    public function remove(Node $node, Node $metricsNode): void
+    {
+        $this->events[] = "remove:{$node->name}";
+        $this->guard($node);
+    }
+
+    public function restore(Node $node, Node $metricsNode, MetricsExporterState $state): void
+    {
+        $this->events[] = "restore:{$node->name}";
+        $this->guard($node);
+    }
+
+    public function actual(Node $node, Node $metricsNode): string
+    {
+        return $node->name === $this->unreachableNode ? 'unknown' : 'active';
+    }
+
+    private function guard(Node $node): void
+    {
+        if ($node->name !== $this->unreachableNode) {
+            return;
+        }
+
+        throw new ResourceOperationException(
+            'metrics.exporter_configuration_inspection_failed',
+            'The Metrics exporter configuration could not be inspected.',
+            502,
+        );
     }
 }
