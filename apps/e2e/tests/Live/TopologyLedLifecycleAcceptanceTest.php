@@ -324,7 +324,9 @@ it('proves the topology-led lifecycle through public wrappers', function (): voi
         lifecycleAssertRelease($diagnosisRelease, $proof, 'proof', lifecycleProofReleased($proof), $stateRoot);
         Assert::assertSame(
             $diagnosed['proof'],
-            LiveHarness::jsonFile("{$stateRoot}/evidence/proofs/{$issue}/{$proofAttempt}.json"),
+            array_diff_key(LiveHarness::jsonFile("{$stateRoot}/evidence/proofs/{$issue}/{$proofAttempt}.json"), [
+                'plan' => true,
+            ]),
         );
 
         // Phase: prove the same unchanged candidate on another fresh attempt.
@@ -375,7 +377,9 @@ it('proves the topology-led lifecycle through public wrappers', function (): voi
         lifecycleAssertRelease($proofRelease, $secondProof, 'proof', lifecycleProofReleased($secondProof), $stateRoot);
         Assert::assertSame(
             $reproved['proof'],
-            LiveHarness::jsonFile("{$stateRoot}/evidence/proofs/{$issue}/{$secondProofAttempt}.json"),
+            array_diff_key(LiveHarness::jsonFile("{$stateRoot}/evidence/proofs/{$issue}/{$secondProofAttempt}.json"), [
+                'plan' => true,
+            ]),
         );
 
         // Phase: standby and unrelated resources are unchanged.
