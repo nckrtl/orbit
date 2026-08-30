@@ -2,14 +2,37 @@
 set -euo pipefail
 state=/tmp/orbit-nck-103-state
 test -s "$state"
+
+json_field() {
+  php -r '
+    $data = json_decode(stream_get_contents(STDIN), true);
+    echo $data[$argv[1]] ?? $data["data"][$argv[1]] ?? "";
+  ' -- "$1"
+}
+
+normalize_json() {
+  php -r '
+    function normalize(mixed $value): mixed {
+      if (!is_array($value)) { return $value; }
+      foreach ($value as $key => $item) {
+        if ($key === "request_id") { unset($value[$key]); continue; }
+        $value[$key] = normalize($item);
+      }
+      if (!array_is_list($value)) { ksort($value); }
+      return $value;
+    }
+    echo json_encode(normalize(json_decode(stream_get_contents(STDIN), true)));
+  '
+}
+
 mapfile -t values < "$state"
 slug=${values[0]}; node_id=${values[1]}; instance_id=${values[3]}; workspace_id=${values[4]}; old_tld=${values[5]}
 node=$(orbit node:show "$node_id" --json)
 instance=$(orbit instance:show "$instance_id" --json)
 workspace=$(orbit workspace:show "$workspace_id" --json)
-node_tld=$(jq -r '.. | objects | .tld? // empty' <<<"$node" | head -n1)
-instance_host=$(jq -r '.. | objects | .hostname? // empty' <<<"$instance" | head -n1)
-workspace_host=$(jq -r '.. | objects | .hostname? // empty' <<<"$workspace" | head -n1)
+node_tld=$(json_field tld <<<"$node")
+instance_host=$(json_field hostname <<<"$instance")
+workspace_host=$(json_field hostname <<<"$workspace")
 test "$node_tld" = test
 test "$instance_host" = "$slug.test"
 test "$workspace_host" = "preview.$slug.test"
@@ -32,8 +55,8 @@ for host in "$instance_host" "$workspace_host"; do
 done
 ! sudo grep -FRq "$old_tld" "$active_caddy" "$active_fragments" 2>/dev/null
 ! sudo grep -Fq "$old_tld" /etc/dnsmasq.d/orbit-records.conf 2>/dev/null
-before=$(orbit node:show "$node_id" --json | jq -S 'del(.. | .request_id?)')
+before=$(orbit node:show "$node_id" --json | normalize_json)
 orbit node:list --json >/dev/null
 orbit node:provision app-dev --user=orbit --orbit-user=orbit --tld=.TEST --json >/dev/null
-after=$(orbit node:show "$node_id" --json | jq -S 'del(.. | .request_id?)')
+after=$(orbit node:show "$node_id" --json | normalize_json)
 test "$before" = "$after"
