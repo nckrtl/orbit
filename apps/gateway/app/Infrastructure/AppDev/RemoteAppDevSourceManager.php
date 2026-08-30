@@ -498,7 +498,7 @@ final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
                 $workspace->instance->node,
                 new RemoteCommand(
                     arguments: $arguments,
-                    input: self::assertRecordedParentsFunction().<<<'BASH'
+                    input: self::assertRecordedParentsFunction().self::releaseTraversalPathsFunction().<<<'BASH'
                             instance=$1
                             repository=$2
                             checkout=$3
@@ -568,85 +568,7 @@ final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
                                 rmdir -- "$grouping_dir"
                             fi
                         fi
-
-                        for path in "${release_paths[@]}"; do
-                            case "$checkout" in
-                                "$path"|"$path"/*) ;;
-                                *)
-                                    case "$grouping_dir" in
-                                        "$path"|"$path"/*) ;;
-                                        *) exit 1 ;;
-                                    esac
-                                    ;;
-                            esac
-                                state_directory="$managed_home/.orbit/caddy-traversal-state"
-                                state_key=$(printf '%s' "$path" | sha256sum | cut -d' ' -f1)
-                                state="$state_directory/$state_key"
-                                if [ ! -e "$state" ] && [ ! -L "$state" ]; then
-                                    if [ ! -e "$path" ] && [ ! -L "$path" ]; then
-                                        continue
-                                    fi
-
-                                    test -d "$path"
-                                    test ! -L "$path"
-                                    test "$(realpath -e "$path")" = "$path"
-                                    if getfattr --only-values -n "$marker_name" -- "$path" >/dev/null 2>&1; then
-                                        if getfacl -cp "$path" | grep -Eq '^user:caddy:--x$' \
-                                            && getfacl -cp "$path" | grep -Eq '^mask::[r-][w-]x$'; then
-                                            exit 1
-                                        fi
-                                        setfattr -x "$marker_name" -- "$path"
-                                    fi
-                                    continue
-                                fi
-
-                                if [ ! -e "$path" ] && [ ! -L "$path" ]; then
-                                    test -d "$state_directory"
-                                    test ! -L "$state_directory"
-                                    test "$(realpath -e "$state_directory")" = "$state_directory"
-                                    test -f "$state"
-                                    test ! -L "$state"
-                                    test "$(stat -c '%a' "$state")" = 600
-                                    test "$(sed -n '1p' "$state")" = "$path"
-                                    state_nonce=$(sed -n '3p' "$state")
-                                    printf '%s\n' "$state_nonce" | grep -Eq '^[0-9a-f]{64}$'
-                                    rm -f -- "$state"
-                                    continue
-                                fi
-                                test -d "$state_directory"
-                                test ! -L "$state_directory"
-                                test "$(realpath -e "$state_directory")" = "$state_directory"
-                                test -d "$path"
-                            test ! -L "$path"
-                            test "$(realpath -e "$path")" = "$path"
-                            test -f "$state"
-                            test ! -L "$state"
-                            test "$(stat -c '%a' "$state")" = 600
-                            test "$(sed -n '1p' "$state")" = "$path"
-                            state_identity=$(sed -n '2p' "$state")
-                            printf '%s\n' "$state_identity" | grep -Eq '^[0-9]+:[0-9]+$'
-                            test "$state_identity" = "$(stat -c '%d:%i' "$path")"
-                            state_nonce=$(sed -n '3p' "$state")
-                            printf '%s\n' "$state_nonce" | grep -Eq '^[0-9a-f]{64}$'
-                            tail -n +4 "$state" | setfacl --test --set-file=- "$path" >/dev/null
-                            if current_nonce=$(getfattr --only-values -n "$marker_name" -- "$path" 2>/dev/null); then
-                                test "$current_nonce" = "$state_nonce"
-                            elif cmp -s <(tail -n +4 "$state") <(getfacl -cp "$path" | sed '/^default:/d'); then
-                                rm -f -- "$state"
-                                continue
-                            else
-                                exit 1
-                            fi
-
-                            if ! cmp -s <(tail -n +4 "$state") <(getfacl -cp "$path" | sed '/^default:/d'); then
-                                getfacl -cp "$path" | grep -Eq '^user:caddy:--x$'
-                                getfacl -cp "$path" | grep -Eq '^mask::[r-][w-]x$'
-                                tail -n +4 "$state" | setfacl --set-file=- "$path"
-                                cmp -s <(tail -n +4 "$state") <(getfacl -cp "$path" | sed '/^default:/d')
-                            fi
-                            setfattr -x "$marker_name" -- "$path"
-                            rm -f -- "$state"
-                        done
+                        release_traversal_paths
                         BASH,
                 ),
                 step: 'workspace-source-remove',
