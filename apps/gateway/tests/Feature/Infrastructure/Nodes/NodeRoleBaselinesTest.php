@@ -59,6 +59,16 @@ it('converges and removes only app development role-owned infrastructure', funct
     ]);
 });
 
+it('converges only the private DNS record when an app development node is unreachable', function (): void {
+    $events = [];
+    [$node, $assignment] = role_baseline_models(RoleName::AppDev);
+    $baseline = app_dev_role_baseline($events);
+
+    $baseline->removeUnreachable($node, $assignment);
+
+    expect($events)->toBe(['dns:none']);
+});
+
 it('converges and removes only app production role-owned infrastructure', function (): void {
     expect(class_exists(AppProdRoleBaseline::class))->toBeTrue();
 
@@ -76,6 +86,16 @@ it('converges and removes only app production role-owned infrastructure', functi
         'caddy:remove',
         'firewall:remove:app-prod',
     ]);
+});
+
+it('does nothing when an app production node is unreachable', function (): void {
+    $events = [];
+    [$node, $assignment] = role_baseline_models(RoleName::AppProd);
+    $baseline = app_prod_role_baseline($events);
+
+    $baseline->removeUnreachable($node, $assignment);
+
+    expect($events)->toBe([]);
 });
 
 it('keeps gateway and VPN removal protected at the baseline boundary', function (): void {
@@ -107,6 +127,10 @@ it('keeps gateway and VPN removal protected at the baseline boundary', function 
         ->toThrow(NodeRoleValidationException::class);
     expect(fn () => $vpn->remove($vpnNode, $vpnAssignment, purgeData: false))
         ->toThrow(NodeRoleValidationException::class);
+    expect(fn () => $gateway->removeUnreachable($gatewayNode, $gatewayAssignment))
+        ->toThrow(NodeRoleValidationException::class, 'The gateway role cannot be removed.');
+    expect(fn () => $vpn->removeUnreachable($vpnNode, $vpnAssignment))
+        ->toThrow(NodeRoleValidationException::class, 'The VPN role cannot be removed.');
     expect($events)->toBe(['firewall:converge:gateway', 'ssh:vpn', 'firewall:converge:vpn']);
 });
 
@@ -261,6 +285,87 @@ it('dispatches every assignment to its code-defined baseline', function (): void
         'ssh:app-dev',
         'ssh:app-prod',
     );
+});
+
+it('dispatches removeUnreachable to the matching baseline and skips fleet reconciliation for Metrics', function (): void {
+    $events = [];
+    $metricsFleet = Mockery::mock(MetricsFleetReconciler::class);
+    $metricsFleet->shouldReceive('reconcile')->times(2);
+    $dispatcher = new NativeRoleBaselineConverger(
+        new GatewayRoleBaseline(baseline_firewall($events)),
+        new VpnRoleBaseline(
+            new NodeRolePrerequisiteCommandFactory,
+            baseline_ssh($events),
+            baseline_keys(),
+            baseline_known_hosts(),
+            baseline_firewall($events),
+            baseline_account_resolver(),
+        ),
+        app_dev_role_baseline($events),
+        app_prod_role_baseline($events),
+        new MetricsRoleBaseline(
+            Mockery::mock(MetricsRuntimeLifecycle::class)->shouldIgnoreMissing(),
+            Mockery::mock(MetricsExporterLifecycle::class)->shouldIgnoreMissing(),
+            Mockery::mock(MetricsPublicationManager::class)->shouldIgnoreMissing(),
+            new MetricsGatewayResolver,
+            new MetricsPublicationReport,
+        ),
+        $metricsFleet,
+        new NodeRoleOperatingSystemGuard(
+            baseline_guard_ssh($events),
+            baseline_keys(),
+            baseline_known_hosts(),
+        ),
+    );
+
+    [$appDevNode, $appDevAssignment] = role_baseline_models(RoleName::AppDev, 'unreachable-app-dev');
+    [$appProdNode, $appProdAssignment] = role_baseline_models(RoleName::AppProd, 'unreachable-app-prod');
+    [$metricsNode, $metricsAssignment] = role_baseline_models(RoleName::Metrics, 'unreachable-metrics');
+
+    $dispatcher->removeUnreachable($appDevNode, $appDevAssignment);
+    $dispatcher->removeUnreachable($appProdNode, $appProdAssignment);
+    $dispatcher->removeUnreachable($metricsNode, $metricsAssignment);
+
+    expect($events)->toBe(['dns:none']);
+});
+
+it('propagates the Gateway and VPN removeUnreachable rejection through the dispatcher', function (): void {
+    $events = [];
+    $metricsFleet = Mockery::mock(MetricsFleetReconciler::class)->shouldIgnoreMissing();
+    $dispatcher = new NativeRoleBaselineConverger(
+        new GatewayRoleBaseline(baseline_firewall($events)),
+        new VpnRoleBaseline(
+            new NodeRolePrerequisiteCommandFactory,
+            baseline_ssh($events),
+            baseline_keys(),
+            baseline_known_hosts(),
+            baseline_firewall($events),
+            baseline_account_resolver(),
+        ),
+        app_dev_role_baseline($events),
+        app_prod_role_baseline($events),
+        new MetricsRoleBaseline(
+            Mockery::mock(MetricsRuntimeLifecycle::class)->shouldIgnoreMissing(),
+            Mockery::mock(MetricsExporterLifecycle::class)->shouldIgnoreMissing(),
+            Mockery::mock(MetricsPublicationManager::class)->shouldIgnoreMissing(),
+            new MetricsGatewayResolver,
+            new MetricsPublicationReport,
+        ),
+        $metricsFleet,
+        new NodeRoleOperatingSystemGuard(
+            baseline_guard_ssh($events),
+            baseline_keys(),
+            baseline_known_hosts(),
+        ),
+    );
+
+    [$gatewayNode, $gatewayAssignment] = role_baseline_models(RoleName::Gateway, 'unreachable-gateway');
+    [$vpnNode, $vpnAssignment] = role_baseline_models(RoleName::Vpn, 'unreachable-vpn');
+
+    expect(fn () => $dispatcher->removeUnreachable($gatewayNode, $gatewayAssignment))
+        ->toThrow(NodeRoleValidationException::class)
+        ->and(fn () => $dispatcher->removeUnreachable($vpnNode, $vpnAssignment))
+        ->toThrow(NodeRoleValidationException::class);
 });
 
 it('checks the remote operating system before every role convergence', function (): void {

@@ -496,6 +496,8 @@ final class AddNodeRoleBaselineFake implements RoleBaselineConverger
     }
 
     public function remove(Node $node, NodeRole $assignment, bool $purgeData): void {}
+
+    public function removeUnreachable(Node $node, NodeRole $assignment): void {}
 }
 
 /** @mago-expect lint:single-class-per-file Test-local lock records persisted assignment state at release. */

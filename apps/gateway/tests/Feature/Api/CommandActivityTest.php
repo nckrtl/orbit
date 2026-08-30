@@ -433,6 +433,8 @@ final class CommandActivityNodeRoleLifecycleFake implements RoleBaselineConverge
 
     public function remove(Node $node, NodeRole $assignment, bool $purgeData): void {}
 
+    public function removeUnreachable(Node $node, NodeRole $assignment): void {}
+
     public function clean(NodeRoleDependencySet $dependencies): void {}
 }
 

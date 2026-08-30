@@ -22,22 +22,37 @@ final class RemoveNodeRoleRequest extends FormRequest
             'role' => ['required', 'string', Rule::enum(RoleName::class)],
             'force' => ['sometimes', $this->strictBoolean(...)],
             'purge_data' => ['sometimes', $this->strictBoolean(...)],
+            'offline' => ['sometimes', $this->strictBoolean(...)],
         ];
     }
 
     /** @return list<callable(Validator): void> */
     public function after(): array
     {
-        return [function (Validator $validator): void {
-            if ($this->input('purge_data') !== true || $this->input('force') === true) {
-                return;
-            }
+        return [
+            function (Validator $validator): void {
+                if ($this->input('purge_data') !== true || $this->input('force') === true) {
+                    return;
+                }
 
-            $validator->errors()->add(
-                'force',
-                'The force field must be true when purge data is requested.',
-            );
-        }];
+                $validator->errors()->add(
+                    'force',
+                    'The force field must be true when purge data is requested.',
+                );
+            },
+            function (Validator $validator): void {
+                if ($this->input('offline') !== true || $this->input('force') === true) {
+                    return;
+                }
+
+                // The offline claim relaxes what Orbit attempts on the node; it
+                // never stands in for consent to the removal itself.
+                $validator->errors()->add(
+                    'force',
+                    'The force field must be true when offline removal is requested.',
+                );
+            },
+        ];
     }
 
     /** @return array<string, mixed> */
@@ -46,7 +61,7 @@ final class RemoveNodeRoleRequest extends FormRequest
         try {
             $payload = app(TopLevelJsonObjectInspector::class)->inspect(
                 $this->getContent(),
-                ['force', 'purge_data'],
+                ['force', 'purge_data', 'offline'],
             );
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
@@ -73,6 +88,17 @@ final class RemoveNodeRoleRequest extends FormRequest
     public function purgeData(): bool
     {
         return $this->validated('purge_data', false) === true;
+    }
+
+    /**
+     * The operator's claim that the node is gone.
+     *
+     * It is a claim, not an instruction: the action probes the node and takes
+     * the ordinary fail-closed path when it answers.
+     */
+    public function offline(): bool
+    {
+        return $this->validated('offline', false) === true;
     }
 
     private function strictBoolean(string $attribute, mixed $value, Closure $fail): void
