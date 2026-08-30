@@ -49,7 +49,10 @@ Three separate causes, found by comparing each issue with the live files:
   restores it.
 - Mutation scan: inventory of the Orbit home, row counts per Gateway table,
   and service states before and after Doctor requests. Only `activity_log`
-  grows, by one request-audit row per request.
+  grows, by one request-audit row per request. Exclude the SQLite `-wal` and
+  `-shm` sidecars from the inventory: SQLite creates and removes them for any
+  connection, including a read-only one, so they appear and disappear between
+  two snapshots without any Doctor write.
 - Self-checking actions live in `apps/e2e/resources/proof/doctor-proof.sh`.
   It runs from the candidate checkout on the checkout roles, so the closed
   guest-script inventory in `WorktreeSynchronizer` stays unchanged. Actions

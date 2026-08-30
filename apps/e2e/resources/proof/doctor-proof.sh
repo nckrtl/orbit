@@ -67,7 +67,11 @@ PHP
 snapshot() {
   case "$1" in
     gateway)
-      find /home/orbit/.orbit -xdev \( -type f -o -type d -o -type l \) -printf '%p\n' | sort
+      # SQLite creates and removes -wal and -shm sidecars for any connection,
+      # including a read-only one, so they are not evidence of a Doctor write.
+      find /home/orbit/.orbit -xdev \( -type f -o -type d -o -type l \) -printf '%p\n' \
+        | grep -v '^/home/orbit/\.orbit/gateway\.sqlite-\(wal\|shm\)$' | sort
+      test -f /home/orbit/.orbit/gateway.sqlite
       php -r '$pdo = new PDO("sqlite:/home/orbit/.orbit/gateway.sqlite"); foreach ($pdo->query("select name from sqlite_master where type = \"table\" and name not like \"sqlite_%\" order by name")->fetchAll(PDO::FETCH_COLUMN) as $table) { printf("rows %s %d\n", $table, $pdo->query("select count(*) from \"{$table}\"")->fetchColumn()); }'
       for unit in caddy dnsmasq wg-quick@orbit php8.5-fpm ssh; do printf 'unit %s %s\n' "$unit" "$(systemctl is-active "$unit")"; done
       ;;
