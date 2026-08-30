@@ -306,6 +306,8 @@ describe('legacy retirement', function () {
         'canonical standby VM' => ['instances', 'orbit-e2e-standby-gateway'],
         'canonical ORBIT feature VM' => ['instances', 'orbit-e2e-orbit-123456789-aaaaaaaa-gateway'],
         'canonical ORBIT feature snapshot' => ['snapshots', 'orbit-e2e-orbit-123456789-aaaaaaaa-gateway/ready'],
+        'compact live standby network' => ['networks', 'oe-live-standby'],
+        'canonical live standby VM' => ['instances', 'orbit-e2e-live-standby-gateway'],
     ]);
 
     it('keeps similar-looking foreign identities eligible when classified as legacy', function (

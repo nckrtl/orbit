@@ -70,13 +70,24 @@ it('renders status exporter rows in JSON', function (): void {
                 ],
                 'prometheus' => 'healthy',
                 'grafana' => 'healthy',
-                'exporters' => [[
-                    'id' => 2,
-                    'name' => 'metrics',
-                    'desired' => true,
-                    'actual' => 'active',
-                    'reason' => 'metrics_node',
-                ]],
+                'exporters' => [
+                    [
+                        'id' => 2,
+                        'name' => 'metrics',
+                        'desired' => true,
+                        'actual' => 'active',
+                        'reason' => 'metrics_node',
+                        'degraded_reason' => null,
+                    ],
+                    [
+                        'id' => 5,
+                        'name' => 'app-prod',
+                        'desired' => true,
+                        'actual' => 'unknown',
+                        'reason' => 'role_default',
+                        'degraded_reason' => 'unreachable',
+                    ],
+                ],
             ],
             'meta' => ['request_id' => $requestId],
         ]),
@@ -97,13 +108,24 @@ it('renders status exporter rows in JSON', function (): void {
             ],
             'prometheus' => 'healthy',
             'grafana' => 'healthy',
-            'exporters' => [[
-                'id' => 2,
-                'name' => 'metrics',
-                'desired' => true,
-                'actual' => 'active',
-                'reason' => 'metrics_node',
-            ]],
+            'exporters' => [
+                [
+                    'id' => 2,
+                    'name' => 'metrics',
+                    'desired' => true,
+                    'actual' => 'active',
+                    'reason' => 'metrics_node',
+                    'degraded_reason' => null,
+                ],
+                [
+                    'id' => 5,
+                    'name' => 'app-prod',
+                    'desired' => true,
+                    'actual' => 'unknown',
+                    'reason' => 'role_default',
+                    'degraded_reason' => 'unreachable',
+                ],
+            ],
             'request_id' => $requestId,
         ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))
         ->assertExitCode(0);
@@ -586,13 +608,23 @@ it('renders complete human status tables', function (): void {
                 'url' => 'https://metrics.orbit',
                 'prometheus' => 'healthy',
                 'grafana' => 'healthy',
-                'exporters' => [[
-                    'id' => 7,
-                    'name' => 'orbit-ops',
-                    'desired' => true,
-                    'actual' => 'active',
-                    'reason' => 'explicit_enabled',
-                ]],
+                'exporters' => [
+                    [
+                        'id' => 7,
+                        'name' => 'orbit-ops',
+                        'desired' => true,
+                        'actual' => 'active',
+                        'reason' => 'explicit_enabled',
+                    ],
+                    [
+                        'id' => 9,
+                        'name' => 'unreachable-node',
+                        'desired' => true,
+                        'actual' => 'unknown',
+                        'reason' => 'role_default',
+                        'degraded_reason' => 'unreachable',
+                    ],
+                ],
             ],
             'meta' => ['request_id' => metrics_cli_request_id()],
         ]),
@@ -607,8 +639,9 @@ it('renders complete human status tables', function (): void {
             ['Prometheus', 'healthy'],
             ['Grafana',    'healthy'],
         ])
-        ->expectsTable(['ID', 'Node', 'Desired', 'Actual', 'Reason'], [
-            [7, 'orbit-ops', 'yes', 'active', 'explicit_enabled'],
+        ->expectsTable(['ID', 'Node', 'Desired', 'Actual', 'Reason', 'Degraded'], [
+            [7, 'orbit-ops',        'yes', 'active',  'explicit_enabled', '-'],
+            [9, 'unreachable-node', 'yes', 'unknown', 'role_default',     'unreachable'],
         ])
         ->expectsOutput('Request ID: '.metrics_cli_request_id())
         ->assertSuccessful();

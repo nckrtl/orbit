@@ -17,9 +17,11 @@ use App\E2E\LegacyRetirementHost;
 use App\E2E\OrphanNetworkSweep;
 use App\E2E\PreparedStateFingerprint;
 use App\E2E\ProofFixtureStager;
+use App\E2E\StandbyAvailability;
 use App\E2E\StandbyBuilder;
 use App\E2E\StandbyManifestStore;
 use App\E2E\StandbyPromoter;
+use App\E2E\StandbyRebuilder;
 use App\E2E\StandbyRefresher;
 use App\E2E\State\AtomicJsonStore;
 use App\E2E\State\OperationLock;
@@ -31,6 +33,7 @@ use App\E2E\TopologyProofRunner;
 use App\E2E\TopologyReleaser;
 use App\E2E\TopologyVerifier;
 use App\E2E\Value\OperationId;
+use App\E2E\Value\StandbyIdentity;
 use App\E2E\WorktreeLocator;
 use App\E2E\WorktreeSynchronizer;
 use Illuminate\Contracts\Config\Repository;
@@ -47,6 +50,14 @@ final class AppServiceProvider extends ServiceProvider
             $value = is_string($value) && $value !== '' ? $value : bin2hex(random_bytes(16));
 
             return new OperationId($value);
+        });
+        // Which physical standby this checkout owns. Two checkouts on one host
+        // must not share standby VMs: a promotion from one would leave the
+        // other's manifest naming snapshots that no longer exist.
+        $this->app->singleton(StandbyIdentity::class, function (Application $app): StandbyIdentity {
+            $namespace = $app->make(Repository::class)->get('e2e.standby.namespace');
+
+            return StandbyIdentity::forNamespace(is_string($namespace) ? $namespace : '');
         });
         $repositoryRoot = dirname(__DIR__, 4);
         $this->app->singleton(GitRepository::class, fn (): GitRepository => new GitRepository($repositoryRoot));
@@ -145,6 +156,7 @@ final class AppServiceProvider extends ServiceProvider
             capacity: $app->make(HostCapacity::class),
             hostPaths: $app->make(StatePaths::class),
             operation: $app->make(OperationId::class),
+            standbyIdentity: $app->make(StandbyIdentity::class),
             repositoryRoot: $repositoryRoot,
         ));
         $this->app->singleton(
@@ -160,6 +172,7 @@ final class AppServiceProvider extends ServiceProvider
                 $app->make(HostCapacity::class),
                 $app->make(StatePaths::class),
                 $app->make(OperationId::class),
+                $app->make(StandbyIdentity::class),
                 $repositoryRoot,
             ),
         );
@@ -186,6 +199,7 @@ final class AppServiceProvider extends ServiceProvider
             $app->make(StandbyManifestStore::class),
             $app->make(AtomicJsonStore::class),
             $repositoryRoot,
+            $app->make(StandbyIdentity::class),
         ));
         $this->app->singleton(StandbyPromoter::class, fn (Application $app): StandbyPromoter => new StandbyPromoter(
             $app->make(IncusHost::class),
@@ -197,6 +211,7 @@ final class AppServiceProvider extends ServiceProvider
             $app->make(StatePaths::class),
             new GitRepository(self::primaryCheckout($repositoryRoot)),
             $app->make(OperationId::class),
+            $app->make(StandbyIdentity::class),
         ));
         $this->app->singleton(StandbyRefresher::class, fn (Application $app): StandbyRefresher => new StandbyRefresher(
             $app->make(IncusHost::class),
@@ -214,6 +229,22 @@ final class AppServiceProvider extends ServiceProvider
             $app->make(GitRepository::class),
             $repositoryRoot,
             $app->make(OperationId::class),
+            $app->make(StandbyIdentity::class),
+            $app->make(StandbyAvailability::class),
+        ));
+        $this->app->singleton(StandbyAvailability::class, fn (Application $app): StandbyAvailability => new StandbyAvailability(
+            $app->make(IncusHost::class),
+            $app->make(StandbyIdentity::class),
+        ));
+        $this->app->singleton(StandbyRebuilder::class, fn (Application $app): StandbyRebuilder => new StandbyRebuilder(
+            $app->make(IncusHost::class),
+            $app->make(IncusNetworkLifecycle::class),
+            $app->make(StandbyManifestStore::class),
+            $app->make(AtomicJsonStore::class),
+            $app->make(StatePaths::class),
+            $app->make(OperationLock::class),
+            $app->make(OperationId::class),
+            $app->make(StandbyIdentity::class),
         ));
     }
 

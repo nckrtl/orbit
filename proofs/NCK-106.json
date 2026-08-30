@@ -1,0 +1,11 @@
+{
+    "setup": [],
+    "acceptance": [
+        {
+            "id": "preserve-workspace-caddy-acl",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/verify-workspace-acl.sh"],
+            "timeout_seconds": 300
+        }
+    ]
+}

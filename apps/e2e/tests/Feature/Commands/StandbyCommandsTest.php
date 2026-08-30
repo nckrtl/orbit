@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Console\Commands\Standby\FingerprintCommand;
 use App\Console\Commands\Standby\PromoteCommand;
+use App\Console\Commands\Standby\RebuildCommand;
 use App\Console\Commands\Standby\RefreshCommand;
 use App\Console\Commands\Standby\RestoreCommand;
 use App\Console\Commands\Standby\StatusCommand;
@@ -12,12 +13,14 @@ use App\E2E\IncusHost;
 use App\E2E\LaravelReleaseResolver;
 use App\E2E\PreparedStateFingerprint;
 use App\E2E\StandbyManifestStore;
+use App\E2E\StandbyRebuilder;
 use App\E2E\StandbyRefresher;
 use App\E2E\State\AtomicJsonStore;
 use App\E2E\State\OperationLock;
 use App\E2E\State\StatePaths;
 use App\E2E\Value\LaravelRelease;
 use App\E2E\Value\StandbyGeneration;
+use App\E2E\Value\StandbyIdentity;
 use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Facades\Process;
 
@@ -65,7 +68,15 @@ describe('standby commands', function () {
             new PromoteCommand()->getName(),
             new RefreshCommand()->getName(),
             new RestoreCommand()->getName(),
-        ])->toBe(['standby:status', 'standby:fingerprint', 'standby:promote', 'standby:refresh', 'standby:restore']);
+            new RebuildCommand()->getName(),
+        ])->toBe([
+            'standby:status',
+            'standby:fingerprint',
+            'standby:promote',
+            'standby:refresh',
+            'standby:restore',
+            'standby:rebuild',
+        ]);
     });
 
     it('limits cold permission to initial standby construction', function () {
@@ -182,6 +193,61 @@ describe('standby commands', function () {
         } finally {
             removeStandbyCommandFingerprintRepository($repository['path']);
         }
+    });
+
+    it('resolves the rebuilder for the standby this checkout owns', function () {
+        expect(app(StandbyRebuilder::class))
+            ->toBeInstanceOf(StandbyRebuilder::class)
+            ->and(app(StandbyIdentity::class))
+            ->toEqual(StandbyIdentity::primary());
+    });
+
+    it('names the standby namespace the harness runs under', function () {
+        config()->set('e2e.standby.namespace', 'live');
+        app()->forgetInstance(StandbyIdentity::class);
+
+        expect(app(StandbyIdentity::class))
+            ->toEqual(StandbyIdentity::live())
+            ->and(app(StandbyIdentity::class)->instance('gateway'))
+            ->toBe('orbit-e2e-live-standby-gateway');
+
+        config()->set('e2e.standby.namespace', '');
+        app()->forgetInstance(StandbyIdentity::class);
+    });
+
+    it('refuses a rebuild without the exact main SHA before touching Incus', function () {
+        Process::fake();
+
+        $this
+            ->artisan('standby:rebuild', ['--main-sha' => 'main'])
+            ->expectsOutputToContain('The exact main SHA is required.')
+            ->assertFailed();
+
+        Process::assertNothingRan();
+    });
+
+    it('reports a stale manifest as recoverable instead of corrupt', function () {
+        bindPromotedStandby(promotedGenerationFixture());
+        Process::fake(function (PendingProcess $process) {
+            $command = $process->command;
+            assert(is_array($command));
+
+            if (in_array('snapshot', $command, true) && in_array('list', $command, true)) {
+                return Process::result('[]');
+            }
+
+            return Process::result(standbyCommandInstanceInventory());
+        });
+        app()->instance(IncusHost::class, new IncusHost);
+
+        $this
+            ->artisan('standby:status', ['--json' => true])
+            ->expectsOutputToContain('"state":"stale"')
+            ->assertFailed();
+        $this
+            ->artisan('standby:status', ['--json' => true])
+            ->expectsOutputToContain('"recovery":"bin/e2e-standby rebuild --main-sha=<sha>"')
+            ->assertFailed();
     });
 
     it('fails status when a promoted snapshot is missing', function () {

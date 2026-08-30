@@ -3,6 +3,12 @@
 declare(strict_types=1);
 
 return [
+    // Which physical standby this checkout owns. The repository's primary
+    // checkout owns the unnamespaced standby; the validation clone that
+    // bin/e2e-live drives sets `live` so a promotion there never touches it.
+    'standby' => [
+        'namespace' => env('ORBIT_E2E_STANDBY_NAMESPACE', ''),
+    ],
     'incus' => [
         'remote' => env('ORBIT_E2E_INCUS_REMOTE', 'local'),
         'project' => env('ORBIT_E2E_INCUS_PROJECT', 'default'),

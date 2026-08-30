@@ -9,6 +9,7 @@ use App\E2E\State\StatePaths;
 use App\E2E\Value\AttemptId;
 use App\E2E\Value\IncusNetwork;
 use App\E2E\Value\OperationId;
+use App\E2E\Value\StandbyIdentity;
 use App\E2E\Value\TopologyTarget;
 use Illuminate\Container\Container;
 use Illuminate\Process\Factory as ProcessFactory;
@@ -90,6 +91,14 @@ describe('orphan network filter', function () {
 
     it('never selects the standby network even when it has no users', function () {
         expect(OrphanNetworkSweep::orphans(['oe-standby' => sweepNetwork('oe-standby')]))->toBe([]);
+    });
+
+    it('never selects any known checkout\'s standby network even when it has no users', function () {
+        foreach (StandbyIdentity::known() as $identity) {
+            $network = $identity->network();
+
+            expect(OrphanNetworkSweep::orphans([$network => sweepNetwork($network)]))->toBe([]);
+        }
     });
 
     it('never selects an explicitly protected network', function () {

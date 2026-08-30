@@ -7,6 +7,7 @@ namespace App\Infrastructure\Metrics;
 use App\Data\Metrics\MetricsAssignmentData;
 use App\Data\Metrics\MetricsExporterData;
 use App\Data\Metrics\MetricsStatusData;
+use App\Domain\Metrics\ExporterDegradationRepository;
 use App\Domain\Metrics\ExporterPreferenceRepository;
 use App\Domain\Metrics\ExporterSelector;
 use App\Domain\Metrics\MetricsExporterLifecycle;
@@ -25,6 +26,7 @@ final readonly class NativeMetricsStatusReader implements MetricsStatusReader
         private ExporterPreferenceRepository $preferences,
         private MetricsRuntimeLifecycle $runtime,
         private MetricsExporterLifecycle $exporters,
+        private ExporterDegradationRepository $degradations,
     ) {}
 
     public function status(): MetricsStatusData
@@ -67,10 +69,16 @@ final readonly class NativeMetricsStatusReader implements MetricsStatusReader
                 $this->preferences->get($node->id),
                 $node->id === $metrics->id,
             );
+            // A node the last convergence skipped has no exporter state
+            // anyone could read, so status reports the recorded reason instead
+            // of waiting on a probe that is expected to fail.
+            $degradation = $this->degradations->get($node->id);
             $actual = 'unknown';
-            try {
-                $actual = $this->exporters->actual($node);
-            } catch (\Throwable) {
+            if ($degradation === null) {
+                try {
+                    $actual = $this->exporters->actual($node);
+                } catch (\Throwable) {
+                }
             }
             $items[] = new MetricsExporterData(
                 $node->id,
@@ -78,6 +86,7 @@ final readonly class NativeMetricsStatusReader implements MetricsStatusReader
                 $selection->selected,
                 $actual,
                 $selection->reason,
+                $degradation,
             );
         }
 

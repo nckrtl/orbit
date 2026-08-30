@@ -15,6 +15,7 @@ use App\E2E\Value\OperationId;
 use App\E2E\Value\ProofFixtures;
 use App\E2E\Value\ProofPlan;
 use App\E2E\Value\StandbyGeneration;
+use App\E2E\Value\StandbyIdentity;
 use App\E2E\Value\TopologyProfile;
 use App\E2E\Value\TopologyRequest;
 use App\E2E\Value\TopologyTarget;
@@ -25,7 +26,7 @@ use Throwable;
  * Promote one issue's proved topology to the standby generation.
  *
  * The three proved VMs are stopped and copied (without snapshots) next to the
- * standby instances, re-attached to `oe-standby` with the fixed standby
+ * standby instances, re-attached to this checkout's standby network with its fixed standby
  * addresses, stripped of their attempt metadata, and snapshotted as
  * `main-<generation>`. Only then is each old standby instance deleted and its
  * copy renamed into place; the manifest is promoted and the proved topology
@@ -56,6 +57,7 @@ final readonly class StandbyPromoter
         private StatePaths $hostPaths,
         private GitRepository $primary,
         private OperationId $operation,
+        private StandbyIdentity $identity,
     ) {}
 
     /** @return array{state:string,issue:string,attempt_id:string,generation_id:string,main_sha:string,previous_generation_id:?string,released:list<string>,networks_reaped:list<string>} */
@@ -240,7 +242,7 @@ final readonly class StandbyPromoter
     /** Copy, re-attach, snapshot; only then swap each standby instance for its copy. */
     private function replaceStandby(FeatureTopology $topology, StandbyGeneration $generation): void
     {
-        $standby = TopologyTarget::standby();
+        $standby = TopologyTarget::standby($this->identity);
         $proved = array_map($topology->target->instance(...), TopologyProfile::ROLES);
         $standbyNames = array_map($standby->instance(...), TopologyProfile::ROLES);
         $copyNames = array_map(static fn (string $name): string => $name.self::COPY_SUFFIX, $standbyNames);
@@ -266,7 +268,7 @@ final readonly class StandbyPromoter
                 'network' => $standby->network(),
                 'role' => $role,
                 'topology' => $standby->network(),
-                'slot' => 1,
+                'slot' => $this->identity->slot,
             ];
         }
         try {
