@@ -63,26 +63,26 @@ final readonly class TopologyReleaser
     }
 
     /**
-     * Every release ends with the orphan network sweep. The receipt records each
-     * deletion made under this attempt's release, also on a replayed release.
+     * Every release ends with the orphan network sweep. Each deletion is written
+     * to the receipt as it happens, also on a replayed release, so a later
+     * failure never loses evidence; failures are reported, not thrown.
      */
     private function sweepOrphanNetworks(ReleaseResult $result): ReleaseResult
     {
         if ($this->sweep === null) {
             return $result;
         }
-        $reaped = $this->sweep->sweep();
-        if ($reaped === []) {
-            return $result->withNetworksReaped([]);
-        }
-        $receipt = $this->receipts->read($result->issue, $result->attempt);
-        if ($receipt !== null) {
-            $recorded = array_values(array_unique([...$receipt->networksReaped, ...$reaped]));
+        $sweep = $this->sweep->sweep(function (string $name) use ($result): void {
+            $receipt = $this->receipts->read($result->issue, $result->attempt);
+            if ($receipt === null) {
+                return;
+            }
+            $recorded = array_values(array_unique([...$receipt->networksReaped, $name]));
             sort($recorded, SORT_STRING);
-            $this->receipts->write($receipt->withNetworksReaped($recorded));
-        }
+            $this->receipts->write($receipt->withNetworksReaped($recorded, $receipt->networksFailed));
+        });
 
-        return $result->withNetworksReaped($reaped);
+        return $result->withNetworksReaped($sweep->reaped, $sweep->failures());
     }
 
     /** @mago-expect lint:halstead Exact release evidence requires explicit ordered mutations. */

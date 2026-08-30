@@ -29,18 +29,24 @@ final class ReapCommand extends E2ECommand
                 static fn ($result): array => $result->toArray(),
                 $reaper->reap(IssueStateSnapshot::fromFile($path)),
             );
-            $networksReaped = $sweep->sweep();
+            $networks = $sweep->sweep();
             $identity = $operation->value;
             $payload = [
                 'state' => 'reaped',
                 'operation_id' => $identity,
                 'results' => $results,
-                'networks_reaped' => $networksReaped,
+                'networks_reaped' => $networks->reaped,
+                'networks_failed' => $networks->failures(),
             ];
             $this->line(
                 $this->option('json')
                     ? json_encode($payload, JSON_THROW_ON_ERROR)
-                    : 'reaped '.count($results).', networks reaped '.count($networksReaped),
+                    : 'reaped '
+                    .count($results)
+                    .', networks reaped '
+                    .count($networks->reaped)
+                    .', failed '
+                    .count($networks->failed),
             );
 
             return self::SUCCESS;
