@@ -24,6 +24,9 @@ final readonly class ProofPlan
 
     private const array SECTIONS = ['setup', 'acceptance'];
 
+    /** The one optional top-level key: a plan that mutates the topology cannot become the standby. */
+    private const string MUTATES = 'mutates';
+
     private const array ACTION_KEYS = ['id', 'node', 'argv', 'timeout_seconds'];
 
     /**
@@ -33,6 +36,7 @@ final readonly class ProofPlan
     private function __construct(
         public array $setup,
         public array $acceptance,
+        public bool $mutates = false,
     ) {}
 
     public static function fromFile(string $path): self
@@ -69,12 +73,22 @@ final readonly class ProofPlan
     /** @param array<array-key, mixed> $plan */
     public static function fromArray(array $plan): self
     {
+        $mutates = false;
+        if (array_key_exists(self::MUTATES, $plan)) {
+            if (! is_bool($plan[self::MUTATES])) {
+                throw new InvalidArgumentException('The proof plan key mutates must be a boolean.');
+            }
+            $mutates = $plan[self::MUTATES];
+            unset($plan[self::MUTATES]);
+        }
         $keys = array_keys($plan);
         sort($keys, SORT_STRING);
         $expected = self::SECTIONS;
         sort($expected, SORT_STRING);
         if ($keys !== $expected) {
-            throw new InvalidArgumentException('The proof plan must have exactly the keys setup and acceptance.');
+            throw new InvalidArgumentException(
+                'The proof plan must have exactly the keys setup and acceptance, plus an optional mutates.',
+            );
         }
         $sections = [];
         foreach (self::SECTIONS as $section) {
@@ -93,7 +107,7 @@ final readonly class ProofPlan
         $setup = self::actions('setup', $sections['setup'], $ids);
         $acceptance = self::actions('acceptance', $sections['acceptance'], $ids);
 
-        return new self($setup, $acceptance);
+        return new self($setup, $acceptance, $mutates);
     }
 
     /**
@@ -187,9 +201,14 @@ final readonly class ProofPlan
         return $actual === $keys;
     }
 
-    /** @return array{setup:list<array{id:string,node:string,argv:list<string>,timeout_seconds:int}>,acceptance:list<array{id:string,node:string,argv:list<string>,timeout_seconds:int}>} */
+    /** @return array{setup:list<array{id:string,node:string,argv:list<string>,timeout_seconds:int}>,acceptance:list<array{id:string,node:string,argv:list<string>,timeout_seconds:int}>,mutates?:true} */
     public function toArray(): array
     {
-        return ['setup' => $this->setup, 'acceptance' => $this->acceptance];
+        $plan = ['setup' => $this->setup, 'acceptance' => $this->acceptance];
+        if ($this->mutates) {
+            $plan['mutates'] = true;
+        }
+
+        return $plan;
     }
 }

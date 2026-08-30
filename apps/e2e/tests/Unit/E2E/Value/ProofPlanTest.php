@@ -100,11 +100,35 @@ describe('ProofPlan', function (): void {
         'empty' => [''],
     ]);
 
+    it('reads the optional mutates flag and keeps it out of the record unless set', function (): void {
+        $plain = ProofPlan::fromFile(proofPlanFile(proofPlanFixture()));
+        $mutating = ProofPlan::fromFile(proofPlanFile(proofPlanFixture() + ['mutates' => true]));
+        $explicit = ProofPlan::fromFile(proofPlanFile(proofPlanFixture() + ['mutates' => false]));
+
+        expect($plain->mutates)
+            ->toBeFalse()
+            ->and($plain->toArray())
+            ->toBe(proofPlanFixture())
+            ->and($mutating->mutates)
+            ->toBeTrue()
+            ->and($mutating->toArray())
+            ->toBe(proofPlanFixture() + ['mutates' => true])
+            ->and($explicit->mutates)
+            ->toBeFalse()
+            ->and($explicit->toArray())
+            ->toBe(proofPlanFixture());
+    });
+
+    it('rejects a mutates flag that is not a boolean', function (mixed $value): void {
+        expect(fn () => ProofPlan::fromFile(proofPlanFile(proofPlanFixture() + ['mutates' => $value])))
+            ->toThrow(InvalidArgumentException::class, 'The proof plan key mutates must be a boolean.');
+    })->with(['string' => ['true'], 'integer' => [1], 'null' => [null]]);
+
     it('rejects anything but the exact top-level keys', function (Closure $mutate): void {
         expect(fn () => ProofPlan::fromFile(mutatedProofPlanFile($mutate)))
             ->toThrow(
                 InvalidArgumentException::class,
-                'The proof plan must have exactly the keys setup and acceptance.',
+                'The proof plan must have exactly the keys setup and acceptance, plus an optional mutates.',
             );
     })->with([
         'missing setup' => [function (array $plan): array {
