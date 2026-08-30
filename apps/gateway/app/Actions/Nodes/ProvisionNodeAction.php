@@ -9,6 +9,7 @@ use App\Domain\AppDev\AppDevTldConverger;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Nodes\LinuxUserName;
+use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\NodeConverger;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\NodeProvisioningIdentity;
@@ -45,6 +46,7 @@ final readonly class ProvisionNodeAction
         private MetricsFleetReconciler $metrics,
         private ConfiguredStoragePathValidator $storagePaths,
         private UpdateNodeSettingsAction $nodeSettings,
+        private ManagedUserAccountResolver $accounts,
     ) {}
 
     public function execute(ProvisionNodeData $data): Node
@@ -81,6 +83,14 @@ final readonly class ProvisionNodeAction
 
         $node = Node::query()->firstOrNew(['name' => $data->name]);
         $managedUser = $data->orbitUser ?? ($node->exists ? $node->user : 'orbit');
+
+        if ($data->settingsProvided && $node->exists) {
+            $this->storagePaths->validateEffective(
+                $data->settings,
+                $node,
+                $this->accounts->resolve($node),
+            );
+        }
 
         if (! LinuxUserName::isValid($managedUser)) {
             throw new ResourceOperationException(
