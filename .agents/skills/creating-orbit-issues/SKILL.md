@@ -6,8 +6,8 @@ description: Use when turning an Orbit request or production GitHub report into 
 # Creating Orbit Issues
 
 Create one claimable Linear record in the team with identifier `NCK`. Linear
-owns the outcome, scope, acceptance criteria, ADR decision, and proof venue. Do
-not create a repository feature plan.
+owns the outcome, scope, acceptance criteria, ADR decision, and the Incus proof
+contract. Do not create a repository feature plan.
 
 ## Issue Contract
 
@@ -32,12 +32,6 @@ Components:
 
 ADR: none
 
-Proof venue: automated
-Live topology: none
-Live nodes: none
-Proof access: none
-Checkout evidence: none
-
 Source: none
 ```
 
@@ -54,20 +48,34 @@ A required ADR must be merged into `main` before the issue enters Ready. If no
 merged ADR exists, keep the issue in preparation and create the ADR work first.
 Implementation agents do not introduce an ADR inside the feature PR.
 
-## Proof Venue
+## Proof
 
-Use `automated` when tests can prove the behavior. Set all live fields to
-`none`.
+Automated proof is mandatory and implicit. Linear does not repeat it.
 
-Use `live` when acceptance depends on a real OS, service manager, privilege
-boundary, network, certificate, filesystem ownership, or multi-node behavior.
-Select exact active applicable nodes with `orbit node:list --json`. Record each
-numeric ID, name, role, and access method. Define the checkout identity
-evidence to record during proof; candidate or deployed SHA and path do not yet
-exist at issue creation. Prefer Orbit CLI or Gateway API; pinned direct SSH is
-allowed for proof. Record the approved SSH SHA256 host-key fingerprint when
-direct SSH is selected. Capture recovery, ownership, and cleanup evidence.
-Never require Incus.
+When acceptance depends on a real OS, service manager, privilege boundary,
+network, certificate, filesystem ownership, or multi-node behavior, add these
+two lines after `ADR:`:
+
+```text
+Proof: incus
+Composition: gateway + app-dev + app-prod
+```
+
+Omit both lines for automated-only work.
+
+`Composition` names the expected physical nodes only. It does not contain
+resource names, images, CPU, memory, disks, networks, attempt IDs, or a machine
+manifest. Repository code owns those details. The supported composition is
+`gateway + app-dev + app-prod` on Ubuntu 26.04
+([ADR 0005](../../../docs/decisions/0005-rolling-incus-development-topology.md),
+[ADR 0006](../../../docs/decisions/0006-topology-led-feature-development.md)).
+
+A normal issue cannot use an unsupported operating system, role combination,
+or topology. Incus availability alone does not make a node or topology
+supported. An issue whose explicit outcome is to add official support must
+include all of these in scope: Gateway support, Gateway tests, an E2E recipe,
+harness support, and live acceptance for the new support. If a new topology
+must become prepared and reusable, say so in scope or acceptance criteria.
 
 ## Production Reports
 
@@ -78,10 +86,9 @@ deployment identity, expected and observed behavior, evidence, and containment.
 ## Ready Gate
 
 Move the issue to Ready only when all fields are complete, linked ADRs are on
-`main`, and criteria are verifiable. For `live`, exact applicable node IDs,
-names, roles, an access method, and required checkout identity evidence must be
-recorded. Direct SSH also requires an approved SSH SHA256 host-key fingerprint.
-Otherwise, name the missing item and use `Status: Preparation`.
+`main`, and criteria are verifiable. For `Proof: incus`, the composition must
+be supported, or adding that support must be in scope. Otherwise, name the
+missing item and use `Status: Preparation`.
 
 ## Example
 
@@ -108,17 +115,15 @@ Components:
 
 ADR: none
 
-Proof venue: automated
-Live topology: none
-Live nodes: none
-Proof access: none
-Checkout evidence: none
-
 Source: none
 ```
 
+An Incus issue adds `Proof: incus` and `Composition: gateway + app-dev +
+app-prod` after `ADR:`.
+
 ## Common Mistakes
 
-- Good prose without the explicit ADR and proof fields is not Ready.
-- `live` without exact nodes and an access method is not executable.
+- Good prose without the explicit ADR field is not Ready.
+- `Proof: incus` without a supported `Composition` is not executable.
+- `Composition` with resource names or sizes duplicates repository code.
 - A GitHub URL without production evidence loses the feedback context.
