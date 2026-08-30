@@ -498,10 +498,18 @@ function liveAssertForwardingIsolation(string $network): void
     $result = Process::timeout(30)->run(['sudo', '-n', 'iptables', '-w', '5', '-S', 'FORWARD']);
     Assert::assertTrue($result->successful(), $result->errorOutput() ?: $result->output());
     $rules = preg_split('/\R/', trim($result->output())) ?: [];
-    $sameNetwork = "-A FORWARD -i {$network} -o {$network} -j ACCEPT";
-    $crossTopology = "-A FORWARD -i {$network} -o oe+ -j DROP";
-    $sameNetworkIndex = array_search($sameNetwork, $rules, true);
-    $crossTopologyIndex = array_search($crossTopology, $rules, true);
+    // The reconciler tags its rules with -m comment; match the interface pair and the verdict.
+    $indexOf = static function (string $prefix, string $verdict) use ($rules): int|false {
+        foreach ($rules as $index => $rule) {
+            if (str_starts_with($rule, $prefix) && str_ends_with($rule, $verdict)) {
+                return $index;
+            }
+        }
+
+        return false;
+    };
+    $sameNetworkIndex = $indexOf("-A FORWARD -i {$network} -o {$network} ", '-j ACCEPT');
+    $crossTopologyIndex = $indexOf("-A FORWARD -i {$network} -o oe+ ", '-j DROP');
     Assert::assertIsInt($sameNetworkIndex, 'The same-topology forwarding rule is missing.');
     Assert::assertIsInt($crossTopologyIndex, 'The cross-topology forwarding isolation rule is missing.');
     Assert::assertLessThan($crossTopologyIndex, $sameNetworkIndex);
