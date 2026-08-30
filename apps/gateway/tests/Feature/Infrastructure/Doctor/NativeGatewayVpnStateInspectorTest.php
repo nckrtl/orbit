@@ -31,6 +31,7 @@ it('compares the active interface and exact rendered server and DNS projections'
         gateway_vpn_result("1\n"),
         gateway_vpn_result("1\n"),
         gateway_vpn_result("1\n"),
+        gateway_vpn_result("1\n"),
     ]);
 
     try {
@@ -42,8 +43,10 @@ it('compares the active interface and exact rendered server and DNS projections'
             ->toBeTrue()
             ->and($state->dnsConfigMatches)
             ->toBeTrue()
+            ->and($state->dnsConflictAbsent)
+            ->toBeTrue()
             ->and($ssh->calls)
-            ->toHaveCount(3)
+            ->toHaveCount(4)
             ->and($ssh->calls[0]['command']->arguments)
             ->toBe([
                 'bash',
@@ -58,6 +61,10 @@ it('compares the active interface and exact rendered server and DNS projections'
             ->toContain('PrivateKey = SERVER_PRIVATE')
             ->and($ssh->calls[2]['protected'])
             ->toStartWith('# Managed by Orbit.')
+            ->and($ssh->calls[3]['command']->arguments[2])
+            ->toContain('for path in "$@"; do', 'if sudo test -e "$path"; then')
+            ->and(array_slice(array: $ssh->calls[3]['command']->arguments, offset: 3))
+            ->toBe(['--', '/etc/dnsmasq.d/ubuntu-fan'])
             ->and(array_column($ssh->calls, 'connection'))
             ->each(fn ($connection) => $connection->toEqual(
                 new SshConnection('10.44.0.1', 'nckrtl', 22, '/key', '/known', commandTimeout: 30.0),
@@ -75,6 +82,7 @@ it('compares the active interface and exact rendered server and DNS projections'
 
 it('inspects the explicitly selected VPN role when a lower fleet assignment exists', function (): void {
     [$inspector, $ssh, $orbitHome] = gateway_vpn_inspector([
+        gateway_vpn_result("1\n"),
         gateway_vpn_result("1\n"),
         gateway_vpn_result("1\n"),
         gateway_vpn_result("1\n"),
@@ -110,6 +118,7 @@ it('inspects the explicitly selected VPN role when a lower fleet assignment exis
 
 it('renders VPN peers in stable persisted order', function (): void {
     [$inspector, $ssh, $orbitHome, $role] = gateway_vpn_inspector([
+        gateway_vpn_result("1\n"),
         gateway_vpn_result("1\n"),
         gateway_vpn_result("1\n"),
         gateway_vpn_result("1\n"),
@@ -177,22 +186,27 @@ it('returns independent bounded mismatch observations', function (
             $state->interfaceActive,
             $state->serverConfigMatches,
             $state->dnsConfigMatches,
+            $state->dnsConflictAbsent,
         ])->toBe($expected);
     } finally {
         new Filesystem()->deleteDirectory($orbitHome);
     }
 })->with([
     'inactive interface' => [
-        ["0\n", "1\n", "1\n"],
-        [false, true, true],
+        ["0\n", "1\n", "1\n", "1\n"],
+        [false, true,  true,  true],
     ],
     'server mismatch' => [
-        ["1\n", "0\n", "1\n"],
-        [true, false, true],
+        ["1\n", "0\n", "1\n", "1\n"],
+        [true,  false, true,  true],
     ],
     'DNS mismatch' => [
-        ["1\n", "1\n", "0\n"],
-        [true, true, false],
+        ["1\n", "1\n", "0\n", "1\n"],
+        [true,  true,  false, true],
+    ],
+    'stock snippet returned' => [
+        ["1\n", "1\n", "1\n", "0\n"],
+        [true,  true,  true,  false],
     ],
 ]);
 
@@ -201,6 +215,7 @@ it('probes for the compared file before running cmp so an absent projection is d
         gateway_vpn_result("1\n"),
         gateway_vpn_result("1\n"),
         gateway_vpn_result("0\n"),
+        gateway_vpn_result("1\n"),
     ]);
 
     try {
@@ -225,6 +240,7 @@ it('yields a bounded mismatch rather than an error when the compared file does n
         gateway_vpn_result("1\n"),
         gateway_vpn_result("1\n"),
         gateway_vpn_result("0\n"),
+        gateway_vpn_result("1\n"),
     ]);
 
     try {
@@ -240,6 +256,27 @@ it('yields a bounded mismatch rather than an error when the compared file does n
             ->and(gateway_vpn_compare_script($script, $path, $expected, present: $expected))
             ->toBe([0, "1\n"])
             ->and(gateway_vpn_compare_script($script, $path, $expected, present: "[Unit]\n"))
+            ->toBe([0, "0\n"]);
+    } finally {
+        new Filesystem()->deleteDirectory($orbitHome);
+    }
+});
+
+it('observes a returned stock dnsmasq snippet as a bounded boolean', function (): void {
+    [$inspector, $ssh, $orbitHome, $role] = gateway_vpn_inspector([
+        gateway_vpn_result("1\n"),
+        gateway_vpn_result("1\n"),
+        gateway_vpn_result("1\n"),
+        gateway_vpn_result("1\n"),
+    ]);
+
+    try {
+        $inspector->inspect($role);
+        $script = $ssh->calls[3]['command']->arguments[2];
+
+        expect(gateway_vpn_conflict_script($script, present: false))
+            ->toBe([0, "1\n"])
+            ->and(gateway_vpn_conflict_script($script, present: true))
             ->toBe([0, "0\n"]);
     } finally {
         new Filesystem()->deleteDirectory($orbitHome);
@@ -341,6 +378,40 @@ function gateway_vpn_compare_script(string $script, string $path, string $expect
             'PATH' => $root.'/bin:'.getenv('PATH'),
         ]);
         $process->setInput($expected);
+        $process->run();
+
+        return [$process->getExitCode() ?? 1, $process->getOutput()];
+    } finally {
+        new Filesystem()->deleteDirectory($root);
+    }
+}
+
+/**
+ * Run the rendered stock snippet probe with a transparent `sudo` shim against
+ * a conf directory that does or does not still hold the retired snippet.
+ *
+ * @return array{int, string}
+ *
+ * @mago-expect lint:no-boolean-flag-parameter The flag models the observed conf directory state.
+ */
+function gateway_vpn_conflict_script(string $script, bool $present): array
+{
+    $root = sys_get_temp_dir().'/orbit-doctor-conflict-'.Str::uuid();
+    $snippet = $root.'/etc/dnsmasq.d/ubuntu-fan';
+    mkdir(directory: $root.'/bin', permissions: 0o700, recursive: true);
+    mkdir(directory: dirname($snippet), permissions: 0o700, recursive: true);
+
+    if ($present) {
+        file_put_contents(filename: $snippet, data: "bind-interfaces\n");
+    }
+
+    file_put_contents(filename: $root.'/bin/sudo', data: "#!/usr/bin/env bash\nexec \"\$@\"\n");
+    chmod($root.'/bin/sudo', permissions: 0o755);
+
+    try {
+        $process = new Process(['bash', '-ceu', $script, '--', $snippet], $root, [
+            'PATH' => $root.'/bin:'.getenv('PATH'),
+        ]);
         $process->run();
 
         return [$process->getExitCode() ?? 1, $process->getOutput()];
