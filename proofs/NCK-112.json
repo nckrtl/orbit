@@ -1,0 +1,23 @@
+{
+    "setup": [],
+    "acceptance": [
+        {
+            "id": "budget-default",
+            "node": "app-dev",
+            "argv": ["php", "-r", "$c = require '/home/orbit/orbit/apps/e2e/config/e2e.php'; if ($c['incus']['max_vms'] !== 24) { fwrite(STDERR, 'max_vms is '.var_export($c['incus']['max_vms'], true).\"\\n\"); exit(1); } echo \"max_vms=24\\n\";"],
+            "timeout_seconds": 60
+        },
+        {
+            "id": "refusal-names-the-override",
+            "node": "app-dev",
+            "argv": ["sh", "-c", "grep -q 'Raise ORBIT_E2E_INCUS_MAX_VMS, or release a topology.' /home/orbit/orbit/apps/e2e/app/E2E/HostCapacity.php && echo 'refusal names the override'"],
+            "timeout_seconds": 60
+        },
+        {
+            "id": "capacity-unit-tests",
+            "node": "app-dev",
+            "argv": ["sh", "-c", "cd /home/orbit/orbit/apps/e2e && PYTHONDONTWRITEBYTECODE=1 vendor/bin/pest --no-tia --compact --colors=never tests/Unit/E2E/HostCapacityTest.php 2>&1 | tail -3"],
+            "timeout_seconds": 300
+        }
+    ]
+}
