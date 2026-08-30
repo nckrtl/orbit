@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\Nodes\ProvisionNodeAction;
 use App\Data\Nodes\ProvisionNodeData;
-use App\Domain\AppDev\PrivateDnsManager;
+use App\Domain\AppDev\AppDevTldConverger;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Nodes\NodeConverger;
 use App\Domain\Nodes\NodeProvisioningException;
@@ -1237,20 +1237,15 @@ describe(ProvisionNodeAction::class, function (): void {
             ->toBe([[ToolManagerName::Apt]]);
     });
 
-    it('rejects a TLD change while the node owns instances', function (): void {
-        $converger = new class implements NodeConverger {
-            public int $calls = 0;
-
+    it('converges populated instances when changing an active app-dev TLD', function (): void {
+        app()->instance(NodeConverger::class, new class implements NodeConverger {
             public function converge(
                 Node $node,
                 NodeProvisioningIdentity $identity,
                 ?string $expectedSshHostFingerprint = null,
                 bool $rolelessOperator = false,
-            ): void {
-                $this->calls++;
-            }
-        };
-        app()->instance(NodeConverger::class, $converger);
+            ): void {}
+        });
         $node = Node::query()->create([
             'name' => 'app-dev',
             'status' => LifecycleStatus::Active,
@@ -1276,24 +1271,32 @@ describe(ProvisionNodeAction::class, function (): void {
             'certificate_mode' => 'orbit-ca',
         ]);
 
-        expect(fn () => app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
+        $tldConverger = new class implements AppDevTldConverger {
+            public array $nodes = [];
+
+            public function converge(Node $node): void
+            {
+                $this->nodes[] = $node->tld;
+                $node->instances()->update(['hostname' => "main.{$node->tld}"]);
+            }
+        };
+        app()->instance(AppDevTldConverger::class, $tldConverger);
+
+        $result = app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
             name: 'app-dev',
             publicSshHost: '192.0.2.20',
             tld: 'changed.orbit',
-        )))->toThrow(function (ResourceOperationException $exception): void {
-            expect($exception->errorCode)
-                ->toBe('node.tld_change_unsupported')
-                ->and($exception->status)
-                ->toBe(409);
-        });
+        ));
 
-        expect($node->refresh()->tld)
-            ->toBe('app-dev.orbit')
-            ->and($converger->calls)
-            ->toBe(0);
+        expect($result->tld)
+            ->toBe('changed.orbit')
+            ->and($node->refresh()->instances()->first()->hostname)
+            ->toBe('main.changed.orbit')
+            ->and($tldConverger->nodes)
+            ->toBe(['changed.orbit']);
     });
 
-    it('converges gateway DNS after changing an app development TLD', function (): void {
+    it('converges app development projections before activating a changed TLD', function (): void {
         app()->instance(NodeConverger::class, new class implements NodeConverger {
             public function converge(
                 Node $node,
@@ -1302,11 +1305,11 @@ describe(ProvisionNodeAction::class, function (): void {
                 bool $rolelessOperator = false,
             ): void {}
         });
-        $dns = new class implements PrivateDnsManager {
+        $converger = new class implements AppDevTldConverger {
             /** @var list<array{tld: ?string, status: LifecycleStatus}> */
             public array $calls = [];
 
-            public function converge(?Node $pendingNode = null): void
+            public function converge(Node $pendingNode): void
             {
                 $this->calls[] = [
                     'tld' => $pendingNode->tld ?? null,
@@ -1314,7 +1317,7 @@ describe(ProvisionNodeAction::class, function (): void {
                 ];
             }
         };
-        app()->instance(PrivateDnsManager::class, $dns);
+        app()->instance(AppDevTldConverger::class, $converger);
         $node = provision_node_tld_change_record();
 
         $result = app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
@@ -1325,11 +1328,13 @@ describe(ProvisionNodeAction::class, function (): void {
 
         expect($result->tld)
             ->toBe('new.orbit')
-            ->and($dns->calls)
-            ->toBe([['tld' => 'new.orbit', 'status' => LifecycleStatus::Active]]);
+            ->and($result->status)
+            ->toBe(LifecycleStatus::Active)
+            ->and($converger->calls)
+            ->toBe([['tld' => 'new.orbit', 'status' => LifecycleStatus::Provisioning]]);
     });
 
-    it('restores the previous app development TLD and DNS when new DNS convergence fails', function (): void {
+    it('restores the previous app development TLD and projections when convergence fails', function (): void {
         app()->instance(NodeConverger::class, new class implements NodeConverger {
             public function converge(
                 Node $node,
@@ -1338,8 +1343,8 @@ describe(ProvisionNodeAction::class, function (): void {
                 bool $rolelessOperator = false,
             ): void {}
         });
-        $dns = new ProvisionNodeTldDnsManager([1]);
-        app()->instance(PrivateDnsManager::class, $dns);
+        $converger = new ProvisionNodeTldProjectionConverger([1]);
+        app()->instance(AppDevTldConverger::class, $converger);
         $node = provision_node_tld_change_record();
 
         expect(fn () => app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
@@ -1354,11 +1359,11 @@ describe(ProvisionNodeAction::class, function (): void {
             ->toBe('old.orbit')
             ->and($node->status)
             ->toBe(LifecycleStatus::Active)
-            ->and($dns->calls)
+            ->and($converger->calls)
             ->toBe(['new.orbit', 'old.orbit']);
     });
 
-    it('returns a stable error when restoring previous app development DNS fails', function (): void {
+    it('marks the node failed when restoring previous app development projections fails', function (): void {
         app()->instance(NodeConverger::class, new class implements NodeConverger {
             public function converge(
                 Node $node,
@@ -1367,8 +1372,8 @@ describe(ProvisionNodeAction::class, function (): void {
                 bool $rolelessOperator = false,
             ): void {}
         });
-        $dns = new ProvisionNodeTldDnsManager([1, 2]);
-        app()->instance(PrivateDnsManager::class, $dns);
+        $converger = new ProvisionNodeTldProjectionConverger([1, 2]);
+        app()->instance(AppDevTldConverger::class, $converger);
         $node = provision_node_tld_change_record();
 
         expect(fn () => app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
@@ -1377,14 +1382,20 @@ describe(ProvisionNodeAction::class, function (): void {
             tld: 'new.orbit',
         )))->toThrow(function (RuntimeConvergenceException $exception): void {
             expect($exception->step)
-                ->toBe('private-dns-rollback')
+                ->toBe('app-dev-tld-rollback')
                 ->and($exception->errorCode)
-                ->toBe('app-dev.dns_rollback_failed');
+                ->toBe('app-dev.tld_rollback_failed');
         });
 
         expect($node->refresh()->tld)
             ->toBe('old.orbit')
-            ->and($dns->calls)
+            ->and($node->status)
+            ->toBe(LifecycleStatus::Failed)
+            ->and($node->failed_step)
+            ->toBe('app-dev-tld-rollback')
+            ->and($node->error_code)
+            ->toBe('app-dev.tld_rollback_failed')
+            ->and($converger->calls)
             ->toBe(['new.orbit', 'old.orbit']);
     });
 
@@ -1830,7 +1841,7 @@ function provision_node_tld_change_record(): Node
 }
 
 /** @mago-expect lint:file-name The stateful fake keeps TLD rollback calls visible in the action test. */
-final class ProvisionNodeTldDnsManager implements PrivateDnsManager
+final class ProvisionNodeTldProjectionConverger implements AppDevTldConverger
 {
     /** @var list<string|null> */
     public array $calls = [];
@@ -1840,7 +1851,7 @@ final class ProvisionNodeTldDnsManager implements PrivateDnsManager
         private readonly array $failingCalls,
     ) {}
 
-    public function converge(?Node $pendingNode = null): void
+    public function converge(Node $pendingNode): void
     {
         $this->calls[] = $pendingNode?->tld;
 
@@ -1849,7 +1860,7 @@ final class ProvisionNodeTldDnsManager implements PrivateDnsManager
         }
 
         throw new RuntimeConvergenceException(
-            step: 'private-dns',
+            step: 'app-dev-tld',
             errorCode: 'app-dev.dns_config_failed',
             message: 'DNS failed.',
         );
