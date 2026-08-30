@@ -6,27 +6,30 @@ namespace App\Console\Commands\Topology;
 
 use App\Console\Commands\E2ECommand;
 use App\E2E\TopologyAcquirer;
+use App\E2E\Value\AttemptId;
 use App\E2E\Value\OperationId;
 use Throwable;
 
 final class VerifyCommand extends E2ECommand
 {
     #[\Override]
-    protected $signature = 'topology:verify {issue} {--json}';
+    protected $signature = 'topology:verify {issue} {attempt} {--json}';
     #[\Override]
-    protected $description = 'Verify one disposable feature topology';
+    protected $description = 'Verify one exact topology attempt';
 
     public function handle(TopologyAcquirer $acquirer, OperationId $operation): int
     {
         try {
-            $topology = $acquirer->verify((string) $this->argument('issue'));
-            $identity = $operation->value;
-            $payload = [
+            $topology = $acquirer->verify(
+                (string) $this->argument('issue'),
+                new AttemptId((string) $this->argument('attempt')),
+            );
+            $this->outputJson([
                 'state' => 'verified',
-                'operation_id' => $identity,
+                'operation_id' => $operation->value,
+                'attempt_id' => $topology->attempt->value,
                 'verification' => $topology->verification->toArray(),
-            ];
-            $this->line($this->option('json') ? json_encode($payload, JSON_THROW_ON_ERROR) : 'verified');
+            ], 'verified');
 
             return self::SUCCESS;
         } catch (Throwable $exception) {

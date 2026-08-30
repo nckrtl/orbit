@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\E2E\State\StatePaths;
+use App\E2E\Value\AttemptId;
 use App\E2E\Value\TopologyProfile;
 use App\E2E\Value\TopologyTarget;
 
@@ -41,15 +42,15 @@ describe('StatePaths', function () {
     });
 
     it('provides stable exact profile roles and target names', function () {
-        $target = new TopologyTarget('NCK-321');
+        $target = TopologyTarget::feature('NCK-321', new AttemptId(str_repeat('a', 32)));
 
         expect(TopologyProfile::ROLES)
             ->toBe(['gateway', 'app-dev', 'app-prod'])
             ->and(TopologyProfile::CHECKOUT_ROLES)
             ->toBe(['gateway', 'app-dev'])
             ->and($target->network())
-            ->toBe('oe-ed6933862e02')
+            ->toBe('oe-3ed34a09f138')
             ->and($target->instance('app-prod'))
-            ->toBe('orbit-e2e-nck-321-app-prod');
+            ->toBe('orbit-e2e-nck-321-aaaaaaaa-app-prod');
     });
 });

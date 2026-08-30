@@ -38,6 +38,22 @@ final readonly class GitRepository
         return $branch;
     }
 
+    /** The shared Git directory every linked worktree of one repository resolves to. */
+    public function commonDirectory(): string
+    {
+        $commonDirectory = realpath(trim($this->run([
+            'rev-parse',
+            '--path-format=absolute',
+            '--git-common-dir',
+        ])));
+
+        if ($commonDirectory === false) {
+            throw new InvalidArgumentException('The Git directories do not exist.');
+        }
+
+        return $commonDirectory;
+    }
+
     public function isLinkedWorktree(): bool
     {
         $gitDirectory = realpath(trim($this->run([
@@ -71,6 +87,23 @@ final readonly class GitRepository
         }
 
         throw new InvalidArgumentException('Git could not verify the bundle prerequisite commit.');
+    }
+
+    /** Whether `$ancestor` is reachable from `$descendant` (a commit is its own ancestor). */
+    public function isAncestor(string $ancestor, string $descendant): bool
+    {
+        $this->validateSha($ancestor);
+        $this->validateSha($descendant);
+        $result = Process::path($this->path)->run(['git', 'merge-base', '--is-ancestor', $ancestor, $descendant]);
+
+        if ($result->exitCode() === 0) {
+            return true;
+        }
+        if ($result->exitCode() === 1) {
+            return false;
+        }
+
+        throw new InvalidArgumentException('Git could not compare the commit ancestry.');
     }
 
     public function createBundle(string $destination, string $commit, ?string $prerequisite = null): void
@@ -261,6 +294,19 @@ final readonly class GitRepository
         }
 
         return $commit;
+    }
+
+    /** The tree object of one exact commit that a repository reference still reaches. */
+    public function tree(string $commit): string
+    {
+        $this->validateReachableCommit($commit);
+        $tree = strtolower(trim($this->run(['rev-parse', '--verify', "{$commit}^{tree}"])));
+
+        if (preg_match('/\A[0-9a-f]{40}\z/D', $tree) !== 1) {
+            throw new InvalidArgumentException('Git did not return a full tree SHA.');
+        }
+
+        return $tree;
     }
 
     /** @param list<string> $patterns

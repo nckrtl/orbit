@@ -24,6 +24,17 @@ function verificationProbeFixture(bool $passed = true, string $probe = 'fixture'
     ];
 }
 
+/** One pinned attempt identity so resource names stay deterministic across a test. */
+function attemptId(string $character = 'a'): App\E2E\Value\AttemptId
+{
+    return new App\E2E\Value\AttemptId(str_repeat($character, 32));
+}
+
+function featureTarget(string $issue, string $character = 'a'): App\E2E\Value\TopologyTarget
+{
+    return App\E2E\Value\TopologyTarget::feature($issue, attemptId($character));
+}
+
 function temporaryPath(string $prefix, int $randomBytes = 8): string
 {
     return TemporaryPaths::path($prefix, $randomBytes);

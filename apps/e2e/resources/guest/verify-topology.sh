@@ -2,11 +2,19 @@
 set -euo pipefail
 umask 077
 
-[[ $# -eq 4 || ( $# -eq 6 && "$1" == wireguard.reachability ) || ( $# -eq 6 && "$1" == source.manifest ) ]]
+# Mounted source probes carry one extra trailing argument: the expected SHA-256 of
+# the worktree `.git` pointer file the host mounted at $source_root.
+[[ $# -eq 4 || ( $# -eq 5 && "$1" =~ ^source\.(gateway|app-dev)$ ) || ( $# -eq 6 && "$1" == wireguard.reachability ) || ( ( $# -eq 6 || $# -eq 7 ) && "$1" == source.manifest ) ]]
 probe=$1
 mode=$2
 identity=$3
 instance=$4
+expected_pointer=
+case "$probe" in
+  source.gateway|source.app-dev) [[ $# -eq 4 ]] || expected_pointer=$5 ;;
+  source.manifest) [[ $# -eq 6 ]] || expected_pointer=$7 ;;
+esac
+[[ -z "$expected_pointer" || "$expected_pointer" =~ ^[0-9a-f]{64}$ ]]
 [[ "$mode" == readiness || "$mode" == proof ]]
 [[ "$identity" =~ ^[0-9a-f]{40}$ ]]
 [[ "$instance" =~ ^[a-z0-9][a-z0-9-]{0,62}$ ]]
@@ -25,6 +33,26 @@ repo_git() {
   else
     "$@"
   fi
+}
+# A discovery topology mounts the host worktree over the checkout; its `.git` is a
+# pointer file guest git cannot follow, so the host records the exact identity here.
+# The guest still proves the mount itself: the path must be a mountpoint carrying
+# the pointer file and the gateway tree, and the pointer hash must match both the
+# marker and the host argument.
+source_root=/home/orbit/orbit
+source_marker=/var/lib/orbit-e2e/source-state
+mounted_source_state() {
+  /usr/bin/php -r '$state = json_decode(file_get_contents($argv[1]), true, 8, JSON_THROW_ON_ERROR); if (($state["mounted"] ?? null) !== true) exit(66); $sha = $state["sha"] ?? null; $tree = $state["tree"] ?? null; $pointer = $state["git_pointer_sha256"] ?? null; if (!is_string($sha) || !preg_match("/\\A[0-9a-f]{40}\\z/D", $sha) || !is_string($tree) || !preg_match("/\\A[0-9a-f]{64}\\z/D", $tree) || !is_string($pointer) || !preg_match("/\\A[0-9a-f]{64}\\z/D", $pointer)) exit(65); echo $sha, " ", $tree, " ", $pointer, "\n";' -- "$1"
+}
+# Sets marker_sha, marker_tree, and observed_pointer; every check fails closed.
+assert_mounted_source() {
+  [[ -n "$expected_pointer" && -f "$source_marker" ]]
+  mountpoint -q -- "$source_root"
+  [[ -f "$source_root/.git" && -f "$source_root/apps/gateway/artisan" ]]
+  read -r marker_sha marker_tree marker_pointer < <(mounted_source_state "$source_marker")
+  observed_pointer=$(sha256sum -- "$source_root/.git" | cut -d ' ' -f 1)
+  [[ "$observed_pointer" =~ ^[0-9a-f]{64}$ ]]
+  [[ "$marker_pointer" == "$expected_pointer" && "$observed_pointer" == "$expected_pointer" ]]
 }
 
 case "$probe" in
@@ -70,35 +98,59 @@ case "$probe" in
   laravel.dev) [[ -f /home/orbit/apps/laravel/artisan ]] && php /home/orbit/apps/laravel/artisan --version >/dev/null; expected='app-dev-laravel:operational'; observed=$expected ;;
   laravel.prod) [[ -f /var/www/laravel/e2e-prod/artisan ]] && php /var/www/laravel/e2e-prod/artisan --version >/dev/null && curl --fail --silent --show-error --retry 10 --retry-delay 2 --retry-connrefused --retry-all-errors --connect-timeout 10 --max-time 30 --cacert "$(cat /var/lib/orbit-e2e/caddy-ca-path)" --resolve laravel.internal:443:127.0.0.1 https://laravel.internal/ >/dev/null; expected='app-prod-laravel:https-operational'; observed=$expected ;;
   workspace.app-dev) [[ -d /home/orbit/.orbit/worktrees/laravel/e2e && -f /home/orbit/.orbit/worktrees/laravel/e2e/artisan ]]; expected='app-dev-workspace:operational'; observed=$expected ;;
-  source.gateway|source.app-dev) source_sha=$(repo_git git -C /home/orbit/orbit rev-parse HEAD 2>/dev/null); expected=$identity; observed=$source_sha; [[ "$observed" == "$expected" ]] ;;
+  source.gateway|source.app-dev)
+    if [[ -n "$expected_pointer" ]]; then
+      assert_mounted_source
+      expected="$identity:git-pointer=$expected_pointer"
+      observed="$marker_sha:git-pointer=$observed_pointer"
+    else
+      # A transferred checkout must not carry a mounted marker.
+      [[ ! -e "$source_marker" ]]
+      source_sha=$(repo_git git -C "$source_root" rev-parse HEAD 2>/dev/null)
+      expected=$identity; observed=$source_sha
+    fi
+    [[ "$observed" == "$expected" ]] ;;
   source.manifest)
-    repo=/home/orbit/orbit
+    repo=$source_root
     expected_tree=$5
     expected_manifest=$6
     [[ "$expected_tree" == - || "$expected_tree" =~ ^[0-9a-f]{64}$ ]]
     [[ "$expected_manifest" =~ ^[A-Za-z0-9+/]*={0,2}$ ]]
-    [[ -f "$repo/.git/orbit-overlay.paths" && -f "$repo/.git/orbit-source-state" ]]
-    printf '%s' "$expected_manifest" | base64 --decode | cmp -s - "$repo/.git/orbit-overlay.paths"
-    read -r marker_sha marker_tree < <(/usr/bin/php -r '$state = json_decode(file_get_contents($argv[1]), true, 8, JSON_THROW_ON_ERROR); $sha = $state["sha"] ?? null; $tree = $state["tree"] ?? null; if (!is_string($sha) || !preg_match("/\\A[0-9a-f]{40}\\z/D", $sha) || !is_string($tree) || !preg_match("/\\A[0-9a-f]{64}\\z/D", $tree)) exit(65); echo $sha, " ", $tree, "\n";' -- "$repo/.git/orbit-source-state")
-    [[ "$marker_sha" == "$identity" ]]
-    index=$(repo_git mktemp)
-    trap 'rm -f -- "$index"' EXIT
-    rm -f -- "$index"
-    repo_git env GIT_INDEX_FILE="$index" git -C "$repo" read-tree HEAD
-    repo_git env GIT_INDEX_FILE="$index" git -C "$repo" add -A -- .
-    actual_tree=$(repo_git env GIT_INDEX_FILE="$index" git -C "$repo" write-tree)
-    actual_tree_hash=$(printf '%s' "$actual_tree" | sha256sum | cut -d ' ' -f 1)
-    rm -f -- "$index"
-    trap - EXIT
-    [[ "$marker_tree" == "$actual_tree_hash" ]]
-    if [[ "$expected_tree" == - ]]; then
-      [[ -z "$(git -C "$repo" status --porcelain=v1 --untracked-files=all)" ]]
-      expected_tree=$actual_tree_hash
+    if [[ -n "$expected_pointer" ]]; then
+      assert_mounted_source
+      [[ "$marker_sha" == "$identity" ]]
+      if [[ "$expected_tree" == - ]]; then
+        expected_tree=$marker_tree
+      else
+        [[ "$marker_tree" == "$expected_tree" ]]
+      fi
+      expected="$identity:$expected_tree:git-pointer=$expected_pointer"
+      observed="$marker_sha:$marker_tree:git-pointer=$observed_pointer"
     else
-      [[ "$actual_tree_hash" == "$expected_tree" ]]
+      [[ ! -e "$source_marker" ]]
+      [[ -f "$repo/.git/orbit-overlay.paths" && -f "$repo/.git/orbit-source-state" ]]
+      printf '%s' "$expected_manifest" | base64 --decode | cmp -s - "$repo/.git/orbit-overlay.paths"
+      read -r marker_sha marker_tree < <(/usr/bin/php -r '$state = json_decode(file_get_contents($argv[1]), true, 8, JSON_THROW_ON_ERROR); $sha = $state["sha"] ?? null; $tree = $state["tree"] ?? null; if (!is_string($sha) || !preg_match("/\\A[0-9a-f]{40}\\z/D", $sha) || !is_string($tree) || !preg_match("/\\A[0-9a-f]{64}\\z/D", $tree)) exit(65); echo $sha, " ", $tree, "\n";' -- "$repo/.git/orbit-source-state")
+      [[ "$marker_sha" == "$identity" ]]
+      index=$(repo_git mktemp)
+      trap 'rm -f -- "$index"' EXIT
+      rm -f -- "$index"
+      repo_git env GIT_INDEX_FILE="$index" git -C "$repo" read-tree HEAD
+      repo_git env GIT_INDEX_FILE="$index" git -C "$repo" add -A -- .
+      actual_tree=$(repo_git env GIT_INDEX_FILE="$index" git -C "$repo" write-tree)
+      actual_tree_hash=$(printf '%s' "$actual_tree" | sha256sum | cut -d ' ' -f 1)
+      rm -f -- "$index"
+      trap - EXIT
+      [[ "$marker_tree" == "$actual_tree_hash" ]]
+      if [[ "$expected_tree" == - ]]; then
+        [[ -z "$(git -C "$repo" status --porcelain=v1 --untracked-files=all)" ]]
+        expected_tree=$actual_tree_hash
+      else
+        [[ "$actual_tree_hash" == "$expected_tree" ]]
+      fi
+      expected="$identity:$expected_tree"
+      observed="$marker_sha:$actual_tree_hash"
     fi
-    expected="$identity:$expected_tree"
-    observed="$marker_sha:$actual_tree_hash"
     ;;
   operator.app-dev) sudo -u orbit -- env HOME=/home/orbit ORBIT_HOME=/home/orbit/.orbit DB_DATABASE=/home/orbit/.orbit/gateway.sqlite /home/orbit/orbit/apps/cli/orbit gateway:status --json >/dev/null; expected='gateway:status=available'; observed=$expected ;;
   *) exit 64 ;;

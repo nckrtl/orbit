@@ -32,6 +32,69 @@ final readonly class AcquisitionRollback
         private Closure $deleteNetwork,
     ) {}
 
+    /** A rollback whose reads and mutations go through the Incus host for one attempt target. */
+    public static function forHost(IncusHost $host, IncusNetworkLifecycle $networks, TopologyTarget $target): self
+    {
+        $inventory = static function (array $resources) use ($host, $target): array {
+            if (
+                ! array_is_list($resources)
+                || array_filter($resources, static fn (mixed $resource): bool => ! is_string($resource)) !== []
+            ) {
+                throw new RuntimeException('Rollback resource list is invalid.');
+            }
+            /** @var list<string> $instances */
+            $instances = array_values(array_filter(
+                $resources,
+                static fn (mixed $resource): bool => $resource !== $target->network(),
+            ));
+            $inventory = $instances === [] ? [] : $host->instances($instances);
+            $inventory[$target->network()] = $host->network($target->network());
+            foreach ($instances as $instance) {
+                $inventory[$instance] ??= null;
+            }
+
+            return $inventory;
+        };
+
+        return new self(
+            $inventory,
+            static function (array $resources) use ($host): void {
+                $host->stopAll($resources);
+            },
+            static function (array $resources) use ($host): void {
+                $host->deleteInstances($resources);
+            },
+            static function (string $resource) use ($networks): void {
+                $networks->delete($resource);
+            },
+        );
+    }
+
+    /**
+     * The identity of every intended resource as observed now; `cleanup()` later
+     * refuses any resource whose identity drifted from this observation.
+     *
+     * @param list<string> $resources
+     * @return array<string, array<string, mixed>|null>
+     */
+    public function observe(array $resources): array
+    {
+        $observed = [];
+        try {
+            $inventory = ($this->readBatch)($resources);
+            foreach ($resources as $resource) {
+                $value = $inventory[$resource] ?? null;
+                $observed[$resource] = $value === null ? null : $this->identity($value);
+            }
+        } catch (Throwable $exception) {
+            foreach ($resources as $resource) {
+                $observed[$resource] = ['observation_error' => $exception->getMessage()];
+            }
+        }
+
+        return $observed;
+    }
+
     /** @param list<string> $resources @param array<array-key, mixed> $observed @return array<string, string> */
     public function cleanup(
         TopologyTarget $target,
@@ -211,6 +274,7 @@ final readonly class AcquisitionRollback
             || $current->name !== $resource
             || ($current->metadata['user.orbit.e2e.owner'] ?? null) !== 'orbit-e2e'
             || ($current->metadata['user.orbit.e2e.issue'] ?? null) !== $target->issue
+            || ($current->metadata['user.orbit.e2e.attempt'] ?? null) !== $target->attempt?->value
             || ($current->metadata['user.orbit.e2e.operation'] ?? null) !== $operation->value
         ) {
             throw new RuntimeException('Rollback resource identity or acquisition ownership drifted.');

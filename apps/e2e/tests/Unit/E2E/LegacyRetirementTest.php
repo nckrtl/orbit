@@ -91,7 +91,7 @@ function legacyFixture(): array
         ]],
         'base_images' => [['name' => 'ubuntu-generic', 'classification' => 'preserve']],
         'pools' => [['name' => 'orbit-e2e', 'identity' => 'pool-uuid-1', 'classification' => 'preserve']],
-        'new_namespace' => [['name' => 'orbit-e2e-nck-123-gateway', 'classification' => 'preserve']],
+        'new_namespace' => [['name' => 'orbit-e2e-nck-123-aaaaaaaa-gateway', 'classification' => 'preserve']],
         'evidence' => [[
             'path' => $root.'/evidence/proof.json',
             'identity' => 'proof-1',
@@ -304,8 +304,8 @@ describe('legacy retirement', function () {
         'compact standby network' => ['networks', 'oe-standby'],
         'compact feature network' => ['networks', 'oe-a1b2c3d4e5f6'],
         'canonical standby VM' => ['instances', 'orbit-e2e-standby-gateway'],
-        'canonical ORBIT feature VM' => ['instances', 'orbit-e2e-orbit-123456789-gateway'],
-        'canonical ORBIT feature snapshot' => ['snapshots', 'orbit-e2e-orbit-123456789-gateway/ready'],
+        'canonical ORBIT feature VM' => ['instances', 'orbit-e2e-orbit-123456789-aaaaaaaa-gateway'],
+        'canonical ORBIT feature snapshot' => ['snapshots', 'orbit-e2e-orbit-123456789-aaaaaaaa-gateway/ready'],
     ]);
 
     it('keeps similar-looking foreign identities eligible when classified as legacy', function (

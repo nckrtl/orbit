@@ -4,7 +4,7 @@ set -euo pipefail
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 
 if [[ $# -lt 1 ]]; then
-    echo "usage: bin/e2e-topology acquire|sync|verify|exec|prove|release|reap [options]" >&2
+    echo "usage: bin/e2e-topology acquire|sync|verify|exec|prove|diagnose|release|status|reap [options]" >&2
     exit 64
 fi
 
@@ -12,7 +12,7 @@ action=$1
 shift
 
 case "$action" in
-    acquire|sync|verify|exec|prove|release|reap)
+    acquire|sync|verify|exec|prove|diagnose|release|status|reap)
         exec php "$root/apps/e2e/artisan" "topology:$action" "$@"
         ;;
     *)

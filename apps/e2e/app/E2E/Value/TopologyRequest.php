@@ -6,17 +6,19 @@ namespace App\E2E\Value;
 
 use InvalidArgumentException;
 
+/**
+ * One issue and one worktree. The attempt identity is not part of the request:
+ * acquisition mints it, and every later command reads the issue's active attempt.
+ */
 final readonly class TopologyRequest
 {
-    public TopologyTarget $target;
-
     public string $worktree;
 
     public function __construct(
         public string $issue,
         string $worktree,
     ) {
-        $this->target = new TopologyTarget($issue);
+        TopologyTarget::assertIssue($issue);
 
         if ($worktree === '' || str_contains($worktree, "\0") || ! str_starts_with($worktree, '/')) {
             throw new InvalidArgumentException('The worktree path must be absolute and safe.');

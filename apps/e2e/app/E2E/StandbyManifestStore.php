@@ -15,6 +15,7 @@ final readonly class StandbyManifestStore
     public function __construct(
         private AtomicJsonStore $store,
         private StatePaths $paths,
+        private TopologyManifestStore $topologies,
     ) {}
 
     public function promoted(): ?StandbyGeneration
@@ -62,13 +63,7 @@ final readonly class StandbyManifestStore
             $protected[] = $current->previousGenerationId;
         }
 
-        foreach ($this->manifestFiles('topologies') as $file) {
-            $relative = 'topologies/'.basename($file);
-            $topology = $this->store->read($relative);
-            $generationId = $topology['generation']['id'] ?? null;
-            if (! is_string($generationId)) {
-                throw new RuntimeException('A topology generation pin is uncertain.');
-            }
+        foreach ($this->topologies->activeGenerationIds() as $generationId) {
             $protected[] = $generationId;
         }
 

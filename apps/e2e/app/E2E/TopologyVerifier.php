@@ -93,6 +93,11 @@ final readonly class TopologyVerifier
                         $source->overlayPaths === [] ? '' : implode("\0", $source->overlayPaths)."\0",
                     );
                 }
+                // A mounted source adds the expected `.git` pointer hash: the guest
+                // must hash the pointer file it sees through the mount itself.
+                if ($source->pointerHash !== null && str_starts_with($name, 'source.')) {
+                    $arguments[] = $source->pointerHash;
+                }
                 $commands[$name] = [
                     'instance' => $target->instance($role),
                     'command' => new GuestCommand($arguments, min(30, $remainingSeconds)),

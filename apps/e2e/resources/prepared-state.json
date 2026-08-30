@@ -25,6 +25,7 @@
         "apps/cli/config/orbit.php",
         "apps/cli/orbit",
         "apps/e2e/app/E2E/TopologyConverger.php",
+        "apps/e2e/app/E2E/WorktreeSynchronizer.php",
         "apps/e2e/resources/guest/converge-app-dev.sh",
         "apps/e2e/resources/guest/converge-app-prod-internal-tls.sh",
         "apps/e2e/resources/guest/converge-gateway.sh",
@@ -32,6 +33,7 @@
         "apps/e2e/resources/guest/hydrate-orbit.sh",
         "apps/e2e/resources/guest/prepare-node.sh",
         "apps/e2e/resources/guest/retarget-vpn.sh",
+        "apps/e2e/resources/guest/verify-topology.sh",
         "apps/gateway/app/Actions/Apps/CreateAppAction.php",
         "apps/gateway/app/Actions/Apps/ListAppsAction.php",
         "apps/gateway/app/Actions/Gateway/BootstrapGatewayAction.php",
@@ -277,7 +279,7 @@
         "packages/php-sdk/src/Support/GatewayOrigin.php",
         "packages/php-sdk/src/Support/GatewayRequestId.php"
     ],
-    "cold_epoch": "ubuntu-26.04-amd64-v1",
+    "cold_epoch": "ubuntu-26.04-amd64-v2",
     "base_image_alias": "orbit-base-ubuntu-26.04-runtime",
     "declared_epochs": {
         "base_image": 1,

@@ -97,7 +97,7 @@ final readonly class RetirementInventory
             || preg_match('/\Aoe-[a-f0-9]{12}\z/i', $identity) === 1
             || str_starts_with($identity, 'orbit-e2e-standby')
             || preg_match(
-                '/\Aorbit-e2e-[a-z][a-z0-9]{1,9}-[1-9][0-9]{0,8}-(?:gateway|app-dev|app-prod)(?:\/|\z)/i',
+                '/\Aorbit-e2e-[a-z][a-z0-9]{1,9}-[1-9][0-9]{0,8}(?:-[0-9a-f]{8})?-(?:gateway|app-dev|app-prod)(?:\/|\z)/i',
                 $identity,
             ) === 1
             || ($resource['namespace'] ?? null) === 'rolling-v1'

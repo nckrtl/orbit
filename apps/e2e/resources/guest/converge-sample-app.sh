@@ -1,18 +1,30 @@
 #!/usr/bin/env bash
 set -euo pipefail
 umask 077
+# incus exec starts in /root, which the orbit account cannot enter; child
+# processes spawned by the CLI need a readable working directory.
+cd /
 orbit=/home/orbit/orbit/apps/cli/orbit
 case ${1-} in
   grant-operator)
     [[ "$(id -u)" -eq 0 ]] && exec sudo -u orbit -- env HOME=/home/orbit ORBIT_HOME=/home/orbit/.orbit DB_DATABASE=/home/orbit/.orbit/gateway.sqlite bash "$0" "$@"
-    [[ $# -eq 3 && "$2" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]{0,62}$ && "$3" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]{0,62}$ ]]
+    [[ $# -eq 3 && "$2" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]{0,62}$ && "$3" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]{0,62}$ ]] || { echo "grant-operator: invalid arguments" >&2; exit 64; }
     ca=/home/orbit/.orbit/ca/root.pem
-    [[ -s "$ca" ]]
-    "$orbit" gateway:add e2e https://10.44.0.1 --ca="$ca" --use --json >/dev/null
-    nodes=$("$orbit" node:list --json)
+    [[ -s "$ca" ]] || { echo "grant-operator: missing root CA at $ca ($(id -un))" >&2; ls -ln /home/orbit/.orbit/ca >&2; exit 66; }
+    if ! output=$("$orbit" gateway:add https://10.44.0.1 --name=e2e --ca="$ca" --use --json 2>&1); then
+      printf 'gateway:add failed: %s\n' "$output" >&2
+      exit 1
+    fi
+    if ! nodes=$("$orbit" node:list --json 2>&1); then
+      printf 'node:list failed: %s\n' "$nodes" >&2
+      exit 1
+    fi
     operator_id=$(php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); $m=array_values(array_filter($v["nodes"], fn($x) => ($x["name"] ?? null)===$argv[1])); if(count($m)!==1 || !is_int($m[0]["id"] ?? null)) exit(65); echo $m[0]["id"];' "$2" <<<"$nodes")
     gateway_id=$(php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); $m=array_values(array_filter($v["nodes"], fn($x) => ($x["name"] ?? null)===$argv[1])); if(count($m)!==1 || !is_int($m[0]["id"] ?? null)) exit(65); echo $m[0]["id"];' "$3" <<<"$nodes")
-    "$orbit" node:access:add "$operator_id" "$gateway_id" --json >/dev/null
+    if ! output=$("$orbit" node:access:add "$operator_id" "$gateway_id" --json 2>&1); then
+      printf 'node:access:add failed: %s\n' "$output" >&2
+      exit 1
+    fi
     ;;
   configure-cli)
     [[ "$(id -u)" -eq 0 ]] && exec sudo -u orbit -- env HOME=/home/orbit ORBIT_HOME=/home/orbit/.orbit DB_DATABASE=/home/orbit/.orbit/gateway.sqlite bash "$0" "$@"
@@ -22,7 +34,7 @@ case ${1-} in
     curl --fail --silent --show-error --insecure "https://$2/api/v1/ca/root" -o "$ca.new"
     php -r '$v=json_decode(file_get_contents($argv[1]), true, 512, JSON_THROW_ON_ERROR); file_put_contents($argv[2], $v["data"]["root_ca"]);' "$ca.new" "$ca"
     rm -f "$ca.new"
-    "$orbit" gateway:add e2e "https://$2" --ca="$ca" --use --json
+    "$orbit" gateway:add "https://$2" --name=e2e --ca="$ca" --use --json
     ;;
   create-resources)
     [[ "$(id -u)" -eq 0 ]] && exec sudo -u orbit -- env HOME=/home/orbit ORBIT_HOME=/home/orbit/.orbit DB_DATABASE=/home/orbit/.orbit/gateway.sqlite bash "$0" "$@"

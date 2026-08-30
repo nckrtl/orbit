@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
+use App\E2E\DiscoveryGuestPreparer;
 use App\E2E\Git\GitRepository;
 use App\E2E\GuestTransport;
 use App\E2E\HostCapacity;
@@ -14,6 +15,9 @@ use App\E2E\LegacyIncusRevalidator;
 use App\E2E\LegacyRetirement;
 use App\E2E\LegacyRetirementHost;
 use App\E2E\PreparedStateFingerprint;
+use App\E2E\ProofRecordReader;
+use App\E2E\ProofStore;
+use App\E2E\ReleaseReceiptStore;
 use App\E2E\StandbyBuilder;
 use App\E2E\StandbyManifestStore;
 use App\E2E\StandbyRefresher;
@@ -25,6 +29,8 @@ use App\E2E\State\StatePaths;
 use App\E2E\TopologyAcquirer;
 use App\E2E\TopologyConverger;
 use App\E2E\TopologyManifestStore;
+use App\E2E\TopologyProofRunner;
+use App\E2E\TopologyReaper;
 use App\E2E\TopologyReleaser;
 use App\E2E\TopologyVerifier;
 use App\E2E\Value\OperationId;
@@ -122,6 +128,10 @@ final class AppServiceProvider extends ServiceProvider
         });
         $this->app->bind(GuestTransport::class, fn (Application $app): IncusHost => $app->make(IncusHost::class));
         $this->app->singleton(IncusNetworkLifecycle::class);
+        $this->app->singleton(ProofRecordReader::class);
+        $this->app->singleton(ProofStore::class);
+        $this->app->singleton(ReleaseReceiptStore::class);
+        $this->app->singleton(DiscoveryGuestPreparer::class);
         $this->app->singleton(TopologyAcquirer::class, fn (Application $app): TopologyAcquirer => new TopologyAcquirer(
             host: $app->make(IncusHost::class),
             networks: $app->make(IncusNetworkLifecycle::class),
@@ -138,7 +148,30 @@ final class AppServiceProvider extends ServiceProvider
             redactor: $app->make(SecretRedactor::class),
             repositoryRoot: $repositoryRoot,
             capacity: $app->make(HostCapacity::class),
+            proofs: $app->make(ProofRecordReader::class),
+            guests: $app->make(DiscoveryGuestPreparer::class),
         ));
+        $this->app->singleton(
+            TopologyProofRunner::class,
+            fn (Application $app): TopologyProofRunner => new TopologyProofRunner(
+                $app->make(IncusHost::class),
+                $app->make(IncusNetworkLifecycle::class),
+                $app->make(StandbyManifestStore::class),
+                $app->make(TopologyManifestStore::class),
+                $app->make(WorktreeSynchronizer::class),
+                $app->make(TopologyConverger::class),
+                $app->make(TopologyVerifier::class),
+                $app->make(ReleaseReceiptStore::class),
+                $app->make(ProofStore::class),
+                $app->make(HostCapacity::class),
+                $app->make(AtomicJsonStore::class),
+                $app->make(StatePaths::class),
+                $app->make(OperationId::class),
+                $app->make(OperationJournal::class),
+                $app->make(SecretRedactor::class),
+                $repositoryRoot,
+            ),
+        );
         $this->app->singleton(TopologyReleaser::class, fn (Application $app): TopologyReleaser => new TopologyReleaser(
             $app->make(IncusHost::class),
             $app->make(IncusNetworkLifecycle::class),
@@ -146,7 +179,16 @@ final class AppServiceProvider extends ServiceProvider
             $app->make(AtomicJsonStore::class),
             $app->make(StatePaths::class),
             $app->make(OperationId::class),
+            $app->make(ReleaseReceiptStore::class),
             $app->make(HostCapacity::class),
+        ));
+        $this->app->singleton(TopologyReaper::class, fn (Application $app): TopologyReaper => new TopologyReaper(
+            $app->make(AtomicJsonStore::class),
+            $app->make(StatePaths::class),
+            $app->make(TopologyReleaser::class),
+            $app->make(ProofRecordReader::class),
+            $app->make(OperationJournal::class),
+            $app->make(OperationId::class),
         ));
 
         $this->app->singleton(StandbyBuilder::class, fn (Application $app): StandbyBuilder => new StandbyBuilder(

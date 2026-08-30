@@ -6,6 +6,7 @@ namespace App\Console\Commands\Topology;
 
 use App\Console\Commands\E2ECommand;
 use App\E2E\TopologyAcquirer;
+use App\E2E\Value\AttemptId;
 use App\E2E\Value\OperationId;
 use InvalidArgumentException;
 use JsonException;
@@ -15,9 +16,9 @@ use Throwable;
 final class ExecCommand extends E2ECommand
 {
     #[\Override]
-    protected $signature = 'topology:exec {issue} {role} {--argv-file=} {--json}';
+    protected $signature = 'topology:exec {issue} {attempt} {role} {--argv-file=} {--json}';
     #[\Override]
-    protected $description = 'Execute an exact argv vector on one topology role';
+    protected $description = 'Execute an exact argv vector, as the orbit runtime user, on one role of an exact topology attempt';
 
     public function handle(TopologyAcquirer $acquirer, OperationId $operation): int
     {
@@ -25,6 +26,7 @@ final class ExecCommand extends E2ECommand
             [$argv, $stdin] = $this->commandInput();
             $result = $acquirer->execute(
                 (string) $this->argument('issue'),
+                new AttemptId((string) $this->argument('attempt')),
                 (string) $this->argument('role'),
                 $argv,
                 $stdin,

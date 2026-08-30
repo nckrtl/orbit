@@ -62,7 +62,7 @@
         "lint": "vendor/bin/mago lint app tests --reporting-format=medium",
         "rector": "vendor/bin/rector process",
         "test": "vendor/bin/pest --parallel --no-tia --compact --exclude-group=incus-live",
-        "test:live-incus": "vendor/bin/pest --no-tia --compact --group=incus-live tests/Live/RollingTopologyAcceptanceTest.php",
+        "test:live-incus": "vendor/bin/pest --no-tia --compact --group=incus-live tests/Live",
         "post-autoload-dump": [
             "Illuminate\\Foundation\\ComposerScripts::postAutoloadDump",
             "@php artisan package:discover --ansi"

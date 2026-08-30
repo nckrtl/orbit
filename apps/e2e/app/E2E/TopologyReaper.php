@@ -5,18 +5,30 @@ declare(strict_types=1);
 namespace App\E2E;
 
 use App\E2E\State\AtomicJsonStore;
+use App\E2E\State\OperationJournal;
 use App\E2E\State\StatePaths;
+use App\E2E\Value\AttemptId;
 use App\E2E\Value\IssueStateSnapshot;
+use App\E2E\Value\OperationId;
 use App\E2E\Value\ReleaseResult;
 use RuntimeException;
 
-/** @mago-expect lint:cyclomatic-complexity Lease expiry and cleanup retain one auditable recovery boundary. */
+/**
+ * Release expired attempts of terminal issues. A proved attempt is never reaped:
+ * its topology is the evidence behind a merge decision.
+ *
+ * @mago-expect lint:cyclomatic-complexity Lease expiry and cleanup retain one auditable recovery boundary.
+ * @mago-expect lint:excessive-parameter-list The reaping dependencies are explicit trust boundaries.
+ */
 final readonly class TopologyReaper
 {
     public function __construct(
         private AtomicJsonStore $state,
         private StatePaths $paths,
         private TopologyReleaser $releaser,
+        private ProofRecordReader $proofs,
+        private OperationJournal $journal,
+        private OperationId $operation,
     ) {}
 
     /** @return list<ReleaseResult> */
@@ -40,7 +52,15 @@ final readonly class TopologyReaper
             }
             $issue = $matches[1];
             $lease = $this->state->read('leases/'.$entry);
-            if ($lease === null || ($lease['issue'] ?? null) !== $issue || ! is_string($lease['expires_at'] ?? null)) {
+            /** @mago-expect analysis:mixed-assignment The lease attempt is validated before use. */
+            $attempt = $lease['attempt'] ?? null;
+            if (
+                $lease === null
+                || ($lease['issue'] ?? null) !== $issue
+                || ! is_string($lease['expires_at'] ?? null)
+                || ! is_string($attempt)
+                || preg_match('/\A[0-9a-f]{32}\z/D', $attempt) !== 1
+            ) {
                 throw new RuntimeException('A topology lease is invalid.');
             }
             $expiresAt = $lease['expires_at'];
@@ -57,20 +77,31 @@ final readonly class TopologyReaper
                 throw new RuntimeException('A topology lease is invalid.');
             }
             if ($parsedExpiry->getTimestamp() <= time() && $snapshot->isTerminal($issue)) {
-                $expired[] = $issue;
+                $expired[$issue] = new AttemptId($attempt);
             }
         }
 
         $results = [];
-        foreach ($expired as $issue) {
+        foreach ($expired as $issue => $attempt) {
+            if ($this->proofs->isProved($issue, $attempt)) {
+                $this->journal->append($this->operation, [
+                    'event' => 'topology.reap',
+                    'state' => 'skipped',
+                    'reason' => 'proved',
+                    'issue' => $issue,
+                    'attempt' => $attempt->value,
+                ]);
+                continue;
+            }
             try {
-                $results[] = $this->releaser->release($issue);
+                $results[] = $this->releaser->release($issue, $attempt);
                 $this->state->delete('reaping-failures/'.$issue.'.json');
             } catch (\Throwable $exception) {
                 // A broken topology must not prevent cleanup of later issues.
                 $this->state->write('reaping-failures/'.$issue.'.json', [
-                    'schema' => 1,
+                    'schema' => 2,
                     'issue' => $issue,
+                    'attempt' => $attempt->value,
                     'error' => $exception->getMessage(),
                 ]);
             }

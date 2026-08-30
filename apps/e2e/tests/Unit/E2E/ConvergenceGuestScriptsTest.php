@@ -817,7 +817,8 @@ describe('convergence guest scripts', function () {
             '/home/orbit/apps/laravel',
             '/home/orbit/.orbit/worktrees/laravel/e2e',
             '/var/www/laravel/e2e-prod',
-            'repo=/home/orbit/orbit',
+            'source_root=/home/orbit/orbit',
+            'source_marker=/var/lib/orbit-e2e/source-state',
             'orbit-overlay.paths',
             'orbit-source-state',
             'gateway:status',
@@ -833,7 +834,9 @@ describe('convergence guest scripts', function () {
             'echo $address;',
             'dig +time=3 +tries=1 +short gateway.orbit @10.44.0.1',
             '--resolve "gateway.orbit:443:$resolved" https://gateway.orbit/up',
-            'repo_git git -C /home/orbit/orbit rev-parse HEAD',
+            'repo_git git -C "$source_root" rev-parse HEAD',
+            'mountpoint -q -- "$source_root"',
+            'sha256sum -- "$source_root/.git"',
             'repo_git env GIT_INDEX_FILE="$index" git -C "$repo" write-tree',
         );
         expect($source)
@@ -1313,5 +1316,131 @@ describe('convergence guest scripts', function () {
             ->and(file("{$root}/reloads", FILE_IGNORE_NEW_LINES))
             ->toHaveCount(1);
         expect(fileperms("{$root}/etc/caddy/Caddyfile.orbit-e2e") & 0o777)->toBe(0o644);
+    });
+    it('proves a mounted source through the mountpoint and the git pointer hash', function () {
+        $root = temporaryPath('orbit-verifier-mounted-', 4);
+        mkdir("{$root}/bin", 0o700, true);
+        mkdir("{$root}/source/apps/gateway", 0o700, true);
+        $sha = str_repeat('a', 40);
+        $tree = str_repeat('b', 64);
+        $marker = "{$root}/source-state";
+        file_put_contents("{$root}/source/.git", "gitdir: /srv/orbit/.git/worktrees/feature\n");
+        file_put_contents("{$root}/source/apps/gateway/artisan", "#!/usr/bin/env php\n");
+        $pointer = hash('sha256', (string) file_get_contents("{$root}/source/.git"));
+        file_put_contents(
+            "{$root}/bin/git",
+            "#!/usr/bin/env bash\nprintf 'guest-git-ran\\n' >> '{$root}/git-ran'\nexit 1\n",
+        );
+        // The fake mountpoint answers for the source root only while the flag file exists.
+        file_put_contents(
+            "{$root}/bin/mountpoint",
+            "#!/usr/bin/env bash\n[[ \"\$3\" == '{$root}/source' && -e '{$root}/mounted' ]]\n",
+        );
+        chmod("{$root}/bin/git", 0o700);
+        chmod("{$root}/bin/mountpoint", 0o700);
+        touch("{$root}/mounted");
+        $script = str_replace(
+            ['source_marker=/var/lib/orbit-e2e/source-state', 'source_root=/home/orbit/orbit'],
+            ["source_marker={$marker}", "source_root={$root}/source"],
+            file_get_contents(dirname(__DIR__, 3).'/resources/guest/verify-topology.sh'),
+        );
+        file_put_contents("{$root}/verify.sh", $script);
+        chmod("{$root}/verify.sh", 0o700);
+        $environment = ['PATH' => "{$root}/bin:".getenv('PATH')];
+        $run = static fn (array $arguments): Process => new Process(
+            ['bash', "{$root}/verify.sh", ...$arguments],
+            env: $environment,
+        );
+        $writeMarker = static fn (array $overrides = []): int|false => file_put_contents(
+            $marker,
+            json_encode(
+                $overrides + ['sha' => $sha, 'tree' => $tree, 'mounted' => true, 'git_pointer_sha256' => $pointer],
+            )
+                ."\n",
+        );
+        $gateway = ['source.gateway', 'readiness', $sha, 'orbit-e2e-x-gateway', $pointer];
+        $manifest = ['source.manifest', 'readiness', $sha, 'orbit-e2e-x-gateway', $tree, '', $pointer];
+
+        try {
+            $writeMarker();
+            $evidence = json_decode($run($gateway)->mustRun()->getOutput(), true, 16, JSON_THROW_ON_ERROR);
+            expect($evidence)->toMatchArray([
+                'probe' => 'source.gateway',
+                'expected' => "{$sha}:git-pointer={$pointer}",
+                'observed' => "{$sha}:git-pointer={$pointer}",
+            ]);
+
+            $manifestEvidence = json_decode($run($manifest)->mustRun()->getOutput(), true, 16, JSON_THROW_ON_ERROR);
+            expect($manifestEvidence)->toMatchArray([
+                'expected' => "{$sha}:{$tree}:git-pointer={$pointer}",
+                'observed' => "{$sha}:{$tree}:git-pointer={$pointer}",
+            ]);
+
+            $clean = json_decode(
+                $run(['source.manifest', 'readiness', $sha, 'orbit-e2e-x-gateway', '-', '', $pointer])
+                    ->mustRun()
+                    ->getOutput(),
+                true,
+                16,
+                JSON_THROW_ON_ERROR,
+            );
+            expect($clean)->toMatchArray(['expected' => "{$sha}:{$tree}:git-pointer={$pointer}"]);
+
+            // Host-side mismatches: identity, tree, and the expected pointer hash.
+            expect($run(['source.gateway', 'readiness', str_repeat('c', 40), 'orbit-e2e-x-gateway', $pointer])->run())
+                ->not->toBe(0)->and(
+                    $run([
+                        'source.manifest',
+                        'readiness',
+                        $sha,
+                        'orbit-e2e-x-gateway',
+                        str_repeat('d', 64),
+                        '',
+                        $pointer,
+                    ])->run(),
+                )
+                ->not->toBe(0)->and(
+                    $run(['source.gateway', 'readiness', $sha, 'orbit-e2e-x-gateway', str_repeat('e', 64)])->run(),
+                )
+                ->not->toBe(0)->and(
+                    $run(['source.gateway', 'readiness', $sha, 'orbit-e2e-x-gateway', 'not-a-hash'])->run(),
+                )
+                ->not->toBe(0);
+
+            // A marker without the mount, or with another pointer hash, proves nothing.
+            unlink("{$root}/mounted");
+            expect($run($gateway)->run())->not->toBe(0)->and($run($manifest)->run())->not->toBe(0);
+            touch("{$root}/mounted");
+            $writeMarker(['git_pointer_sha256' => str_repeat('e', 64)]);
+            expect($run($gateway)->run())->not->toBe(0);
+
+            // The pointer file the guest sees must hash to the expected value.
+            $writeMarker();
+            file_put_contents("{$root}/source/.git", "gitdir: /srv/other/.git/worktrees/feature\n");
+            expect($run($gateway)->run())->not->toBe(0)->and($run($manifest)->run())->not->toBe(0);
+            file_put_contents("{$root}/source/.git", "gitdir: /srv/orbit/.git/worktrees/feature\n");
+            unlink("{$root}/source/apps/gateway/artisan");
+            expect($run($gateway)->run())->not->toBe(0);
+            file_put_contents("{$root}/source/apps/gateway/artisan", "#!/usr/bin/env php\n");
+
+            // The host contract is explicit: no marker for a mounted probe, and no
+            // mounted marker for a transferred checkout.
+            $writeMarker(['mounted' => false]);
+            expect($run($gateway)->run())->not->toBe(0);
+            $writeMarker();
+            expect($run(['source.gateway', 'readiness', $sha, 'orbit-e2e-x-gateway'])->run())->not->toBe(0);
+            unlink($marker);
+            expect($run($gateway)->run())->not->toBe(0);
+
+            $writeMarker();
+            file_put_contents($marker, "{malformed\n");
+            expect($run($manifest)->run())
+                ->not
+                ->toBe(0)
+                ->and(file_exists("{$root}/git-ran"))
+                ->toBeFalse();
+        } finally {
+            new Illuminate\Filesystem\Filesystem()->deleteDirectory($root);
+        }
     });
 });
