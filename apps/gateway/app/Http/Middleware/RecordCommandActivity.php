@@ -291,7 +291,10 @@ final readonly class RecordCommandActivity
         return $this->inputSanitizer->sanitizeProperties($input);
     }
 
-    /** @return array<array-key, mixed> */
+    /**
+     * @return array<array-key, mixed>
+     * @mago-expect analysis:mixed-assignment Parsed request input is an untyped transport boundary.
+     */
     private function doctorInput(Request $request): array
     {
         try {

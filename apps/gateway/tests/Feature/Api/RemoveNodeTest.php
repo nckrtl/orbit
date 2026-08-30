@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\AppDev\PrivateDnsManager;
+use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\WireGuard\GatewayPeerProjectionManager;
@@ -18,6 +19,53 @@ beforeEach(function (): void {
     $this->peers = new RemoveNodeFakePeerProjection;
     app()->instance(PrivateDnsManager::class, $this->dns);
     app()->instance('App\\Domain\\WireGuard\\GatewayPeerProjectionManager', $this->peers);
+});
+
+it('retires Metrics exporter state before removing network projections', function (): void {
+    $caller = remove_node_record(name: 'operator', wireguardAddress: '10.44.0.2');
+    $target = remove_node_record(name: 'retired', wireguardAddress: '10.44.0.3');
+    $caller->accessibleNodes()->attach($target);
+    $target->update(['wireguard_public_key' => 'TARGET_PUBLIC_KEY']);
+    $metrics = Mockery::mock(MetricsFleetReconciler::class);
+    $metrics
+        ->shouldReceive('retire')
+        ->once()
+        ->withArgs(
+            static fn (Node $node): bool => $node->is($target) && $node->status === LifecycleStatus::Removing,
+        );
+    app()->instance(MetricsFleetReconciler::class, $metrics);
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
+        ->deleteJson("/api/v1/nodes/{$target->id}")
+        ->assertOk();
+
+    expect($this->peers->removed)->toBe([$target->id]);
+});
+
+it('restores active Metrics selection when exporter retirement fails', function (): void {
+    $caller = remove_node_record(name: 'operator', wireguardAddress: '10.44.0.2');
+    $target = remove_node_record(name: 'retired', wireguardAddress: '10.44.0.3');
+    $caller->accessibleNodes()->attach($target);
+    $metrics = Mockery::mock(MetricsFleetReconciler::class);
+    $metrics->shouldReceive('retire')->once()->andThrow(new RuntimeException('private Metrics failure'));
+    $metrics->shouldReceive('reconcile')->once();
+    app()->instance(MetricsFleetReconciler::class, $metrics);
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
+        ->deleteJson("/api/v1/nodes/{$target->id}")
+        ->assertStatus(502)
+        ->assertJsonPath('error.code', 'node.metrics_reconcile_failed')
+        ->assertJsonPath('error.details.step', 'metrics-exporters')
+        ->assertJsonMissing(['private Metrics failure']);
+
+    expect($target->fresh()?->status)
+        ->toBe(LifecycleStatus::Active)
+        ->and($this->peers->removed)
+        ->toBeEmpty()
+        ->and($this->dns->convergences)
+        ->toBe(0);
 });
 
 it('removes only the target WireGuard peer before reconciling DNS', function (): void {
@@ -49,6 +97,10 @@ it('returns 502 and retains active state when WireGuard projection fails', funct
     $caller->accessibleNodes()->attach($target);
     $target->update(['wireguard_public_key' => 'TARGET_PUBLIC_KEY']);
     $this->peers->removeFailure = new RuntimeException('private projection detail');
+    $metrics = Mockery::mock(MetricsFleetReconciler::class);
+    $metrics->shouldReceive('retire')->once();
+    $metrics->shouldReceive('reconcile')->once();
+    app()->instance(MetricsFleetReconciler::class, $metrics);
 
     $this
         ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
@@ -72,6 +124,10 @@ it('restores the WireGuard peer and node state when DNS projection fails', funct
     $caller->accessibleNodes()->attach($target);
     $target->update(['wireguard_public_key' => 'TARGET_PUBLIC_KEY']);
     $this->dns->failure = new RuntimeException('private DNS detail');
+    $metrics = Mockery::mock(MetricsFleetReconciler::class);
+    $metrics->shouldReceive('retire')->once();
+    $metrics->shouldReceive('reconcile')->once();
+    app()->instance(MetricsFleetReconciler::class, $metrics);
 
     $this
         ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
@@ -121,6 +177,10 @@ it('restores network projections and active state when persistence deletion fail
             throw new RuntimeException('private database detail');
         }
     });
+    $metrics = Mockery::mock(MetricsFleetReconciler::class);
+    $metrics->shouldReceive('retire')->once();
+    $metrics->shouldReceive('reconcile')->once();
+    app()->instance(MetricsFleetReconciler::class, $metrics);
 
     $this
         ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])

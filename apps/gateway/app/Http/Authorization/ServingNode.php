@@ -13,5 +13,6 @@ enum ServingNode
     case WorkspaceOwning;
     case ProcessOwning;
     case ToolOwning;
+    case RoleMutation;
     case Collection;
 }

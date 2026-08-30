@@ -6,7 +6,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\RoleRegistry;
 
 describe(RoleRegistry::class, function (): void {
-    it('defines the four version-one roles and their lifecycle policy', function (): void {
+    it('defines the version-one roles and their lifecycle policy', function (): void {
         $registry = new RoleRegistry;
 
         expect($registry->names())
@@ -15,6 +15,7 @@ describe(RoleRegistry::class, function (): void {
                 RoleName::Vpn,
                 RoleName::AppDev,
                 RoleName::AppProd,
+                RoleName::Metrics,
             ])
             ->and($registry->definition(RoleName::Gateway)->singleton)
             ->toBeTrue()
@@ -39,6 +40,12 @@ describe(RoleRegistry::class, function (): void {
             ->and($registry->definition(RoleName::AppProd)->assignableDuringProvisioning)
             ->toBeTrue()
             ->and($registry->definition(RoleName::AppProd)->mutable)
+            ->toBeTrue()
+            ->and($registry->definition(RoleName::Metrics)->singleton)
+            ->toBeTrue()
+            ->and($registry->definition(RoleName::Metrics)->assignableDuringProvisioning)
+            ->toBeTrue()
+            ->and($registry->definition(RoleName::Metrics)->mutable)
             ->toBeTrue();
     });
 

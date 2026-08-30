@@ -6,6 +6,7 @@ use App\Actions\Nodes\ProvisionNodeAction;
 use App\Data\Nodes\ProvisionNodeData;
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Nodes\NodeConverger;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\NodeProvisioningIdentity;
@@ -38,6 +39,89 @@ describe(ProvisionNodeAction::class, function (): void {
 
             public function remove(Node $node, NodeRole $assignment, bool $purgeData): void {}
         });
+    });
+
+    it('reconciles a roleless provisioned node after activation', function (): void {
+        app()->instance(NodeConverger::class, new class implements NodeConverger {
+            public function converge(
+                Node $node,
+                NodeProvisioningIdentity $identity,
+                ?string $expectedSshHostFingerprint = null,
+                bool $rolelessOperator = false,
+            ): void {}
+        });
+        $metrics = Mockery::mock(MetricsFleetReconciler::class);
+        $metrics->shouldReceive('reconcile')->once()->withNoArgs();
+        app()->instance(MetricsFleetReconciler::class, $metrics);
+
+        $node = app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
+            name: 'roleless-exporter',
+            publicSshHost: '192.0.2.97',
+            architecture: 'x86_64',
+            expectedSshHostFingerprint: 'SHA256:pinned',
+        ));
+
+        expect($node->status)->toBe(LifecycleStatus::Active);
+    });
+
+    it('reconciles a role-bearing provisioned node after activation', function (): void {
+        app()->instance(NodeConverger::class, new class implements NodeConverger {
+            public function converge(
+                Node $node,
+                NodeProvisioningIdentity $identity,
+                ?string $expectedSshHostFingerprint = null,
+                bool $rolelessOperator = false,
+            ): void {}
+        });
+        // Role convergence runs while the node is still provisioning and
+        // exporter selection only sees active nodes, so without this call the
+        // node goes active with no exporter and no Prometheus target.
+        $metrics = Mockery::mock(MetricsFleetReconciler::class);
+        $metrics->shouldReceive('reconcile')->once()->withNoArgs();
+        app()->instance(MetricsFleetReconciler::class, $metrics);
+
+        $node = app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
+            name: 'role-bearing-exporter',
+            publicSshHost: '192.0.2.99',
+            architecture: 'x86_64',
+            expectedSshHostFingerprint: 'SHA256:pinned',
+            roles: [RoleName::AppProd],
+        ));
+
+        expect($node->status)
+            ->toBe(LifecycleStatus::Active)
+            ->and($node->roles->pluck('role')->all())
+            ->toBe([RoleName::AppProd]);
+    });
+
+    it('uses the node provisioning failure boundary when roleless Metrics reconciliation fails', function (): void {
+        app()->instance(NodeConverger::class, new class implements NodeConverger {
+            public function converge(
+                Node $node,
+                NodeProvisioningIdentity $identity,
+                ?string $expectedSshHostFingerprint = null,
+                bool $rolelessOperator = false,
+            ): void {}
+        });
+        $metrics = Mockery::mock(MetricsFleetReconciler::class);
+        $metrics->shouldReceive('reconcile')->once()->andThrow(new RuntimeException('metrics failure'));
+        app()->instance(MetricsFleetReconciler::class, $metrics);
+
+        expect(fn () => app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
+            name: 'roleless-exporter-failure',
+            publicSshHost: '192.0.2.98',
+            architecture: 'x86_64',
+            expectedSshHostFingerprint: 'SHA256:pinned',
+        )))
+            ->toThrow(NodeProvisioningException::class, 'Metrics fleet reconciliation failed.');
+
+        $node = Node::query()->where('name', 'roleless-exporter-failure')->sole();
+        expect($node->status)
+            ->toBe(LifecycleStatus::Failed)
+            ->and($node->failed_step)
+            ->toBe('metrics-exporters')
+            ->and($node->error_code)
+            ->toBe('node.metrics_reconcile_failed');
     });
 
     it('rejects an invalid stored managed user before mutating an existing node', function (): void {

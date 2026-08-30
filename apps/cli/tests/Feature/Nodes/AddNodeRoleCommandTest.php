@@ -8,6 +8,7 @@ use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Nodes\AddNodeRoleRequest;
+use Orbit\Sdk\Requests\Nodes\ListNodesRequest;
 use Saloon\Enums\Method;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
@@ -54,10 +55,44 @@ it('rejects an invalid node id before connector io', function (string $nodeId): 
 
     expect($mockClient->getLastPendingRequest())->toBeNull();
 })->with([
-    'non-numeric' => 'operator',
     'zero' => '0',
     'negative' => '-1',
 ]);
+
+it('resolves a node name through the node list before adding the role', function (): void {
+    $mockClient = MockClient::global([
+        ListNodesRequest::class => MockResponse::make([
+            'data' => [node_role_add_node_payload(7, 'app-dev')],
+            'meta' => ['request_id' => node_role_add_request_id()],
+        ]),
+        AddNodeRoleRequest::class => MockResponse::make([
+            'data' => added_node_role_payload(),
+            'meta' => ['request_id' => node_role_add_request_id()],
+        ], 201),
+    ]);
+
+    $this
+        ->artisan('node:role:add', ['node' => 'app-dev', 'role' => 'app-dev', '--json' => true])
+        ->assertExitCode(0);
+
+    expect($mockClient->getLastRequest()?->resolveEndpoint())->toBe('/api/v1/nodes/7/roles');
+});
+
+it('rejects an unknown node name before the role request', function (): void {
+    $mockClient = MockClient::global([
+        ListNodesRequest::class => MockResponse::make([
+            'data' => [node_role_add_node_payload(7, 'app-dev')],
+            'meta' => ['request_id' => node_role_add_request_id()],
+        ]),
+    ]);
+
+    $this
+        ->artisan('node:role:add', ['node' => 'operator', 'role' => 'app-dev'])
+        ->expectsOutputToContain('Node [operator] is not registered.')
+        ->assertExitCode(1);
+
+    $mockClient->assertNotSent(AddNodeRoleRequest::class);
+});
 
 it('rejects an empty role before connector io', function (): void {
     $mockClient = MockClient::global();
@@ -235,3 +270,27 @@ it('shows deterministic human output for a converged existing node role assignme
         ->expectsOutput('Request ID: '.node_role_add_request_id())
         ->assertExitCode(0);
 });
+
+/** @return array<string, mixed> */
+function node_role_add_node_payload(int $id, string $name): array
+{
+    return [
+        'id' => $id,
+        'name' => $name,
+        'status' => 'active',
+        'platform' => 'linux',
+        'architecture' => 'x86_64',
+        'tld' => null,
+        'public_ssh_host' => '203.0.113.7',
+        'public_ssh_port' => 22,
+        'user' => 'orbit',
+        'wireguard_address' => '10.44.0.7',
+        'wireguard_public_key' => 'key',
+        'wireguard_endpoint_override' => null,
+        'dns_server_override' => null,
+        'ssh_host_fingerprint' => null,
+        'failed_step' => null,
+        'error_code' => null,
+        'roles' => [],
+    ];
+}

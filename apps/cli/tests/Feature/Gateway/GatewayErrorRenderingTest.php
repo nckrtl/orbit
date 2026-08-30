@@ -522,7 +522,7 @@ it('renders local validation failures through the exact json boundary', function
     ],
     'node role add id' => [
         'node:role:add',
-        ['node' => 'validation-secret', 'role' => 'app-dev'],
+        ['node' => '0', 'role' => 'app-dev'],
         'node.id_invalid',
         'Node ID must be a positive integer.',
     ],

@@ -7,6 +7,7 @@ namespace App\Actions\Nodes;
 use App\Data\Nodes\ProvisionNodeData;
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Nodes\LinuxUserName;
 use App\Domain\Nodes\NodeConverger;
 use App\Domain\Nodes\NodeProvisioningException;
@@ -40,6 +41,7 @@ final readonly class ProvisionNodeAction
         private GatewayPeerProjectionManager $gatewayPeers,
         private NodeProvisioningLock $provisioningLock,
         private PrivateDnsManager $dns,
+        private MetricsFleetReconciler $metrics,
     ) {}
 
     public function execute(ProvisionNodeData $data): Node
@@ -236,6 +238,25 @@ final readonly class ProvisionNodeAction
 
         if ($convergeChangedAppDevTld) {
             $this->convergeChangedAppDevTld($node, $previousTld);
+        }
+
+        // Role convergence runs while the node is still provisioning, and
+        // exporter selection only ever considers active nodes. The node is
+        // active here, so every provisioning outcome reconciles: a role-bearing
+        // node becomes a selected exporter, and a roleless node picks up an
+        // explicit preference it kept from an earlier registration.
+        try {
+            $this->metrics->reconcile();
+        } catch (Throwable $exception) {
+            $failure = new NodeProvisioningException(
+                step: 'metrics-exporters',
+                errorCode: 'node.metrics_reconcile_failed',
+                message: 'Metrics fleet reconciliation failed.',
+                previous: $exception,
+            );
+            $this->markFailed($node, $failure);
+
+            throw $failure;
         }
 
         return $node->refresh()->load('roles');

@@ -8,19 +8,25 @@ use LaravelZero\Framework\Commands\Command;
 
 final class GatewayFailureRenderer
 {
+    /**
+     * @param array<string,string> $details
+     *
+     * @mago-expect lint:excessive-parameter-list Every knob is optional and mirrors the shared failure envelope shape.
+     */
     public static function write(
         Command $command,
         string $code,
         string $message,
         ?string $requestId = null,
         ?string $humanMessage = null,
+        array $details = [],
     ): void {
         $code = self::safeErrorCode($code);
         $message = self::safeErrorMessage($message);
         $requestId = self::safeRequestId($requestId);
 
         if ($command->option('json') === true) {
-            $command->line(self::json($code, $message, $requestId));
+            $command->line(self::json($code, $message, $requestId, $details));
 
             return;
         }
@@ -32,15 +38,21 @@ final class GatewayFailureRenderer
         }
     }
 
-    public static function json(string $code, string $message, ?string $requestId = null): string
+    /** @param array<string,string> $details */
+    public static function json(string $code, string $message, ?string $requestId = null, array $details = []): string
     {
-        return json_encode([
-            'error' => [
-                'code' => self::safeErrorCode($code),
-                'message' => self::safeErrorMessage($message),
-                'request_id' => self::safeRequestId($requestId),
-            ],
-        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+        $error = [
+            'code' => self::safeErrorCode($code),
+            'message' => self::safeErrorMessage($message),
+        ];
+
+        if ($details !== []) {
+            $error['details'] = $details;
+        }
+
+        $error['request_id'] = self::safeRequestId($requestId);
+
+        return json_encode(['error' => $error], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
     }
 
     private static function safeErrorCode(string $code): string

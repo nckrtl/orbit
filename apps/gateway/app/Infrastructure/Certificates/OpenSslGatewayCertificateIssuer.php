@@ -30,9 +30,10 @@ final readonly class OpenSslGatewayCertificateIssuer implements GatewayCertifica
     {
         $this->guardIdentity($hostname, $wireguardAddress);
         $directory = rtrim(string: $this->orbitHome, characters: '/').'/ca';
+        $scope = $hostname === 'metrics.orbit' ? 'metrics' : 'gateway';
         $paths = new GatewayCertificatePaths(
-            privateKeyPath: $directory.'/gateway-current/gateway.key',
-            certificatePath: $directory.'/gateway-current/gateway.pem',
+            privateKeyPath: $directory.'/'.$scope.'-current/gateway.key',
+            certificatePath: $directory.'/'.$scope.'-current/gateway.pem',
         );
 
         if ($this->isCurrent($paths, $hostname, $wireguardAddress, $directory.'/root.pem')) {
@@ -41,7 +42,7 @@ final readonly class OpenSslGatewayCertificateIssuer implements GatewayCertifica
             return $paths;
         }
 
-        $this->issueVersion($paths, $hostname, $wireguardAddress, $directory);
+        $this->issueVersion($paths, $hostname, $wireguardAddress, $directory, $scope);
         $this->protect($paths, $directory);
 
         return $paths;
@@ -76,8 +77,9 @@ final readonly class OpenSslGatewayCertificateIssuer implements GatewayCertifica
         string $hostname,
         string $wireguardAddress,
         string $caDirectory,
+        string $scope,
     ): void {
-        $versionsDirectory = $caDirectory.'/gateway-versions';
+        $versionsDirectory = $caDirectory.'/'.$scope.'-versions';
         $version = bin2hex(random_bytes(8));
         $candidateDirectory = "{$versionsDirectory}/{$version}.candidate";
         $versionDirectory = "{$versionsDirectory}/{$version}";
