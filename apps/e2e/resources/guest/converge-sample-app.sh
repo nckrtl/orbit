@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 umask 077
+# incus exec starts in /root, which the orbit account cannot enter; child
+# processes spawned by the CLI need a readable working directory.
+cd /
 orbit=/home/orbit/orbit/apps/cli/orbit
 case ${1-} in
   grant-operator)
