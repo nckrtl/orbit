@@ -17,4 +17,10 @@ explicit=$(orbit workspace:new "$dev_id" nck104-explicit --path=/home/orbit/cust
   || fail "explicit checkout path was not recorded: $explicit"
 [[ "$(sql_workspace_origin nck104-explicit)" == explicit ]] || fail "explicit origin was not stored"
 
+legacy=$(orbit workspace:new "$dev_id" nck104-legacy --path=/home/orbit/custom-worktrees/nck104-legacy --json)
+[[ "$(echo "$legacy" | json_get checkout_path)" == /home/orbit/custom-worktrees/nck104-legacy ]] \
+  || fail "legacy fixture workspace was not created: $legacy"
+sql_clear_workspace_origin nck104-legacy
+[[ "$(sql_workspace_origin nck104-legacy)" == null ]] || fail "legacy origin was not cleared"
+
 echo "origin: derived, explicit, and legacy null"

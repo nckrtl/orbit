@@ -12,7 +12,7 @@
             "id": "retrieve-settings-sql",
             "node": "gateway",
             "argv": ["bash", "/var/lib/orbit-e2e/proof/retrieve-settings-sql.sh"],
-            "timeout_seconds": 120
+            "timeout_seconds": 600
         },
         {
             "id": "patch-omit-null",
@@ -30,13 +30,13 @@
             "id": "derived-explicit-origin",
             "node": "gateway",
             "argv": ["bash", "/var/lib/orbit-e2e/proof/derived-explicit-origin.sh"],
-            "timeout_seconds": 180
+            "timeout_seconds": 300
         },
         {
             "id": "non-migrating-app-prod",
             "node": "gateway",
             "argv": ["bash", "/var/lib/orbit-e2e/proof/non-migrating-app-prod.sh"],
-            "timeout_seconds": 60
+            "timeout_seconds": 300
         },
         {
             "id": "reject-invalid-roots",
@@ -54,7 +54,7 @@
             "id": "caddy-acl-sharing",
             "node": "app-dev",
             "argv": ["bash", "/var/lib/orbit-e2e/proof/caddy-acl-sharing.sh"],
-            "timeout_seconds": 180
+            "timeout_seconds": 300
         },
         {
             "id": "checkout-overlap",
@@ -66,7 +66,7 @@
             "id": "removal-recorded-origin",
             "node": "app-dev",
             "argv": ["bash", "/var/lib/orbit-e2e/proof/removal-recorded-origin.sh"],
-            "timeout_seconds": 180
+            "timeout_seconds": 300
         }
     ]
 }

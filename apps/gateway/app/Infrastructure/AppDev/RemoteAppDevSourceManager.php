@@ -16,7 +16,7 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Instance;
 use App\Models\Workspace;
 
-/** @mago-expect lint:kan-defect Instance and workspace source scripts keep containment and ACL accounting together. */
+/** @mago-expect lint:kan-defect,too-many-methods Instance and workspace source scripts keep containment and ACL accounting together. */
 final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
 {
     public function __construct(
@@ -59,7 +59,7 @@ final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
                 $instance->node,
                 new RemoteCommand(
                     arguments: $arguments,
-                    input: <<<'BASH'
+                    input: self::prepareTraversalPathsFunction().<<<'BASH'
                         repository=$1
                         checkout=$2
                         document_root=$3
@@ -131,12 +131,10 @@ final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
                         }
 
                         grant_caddy_access() {
-                            setfacl -m u:caddy:--x "$managed_home" "$managed_home/apps" "$allowed_root" "$checkout"
-                            for path in "${traversal_paths[@]}"; do
-                                case "$checkout" in
-                                    "$path"|"$path"/*) setfacl -m u:caddy:--x "$path" ;;
-                                esac
-                            done
+                            setfacl -m u:caddy:--x "$managed_home" "$checkout"
+                            if [ -d "$managed_home/apps" ]; then
+                                setfacl -m u:caddy:--x "$managed_home/apps"
+                            fi
 
                             current=$checkout_root
                             if [ "$document_root_real" = "$checkout_root" ]; then
@@ -164,6 +162,7 @@ final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
                             fi
                         }
                         guard_checkout_parent "$checkout"
+                        prepare_traversal_paths
                         install -d -m 0755 -- "$allowed_root" "$(dirname "$checkout")"
                         case "$(realpath -e "$(dirname "$checkout")")" in
                             "$allowed_root"|"$allowed_root"/*) ;;
@@ -227,7 +226,7 @@ final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
                 $instance->node,
                 new RemoteCommand(
                     arguments: $arguments,
-                    input: <<<'BASH'
+                    input: self::assertRecordedParentsFunction().self::releaseTraversalPathsFunction().<<<'BASH'
                         repository=$1
                         checkout=$2
                         managed_user=$3
@@ -236,22 +235,18 @@ final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
                         allowed_root=$6
                         shift 6
                         release_paths=("$@")
-                        parent=$(dirname "$checkout")
-
-                        test ! -L "$parent"
-                        case "$(realpath -e "$parent")" in
-                            "$allowed_root"|"$allowed_root"/*) ;;
-                            *) exit 1 ;;
-                        esac
-
-                        if [ ! -e "$checkout" ]; then
-                            exit 0
+                        marker_name=user.orbit.caddy_traversal
+                        if [ -L "$checkout" ]; then
+                            exit 1
                         fi
-
-                        test ! -L "$checkout"
-                        test "$(realpath -e "$checkout")" = "$(git -C "$checkout" rev-parse --show-toplevel)"
-                        test "$(git -C "$checkout" remote get-url origin)" = "$repository"
-                        rm -rf -- "$checkout"
+                        assert_recorded_parents "$checkout" "$allowed_root"
+                        if [ -e "$checkout" ]; then
+                            test ! -L "$checkout"
+                            test "$(realpath -e "$checkout")" = "$(git -C "$checkout" rev-parse --show-toplevel)"
+                            test "$(git -C "$checkout" remote get-url origin)" = "$repository"
+                            rm -rf -- "$checkout"
+                        fi
+                        release_traversal_paths
                         BASH,
                 ),
                 step: 'instance-source-remove',
@@ -503,6 +498,7 @@ final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
                             test -d "$checkout"
                             test "$(git -C "$checkout" symbolic-ref --quiet --short HEAD)" = "$branch"
                         else
+                            test ! -L "$checkout"
                             test ! -e "$checkout"
                             guard_checkout_parent "$checkout"
                             case "$(realpath -e "$(dirname "$checkout")")" in
@@ -568,7 +564,7 @@ final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
                 $workspace->instance->node,
                 new RemoteCommand(
                     arguments: $arguments,
-                    input: <<<'BASH'
+                    input: self::assertRecordedParentsFunction().<<<'BASH'
                             instance=$1
                             repository=$2
                             checkout=$3
@@ -580,19 +576,10 @@ final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
                             shift 8
                             release_paths=("$@")
                             marker_name=user.orbit.caddy_traversal
-                        parent=$(dirname "$checkout")
-                        case "$parent" in
-                            "$allowed_root"|"$allowed_root"/*) ;;
-                            *) exit 1 ;;
-                        esac
-                        if [ -e "$parent" ] || [ -L "$parent" ]; then
-                            test -d "$parent"
-                            test ! -L "$parent"
-                            case "$(realpath -e "$parent")" in
-                                "$allowed_root"|"$allowed_root"/*) ;;
-                                *) exit 1 ;;
-                            esac
+                        if [ -L "$checkout" ]; then
+                            exit 1
                         fi
+                        assert_recorded_parents "$checkout" "$allowed_root"
                         test ! -L "$instance"
                         test "$(realpath -e "$instance")" = "$(git -C "$instance" rev-parse --show-toplevel)"
                         test "$(git -C "$instance" remote get-url origin)" = "$repository"
@@ -693,6 +680,210 @@ final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
                 errorCode: 'workspace.remove_failed',
             );
         });
+    }
+
+    private static function assertRecordedParentsFunction(): string
+    {
+        return <<<'BASH'
+            assert_recorded_parents() {
+                current=$(dirname "$1")
+                root=$2
+                while :; do
+                    if [ -L "$current" ]; then
+                        return 1
+                    fi
+                    if [ -e "$current" ]; then
+                        test -d "$current"
+                        test "$(realpath -e "$current")" = "$current"
+                        case "$current" in
+                            "$root"|"$root"/*) ;;
+                            *) return 1 ;;
+                        esac
+                    fi
+                    if [ "$current" = "$root" ]; then
+                        return 0
+                    fi
+                    if [ "$current" = "/" ]; then
+                        return 1
+                    fi
+                    next=$(dirname "$current")
+                    if [ "$next" = "$current" ]; then
+                        return 1
+                    fi
+                    current=$next
+                done
+            }
+
+            BASH;
+    }
+
+    private static function prepareTraversalPathsFunction(): string
+    {
+        return <<<'BASH'
+            prepare_traversal_paths() {
+                state_directory="$managed_home/.orbit/caddy-traversal-state"
+                marker_name=user.orbit.caddy_traversal
+                install -d -m 0700 -- "$state_directory"
+                test -d "$state_directory"
+                test ! -L "$state_directory"
+                test "$(realpath -e "$state_directory")" = "$state_directory"
+                find "$state_directory" -maxdepth 1 -type f -name '.state.*' -delete
+                for path in "${traversal_paths[@]}"; do
+                    case "$checkout" in
+                        "$path"/*) ;;
+                        *) return 1 ;;
+                    esac
+                    if [ ! -e "$path" ] && [ ! -L "$path" ]; then
+                        install -d -m 0700 -- "$path"
+                    fi
+                    test -d "$path"
+                    test ! -L "$path"
+                    test "$(realpath -e "$path")" = "$path"
+
+                    case "$path" in
+                        "$managed_home"|"$managed_home/apps"|"$managed_home/.orbit"|"$managed_home/.orbit/worktrees") ;;
+                        *)
+                            state_key=$(printf '%s' "$path" | sha256sum | cut -d' ' -f1)
+                            state="$state_directory/$state_key"
+                            if [ ! -e "$state" ] && [ ! -L "$state" ]; then
+                                if getfattr --only-values -n "$marker_name" -- "$path" >/dev/null 2>&1; then
+                                    if getfacl -cp "$path" | grep -Eq '^user:caddy:--x$' \
+                                        && getfacl -cp "$path" | grep -Eq '^mask::[r-][w-]x$'; then
+                                        return 1
+                                    fi
+                                    setfattr -x "$marker_name" -- "$path"
+                                fi
+
+                                state_nonce=$(openssl rand -hex 32)
+                                printf '%s\n' "$state_nonce" | grep -Eq '^[0-9a-f]{64}$'
+                                temporary_state=$(mktemp "$state_directory/.state.XXXXXX")
+                                {
+                                    printf '%s\n%s\n%s\n' "$path" "$(stat -c '%d:%i' "$path")" "$state_nonce"
+                                    getfacl -cp "$path" | sed '/^default:/d'
+                                } > "$temporary_state"
+                                chmod 0600 "$temporary_state"
+                                setfattr -n "$marker_name" -v "$state_nonce" -- "$path"
+                                if ! mv -f -- "$temporary_state" "$state"; then
+                                    setfattr -x "$marker_name" -- "$path"
+                                    rm -f -- "$temporary_state"
+                                    return 1
+                                fi
+                            fi
+                            test -f "$state"
+                            test ! -L "$state"
+                            test "$(stat -c '%a' "$state")" = 600
+                            test "$(sed -n '1p' "$state")" = "$path"
+                            state_identity=$(sed -n '2p' "$state")
+                            printf '%s\n' "$state_identity" | grep -Eq '^[0-9]+:[0-9]+$'
+                            test "$state_identity" = "$(stat -c '%d:%i' "$path")"
+                            state_nonce=$(sed -n '3p' "$state")
+                            printf '%s\n' "$state_nonce" | grep -Eq '^[0-9a-f]{64}$'
+                            test "$(getfattr --only-values -n "$marker_name" -- "$path" 2>/dev/null)" = "$state_nonce"
+                            tail -n +4 "$state" | setfacl --test --set-file=- "$path" >/dev/null
+                            ;;
+                    esac
+
+                    current_acl=$(getfacl -cp "$path")
+                    traversal_mask=$(printf '%s\n' "$current_acl" | sed -n 's/^mask::\([rwx-]\{3\}\).*$/\1/p')
+                    if [ -z "$traversal_mask" ]; then
+                        traversal_mask=$(printf '%s\n' "$current_acl" | sed -n 's/^group::\([rwx-]\{3\}\).*$/\1/p')
+                    fi
+                    printf '%s\n' "$traversal_mask" | grep -Eq '^[rwx-]{3}$'
+                    traversal_mask="${traversal_mask%?}x"
+                    setfacl -n -m "u:caddy:--x,m::$traversal_mask" "$path"
+                    getfacl -cp "$path" | grep -Eq '^user:caddy:[r-][w-]x$'
+                    getfacl -cp "$path" | grep -Fqx "mask::$traversal_mask"
+                done
+            }
+
+            BASH;
+    }
+
+    private static function releaseTraversalPathsFunction(): string
+    {
+        return <<<'BASH'
+            release_traversal_paths() {
+                for path in "${release_paths[@]}"; do
+                    case "$checkout" in
+                        "$path"|"$path"/*) ;;
+                        *)
+                            case "${grouping_dir:-}" in
+                                "$path"|"$path"/*) ;;
+                                *) exit 1 ;;
+                            esac
+                            ;;
+                    esac
+                    state_directory="$managed_home/.orbit/caddy-traversal-state"
+                    state_key=$(printf '%s' "$path" | sha256sum | cut -d' ' -f1)
+                    state="$state_directory/$state_key"
+                    if [ ! -e "$state" ] && [ ! -L "$state" ]; then
+                        if [ ! -e "$path" ] && [ ! -L "$path" ]; then
+                            continue
+                        fi
+
+                        test -d "$path"
+                        test ! -L "$path"
+                        test "$(realpath -e "$path")" = "$path"
+                        if getfattr --only-values -n "$marker_name" -- "$path" >/dev/null 2>&1; then
+                            if getfacl -cp "$path" | grep -Eq '^user:caddy:--x$' \
+                                && getfacl -cp "$path" | grep -Eq '^mask::[r-][w-]x$'; then
+                                exit 1
+                            fi
+                            setfattr -x "$marker_name" -- "$path"
+                        fi
+                        continue
+                    fi
+
+                    if [ ! -e "$path" ] && [ ! -L "$path" ]; then
+                        test -d "$state_directory"
+                        test ! -L "$state_directory"
+                        test "$(realpath -e "$state_directory")" = "$state_directory"
+                        test -f "$state"
+                        test ! -L "$state"
+                        test "$(stat -c '%a' "$state")" = 600
+                        test "$(sed -n '1p' "$state")" = "$path"
+                        state_nonce=$(sed -n '3p' "$state")
+                        printf '%s\n' "$state_nonce" | grep -Eq '^[0-9a-f]{64}$'
+                        rm -f -- "$state"
+                        continue
+                    fi
+                    test -d "$state_directory"
+                    test ! -L "$state_directory"
+                    test "$(realpath -e "$state_directory")" = "$state_directory"
+                    test -d "$path"
+                    test ! -L "$path"
+                    test "$(realpath -e "$path")" = "$path"
+                    test -f "$state"
+                    test ! -L "$state"
+                    test "$(stat -c '%a' "$state")" = 600
+                    test "$(sed -n '1p' "$state")" = "$path"
+                    state_identity=$(sed -n '2p' "$state")
+                    printf '%s\n' "$state_identity" | grep -Eq '^[0-9]+:[0-9]+$'
+                    test "$state_identity" = "$(stat -c '%d:%i' "$path")"
+                    state_nonce=$(sed -n '3p' "$state")
+                    printf '%s\n' "$state_nonce" | grep -Eq '^[0-9a-f]{64}$'
+                    tail -n +4 "$state" | setfacl --test --set-file=- "$path" >/dev/null
+                    if current_nonce=$(getfattr --only-values -n "$marker_name" -- "$path" 2>/dev/null); then
+                        test "$current_nonce" = "$state_nonce"
+                    elif cmp -s <(tail -n +4 "$state") <(getfacl -cp "$path" | sed '/^default:/d'); then
+                        rm -f -- "$state"
+                        continue
+                    else
+                        exit 1
+                    fi
+
+                    if ! cmp -s <(tail -n +4 "$state") <(getfacl -cp "$path" | sed '/^default:/d'); then
+                        getfacl -cp "$path" | grep -Eq '^user:caddy:--x$'
+                        getfacl -cp "$path" | grep -Eq '^mask::[r-][w-]x$'
+                        tail -n +4 "$state" | setfacl --set-file=- "$path"
+                        cmp -s <(tail -n +4 "$state") <(getfacl -cp "$path" | sed '/^default:/d')
+                    fi
+                    setfattr -x "$marker_name" -- "$path"
+                    rm -f -- "$state"
+                done
+            }
+
+            BASH;
     }
 
     /** @return list<string> */

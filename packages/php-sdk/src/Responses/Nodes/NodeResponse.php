@@ -80,7 +80,7 @@ final readonly class NodeResponse
      * @return array<string, int|string|list<string>|null|array{
      *     can_access: list<array{id: int, name: string}>,
      *     accessible_by: list<array{id: int, name: string}>
-     * }|array{instance: array{path: string}|null, worktree: array{path: string}|null}>
+     * }|array{instance: array{path: string|null}|null, worktree: array{path: string|null}|null}>
      */
     public function toArray(): array
     {

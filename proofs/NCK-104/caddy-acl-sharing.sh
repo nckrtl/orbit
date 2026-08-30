@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Caddy traverse ACLs are shared across dependent sites and released after the last one.
+# Caddy traverse ACLs are shared, restore after the last dependent, and preserve pre-existing ACLs.
 source /var/lib/orbit-e2e/proof/lib.sh
 
 dev_id=$(instance_id e2e-dev)
@@ -18,4 +18,18 @@ test -d /srv/orbit/worktrees/laravel
 getfacl -cp /srv/orbit/worktrees/laravel | grep -Eq '^user:caddy:--x$' \
   || fail "shared Caddy ACL was released before the last workspace"
 
-echo "caddy: shared traverse ACL survived the first derived removal"
+mkdir -p /home/orbit/projects-nck104
+setfacl -m u:nobody:r-x /home/orbit/projects-nck104
+original=$(getfacl -cp /home/orbit/projects-nck104)
+orbit workspace:new "$dev_id" nck104-acl-a --path=/home/orbit/projects-nck104/a --json >/dev/null
+orbit workspace:new "$dev_id" nck104-acl-b --path=/home/orbit/projects-nck104/b --json >/dev/null
+getfacl -cp /home/orbit/projects-nck104 | grep -Eq '^user:caddy:--x$' \
+  || fail "custom parent missing Caddy traverse ACL after first dependents"
+orbit workspace:remove "$(workspace_id nck104-acl-a)" --json >/dev/null
+getfacl -cp /home/orbit/projects-nck104 | grep -Eq '^user:caddy:--x$' \
+  || fail "pre-existing parent ACL sharing was released too early"
+orbit workspace:remove "$(workspace_id nck104-acl-b)" --json >/dev/null
+[[ "$(getfacl -cp /home/orbit/projects-nck104)" == "$original" ]] \
+  || fail "pre-existing parent ACL was not restored after the last dependent"
+
+echo "caddy: shared grants survive; last dependent restores pre-existing ACLs"

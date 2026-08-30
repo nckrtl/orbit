@@ -113,7 +113,7 @@ final class ProvisionNodeCommand extends GatewayCommand
                 architecture: $this->stringOption('architecture'),
                 tld: $this->stringOption('tld'),
                 settingsProvided: $settings['provided'],
-                settings: $settings['provided'] ? $settings['body'] : null,
+                settings: $settings['provided'] ? NodeSettingOptions::settings($settings['body']) : null,
             ),
             NodeResponse::class,
         );

@@ -56,9 +56,9 @@ final class UpdateNodeSettingsCommand extends GatewayCommand
             new UpdateNodeSettingsRequest(
                 nodeId: $nodeId,
                 hasInstance: array_key_exists('instance', $settings['body']),
-                instancePath: self::nestedPath($settings['body']['instance'] ?? null),
+                instance: NodeSettingOptions::instance($settings['body']['instance'] ?? null),
                 hasWorktree: array_key_exists('worktree', $settings['body']),
-                worktreePath: self::nestedPath($settings['body']['worktree'] ?? null),
+                worktree: NodeSettingOptions::worktree($settings['body']['worktree'] ?? null),
             ),
             NodeResponse::class,
         );
@@ -77,14 +77,5 @@ final class UpdateNodeSettingsCommand extends GatewayCommand
         $this->line("Request ID: {$node->requestId}");
 
         return self::SUCCESS;
-    }
-
-    private static function nestedPath(mixed $value): ?string
-    {
-        if (! is_array($value) || ! is_string($value['path'] ?? null)) {
-            return null;
-        }
-
-        return $value['path'];
     }
 }

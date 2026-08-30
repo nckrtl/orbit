@@ -193,4 +193,73 @@ describe('node storage settings', function (): void {
 
         expect($node->refresh()->settings)->toBeNull();
     });
+
+    it('rejects protected roots on a node without app-dev before persisting', function (): void {
+        $prepared = [];
+        app()->instance(NodeStorageRootPreparer::class, recording_storage_preparer($prepared));
+        $node = Node::query()->create([
+            'name' => 'gateway',
+            'status' => LifecycleStatus::Active,
+            'public_ssh_host' => '192.0.2.10',
+            'user' => 'orbit',
+            'wireguard_address' => '10.44.0.1',
+        ]);
+
+        $this
+            ->patchJson("/api/v1/nodes/{$node->id}/settings", [
+                'instance' => ['path' => '/etc/orbit'],
+            ])
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'node.settings_path_protected');
+
+        expect($node->refresh()->settings)
+            ->toBeNull()
+            ->and($prepared)
+            ->toBe([]);
+    });
+
+    it('stores allowed roots on a node without app-dev without preparing them', function (): void {
+        $prepared = [];
+        app()->instance(NodeStorageRootPreparer::class, recording_storage_preparer($prepared));
+        $node = Node::query()->create([
+            'name' => 'gateway',
+            'status' => LifecycleStatus::Active,
+            'public_ssh_host' => '192.0.2.10',
+            'user' => 'orbit',
+            'wireguard_address' => '10.44.0.1',
+        ]);
+
+        $this
+            ->patchJson("/api/v1/nodes/{$node->id}/settings", [
+                'instance' => ['path' => '/srv/orbit/instances'],
+                'worktree' => ['path' => '/srv/orbit/worktrees'],
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.settings.instance.path', '/srv/orbit/instances');
+
+        expect($node->refresh()->settings)
+            ->toBe([
+                'instance' => ['path' => '/srv/orbit/instances'],
+                'worktree' => ['path' => '/srv/orbit/worktrees'],
+            ])
+            ->and($prepared)
+            ->toBe([]);
+    });
 });
+
+function recording_storage_preparer(array &$prepared): NodeStorageRootPreparer
+{
+    return new class($prepared) implements NodeStorageRootPreparer {
+        /** @param list<string> $prepared */
+        public function __construct(
+            private array &$prepared,
+        ) {}
+
+        public function inspect(Node $node, ManagedUserAccount $account, StoragePath $path): void {}
+
+        public function prepare(Node $node, ManagedUserAccount $account, EffectiveStorageRoots $roots): void
+        {
+            $this->prepared[] = $roots->instance->value;
+        }
+    };
+}

@@ -4,6 +4,11 @@ declare(strict_types=1);
 
 namespace App\Support;
 
+use Orbit\Sdk\Responses\Nodes\InstanceSettings;
+use Orbit\Sdk\Responses\Nodes\NodeSettings;
+use Orbit\Sdk\Responses\Nodes\WorktreeSettings;
+
+/** @mago-expect lint:cyclomatic-complexity Closed setting-path parsing stays beside the typed DTO mapping. */
 final readonly class NodeSettingOptions
 {
     /** @var list<string> */
@@ -64,6 +69,37 @@ final readonly class NodeSettingOptions
         }
 
         return ['ok' => true, 'provided' => true, 'body' => $body];
+    }
+
+    /** @param array{instance?: array{path: string}|null, worktree?: array{path: string}|null} $body */
+    public static function settings(array $body): NodeSettings
+    {
+        return new NodeSettings(
+            instance: array_key_exists('instance', $body) ? self::instance($body['instance']) : null,
+            worktree: array_key_exists('worktree', $body) ? self::worktree($body['worktree']) : null,
+        );
+    }
+
+    public static function instance(mixed $value): ?InstanceSettings
+    {
+        if (! is_array($value)) {
+            return null;
+        }
+
+        $path = $value['path'] ?? null;
+
+        return new InstanceSettings(is_string($path) ? $path : null);
+    }
+
+    public static function worktree(mixed $value): ?WorktreeSettings
+    {
+        if (! is_array($value)) {
+            return null;
+        }
+
+        $path = $value['path'] ?? null;
+
+        return new WorktreeSettings(is_string($path) ? $path : null);
     }
 
     /** @return array{ok: false, code: string, message: string} */

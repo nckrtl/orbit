@@ -155,7 +155,10 @@ it('uses only generated instance paths and registered Git worktrees for source r
             'test ! -L "$current"',
             'setfacl -P -R -m u:caddy:--- "$checkout_root"',
             'find -P "$checkout_root" -type d -exec setfacl -m d:u:caddy:--- -- {} +',
-            'setfacl -m u:caddy:--x "$managed_home" "$managed_home/apps" "$allowed_root" "$checkout"',
+            'prepare_traversal_paths',
+            'user.orbit.caddy_traversal',
+            'setfacl -m u:caddy:--x "$managed_home" "$checkout"',
+            'setfacl -m u:caddy:--x "$managed_home/apps"',
             'setfacl -P -R -m u:caddy:r-X "$document_root_real"',
             'find -P "$document_root_real" -type d -exec setfacl -m d:u:caddy:r-x -- {} +',
         )
@@ -175,16 +178,88 @@ it('uses only generated instance paths and registered Git worktrees for source r
         ->not->toContain('sudo setfacl')->and($ssh->commands[2]->input)->toContain(
             'worktree list --porcelain',
             'worktree remove --force -- "$checkout"',
+            'if [ -L "$checkout" ]; then',
+            'assert_recorded_parents',
             'test "$(git -C "$instance" remote get-url origin)" = "$repository"',
         )->and($ssh->commands[3]->input)->toContain(
-            'case "$(realpath -e "$parent")" in',
+            'if [ -L "$checkout" ]; then',
+            'assert_recorded_parents',
+            'release_traversal_paths',
             'test ! -L "$checkout"',
             'git -C "$checkout" rev-parse --show-toplevel',
             'test "$(git -C "$checkout" remote get-url origin)" = "$repository"',
             'rm -rf -- "$checkout"',
+            'tail -n +4 "$state" | setfacl --set-file=- "$path"',
         )->and($ssh->commands[2]->arguments)->toContain(
             'git@github.com:acme/site.git',
         )->and($ssh->commands[3]->arguments)->toContain('git@github.com:acme/site.git');
+});
+
+it('rejects a dangling instance checkout symlink instead of treating the path as absent', function (): void {
+    [, $instance] = app_dev_runtime_models();
+    [$manager, $ssh] = source_manager();
+    $manager->removeInstance($instance);
+    $filesystem = new Filesystem;
+    $root = sys_get_temp_dir().'/orbit-instance-dangling-'.Str::uuid();
+    $checkout = "{$root}/apps/acme";
+
+    try {
+        $filesystem->makeDirectory(dirname($checkout), mode: 0o755, recursive: true);
+        symlink('/missing-orbit-checkout', $checkout);
+        $removed = run_app_dev_command_locally($ssh->commands[0], $root);
+
+        expect($removed->succeeded())
+            ->toBeFalse($removed->stderr)
+            ->and(is_link($checkout))
+            ->toBeTrue();
+    } finally {
+        $filesystem->deleteDirectory($root);
+    }
+});
+
+it('restores a pre-existing instance traversal ACL after the last dependent checkout is removed', function (): void {
+    if (
+        ! is_executable('/usr/bin/setfacl')
+        || ! is_executable('/usr/bin/setfattr')
+        || posix_getpwnam('nobody') === false
+    ) {
+        $this->markTestSkipped('The ACL behavior test requires ACL, xattr, and the nobody account.');
+    }
+
+    [, $instance] = app_dev_runtime_models();
+    $instance->update(['checkout_path' => '/home/orbit/instances/acme']);
+    [$manager, $ssh] = source_manager();
+    $manager->convergeInstance($instance);
+    $manager->removeInstance($instance);
+    $converge = $ssh->commands[0];
+    $remove = $ssh->commands[1];
+    $filesystem = new Filesystem;
+    $root = sys_get_temp_dir().'/orbit-instance-acl-'.Str::uuid();
+    $instances = "{$root}/instances";
+    $checkout = "{$instances}/acme";
+
+    try {
+        $filesystem->makeDirectory($instances, mode: 0o700, recursive: true);
+        setfacl_for(user: 'nobody', permissions: 'r-x', path: $instances);
+        $originalAcl = acl_for($instances);
+        $filesystem->makeDirectory("{$checkout}/public", mode: 0o700, recursive: true);
+        $filesystem->put("{$checkout}/public/index.php", '<?php');
+        initialise_acl_test_repository($checkout, repository: 'git@github.com:acme/site.git');
+
+        $converged = run_app_dev_command_locally($converge, $root);
+        expect($converged->succeeded())->toBeTrue($converged->stderr);
+        expect(acl_for($instances))->toContain('user:nobody:--x');
+
+        $removed = run_app_dev_command_locally($remove, $root);
+        expect($removed->succeeded())
+            ->toBeTrue($removed->stderr)
+            ->and(acl_for($instances))
+            ->toBe($originalAcl)
+            ->and($filesystem->exists($checkout))
+            ->toBeFalse();
+    } finally {
+        $filesystem->deleteDirectory($root);
+    }
 });
 
 it('uses a nondefault managed home for source converge and removal commands', function (): void {
@@ -212,7 +287,8 @@ it('uses a nondefault managed home for source converge and removal commands', fu
             'managed_group=$5',
             'managed_home=$6',
             'case "$parent" in',
-            'setfacl -m u:caddy:--x "$managed_home" "$managed_home/apps" "$allowed_root" "$checkout"',
+            'prepare_traversal_paths',
+            'setfacl -m u:caddy:--x "$managed_home" "$checkout"',
         )
         ->not->toContain('/home/orbit')->and($ssh->commands[1]->arguments)->toContain(
             '/srv/users/nckrtl/apps/acme',

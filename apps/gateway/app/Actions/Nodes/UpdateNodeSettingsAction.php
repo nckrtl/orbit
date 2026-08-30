@@ -27,29 +27,27 @@ final readonly class UpdateNodeSettingsAction
     {
         $merged = $patch->merge($this->normalizer->fromStored($node->settings));
         $normalized = $this->normalizer->normalize($merged);
-        $this->validator->validateGrammar($normalized);
-
-        if ($this->hasActiveAppDevRole($node)) {
-            $account = $this->accounts->resolve($node);
-            $roots = $this->validator->validateEffective($normalized, $node, $account);
-            $this->preparer->prepare($node, $account, $roots);
-        }
-
-        $node->settings = $this->normalizer->stored($normalized);
-        $node->save();
+        $this->apply($node, $normalized);
 
         return $node->refresh();
     }
 
     public function persistDuringProvisioning(Node $node, ?NodeSettingsData $settings): void
     {
-        $normalized = $this->normalizer->normalize($settings);
+        $this->apply($node, $this->normalizer->normalize($settings));
+    }
+
+    private function apply(Node $node, ?NodeSettingsData $normalized): void
+    {
         $this->validator->validateGrammar($normalized);
 
-        if ($normalized instanceof NodeSettingsData && $this->hasActiveAppDevRole($node)) {
+        if ($normalized instanceof NodeSettingsData) {
             $account = $this->accounts->resolve($node);
             $roots = $this->validator->validateEffective($normalized, $node, $account);
-            $this->preparer->prepare($node, $account, $roots);
+
+            if ($this->hasActiveAppDevRole($node)) {
+                $this->preparer->prepare($node, $account, $roots);
+            }
         }
 
         $node->settings = $this->normalizer->stored($normalized);

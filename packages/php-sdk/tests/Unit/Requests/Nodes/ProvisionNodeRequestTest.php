@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\Nodes\ProvisionNodeRequest;
+use Orbit\Sdk\Responses\Nodes\InstanceSettings;
 use Orbit\Sdk\Responses\Nodes\NodeResponse;
+use Orbit\Sdk\Responses\Nodes\NodeSettings;
 use Saloon\Enums\Method;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
@@ -172,10 +174,9 @@ it('sends an explicit settings object when supplied and omits it otherwise', fun
         name: 'app-dev',
         publicSshHost: '94.237.40.75',
         settingsProvided: true,
-        settings: [
-            'instance' => ['path' => '/srv/orbit/instances'],
-            'worktree' => null,
-        ],
+        settings: new NodeSettings(
+            instance: new InstanceSettings('/srv/orbit/instances'),
+        ),
     );
     $withoutSettings = new ProvisionNodeRequest(
         name: 'app-dev',

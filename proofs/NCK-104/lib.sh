@@ -130,3 +130,37 @@ restore_default_roots() {
     --setting=worktree.path:/srv/orbit/worktrees \
     --json >/dev/null
 }
+
+node_id() {
+  orbit node:list --json | php -r '
+    $name = $argv[1];
+    foreach (json_decode(stream_get_contents(STDIN), true)["nodes"] ?? [] as $node) {
+      if (($node["name"] ?? null) === $name) {
+        echo $node["id"];
+        exit(0);
+      }
+    }
+    exit(1);
+  ' -- "$1"
+}
+
+app_id() {
+  orbit app:list --json | php -r '
+    $slug = $argv[1];
+    foreach (json_decode(stream_get_contents(STDIN), true)["apps"] ?? [] as $app) {
+      if (($app["slug"] ?? null) === $slug) {
+        echo $app["id"];
+        exit(0);
+      }
+    }
+    exit(1);
+  ' -- "$1"
+}
+
+sql_clear_workspace_origin() {
+  php -r '
+    $d = new PDO("sqlite:/home/orbit/.orbit/gateway.sqlite");
+    $statement = $d->prepare("update workspaces set checkout_path_origin = null where name = :name");
+    $statement->execute(["name" => $argv[1]]);
+  ' -- "$1"
+}

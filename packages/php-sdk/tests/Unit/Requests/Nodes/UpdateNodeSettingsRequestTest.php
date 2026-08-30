@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\Nodes\UpdateNodeSettingsRequest;
+use Orbit\Sdk\Responses\Nodes\InstanceSettings;
 use Orbit\Sdk\Responses\Nodes\NodeResponse;
 use Saloon\Enums\Method;
 use Saloon\Http\Faking\MockClient;
@@ -33,7 +34,7 @@ it('sends a partial settings patch and preserves omitted members', function (): 
     $request = new UpdateNodeSettingsRequest(
         nodeId: 2,
         hasInstance: true,
-        instancePath: '/srv/orbit/instances',
+        instance: new InstanceSettings('/srv/orbit/instances'),
     );
 
     $response = $connector->send($request)->dto();
@@ -48,9 +49,9 @@ it('sends a partial settings patch and preserves omitted members', function (): 
         ])
         ->and($response)
         ->toBeInstanceOf(NodeResponse::class)
-        ->and($response->settings?->instancePath)
+        ->and($response->settings?->instance?->path)
         ->toBe('/srv/orbit/instances')
-        ->and($response->settings?->worktreePath)
+        ->and($response->settings?->worktree?->path)
         ->toBe('/srv/orbit/worktrees');
 });
 
@@ -58,7 +59,7 @@ it('sends an explicit null nested member to unset a setting', function (): void 
     $request = new UpdateNodeSettingsRequest(
         nodeId: 2,
         hasWorktree: true,
-        worktreePath: null,
+        worktree: null,
     );
 
     expect($request->body()->all())->toBe([
