@@ -13,14 +13,17 @@ use InvalidArgumentException;
  * evidence; a `diagnosis` record keeps whatever was observed before the failure.
  *
  * @phpstan-type ActionResult array{id:string,node:string,argv:list<string>,exit_code:int,stdout:string,stderr:string,started_at:string,finished_at:string}
- * @mago-expect lint:cyclomatic-complexity,excessive-parameter-list,kan-defect Proof evidence is validated field by field at construction.
+ * @mago-expect lint:cyclomatic-complexity,excessive-parameter-list,kan-defect,too-many-methods Proof evidence is validated field by field at construction and summarized in one place.
  */
 final readonly class ProofResult
 {
-    public const int SCHEMA = 1;
+    public const int SCHEMA = 2;
 
     /** Recorded stdout and stderr are each capped at this many bytes after redaction. */
     public const int OUTPUT_LIMIT = 16_384;
+
+    /** The failure summary keeps this many trailing bytes of each captured stream. */
+    public const int TAIL_LIMIT = 2_048;
 
     private const array KEYS = [
         'schema',
@@ -30,6 +33,7 @@ final readonly class ProofResult
         'candidate_sha',
         'candidate_tree',
         'guest_script_hash',
+        'proof_fixtures',
         'profile',
         'source',
         'plan',
@@ -73,6 +77,8 @@ final readonly class ProofResult
         public VerificationReport $verification,
         public string $recordedAt,
         public string $operationId,
+        /** Null when the fixtures never finished staging or the record predates fixture staging. */
+        public ?ProofFixtures $fixtures = null,
     ) {
         TopologyTarget::assertIssue($issue);
         if (
@@ -123,7 +129,51 @@ final readonly class ProofResult
             $this->verification,
             $recordedAt,
             $this->operationId,
+            $this->fixtures,
         );
+    }
+
+    /**
+     * The last action that ended the proof: its identity, exit code, and the tail
+     * of each captured stream. Null when no declared action failed.
+     *
+     * @return ?array{id:string,node:string,exit_code:int,stdout_tail:string,stderr_tail:string}
+     */
+    public function failedAction(): ?array
+    {
+        foreach (array_reverse([...$this->setupResults, ...$this->acceptanceResults]) as $result) {
+            if ($result['exit_code'] !== 0) {
+                return [
+                    'id' => $result['id'],
+                    'node' => $result['node'],
+                    'exit_code' => $result['exit_code'],
+                    'stdout_tail' => self::tail($result['stdout']),
+                    'stderr_tail' => self::tail($result['stderr']),
+                ];
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * The record without the declared plan: command output never echoes the plan back.
+     *
+     * @return array<string, mixed>
+     */
+    public function summary(): array
+    {
+        return array_diff_key($this->toArray(), ['plan' => true]);
+    }
+
+    /** The trailing bytes of one stream, cut on a UTF-8 boundary. */
+    public static function tail(string $value): string
+    {
+        if (strlen($value) <= self::TAIL_LIMIT) {
+            return $value;
+        }
+
+        return mb_strcut($value, -self::TAIL_LIMIT);
     }
 
     private function hasCompletePassingEvidence(): bool
@@ -192,6 +242,7 @@ final readonly class ProofResult
             'candidate_sha' => $this->candidateSha,
             'candidate_tree' => $this->candidateTree,
             'guest_script_hash' => $this->guestScriptHash,
+            'proof_fixtures' => $this->fixtures?->toArray(),
             'profile' => TopologyProfile::NAME,
             'source' => $this->source->toArray(),
             'plan' => ['setup' => $this->plan->setup, 'acceptance' => $this->plan->acceptance],
@@ -207,6 +258,10 @@ final readonly class ProofResult
     /** @param array<array-key, mixed> $value */
     public static function fromArray(array $value): self
     {
+        // A schema 1 record predates fixture staging and carries no fixture inventory.
+        if (($value['schema'] ?? null) === 1 && ! array_key_exists('proof_fixtures', $value)) {
+            $value = self::withSchemaTwoKeys($value);
+        }
         if (
             array_keys($value) !== self::KEYS
             || $value['schema'] !== self::SCHEMA
@@ -218,6 +273,8 @@ final readonly class ProofResult
             || ! is_string($value['candidate_tree'])
             || $value['guest_script_hash'] !== null
             && ! is_string($value['guest_script_hash'])
+            || $value['proof_fixtures'] !== null
+            && ! is_array($value['proof_fixtures'])
             || ! is_array($value['source'])
             || ! is_array($value['plan'])
             || ! is_array($value['setup_results'])
@@ -257,6 +314,25 @@ final readonly class ProofResult
             VerificationReport::fromArray($value['verification']),
             $value['recorded_at'],
             $value['operation_id'],
+            $value['proof_fixtures'] === null ? null : ProofFixtures::fromArray($value['proof_fixtures']),
         );
+    }
+
+    /**
+     * @param array<array-key, mixed> $value
+     * @return array<array-key, mixed>
+     */
+    private static function withSchemaTwoKeys(array $value): array
+    {
+        $upgraded = [];
+        /** @mago-expect analysis:mixed-assignment The record keys are re-ordered without inspecting their values. */
+        foreach ($value as $key => $field) {
+            $upgraded[$key] = $key === 'schema' ? self::SCHEMA : $field;
+            if ($key === 'guest_script_hash') {
+                $upgraded['proof_fixtures'] = null;
+            }
+        }
+
+        return $upgraded;
     }
 }

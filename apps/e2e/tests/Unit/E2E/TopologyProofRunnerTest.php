@@ -9,6 +9,7 @@ use App\E2E\HostCapacity;
 use App\E2E\IncusHost;
 use App\E2E\IncusNetworkLifecycle;
 use App\E2E\PreparedStateFingerprint;
+use App\E2E\ProofFixtureStager;
 use App\E2E\ProofRecordReader;
 use App\E2E\ProofStore;
 use App\E2E\ReleaseReceiptStore;
@@ -152,6 +153,7 @@ function proofRunner(
         new TopologyVerifier($host, readinessTimeoutSeconds: 1, readinessPollIntervalMicroseconds: 0),
         new ReleaseReceiptStore($store, $paths),
         new ProofStore($store),
+        new ProofFixtureStager($host, $operation),
         new HostCapacity($store, $paths, $operation, $maxVms),
         $store,
         $paths,
@@ -578,6 +580,7 @@ it('proves an exact candidate on a fresh proof topology in the locked sequence',
             'prepare.cloned-host-state',
             'sync.candidate',
             'identity',
+            'fixtures',
             'converge',
             'setup',
             'acceptance',
@@ -586,10 +589,43 @@ it('proves an exact candidate on a fresh proof topology in the locked sequence',
         ->and($phases[0]['state'] ?? null)
         ->toBe('proved');
 
+    // No fixture directory at the candidate: every role still reports the empty staged inventory.
+    $emptyDigest = hash('sha256', '');
+    expect($result->fixtures?->toArray())
+        ->toBe([
+            'guest_directory' => '/var/lib/orbit-e2e/proof',
+            'files' => [],
+            'digest' => $emptyDigest,
+            'roles' => ['gateway' => $emptyDigest, 'app-dev' => $emptyDigest, 'app-prod' => $emptyDigest],
+        ])
+        ->and(proofGuestIndex($events, [
+            'install',
+            '-d',
+            '-o',
+            'root',
+            '-g',
+            'root',
+            '-m',
+            '0755',
+            '/var/lib/orbit-e2e/proof',
+        ]))
+        ->toHaveCount(3);
+
     $sequence = [
         proofIncusIndex($events, 'copy')[0],
         proofIncusIndex($events, 'start')[0],
         proofGuestIndex($events, ['/usr/local/bin/receive-source.sh'])[0],
+        proofGuestIndex($events, [
+            'install',
+            '-d',
+            '-o',
+            'root',
+            '-g',
+            'root',
+            '-m',
+            '0755',
+            '/var/lib/orbit-e2e/proof',
+        ])[0],
         proofGuestIndex($events, ['/usr/local/bin/converge-gateway.sh'])[0],
         proofGuestIndex($events, ['touch', '/tmp/seeded'])[0],
         proofGuestIndex($events, PROOF_ACCEPTANCE_ARGV)[0],

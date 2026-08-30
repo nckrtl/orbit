@@ -35,7 +35,7 @@ Three separate causes, found by comparing each issue with the live files:
 
 - Product defects got focused RED-to-GREEN fixes in `apps/gateway` with tests.
 - Harness state is corrected by declared proof setup in
-  `apps/e2e/resources/proof/nck-58-doctor.json`: restore the product symlink and
+  `apps/e2e/resources/proof/NCK-58/plan.json`: restore the product symlink and
   place the e2e `local_certs` global block as
   `fragments/00-orbit-e2e-global.caddy` inside the managed version (the product
   publisher copies unmanaged fragments forward), then re-project every instance
@@ -53,7 +53,7 @@ Three separate causes, found by comparing each issue with the live files:
   `-shm` sidecars from the inventory: SQLite creates and removes them for any
   connection, including a read-only one, so they appear and disappear between
   two snapshots without any Doctor write.
-- Self-checking actions live in `apps/e2e/resources/proof/doctor-proof.sh`.
+- Self-checking actions live in `apps/e2e/resources/proof/NCK-58/doctor-proof.sh`.
   It runs from the candidate checkout on the checkout roles, so the closed
   guest-script inventory in `WorktreeSynchronizer` stays unchanged. Actions
   on app-prod, which has no checkout, are short `sudo bash -c` argv strings.
@@ -70,5 +70,5 @@ Three separate causes, found by comparing each issue with the live files:
 
 ## Verification
 
-`bin/e2e-topology prove NCK-58 <worktree> --candidate-sha=<sha> --proof-plan-file=apps/e2e/resources/proof/nck-58-doctor.json --json`
+`bin/e2e-topology prove NCK-58 <worktree> --candidate-sha=<sha> --proof-plan-file=apps/e2e/resources/proof/NCK-58/plan.json --json`
 records `proved` with every setup and acceptance action at exit 0.

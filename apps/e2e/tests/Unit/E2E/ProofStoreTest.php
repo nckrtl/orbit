@@ -7,6 +7,7 @@ use App\E2E\ProofStore;
 use App\E2E\State\AtomicJsonStore;
 use App\E2E\State\StatePaths;
 use App\E2E\Value\AttemptId;
+use App\E2E\Value\ProofFixtures;
 use App\E2E\Value\ProofPlan;
 use App\E2E\Value\ProofResult;
 use App\E2E\Value\ProofStatus;
@@ -76,6 +77,7 @@ function proofResultFixture(array $overrides = []): ProofResult
         'verification' => $verification,
         'recordedAt' => '2026-08-30T10:00:02Z',
         'operationId' => str_repeat('a', 32),
+        'fixtures' => null,
     ];
 
     return new ProofResult(
@@ -92,6 +94,7 @@ function proofResultFixture(array $overrides = []): ProofResult
         $values['verification'],
         $values['recordedAt'],
         $values['operationId'],
+        $values['fixtures'],
     );
 }
 
@@ -109,6 +112,7 @@ describe('ProofResult', function () {
                 'candidate_sha',
                 'candidate_tree',
                 'guest_script_hash',
+                'proof_fixtures',
                 'profile',
                 'source',
                 'plan',
@@ -120,7 +124,9 @@ describe('ProofResult', function () {
                 'operation_id',
             ])
             ->and($array['schema'])
-            ->toBe(1)
+            ->toBe(2)
+            ->and($array['proof_fixtures'])
+            ->toBeNull()
             ->and($array['status'])
             ->toBe('proved')
             ->and($array['profile'])
@@ -194,11 +200,64 @@ describe('ProofResult', function () {
 
         expect(fn () => ProofResult::fromArray($array))->toThrow(InvalidArgumentException::class);
     })->with([
-        [['schema' => 2]],
+        [['schema' => 3]],
+        [['proof_fixtures' => ['digest' => 'x']]],
         [['status' => 'passed']],
         [['profile' => 'other']],
         [['unexpected' => true]],
     ]);
+
+    it('records the staged proof fixtures and reads a schema 1 record without them', function () {
+        $files = ['check.sh' => ['mode' => '755', 'sha256' => str_repeat('1', 64)]];
+        $digest = ProofFixtures::digestOf($files);
+        $fixtures = new ProofFixtures($files, $digest, array_fill_keys(TopologyProfile::ROLES, $digest));
+        $array = proofResultFixture(['fixtures' => $fixtures])->toArray();
+        $legacy = proofResultFixture()->toArray();
+        unset($legacy['proof_fixtures']);
+        $legacy['schema'] = 1;
+
+        expect($array['proof_fixtures'])
+            ->toBe([
+                'guest_directory' => '/var/lib/orbit-e2e/proof',
+                'files' => $files,
+                'digest' => $digest,
+                'roles' => ['gateway' => $digest, 'app-dev' => $digest, 'app-prod' => $digest],
+            ])
+            ->and(ProofResult::fromArray($array)->toArray())
+            ->toBe($array)
+            ->and(ProofResult::fromArray($legacy)->toArray())
+            ->toBe(proofResultFixture()->toArray());
+    });
+
+    it('summarizes a diagnosis with the last failed action and never the plan', function () {
+        $plan = ProofPlan::fromArray(proofStorePlanFixture());
+        $failed = proofActionResult($plan->acceptance[0], 2);
+        $failed['stdout'] = str_repeat('a', 3_000).'é';
+        $failed['stderr'] = "gateway unreachable\n";
+        $result = proofResultFixture([
+            'status' => ProofStatus::Diagnosis,
+            'acceptanceResults' => [$failed],
+            'verification' => new VerificationReport(false, ['proof.acceptance' => verificationProbeFixture(false)]),
+        ]);
+
+        expect($result->failedAction())
+            ->toBe([
+                'id' => 'list',
+                'node' => 'app-dev',
+                'exit_code' => 2,
+                'stdout_tail' => str_repeat('a', ProofResult::TAIL_LIMIT - 2).'é',
+                'stderr_tail' => "gateway unreachable\n",
+            ])
+            ->and(array_keys($result->summary()))
+            ->not
+            ->toContain('plan')
+            ->and($result->summary()['post_deployment_actions'])
+            ->toBe($plan->postDeploymentActions)
+            ->and(proofResultFixture()->failedAction())
+            ->toBeNull()
+            ->and(ProofResult::tail(str_repeat('x', 10)))
+            ->toBe(str_repeat('x', 10));
+    });
 });
 
 describe('ProofStore', function () {

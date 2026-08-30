@@ -15,7 +15,7 @@
       "id": "reproject-instances",
       "node": "app-dev",
       "argv": [
-        "/home/orbit/orbit/apps/e2e/resources/proof/doctor-proof.sh",
+        "/var/lib/orbit-e2e/proof/doctor-proof.sh",
         "reproject-instances"
       ],
       "timeout_seconds": 600
@@ -24,7 +24,7 @@
       "id": "baseline-healthy-report",
       "node": "app-dev",
       "argv": [
-        "/home/orbit/orbit/apps/e2e/resources/proof/doctor-proof.sh",
+        "/var/lib/orbit-e2e/proof/doctor-proof.sh",
         "expect-healthy"
       ],
       "timeout_seconds": 300
@@ -33,7 +33,7 @@
       "id": "inject-drift",
       "node": "app-dev",
       "argv": [
-        "/home/orbit/orbit/apps/e2e/resources/proof/doctor-proof.sh",
+        "/var/lib/orbit-e2e/proof/doctor-proof.sh",
         "inject-drift"
       ],
       "timeout_seconds": 120
@@ -55,7 +55,7 @@
       "id": "report-drift-and-unverifiable",
       "node": "app-dev",
       "argv": [
-        "/home/orbit/orbit/apps/e2e/resources/proof/doctor-proof.sh",
+        "/var/lib/orbit-e2e/proof/doctor-proof.sh",
         "expect-issues"
       ],
       "timeout_seconds": 300
@@ -64,7 +64,7 @@
       "id": "api-http-200-with-issues",
       "node": "app-dev",
       "argv": [
-        "/home/orbit/orbit/apps/e2e/resources/proof/doctor-proof.sh",
+        "/var/lib/orbit-e2e/proof/doctor-proof.sh",
         "expect-api",
         "issues"
       ],
@@ -74,7 +74,7 @@
       "id": "restore-drift",
       "node": "app-dev",
       "argv": [
-        "/home/orbit/orbit/apps/e2e/resources/proof/doctor-proof.sh",
+        "/var/lib/orbit-e2e/proof/doctor-proof.sh",
         "restore-drift"
       ],
       "timeout_seconds": 120
@@ -94,7 +94,7 @@
       "id": "mutation-snapshot-gateway",
       "node": "gateway",
       "argv": [
-        "/home/orbit/orbit/apps/e2e/resources/proof/doctor-proof.sh",
+        "/var/lib/orbit-e2e/proof/doctor-proof.sh",
         "mutation-snapshot",
         "gateway"
       ],
@@ -104,7 +104,7 @@
       "id": "mutation-snapshot-app-dev",
       "node": "app-dev",
       "argv": [
-        "/home/orbit/orbit/apps/e2e/resources/proof/doctor-proof.sh",
+        "/var/lib/orbit-e2e/proof/doctor-proof.sh",
         "mutation-snapshot",
         "app-dev"
       ],
@@ -114,7 +114,7 @@
       "id": "report-healthy-after-recovery",
       "node": "app-dev",
       "argv": [
-        "/home/orbit/orbit/apps/e2e/resources/proof/doctor-proof.sh",
+        "/var/lib/orbit-e2e/proof/doctor-proof.sh",
         "expect-healthy"
       ],
       "timeout_seconds": 300
@@ -123,7 +123,7 @@
       "id": "api-http-200-healthy",
       "node": "app-dev",
       "argv": [
-        "/home/orbit/orbit/apps/e2e/resources/proof/doctor-proof.sh",
+        "/var/lib/orbit-e2e/proof/doctor-proof.sh",
         "expect-api",
         "healthy"
       ],
@@ -133,7 +133,7 @@
       "id": "mutation-compare-gateway",
       "node": "gateway",
       "argv": [
-        "/home/orbit/orbit/apps/e2e/resources/proof/doctor-proof.sh",
+        "/var/lib/orbit-e2e/proof/doctor-proof.sh",
         "mutation-compare",
         "gateway",
         "3"
@@ -144,7 +144,7 @@
       "id": "mutation-compare-app-dev",
       "node": "app-dev",
       "argv": [
-        "/home/orbit/orbit/apps/e2e/resources/proof/doctor-proof.sh",
+        "/var/lib/orbit-e2e/proof/doctor-proof.sh",
         "mutation-compare",
         "app-dev",
         "0"
@@ -155,7 +155,7 @@
       "id": "cli-exit-codes",
       "node": "app-dev",
       "argv": [
-        "/home/orbit/orbit/apps/e2e/resources/proof/doctor-proof.sh",
+        "/var/lib/orbit-e2e/proof/doctor-proof.sh",
         "exit-codes"
       ],
       "timeout_seconds": 600
@@ -164,7 +164,7 @@
       "id": "architecture-coverage",
       "node": "gateway",
       "argv": [
-        "/home/orbit/orbit/apps/e2e/resources/proof/doctor-proof.sh",
+        "/var/lib/orbit-e2e/proof/doctor-proof.sh",
         "architecture-coverage"
       ],
       "timeout_seconds": 300

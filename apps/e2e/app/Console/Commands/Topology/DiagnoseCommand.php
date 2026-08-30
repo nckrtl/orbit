@@ -30,7 +30,7 @@ final class DiagnoseCommand extends E2ECommand
                     'operation_id' => $operation->value,
                     'issue' => $result->issue,
                     'attempt_id' => $result->attempt->value,
-                    'proof' => $result->toArray(),
+                    'proof' => $result->summary(),
                 ],
                 $result->status->value.' '.$result->attempt->value,
             );

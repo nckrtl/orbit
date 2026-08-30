@@ -66,6 +66,18 @@ it('keeps the topology-led workflow contracts aligned', function (): void {
     expect($topologies)->toContain('bin/e2e-topology sync ISSUE ATTEMPT WORKTREE');
     expect($topologies)->toContain('bin/e2e-topology verify ISSUE ATTEMPT');
     expect($topologies)->toContain('bin/e2e-topology exec ISSUE ATTEMPT ROLE --argv-file=PATH');
+    // Exec: inline argv, mutually exclusive with the file, resolved through env on the guest PATH
+    expect($topologies)->toContain('--argv=', 'argv[0]', 'Passing both is refused');
+    expect($worker)->toContain('--argv=', 'mutually exclusive', 'absolute path');
+    // Proof fixtures: per-issue host directory staged to one fixed guest path on every role
+    expect($topologies)->toContain('apps/e2e/resources/proof/<issue>/', '/var/lib/orbit-e2e/proof/', 'proof_fixtures');
+    expect($worker)->toContain('apps/e2e/resources/proof/<issue>/', '/var/lib/orbit-e2e/proof/', 'proof_fixtures');
+    expect($review)->toContain('/var/lib/orbit-e2e/proof/', 'proof_fixtures');
+    // Proof output: no plan echo, diagnosis ends with the failed action
+    expect($topologies)->toContain('failed_action', 'stdout_tail', 'stderr_tail');
+    expect($worker)->toContain('failed_action');
+    expect($worker)->toMatch('/diagnosis round.*moves the code freeze/s');
+    expect($worker)->toMatch('/proof plan.*may change between\s+rounds/s');
     expect($topologies)->toContain('bin/e2e-topology prove ISSUE WORKTREE --candidate-sha=SHA --proof-plan-file=PATH');
     expect($topologies)->toContain('bin/e2e-topology diagnose ISSUE ATTEMPT');
     expect($topologies)->toContain('bin/e2e-topology status ISSUE [ATTEMPT]');

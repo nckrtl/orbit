@@ -6,10 +6,10 @@ use App\E2E\Value\ProofPlan;
 use Symfony\Component\Process\Process;
 
 describe('Doctor proof plan', function (): void {
-    it('declares a valid plan whose fixture subcommands exist on checkout roles only', function (): void {
-        $root = dirname(__DIR__, 3).'/resources/proof';
-        $fixture = '/home/orbit/orbit/apps/e2e/resources/proof/doctor-proof.sh';
-        $plan = ProofPlan::fromFile("{$root}/nck-58-doctor.json");
+    it('declares a valid plan whose staged fixture subcommands exist on checkout roles only', function (): void {
+        $root = dirname(__DIR__, 3).'/resources/proof/NCK-58';
+        $fixture = '/var/lib/orbit-e2e/proof/doctor-proof.sh';
+        $plan = ProofPlan::fromFile("{$root}/plan.json");
         $script = file_get_contents("{$root}/doctor-proof.sh");
 
         expect($script)

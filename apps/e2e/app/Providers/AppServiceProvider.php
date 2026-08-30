@@ -15,6 +15,7 @@ use App\E2E\LegacyIncusRevalidator;
 use App\E2E\LegacyRetirement;
 use App\E2E\LegacyRetirementHost;
 use App\E2E\PreparedStateFingerprint;
+use App\E2E\ProofFixtureStager;
 use App\E2E\ProofRecordReader;
 use App\E2E\ProofStore;
 use App\E2E\ReleaseReceiptStore;
@@ -163,6 +164,7 @@ final class AppServiceProvider extends ServiceProvider
                 $app->make(TopologyVerifier::class),
                 $app->make(ReleaseReceiptStore::class),
                 $app->make(ProofStore::class),
+                new ProofFixtureStager($app->make(IncusHost::class), $app->make(OperationId::class)),
                 $app->make(HostCapacity::class),
                 $app->make(AtomicJsonStore::class),
                 $app->make(StatePaths::class),
