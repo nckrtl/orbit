@@ -90,6 +90,7 @@ it('keeps the workflow reference aligned with the skills', function () use ($rea
         '`<worktree>/.e2e/`',
         'Feature branches never modify the harness.',
         '`apps/e2e/tests/Feature/**` and `apps/e2e/tests/Unit/**`',
+        '0007-nine-step-feature-flow.md',
     ] as $needle) {
         expect($reference)->toContain($needle);
     }

@@ -4,7 +4,7 @@ Incus provides the disposable development topology for issues marked
 `Proof: incus`. The lifecycle is governed by
 [ADR 0005](../decisions/0005-rolling-incus-development-topology.md) (prepared
 standby, refresh, exact cleanup) and
-[ADR 0006](../decisions/0006-topology-led-feature-development.md) (discovery,
+[ADR 0007](../decisions/0007-nine-step-feature-flow.md) (discovery,
 fresh proof, immutable proved attempts). Automated-only work stays independent
 of Incus.
 
@@ -62,7 +62,7 @@ standby generation.
 ### `gateway_app-dev_app-prod`
 
 Registered on 2026-08-29 after live acceptance (ADR 0005). The attempt-scoped
-discovery and proof lifecycle passed live acceptance on 2026-08-30 (ADR 0006).
+discovery and proof lifecycle passed live acceptance on 2026-08-30 (ADR 0007).
 
 | Field | Value |
 | --- | --- |
