@@ -172,6 +172,18 @@ final class LiveHarness
         Assert::assertSame($sha, self::git($worktree, ['rev-parse', '--verify', 'HEAD^{commit}']));
     }
 
+    /**
+     * Move the main checkout and its `main` branch together: the standby
+     * refresher keys off HEAD while the acquirer fingerprints the `main` ref.
+     */
+    public static function checkoutMain(string $worktree, string $sha): void
+    {
+        Assert::assertSame([], self::gitStatus($worktree));
+        Assert::assertSame('', self::git($worktree, ['checkout', '--quiet', '-B', 'main', $sha]));
+        Assert::assertSame($sha, self::git($worktree, ['rev-parse', '--verify', 'HEAD^{commit}']));
+        Assert::assertSame($sha, self::git($worktree, ['rev-parse', '--verify', 'main^{commit}']));
+    }
+
     /** @return array<array-key, mixed> */
     public static function incusResource(string $type, string $name): array
     {

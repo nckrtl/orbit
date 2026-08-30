@@ -104,7 +104,7 @@ it('proves the rolling topology contract through public wrappers', function (): 
         Assert::assertSame($initial['state'] === 'missing', $initial['generation'] === null);
 
         if ($initial['state'] === 'missing') {
-            LiveHarness::checkout($mainWorktree, $baseSha);
+            LiveHarness::checkoutMain($mainWorktree, $baseSha);
             $bootstrap = LiveHarness::jsonPhase('bootstrap standby generation', fn (): array => LiveHarness::jsonWrapper(
                 'standby',
                 'refresh',
@@ -167,7 +167,7 @@ it('proves the rolling topology contract through public wrappers', function (): 
             Assert::assertNotContains(false, $verified['verification']['probes'] ?? []);
         });
 
-        LiveHarness::checkout($mainWorktree, $rollingSha);
+        LiveHarness::checkoutMain($mainWorktree, $rollingSha);
         $rollingFingerprint = LiveHarness::jsonWrapper('standby', 'fingerprint', "--main-sha={$rollingSha}");
         $rolling = LiveHarness::jsonPhase('rolling standby refresh', fn (): array => LiveHarness::jsonWrapper(
             'standby',
@@ -185,7 +185,7 @@ it('proves the rolling topology contract through public wrappers', function (): 
             $promoted['generation']['prepared_fingerprint'] ?? null,
         );
 
-        LiveHarness::checkout($mainWorktree, $failureSha);
+        LiveHarness::checkoutMain($mainWorktree, $failureSha);
         $failureFingerprint = LiveHarness::jsonWrapper('standby', 'fingerprint', "--main-sha={$failureSha}");
         Assert::assertNotSame($rollingFingerprint['fingerprint'] ?? null, $failureFingerprint['fingerprint'] ?? null);
         Assert::assertSame($failureFingerprint['fingerprint'] ?? null, $migration['fingerprint'] ?? null);
@@ -214,7 +214,7 @@ it('proves the rolling topology contract through public wrappers', function (): 
         liveAssertStandbyStatus($recovered, 'promoted');
         Assert::assertSame($rolling['generation_id'], $recovered['generation']['id'] ?? null);
 
-        LiveHarness::checkout($mainWorktree, $rollingSha);
+        LiveHarness::checkoutMain($mainWorktree, $rollingSha);
         $unchanged = LiveHarness::jsonPhase('no-op standby refresh', fn (): array => LiveHarness::jsonWrapper(
             'standby',
             'refresh',
@@ -271,8 +271,7 @@ it('proves the rolling topology contract through public wrappers', function (): 
 
         // A fresh topology cloned from the rolling generation carries product
         // projections re-rendered by the refreshed Gateway code (NCK-83):
-        // Doctor reports no projection drift without any setup action. The
-        // app-prod Caddy wrapper issue stays until NCK-84 lands.
+        // Doctor reports no projection drift without any setup action.
         $fresh = LiveHarness::jsonPhase('acquire fresh topology after rolling refresh', fn (): array => LiveHarness::jsonWrapper(
             'topology',
             'acquire',
@@ -305,14 +304,7 @@ it('proves the rolling topology contract through public wrappers', function (): 
         Assert::assertCount(3, $report['nodes'] ?? []);
         Assert::assertSame(
             [],
-            array_values(array_filter(
-                $issues,
-                static fn (array $reported): bool => $reported !== [
-                    'app-prod',
-                    'instance',
-                    'instance.caddy_projection_mismatch',
-                ],
-            )),
+            $issues,
             'Doctor reported projection drift on a fresh topology: '.json_encode($issues),
         );
         $freshRelease = LiveHarness::jsonPhase('release fresh topology', fn (): array => LiveHarness::jsonWrapper(
@@ -355,7 +347,7 @@ it('proves the rolling topology contract through public wrappers', function (): 
             }
         }
         try {
-            LiveHarness::checkout($mainWorktree, $initialMainSha);
+            LiveHarness::checkoutMain($mainWorktree, $initialMainSha);
         } catch (Throwable $exception) {
             $cleanupFailure ??= $exception;
         }

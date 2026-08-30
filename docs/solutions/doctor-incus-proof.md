@@ -27,19 +27,19 @@ Three separate causes, found by comparing each issue with the live files:
   `instance.caddy_projection_mismatch` on app-prod: harness state, not
   product state. The rolling standby refresh restores old snapshots and skips
   provisioning, so pool files written by an older renderer survive a renderer
-  change. The app-prod internal-TLS fixture also replaces the product-managed
-  `/etc/caddy/Caddyfile` symlink with a wrapper, which breaks Doctor's fragment
-  lookup and makes the product's own Caddy publish fail validation.
+  change. The app-prod internal-TLS fixture also replaced the product-managed
+  `/etc/caddy/Caddyfile` symlink with a wrapper, which broke Doctor's fragment
+  lookup and made the product's own Caddy publish fail validation (fixed in
+  the fixture by NCK-84).
 
 ## Solution
 
 - Product defects got focused RED-to-GREEN fixes in `apps/gateway` with tests.
-- Harness state is corrected by declared proof setup in
-  `apps/e2e/resources/proof/NCK-58/plan.json`: restore the product symlink and
-  place the e2e `local_certs` global block as
+- Harness state is corrected in convergence: `converge-sample-app.sh
+  internal-tls` places the e2e `local_certs` global block as
   `fragments/00-orbit-e2e-global.caddy` inside the managed version (the product
-  publisher copies unmanaged fragments forward), then re-project every instance
-  with `orbit instance:php <id> <current version>`.
+  publisher copies unmanaged fragments forward), and `reproject` re-projects
+  every role and instance. The NCK-58 proof plan needs no Caddy setup action.
 - Drift fixture: change `pm.max_children` inside the `[orbit-instance-1]` pool
   block on app-dev. Doctor reports exactly one
   `instance.php_fpm_projection_mismatch`. A second `sed` restores it.

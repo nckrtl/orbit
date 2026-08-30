@@ -121,7 +121,9 @@ final readonly class TopologyConverger
         $steps['create.sample-resources'] = true;
         // Rolling refreshes restore snapshots and skip provisioning, so the
         // product must re-render every projection from the checked-out code.
-        $this->run($instances['app-prod'], 'converge-sample-app.sh', ['unwrap-caddy']);
+        // The app-prod internal-TLS fragment lands inside the managed Caddy
+        // layout first so the product publisher carries it forward.
+        $this->run($instances['app-prod'], 'converge-sample-app.sh', ['internal-tls']);
         $this->run($instances['app-dev'], 'converge-sample-app.sh', ['reproject']);
         $steps['reproject.product-state'] = true;
 

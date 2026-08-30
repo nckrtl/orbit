@@ -182,16 +182,12 @@ Known prepared-state limits (first observed on 2026-08-30, NCK-58):
   the app-dev runtime converger publishes the Gateway DNS records for every
   active site). The prepared-state allowlist tracks the projection renderers
   and this command closure, so a renderer change invalidates the promoted
-  generation. Before that step, `converge-sample-app.sh unwrap-caddy` on
-  `app-prod` points `/etc/caddy/Caddyfile` back at the remembered managed
-  version so the product publisher can validate; `hydrate` re-wraps it and
-  remembers the newly published version.
-- `converge-sample-app.sh` replaces the product-managed `/etc/caddy/Caddyfile`
-  symlink on `app-prod` with an e2e wrapper for internal TLS. The product's
-  Caddy publisher then fails validation on the next publish, and Doctor's
-  fragment lookup misses. Restore the managed symlink and keep the
-  `local_certs` block as `fragments/00-orbit-e2e-global.caddy` inside the
-  managed version instead; the publisher copies unmanaged fragments forward.
+  generation. Before that step, `converge-sample-app.sh internal-tls` on
+  `app-prod` places the e2e `local_certs` global block as
+  `fragments/00-orbit-e2e-global.caddy` inside the managed Caddy version
+  behind the product-owned `/etc/caddy/Caddyfile` symlink (NCK-84); the
+  product publisher copies unmanaged fragments forward, so Doctor reports no
+  Caddy drift and the harness never replaces the managed symlink.
 
 ## Standby
 
@@ -211,3 +207,27 @@ no promoted generation or standby resources exist. It never replaces a
 promoted generation. An operating-system, base-image, cold-epoch, or corrupt
 standby change requires a separate reviewed disaster-recovery procedure before
 the harness mutates Incus resources.
+
+## Live acceptance suites
+
+`composer test:live-incus` in `apps/e2e` runs the lifecycle and rolling
+suites under `tests/Live` against real Incus resources. They skip unless
+`ORBIT_LIVE_INCUS=1`; each test lists its own `ORBIT_LIVE_*` inputs. Contracts
+the inputs do not spell out:
+
+- `XDG_STATE_HOME` must point at the state root the wrappers use (normally
+  `$HOME/.local/state`), because the suites read evidence, journals, and
+  lease files under `<XDG_STATE_HOME>/orbit/e2e`.
+- `ORBIT_LIVE_MAIN_WORKTREE` is the repository the suite runs from, and
+  `ORBIT_LIVE_FEATURE_WORKTREE` is a linked worktree of it that is checked
+  out on a branch whose name starts with the lowercase issue key (for
+  `ORBIT_LIVE_ISSUE=ACC-1`, `acc-1-...`); a detached `HEAD` fails with
+  `The Git command failed.` and any other branch with
+  `The worktree branch does not match the issue.`
+- The lifecycle suite runs the proof plan's first acceptance action as its
+  discovery command and requires that action to print JSON on stdout (for
+  example `orbit node:list --json`). Use a small harness plan for the suite
+  rather than a feature's proof plan.
+- `bin/e2e-topology prove --json` returns the proof summary without `plan`;
+  the full record with the plan is the persisted file at
+  `<XDG_STATE_HOME>/orbit/e2e/evidence/proofs/<issue>/<attempt>.json`.

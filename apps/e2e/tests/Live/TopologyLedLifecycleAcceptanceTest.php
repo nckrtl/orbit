@@ -324,7 +324,9 @@ it('proves the topology-led lifecycle through public wrappers', function (): voi
         lifecycleAssertRelease($diagnosisRelease, $proof, 'proof', lifecycleProofReleased($proof), $stateRoot);
         Assert::assertSame(
             $diagnosed['proof'],
-            LiveHarness::jsonFile("{$stateRoot}/evidence/proofs/{$issue}/{$proofAttempt}.json"),
+            array_diff_key(LiveHarness::jsonFile("{$stateRoot}/evidence/proofs/{$issue}/{$proofAttempt}.json"), [
+                'plan' => true,
+            ]),
         );
 
         // Phase: prove the same unchanged candidate on another fresh attempt.
@@ -375,7 +377,9 @@ it('proves the topology-led lifecycle through public wrappers', function (): voi
         lifecycleAssertRelease($proofRelease, $secondProof, 'proof', lifecycleProofReleased($secondProof), $stateRoot);
         Assert::assertSame(
             $reproved['proof'],
-            LiveHarness::jsonFile("{$stateRoot}/evidence/proofs/{$issue}/{$secondProofAttempt}.json"),
+            array_diff_key(LiveHarness::jsonFile("{$stateRoot}/evidence/proofs/{$issue}/{$secondProofAttempt}.json"), [
+                'plan' => true,
+            ]),
         );
 
         // Phase: standby and unrelated resources are unchanged.
@@ -586,7 +590,10 @@ function lifecycleAssertProof(
     Assert::assertSame($candidateSha, $record['source']['guest_sha'] ?? null);
     Assert::assertFalse($record['source']['dirty'] ?? true);
     Assert::assertFalse($record['source']['mounted'] ?? true);
-    Assert::assertSame(['setup' => $plan->setup, 'acceptance' => $plan->acceptance], $record['plan'] ?? null);
+    // The wrapper returns the proof summary: the persisted record minus the
+    // plan, and no failed_action once the proof passed.
+    Assert::assertArrayNotHasKey('plan', $record);
+    Assert::assertArrayNotHasKey('failed_action', $payload);
     Assert::assertSame($plan->postDeploymentActions, $record['post_deployment_actions'] ?? null);
     Assert::assertTrue($record['verification']['passed'] ?? false);
     foreach (['setup' => $plan->setup, 'acceptance' => $plan->acceptance] as $section => $actions) {
@@ -600,7 +607,9 @@ function lifecycleAssertProof(
             Assert::assertSame(0, $results[$index]['exit_code'] ?? null);
         }
     }
-    Assert::assertSame($record, LiveHarness::jsonFile("{$stateRoot}/evidence/proofs/{$target->issue}/{$attempt}.json"));
+    $persisted = LiveHarness::jsonFile("{$stateRoot}/evidence/proofs/{$target->issue}/{$attempt}.json");
+    Assert::assertSame(['setup' => $plan->setup, 'acceptance' => $plan->acceptance], $persisted['plan'] ?? null);
+    Assert::assertSame($record, array_diff_key($persisted, ['plan' => true]));
 }
 
 /**

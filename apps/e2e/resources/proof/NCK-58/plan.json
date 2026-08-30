@@ -1,17 +1,6 @@
 {
   "setup": [
     {
-      "id": "prod-caddy-managed-version",
-      "node": "app-prod",
-      "argv": [
-        "sudo",
-        "bash",
-        "-c",
-        "set -eu; live=/etc/caddy/Caddyfile; target=$(readlink -f \"$live\"); if [ \"$target\" = /etc/caddy/Caddyfile.orbit-e2e ]; then target=$(sed -n 's#^import \\(/etc/caddy/orbit-versions/[0-9a-f]\\{16\\}/Caddyfile\\)$#\\1#p' \"$target\" | tail -n 1); fi; case \"$target\" in /etc/caddy/orbit-versions/*/Caddyfile) ;; *) echo \"unexpected Caddyfile target: $target\" >&2; exit 65 ;; esac; test -f \"$target\"; fragment=$(dirname \"$target\")/fragments/00-orbit-e2e-global.caddy; printf '{\\n    local_certs\\n}\\n' > /run/orbit-e2e-global.caddy.tmp; install -m 0640 -o root -g caddy /run/orbit-e2e-global.caddy.tmp \"$fragment\"; rm -f /run/orbit-e2e-global.caddy.tmp; ln -sfn \"$target\" \"$live\"; caddy validate --config \"$live\" --adapter caddyfile >/dev/null 2>&1; systemctl reload caddy; curl --fail --silent --show-error --retry 10 --retry-delay 2 --retry-all-errors --max-time 20 --cacert \"$(cat /var/lib/orbit-e2e/caddy-ca-path)\" --resolve laravel.internal:443:127.0.0.1 https://laravel.internal/ -o /dev/null; echo \"app-prod Caddy serves the managed version $target with the e2e local CA\""
-      ],
-      "timeout_seconds": 180
-    },
-    {
       "id": "baseline-healthy-report",
       "node": "app-dev",
       "argv": [
