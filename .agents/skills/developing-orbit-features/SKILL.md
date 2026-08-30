@@ -17,7 +17,8 @@ is missing.
 ## Steps
 
 1. **Read the issue.** Outcome, scope, acceptance criteria, components, ADR.
-   If it has no `Proof: incus` line, do steps 5 and 7 only.
+   If it changes harness code, follow **Harness issues** below. If it has no
+   `Proof: incus` line, do steps 5 and 7 only.
 2. **Fresh topology.** `bin/e2e-topology acquire <ISSUE> <worktree>`. Three VMs
    from the standby snapshot; the worktree is mounted at `/home/orbit/orbit` on
    `gateway` and `app-dev`. `app-prod` runs no Orbit code.
@@ -48,7 +49,8 @@ is missing.
    `bin/e2e-topology prove <ISSUE>`. On `diagnosis`, fix, commit, prove again.
    Leave the proved topology alive.
 7. **Pull request.** Push. Use the template: what changed, why, and
-   "Proved with `proofs/<ISSUE>.json` at `<sha>`" (or "Automated tests only").
+   "Proved with `proofs/<ISSUE>.json` at `<sha>`", "Harness: `bin/e2e-live
+   <sha>` passed.", or "Automated tests only".
    Short and for humans. Do not wait for CI.
 
 ## Corrections
@@ -58,17 +60,22 @@ push, reply "Addressed in `<sha>`".
 
 ## Harness issues
 
-If the issue's components include `apps/e2e` (the harness), skip steps 2–4 and
-6: implement with unit tests (step 5), then prove with
-`bin/e2e-live <full sha>` (one end-to-end run of the feature flow against a
-standby built from your commit, ~4 min). The PR's Proof line is
-"Harness: `bin/e2e-live <sha>` passed." Only harness issues touch `apps/e2e`
-or `bin/e2e-*`.
+Harness code is `apps/e2e/app/**`, `apps/e2e/resources/guest/**`,
+`apps/e2e/tests/Live/**`, and `bin/e2e-*`. An issue that changes it skips
+steps 2, 3, 4, and 6:
 
-Tips: run `vendor/bin/mago format` before `composer check`; keep `it` bodies
-straight-line and fixtures in helper functions (mago's complexity rule counts
-the enclosing `describe`); verify-probe evidence has a fixed key set — record
-extra detail in `expected`/`observed`.
+- Implement with unit tests (step 5).
+- Prove with `bin/e2e-live <full sha>`. It builds a standby from your commit
+  and runs the feature flow once end to end (about four minutes).
+- The PR's Proof line is "Harness: `bin/e2e-live <sha>` passed."
+
+Tips for `apps/e2e`:
+
+- Run `vendor/bin/mago format` before `composer check`.
+- Keep `it` bodies straight-line and fixtures in helper functions; mago's
+  complexity rule counts the enclosing `describe`.
+- Probe evidence has a fixed key set. Record extra detail in `expected` and
+  `observed`.
 
 ## Rules
 

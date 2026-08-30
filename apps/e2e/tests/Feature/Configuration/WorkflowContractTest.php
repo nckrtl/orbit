@@ -19,6 +19,8 @@ it('keeps the developing skill on the nine-step flow', function () use ($read): 
         'Feature branches never touch `apps/e2e` or `bin/e2e-*`.',
         '## Harness issues',
         'bin/e2e-live <full sha>',
+        'follow **Harness issues** below',
+        'Harness: `bin/e2e-live',
     ] as $needle) {
         expect($skill)->toContain($needle);
     }

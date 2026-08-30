@@ -16,7 +16,8 @@ Approve only what you re-proved yourself.
    `main` plus this change).
 3. **Re-prove.** For `Proof: incus`: `bin/e2e-topology release <ISSUE>` if a
    topology is live, then `bin/e2e-topology prove <ISSUE>`. Must be `proved`.
-   For a harness issue (components include `apps/e2e`): `bin/e2e-live <sha>`
+   For a harness issue (it changes `apps/e2e/app/**`, `apps/e2e/resources/guest/**`,
+   `apps/e2e/tests/Live/**`, or `bin/e2e-*`): `bin/e2e-live <sha>`
    must pass. For automated-only issues: CI green.
 4. **Read the code.** Correctness, tests that test the criteria, conventions
    from `AGENTS.md`. Ask for changes when something is wrong; say exactly what
