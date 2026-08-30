@@ -130,6 +130,22 @@ function readyReleaseState(AtomicJsonStore $store, string $issue = 'NCK-12', str
     ]);
 }
 
+/** A ready proof attempt: bundled candidate source, no mount device on any role. */
+function readyProofReleaseState(AtomicJsonStore $store, string $issue = 'NCK-12', string $character = 'a'): void
+{
+    readyReleaseState($store, $issue, $character);
+    $record = $store->read(releaseTopologyPath($issue, $character)) ?? [];
+    $record['purpose'] = 'proof';
+    $record['mounts'] = [];
+    $record['source'] = [
+        ...$record['source'],
+        'operation_id' => str_repeat('a', 32),
+        'mounted' => false,
+        'git_pointer_sha256' => null,
+    ];
+    $store->write(releaseTopologyPath($issue, $character), $record);
+}
+
 /** @param array{operation?:string,evidence?:string,released?:list<string>,absent?:list<string>,issue?:string,character?:string} $overrides */
 function releaseReceipt(array $overrides = []): ReleaseResult
 {
@@ -292,7 +308,7 @@ function fakeReleaseIncus(TopologyTarget $target, array &$instances, bool &$netw
     });
 }
 
-/** @mago-expect lint:cyclomatic-complexity The release scenarios keep exact cleanup behavior visible. */
+/** @mago-expect lint:cyclomatic-complexity,kan-defect The release scenarios keep exact cleanup behavior visible. */
 describe('topology release', function () {
     it('removes an abandoned acquisition manifest after exact cleanup', function () {
         Process::fake(['*' => Process::result('[]')]);
@@ -527,6 +543,44 @@ describe('topology release', function () {
             ->and(collect($commands)->contains(
                 static fn (array $command): bool => in_array(RELEASE_MOUNT_SOURCE, $command, true),
             ))
+            ->toBeFalse();
+    });
+
+    it('retains the proof record and writes a receipt when a proved attempt is released', function () {
+        $paths = new StatePaths(temporaryPath('orbit-release-proved-', 8));
+        $store = new AtomicJsonStore($paths);
+        $target = featureTarget('NCK-123');
+        readyProofReleaseState($store, $target->issue);
+        $proof = ['schema' => 1, 'issue' => 'NCK-123', 'attempt_id' => releaseAttempt()->value, 'status' => 'proved'];
+        $store->write('evidence/proofs/NCK-123/'.releaseAttempt()->value.'.json', $proof);
+        $instances = [];
+        foreach (TopologyProfile::ROLES as $role) {
+            $instances[$target->instance($role)] = releaseInstanceJson($target, $role, []);
+        }
+        $networkExists = true;
+        $commands = [];
+        fakeReleaseIncus($target, $instances, $networkExists, $commands);
+
+        $result = releaser($store, $paths)->release('NCK-123', releaseAttempt());
+
+        expect($result->purpose)
+            ->toBe(AttemptPurpose::Proof)
+            ->and($result->released)
+            ->not
+            ->toContain('device:'.$target->instance('gateway').':orbit-source')
+            ->and($result->verifiedAbsent)
+            ->toBe([...array_map($target->instance(...), TopologyProfile::ROLES), $target->network()])
+            ->and($store->read(releaseReceiptPath('NCK-123')))
+            ->toBe($result->toArray())
+            ->and($store->read('evidence/proofs/NCK-123/'.releaseAttempt()->value.'.json'))
+            ->toBe($proof)
+            ->and($store->read('topologies/NCK-123/active.json'))
+            ->toBeNull()
+            ->and($store->read('leases/NCK-123.json'))
+            ->toBeNull()
+            ->and($instances)
+            ->toBe([])
+            ->and($networkExists)
             ->toBeFalse();
     });
 

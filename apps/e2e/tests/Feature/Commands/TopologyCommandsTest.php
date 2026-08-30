@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Console\Commands\Topology\AcquireCommand;
+use App\Console\Commands\Topology\DiagnoseCommand;
 use App\Console\Commands\Topology\ExecCommand;
 use App\Console\Commands\Topology\ProveCommand;
 use App\Console\Commands\Topology\ReapCommand;
@@ -30,6 +31,7 @@ describe('topology commands', function () {
             new VerifyCommand()->getName(),
             new ExecCommand()->getName(),
             new ProveCommand()->getName(),
+            new DiagnoseCommand()->getName(),
             new ReleaseCommand()->getName(),
             new StatusCommand()->getName(),
             new ReapCommand()->getName(),
@@ -39,6 +41,7 @@ describe('topology commands', function () {
             'topology:verify',
             'topology:exec',
             'topology:prove',
+            'topology:diagnose',
             'topology:release',
             'topology:status',
             'topology:reap',
@@ -64,6 +67,22 @@ describe('topology commands', function () {
                     ->hasOption('argv-file'),
             )
             ->toBeTrue()
+            ->and($arguments(new ProveCommand))
+            ->toBe(['issue', 'worktree'])
+            ->and(
+                new ProveCommand()
+                    ->getDefinition()
+                    ->hasOption('candidate-sha'),
+            )
+            ->toBeTrue()
+            ->and(
+                new ProveCommand()
+                    ->getDefinition()
+                    ->hasOption('proof-plan-file'),
+            )
+            ->toBeTrue()
+            ->and($arguments(new DiagnoseCommand))
+            ->toBe(['issue', 'attempt'])
             ->and($arguments(new ReleaseCommand))
             ->toBe(['issue', 'attempt'])
             ->and($arguments(new StatusCommand))
@@ -81,6 +100,8 @@ describe('topology commands', function () {
             new SyncCommand,
             new VerifyCommand,
             new ExecCommand,
+            new ProveCommand,
+            new DiagnoseCommand,
             new ReleaseCommand,
             new StatusCommand,
         ] as $command) {
@@ -104,6 +125,27 @@ describe('topology commands', function () {
         $this
             ->artisan('topology:prove', ['issue' => 'NCK-12', 'worktree' => dirname(__DIR__, 3)])
             ->expectsOutputToContain('candidate SHA')
+            ->assertFailed();
+        $this
+            ->artisan('topology:prove', [
+                'issue' => 'NCK-12',
+                'worktree' => dirname(__DIR__, 3),
+                '--candidate-sha' => str_repeat('a', 40),
+            ])
+            ->expectsOutputToContain('proof plan file')
+            ->assertFailed();
+        $this
+            ->artisan('topology:prove', [
+                'issue' => 'NCK-12',
+                'worktree' => dirname(__DIR__, 3),
+                '--candidate-sha' => str_repeat('a', 40),
+                '--proof-plan-file' => dirname(__DIR__, 3).'/missing-plan.json',
+            ])
+            ->expectsOutputToContain('proof plan file cannot be read')
+            ->assertFailed();
+        $this
+            ->artisan('topology:diagnose', ['issue' => 'NCK-12', 'attempt' => 'not-an-attempt'])
+            ->expectsOutputToContain('attempt ID is invalid')
             ->assertFailed();
         $this
             ->artisan('topology:reap')
@@ -194,6 +236,34 @@ describe('topology commands', function () {
             ->assertSuccessful();
 
         expect(commandStateListing($paths))->toBe($before);
+    });
+
+    it('refuses to diagnose an attempt that is not the active proved attempt without touching infrastructure', function () {
+        config(['e2e.incus.operation_id' => '0123456789abcdef0123456789abcdef']);
+        app()->forgetInstance(OperationId::class);
+        $paths = commandStatePaths();
+        app()->forgetInstance(\App\E2E\ProofStore::class);
+        app()->forgetInstance(\App\E2E\TopologyProofRunner::class);
+        $store = new AtomicJsonStore($paths);
+        new TopologyManifestStore($store, $paths)->writeActive(commandTopologyFixture('NCK-12'));
+        $before = commandStateListing($paths);
+
+        $this
+            ->artisan('topology:diagnose', ['issue' => 'NCK-12', 'attempt' => attemptId('b')->value, '--json' => true])
+            ->expectsOutput(json_encode([
+                'state' => 'failed',
+                'operation_id' => '0123456789abcdef0123456789abcdef',
+                'error' => 'The attempt is not the active topology attempt.',
+            ], JSON_THROW_ON_ERROR))
+            ->assertFailed();
+        $this
+            ->artisan('topology:diagnose', ['issue' => 'NCK-12', 'attempt' => attemptId()->value, '--json' => true])
+            ->expectsOutputToContain('not a proof attempt')
+            ->assertFailed();
+
+        // Only the issue lock the command took and released is new.
+        expect(array_keys(array_diff_key(commandStateListing($paths), $before)))
+            ->toBe([$paths->root().'/locks/topology-NCK-12.lock']);
     });
 
     it('binds one command operation identity from the environment', function () {

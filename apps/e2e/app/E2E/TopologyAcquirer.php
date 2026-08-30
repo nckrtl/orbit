@@ -19,7 +19,6 @@ use App\E2E\Value\IncusInstance;
 use App\E2E\Value\IncusNetwork;
 use App\E2E\Value\MountPath;
 use App\E2E\Value\OperationId;
-use App\E2E\Value\ProofResult;
 use App\E2E\Value\SourceState;
 use App\E2E\Value\TopologyProfile;
 use App\E2E\Value\TopologyRequest;
@@ -193,7 +192,7 @@ final readonly class TopologyAcquirer
             throw new RuntimeException('The issue topology is locked.');
         }
         try {
-            $topology = $this->requireTopology($issue, $attempt);
+            $topology = $this->requireTopology($issue, $attempt, mutating: false);
             $target = $topology->target;
             $this->networks->reconcile($target->network());
             if ($topology->source->mounted) {
@@ -214,7 +213,10 @@ final readonly class TopologyAcquirer
                 $report,
                 $topology->mounts,
             );
-            $this->manifests->writeActive($updated);
+            // A proved attempt is immutable: its record keeps the proof verification.
+            if (! $this->proofs->isProved($issue, $attempt)) {
+                $this->manifests->writeActive($updated);
+            }
 
             return $updated;
         } finally {
@@ -273,120 +275,6 @@ final readonly class TopologyAcquirer
         } finally {
             $lock->release();
         }
-    }
-
-    public function prove(TopologyRequest $request, string $candidateSha): ProofResult
-    {
-        $this->validateRequestOwnership($request);
-        if (preg_match('/\A[0-9a-f]{40}\z/D', $candidateSha) !== 1) {
-            throw new \InvalidArgumentException('The candidate must be an exact full SHA.');
-        }
-        $operation = $this->commandOperation;
-        $lock = new OperationLock($this->paths);
-        if (! $lock->acquire('topology-'.$request->issue, $operation)) {
-            throw new RuntimeException('The issue topology is locked.');
-        }
-        try {
-            return $this->proveLocked($request, $candidateSha);
-        } finally {
-            $lock->release();
-        }
-    }
-
-    private function proveLocked(TopologyRequest $request, string $candidateSha): ProofResult
-    {
-        $repository = new GitRepository($request->worktree);
-        if ($repository->dirtyOverlay() !== null || $repository->commit() !== $candidateSha) {
-            throw new RuntimeException('Final proof requires a clean worktree at the candidate SHA.');
-        }
-
-        $active = $this->manifests->active($request->issue) ?? throw new RuntimeException(
-            'The feature topology does not exist.',
-        );
-        $topology = $this->syncUnlocked($request, $active->attempt);
-        $target = $topology->target;
-        if ($topology->source->dirty || $topology->source->hostSha !== $candidateSha) {
-            throw new RuntimeException('Final source sync changed the candidate identity.');
-        }
-        foreach (TopologyProfile::CHECKOUT_ROLES as $role) {
-            $identity = $this->host->exec($target->instance($role), new GuestCommand([
-                'runuser',
-                '-u',
-                'orbit',
-                '--',
-                'env',
-                'HOME=/home/orbit',
-                'git',
-                '-C',
-                '/home/orbit/orbit',
-                'rev-parse',
-                '--verify',
-                'HEAD^{commit}',
-            ]));
-            if (! $identity->successful() || trim($identity->stdout) !== $candidateSha) {
-                throw new RuntimeException("The {$role} checkout is not at the candidate SHA.");
-            }
-            $result = $this->host->exec($target->instance($role), new GuestCommand([
-                'runuser',
-                '-u',
-                'orbit',
-                '--',
-                'env',
-                'HOME=/home/orbit',
-                'git',
-                '-C',
-                '/home/orbit/orbit',
-                'status',
-                '--porcelain=v1',
-                '--untracked-files=all',
-            ]));
-            if (! $result->successful() || trim($result->stdout) !== '') {
-                throw new RuntimeException("The {$role} checkout is not clean at the candidate.");
-            }
-        }
-        $automated = $this->host->exec(
-            $target->instance('gateway'),
-            new GuestCommand(
-                [
-                    'runuser',
-                    '-u',
-                    'orbit',
-                    '--',
-                    'env',
-                    '-C',
-                    '/home/orbit/orbit',
-                    'HOME=/home/orbit',
-                    '/home/orbit/orbit/bin/test',
-                ],
-                3_600,
-            ),
-        );
-        if (! $automated->successful()) {
-            throw new RuntimeException(
-                'Candidate automated checks failed.'.$this->automatedCheckSummary($automated),
-            );
-        }
-
-        $verification = $this->verifier->verify($target, VerificationMode::Proof, $topology->source);
-        if (! $verification->passed) {
-            throw new RuntimeException('Candidate proof probes failed.');
-        }
-        $tree = Process::path($request->worktree)->run(['git', 'rev-parse', '--verify', 'HEAD^{tree}']);
-        $candidateTree = strtolower(trim($tree->output()));
-        if ($tree->failed() || preg_match('/\A[0-9a-f]{40}\z/D', $candidateTree) !== 1) {
-            throw new RuntimeException('Git could not resolve the exact candidate tree.');
-        }
-        $result = new ProofResult(
-            $this->commandOperation->value,
-            bin2hex(random_bytes(16)),
-            $candidateSha,
-            $candidateTree,
-            $repository->effectiveTreeHash(),
-            $verification,
-        );
-        $this->state->write('proof/'.$request->issue.'.json', $result->toArray());
-
-        return $result;
     }
 
     private function acquirePinned(
@@ -826,7 +714,7 @@ final readonly class TopologyAcquirer
         }
     }
 
-    private function requireTopology(string $issue, AttemptId $attempt): FeatureTopology
+    private function requireTopology(string $issue, AttemptId $attempt, bool $mutating = true): FeatureTopology
     {
         $lease = $this->state->read('leases/'.$issue.'.json');
         if (! is_array($lease)) {
@@ -837,7 +725,7 @@ final readonly class TopologyAcquirer
         }
         $this->leaseOperation($lease, $issue, ['ready'], 'topology');
 
-        return $this->exactTopology($issue, $attempt, $this->leaseAttempt($lease, $issue, 'topology'));
+        return $this->exactTopology($issue, $attempt, $this->leaseAttempt($lease, $issue, 'topology'), $mutating);
     }
 
     private function requireTopologyForSync(string $issue, AttemptId $attempt): FeatureTopology
@@ -861,10 +749,15 @@ final readonly class TopologyAcquirer
 
     /**
      * The exact attempt record, the lease, and the active pointer must all name the
-     * requested attempt before any command touches it; a proved attempt is immutable.
+     * requested attempt before any command touches it; a proved attempt is immutable,
+     * so only a read-only command may reach it.
      */
-    private function exactTopology(string $issue, AttemptId $attempt, AttemptId $leaseAttempt): FeatureTopology
-    {
+    private function exactTopology(
+        string $issue,
+        AttemptId $attempt,
+        AttemptId $leaseAttempt,
+        bool $mutating = true,
+    ): FeatureTopology {
         if ($leaseAttempt->value !== $attempt->value) {
             throw new RuntimeException('The topology lease names another attempt.');
         }
@@ -876,7 +769,7 @@ final readonly class TopologyAcquirer
         if ($active === null || $active->attempt->value !== $attempt->value) {
             throw new RuntimeException('The topology attempt is not the active topology attempt.');
         }
-        if ($this->proofs->isProved($issue, $attempt)) {
+        if ($mutating && $this->proofs->isProved($issue, $attempt)) {
             throw new RuntimeException('The topology attempt is proved and cannot be changed.');
         }
 
@@ -1096,30 +989,5 @@ final readonly class TopologyAcquirer
             ];
         }
         $this->state->write('leases/'.$issue.'.json', $lease);
-    }
-
-    /** Keep only the suite verdict lines so the failure evidence stays short and free of progress noise. */
-    private function automatedCheckSummary(GuestCommandResult $result): string
-    {
-        $output = preg_replace('/\e\[[0-9;]*m/', '', $result->stdout."\n".$result->stderr) ?? '';
-        $lines = array_values(array_filter(
-            array_map(trim(...), explode("\n", $output)),
-            static fn (string $line): bool => (
-                preg_match(
-                    '/^(\[[a-z0-9\/-]+\] (?:passed|failed)|FAILED |Tests: |.+ is not installed\.|.+:\d+$)/',
-                    $line,
-                ) === 1
-            ),
-        ));
-        if ($lines === []) {
-            $stderr = array_values(array_filter(array_map(trim(...), explode("\n", $result->stderr))));
-
-            return (
-                " Guest exit code {$result->exitCode} with no suite verdict."
-                .($stderr === [] ? '' : ' '.implode(' | ', array_slice($stderr, -3)))
-            );
-        }
-
-        return " Guest exit code {$result->exitCode}: ".implode(' | ', array_slice($lines, -12));
     }
 }

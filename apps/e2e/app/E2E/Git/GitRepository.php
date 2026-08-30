@@ -38,6 +38,22 @@ final readonly class GitRepository
         return $branch;
     }
 
+    /** The shared Git directory every linked worktree of one repository resolves to. */
+    public function commonDirectory(): string
+    {
+        $commonDirectory = realpath(trim($this->run([
+            'rev-parse',
+            '--path-format=absolute',
+            '--git-common-dir',
+        ])));
+
+        if ($commonDirectory === false) {
+            throw new InvalidArgumentException('The Git directories do not exist.');
+        }
+
+        return $commonDirectory;
+    }
+
     public function isLinkedWorktree(): bool
     {
         $gitDirectory = realpath(trim($this->run([
