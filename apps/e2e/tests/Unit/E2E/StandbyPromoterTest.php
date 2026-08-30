@@ -406,7 +406,7 @@ describe('StandbyPromoter', function (): void {
             $guestEvents,
             static fn (array $event): bool => in_array('rm', $event, true),
         ));
-        expect($removals)->toHaveCount(3)->and($removals[0])->toContain('/var/lib/orbit-e2e/proof');
+        expect($removals)->toHaveCount(3)->and($removals[0])->toContain(ProofFixtures::GUEST_DIRECTORY);
 
         expect($events)->toBe($expected);
     });
