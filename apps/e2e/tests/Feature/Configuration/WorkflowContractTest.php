@@ -34,9 +34,9 @@ it('keeps the topology-led workflow contracts aligned', function (): void {
     expect($worker)->toMatch('/subagents/');
     // Automated-only path: explicit summary, step-7 gates on both paths, direct-work threshold
     expect($worker)->toMatch(
-        '/## Automated-only path\n\nAn issue without a `Proof: incus` line runs steps 2, 7, and 10 only/',
+        '/## Automated-only path\n\nAn issue without a `Proof: incus` line runs steps 2, 7, and 10, skips steps 3\s+to 9, and returns the handoff with `venue: automated`/',
     );
-    expect($worker)->toMatch('/returns the handoff with `venue: automated`/');
+    expect($worker)->toMatch('/Review corrections continue from step 11/');
     expect($worker)->toMatch(
         '/These gates \(test-driven\s+development, `composer check`, `bin\/test`, and the commit freeze\) apply on\s+both the Incus path and the automated-only path/',
     );
@@ -52,7 +52,9 @@ it('keeps the topology-led workflow contracts aligned', function (): void {
     // Delegation is client-neutral: no model or client-option pins
     expect($worker)->toMatch('/client\'s available reasoning model/');
     foreach ([$worker, $review, $merge, $workflow] as $document) {
-        expect($document)->not->toContain('gpt-5.6-luna', 'fork_turns', 'Luna Light', 'reasoning_effort');
+        foreach (['gpt-5.6-luna', 'fork_turns', 'Luna Light', 'reasoning_effort'] as $pin) {
+            expect($document)->not->toContain($pin);
+        }
     }
     // Worker-owned discovery release and proof; the project manager keeps post-merge cleanup only
     expect($worker)->toMatch(

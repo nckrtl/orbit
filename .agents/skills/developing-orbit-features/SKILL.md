@@ -14,8 +14,9 @@ its internal implementation subagents. The flow is governed by
 
 ## Automated-only path
 
-An issue without a `Proof: incus` line runs steps 2, 7, and 10 only, then
-returns the handoff with `venue: automated`. Step 7's gates apply in full.
+An issue without a `Proof: incus` line runs steps 2, 7, and 10, skips steps 3
+to 9, and returns the handoff with `venue: automated`. Step 7's gates apply in
+full. Review corrections continue from step 11.
 
 ## Repository scope
 
