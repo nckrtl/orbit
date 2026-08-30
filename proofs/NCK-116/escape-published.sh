@@ -13,7 +13,16 @@ run_escape --dry-run >/dev/null
 [[ "$ESCAPE_STATUS" -eq 0 ]] || fail "dry run exited $ESCAPE_STATUS: $ESCAPE_OUTPUT"
 assert_reports 'footprint on'
 assert_reports 'exporter drop-in     owned'
+assert_reports 'exporter UFW rule    ok'
 assert_reports 'Dry run: nothing was changed.'
+
+# The preview must name resources, not only count them: it is what the
+# operator approves before a root-run destructive tool acts.
+assert_reports 'Would remove:'
+assert_reports '  - /etc/systemd/system/prometheus-node-exporter.service.d/orbit.conf, and stop and disable prometheus-node-exporter'
+assert_reports 'commented orbit:metrics-node-exporter'
+
+firewall_rule_exists orbit:metrics-node-exporter || fail "the dry run removed the exporter firewall rule"
 
 sudo test -e /etc/systemd/system/prometheus-node-exporter.service.d/orbit.conf \
   || fail "the dry run removed the exporter drop-in"

@@ -59,7 +59,7 @@ final readonly class MetricsExporterSshExecutor implements MetricsExporterRuntim
                     '--yes',
                     '--no-install-recommends',
                     '--',
-                    'prometheus-node-exporter',
+                    MetricsFootprint::ExporterPackage,
                 ]),
                 'metrics.exporter_install_failed',
                 'The Metrics exporter package could not be installed.',
@@ -240,7 +240,10 @@ final readonly class MetricsExporterSshExecutor implements MetricsExporterRuntim
                 return 'drift';
             }
 
-            $service = $this->raw($node, new RemoteCommand(['systemctl', 'is-active', 'prometheus-node-exporter']));
+            $service = $this->raw(
+                $node,
+                new RemoteCommand(['systemctl', 'is-active', MetricsFootprint::ExporterService]),
+            );
 
             return $service->succeeded() && trim($service->stdout) === 'active'
                 ? 'active'
@@ -256,9 +259,11 @@ final readonly class MetricsExporterSshExecutor implements MetricsExporterRuntim
     {
         return (
             self::OwnershipMarker
-            ."\n[Service]\nExecStart=\nExecStart=/usr/bin/prometheus-node-exporter --web.listen-address={$this->address(
-                $node,
-            )}:9100\n"
+            ."\n[Service]\nExecStart=\nExecStart=/usr/bin/"
+            .MetricsFootprint::ExporterService
+            ." --web.listen-address={$this->address($node)}:"
+            .MetricsFootprint::ExporterPort
+            ."\n"
         );
     }
 
@@ -307,7 +312,7 @@ final readonly class MetricsExporterSshExecutor implements MetricsExporterRuntim
             direction: 'in',
             source: $this->address($metricsNode),
             destination: $this->address($node),
-            port: '9100',
+            port: MetricsFootprint::ExporterPort,
             protocol: 'tcp',
             inInterface: self::WireGuardInterface,
             outInterface: null,
@@ -347,7 +352,7 @@ final readonly class MetricsExporterSshExecutor implements MetricsExporterRuntim
         // `install` reads `/dev/stdin` and refuses an existing destination on
         // the uutils coreutils that Ubuntu ships, so the drop-in lands on a
         // candidate path and is moved into place.
-        $candidate = self::ConfigurationPath.'.orbit-candidate';
+        $candidate = self::ConfigurationPath.MetricsFootprint::CandidateSuffix;
         $this->run(
             $node,
             new RemoteCommand(['sudo', 'rm', '-f', '--', $candidate]),
@@ -425,11 +430,19 @@ final readonly class MetricsExporterSshExecutor implements MetricsExporterRuntim
         );
     }
 
+    /** Removes the escape and any candidate a failed publication left beside it. */
     private function removeUninstallScript(Node $node, string $errorCode): void
     {
         $this->run(
             $node,
-            new RemoteCommand(['sudo', 'rm', '-f', '--', MetricsFootprint::UninstallScript]),
+            new RemoteCommand([
+                'sudo',
+                'rm',
+                '-f',
+                '--',
+                MetricsFootprint::UninstallScript,
+                MetricsFootprint::UninstallScript.MetricsFootprint::CandidateSuffix,
+            ]),
             $errorCode,
             'The Metrics uninstall script could not be removed.',
         );
@@ -449,8 +462,8 @@ final readonly class MetricsExporterSshExecutor implements MetricsExporterRuntim
     private function setServiceActive(Node $node, bool $active, string $errorCode): void
     {
         $command = $active
-            ? ['sudo', 'systemctl', 'enable', '--now', 'prometheus-node-exporter']
-            : ['sudo', 'systemctl', 'disable', '--now', 'prometheus-node-exporter'];
+            ? ['sudo', 'systemctl', 'enable', '--now', MetricsFootprint::ExporterService]
+            : ['sudo', 'systemctl', 'disable', '--now', MetricsFootprint::ExporterService];
 
         $this->run(
             $node,
@@ -466,7 +479,7 @@ final readonly class MetricsExporterSshExecutor implements MetricsExporterRuntim
             // a restart applies the Orbit drop-in to an already running unit.
             $this->run(
                 $node,
-                new RemoteCommand(['sudo', 'systemctl', 'restart', 'prometheus-node-exporter']),
+                new RemoteCommand(['sudo', 'systemctl', 'restart', MetricsFootprint::ExporterService]),
                 $errorCode,
                 'The Metrics exporter service could not be restarted.',
             );
@@ -475,7 +488,10 @@ final readonly class MetricsExporterSshExecutor implements MetricsExporterRuntim
 
     private function serviceActive(Node $node): bool
     {
-        $result = $this->raw($node, new RemoteCommand(['systemctl', 'is-active', 'prometheus-node-exporter']));
+        $result = $this->raw(
+            $node,
+            new RemoteCommand(['systemctl', 'is-active', MetricsFootprint::ExporterService]),
+        );
 
         if ($result->succeeded() && trim($result->stdout) === 'active') {
             return true;
@@ -510,7 +526,7 @@ final readonly class MetricsExporterSshExecutor implements MetricsExporterRuntim
                 'to',
                 $shape->destination,
                 'port',
-                '9100',
+                MetricsFootprint::ExporterPort,
                 'comment',
                 self::FirewallComment,
             ]),

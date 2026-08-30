@@ -48,6 +48,9 @@ final readonly class MetricsUninstallScript
             '@@PACKAGE@@' => MetricsFootprint::ExporterPackage,
             '@@EXPORTER_COMMENT@@' => MetricsFootprint::ExporterFirewallComment,
             '@@GRAFANA_COMMENT@@' => MetricsFootprint::PublicationFirewallComment,
+            '@@EXPORTER_PORT@@' => MetricsFootprint::ExporterPort,
+            '@@GRAFANA_PORT@@' => MetricsFootprint::PublicationPort,
+            '@@INTERFACE@@' => MetricsFootprint::WireGuardInterface,
             '@@SELF@@' => MetricsFootprint::UninstallScript,
         ]);
     }
@@ -71,13 +74,16 @@ final readonly class MetricsUninstallScript
             # always matches the code that put the state here. It removes only what Orbit
             # can prove it owns and reports everything else instead of guessing.
             #
-            # Re-enabling is ordinary registration: run `orbit metrics:enable` once a
-            # Gateway is reachable again.
+            # Re-enabling is ordinary registration. Once a Gateway is reachable,
+            # take the stale role off and add it again:
+            #
+            #   orbit metrics:disable --force
+            #   orbit metrics:enable <node>
             #
             # Usage: sudo @@SELF@@ [--force] [--dry-run]
             #
-            # Exit codes: 0 removed everything Orbit owns, 2 usage, 3 something was
-            # refused or survived removal, 4 must run as root.
+            # Exit codes: 0 removed everything Orbit owns, 2 usage or cancelled,
+            # 3 something was refused or survived removal, 4 must run as root.
 
             set -uo pipefail
 
@@ -96,6 +102,9 @@ final readonly class MetricsUninstallScript
             readonly SELF='@@SELF@@'
             readonly EXPORTER_COMMENT='@@EXPORTER_COMMENT@@'
             readonly GRAFANA_COMMENT='@@GRAFANA_COMMENT@@'
+            readonly EXPORTER_PORT='@@EXPORTER_PORT@@'
+            readonly GRAFANA_PORT='@@GRAFANA_PORT@@'
+            readonly INTERFACE='@@INTERFACE@@'
 
             readonly CONFIG_PATHS=(
             @@CONFIG_PATHS@@
@@ -108,9 +117,21 @@ final readonly class MetricsUninstallScript
             removed=()
             refused=()
             kept=()
+            planned=()
             force=0
             dry_run=0
             scope='none'
+
+            # Captured once, then every firewall decision reads these. Asking
+            # ufw again between the plan and the act is how a confirm-then-act
+            # tool ends up removing something the operator never saw.
+            firewall_status=''
+            firewall_state='unknown'
+            exporter_rule_state='none'
+            grafana_rule_state='none'
+            exporter_rule_number=''
+            grafana_rule_number=''
+            node_address=''
 
             usage() {
                 cat <<USAGE
@@ -196,20 +217,76 @@ final readonly class MetricsUninstallScript
                     = "${LABEL_VALUE}" ]
             }
 
-            firewall_available() {
-                have ufw && ufw status 2>/dev/null | grep -qiE '^Status:[[:space:]]+active$'
+            # Reads the whole UFW status once into a variable.
+            #
+            # `ufw status | grep -q` looks equivalent and is not: `grep -q`
+            # exits at its first match, ufw then writes into a closed pipe, and
+            # `pipefail` turns the resulting SIGPIPE into a failure. That is
+            # deterministic once the status exceeds the pipe buffer, so a busy
+            # host reports "UFW is not active" and plans around rules it can
+            # see perfectly well. Every match below runs against the variable.
+            inspect_firewall() {
+                local line
+
+                if ! have ufw; then
+                    firewall_state='unavailable'
+
+                    return
+                fi
+
+                firewall_status="$(ufw status numbered 2>/dev/null)" || firewall_status=''
+                firewall_state='inactive'
+
+                while IFS= read -r line; do
+                    if [[ "${line}" =~ ^[Ss]tatus:[[:space:]]+active[[:space:]]*$ ]]; then
+                        firewall_state='active'
+
+                        return
+                    fi
+                done <<<"${firewall_status}"
             }
 
-            # Numbers the UFW rules whose comment is exactly the one asked for. The
-            # comment ends the line, so the match is anchored there: a prefix match would
-            # also claim a future neighbour such as `orbit:metrics-node-exporter-v2` and
-            # delete it silently.
-            firewall_rule_numbers() {
+            # This node's WireGuard address, which is the destination of both
+            # Orbit rules. Without it their shape cannot be proved, so the
+            # rules are reported rather than deleted.
+            inspect_address() {
+                local line
+
+                while IFS= read -r line; do
+                    if [[ "${line}" =~ inet[[:space:]]+([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)/ ]]; then
+                        node_address="${BASH_REMATCH[1]}"
+
+                        return
+                    fi
+                done <<<"$(ip -4 -o addr show dev "${INTERFACE}" 2>/dev/null)"
+            }
+
+            squeeze() {
+                local value="$1"
+                value="${value//$'\t'/ }"
+
+                while [[ "${value}" == *'  '* ]]; do
+                    value="${value//  / }"
+                done
+
+                printf '%s' "${value}"
+            }
+
+            rtrim() {
+                local value="$1"
+                printf '%s' "${value%"${value##*[![:space:]]}"}"
+            }
+
+            # Numbers the UFW rules whose comment is exactly the one asked for.
+            # The comment ends the line, so the match is anchored there: a
+            # prefix match would also claim a neighbour such as
+            # `orbit:metrics-node-exporter-v2` and delete it silently.
+            firewall_comment_numbers() {
                 local comment="# $1"
                 local line trimmed
 
-                ufw status numbered 2>/dev/null | while IFS= read -r line; do
-                    trimmed="${line%"${line##*[![:space:]]}"}"
+                while IFS= read -r line; do
+                    trimmed="$(rtrim "${line}")"
 
                     case "${trimmed}" in
                         *"${comment}")
@@ -218,35 +295,82 @@ final readonly class MetricsUninstallScript
                             fi
                             ;;
                     esac
-                done
+                done <<<"${firewall_status}"
             }
 
-            firewall_rule_count() {
-                firewall_rule_numbers "$1" | grep -c '^' 2>/dev/null
-            }
+            # True when the numbered rule is the exact rule Orbit writes.
+            #
+            # The comment alone is not proof: a hand-edited rule that kept the
+            # comment is drift the Gateway refuses, so the escape refuses it
+            # too. Everything the Gateway compares is checked here except the
+            # peer address, which is the Gateway's own and is exactly what is
+            # unknowable with no Gateway. Requiring a bare IPv4 source keeps an
+            # `Anywhere` rule out.
+            firewall_rule_matches() {
+                local number="$1" port="$2"
+                local line trimmed body target source
+                local expected="${node_address} ${port}/tcp on ${INTERFACE}"
 
-            # Deletes rules one at a time, re-reading the numbering between deletes
-            # because every delete renumbers the rules below it.
-            remove_firewall_rules() {
-                local comment="$1"
-                local attempt=0
-                local number
+                while IFS= read -r line; do
+                    trimmed="$(rtrim "${line}")"
 
-                while [ "${attempt}" -lt 32 ]; do
-                    number="$(firewall_rule_numbers "${comment}" | head -n 1)"
-
-                    if [ -z "${number}" ]; then
-                        return 0
+                    if [[ ! "${trimmed}" =~ ^[[:space:]]*\[[[:space:]]*${number}\][[:space:]]*(.*)$ ]]; then
+                        continue
                     fi
 
-                    if ! ufw --force delete "${number}" >/dev/null 2>&1; then
+                    body="${BASH_REMATCH[1]}"
+                    body="$(rtrim "${body%%'#'*}")"
+
+                    case "${body}" in
+                        *'(v6)'*) return 1 ;;
+                    esac
+
+                    if [[ ! "${body}" =~ ^(.*[^[:space:]])[[:space:]]+ALLOW[[:space:]]+IN[[:space:]]+([^[:space:]]+)$ ]]; then
                         return 1
                     fi
 
-                    attempt=$((attempt + 1))
-                done
+                    target="$(squeeze "${BASH_REMATCH[1]}")"
+                    source="${BASH_REMATCH[2]}"
+
+                    [[ "${target}" == "${expected}" ]] || return 1
+                    [[ "${source}" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || return 1
+
+                    return 0
+                done <<<"${firewall_status}"
 
                 return 1
+            }
+
+            # Resolves one Orbit rule to `none`, `ok`, or `drift`, and prints
+            # the rule number when it is `ok`.
+            firewall_rule_plan() {
+                local comment="$1" port="$2"
+                local -a numbers=()
+                local number
+
+                while IFS= read -r number; do
+                    [[ -n "${number}" ]] && numbers+=("${number}")
+                done <<<"$(firewall_comment_numbers "${comment}")"
+
+                if [ "${#numbers[@]}" -eq 0 ]; then
+                    printf 'none\n'
+
+                    return
+                fi
+
+                if [ "${#numbers[@]}" -ne 1 ]; then
+                    printf 'drift\n'
+
+                    return
+                fi
+
+                if ! firewall_rule_matches "${numbers[0]}" "${port}"; then
+                    printf 'drift\n'
+
+                    return
+                fi
+
+                printf 'ok %s\n' "${numbers[0]}"
             }
 
             remove_exporter() {
@@ -332,19 +456,33 @@ final readonly class MetricsUninstallScript
             }
 
             remove_firewall() {
-                local comment
+                local -a entries=()
+                local entry number comment
 
-                for comment in "${EXPORTER_COMMENT}" "${GRAFANA_COMMENT}"; do
-                    if [ "$(firewall_rule_count "${comment}")" -eq 0 ]; then
-                        continue
-                    fi
+                if [ "${exporter_rule_state}" = 'ok' ]; then
+                    entries+=("${exporter_rule_number} ${EXPORTER_COMMENT}")
+                fi
 
-                    if remove_firewall_rules "${comment}"; then
-                        note_removed "UFW rules commented ${comment}"
+                if [ "${grafana_rule_state}" = 'ok' ]; then
+                    entries+=("${grafana_rule_number} ${GRAFANA_COMMENT}")
+                fi
+
+                if [ "${#entries[@]}" -eq 0 ]; then
+                    return
+                fi
+
+                # Highest number first: every delete renumbers the rules below it.
+                while IFS= read -r entry; do
+                    [ -n "${entry}" ] || continue
+                    number="${entry%% *}"
+                    comment="${entry#* }"
+
+                    if ufw --force delete "${number}" >/dev/null 2>&1; then
+                        note_removed "UFW rule commented ${comment}"
                     else
-                        note_refused "UFW rules commented ${comment} (removal failed)"
+                        note_refused "UFW rule [${number}] commented ${comment} could not be removed"
                     fi
-                done
+                done <<<"$(printf '%s\n' "${entries[@]}" | sort -rn)"
             }
 
             verify() {
@@ -371,12 +509,18 @@ final readonly class MetricsUninstallScript
                     fi
                 fi
 
-                if firewall_available; then
-                    if [ "$(firewall_rule_count "${EXPORTER_COMMENT}")" -ne 0 ]; then
+                # Only the rules this run planned to delete. A rule left alone
+                # for drift is already reported, and is not a survivor.
+                if [ "${firewall_state}" = 'active' ]; then
+                    inspect_firewall
+
+                    if [ "${exporter_rule_state}" = 'ok' ] \
+                        && [ -n "$(firewall_comment_numbers "${EXPORTER_COMMENT}")" ]; then
                         note_refused "UFW rules commented ${EXPORTER_COMMENT} survived removal"
                     fi
 
-                    if [ "$(firewall_rule_count "${GRAFANA_COMMENT}")" -ne 0 ]; then
+                    if [ "${grafana_rule_state}" = 'ok' ] \
+                        && [ -n "$(firewall_comment_numbers "${GRAFANA_COMMENT}")" ]; then
                         note_refused "UFW rules commented ${GRAFANA_COMMENT} survived removal"
                     fi
                 fi
@@ -385,7 +529,7 @@ final readonly class MetricsUninstallScript
             # Everything Orbit leaves behind on purpose, and how to finish the job by hand.
             report_kept() {
                 if [ "${scope}" != 'none' ]; then
-                    note_kept "the ${PACKAGE} package: Orbit installed it but cannot prove it owns it, and another scrape may need it. Remove it with: sudo apt-get purge --yes ${PACKAGE}"
+                    note_kept "the ${PACKAGE} package: Orbit installed it but cannot prove it owns it, and removal through the Gateway leaves it installed too. This cleanup stops and disables its service and removes Orbit's drop-in, so the package is left inert. Remove it with: sudo apt-get purge --yes ${PACKAGE}"
                 fi
 
                 note_kept "this script at ${SELF}, so the cleanup stays re-runnable and verifiable. Remove it with: sudo rm -f ${SELF}"
@@ -417,10 +561,86 @@ final readonly class MetricsUninstallScript
                 report_list 'Refused, because ownership could not be proved:' "${refused[@]}"
             }
 
+            # Names every resource this run would remove, so the operator
+            # confirms a list rather than a count, and `--dry-run` is a real
+            # preview.
+            plan_removals() {
+                local dropin="$1" config="$2" containers="$3" volumes="$4"
+                local name path
+
+                if [ "${dropin}" = 'owned' ]; then
+                    planned+=("${DROPIN}, and stop and disable ${SERVICE}")
+                fi
+
+                while IFS= read -r name; do
+                    [ -n "${name}" ] && planned+=("container ${name}")
+                done <<<"${containers}"
+
+                while IFS= read -r name; do
+                    [ -n "${name}" ] && planned+=("volume ${name}, and the data in it")
+                done <<<"${volumes}"
+
+                if [ "${config}" = 'owned' ]; then
+                    for path in "${CONFIG_PATHS[@]}"; do
+                        [ -e "${path}" ] && planned+=("${path}")
+                    done
+
+                    planned+=("${MARKER_PATH}")
+                fi
+
+                if [ "${exporter_rule_state}" = 'ok' ]; then
+                    planned+=("UFW rule [${exporter_rule_number}] commented ${EXPORTER_COMMENT}")
+                fi
+
+                if [ "${grafana_rule_state}" = 'ok' ]; then
+                    planned+=("UFW rule [${grafana_rule_number}] commented ${GRAFANA_COMMENT}")
+                fi
+            }
+
+            plan_firewall() {
+                local footprint="$1"
+
+                if [ "${firewall_state}" != 'active' ]; then
+                    exporter_rule_state='uninspectable'
+                    grafana_rule_state='uninspectable'
+
+                    # A node with no Metrics footprint at all has no rules to
+                    # miss, so an inactive UFW is not a refusal there.
+                    if [ "${footprint}" = 'yes' ]; then
+                        note_refused 'UFW is not active, so Orbit Metrics firewall rules could not be inspected.'
+                    fi
+
+                    return
+                fi
+
+                if [ -z "${node_address}" ]; then
+                    exporter_rule_state='unprovable'
+                    grafana_rule_state='unprovable'
+
+                    if [ "${footprint}" = 'yes' ]; then
+                        note_refused "the ${INTERFACE} interface has no IPv4 address, so Orbit Metrics firewall rule shapes could not be proved."
+                    fi
+
+                    return
+                fi
+
+                read -r exporter_rule_state exporter_rule_number \
+                    <<<"$(firewall_rule_plan "${EXPORTER_COMMENT}" "${EXPORTER_PORT}")"
+                read -r grafana_rule_state grafana_rule_number \
+                    <<<"$(firewall_rule_plan "${GRAFANA_COMMENT}" "${GRAFANA_PORT}")"
+
+                if [ "${exporter_rule_state}" = 'drift' ]; then
+                    note_refused "UFW rules commented ${EXPORTER_COMMENT} are not the rule Orbit writes (allow in on ${INTERFACE} proto tcp from one address to ${node_address} port ${EXPORTER_PORT})"
+                fi
+
+                if [ "${grafana_rule_state}" = 'drift' ]; then
+                    note_refused "UFW rules commented ${GRAFANA_COMMENT} are not the rule Orbit writes (allow in on ${INTERFACE} proto tcp from one address to ${node_address} port ${GRAFANA_PORT})"
+                fi
+            }
+
             main() {
                 local argument
-                local dropin config containers volumes
-                local exporter_rules='0' grafana_rules='0'
+                local dropin config containers volumes footprint
                 local answer
                 local -a container_names=() volume_names=()
 
@@ -458,39 +678,48 @@ final readonly class MetricsUninstallScript
                     note_refused 'Docker is not reachable, so Orbit Metrics containers and volumes could not be inspected.'
                 fi
 
-                if firewall_available; then
-                    exporter_rules="$(firewall_rule_count "${EXPORTER_COMMENT}")"
-                    grafana_rules="$(firewall_rule_count "${GRAFANA_COMMENT}")"
-                else
-                    note_refused 'UFW is not active, so Orbit Metrics firewall rules could not be inspected.'
+                footprint='no'
+
+                if [ "${dropin}" != 'absent' ] || [ "${config}" != 'absent' ] \
+                    || [ -n "${containers}" ] || [ -n "${volumes}" ]; then
+                    footprint='yes'
                 fi
+
+                inspect_firewall
+                inspect_address
+                plan_firewall "${footprint}"
 
                 if [ "${config}" = 'owned' ] || [ -n "${containers}" ] || [ -n "${volumes}" ]; then
                     scope='metrics-node'
-                elif [ "${dropin}" = 'owned' ] || [ "${exporter_rules}" -ne 0 ]; then
+                elif [ "${dropin}" = 'owned' ] || [ "${exporter_rule_state}" = 'ok' ]; then
                     scope='exporter'
                 fi
+
+                plan_removals "${dropin}" "${config}" "${containers}" "${volumes}"
 
                 printf 'Orbit Metrics footprint on %s: %s\n' "$(uname -n)" "${scope}"
                 printf '  exporter drop-in     %s\n' "${dropin}"
                 printf '  generated config     %s\n' "${config}"
                 printf '  labelled containers  %s\n' "$(printf '%s' "${containers}" | grep -c '^.' || true)"
                 printf '  labelled volumes     %s\n' "$(printf '%s' "${volumes}" | grep -c '^.' || true)"
-                printf '  exporter UFW rules   %s\n' "${exporter_rules}"
-                printf '  grafana UFW rules    %s\n' "${grafana_rules}"
+                printf '  exporter UFW rule    %s\n' "${exporter_rule_state}"
+                printf '  grafana UFW rule     %s\n' "${grafana_rule_state}"
 
-                if [ "${scope}" = 'none' ]; then
+                if [ "${dry_run}" -eq 1 ]; then
+                    report_list 'Would remove:' "${planned[@]}"
                     report
 
-                    finish $'\nNothing Orbit owns is left on this node.'
+                    finish $'\nDry run: nothing was changed.'
 
                     return
                 fi
 
-                if [ "${dry_run}" -eq 1 ]; then
+                report_list 'Will remove:' "${planned[@]}"
+
+                if [ "${#planned[@]}" -eq 0 ]; then
                     report
 
-                    finish $'\nDry run: nothing was changed.'
+                    finish $'\nNothing Orbit owns is left on this node.'
 
                     return
                 fi
@@ -502,7 +731,7 @@ final readonly class MetricsUninstallScript
                         return 2
                     fi
 
-                    printf '\nThis removes the resources above, including their data volumes. Continue? [y/N] '
+                    printf '\nRemove everything listed above? [y/N] '
                     read -r answer
 
                     case "${answer}" in

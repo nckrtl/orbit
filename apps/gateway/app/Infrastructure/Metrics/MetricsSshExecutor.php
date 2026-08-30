@@ -946,7 +946,7 @@ final readonly class MetricsSshExecutor implements MetricsRuntimeHost, MetricsCr
             'output = "/dev/null"',
             'user = '.$this->curlQuote("admin:{$password}"),
             'request = '.$this->curlQuote($method),
-            'url = '.$this->curlQuote("http://{$address}:3000{$path}"),
+            'url = '.$this->curlQuote('http://'.$address.':'.MetricsFootprint::PublicationPort.$path),
         ];
 
         if (is_string($payload)) {

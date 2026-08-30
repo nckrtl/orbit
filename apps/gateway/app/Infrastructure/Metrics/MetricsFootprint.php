@@ -60,6 +60,12 @@ final readonly class MetricsFootprint
     /** The first line of the drop-in, and the only proof that Orbit wrote it. */
     public const string ExporterDropInMarker = '# Managed by Orbit: metrics';
 
+    /** The port the exporter listens on, and the port its UFW rule opens. */
+    public const string ExporterPort = '9100';
+
+    /** The port Grafana listens on, and the port the Gateway upstream rule opens. */
+    public const string PublicationPort = '3000';
+
     public const string ExporterFirewallComment = 'orbit:metrics-node-exporter';
 
     public const string PublicationFirewallComment = 'orbit:metrics-grafana-upstream';

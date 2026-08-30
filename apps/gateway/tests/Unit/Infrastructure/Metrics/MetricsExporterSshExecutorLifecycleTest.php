@@ -187,7 +187,14 @@ it('removes only proven exporter configuration and firewall state', function ():
         ['sudo', 'systemctl', 'disable', '--now', 'prometheus-node-exporter'],
         ['sudo', 'rm', '-f', '--', '/etc/systemd/system/prometheus-node-exporter.service.d/orbit.conf'],
         ['sudo', 'ufw', '--force', 'delete', '5'],
-        ['sudo', 'rm', '-f', '--', MetricsFootprint::UninstallScript],
+        [
+            'sudo',
+            'rm',
+            '-f',
+            '--',
+            MetricsFootprint::UninstallScript,
+            MetricsFootprint::UninstallScript.MetricsFootprint::CandidateSuffix,
+        ],
     );
 });
 
@@ -332,7 +339,14 @@ it('removes the uninstall script only after firewall removal is verified', funct
         static fn (RemoteCommand $command): array => $command->arguments,
         $ssh->commands,
     ))
-        ->toContain(['sudo', 'rm', '-f', '--', MetricsFootprint::UninstallScript])
+        ->toContain([
+            'sudo',
+            'rm',
+            '-f',
+            '--',
+            MetricsFootprint::UninstallScript,
+            MetricsFootprint::UninstallScript.MetricsFootprint::CandidateSuffix,
+        ])
         ->and($ssh->uninstallScript)
         ->toBeNull();
 });
@@ -358,7 +372,14 @@ it('leaves the uninstall script in place when firewall removal cannot be verifie
         static fn (RemoteCommand $command): array => $command->arguments,
         $ssh->commands,
     ))
-        ->not->toContain(['sudo', 'rm', '-f', '--', MetricsFootprint::UninstallScript])->and($ssh->uninstallScript)
+        ->not->toContain([
+            'sudo',
+            'rm',
+            '-f',
+            '--',
+            MetricsFootprint::UninstallScript,
+            MetricsFootprint::UninstallScript.MetricsFootprint::CandidateSuffix,
+        ])->and($ssh->uninstallScript)
         ->not->toBeNull();
 });
 
@@ -423,7 +444,14 @@ it('removes the uninstall script when restoring a state that had no drop-in', fu
         static fn (RemoteCommand $command): array => $command->arguments,
         $ssh->commands,
     ))
-        ->toContain(['sudo', 'rm', '-f', '--', MetricsFootprint::UninstallScript])
+        ->toContain([
+            'sudo',
+            'rm',
+            '-f',
+            '--',
+            MetricsFootprint::UninstallScript,
+            MetricsFootprint::UninstallScript.MetricsFootprint::CandidateSuffix,
+        ])
         ->and($ssh->uninstallScript)
         ->toBeNull();
 });
@@ -656,7 +684,15 @@ final class MetricsExporterStatefulSsh implements SshExecutor
                 MetricsFootprint::UninstallScript,
             ]
                 => $this->publishUninstallCandidate(),
-            ['sudo', 'rm', '-f', '--', MetricsFootprint::UninstallScript] => $this->removeUninstallScript(),
+            [
+                'sudo',
+                'rm',
+                '-f',
+                '--',
+                MetricsFootprint::UninstallScript,
+                MetricsFootprint::UninstallScript.MetricsFootprint::CandidateSuffix,
+            ]
+                => $this->removeUninstallScript(),
             default => metricsExporterResult(),
         };
     }

@@ -143,15 +143,28 @@ sudo /usr/local/sbin/orbit-metrics-uninstall --dry-run
 ```
 
 `--force` skips the confirmation prompt, for non-interactive use. `--dry-run`
-reports what would be removed and changes nothing.
+changes nothing.
+
+Both the prompt and `--dry-run` name every resource, one per line, before
+anything happens. The plan is computed once and the removal acts only on it,
+so the operator confirms the list that runs.
 
 The script proves ownership with the same evidence the remote path uses: the
-`com.orbit.managed=metrics` container and volume labels, the
-`/etc/orbit/metrics/.orbit-owner` marker reading `metrics`, the drop-in's
-`# Managed by Orbit: metrics` first line, and the Orbit-namespaced UFW
-comments `orbit:metrics-node-exporter` and `orbit:metrics-grafana-upstream`,
-matched at the end of the line. Anything without a proof is reported, never
-removed, and the script exits `3`.
+`com.orbit.managed=metrics` container and volume labels, re-read immediately
+before each removal; the `/etc/orbit/metrics/.orbit-owner` marker reading
+`metrics`; and the drop-in's `# Managed by Orbit: metrics` first line.
+
+A firewall rule needs more than its comment. The script requires exactly one
+rule carrying the Orbit comment, matched at the end of the line so
+`orbit:metrics-node-exporter-v2` is never claimed, and that rule must be the
+rule Orbit writes: `allow in on orbit`, `tcp`, destination this node's
+WireGuard address, port `9100` or `3000`, and a single IPv4 source. Anything
+else is drift, which the Gateway also refuses. A hand-edited rule that kept
+the comment is therefore reported, not deleted. The destination check needs
+the `orbit` interface to hold an IPv4 address; without it the rules are
+reported rather than removed.
+
+Anything without a proof is reported, never removed, and the script exits `3`.
 
 The script discovers its own scope rather than being told. An exporter-only
 node loses the drop-in, the exporter service, and the 9100 UFW rule. A Metrics
@@ -161,15 +174,16 @@ and the Grafana upstream 3000 UFW rule.
 
 | Exit code | Meaning |
 | --- | --- |
-| `0` | Clean: nothing Orbit owns is left, or everything owned was removed. |
+| `0` | Clean: nothing Orbit owns is left, or everything owned was removed. A node with no Metrics footprint exits `0` even when UFW is inactive or absent. |
 | `2` | Usage error, or the operator declined the confirmation prompt. |
 | `3` | Something was refused or survived removal. |
 | `4` | Not running as root. |
 
 The script leaves some things in place on purpose. It never removes the
 `prometheus-node-exporter` package: Orbit installs it but cannot prove it owns
-it, and the remote removal path does not remove it either, so the script
-prints the exact `apt-get purge` command instead. It leaves Docker and any
+it, and the remote removal path does not remove it either. The cleanup stops
+and disables the service and removes Orbit's drop-in, so the package is left
+inert, and the script prints the exact `apt-get purge` command instead. It leaves Docker and any
 container Orbit did not label. It leaves itself in place, so the cleanup stays
 re-runnable and verifiable.
 

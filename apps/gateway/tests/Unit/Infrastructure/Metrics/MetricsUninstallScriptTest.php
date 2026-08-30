@@ -94,6 +94,62 @@ it('checks the root guard before acting on --dry-run', function (): void {
     expect($result->exitCode)->toBe(4)->and($result->stdout)->toBe('');
 });
 
+it('never pipes ufw output into another command', function (): void {
+    $rendered = metricsUninstallScriptRendered();
+
+    $codeLines = array_values(array_filter(
+        explode("\n", $rendered),
+        static fn (string $line): bool => preg_match('/^\s*#/', $line) !== 1,
+    ));
+
+    $piped = array_values(array_filter(
+        $codeLines,
+        static fn (string $line): bool => preg_match('/\bufw\b.*[^|]\|[^|]/', $line) === 1,
+    ));
+
+    expect($piped)->toBe([]);
+});
+
+it('binds the exporter port the firewall shape proof compares', function (): void {
+    expect(metricsUninstallScriptRendered())
+        ->toContain("readonly EXPORTER_PORT='".MetricsFootprint::ExporterPort."'");
+});
+
+it('binds the publication port the firewall shape proof compares', function (): void {
+    expect(metricsUninstallScriptRendered())
+        ->toContain("readonly GRAFANA_PORT='".MetricsFootprint::PublicationPort."'");
+});
+
+it('binds the WireGuard interface the firewall shape proof compares', function (): void {
+    expect(metricsUninstallScriptRendered())
+        ->toContain("readonly INTERFACE='".MetricsFootprint::WireGuardInterface."'");
+});
+
+it('proves a firewall rule by its shape, not only by its comment', function (): void {
+    expect(metricsUninstallScriptRendered())
+        ->toContain('local expected="${node_address} ${port}/tcp on ${INTERFACE}"');
+});
+
+it('requires a single IPv4 source, so an Anywhere rule is drift', function (): void {
+    expect(metricsUninstallScriptRendered())
+        ->toContain('[[ "${source}" =~ ^[0-9]{1,3}(\\.[0-9]{1,3}){3}$ ]] || return 1');
+});
+
+it('previews resources under a "Would remove:" heading on --dry-run', function (): void {
+    expect(metricsUninstallScriptRendered())->toContain('Would remove:');
+});
+
+it('names resources under a "Will remove:" heading when actually removing', function (): void {
+    expect(metricsUninstallScriptRendered())->toContain('Will remove:');
+});
+
+it('promises in --help exactly what --force and --dry-run do', function (): void {
+    $result = metricsUninstallScriptRun('--help');
+
+    expect($result->stdout)->toContain('do not ask for confirmation');
+    expect($result->stdout)->toContain('report what would be removed and change nothing');
+});
+
 function metricsUninstallScriptRendered(): string
 {
     static $rendered = null;

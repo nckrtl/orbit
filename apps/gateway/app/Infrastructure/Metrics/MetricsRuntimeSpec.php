@@ -146,7 +146,7 @@ final readonly class MetricsRuntimeSpec
                 'GF_SECURITY_ADMIN_USER' => 'admin',
                 'GF_SECURITY_ADMIN_PASSWORD__FILE' => '/run/orbit/grafana-admin-password',
                 'GF_SERVER_HTTP_ADDR' => $wireguardAddress,
-                'GF_SERVER_HTTP_PORT' => '3000',
+                'GF_SERVER_HTTP_PORT' => MetricsFootprint::PublicationPort,
             ],
             'health_command' => [
                 'CMD',
@@ -154,7 +154,7 @@ final readonly class MetricsRuntimeSpec
                 '--no-verbose',
                 '--tries=1',
                 '--spider',
-                "http://{$wireguardAddress}:3000/api/health",
+                'http://'.$wireguardAddress.':'.MetricsFootprint::PublicationPort.'/api/health',
             ],
         ];
     }

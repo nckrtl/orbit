@@ -10,12 +10,17 @@ readonly DECOY_RULE=orbit:metrics-grafana-upstream-v2
 address=$(this_address)
 docker container create --name "$DECOY_CONTAINER" --label com.orbit.managed=other \
   prom/prometheus:v3.5.0 >/dev/null
-docker volume create "$DECOY_VOLUME" >/dev/null
+docker volume create --label com.orbit.managed=other "$DECOY_VOLUME" >/dev/null
 sudo ufw allow in on orbit proto tcp to "$address" port 3001 comment "$DECOY_RULE" >/dev/null
 
 run_escape --force
 [[ "$ESCAPE_STATUS" -eq 0 ]] || fail "escape exited $ESCAPE_STATUS: $ESCAPE_OUTPUT"
 assert_reports 'metrics-node'
+assert_reports 'Will remove:'
+assert_reports '  - container orbit-metrics-prometheus'
+assert_reports '  - volume orbit-metrics-grafana-data, and the data in it'
+assert_reports '  - /etc/orbit/metrics/.orbit-owner'
+assert_reports 'commented orbit:metrics-grafana-upstream'
 
 for name in orbit-metrics-prometheus orbit-metrics-grafana; do
   ! container_exists "$name" || fail "container $name survived the escape"
@@ -33,7 +38,7 @@ sudo test ! -e /etc/systemd/system/prometheus-node-exporter.service.d/orbit.conf
 sudo test -x "$ESCAPE" || fail "the escape removed itself"
 
 container_exists "$DECOY_CONTAINER" || fail "the escape removed a container it does not own"
-volume_exists "$DECOY_VOLUME" || fail "the escape removed a volume it does not own"
+volume_exists "$DECOY_VOLUME" || fail "the escape removed a volume whose managed label reads another value"
 firewall_rule_exists "$DECOY_RULE" || fail "the escape removed a firewall rule it does not own"
 package_installed prometheus-node-exporter || fail "the escape removed a package it cannot prove it owns"
 
