@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Data\GatewayProfile;
 use App\Exceptions\GatewayConfigException;
 use App\Repositories\GatewayConfigRepository;
 use Illuminate\Filesystem\Filesystem;
@@ -122,6 +123,41 @@ it('rejects a gateway configuration readable by other users', function (): void 
 
     expect($repository->active(...))
         ->toThrow(GatewayConfigException::class, 'Orbit gateway configuration is not private.');
+});
+
+it('preserves narrow existing traversal permissions when writing the gateway configuration', function (): void {
+    mkdir(directory: $this->configDirectory, permissions: 0o710, recursive: true);
+    chmod(filename: $this->configDirectory, permissions: 0o710);
+
+    $repository = new GatewayConfigRepository($this->configPath);
+    $repository->add(new GatewayProfile('test', 'https://10.70.0.1', null));
+
+    clearstatcache();
+    expect(fileperms($this->configDirectory) & 0o777)
+        ->toBe(0o710)
+        ->and(fileperms($this->configPath) & 0o777)
+        ->toBe(0o600);
+});
+
+it('creates a private gateway configuration directory and file', function (): void {
+    $repository = new GatewayConfigRepository($this->configPath);
+    $repository->add(new GatewayProfile('test', 'https://10.70.0.1', null));
+
+    clearstatcache();
+    expect(fileperms($this->configDirectory) & 0o777)
+        ->toBe(0o700)
+        ->and(fileperms($this->configPath) & 0o777)
+        ->toBe(0o600);
+});
+
+it('rejects an existing gateway configuration directory readable by other users', function (): void {
+    mkdir(directory: $this->configDirectory, permissions: 0o755, recursive: true);
+    chmod(filename: $this->configDirectory, permissions: 0o755);
+
+    $repository = new GatewayConfigRepository($this->configPath);
+
+    expect(fn () => $repository->add(new GatewayProfile('test', 'https://10.70.0.1', null)))
+        ->toThrow(GatewayConfigException::class, 'Orbit gateway configuration directory is not private.');
 });
 
 function write_gateway_security_config(
