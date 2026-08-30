@@ -228,6 +228,56 @@ function convergence_app_fixture(string $scriptName): array
     ];
 }
 
+/**
+ * Runs the `https.gateway-internal` probe against a fake resolver that drops
+ * every query until it has been asked $blockedTries times.
+ *
+ * @return array{exit:int,output:string,dig_calls:string,sleeps:list<string>,curl:?string}
+ */
+function vpn_dns_probe_run(int $blockedTries): array
+{
+    $root = temporaryPath('orbit-verifier-dns-', 4);
+    mkdir("{$root}/bin", 0o700, true);
+    file_put_contents("{$root}/bin/dig", <<<BASH
+        #!/usr/bin/env bash
+        count=\$(( \$(cat '{$root}/dig-calls' 2>/dev/null || printf 0) + 1 ))
+        printf '%s' "\$count" > '{$root}/dig-calls'
+        if (( count <= {$blockedTries} )); then
+          printf ';; connection timed out; no servers could be reached\n' >&2
+          exit 9
+        fi
+        printf '10.44.0.1\n'
+        BASH);
+    file_put_contents("{$root}/bin/sleep", "#!/usr/bin/env bash\nprintf '%s\\n' \"\$1\" >> '{$root}/sleeps'\n");
+    file_put_contents("{$root}/bin/curl", "#!/usr/bin/env bash\nprintf '%s\\n' \"\$*\" > '{$root}/curl'\n");
+    foreach (['dig', 'sleep', 'curl'] as $command) {
+        chmod("{$root}/bin/{$command}", 0o700);
+    }
+
+    $process = new Process([
+        'bash',
+        dirname(__DIR__, 3).'/resources/guest/verify-topology.sh',
+        'https.gateway-internal',
+        'readiness',
+        str_repeat('a', 40),
+        'orbit-e2e-standby-app-dev',
+    ], env: ['PATH' => "{$root}/bin:".getenv('PATH')]);
+
+    try {
+        $exit = $process->run();
+
+        return [
+            'exit' => $exit,
+            'output' => $process->getOutput(),
+            'dig_calls' => (string) file_get_contents("{$root}/dig-calls"),
+            'sleeps' => file_exists("{$root}/sleeps") ? file("{$root}/sleeps", FILE_IGNORE_NEW_LINES) : [],
+            'curl' => file_exists("{$root}/curl") ? (string) file_get_contents("{$root}/curl") : null,
+        ];
+    } finally {
+        new Illuminate\Filesystem\Filesystem()->deleteDirectory($root);
+    }
+}
+
 describe('Gateway host prerequisite convergence', function () {
     it('skips apt when all Gateway prerequisites are installed', function () {
         $root = gateway_prerequisite_fixture();
@@ -774,6 +824,50 @@ describe('convergence guest scripts', function () {
             ->toBeFalse();
     });
 
+    it('retries the VPN DNS probe within the bound and records the tries', function (
+        int $blockedTries,
+        int $expectedTries,
+    ) {
+        $run = vpn_dns_probe_run($blockedTries);
+        $evidence = json_decode($run['output'], true, 16, JSON_THROW_ON_ERROR);
+
+        expect($run['exit'])
+            ->toBe(0)
+            ->and($evidence)
+            ->toMatchArray([
+                'probe' => 'https.gateway-internal',
+                'passed' => true,
+                'expected' => 'https://gateway.orbit/up:vpn-dns+reachable,tries<=3',
+                'observed' => "https://gateway.orbit/up:vpn-dns+reachable,tries={$expectedTries}",
+            ])
+            ->and($run['dig_calls'])
+            ->toBe((string) $expectedTries)
+            ->and($run['sleeps'])
+            ->toBe(array_fill(0, $expectedTries - 1, '2'))
+            ->and($run['curl'])
+            ->toContain('--resolve gateway.orbit:443:10.44.0.1 https://gateway.orbit/up');
+    })->with([
+        'resolver answers at once' => [0, 1],
+        'resolver blocked for the first try' => [1, 2],
+        'resolver blocked until the last try' => [2, 3],
+    ]);
+
+    it('fails the VPN DNS probe with the existing evidence shape when the resolver stays blocked for the full bound', function () {
+        $run = vpn_dns_probe_run(3);
+
+        expect($run['exit'])
+            ->not
+            ->toBe(0)
+            ->and(trim($run['output']))
+            ->toBe('')
+            ->and($run['dig_calls'])
+            ->toBe('3')
+            ->and($run['sleeps'])
+            ->toBe(['2', '2'])
+            ->and($run['curl'])
+            ->toBeNull();
+    });
+
     it('proves the exact control-plane role assignments', function () {
         $root = temporaryPath('orbit-verifier-roles-', 4);
         mkdir("{$root}/bin", 0o700, true);
@@ -863,6 +957,9 @@ describe('convergence guest scripts', function () {
             'UserKnownHostsFile="$known_hosts"',
             'echo $address;',
             'dig +time=3 +tries=1 +short gateway.orbit @10.44.0.1',
+            'while ((dns_tries < 3)); do',
+            'vpn-dns+reachable,tries<=3',
+            'vpn-dns+reachable,tries=$dns_tries',
             '--resolve "gateway.orbit:443:$resolved" https://gateway.orbit/up',
             'repo_git git -C "$source_root" rev-parse HEAD',
             'mountpoint -q -- "$source_root"',
