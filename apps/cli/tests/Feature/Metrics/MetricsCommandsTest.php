@@ -267,7 +267,6 @@ it('sends the force and purge disable payload', function (): void {
             'node_id' => 7,
             'status' => 'removed',
             'request_id' => '77777777-7777-4777-8777-777777777777',
-            'publication' => null,
         ], JSON_THROW_ON_ERROR))
         ->assertExitCode(0);
 
@@ -547,7 +546,6 @@ it('enables Metrics on a node given by name', function (): void {
             'node_id' => 2,
             'status' => 'active',
             'request_id' => metrics_cli_request_id(),
-            'publication' => null,
         ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))
         ->assertSuccessful();
 
@@ -612,7 +610,6 @@ it('sends the selected node through each exporter request', function (
             'node_id' => 7,
             'status' => 'active',
             'request_id' => metrics_cli_request_id(),
-            'publication' => null,
         ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))
         ->assertSuccessful();
 

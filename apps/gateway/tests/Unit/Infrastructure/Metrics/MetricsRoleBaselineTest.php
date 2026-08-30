@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 use App\Domain\Metrics\MetricsExporterLifecycle;
 use App\Domain\Metrics\MetricsGatewayResolver;
+use App\Domain\Metrics\MetricsPublicationCleanup;
 use App\Domain\Metrics\MetricsPublicationManager;
+use App\Domain\Metrics\MetricsPublicationReport;
 use App\Domain\Metrics\MetricsRuntimeLifecycle;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
@@ -107,32 +109,58 @@ it('fails closed when convergence rollback does not complete', function (): void
 it('removes publication, exporters, and runtime in that order', function (): void {
     [$metrics, $assignment] = metricsBaselineTopology();
     $events = [];
-    $baseline = metricsBaseline($events);
+    $report = new MetricsPublicationReport;
+    $baseline = metricsBaseline($events, report: $report);
 
     $baseline->remove($metrics, $assignment, true);
 
-    expect($events)->toBe([
-        'publication:remove',
-        'exporters:remove',
-        'runtime:remove:purge',
-    ]);
+    expect($events)
+        ->toBe([
+            'publication:remove',
+            'exporters:remove',
+            'runtime:remove:purge',
+        ])
+        ->and($report->take())
+        ->toBe(MetricsPublicationCleanup::Cleaned);
 });
 
-it('removes node state and abandons the publication when no single Gateway is active', function (
+it('removes node state before abandoning the publication when no single Gateway is active', function (
     int $gatewayCount,
 ): void {
     [$metrics, $assignment] = metricsBaselineTopology($gatewayCount);
     $events = [];
-    $baseline = metricsBaseline($events);
+    $report = new MetricsPublicationReport;
+    $baseline = metricsBaseline($events, report: $report);
 
     $baseline->remove($metrics, $assignment, false);
 
-    expect($events)->toBe([
-        'publication:abandon',
-        'exporters:remove',
-        'runtime:remove',
-    ]);
+    expect($events)
+        ->toBe([
+            'exporters:remove',
+            'runtime:remove',
+            'publication:abandon',
+        ])
+        ->and($report->take())
+        ->toBe(MetricsPublicationCleanup::Uncleaned);
 })->with([0, 2]);
+
+it('still removes the role and reports un-cleaned when abandoning the publication fails', function (): void {
+    [$metrics, $assignment] = metricsBaselineTopology(gatewayCount: 0);
+    $events = [];
+    $report = new MetricsPublicationReport;
+    $baseline = metricsBaseline($events, failure: 'publication:abandon', report: $report);
+
+    $baseline->remove($metrics, $assignment, false);
+
+    expect($events)
+        ->toBe([
+            'exporters:remove',
+            'runtime:remove',
+            'publication:abandon',
+        ])
+        ->and($report->take())
+        ->toBe(MetricsPublicationCleanup::Uncleaned);
+});
 
 /** @return array{Node, NodeRole} */
 function metricsBaselineTopology(int $gatewayCount = 1, bool $metricsIsGateway = false): array
@@ -187,12 +215,14 @@ function metricsBaseline(
     array &$events,
     ?string $failure = null,
     ?string $rollbackFailure = null,
+    ?MetricsPublicationReport $report = null,
 ): MetricsRoleBaseline {
     return new MetricsRoleBaseline(
         runtime: new MetricsBaselineRuntime($events, $failure, $rollbackFailure),
         exporters: new MetricsBaselineExporters($events, $failure, $rollbackFailure),
         publication: new MetricsBaselinePublication($events, $failure, $rollbackFailure),
         gateways: new MetricsGatewayResolver,
+        report: $report ?? new MetricsPublicationReport,
     );
 }
 

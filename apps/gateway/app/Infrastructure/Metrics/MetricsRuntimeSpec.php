@@ -11,6 +11,15 @@ final readonly class MetricsRuntimeSpec
 {
     public const string PrometheusImage = 'prom/prometheus:v3.5.0';
 
+    /**
+     * Pinned Grafana image.
+     *
+     * A version bump must re-run the NCK-109 dashboard proof. The provisioned
+     * dashboard is deliberately outside the Grafana configuration hash, and
+     * that rests on the file provider re-reading the bind mount, which is
+     * third-party behaviour verified once, on this version. Grafana 12.1.1
+     * needs the explicit `updateIntervalSeconds` to do it at all.
+     */
     public const string GrafanaImage = 'grafana/grafana:12.1.1';
 
     /**

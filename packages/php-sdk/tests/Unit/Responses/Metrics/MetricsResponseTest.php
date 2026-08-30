@@ -256,6 +256,23 @@ it('accepts a cleaned mutation publication', function (): void {
     expect($response->publication)->toBe('cleaned');
 });
 
+it('omits an absent publication from the array form and keeps a present one', function (): void {
+    $absent = MetricsMutationResponse::fromGatewayData(
+        ['node_id' => 4, 'status' => 'active'],
+        'req-omit',
+    );
+    $present = MetricsMutationResponse::fromGatewayData(
+        ['node_id' => 4, 'status' => 'removed', 'publication' => 'uncleaned'],
+        'req-omit',
+    );
+
+    expect($absent->toArray())
+        ->not
+        ->toHaveKey('publication')
+        ->and($present->toArray()['publication'])
+        ->toBe('uncleaned');
+});
+
 it('accepts an uncleaned mutation publication', function (): void {
     $response = MetricsMutationResponse::fromGatewayData([
         'node_id' => 3,

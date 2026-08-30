@@ -42,6 +42,7 @@ use App\Domain\Metrics\MetricsCredentialRuntime;
 use App\Domain\Metrics\MetricsExporterLifecycle;
 use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Metrics\MetricsPublicationManager as MetricsPublicationManagerContract;
+use App\Domain\Metrics\MetricsPublicationReport;
 use App\Domain\Metrics\MetricsRoleManager;
 use App\Domain\Metrics\MetricsRuntimeLifecycle;
 use App\Domain\Metrics\MetricsStatusReader;
@@ -204,6 +205,9 @@ final class AppServiceProvider extends ServiceProvider
         $this->app->singleton(ManagedUserAccountResolver::class, SshManagedUserAccountResolver::class);
         $this->app->scoped(NodeProvisioningLock::class, NativeNodeProvisioningLock::class);
         $this->app->scoped(ToolManagerScopeLock::class, NativeToolManagerScopeLock::class);
+        // Shared for one request so the Metrics baseline's removal outcome
+        // reaches the disable response instead of being inferred a second time.
+        $this->app->scoped(MetricsPublicationReport::class);
 
         if (class_exists(GuidelineComposer::class)) {
             $this->app->singleton(GuidelineComposer::class, GatewayGuidelineComposer::class);

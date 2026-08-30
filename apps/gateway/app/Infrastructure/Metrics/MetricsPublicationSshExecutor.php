@@ -259,16 +259,25 @@ final readonly class MetricsPublicationSshExecutor
         return $result;
     }
 
-    /** @return list<string> */
+    /**
+     * Numbers the UFW rules whose comment is exactly Orbit's Grafana marker.
+     *
+     * The comment ends the line, so the match is anchored there. A prefix
+     * match would also claim a future neighbour such as
+     * `orbit:metrics-grafana-upstream-v2` and delete it silently.
+     *
+     * @return list<string>
+     */
     private function ruleNumbers(string $status): array
     {
         $numbers = [];
+        $comment = '# '.self::FirewallComment;
 
         foreach (explode("\n", $status) as $line) {
             $matches = [];
 
             if (
-                str_contains($line, '# '.self::FirewallComment)
+                str_ends_with(rtrim($line), $comment)
                 && preg_match('/^\s*\[\s*(\d+)\]/', $line, $matches) === 1
             ) {
                 $numbers[] = $matches[1];

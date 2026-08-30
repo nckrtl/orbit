@@ -117,12 +117,24 @@ Purge also removes proven Metrics volumes and active or pending credentials.
 It never removes shared packages, Docker, unrelated containers, user files, or
 exporter preferences. Ambiguous ownership fails closed.
 
-Disable does not need a Gateway. Publication belongs to the one active Gateway,
-so with none, or with more than one, Orbit removes every node-side effect and
-leaves the Gateway side alone. The response reports
-`"publication": "uncleaned"`, and the CLI prints a warning. The `metrics.orbit`
-route, its certificate, and its DNS record stay on the Gateway host until an
-operator removes them. A normal disable reports `"publication": "cleaned"`.
+A normal disable reports `"publication": "cleaned"`.
+
+### Disable with no single active Gateway
+
+**Disable is not reachable in this state today.** Every Metrics route
+authorizes against the one active Gateway: `MetricsController` carries a
+class-level `RequiresNodeAccess(ServingNode::Gateway)`, and
+`ServingNodeResolver::roleMutation()` sends `node:role:remove metrics` to the
+same resolver. With no active Gateway, or with more than one, both refuse
+before the request reaches the role manager, and `orbit metrics:disable
+--force` fails with `node_access.required` from any caller, including the
+Gateway node itself. NCK-116 decides how that is resolved.
+
+The role removal itself no longer requires a Gateway. Once a caller can reach
+it, Orbit removes the Metrics node's runtime, exporters and Grafana upstream
+firewall rule, then reports `"publication": "uncleaned"`, and the CLI prints a
+warning. The `metrics.orbit` route, its certificate, and its DNS record stay on
+the Gateway host until an operator removes them.
 
 ## API surface
 

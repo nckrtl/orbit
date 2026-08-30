@@ -23,14 +23,14 @@ final readonly class MetricsMutationResponse
         #[SensitiveParameter]
         string $requestId,
     ): self {
+        $publication = $data['publication'] ?? null;
+
         if (
             ! is_int($data['node_id'] ?? null)
             || $data['node_id'] < 1
             || ! is_string($data['status'] ?? null)
             || ! in_array($data['status'], ['active', 'removed', 'enabled', 'disabled'], strict: true)
-            || ! (($data['publication'] ?? null) === null
-            || is_string($data['publication'])
-            && in_array($data['publication'], ['cleaned', 'uncleaned'], strict: true))
+            || ! self::isPublication($publication)
         ) {
             throw new GatewayApiException(
                 'Gateway response contains invalid metrics mutation data.',
@@ -38,17 +38,42 @@ final readonly class MetricsMutationResponse
             );
         }
 
-        return new self($data['node_id'], $data['status'], $requestId, $data['publication'] ?? null);
+        return new self(
+            $data['node_id'],
+            $data['status'],
+            $requestId,
+            is_string($publication) ? $publication : null,
+        );
     }
 
-    /** @return array{node_id:int,status:string,request_id:string,publication:?string} */
+    /**
+     * Only a disable carries a publication outcome, so the key is absent
+     * rather than null on every other mutation.
+     *
+     * @return array{node_id:int,status:string,request_id:string,publication?:string}
+     */
     public function toArray(): array
     {
-        return [
+        $data = [
             'node_id' => $this->nodeId,
             'status' => $this->status,
             'request_id' => $this->requestId,
-            'publication' => $this->publication,
         ];
+
+        if ($this->publication === null) {
+            return $data;
+        }
+
+        return [...$data, 'publication' => $this->publication];
+    }
+
+    /** A publication outcome is absent, or one of the two known strings. */
+    private static function isPublication(mixed $value): bool
+    {
+        if ($value === null) {
+            return true;
+        }
+
+        return is_string($value) && in_array($value, ['cleaned', 'uncleaned'], strict: true);
     }
 }

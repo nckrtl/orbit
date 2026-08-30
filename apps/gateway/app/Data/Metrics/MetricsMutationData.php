@@ -14,13 +14,23 @@ final readonly class MetricsMutationData
         public ?MetricsPublicationCleanup $publication = null,
     ) {}
 
-    /** @return array{node_id: int, status: string, publication: ?string} */
+    /**
+     * Only a disable carries a publication outcome, so the key is absent
+     * rather than null on every other mutation.
+     *
+     * @return array{node_id: int, status: string, publication?: string}
+     */
     public function toArray(): array
     {
-        return [
+        $data = [
             'node_id' => $this->nodeId,
             'status' => $this->status,
-            'publication' => $this->publication?->value,
         ];
+
+        if (! $this->publication instanceof MetricsPublicationCleanup) {
+            return $data;
+        }
+
+        return [...$data, 'publication' => $this->publication->value];
     }
 }

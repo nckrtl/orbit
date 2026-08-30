@@ -130,6 +130,17 @@ it('fails closed when an abandoned Grafana firewall rule survives removal', func
     }
 });
 
+it('leaves a neighbouring rule whose comment only starts with the Orbit marker', function (): void {
+    $ssh = new MetricsPublicationCapturingSshExecutor([
+        metricsPublicationResult(stdout: metricsPublicationNeighbourFirewallStatus()),
+    ]);
+    $publication = metricsPublicationSshExecutor($ssh);
+
+    $publication->abandon(metricsPublicationNode('metrics', '10.44.0.3'));
+
+    expect($ssh->commands)->toHaveCount(1);
+});
+
 function metricsPublicationSshExecutor(
     MetricsPublicationCapturingSshExecutor $ssh,
 ): MetricsPublicationSshExecutor {
@@ -201,4 +212,13 @@ final readonly class MetricsPublicationKnownHostsStoreFake implements KnownHosts
     }
 
     public function put(string $host, int $port, HostKey $key): void {}
+}
+
+function metricsPublicationNeighbourFirewallStatus(): string
+{
+    return <<<'STATUS'
+        Status: active
+
+        [ 9] 10.44.0.3 3000/tcp on orbit ALLOW IN 10.44.0.1 # orbit:metrics-grafana-upstream-v2
+        STATUS;
 }

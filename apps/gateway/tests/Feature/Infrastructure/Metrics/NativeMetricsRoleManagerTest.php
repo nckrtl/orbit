@@ -2,14 +2,16 @@
 
 declare(strict_types=1);
 
+use App\Domain\Metrics\MetricsExporterLifecycle;
+use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Metrics\MetricsPublicationCleanup;
+use App\Domain\Metrics\MetricsPublicationManager;
+use App\Domain\Metrics\MetricsRuntimeLifecycle;
 use App\Domain\Nodes\RoleAssignmentException;
-use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\Metrics\NativeMetricsRoleManager;
 use App\Models\Node;
-use App\Models\NodeRole;
 
 it('fails closed before removal when Metrics assignments drift', function (): void {
     foreach (['metrics-a', 'metrics-b'] as $name) {
@@ -88,11 +90,38 @@ function metricsRoleManagerNode(string $name, string $address, RoleName $role = 
     return $node;
 }
 
+it('omits the publication key from mutations that do not touch it', function (): void {
+    metricsRoleManagerNode('gateway', '10.44.0.1', RoleName::Gateway);
+    $node = metricsRoleManagerNode('worker', '10.44.0.4', RoleName::AppProd);
+    metricsRoleManagerStubBaselines();
+
+    $result = app(NativeMetricsRoleManager::class)->enableExporter($node->id);
+
+    expect($result->publication)
+        ->toBeNull()
+        ->and($result->toArray())
+        ->not->toHaveKey('publication');
+});
+
+/**
+ * Stubs the Metrics baseline's remote collaborators, not the baseline.
+ *
+ * The disable response reports what the baseline recorded, so the real
+ * MetricsRoleBaseline has to run for these tests to prove anything.
+ */
 function metricsRoleManagerStubBaselines(): void
 {
-    app()->instance(RoleBaselineConverger::class, new class implements RoleBaselineConverger {
-        public function converge(Node $node, NodeRole $assignment): void {}
-
-        public function remove(Node $node, NodeRole $assignment, bool $purgeData): void {}
-    });
+    app()->instance(
+        MetricsRuntimeLifecycle::class,
+        Mockery::mock(MetricsRuntimeLifecycle::class)->shouldIgnoreMissing(),
+    );
+    app()->instance(
+        MetricsExporterLifecycle::class,
+        Mockery::mock(MetricsExporterLifecycle::class)->shouldIgnoreMissing(),
+    );
+    app()->instance(
+        MetricsPublicationManager::class,
+        Mockery::mock(MetricsPublicationManager::class)->shouldIgnoreMissing(),
+    );
+    app()->instance(MetricsFleetReconciler::class, Mockery::mock(MetricsFleetReconciler::class)->shouldIgnoreMissing());
 }

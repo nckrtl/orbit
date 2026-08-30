@@ -6,7 +6,9 @@ namespace App\Infrastructure\Nodes\Roles;
 
 use App\Domain\Metrics\MetricsExporterLifecycle;
 use App\Domain\Metrics\MetricsGatewayResolver;
+use App\Domain\Metrics\MetricsPublicationCleanup;
 use App\Domain\Metrics\MetricsPublicationManager;
+use App\Domain\Metrics\MetricsPublicationReport;
 use App\Domain\Metrics\MetricsRuntimeLifecycle;
 use App\Domain\Nodes\RoleBaseline;
 use App\Domain\Shared\ResourceOperationException;
@@ -20,6 +22,7 @@ final readonly class MetricsRoleBaseline implements RoleBaseline
         private MetricsExporterLifecycle $exporters,
         private MetricsPublicationManager $publication,
         private MetricsGatewayResolver $gateways,
+        private MetricsPublicationReport $report,
     ) {}
 
     public function converge(Node $node, NodeRole $assignment): void
@@ -71,9 +74,14 @@ final readonly class MetricsRoleBaseline implements RoleBaseline
      * Removes the role, degrading when no single active Gateway is left.
      *
      * Demanding a Gateway here made the role unremovable exactly when the
-     * fleet had lost the Gateway that publishes it. The Metrics node's own
-     * runtime, exporters and firewall rules always come down; only the
-     * Gateway-side publication is left behind, and the caller reports it.
+     * fleet had lost the Gateway that publishes it.
+     *
+     * In the degraded branch the node's own state comes down first. The
+     * Gateway-side publication is already lost either way, and abandoning the
+     * firewall rule needs a live, single-ruled UFW on the Metrics node; a node
+     * degraded enough to fail that would otherwise re-create the stuck role
+     * this path exists to remove. A failed abandon is therefore folded into the
+     * same un-cleaned report rather than aborting the removal.
      */
     public function remove(Node $node, NodeRole $assignment, bool $purgeData): void
     {
@@ -81,11 +89,23 @@ final readonly class MetricsRoleBaseline implements RoleBaseline
 
         if ($gateway instanceof Node) {
             $this->publication->remove($gateway, $node);
-        } else {
-            $this->publication->abandon($node);
+            $this->exporters->remove($node, $assignment);
+            $this->runtime->remove($node, $assignment, $purgeData);
+            $this->report->record(MetricsPublicationCleanup::Cleaned);
+
+            return;
         }
 
         $this->exporters->remove($node, $assignment);
         $this->runtime->remove($node, $assignment, $purgeData);
+
+        try {
+            $this->publication->abandon($node);
+        } catch (\Throwable) {
+            // The report below already tells the operator the publication was
+            // not cleaned, which is the whole signal a failure here would add.
+        }
+
+        $this->report->record(MetricsPublicationCleanup::Uncleaned);
     }
 }
