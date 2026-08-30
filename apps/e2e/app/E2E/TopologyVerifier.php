@@ -7,6 +7,7 @@ namespace App\E2E;
 use App\E2E\Value\GuestCommand;
 use App\E2E\Value\GuestCommandResult;
 use App\E2E\Value\SourceState;
+use App\E2E\Value\TopologyEndState;
 use App\E2E\Value\TopologyProfile;
 use App\E2E\Value\TopologyTarget;
 use App\E2E\Value\VerificationMode;
@@ -53,8 +54,53 @@ final readonly class TopologyVerifier
         }
     }
 
-    public function verify(TopologyTarget $target, VerificationMode $mode, SourceState $source): VerificationReport
+    /**
+     * The probes one declared end state runs: every probe of a node it keeps.
+     *
+     * A probe runs on exactly one node, so a node the plan declares gone takes
+     * its own probes with it and nothing else. The two fleet probes still run:
+     * they are told which nodes to expect, so `role.assignments` is what fails
+     * when a node declared absent is still registered, and
+     * `wireguard.reachability` still proves every node that stayed. Only a
+     * declaration that keeps the gateway alone leaves it nothing to reach.
+     *
+     * @return array<string, string> Probe name to the role that runs it.
+     */
+    public static function probesFor(TopologyEndState $endState): array
     {
+        $probes = [];
+        foreach (self::PROBES as $name => $role) {
+            if (! $endState->keeps($role)) {
+                continue;
+            }
+            if ($name === 'wireguard.reachability' && $endState->peers() === []) {
+                continue;
+            }
+            $probes[$name] = $role;
+        }
+
+        return $probes;
+    }
+
+    /**
+     * The probes one declared end state does not run, for the record a
+     * reviewer reads.
+     *
+     * @return list<string>
+     */
+    public static function skippedProbes(TopologyEndState $endState): array
+    {
+        return array_values(array_diff(array_keys(self::PROBES), array_keys(self::probesFor($endState))));
+    }
+
+    public function verify(
+        TopologyTarget $target,
+        VerificationMode $mode,
+        SourceState $source,
+        ?TopologyEndState $endState = null,
+    ): VerificationReport {
+        $declared = $endState ?? TopologyEndState::complete();
+        $probes = self::probesFor($declared);
         $instances = [];
         foreach (TopologyProfile::ROLES as $role) {
             $instances[$role] = $target->instance($role);
@@ -62,7 +108,7 @@ final readonly class TopologyVerifier
         $this->host->assertTopologyNetworkIdentity($instances, $target->network());
 
         $results = [];
-        foreach (self::PROBES as $name => $role) {
+        foreach ($probes as $name => $role) {
             $results[$name] = $this->failedProbe(
                 $name,
                 $target->instance($role),
@@ -70,7 +116,7 @@ final readonly class TopologyVerifier
                 'no evidence received',
             );
         }
-        $pending = self::PROBES;
+        $pending = $probes;
         $deadline = microtime(true) + $this->readinessTimeoutSeconds;
 
         do {
@@ -85,8 +131,11 @@ final readonly class TopologyVerifier
                     $target->instance($role),
                 ];
                 if ($name === 'wireguard.reachability') {
-                    $arguments[] = 'app-dev';
-                    $arguments[] = 'app-prod';
+                    // The registry names the nodes by role; a declared-absent node is not among them.
+                    array_push($arguments, ...$declared->peers());
+                } elseif ($name === 'role.assignments' && $declared->declaresAbsence()) {
+                    // Only a declaration adds the argument, so an undeclared proof runs the probe unchanged.
+                    $arguments[] = implode(',', $declared->nodes);
                 } elseif ($name === 'source.manifest') {
                     $arguments[] = $source->treeHash ?? '-';
                     $arguments[] = base64_encode(
@@ -107,7 +156,7 @@ final readonly class TopologyVerifier
             $probeResults = $this->host->execAll($commands);
             foreach ($pending as $name => $_role) {
                 $result = $probeResults[$name] ?? null;
-                $instance = $target->instance(self::PROBES[$name]);
+                $instance = $target->instance($probes[$name]);
                 if ($result instanceof GuestCommandResult) {
                     $evidence = $this->probe($name, $result, $source->guestSha, $instance);
                     if ($evidence !== null) {

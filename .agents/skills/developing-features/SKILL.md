@@ -89,4 +89,8 @@ Tips for `apps/e2e`:
 
 - Feature branches never touch `apps/e2e` or `bin/e2e-*`.
 - Proof actions are read-only checks unless the plan says `"mutates": true`.
+- A plan that removes a node declares what it ends with, for example
+  `"ends_with": {"nodes": ["gateway", "app-dev"]}`; the probes of the removed
+  node are then skipped and named in the result, and a node declared absent
+  that is still registered fails.
 - One issue per worktree; do not reuse a topology across issues.

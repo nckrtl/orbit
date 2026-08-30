@@ -10,7 +10,9 @@ usage: bin/e2e-live <candidate-sha>
 Runs apps/e2e/tests/Live/TopologyLedLifecycleAcceptanceTest.php (issue ACC-1)
 against real Incus resources from a validation clone: acquire, exec, release,
 prove with proofs/ACC-1.json, promote the proved topology into the clone's
-standby, acquire from that generation, release.
+standby, acquire from that generation, release, and prove once more with
+proofs/ACC-1-ends-with.json, whose declared end state the topology does not
+have, so the run proves a declaration is checked and never taken.
 
 The clone owns its own standby (ORBIT_E2E_STANDBY_NAMESPACE=live:
 orbit-e2e-live-standby-<role> on oe-live-standby), so the promote step never
