@@ -38,6 +38,31 @@ it('publishes the Metrics certificate and Caddy fragment through protected versi
         ->toContain('rollback');
 });
 
+it('reloads Caddy after swapping in a renewed Metrics certificate', function (): void {
+    // The Caddy fragment names fixed paths, so a renewal never changes it and MetricsCaddyPublisher
+    // short-circuits without reloading. Caddy reads `tls` files once at load, so unless the
+    // certificate publisher reloads, Caddy keeps serving the certificate that just expired.
+    $processes = new MetricsLocalPublicationProcessRunner;
+
+    new MetricsCertificatePublisher($processes)->publish(new GatewayCertificatePaths(
+        privateKeyPath: '/var/lib/orbit/ca/metrics.key',
+        certificatePath: '/var/lib/orbit/ca/metrics.pem',
+    ));
+
+    $script = (string) $processes->invocations[0]->input;
+    $swap = strpos($script, 'mv -fT -- "$link" "$current"');
+    $reload = strpos($script, 'systemctl reload-or-restart caddy');
+
+    expect($script)
+        ->toContain('systemctl is-active --quiet caddy')
+        ->and($swap)
+        ->toBeInt()
+        ->and($reload)
+        ->toBeInt()
+        ->toBeGreaterThan($swap)
+        ->toBeLessThan(strpos($script, "printf 'changed\\n'"));
+});
+
 it('removes only Metrics-owned local publication state', function (): void {
     $processes = new MetricsLocalPublicationProcessRunner;
 
