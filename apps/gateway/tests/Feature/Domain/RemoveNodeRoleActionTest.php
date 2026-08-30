@@ -6,12 +6,15 @@ use App\Actions\Nodes\RemoveNodeRoleAction;
 use App\Domain\AppDev\AppDevRuntimeConverger;
 use App\Domain\AppProd\AppProdRuntimeConverger;
 use App\Domain\Instances\CertificateMode;
+use App\Domain\Metrics\ExporterDegradationReason;
+use App\Domain\Nodes\NodeReachabilityProbe;
 use App\Domain\Nodes\NodeRoleDependencyInspector;
 use App\Domain\Nodes\NodeRoleDependencySet;
 use App\Domain\Nodes\NodeRoleDependentCleaner;
 use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\NodeRoleToolIntentGuard;
 use App\Domain\Nodes\NodeRoleValidationException;
+use App\Domain\Nodes\NodeSideResidue;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Processes\ProcessOperationException;
@@ -176,7 +179,7 @@ describe(RemoveNodeRoleAction::class, function (): void {
 
         $removed = $action->execute($node, RoleName::AppDev, force: true);
 
-        expect($removed->summaries)->toBe([
+        expect($removed->dependencies->summaries)->toBe([
             'Composer Tool manager will become unavailable',
             'VP Tool manager will become unavailable',
         ]);
@@ -235,6 +238,8 @@ describe(RemoveNodeRoleAction::class, function (): void {
             app(\App\Domain\Nodes\RoleRegistry::class),
             $guard,
             app(ToolManagerScopeLock::class),
+            new RemovalReachabilityFake(null),
+            new NodeSideResidue,
         );
 
         expect($guard->preview($node, RoleName::AppDev))->toBe([
@@ -302,6 +307,8 @@ describe(RemoveNodeRoleAction::class, function (): void {
             app(\App\Domain\Nodes\RoleRegistry::class),
             app(\App\Domain\Nodes\NodeRoleToolIntentGuard::class),
             app(ToolManagerScopeLock::class),
+            new RemovalReachabilityFake(null),
+            new NodeSideResidue,
         );
 
         $action->execute($node, RoleName::AppDev, force: true);
@@ -366,6 +373,8 @@ describe(RemoveNodeRoleAction::class, function (): void {
             app(\App\Domain\Nodes\RoleRegistry::class),
             app(\App\Domain\Nodes\NodeRoleToolIntentGuard::class),
             app(ToolManagerScopeLock::class),
+            new RemovalReachabilityFake(null),
+            new NodeSideResidue,
         );
 
         $action->execute($node, RoleName::AppDev, force: true);
@@ -417,7 +426,7 @@ describe(RemoveNodeRoleAction::class, function (): void {
 
         $removed = $action->execute($node, RoleName::AppDev, force: true, purgeData: true);
 
-        expect($removed)
+        expect($removed->dependencies)
             ->toBe($dependencies)
             ->and($events)
             ->toBe([
@@ -624,13 +633,17 @@ describe(RemoveNodeRoleAction::class, function (): void {
         $baseline->failure = null;
         $removed = $action->execute($node, RoleName::AppDev, force: true, purgeData: false);
 
-        expect($removed->instanceIds)
+        expect($removed->dependencies->instanceIds)
             ->toBe($dependencies->instanceIds)
-            ->and($removed->workspaceIds)
+            ->and($removed->dependencies->workspaceIds)
             ->toBe($dependencies->workspaceIds)
-            ->and($removed->processIds)
+            ->and($removed->dependencies->processIds)
             ->toBe($dependencies->processIds)
-            ->and($removed->summaries)
+            ->and($removed->degradation)
+            ->toBeNull()
+            ->and($removed->retained)
+            ->toBe([])
+            ->and($removed->dependencies->summaries)
             ->toBe([
                 ...$dependencies->summaries,
                 'VP Tool manager will become unavailable',
@@ -735,13 +748,132 @@ describe(RemoveNodeRoleAction::class, function (): void {
             ->and($failed->error_code)
             ->toBe($expected[1]);
     })->with(['process-runtime', 'workspace-runtime', 'instance-runtime']);
+
+    it('sheds a role from an unreachable node without attempting anything on it', function (): void {
+        [$node, $assignment, $dependencies] = removal_role_fixture(withDependents: true);
+        $inspector = new RemovalInspectorFake($dependencies);
+        $cleaner = new RemovalCleanerFake;
+        $baseline = new RemovalBaselineFake;
+        $probe = new RemovalReachabilityFake(ExporterDegradationReason::Unreachable);
+        $action = removal_action($inspector, $cleaner, $baseline, reachability: $probe);
+
+        $removed = $action->execute($node, RoleName::AppDev, force: true, purgeData: false, offline: true);
+
+        expect($probe->calls)
+            ->toBe(1)
+            ->and($cleaner->calls)
+            ->toBe(0)
+            ->and($baseline->events)
+            ->toBe(['baseline-unreachable:'.DB::transactionLevel()])
+            ->and($removed->degradation)
+            ->toBe(ExporterDegradationReason::Unreachable)
+            ->and($removed->retained)
+            ->toContain('Caddy site configuration and certificates for the app-dev role')
+            ->toContain('Metrics node exporter package, its Orbit systemd drop-in and its firewall rule for port 9100')
+            ->and(NodeRole::query()->whereKey($assignment->id)->exists())
+            ->toBeFalse()
+            ->and(removal_dependency_rows_exist($dependencies))
+            ->toBeFalse();
+    });
+
+    it('keeps a reachable node fail-closed even when the offline claim is made', function (): void {
+        [$node, $assignment, $dependencies] = removal_role_fixture(withDependents: true);
+        $cleaner = new RemovalCleanerFake;
+        $cleaner->failure = new \App\Domain\AppDev\RuntimeConvergenceException(
+            step: 'instance-runtime',
+            errorCode: 'cleanup.instance-runtime_failed',
+            message: 'instance-runtime failed',
+        );
+        $probe = new RemovalReachabilityFake(null);
+        $action = removal_action(
+            new RemovalInspectorFake($dependencies),
+            $cleaner,
+            new RemovalBaselineFake,
+            reachability: $probe,
+        );
+
+        expect(fn () => $action->execute($node, RoleName::AppDev, force: true, purgeData: false, offline: true))
+            ->toThrow(NodeRoleOperationException::class);
+
+        expect($probe->calls)
+            ->toBe(1)
+            ->and($cleaner->calls)
+            ->toBe(1)
+            ->and($assignment->refresh()->status)
+            ->toBe(LifecycleStatus::Failed)
+            ->and($assignment->failed_step)
+            ->toBe('remove:instance-runtime')
+            ->and(removal_dependency_rows_exist($dependencies))
+            ->toBeTrue();
+    });
+
+    it('names the offline flag on a node-side teardown failure', function (): void {
+        [$node, , $dependencies] = removal_role_fixture(withDependents: true);
+        $cleaner = new RemovalCleanerFake;
+        $cleaner->failure = new \App\Domain\AppDev\RuntimeConvergenceException(
+            step: 'instance-runtime',
+            errorCode: 'cleanup.instance-runtime_failed',
+            message: 'instance-runtime failed',
+        );
+        $action = removal_action(new RemovalInspectorFake($dependencies), $cleaner, new RemovalBaselineFake);
+
+        expect(fn () => $action->execute($node, RoleName::AppDev, force: true, purgeData: false))
+            ->toThrow(
+                NodeRoleOperationException::class,
+                "instance-runtime failed Retry with --offline if node [{$node->name}] is unreachable.",
+            );
+    });
+
+    it('still fails closed when the Gateway side cannot be converged for an unreachable node', function (): void {
+        [$node, $assignment, $dependencies] = removal_role_fixture(withDependents: true);
+        $baseline = new RemovalBaselineFake;
+        $baseline->failure = new \RuntimeException('gateway projection failed');
+        $action = removal_action(
+            new RemovalInspectorFake($dependencies),
+            new RemovalCleanerFake,
+            $baseline,
+            reachability: new RemovalReachabilityFake(ExporterDegradationReason::Unreachable),
+        );
+
+        expect(fn () => $action->execute($node, RoleName::AppDev, force: true, purgeData: false, offline: true))
+            ->toThrow(NodeRoleOperationException::class);
+
+        expect($assignment->refresh()->status)
+            ->toBe(LifecycleStatus::Failed)
+            ->and($assignment->failed_step)
+            ->toBe('remove:baseline')
+            ->and(removal_dependency_rows_exist($dependencies))
+            ->toBeTrue();
+    });
+
+    it('never probes reachability without the offline claim', function (): void {
+        [$node, , $dependencies] = removal_role_fixture(withDependents: true);
+        $probe = new RemovalReachabilityFake(ExporterDegradationReason::Unreachable);
+        $action = removal_action(
+            new RemovalInspectorFake($dependencies),
+            new RemovalCleanerFake,
+            new RemovalBaselineFake,
+            reachability: $probe,
+        );
+
+        $removed = $action->execute($node, RoleName::AppDev, force: true, purgeData: false);
+
+        expect($probe->calls)
+            ->toBe(0)
+            ->and($removed->degradation)
+            ->toBeNull()
+            ->and($removed->retained)
+            ->toBe([]);
+    });
 });
 
+/** @mago-expect lint:excessive-parameter-list The fixture mirrors the action's explicit collaborator list. */
 function removal_action(
     NodeRoleDependencyInspector $inspector,
     NodeRoleDependentCleaner $cleaner,
     RoleBaselineConverger $baseline,
     ?NodeRoleToolIntentGuard $toolIntentGuard = null,
+    ?NodeReachabilityProbe $reachability = null,
 ): RemoveNodeRoleAction {
     return new RemoveNodeRoleAction(
         $inspector,
@@ -750,7 +882,26 @@ function removal_action(
         app(\App\Domain\Nodes\RoleRegistry::class),
         $toolIntentGuard ?? app(NodeRoleToolIntentGuard::class),
         app(ToolManagerScopeLock::class),
+        $reachability ?? new RemovalReachabilityFake(null),
+        new NodeSideResidue,
     );
+}
+
+/** @mago-expect lint:single-class-per-file Test-local fakes keep the removal collaborators visible to this suite. */
+final class RemovalReachabilityFake implements NodeReachabilityProbe
+{
+    public int $calls = 0;
+
+    public function __construct(
+        private readonly ?ExporterDegradationReason $reason,
+    ) {}
+
+    public function degradation(Node $node): ?ExporterDegradationReason
+    {
+        $this->calls++;
+
+        return $this->reason;
+    }
 }
 
 /**
@@ -983,6 +1134,16 @@ final class RemovalBaselineFake implements RoleBaselineConverger
     {
         $this->calls++;
         $this->events[] = 'baseline:'.(int) $purgeData.':'.DB::transactionLevel();
+
+        if ($this->failure instanceof Throwable) {
+            throw $this->failure;
+        }
+    }
+
+    public function removeUnreachable(Node $node, NodeRole $assignment): void
+    {
+        $this->calls++;
+        $this->events[] = 'baseline-unreachable:'.DB::transactionLevel();
 
         if ($this->failure instanceof Throwable) {
             throw $this->failure;

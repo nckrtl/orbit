@@ -16,6 +16,7 @@ final class RemoveNodeCommand extends GatewayCommand
     protected $signature = 'node:remove
         {node : Numeric node ID}
         {--force : Skip the destructive confirmation prompt}
+        {--offline : Shed roles and remove a node Orbit cannot reach}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -41,7 +42,11 @@ final class RemoveNodeCommand extends GatewayCommand
             return self::FAILURE;
         }
 
-        $node = $this->send($connector, new RemoveNodeRequest($nodeId), RemovedNodeResponse::class);
+        $node = $this->send(
+            $connector,
+            new RemoveNodeRequest($nodeId, offline: $this->option('offline') === true),
+            RemovedNodeResponse::class,
+        );
 
         if (! $node instanceof RemovedNodeResponse) {
             return self::FAILURE;
@@ -54,6 +59,14 @@ final class RemoveNodeCommand extends GatewayCommand
         }
 
         $this->info("Node [{$node->name}] removed.");
+        NodeOutput::degradationAdvisory(
+            $this,
+            $node->name,
+            $node->degradation,
+            $node->rolesShed,
+            $node->retainedOnNode,
+            $node->followUp,
+        );
         $this->line("Request ID: {$node->requestId}");
 
         return self::SUCCESS;

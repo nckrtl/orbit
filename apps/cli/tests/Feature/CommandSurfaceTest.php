@@ -175,10 +175,13 @@ it('keeps the exact approved arguments options and defaults', function (): void 
                 'json' => false,
             ],
         ],
-        'node:remove' => [['node'], ['force' => false, 'json' => false]],
+        'node:remove' => [['node'], ['force' => false, 'offline' => false, 'json' => false]],
         'node:role:add' => [['node', 'role'], ['converge' => false, 'json' => false]],
         'node:role:list' => [['node'], ['json' => false]],
-        'node:role:remove' => [['node', 'role'], ['force' => false, 'purge-data' => false, 'json' => false]],
+        'node:role:remove' => [
+            ['node', 'role'],
+            ['force' => false, 'purge-data' => false, 'offline' => false, 'json' => false],
+        ],
         'node:show' => [['node'], ['json' => false]],
         'process:add' => [
             ['name'],

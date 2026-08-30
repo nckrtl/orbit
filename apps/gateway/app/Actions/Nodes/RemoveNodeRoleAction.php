@@ -6,12 +6,16 @@ namespace App\Actions\Nodes;
 
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Firewall\FirewallOperationException;
+use App\Domain\Metrics\ExporterDegradationReason;
+use App\Domain\Nodes\NodeReachabilityProbe;
 use App\Domain\Nodes\NodeRoleDependencyInspector;
 use App\Domain\Nodes\NodeRoleDependencySet;
 use App\Domain\Nodes\NodeRoleDependentCleaner;
 use App\Domain\Nodes\NodeRoleOperationException;
+use App\Domain\Nodes\NodeRoleRemovalOutcome;
 use App\Domain\Nodes\NodeRoleToolIntentGuard;
 use App\Domain\Nodes\NodeRoleValidationException;
+use App\Domain\Nodes\NodeSideResidue;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\RoleRegistry;
@@ -42,6 +46,8 @@ final readonly class RemoveNodeRoleAction
         private RoleRegistry $registry,
         private NodeRoleToolIntentGuard $toolIntentGuard,
         private ToolManagerScopeLock $managerScope,
+        private NodeReachabilityProbe $reachability,
+        private NodeSideResidue $residue,
     ) {}
 
     /**
@@ -52,7 +58,8 @@ final readonly class RemoveNodeRoleAction
         RoleName $role,
         bool $force = false,
         bool $purgeData = false,
-    ): NodeRoleDependencySet {
+        bool $offline = false,
+    ): NodeRoleRemovalOutcome {
         $this->guardPolicy($node, $role);
         $this->toolIntentGuard->assertRemovalSafe($node, $role);
         $preview = $this->withRetirementPreview(
@@ -73,23 +80,37 @@ final readonly class RemoveNodeRoleAction
             );
         }
 
+        // `--offline` states a belief about the node, not a licence to ignore
+        // failures. Orbit checks the belief first, and a node that answers
+        // takes the ordinary fail-closed path whether or not the flag was set.
+        $degradation = $offline ? $this->reachability->degradation($node) : null;
+
         if ($this->isAppRole($role)) {
-            return $this->removeAppRole($node, $role, $purgeData);
+            return $this->removeAppRole($node, $role, $purgeData, $degradation);
         }
 
-        return $this->removeClaimedRole($node, $role, $purgeData);
+        return $this->removeClaimedRole($node, $role, $purgeData, $degradation);
     }
 
-    private function removeAppRole(Node $node, RoleName $role, bool $purgeData): NodeRoleDependencySet
-    {
+    private function removeAppRole(
+        Node $node,
+        RoleName $role,
+        bool $purgeData,
+        ?ExporterDegradationReason $degradation,
+    ): NodeRoleRemovalOutcome {
         try {
             return $this->managerScope->run(
                 $node->id,
                 ToolManagerName::Vp,
-                fn (): NodeRoleDependencySet => $this->managerScope->run(
+                fn (): NodeRoleRemovalOutcome => $this->managerScope->run(
                     $node->id,
                     ToolManagerName::Composer,
-                    fn (): NodeRoleDependencySet => $this->removeClaimedRole($node, $role, $purgeData),
+                    fn (): NodeRoleRemovalOutcome => $this->removeClaimedRole(
+                        $node,
+                        $role,
+                        $purgeData,
+                        $degradation,
+                    ),
                 ),
             );
         } catch (ToolManagerScopeLockException $exception) {
@@ -103,20 +124,18 @@ final readonly class RemoveNodeRoleAction
         }
     }
 
-    private function removeClaimedRole(Node $node, RoleName $role, bool $purgeData): NodeRoleDependencySet
-    {
+    private function removeClaimedRole(
+        Node $node,
+        RoleName $role,
+        bool $purgeData,
+        ?ExporterDegradationReason $degradation,
+    ): NodeRoleRemovalOutcome {
         [$assignment, $dependencies] = $this->claim($node, $role);
 
-        try {
-            $this->cleaner->clean($dependencies);
-        } catch (Throwable $exception) {
-            $this->failRemoval($assignment, $this->cleanupFailure($exception));
-        }
-
-        try {
-            $this->baselines->remove($node, $assignment, $purgeData);
-        } catch (Throwable $exception) {
-            $this->failRemoval($assignment, $this->baselineFailure($node, $role, $exception));
+        if ($degradation instanceof ExporterDegradationReason) {
+            $this->abandonNodeSide($node, $role, $assignment);
+        } else {
+            $this->tearDownNodeSide($node, $role, $assignment, $dependencies, $purgeData);
         }
 
         try {
@@ -134,7 +153,74 @@ final readonly class RemoveNodeRoleAction
             $this->failRemoval($assignment, $failure);
         }
 
-        return $dependencies;
+        return new NodeRoleRemovalOutcome(
+            dependencies: $dependencies,
+            degradation: $degradation,
+            retained: $degradation instanceof ExporterDegradationReason
+                ? $this->residue->describe([$role])
+                : [],
+        );
+    }
+
+    /**
+     * The ordinary path: every dependent and every baseline step is torn down
+     * on the node, and any failure leaves the assignment in `Failed`.
+     *
+     * @mago-expect lint:excessive-parameter-list The teardown needs the claimed assignment and its captured dependents.
+     */
+    private function tearDownNodeSide(
+        Node $node,
+        RoleName $role,
+        NodeRole $assignment,
+        NodeRoleDependencySet $dependencies,
+        bool $purgeData,
+    ): void {
+        try {
+            $this->cleaner->clean($dependencies);
+        } catch (Throwable $exception) {
+            $this->failRemoval($assignment, $this->offlineHint($this->cleanupFailure($exception), $node));
+        }
+
+        try {
+            $this->baselines->remove($node, $assignment, $purgeData);
+        } catch (Throwable $exception) {
+            $this->failRemoval(
+                $assignment,
+                $this->offlineHint($this->baselineFailure($node, $role, $exception), $node),
+            );
+        }
+    }
+
+    /**
+     * The unreachable path: nothing is attempted on the node, so no failure is
+     * swallowed. The Gateway-side projection is still converged, and still
+     * fails closed when it cannot be.
+     */
+    private function abandonNodeSide(Node $node, RoleName $role, NodeRole $assignment): void
+    {
+        try {
+            $this->baselines->removeUnreachable($node, $assignment);
+        } catch (Throwable $exception) {
+            $this->failRemoval($assignment, $this->baselineFailure($node, $role, $exception));
+        }
+    }
+
+    /**
+     * Names the flag on a failure the operator may have meant to force.
+     *
+     * The hint is safe to give unconditionally: `--offline` re-checks the node
+     * and falls back to this same path when it answers.
+     */
+    private function offlineHint(NodeRoleOperationException $exception, Node $node): NodeRoleOperationException
+    {
+        return new NodeRoleOperationException(
+            step: $exception->step,
+            errorCode: $exception->errorCode,
+            underlyingErrorCode: $exception->underlyingErrorCode,
+            message: $exception->getMessage()." Retry with --offline if node [{$node->name}] is unreachable.",
+            result: $exception->result,
+            previous: $exception,
+        );
     }
 
     private function isAppRole(RoleName $role): bool

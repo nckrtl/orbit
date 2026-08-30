@@ -26,4 +26,9 @@ final readonly class GatewayRoleBaseline implements RoleBaseline
     {
         throw new NodeRoleValidationException('The gateway role cannot be removed.');
     }
+
+    public function removeUnreachable(Node $node, NodeRole $assignment): never
+    {
+        throw new NodeRoleValidationException('The gateway role cannot be removed.');
+    }
 }

@@ -43,6 +43,15 @@ final readonly class NativeRoleBaselineConverger implements RoleBaselineConverge
         }
     }
 
+    public function removeUnreachable(Node $node, NodeRole $assignment): void
+    {
+        $this->baseline($assignment->role)->removeUnreachable($node, $assignment);
+
+        if ($assignment->role !== RoleName::Metrics) {
+            $this->metricsFleet->reconcile();
+        }
+    }
+
     private function baseline(RoleName $role): RoleBaseline
     {
         return match ($role) {

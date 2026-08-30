@@ -47,6 +47,23 @@ function node_role_removed_gateway_data(): array
     ];
 }
 
+/** @return array<string, mixed> */
+function node_role_removed_degraded_gateway_data(): array
+{
+    return [
+        'node_id' => 7,
+        'node_name' => 'app-1',
+        'role' => 'app-dev',
+        'assignment' => null,
+        'removed' => true,
+        'degradation' => 'unreachable',
+        'retained_on_node' => [
+            'Caddy site configuration and certificates for the app-dev role',
+        ],
+        'follow_up' => 'Run the node-local Metrics cleanup on the node once it boots, or discard the node.',
+    ];
+}
+
 function node_role_request_id(): string
 {
     return '0198e15c-bf97-7c23-8f1f-61b8fe67a844';

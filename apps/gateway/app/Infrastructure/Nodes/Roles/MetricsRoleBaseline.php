@@ -108,4 +108,30 @@ final readonly class MetricsRoleBaseline implements RoleBaseline
 
         $this->report->record(MetricsPublicationCleanup::Uncleaned);
     }
+
+    /**
+     * Removes only what lives on the Gateway, for a Metrics node Orbit cannot reach.
+     *
+     * With a Gateway present, the route, the certificate and the DNS record
+     * are all Gateway-local and are removed. The Metrics node's own firewall
+     * rule, containers, volumes and `/etc/orbit/metrics` stay on the box,
+     * since reaching them would require SSH to a node that is unreachable.
+     *
+     * With no single active Gateway, there is no Gateway-side state to
+     * remove either, so nothing runs and the publication is reported
+     * un-cleaned.
+     */
+    public function removeUnreachable(Node $node, NodeRole $assignment): void
+    {
+        $gateway = $this->gateways->find();
+
+        if ($gateway instanceof Node) {
+            $this->publication->retract($node);
+            $this->report->record(MetricsPublicationCleanup::Cleaned);
+
+            return;
+        }
+
+        $this->report->record(MetricsPublicationCleanup::Uncleaned);
+    }
 }
