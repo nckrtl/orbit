@@ -12,5 +12,6 @@ final readonly class ProcessTarget
         public Node $node,
         public string $user,
         public string $checkoutPath,
+        public ?string $certificateScope = null,
     ) {}
 }

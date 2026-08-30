@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Processes;
 
+use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Processes\ProcessTarget;
 use App\Models\Process;
 use InvalidArgumentException;
 
+/** @mago-expect lint:cyclomatic-complexity Unit and certificate validation keep independent failure gates explicit. */
 final readonly class SystemdProcessRenderer
 {
     public function unitName(Process $process): string
@@ -25,7 +27,7 @@ final readonly class SystemdProcessRenderer
     }
 
     /** @mago-expect analysis:mixed-assignment Persisted runtime configuration is validated before rendering. */
-    public function render(Process $process, ProcessTarget $target): string
+    public function render(Process $process, ProcessTarget $target, ?ManagedUserAccount $managedAccount = null): string
     {
         $runtimeConfig = $this->runtimeConfig($process);
         $command = $this->stringList($runtimeConfig['command'] ?? null);
@@ -42,6 +44,8 @@ final readonly class SystemdProcessRenderer
             );
         }
 
+        $certificateProjection = $this->certificateProjection($target, $managedAccount);
+
         return implode("\n", [
             '[Unit]',
             "Description=Orbit process {$process->name}",
@@ -56,7 +60,15 @@ final readonly class SystemdProcessRenderer
             'Environment=PATH=/usr/local/bin:/opt/orbit/composer/vendor/bin:/usr/bin:/bin',
             'Environment=NODE_USE_SYSTEM_CA=1',
             'EnvironmentFile=-'.$this->escapeDirectivePath($environmentFile),
-            'ExecStart='.implode(' ', array_map($this->quoteArgument(...), $command)),
+            ...$certificateProjection['directives'],
+            'ExecStart='
+                .implode(
+                    ' ',
+                    array_map(
+                        $this->quoteArgument(...),
+                        [...$certificateProjection['commandPrefix'], ...$command],
+                    ),
+                ),
             'Restart='.$this->restartPolicy($process),
             'RestartSec=2',
             '',
@@ -64,6 +76,34 @@ final readonly class SystemdProcessRenderer
             'WantedBy=multi-user.target',
             '',
         ]);
+    }
+
+    /** @return array{directives: list<string>, commandPrefix: list<string>} */
+    private function certificateProjection(ProcessTarget $target, ?ManagedUserAccount $managedAccount): array
+    {
+        if ($target->certificateScope === null) {
+            return ['directives' => [], 'commandPrefix' => []];
+        }
+
+        if ($managedAccount === null || $managedAccount->user !== $target->user) {
+            throw new InvalidArgumentException('A matching managed account is required for process certificates.');
+        }
+
+        $base = rtrim($managedAccount->home, '/')."/.orbit/certificates/{$target->certificateScope}/current/";
+        $certificate = $base.'cert.pem';
+        $key = $base.'key.pem';
+
+        return [
+            'directives' => [
+                'Environment=VITE_DEV_SERVER_CERT='.$this->escapeDirectivePath($certificate),
+                'Environment=VITE_DEV_SERVER_KEY='.$this->escapeDirectivePath($key),
+            ],
+            'commandPrefix' => [
+                '/usr/bin/env',
+                "VITE_DEV_SERVER_CERT={$certificate}",
+                "VITE_DEV_SERVER_KEY={$key}",
+            ],
+        ];
     }
 
     /** @return array<string, mixed> */

@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Domain\Nodes\ManagedUserAccount;
+use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Processes\ProcessOperationException;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessTargetResolver;
@@ -32,6 +34,7 @@ beforeEach(function (): void {
     $this->ssh = new ProcessRuntimeFakeSshExecutor;
     $this->manager = new RemoteProcessRuntimeManager(
         targets: new ProcessTargetResolver,
+        accounts: new ProcessRuntimeFakeManagedUserAccountResolver,
         ssh: $this->ssh,
         keys: new ProcessRuntimeFakeSshKeyProvider,
         knownHosts: new ProcessRuntimeFakeKnownHostsStore,
@@ -140,8 +143,57 @@ it('installs and manages a systemd process through fixed SSH argv', function ():
         ])
         ->and($this->ssh->commands[2]->input)
         ->toContain("X-Orbit-Process-ID={$process->id}")
+        ->toContain(
+            "Environment=VITE_DEV_SERVER_CERT=/home/orbit/.orbit/certificates/instance-{$this->instance->id}/current/cert.pem",
+        )
+        ->toContain(
+            "Environment=VITE_DEV_SERVER_KEY=/home/orbit/.orbit/certificates/instance-{$this->instance->id}/current/key.pem",
+        )
+        ->toContain(
+            "\"VITE_DEV_SERVER_CERT=/home/orbit/.orbit/certificates/instance-{$this->instance->id}/current/cert.pem\"",
+        )
+        ->toContain(
+            "\"VITE_DEV_SERVER_KEY=/home/orbit/.orbit/certificates/instance-{$this->instance->id}/current/key.pem\"",
+        )
         ->and($logs)
         ->toBe("line one\nline two\n");
+});
+
+it('renders the workspace certificate scope during systemd convergence', function (): void {
+    $workspace = Workspace::query()->create([
+        'instance_id' => $this->instance->id,
+        'name' => 'feature',
+        'branch' => 'feature',
+        'checkout_path' => $this->instance->checkout_path.'/feature',
+        'hostname' => 'feature.docs.app-dev.orbit',
+        'status' => LifecycleStatus::Active,
+    ]);
+    $process = runtime_manager_systemd_process_for_workspace($workspace);
+    $this->ssh->responses = [
+        process_runtime_result(1),
+        process_runtime_result(),
+        process_runtime_result(),
+        process_runtime_result(),
+        process_runtime_result(),
+        process_runtime_result(),
+        process_runtime_result(),
+    ];
+
+    $this->manager->converge($process);
+
+    expect($this->ssh->commands[2]->input)
+        ->toContain(
+            "Environment=VITE_DEV_SERVER_CERT=/home/orbit/.orbit/certificates/workspace-{$workspace->id}/current/cert.pem",
+        )
+        ->toContain(
+            "Environment=VITE_DEV_SERVER_KEY=/home/orbit/.orbit/certificates/workspace-{$workspace->id}/current/key.pem",
+        )
+        ->toContain(
+            "\"VITE_DEV_SERVER_CERT=/home/orbit/.orbit/certificates/workspace-{$workspace->id}/current/cert.pem\"",
+        )
+        ->toContain(
+            "\"VITE_DEV_SERVER_KEY=/home/orbit/.orbit/certificates/workspace-{$workspace->id}/current/key.pem\"",
+        );
 });
 
 it('refuses to overwrite a systemd unit that is not owned by the process', function (): void {
@@ -598,6 +650,7 @@ it('executes Docker replacement rollback and retry to the exact final artifact s
     $ssh->failOnceArguments = ['sudo', 'docker', 'container', 'start', $name];
     $manager = new RemoteProcessRuntimeManager(
         targets: new ProcessTargetResolver,
+        accounts: new ProcessRuntimeFakeManagedUserAccountResolver,
         ssh: $ssh,
         keys: new ProcessRuntimeFakeSshKeyProvider,
         knownHosts: new ProcessRuntimeFakeKnownHostsStore,
@@ -960,6 +1013,7 @@ it('executes the protected Docker environment-file boundary and removes the temp
         $ssh = new ProcessRuntimeExecutingSshExecutor(new NativeProcessRunner, $directory);
         $manager = new RemoteProcessRuntimeManager(
             targets: new ProcessTargetResolver,
+            accounts: new ProcessRuntimeFakeManagedUserAccountResolver,
             ssh: $ssh,
             keys: new ProcessRuntimeFakeSshKeyProvider,
             knownHosts: new ProcessRuntimeFakeKnownHostsStore,
@@ -1548,7 +1602,7 @@ it('removes a workspace process after its role and resources enter removing stat
         'hostname' => 'feature.docs.app-dev.orbit',
         'status' => LifecycleStatus::Removing,
     ]);
-    $process = runtime_manager_systemd_process_for_workspace($workspace);
+    $process = runtime_manager_systemd_process_for_workspace($workspace, LifecycleStatus::Removing);
     $this->instance->update(['status' => LifecycleStatus::Removing]);
     $this->instance->node->roles()->where('role', 'app-dev')->update(['status' => LifecycleStatus::Removing]);
     $ownedUnit = "[Unit]\nX-Orbit-Process-ID={$process->id}\n";
@@ -1698,8 +1752,10 @@ function runtime_manager_systemd_process(Instance $instance): Process
     ]);
 }
 
-function runtime_manager_systemd_process_for_workspace(Workspace $workspace): Process
-{
+function runtime_manager_systemd_process_for_workspace(
+    Workspace $workspace,
+    LifecycleStatus $status = LifecycleStatus::Active,
+): Process {
     return Process::query()->create([
         'owner_type' => Workspace::class,
         'owner_id' => $workspace->id,
@@ -1712,7 +1768,7 @@ function runtime_manager_systemd_process_for_workspace(Workspace $workspace): Pr
         ],
         'restart_policy' => 'always',
         'desired_state' => 'stopped',
-        'status' => LifecycleStatus::Removing,
+        'status' => $status,
     ]);
 }
 
@@ -1851,6 +1907,15 @@ final class ProcessRuntimeFakeSshExecutor implements SshExecutor
         }
 
         return array_shift($this->responses) ?? process_runtime_result();
+    }
+}
+
+/** @mago-expect lint:single-class-per-file Test-local fake supplies the managed account contract. */
+final readonly class ProcessRuntimeFakeManagedUserAccountResolver implements ManagedUserAccountResolver
+{
+    public function resolve(Node $node): ManagedUserAccount
+    {
+        return new ManagedUserAccount($node->user, 'orbit', '/home/orbit');
     }
 }
 
