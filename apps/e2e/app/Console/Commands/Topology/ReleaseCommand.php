@@ -6,29 +6,29 @@ namespace App\Console\Commands\Topology;
 
 use App\Console\Commands\E2ECommand;
 use App\E2E\TopologyReleaser;
-use App\E2E\Value\AttemptId;
-use App\E2E\Value\OperationId;
 use Throwable;
 
 final class ReleaseCommand extends E2ECommand
 {
     #[\Override]
-    protected $signature = 'topology:release {issue} {attempt} {--json}';
+    protected $signature = 'topology:release {issue} '.self::WORKTREE_OPTION.' {--json}';
     #[\Override]
-    protected $description = 'Release one exact disposable topology attempt';
+    protected $description = 'Release the live topology of the issue and sweep orphaned harness networks';
 
-    public function handle(TopologyReleaser $releaser, OperationId $operation): int
+    public function handle(TopologyReleaser $releaser): int
     {
         try {
-            $result = $releaser->release(
-                (string) $this->argument('issue'),
-                new AttemptId((string) $this->argument('attempt')),
-            );
-            $this->outputJson($result->toArray(), 'released');
+            $request = $this->request();
+            $result = $releaser->release($request);
+            $this->log($request, 'attempt='.$result['attempt_id'].' ok');
+            $this->outputJson($result, 'released '.$result['attempt_id']);
 
             return self::SUCCESS;
         } catch (Throwable $exception) {
-            $this->outputFailure($exception, $operation);
+            if (isset($request)) {
+                $this->log($request, 'failed: '.$exception->getMessage());
+            }
+            $this->outputFailure($exception);
 
             return self::FAILURE;
         }
