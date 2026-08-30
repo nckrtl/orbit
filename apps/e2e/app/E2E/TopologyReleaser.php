@@ -43,6 +43,7 @@ final readonly class TopologyReleaser
         private ReleaseReceiptStore $receipts,
         private ?HostCapacity $capacity = null,
         private ?AcquisitionRollback $acquisitionRollback = null,
+        private ?OrphanNetworkSweep $sweep = null,
     ) {}
 
     public function release(string $issue, AttemptId $attempt): ReleaseResult
@@ -53,10 +54,35 @@ final readonly class TopologyReleaser
             throw new RuntimeException('The issue topology is locked.');
         }
         try {
-            return $this->releaseLocked(TopologyTarget::feature($issue, $attempt));
+            $result = $this->releaseLocked(TopologyTarget::feature($issue, $attempt));
+
+            return $this->sweepOrphanNetworks($result);
         } finally {
             $lock->release();
         }
+    }
+
+    /**
+     * Every release ends with the orphan network sweep. The receipt records each
+     * deletion made under this attempt's release, also on a replayed release.
+     */
+    private function sweepOrphanNetworks(ReleaseResult $result): ReleaseResult
+    {
+        if ($this->sweep === null) {
+            return $result;
+        }
+        $reaped = $this->sweep->sweep();
+        if ($reaped === []) {
+            return $result->withNetworksReaped([]);
+        }
+        $receipt = $this->receipts->read($result->issue, $result->attempt);
+        if ($receipt !== null) {
+            $recorded = array_values(array_unique([...$receipt->networksReaped, ...$reaped]));
+            sort($recorded, SORT_STRING);
+            $this->receipts->write($receipt->withNetworksReaped($recorded));
+        }
+
+        return $result->withNetworksReaped($reaped);
     }
 
     /** @mago-expect lint:halstead Exact release evidence requires explicit ordered mutations. */

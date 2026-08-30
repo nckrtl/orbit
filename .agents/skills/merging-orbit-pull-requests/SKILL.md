@@ -61,7 +61,9 @@ worktree, or perform a production release. After a successful merge, signal
 the project manager. It then, in this order:
 
 1. releases the proof topology with `bin/e2e-topology release ISSUE ATTEMPT
-   --json` and verifies its exact absence;
+   --json`, verifies its exact absence, and records the orphan network sweep
+   result from that output as `networks_reaped: n` in its handoff (the sweep
+   deletes unused `oe-*` and `orbit-e2e-*` networks, never `oe-standby`);
 2. computes `bin/e2e-standby fingerprint --main-sha=SHA` for merged `main` and
    runs `bin/e2e-standby refresh --main-sha=SHA` only when the fingerprint
    changed;

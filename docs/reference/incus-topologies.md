@@ -21,6 +21,23 @@ these exact-ID operations:
 Cleanup is idempotent and removes only the attempt's recorded inventory. The
 TTL reaper is only a fallback for abandoned discovery or diagnosis attempts.
 
+## Network ownership
+
+Every Incus network in the `default` project whose name starts with `oe-`
+(current harness) or `orbit-e2e-` (legacy harness) belongs to the harness. No
+such network may outlive the topology that used it: every
+`bin/e2e-topology release` and `bin/e2e-topology reap` ends with an orphan
+sweep that deletes each harness network with an empty `used_by`, except
+`oe-standby` and the network of an active lease (an acquisition owns its
+network before the first VM attaches). The sweep never touches a network
+outside those prefixes, a network with users, or another Incus project. Each
+deleted name is recorded as `networks_reaped` in the command output, in the
+release receipt under `evidence/releases/ISSUE/ATTEMPT.json`, and in the
+operation journal (`network.sweep`). A repeated `release` sweeps again and
+reports the new deletions only, appending them to the receipt. The
+project-manager post-merge cleanup names `networks_reaped: n` from its release
+of the proof topology in its handoff.
+
 ## Supported platform
 
 Orbit supports Ubuntu 26.04 nodes only. The single registered profile is
@@ -62,8 +79,8 @@ Every command accepts `--json`. `acquire` and `prove` refuse a stale promoted st
 | `bin/e2e-topology prove ISSUE WORKTREE --candidate-sha=SHA --proof-plan-file=PATH` | One-shot proof of the exact candidate on a fresh proof attempt (about 33 s) |
 | `bin/e2e-topology diagnose ISSUE ATTEMPT` | Move a proved attempt to diagnosis; one-way |
 | `bin/e2e-topology status ISSUE [ATTEMPT]` | Report the active or exact attempt without touching infrastructure |
-| `bin/e2e-topology release ISSUE ATTEMPT` | Release one exact attempt and verify absence |
-| `bin/e2e-topology reap --issue-state-file=PATH` | Release expired attempts of terminal issues from an issue-state snapshot |
+| `bin/e2e-topology release ISSUE ATTEMPT` | Release one exact attempt, verify absence, and sweep orphaned harness networks (`networks_reaped`) |
+| `bin/e2e-topology reap --issue-state-file=PATH` | Release expired attempts of terminal issues from an issue-state snapshot, then sweep orphaned harness networks (`networks_reaped`) |
 | `bin/e2e-standby status` | Show the promoted standby generation |
 | `bin/e2e-standby fingerprint --main-sha=SHA` | Compute the prepared-state fingerprint |
 | `bin/e2e-standby refresh --main-sha=SHA` | Refresh and promote the standby when the fingerprint changed |

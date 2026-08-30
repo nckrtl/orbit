@@ -179,10 +179,33 @@ final class IncusHost implements GuestTransport
                 $name,
                 $this->metadata($resource),
                 $this->configuration($resource),
+                $this->usedBy($resource),
             );
         }
 
         return $networks;
+    }
+
+    /**
+     * @param array<array-key, mixed> $resource
+     * @return list<string>
+     */
+    private function usedBy(array $resource): array
+    {
+        $usedBy = $resource['used_by'] ?? [];
+        if (! is_array($usedBy)) {
+            throw new RuntimeException('Incus network inventory identity is invalid.');
+        }
+        $users = [];
+        /** @mago-expect analysis:mixed-assignment Incus output is validated one user at a time. */
+        foreach ($usedBy as $user) {
+            if (! is_string($user)) {
+                throw new RuntimeException('Incus network inventory identity is invalid.');
+            }
+            $users[] = $user;
+        }
+
+        return $users;
     }
 
     public function imageFingerprint(string $alias): string
@@ -1264,6 +1287,28 @@ final class IncusHost implements GuestTransport
         }
 
         $this->assertOwned($resource->metadata, "network {$network}");
+        $this->run(['network', 'delete', "{$this->remote}:{$network}"]);
+    }
+
+    /**
+     * Delete one orphaned harness network. The name must carry a harness prefix,
+     * must not be the standby network, and must still have no users at deletion
+     * time; legacy harness networks carry no ownership metadata, so the prefix
+     * is the ownership rule here.
+     */
+    public function deleteOrphanNetwork(string $network): void
+    {
+        $this->validateName($network, 'network');
+        if (! OrphanNetworkSweep::isHarnessNetworkName($network)) {
+            throw new RuntimeException("Incus network {$network} is outside the harness prefixes.");
+        }
+        $resource = $this->networks()[$network] ?? null;
+        if ($resource === null) {
+            throw new RuntimeException("Incus network {$network} does not exist.");
+        }
+        if ($resource->usedBy !== []) {
+            throw new RuntimeException("Incus network {$network} is still in use.");
+        }
         $this->run(['network', 'delete', "{$this->remote}:{$network}"]);
     }
 
