@@ -121,14 +121,77 @@ A normal disable reports `"publication": "cleaned"`.
 
 ### Disable with no single active Gateway
 
-**Disable is not reachable in this state today.** Every Metrics route
-authorizes against the one active Gateway: `MetricsController` carries a
-class-level `RequiresNodeAccess(ServingNode::Gateway)`, and
-`ServingNodeResolver::roleMutation()` sends `node:role:remove metrics` to the
-same resolver. With no active Gateway, or with more than one, both refuse
-before the request reaches the role manager, and `orbit metrics:disable
---force` fails with `node_access.required` from any caller, including the
-Gateway node itself. NCK-116 decides how that is resolved.
+The HTTP access model does not change here. `MetricsController` still carries
+a class-level `RequiresNodeAccess(ServingNode::Gateway)`, and
+`ServingNodeResolver::roleMutation()` still sends `node:role:remove metrics` to
+the same resolver. With no active Gateway, or with more than one, both refuse
+before the request reaches the role manager, and every Metrics route and
+`orbit metrics:disable --force` fail with `node_access.required` from any
+caller, including the Gateway node itself. This is deliberate: the active
+Gateway peer is the implicit authority for the role.
+
+The recovery is node-local. Orbit publishes
+`/usr/local/sbin/orbit-metrics-uninstall` on every node it converges the
+Metrics exporter onto, rendered from the same constants the remote executors
+mutate, and removes it again when the exporter is removed through Orbit. An
+operator standing on the node runs it directly:
+
+```text
+sudo /usr/local/sbin/orbit-metrics-uninstall
+sudo /usr/local/sbin/orbit-metrics-uninstall --force
+sudo /usr/local/sbin/orbit-metrics-uninstall --dry-run
+```
+
+`--force` skips the confirmation prompt, for non-interactive use. `--dry-run`
+reports what would be removed and changes nothing.
+
+The script proves ownership with the same evidence the remote path uses: the
+`com.orbit.managed=metrics` container and volume labels, the
+`/etc/orbit/metrics/.orbit-owner` marker reading `metrics`, the drop-in's
+`# Managed by Orbit: metrics` first line, and the Orbit-namespaced UFW
+comments `orbit:metrics-node-exporter` and `orbit:metrics-grafana-upstream`,
+matched at the end of the line. Anything without a proof is reported, never
+removed, and the script exits `3`.
+
+The script discovers its own scope rather than being told. An exporter-only
+node loses the drop-in, the exporter service, and the 9100 UFW rule. A Metrics
+node additionally loses the labelled containers, the labelled volumes
+(including their data), everything Orbit generated under `/etc/orbit/metrics`,
+and the Grafana upstream 3000 UFW rule.
+
+| Exit code | Meaning |
+| --- | --- |
+| `0` | Clean: nothing Orbit owns is left, or everything owned was removed. |
+| `2` | Usage error, or the operator declined the confirmation prompt. |
+| `3` | Something was refused or survived removal. |
+| `4` | Not running as root. |
+
+The script leaves some things in place on purpose. It never removes the
+`prometheus-node-exporter` package: Orbit installs it but cannot prove it owns
+it, and the remote removal path does not remove it either, so the script
+prints the exact `apt-get purge` command instead. It leaves Docker and any
+container Orbit did not label. It leaves itself in place, so the cleanup stays
+re-runnable and verifiable.
+
+Some things can only be cleaned up on the Gateway. The `metrics.orbit` route,
+its certificate, and its private DNS record stay on the Gateway host. The
+Metrics role assignment, exporter preferences, and stored credentials stay in
+the Gateway database. The script reports both.
+
+Re-enabling is ordinary registration. The escape leaves the role assignment in
+the Gateway database, so once a Gateway is reachable an operator takes the
+stale role off and adds it again:
+
+```text
+orbit metrics:disable --force
+orbit metrics:enable app-dev
+```
+
+Disable copes with a node the escape already emptied: it finds nothing to
+remove and reports `"publication": "cleaned"`. Enable then re-publishes the
+configuration, the containers, the volumes, the firewall rules and the escape
+itself, and converges the role back to healthy. The escape does not need to be
+reversible in place.
 
 The role removal itself no longer requires a Gateway. Once a caller can reach
 it, Orbit removes the Metrics node's runtime, exporters and Grafana upstream

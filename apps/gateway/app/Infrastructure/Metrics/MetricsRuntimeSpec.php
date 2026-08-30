@@ -74,7 +74,7 @@ final readonly class MetricsRuntimeSpec
         ];
         $specHash = hash('sha256', $this->encode($publicSpec));
         $labels = [
-            'com.orbit.managed' => 'metrics',
+            MetricsFootprint::ManagedLabel => MetricsFootprint::ManagedValue,
             'com.orbit.metrics.service' => $service->value,
             'com.orbit.metrics.assignment' => (string) $assignmentId,
             'com.orbit.metrics.spec-hash' => $specHash,
@@ -87,7 +87,7 @@ final readonly class MetricsRuntimeSpec
             volume: $definition['volume'],
             labels: $labels,
             volumeLabels: [
-                'com.orbit.managed' => 'metrics',
+                MetricsFootprint::ManagedLabel => MetricsFootprint::ManagedValue,
                 'com.orbit.metrics.volume' => $service->value,
             ],
             command: $definition['command'],

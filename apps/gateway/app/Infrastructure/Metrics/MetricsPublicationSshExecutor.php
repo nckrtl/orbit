@@ -22,7 +22,7 @@ use App\Models\Node;
  */
 final readonly class MetricsPublicationSshExecutor
 {
-    private const string FirewallComment = 'orbit:metrics-grafana-upstream';
+    private const string FirewallComment = MetricsFootprint::PublicationFirewallComment;
 
     public function __construct(
         private SshExecutor $ssh,

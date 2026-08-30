@@ -25,19 +25,20 @@ use Throwable;
  */
 final readonly class MetricsExporterSshExecutor implements MetricsExporterRuntime
 {
-    private const string ConfigurationPath = '/etc/systemd/system/prometheus-node-exporter.service.d/orbit.conf';
+    private const string ConfigurationPath = MetricsFootprint::ExporterDropIn;
 
-    private const string WireGuardInterface = 'orbit';
+    private const string WireGuardInterface = MetricsFootprint::WireGuardInterface;
 
-    private const string FirewallComment = 'orbit:metrics-node-exporter';
+    private const string FirewallComment = MetricsFootprint::ExporterFirewallComment;
 
-    private const string OwnershipMarker = '# Managed by Orbit: metrics';
+    private const string OwnershipMarker = MetricsFootprint::ExporterDropInMarker;
 
     public function __construct(
         private SshExecutor $ssh,
         private SshKeyProvider $keys,
         private KnownHostsStore $knownHosts,
         private UfwStatusParser $parser = new UfwStatusParser,
+        private MetricsUninstallScript $uninstall = new MetricsUninstallScript,
     ) {}
 
     public function converge(Node $node, Node $metricsNode): void
@@ -48,6 +49,7 @@ final readonly class MetricsExporterSshExecutor implements MetricsExporterRuntim
         $expected = $this->expectedConfiguration($node);
 
         try {
+            $this->publishUninstallScript($node, 'metrics.exporter_uninstall_publish_failed');
             $this->run(
                 $node,
                 new RemoteCommand([
@@ -142,6 +144,10 @@ final readonly class MetricsExporterSshExecutor implements MetricsExporterRuntim
                     502,
                 );
             }
+
+            // Last, so any failure above leaves the escape where an operator
+            // can still reach the footprint this removal did not finish.
+            $this->removeUninstallScript($node, 'metrics.exporter_uninstall_remove_failed');
         } catch (Throwable $exception) {
             $this->recover(
                 node: $node,
@@ -184,6 +190,10 @@ final readonly class MetricsExporterSshExecutor implements MetricsExporterRuntim
                 )
                 : $this->removeConfiguration($node, 'metrics.exporter_configuration_rollback_failed');
         }
+
+        is_string($state->configuration)
+            ? $this->publishUninstallScript($node, 'metrics.exporter_uninstall_rollback_failed')
+            : $this->removeUninstallScript($node, 'metrics.exporter_uninstall_rollback_failed');
 
         if ($state->serviceActive || $this->serviceActive($node)) {
             $this->setServiceActive($node, $state->serviceActive, 'metrics.exporter_service_rollback_failed');
@@ -369,6 +379,59 @@ final readonly class MetricsExporterSshExecutor implements MetricsExporterRuntim
             new RemoteCommand(['sudo', 'systemctl', 'daemon-reload']),
             $errorCode,
             'The Metrics exporter unit could not be reloaded.',
+        );
+    }
+
+    /**
+     * Publishes the node-local escape beside the drop-in it removes.
+     *
+     * Every Metrics route authorizes against the one active Gateway, so a
+     * fleet that loses its Gateway can reach no removal path at all. This
+     * script is the way out. It is rendered from the same constants this
+     * executor mutates, so it cannot drift from the state it removes, and it
+     * is republished only when it differs, which costs a settled convergence
+     * one extra command.
+     */
+    private function publishUninstallScript(Node $node, string $errorCode): void
+    {
+        $expected = $this->uninstall->render();
+        $current = $this->raw($node, new RemoteCommand(['sudo', 'cat', '--', MetricsFootprint::UninstallScript]));
+
+        if ($current->succeeded() && $current->stdout === $expected) {
+            return;
+        }
+
+        $candidate = MetricsFootprint::UninstallScript.MetricsFootprint::CandidateSuffix;
+        $this->run(
+            $node,
+            new RemoteCommand(['sudo', 'rm', '-f', '--', $candidate]),
+            $errorCode,
+            'The Metrics uninstall script could not be staged.',
+        );
+        $this->run(
+            $node,
+            new RemoteCommand(
+                ['sudo', 'install', '-D', '-o', 'root', '-g', 'root', '-m', '0755', '/dev/stdin', $candidate],
+                protectedInput: ProtectedInput::fromString($expected),
+            ),
+            $errorCode,
+            'The Metrics uninstall script could not be staged.',
+        );
+        $this->run(
+            $node,
+            new RemoteCommand(['sudo', 'mv', '-fT', '--', $candidate, MetricsFootprint::UninstallScript]),
+            $errorCode,
+            'The Metrics uninstall script could not be published.',
+        );
+    }
+
+    private function removeUninstallScript(Node $node, string $errorCode): void
+    {
+        $this->run(
+            $node,
+            new RemoteCommand(['sudo', 'rm', '-f', '--', MetricsFootprint::UninstallScript]),
+            $errorCode,
+            'The Metrics uninstall script could not be removed.',
         );
     }
 
