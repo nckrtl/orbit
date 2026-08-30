@@ -17,9 +17,15 @@ assert_unchanged() {
 reject_root() {
   local code=$1
   local path=$2
-  expect_error "$code" orbit node:settings app-dev --setting=instance.path:"$path" --json
+  expect_error "$code" orbit node:settings app-dev \
+    --setting=instance.path:"$path" \
+    --setting=worktree.path:/srv/orbit/worktrees \
+    --json
   assert_unchanged "settings $path"
-  expect_error "$code" provision_app_dev --setting=instance.path:"$path" --json
+  expect_error "$code" provision_app_dev \
+    --setting=instance.path:"$path" \
+    --setting=worktree.path:/srv/orbit/worktrees \
+    --json
   assert_unchanged "provision $path"
 }
 
