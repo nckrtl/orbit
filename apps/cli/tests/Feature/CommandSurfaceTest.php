@@ -40,6 +40,12 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'instance:php',
         'instance:remove',
         'instance:show',
+        'metrics:credentials',
+        'metrics:disable',
+        'metrics:enable',
+        'metrics:exporter:disable',
+        'metrics:exporter:enable',
+        'metrics:status',
         'node:access:add',
         'node:access:remove',
         'node:list',
@@ -74,7 +80,7 @@ it('does not register hidden Orbit product commands', function (): void {
     $orbitCommands = collect(app(Kernel::class)->all())
         ->filter(static fn (Command $command): bool => str_starts_with($command::class, 'App\\Commands\\'));
 
-    expect($orbitCommands)->toHaveCount(48);
+    expect($orbitCommands)->toHaveCount(54);
     expect($orbitCommands->every(
         static fn (Command $command): bool => ! $command->isHidden(),
     ))->toBeTrue();
@@ -143,6 +149,12 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'instance:php' => [['instance', 'version'], ['json' => false]],
         'instance:remove' => [['instance'], ['json' => false]],
         'instance:show' => [['instance'], ['json' => false]],
+        'metrics:credentials' => [[], ['reset' => false, 'json' => false]],
+        'metrics:disable' => [[], ['force' => false, 'purge-data' => false, 'json' => false]],
+        'metrics:enable' => [['node'], ['json' => false]],
+        'metrics:exporter:disable' => [['node'], ['json' => false]],
+        'metrics:exporter:enable' => [['node'], ['json' => false]],
+        'metrics:status' => [[], ['json' => false]],
         'node:access:add' => [['consumer', 'serving'], ['json' => false]],
         'node:access:remove' => [['consumer', 'serving'], ['force' => false, 'json' => false]],
         'node:list' => [[], ['json' => false]],
@@ -234,6 +246,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
             'dns:resolve' => ['target'],
             'node:provision' => ['host'],
             'tool:install' => ['package'],
+            'metrics:enable' => ['node'],
             default => [],
         };
         expect(collect($definition->getArguments())
@@ -332,6 +345,12 @@ it('renders one exact json failure envelope for every Orbit product command', fu
         'instance:php' => [['instance' => '1', 'version' => '8.5'], ...$profileMissing],
         'instance:remove' => [['instance' => '1'], ...$profileMissing],
         'instance:show' => [['instance' => '1'], ...$profileMissing],
+        'metrics:credentials' => [[], ...$profileMissing],
+        'metrics:disable' => [['--force' => true], ...$profileMissing],
+        'metrics:enable' => [['node' => '1'], ...$profileMissing],
+        'metrics:exporter:disable' => [['node' => '1'], ...$profileMissing],
+        'metrics:exporter:enable' => [['node' => '1'], ...$profileMissing],
+        'metrics:status' => [[], ...$profileMissing],
         'node:access:add' => [['consumer' => '2', 'serving' => '3'], ...$profileMissing],
         'node:access:remove' => [['consumer' => '2', 'serving' => '3', '--force' => true], ...$profileMissing],
         'node:list' => [[], ...$profileMissing],

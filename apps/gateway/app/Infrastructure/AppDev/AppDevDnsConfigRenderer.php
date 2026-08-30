@@ -54,6 +54,32 @@ final readonly class AppDevDnsConfigRenderer
             ->first();
         if ($gateway instanceof Node) {
             $records->push("host-record=gateway.orbit,{$gateway->wireguard_address}");
+
+            $metrics = Node::query()
+                ->where(static function (Builder $q) use ($pendingNode): void {
+                    $q->where('status', LifecycleStatus::Active->value);
+
+                    if ($pendingNode instanceof Node && $pendingNode->exists) {
+                        $q->orWhere('id', $pendingNode->id);
+                    }
+                })
+                ->whereNotNull('wireguard_address')
+                ->whereHas('roles', static function (Builder $q) use ($pendingNode): void {
+                    $q->where('role', RoleName::Metrics->value)
+                        ->where(static function (Builder $q) use ($pendingNode): void {
+                            $q->where('status', LifecycleStatus::Active->value);
+
+                            if ($pendingNode instanceof Node && $pendingNode->exists) {
+                                $q->orWhere(static fn (Builder $q): Builder => $q
+                                    ->where('node_id', $pendingNode->id)
+                                    ->where('status', LifecycleStatus::Provisioning->value));
+                            }
+                        });
+                })
+                ->first();
+            if ($metrics instanceof Node) {
+                $records->push("host-record=metrics.orbit,{$gateway->wireguard_address}");
+            }
         }
 
         return '# Managed by Orbit.'.PHP_EOL.$records->unique()->sort()->implode(PHP_EOL).PHP_EOL;

@@ -6,6 +6,7 @@ namespace App\Actions\Nodes;
 
 use App\Data\Nodes\RemoveNodeData;
 use App\Domain\AppDev\PrivateDnsManager;
+use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\NodeRemovalException;
 use App\Domain\Nodes\RoleName;
@@ -15,12 +16,16 @@ use App\Domain\WireGuard\GatewayPeerProjectionManager;
 use App\Models\Node;
 use Throwable;
 
-/** @mago-expect lint:cyclomatic-complexity Removal keeps guarded projection rollback in one transaction flow. */
+/**
+ * @mago-expect lint:cyclomatic-complexity Removal keeps guarded projection rollback in one transaction flow.
+ * @mago-expect lint:halstead Removal keeps the ordered recovery boundary visible in one transaction flow.
+ */
 final readonly class RemoveNodeAction
 {
     public function __construct(
         private PrivateDnsManager $dns,
         private GatewayPeerProjectionManager $peers,
+        private MetricsFleetReconciler $metrics,
     ) {}
 
     public function execute(Node $node, Node $caller): RemoveNodeData
@@ -36,12 +41,35 @@ final readonly class RemoveNodeAction
         );
         $node->update(['status' => LifecycleStatus::Removing]);
 
+        try {
+            $this->metrics->retire($node);
+        } catch (Throwable $exception) {
+            $node->update(['status' => LifecycleStatus::Active]);
+            $rollbackFailure = $this->restoreMetricsSelection();
+
+            if ($rollbackFailure instanceof Throwable) {
+                throw $this->metricsRollbackFailure($node, $rollbackFailure);
+            }
+
+            throw $this->failure(
+                step: 'metrics-exporters',
+                errorCode: 'node.metrics_reconcile_failed',
+                message: "Could not retire Metrics exporter state for node [{$node->name}].",
+                previous: $exception,
+            );
+        }
+
         if ($node->wireguard_public_key !== null) {
             try {
                 $this->peers->remove($node);
                 $peerRemoved = true;
             } catch (Throwable $exception) {
                 $node->update(['status' => LifecycleStatus::Active]);
+                $rollbackFailure = $this->restoreMetricsSelection();
+
+                if ($rollbackFailure instanceof Throwable) {
+                    throw $this->metricsRollbackFailure($node, $rollbackFailure);
+                }
 
                 throw $this->failure(
                     step: 'wireguard-projection',
@@ -56,18 +84,29 @@ final readonly class RemoveNodeAction
             $this->dns->converge();
         } catch (Throwable $exception) {
             $node->update(['status' => LifecycleStatus::Active]);
+            $rollbackFailure = null;
 
             if ($peerRemoved) {
                 try {
                     $this->peers->restore($node);
                 } catch (Throwable $rollbackException) {
-                    throw $this->failure(
-                        step: 'wireguard-rollback',
-                        errorCode: 'node.removal_rollback_failed',
-                        message: "Could not restore the WireGuard peer for node [{$node->name}].",
-                        previous: $rollbackException,
-                    );
+                    $rollbackFailure = $rollbackException;
                 }
+            }
+
+            $metricsRollbackFailure = $this->restoreMetricsSelection();
+
+            if ($rollbackFailure instanceof Throwable) {
+                throw $this->failure(
+                    step: 'wireguard-rollback',
+                    errorCode: 'node.removal_rollback_failed',
+                    message: "Could not restore the WireGuard peer for node [{$node->name}].",
+                    previous: $rollbackFailure,
+                );
+            }
+
+            if ($metricsRollbackFailure instanceof Throwable) {
+                throw $this->metricsRollbackFailure($node, $metricsRollbackFailure);
             }
 
             throw $this->failure(
@@ -98,6 +137,8 @@ final readonly class RemoveNodeAction
                 $rollbackFailure ??= $dnsRollbackException;
             }
 
+            $metricsRollbackFailure = $this->restoreMetricsSelection();
+
             if ($rollbackFailure instanceof Throwable) {
                 throw $this->failure(
                     step: 'persistence-rollback',
@@ -105,6 +146,10 @@ final readonly class RemoveNodeAction
                     message: "Could not restore network projections for node [{$node->name}].",
                     previous: $rollbackFailure,
                 );
+            }
+
+            if ($metricsRollbackFailure instanceof Throwable) {
+                throw $this->metricsRollbackFailure($node, $metricsRollbackFailure);
             }
 
             throw $this->failure(
@@ -148,6 +193,27 @@ final readonly class RemoveNodeAction
     private function conflict(string $errorCode, string $message): ResourceOperationException
     {
         return new ResourceOperationException($errorCode, $message, 409);
+    }
+
+    private function restoreMetricsSelection(): ?Throwable
+    {
+        try {
+            $this->metrics->reconcile();
+        } catch (Throwable $exception) {
+            return $exception;
+        }
+
+        return null;
+    }
+
+    private function metricsRollbackFailure(Node $node, Throwable $previous): NodeRemovalException
+    {
+        return $this->failure(
+            step: 'metrics-exporters-rollback',
+            errorCode: 'node.removal_rollback_failed',
+            message: "Could not restore Metrics exporter state for node [{$node->name}].",
+            previous: $previous,
+        );
     }
 
     private function failure(

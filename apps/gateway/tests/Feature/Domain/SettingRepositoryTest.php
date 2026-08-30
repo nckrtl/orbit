@@ -28,4 +28,17 @@ describe(SettingRepository::class, function (): void {
             ->and(Setting::query()->where('key', 'ca.private_key')->value('value'))
             ->not->toBe('private');
     });
+
+    it('deletes one typed scoped setting', function (): void {
+        $repository = app(SettingRepository::class);
+        $scope = new SettingScope(SettingScopeType::Node, 42);
+        $repository->put($scope, 'metrics.pending_password', 'secret');
+
+        expect($repository->delete($scope, 'metrics.pending_password'))
+            ->toBeTrue()
+            ->and($repository->get($scope, 'metrics.pending_password'))
+            ->toBeNull()
+            ->and($repository->delete($scope, 'metrics.pending_password'))
+            ->toBeFalse();
+    });
 });

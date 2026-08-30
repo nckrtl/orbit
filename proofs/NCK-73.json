@@ -1,0 +1,162 @@
+{
+    "setup": [
+        {
+            "id": "metrics-enable-app-dev",
+            "node": "app-dev",
+            "argv": ["orbit", "metrics:enable", "app-dev", "--json"],
+            "timeout_seconds": 600
+        }
+    ],
+    "acceptance": [
+        {
+            "id": "status-active",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/status-active.sh", "app-dev=desired/active/metrics_node", "app-prod=desired/active/role_default", "gateway=desired/active/role_default"],
+            "timeout_seconds": 120
+        },
+        {
+            "id": "singleton-refused",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/singleton-refused.sh"],
+            "timeout_seconds": 120
+        },
+        {
+            "id": "containers-healthy",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/containers-healthy.sh"],
+            "timeout_seconds": 60
+        },
+        {
+            "id": "exporter-gateway",
+            "node": "gateway",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/exporter-local.sh"],
+            "timeout_seconds": 60
+        },
+        {
+            "id": "exporter-app-dev",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/exporter-local.sh"],
+            "timeout_seconds": 60
+        },
+        {
+            "id": "exporter-app-prod",
+            "node": "app-prod",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/exporter-local.sh"],
+            "timeout_seconds": 60
+        },
+        {
+            "id": "targets-up",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/targets-up.sh", "gateway,app-dev,app-prod"],
+            "timeout_seconds": 180
+        },
+        {
+            "id": "https-metrics-orbit",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/https-metrics.sh"],
+            "timeout_seconds": 60
+        },
+        {
+            "id": "gateway-upstream",
+            "node": "gateway",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/gateway-upstream.sh"],
+            "timeout_seconds": 60
+        },
+        {
+            "id": "private-upstreams-app-prod",
+            "node": "app-prod",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/private-upstreams.sh", "10.44.0.2"],
+            "timeout_seconds": 60
+        },
+        {
+            "id": "credentials-login-and-reset",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/credentials.sh"],
+            "timeout_seconds": 180
+        },
+        {
+            "id": "exporter-disable-app-prod",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/exporter-disable.sh"],
+            "timeout_seconds": 180
+        },
+        {
+            "id": "exporter-absent-app-prod",
+            "node": "app-prod",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/exporter-absent.sh"],
+            "timeout_seconds": 60
+        },
+        {
+            "id": "status-app-prod-excluded",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/status-active.sh", "app-prod=excluded/inactive/explicit_disabled"],
+            "timeout_seconds": 120
+        },
+        {
+            "id": "exporter-enable-app-prod",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/exporter-enable.sh"],
+            "timeout_seconds": 180
+        },
+        {
+            "id": "exporter-app-prod-restored",
+            "node": "app-prod",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/exporter-local.sh"],
+            "timeout_seconds": 60
+        },
+        {
+            "id": "disable-force",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/disable.sh"],
+            "timeout_seconds": 300
+        },
+        {
+            "id": "disable-gateway-publication",
+            "node": "gateway",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/disable-gateway.sh"],
+            "timeout_seconds": 60
+        },
+        {
+            "id": "disable-exporter-gateway",
+            "node": "gateway",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/exporter-absent.sh"],
+            "timeout_seconds": 60
+        },
+        {
+            "id": "disable-exporter-app-prod",
+            "node": "app-prod",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/exporter-absent.sh"],
+            "timeout_seconds": 60
+        },
+        {
+            "id": "recover-failed-assignment",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/recover.sh"],
+            "timeout_seconds": 600
+        },
+        {
+            "id": "credential-preserved",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/credential-preserved.sh"],
+            "timeout_seconds": 60
+        },
+        {
+            "id": "targets-up-final",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/targets-up.sh", "gateway,app-dev,app-prod"],
+            "timeout_seconds": 180
+        },
+        {
+            "id": "https-metrics-orbit-final",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/https-metrics.sh"],
+            "timeout_seconds": 60
+        },
+        {
+            "id": "status-final",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/status-active.sh", "app-dev=desired/active/metrics_node", "app-prod=desired/active/explicit_enabled", "gateway=desired/active/role_default"],
+            "timeout_seconds": 120
+        }
+    ]
+}

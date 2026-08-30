@@ -5,6 +5,10 @@ declare(strict_types=1);
 use App\Domain\AppDev\AppDevCaddyManager;
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\AppProd\AppProdCaddyManager;
+use App\Domain\Metrics\MetricsExporterLifecycle;
+use App\Domain\Metrics\MetricsFleetReconciler;
+use App\Domain\Metrics\MetricsPublicationManager;
+use App\Domain\Metrics\MetricsRuntimeLifecycle;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\NodeRoleFirewallManager;
@@ -17,6 +21,7 @@ use App\Infrastructure\AppProd\AppProdSshExecutor;
 use App\Infrastructure\Nodes\Roles\AppDevRoleBaseline;
 use App\Infrastructure\Nodes\Roles\AppProdRoleBaseline;
 use App\Infrastructure\Nodes\Roles\GatewayRoleBaseline;
+use App\Infrastructure\Nodes\Roles\MetricsRoleBaseline;
 use App\Infrastructure\Nodes\Roles\NativeRoleBaselineConverger;
 use App\Infrastructure\Nodes\Roles\NodeRoleOperatingSystemGuard;
 use App\Infrastructure\Nodes\Roles\NodeRolePrerequisiteCommandFactory;
@@ -205,6 +210,8 @@ it('dispatches every assignment to its code-defined baseline', function (): void
     $events = [];
     $firewall = baseline_firewall($events);
     $ssh = baseline_ssh($events);
+    $metricsFleet = Mockery::mock(MetricsFleetReconciler::class);
+    $metricsFleet->shouldReceive('reconcile')->times(5);
     $dispatcher = new NativeRoleBaselineConverger(
         new GatewayRoleBaseline($firewall),
         new VpnRoleBaseline(
@@ -217,6 +224,12 @@ it('dispatches every assignment to its code-defined baseline', function (): void
         ),
         app_dev_role_baseline($events),
         app_prod_role_baseline($events),
+        new MetricsRoleBaseline(
+            Mockery::mock(MetricsRuntimeLifecycle::class)->shouldIgnoreMissing(),
+            Mockery::mock(MetricsExporterLifecycle::class)->shouldIgnoreMissing(),
+            Mockery::mock(MetricsPublicationManager::class)->shouldIgnoreMissing(),
+        ),
+        $metricsFleet,
         new NodeRoleOperatingSystemGuard(
             baseline_guard_ssh($events),
             baseline_keys(),
@@ -226,7 +239,16 @@ it('dispatches every assignment to its code-defined baseline', function (): void
 
     foreach (RoleName::cases() as $role) {
         [$node, $assignment] = role_baseline_models($role, "dispatch-{$role->value}");
+
+        if ($role === RoleName::Gateway) {
+            $assignment->update(['status' => 'active']);
+        }
+
         $dispatcher->converge($node, $assignment);
+
+        if ($role === RoleName::AppProd) {
+            $dispatcher->remove($node, $assignment, purgeData: false);
+        }
     }
 
     expect($events)->toContain(
@@ -239,6 +261,7 @@ it('dispatches every assignment to its code-defined baseline', function (): void
 
 it('checks the remote operating system before every role convergence', function (): void {
     $events = [];
+    $metricsFleet = Mockery::mock(MetricsFleetReconciler::class)->shouldIgnoreMissing();
     $dispatcher = new NativeRoleBaselineConverger(
         new GatewayRoleBaseline(baseline_firewall($events)),
         new VpnRoleBaseline(
@@ -251,6 +274,12 @@ it('checks the remote operating system before every role convergence', function 
         ),
         app_dev_role_baseline($events),
         app_prod_role_baseline($events),
+        new MetricsRoleBaseline(
+            Mockery::mock(MetricsRuntimeLifecycle::class)->shouldIgnoreMissing(),
+            Mockery::mock(MetricsExporterLifecycle::class)->shouldIgnoreMissing(),
+            Mockery::mock(MetricsPublicationManager::class)->shouldIgnoreMissing(),
+        ),
+        $metricsFleet,
         new NodeRoleOperatingSystemGuard(
             baseline_guard_ssh($events),
             baseline_keys(),
@@ -260,6 +289,9 @@ it('checks the remote operating system before every role convergence', function 
 
     foreach (RoleName::cases() as $role) {
         [$node, $assignment] = role_baseline_models($role, "guard-{$role->value}");
+        if ($role === RoleName::Gateway) {
+            $assignment->update(['status' => 'active']);
+        }
         $dispatcher->converge($node, $assignment);
     }
 
@@ -278,11 +310,13 @@ it('checks the remote operating system before every role convergence', function 
         'ssh:app-prod',
         'caddy:converge',
         'firewall:converge:app-prod',
+        'guard:unknown',
     ]);
 });
 
 it('stops baseline convergence when the remote operating system guard fails', function (): void {
     $events = [];
+    $metricsFleet = Mockery::mock(MetricsFleetReconciler::class)->shouldIgnoreMissing();
     [$node, $assignment] = role_baseline_models(RoleName::AppDev, 'guard-failure');
     $dispatcher = new NativeRoleBaselineConverger(
         new GatewayRoleBaseline(baseline_firewall($events)),
@@ -296,6 +330,12 @@ it('stops baseline convergence when the remote operating system guard fails', fu
         ),
         app_dev_role_baseline($events),
         app_prod_role_baseline($events),
+        new MetricsRoleBaseline(
+            Mockery::mock(MetricsRuntimeLifecycle::class)->shouldIgnoreMissing(),
+            Mockery::mock(MetricsExporterLifecycle::class)->shouldIgnoreMissing(),
+            Mockery::mock(MetricsPublicationManager::class)->shouldIgnoreMissing(),
+        ),
+        $metricsFleet,
         new NodeRoleOperatingSystemGuard(
             new class($events) implements SshExecutor {
                 /** @param list<string> $events */

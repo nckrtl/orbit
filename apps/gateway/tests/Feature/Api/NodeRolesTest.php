@@ -28,6 +28,57 @@ beforeEach(function (): void {
     $this->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_address]);
 });
 
+it('rejects direct target access for Metrics role mutation', function (): void {
+    $target = node_roles_api_node('metrics-target');
+    $direct = node_roles_api_node('direct-target-consumer');
+    $direct->accessibleNodes()->attach($target);
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $direct->wireguard_address])
+        ->postJson("/api/v1/nodes/{$target->id}/roles", ['role' => 'metrics'])
+        ->assertForbidden();
+});
+
+it('rejects direct target access for Metrics role removal', function (): void {
+    $target = node_roles_api_node('metrics-removal-target');
+    $target
+        ->roles()
+        ->create([
+            'role' => RoleName::Metrics,
+            'status' => LifecycleStatus::Active,
+        ]);
+    $direct = node_roles_api_node('direct-removal-consumer');
+    $direct->accessibleNodes()->attach($target);
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $direct->wireguard_address])
+        ->deleteJson("/api/v1/nodes/{$target->id}/roles/metrics", ['force' => true])
+        ->assertForbidden();
+});
+
+it('allows Metrics role mutation through directed Gateway access', function (): void {
+    $target = node_roles_api_node('gateway-authorized-target');
+    $consumer = node_roles_api_node('gateway-authorized-consumer');
+    $consumer->accessibleNodes()->attach($this->caller);
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $consumer->wireguard_address])
+        ->postJson("/api/v1/nodes/{$target->id}/roles", ['role' => 'metrics'])
+        ->assertCreated();
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $consumer->wireguard_address])
+        ->deleteJson("/api/v1/nodes/{$target->id}/roles/metrics", ['force' => true])
+        ->assertOk();
+});
+
+it('keeps ordinary role mutation on target access', function (): void {
+    $this->caller->accessibleNodes()->attach($this->node);
+
+    $this->postJson("/api/v1/nodes/{$this->node->id}/roles", ['role' => 'app-dev'])
+        ->assertCreated();
+});
+
 it('exposes only the exact numeric node role routes and methods', function (): void {
     $routes = collect(app('router')->getRoutes()->getRoutes())
         ->filter(static fn (\Illuminate\Routing\Route $route): bool => str_starts_with(

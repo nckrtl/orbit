@@ -2,6 +2,29 @@
 
 declare(strict_types=1);
 
+$configuredHome = env('ORBIT_HOME');
+$userHome = getenv('HOME');
+$orbitHome = base_path('.orbit');
+
+if (is_string($userHome) && $userHome !== '') {
+    $orbitHome = $userHome.'/.orbit';
+}
+
+if (is_string($configuredHome) && $configuredHome !== '') {
+    $orbitHome = $configuredHome;
+}
+
+// The Gateway keeps its encryption key with the rest of its durable state in
+// ORBIT_HOME so a replaced checkout keeps reading the settings it encrypted.
+$configuredKey = env('APP_KEY');
+$appKey = is_string($configuredKey) && $configuredKey !== '' ? $configuredKey : null;
+$appKeyFile = rtrim(string: $orbitHome, characters: '/').'/gateway.app-key';
+
+if ($appKey === null && is_file($appKeyFile)) {
+    $storedKey = trim((string) file_get_contents($appKeyFile));
+    $appKey = $storedKey !== '' ? $storedKey : null;
+}
+
 return [
     /*
      |--------------------------------------------------------------------------
@@ -100,7 +123,7 @@ return [
 
     'cipher' => 'AES-256-CBC',
 
-    'key' => env('APP_KEY'),
+    'key' => $appKey,
 
     'previous_keys' => [
         ...array_filter(

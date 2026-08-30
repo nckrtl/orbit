@@ -49,4 +49,15 @@ final readonly class SettingRepository
             ? Crypt::decryptString($setting->value)
             : $setting->value;
     }
+
+    public function delete(SettingScope $scope, string $key): bool
+    {
+        $deleted = (int) Setting::query()
+            ->where('scope_type', $scope->type->value)
+            ->where('scope_id', $scope->id)
+            ->where('key', $key)
+            ->delete();
+
+        return $deleted > 0;
+    }
 }

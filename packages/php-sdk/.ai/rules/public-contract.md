@@ -1,6 +1,6 @@
 # Public contract
 
-The SDK models exactly 45 concrete public Gateway API operations:
+The SDK models exactly 52 concrete public Gateway API operations:
 
 - Gateway: status and root trust.
 - Activity: list and show.
@@ -12,6 +12,7 @@ The SDK models exactly 45 concrete public Gateway API operations:
 - Firewall: list, allow, deny, and remove.
 - Tool: manager list, tool list, show, install, update, and remove.
 - Doctor: run the complete typed Gateway report.
+- Metrics: enable, disable, status, credentials, credential reset, exporter enable, and exporter disable.
 
 The two abstract request bases are implementation details, not extra Gateway
 operations. Keep the public API typed and small.

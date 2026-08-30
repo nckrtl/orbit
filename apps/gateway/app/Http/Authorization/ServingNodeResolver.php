@@ -17,6 +17,7 @@ use Illuminate\Http\Request;
 /**
  * @mago-expect lint:cyclomatic-complexity Each serving scope has one explicit resolution path.
  * @mago-expect lint:kan-defect The cohesive resolver keeps route vocabulary and 404/422 boundaries together.
+ * @mago-expect lint:too-many-methods Each private method resolves one closed serving-node scope.
  */
 final readonly class ServingNodeResolver
 {
@@ -31,6 +32,7 @@ final readonly class ServingNodeResolver
             ServingNode::WorkspaceOwning => $this->workspaceOwning($request),
             ServingNode::ProcessOwning => $this->processOwning($request),
             ServingNode::ToolOwning => $this->toolOwning($request),
+            ServingNode::RoleMutation => $this->roleMutation($request),
             ServingNode::Collection => [],
         };
     }
@@ -38,7 +40,7 @@ final readonly class ServingNodeResolver
     /** @return list<Node> */
     private function gateway(): array
     {
-        $gateway = Node::query()
+        $gateways = Node::query()
             ->where('status', LifecycleStatus::Active)
             ->whereHas('roles', static function ($query): void {
                 $query
@@ -46,13 +48,14 @@ final readonly class ServingNodeResolver
                     ->where('status', LifecycleStatus::Active);
             })
             ->orderBy('id')
-            ->first();
+            ->limit(2)
+            ->get();
 
-        if (! $gateway instanceof Node) {
-            throw new ActiveGatewayMissing('An active Gateway node is required.');
+        if ($gateways->count() !== 1) {
+            throw new ActiveGatewayMissing('Exactly one active Gateway node is required.');
         }
 
-        return [$gateway];
+        return [$gateways->sole()];
     }
 
     /** @return list<Node> */
@@ -186,6 +189,21 @@ final readonly class ServingNodeResolver
         }
 
         return [Node::query()->findOrFail($nodeId)];
+    }
+
+    /**
+     * @return list<Node>
+     * @mago-expect analysis:mixed-assignment Route and request input are untyped transport boundaries.
+     */
+    private function roleMutation(Request $request): array
+    {
+        $role = $request->route('role') ?? $request->input('role');
+
+        if ($role === RoleName::Metrics->value || $role === RoleName::Metrics) {
+            return $this->gateway();
+        }
+
+        return $this->target($request);
     }
 
     private function ownerNode(Instance|Workspace $owner): Node

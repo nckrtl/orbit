@@ -26,7 +26,10 @@ final class RunDoctorRequest extends FormRequest
         ];
     }
 
-    /** @return array<string, mixed> */
+    /**
+     * @return array<string, mixed>
+     * @mago-expect analysis:mixed-assignment Decoded request input is an untyped transport boundary.
+     */
     public function validationData(): array
     {
         try {
@@ -49,6 +52,7 @@ final class RunDoctorRequest extends FormRequest
         }
     }
 
+    /** @mago-expect analysis:mixed-assignment Validated request input is an untyped transport boundary. */
     public function nodeId(): ?int
     {
         $nodeId = $this->validated('node_id');
@@ -62,7 +66,6 @@ final class RunDoctorRequest extends FormRequest
         /** @var list<string> $families */
         $families = $this->validated('families', []);
 
-        /** @var list<DoctorFamily> */
         return array_map(
             DoctorFamily::from(...),
             array_values($families),

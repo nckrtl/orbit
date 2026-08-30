@@ -32,6 +32,7 @@ final class NodeFirewallRuleCatalog
                 $this->rule('orbit:app-dev-direct-https', '443'),
             ],
             RoleName::AppProd => [$this->rule('orbit:app-prod-http', '80'), $this->rule('orbit:app-prod-https', '443')],
+            RoleName::Metrics => [],
         };
     }
 

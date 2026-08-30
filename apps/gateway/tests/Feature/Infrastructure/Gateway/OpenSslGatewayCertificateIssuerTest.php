@@ -148,6 +148,68 @@ it('creates an idempotent Orbit root CA signed gateway leaf with DNS and IP iden
     }
 });
 
+it('publishes the Metrics leaf without replacing the Gateway certificate scope', function (): void {
+    $orbitHome = sys_get_temp_dir().'/orbit-metrics-certificate-'.Str::uuid();
+    $caDirectory = $orbitHome.'/ca';
+    mkdir(directory: $caDirectory, permissions: 0o700, recursive: true);
+    $processes = new NativeProcessRunner;
+
+    try {
+        expect(
+            $processes->run(new ProcessInvocation([
+                'openssl',
+                'genpkey',
+                '-algorithm',
+                'ED25519',
+                '-out',
+                $caDirectory.'/root.key',
+            ]))->succeeded(),
+        )->toBeTrue();
+        expect(
+            $processes->run(new ProcessInvocation([
+                'openssl',
+                'req',
+                '-x509',
+                '-new',
+                '-key',
+                $caDirectory.'/root.key',
+                '-out',
+                $caDirectory.'/root.pem',
+                '-days',
+                '3650',
+                '-subj',
+                '/CN=Orbit Root CA',
+            ]))->succeeded(),
+        )->toBeTrue();
+        $issuer = new OpenSslGatewayCertificateIssuer(
+            processes: $processes,
+            validator: new OpenSslGatewayCertificateValidator($processes),
+            links: new NativeAtomicSymlinkPublisher,
+            orbitHome: $orbitHome,
+        );
+        $gateway = $issuer->issue('gateway.orbit', '10.44.0.1');
+        $gatewayCertificate = file_get_contents($gateway->certificatePath);
+        $metrics = $issuer->issue('metrics.orbit', '10.44.0.1');
+
+        expect($gateway->certificatePath)
+            ->toBe($caDirectory.'/gateway-current/gateway.pem')
+            ->and($metrics->certificatePath)
+            ->toBe($caDirectory.'/metrics-current/gateway.pem')
+            ->and($metrics->privateKeyPath)
+            ->toBe($caDirectory.'/metrics-current/gateway.key')
+            ->and(file_get_contents($gateway->certificatePath))
+            ->toBe($gatewayCertificate)
+            ->and(gateway_certificate_text($processes, $metrics->certificatePath))
+            ->toContain('DNS:metrics.orbit', 'IP Address:10.44.0.1')
+            ->and(is_dir($caDirectory.'/gateway-versions'))
+            ->toBeTrue()
+            ->and(is_dir($caDirectory.'/metrics-versions'))
+            ->toBeTrue();
+    } finally {
+        new Filesystem()->deleteDirectory($orbitHome);
+    }
+});
+
 it('renews gateway leaves when they expire within 30 days', function (): void {
     $processes = new class implements ProcessRunner {
         /** @var list<ProcessInvocation> */
