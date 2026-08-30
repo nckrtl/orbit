@@ -165,17 +165,36 @@ final readonly class GatewayConfigRepository
     private function write(array $config): void
     {
         $directory = dirname($this->path);
+        $directoryCreated = false;
 
-        if (
-            ! is_dir($directory)
-            && ! mkdir(directory: $directory, permissions: 0o700, recursive: true)
-            && ! is_dir($directory)
-        ) {
+        if (! is_dir($directory)) {
+            $directoryCreated = mkdir(directory: $directory, permissions: 0o700, recursive: true);
+
+            if (! $directoryCreated && ! is_dir($directory)) {
+                throw new GatewayConfigException('Could not update Orbit gateway configuration.');
+            }
+        }
+
+        if ($directoryCreated && ! chmod(filename: $directory, permissions: 0o700)) {
             throw new GatewayConfigException('Could not update Orbit gateway configuration.');
         }
 
-        if (! chmod(filename: $directory, permissions: 0o700)) {
-            throw new GatewayConfigException('Could not update Orbit gateway configuration.');
+        if (! $directoryCreated) {
+            $permissions = fileperms($directory);
+            $owner = fileowner($directory);
+            $effectiveUserId = function_exists('posix_geteuid') ? posix_geteuid() : null;
+
+            if (
+                is_link($directory)
+                || ! is_int($permissions)
+                || ($permissions & 0o700) !== 0o700
+                || ($permissions & 0o067) !== 0
+                || ! is_int($owner)
+                || ! is_int($effectiveUserId)
+                || $owner !== $effectiveUserId
+            ) {
+                throw new GatewayConfigException('Orbit gateway configuration directory is not private.');
+            }
         }
 
         $temporaryPath = $this->path.'.tmp.'.bin2hex(random_bytes(8));
