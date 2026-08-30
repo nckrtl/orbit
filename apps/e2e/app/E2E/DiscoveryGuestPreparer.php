@@ -15,10 +15,11 @@ use RuntimeException;
  * Prepare the cloned guests of one discovery attempt for a mounted worktree.
  *
  * Two ordered phases run after the clones boot: `mount.source` proves the
- * worktree is mounted on every checkout role, then places the preserved gateway
- * environment, and `repair.identity` points the nodes at the cloned gateway and
- * restarts PHP-FPM so no cache names the hidden snapshot checkout. The mount
- * proof alone is what verify and sync re-run before touching a mounted topology.
+ * worktree is mounted on every checkout role, places the preserved gateway
+ * environment, and links the CLI onto the guest `PATH`; `repair.identity`
+ * points the nodes at the cloned gateway and restarts PHP-FPM so no cache names
+ * the hidden snapshot checkout. The mount proof alone is what verify and sync
+ * re-run before touching a mounted topology.
  */
 final readonly class DiscoveryGuestPreparer
 {
@@ -62,6 +63,19 @@ final readonly class DiscoveryGuestPreparer
                 .'.',
             );
         }
+    }
+
+    /** Expose `orbit` by name for the orbit user on every checkout role. */
+    public function exposeOrbitCli(TopologyTarget $target): void
+    {
+        $commands = [];
+        foreach (TopologyProfile::CHECKOUT_ROLES as $role) {
+            $commands["orbit-cli.{$role}"] = [
+                'instance' => $target->instance($role),
+                'command' => GuestCommand::linkOrbitCli(),
+            ];
+        }
+        $this->assertGuestBatch($this->host->execAll($commands), 'The orbit CLI could not be linked onto the PATH on');
     }
 
     /**

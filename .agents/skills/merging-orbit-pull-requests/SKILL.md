@@ -6,10 +6,11 @@ description: Use when performing the final merge gate for an approved Orbit pull
 # Merging Orbit Pull Requests
 
 Verify the exact approved candidate and merge it only when every gate passes.
-The external project manager owns issue state, proof-topology release,
-prepared-state refresh, worktree removal, issue closure, and all production
-deployment work. The merge verifier performs no cleanup and no topology
-mutation.
+The feature worker runs discovery `release` and `prove` for its own issue.
+The external project manager keeps post-merge cleanup only: issue state,
+proof-topology release, prepared-state refresh, worktree removal, issue
+closure, and all production deployment work. The merge verifier performs
+no cleanup and no topology mutation.
 
 ## Required input
 

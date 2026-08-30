@@ -5,11 +5,11 @@ description: Use when implementing or resuming a Ready Orbit Linear issue anywhe
 
 # Developing Orbit Features
 
-Own Work, Compound, discovery, candidate proof, the pull request, and review
-corrections. The external project manager owns issue state, the worktree,
-topology creation and release requests, merge, post-merge cleanup, and issue
-closure. The feature worker owns its internal implementation subagents. The
-flow is governed by
+Own Work, Compound, discovery, discovery release, candidate proof, the pull
+request, and review corrections. The external project manager owns issue
+state, the worktree, discovery creation, merge, post-merge cleanup (including
+release of the proved topology), and issue closure. The feature worker owns
+its internal implementation subagents. The flow is governed by
 [ADR 0006](../../../docs/decisions/0006-topology-led-feature-development.md).
 
 ## Repository scope
@@ -106,13 +106,16 @@ Automated-only work skips them and continues at step 10 with
    or, when the command needs stdin, `--argv-file=PATH` where the file holds
    `{"argv":[...],"stdin":null}`; the two options are mutually exclusive. The
    vector runs as the orbit user through `env`, so `argv[0]` must resolve on
-   the guest `PATH` or be an absolute path; the Orbit CLI is not on that
-   `PATH`. Example:
+   the guest `PATH` or be an absolute path. The harness links the checkout's
+   CLI to `/usr/local/bin/orbit` on `gateway` and `app-dev`, so `orbit`
+   resolves by name in discovery and proof alike. Example:
 
    ```bash
    bin/e2e-topology exec NCK-82 ATTEMPT app-dev \
-     --argv='["/home/orbit/orbit/apps/cli/orbit","doctor","--json"]' --json
+     --argv='["orbit","doctor","--json"]' --json
    ```
+
+   An issue with no active attempt fails with `ISSUE has no active attempt.`
 
    Use `bin/e2e-topology verify ISSUE ATTEMPT --json` and
    `bin/e2e-topology status ISSUE --json` to inspect. Discovery output is not
@@ -132,8 +135,9 @@ Automated-only work skips them and continues at step 10 with
    commit; rerun the gates on it before the next proof. The proof plan and
    the fixtures under `apps/e2e/resources/proof/<issue>/` may change between
    rounds, because they are proof input rather than product state.
-8. **Remove discovery.** Request discovery release from the project manager.
-   It runs `bin/e2e-topology release ISSUE ATTEMPT --json`. Wait for verified
+8. **Remove discovery.** The worker runs
+   `bin/e2e-topology release ISSUE ATTEMPT --json` for its own discovery
+   attempt; no project-manager round trip is needed. Wait for verified
    absence before proof. Proof cannot start while a discovery attempt exists.
 9. **Prove fresh.** Write the proof plan file:
 
@@ -150,8 +154,8 @@ Automated-only work skips them and continues at step 10 with
    Put proof-only scripts and data in `apps/e2e/resources/proof/<issue>/` and
    commit them with the candidate; `prove` stages them root-owned at
    `/var/lib/orbit-e2e/proof/<name>` on every role, including `app-prod`, and
-   the record lists the staged digest per role under `proof_fixtures`. Call
-   the one-shot proof command for the exact candidate:
+   the record lists the staged digest per role under `proof_fixtures`. The
+   worker runs the one-shot proof command for the exact candidate itself:
    `bin/e2e-topology prove ISSUE WORKTREE --candidate-sha=SHA --proof-plan-file=PATH --json`.
    The harness creates a fresh proof attempt, synchronizes the exact commit
    from Git, verifies clean guest checkout identity, stages the fixtures,
@@ -169,7 +173,8 @@ Automated-only work skips them and continues at step 10 with
     comment in the same worktree. Any new commit changes the pull-request head,
     so the prior proof is stale. Move the old proof to diagnosis with
     `bin/e2e-topology diagnose ISSUE ATTEMPT --json` only when it helps the
-    investigation. Request release of the old topology, rerun the local gates
+    investigation. Release the old topology with
+    `bin/e2e-topology release ISSUE ATTEMPT --json`, rerun the local gates
     from step 7, complete fresh proof from step 9, and then push the new
     candidate. After the push, post one pull request conversation comment for
     that candidate SHA and return `changes_addressed`:
@@ -180,9 +185,9 @@ Automated-only work skips them and continues at step 10 with
 
 12. **Merge.** The merge verifier uses
     `.agents/skills/merging-orbit-pull-requests`.
-13. **Clean development resources.** The project manager releases the proof
-    topology, refreshes prepared state when needed, removes the worktree, and
-    closes the issue.
+13. **Clean development resources.** The project manager keeps post-merge
+    cleanup only: it releases the proof topology, refreshes prepared state
+    when needed, removes the worktree, and closes the issue.
 14. **Deploy separately.** The production deployment process deploys the
     merged code and performs and verifies `post_deployment_actions`.
 

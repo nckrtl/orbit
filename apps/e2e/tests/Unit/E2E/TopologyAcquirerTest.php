@@ -3868,6 +3868,24 @@ it('fails closed for a malformed interrupted sync lease', function (array $lease
     ]],
 ]);
 
+it('names the issue without an active attempt on operational entry points', function (string $entryPoint) {
+    $repositoryRoot = preparedTopologyRepository();
+    $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));
+    $events = [];
+    fakePinnedWorktreeProcesses(featureTarget('NCK-123'), $events);
+    $acquirer = taskNineAcquirer($repositoryRoot, $paths);
+    $request = new TopologyRequest('NCK-123', $repositoryRoot);
+
+    expect(fn () => match ($entryPoint) {
+        'sync' => $acquirer->sync($request->issue, attemptId(), $request->worktree),
+        'verify' => $acquirer->verify('NCK-123', attemptId()),
+        'execute' => $acquirer->execute('NCK-123', attemptId(), 'gateway', ['true']),
+    })
+        ->toThrow(RuntimeException::class, 'NCK-123 has no active attempt.')
+        ->and($events)
+        ->toBeEmpty();
+})->with(['sync', 'verify', 'execute']);
+
 it('fails closed for a malformed ready lease on operational entry points', function (string $entryPoint) {
     $repositoryRoot = preparedTopologyRepository();
     $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));

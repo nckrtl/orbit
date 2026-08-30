@@ -21,6 +21,15 @@ final class MountPath
      */
     public const string GUEST_SOURCE = '/home/orbit/orbit';
 
+    /**
+     * The `PATH` entry that resolves `orbit` for the orbit user on every checkout
+     * role: a symlink to the CLI entrypoint of the mounted or bundled checkout, so
+     * `exec` and proof-plan argv can name the program instead of its path.
+     */
+    public const string ORBIT_CLI_LINK = '/usr/local/bin/orbit';
+
+    public const string ORBIT_CLI_ENTRYPOINT = self::GUEST_SOURCE.'/apps/cli/orbit';
+
     public static function isSafe(string $path): bool
     {
         return (

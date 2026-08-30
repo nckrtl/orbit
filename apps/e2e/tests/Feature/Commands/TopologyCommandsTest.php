@@ -211,6 +211,28 @@ describe('topology commands', function () {
             ->assertFailed();
     });
 
+    it('names the issue without an active attempt on exec', function () {
+        config(['e2e.incus.operation_id' => '0123456789abcdef0123456789abcdef']);
+        app()->forgetInstance(OperationId::class);
+        $paths = commandStatePaths();
+
+        $this
+            ->artisan('topology:exec', [
+                'issue' => 'NCK-999',
+                'attempt' => attemptId()->value,
+                'role' => 'gateway',
+                '--argv' => '["orbit","doctor","--json"]',
+                '--json' => true,
+            ])
+            ->expectsOutput(json_encode([
+                'state' => 'failed',
+                'operation_id' => '0123456789abcdef0123456789abcdef',
+                'error' => 'NCK-999 has no active attempt.',
+            ], JSON_THROW_ON_ERROR))
+            ->assertFailed();
+        expect(glob($paths->root().'/*'))->toBe([$paths->root().'/locks']);
+    });
+
     it('reports an absent topology without touching infrastructure', function () {
         config(['e2e.incus.operation_id' => '0123456789abcdef0123456789abcdef']);
         app()->forgetInstance(OperationId::class);

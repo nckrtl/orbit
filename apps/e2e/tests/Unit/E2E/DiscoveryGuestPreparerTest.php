@@ -141,6 +141,36 @@ describe('mount.source', function () {
             ->and($execs)
             ->toHaveCount(1);
     });
+
+    it('links the orbit CLI onto the PATH of every checkout role as root', function () {
+        $batches = [];
+        $execs = [];
+        fakePreparerGuests([], $batches, $execs);
+        $target = preparerTarget();
+
+        new DiscoveryGuestPreparer(new IncusHost)->exposeOrbitCli($target);
+
+        expect($batches)
+            ->toHaveCount(1)
+            ->and($batches[0]['labels'])
+            ->toBe(['orbit-cli.gateway', 'orbit-cli.app-dev'])
+            ->and($batches[0]['instances'])
+            ->toBe(['local:'.$target->instance('gateway'), 'local:'.$target->instance('app-dev')])
+            ->and($batches[0]['argv'])
+            ->each
+            ->toBe(['ln', '-sfn', '/home/orbit/orbit/apps/cli/orbit', '/usr/local/bin/orbit'])
+            ->and($execs)
+            ->toBe([]);
+    });
+
+    it('names every role whose CLI link failed', function () {
+        $batches = [];
+        $execs = [];
+        fakePreparerGuests(['orbit-cli.app-dev' => 1], $batches, $execs);
+
+        expect(fn () => new DiscoveryGuestPreparer(new IncusHost)->exposeOrbitCli(preparerTarget()))
+            ->toThrow(RuntimeException::class, 'The orbit CLI could not be linked onto the PATH on orbit-cli.app-dev.');
+    });
 });
 
 describe('repair.identity', function () {

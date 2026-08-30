@@ -427,6 +427,7 @@ final readonly class TopologyAcquirer
             $this->measurePhase($phase, $phaseTimings, function () use ($target): void {
                 $this->guests->assertSourceMounted($target);
                 $this->guests->placeGatewayEnvironment($target);
+                $this->guests->exposeOrbitCli($target);
             });
             $phase = 'repair.identity';
             $this->measurePhase($phase, $phaseTimings, fn () => $this->guests->repairCloneIdentity($target));
@@ -717,10 +718,7 @@ final readonly class TopologyAcquirer
 
     private function requireTopology(string $issue, AttemptId $attempt, bool $mutating = true): FeatureTopology
     {
-        $lease = $this->state->read('leases/'.$issue.'.json');
-        if (! is_array($lease)) {
-            throw new RuntimeException('The topology lease is invalid.');
-        }
+        $lease = $this->requireLease($issue);
         if (($lease['state'] ?? null) !== 'ready') {
             throw new RuntimeException('The feature topology lease is not ready.');
         }
@@ -731,10 +729,7 @@ final readonly class TopologyAcquirer
 
     private function requireTopologyForSync(string $issue, AttemptId $attempt): FeatureTopology
     {
-        $lease = $this->state->read('leases/'.$issue.'.json');
-        if (! is_array($lease)) {
-            throw new RuntimeException('The sync lease is invalid.');
-        }
+        $lease = $this->requireLease($issue);
         $state = $lease['state'] ?? null;
         if ($state === 'ready') {
             return $this->requireTopology($issue, $attempt);
@@ -775,6 +770,21 @@ final readonly class TopologyAcquirer
         }
 
         return $topology;
+    }
+
+    /**
+     * An absent lease means the issue has no attempt at all, which is the common
+     * operator mistake; a present but malformed lease is reported as invalid later.
+     *
+     * @return array<array-key, mixed>
+     */
+    private function requireLease(string $issue): array
+    {
+        return (
+            $this->state->read('leases/'.$issue.'.json') ?? throw new RuntimeException(
+                "{$issue} has no active attempt.",
+            )
+        );
     }
 
     /** @param array<array-key, mixed> $lease */

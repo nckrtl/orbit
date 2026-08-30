@@ -18,8 +18,10 @@ describe('Composer configuration', function (): void {
             ->not->toHaveKey('Database\\')->and(json_encode($composer['scripts'], JSON_THROW_ON_ERROR))
             ->not->toMatch('/migrate|artisan dev|sqlite|routes|database/i');
 
-        expect($composer['scripts']['analyse'])->toBe('vendor/bin/mago analyze app --reporting-format=medium');
-        expect($composer['scripts']['lint'])->toBe('vendor/bin/mago lint app tests --reporting-format=medium');
+        expect($composer['scripts']['analyse'])
+            ->toBe('vendor/bin/mago analyze app --reporting-format=medium --minimum-report-level=error');
+        expect($composer['scripts']['lint'])
+            ->toBe('vendor/bin/mago lint app tests --reporting-format=medium --minimum-report-level=error');
 
         foreach (['.env.example', 'config/app.php', 'phpunit.xml', 'tests/Pest.php'] as $file) {
             expect(file_get_contents(base_path($file)))

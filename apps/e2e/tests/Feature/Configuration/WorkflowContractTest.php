@@ -32,6 +32,22 @@ it('keeps the topology-led workflow contracts aligned', function (): void {
     expect($worker)->toMatch('/status: proved\|not-applicable/');
     expect($worker)->toMatch('/CI fields may\s+remain `null` while CI runs/');
     expect($worker)->toMatch('/subagents/');
+    // Worker-owned discovery release and proof; the project manager keeps post-merge cleanup only
+    expect($worker)->toMatch(
+        '/Remove discovery\.\*\* The worker runs\s+`bin\/e2e-topology release ISSUE ATTEMPT --json`/',
+    );
+    expect($worker)->toMatch('/worker runs the one-shot proof command/');
+    expect($worker)->toMatch('/project manager keeps post-merge\s+cleanup only/');
+    expect($worker)->not->toMatch('/Request (discovery )?release/');
+    expect($review)->toMatch('/feature worker\s+runs discovery `release` and `prove` for its own issue/');
+    expect($merge)->toMatch('/feature worker runs discovery `release` and `prove` for its own issue/');
+    expect($merge)->toMatch('/project manager keeps post-merge cleanup only/');
+    expect($workflow)->toMatch('/Remove discovery\.\*\* The worker runs/');
+    // The CLI resolves by name on the guest PATH; an absent attempt is named as such
+    expect($topologies)->toContain('/usr/local/bin/orbit', 'ISSUE has no active attempt.');
+    expect($worker)->toContain('--argv=\'["orbit","doctor","--json"]\'', 'ISSUE has no active attempt.');
+    expect($topologies)->not->toContain('The Orbit CLI is not on that `PATH`');
+    expect($worker)->not->toContain('the Orbit CLI is not on that');
 
     // Reviewer: review can approve while CI is pending
     expect($review)->toMatch('/approve while CI is\s+pending/');
