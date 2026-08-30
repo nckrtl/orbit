@@ -271,11 +271,15 @@ final readonly class ProvisionNodeAction
         if ($data->settingsProvided) {
             try {
                 $this->nodeSettings->persistDuringProvisioning($node->refresh(), $data->settings);
+            } catch (ResourceOperationException $exception) {
+                throw $exception;
+            } catch (RuntimeConvergenceException $exception) {
+                throw new ResourceOperationException(
+                    errorCode: $exception->errorCode,
+                    message: $exception->getMessage(),
+                    previous: $exception,
+                );
             } catch (Throwable $exception) {
-                if ($exception instanceof ResourceOperationException) {
-                    throw $exception;
-                }
-
                 $failure = new NodeProvisioningException(
                     step: 'node-storage-root',
                     errorCode: 'node.settings_root_failed',
