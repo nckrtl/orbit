@@ -21,7 +21,9 @@ final readonly class PrometheusConfigRenderer
             $entries .=
                 '      - targets: ["'
                 .$node['address']
-                .':9100"]'
+                .':'
+                .MetricsFootprint::ExporterPort
+                .'"]'
                 ."\n        labels:\n          node: \""
                 .$node['name']
                 ."\"\n";

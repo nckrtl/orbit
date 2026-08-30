@@ -22,7 +22,7 @@ use App\Models\Node;
  */
 final readonly class MetricsPublicationSshExecutor
 {
-    private const string FirewallComment = 'orbit:metrics-grafana-upstream';
+    private const string FirewallComment = MetricsFootprint::PublicationFirewallComment;
 
     public function __construct(
         private SshExecutor $ssh,
@@ -62,7 +62,7 @@ final readonly class MetricsPublicationSshExecutor
                     'to',
                     $shape->destination,
                     'port',
-                    '3000',
+                    MetricsFootprint::PublicationPort,
                     'comment',
                     self::FirewallComment,
                 ]),
@@ -190,7 +190,7 @@ final readonly class MetricsPublicationSshExecutor
             direction: 'in',
             source: $gatewayAddress,
             destination: $metricsAddress,
-            port: '3000',
+            port: MetricsFootprint::PublicationPort,
             protocol: 'tcp',
             inInterface: 'orbit',
             outInterface: null,

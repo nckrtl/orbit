@@ -3,8 +3,26 @@
 declare(strict_types=1);
 
 use App\Infrastructure\Metrics\MetricsConfigurationRenderer;
+use App\Infrastructure\Metrics\MetricsFootprint;
 
 describe(MetricsConfigurationRenderer::class, function (): void {
+    it('generates exactly the files MetricsFootprint::ConfigurationPaths names', function (): void {
+        $renderer = new MetricsConfigurationRenderer;
+
+        $bundle = $renderer->render(metricsRendererTargets(), 'admin-password');
+
+        $generatedPaths = array_map(
+            static fn (App\Infrastructure\Metrics\MetricsGeneratedFile $file): string => $file->path,
+            $bundle->files,
+        );
+
+        sort($generatedPaths);
+        $expectedPaths = MetricsFootprint::ConfigurationPaths;
+        sort($expectedPaths);
+
+        expect($generatedPaths)->toBe($expectedPaths);
+    });
+
     it('hashes each service against the files that service reads', function (): void {
         $renderer = new MetricsConfigurationRenderer;
 
