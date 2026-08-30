@@ -11,6 +11,7 @@ use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\WireGuard\NativeGatewayVpnConverger;
+use App\Infrastructure\WireGuard\RetiredDnsmasqSnippets;
 use App\Models\Node;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Collection;
@@ -139,19 +140,33 @@ function assert_gateway_publication_commands(
             'systemctl restart "$service"',
         )
         ->not->toContain('After=wg-quick@orbit.service');
-    expect($arguments[9])->toBe(['sudo', 'bash', '-seu']);
+    expect($arguments[9])
+        ->toBe([
+            'sudo',
+            'bash',
+            '-seu',
+            '--',
+            '/etc/dnsmasq.d',
+            '/var/lib/orbit/dnsmasq/disabled',
+            'ubuntu-fan',
+        ]);
     expect($processes->calls[9]->input)
+        ->toBe(new RetiredDnsmasqSnippets()->script())
+        ->toContain('mv -fT -- "$stock" "$retired_directory/$snippet"');
+    expect($arguments[10])->toBe(['sudo', 'bash', '-seu']);
+    expect($processes->calls[10]->input)
         ->toContain(
             'exec 9>/run/lock/orbit-dnsmasq.lock',
             'flock -w 30 9',
             'dnsmasq --test --conf-file="$validation/dnsmasq.conf"',
             'cmp -s -- "$validation/fragments/orbit-vpn.conf" "$managed"',
             'if systemctl is-active --quiet dnsmasq; then',
-            'if ! systemctl restart dnsmasq; then',
+            'if ! restart_dnsmasq; then',
+            'journalctl --unit=dnsmasq --lines=20 --no-pager >&2 || true',
             'systemctl restart dnsmasq || true',
         );
     expect(base64_decode(
-        Str::match('/\x27([A-Za-z0-9+\/=]+)\x27 \| base64 --decode/', $processes->calls[9]->input ?? ''),
+        Str::match('/\x27([A-Za-z0-9+\/=]+)\x27 \| base64 --decode/', $processes->calls[10]->input ?? ''),
         strict: true,
     ))->toContain('bind-dynamic');
 }
@@ -159,7 +174,7 @@ function assert_gateway_publication_commands(
 /** @param list<list<string>> $arguments */
 function assert_gateway_firewall_commands(array $arguments): void
 {
-    expect(array_slice(array: $arguments, offset: 10))->toBe([
+    expect(array_slice(array: $arguments, offset: 11))->toBe([
         ['sudo', 'ufw', 'status', 'numbered'],
         [
             'sudo',
@@ -584,6 +599,31 @@ it('fails closed before mutating UFW when the VPN comment identifies a broader r
     }
 });
 
+it('reports the bounded dnsmasq journal tail when the managed restart fails', function (): void {
+    [$converger, $processes, $orbitHome] = gateway_vpn_converger();
+    $node = Node::query()->create([
+        'name' => 'gateway',
+        'public_ssh_host' => '85.9.218.89',
+        'wireguard_address' => '10.44.0.1',
+    ]);
+
+    try {
+        $converger->converge($node, gateway_bootstrap_data());
+        [$exitCode, $stderr] = gateway_dnsmasq_restart_failure($processes->calls[10]->input ?? '');
+
+        expect($exitCode)
+            ->toBe(1)
+            ->and($stderr)
+            ->toContain(
+                'dnsmasq did not restart. Last journal lines:',
+                'journalctl --unit=dnsmasq --lines=20 --no-pager',
+                'dnsmasq: cannot set --bind-interfaces and --bind-dynamic',
+            );
+    } finally {
+        new Filesystem()->deleteDirectory($orbitHome);
+    }
+});
+
 it('does not touch UFW when dnsmasq convergence fails and includes rollback', function (): void {
     [$converger, $processes, $orbitHome] = gateway_vpn_converger(failDns: true);
     $node = Node::query()->create([
@@ -598,7 +638,12 @@ it('does not touch UFW when dnsmasq convergence fails and includes rollback', fu
                 expect($exception->step)
                     ->toBe('vpn-dns')
                     ->and($exception->errorCode)
-                    ->toBe('vpn.dns_config_failed');
+                    ->toBe('vpn.dns_config_failed')
+                    ->and($exception->result?->stderr)
+                    ->toContain(
+                        'dnsmasq did not restart. Last journal lines:',
+                        'dnsmasq: cannot set --bind-interfaces and --bind-dynamic',
+                    );
             });
         $dns = Collection::make($processes->calls)
             ->first(
@@ -757,6 +802,42 @@ it('restores and restarts the previous gateway WireGuard config when activation 
  *
  * @return array{NativeGatewayVpnConverger, GatewayVpnFakeProcessRunner, string}
  */
+/**
+ * Run the rendered dnsmasq restart helper with a failing `systemctl` shim and
+ * a `journalctl` shim that prints the conflict the unit reports.
+ *
+ * @return array{int, string}
+ */
+function gateway_dnsmasq_restart_failure(string $script): array
+{
+    $root = sys_get_temp_dir().'/orbit-dnsmasq-restart-'.Str::uuid();
+    mkdir(directory: $root.'/bin', permissions: 0o700, recursive: true);
+    file_put_contents(
+        filename: $root.'/bin/systemctl',
+        data: "#!/usr/bin/env bash\nprintf 'Job for dnsmasq.service failed.\\n' >&2\nexit 1\n",
+    );
+    file_put_contents(filename: $root.'/bin/journalctl', data: <<<'BASH'
+        #!/usr/bin/env bash
+        printf 'journalctl %s\n' "$*"
+        printf 'dnsmasq: cannot set --bind-interfaces and --bind-dynamic\n'
+        BASH);
+    chmod($root.'/bin/systemctl', permissions: 0o755);
+    chmod($root.'/bin/journalctl', permissions: 0o755);
+    $helper = Str::match('/^restart_dnsmasq\(\) \{$.*?^\}$/ms', $script);
+
+    try {
+        $process = new Symfony\Component\Process\Process(['bash', '-seu'], $root, [
+            'PATH' => $root.'/bin:'.getenv('PATH'),
+        ]);
+        $process->setInput($helper."\nrestart_dnsmasq\n");
+        $process->run();
+
+        return [$process->getExitCode() ?? 1, $process->getErrorOutput()];
+    } finally {
+        new Filesystem()->deleteDirectory($root);
+    }
+}
+
 function gateway_vpn_converger(
     bool $failValidation = false,
     bool $failForwarding = false,
@@ -929,7 +1010,13 @@ final class GatewayVpnFakeProcessRunner implements ProcessRunner
             && $invocation->arguments === ['sudo', 'bash', '-seu']
             && str_contains($invocation->input ?? '', 'managed=/etc/dnsmasq.d/orbit-vpn.conf')
         ) {
-            return new CommandResult(1, '', 'dnsmasq restart failed', 2, false);
+            return new CommandResult(
+                1,
+                '',
+                "dnsmasq did not restart. Last journal lines:\ndnsmasq: cannot set --bind-interfaces and --bind-dynamic\n",
+                2,
+                false,
+            );
         }
 
         if (
