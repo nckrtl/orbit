@@ -35,7 +35,7 @@ final class LiveHarness
 
     public static function repositoryRoot(): string
     {
-        return dirname(__DIR__, 4);
+        return dirname(__DIR__, 5);
     }
 
     public static function wrapper(string $tool, string $action, string ...$arguments): ProcessResult
