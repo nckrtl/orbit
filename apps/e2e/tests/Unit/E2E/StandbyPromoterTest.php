@@ -21,6 +21,7 @@ use App\E2E\Value\OperationId;
 use App\E2E\Value\ProofFixtures;
 use App\E2E\Value\ProofPlan;
 use App\E2E\Value\SourceState;
+use App\E2E\Value\StandbyIdentity;
 use App\E2E\Value\TopologyProfile;
 use App\E2E\Value\TopologyRequest;
 use App\E2E\Value\TopologyTarget;
@@ -137,6 +138,7 @@ function promoterFor(string $root, StatePaths $paths, StandbyManifestStore $mani
         $paths,
         new GitRepository($root),
         $operation,
+        StandbyIdentity::primary(),
     );
 }
 
