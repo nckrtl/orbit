@@ -114,7 +114,6 @@ final readonly class NodeRolePrerequisiteCommandFactory
             BASH;
         $appDevSetup = <<<'BASH'
                 install -d -m 0755 -o "$managed_user" -g "$managed_group" "$managed_home/apps" "$managed_home/.orbit/worktrees"
-                setfacl -m u:caddy:--x "$managed_home" "$managed_home/apps" "$managed_home/.orbit" "$managed_home/.orbit/worktrees"
             BASH;
         $runtime = <<<'BASH'
                 if { [ -e /opt/orbit ] || [ -L /opt/orbit ]; } \

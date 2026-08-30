@@ -33,7 +33,7 @@ final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
         $account = $this->accounts->resolve($instance->node);
         $repository = GitRepositoryOrigin::validate($instance->app->repository_url);
         $allowedRoot = $this->removal->instanceRoot($instance, $account);
-        $traversalPaths = $this->checkoutTraversalPaths($instance->checkout_path, $account->home);
+        $traversalPaths = $this->checkoutTraversalPaths($instance->checkout_path);
         $this->lock->synchronized($instance->node_id, function () use (
             $instance,
             $repository,
@@ -209,9 +209,7 @@ final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
         ): void {
             $releasePaths = $this->releasableTraversalPaths(
                 $instance->checkout_path,
-                $allowedRoot,
                 $instance->node_id,
-                $account,
                 ignoreInstanceId: $instance->id,
             );
             $arguments = [
@@ -276,7 +274,7 @@ final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
             $allowedRoot,
             $origin,
         ): void {
-            $traversalPaths = $this->checkoutTraversalPaths($workspace->checkout_path, $account->home);
+            $traversalPaths = $this->checkoutTraversalPaths($workspace->checkout_path);
             $arguments = [
                 'bash',
                 '-seu',
@@ -471,9 +469,7 @@ final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
         ): void {
             $releasePaths = $this->releasableTraversalPaths(
                 $workspace->checkout_path,
-                $allowedRoot,
                 $workspace->instance->node_id,
-                $account,
                 ignoreWorkspaceId: $workspace->id,
             );
             $recognized = $grouping instanceof StoragePath
@@ -863,19 +859,14 @@ final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
     }
 
     /** @return list<string> */
-    private function checkoutTraversalPaths(string $checkout, string $managedHome): array
+    private function checkoutTraversalPaths(string $checkout): array
     {
         $path = StoragePath::parse($checkout);
-        $home = StoragePath::tryParse($managedHome);
         /** @var list<string> $paths */
         $paths = [];
         $current = $path->parent();
 
         while ($current instanceof StoragePath) {
-            if ($home instanceof StoragePath && $home->isInside($current)) {
-                break;
-            }
-
             array_unshift($paths, $current->value);
             $current = $current->parent();
         }
@@ -899,15 +890,10 @@ final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
         return $paths;
     }
 
-    /**
-     * @return list<string>
-     * @mago-expect lint:excessive-parameter-list Remaining checkouts and the recorded root select one release set.
-     */
+    /** @return list<string> */
     private function releasableTraversalPaths(
         string $checkout,
-        StoragePath $stop,
         int $nodeId,
-        ManagedUserAccount $account,
         ?int $ignoreInstanceId = null,
         ?int $ignoreWorkspaceId = null,
     ): array {
@@ -937,7 +923,7 @@ final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
             $remaining = [...$remaining, ...$this->ancestorPaths($workspace->checkout_path)];
         }
 
-        $releasePaths = array_diff($this->checkoutTraversalPaths($checkout, $account->home), $remaining);
+        $releasePaths = array_diff($this->checkoutTraversalPaths($checkout), $remaining);
         $ordered = [];
 
         foreach (array_reverse($releasePaths) as $path) {

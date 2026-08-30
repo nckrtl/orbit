@@ -196,7 +196,6 @@ it('uses fixed managed account argv and dynamic paths for a nondefault home', fu
             'managed_group=$2',
             'managed_home=$3',
             'install -d -m 0755 -o "$managed_user" -g "$managed_group" "$managed_home/apps" "$managed_home/.orbit/worktrees"',
-            'setfacl -m u:caddy:--x "$managed_home" "$managed_home/apps" "$managed_home/.orbit" "$managed_home/.orbit/worktrees"',
             '"$managed_home/.vite-plus"',
             'sudo -u "$managed_user" -H env COMPOSER_HOME=/opt/orbit/composer /usr/bin/composer --version --no-ansi',
         )
@@ -219,7 +218,7 @@ it('uses the managed account for ownership validation on shared prerequisites', 
         ->not->toContain('orbit:orbit');
 });
 
-it('keeps app development directories and Caddy traversal ACLs role-owned', function (): void {
+it('creates app development directories without mutating Caddy traversal ACLs', function (): void {
     expect(class_exists(NodeRolePrerequisiteCommandFactory::class))->toBeTrue();
 
     $factory = new NodeRolePrerequisiteCommandFactory;
@@ -231,9 +230,8 @@ it('keeps app development directories and Caddy traversal ACLs role-owned', func
     expect($appDev)
         ->toContain(
             'install -d -m 0755 -o "$managed_user" -g "$managed_group" "$managed_home/apps" "$managed_home/.orbit/worktrees"',
-            'setfacl -m u:caddy:--x "$managed_home" "$managed_home/apps" "$managed_home/.orbit" "$managed_home/.orbit/worktrees"',
         )
-        ->and($appProd)
+        ->not->toContain('setfacl')->and($appProd)
         ->not->toContain('/home/orbit/apps', 'setfacl')->and($vpn)
         ->not->toContain('/home/orbit/apps', '/opt/orbit/composer', '/opt/orbit/vite-plus', '/opt/orbit/bun');
 });

@@ -147,7 +147,7 @@ it('uses only generated instance paths and registered Git worktrees for source r
     expect($ssh->commands)
         ->toHaveCount(4)
         ->and($ssh->commands[0]->arguments)
-        ->toContain('git@github.com:acme/site.git', '/home/orbit/apps/acme', 'public')
+        ->toContain('git@github.com:acme/site.git', '/home/orbit/apps/acme', 'public', '/home')
         ->and($ssh->commands[0]->input)
         ->toContain(
             'git -C "$checkout" remote get-url origin',
@@ -366,7 +366,9 @@ it('preserves and restores Caddy ACLs on managed-home traversal ancestors', func
     $convergeFirst = $ssh->commands[1];
     $convergeSecond = $ssh->commands[2];
     $filesystem = new Filesystem;
-    $root = sys_get_temp_dir().'/orbit-home-ancestor-acl-'.Str::uuid();
+    $sandbox = sys_get_temp_dir().'/orbit-home-ancestor-acl-'.Str::uuid();
+    $homeParent = "{$sandbox}/home";
+    $root = "{$homeParent}/orbit";
     $apps = "{$root}/apps";
     $orbit = "{$root}/.orbit";
     $worktrees = "{$orbit}/worktrees";
@@ -375,8 +377,10 @@ it('preserves and restores Caddy ACLs on managed-home traversal ancestors', func
     $secondCheckout = "{$worktrees}/acme/second";
 
     try {
+        $filesystem->makeDirectory($homeParent, mode: 0o755, recursive: true);
         $filesystem->makeDirectory($apps, mode: 0o700, recursive: true);
         $filesystem->makeDirectory($worktrees, mode: 0o700, recursive: true);
+        $originalHomeParent = acl_for($homeParent);
         chmod(filename: $root, permissions: 0o700);
         chmod(filename: $orbit, permissions: 0o700);
         setfacl_for(user: 'nobody', permissions: 'r-x', path: $root);
@@ -393,9 +397,13 @@ it('preserves and restores Caddy ACLs on managed-home traversal ancestors', func
         add_acl_test_worktree($instanceCheckout, $firstCheckout, 'feature');
         add_acl_test_worktree($instanceCheckout, $secondCheckout, 'second');
 
-        expect(run_app_dev_command_locally($convergeInstance, $root)->succeeded())->toBeTrue();
-        expect(run_app_dev_command_locally($convergeFirst, $root)->succeeded())->toBeTrue();
-        expect(run_app_dev_command_locally($convergeSecond, $root)->succeeded())->toBeTrue();
+        expect(run_app_dev_command_locally($convergeInstance, $root, includeManagedHomeAncestor: true)->succeeded())
+            ->toBeTrue();
+        expect(run_app_dev_command_locally($convergeFirst, $root, includeManagedHomeAncestor: true)->succeeded())
+            ->toBeTrue();
+        expect(run_app_dev_command_locally($convergeSecond, $root, includeManagedHomeAncestor: true)->succeeded())
+            ->toBeTrue();
+        expect(access_acl_permissions_for(user: 'nobody', path: $homeParent))->toBe('--x');
         expect(acl_for($root))->toContain('user:nobody:r-x');
         expect(acl_for($apps))->toContain('user:nobody:r-x');
         expect(acl_for($orbit))->toContain('user:nobody:r-x');
@@ -403,32 +411,39 @@ it('preserves and restores Caddy ACLs on managed-home traversal ancestors', func
 
         $ssh->commands = [];
         $manager->removeWorkspace($first);
-        $removedFirst = run_app_dev_command_locally($ssh->commands[0], $root);
+        $removedFirst = run_app_dev_command_locally($ssh->commands[0], $root, includeManagedHomeAncestor: true);
         expect($removedFirst->succeeded())->toBeTrue($removedFirst->stderr);
         expect(acl_for($worktrees))->toContain('user:nobody:r-x');
         expect(acl_for($orbit))->toContain('user:nobody:r-x');
+        expect(access_acl_permissions_for(user: 'nobody', path: $homeParent))->toBe('--x');
         expect(acl_for($root))->toContain('user:nobody:r-x');
         expect(acl_for($apps))->toContain('user:nobody:r-x');
         $first->delete();
 
         $ssh->commands = [];
         $manager->removeWorkspace($second);
-        $removedSecond = run_app_dev_command_locally($ssh->commands[0], $root);
+        $removedSecond = run_app_dev_command_locally($ssh->commands[0], $root, includeManagedHomeAncestor: true);
         expect($removedSecond->succeeded())->toBeTrue($removedSecond->stderr);
         expect(acl_for($worktrees))->toBe($originalWorktrees);
         expect(acl_for($orbit))->toBe($originalOrbit);
         expect(acl_for($root))->toContain('user:nobody:r-x');
         expect(acl_for($apps))->toContain('user:nobody:r-x');
+        expect(access_acl_permissions_for(user: 'nobody', path: $homeParent))->toBe('--x');
         $second->delete();
 
         $ssh->commands = [];
         $manager->removeInstance($instance);
-        $removedInstance = run_app_dev_command_locally($ssh->commands[0], $root);
+        $removedInstance = run_app_dev_command_locally(
+            $ssh->commands[0],
+            $root,
+            includeManagedHomeAncestor: true,
+        );
         expect($removedInstance->succeeded())->toBeTrue($removedInstance->stderr);
         expect(acl_for($root))->toBe($originalHome);
         expect(acl_for($apps))->toBe($originalApps);
+        expect(acl_for($homeParent))->toBe($originalHomeParent);
     } finally {
-        $filesystem->deleteDirectory($root);
+        $filesystem->deleteDirectory($sandbox);
     }
 });
 
@@ -450,6 +465,8 @@ it('uses a nondefault managed home for source converge and removal commands', fu
             'public',
             'nckrtl',
             '/srv/users/nckrtl',
+            '/srv/users',
+            '/srv',
         )
         ->and($ssh->commands[0]->input)
         ->toContain(
@@ -2579,18 +2596,28 @@ function initialise_acl_test_repository(string $path, string $repository): void
         ->toBeTrue($commit->stderr);
 }
 
-function run_app_dev_command_locally(RemoteCommand $command, string $root): CommandResult
-{
+function run_app_dev_command_locally(
+    RemoteCommand $command,
+    string $root,
+    bool $includeManagedHomeAncestor = false,
+): CommandResult {
     $identity = posix_getpwuid(posix_geteuid());
     $runtimeUser = is_array($identity) && is_string($identity['name'] ?? null) ? $identity['name'] : 'orbit';
-    $arguments = array_map(
-        static function (string $argument) use ($root, $runtimeUser): string {
-            $argument = str_replace('/home/orbit', $root, $argument);
+    $arguments = array_values(array_filter(
+        array_map(
+            static function (string $argument) use ($root, $runtimeUser, $includeManagedHomeAncestor): ?string {
+                if ($argument === '/home') {
+                    return $includeManagedHomeAncestor ? dirname($root) : null;
+                }
 
-            return $argument === 'orbit' ? $runtimeUser : $argument;
-        },
-        $command->arguments,
-    );
+                $argument = str_replace('/home/orbit', $root, $argument);
+
+                return $argument === 'orbit' ? $runtimeUser : $argument;
+            },
+            $command->arguments,
+        ),
+        static fn (?string $argument): bool => $argument !== null,
+    ));
     $input = str_replace('/home/orbit', $root, $command->input ?? '');
     $input = str_replace('sudo -n ', '', $input);
     $input = str_replace(

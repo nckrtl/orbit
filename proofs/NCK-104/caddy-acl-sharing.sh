@@ -3,6 +3,15 @@
 source /var/lib/orbit-e2e/proof/lib.sh
 
 dev_id=$(instance_id e2e-dev)
+orbit workspace:remove "$(workspace_id e2e)" --json >/dev/null
+test ! -e /home/orbit/.orbit/worktrees/laravel/e2e
+
+setfacl -m u:caddy:r-x /home/orbit/.orbit/worktrees
+original_default_worktrees=$(getfacl -cp /home/orbit/.orbit/worktrees)
+orbit node:role:add app-dev app-dev --converge --json >/dev/null
+[[ "$(getfacl -cp /home/orbit/.orbit/worktrees)" == "$original_default_worktrees" ]] \
+  || fail "app-dev role convergence changed the pre-existing default-worktree Caddy ACL"
+
 shared=$(orbit workspace:new "$dev_id" nck104-shared --json)
 [[ "$(echo "$shared" | json_get checkout_path)" == /srv/orbit/worktrees/laravel/nck104-shared ]] \
   || fail "shared workspace was not derived: $shared"
@@ -48,7 +57,7 @@ orbit workspace:remove "$(workspace_id nck104-caddy-b)" --json >/dev/null
 [[ "$(getfacl -cp /home/orbit/projects-nck104-caddy)" == "$original_caddy" ]] \
   || fail "pre-existing Caddy ACL was not restored after the last dependent"
 
-setfacl -m u:caddy:r-x /home/orbit /home/orbit/apps /home/orbit/.orbit /home/orbit/.orbit/worktrees
+setfacl -m u:caddy:r-x /home/orbit /home/orbit/apps /home/orbit/.orbit
 orbit workspace:new "$dev_id" nck104-home-a --path=/home/orbit/.orbit/worktrees/nck104-home-a --json >/dev/null
 getfacl -cp /home/orbit/.orbit/worktrees | grep -Fqx 'user:caddy:r-x' \
   || fail "managed-home worktrees Caddy r-x was narrowed with one dependent"
@@ -67,10 +76,8 @@ getfacl -cp /home/orbit/.orbit/worktrees | grep -Fqx 'user:caddy:r-x' \
 getfacl -cp /home/orbit | grep -Fqx 'user:caddy:r-x' \
   || fail "managed home Caddy r-x was released while the instance remained"
 orbit workspace:remove "$(workspace_id nck104-home-b)" --json >/dev/null
-getfacl -cp /home/orbit/.orbit/worktrees | grep -Fqx 'user:caddy:r-x' \
-  || fail "managed-home worktrees Caddy r-x was released while the fixture workspace remained"
-getfacl -cp /home/orbit/.orbit | grep -Fqx 'user:caddy:r-x' \
-  || fail "managed-home .orbit Caddy r-x was released while the fixture workspace remained"
+[[ "$(getfacl -cp /home/orbit/.orbit/worktrees)" == "$original_default_worktrees" ]] \
+  || fail "managed-home worktrees ACL was not restored after the last dependent"
 getfacl -cp /home/orbit | grep -Fqx 'user:caddy:r-x' \
   || fail "managed home Caddy r-x was released after extra workspace dependents were removed"
 getfacl -cp /home/orbit/apps | grep -Fqx 'user:caddy:r-x' \
@@ -92,4 +99,4 @@ test ! -e /srv/restricted/root/laravel/nck104-restricted
   || fail "restricted ancestor ACL was not restored after the last dependent"
 restore_default_roots
 
-echo "caddy: shared grants survive; last dependent restores pre-existing ACLs"
+echo "caddy: role convergence preserves broad ACLs; shared grants survive; last removal restores exact ACLs"

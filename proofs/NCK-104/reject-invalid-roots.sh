@@ -29,6 +29,21 @@ reject_root() {
   assert_unchanged "provision $path"
 }
 
+reject_worktree_root() {
+  local code=$1
+  local path=$2
+  expect_error "$code" orbit node:settings app-dev \
+    --setting=instance.path:/srv/orbit/instances \
+    --setting=worktree.path:"$path" \
+    --json
+  assert_unchanged "worktree settings $path"
+  expect_error "$code" provision_app_dev \
+    --setting=instance.path:/srv/orbit/instances \
+    --setting=worktree.path:"$path" \
+    --json
+  assert_unchanged "worktree provision $path"
+}
+
 http_provision_body() {
   php -r '
     $settings = json_decode($argv[1], flags: JSON_THROW_ON_ERROR);
@@ -139,6 +154,7 @@ reject_root node.settings_path_protected "$app_prod_checkout"
 reject_root node.settings_path_protected /home/orbit/.ssh
 reject_root node.settings_path_protected /home/orbit/.orbit
 reject_root node.settings_path_protected /home/orbit/.orbit/worktrees/instances
+reject_worktree_root node.settings_path_protected /home/orbit/.orbit/worktrees/instances
 
 expect_error node.settings_roots_overlap orbit node:settings app-dev \
   --setting=instance.path:/srv/orbit/source --setting=worktree.path:/srv/orbit/source/worktrees --json

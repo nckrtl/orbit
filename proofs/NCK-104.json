@@ -51,22 +51,22 @@
             "timeout_seconds": 360
         },
         {
-            "id": "caddy-acl-sharing",
-            "node": "app-dev",
-            "argv": ["bash", "/var/lib/orbit-e2e/proof/caddy-acl-sharing.sh"],
-            "timeout_seconds": 540
-        },
-        {
             "id": "checkout-overlap",
             "node": "app-dev",
             "argv": ["bash", "/var/lib/orbit-e2e/proof/checkout-overlap.sh"],
             "timeout_seconds": 180
         },
         {
+            "id": "caddy-acl-sharing",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/caddy-acl-sharing.sh"],
+            "timeout_seconds": 600
+        },
+        {
             "id": "removal-recorded-origin",
             "node": "app-dev",
             "argv": ["bash", "/var/lib/orbit-e2e/proof/removal-recorded-origin.sh"],
-            "timeout_seconds": 420
+            "timeout_seconds": 900
         }
     ]
 }
