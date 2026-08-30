@@ -26,6 +26,9 @@ final class ProofFixtureGuestFake implements GuestTransport
     /** @var array<string, array<string, array{mode:string, content:string}>> */
     public array $installed = [];
 
+    /** @var list<string> */
+    public array $reset = [];
+
     /** @param array<string, string> $inventoryOverride Per instance, the inventory text to report instead of the real one. */
     public function __construct(
         public array $inventoryOverride = [],
@@ -73,6 +76,12 @@ final class ProofFixtureGuestFake implements GuestTransport
                 static fn (array $push): bool => $push['instance'] === $instance && $push['destination'] === $argv[7],
             ));
             $this->installed[$instance][$name] = ['mode' => ltrim($argv[6], '0'), 'content' => $staged[0]['content']];
+        }
+        if ($argv[0] === 'sh' && str_contains($argv[2] ?? '', 'rm -rf')) {
+            $this->reset[] = $instance;
+            unset($this->installed[$instance]);
+
+            return new GuestCommandResult('', '', 0);
         }
         if ($argv[0] === 'sh') {
             if (isset($this->inventoryOverride[$instance])) {
@@ -178,6 +187,24 @@ describe('ProofFixtureStager', function (): void {
             ])
             ->and(glob(sys_get_temp_dir().'/orbit-proof-fixtures-*'))
             ->toBe([]);
+    });
+
+    it('empties the guest fixture directory on every role before it installs', function (): void {
+        ['repository' => $repository, 'commit' => $commit] = proofFixtureRepository('NCK-100', [
+            'check.sh' => ["#!/bin/sh\nexit 0\n", 0755],
+        ]);
+        $guest = new ProofFixtureGuestFake;
+        $guest->installed['orbit-e2e-nck-100-bbbbbbbb-gateway'] = ['marker' => ['mode' => '644', 'content' => "x\n"]];
+        $target = featureTarget('NCK-100', 'b');
+
+        new ProofFixtureStager($guest, new OperationId(str_repeat('c', 32)))->stage($target, $repository, $commit);
+
+        expect($guest->reset)
+            ->toHaveCount(3)
+            ->and($guest->installed['orbit-e2e-nck-100-bbbbbbbb-gateway'])
+            ->toHaveKeys(['check.sh'])
+            ->and($guest->installed['orbit-e2e-nck-100-bbbbbbbb-gateway'])
+            ->not->toHaveKey('marker');
     });
 
     it('stages an empty inventory without pushing files when the issue has no fixture directory', function (): void {

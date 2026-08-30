@@ -28,6 +28,12 @@ use Throwable;
  */
 final readonly class ProofFixtureStager
 {
+    /**
+     * Replace the guest fixture directory. A promoted generation can carry another
+     * issue's fixtures, and the inventory check demands this issue's files only.
+     */
+    private const string DIRECTORY_SCRIPT = 'set -eu; rm -rf -- "$1"; install -d -o root -g root -m 0755 "$1"';
+
     /** The guest prints the installed inventory in the exact host layout. */
     private const string INVENTORY_SCRIPT =
         'cd -- "$1" && test -z "$(find . -mindepth 1 ! -type f)" '
@@ -131,14 +137,10 @@ final readonly class ProofFixtureStager
                 $installs["fixture-directory.{$role}"] = [
                     'instance' => $instance,
                     'command' => new GuestCommand([
-                        'install',
-                        '-d',
-                        '-o',
-                        'root',
-                        '-g',
-                        'root',
-                        '-m',
-                        '0755',
+                        'sh',
+                        '-c',
+                        self::DIRECTORY_SCRIPT,
+                        'orbit-e2e',
                         ProofFixtures::GUEST_DIRECTORY,
                     ]),
                 ];
