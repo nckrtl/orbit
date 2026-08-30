@@ -61,9 +61,14 @@ case "$probe" in
   role.assignments)
     db=/home/orbit/.orbit/gateway.sqlite
     [[ -r "$db" ]]
-    php -r '$pdo = new PDO("sqlite:".$argv[1]); $query = $pdo->query("SELECT n.name, n.status AS node_status, r.role, r.status AS role_status FROM nodes n INNER JOIN node_roles r ON r.node_id = n.id ORDER BY n.name, r.role"); $rows = $query->fetchAll(PDO::FETCH_ASSOC); if (count($rows) !== 4) exit(1); $actual = array_map(static fn (array $row): string => implode(":", [$row["name"], $row["node_status"], $row["role"], $row["role_status"]]), $rows); $expected = ["app-dev:active:app-dev:active", "app-prod:active:app-prod:active", "gateway:active:gateway:active", "gateway:active:vpn:active"]; exit($actual === $expected ? 0 : 1);' -- "$db"
+    # The base topology must be converged. A proof may add roles (Metrics on
+    # app-dev, for example); every extra assignment must be active as well.
+    extra=$(php -r '$pdo = new PDO("sqlite:".$argv[1]); $rows = $pdo->query("SELECT n.name, n.status AS node_status, r.role, r.status AS role_status FROM nodes n INNER JOIN node_roles r ON r.node_id = n.id ORDER BY n.name, r.role")->fetchAll(PDO::FETCH_ASSOC); $base = ["gateway:gateway", "gateway:vpn", "app-dev:app-dev", "app-prod:app-prod"]; $seen = []; $extra = []; foreach ($rows as $row) { if ($row["node_status"] !== "active" || $row["role_status"] !== "active") exit(1); $key = $row["name"].":".$row["role"]; if (in_array($key, $base, true)) { $seen[] = $key; continue; } $extra[] = $key; } foreach ($base as $key) { if (!in_array($key, $seen, true)) exit(1); } echo implode(",", $extra);' -- "$db")
     expected='gateway:gateway+vpn,app-dev:app-dev,app-prod:app-prod:active'
     observed=$expected
+    if [[ -n "$extra" ]]; then
+      observed="${expected}+${extra}"
+    fi
     ;;
   role.app-dev) [[ -d /home/orbit/apps/laravel && -d /home/orbit/.orbit/worktrees/laravel/e2e ]]; expected='app-dev,workspace:prepared'; observed=$expected ;;
   role.app-prod) [[ -d /var/www/laravel/e2e-prod ]]; expected='app-prod:prepared'; observed=$expected ;;
