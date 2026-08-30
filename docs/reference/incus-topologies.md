@@ -32,7 +32,7 @@ standby generation.
 ### `gateway_app-dev_app-prod`
 
 Registered on 2026-08-29 after live acceptance (ADR 0005). The attempt-scoped
-discovery and proof lifecycle passed live acceptance on 2026-08-29 (ADR 0006).
+discovery and proof lifecycle passed live acceptance on 2026-08-30 (ADR 0006).
 
 | Field | Value |
 | --- | --- |
@@ -51,7 +51,7 @@ Issue IDs match `[A-Z][A-Z0-9]{1,9}-[1-9][0-9]{0,8}`.
 
 ## Command surface
 
-Every command accepts `--json`. Every command refuses a stale promoted standby.
+Every command accepts `--json`. `acquire` and `prove` refuse a stale promoted standby.
 
 | Command | Purpose |
 | --- | --- |
