@@ -102,9 +102,19 @@ Automated-only work skips them and continues at step 10 with
    Guests never run composer in discovery; host `bin/bootstrap` owns vendor.
 5. **Learn desired state.** Change code and task-owned guest state until the
    topology shows the required behavior. Run exact commands with
-   `bin/e2e-topology exec ISSUE ATTEMPT ROLE --argv-file=PATH --json`; the
-   file holds `{"argv":[...],"stdin":null}` and the command runs as the orbit
-   user. Use `bin/e2e-topology verify ISSUE ATTEMPT --json` and
+   `bin/e2e-topology exec ISSUE ATTEMPT ROLE --argv='["program","arg"]' --json`
+   or, when the command needs stdin, `--argv-file=PATH` where the file holds
+   `{"argv":[...],"stdin":null}`; the two options are mutually exclusive. The
+   vector runs as the orbit user through `env`, so `argv[0]` must resolve on
+   the guest `PATH` or be an absolute path; the Orbit CLI is not on that
+   `PATH`. Example:
+
+   ```bash
+   bin/e2e-topology exec NCK-82 ATTEMPT app-dev \
+     --argv='["/home/orbit/orbit/apps/cli/orbit","doctor","--json"]' --json
+   ```
+
+   Use `bin/e2e-topology verify ISSUE ATTEMPT --json` and
    `bin/e2e-topology status ISSUE --json` to inspect. Discovery output is not
    proof evidence.
 6. **Codify required state.** Every manual action from discovery becomes one
@@ -118,6 +128,10 @@ Automated-only work skips them and continues at step 10 with
    durable update is useful. Map each acceptance criterion to a focused
    acceptance check. Run each changed project's `composer check` and root
    `bin/test`. Commit the clean candidate. That commit is the code freeze.
+   A diagnosis round that changes code moves the code freeze to the new
+   commit; rerun the gates on it before the next proof. The proof plan and
+   the fixtures under `apps/e2e/resources/proof/<issue>/` may change between
+   rounds, because they are proof input rather than product state.
 8. **Remove discovery.** Request discovery release from the project manager.
    It runs `bin/e2e-topology release ISSUE ATTEMPT --json`. Wait for verified
    absence before proof. Proof cannot start while a discovery attempt exists.
@@ -133,13 +147,20 @@ Automated-only work skips them and continues at step 10 with
    }
    ```
 
-   Call the one-shot proof command for the exact candidate:
+   Put proof-only scripts and data in `apps/e2e/resources/proof/<issue>/` and
+   commit them with the candidate; `prove` stages them root-owned at
+   `/var/lib/orbit-e2e/proof/<name>` on every role, including `app-prod`, and
+   the record lists the staged digest per role under `proof_fixtures`. Call
+   the one-shot proof command for the exact candidate:
    `bin/e2e-topology prove ISSUE WORKTREE --candidate-sha=SHA --proof-plan-file=PATH --json`.
    The harness creates a fresh proof attempt, synchronizes the exact commit
-   from Git, verifies clean guest checkout identity, converges, runs setup and
-   acceptance, and records the proof. Proof never mounts the worktree. A
-   failed proof becomes `diagnosis`; inspect it, release it, and prove again
-   after a fix. A proved attempt is immutable; do not sync, exec, or change it.
+   from Git, verifies clean guest checkout identity, stages the fixtures,
+   converges, runs setup and acceptance, and records the proof. Proof never
+   mounts the worktree. The output carries the record without its plan; a
+   failed proof becomes `diagnosis` and the output ends with `failed_action`
+   (`id`, `node`, `exit_code`, `stdout_tail`, `stderr_tail`). Inspect it,
+   release it, and prove again after a fix. A proved attempt is immutable; do
+   not sync, exec, or change it.
 10. **Open a normal pull request.** Push the candidate and create the pull
     request from its template only after proof succeeds. Orbit does not use
     draft pull requests. CI and independent review start immediately and run

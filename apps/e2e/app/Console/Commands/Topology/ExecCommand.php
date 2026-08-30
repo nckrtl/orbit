@@ -16,7 +16,7 @@ use Throwable;
 final class ExecCommand extends E2ECommand
 {
     #[\Override]
-    protected $signature = 'topology:exec {issue} {attempt} {role} {--argv-file=} {--json}';
+    protected $signature = 'topology:exec {issue} {attempt} {role} {--argv=} {--argv-file=} {--json}';
     #[\Override]
     protected $description = 'Execute an exact argv vector, as the orbit runtime user, on one role of an exact topology attempt';
 
@@ -49,11 +49,44 @@ final class ExecCommand extends E2ECommand
         }
     }
 
-    /** @return array{list<string>, ?string} */
+    /**
+     * The argv vector comes from exactly one of `--argv` (an inline JSON array of
+     * strings, no stdin) or `--argv-file` (a file holding `{"argv":[...],"stdin":null}`).
+     *
+     * @return array{list<string>, ?string}
+     */
     private function commandInput(): array
     {
+        $inline = $this->option('argv');
         $path = $this->option('argv-file');
-        if (! is_string($path) || $path === '' || ! is_file($path) || is_link($path)) {
+        $hasInline = is_string($inline) && $inline !== '';
+        $hasFile = is_string($path) && $path !== '';
+        if ($hasInline && $hasFile) {
+            throw new InvalidArgumentException('Use either --argv or --argv-file, not both.');
+        }
+        if (! $hasInline && ! $hasFile) {
+            throw new InvalidArgumentException(
+                'An exact argv JSON array (--argv) or argv JSON file (--argv-file) is required.',
+            );
+        }
+        if ($hasInline) {
+            try {
+                $value = json_decode($inline, true, 8, JSON_THROW_ON_ERROR);
+            } catch (JsonException $exception) {
+                throw new InvalidArgumentException(
+                    'The --argv value must be a JSON array of strings, for example \'["orbit","doctor","--json"]\'.',
+                    previous: $exception,
+                );
+            }
+            if (! is_array($value) || ! array_is_list($value) || $value === []) {
+                throw new InvalidArgumentException(
+                    'The --argv value must be a non-empty JSON array of strings, for example \'["orbit","doctor","--json"]\'.',
+                );
+            }
+
+            return [$this->argvList($value), null];
+        }
+        if (! is_file($path) || is_link($path)) {
             throw new InvalidArgumentException('An exact argv JSON file is required.');
         }
         try {
@@ -71,14 +104,25 @@ final class ExecCommand extends E2ECommand
         ) {
             throw new InvalidArgumentException('The argv JSON schema is invalid.');
         }
+
+        return [$this->argvList($value['argv']), $value['stdin']];
+    }
+
+    /**
+     * @param list<mixed> $value
+     * @return list<string>
+     */
+    private function argvList(array $value): array
+    {
         $argv = [];
-        foreach ($value['argv'] as $argument) {
+        /** @mago-expect analysis:mixed-assignment Each argument is validated before it joins the vector. */
+        foreach ($value as $argument) {
             if (! is_string($argument)) {
                 throw new InvalidArgumentException('Every argv item must be a string.');
             }
             $argv[] = $argument;
         }
 
-        return [$argv, $value['stdin']];
+        return $argv;
     }
 }

@@ -8,6 +8,7 @@ use App\Console\Commands\E2ECommand;
 use App\E2E\TopologyProofRunner;
 use App\E2E\Value\OperationId;
 use App\E2E\Value\ProofPlan;
+use App\E2E\Value\ProofResult;
 use App\E2E\Value\ProofStatus;
 use App\E2E\Value\TopologyRequest;
 use InvalidArgumentException;
@@ -36,16 +37,18 @@ final class ProveCommand extends E2ECommand
                 $sha,
                 ProofPlan::fromFile($planFile),
             );
-            $this->outputJson(
-                [
-                    'state' => $result->status->value,
-                    'operation_id' => $operation->value,
-                    'issue' => $result->issue,
-                    'attempt_id' => $result->attempt->value,
-                    'proof' => $result->toArray(),
-                ],
-                $result->status->value.' '.$result->attempt->value,
-            );
+            $payload = [
+                'state' => $result->status->value,
+                'operation_id' => $operation->value,
+                'issue' => $result->issue,
+                'attempt_id' => $result->attempt->value,
+                'proof' => $result->summary(),
+            ];
+            // A diagnosis ends with the action that failed, so a worker reads the verdict without the record file.
+            if ($result->status === ProofStatus::Diagnosis) {
+                $payload['failed_action'] = $result->failedAction();
+            }
+            $this->outputJson($payload, $this->text($result));
 
             return $result->status === ProofStatus::Proved ? self::SUCCESS : self::FAILURE;
         } catch (Throwable $exception) {
@@ -53,5 +56,20 @@ final class ProveCommand extends E2ECommand
 
             return self::FAILURE;
         }
+    }
+
+    private function text(ProofResult $result): string
+    {
+        $text = $result->status->value.' '.$result->attempt->value;
+        $failed = $result->status === ProofStatus::Diagnosis ? $result->failedAction() : null;
+        if ($failed === null) {
+            return $text;
+        }
+
+        return (
+            $text
+            ." failed_action={$failed['id']} node={$failed['node']} exit_code={$failed['exit_code']}\n"
+            .rtrim($failed['stderr_tail'])
+        );
     }
 }

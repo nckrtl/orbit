@@ -36,6 +36,10 @@ reviewed.
    Confirm the active proof topology uses the issue's recipe, its proof record
    has status `proved`, and its candidate commit equals the pull-request head.
    Do not sync, exec, diagnose, or release it.
+   When the plan calls a fixture under `/var/lib/orbit-e2e/proof/`, confirm
+   the file exists in `apps/e2e/resources/proof/<issue>/` at the candidate
+   and that the record's `proof_fixtures.roles` lists the same digest for
+   every role.
 6. Map every acceptance criterion to an observed result in the proof record or
    to reproducible automated evidence in the pull request. Focused evidence
    states the command, the observed result, and a link or attached output when

@@ -355,6 +355,41 @@ final readonly class GitRepository
     }
 
     /**
+     * Every regular file directly under one directory of an exact commit, with
+     * its tree mode and content. An absent directory is an empty inventory; a
+     * nested directory, symlink, or submodule below it is refused.
+     *
+     * @return array<string, array{mode:string, content:string}> Keyed by file name.
+     */
+    public function directoryBlobs(string $commit, string $directory): array
+    {
+        $this->validateReachableCommit($commit);
+        $this->validatePattern($directory);
+        $prefix = rtrim($directory, '/').'/';
+        $selected = [];
+        $modes = [];
+
+        foreach ($this->treeEntries($commit) as $path => $entry) {
+            if (! str_starts_with($path, $prefix)) {
+                continue;
+            }
+            $name = substr($path, strlen($prefix));
+            if (str_contains($name, '/') || $entry['mode'] === '120000' || $entry['type'] !== 'blob') {
+                throw new InvalidArgumentException("Directory entry [{$path}] is not a regular file.");
+            }
+            $selected[$name] = $entry['object'];
+            $modes[$name] = $entry['mode'];
+        }
+
+        $blobs = [];
+        foreach ($selected === [] ? [] : $this->readBlobs($selected) as $name => $content) {
+            $blobs[$name] = ['mode' => $modes[$name], 'content' => $content];
+        }
+
+        return $blobs;
+    }
+
+    /**
      * @param array<string, string> $selected
      * @return array<string, string>
      */

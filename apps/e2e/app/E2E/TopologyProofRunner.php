@@ -16,6 +16,7 @@ use App\E2E\Value\CandidateSync;
 use App\E2E\Value\FeatureTopology;
 use App\E2E\Value\GuestCommand;
 use App\E2E\Value\OperationId;
+use App\E2E\Value\ProofFixtures;
 use App\E2E\Value\ProofPlan;
 use App\E2E\Value\ProofResult;
 use App\E2E\Value\ProofStatus;
@@ -80,6 +81,7 @@ final readonly class TopologyProofRunner
         private TopologyVerifier $verifier,
         private ReleaseReceiptStore $receipts,
         private ProofStore $proofs,
+        private ProofFixtureStager $fixtures,
         private HostCapacity $capacity,
         private AtomicJsonStore $state,
         private StatePaths $paths,
@@ -237,6 +239,7 @@ final readonly class TopologyProofRunner
                         $candidateSha,
                         $candidateTree,
                         null,
+                        null,
                         $plan,
                         [],
                         [],
@@ -255,6 +258,7 @@ final readonly class TopologyProofRunner
                     $candidateSha,
                     $candidateTree,
                     null,
+                    null,
                     $plan,
                     [],
                     [],
@@ -263,7 +267,7 @@ final readonly class TopologyProofRunner
                 );
             }
 
-            return $this->proveOnTopology($target, $generation, $sync, $plan, $timings);
+            return $this->proveOnTopology($target, $generation, $sync, $request, $plan, $timings);
         }
     }
 
@@ -346,6 +350,7 @@ final readonly class TopologyProofRunner
         TopologyTarget $target,
         StandbyGeneration $generation,
         CandidateSync $sync,
+        TopologyRequest $request,
         ProofPlan $plan,
         array $timings,
     ): ProofResult {
@@ -353,10 +358,22 @@ final readonly class TopologyProofRunner
         $this->activate($target, $generation, $sync->candidateSha, $this->pendingVerification($target));
         $setup = [];
         $acceptance = [];
+        $fixtures = null;
         $verification = null;
         $status = ProofStatus::Proved;
-        $phase = 'converge';
+        $phase = 'fixtures';
         try {
+            // Fixtures come from the candidate commit and land on every role before any plan action runs.
+            $fixtures = $this->measure(
+                $phase,
+                $timings,
+                fn (): ProofFixtures => $this->fixtures->stage(
+                    $target,
+                    new GitRepository($request->worktree),
+                    $sync->candidateSha,
+                ),
+            );
+            $phase = 'converge';
             $this->measure($phase, $timings, fn () => $this->converger->converge(
                 $target,
                 $source,
@@ -399,6 +416,7 @@ final readonly class TopologyProofRunner
             $sync->candidateSha,
             $sync->candidateTree,
             $sync->guestScriptHash,
+            $fixtures,
             $plan,
             $setup,
             $acceptance,
@@ -505,6 +523,7 @@ final readonly class TopologyProofRunner
         string $candidateSha,
         string $candidateTree,
         ?string $guestScriptHash,
+        ?ProofFixtures $fixtures,
         ProofPlan $plan,
         array $setup,
         array $acceptance,
@@ -525,6 +544,7 @@ final readonly class TopologyProofRunner
             $verification,
             ProofResult::now(),
             $this->operation->value,
+            $fixtures,
         );
         $this->proofs->write($result);
         $this->journal->append($this->operation, [

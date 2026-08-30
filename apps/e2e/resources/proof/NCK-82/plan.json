@@ -1,0 +1,33 @@
+{
+  "setup": [],
+  "acceptance": [
+    {
+      "id": "fixture-gateway",
+      "node": "gateway",
+      "argv": [
+        "/var/lib/orbit-e2e/proof/fixture-check.sh",
+        "gateway"
+      ],
+      "timeout_seconds": 60
+    },
+    {
+      "id": "fixture-app-dev",
+      "node": "app-dev",
+      "argv": [
+        "/var/lib/orbit-e2e/proof/fixture-check.sh",
+        "app-dev"
+      ],
+      "timeout_seconds": 60
+    },
+    {
+      "id": "fixture-app-prod",
+      "node": "app-prod",
+      "argv": [
+        "/var/lib/orbit-e2e/proof/fixture-check.sh",
+        "app-prod"
+      ],
+      "timeout_seconds": 60
+    }
+  ],
+  "post_deployment_actions": []
+}

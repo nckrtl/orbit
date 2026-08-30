@@ -153,6 +153,46 @@ describe('topology commands', function () {
             ->assertFailed();
     });
 
+    it('accepts an inline argv vector and rejects it together with an argv file', function () {
+        config(['e2e.incus.operation_id' => '0123456789abcdef0123456789abcdef']);
+        app()->forgetInstance(OperationId::class);
+        commandStatePaths();
+        $argvFile = temporaryFile('orbit-argv-');
+        file_put_contents($argvFile, json_encode(['argv' => ['true'], 'stdin' => null], JSON_THROW_ON_ERROR));
+        $exec = fn (array $options) => $this->artisan('topology:exec', [
+            'issue' => 'NCK-12',
+            'attempt' => attemptId()->value,
+            'role' => 'gateway',
+            '--json' => true,
+            ...$options,
+        ]);
+
+        $exec(['--argv' => '["orbit","doctor","--json"]', '--argv-file' => $argvFile])
+            ->expectsOutputToContain('Use either --argv or --argv-file, not both.')
+            ->assertFailed();
+        $exec(['--argv' => '{"argv":["orbit"]}'])
+            ->expectsOutputToContain('The --argv value must be a non-empty JSON array of strings')
+            ->assertFailed();
+        $exec(['--argv' => '[]'])
+            ->expectsOutputToContain('The --argv value must be a non-empty JSON array of strings')
+            ->assertFailed();
+        $exec(['--argv' => '["orbit",'])
+            ->expectsOutputToContain('The --argv value must be a JSON array of strings')
+            ->assertFailed();
+        $exec(['--argv' => '["orbit",1]'])
+            ->expectsOutputToContain('Every argv item must be a string.')
+            ->assertFailed();
+        // A valid inline vector or file passes validation and reaches the topology lookup, which finds no attempt.
+        $exec(['--argv' => '["orbit","doctor","--json"]'])
+            ->expectsOutputToContain('"state":"failed"')
+            ->doesntExpectOutputToContain('argv')
+            ->assertFailed();
+        $exec(['--argv-file' => $argvFile])
+            ->expectsOutputToContain('"state":"failed"')
+            ->doesntExpectOutputToContain('argv')
+            ->assertFailed();
+    });
+
     it('returns a structured JSON failure envelope', function () {
         config(['e2e.incus.operation_id' => '0123456789abcdef0123456789abcdef']);
         app()->forgetInstance(OperationId::class);
@@ -166,7 +206,7 @@ describe('topology commands', function () {
             ->expectsOutput(json_encode([
                 'state' => 'failed',
                 'operation_id' => '0123456789abcdef0123456789abcdef',
-                'error' => 'An exact argv JSON file is required.',
+                'error' => 'An exact argv JSON array (--argv) or argv JSON file (--argv-file) is required.',
             ], JSON_THROW_ON_ERROR))
             ->assertFailed();
     });
