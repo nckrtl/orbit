@@ -81,8 +81,31 @@ final readonly class TopologyReleaser
             sort($recorded, SORT_STRING);
             $this->receipts->write($receipt->withNetworksReaped($recorded, $receipt->networksFailed));
         });
+        if ($sweep->failed !== []) {
+            $this->recordSweepFailures($result, $sweep->failures());
+        }
 
         return $result->withNetworksReaped($sweep->reaped, $sweep->failures());
+    }
+
+    /**
+     * Keep every failed network on the receipt once, by name; a later attempt at
+     * the same network replaces its message.
+     *
+     * @param list<string> $failures `name: message` entries of this sweep.
+     */
+    private function recordSweepFailures(ReleaseResult $result, array $failures): void
+    {
+        $receipt = $this->receipts->read($result->issue, $result->attempt);
+        if ($receipt === null) {
+            return;
+        }
+        $byName = [];
+        foreach ([...$receipt->networksFailed, ...$failures] as $failure) {
+            $byName[strstr($failure, ':', true) ?: $failure] = $failure;
+        }
+        ksort($byName, SORT_STRING);
+        $this->receipts->write($receipt->withNetworksReaped($receipt->networksReaped, array_values($byName)));
     }
 
     /** @mago-expect lint:halstead Exact release evidence requires explicit ordered mutations. */

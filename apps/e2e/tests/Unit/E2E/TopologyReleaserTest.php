@@ -652,8 +652,17 @@ describe('topology release', function () {
             ->toStartWith('oe-stuck: ')
             ->and($store->read(releaseReceiptPath('NCK-123'))['networks_reaped'] ?? null)
             ->toBe(['oe-orphan1', 'oe-orphan2', 'oe-orphan3', 'orbit-e2e-n-legacy', 'orbit-e2e-n-legacy2'])
+            ->and($store->read(releaseReceiptPath('NCK-123'))['networks_failed'] ?? null)
+            ->toBe($replay->networksFailed)
             ->and($orphans)
             ->toBe(['oe-stuck']);
+
+        // A repeated failure of the same network is recorded once on the receipt.
+        $replay = $build()->release('NCK-123', releaseAttempt());
+        expect($replay->networksFailed)
+            ->toHaveCount(1)
+            ->and($store->read(releaseReceiptPath('NCK-123'))['networks_failed'] ?? null)
+            ->toBe($replay->networksFailed);
     });
 
     it('retains the proof record and writes a receipt when a proved attempt is released', function () {
