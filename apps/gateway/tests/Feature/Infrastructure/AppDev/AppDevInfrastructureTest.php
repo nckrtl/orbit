@@ -180,6 +180,8 @@ it('uses only generated instance paths and registered Git worktrees for source r
             'worktree remove --force -- "$checkout"',
             'if [ -L "$checkout" ]; then',
             'assert_recorded_parents',
+            '%U:%G',
+            'preflight_derived_grouping',
             'test "$(git -C "$instance" remote get-url origin)" = "$repository"',
         )->and($ssh->commands[3]->input)->toContain(
             'if [ -L "$checkout" ]; then',
@@ -211,6 +213,36 @@ it('rejects a dangling instance checkout symlink instead of treating the path as
         expect($removed->succeeded())
             ->toBeFalse($removed->stderr)
             ->and(is_link($checkout))
+            ->toBeTrue();
+    } finally {
+        $filesystem->deleteDirectory($root);
+    }
+});
+
+it('fails closed when a derived grouping directory has an unexpected sibling', function (): void {
+    [, $instance, $workspace] = app_dev_runtime_models();
+    $workspace->update([
+        'checkout_path' => '/home/orbit/.orbit/worktrees/acme/feature',
+        'checkout_path_origin' => 'derived',
+    ]);
+    [$manager, $ssh] = source_manager();
+    $manager->removeWorkspace($workspace);
+    $filesystem = new Filesystem;
+    $root = sys_get_temp_dir().'/orbit-grouping-'.Str::uuid();
+    $instanceCheckout = "{$root}/apps/acme";
+    $grouping = "{$root}/.orbit/worktrees/acme";
+
+    try {
+        $filesystem->makeDirectory("{$instanceCheckout}/public", mode: 0o755, recursive: true);
+        $filesystem->put("{$instanceCheckout}/public/index.php", '<?php');
+        initialise_acl_test_repository($instanceCheckout, repository: 'git@github.com:acme/site.git');
+        $filesystem->makeDirectory($grouping, mode: 0o755, recursive: true);
+        $filesystem->put("{$grouping}/UNEXPECTED", 'nope');
+        $removed = run_app_dev_command_locally($ssh->commands[0], $root);
+
+        expect($removed->succeeded())
+            ->toBeFalse($removed->stderr)
+            ->and($filesystem->exists("{$grouping}/UNEXPECTED"))
             ->toBeTrue();
     } finally {
         $filesystem->deleteDirectory($root);
@@ -2227,8 +2259,14 @@ function initialise_acl_test_repository(string $path, string $repository): void
 
 function run_app_dev_command_locally(RemoteCommand $command, string $root): CommandResult
 {
+    $identity = posix_getpwuid(posix_geteuid());
+    $runtimeUser = is_array($identity) && is_string($identity['name'] ?? null) ? $identity['name'] : 'orbit';
     $arguments = array_map(
-        static fn (string $argument): string => str_replace('/home/orbit', $root, $argument),
+        static function (string $argument) use ($root, $runtimeUser): string {
+            $argument = str_replace('/home/orbit', $root, $argument);
+
+            return $argument === 'orbit' ? $runtimeUser : $argument;
+        },
         $command->arguments,
     );
     $input = str_replace('/home/orbit', $root, $command->input ?? '');

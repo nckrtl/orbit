@@ -23,4 +23,10 @@ legacy=$(orbit workspace:new "$dev_id" nck104-legacy --path=/home/orbit/custom-w
 sql_clear_workspace_origin nck104-legacy
 [[ "$(sql_workspace_origin nck104-legacy)" == null ]] || fail "legacy origin was not cleared"
 
+unsafe=$(orbit workspace:new "$dev_id" nck104-unsafe --path=/home/orbit/custom-worktrees/nck104-unsafe --json)
+[[ "$(echo "$unsafe" | json_get checkout_path)" == /home/orbit/custom-worktrees/nck104-unsafe ]] \
+  || fail "unsafe-origin fixture workspace was not created: $unsafe"
+sql_set_workspace_origin nck104-unsafe bogus
+[[ "$(sql_workspace_origin nck104-unsafe)" == bogus ]] || fail "unsafe origin was not stored"
+
 echo "origin: derived, explicit, and legacy null"

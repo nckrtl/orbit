@@ -195,8 +195,9 @@ describe('node storage settings', function (): void {
     });
 
     it('rejects protected roots on a node without app-dev before persisting', function (): void {
+        $inspected = [];
         $prepared = [];
-        app()->instance(NodeStorageRootPreparer::class, recording_storage_preparer($prepared));
+        app()->instance(NodeStorageRootPreparer::class, recording_storage_preparer($inspected, $prepared));
         $node = Node::query()->create([
             'name' => 'gateway',
             'status' => LifecycleStatus::Active,
@@ -218,9 +219,10 @@ describe('node storage settings', function (): void {
             ->toBe([]);
     });
 
-    it('stores allowed roots on a node without app-dev without preparing them', function (): void {
+    it('inspects explicit roots on a node without app-dev and does not create them', function (): void {
+        $inspected = [];
         $prepared = [];
-        app()->instance(NodeStorageRootPreparer::class, recording_storage_preparer($prepared));
+        app()->instance(NodeStorageRootPreparer::class, recording_storage_preparer($inspected, $prepared));
         $node = Node::query()->create([
             'name' => 'gateway',
             'status' => LifecycleStatus::Active,
@@ -242,20 +244,58 @@ describe('node storage settings', function (): void {
                 'instance' => ['path' => '/srv/orbit/instances'],
                 'worktree' => ['path' => '/srv/orbit/worktrees'],
             ])
+            ->and($inspected)
+            ->toBe(['/srv/orbit/instances', '/srv/orbit/worktrees'])
             ->and($prepared)
             ->toBe([]);
     });
+
+    it('rejects an empty nested path instead of treating it as an unset', function (): void {
+        $node = Node::query()->create([
+            'name' => 'app-dev',
+            'status' => LifecycleStatus::Active,
+            'public_ssh_host' => '192.0.2.10',
+            'user' => 'orbit',
+            'wireguard_address' => '10.44.0.3',
+            'settings' => [
+                'instance' => ['path' => '/srv/orbit/instances'],
+            ],
+        ]);
+        $node->roles()->create([
+            'role' => RoleName::AppDev,
+            'status' => LifecycleStatus::Active,
+        ]);
+
+        $this
+            ->patchJson("/api/v1/nodes/{$node->id}/settings", [
+                'instance' => ['path' => ''],
+            ])
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'node.settings_path_invalid');
+
+        expect($node->refresh()->settings)
+            ->toBe([
+                'instance' => ['path' => '/srv/orbit/instances'],
+            ]);
+    });
 });
 
-function recording_storage_preparer(array &$prepared): NodeStorageRootPreparer
+function recording_storage_preparer(array &$inspected, array &$prepared): NodeStorageRootPreparer
 {
-    return new class($prepared) implements NodeStorageRootPreparer {
-        /** @param list<string> $prepared */
+    return new class($inspected, $prepared) implements NodeStorageRootPreparer {
+        /**
+         * @param list<string> $inspected
+         * @param list<string> $prepared
+         */
         public function __construct(
+            private array &$inspected,
             private array &$prepared,
         ) {}
 
-        public function inspect(Node $node, ManagedUserAccount $account, StoragePath $path): void {}
+        public function inspect(Node $node, ManagedUserAccount $account, StoragePath $path): void
+        {
+            $this->inspected[] = $path->value;
+        }
 
         public function prepare(Node $node, ManagedUserAccount $account, EffectiveStorageRoots $roots): void
         {

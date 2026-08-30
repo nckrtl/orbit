@@ -178,3 +178,29 @@ sql_clear_workspace_origin() {
     $statement->execute(["name" => $argv[1]]);
   ' -- "$1"
 }
+
+sql_set_workspace_origin() {
+  php -r '
+    $d = new PDO("sqlite:/home/orbit/.orbit/gateway.sqlite");
+    $statement = $d->prepare("update workspaces set checkout_path_origin = :origin where name = :name");
+    $statement->execute(["origin" => $argv[2], "name" => $argv[1]]);
+  ' -- "$1" "$2"
+}
+
+provision_app_dev() {
+  orbit node:provision app-dev "$(node_field app-dev public_ssh_host)" \
+    --user=orbit \
+    --host-key-fingerprint="$(node_field app-dev ssh_host_fingerprint)" \
+    --architecture="$(node_field app-dev architecture)" \
+    --tld="$(node_field app-dev tld)" \
+    --role=app-dev \
+    "$@"
+}
+
+provision_app_prod() {
+  orbit node:provision app-prod "$(node_field app-prod public_ssh_host)" \
+    --user=orbit \
+    --host-key-fingerprint="$(node_field app-prod ssh_host_fingerprint)" \
+    --architecture="$(node_field app-prod architecture)" \
+    "$@"
+}

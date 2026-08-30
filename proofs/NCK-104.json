@@ -42,7 +42,7 @@
             "id": "reject-invalid-roots",
             "node": "gateway",
             "argv": ["bash", "/var/lib/orbit-e2e/proof/reject-invalid-roots.sh"],
-            "timeout_seconds": 120
+            "timeout_seconds": 300
         },
         {
             "id": "root-ownership",

@@ -79,6 +79,13 @@ final readonly class NodeSettingsParser
             $this->reject('The instance path must be a string or null.');
         }
 
+        if ($path === '') {
+            throw new ResourceOperationException(
+                errorCode: 'node.settings_path_invalid',
+                message: 'The instance storage path is not a normalized absolute path.',
+            );
+        }
+
         return new InstanceSettingsData(is_string($path) ? $path : null);
     }
 
@@ -94,6 +101,13 @@ final readonly class NodeSettingsParser
 
         if ($path !== null && ! is_string($path)) {
             $this->reject('The worktree path must be a string or null.');
+        }
+
+        if ($path === '') {
+            throw new ResourceOperationException(
+                errorCode: 'node.settings_path_invalid',
+                message: 'The worktree storage path is not a normalized absolute path.',
+            );
         }
 
         return new WorktreeSettingsData(is_string($path) ? $path : null);

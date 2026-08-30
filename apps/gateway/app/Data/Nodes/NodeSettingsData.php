@@ -17,14 +17,14 @@ final class NodeSettingsData extends Data
     {
         $path = $this->instance?->path;
 
-        return is_string($path) && $path !== '' ? $path : null;
+        return is_string($path) ? $path : null;
     }
 
     public function worktreePath(): ?string
     {
         $path = $this->worktree?->path;
 
-        return is_string($path) && $path !== '' ? $path : null;
+        return is_string($path) ? $path : null;
     }
 
     public function isEmpty(): bool

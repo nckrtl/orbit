@@ -7,12 +7,10 @@ source /var/lib/orbit-e2e/proof/lib.sh
 [[ "$(sql_node_settings app-prod)" == null ]] || fail "app-prod SQL settings were not null"
 [[ "$(sql_node_settings gateway)" == null ]] || fail "gateway SQL settings were not null"
 
-out=$(orbit node:provision app-dev "$(node_field app-dev public_ssh_host)" \
-  --user=orbit \
-  --host-key-fingerprint="$(node_field app-dev ssh_host_fingerprint)" \
-  --architecture="$(node_field app-dev architecture)" \
-  --tld="$(node_field app-dev tld)" \
-  --role=app-dev \
+provision_app_prod --json >/dev/null || fail "provision without settings failed"
+[[ "$(sql_node_settings app-prod)" == null ]] || fail "provision without settings stored overrides"
+
+out=$(provision_app_dev \
   --setting=instance.path:/srv/orbit/instances \
   --setting=worktree.path:/srv/orbit/worktrees \
   --json) || fail "provision with settings failed: $out"

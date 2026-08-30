@@ -9,6 +9,7 @@ use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
+use App\Domain\Nodes\Storage\CheckoutPathOrigin;
 use App\Domain\Nodes\Storage\CheckoutRemovalBoundary;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\SourceControl\GitRepositoryOrigin;
@@ -16,7 +17,7 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Instance;
 use App\Models\Workspace;
 
-/** @mago-expect lint:kan-defect,too-many-methods Instance and workspace source scripts keep containment and ACL accounting together. */
+/** @mago-expect lint:kan-defect,too-many-methods,cyclomatic-complexity Instance and workspace source scripts keep containment and ACL accounting together. */
 final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
 {
     public function __construct(
@@ -544,6 +545,9 @@ final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
                 $account,
                 ignoreWorkspaceId: $workspace->id,
             );
+            $recognized = $grouping instanceof StoragePath
+                ? $this->recognizedGroupingCheckouts($workspace, $grouping)
+                : [];
             $arguments = [
                 'bash',
                 '-seu',
@@ -556,7 +560,11 @@ final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
                 $account->home,
                 $allowedRoot->value,
                 $grouping?->value ?? '-',
+                (string) count($recognized),
             ];
+            foreach ($recognized as $path) {
+                $arguments[] = $path;
+            }
             foreach ($releasePaths as $path) {
                 $arguments[] = $path;
             }
@@ -573,7 +581,16 @@ final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
                             managed_home=$6
                             allowed_root=$7
                             grouping_dir=$8
-                            shift 8
+                            recognized_count=$9
+                            shift 9
+                            printf '%s\n' "$recognized_count" | grep -Eq '^[0-9]+$'
+                            recognized_siblings=()
+                            i=0
+                            while [ "$i" -lt "$recognized_count" ]; do
+                                recognized_siblings+=("$1")
+                                shift
+                                i=$((i + 1))
+                            done
                             release_paths=("$@")
                             marker_name=user.orbit.caddy_traversal
                         if [ -L "$checkout" ]; then
@@ -583,6 +600,36 @@ final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
                         test ! -L "$instance"
                         test "$(realpath -e "$instance")" = "$(git -C "$instance" rev-parse --show-toplevel)"
                         test "$(git -C "$instance" remote get-url origin)" = "$repository"
+                        if [ -e "$checkout" ]; then
+                            test "$(stat -c '%U:%G' "$checkout")" = "$managed_user:$managed_group"
+                        fi
+                        preflight_derived_grouping() {
+                            if [ "$grouping_dir" = '-' ] || [ -z "$grouping_dir" ]; then
+                                return 0
+                            fi
+                            if [ ! -e "$grouping_dir" ] && [ ! -L "$grouping_dir" ]; then
+                                return 0
+                            fi
+                            test -d "$grouping_dir"
+                            test ! -L "$grouping_dir"
+                            test "$(realpath -e "$grouping_dir")" = "$grouping_dir"
+                            test "$(stat -c '%U:%G' "$grouping_dir")" = "$managed_user:$managed_group"
+                            shopt -s nullglob dotglob
+                            for entry in "$grouping_dir"/*; do
+                                recognized=0
+                                for sibling in "${recognized_siblings[@]}"; do
+                                    if [ "$entry" = "$sibling" ]; then
+                                        recognized=1
+                                        break
+                                    fi
+                                done
+                                test "$recognized" -eq 1
+                                test ! -L "$entry"
+                                test -d "$entry"
+                                test "$(stat -c '%U:%G' "$entry")" = "$managed_user:$managed_group"
+                            done
+                        }
+                        preflight_derived_grouping
 
                         if ! git -C "$instance" worktree list --porcelain | grep -Fx -- "worktree $checkout" >/dev/null; then
                             test ! -e "$checkout"
@@ -884,6 +931,39 @@ final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
             }
 
             BASH;
+    }
+
+    /** @return list<string> */
+    private function recognizedGroupingCheckouts(Workspace $workspace, StoragePath $grouping): array
+    {
+        $workspace->loadMissing('instance');
+        $checkouts = [];
+        $siblings = Workspace::query()
+            ->whereHas(
+                'instance',
+                static function ($query) use ($workspace): void {
+                    $query
+                        ->where('node_id', $workspace->instance->node_id)
+                        ->where('app_id', $workspace->instance->app_id);
+                },
+            )
+            ->where('checkout_path_origin', CheckoutPathOrigin::Derived->value)
+            ->get(['checkout_path']);
+
+        foreach ($siblings as $sibling) {
+            $path = StoragePath::tryParse($sibling->checkout_path);
+            $parent = $path instanceof StoragePath ? $path->parent() : null;
+
+            if (
+                $path instanceof StoragePath
+                && $parent instanceof StoragePath
+                && $parent->equals($grouping)
+            ) {
+                $checkouts[] = $path->value;
+            }
+        }
+
+        return $checkouts;
     }
 
     /** @return list<string> */

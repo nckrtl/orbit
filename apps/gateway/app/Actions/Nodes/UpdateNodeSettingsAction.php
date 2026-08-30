@@ -5,12 +5,14 @@ declare(strict_types=1);
 namespace App\Actions\Nodes;
 
 use App\Data\Nodes\NodeSettingsData;
+use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\ConfiguredStoragePathValidator;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Nodes\Storage\NodeSettingsPatch;
 use App\Domain\Nodes\Storage\NodeStorageRootPreparer;
+use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Node;
 
@@ -47,11 +49,24 @@ final readonly class UpdateNodeSettingsAction
 
             if ($this->hasActiveAppDevRole($node)) {
                 $this->preparer->prepare($node, $account, $roots);
+            } else {
+                $this->inspectExplicitRoots($node, $account, $normalized);
             }
         }
 
         $node->settings = $this->normalizer->stored($normalized);
         $node->save();
+    }
+
+    private function inspectExplicitRoots(Node $node, ManagedUserAccount $account, NodeSettingsData $settings): void
+    {
+        foreach ([$settings->instancePath(), $settings->worktreePath()] as $path) {
+            if (! is_string($path) || $path === '') {
+                continue;
+            }
+
+            $this->preparer->inspect($node, $account, StoragePath::parse($path));
+        }
     }
 
     private function hasActiveAppDevRole(Node $node): bool

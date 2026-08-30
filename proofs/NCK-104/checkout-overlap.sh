@@ -8,6 +8,8 @@ expect_error workspace.path_taken orbit workspace:new "$dev_id" nck104-overlap \
   --path=/home/orbit/.orbit/worktrees/laravel/e2e --json
 expect_error workspace.path_taken orbit workspace:new "$dev_id" nck104-parent-overlap \
   --path=/home/orbit/.orbit/worktrees/laravel --json
+expect_error workspace.path_taken orbit workspace:new "$dev_id" nck104-child-overlap \
+  --path=/home/orbit/.orbit/worktrees/laravel/e2e/child --json
 
 lookalike=$(orbit workspace:new "$dev_id" nck104-lookalike \
   --path=/home/orbit/.orbit/worktrees/laravel/e2e-extra --json)
