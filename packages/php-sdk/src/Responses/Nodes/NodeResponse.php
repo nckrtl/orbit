@@ -34,6 +34,7 @@ final readonly class NodeResponse
         public ?string $wireguardEndpointOverride = null,
         public ?string $dnsServerOverride = null,
         public ?NodeAccessResponse $access = null,
+        public ?NodeSettings $settings = null,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -71,6 +72,7 @@ final readonly class NodeResponse
             roles: self::stringList($data['roles'] ?? []),
             requestId: $requestId,
             access: is_array($data['access'] ?? null) ? NodeAccessResponse::fromGatewayData($data['access']) : null,
+            settings: self::settings($data['settings'] ?? null),
         );
     }
 
@@ -78,7 +80,7 @@ final readonly class NodeResponse
      * @return array<string, int|string|list<string>|null|array{
      *     can_access: list<array{id: int, name: string}>,
      *     accessible_by: list<array{id: int, name: string}>
-     * }>
+     * }|array{instance: array{path: string}|null, worktree: array{path: string}|null}>
      */
     public function toArray(): array
     {
@@ -100,6 +102,7 @@ final readonly class NodeResponse
             'failed_step' => $this->failedStep,
             'error_code' => $this->errorCode,
             'roles' => $this->roles,
+            'settings' => $this->settings?->toArray(),
             'request_id' => $this->requestId,
         ];
 
@@ -108,6 +111,28 @@ final readonly class NodeResponse
         }
 
         return $data;
+    }
+
+    /**
+     * @mago-expect analysis:mixed-assignment Gateway settings remain mixed until keyed.
+     */
+    private static function settings(mixed $value): ?NodeSettings
+    {
+        if (! is_array($value)) {
+            return null;
+        }
+
+        $settings = [];
+
+        foreach ($value as $key => $item) {
+            if (! is_string($key)) {
+                continue;
+            }
+
+            $settings[$key] = $item;
+        }
+
+        return NodeSettings::fromGatewayData($settings);
     }
 
     /**

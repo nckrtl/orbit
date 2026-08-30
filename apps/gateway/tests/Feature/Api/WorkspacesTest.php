@@ -155,6 +155,23 @@ describe('workspace API', function (): void {
             ->toBe($response->json('data.id'))
             ->and($activity->target_node_id)
             ->toBe($this->node->id);
+
+        expect(\App\Models\Workspace::query()->sole()->checkout_path_origin)
+            ->toBe(\App\Domain\Nodes\Storage\CheckoutPathOrigin::Derived->value);
+    });
+
+    it('records explicit origin for an overridden workspace checkout', function (): void {
+        $this
+            ->postJson('/api/v1/workspaces', [
+                'instance_id' => $this->instance->id,
+                'name' => 'feature-one',
+                'checkout_path' => '/srv/users/nckrtl/custom-worktrees/acme-feature-one',
+            ])
+            ->assertCreated()
+            ->assertJsonPath('data.checkout_path', '/srv/users/nckrtl/custom-worktrees/acme-feature-one');
+
+        expect(\App\Models\Workspace::query()->sole()->checkout_path_origin)
+            ->toBe(\App\Domain\Nodes\Storage\CheckoutPathOrigin::Explicit->value);
     });
 
     it('rejects workspaces on an active app-prod node with a stable error', function (): void {

@@ -1,0 +1,72 @@
+{
+    "setup": [
+        {
+            "id": "prepare-roots",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/prepare-roots.sh"],
+            "timeout_seconds": 30
+        }
+    ],
+    "acceptance": [
+        {
+            "id": "retrieve-settings-sql",
+            "node": "gateway",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/retrieve-settings-sql.sh"],
+            "timeout_seconds": 120
+        },
+        {
+            "id": "patch-omit-null",
+            "node": "gateway",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/patch-omit-null.sh"],
+            "timeout_seconds": 120
+        },
+        {
+            "id": "cli-setting-parse",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/cli-setting-parse.sh"],
+            "timeout_seconds": 120
+        },
+        {
+            "id": "derived-explicit-origin",
+            "node": "gateway",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/derived-explicit-origin.sh"],
+            "timeout_seconds": 180
+        },
+        {
+            "id": "non-migrating-app-prod",
+            "node": "gateway",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/non-migrating-app-prod.sh"],
+            "timeout_seconds": 60
+        },
+        {
+            "id": "reject-invalid-roots",
+            "node": "gateway",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/reject-invalid-roots.sh"],
+            "timeout_seconds": 120
+        },
+        {
+            "id": "root-ownership",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/root-ownership.sh"],
+            "timeout_seconds": 120
+        },
+        {
+            "id": "caddy-acl-sharing",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/caddy-acl-sharing.sh"],
+            "timeout_seconds": 180
+        },
+        {
+            "id": "checkout-overlap",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/checkout-overlap.sh"],
+            "timeout_seconds": 180
+        },
+        {
+            "id": "removal-recorded-origin",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/removal-recorded-origin.sh"],
+            "timeout_seconds": 180
+        }
+    ]
+}

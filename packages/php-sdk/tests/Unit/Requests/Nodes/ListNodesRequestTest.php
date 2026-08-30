@@ -93,6 +93,7 @@ function list_nodes_gateway_data(): array
             'failed_step' => null,
             'error_code' => null,
             'roles' => ['app-dev'],
+            'settings' => null,
         ],
         [
             'id' => 7,
@@ -112,6 +113,7 @@ function list_nodes_gateway_data(): array
             'failed_step' => 'wireguard-server-validate',
             'error_code' => 'vpn.server_config_invalid',
             'roles' => ['app-prod'],
+            'settings' => null,
         ],
     ];
 }

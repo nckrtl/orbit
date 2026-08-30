@@ -250,5 +250,6 @@ function node_response_public_data(): array
         'failed_step' => null,
         'error_code' => null,
         'roles' => ['app-dev'],
+        'settings' => null,
     ];
 }

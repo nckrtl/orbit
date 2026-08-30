@@ -8,6 +8,7 @@ use App\Data\Nodes\ProvisionNodeData;
 use App\Domain\Nodes\LinuxUserName;
 use App\Domain\Nodes\NodeTld;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Nodes\Storage\NodeSettingsParser;
 use App\Domain\WireGuard\WireGuardEndpoint;
 use App\Models\Node;
 use Closure;
@@ -155,6 +156,10 @@ final class ProvisionNodeRequest extends FormRequest
             platform: is_string($validated['platform'] ?? null) ? $validated['platform'] : 'linux',
             architecture: is_string($validated['architecture'] ?? null) ? $validated['architecture'] : null,
             tld: is_string($validated['tld'] ?? null) ? $validated['tld'] : null,
+            settingsProvided: array_key_exists('settings', $this->all()),
+            settings: array_key_exists('settings', $this->all())
+                ? new NodeSettingsParser()->parseComplete($this->input('settings'))
+                : null,
         );
     }
 

@@ -51,6 +51,7 @@ use App\Domain\Nodes\NodeRoleDependentCleaner;
 use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\NodeRoleToolIntentGuard;
 use App\Domain\Nodes\RoleBaselineConverger;
+use App\Domain\Nodes\Storage\NodeStorageRootPreparer;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Tools\ToolInspector;
 use App\Domain\Tools\ToolManagerMaterializer;
@@ -110,6 +111,7 @@ use App\Infrastructure\Nodes\EloquentNodeRoleDependencyInspector;
 use App\Infrastructure\Nodes\NativeNodeConverger;
 use App\Infrastructure\Nodes\NativeNodeProvisioningLock;
 use App\Infrastructure\Nodes\NativeNodeRoleDependentCleaner;
+use App\Infrastructure\Nodes\RemoteNodeStorageRootPreparer;
 use App\Infrastructure\Nodes\Roles\NativeNodeRoleFirewallManager;
 use App\Infrastructure\Nodes\Roles\NativeRoleBaselineConverger;
 use App\Infrastructure\Nodes\SshManagedUserAccountResolver;
@@ -175,6 +177,7 @@ final class AppServiceProvider extends ServiceProvider
         MetricsRuntimeLifecycle::class => NativeMetricsContainerRuntime::class,
         MetricsStatusReader::class => NativeMetricsStatusReader::class,
         NodeConverger::class => NativeNodeConverger::class,
+        NodeStorageRootPreparer::class => RemoteNodeStorageRootPreparer::class,
         NodeStateInspector::class => SshNodeStateInspector::class,
         ProcessStateInspector::class => NativeProcessStateInspector::class,
         NodeRoleDependencyInspector::class => EloquentNodeRoleDependencyInspector::class,

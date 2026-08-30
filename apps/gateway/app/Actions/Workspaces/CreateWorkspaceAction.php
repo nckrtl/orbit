@@ -9,19 +9,27 @@ use App\Domain\AppDev\AppDevRuntimeConverger;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Nodes\Storage\CheckoutPathOrigin;
+use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
+use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
+use App\Domain\Nodes\Storage\StoragePath;
+use App\Domain\Nodes\Storage\StorageRootResolver;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
 use App\Models\Workspace;
 use Throwable;
 
-/** @mago-expect lint:cyclomatic-complexity Workspace creation keeps role, path, and immutable identity gates together. */
+/** @mago-expect lint:cyclomatic-complexity,excessive-parameter-list Workspace creation keeps role, path, and immutable identity gates together. */
 final readonly class CreateWorkspaceAction
 {
     public function __construct(
         private AppDevRuntimeConverger $runtime,
         private EnsureWorkspaceCheckoutPathAvailableAction $ensureCheckoutPathAvailable,
         private ManagedUserAccountResolver $managedUserAccountResolver,
+        private StorageRootResolver $storageRoots,
+        private NodeSettingsNormalizer $nodeSettings,
+        private ManagedCheckoutOverlap $checkoutOverlap,
     ) {}
 
     /** @return array{workspace: Workspace, created: bool} */
@@ -42,8 +50,25 @@ final readonly class CreateWorkspaceAction
                 'Managed user account is unavailable.',
             );
         }
-        $checkoutPath = $data->checkoutPath ?? "{$account->home}/.orbit/worktrees/{$instance->app->slug}/{$data->name}";
-        if (! $this->isAllowedPath($checkoutPath, $account->home)) {
+        $origin = $workspace->exists ? $workspace->checkout_path_origin : null;
+        if ($workspace->exists) {
+            $checkoutPath = $workspace->checkout_path;
+        } elseif ($data->checkoutPath !== null) {
+            $checkoutPath = $data->checkoutPath;
+            $origin = CheckoutPathOrigin::Explicit->value;
+        } else {
+            $roots = $this->storageRoots->resolve(
+                $this->nodeSettings->fromStored($instance->node->settings),
+                $account,
+            );
+            $checkoutPath = $roots->worktree->append($instance->app->slug, $data->name)->value;
+            $origin = CheckoutPathOrigin::Derived->value;
+        }
+        if (
+            ! $workspace->exists
+            && $origin === CheckoutPathOrigin::Explicit->value
+            && ! $this->isAllowedPath($checkoutPath, $account->home)
+        ) {
             throw new ResourceOperationException(
                 'workspace.checkout_path_invalid',
                 'Workspace checkout path is not allowed.',
@@ -74,7 +99,16 @@ final readonly class CreateWorkspaceAction
             );
         }
 
-        $this->ensureCheckoutPathAvailable->execute($instance, $workspace, $checkoutPath);
+        if ($workspace->exists) {
+            $this->ensureCheckoutPathAvailable->execute($instance, $workspace, $checkoutPath);
+        } else {
+            $this->checkoutOverlap->assertAvailable(
+                $instance->node_id,
+                StoragePath::parse($checkoutPath),
+                'workspace.path_taken',
+                $instance->id,
+            );
+        }
         $collision = Workspace::query()
             ->where('hostname', $hostname)
             ->when($workspace->exists, static fn ($query) => $query->whereKeyNot($workspace->id))
@@ -91,6 +125,7 @@ final readonly class CreateWorkspaceAction
         $workspace->fill([
             'branch' => $data->branch,
             'checkout_path' => $checkoutPath,
+            'checkout_path_origin' => $origin,
             'php_version' => $data->phpVersion,
             'hostname' => $hostname,
             'status' => LifecycleStatus::Provisioning,

@@ -197,6 +197,40 @@ describe('instance API', function (): void {
             ->toBe($this->node->id);
     });
 
+    it('derives a new app-dev instance from configured instance root without moving existing checkouts', function (): void {
+        $this->node->update([
+            'settings' => [
+                'instance' => ['path' => '/srv/orbit/instances'],
+                'worktree' => ['path' => '/srv/orbit/worktrees'],
+            ],
+        ]);
+
+        $this
+            ->postJson('/api/v1/instances', [
+                'app_id' => $this->orbitApp->id,
+                'node_id' => $this->node->id,
+                'name' => 'dev',
+            ])
+            ->assertCreated()
+            ->assertJsonPath('data.checkout_path', '/srv/orbit/instances/acme');
+
+        $this->node->update([
+            'settings' => [
+                'instance' => ['path' => '/mnt/apps'],
+                'worktree' => ['path' => '/mnt/worktrees'],
+            ],
+        ]);
+
+        $this
+            ->postJson('/api/v1/instances', [
+                'app_id' => $this->orbitApp->id,
+                'node_id' => $this->node->id,
+                'name' => 'dev',
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.checkout_path', '/srv/orbit/instances/acme');
+    });
+
     it('creates an isolated app-prod instance with a required public hostname', function (): void {
         $node = Node::query()->create([
             'name' => 'app-prod',

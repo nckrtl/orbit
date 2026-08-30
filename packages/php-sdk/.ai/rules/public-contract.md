@@ -1,10 +1,10 @@
 # Public contract
 
-The SDK models exactly 52 concrete public Gateway API operations:
+The SDK models exactly 53 concrete public Gateway API operations:
 
 - Gateway: status and root trust.
 - Activity: list and show.
-- Node: list, show, provision, remove, access add, access remove, role list, role add, and role remove.
+- Node: list, show, provision, settings update, remove, access add, access remove, role list, role add, and role remove.
 - App: list, show, create, and remove.
 - Instance: list, show, create, remove, and update PHP.
 - Workspace: list, show, create, remove, and update PHP.

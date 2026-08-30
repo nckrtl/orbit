@@ -54,6 +54,9 @@ Route::prefix('v1')->group(function (): void {
             ->name('activity:show');
         Route::post('nodes', [NodesController::class, 'store'])
             ->name('node:provision');
+        Route::patch('nodes/{node}/settings', [NodesController::class, 'settings'])
+            ->whereNumber('node')
+            ->name('node:settings');
         Route::delete('nodes/{node}', [NodesController::class, 'destroy'])
             ->name('node:remove');
         Route::put(

@@ -54,6 +54,7 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'node:role:add',
         'node:role:list',
         'node:role:remove',
+        'node:settings',
         'node:show',
         'process:add',
         'process:list',
@@ -80,7 +81,7 @@ it('does not register hidden Orbit product commands', function (): void {
     $orbitCommands = collect(app(Kernel::class)->all())
         ->filter(static fn (Command $command): bool => str_starts_with($command::class, 'App\\Commands\\'));
 
-    expect($orbitCommands)->toHaveCount(54);
+    expect($orbitCommands)->toHaveCount(55);
     expect($orbitCommands->every(
         static fn (Command $command): bool => ! $command->isHidden(),
     ))->toBeTrue();
@@ -172,10 +173,12 @@ it('keeps the exact approved arguments options and defaults', function (): void 
                 'wireguard-address' => null,
                 'wireguard-endpoint' => null,
                 'dns-server' => null,
+                'setting' => [],
                 'json' => false,
             ],
         ],
         'node:remove' => [['node'], ['force' => false, 'json' => false]],
+        'node:settings' => [['node'], ['setting' => [], 'json' => false]],
         'node:role:add' => [['node', 'role'], ['converge' => false, 'json' => false]],
         'node:role:list' => [['node'], ['json' => false]],
         'node:role:remove' => [['node', 'role'], ['force' => false, 'purge-data' => false, 'json' => false]],
@@ -359,6 +362,7 @@ it('renders one exact json failure envelope for every Orbit product command', fu
         'node:role:add' => [['node' => '7', 'role' => 'app-dev'], ...$profileMissing],
         'node:role:list' => [['node' => '7'], ...$profileMissing],
         'node:role:remove' => [['node' => '7', 'role' => 'app-dev', '--force' => true], ...$profileMissing],
+        'node:settings' => [['node' => '1', '--setting' => ['instance.path:/srv/orbit/instances']], ...$profileMissing],
         'node:show' => [['node' => '1'], ...$profileMissing],
         'process:add' => [
             ['name' => 'worker', '--instance' => '1', '--command' => ['/usr/bin/php']],

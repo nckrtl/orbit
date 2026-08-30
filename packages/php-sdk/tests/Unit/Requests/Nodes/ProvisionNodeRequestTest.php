@@ -166,3 +166,27 @@ it('represents a Linux node without inventing a public SSH host', function (): v
         'roles' => [],
     ]);
 });
+
+it('sends an explicit settings object when supplied and omits it otherwise', function (): void {
+    $withSettings = new ProvisionNodeRequest(
+        name: 'app-dev',
+        publicSshHost: '94.237.40.75',
+        settingsProvided: true,
+        settings: [
+            'instance' => ['path' => '/srv/orbit/instances'],
+            'worktree' => null,
+        ],
+    );
+    $withoutSettings = new ProvisionNodeRequest(
+        name: 'app-dev',
+        publicSshHost: '94.237.40.75',
+    );
+
+    expect($withSettings->body()->all())
+        ->toHaveKey('settings', [
+            'instance' => ['path' => '/srv/orbit/instances'],
+            'worktree' => null,
+        ])
+        ->and($withoutSettings->body()->all())
+        ->not->toHaveKey('settings');
+});

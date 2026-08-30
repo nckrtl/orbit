@@ -68,6 +68,7 @@ it('sends node provisioning to the active gateway', function (): void {
         'failed_step' => null,
         'error_code' => null,
         'roles' => ['app-dev'],
+        'settings' => null,
         'request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844',
     ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
 
@@ -138,6 +139,56 @@ it('passes bootstrap and managed users to the SDK', function (): void {
     expect($mockClient->getLastRequest()?->body()->all())
         ->toHaveKey('user', 'deployer')
         ->toHaveKey('orbit_user', 'nckrtl');
+});
+
+it('sends repeatable provision settings and rejects invalid setting input locally', function (): void {
+    app(GatewayConfigRepository::class)->add(new GatewayProfile(
+        name: 'test',
+        url: 'https://10.44.0.1',
+    ));
+    $mockClient = MockClient::global([
+        '*/api/v1/nodes' => MockResponse::make([
+            'data' => [
+                'id' => 1,
+                'name' => 'app-dev',
+                'status' => 'active',
+                'public_ssh_host' => '94.237.40.75',
+                'public_ssh_port' => 22,
+                'user' => 'orbit',
+                'roles' => ['app-dev'],
+            ],
+            'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844'],
+        ], 201),
+    ]);
+
+    $this->artisan('node:provision', [
+        'name' => 'app-dev',
+        'host' => '94.237.40.75',
+        '--setting' => [
+            'instance.path:/srv/orbit:data/instances',
+            'worktree.path:',
+        ],
+    ])->assertExitCode(0);
+
+    expect($mockClient->getLastRequest()?->body()->all()['settings'] ?? null)
+        ->toBe([
+            'instance' => ['path' => '/srv/orbit:data/instances'],
+            'worktree' => null,
+        ]);
+
+    MockClient::destroyGlobal();
+    $mockClient = MockClient::global();
+
+    $this
+        ->artisan('node:provision', [
+            'name' => 'app-dev',
+            'host' => '94.237.40.75',
+            '--setting' => ['packages.path:/srv/a'],
+        ])
+        ->expectsOutputToContain('Unknown setting')
+        ->assertExitCode(1);
+
+    expect($mockClient->getLastPendingRequest())->toBeNull();
 });
 
 it('rejects non-Linux platform input before making an API request', function (string $platform): void {

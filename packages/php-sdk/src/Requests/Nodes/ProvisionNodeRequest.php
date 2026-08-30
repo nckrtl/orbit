@@ -36,6 +36,9 @@ final class ProvisionNodeRequest extends GatewayRequest implements HasBody
         private readonly string $platform = 'linux',
         private readonly ?string $architecture = null,
         private readonly ?string $tld = null,
+        private readonly bool $settingsProvided = false,
+        /** @var null|array{instance?: array{path: string}|null, worktree?: array{path: string}|null} */
+        private readonly ?array $settings = null,
     ) {}
 
     public function resolveEndpoint(): string
@@ -54,7 +57,7 @@ final class ProvisionNodeRequest extends GatewayRequest implements HasBody
     /** @return array<string, mixed> */
     protected function defaultBody(): array
     {
-        return array_filter(
+        $body = array_filter(
             [
                 'name' => $this->name,
                 'public_ssh_host' => $this->publicSshHost,
@@ -72,5 +75,11 @@ final class ProvisionNodeRequest extends GatewayRequest implements HasBody
             ],
             static fn (mixed $value): bool => $value !== null,
         );
+
+        if ($this->settingsProvided) {
+            $body['settings'] = $this->settings;
+        }
+
+        return $body;
     }
 }

@@ -9,17 +9,21 @@ use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
+use App\Domain\Nodes\Storage\CheckoutRemovalBoundary;
+use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\SourceControl\GitRepositoryOrigin;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Instance;
 use App\Models\Workspace;
 
+/** @mago-expect lint:kan-defect Instance and workspace source scripts keep containment and ACL accounting together. */
 final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
 {
     public function __construct(
         private AppDevSshExecutor $ssh,
         private AppDevSourceOperationLock $lock,
         private ManagedUserAccountResolver $accounts,
+        private CheckoutRemovalBoundary $removal,
     ) {}
 
     public function convergeInstance(Instance $instance): void
@@ -27,22 +31,34 @@ final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
         $instance->loadMissing(['app', 'node']);
         $account = $this->accounts->resolve($instance->node);
         $repository = GitRepositoryOrigin::validate($instance->app->repository_url);
-        $this->guardInstancePath($instance, $account);
-        $this->lock->synchronized($instance->node_id, function () use ($instance, $repository, $account): void {
+        $allowedRoot = $this->removal->instanceRoot($instance, $account);
+        $traversalPaths = $this->checkoutTraversalPaths($instance->checkout_path, $allowedRoot);
+        $this->lock->synchronized($instance->node_id, function () use (
+            $instance,
+            $repository,
+            $account,
+            $allowedRoot,
+            $traversalPaths,
+        ): void {
+            $arguments = [
+                'bash',
+                '-seu',
+                '--',
+                $repository,
+                $instance->checkout_path,
+                $instance->document_root,
+                $account->user,
+                $account->group,
+                $account->home,
+                $allowedRoot->value,
+            ];
+            foreach ($traversalPaths as $path) {
+                $arguments[] = $path;
+            }
             $this->ssh->execute(
                 $instance->node,
                 new RemoteCommand(
-                    arguments: [
-                        'bash',
-                        '-seu',
-                        '--',
-                        $repository,
-                        $instance->checkout_path,
-                        $instance->document_root,
-                        $account->user,
-                        $account->group,
-                        $account->home,
-                    ],
+                    arguments: $arguments,
                     input: <<<'BASH'
                         repository=$1
                         checkout=$2
@@ -50,10 +66,13 @@ final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
                         managed_user=$4
                         managed_group=$5
                         managed_home=$6
+                        allowed_root=$7
+                        shift 7
+                        traversal_paths=("$@")
                         guard_checkout_parent() {
                             parent=$(dirname "$1")
                             case "$parent" in
-                                "$managed_home"|"$managed_home"/*) ;;
+                                "$allowed_root"|"$allowed_root"/*) ;;
                                 *) return 1 ;;
                             esac
 
@@ -63,12 +82,12 @@ final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
                             done
                             test ! -L "$existing_parent"
                             case "$(realpath -e "$existing_parent")" in
-                                "$managed_home"|"$managed_home"/*) ;;
+                                "$allowed_root"|"$allowed_root"/*) ;;
                                 *) return 1 ;;
                             esac
 
-                            current=$managed_home
-                            IFS=/ read -r -a segments <<< "${parent#"$managed_home"/}"
+                            current=$allowed_root
+                            IFS=/ read -r -a segments <<< "${parent#"$allowed_root"/}"
                             for segment in "${segments[@]}"; do
                                 current="$current/$segment"
                                 if [ -e "$current" ] || [ -L "$current" ]; then
@@ -112,7 +131,12 @@ final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
                         }
 
                         grant_caddy_access() {
-                            setfacl -m u:caddy:--x "$managed_home" "$managed_home/apps" "$checkout"
+                            setfacl -m u:caddy:--x "$managed_home" "$managed_home/apps" "$allowed_root" "$checkout"
+                            for path in "${traversal_paths[@]}"; do
+                                case "$checkout" in
+                                    "$path"|"$path"/*) setfacl -m u:caddy:--x "$path" ;;
+                                esac
+                            done
 
                             current=$checkout_root
                             if [ "$document_root_real" = "$checkout_root" ]; then
@@ -140,9 +164,9 @@ final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
                             fi
                         }
                         guard_checkout_parent "$checkout"
-                        install -d -m 0755 -- "$managed_home/apps" "$(dirname "$checkout")"
+                        install -d -m 0755 -- "$allowed_root" "$(dirname "$checkout")"
                         case "$(realpath -e "$(dirname "$checkout")")" in
-                            "$managed_home"|"$managed_home"/*) ;;
+                            "$allowed_root"|"$allowed_root"/*) ;;
                             *) exit 1 ;;
                         esac
 
@@ -170,32 +194,53 @@ final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
         $instance->loadMissing(['app', 'node']);
         $account = $this->accounts->resolve($instance->node);
         $repository = GitRepositoryOrigin::validate($instance->app->repository_url);
-        $this->guardInstancePath($instance, $account);
-        $this->lock->synchronized($instance->node_id, function () use ($instance, $repository, $account): void {
+        $allowedRoot = $this->removal->instanceRoot($instance, $account);
+        $releasePaths = $this->releasableTraversalPaths(
+            $instance->checkout_path,
+            $allowedRoot,
+            $instance->node_id,
+            $account,
+            ignoreInstanceId: $instance->id,
+        );
+        $this->lock->synchronized($instance->node_id, function () use (
+            $instance,
+            $repository,
+            $account,
+            $allowedRoot,
+            $releasePaths,
+        ): void {
+            $arguments = [
+                'bash',
+                '-seu',
+                '--',
+                $repository,
+                $instance->checkout_path,
+                $account->user,
+                $account->group,
+                $account->home,
+                $allowedRoot->value,
+            ];
+            foreach ($releasePaths as $path) {
+                $arguments[] = $path;
+            }
             $this->ssh->execute(
                 $instance->node,
                 new RemoteCommand(
-                    arguments: [
-                        'bash',
-                        '-seu',
-                        '--',
-                        $repository,
-                        $instance->checkout_path,
-                        $account->user,
-                        $account->group,
-                        $account->home,
-                    ],
+                    arguments: $arguments,
                     input: <<<'BASH'
                         repository=$1
                         checkout=$2
                         managed_user=$3
                         managed_group=$4
                         managed_home=$5
+                        allowed_root=$6
+                        shift 6
+                        release_paths=("$@")
                         parent=$(dirname "$checkout")
 
                         test ! -L "$parent"
                         case "$(realpath -e "$parent")" in
-                            "$managed_home"|"$managed_home"/*) ;;
+                            "$allowed_root"|"$allowed_root"/*) ;;
                             *) exit 1 ;;
                         esac
 
@@ -220,29 +265,38 @@ final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
         $workspace->loadMissing(['instance.app', 'instance.node']);
         $account = $this->accounts->resolve($workspace->instance->node);
         $repository = GitRepositoryOrigin::validate($workspace->instance->app->repository_url);
+        $allowedRoot = $this->removal->workspaceRoot($workspace, $account);
+        $origin = $workspace->checkout_path_origin ?? 'legacy';
         $this->lock->synchronized($workspace->instance->node_id, function () use (
             $repository,
             $workspace,
             $account,
+            $allowedRoot,
+            $origin,
         ): void {
-            $traversalPaths = $this->workspaceTraversalPaths($workspace, $account);
+            $traversalPaths = $this->checkoutTraversalPaths($workspace->checkout_path, $allowedRoot);
+            $arguments = [
+                'bash',
+                '-seu',
+                '--',
+                $workspace->instance->checkout_path,
+                $repository,
+                $workspace->checkout_path,
+                $workspace->branch,
+                $workspace->instance->document_root,
+                $account->user,
+                $account->group,
+                $account->home,
+                $allowedRoot->value,
+                $origin,
+            ];
+            foreach ($traversalPaths as $path) {
+                $arguments[] = $path;
+            }
             $this->ssh->execute(
                 $workspace->instance->node,
                 new RemoteCommand(
-                    arguments: [
-                        'bash',
-                        '-seu',
-                        '--',
-                        $workspace->instance->checkout_path,
-                        $repository,
-                        $workspace->checkout_path,
-                        $workspace->branch,
-                        $workspace->instance->document_root,
-                        $account->user,
-                        $account->group,
-                        $account->home,
-                        ...$traversalPaths,
-                    ],
+                    arguments: $arguments,
                     input: <<<'BASH'
                         instance=$1
                         repository=$2
@@ -252,12 +306,14 @@ final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
                         managed_user=$6
                         managed_group=$7
                         managed_home=$8
-                        shift 8
+                        allowed_root=$9
+                        origin=${10}
+                        shift 10
                         traversal_paths=("$@")
                         guard_checkout_parent() {
                             parent=$(dirname "$1")
                             case "$parent" in
-                                "$managed_home"|"$managed_home"/*) ;;
+                                "$allowed_root"|"$allowed_root"/*) ;;
                                 *) return 1 ;;
                             esac
 
@@ -267,12 +323,12 @@ final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
                             done
                             test ! -L "$existing_parent"
                             case "$(realpath -e "$existing_parent")" in
-                                "$managed_home"|"$managed_home"/*) ;;
+                                "$allowed_root"|"$allowed_root"/*) ;;
                                 *) return 1 ;;
                             esac
 
-                            current=$managed_home
-                            IFS=/ read -r -a segments <<< "${parent#"$managed_home"/}"
+                            current=$allowed_root
+                            IFS=/ read -r -a segments <<< "${parent#"$allowed_root"/}"
                             for segment in "${segments[@]}"; do
                                 current="$current/$segment"
                                 if [ -e "$current" ] || [ -L "$current" ]; then
@@ -306,10 +362,6 @@ final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
                             test "$(realpath -e "$state_directory")" = "$state_directory"
                             find "$state_directory" -maxdepth 1 -type f -name '.state.*' -delete
                             for path in "${traversal_paths[@]}"; do
-                                case "$path" in
-                                    "$managed_home"|"$managed_home"/*) ;;
-                                    *) return 1 ;;
-                                esac
                                 case "$checkout" in
                                     "$path"/*) ;;
                                     *) return 1 ;;
@@ -439,7 +491,9 @@ final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
                                 find -P "$storage_target" -type d -exec setfacl -m d:u:caddy:r-x -- {} +
                             fi
                         }
-                        guard_workspace_path
+                        if [ "$origin" != "derived" ]; then
+                            guard_workspace_path
+                        fi
                         test ! -L "$instance"
                         test "$(realpath -e "$instance")" = "$(git -C "$instance" rev-parse --show-toplevel)"
                         test "$(git -C "$instance" remote get-url origin)" = "$repository"
@@ -452,7 +506,7 @@ final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
                             test ! -e "$checkout"
                             guard_checkout_parent "$checkout"
                             case "$(realpath -e "$(dirname "$checkout")")" in
-                                "$managed_home"|"$managed_home"/*) ;;
+                                "$allowed_root"|"$allowed_root"/*) ;;
                                 *) exit 1 ;;
                             esac
 
@@ -478,28 +532,42 @@ final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
         $workspace->loadMissing(['instance.app', 'instance.node']);
         $account = $this->accounts->resolve($workspace->instance->node);
         $repository = GitRepositoryOrigin::validate($workspace->instance->app->repository_url);
+        $allowedRoot = $this->removal->workspaceRoot($workspace, $account);
+        $grouping = $this->removal->groupingDirectory($workspace, $allowedRoot);
         $this->lock->synchronized($workspace->instance->node_id, function () use (
             $repository,
             $workspace,
             $account,
+            $allowedRoot,
+            $grouping,
         ): void {
-            $this->guardWorkspacePath($workspace, $account);
-            $releasePaths = $this->releasableWorkspaceTraversalPaths($workspace, $account);
+            $releasePaths = $this->releasableTraversalPaths(
+                $workspace->checkout_path,
+                $allowedRoot,
+                $workspace->instance->node_id,
+                $account,
+                ignoreWorkspaceId: $workspace->id,
+            );
+            $arguments = [
+                'bash',
+                '-seu',
+                '--',
+                $workspace->instance->checkout_path,
+                $repository,
+                $workspace->checkout_path,
+                $account->user,
+                $account->group,
+                $account->home,
+                $allowedRoot->value,
+                $grouping?->value ?? '-',
+            ];
+            foreach ($releasePaths as $path) {
+                $arguments[] = $path;
+            }
             $this->ssh->execute(
                 $workspace->instance->node,
                 new RemoteCommand(
-                    arguments: [
-                        'bash',
-                        '-seu',
-                        '--',
-                        $workspace->instance->checkout_path,
-                        $repository,
-                        $workspace->checkout_path,
-                        $account->user,
-                        $account->group,
-                        $account->home,
-                        ...$releasePaths,
-                    ],
+                    arguments: $arguments,
                     input: <<<'BASH'
                             instance=$1
                             repository=$2
@@ -507,19 +575,21 @@ final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
                             managed_user=$4
                             managed_group=$5
                             managed_home=$6
-                            shift 6
+                            allowed_root=$7
+                            grouping_dir=$8
+                            shift 8
                             release_paths=("$@")
                             marker_name=user.orbit.caddy_traversal
                         parent=$(dirname "$checkout")
                         case "$parent" in
-                            "$managed_home"|"$managed_home"/*) ;;
+                            "$allowed_root"|"$allowed_root"/*) ;;
                             *) exit 1 ;;
                         esac
                         if [ -e "$parent" ] || [ -L "$parent" ]; then
                             test -d "$parent"
                             test ! -L "$parent"
                             case "$(realpath -e "$parent")" in
-                                "$managed_home"|"$managed_home"/*) ;;
+                                "$allowed_root"|"$allowed_root"/*) ;;
                                 *) exit 1 ;;
                             esac
                         fi
@@ -533,11 +603,22 @@ final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
                             git -C "$instance" worktree remove --force -- "$checkout"
                         fi
 
+                        if [ "$grouping_dir" != '-' ] && [ -n "$grouping_dir" ] && [ -d "$grouping_dir" ] && [ ! -L "$grouping_dir" ]; then
+                            if [ -z "$(find -P "$grouping_dir" -mindepth 1 -maxdepth 1 -print -quit)" ]; then
+                                rmdir -- "$grouping_dir"
+                            fi
+                        fi
+
                         for path in "${release_paths[@]}"; do
-                            case "$path" in
-                                "$managed_home/"*) ;;
-                                *) exit 1 ;;
-                                esac
+                            case "$checkout" in
+                                "$path"|"$path"/*) ;;
+                                *)
+                                    case "$grouping_dir" in
+                                        "$path"|"$path"/*) ;;
+                                        *) exit 1 ;;
+                                    esac
+                                    ;;
+                            esac
                                 state_directory="$managed_home/.orbit/caddy-traversal-state"
                                 state_key=$(printf '%s' "$path" | sha256sum | cut -d' ' -f1)
                                 state="$state_directory/$state_key"
@@ -614,98 +695,92 @@ final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
         });
     }
 
-    private function guardInstancePath(Instance $instance, ManagedUserAccount $account): void
-    {
-        $escapedHome = preg_quote($account->home, delimiter: '/');
-        $expected = "{$account->home}/apps/{$instance->app->slug}";
-
-        if (
-            preg_match("/\\A{$escapedHome}\\/apps\\/[A-Za-z0-9_-]+\\z/", $expected) === 1
-            && $instance->checkout_path === $expected
-        ) {
-            return;
-        }
-
-        throw new RuntimeConvergenceException(
-            step: 'instance-source-path',
-            errorCode: 'instance.checkout_path_unsafe',
-            message: "Instance [{$instance->name}] has an unsafe checkout path.",
-        );
-    }
-
     /** @return list<string> */
-    private function workspaceTraversalPaths(Workspace $workspace, ManagedUserAccount $account): array
+    private function checkoutTraversalPaths(string $checkout, StoragePath $stop): array
     {
-        $this->guardWorkspacePath($workspace, $account);
-        $home = $account->home;
-        $parent = dirname($workspace->checkout_path);
-        $relativeParent = mb_substr($parent, mb_strlen($home));
-        $segments = array_values(array_filter(explode('/', $relativeParent)));
-        $paths = [$home];
-        $path = $home;
+        $path = StoragePath::parse($checkout);
+        /** @var list<string> $paths */
+        $paths = [];
+        $current = $path->parent();
 
-        foreach ($segments as $segment) {
-            $path .= "/{$segment}";
-            $paths[] = $path;
+        while ($current instanceof StoragePath) {
+            array_unshift($paths, $current->value);
+
+            if ($current->equals($stop)) {
+                return $paths;
+            }
+
+            $current = $current->parent();
         }
 
         return $paths;
     }
 
     /** @return list<string> */
-    private function releasableWorkspaceTraversalPaths(Workspace $workspace, ManagedUserAccount $account): array
+    private function ancestorPaths(string $checkout): array
     {
-        $home = $account->home;
-        $remainingPaths = Workspace::query()
-            ->with('instance')
-            ->whereKeyNot($workspace->id)
-            ->get()
-            ->filter(
-                static fn (Workspace $other): bool => $other->instance->node_id === $workspace->instance->node_id,
-            )
-            ->flatMap(fn (Workspace $other): array => $this->workspaceTraversalPaths($other, $account))
-            ->unique()
-            ->all();
-        $fixedPaths = [$home, "{$home}/apps", "{$home}/.orbit", "{$home}/.orbit/worktrees"];
-        $releasePaths = array_diff($this->workspaceTraversalPaths($workspace, $account), $remainingPaths, $fixedPaths);
+        $path = StoragePath::tryParse($checkout);
+        /** @var list<string> $paths */
+        $paths = [];
+        $current = $path;
 
-        return array_values(array_reverse($releasePaths));
+        while ($current instanceof StoragePath) {
+            array_unshift($paths, $current->value);
+            $current = $current->parent();
+        }
+
+        return $paths;
     }
 
-    private function guardWorkspacePath(Workspace $workspace, ManagedUserAccount $account): void
-    {
-        $path = $workspace->checkout_path;
+    /**
+     * @return list<string>
+     * @mago-expect lint:excessive-parameter-list Remaining checkouts and the recorded root select one release set.
+     */
+    private function releasableTraversalPaths(
+        string $checkout,
+        StoragePath $stop,
+        int $nodeId,
+        ManagedUserAccount $account,
+        ?int $ignoreInstanceId = null,
+        ?int $ignoreWorkspaceId = null,
+    ): array {
+        $remaining = [];
+
+        $instances = Instance::query()
+            ->where('node_id', $nodeId)
+            ->when(
+                $ignoreInstanceId !== null,
+                static fn ($query) => $query->whereKeyNot($ignoreInstanceId),
+            )
+            ->get(['checkout_path']);
+
+        foreach ($instances as $instance) {
+            $remaining = [...$remaining, ...$this->ancestorPaths($instance->checkout_path)];
+        }
+
+        $workspaces = Workspace::query()
+            ->whereHas('instance', static fn ($query) => $query->where('node_id', $nodeId))
+            ->when(
+                $ignoreWorkspaceId !== null,
+                static fn ($query) => $query->whereKeyNot($ignoreWorkspaceId),
+            )
+            ->get(['checkout_path']);
+
+        foreach ($workspaces as $workspace) {
+            $remaining = [...$remaining, ...$this->ancestorPaths($workspace->checkout_path)];
+        }
+
         $home = $account->home;
+        $fixedPaths = [$home, "{$home}/apps", "{$home}/.orbit", "{$home}/.orbit/worktrees"];
+        $releasePaths = array_diff($this->checkoutTraversalPaths($checkout, $stop), $remaining, $fixedPaths);
+        $ordered = [];
 
-        if (! str_starts_with($path, "{$home}/")) {
-            throw new RuntimeConvergenceException(
-                step: 'workspace-source-path',
-                errorCode: 'workspace.checkout_path_unsafe',
-                message: "Workspace [{$workspace->name}] has an unsafe checkout path.",
-            );
+        foreach (array_reverse($releasePaths) as $path) {
+            if (is_string($path)) {
+                $ordered[] = $path;
+            }
         }
 
-        $relative = mb_substr($path, mb_strlen("{$home}/"));
-        $segments = explode('/', $relative);
-        $escapedHome = preg_quote($home, delimiter: '#');
-        $protected = preg_match("#\\A{$escapedHome}/(?:apps(?:/|\\z)|\\.(?!orbit/worktrees/))#", $path) === 1;
-        $segmentsAreSafe = collect($segments)->every(
-            static fn (string $segment): bool => (
-                $segment !== ''
-                && $segment !== '.'
-                && $segment !== '..'
-                && preg_match('/\A[A-Za-z0-9._-]+\z/', $segment) === 1
-            ),
-        );
-
-        if (! $protected && $segmentsAreSafe) {
-            return;
-        }
-
-        throw new RuntimeConvergenceException(
-            step: 'workspace-source-path',
-            errorCode: 'workspace.checkout_path_unsafe',
-            message: "Workspace [{$workspace->name}] has an unsafe checkout path.",
-        );
+        return $ordered;
     }
 }

@@ -182,6 +182,24 @@ it('passes a nondefault managed account into every baseline prerequisite command
             public function converge(?Node $pendingNode = null): void {}
         },
         $accounts,
+        new App\Domain\Nodes\Storage\StorageRootResolver(
+            new App\Domain\Nodes\Storage\NodeSettingsNormalizer,
+            new App\Domain\Nodes\Storage\ProtectedPathCatalog,
+        ),
+        new App\Domain\Nodes\Storage\NodeSettingsNormalizer,
+        new class implements App\Domain\Nodes\Storage\NodeStorageRootPreparer {
+            public function inspect(
+                Node $node,
+                App\Domain\Nodes\ManagedUserAccount $account,
+                App\Domain\Nodes\Storage\StoragePath $path,
+            ): void {}
+
+            public function prepare(
+                Node $node,
+                App\Domain\Nodes\ManagedUserAccount $account,
+                App\Domain\Nodes\Storage\EffectiveStorageRoots $roots,
+            ): void {}
+        },
     )->converge($appDevNode, $appDevAssignment);
 
     new AppProdRoleBaseline(
@@ -449,6 +467,24 @@ function app_dev_role_baseline(array &$events): AppDevRoleBaseline
         baseline_firewall($events),
         $dns,
         baseline_account_resolver(),
+        new App\Domain\Nodes\Storage\StorageRootResolver(
+            new App\Domain\Nodes\Storage\NodeSettingsNormalizer,
+            new App\Domain\Nodes\Storage\ProtectedPathCatalog,
+        ),
+        new App\Domain\Nodes\Storage\NodeSettingsNormalizer,
+        new class implements App\Domain\Nodes\Storage\NodeStorageRootPreparer {
+            public function inspect(
+                Node $node,
+                App\Domain\Nodes\ManagedUserAccount $account,
+                App\Domain\Nodes\Storage\StoragePath $path,
+            ): void {}
+
+            public function prepare(
+                Node $node,
+                App\Domain\Nodes\ManagedUserAccount $account,
+                App\Domain\Nodes\Storage\EffectiveStorageRoots $roots,
+            ): void {}
+        },
     );
 }
 

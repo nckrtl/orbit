@@ -124,7 +124,7 @@ it('uses only generated instance paths and registered Git worktrees for source r
             'test ! -L "$current"',
             'setfacl -P -R -m u:caddy:--- "$checkout_root"',
             'find -P "$checkout_root" -type d -exec setfacl -m d:u:caddy:--- -- {} +',
-            'setfacl -m u:caddy:--x "$managed_home" "$managed_home/apps" "$checkout"',
+            'setfacl -m u:caddy:--x "$managed_home" "$managed_home/apps" "$allowed_root" "$checkout"',
             'setfacl -P -R -m u:caddy:r-X "$document_root_real"',
             'find -P "$document_root_real" -type d -exec setfacl -m d:u:caddy:r-x -- {} +',
         )
@@ -181,7 +181,7 @@ it('uses a nondefault managed home for source converge and removal commands', fu
             'managed_group=$5',
             'managed_home=$6',
             'case "$parent" in',
-            'setfacl -m u:caddy:--x "$managed_home" "$managed_home/apps" "$checkout"',
+            'setfacl -m u:caddy:--x "$managed_home" "$managed_home/apps" "$allowed_root" "$checkout"',
         )
         ->not->toContain('/home/orbit')->and($ssh->commands[1]->arguments)->toContain(
             '/srv/users/nckrtl/apps/acme',
@@ -2077,7 +2077,15 @@ function source_manager(
         }
     };
 
-    return [new RemoteAppDevSourceManager(app_dev_ssh($ssh), $lock, app_dev_account_resolver($account)), $ssh];
+    return [
+        new RemoteAppDevSourceManager(
+            app_dev_ssh($ssh),
+            $lock,
+            app_dev_account_resolver($account),
+            new App\Domain\Nodes\Storage\CheckoutRemovalBoundary(new App\Domain\Nodes\Storage\ProtectedPathCatalog),
+        ),
+        $ssh,
+    ];
 }
 
 function initialise_acl_test_repository(string $path, string $repository): void

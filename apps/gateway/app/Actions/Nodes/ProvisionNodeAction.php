@@ -18,6 +18,7 @@ use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\NodeTld;
 use App\Domain\Nodes\RecoverableNodeConverger;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Nodes\Storage\ConfiguredStoragePathValidator;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ToolManagerMaterializer;
@@ -42,6 +43,8 @@ final readonly class ProvisionNodeAction
         private NodeProvisioningLock $provisioningLock,
         private PrivateDnsManager $dns,
         private MetricsFleetReconciler $metrics,
+        private ConfiguredStoragePathValidator $storagePaths,
+        private UpdateNodeSettingsAction $nodeSettings,
     ) {}
 
     public function execute(ProvisionNodeData $data): Node
@@ -71,6 +74,11 @@ final readonly class ProvisionNodeAction
             );
         }
         $this->validateEndpointOverride($data);
+
+        if ($data->settingsProvided) {
+            $this->storagePaths->validateGrammar($data->settings);
+        }
+
         $node = Node::query()->firstOrNew(['name' => $data->name]);
         $managedUser = $data->orbitUser ?? ($node->exists ? $node->user : 'orbit');
 
@@ -235,6 +243,26 @@ final readonly class ProvisionNodeAction
             'failed_step' => null,
             'error_code' => null,
         ]);
+
+        if ($data->settingsProvided) {
+            try {
+                $this->nodeSettings->persistDuringProvisioning($node->refresh(), $data->settings);
+            } catch (Throwable $exception) {
+                if ($exception instanceof ResourceOperationException) {
+                    throw $exception;
+                }
+
+                $failure = new NodeProvisioningException(
+                    step: 'node-storage-root',
+                    errorCode: 'node.settings_root_failed',
+                    message: 'Node storage settings could not be prepared.',
+                    previous: $exception,
+                );
+                $this->markFailed($node, $failure);
+
+                throw $failure;
+            }
+        }
 
         if ($convergeChangedAppDevTld) {
             $this->convergeChangedAppDevTld($node, $previousTld);
