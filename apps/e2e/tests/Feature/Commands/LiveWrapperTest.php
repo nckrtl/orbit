@@ -33,6 +33,24 @@ it('rejects an unknown option before touching any repository', function () use (
     expect($result->exitCode())->toBe(64)->and($result->errorOutput())->toContain('unknown option: --force');
 });
 
+it('refuses a second run while the live lock is held', function () use ($wrapper): void {
+    $state = temporaryPath('orbit-e2e-live-state-', 8);
+    mkdir($state.'/orbit/e2e', 0700, true);
+    $lock = $state.'/orbit/e2e/live.lock';
+
+    $result = Process::env(['XDG_STATE_HOME' => $state])->run([
+        'flock',
+        $lock,
+        $wrapper,
+        str_repeat('a', 40),
+    ]);
+
+    expect($result->exitCode())
+        ->toBe(75)
+        ->and($result->errorOutput())
+        ->toContain('another bin/e2e-live run holds '.$lock);
+});
+
 it('describes the validation clone, suites, and inputs with --help', function () use ($wrapper): void {
     $result = Process::run([$wrapper, '--help']);
 

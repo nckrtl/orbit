@@ -24,7 +24,8 @@ resets linked worktrees .worktrees/acc-1 (branch acc-1-live) and, with
 the standby when the prepared-state fingerprint changed, exports every
 ORBIT_LIVE_* input, and uses apps/e2e/resources/proof/ACC-1/plan.json as the
 harness plan. It refuses to run while any feature topology other than the
-suites' own ACC-1 or ACC-2 is active, and releases stale ACC-1/ACC-2 attempts.
+suites' own ACC-1 or ACC-2 is active, releases stale ACC-1/ACC-2 attempts, and
+holds <XDG_STATE_HOME>/orbit/e2e/live.lock so only one run drives the clone.
 
 Each suite ends with one summary line to paste into the handoff:
   <suite>: passed, <assertions> assertions, <seconds>s
@@ -86,9 +87,14 @@ isolation_worktree=$validate/.worktrees/acc-2
 plan=apps/e2e/resources/proof/ACC-1/plan.json
 summaries=()
 
-for tool in git jq composer php incus; do
+for tool in git jq composer php incus flock; do
     command -v "$tool" >/dev/null 2>&1 || fail "$tool is required"
 done
+
+# One live run at a time: two runs would race on the clone, the standby, and ACC-1.
+mkdir -p "$state_root"
+exec 9>"$state_root/live.lock"
+flock --nonblocking 9 || fail "another bin/e2e-live run holds $state_root/live.lock" 75
 git -C "$root" rev-parse --verify --quiet "${candidate}^{commit}" >/dev/null \
     || fail "candidate $candidate is not a commit in $root"
 if [[ -e "$validate" && "$(cd "$validate" && pwd -P)" == "$(cd "$root" && pwd -P)" ]]; then
