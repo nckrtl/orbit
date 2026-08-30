@@ -80,6 +80,12 @@ changes. A feature pull request must not introduce or modify its governing ADR.
 7. **Harden candidate.** The worker implements, tests, runs each changed
    project's `composer check` and root `bin/test`, compounds durable
    learning, and commits the clean candidate. That commit is the code freeze.
+   A diff that touches `apps/e2e/app/**`, `apps/e2e/resources/guest/**`,
+   `apps/e2e/tests/Live/**`, or `bin/e2e-*` also runs both live acceptance
+   suites on the frozen candidate with `bin/e2e-live <candidate-sha>
+   --rolling` (after discovery release, before proof) and records each
+   suite's command, assertion count, and duration in the handoff and the
+   pull request body; review and merge block without that evidence.
 8. **Remove discovery.** The worker runs
    `bin/e2e-topology release ISSUE ATTEMPT --json` for its own discovery
    attempt and waits for verified absence before proof.

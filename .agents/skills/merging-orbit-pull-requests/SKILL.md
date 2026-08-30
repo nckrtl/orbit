@@ -26,6 +26,11 @@ post-deployment actions, Compound disposition, and worktree path. Return
    mergeable, and its current head equals the candidate SHA.
 2. Confirm passing current-head CI for that SHA and that no newer or pending
    result invalidates it. A pending or failed run blocks the merge.
+   When the diff touches `apps/e2e/app/**`, `apps/e2e/resources/guest/**`,
+   `apps/e2e/tests/Live/**`, or `bin/e2e-*`, confirm that the worker handoff
+   and the pull request body record `bin/e2e-live <candidate-sha> --rolling`
+   for that SHA with the assertion count and duration of both live suites. A
+   harness-touching diff without that evidence blocks the merge.
 3. Confirm the reviewer handoff has `status: approved` for that SHA. Approval
    is either a formal GitHub approval from a review account different from the
    pull request author, or, when the review account is the same as the pull

@@ -68,6 +68,7 @@ Every command accepts `--json`. `acquire` and `prove` refuse a stale promoted st
 | `bin/e2e-standby fingerprint --main-sha=SHA` | Compute the prepared-state fingerprint |
 | `bin/e2e-standby refresh --main-sha=SHA` | Refresh and promote the standby when the fingerprint changed |
 | `bin/e2e-standby restore` | Restore the promoted generation and leave it stopped |
+| `bin/e2e-live SHA [--rolling]` | Run the live acceptance suites against the exact candidate from the validation clone (see [Live acceptance suites](#live-acceptance-suites)) |
 
 ### Guest commands
 
@@ -231,3 +232,39 @@ the inputs do not spell out:
 - `bin/e2e-topology prove --json` returns the proof summary without `plan`;
   the full record with the plan is the persisted file at
   `<XDG_STATE_HOME>/orbit/e2e/evidence/proofs/<issue>/<attempt>.json`.
+
+### `bin/e2e-live`
+
+`bin/e2e-live <candidate-sha> [--rolling]` makes that recipe executable. It
+is the required check for a harness-touching diff (`apps/e2e/app/**`,
+`apps/e2e/resources/guest/**`, `apps/e2e/tests/Live/**`, `bin/e2e-*`). The
+wrapper:
+
+- owns the validation clone at `ORBIT_E2E_VALIDATE_ROOT` (default
+  `$HOME/orbit-validate`), cloning it from the calling repository when
+  absent, and refuses a dirty clone;
+- fetches the candidate from the calling repository and runs
+  `git checkout -B main <sha>` there, because the acquirer fingerprints the
+  `main` ref and the refresher keys off `HEAD`;
+- resets the linked worktrees `.worktrees/acc-1` (branch `acc-1-live`) and,
+  with `--rolling`, `.worktrees/acc-2` (branch `acc-2-live`) to the
+  candidate, and runs `bin/bootstrap` in the clone and each worktree;
+- exports `XDG_STATE_HOME` (default `$HOME/.local/state`) and every
+  `ORBIT_LIVE_*` input, with `apps/e2e/resources/proof/ACC-1/plan.json` as
+  the harness plan (its first acceptance action is `orbit node:list --json`);
+- refuses to run while a feature topology other than `ACC-1` or `ACC-2` is
+  active, and releases a stale `ACC-1` or `ACC-2` attempt itself;
+- refreshes the standby to the candidate when the prepared-state fingerprint
+  changed, then runs the lifecycle suite;
+- with `--rolling`, commits two marker changes to
+  `apps/e2e/resources/guest/prepare-node.sh` on the throwaway branch
+  `acc-1-rolling` (`ORBIT_LIVE_ROLLING_SHA`, `ORBIT_LIVE_FAILURE_SHA`),
+  writes the failing migration file from
+  `bin/e2e-standby fingerprint --main-sha=<failure-sha>`, runs the rolling
+  suite, and refreshes the standby back to the candidate afterwards, also
+  when the suite fails; and
+- prints one summary line per suite (`<suite> suite: passed, <n> assertions,
+  <seconds>s — <command>`) for the handoff `checks` and the pull request body.
+
+The lifecycle suite alone takes about 3 minutes on a warm clone; `--rolling`
+adds about 6 minutes for the two extra standby refreshes.

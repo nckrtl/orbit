@@ -1,0 +1,270 @@
+#!/usr/bin/env bash
+# Run the live Incus acceptance suites against one exact candidate commit from
+# a validation clone whose `main` is that candidate. See docs/reference/incus-topologies.md.
+set -euo pipefail
+
+usage() {
+    cat <<'EOF'
+usage: bin/e2e-live <candidate-sha> [--rolling]
+
+Runs apps/e2e/tests/Live/TopologyLedLifecycleAcceptanceTest.php (issue ACC-1)
+against real Incus resources from a validation clone. With --rolling it also
+runs apps/e2e/tests/Live/RollingTopologyAcceptanceTest.php (isolation issue
+ACC-2) with generated marker commits and a failing migration file, then
+restores the promoted standby generation to the candidate.
+
+The wrapper owns the validation clone:
+  ORBIT_E2E_VALIDATE_ROOT  clone path (default: $HOME/orbit-validate); cloned
+                           from this repository when absent
+  XDG_STATE_HOME           harness state root (default: $HOME/.local/state)
+
+It fetches the candidate, checks the clone out on `main` at the candidate,
+resets linked worktrees .worktrees/acc-1 (branch acc-1-live) and, with
+--rolling, .worktrees/acc-2 (branch acc-2-live), bootstraps them, refreshes
+the standby when the prepared-state fingerprint changed, exports every
+ORBIT_LIVE_* input, and uses apps/e2e/resources/proof/ACC-1/plan.json as the
+harness plan. It refuses to run while any feature topology other than the
+suites' own ACC-1 or ACC-2 is active, and releases stale ACC-1/ACC-2 attempts.
+
+Each suite ends with one summary line to paste into the handoff:
+  <suite>: passed, <assertions> assertions, <seconds>s
+EOF
+}
+
+fail() {
+    printf 'e2e-live: %s\n' "$1" >&2
+    exit "${2:-1}"
+}
+
+log() {
+    printf '[e2e-live %s] %s\n' "$(date -u +%H:%M:%S)" "$1" >&2
+}
+
+candidate=''
+rolling=0
+for argument in "$@"; do
+    case "$argument" in
+        --help|-h)
+            usage
+            exit 0
+            ;;
+        --rolling)
+            rolling=1
+            ;;
+        --*)
+            usage >&2
+            fail "unknown option: $argument" 64
+            ;;
+        *)
+            if [[ -n "$candidate" ]]; then
+                usage >&2
+                fail "unexpected argument: $argument" 64
+            fi
+            candidate=$argument
+            ;;
+    esac
+done
+
+if [[ -z "$candidate" ]]; then
+    usage >&2
+    exit 64
+fi
+if [[ ! "$candidate" =~ ^[0-9a-f]{40}$ ]]; then
+    fail 'candidate SHA must be 40 hexadecimal characters' 64
+fi
+
+root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+validate=${ORBIT_E2E_VALIDATE_ROOT:-$HOME/orbit-validate}
+export XDG_STATE_HOME=${XDG_STATE_HOME:-$HOME/.local/state}
+export PYTHONDONTWRITEBYTECODE=1
+state_root=$XDG_STATE_HOME/orbit/e2e
+profile=gateway_app-dev_app-prod
+issue=ACC-1
+isolation_issue=ACC-2
+feature_worktree=$validate/.worktrees/acc-1
+isolation_worktree=$validate/.worktrees/acc-2
+plan=apps/e2e/resources/proof/ACC-1/plan.json
+summaries=()
+
+for tool in git jq composer php incus; do
+    command -v "$tool" >/dev/null 2>&1 || fail "$tool is required"
+done
+git -C "$root" rev-parse --verify --quiet "${candidate}^{commit}" >/dev/null \
+    || fail "candidate $candidate is not a commit in $root"
+if [[ -e "$validate" && "$(cd "$validate" && pwd -P)" == "$(cd "$root" && pwd -P)" ]]; then
+    fail 'the validation clone must not be this repository'
+fi
+
+# Refuse while any feature topology other than the suites' own is active.
+active_issues=()
+for pointer in "$state_root"/topologies/*/active.json "$state_root"/leases/*.json; do
+    [[ -e "$pointer" ]] || continue
+    active=$(jq -r '.issue // empty' "$pointer" 2>/dev/null || true)
+    [[ -n "$active" ]] || continue
+    case "$active" in
+        "$issue"|"$isolation_issue") ;;
+        *) active_issues+=("$active") ;;
+    esac
+done
+if ((${#active_issues[@]} > 0)); then
+    fail "a feature topology is active (${active_issues[*]}); release it before running the live suites"
+fi
+
+# Validation clone on main at the candidate.
+if [[ ! -d "$validate/.git" ]]; then
+    log "cloning $root into $validate"
+    git clone --quiet "$root" "$validate"
+fi
+if [[ -n "$(git -C "$validate" status --porcelain --untracked-files=all)" ]]; then
+    fail "the validation clone $validate is dirty"
+fi
+log "fetching $candidate into $validate"
+git -C "$validate" fetch --quiet --no-tags "$root" "$candidate"
+git -C "$validate" checkout --quiet -B main "$candidate"
+
+prepare_worktree() {
+    local path=$1 branch=$2
+    if [[ -d "$path" ]]; then
+        if [[ -n "$(git -C "$path" status --porcelain --untracked-files=all)" ]]; then
+            fail "the linked worktree $path is dirty"
+        fi
+        git -C "$path" checkout --quiet -B "$branch" "$candidate"
+    else
+        git -C "$validate" worktree add --quiet -B "$branch" "$path" "$candidate"
+    fi
+}
+
+prepare_worktree "$feature_worktree" acc-1-live
+if ((rolling)); then
+    prepare_worktree "$isolation_worktree" acc-2-live
+fi
+
+bootstrap_targets=("$validate" "$feature_worktree")
+if ((rolling)); then
+    bootstrap_targets+=("$isolation_worktree")
+fi
+bootstrap_logs=$(mktemp -d)
+bootstrap_pids=()
+for target in "${bootstrap_targets[@]}"; do
+    log "bootstrapping $target"
+    "$target/bin/bootstrap" >"$bootstrap_logs/$(basename "$target").log" 2>&1 &
+    bootstrap_pids+=("$!")
+done
+for index in "${!bootstrap_targets[@]}"; do
+    if ! wait "${bootstrap_pids[$index]}"; then
+        cat "$bootstrap_logs/$(basename "${bootstrap_targets[$index]}").log" >&2
+        fail "bootstrap failed for ${bootstrap_targets[$index]}"
+    fi
+done
+rm -rf "$bootstrap_logs"
+
+harness() {
+    "$validate/bin/e2e-$1" "${@:2}" --json
+}
+
+# Stale attempts of the suites' own issues block their first assertion.
+for own in "$issue" "$isolation_issue"; do
+    stale=$(harness topology status "$own" | jq -r '.attempt_id // empty')
+    if [[ -n "$stale" ]]; then
+        log "releasing stale $own attempt $stale"
+        harness topology release "$own" "$stale" >/dev/null
+    fi
+done
+
+standby_state=$(harness standby status | jq -r '.state')
+if [[ "$standby_state" != promoted ]]; then
+    fail "the standby is $standby_state, not promoted; build it with the reviewed procedure first"
+fi
+refresh_standby() {
+    local sha=$1 result state
+    git -C "$validate" checkout --quiet -B main "$sha"
+    log "refreshing the standby to $sha"
+    result=$(harness standby refresh "--main-sha=$sha") || {
+        printf '%s\n' "$result" >&2
+        fail "standby refresh to $sha failed"
+    }
+    state=$(jq -r '.state' <<<"$result")
+    log "standby refresh: $state ($(jq -r '.generation_id' <<<"$result"))"
+}
+refresh_standby "$candidate"
+base_sha=$(harness standby status | jq -r '.generation.main_sha')
+if ! git -C "$validate" rev-parse --verify --quiet "${base_sha}^{commit}" >/dev/null; then
+    git -C "$validate" fetch --quiet --no-tags "$root" "$base_sha" \
+        || fail "the promoted generation's main SHA $base_sha is not reachable from $root"
+fi
+
+export ORBIT_LIVE_INCUS=1
+export ORBIT_LIVE_PROFILE=$profile
+export ORBIT_LIVE_ISSUE=$issue
+export ORBIT_LIVE_MAIN_WORKTREE=$validate
+export ORBIT_LIVE_FEATURE_WORKTREE=$feature_worktree
+export ORBIT_LIVE_CANDIDATE_SHA=$candidate
+export ORBIT_LIVE_PROOF_PLAN=$validate/$plan
+export ORBIT_LIVE_ISOLATION_ISSUE=$isolation_issue
+export ORBIT_LIVE_ISOLATION_WORKTREE=$isolation_worktree
+export ORBIT_LIVE_BASE_SHA=$base_sha
+
+run_suite() {
+    local name=$1 test=$2 started output status assertions seconds
+    local command="cd $validate/apps/e2e && vendor/bin/pest --no-tia --compact --colors=never --group=incus-live $test"
+    log "running the $name suite"
+    started=$SECONDS
+    output=$(mktemp -t orbit-e2e-live-suite.XXXXXX.log)
+    set +e
+    (cd "$validate/apps/e2e" && vendor/bin/pest --no-tia --compact --colors=never --group=incus-live "$test") 2>&1 | tee "$output" >&2
+    status=${PIPESTATUS[0]}
+    set -e
+    seconds=$((SECONDS - started))
+    assertions=$(sed 's/\x1b\[[0-9;]*m//g' "$output" | grep -oE '\(([0-9]+) assertions?\)' | tail -1 | tr -dc '0-9')
+    rm -f "$output"
+    if ((status != 0)); then
+        summaries+=("$name suite: FAILED after ${seconds}s (${assertions:-0} assertions) — $command")
+        printf '%s\n' "${summaries[@]}"
+        fail "the $name suite failed"
+    fi
+    summaries+=("$name suite: passed, ${assertions:-?} assertions, ${seconds}s — $command")
+}
+
+run_suite lifecycle tests/Live/TopologyLedLifecycleAcceptanceTest.php
+
+if ((rolling)); then
+    rolling_branch=acc-1-rolling
+    rolling_worktree=$validate/.worktrees/$rolling_branch
+    marker_file=apps/e2e/resources/guest/prepare-node.sh
+    stamp=$(date -u +%Y%m%dT%H%M%SZ)
+    if [[ -d "$rolling_worktree" ]]; then
+        git -C "$validate" worktree remove --force "$rolling_worktree"
+    fi
+    git -C "$validate" worktree add --quiet --detach "$rolling_worktree" "$candidate"
+    marker_commit() {
+        printf '\n# rolling-live marker %s-%s\n' "$stamp" "$1" >>"$rolling_worktree/$marker_file"
+        git -C "$rolling_worktree" -c user.name=orbit-e2e -c user.email=e2e@orbit.invalid \
+            commit --quiet --all --message "test: rolling live marker $stamp-$1"
+        git -C "$rolling_worktree" rev-parse --verify 'HEAD^{commit}'
+    }
+    rolling_sha=$(marker_commit roll)
+    failure_sha=$(marker_commit fail)
+    git -C "$validate" branch --force "$rolling_branch" "$failure_sha" >/dev/null
+    git -C "$validate" worktree remove --force "$rolling_worktree"
+    migration_file=$(mktemp -t orbit-e2e-live-migration.XXXXXX.json)
+    harness standby fingerprint "--main-sha=$failure_sha" \
+        | jq '{fingerprint: .fingerprint, steps: [{role: "gateway", argv: ["/bin/false"], stdin: ""}]}' \
+        >"$migration_file"
+    export ORBIT_LIVE_ROLLING_SHA=$rolling_sha
+    export ORBIT_LIVE_FAILURE_SHA=$failure_sha
+    export ORBIT_LIVE_FAILURE_MIGRATION=$migration_file
+    log "rolling markers: base $base_sha, rolling $rolling_sha, failure $failure_sha"
+
+    restore_after_rolling() {
+        trap - EXIT
+        refresh_standby "$candidate"
+        git -C "$validate" branch --delete --force "$rolling_branch" >/dev/null 2>&1 || true
+        rm -f "$migration_file"
+    }
+    trap restore_after_rolling EXIT
+    run_suite rolling tests/Live/RollingTopologyAcceptanceTest.php
+    restore_after_rolling
+fi
+
+printf '\n'
+printf '%s\n' "${summaries[@]}"
