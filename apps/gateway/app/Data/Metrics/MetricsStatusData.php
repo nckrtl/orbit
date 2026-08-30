@@ -26,7 +26,7 @@ final readonly class MetricsStatusData
      *     assignment: ?array{id: int, node_id: int, node_name: string, status: string, failed_step: ?string, error_code: ?string},
      *     prometheus: string,
      *     grafana: string,
-     *     exporters: list<array{id: int, name: string, desired: bool, actual: string, reason: string}>
+     *     exporters: list<array{id: int, name: string, desired: bool, actual: string, reason: string, degraded_reason: ?string}>
      * }
      */
     public function toArray(): array
