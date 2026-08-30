@@ -160,9 +160,19 @@ rule carrying the Orbit comment, matched at the end of the line so
 rule Orbit writes: `allow in on orbit`, `tcp`, destination this node's
 WireGuard address, port `9100` or `3000`, and a single IPv4 source. Anything
 else is drift, which the Gateway also refuses. A hand-edited rule that kept
-the comment is therefore reported, not deleted. The destination check needs
-the `orbit` interface to hold an IPv4 address; without it the rules are
-reported rather than removed.
+the comment is therefore reported, not deleted.
+
+The destination check needs the `orbit` interface to hold an IPv4 address.
+When it does not, the escape does not refuse: an isolated node with a dead
+WireGuard interface is squarely the case this tool exists for, and the
+destination is the one field that cannot be checked either way, so refusing on
+it strands the operator without buying safety. The escape then proves
+everything else — the anchored Orbit comment, `ALLOW IN`, on `orbit`, `tcp`,
+the expected port, a single IPv4 destination and a single IPv4 source — and
+removes on that basis. It says so in the plan, before the confirmation prompt,
+under `Proved with less evidence than usual:`, marks each such rule
+`(destination address not verified)` in the list the operator approves, and
+repeats both in the final report.
 
 Anything without a proof is reported, never removed, and the script exits `3`.
 

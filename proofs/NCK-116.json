@@ -68,6 +68,15 @@
             "timeout_seconds": 300
         },
         {
+            "id": "cleans-up-with-no-wireguard-address",
+            "node": "app-prod",
+            "argv": [
+                "bash",
+                "/var/lib/orbit-e2e/proof/escape-without-wireguard-address.sh"
+            ],
+            "timeout_seconds": 300
+        },
+        {
             "id": "gateway-online",
             "node": "gateway",
             "argv": [

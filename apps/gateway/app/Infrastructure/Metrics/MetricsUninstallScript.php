@@ -132,6 +132,7 @@ final readonly class MetricsUninstallScript
             exporter_rule_number=''
             grafana_rule_number=''
             node_address=''
+            downgrades=()
 
             usage() {
                 cat <<USAGE
@@ -148,6 +149,7 @@ final readonly class MetricsUninstallScript
             note_removed() { removed+=("$1"); }
             note_refused() { refused+=("$1"); }
             note_kept() { kept+=("$1"); }
+            note_downgrade() { downgrades+=("$1"); }
 
             have() { command -v "$1" >/dev/null 2>&1; }
 
@@ -298,18 +300,25 @@ final readonly class MetricsUninstallScript
                 done <<<"${firewall_status}"
             }
 
-            # True when the numbered rule is the exact rule Orbit writes.
+            # True when the numbered rule is the rule Orbit writes.
             #
             # The comment alone is not proof: a hand-edited rule that kept the
             # comment is drift the Gateway refuses, so the escape refuses it
             # too. Everything the Gateway compares is checked here except the
             # peer address, which is the Gateway's own and is exactly what is
-            # unknowable with no Gateway. Requiring a bare IPv4 source keeps an
-            # `Anywhere` rule out.
+            # unknowable with no Gateway.
+            #
+            # The destination is this node's WireGuard address. When the
+            # interface has no IPv4 address that field cannot be checked
+            # either way, so refusing on it would buy no safety and would
+            # strand an operator on exactly the broken node this script exists
+            # for. The destination must then still be a single IPv4 address,
+            # every other field is still proved, and the report says which
+            # rules were matched with the address unverified.
             firewall_rule_matches() {
                 local number="$1" port="$2"
                 local line trimmed body target source
-                local expected="${node_address} ${port}/tcp on ${INTERFACE}"
+                local address='[0-9]{1,3}(\.[0-9]{1,3}){3}'
 
                 while IFS= read -r line; do
                     trimmed="$(rtrim "${line}")"
@@ -332,8 +341,14 @@ final readonly class MetricsUninstallScript
                     target="$(squeeze "${BASH_REMATCH[1]}")"
                     source="${BASH_REMATCH[2]}"
 
-                    [[ "${target}" == "${expected}" ]] || return 1
-                    [[ "${source}" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || return 1
+                    if [ -n "${node_address}" ]; then
+                        [[ "${target}" == "${node_address} ${port}/tcp on ${INTERFACE}" ]] || return 1
+                    else
+                        [[ "${target}" =~ ^${address}[[:space:]]${port}/tcp[[:space:]]on[[:space:]]${INTERFACE}$ ]] \
+                            || return 1
+                    fi
+
+                    [[ "${source}" =~ ^${address}$ ]] || return 1
 
                     return 0
                 done <<<"${firewall_status}"
@@ -558,6 +573,7 @@ final readonly class MetricsUninstallScript
                 report_kept
                 report_list 'Removed:' "${removed[@]}"
                 report_list 'Left in place:' "${kept[@]}"
+                report_list 'Proved with less evidence than usual:' "${downgrades[@]}"
                 report_list 'Refused, because ownership could not be proved:' "${refused[@]}"
             }
 
@@ -589,12 +605,30 @@ final readonly class MetricsUninstallScript
                 fi
 
                 if [ "${exporter_rule_state}" = 'ok' ]; then
-                    planned+=("UFW rule [${exporter_rule_number}] commented ${EXPORTER_COMMENT}")
+                    planned+=("UFW rule [${exporter_rule_number}] commented ${EXPORTER_COMMENT}$(unverified)")
                 fi
 
                 if [ "${grafana_rule_state}" = 'ok' ]; then
-                    planned+=("UFW rule [${grafana_rule_number}] commented ${GRAFANA_COMMENT}")
+                    planned+=("UFW rule [${grafana_rule_number}] commented ${GRAFANA_COMMENT}$(unverified)")
                 fi
+            }
+
+            unverified() {
+                if [ -n "${node_address}" ]; then
+                    return
+                fi
+
+                printf ' (destination address not verified)'
+            }
+
+            destination() {
+                if [ -n "${node_address}" ]; then
+                    printf '%s' "${node_address}"
+
+                    return
+                fi
+
+                printf 'one IPv4 address'
             }
 
             plan_firewall() {
@@ -613,28 +647,22 @@ final readonly class MetricsUninstallScript
                     return
                 fi
 
-                if [ -z "${node_address}" ]; then
-                    exporter_rule_state='unprovable'
-                    grafana_rule_state='unprovable'
-
-                    if [ "${footprint}" = 'yes' ]; then
-                        note_refused "the ${INTERFACE} interface has no IPv4 address, so Orbit Metrics firewall rule shapes could not be proved."
-                    fi
-
-                    return
-                fi
-
                 read -r exporter_rule_state exporter_rule_number \
                     <<<"$(firewall_rule_plan "${EXPORTER_COMMENT}" "${EXPORTER_PORT}")"
                 read -r grafana_rule_state grafana_rule_number \
                     <<<"$(firewall_rule_plan "${GRAFANA_COMMENT}" "${GRAFANA_PORT}")"
 
+                if [ -z "${node_address}" ] \
+                    && { [ "${exporter_rule_state}" = 'ok' ] || [ "${grafana_rule_state}" = 'ok' ]; }; then
+                    note_downgrade "the ${INTERFACE} interface has no IPv4 address, so the destination address of the UFW rules below could not be verified. Everything else was matched: the Orbit comment at the end of the line, allow in on ${INTERFACE}, tcp, the expected port, a single IPv4 destination and a single IPv4 source."
+                fi
+
                 if [ "${exporter_rule_state}" = 'drift' ]; then
-                    note_refused "UFW rules commented ${EXPORTER_COMMENT} are not the rule Orbit writes (allow in on ${INTERFACE} proto tcp from one address to ${node_address} port ${EXPORTER_PORT})"
+                    note_refused "UFW rules commented ${EXPORTER_COMMENT} are not the rule Orbit writes (allow in on ${INTERFACE} proto tcp from one IPv4 address to $(destination) port ${EXPORTER_PORT})"
                 fi
 
                 if [ "${grafana_rule_state}" = 'drift' ]; then
-                    note_refused "UFW rules commented ${GRAFANA_COMMENT} are not the rule Orbit writes (allow in on ${INTERFACE} proto tcp from one address to ${node_address} port ${GRAFANA_PORT})"
+                    note_refused "UFW rules commented ${GRAFANA_COMMENT} are not the rule Orbit writes (allow in on ${INTERFACE} proto tcp from one IPv4 address to $(destination) port ${GRAFANA_PORT})"
                 fi
             }
 
@@ -704,6 +732,8 @@ final readonly class MetricsUninstallScript
                 printf '  labelled volumes     %s\n' "$(printf '%s' "${volumes}" | grep -c '^.' || true)"
                 printf '  exporter UFW rule    %s\n' "${exporter_rule_state}"
                 printf '  grafana UFW rule     %s\n' "${grafana_rule_state}"
+
+                report_list 'Proved with less evidence than usual:' "${downgrades[@]}"
 
                 if [ "${dry_run}" -eq 1 ]; then
                     report_list 'Would remove:' "${planned[@]}"

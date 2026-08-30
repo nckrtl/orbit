@@ -127,12 +127,32 @@ it('binds the WireGuard interface the firewall shape proof compares', function (
 
 it('proves a firewall rule by its shape, not only by its comment', function (): void {
     expect(metricsUninstallScriptRendered())
-        ->toContain('local expected="${node_address} ${port}/tcp on ${INTERFACE}"');
+        ->toContain('[[ "${target}" == "${node_address} ${port}/tcp on ${INTERFACE}" ]] || return 1');
+});
+
+it('falls back to an unverified destination when the interface has no address', function (): void {
+    expect(metricsUninstallScriptRendered())
+        ->toContain('[[ "${target}" =~ ^${address}[[:space:]]${port}/tcp[[:space:]]on[[:space:]]${INTERFACE}$ ]]');
+});
+
+it('still demands a single IPv4 destination when it cannot verify which one', function (): void {
+    expect(metricsUninstallScriptRendered())
+        ->toContain("local address='[0-9]{1,3}(\\.[0-9]{1,3}){3}'");
+});
+
+it('names the reduced proof in the plan, before the operator confirms', function (): void {
+    $rendered = metricsUninstallScriptRendered();
+    $plan = substr($rendered, 0, (int) strpos($rendered, "report_list 'Will remove:'"));
+
+    expect($plan)->toContain("report_list 'Proved with less evidence than usual:'");
+});
+
+it('marks each rule whose destination it could not verify', function (): void {
+    expect(metricsUninstallScriptRendered())->toContain(' (destination address not verified)');
 });
 
 it('requires a single IPv4 source, so an Anywhere rule is drift', function (): void {
-    expect(metricsUninstallScriptRendered())
-        ->toContain('[[ "${source}" =~ ^[0-9]{1,3}(\\.[0-9]{1,3}){3}$ ]] || return 1');
+    expect(metricsUninstallScriptRendered())->toContain('[[ "${source}" =~ ^${address}$ ]] || return 1');
 });
 
 it('previews resources under a "Would remove:" heading on --dry-run', function (): void {

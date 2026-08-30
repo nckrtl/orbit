@@ -3,6 +3,7 @@
 set -euo pipefail
 
 readonly ESCAPE=/usr/local/sbin/orbit-metrics-uninstall
+readonly EXPORTER_RULE_COMMENT=orbit:metrics-node-exporter
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
