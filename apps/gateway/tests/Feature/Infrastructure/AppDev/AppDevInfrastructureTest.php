@@ -1427,8 +1427,16 @@ it('keeps leaf private keys on the target while publishing a gateway-signed cert
             'test "$(sha256sum "$candidate/root.pem" | cut -d \' \' -f 1)" = "$expected_root_hash"',
             'sudo install -o root -g root -m 0644',
             'sudo install -o root -g caddy -m 0640 -- "$published/key.pem"',
+            'sudo mv -fT -- "$caddy_link" "$caddy_root/current"',
+            "if sudo systemctl is-active --quiet caddy; then\n    sudo systemctl reload-or-restart caddy\nfi",
         )
-        ->not->toContain('PRIVATE KEY');
+        ->not
+        ->toContain('PRIVATE KEY')
+        ->and(mb_strpos($ssh->commands[1]->arguments[2], 'sudo systemctl reload-or-restart caddy'))
+        ->toBeGreaterThan((int) mb_strpos(
+            $ssh->commands[1]->arguments[2],
+            'sudo mv -fT -- "$caddy_link" "$caddy_root/current"',
+        ));
 });
 
 it('uses a nondefault managed home for app-dev certificate converge and removal', function (): void {

@@ -252,6 +252,9 @@ final readonly class RemoteAppDevCertificateManager implements AppDevCertificate
             caddy_link="$caddy_root/.current-$version"
             sudo ln -s -- "$caddy_published" "$caddy_link"
             sudo mv -fT -- "$caddy_link" "$caddy_root/current"
+            if sudo systemctl is-active --quiet caddy; then
+                sudo systemctl reload-or-restart caddy
+            fi
             BASH;
     }
 
