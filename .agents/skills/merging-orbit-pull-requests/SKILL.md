@@ -15,8 +15,9 @@ description: Use when merging an approved Orbit pull request and cleaning up.
 3. **Promote.** For `Proof: incus`: `bin/e2e-standby promote <ISSUE>` snapshots
    the reviewer's topology as the new standby generation. If it refuses (plan
    marked `mutates`, or `main` differs), run `bin/e2e-standby refresh` instead.
-   For a harness issue: `bin/e2e-standby promote --from-live <sha>` or
-   `refresh`.
+   For a harness issue: `bin/e2e-standby refresh --main-sha=<merge sha>` on
+   the primary checkout (`bin/e2e-live` promoted into the validation clone's
+   standby, not the primary's).
 4. **Clean up.** `bin/worktree-remove <ISSUE> <slug>` (releases the topology,
    deletes the worktree and its `.e2e/`). Close the Linear issue.
 

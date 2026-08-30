@@ -264,7 +264,7 @@ final readonly class StandbyPromoter
             } catch (Throwable $exception) {
                 throw new RuntimeException(
                     "Standby promotion failed while swapping {$role}: {$exception->getMessage()} "
-                    ."Rename {$copyNames[$index]} to {$standbyNames[$index]} by hand, then promote the manifest again.",
+                    ."Rename {$copyNames[$index]} to {$standbyNames[$index]} by hand, then run bin/e2e-standby refresh.",
                     previous: $exception,
                 );
             }

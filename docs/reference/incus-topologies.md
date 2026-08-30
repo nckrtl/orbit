@@ -210,7 +210,7 @@ or a short `sudo bash -c` argument vector.
 
 Known prepared-state limits (first observed on 2026-08-30, NCK-58):
 
-- A rolling refresh restores the promoted snapshots and skips provisioning, so
+- A standby refresh restores the promoted snapshots and skips provisioning, so
   every convergence ends with the `reproject.product-state` step (NCK-83):
   `converge-sample-app.sh reproject` on `app-dev` runs the product's own
   projection path (`node:role:add --converge` for every app role, then
