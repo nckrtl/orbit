@@ -7,7 +7,7 @@ $root = dirname(__DIR__, 5);
 $read = static fn (string $relative): string => (string) file_get_contents($root.'/'.$relative);
 
 it('keeps the developing skill on the nine-step flow', function () use ($read): void {
-    $skill = $read('.agents/skills/developing-orbit-features/SKILL.md');
+    $skill = $read('.agents/skills/developing-features/SKILL.md');
 
     foreach ([
         'bin/e2e-topology acquire <ISSUE> <worktree>',
@@ -17,17 +17,24 @@ it('keeps the developing skill on the nine-step flow', function () use ($read): 
         'bin/e2e-topology prove <ISSUE>',
         'git merge main',
         'Feature branches never touch `apps/e2e` or `bin/e2e-*`.',
+        '## Harness issues',
+        '## Delegation',
+        'You are the orchestrator for the issue.',
+        'bin/e2e-live <full sha>',
+        'follow **Harness issues** below',
+        '"Harness: `bin/e2e-live <sha>` passed."',
+        '`apps/e2e/tests/Feature/**` and `apps/e2e/tests/Unit/**`',
     ] as $needle) {
         expect($skill)->toContain($needle);
     }
 
-    foreach (['yaml', 'handoff', 'gpt-', 'fork_turns', 'e2e-live', 'post_deployment'] as $absent) {
+    foreach (['yaml', 'handoff', 'gpt-', 'fork_turns', 'post_deployment'] as $absent) {
         expect(strtolower($skill))->not->toContain($absent);
     }
 });
 
 it('keeps the reviewing skill on re-proving', function () use ($read): void {
-    $skill = $read('.agents/skills/reviewing-orbit-pull-requests/SKILL.md');
+    $skill = $read('.agents/skills/reviewing-pull-requests/SKILL.md');
 
     foreach ([
         'git merge main',
@@ -45,7 +52,7 @@ it('keeps the reviewing skill on re-proving', function () use ($read): void {
 });
 
 it('keeps the merging skill on promote then clean up', function () use ($read): void {
-    $skill = $read('.agents/skills/merging-orbit-pull-requests/SKILL.md');
+    $skill = $read('.agents/skills/merging-pull-requests/SKILL.md');
 
     foreach ([
         'gh pr merge <n> --merge',
@@ -84,9 +91,35 @@ it('keeps the workflow reference aligned with the skills', function () use ($rea
         'bin/e2e-live <sha>',
         '`<worktree>/.e2e/`',
         'Feature branches never modify the harness.',
+        '`apps/e2e/tests/Feature/**` and `apps/e2e/tests/Unit/**`',
+        '0007-nine-step-feature-flow.md',
     ] as $needle) {
         expect($reference)->toContain($needle);
     }
 
     expect($reference)->not->toContain('14-step');
+});
+
+it('keeps the root guidance and the issue skill on the nine-step flow', function () use ($read): void {
+    $agents = $read('AGENTS.md');
+    $issues = $read('.agents/skills/creating-issues/SKILL.md');
+
+    foreach ([
+        'docs/reference/development-workflow.md',
+        '.agents/skills/developing-features',
+        'Feature branches never modify the harness',
+        'proofs/<ISSUE>.json',
+    ] as $needle) {
+        expect($agents)->toContain($needle);
+    }
+
+    foreach (['Proof: incus', 'issue never lists it'] as $needle) {
+        expect($issues)->toContain($needle);
+    }
+
+    foreach ([$agents, $issues] as $document) {
+        foreach (['14-step', 'Compound', 'post_deployment', 'Composition', 'project manager'] as $absent) {
+            expect($document)->not->toContain($absent);
+        }
+    }
 });

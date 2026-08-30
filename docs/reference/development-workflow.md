@@ -3,13 +3,13 @@
 Every change to Orbit follows one short flow. A Linear issue defines it, an
 agent implements it in a worktree, a reviewer re-proves it, a merge agent
 merges and cleans up. Governed by
-[ADR 0006](../decisions/0006-topology-led-feature-development.md).
+[ADR 0007](../decisions/0007-nine-step-feature-flow.md).
 
 ## Feature flow
 
 1. **Issue.** Linear (team `NCK`): outcome, scope, acceptance criteria,
    components, ADR. `Proof: incus` when a real machine is needed. Ready when
-   complete. See [creating-orbit-issues](../../.agents/skills/creating-orbit-issues/SKILL.md).
+   complete. See [creating-issues](../../.agents/skills/creating-issues/SKILL.md).
 2. **Worktree.** `bin/worktree-create NCK-123 slug`, then `bin/bootstrap` in it.
    Issue → In Progress.
 3. **Fresh topology.** `bin/e2e-topology acquire NCK-123 <worktree>`: three VMs
@@ -35,8 +35,9 @@ proof), 9 (no promote).
 
 ## Harness flow
 
-Changes to the harness (`apps/e2e`, `bin/e2e-*`) are their own issues with
-`apps/e2e` in Components. No discovery topology. The proof is
+Harness code is everything under `apps/e2e` and `bin/e2e-*`, except
+`apps/e2e/tests/Feature/**` and `apps/e2e/tests/Unit/**`. Changes to it are
+their own issues with `apps/e2e` in Components. No discovery topology. The proof is
 `bin/e2e-live <sha>`: build a standby from the candidate in the validation
 clone and run the feature flow once end to end, promote included. The reviewer
 runs it too; the merge agent promotes the standby it built.

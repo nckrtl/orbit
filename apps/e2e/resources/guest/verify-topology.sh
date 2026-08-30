@@ -87,11 +87,25 @@ case "$probe" in
     observed=$expected
     ;;
   https.gateway-internal)
-    resolved=$(dig +time=3 +tries=1 +short gateway.orbit @10.44.0.1 | awk 'NF { print; exit }')
+    # One late WireGuard DNS reply right after convergence must not fail the
+    # topology: bounded retry, 3 tries of 3 s with 2 s between them.
+    dns_tries=0
+    resolved=
+    while ((dns_tries < 3)); do
+      dns_tries=$((dns_tries + 1))
+      resolved=$(dig +time=3 +tries=1 +short gateway.orbit @10.44.0.1 2>/dev/null | awk 'NF { print; exit }') || resolved=
+      if [[ "$resolved" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
+        break
+      fi
+      resolved=
+      if ((dns_tries < 3)); then
+        sleep 2
+      fi
+    done
     [[ "$resolved" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]
     curl --fail --silent --show-error --max-time 5 --cacert /home/orbit/.orbit/e2e-gateway-root-ca.pem --resolve "gateway.orbit:443:$resolved" https://gateway.orbit/up >/dev/null
-    expected='https://gateway.orbit/up:vpn-dns+reachable'
-    observed=$expected
+    expected='https://gateway.orbit/up:vpn-dns+reachable,tries<=3'
+    observed="https://gateway.orbit/up:vpn-dns+reachable,tries=$dns_tries"
     ;;
   php-fpm.app-dev|php-fpm.app-prod) php_state=$(systemctl is-active php8.5-fpm 2>/dev/null); expected='php8.5-fpm=active'; observed="php8.5-fpm=$php_state"; [[ "$observed" == "$expected" ]] ;;
   caddy.app-dev|caddy.app-prod) caddy_state=$(systemctl is-active caddy 2>/dev/null); caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1; expected='caddy=active,config=valid'; observed="caddy=$caddy_state,config=valid"; [[ "$observed" == "$expected" ]] ;;

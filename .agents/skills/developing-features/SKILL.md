@@ -1,12 +1,12 @@
 ---
-name: developing-orbit-features
+name: developing-features
 description: Use when implementing a Ready Orbit Linear issue from its worktree.
 ---
 
-# Developing Orbit Features
+# Developing Features
 
-You implement one Linear issue in its worktree and open a pull request. The
-project manager owns the issue state, the worktree, review, merge, and cleanup.
+You implement one Linear issue in its worktree and open a pull request.
+Issue state, the worktree, review, merge, and cleanup belong to other agents.
 
 ## Inputs
 
@@ -17,7 +17,8 @@ is missing.
 ## Steps
 
 1. **Read the issue.** Outcome, scope, acceptance criteria, components, ADR.
-   If it has no `Proof: incus` line, do steps 5 and 7 only.
+   If it changes harness code, follow **Harness issues** below. If it has no
+   `Proof: incus` line, do steps 5 and 7 only.
 2. **Fresh topology.** `bin/e2e-topology acquire <ISSUE> <worktree>`. Three VMs
    from the standby snapshot; the worktree is mounted at `/home/orbit/orbit` on
    `gateway` and `app-dev`. `app-prod` runs no Orbit code.
@@ -48,13 +49,41 @@ is missing.
    `bin/e2e-topology prove <ISSUE>`. On `diagnosis`, fix, commit, prove again.
    Leave the proved topology alive.
 7. **Pull request.** Push. Use the template: what changed, why, and
-   "Proved with `proofs/<ISSUE>.json` at `<sha>`" (or "Automated tests only").
+   "Proved with `proofs/<ISSUE>.json` at `<sha>`",
+   "Harness: `bin/e2e-live <sha>` passed.", or "Automated tests only".
    Short and for humans. Do not wait for CI.
+
+## Delegation
+
+You are the orchestrator for the issue. Delegate bounded pieces to subagents:
+a component's implementation, its tests, a targeted code read. Give each
+subagent the issue, the worktree, and the exact scope. Integrate their work
+yourself. Keep steps 2, 3, 6, and 7 (topology, proof, pull request) in your
+own hands. Do the work directly when the change touches at most five files.
 
 ## Corrections
 
 On review comments: fix, commit, `git merge main`, release and prove again,
 push, reply "Addressed in `<sha>`".
+
+## Harness issues
+
+Harness code is everything under `apps/e2e` and `bin/e2e-*`, except
+`apps/e2e/tests/Feature/**` and `apps/e2e/tests/Unit/**`. An issue that
+changes it skips steps 2, 3, 4, and 6:
+
+- Implement with unit tests (step 5).
+- Prove with `bin/e2e-live <full sha>`. It builds a standby from your commit
+  and runs the feature flow once end to end (about four minutes).
+- The PR's Proof line is "Harness: `bin/e2e-live <sha>` passed."
+
+Tips for `apps/e2e`:
+
+- Run `vendor/bin/mago format` before `composer check`.
+- Keep `it` bodies straight-line and fixtures in helper functions; mago's
+  complexity rule counts the enclosing `describe`.
+- Probe evidence has a fixed key set. Record extra detail in `expected` and
+  `observed`.
 
 ## Rules
 

@@ -104,9 +104,9 @@ operations process.
 ### Migrate the workflow contracts after this decision lands
 
 This decision amends the staged review and cleanup contracts in
-`.agents/skills/developing-orbit-features/SKILL.md`,
-`.agents/skills/reviewing-orbit-pull-requests/SKILL.md`, and
-`.agents/skills/merging-orbit-pull-requests/SKILL.md`. Those contracts must be
+`.agents/skills/developing-features/SKILL.md`,
+`.agents/skills/reviewing-pull-requests/SKILL.md`, and
+`.agents/skills/merging-pull-requests/SKILL.md`. Those contracts must be
 updated together in a dependent change after this ADR is on `main`. Until they
 conform to this decision, they cannot authorize a candidate rollout, final
 approval, or merge under this workflow.
