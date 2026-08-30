@@ -55,7 +55,8 @@ final readonly class ProcessTargetResolver
     private function instance(Instance $instance): ProcessTarget
     {
         $this->ensureActive($instance);
-        $user = $this->hasActiveAppProdRole($instance)
+        $appProd = $this->hasActiveAppProdRole($instance);
+        $user = $appProd
             ? "orbit-{$instance->app->slug}"
             : $instance->node->user;
 
@@ -63,6 +64,7 @@ final readonly class ProcessTargetResolver
             node: $instance->node,
             user: $user,
             checkoutPath: $instance->checkout_path,
+            certificateScope: $appProd ? null : "instance-{$instance->id}",
         );
     }
 
@@ -88,6 +90,7 @@ final readonly class ProcessTargetResolver
             node: $workspace->instance->node,
             user: $workspace->instance->node->user,
             checkoutPath: $workspace->checkout_path,
+            certificateScope: "workspace-{$workspace->id}",
         );
     }
 
