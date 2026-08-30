@@ -39,6 +39,7 @@ final class EnableMetricsCommand extends MetricsCommand
         }
 
         $value = $this->argument('node');
+        $nodes = null;
         if ($value === null && $this->input->isInteractive() && $this->option('json') !== true) {
             $nodes = $this->send($connector, new ListNodesRequest, NodesResponse::class);
             if (! $nodes instanceof NodesResponse) {
@@ -61,7 +62,7 @@ final class EnableMetricsCommand extends MetricsCommand
         if ($value === null || $value === '') {
             return $this->validationFailure('node', 'Node ID or name is required.');
         }
-        $nodeId = $this->resolveNodeId($connector, $value);
+        $nodeId = $this->resolveNodeId($connector, $value, $nodes);
         if ($nodeId === null) {
             return self::FAILURE;
         }

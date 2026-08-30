@@ -114,7 +114,7 @@ exporter preferences. Ambiguous ownership fails closed.
 | Method | Path | Purpose |
 | --- | --- | --- |
 | `POST` | `/api/v1/metrics` | Enable the role. |
-| `DELETE` | `/api/v1/metrics` | Preview or disable the role. |
+| `DELETE` | `/api/v1/metrics` | Disable the role. |
 | `GET` | `/api/v1/metrics/status` | Read status. |
 | `GET` | `/api/v1/metrics/credentials` | Read verified credentials. |
 | `POST` | `/api/v1/metrics/credentials/reset` | Reset credentials. |

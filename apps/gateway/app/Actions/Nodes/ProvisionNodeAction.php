@@ -240,20 +240,23 @@ final readonly class ProvisionNodeAction
             $this->convergeChangedAppDevTld($node, $previousTld);
         }
 
-        if ($data->roles === []) {
-            try {
-                $this->metrics->reconcile();
-            } catch (Throwable $exception) {
-                $failure = new NodeProvisioningException(
-                    step: 'metrics-exporters',
-                    errorCode: 'node.metrics_reconcile_failed',
-                    message: 'Metrics fleet reconciliation failed.',
-                    previous: $exception,
-                );
-                $this->markFailed($node, $failure);
+        // Role convergence runs while the node is still provisioning, and
+        // exporter selection only ever considers active nodes. The node is
+        // active here, so every provisioning outcome reconciles: a role-bearing
+        // node becomes a selected exporter, and a roleless node picks up an
+        // explicit preference it kept from an earlier registration.
+        try {
+            $this->metrics->reconcile();
+        } catch (Throwable $exception) {
+            $failure = new NodeProvisioningException(
+                step: 'metrics-exporters',
+                errorCode: 'node.metrics_reconcile_failed',
+                message: 'Metrics fleet reconciliation failed.',
+                previous: $exception,
+            );
+            $this->markFailed($node, $failure);
 
-                throw $failure;
-            }
+            throw $failure;
         }
 
         return $node->refresh()->load('roles');

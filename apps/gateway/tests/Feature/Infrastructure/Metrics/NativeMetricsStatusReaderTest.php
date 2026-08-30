@@ -72,6 +72,34 @@ it('returns healthy services and deterministic exporter reasons', function (): v
         ->toBe(['explicit_disabled', 'explicit_enabled', 'metrics_node', 'role_default', 'roleless_default_excluded']);
 });
 
+it('selects a node whose role is still provisioning', function (): void {
+    $metrics = statusNode('metrics-provisioning');
+    NodeRole::query()->create(['node_id' => $metrics->id, 'role' => 'metrics', 'status' => 'active']);
+    $provisioning = statusNode('provisioning-node');
+    // Exporter convergence already counts this role, so status must agree or it
+    // reports a node as excluded while its exporter is being installed.
+    NodeRole::query()->create(['node_id' => $provisioning->id, 'role' => 'app-prod', 'status' => 'provisioning']);
+
+    $data = new NativeMetricsStatusReader(
+        new ExporterSelector,
+        app(ExporterPreferenceRepository::class),
+        new StatusRuntimeFake,
+        new StatusExporterFake,
+    )
+        ->status()
+        ->toArray();
+
+    $exporter = collect($data['exporters'])
+        ->firstOrFail(
+            static fn (array $row): bool => $row['name'] === 'provisioning-node',
+        );
+
+    expect($exporter['desired'])
+        ->toBeTrue()
+        ->and($exporter['reason'])
+        ->toBe('role_default');
+});
+
 it('keeps failed Metrics assignments visible', function (): void {
     $metrics = statusNode('metrics-failed');
     NodeRole::query()->create([

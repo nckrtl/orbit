@@ -44,24 +44,24 @@ final readonly class NativeMetricsRoleManager implements MetricsRoleManager
 
     public function remove(bool $force, bool $purge): MetricsMutationData
     {
-        $assignments = Node::query()
+        $nodes = Node::query()
             ->whereHas('roles', static fn ($q) => $q->where('role', RoleName::Metrics->value))
             ->with('roles')
             ->limit(2)
             ->get();
 
-        if ($assignments->isEmpty()) {
+        if ($nodes->isEmpty()) {
             throw new RoleAssignmentException('Metrics is not assigned.');
         }
 
-        if ($assignments->count() !== 1) {
+        if ($nodes->count() !== 1) {
             throw new RoleAssignmentException('Metrics role assignment drift detected.');
         }
 
-        $assignment = $assignments->sole();
-        $this->remove->execute($assignment, RoleName::Metrics, $force, $purge);
+        $node = $nodes->sole();
+        $this->remove->execute($node, RoleName::Metrics, $force, $purge);
 
-        return new MetricsMutationData($assignment->id, 'removed');
+        return new MetricsMutationData($node->id, 'removed');
     }
 
     public function enableExporter(int $nodeId): MetricsMutationData

@@ -129,6 +129,76 @@ describe(NativeMetricsCredentialManager::class, function (): void {
             ->toBeNull();
     });
 
+    it('applies a pending password Grafana never received before promoting it', function (): void {
+        $node = metricsCredentialNode();
+        $runtime = new MetricsCredentialRuntimeFake;
+        // Grafana still holds the active password: the earlier reset stored the
+        // pending one and failed before applying it.
+        $runtime->holds('old-active-password');
+        $manager = new NativeMetricsCredentialManager(app(SettingRepository::class), $runtime);
+        $scope = metricsCredentialScope($node);
+        $settings = metricsCredentialSettings();
+        $settings->put(
+            $scope,
+            NativeMetricsCredentialManager::ActivePasswordKey,
+            'old-active-password',
+            SettingValueProtection::Secret,
+        );
+        $settings->put(
+            $scope,
+            NativeMetricsCredentialManager::PendingPasswordKey,
+            'pending-password',
+            SettingValueProtection::Secret,
+        );
+
+        $credentials = $manager->reset();
+
+        expect($runtime->applied)
+            ->toBe([[$node->id, 'old-active-password', 'pending-password']])
+            ->and($runtime->held())
+            ->toBe('pending-password')
+            ->and($credentials->password)
+            ->toBe('pending-password')
+            ->and($settings->get($scope, NativeMetricsCredentialManager::ActivePasswordKey))
+            ->toBe('pending-password')
+            ->and($settings->get($scope, NativeMetricsCredentialManager::PendingPasswordKey))
+            ->toBeNull();
+    });
+
+    it('promotes a pending password Grafana already holds without applying it again', function (): void {
+        $node = metricsCredentialNode();
+        $runtime = new MetricsCredentialRuntimeFake;
+        // The earlier reset applied the pending password and failed before
+        // promoting it, so Grafana already answers to it.
+        $runtime->holds('pending-password');
+        $manager = new NativeMetricsCredentialManager(app(SettingRepository::class), $runtime);
+        $scope = metricsCredentialScope($node);
+        $settings = metricsCredentialSettings();
+        $settings->put(
+            $scope,
+            NativeMetricsCredentialManager::ActivePasswordKey,
+            'old-active-password',
+            SettingValueProtection::Secret,
+        );
+        $settings->put(
+            $scope,
+            NativeMetricsCredentialManager::PendingPasswordKey,
+            'pending-password',
+            SettingValueProtection::Secret,
+        );
+
+        $credentials = $manager->reset();
+
+        expect($runtime->applied)
+            ->toBe([])
+            ->and($credentials->password)
+            ->toBe('pending-password')
+            ->and($settings->get($scope, NativeMetricsCredentialManager::ActivePasswordKey))
+            ->toBe('pending-password')
+            ->and($settings->get($scope, NativeMetricsCredentialManager::PendingPasswordKey))
+            ->toBeNull();
+    });
+
     it('purges only the active and pending credential settings', function (): void {
         $node = metricsCredentialNode();
         $manager = new NativeMetricsCredentialManager(
@@ -215,6 +285,13 @@ final class MetricsCredentialRuntimeFake implements MetricsCredentialRuntime
 {
     public bool $accepts = true;
 
+    /**
+     * What Grafana actually answers to. When the fake holds a credential it
+     * accepts only that one, and `apply()` is the only thing that changes it,
+     * which is how a partial reset leaves a pending credential unusable.
+     */
+    private ?string $held = null;
+
     /** @var list<array{int, string, string}> */
     public array $applied = [];
 
@@ -229,11 +306,29 @@ final class MetricsCredentialRuntimeFake implements MetricsCredentialRuntime
         string $pendingPassword,
     ): void {
         $this->applied[] = [$node->id, $activePassword, $pendingPassword];
+
+        if ($this->held !== null) {
+            $this->held = $pendingPassword;
+        }
+    }
+
+    public function holds(#[SensitiveParameter] string $credential): void
+    {
+        $this->held = $credential;
+    }
+
+    public function held(): ?string
+    {
+        return $this->held;
     }
 
     public function verify(Node $node, #[SensitiveParameter] string $password): bool
     {
         $this->verified[] = [$node->id, $password];
+
+        if ($this->held !== null) {
+            return hash_equals($this->held, $password);
+        }
 
         return $this->accepts;
     }

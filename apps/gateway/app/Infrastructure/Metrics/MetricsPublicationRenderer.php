@@ -6,19 +6,6 @@ namespace App\Infrastructure\Metrics;
 
 final readonly class MetricsPublicationRenderer
 {
-    public function dns(string $gatewayAddress): array
-    {
-        $this->validateAddress($gatewayAddress);
-
-        return [
-            'hostname' => 'metrics.orbit',
-            'type' => 'A',
-            'address' => $gatewayAddress,
-            'private' => true,
-            'owner' => 'metrics',
-        ];
-    }
-
     public function caddy(
         string $metricsAddress,
         ?string $gatewayAddress = null,
@@ -32,20 +19,6 @@ final readonly class MetricsPublicationRenderer
         $this->validatePath($privateKeyPath);
 
         return "# Managed by Orbit: metrics\nmetrics.orbit {$gatewayAddress}:443 {\n  bind {$gatewayAddress}\n  tls {$certificatePath} {$privateKeyPath}\n  reverse_proxy http://{$metricsAddress}:3000\n}\n";
-    }
-
-    public function firewallIntent(string $gatewayAddress): array
-    {
-        $this->validateAddress($gatewayAddress);
-
-        return [
-            'name' => 'orbit-metrics-grafana',
-            'owner' => 'metrics',
-            'protocol' => 'tcp',
-            'port' => 3000,
-            'source' => $gatewayAddress,
-            'action' => 'allow',
-        ];
     }
 
     private function validateAddress(string $address): void

@@ -34,19 +34,10 @@ abstract class MetricsCommand extends GatewayCommand
 
     protected function validationFailure(string $field, string $message): int
     {
-        if ($this->option('json') === true) {
-            $this->writeJson([
-                'error' => [
-                    'code' => 'validation_failed',
-                    'message' => $message,
-                    'details' => ['field' => $field],
-                    'request_id' => null,
-                ],
-            ]);
-
-            return self::FAILURE;
-        }
-
-        return $this->renderGatewayFailure('validation_failed', $message);
+        return $this->renderGatewayFailure(
+            'metrics.node_required',
+            $message,
+            details: ['field' => $field],
+        );
     }
 }

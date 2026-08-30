@@ -27,7 +27,7 @@ convergence after the code that causes it.
 Never point a remote `install` at a live path. Write to
 `<path>.orbit-candidate`, remove any stale candidate first, then `mv -fT` the
 candidate onto the target. The move is atomic, which running containers and
-systemd units need anyway. `MetricsSshExecutor::stageFile()` and
+systemd units need anyway. `MetricsSshExecutor::publishFile()` and
 `MetricsExporterSshExecutor::publishConfiguration()` follow this shape, and
 `RemoteProcessRuntimeManager` already did.
 

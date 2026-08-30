@@ -8,6 +8,7 @@ use App\Data\Metrics\MetricsStatusData;
 use App\Domain\Metrics\MetricsCredentialManager;
 use App\Domain\Metrics\MetricsRoleManager;
 use App\Domain\Metrics\MetricsStatusReader;
+use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
@@ -300,3 +301,56 @@ it('marks credentials responses as non-cacheable', function (string $method, str
     'show' => ['GET', '/api/v1/metrics/credentials'],
     'reset' => ['POST', '/api/v1/metrics/credentials/reset'],
 ]);
+
+it('refuses to disable the exporter on the Metrics node with a stable error code', function (): void {
+    $gateway = Node::query()->create([
+        'name' => 'gateway',
+        'status' => LifecycleStatus::Active,
+        'public_ssh_host' => '192.0.2.1',
+        'wireguard_address' => '10.44.0.1',
+    ]);
+    $this->markAsGateway($gateway);
+    $metricsNode = Node::query()->create([
+        'name' => 'app-dev',
+        'status' => LifecycleStatus::Active,
+        'public_ssh_host' => '192.0.2.2',
+        'wireguard_address' => '10.44.0.2',
+    ]);
+    $metricsNode->roles()->create(['role' => RoleName::Metrics, 'status' => LifecycleStatus::Active]);
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_address])
+        ->deleteJson("/api/v1/metrics/exporters/{$metricsNode->id}")
+        ->assertStatus(422)
+        ->assertJsonPath('error.code', 'node.role_conflict')
+        ->assertJsonPath('error.message', 'The metrics node exporter cannot be disabled.');
+});
+
+it('refuses a second Metrics claim through the generic role route with a stable error code', function (): void {
+    $gateway = Node::query()->create([
+        'name' => 'gateway',
+        'status' => LifecycleStatus::Active,
+        'public_ssh_host' => '192.0.2.1',
+        'wireguard_address' => '10.44.0.1',
+    ]);
+    $this->markAsGateway($gateway);
+    $held = Node::query()->create([
+        'name' => 'app-dev',
+        'status' => LifecycleStatus::Active,
+        'public_ssh_host' => '192.0.2.2',
+        'wireguard_address' => '10.44.0.2',
+    ]);
+    $held->roles()->create(['role' => RoleName::Metrics, 'status' => LifecycleStatus::Active]);
+    $other = Node::query()->create([
+        'name' => 'app-prod',
+        'status' => LifecycleStatus::Active,
+        'public_ssh_host' => '192.0.2.3',
+        'wireguard_address' => '10.44.0.3',
+    ]);
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_address])
+        ->postJson("/api/v1/nodes/{$other->id}/roles", ['role' => 'metrics'])
+        ->assertStatus(422)
+        ->assertJsonPath('error.code', 'validation.failed');
+});

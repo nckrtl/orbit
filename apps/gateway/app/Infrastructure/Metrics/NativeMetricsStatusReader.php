@@ -46,11 +46,19 @@ final readonly class NativeMetricsStatusReader implements MetricsStatusReader
             ->with('roles')
             ->orderBy('name')
             ->get() as $node) {
+            // Selection counts a provisioning role the same as an active one,
+            // so the exporter exists before Prometheus publishes the target.
+            // Status must read the roles the same way or it reports a node as
+            // excluded while its exporter is already converging.
             $roles = array_values(
                 $node
                     ->roles
-                    ->filter(static fn ($role): bool => $role->status->value === 'active')
-                    ->map(static fn ($role): RoleName => $role->role)
+                    ->filter(static fn (NodeRole $role): bool => in_array(
+                        $role->status,
+                        [LifecycleStatus::Provisioning, LifecycleStatus::Active],
+                        strict: true,
+                    ))
+                    ->map(static fn (NodeRole $role): RoleName => $role->role)
                     ->values()
                     ->all(),
             );

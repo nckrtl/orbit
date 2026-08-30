@@ -101,8 +101,10 @@ abstract class GatewayCommand extends Command
 
     /**
      * Resolves one node reference given as a numeric ID or a registered node name.
+     *
+     * Pass an already-fetched $nodes to resolve a name without listing nodes again.
      */
-    protected function resolveNodeId(GatewayConnector $connector, mixed $reference): ?int
+    protected function resolveNodeId(GatewayConnector $connector, mixed $reference, ?NodesResponse $nodes = null): ?int
     {
         if (is_int($reference)) {
             $reference = (string) $reference;
@@ -128,10 +130,14 @@ abstract class GatewayCommand extends Command
             return $id;
         }
 
-        $nodes = $this->send($connector, new ListNodesRequest, NodesResponse::class);
+        if ($nodes === null) {
+            $fetchedNodes = $this->send($connector, new ListNodesRequest, NodesResponse::class);
 
-        if (! $nodes instanceof NodesResponse) {
-            return null;
+            if (! $fetchedNodes instanceof NodesResponse) {
+                return null;
+            }
+
+            $nodes = $fetchedNodes;
         }
 
         foreach ($nodes->nodes as $node) {
@@ -271,13 +277,15 @@ abstract class GatewayCommand extends Command
         $this->line(json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
     }
 
+    /** @param array<string,string> $details */
     protected function renderGatewayFailure(
         string $code,
         string $message,
         ?string $requestId = null,
         ?string $humanMessage = null,
+        array $details = [],
     ): int {
-        GatewayFailureRenderer::write($this, $code, $message, $requestId, $humanMessage);
+        GatewayFailureRenderer::write($this, $code, $message, $requestId, $humanMessage, $details);
 
         return self::FAILURE;
     }

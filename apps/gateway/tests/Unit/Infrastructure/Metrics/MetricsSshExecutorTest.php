@@ -373,3 +373,31 @@ describe('credential file snapshots', function (): void {
             ->not->toContain(['sudo', 'sha256sum', '--', '/etc/orbit/metrics/grafana/admin-password']);
     });
 });
+
+describe('credential verification', function (): void {
+    it('verifies a Grafana password against an authenticated endpoint', function (): void {
+        $ssh = new MetricsCapturingSshExecutor([]);
+        $executor = metricsSshExecutor($ssh);
+
+        $executor->verify(metricsSshNode(), 'password-sentinel');
+
+        $configuration = stream_get_contents($ssh->commands[0]->protectedInput?->stream());
+
+        expect($ssh->commands[0]->arguments)
+            ->toBe(['curl', '--config', '-'])
+            ->and($configuration)
+            ->toContain('url = "http://10.44.0.3:3000/api/user"')
+            ->toContain('fail')
+            ->toContain('user = "admin:password-sentinel"')
+            // /api/health answers without credentials, so probing it proves the
+            // service is up and nothing about the password.
+            ->not->toContain('/api/health');
+    });
+
+    it('reports an unverified password when Grafana refuses the request', function (): void {
+        $ssh = new MetricsCapturingSshExecutor([metricsCommandResult(exitCode: 22)]);
+        $executor = metricsSshExecutor($ssh);
+
+        expect($executor->verify(metricsSshNode(), 'stale-password'))->toBeFalse();
+    });
+});

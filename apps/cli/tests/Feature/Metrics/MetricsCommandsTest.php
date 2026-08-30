@@ -294,6 +294,42 @@ it('prompts from the active eligible node list before enabling Metrics', functio
     expect($mock->getLastRequest()?->body()->all())->toBe(['node_id' => 3]);
 });
 
+it('resolves a typed node name against the already-fetched node list without listing nodes twice', function (): void {
+    $mock = MockClient::global([
+        ShowMetricsStatusRequest::class => MockResponse::make([
+            'data' => metrics_cli_status_payload(),
+            'meta' => ['request_id' => metrics_cli_request_id()],
+        ]),
+        ListNodesRequest::class => MockResponse::make([
+            'data' => [
+                metrics_cli_node_payload(3, 'app-dev', 'active', ['app-dev']),
+                metrics_cli_node_payload(7, 'orbit-ops', 'active', []),
+            ],
+            'meta' => ['request_id' => metrics_cli_request_id()],
+        ]),
+        EnableMetricsRequest::class => MockResponse::make([
+            'data' => ['node_id' => 7, 'status' => 'active'],
+            'meta' => ['request_id' => metrics_cli_request_id()],
+        ]),
+    ]);
+
+    $this
+        ->artisan('metrics:enable')
+        ->expectsOutput('Eligible active nodes:')
+        ->expectsQuestion('Node ID or name', 'orbit-ops')
+        ->expectsOutput('Metrics operation completed for node #7: active.')
+        ->expectsOutput('Request ID: '.metrics_cli_request_id())
+        ->assertSuccessful();
+
+    $mock->assertSentCount(1, ListNodesRequest::class);
+    $mock->assertSentInOrder([
+        ShowMetricsStatusRequest::class,
+        ListNodesRequest::class,
+        EnableMetricsRequest::class,
+    ]);
+    expect($mock->getLastRequest()?->body()->all())->toBe(['node_id' => 7]);
+});
+
 it('rejects an existing assignment before listing or prompting for nodes', function (): void {
     $mock = MockClient::global([
         ShowMetricsStatusRequest::class => MockResponse::make([
@@ -333,7 +369,7 @@ it('returns field=node when non-interactive enable omits the node', function ():
         ->artisan('metrics:enable', ['--json' => true])
         ->expectsOutput(json_encode([
             'error' => [
-                'code' => 'validation_failed',
+                'code' => 'metrics.node_required',
                 'message' => 'Node ID or name is required.',
                 'details' => ['field' => 'node'],
                 'request_id' => null,
@@ -567,12 +603,42 @@ it('renders complete human status tables', function (): void {
         ->expectsTable(['Field', 'Value'], [
             ['Enabled',    'yes'],
             ['URL',        'https://metrics.orbit'],
-            ['Assignment', '#2 (active)'],
+            ['Assignment', '#2 (active) on app-dev'],
             ['Prometheus', 'healthy'],
             ['Grafana',    'healthy'],
         ])
         ->expectsTable(['ID', 'Node', 'Desired', 'Actual', 'Reason'], [
             [7, 'orbit-ops', 'yes', 'active', 'explicit_enabled'],
+        ])
+        ->expectsOutput('Request ID: '.metrics_cli_request_id())
+        ->assertSuccessful();
+});
+
+it('renders the failed step and error code for a failed assignment in human status output', function (): void {
+    MockClient::global([
+        ShowMetricsStatusRequest::class => MockResponse::make([
+            'data' => metrics_cli_status_payload([
+                'id' => 9,
+                'node_id' => 3,
+                'node_name' => 'app-dev',
+                'status' => 'failed',
+                'failed_step' => 'metrics:runtime',
+                'error_code' => 'metrics.runtime_failed',
+            ]),
+            'meta' => ['request_id' => metrics_cli_request_id()],
+        ]),
+    ]);
+
+    $this
+        ->artisan('metrics:status')
+        ->expectsTable(['Field', 'Value'], [
+            ['Enabled',     'yes'],
+            ['URL',         'https://metrics.orbit'],
+            ['Assignment',  '#9 (failed) on app-dev'],
+            ['Failed step', 'metrics:runtime'],
+            ['Error code',  'metrics.runtime_failed'],
+            ['Prometheus',  'unknown'],
+            ['Grafana',     'unknown'],
         ])
         ->expectsOutput('Request ID: '.metrics_cli_request_id())
         ->assertSuccessful();

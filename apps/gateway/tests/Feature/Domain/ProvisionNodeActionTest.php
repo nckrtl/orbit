@@ -64,6 +64,36 @@ describe(ProvisionNodeAction::class, function (): void {
         expect($node->status)->toBe(LifecycleStatus::Active);
     });
 
+    it('reconciles a role-bearing provisioned node after activation', function (): void {
+        app()->instance(NodeConverger::class, new class implements NodeConverger {
+            public function converge(
+                Node $node,
+                NodeProvisioningIdentity $identity,
+                ?string $expectedSshHostFingerprint = null,
+                bool $rolelessOperator = false,
+            ): void {}
+        });
+        // Role convergence runs while the node is still provisioning and
+        // exporter selection only sees active nodes, so without this call the
+        // node goes active with no exporter and no Prometheus target.
+        $metrics = Mockery::mock(MetricsFleetReconciler::class);
+        $metrics->shouldReceive('reconcile')->once()->withNoArgs();
+        app()->instance(MetricsFleetReconciler::class, $metrics);
+
+        $node = app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
+            name: 'role-bearing-exporter',
+            publicSshHost: '192.0.2.99',
+            architecture: 'x86_64',
+            expectedSshHostFingerprint: 'SHA256:pinned',
+            roles: [RoleName::AppProd],
+        ));
+
+        expect($node->status)
+            ->toBe(LifecycleStatus::Active)
+            ->and($node->roles->pluck('role')->all())
+            ->toBe([RoleName::AppProd]);
+    });
+
     it('uses the node provisioning failure boundary when roleless Metrics reconciliation fails', function (): void {
         app()->instance(NodeConverger::class, new class implements NodeConverger {
             public function converge(

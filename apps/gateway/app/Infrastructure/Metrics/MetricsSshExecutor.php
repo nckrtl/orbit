@@ -452,13 +452,19 @@ final readonly class MetricsSshExecutor implements MetricsRuntimeHost, MetricsCr
         );
     }
 
+    /**
+     * Grafana serves `/api/health` without authentication, so a probe there
+     * proves the service is up and nothing about the credential. `/api/user`
+     * answers only for the signed-in administrator and returns 401 otherwise,
+     * which `--fail` turns into a non-zero exit.
+     */
     public function verify(Node $node, #[SensitiveParameter] string $password): bool
     {
         $configuration = $this->curlConfiguration(
             node: $node,
             password: $password,
             method: 'GET',
-            path: '/api/health',
+            path: '/api/user',
         );
 
         return $this->raw(

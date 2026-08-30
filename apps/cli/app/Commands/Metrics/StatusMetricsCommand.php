@@ -9,6 +9,9 @@ use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\Requests\Metrics\ShowMetricsStatusRequest;
 use Orbit\Sdk\Responses\Metrics\MetricsStatusResponse;
 
+/**
+ * @mago-expect lint:cyclomatic-complexity The human table surfaces every optional assignment field defensively.
+ */
 final class StatusMetricsCommand extends MetricsCommand
 {
     #[\Override]
@@ -34,21 +37,7 @@ final class StatusMetricsCommand extends MetricsCommand
             return self::SUCCESS;
         }
 
-        $assignment = $response->assignment;
-        $assignmentId = is_int($assignment['id'] ?? null) ? (string) $assignment['id'] : '-';
-        $assignmentStatus = is_string($assignment['status'] ?? null) ? $assignment['status'] : '-';
-        $this->table(['Field', 'Value'], [
-            ['Enabled', $response->enabled ? 'yes' : 'no'],
-            ['URL', $response->url ?? '-'],
-            [
-                'Assignment',
-                $assignment === null
-                    ? '-'
-                    : sprintf('#%s (%s)', $assignmentId, $assignmentStatus),
-            ],
-            ['Prometheus', $response->prometheus],
-            ['Grafana', $response->grafana],
-        ]);
+        $this->table(['Field', 'Value'], $this->statusRows($response));
         if ($response->exporters !== []) {
             $this->table(['ID', 'Node', 'Desired', 'Actual', 'Reason'], array_map(static fn (array $row): array => [
                 $row['id'],
@@ -61,5 +50,50 @@ final class StatusMetricsCommand extends MetricsCommand
         $this->line("Request ID: {$response->requestId}");
 
         return self::SUCCESS;
+    }
+
+    /** @return list<array{0: string, 1: string}> */
+    private function statusRows(MetricsStatusResponse $response): array
+    {
+        $assignment = $response->assignment;
+        $summary = $assignment === null
+            ? '-'
+            : sprintf(
+                '#%s (%s) on %s',
+                $this->text($assignment, 'id') ?? '-',
+                $this->text($assignment, 'status') ?? '-',
+                $this->text($assignment, 'node_name') ?? '-',
+            );
+
+        $rows = [
+            ['Enabled', $response->enabled ? 'yes' : 'no'],
+            ['URL', $response->url ?? '-'],
+            ['Assignment', $summary],
+        ];
+
+        foreach (['Failed step' => 'failed_step', 'Error code' => 'error_code'] as $label => $key) {
+            $value = $this->text($assignment, $key);
+
+            if ($value !== null) {
+                $rows[] = [$label, $value];
+            }
+        }
+
+        $rows[] = ['Prometheus', $response->prometheus];
+        $rows[] = ['Grafana', $response->grafana];
+
+        return $rows;
+    }
+
+    /**
+     * Reads one printable assignment field; absent, null, and unexpected shapes all read as absent.
+     *
+     * @param array<string, mixed>|null $assignment
+     */
+    private function text(?array $assignment, string $key): ?string
+    {
+        $value = $assignment[$key] ?? null;
+
+        return is_string($value) || is_int($value) ? (string) $value : null;
     }
 }
