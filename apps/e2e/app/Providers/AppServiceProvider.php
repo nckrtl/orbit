@@ -137,7 +137,7 @@ final class AppServiceProvider extends ServiceProvider
         $this->app->singleton(IncusNetworkLifecycle::class);
         $this->app->singleton(HostCapacity::class, fn (Application $app): HostCapacity => new HostCapacity(
             $app->make(IncusHost::class),
-            (int) $app->make(Repository::class)->get('e2e.incus.max_vms', 12),
+            (int) $app->make(Repository::class)->get('e2e.incus.max_vms', 24),
         ));
         $this->app->singleton(StandbyManifestStore::class, fn (Application $app): StandbyManifestStore => new StandbyManifestStore(
             $app->make(AtomicJsonStore::class),

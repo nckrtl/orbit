@@ -7,7 +7,7 @@
             "argv": [
                 "sh",
                 "-c",
-                "grep -qF \"'max_vms' => (int) env('ORBIT_E2E_INCUS_MAX_VMS', 24),\" /home/orbit/orbit/apps/e2e/config/e2e.php && echo 'shipped default is 24'"
+                "grep -qE \"'max_vms'[[:space:]]*=>[[:space:]]*\\(int\\)[[:space:]]*env\\([[:space:]]*'ORBIT_E2E_INCUS_MAX_VMS'[[:space:]]*,[[:space:]]*24[[:space:]]*\\)\" /home/orbit/orbit/apps/e2e/config/e2e.php && echo 'shipped default is 24'"
             ],
             "timeout_seconds": 60
         },
