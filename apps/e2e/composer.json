@@ -60,7 +60,7 @@
             "@guidance:check"
         ],
         "lint": "vendor/bin/mago lint app tests --reporting-format=medium --minimum-report-level=error",
-        "rector": "vendor/bin/rector process",
+        "rector": "vendor/bin/rector process --no-progress-bar",
         "test": "vendor/bin/pest --parallel --no-tia --compact --exclude-group=incus-live",
         "test:live-incus": "vendor/bin/pest --no-tia --compact --group=incus-live tests/Live",
         "post-autoload-dump": [

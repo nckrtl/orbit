@@ -240,8 +240,9 @@ it('keeps Boost setup and repository-owned skills reproducible', function (): vo
         ->toBe('vendor/bin/pest --parallel --no-tia --compact')
         ->and($composer['scripts']['test:full'] ?? null)
         ->toBeNull()
-        ->and($composer['scripts']['check'][0] ?? null)
-        ->toBe('@guidance:check');
+        ->and($composer['scripts']['check'] ?? null)
+        ->toContain('@test')
+        ->not->toContain('@guidance:check');
     foreach ([
         'AGENTS.md',
         'README.md',

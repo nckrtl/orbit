@@ -12,6 +12,11 @@ release of the proved topology), and issue closure. The feature worker owns
 its internal implementation subagents. The flow is governed by
 [ADR 0006](../../../docs/decisions/0006-topology-led-feature-development.md).
 
+## Automated-only path
+
+An issue without a `Proof: incus` line runs steps 2, 7, and 10 only, then
+returns the handoff with `venue: automated`. Step 7's gates apply in full.
+
 ## Repository scope
 
 This root-owned skill is the implementation workflow for the repository root
@@ -45,12 +50,12 @@ the handoff. Delegate bounded implementation and focused tests whenever they
 can run independently. The worker can use subagents during discovery and
 hardening.
 
-Keep every available collaboration slot filled while useful independent work
-exists. Spawn implementation subagents with model `gpt-5.6-luna` and
-`reasoning_effort: low`. The UI calls this combination Luna Light; `low` is the
-programmatic effort value. Use a `default` agent and `fork_turns: none` so the
-model override takes effect, then include all needed context in its task. Keep
-agent spawning and task routing centralized in the implementation orchestrator.
+Do the work directly when the change touches at most 5 files or stays inside
+a single project. Delegate above that threshold, and keep every available
+collaboration slot filled while useful independent work exists. Delegate with
+the client's available reasoning model at the lowest effort that fits the
+task, and include all needed context in the task. Keep agent spawning and task
+routing centralized in the implementation orchestrator.
 
 Before spawning, map acceptance criteria and components into the smallest
 independent work items. Prefer vertical slices in which one subagent owns both
@@ -89,8 +94,8 @@ Automated-only work skips them and continues at step 10 with
    clean worktree, and starts this worker. Read the root and nearest project
    `AGENTS.md` files, relevant rules, and required local skills. Complete each
    changed project's guidance bootstrap before editing its files. Inspect
-   `/home/nckrtl/orbit-old` for applicable prior implementation before
-   codifying behavior.
+   `/home/nckrtl/orbit-old` only when the issue reimplements prior product
+   behavior.
 3. **Select recipe.** Map the Linear `Composition` to repository-supported
    Gateway node types and the `apps/e2e` recipe. The supported recipe is
    `gateway_app-dev_app-prod`. An unsupported requirement blocks normal
@@ -130,7 +135,11 @@ Automated-only work skips them and continues at step 10 with
    existing ADR, reference, solution, or rule; give a specific reason when no
    durable update is useful. Map each acceptance criterion to a focused
    acceptance check. Run each changed project's `composer check` and root
-   `bin/test`. Commit the clean candidate. That commit is the code freeze.
+   `bin/test`. A Mago report at level `error` fails `composer check`; lower
+   levels (`warning`, `help`, `note`) are advisory. Commit the clean
+   candidate. That commit is the code freeze. These gates (test-driven
+   development, `composer check`, `bin/test`, and the commit freeze) apply on
+   both the Incus path and the automated-only path.
    A diagnosis round that changes code moves the code freeze to the new
    commit; rerun the gates on it before the next proof. The proof plan and
    the fixtures under `apps/e2e/resources/proof/<issue>/` may change between

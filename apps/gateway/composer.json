@@ -70,7 +70,7 @@
             "@guidance:check"
         ],
         "lint": "vendor/bin/mago lint app routes database/migrations tests --reporting-format=medium",
-        "rector": "vendor/bin/rector process",
+        "rector": "vendor/bin/rector process --no-progress-bar",
         "test": "vendor/bin/pest --parallel --no-tia --compact",
         "post-autoload-dump": [
             "Illuminate\\Foundation\\ComposerScripts::postAutoloadDump",

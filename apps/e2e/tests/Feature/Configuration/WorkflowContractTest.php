@@ -32,6 +32,28 @@ it('keeps the topology-led workflow contracts aligned', function (): void {
     expect($worker)->toMatch('/status: proved\|not-applicable/');
     expect($worker)->toMatch('/CI fields may\s+remain `null` while CI runs/');
     expect($worker)->toMatch('/subagents/');
+    // Automated-only path: explicit summary, step-7 gates on both paths, direct-work threshold
+    expect($worker)->toMatch(
+        '/## Automated-only path\n\nAn issue without a `Proof: incus` line runs steps 2, 7, and 10 only/',
+    );
+    expect($worker)->toMatch('/returns the handoff with `venue: automated`/');
+    expect($worker)->toMatch(
+        '/These gates \(test-driven\s+development, `composer check`, `bin\/test`, and the commit freeze\) apply on\s+both the Incus path and the automated-only path/',
+    );
+    expect($worker)->toMatch(
+        '/Do the work directly when the change touches at most 5 files or stays inside\s+a single project/',
+    );
+    expect($worker)->toMatch(
+        '/Inspect\s+`\/home\/nckrtl\/orbit-old` only when the issue reimplements prior product\s+behavior/',
+    );
+    expect($worker)->toMatch(
+        '/Mago report at level `error` fails `composer check`; lower\s+levels \(`warning`, `help`, `note`\) are advisory/',
+    );
+    // Delegation is client-neutral: no model or client-option pins
+    expect($worker)->toMatch('/client\'s available reasoning model/');
+    foreach ([$worker, $review, $merge, $workflow] as $document) {
+        expect($document)->not->toContain('gpt-5.6-luna', 'fork_turns', 'Luna Light', 'reasoning_effort');
+    }
     // Worker-owned discovery release and proof; the project manager keeps post-merge cleanup only
     expect($worker)->toMatch(
         '/Remove discovery\.\*\* The worker runs\s+`bin\/e2e-topology release ISSUE ATTEMPT --json`/',
