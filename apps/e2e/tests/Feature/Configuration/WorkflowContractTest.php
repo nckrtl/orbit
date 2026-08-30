@@ -96,3 +96,27 @@ it('keeps the workflow reference aligned with the skills', function () use ($rea
 
     expect($reference)->not->toContain('14-step');
 });
+
+it('keeps the root guidance and the issue skill on the nine-step flow', function () use ($read): void {
+    $agents = $read('AGENTS.md');
+    $issues = $read('.agents/skills/creating-orbit-issues/SKILL.md');
+
+    foreach ([
+        'docs/reference/development-workflow.md',
+        '.agents/skills/developing-orbit-features',
+        'Feature branches never modify the harness',
+        'proofs/<ISSUE>.json',
+    ] as $needle) {
+        expect($agents)->toContain($needle);
+    }
+
+    foreach (['Proof: incus', 'issue never lists it'] as $needle) {
+        expect($issues)->toContain($needle);
+    }
+
+    foreach ([$agents, $issues] as $document) {
+        foreach (['14-step', 'Compound', 'post_deployment', 'Composition', 'project manager'] as $absent) {
+            expect($document)->not->toContain($absent);
+        }
+    }
+});

@@ -13,35 +13,28 @@ harness.
 
 ## Workflow
 
-- Start feature work in a worktree created by `bin/worktree-create`.
-- Use `.agents/skills/creating-orbit-issues` to prepare Linear issues.
-- Use `.agents/skills/developing-orbit-features` for Work and Compound. It
-  encodes the 14-step topology-led flow from
-  `docs/reference/development-workflow.md`.
-- Use `.agents/skills/reviewing-orbit-pull-requests` for independent review.
-- Use `.agents/skills/merging-orbit-pull-requests` for the final merge gate.
-- Merge every governing ADR to `main` before implementation or a dependent
-  workflow-contract change starts. A feature pull request must not introduce,
-  modify, or rely on an unmerged governing ADR.
-- The implementation agent owns Work and Compound for its pull request.
-- Incus proof follows ADR 0006: discovery on one disposable topology, verified
-  release, then one-shot proof of the exact candidate on a fresh topology. The
-  agent opens a normal pull request only after proof succeeds.
-- Review is a separate agent cycle. CI and review start when the pull request
-  opens and run in parallel. The same implementation agent addresses review
-  comments and proves each corrected candidate again.
-- The merge agent verifies passing current-head CI, approval for the current
-  head, the active proved attempt for that head, acceptance results, Compound,
-  and post-deployment actions without mutating any topology.
-- After merge, the external project manager releases the proof topology and
-  verifies exact absence, promotes the reviewer's proved topology with
-  `bin/e2e-standby promote` (fallback: standby refresh), removes the
-  worktree, and closes the issue. A failed promotion or refresh keeps the
-  worktree and issue open and does not revert merged code.
-- Keep project-manager orchestration outside this repository. The repository
-  owns role behavior and handoff contracts only.
-- Production release and `post_deployment_actions` remain a separate
-  operations process. Production never reuses a proof topology.
+Every change follows the nine-step flow in
+`docs/reference/development-workflow.md`: Linear issue → worktree → fresh
+topology → get it right → codify → prove fresh → pull request → review →
+merge. The skills carry the exact commands:
+
+- `.agents/skills/creating-orbit-issues` — write the Linear issue.
+- `.agents/skills/developing-orbit-features` — implement it and open the PR.
+- `.agents/skills/reviewing-orbit-pull-requests` — re-prove and approve.
+- `.agents/skills/merging-orbit-pull-requests` — merge, promote, clean up.
+
+Rules that hold everywhere:
+
+- Every governing ADR is on `main` before implementation starts; a feature
+  PR never introduces or changes an ADR.
+- Feature branches never modify the harness (`apps/e2e`, `bin/e2e-*`).
+  Harness changes are their own issues.
+- Proof plans live at `proofs/<ISSUE>.json`. Per-issue harness state lives
+  in `<worktree>/.e2e/` and dies with the worktree; the promoted standby
+  generation lives in `<primary>/.e2e/standby/` until the next promote.
+- The repository owns agent behavior and the commands; orchestration of
+  agents stays outside it.
+- Production release is a separate process and never reuses a proof topology.
 
 ## Verification
 
