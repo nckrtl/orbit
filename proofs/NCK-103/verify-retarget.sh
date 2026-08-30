@@ -41,20 +41,27 @@ old_workspace_host="preview.$slug.$old_tld"
 node_address=$(ip -4 -o addr show | awk '$4 ~ /^10\.44\./ {sub(/\/.*$/, "", $4); print $4; exit}')
 test -n "$node_address"
 for host in "$instance_host" "$workspace_host"; do
-  address=$(getent ahostsv4 "$host" | awk 'NR==1 {print $1}')
-  test "$address" = "$node_address"
+  gateway_address=$(dig +short "$host" @10.44.0.1 | awk 'NF {print; exit}')
+  system_address=$(getent ahostsv4 "$host" | awk 'NR==1 {print $1}')
+  test "$gateway_address" = "$node_address"
+  test "$system_address" = "$node_address"
   curl --fail --silent --show-error --cacert /etc/ssl/certs/ca-certificates.crt --resolve "$host:443:127.0.0.1" "https://$host/" >/dev/null
 done
 ! getent ahostsv4 "$old_instance_host" >/dev/null
 ! getent ahostsv4 "$old_workspace_host" >/dev/null
+test -z "$(dig +short "$old_instance_host" @10.44.0.1 | awk 'NF {print; exit}')"
+test -z "$(dig +short "$old_workspace_host" @10.44.0.1 | awk 'NF {print; exit}')"
 active_caddy=$(readlink -f /etc/caddy/Caddyfile)
 active_fragments=/etc/caddy/orbit-versions/"$(basename "$(dirname "$active_caddy")")"/fragments
 for host in "$instance_host" "$workspace_host"; do
   sudo grep -FRq "$host" "$active_caddy" "$active_fragments"
-  sudo grep -Fq "$host" /etc/dnsmasq.d/orbit-records.conf
 done
 ! sudo grep -FRq "$old_tld" "$active_caddy" "$active_fragments" 2>/dev/null
-! sudo grep -Fq "$old_tld" /etc/dnsmasq.d/orbit-records.conf 2>/dev/null
+sudo grep -Fq "\\~test" /etc/wireguard/orbit.conf
+! sudo grep -Fq "\\~$old_tld" /etc/wireguard/orbit.conf
+resolved_domains=$(resolvectl domain orbit)
+[[ "$resolved_domains" == *"~test"* ]]
+[[ "$resolved_domains" != *"~$old_tld"* ]]
 before=$(orbit node:show "$node_id" --json | normalize_json)
 orbit node:list --json >/dev/null
 orbit node:provision app-dev --user=orbit --orbit-user=orbit --tld=.TEST --json >/dev/null

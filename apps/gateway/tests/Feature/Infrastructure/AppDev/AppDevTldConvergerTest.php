@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\AppDev\AppDevCaddyManager;
 use App\Domain\AppDev\AppDevCertificateManager;
+use App\Domain\AppDev\AppDevTldRouteManager;
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -66,6 +67,7 @@ it('renames every child row and converges only publishable projections', functio
             "certificate:workspace:{$provisioningWorkspace->id}",
             "caddy:{$node->id}",
             "dns:{$node->id}",
+            "route:{$node->id}",
         ]);
 });
 
@@ -89,10 +91,12 @@ it('repeats the converged projection without changing derived hostnames', functi
             "certificate:workspace:{$workspace->id}",
             "caddy:{$node->id}",
             "dns:{$node->id}",
+            "route:{$node->id}",
             "certificate:instance:{$instance->id}",
             "certificate:workspace:{$workspace->id}",
             "caddy:{$node->id}",
             "dns:{$node->id}",
+            "route:{$node->id}",
         ]);
 });
 
@@ -243,6 +247,17 @@ function tld_converger_runtime(array &$events): NativeAppDevTldConverger
             $this->events[] = "dns:{$pendingNode?->id}";
         }
     };
+    $routes = new class($events) implements AppDevTldRouteManager {
+        /** @param list<string> $events */
+        public function __construct(
+            private array &$events,
+        ) {}
 
-    return new NativeAppDevTldConverger($certificates, $caddy, $dns);
+        public function converge(Node $node): void
+        {
+            $this->events[] = "route:{$node->id}";
+        }
+    };
+
+    return new NativeAppDevTldConverger($certificates, $caddy, $dns, $routes);
 }

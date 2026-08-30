@@ -7,6 +7,7 @@ namespace App\Infrastructure\AppDev;
 use App\Domain\AppDev\AppDevCaddyManager;
 use App\Domain\AppDev\AppDevCertificateManager;
 use App\Domain\AppDev\AppDevTldConverger;
+use App\Domain\AppDev\AppDevTldRouteManager;
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -22,6 +23,7 @@ final readonly class NativeAppDevTldConverger implements AppDevTldConverger
         private AppDevCertificateManager $certificates,
         private AppDevCaddyManager $caddy,
         private PrivateDnsManager $dns,
+        private AppDevTldRouteManager $routes,
     ) {}
 
     public function converge(Node $node): void
@@ -96,5 +98,6 @@ final readonly class NativeAppDevTldConverger implements AppDevTldConverger
         }
         $this->caddy->converge($node);
         $this->dns->converge($node);
+        $this->routes->converge($node);
     }
 }
