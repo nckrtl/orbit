@@ -11,7 +11,39 @@ final readonly class MetricsRuntimeSpec
 {
     public const string PrometheusImage = 'prom/prometheus:v3.5.0';
 
+    /**
+     * Pinned Grafana image.
+     *
+     * A version bump must re-run the NCK-109 dashboard proof. The provisioned
+     * dashboard is deliberately outside the Grafana configuration hash, and
+     * that rests on the file provider re-reading the bind mount, which is
+     * third-party behaviour verified once, on this version. Grafana 12.1.1
+     * needs the explicit `updateIntervalSeconds` to do it at all.
+     */
     public const string GrafanaImage = 'grafana/grafana:12.1.1';
+
+    /**
+     * Bounded container logging.
+     *
+     * The Docker daemon default keeps a `json-file` log that never rotates,
+     * and Grafana writes a line per request, so a long-lived Metrics node
+     * fills its disk. The driver is named explicitly because the options
+     * below belong to it, and both live in the spec hash so a change to
+     * either re-converges the container.
+     */
+    public const string LogDriver = 'json-file';
+
+    /** @var array<string, string> */
+    public const array LogOptions = [
+        'max-size' => '10m',
+        'max-file' => '3',
+    ];
+
+    /** @param array<string, string> $logOptions */
+    public function __construct(
+        private string $logDriver = self::LogDriver,
+        private array $logOptions = self::LogOptions,
+    ) {}
 
     public function for(
         MetricsService $service,
@@ -36,11 +68,13 @@ final readonly class MetricsRuntimeSpec
             'mounts' => $definition['mounts'],
             'environment' => $definition['environment'],
             'health_command' => $definition['health_command'],
+            'log_driver' => $this->logDriver,
+            'log_options' => $this->logOptions,
             'configuration_hash' => $configurationHash,
         ];
         $specHash = hash('sha256', $this->encode($publicSpec));
         $labels = [
-            'com.orbit.managed' => 'metrics',
+            MetricsFootprint::ManagedLabel => MetricsFootprint::ManagedValue,
             'com.orbit.metrics.service' => $service->value,
             'com.orbit.metrics.assignment' => (string) $assignmentId,
             'com.orbit.metrics.spec-hash' => $specHash,
@@ -53,13 +87,15 @@ final readonly class MetricsRuntimeSpec
             volume: $definition['volume'],
             labels: $labels,
             volumeLabels: [
-                'com.orbit.managed' => 'metrics',
+                MetricsFootprint::ManagedLabel => MetricsFootprint::ManagedValue,
                 'com.orbit.metrics.volume' => $service->value,
             ],
             command: $definition['command'],
             mounts: $definition['mounts'],
             environment: $definition['environment'],
             healthCommand: $definition['health_command'],
+            logDriver: $this->logDriver,
+            logOptions: $this->logOptions,
             specHash: $specHash,
         );
     }
@@ -110,7 +146,7 @@ final readonly class MetricsRuntimeSpec
                 'GF_SECURITY_ADMIN_USER' => 'admin',
                 'GF_SECURITY_ADMIN_PASSWORD__FILE' => '/run/orbit/grafana-admin-password',
                 'GF_SERVER_HTTP_ADDR' => $wireguardAddress,
-                'GF_SERVER_HTTP_PORT' => '3000',
+                'GF_SERVER_HTTP_PORT' => MetricsFootprint::PublicationPort,
             ],
             'health_command' => [
                 'CMD',
@@ -118,7 +154,7 @@ final readonly class MetricsRuntimeSpec
                 '--no-verbose',
                 '--tries=1',
                 '--spider',
-                "http://{$wireguardAddress}:3000/api/health",
+                'http://'.$wireguardAddress.':'.MetricsFootprint::PublicationPort.'/api/health',
             ],
         ];
     }

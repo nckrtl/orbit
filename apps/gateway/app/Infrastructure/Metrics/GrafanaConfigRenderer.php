@@ -15,9 +15,18 @@ final readonly class GrafanaConfigRenderer
         return "apiVersion: 1\ndatasources:\n  - name: Prometheus\n    type: prometheus\n    uid: orbit-prometheus\n    url: {$url}\n    access: proxy\n    isDefault: true\n";
     }
 
+    /**
+     * Provisions the Orbit dashboards from their bind mount, and keeps polling.
+     *
+     * `updateIntervalSeconds` is explicit because Grafana 12 otherwise reads
+     * the directory once, at start. The provisioned dashboard carries the
+     * scraped node names, so without the poll a fleet change would show up
+     * only after Grafana was replaced, and replacing Grafana on a fleet change
+     * is exactly what this configuration exists to avoid.
+     */
     public function dashboardProvider(): string
     {
-        return "apiVersion: 1\nproviders:\n  - name: Orbit\n    type: file\n    disableDeletion: true\n    allowUiUpdates: false\n    options:\n      path: /var/lib/grafana/dashboards\n";
+        return "apiVersion: 1\nproviders:\n  - name: Orbit\n    type: file\n    disableDeletion: true\n    allowUiUpdates: false\n    updateIntervalSeconds: 10\n    options:\n      path: /var/lib/grafana/dashboards\n";
     }
 
     public function rootUrl(): string

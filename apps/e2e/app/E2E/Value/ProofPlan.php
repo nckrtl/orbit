@@ -24,8 +24,11 @@ final readonly class ProofPlan
 
     private const array SECTIONS = ['setup', 'acceptance'];
 
-    /** The one optional top-level key: a plan that mutates the topology cannot become the standby. */
+    /** Optional: a plan that mutates the topology cannot become the standby. */
     private const string MUTATES = 'mutates';
+
+    /** Optional: the topology the plan ends with; a node it leaves out is proved absent. */
+    private const string ENDS_WITH = 'ends_with';
 
     private const array ACTION_KEYS = ['id', 'node', 'argv', 'timeout_seconds'];
 
@@ -36,7 +39,8 @@ final readonly class ProofPlan
     private function __construct(
         public array $setup,
         public array $acceptance,
-        public bool $mutates = false,
+        public bool $mutates,
+        public TopologyEndState $endsWith,
     ) {}
 
     public static function fromFile(string $path): self
@@ -81,13 +85,21 @@ final readonly class ProofPlan
             $mutates = $plan[self::MUTATES];
             unset($plan[self::MUTATES]);
         }
+        $endsWith = TopologyEndState::complete();
+        if (array_key_exists(self::ENDS_WITH, $plan)) {
+            $endsWith = TopologyEndState::fromArray($plan[self::ENDS_WITH]);
+            unset($plan[self::ENDS_WITH]);
+        }
+        // Removing a node changes the topology the proof ran on, whatever the plan says.
+        $mutates = $mutates || $endsWith->declaresAbsence();
         $keys = array_keys($plan);
         sort($keys, SORT_STRING);
         $expected = self::SECTIONS;
         sort($expected, SORT_STRING);
         if ($keys !== $expected) {
             throw new InvalidArgumentException(
-                'The proof plan must have exactly the keys setup and acceptance, plus an optional mutates.',
+                'The proof plan must have exactly the keys setup and acceptance, '
+                .'plus an optional mutates and ends_with.',
             );
         }
         $sections = [];
@@ -107,7 +119,7 @@ final readonly class ProofPlan
         $setup = self::actions('setup', $sections['setup'], $ids);
         $acceptance = self::actions('acceptance', $sections['acceptance'], $ids);
 
-        return new self($setup, $acceptance, $mutates);
+        return new self($setup, $acceptance, $mutates, $endsWith);
     }
 
     /**
@@ -201,12 +213,15 @@ final readonly class ProofPlan
         return $actual === $keys;
     }
 
-    /** @return array{setup:list<array{id:string,node:string,argv:list<string>,timeout_seconds:int}>,acceptance:list<array{id:string,node:string,argv:list<string>,timeout_seconds:int}>,mutates?:true} */
+    /** @return array{setup:list<array{id:string,node:string,argv:list<string>,timeout_seconds:int}>,acceptance:list<array{id:string,node:string,argv:list<string>,timeout_seconds:int}>,mutates?:true,ends_with?:array{nodes:list<string>}} */
     public function toArray(): array
     {
         $plan = ['setup' => $this->setup, 'acceptance' => $this->acceptance];
         if ($this->mutates) {
             $plan['mutates'] = true;
+        }
+        if ($this->endsWith->declaresAbsence()) {
+            $plan['ends_with'] = $this->endsWith->toArray();
         }
 
         return $plan;

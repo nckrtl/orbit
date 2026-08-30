@@ -5,8 +5,10 @@ declare(strict_types=1);
 use App\E2E\IncusHost;
 use App\E2E\TopologyVerifier;
 use App\E2E\Value\SourceState;
+use App\E2E\Value\TopologyEndState;
 use App\E2E\Value\TopologyTarget;
 use App\E2E\Value\VerificationMode;
+use App\E2E\Value\VerificationReport;
 use Illuminate\Container\Container;
 use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Process\Factory as ProcessFactory;
@@ -426,5 +428,158 @@ describe('TopologyVerifier', function () {
             ->toBe(['service.vpn' => 2, 'wireguard.reachability' => 2]);
         Process::assertRanTimes(isTopologyVerifierHelper(...), 2);
         Process::assertNotRan(isDirectTopologyVerifierProbe(...));
+    });
+});
+
+/**
+ * Run one verification against a fake host that answers every probe, failing
+ * exactly the named ones. Returns the report and the argv of each probe.
+ *
+ * @param list<string> $failing
+ * @return array{report:VerificationReport,argv:array<string, list<string>>,batches:list<list<string>>}
+ */
+function runTopologyVerifierWithEndState(?TopologyEndState $endState, array $failing = []): array
+{
+    setUpTopologyVerifierProcessFacade();
+    $sha = str_repeat('a', 40);
+    $argv = [];
+    $batches = [];
+
+    Process::fake(function (PendingProcess $process) use ($sha, $failing, &$argv, &$batches) {
+        $inventory = topologyVerifierInventory($process);
+        if ($inventory instanceof ProcessResult) {
+            return $inventory;
+        }
+        $payload = json_decode((string) $process->input, true, 512, JSON_THROW_ON_ERROR);
+        $labels = [];
+        $results = [];
+        foreach ($payload['requests'] as $request) {
+            if (isGlobalIpv4TopologyVerifierProbe($request['argv'] ?? [])) {
+                $results[] = [
+                    'label' => $request['label'],
+                    'stdout' =>
+                        '2: enp5s0    inet 192.0.2.'
+                            .['gateway' => 1, 'app-dev' => 2, 'app-prod' => 3][$request['label']]
+                            .'/24 scope global',
+                    'stderr' => '',
+                    'exit_code' => 0,
+                ];
+                continue;
+            }
+            $labels[] = $request['label'];
+            $argv[$request['label']] = $request['argv'];
+            $failed = in_array($request['label'], $failing, true);
+            $results[] = [
+                'label' => $request['label'],
+                'stdout' => $failed ? '' : topologyVerifierEvidence($request, $sha),
+                'stderr' => $failed ? 'probe refused' : '',
+                'exit_code' => $failed ? 1 : 0,
+            ];
+        }
+        $batches[] = $labels;
+
+        return Process::result(json_encode($results, JSON_THROW_ON_ERROR));
+    });
+
+    $report = new TopologyVerifier(
+        new IncusHost(pool: 'orbit-e2e'),
+        readinessTimeoutSeconds: 60,
+        readinessPollIntervalMicroseconds: 0,
+    )->verify(TopologyTarget::standby(), VerificationMode::Proof, new SourceState($sha, $sha), $endState);
+
+    return ['report' => $report, 'argv' => $argv, 'batches' => $batches];
+}
+
+describe('TopologyVerifier declared end state', function (): void {
+    it('runs every probe when the plan declares nothing', function (): void {
+        expect(TopologyVerifier::probesFor(TopologyEndState::complete()))
+            ->toBe(topologyVerifierProbeRoles())
+            ->and(TopologyVerifier::skippedProbes(TopologyEndState::complete()))
+            ->toBe([]);
+    });
+
+    it('skips only the probes that run on a declared-absent node', function (): void {
+        $endState = TopologyEndState::fromArray(['nodes' => ['gateway', 'app-dev']]);
+
+        expect(TopologyVerifier::skippedProbes($endState))
+            ->toBe(['vm.app-prod.running', 'role.app-prod', 'php-fpm.app-prod', 'caddy.app-prod', 'laravel.prod'])
+            ->and(array_keys(TopologyVerifier::probesFor($endState)))
+            ->toContain('role.assignments', 'wireguard.reachability', 'role.app-dev', 'source.manifest');
+    });
+
+    it('drops the reachability probe only when no node is left to reach', function (): void {
+        expect(TopologyVerifier::skippedProbes(TopologyEndState::fromArray(['nodes' => ['gateway']])))
+            ->toContain('wireguard.reachability', 'role.app-dev', 'operator.app-dev', 'source.app-dev')
+            ->and(TopologyVerifier::probesFor(TopologyEndState::fromArray(['nodes' => ['gateway']])))
+            ->toBe([
+                'vm.gateway.running' => 'gateway',
+                'role.gateway' => 'gateway',
+                'role.assignments' => 'gateway',
+                'service.gateway' => 'gateway',
+                'service.vpn' => 'gateway',
+                'source.gateway' => 'gateway',
+                'source.manifest' => 'gateway',
+            ]);
+    });
+
+    it('tells the fleet probes which nodes to expect and runs nothing on the absent node', function (): void {
+        $run = runTopologyVerifierWithEndState(TopologyEndState::fromArray(['nodes' => ['gateway', 'app-dev']]));
+        $sha = str_repeat('a', 40);
+        $script = '/usr/local/bin/verify-topology.sh';
+        $gateway = TopologyTarget::standby()->instance('gateway');
+
+        expect($run['report']->passed)
+            ->toBeTrue()
+            ->and($run['argv']['role.assignments'] ?? null)
+            ->toBe([$script, 'role.assignments', 'proof', $sha, $gateway, 'gateway,app-dev'])
+            ->and($run['argv']['wireguard.reachability'] ?? null)
+            ->toBe([$script, 'wireguard.reachability', 'proof', $sha, $gateway, 'app-dev'])
+            ->and(array_keys($run['argv']))
+            ->not
+            ->toContain('role.app-prod')
+            ->and($run['batches'])
+            ->toBe([array_keys(TopologyVerifier::probesFor(
+                TopologyEndState::fromArray(['nodes' => ['gateway', 'app-dev']]),
+            ))]);
+    });
+
+    it('calls the fleet probes exactly as before when the plan declares nothing', function (): void {
+        $run = runTopologyVerifierWithEndState(null);
+        $sha = str_repeat('a', 40);
+        $script = '/usr/local/bin/verify-topology.sh';
+        $gateway = TopologyTarget::standby()->instance('gateway');
+
+        expect($run['argv']['role.assignments'] ?? null)
+            ->toBe([$script, 'role.assignments', 'proof', $sha, $gateway])
+            ->and($run['argv']['wireguard.reachability'] ?? null)
+            ->toBe([$script, 'wireguard.reachability', 'proof', $sha, $gateway, 'app-dev', 'app-prod'])
+            ->and($run['report']->probes)
+            ->toHaveCount(22);
+    });
+
+    it('fails when a node declared absent is still registered', function (): void {
+        // The gateway registry probe is what sees it, and a declaration never skips it.
+        $run = runTopologyVerifierWithEndState(
+            TopologyEndState::fromArray(['nodes' => ['gateway', 'app-dev']]),
+            ['role.assignments'],
+        );
+
+        expect($run['report']->passed)
+            ->toBeFalse()
+            ->and($run['report']->probes['role.assignments']['passed'] ?? null)
+            ->toBeFalse()
+            ->and($run['report']->failedSummary())
+            ->toContain('role.assignments');
+    });
+
+    it('fails when a node is removed without a declaration', function (): void {
+        $run = runTopologyVerifierWithEndState(null, ['role.app-prod', 'role.assignments']);
+
+        expect($run['report']->passed)
+            ->toBeFalse()
+            ->and($run['report']->probes['role.app-prod']['passed'] ?? null)
+            ->toBeFalse()
+            ->and($run['report']->probes['laravel.prod']['passed'] ?? null)
+            ->toBeTrue();
     });
 });

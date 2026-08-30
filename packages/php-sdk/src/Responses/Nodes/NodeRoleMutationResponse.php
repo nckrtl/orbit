@@ -15,12 +15,18 @@ final readonly class NodeRoleMutationResponse
 {
     private const int MAX_NODE_NAME_LENGTH = 63;
 
+    private const array VALID_DEGRADATIONS = ['unreachable', 'firewall_inactive'];
+
+    /** @param list<string> $retainedOnNode */
     public function __construct(
         public int $nodeId,
         public string $nodeName,
         public string $role,
         public ?NodeRoleAssignmentResponse $assignment,
         public bool $removed,
+        public ?string $degradation,
+        public array $retainedOnNode,
+        public ?string $followUp,
         public string $requestId,
     ) {}
 
@@ -98,6 +104,41 @@ final readonly class NodeRoleMutationResponse
             );
         }
 
+        /** @mago-expect analysis:mixed-assignment Gateway mutation data is an untyped transport boundary. */
+        $degradation = $data['degradation'] ?? null;
+
+        if (
+            $degradation !== null
+            && ! (is_string($degradation)
+            && in_array($degradation, self::VALID_DEGRADATIONS, strict: true))
+        ) {
+            throw new GatewayApiException(
+                'Gateway response contains an invalid node role mutation degradation.',
+                requestId: $requestId,
+            );
+        }
+
+        /** @mago-expect analysis:mixed-assignment Gateway mutation data is an untyped transport boundary. */
+        $retainedOnNodeData = $data['retained_on_node'] ?? [];
+        $retainedOnNode = is_array($retainedOnNodeData) ? self::stringListOrNull($retainedOnNodeData) : null;
+
+        if ($retainedOnNode === null) {
+            throw new GatewayApiException(
+                'Gateway response contains an invalid node role mutation retained_on_node.',
+                requestId: $requestId,
+            );
+        }
+
+        /** @mago-expect analysis:mixed-assignment Gateway mutation data is an untyped transport boundary. */
+        $followUp = $data['follow_up'] ?? null;
+
+        if ($followUp !== null && ! is_string($followUp)) {
+            throw new GatewayApiException(
+                'Gateway response contains an invalid node role mutation follow_up.',
+                requestId: $requestId,
+            );
+        }
+
         /** @var string $role */
         return new self(
             nodeId: $nodeId,
@@ -105,6 +146,9 @@ final readonly class NodeRoleMutationResponse
             role: $role,
             assignment: $assignment,
             removed: $removed,
+            degradation: $degradation,
+            retainedOnNode: $retainedOnNode,
+            followUp: $followUp,
             requestId: $requestId,
         );
     }
@@ -116,6 +160,9 @@ final readonly class NodeRoleMutationResponse
      *     role: string,
      *     assignment: array{id: int, role: string, status: string, failed_step: ?string, error_code: ?string}|null,
      *     removed: bool,
+     *     degradation: ?string,
+     *     retained_on_node: list<string>,
+     *     follow_up: ?string,
      *     request_id: string
      * }
      */
@@ -127,6 +174,9 @@ final readonly class NodeRoleMutationResponse
             'role' => $this->role,
             'assignment' => $this->assignment?->toArray(),
             'removed' => $this->removed,
+            'degradation' => $this->degradation,
+            'retained_on_node' => $this->retainedOnNode,
+            'follow_up' => $this->followUp,
             'request_id' => $this->requestId,
         ];
     }
@@ -148,6 +198,27 @@ final readonly class NodeRoleMutationResponse
             }
 
             $result[$key] = $item;
+        }
+
+        return $result;
+    }
+
+    /**
+     * @mago-expect analysis:mixed-assignment Gateway mutation payload values stay mixed until validated.
+     *
+     * @param array<array-key, mixed> $value
+     * @return list<string>|null
+     */
+    private static function stringListOrNull(array $value): ?array
+    {
+        $result = [];
+
+        foreach ($value as $item) {
+            if (! is_string($item)) {
+                return null;
+            }
+
+            $result[] = $item;
         }
 
         return $result;

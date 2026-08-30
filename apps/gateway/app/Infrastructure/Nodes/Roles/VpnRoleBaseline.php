@@ -73,4 +73,9 @@ final readonly class VpnRoleBaseline implements RoleBaseline
     {
         throw new NodeRoleValidationException('The VPN role cannot be removed.');
     }
+
+    public function removeUnreachable(Node $node, NodeRole $assignment): never
+    {
+        throw new NodeRoleValidationException('The VPN role cannot be removed.');
+    }
 }

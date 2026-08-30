@@ -7,6 +7,9 @@ use App\Domain\Metrics\ExporterDegradationReason;
 use App\Domain\Metrics\ExporterDegradationRepository;
 use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Metrics\MetricsRuntimeLifecycle;
+use App\Domain\Nodes\NodeReachabilityProbe;
+use App\Domain\Nodes\NodeRoleDependencySet;
+use App\Domain\Nodes\NodeRoleDependentCleaner;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -44,7 +47,7 @@ it('retires Metrics exporter state before removing network projections', functio
 
     $this
         ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
-        ->deleteJson("/api/v1/nodes/{$target->id}")
+        ->deleteJson("/api/v1/nodes/{$target->id}", ['offline' => false])
         ->assertOk();
 
     expect($this->peers->removed)->toBe([$target->id]);
@@ -61,7 +64,7 @@ it('restores active Metrics selection when exporter retirement fails', function 
 
     $this
         ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
-        ->deleteJson("/api/v1/nodes/{$target->id}")
+        ->deleteJson("/api/v1/nodes/{$target->id}", ['offline' => false])
         ->assertStatus(502)
         ->assertJsonPath('error.code', 'node.metrics_reconcile_failed')
         ->assertJsonPath('error.details.step', 'metrics-exporters')
@@ -94,7 +97,7 @@ it('removes an unreachable node while Metrics is enabled', function (): void {
 
     $this
         ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
-        ->deleteJson("/api/v1/nodes/{$target->id}")
+        ->deleteJson("/api/v1/nodes/{$target->id}", ['offline' => false])
         ->assertOk();
 
     // The retire of the dead node is attempted and fails, and the remaining
@@ -135,7 +138,7 @@ it('reconciles a fleet peer that is unreachable without failing the removal', fu
 
     $this
         ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
-        ->deleteJson("/api/v1/nodes/{$target->id}")
+        ->deleteJson("/api/v1/nodes/{$target->id}", ['offline' => false])
         ->assertOk();
 
     expect($target->fresh())
@@ -152,7 +155,7 @@ it('removes only the target WireGuard peer before reconciling DNS', function ():
 
     $this
         ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
-        ->deleteJson("/api/v1/nodes/{$target->id}")
+        ->deleteJson("/api/v1/nodes/{$target->id}", ['offline' => false])
         ->assertOk()
         ->assertJsonPath('data.wireguard_peer_removed', true)
         ->assertJsonPath('data.dns_records_removed', true);
@@ -180,7 +183,7 @@ it('returns 502 and retains active state when WireGuard projection fails', funct
 
     $this
         ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
-        ->deleteJson("/api/v1/nodes/{$target->id}")
+        ->deleteJson("/api/v1/nodes/{$target->id}", ['offline' => false])
         ->assertStatus(502)
         ->assertJsonPath('error.code', 'node.wireguard_projection_failed')
         ->assertJsonPath('error.details.step', 'wireguard-projection')
@@ -207,7 +210,7 @@ it('restores the WireGuard peer and node state when DNS projection fails', funct
 
     $this
         ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
-        ->deleteJson("/api/v1/nodes/{$target->id}")
+        ->deleteJson("/api/v1/nodes/{$target->id}", ['offline' => false])
         ->assertStatus(502)
         ->assertJsonPath('error.code', 'node.dns_projection_failed')
         ->assertJsonPath('error.details.step', 'dns-projection')
@@ -231,7 +234,7 @@ it('returns a stable rollback error when restoring the WireGuard peer fails', fu
 
     $this
         ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
-        ->deleteJson("/api/v1/nodes/{$target->id}")
+        ->deleteJson("/api/v1/nodes/{$target->id}", ['offline' => false])
         ->assertStatus(502)
         ->assertJsonPath('error.code', 'node.removal_rollback_failed')
         ->assertJsonPath('error.details.step', 'wireguard-rollback')
@@ -260,7 +263,7 @@ it('restores network projections and active state when persistence deletion fail
 
     $this
         ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
-        ->deleteJson("/api/v1/nodes/{$target->id}")
+        ->deleteJson("/api/v1/nodes/{$target->id}", ['offline' => false])
         ->assertStatus(502)
         ->assertJsonPath('error.code', 'node.persistence_failed')
         ->assertJsonPath('error.details.step', 'persistence')
@@ -285,7 +288,7 @@ it('removes a roleless node without resources and returns the stable projection 
     $response = $this
         ->withHeader('X-Orbit-Request-Id', $requestId)
         ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
-        ->deleteJson("/api/v1/nodes/{$target->id}");
+        ->deleteJson("/api/v1/nodes/{$target->id}", ['offline' => false]);
 
     $response
         ->assertOk()
@@ -322,7 +325,7 @@ it('returns 409 without side effects when the caller targets itself', function (
 
     $this
         ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
-        ->deleteJson("/api/v1/nodes/{$caller->id}")
+        ->deleteJson("/api/v1/nodes/{$caller->id}", ['offline' => false])
         ->assertConflict()
         ->assertJsonPath('error.code', 'node.self_removal_forbidden');
 
@@ -345,7 +348,7 @@ it('returns 409 when the target still has any role assignment', function (RoleNa
 
     $this
         ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
-        ->deleteJson("/api/v1/nodes/{$target->id}")
+        ->deleteJson("/api/v1/nodes/{$target->id}", ['offline' => false])
         ->assertConflict()
         ->assertJsonPath('error.code', match ($role) {
             RoleName::Gateway => 'node.gateway_removal_forbidden',
@@ -381,7 +384,7 @@ it('returns 409 when the target still owns an instance', function (): void {
 
     $this
         ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
-        ->deleteJson("/api/v1/nodes/{$target->id}")
+        ->deleteJson("/api/v1/nodes/{$target->id}", ['offline' => false])
         ->assertConflict()
         ->assertJsonPath('error.code', 'node.has_instances');
 
@@ -408,7 +411,7 @@ it('returns 409 when the target still owns a firewall rule', function (): void {
 
     $this
         ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
-        ->deleteJson("/api/v1/nodes/{$target->id}")
+        ->deleteJson("/api/v1/nodes/{$target->id}", ['offline' => false])
         ->assertConflict()
         ->assertJsonPath('error.code', 'node.has_firewall_rules');
 
@@ -418,6 +421,228 @@ it('returns 409 when the target still owns a firewall rule', function (): void {
         ->and($this->dns->convergences)
         ->toBe(0);
 });
+
+it('removes an unreachable node holding a role in one command', function (): void {
+    $caller = remove_node_record(name: 'operator', wireguardAddress: '10.44.0.2');
+    $target = remove_node_record(name: 'retired', wireguardAddress: '10.44.0.3');
+    $caller->accessibleNodes()->attach($target);
+    $target->update(['wireguard_public_key' => 'TARGET_PUBLIC_KEY']);
+    remove_node_offline_probe($target);
+    remove_node_role_fixture($target, RoleName::AppProd);
+    $metrics = Mockery::mock(MetricsFleetReconciler::class);
+    $metrics->shouldReceive('reconcile')->atLeast()->once();
+    $metrics->shouldReceive('retire')->once();
+    app()->instance(MetricsFleetReconciler::class, $metrics);
+
+    $response = $this
+        ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
+        ->deleteJson("/api/v1/nodes/{$target->id}", ['force' => true, 'offline' => true]);
+
+    $response
+        ->assertOk()
+        ->assertJsonPath('data.removed', true)
+        ->assertJsonPath('data.degradation', 'unreachable')
+        ->assertJsonPath('data.roles_shed', ['app-prod'])
+        ->assertJsonPath('data.wireguard_peer_removed', true)
+        ->assertJsonPath(
+            'data.follow_up',
+            'Run the node-local Metrics cleanup on the node once it boots, or discard the node.',
+        );
+
+    expect($response->json('data.retained_on_node'))
+        ->toContain('Caddy site configuration and certificates for the app-prod role')
+        ->toContain('Orbit firewall rules for the app-prod role')
+        ->and($target->fresh())
+        ->toBeNull()
+        ->and(NodeRole::query()->where('node_id', $target->id)->exists())
+        ->toBeFalse()
+        ->and(Instance::query()->where('node_id', $target->id)->exists())
+        ->toBeFalse()
+        ->and($this->peers->removed)
+        ->toBe([$target->id]);
+});
+
+it('refuses an unreachable node without the offline claim and names the flag', function (): void {
+    $caller = remove_node_record(name: 'operator', wireguardAddress: '10.44.0.2');
+    $target = remove_node_record(name: 'retired', wireguardAddress: '10.44.0.3');
+    $caller->accessibleNodes()->attach($target);
+    remove_node_offline_probe($target);
+    remove_node_role_fixture($target, RoleName::AppProd);
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
+        ->deleteJson("/api/v1/nodes/{$target->id}", ['offline' => false])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'node.has_roles')
+        ->assertJsonPath(
+            'error.message',
+            'Node [retired] still has roles. Remove them, or use --offline if the node is unreachable.',
+        );
+
+    expect($target->fresh())
+        ->not
+        ->toBeNull()
+        ->and(NodeRole::query()->where('node_id', $target->id)->exists())
+        ->toBeTrue()
+        ->and($this->dns->convergences)
+        ->toBe(0);
+});
+
+it('leaves a reachable node alone even when the offline claim is made', function (): void {
+    $caller = remove_node_record(name: 'operator', wireguardAddress: '10.44.0.2');
+    $target = remove_node_record(name: 'retired', wireguardAddress: '10.44.0.3');
+    $caller->accessibleNodes()->attach($target);
+    remove_node_reachable_probe();
+    remove_node_role_fixture($target, RoleName::AppProd);
+    $cleaner = new RemoveNodeCountingCleaner;
+    app()->instance(NodeRoleDependentCleaner::class, $cleaner);
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
+        ->deleteJson("/api/v1/nodes/{$target->id}", ['force' => true, 'offline' => true])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'node.has_roles');
+
+    // The claim is checked, not obeyed: a node that answers keeps the ordinary
+    // contract, and nothing on it was touched on the way to the refusal.
+    expect($target->fresh())
+        ->not
+        ->toBeNull()
+        ->and(NodeRole::query()->where('node_id', $target->id)->sole()->status)
+        ->toBe(LifecycleStatus::Active)
+        ->and($cleaner->calls)
+        ->toBe(0)
+        ->and($this->dns->convergences)
+        ->toBe(0)
+        ->and($this->peers->removed)
+        ->toBe([]);
+});
+
+it('never sheds roles from a protected node, whatever the offline claim says', function (RoleName $role): void {
+    $caller = remove_node_record(name: 'operator', wireguardAddress: '10.44.0.2');
+    $target = remove_node_record(name: 'retired', wireguardAddress: '10.44.0.3');
+    $caller->accessibleNodes()->attach($target);
+    remove_node_offline_probe($target);
+    NodeRole::query()->create([
+        'node_id' => $target->id,
+        'role' => $role,
+        'status' => LifecycleStatus::Active,
+    ]);
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
+        ->deleteJson("/api/v1/nodes/{$target->id}", ['force' => true, 'offline' => true])
+        ->assertConflict()
+        ->assertJsonPath('error.code', match ($role) {
+            RoleName::Gateway => 'node.gateway_removal_forbidden',
+            RoleName::Vpn => 'node.vpn_removal_forbidden',
+        });
+
+    expect(NodeRole::query()->where('node_id', $target->id)->exists())
+        ->toBeTrue()
+        ->and($target->fresh())
+        ->not
+        ->toBeNull()
+        ->and($this->dns->convergences)
+        ->toBe(0);
+})->with([
+    'gateway' => [RoleName::Gateway],
+    'vpn' => [RoleName::Vpn],
+]);
+
+it('rejects an offline claim that is not a boolean', function (): void {
+    $caller = remove_node_record(name: 'operator', wireguardAddress: '10.44.0.2');
+    $target = remove_node_record(name: 'retired', wireguardAddress: '10.44.0.3');
+    $caller->accessibleNodes()->attach($target);
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
+        ->deleteJson("/api/v1/nodes/{$target->id}", ['force' => true, 'offline' => 'yes'])
+        ->assertStatus(422);
+
+    expect($target->fresh())->not->toBeNull();
+});
+
+it('refuses to shed roles from an unreachable node without consent', function (): void {
+    $caller = remove_node_record(name: 'operator', wireguardAddress: '10.44.0.2');
+    $target = remove_node_record(name: 'retired', wireguardAddress: '10.44.0.3');
+    $caller->accessibleNodes()->attach($target);
+    remove_node_offline_probe($target);
+    remove_node_role_fixture($target, RoleName::AppProd);
+
+    // Offline removal deletes the node's instances, workspaces and processes.
+    // Before it existed this call was refused outright, so the widened blast
+    // radius must not be reachable on the claim alone.
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
+        ->deleteJson("/api/v1/nodes/{$target->id}", ['offline' => true])
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'validation.failed')
+        ->assertJsonPath(
+            'error.details.force.0',
+            'The force field must be true when offline removal is requested.',
+        );
+
+    expect($target->fresh())
+        ->not
+        ->toBeNull()
+        ->and(NodeRole::query()->where('node_id', $target->id)->sole()->status)
+        ->toBe(LifecycleStatus::Active)
+        ->and(Instance::query()->where('node_id', $target->id)->exists())
+        ->toBeTrue()
+        ->and($this->dns->convergences)
+        ->toBe(0);
+});
+
+it('enforces consent in the action itself, not only at the request boundary', function (): void {
+    $caller = remove_node_record(name: 'operator', wireguardAddress: '10.44.0.2');
+    $target = remove_node_record(name: 'retired', wireguardAddress: '10.44.0.3');
+    remove_node_offline_probe($target);
+    remove_node_role_fixture($target, RoleName::AppProd);
+
+    expect(fn () => app(App\Actions\Nodes\RemoveNodeAction::class)->execute($target, $caller, offline: true))
+        ->toThrow(ResourceOperationException::class);
+
+    expect($target->fresh())
+        ->not
+        ->toBeNull()
+        ->and(NodeRole::query()->where('node_id', $target->id)->sole()->status)
+        ->toBe(LifecycleStatus::Active);
+});
+
+function remove_node_offline_probe(Node $unreachable): void
+{
+    app()->instance(NodeReachabilityProbe::class, new RemoveNodeFakeReachability($unreachable->id));
+}
+
+function remove_node_reachable_probe(): void
+{
+    app()->instance(NodeReachabilityProbe::class, new RemoveNodeFakeReachability(null));
+}
+
+function remove_node_role_fixture(Node $node, RoleName $role): void
+{
+    NodeRole::query()->create([
+        'node_id' => $node->id,
+        'role' => $role,
+        'status' => LifecycleStatus::Active,
+    ]);
+    $app = OrbitApp::query()->create([
+        'name' => 'Acme',
+        'slug' => 'acme',
+        'repository_url' => 'https://github.com/acme/site.git',
+    ]);
+    Instance::query()->create([
+        'app_id' => $app->id,
+        'node_id' => $node->id,
+        'name' => 'production',
+        'environment' => 'production',
+        'checkout_path' => '/var/www/acme/production',
+        'hostname' => 'acme.example.com',
+        'certificate_mode' => 'acme',
+        'status' => LifecycleStatus::Active,
+    ]);
+}
 
 function remove_node_record(string $name, string $wireguardAddress): Node
 {
@@ -551,5 +776,29 @@ final class RemoveNodeUnreachableExporterRuntime implements MetricsExporterRunti
             'The Metrics exporter configuration could not be inspected.',
             502,
         );
+    }
+}
+
+/** @mago-expect lint:single-class-per-file Test-local fakes keep projection state visible to this API suite. */
+final class RemoveNodeFakeReachability implements NodeReachabilityProbe
+{
+    public function __construct(
+        private readonly ?int $unreachableNodeId,
+    ) {}
+
+    public function degradation(Node $node): ?ExporterDegradationReason
+    {
+        return $node->id === $this->unreachableNodeId ? ExporterDegradationReason::Unreachable : null;
+    }
+}
+
+/** @mago-expect lint:single-class-per-file Test-local fakes keep projection state visible to this API suite. */
+final class RemoveNodeCountingCleaner implements NodeRoleDependentCleaner
+{
+    public int $calls = 0;
+
+    public function clean(NodeRoleDependencySet $dependencies): void
+    {
+        $this->calls++;
     }
 }

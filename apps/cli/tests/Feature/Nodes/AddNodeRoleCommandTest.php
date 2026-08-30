@@ -247,6 +247,9 @@ function added_node_role_expected_json(): array
 {
     return [
         ...added_node_role_payload(),
+        'degradation' => null,
+        'retained_on_node' => [],
+        'follow_up' => null,
         'request_id' => node_role_add_request_id(),
     ];
 }

@@ -38,6 +38,8 @@ describe(ProvisionNodeAction::class, function (): void {
             public function converge(Node $node, NodeRole $assignment): void {}
 
             public function remove(Node $node, NodeRole $assignment, bool $purgeData): void {}
+
+            public function removeUnreachable(Node $node, NodeRole $assignment): void {}
         });
     });
 
@@ -768,6 +770,8 @@ describe(ProvisionNodeAction::class, function (): void {
             }
 
             public function remove(Node $node, NodeRole $assignment, bool $purgeData): void {}
+
+            public function removeUnreachable(Node $node, NodeRole $assignment): void {}
         });
         app()->instance(NodeConverger::class, new class($events) implements NodeConverger, RecoverableNodeConverger {
             /** @param list<string> $events */
@@ -897,6 +901,11 @@ describe(ProvisionNodeAction::class, function (): void {
             }
 
             public function remove(Node $node, NodeRole $assignment, bool $purgeData): void
+            {
+                throw new RuntimeException('must not delete');
+            }
+
+            public function removeUnreachable(Node $node, NodeRole $assignment): void
             {
                 throw new RuntimeException('must not delete');
             }
@@ -1085,6 +1094,8 @@ describe(ProvisionNodeAction::class, function (): void {
             }
 
             public function remove(Node $node, NodeRole $assignment, bool $purgeData): void {}
+
+            public function removeUnreachable(Node $node, NodeRole $assignment): void {}
         });
 
         $ambientTransactionLevel = DB::transactionLevel();
@@ -1167,6 +1178,8 @@ describe(ProvisionNodeAction::class, function (): void {
             }
 
             public function remove(Node $node, NodeRole $assignment, bool $purgeData): void {}
+
+            public function removeUnreachable(Node $node, NodeRole $assignment): void {}
         });
         $node = Node::query()->create([
             'name' => 'existing-host',
@@ -1756,6 +1769,8 @@ describe(ProvisionNodeAction::class, function (): void {
             }
 
             public function remove(Node $node, NodeRole $assignment, bool $purgeData): void {}
+
+            public function removeUnreachable(Node $node, NodeRole $assignment): void {}
         });
 
         expect(fn () => app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(

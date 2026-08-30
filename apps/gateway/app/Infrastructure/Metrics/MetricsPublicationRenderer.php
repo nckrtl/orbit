@@ -18,7 +18,11 @@ final readonly class MetricsPublicationRenderer
         $this->validatePath($certificatePath);
         $this->validatePath($privateKeyPath);
 
-        return "# Managed by Orbit: metrics\nmetrics.orbit {$gatewayAddress}:443 {\n  bind {$gatewayAddress}\n  tls {$certificatePath} {$privateKeyPath}\n  reverse_proxy http://{$metricsAddress}:3000\n}\n";
+        return (
+            "# Managed by Orbit: metrics\nmetrics.orbit {$gatewayAddress}:443 {\n  bind {$gatewayAddress}\n  tls {$certificatePath} {$privateKeyPath}\n  reverse_proxy http://{$metricsAddress}:"
+            .MetricsFootprint::PublicationPort
+            ."\n}\n"
+        );
     }
 
     private function validateAddress(string $address): void

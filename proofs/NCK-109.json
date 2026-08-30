@@ -1,0 +1,31 @@
+{
+    "setup": [
+        {
+            "id": "render-from-branch",
+            "node": "app-dev",
+            "argv": ["orbit", "metrics:exporter:enable", "gateway", "--json"],
+            "timeout_seconds": 900
+        }
+    ],
+    "acceptance": [
+        {
+            "id": "container-identity-per-service",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/container-identity.sh"],
+            "timeout_seconds": 900
+        },
+        {
+            "id": "bounded-container-logging",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/log-bounds.sh"],
+            "timeout_seconds": 120
+        },
+        {
+            "id": "dashboard-reloads-without-replacing-grafana",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/dashboard-reload.sh"],
+            "timeout_seconds": 900
+        }
+    ],
+    "mutates": true
+}

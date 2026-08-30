@@ -41,6 +41,7 @@ it('registers the exact node role remove command signature surface', function ()
         ->toBe([
             'force' => false,
             'purge-data' => false,
+            'offline' => false,
             'json' => false,
         ]);
 });
@@ -98,6 +99,7 @@ it('sends one forced node role removal request as json', function (): void {
         ->toBe([
             'force' => true,
             'purge_data' => false,
+            'offline' => false,
         ])
         ->and($mockClient->getRecordedResponses())
         ->toHaveCount(1);
@@ -218,10 +220,12 @@ it('shows dependents then sends one forced retry after confirmation', function (
         static fn (RemoveNodeRoleRequest $request): bool => $request->body()->all() === [
             'force' => false,
             'purge_data' => false,
+            'offline' => false,
         ],
         static fn (RemoveNodeRoleRequest $request): bool => $request->body()->all() === [
             'force' => true,
             'purge_data' => false,
+            'offline' => false,
         ],
     ]);
 });
@@ -299,10 +303,12 @@ it('forwards purge data only on the forced retry and keeps empty dependents hidd
         static fn (RemoveNodeRoleRequest $request): bool => $request->body()->all() === [
             'force' => false,
             'purge_data' => false,
+            'offline' => false,
         ],
         static fn (RemoveNodeRoleRequest $request): bool => $request->body()->all() === [
             'force' => true,
             'purge_data' => true,
+            'offline' => false,
         ],
     ]);
 });
@@ -343,6 +349,49 @@ it('shows deterministic human output for a removed node role assignment', functi
         ->expectsOutput('Role [app-dev] removed from node [app-1] (#7).')
         ->expectsOutput('Request ID: '.node_role_remove_request_id())
         ->assertExitCode(0);
+});
+
+it('shows no degradation advisory for an ordinary node role removal', function (): void {
+    MockClient::global([
+        RemoveNodeRoleRequest::class => MockResponse::make([
+            'data' => removed_node_role_payload(),
+            'meta' => ['request_id' => node_role_remove_request_id()],
+        ]),
+    ]);
+
+    $this
+        ->artisan('node:role:remove', ['node' => '7', 'role' => 'app-dev', '--force' => true])
+        ->expectsOutput('Role [app-dev] removed from node [app-1] (#7).')
+        ->doesntExpectOutputToContain('Left on the node:')
+        ->doesntExpectOutputToContain('  - ')
+        ->expectsOutput('Request ID: '.node_role_remove_request_id())
+        ->assertExitCode(0);
+});
+
+it('shows the degradation advisory for an offline node role removal', function (): void {
+    $mockClient = MockClient::global([
+        RemoveNodeRoleRequest::class => MockResponse::make([
+            'data' => removed_node_role_degraded_payload(),
+            'meta' => ['request_id' => node_role_remove_request_id()],
+        ]),
+    ]);
+
+    $this
+        ->artisan('node:role:remove', ['node' => '7', 'role' => 'app-dev', '--force' => true, '--offline' => true])
+        ->expectsOutput('Role [app-dev] removed from node [app-1] (#7).')
+        ->expectsOutput('Warning: Node [app-1] was unreachable. Orbit removed only the state it owns.')
+        ->expectsOutput('Left on the node:')
+        ->expectsOutput('  - Caddy site configuration and certificates for the app-dev role')
+        ->expectsOutput('Run the node-local Metrics cleanup on the node once it boots, or discard the node.')
+        ->expectsOutput('Request ID: '.node_role_remove_request_id())
+        ->assertExitCode(0);
+
+    expect($mockClient->getLastPendingRequest()?->body()->all())
+        ->toBe([
+            'force' => true,
+            'purge_data' => false,
+            'offline' => true,
+        ]);
 });
 
 it('renders unrelated gateway failures through the shared boundary without a forced retry', function (): void {
@@ -410,10 +459,30 @@ function removed_node_role_payload(): array
 }
 
 /** @return array<string, mixed> */
+function removed_node_role_degraded_payload(): array
+{
+    return [
+        'node_id' => 7,
+        'node_name' => 'app-1',
+        'role' => 'app-dev',
+        'assignment' => null,
+        'removed' => true,
+        'degradation' => 'unreachable',
+        'retained_on_node' => [
+            'Caddy site configuration and certificates for the app-dev role',
+        ],
+        'follow_up' => 'Run the node-local Metrics cleanup on the node once it boots, or discard the node.',
+    ];
+}
+
+/** @return array<string, mixed> */
 function removed_node_role_expected_json(): array
 {
     return [
         ...removed_node_role_payload(),
+        'degradation' => null,
+        'retained_on_node' => [],
+        'follow_up' => null,
         'request_id' => node_role_remove_request_id(),
     ];
 }
