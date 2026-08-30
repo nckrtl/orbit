@@ -44,6 +44,7 @@ use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
 use App\Infrastructure\AppDev\RemoteAppDevCertificateManager;
 use App\Infrastructure\AppDev\RemoteAppDevPhpFpmManager;
 use App\Infrastructure\AppDev\RemoteAppDevSourceManager;
+use App\Infrastructure\AppDev\RemoteAppDevTldRouteManager;
 use App\Infrastructure\Nodes\RemotePhpPackageManager;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\NativeProcessRunner;
@@ -63,6 +64,36 @@ use Tests\Support\AppDevCaddyPublishScenario;
 use Tests\Support\AppDevFakeProcessRunner;
 use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\FpmPublishHarness;
+
+it('converges the persistent and active app development TLD route over WireGuard', function (): void {
+    $node = Node::query()->create([
+        'name' => 'app-dev-route',
+        'status' => LifecycleStatus::Provisioning,
+        'platform' => 'linux',
+        'architecture' => 'x86_64',
+        'tld' => 'test',
+        'public_ssh_host' => '192.0.2.10',
+        'wireguard_address' => '10.44.0.7',
+        'user' => 'orbit',
+    ]);
+    $ssh = new AppDevFakeSshExecutor;
+
+    new RemoteAppDevTldRouteManager(app_dev_ssh($ssh))->converge($node);
+
+    expect($ssh->connections)->toHaveCount(1);
+    expect($ssh->connections[0]->host)->toBe('10.44.0.7');
+    expect($ssh->commands)->toHaveCount(1);
+    expect($ssh->commands[0]->arguments)->toBe(['sudo', 'bash', '-seu', '--', 'test']);
+    expect($ssh->commands[0]->input)
+        ->toContain(
+            'exec 9>/run/lock/orbit-wireguard-peer.lock',
+            'candidate=/etc/wireguard/orbit-candidate.conf',
+            'wg-quick strip "$candidate"',
+            'mv -fT -- "$candidate" "$live"',
+            'resolvectl domain "$dns_link" "~$domain" "~$tld"',
+        )
+        ->not->toContain('systemctl restart wg-quick@orbit');
+});
 
 it('renders isolated pools and private Caddy listeners for every active scope', function (): void {
     [$node, $instance, $workspace] = app_dev_runtime_models();

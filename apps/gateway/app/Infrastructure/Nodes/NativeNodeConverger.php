@@ -66,6 +66,13 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
     ): void {
         [$hostKey, $wireguardAddress] = $this->prepare($node, $identity, $expectedSshHostFingerprint);
 
+        if ($node->roles()->exists()) {
+            $this->finishWireGuard($node, $identity->managedUser, $hostKey, $wireguardAddress);
+            $completion();
+
+            return;
+        }
+
         if (! $this->wireGuard instanceof RecoverableWireGuardPeerConverger) {
             $this->wireGuard->converge(
                 $node,
@@ -100,7 +107,8 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
             );
         }
 
-        $hostKey = $this->hostKeys->scan($node->public_ssh_host, $node->public_ssh_port);
+        $bootstrapConnection = $this->connection($node, $identity->bootstrapUser);
+        $hostKey = $this->hostKeys->scan($bootstrapConnection->host, $bootstrapConnection->port);
 
         if ($node->ssh_host_fingerprint !== null && $node->ssh_host_fingerprint !== $hostKey->fingerprint) {
             throw new NodeProvisioningException(
@@ -126,7 +134,7 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
             );
         }
 
-        $this->knownHosts->put($node->public_ssh_host, $node->public_ssh_port, $hostKey);
+        $this->knownHosts->put($bootstrapConnection->host, $bootstrapConnection->port, $hostKey);
         $node->update([
             'ssh_host_key_type' => $hostKey->type,
             'ssh_host_key' => $hostKey->value,
@@ -134,7 +142,7 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
         ]);
 
         $bootstrap = $this->ssh->execute(
-            $this->connection($node, $identity->bootstrapUser),
+            $bootstrapConnection,
             $identity->bootstrapUser === 'root'
                 ? $this->bootstrapCommand->make($node, $identity->managedUser)
                 : $this->bootstrapCommand->makeWithPasswordlessSudo($node, $identity->managedUser),
@@ -150,7 +158,12 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
         }
 
         $verification = $this->ssh->execute(
-            $this->connection($node, $identity->managedUser),
+            $this->connection(
+                $node,
+                $identity->managedUser,
+                $bootstrapConnection->host,
+                $bootstrapConnection->port,
+            ),
             new RemoteCommand(['true']),
         );
 
@@ -173,16 +186,18 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
 
         $wireguardAddress = $node->wireguard_address;
 
-        try {
-            $this->firewall->convergeBase($node, $identity->managedUser);
-        } catch (FirewallOperationException $exception) {
-            throw new NodeProvisioningException(
-                $exception->step,
-                $exception->errorCode,
-                $exception->getMessage(),
-                $exception,
-                $exception->result,
-            );
+        if ($node->roles()->doesntExist()) {
+            try {
+                $this->firewall->convergeBase($node, $identity->managedUser);
+            } catch (FirewallOperationException $exception) {
+                throw new NodeProvisioningException(
+                    $exception->step,
+                    $exception->errorCode,
+                    $exception->getMessage(),
+                    $exception,
+                    $exception->result,
+                );
+            }
         }
 
         return [$hostKey, $wireguardAddress];
@@ -239,12 +254,42 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
 
     private function connection(Node $node, string $user, ?string $host = null, ?int $port = null): SshConnection
     {
+        if ($host !== null && $port !== null) {
+            return new SshConnection(
+                host: $host,
+                user: $user,
+                port: $port,
+                identityFile: $this->sshKeys->privateKeyPath(),
+                knownHostsFile: $this->knownHosts->path(),
+            );
+        }
+
+        [$defaultHost, $defaultPort] = $this->accessTarget($node);
+
         return new SshConnection(
-            host: $host ?? $node->public_ssh_host,
+            host: $host ?? $defaultHost,
             user: $user,
-            port: $port ?? $node->public_ssh_port,
+            port: $port ?? $defaultPort,
             identityFile: $this->sshKeys->privateKeyPath(),
             knownHostsFile: $this->knownHosts->path(),
         );
+    }
+
+    /** @return array{0: string, 1: int} */
+    private function accessTarget(Node $node): array
+    {
+        if ($node->roles()->doesntExist()) {
+            return [$node->public_ssh_host, $node->public_ssh_port];
+        }
+
+        if (! is_string($node->wireguard_address) || $node->wireguard_address === '') {
+            throw new NodeProvisioningException(
+                'wireguard-address',
+                'vpn.peer_address_missing',
+                "Node [{$node->name}] has no WireGuard address.",
+            );
+        }
+
+        return [$node->wireguard_address, 22];
     }
 }
