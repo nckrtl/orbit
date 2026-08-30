@@ -1,12 +1,12 @@
 {
     "setup": [
         {
-            "id": "enable-metrics",
+            "id": "render-from-branch",
             "node": "app-dev",
             "argv": [
                 "orbit",
-                "metrics:enable",
-                "app-dev",
+                "metrics:exporter:enable",
+                "gateway",
                 "--json"
             ],
             "timeout_seconds": 900
