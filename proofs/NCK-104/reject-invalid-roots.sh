@@ -4,9 +4,10 @@ source /var/lib/orbit-e2e/proof/lib.sh
 
 before=$(sql_node_settings app-dev)
 gateway_checkout=/home/orbit/orbit/apps/gateway
-app_prod_checkout=/var/www/laravel/e2e-prod
+app_prod_checkout=$(instance_checkout e2e-prod)
 test -d "$gateway_checkout" || fail "configured Gateway checkout is missing: $gateway_checkout"
-test -d "$app_prod_checkout" || fail "app-prod checkout is missing: $app_prod_checkout"
+[[ "$app_prod_checkout" == /var/www/laravel/e2e-prod ]] \
+  || fail "app-prod checkout is not the recorded storage path: $app_prod_checkout"
 
 assert_unchanged() {
   local why=$1
