@@ -1,5 +1,5 @@
 ---
-name: developing-orbit-features
+name: developing-features
 description: Use when implementing a Ready Orbit Linear issue from its worktree.
 ---
 

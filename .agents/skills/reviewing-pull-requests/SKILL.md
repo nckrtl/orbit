@@ -1,5 +1,5 @@
 ---
-name: reviewing-orbit-pull-requests
+name: reviewing-pull-requests
 description: Use when reviewing an Orbit pull request.
 ---
 

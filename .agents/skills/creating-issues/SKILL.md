@@ -1,5 +1,5 @@
 ---
-name: creating-orbit-issues
+name: creating-issues
 description: Use when turning an Orbit request or production GitHub report into a Linear issue before implementation.
 ---
 
