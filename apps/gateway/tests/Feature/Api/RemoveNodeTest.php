@@ -97,14 +97,21 @@ it('removes an unreachable node while Metrics is enabled', function (): void {
         ->deleteJson("/api/v1/nodes/{$target->id}")
         ->assertOk();
 
+    // The retire of the dead node is attempted and fails, and the remaining
+    // fleet still converges afterwards rather than the removal aborting.
     expect($target->fresh())
         ->toBeNull()
         ->and($this->peers->removed)
         ->toBe([$target->id])
         ->and($exporters->events)
         ->toContain('remove:unreachable')
-        ->and(app(ExporterDegradationRepository::class)->get($caller->id))
-        ->toBeNull();
+        ->toContain('converge:metrics')
+        ->toContain('snapshot:operator')
+        ->and(array_filter(
+            $exporters->events,
+            static fn (string $event): bool => str_ends_with($event, ':unreachable') && $event !== 'remove:unreachable',
+        ))
+        ->toBeEmpty();
 });
 
 it('reconciles a fleet peer that is unreachable without failing the removal', function (): void {
