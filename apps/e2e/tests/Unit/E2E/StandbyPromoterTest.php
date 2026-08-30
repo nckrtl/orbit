@@ -146,8 +146,12 @@ function promoterFor(string $root, StatePaths $paths, StandbyManifestStore $mani
  * @param list<string> $events
  * @mago-expect lint:cyclomatic-complexity,halstead,kan-defect The fake maps one complete promotion process boundary.
  */
-function fakePromotionHost(TopologyTarget $target, array &$events, ?string $failAt = null): void
-{
+function fakePromotionHost(
+    TopologyTarget $target,
+    array &$events,
+    ?string $failAt = null,
+    ?array &$guestEvents = null,
+): void {
     $standby = TopologyTarget::standby();
     $instances = [];
     $snapshots = [];
@@ -192,6 +196,7 @@ function fakePromotionHost(TopologyTarget $target, array &$events, ?string $fail
 
     Process::fake(function (PendingProcess $process) use (
         &$events,
+        &$guestEvents,
         &$instances,
         &$snapshots,
         &$networks,
@@ -203,6 +208,9 @@ function fakePromotionHost(TopologyTarget $target, array &$events, ?string $fail
         assert(is_array($command));
         if (($firewall = topologyFirewallResult($command)) !== null) {
             return $firewall;
+        }
+        if (($batch = pinnedWorktreeBatchResult($process, $guestEvents)) !== null) {
+            return $batch;
         }
         if (($command[0] ?? null) === 'git') {
             return $realProcess
@@ -329,7 +337,8 @@ describe('StandbyPromoter', function (): void {
         $target = $fixture['target'];
         $standby = TopologyTarget::standby();
         $events = [];
-        fakePromotionHost($target, $events);
+        $guestEvents = [];
+        fakePromotionHost($target, $events, null, $guestEvents);
         $old = $fixture['manifests']->promoted();
 
         $result = promoterFor($fixture['root'], $fixture['paths'], $fixture['manifests'])
@@ -384,6 +393,12 @@ describe('StandbyPromoter', function (): void {
             $expected[] = 'delete:'.$target->instance($role);
         }
         $expected[] = 'network-delete:'.$target->network();
+        $removals = array_values(array_filter(
+            $guestEvents,
+            static fn (array $event): bool => in_array('rm', $event, true),
+        ));
+        expect($removals)->toHaveCount(3)->and($removals[0])->toContain('/var/lib/orbit-e2e/proof');
+
         expect($events)->toBe($expected);
     });
 

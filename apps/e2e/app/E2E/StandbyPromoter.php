@@ -9,8 +9,10 @@ use App\E2E\State\OperationLock;
 use App\E2E\State\StatePaths;
 use App\E2E\Value\AttemptPurpose;
 use App\E2E\Value\FeatureTopology;
+use App\E2E\Value\GuestCommand;
 use App\E2E\Value\IncusInstance;
 use App\E2E\Value\OperationId;
+use App\E2E\Value\ProofFixtures;
 use App\E2E\Value\ProofPlan;
 use App\E2E\Value\StandbyGeneration;
 use App\E2E\Value\TopologyProfile;
@@ -208,6 +210,31 @@ final readonly class StandbyPromoter
         );
     }
 
+    /**
+     * Remove the issue's proof fixtures while the proved instances still run, so the
+     * promoted generation carries none of them into the next issue's proof.
+     *
+     * @param list<string> $instances
+     */
+    private function clearProofFixtures(array $instances): void
+    {
+        $removals = [];
+        foreach ($instances as $instance) {
+            $removals["proof-fixtures.{$instance}"] = [
+                'instance' => $instance,
+                'command' => new GuestCommand(
+                    ['rm', '-rf', '--', ProofFixtures::GUEST_DIRECTORY],
+                    60,
+                ),
+            ];
+        }
+        foreach ($this->host->execAll($removals) as $result) {
+            if ($result->exitCode !== 0) {
+                throw new RuntimeException('Proof fixture removal failed before promotion.');
+            }
+        }
+    }
+
     /** Copy, re-attach, snapshot; only then swap each standby instance for its copy. */
     private function replaceStandby(FeatureTopology $topology, StandbyGeneration $generation): void
     {
@@ -223,6 +250,7 @@ final readonly class StandbyPromoter
             );
         }
         $this->assertOwnedByAttempt($topology, $proved);
+        $this->clearProofFixtures($proved);
         $this->host->stopAll($proved);
         $this->assertStopped($proved, 'proved');
         $this->assertStopped($standbyNames, 'standby');
