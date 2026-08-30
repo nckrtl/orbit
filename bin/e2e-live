@@ -87,14 +87,16 @@ isolation_worktree=$validate/.worktrees/acc-2
 plan=apps/e2e/resources/proof/ACC-1/plan.json
 summaries=()
 
-for tool in git jq composer php incus flock; do
-    command -v "$tool" >/dev/null 2>&1 || fail "$tool is required"
-done
-
 # One live run at a time: two runs would race on the clone, the standby, and ACC-1.
+# The lock comes before every other prerequisite so a held lock always exits 75.
+command -v flock >/dev/null 2>&1 || fail 'flock is required'
 mkdir -p "$state_root"
 exec 9>"$state_root/live.lock"
 flock --nonblocking 9 || fail "another bin/e2e-live run holds $state_root/live.lock" 75
+
+for tool in git jq composer php incus; do
+    command -v "$tool" >/dev/null 2>&1 || fail "$tool is required"
+done
 git -C "$root" rev-parse --verify --quiet "${candidate}^{commit}" >/dev/null \
     || fail "candidate $candidate is not a commit in $root"
 if [[ -e "$validate" && "$(cd "$validate" && pwd -P)" == "$(cd "$root" && pwd -P)" ]]; then
