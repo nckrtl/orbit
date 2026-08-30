@@ -3,7 +3,7 @@
 Every change to Orbit follows one short flow. A Linear issue defines it, an
 agent implements it in a worktree, a reviewer re-proves it, a merge agent
 merges and cleans up. Governed by
-[ADR 0006](../decisions/0006-topology-led-feature-development.md).
+[ADR 0007](../decisions/0007-nine-step-feature-flow.md).
 
 ## Feature flow
 
