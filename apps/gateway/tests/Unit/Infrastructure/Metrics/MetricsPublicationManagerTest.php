@@ -132,6 +132,19 @@ it('preserves pre-existing healthy publication when repeated convergence fails',
     ]);
 });
 
+it('retracts only the Gateway side of the publication, never touching the firewall', function (): void {
+    $events = [];
+    $manager = metrics_publication_manager($events, []);
+
+    $manager->retract(metrics_publication_manager_node('metrics', '10.44.0.3'));
+
+    expect($events)->toBe([
+        'dns:none',
+        'process:caddy',
+        'process:certificate',
+    ]);
+});
+
 /** @param list<string> $events @param list<CommandResult> $sshResults */
 function metrics_publication_manager(
     array &$events,

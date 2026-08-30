@@ -188,6 +188,9 @@ it('returns 201 for a new assignment and 200 for explicit convergence', function
                 'node_id' => $this->node->id,
                 'node_name' => $this->node->name,
                 'role' => 'app-dev',
+                'degradation' => null,
+                'retained_on_node' => [],
+                'follow_up' => null,
                 'assignment' => [
                     'id' => $assignment->id,
                     'role' => 'app-dev',
@@ -309,6 +312,9 @@ it('returns the exact mutation snapshot and forwards purge data on confirmed rem
                 'node_id' => $this->node->id,
                 'node_name' => $this->node->name,
                 'role' => 'app-dev',
+                'degradation' => null,
+                'retained_on_node' => [],
+                'follow_up' => null,
                 'assignment' => null,
                 'removed' => true,
             ],
@@ -337,6 +343,29 @@ it('requires force when purge data is true before the removal action runs', func
         ->assertUnprocessable()
         ->assertJsonPath('error.code', 'validation.failed')
         ->assertJsonPath('error.details.force.0', 'The force field must be true when purge data is requested.');
+
+    expect($assignment->refresh()->status)
+        ->toBe(LifecycleStatus::Active)
+        ->and($this->roleLifecycle->removed)
+        ->toBeEmpty();
+});
+
+it('requires force when the offline claim is made before the removal action runs', function (): void {
+    $assignment = $this->node
+        ->roles()
+        ->create([
+            'role' => RoleName::AppDev,
+            'status' => LifecycleStatus::Active,
+        ]);
+
+    $this
+        ->deleteJson("/api/v1/nodes/{$this->node->id}/roles/app-dev", [
+            'force' => false,
+            'offline' => true,
+        ])
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'validation.failed')
+        ->assertJsonPath('error.details.force.0', 'The force field must be true when offline removal is requested.');
 
     expect($assignment->refresh()->status)
         ->toBe(LifecycleStatus::Active)
@@ -448,7 +477,7 @@ it('returns a safe correlated 502 for removal failure', function (): void {
         ->assertExactJson([
             'error' => [
                 'code' => 'node_role.remove_failed',
-                'message' => 'Role removal failed.',
+                'message' => 'Role removal failed. Retry with --offline if node [role-target] is unreachable.',
                 'details' => ['step' => 'remove:firewall'],
             ],
         ]);
@@ -534,6 +563,11 @@ it('rejects unsafe raw JSON without mutation or rejected activity input', functi
         '/api/v1/nodes/{node}/roles/app-dev',
         '{"force":"{sentinel}","purge_data":false}',
     ],
+    'non-boolean offline flag' => [
+        'DELETE',
+        '/api/v1/nodes/{node}/roles/app-dev',
+        '{"force":true,"offline":"{sentinel}"}',
+    ],
 ]);
 
 /** @mago-expect lint:excessive-parameter-list Test transport helper preserves exact raw JSON. */
@@ -604,6 +638,8 @@ final class NodeRoleApiLifecycleFake implements RoleBaselineConverger, NodeRoleD
             throw $this->removalFailure;
         }
     }
+
+    public function removeUnreachable(Node $node, NodeRole $assignment): void {}
 
     public function clean(NodeRoleDependencySet $dependencies): void {}
 }
