@@ -1,12 +1,6 @@
 {
     "setup": [
         {
-            "id": "metrics-enable-app-dev",
-            "node": "app-dev",
-            "argv": ["orbit", "metrics:enable", "app-dev", "--json"],
-            "timeout_seconds": 900
-        },
-        {
             "id": "stop-app-prod-ssh",
             "node": "app-prod",
             "argv": ["bash", "/var/lib/orbit-e2e/proof/ssh-service.sh", "stop"],
@@ -31,6 +25,12 @@
             "node": "app-dev",
             "argv": ["bash", "/var/lib/orbit-e2e/proof/status-degraded.sh"],
             "timeout_seconds": 300
+        },
+        {
+            "id": "metrics-node-still-fails-closed",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/metrics-node-fails-closed.sh"],
+            "timeout_seconds": 600
         },
         {
             "id": "restore-app-prod-ssh",

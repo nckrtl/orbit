@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Role convergence and role removal must both succeed while one fleet node is
-# unreachable. Every one of these commands reconciles the Metrics fleet, and
-# each of them used to fail with a 502 the moment a peer stopped answering.
+# unreachable. Each of these reconciles the Metrics fleet, and each of them
+# failed the moment a peer stopped answering: a role add on the healthy
+# app-dev node left its own assignment in `failed`.
 source /var/lib/orbit-e2e/proof/lib.sh
 
 dev_id=$(node_id app-dev)
