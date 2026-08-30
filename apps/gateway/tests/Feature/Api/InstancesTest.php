@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\AppDev\AppDevRuntimeConverger;
+use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\AppProd\AppProdRuntimeConverger;
 use App\Domain\Instances\CertificateMode;
@@ -656,6 +657,40 @@ describe('instance API', function (): void {
             ->toBe(0)
             ->and($this->runtime->calls)
             ->toContain('instance-remove:1');
+    });
+
+    it('deletes an instance before releasing its per-node source lock', function (): void {
+        $instance = create_instance_for_api_test($this->orbitApp, $this->node);
+        $lock = new class($instance) implements AppDevSourceOperationLock {
+            public int $calls = 0;
+
+            public bool $instanceWasDeletedBeforeRelease = false;
+
+            public function __construct(
+                private readonly Instance $instance,
+            ) {}
+
+            public function synchronized(int $nodeId, Closure $operation): mixed
+            {
+                $this->calls++;
+                $result = $operation();
+                $this->instanceWasDeletedBeforeRelease = ! Instance::query()
+                    ->whereKey($this->instance->id)
+                    ->exists();
+
+                return $result;
+            }
+        };
+        app()->instance(AppDevSourceOperationLock::class, $lock);
+
+        $this
+            ->deleteJson("/api/v1/instances/{$instance->id}")
+            ->assertOk();
+
+        expect($lock->calls)
+            ->toBe(1)
+            ->and($lock->instanceWasDeletedBeforeRelease)
+            ->toBeTrue();
     });
 
     it('does not remove an instance with workspaces', function (): void {

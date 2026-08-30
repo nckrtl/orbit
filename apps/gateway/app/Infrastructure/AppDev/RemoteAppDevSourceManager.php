@@ -132,10 +132,7 @@ final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
                         }
 
                         grant_caddy_access() {
-                            setfacl -m u:caddy:--x "$managed_home" "$checkout"
-                            if [ -d "$managed_home/apps" ]; then
-                                setfacl -m u:caddy:--x "$managed_home/apps"
-                            fi
+                            setfacl -m u:caddy:--x "$checkout"
 
                             current=$checkout_root
                             if [ "$document_root_real" = "$checkout_root" ]; then
@@ -195,20 +192,19 @@ final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
         $account = $this->accounts->resolve($instance->node);
         $repository = GitRepositoryOrigin::validate($instance->app->repository_url);
         $allowedRoot = $this->removal->instanceRoot($instance, $account);
-        $releasePaths = $this->releasableTraversalPaths(
-            $instance->checkout_path,
-            $allowedRoot,
-            $instance->node_id,
-            $account,
-            ignoreInstanceId: $instance->id,
-        );
         $this->lock->synchronized($instance->node_id, function () use (
             $instance,
             $repository,
             $account,
             $allowedRoot,
-            $releasePaths,
         ): void {
+            $releasePaths = $this->releasableTraversalPaths(
+                $instance->checkout_path,
+                $allowedRoot,
+                $instance->node_id,
+                $account,
+                ignoreInstanceId: $instance->id,
+            );
             $arguments = [
                 'bash',
                 '-seu',
@@ -659,48 +655,43 @@ final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
                     test ! -L "$path"
                     test "$(realpath -e "$path")" = "$path"
 
-                    case "$path" in
-                        "$managed_home"|"$managed_home/apps"|"$managed_home/.orbit"|"$managed_home/.orbit/worktrees") ;;
-                        *)
-                            state_key=$(printf '%s' "$path" | sha256sum | cut -d' ' -f1)
-                            state="$state_directory/$state_key"
-                            if [ ! -e "$state" ] && [ ! -L "$state" ]; then
-                                if acl getfattr --only-values -n "$marker_name" -- "$path" >/dev/null 2>&1; then
-                                    if acl getfacl -cp "$path" | grep -Eq '^user:caddy:--x$' \
-                                        && acl getfacl -cp "$path" | grep -Eq '^mask::[r-][w-]x$'; then
-                                        return 1
-                                    fi
-                                    acl setfattr -x "$marker_name" -- "$path"
-                                fi
-
-                                state_nonce=$(openssl rand -hex 32)
-                                printf '%s\n' "$state_nonce" | grep -Eq '^[0-9a-f]{64}$'
-                                temporary_state=$(mktemp "$state_directory/.state.XXXXXX")
-                                {
-                                    printf '%s\n%s\n%s\n' "$path" "$(stat -c '%d:%i' "$path")" "$state_nonce"
-                                    acl getfacl -cp "$path" | sed '/^default:/d'
-                                } > "$temporary_state"
-                                chmod 0600 "$temporary_state"
-                                acl setfattr -n "$marker_name" -v "$state_nonce" -- "$path"
-                                if ! mv -f -- "$temporary_state" "$state"; then
-                                    acl setfattr -x "$marker_name" -- "$path"
-                                    rm -f -- "$temporary_state"
-                                    return 1
-                                fi
+                    state_key=$(printf '%s' "$path" | sha256sum | cut -d' ' -f1)
+                    state="$state_directory/$state_key"
+                    if [ ! -e "$state" ] && [ ! -L "$state" ]; then
+                        if acl getfattr --only-values -n "$marker_name" -- "$path" >/dev/null 2>&1; then
+                            if acl getfacl -cp "$path" | grep -Eq '^user:caddy:--x$' \
+                                && acl getfacl -cp "$path" | grep -Eq '^mask::[r-][w-]x$'; then
+                                return 1
                             fi
-                            test -f "$state"
-                            test ! -L "$state"
-                            test "$(stat -c '%a' "$state")" = 600
-                            test "$(sed -n '1p' "$state")" = "$path"
-                            state_identity=$(sed -n '2p' "$state")
-                            printf '%s\n' "$state_identity" | grep -Eq '^[0-9]+:[0-9]+$'
-                            test "$state_identity" = "$(stat -c '%d:%i' "$path")"
-                            state_nonce=$(sed -n '3p' "$state")
-                            printf '%s\n' "$state_nonce" | grep -Eq '^[0-9a-f]{64}$'
-                            test "$(acl getfattr --only-values -n "$marker_name" -- "$path" 2>/dev/null)" = "$state_nonce"
-                            tail -n +4 "$state" | acl setfacl --test --set-file=- "$path" >/dev/null
-                            ;;
-                    esac
+                            acl setfattr -x "$marker_name" -- "$path"
+                        fi
+
+                        state_nonce=$(openssl rand -hex 32)
+                        printf '%s\n' "$state_nonce" | grep -Eq '^[0-9a-f]{64}$'
+                        temporary_state=$(mktemp "$state_directory/.state.XXXXXX")
+                        {
+                            printf '%s\n%s\n%s\n' "$path" "$(stat -c '%d:%i' "$path")" "$state_nonce"
+                            acl getfacl -cp "$path" | sed '/^default:/d'
+                        } > "$temporary_state"
+                        chmod 0600 "$temporary_state"
+                        acl setfattr -n "$marker_name" -v "$state_nonce" -- "$path"
+                        if ! mv -f -- "$temporary_state" "$state"; then
+                            acl setfattr -x "$marker_name" -- "$path"
+                            rm -f -- "$temporary_state"
+                            return 1
+                        fi
+                    fi
+                    test -f "$state"
+                    test ! -L "$state"
+                    test "$(stat -c '%a' "$state")" = 600
+                    test "$(sed -n '1p' "$state")" = "$path"
+                    state_identity=$(sed -n '2p' "$state")
+                    printf '%s\n' "$state_identity" | grep -Eq '^[0-9]+:[0-9]+$'
+                    test "$state_identity" = "$(stat -c '%d:%i' "$path")"
+                    state_nonce=$(sed -n '3p' "$state")
+                    printf '%s\n' "$state_nonce" | grep -Eq '^[0-9a-f]{64}$'
+                    test "$(acl getfattr --only-values -n "$marker_name" -- "$path" 2>/dev/null)" = "$state_nonce"
+                    tail -n +4 "$state" | acl setfacl --test --set-file=- "$path" >/dev/null
 
                     current_acl=$(acl getfacl -cp "$path")
                     traversal_mask=$(printf '%s\n' "$current_acl" | sed -n 's/^mask::\([rwx-]\{3\}\).*$/\1/p')
@@ -937,9 +928,7 @@ final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
             $remaining = [...$remaining, ...$this->ancestorPaths($workspace->checkout_path)];
         }
 
-        $home = $account->home;
-        $fixedPaths = [$home, "{$home}/apps", "{$home}/.orbit", "{$home}/.orbit/worktrees"];
-        $releasePaths = array_diff($this->checkoutTraversalPaths($checkout, $account->home), $remaining, $fixedPaths);
+        $releasePaths = array_diff($this->checkoutTraversalPaths($checkout, $account->home), $remaining);
         $ordered = [];
 
         foreach (array_reverse($releasePaths) as $path) {

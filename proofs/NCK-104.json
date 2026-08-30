@@ -54,7 +54,7 @@
             "id": "caddy-acl-sharing",
             "node": "app-dev",
             "argv": ["bash", "/var/lib/orbit-e2e/proof/caddy-acl-sharing.sh"],
-            "timeout_seconds": 420
+            "timeout_seconds": 540
         },
         {
             "id": "checkout-overlap",

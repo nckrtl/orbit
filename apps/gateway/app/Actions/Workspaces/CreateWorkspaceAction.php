@@ -51,11 +51,13 @@ final readonly class CreateWorkspaceAction
             );
         }
         $origin = $workspace->exists ? $workspace->checkout_path_origin : null;
-        if ($workspace->exists) {
-            $checkoutPath = $workspace->checkout_path;
-        } elseif ($data->checkoutPath !== null) {
+        if ($data->checkoutPath !== null) {
             $checkoutPath = $data->checkoutPath;
-            $origin = CheckoutPathOrigin::Explicit->value;
+            if (! $workspace->exists) {
+                $origin = CheckoutPathOrigin::Explicit->value;
+            }
+        } elseif ($workspace->exists) {
+            $checkoutPath = $workspace->checkout_path;
         } else {
             $roots = $this->storageRoots->resolve(
                 $this->nodeSettings->fromStored($instance->node->settings),

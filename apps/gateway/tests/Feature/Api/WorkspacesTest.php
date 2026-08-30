@@ -349,6 +349,36 @@ describe('workspace API', function (): void {
         expect($this->runtime->calls)->toBeEmpty();
     });
 
+    it('rejects checkout path drift when resuming a workspace', function (): void {
+        $workspace = create_workspace_for_api_test($this->instance);
+
+        $this
+            ->postJson('/api/v1/workspaces', [
+                'instance_id' => $this->instance->id,
+                'name' => 'feature-one',
+                'checkout_path' => '/srv/users/nckrtl/custom-worktrees/other',
+            ])
+            ->assertConflict()
+            ->assertJsonPath('error.code', 'workspace.path_change_unsupported');
+
+        expect($workspace->refresh()->checkout_path)
+            ->toBe('/srv/users/nckrtl/.orbit/worktrees/acme/feature-one')
+            ->and($this->runtime->calls)
+            ->toBeEmpty();
+    });
+
+    it('resumes an existing workspace from the stored checkout when the request omits the path', function (): void {
+        create_workspace_for_api_test($this->instance);
+
+        $this
+            ->postJson('/api/v1/workspaces', [
+                'instance_id' => $this->instance->id,
+                'name' => 'feature-one',
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.checkout_path', '/srv/users/nckrtl/.orbit/worktrees/acme/feature-one');
+    });
+
     it('rejects unsafe paths and branch names', function (array $payload, string $field): void {
         $this
             ->postJson('/api/v1/workspaces', [
