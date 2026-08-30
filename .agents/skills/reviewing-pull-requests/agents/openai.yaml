@@ -1,4 +1,4 @@
 interface:
-  display_name: "Reviewing Orbit Pull Requests"
+  display_name: "Reviewing Pull Requests"
   short_description: "Independently review an Orbit pull request"
   default_prompt: "Use $reviewing-pull-requests to review this Orbit pull request against its Linear issue and candidate commit."

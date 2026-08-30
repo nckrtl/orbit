@@ -53,6 +53,15 @@ is missing.
    "Harness: `bin/e2e-live <sha>` passed.", or "Automated tests only".
    Short and for humans. Do not wait for CI.
 
+## Delegation
+
+You are the orchestrator for the issue. Delegate bounded pieces — a component's
+implementation, its tests, a targeted code review — to subagents with the
+client's available reasoning model, and give each one the issue, the worktree,
+and the exact scope. Integrate their work yourself. Keep steps 2, 3, 6, and 7
+(topology, proof, pull request) in your own hands. Do the work directly when
+the change touches at most 5 files.
+
 ## Corrections
 
 On review comments: fix, commit, `git merge main`, release and prove again,

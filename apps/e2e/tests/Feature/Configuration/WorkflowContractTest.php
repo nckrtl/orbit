@@ -18,6 +18,8 @@ it('keeps the developing skill on the nine-step flow', function () use ($read): 
         'git merge main',
         'Feature branches never touch `apps/e2e` or `bin/e2e-*`.',
         '## Harness issues',
+        '## Delegation',
+        'You are the orchestrator for the issue.',
         'bin/e2e-live <full sha>',
         'follow **Harness issues** below',
         '"Harness: `bin/e2e-live <sha>` passed."',

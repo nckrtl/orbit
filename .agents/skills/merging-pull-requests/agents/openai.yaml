@@ -1,4 +1,4 @@
 interface:
-  display_name: "Merging Orbit Pull Requests"
+  display_name: "Merging Pull Requests"
   short_description: "Verify and merge an approved Orbit pull request"
   default_prompt: "Use $merging-pull-requests to verify and merge this approved Orbit pull request."
