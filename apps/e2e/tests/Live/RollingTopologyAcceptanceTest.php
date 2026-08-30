@@ -533,22 +533,42 @@ function liveAssertTopologyTrafficIsolation(TopologyTarget $first, TopologyTarge
     $firstAppDev = liveTopologyRoleIpv4($first, 'app-dev');
     $secondAppDev = liveTopologyRoleIpv4($second, 'app-dev');
 
+    // Orbit's role firewall closes public SSH after convergence, so ICMP is the
+    // reachability signal on the topology NIC; the cross-topology FORWARD DROP
+    // applies to every protocol.
     Assert::assertTrue(
-        liveTcpProbe($firstGateway, $firstAppDev, 22)->successful(),
-        'Traffic inside the first topology did not reach app-dev SSH.',
+        liveIcmpProbe($firstGateway, $firstAppDev)->successful(),
+        'Traffic inside the first topology did not reach app-dev.',
     );
     Assert::assertTrue(
-        liveTcpProbe($secondGateway, $secondAppDev, 22)->successful(),
-        'Traffic inside the second topology did not reach app-dev SSH.',
+        liveIcmpProbe($secondGateway, $secondAppDev)->successful(),
+        'Traffic inside the second topology did not reach app-dev.',
     );
     Assert::assertFalse(
-        liveTcpProbe($firstGateway, $secondAppDev, 22)->successful(),
+        liveIcmpProbe($firstGateway, $secondAppDev)->successful(),
         'The first topology reached the second topology.',
     );
     Assert::assertFalse(
-        liveTcpProbe($secondGateway, $firstAppDev, 22)->successful(),
+        liveIcmpProbe($secondGateway, $firstAppDev)->successful(),
         'The second topology reached the first topology.',
     );
+}
+
+function liveIcmpProbe(string $source, string $address): ProcessResult
+{
+    Assert::assertNotFalse(filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4));
+
+    return LiveHarness::incusProcess([
+        'exec',
+        (string) config('e2e.incus.remote').':'.$source,
+        '--',
+        'ping',
+        '-c',
+        '1',
+        '-W',
+        '2',
+        $address,
+    ]);
 }
 
 function liveTopologyRoleIpv4(TopologyTarget $target, string $role): string
@@ -569,20 +589,4 @@ function liveTopologyRoleIpv4(TopologyTarget $target, string $role): string
     Assert::assertCount(1, $addresses);
 
     return $addresses[0];
-}
-
-function liveTcpProbe(string $source, string $address, int $port): ProcessResult
-{
-    Assert::assertNotFalse(filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4));
-
-    return LiveHarness::incusProcess([
-        'exec',
-        (string) config('e2e.incus.remote').':'.$source,
-        '--',
-        'timeout',
-        '5',
-        'bash',
-        '-c',
-        "exec 3<>/dev/tcp/{$address}/{$port}",
-    ]);
 }
