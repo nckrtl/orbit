@@ -144,6 +144,36 @@ it('removes node state before abandoning the publication when no single Gateway 
         ->toBe(MetricsPublicationCleanup::Uncleaned);
 })->with([0, 2]);
 
+it('retracts only the Gateway-side publication when the Metrics node is unreachable', function (): void {
+    [$metrics, $assignment] = metricsBaselineTopology();
+    $events = [];
+    $report = new MetricsPublicationReport;
+    $baseline = metricsBaseline($events, report: $report);
+
+    $baseline->removeUnreachable($metrics, $assignment);
+
+    expect($events)
+        ->toBe(['publication:retract'])
+        ->and($report->take())
+        ->toBe(MetricsPublicationCleanup::Cleaned);
+});
+
+it('does nothing and reports un-cleaned when no single Gateway is active for an unreachable Metrics node', function (
+    int $gatewayCount,
+): void {
+    [$metrics, $assignment] = metricsBaselineTopology($gatewayCount);
+    $events = [];
+    $report = new MetricsPublicationReport;
+    $baseline = metricsBaseline($events, report: $report);
+
+    $baseline->removeUnreachable($metrics, $assignment);
+
+    expect($events)
+        ->toBe([])
+        ->and($report->take())
+        ->toBe(MetricsPublicationCleanup::Uncleaned);
+})->with([0, 2]);
+
 it('still removes the role and reports un-cleaned when abandoning the publication fails', function (): void {
     [$metrics, $assignment] = metricsBaselineTopology(gatewayCount: 0);
     $events = [];
@@ -323,6 +353,11 @@ final class MetricsBaselinePublication implements MetricsPublicationManager
     public function abandon(Node $metrics): void
     {
         $this->record('publication:abandon');
+    }
+
+    public function retract(Node $metrics): void
+    {
+        $this->record('publication:retract');
     }
 
     private function record(string $event): void

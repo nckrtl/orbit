@@ -34,6 +34,7 @@ describe(RemoveNodeRoleRequest::class, function (): void {
             ->toBe([
                 'force' => true,
                 'purge_data' => false,
+                'offline' => false,
             ])
             ->and($response)
             ->toBeInstanceOf(NodeRoleMutationResponse::class)
@@ -46,7 +47,30 @@ describe(RemoveNodeRoleRequest::class, function (): void {
                 'role' => 'app-dev',
                 'assignment' => null,
                 'removed' => true,
+                'degradation' => null,
+                'retained_on_node' => [],
+                'follow_up' => null,
                 'request_id' => node_role_request_id(),
+            ]);
+    });
+
+    it('sends the offline claim in the request body', function (): void {
+        $mockClient = new MockClient([
+            RemoveNodeRoleRequest::class => MockResponse::make([
+                'data' => node_role_removed_gateway_data(),
+                'meta' => ['request_id' => node_role_request_id()],
+            ]),
+        ]);
+        $connector = node_role_gateway_connector($mockClient);
+        $request = new RemoveNodeRoleRequest(nodeId: 7, role: 'app-dev', force: true, offline: true);
+
+        $connector->send($request)->dto();
+
+        expect($mockClient->getLastPendingRequest()?->body()->all())
+            ->toBe([
+                'force' => true,
+                'purge_data' => false,
+                'offline' => true,
             ]);
     });
 

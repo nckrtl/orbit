@@ -23,6 +23,7 @@ final class RemoveNodeRoleRequest extends GatewayRequest implements HasBody
         private readonly string $role,
         private readonly bool $force,
         private readonly bool $purgeData = false,
+        private readonly bool $offline = false,
     ) {}
 
     public function resolveEndpoint(): string
@@ -38,12 +39,13 @@ final class RemoveNodeRoleRequest extends GatewayRequest implements HasBody
         return NodeRoleMutationResponse::fromGatewayData($data, $requestId);
     }
 
-    /** @return array{force: bool, purge_data: bool} */
+    /** @return array{force: bool, purge_data: bool, offline: bool} */
     protected function defaultBody(): array
     {
         return [
             'force' => $this->force,
             'purge_data' => $this->purgeData,
+            'offline' => $this->offline,
         ];
     }
 }

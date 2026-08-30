@@ -58,4 +58,15 @@ final readonly class AppDevRoleBaseline implements RoleBaseline
         $this->firewall->remove($node, RoleName::AppDev, $node->user);
         $this->dns->converge();
     }
+
+    /**
+     * Only the private DNS record lives on the Gateway.
+     *
+     * The Caddy route and the firewall rule both live on the node itself, so
+     * both would have run over SSH; the caller reports those as retained.
+     */
+    public function removeUnreachable(Node $node, NodeRole $assignment): void
+    {
+        $this->dns->converge();
+    }
 }

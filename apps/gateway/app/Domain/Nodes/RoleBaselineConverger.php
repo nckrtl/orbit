@@ -13,4 +13,6 @@ interface RoleBaselineConverger
 
     /** @mago-expect lint:no-boolean-flag-parameter The role lifecycle contract carries the explicit purge-data choice. */
     public function remove(Node $node, NodeRole $assignment, bool $purgeData): void;
+
+    public function removeUnreachable(Node $node, NodeRole $assignment): void;
 }

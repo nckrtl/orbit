@@ -25,6 +25,8 @@ describe('POST /api/v1/nodes', function (): void {
             public function converge(Node $node, NodeRole $assignment): void {}
 
             public function remove(Node $node, NodeRole $assignment, bool $purgeData): void {}
+
+            public function removeUnreachable(Node $node, NodeRole $assignment): void {}
         });
         $operator = Node::query()->create([
             'name' => 'operator',
@@ -105,6 +107,8 @@ describe('POST /api/v1/nodes', function (): void {
             }
 
             public function remove(Node $node, NodeRole $assignment, bool $purgeData): void {}
+
+            public function removeUnreachable(Node $node, NodeRole $assignment): void {}
         });
         $requestId = (string) Str::uuid();
 

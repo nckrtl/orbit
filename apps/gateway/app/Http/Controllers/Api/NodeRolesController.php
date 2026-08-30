@@ -80,11 +80,12 @@ final class NodeRolesController extends Controller
         $validatedRole = $request->role();
         $this->guardMutable($validatedRole, $registry);
         try {
-            $action->execute(
+            $outcome = $action->execute(
                 $node,
                 $validatedRole,
                 $request->force(),
                 $request->purgeData(),
+                $request->offline(),
             );
         } catch (NodeRoleValidationException $exception) {
             if ($exception->details !== []) {
@@ -98,7 +99,7 @@ final class NodeRolesController extends Controller
         }
 
         return response()->json([
-            'data' => NodeRoleMutationData::removed($node, $validatedRole)->toArray(),
+            'data' => NodeRoleMutationData::removed($node, $validatedRole, $outcome)->toArray(),
             'meta' => $this->meta($request),
         ]);
     }
