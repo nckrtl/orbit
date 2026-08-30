@@ -187,6 +187,14 @@ describe('PreparedStateFingerprint', function (): void {
                 'packages/php-sdk/src/Requests/Instances/CreateInstanceRequest.php',
                 'packages/php-sdk/src/Requests/Nodes/ShowNodeRequest.php',
                 'packages/php-sdk/src/Requests/Workspaces/CreateWorkspaceRequest.php',
+                // The standby carries a converged Metrics role, so its renderers are prepared state.
+                'apps/gateway/app/Infrastructure/Metrics/PrometheusConfigRenderer.php',
+                'apps/gateway/app/Infrastructure/Metrics/GrafanaConfigRenderer.php',
+                'apps/gateway/app/Infrastructure/Metrics/MetricsPublicationRenderer.php',
+                'apps/gateway/app/Infrastructure/Metrics/MetricsRuntimeSpec.php',
+                'apps/gateway/app/Infrastructure/Metrics/MetricsExporterRuntime.php',
+                'apps/gateway/app/Infrastructure/Nodes/Roles/MetricsRoleBaseline.php',
+                'apps/gateway/app/Domain/Metrics/ExporterSelector.php',
             )
             ->not->toContain(
                 'apps/e2e/app/E2E/StandbyBuilder.php',
