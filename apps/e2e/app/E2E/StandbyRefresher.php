@@ -13,6 +13,7 @@ use App\E2E\Value\OperationId;
 use App\E2E\Value\PreparedFingerprint;
 use App\E2E\Value\RefreshResult;
 use App\E2E\Value\StandbyGeneration;
+use App\E2E\Value\StandbyIdentity;
 use App\E2E\Value\TopologyProfile;
 use App\E2E\Value\TopologyTarget;
 use App\E2E\Value\VerificationMode;
@@ -40,6 +41,8 @@ final readonly class StandbyRefresher
         private GitRepository $git,
         private string $mainWorktree,
         private OperationId $operation,
+        private StandbyIdentity $identity,
+        private StandbyAvailability $availability,
         private int $refreshLockTimeoutSeconds = 3600,
     ) {}
 
@@ -87,6 +90,7 @@ final readonly class StandbyRefresher
             if ($generation === null) {
                 throw new RuntimeException('There is no promoted standby generation.');
             }
+            $this->availability->assertAvailable($generation);
 
             $this->withGenerationMutationLock($this->operation, function () use ($generation): void {
                 $this->deleteUnpromotedSnapshots($generation);
@@ -169,7 +173,7 @@ final readonly class StandbyRefresher
                     ? $promoted->laravel
                     : $this->laravel->resolve('>=13.0.0');
             $desired = $this->fingerprints->withLaravel($structural, $release);
-            $target = TopologyTarget::standby();
+            $target = TopologyTarget::standby($this->identity);
 
             if ($promoted === null) {
                 $mutated = true;
@@ -190,6 +194,9 @@ final readonly class StandbyRefresher
                     throw new RuntimeException('Unable to acquire the standby generation lock for standby mutation.');
                 }
                 $generationMutationLockHeld = true;
+                // A manifest that names resources the host lost is stale, not corrupt:
+                // refuse with the recovery command before anything mutates the standby.
+                $this->availability->assertAvailable($promoted);
                 $mutated = true;
                 $this->assertStopped();
                 $this->deleteUnpromotedSnapshots($promoted);
@@ -282,7 +289,7 @@ final readonly class StandbyRefresher
 
     private function restoreSnapshots(StandbyGeneration $generation): void
     {
-        $target = TopologyTarget::standby();
+        $target = TopologyTarget::standby($this->identity);
         $snapshots = [];
         foreach (TopologyProfile::ROLES as $role) {
             $snapshots[$target->instance($role)] = $generation->snapshots[$role];
@@ -292,17 +299,12 @@ final readonly class StandbyRefresher
 
     private function assertGenerationAvailable(StandbyGeneration $generation): void
     {
-        $target = TopologyTarget::standby();
-        $snapshots = [];
-        foreach (TopologyProfile::ROLES as $role) {
-            $snapshots[$target->instance($role)] = $generation->snapshots[$role];
-        }
-        $this->host->assertOwnedSnapshots($snapshots);
+        $this->availability->assertAvailable($generation);
     }
 
     private function startAll(): void
     {
-        $target = TopologyTarget::standby();
+        $target = TopologyTarget::standby($this->identity);
         $instances = array_map($target->instance(...), TopologyProfile::ROLES);
         $this->host->startAll($instances);
         $this->host->waitForRestoredHostStates($instances);
@@ -310,7 +312,7 @@ final readonly class StandbyRefresher
 
     private function stopAll(): void
     {
-        $target = TopologyTarget::standby();
+        $target = TopologyTarget::standby($this->identity);
         $instances = array_map($target->instance(...), TopologyProfile::ROLES);
         $this->host->stopAll($instances);
     }
@@ -323,7 +325,7 @@ final readonly class StandbyRefresher
 
     private function assertStopped(): void
     {
-        $target = TopologyTarget::standby();
+        $target = TopologyTarget::standby($this->identity);
         $instances = array_map($target->instance(...), TopologyProfile::ROLES);
         for ($attempt = 0; $attempt < 20; $attempt++) {
             $observed = $this->host->instances($instances);
@@ -351,7 +353,7 @@ final readonly class StandbyRefresher
         $id = substr($mainSha, 0, 12).'-'.substr($fingerprint, 0, 12);
         $snapshot = 'main-'.$id;
         $snapshots = [];
-        $target = TopologyTarget::standby();
+        $target = TopologyTarget::standby($this->identity);
         $stale = $this->deleteCandidateSnapshots($target, $snapshot);
         if ($stale !== []) {
             throw new RuntimeException(
@@ -499,7 +501,7 @@ final readonly class StandbyRefresher
             }
         }
 
-        $instances = array_map(TopologyTarget::standby()->instance(...), TopologyProfile::ROLES);
+        $instances = array_map(TopologyTarget::standby($this->identity)->instance(...), TopologyProfile::ROLES);
         $inventory = $this->host->ownedSnapshotNames($instances);
         $deletions = [];
         foreach ($inventory as $instance => $snapshots) {
@@ -538,7 +540,7 @@ final readonly class StandbyRefresher
     private function snapshotMap(StandbyGeneration $generation): array
     {
         $snapshots = [];
-        $target = TopologyTarget::standby();
+        $target = TopologyTarget::standby($this->identity);
         foreach (TopologyProfile::ROLES as $role) {
             $snapshots[$target->instance($role)] = $generation->snapshots[$role];
         }
@@ -552,7 +554,8 @@ final readonly class StandbyRefresher
             foreach ($this->manifests->prunable($current) as $generation) {
                 $snapshots = [];
                 foreach (TopologyProfile::ROLES as $role) {
-                    $snapshots[TopologyTarget::standby()->instance($role)] = $generation->snapshots[$role];
+                    $snapshots[TopologyTarget::standby($this->identity)->instance($role)] =
+                        $generation->snapshots[$role];
                 }
                 $this->host->deleteSnapshotsIfExist($snapshots);
                 $this->manifests->forget($generation);
