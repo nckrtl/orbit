@@ -205,6 +205,7 @@ it('proves the rolling topology contract through public wrappers', function (): 
         Assert::assertSame('A standby migration step failed.', $failureEvidence['message'] ?? null);
         Assert::assertSame([
             'schema' => 1,
+            'operation_id' => $failed['operation_id'],
             'recovered' => true,
             'stopped' => true,
             'generation_id' => $rolling['generation_id'],
