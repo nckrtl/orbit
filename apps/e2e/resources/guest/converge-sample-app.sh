@@ -62,6 +62,35 @@ case ${1-} in
       "$orbit" workspace:new "$dev_instance_id" e2e --branch=e2e --json >/dev/null
     fi
     ;;
+  unwrap-caddy)
+    # Re-projection runs the product's app-prod Caddy publisher, which reads
+    # the managed version behind /etc/caddy/Caddyfile. Point the live symlink
+    # back at that version while the e2e wrapper is live; Caddy keeps its
+    # running configuration until the publisher or hydrate reloads it.
+    [[ $# -eq 1 ]] || exit 64
+    rendered_state=/var/lib/orbit-e2e/caddy-rendered-path
+    if [[ "$(readlink -f /etc/caddy/Caddyfile)" == /etc/caddy/Caddyfile.orbit-e2e && -s "$rendered_state" ]]; then
+      rendered=$(cat "$rendered_state")
+      [[ -f "$rendered" ]]
+      ln -sfn "$rendered" /etc/caddy/Caddyfile
+    fi
+    ;;
+  reproject)
+    # Re-project every managed role and instance through the product so the
+    # rendered PHP-FPM pools, Caddy fragments, firewall rules, and DNS records
+    # match the Gateway code in the checkout. Roles first, then instances with
+    # development last: the app-dev runtime converger publishes the Gateway
+    # DNS records for every active site, so it must run after every other
+    # instance is active again.
+    [[ "$(id -u)" -eq 0 ]] && exec sudo -u orbit -- env HOME=/home/orbit ORBIT_HOME=/home/orbit/.orbit DB_DATABASE=/home/orbit/.orbit/gateway.sqlite bash "$0" "$@"
+    [[ $# -eq 1 ]] || exit 64
+    "$orbit" node:list --json | php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); foreach ($v["nodes"] as $n) { foreach ($n["roles"] ?? [] as $r) { if (in_array($r, ["app-dev", "app-prod"], true)) { printf("%d %s\n", $n["id"], $r); } } }' | while read -r node_id role; do
+      "$orbit" node:role:add "$node_id" "$role" --converge --json | php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); if (($v["assignment"]["status"] ?? null) !== "active") { fwrite(STDERR, "role is not active after re-projection\n"); exit(1); } printf("reprojected role %s on node %d\n", $v["role"], $v["node_id"]);' || exit 1
+    done
+    "$orbit" instance:list --json | php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); $i=$v["instances"]; usort($i, fn($a, $b) => [$a["environment"] === "development", $a["id"]] <=> [$b["environment"] === "development", $b["id"]]); foreach ($i as $x) { printf("%d %s\n", $x["id"], $x["php_version"]); }' | while read -r id version; do
+      "$orbit" instance:php "$id" "$version" --json | php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); if (($v["status"] ?? null) !== "active") { fwrite(STDERR, "instance is not active after re-projection\n"); exit(1); } printf("reprojected instance %d (%s) on node %d\n", $v["id"], $v["name"], $v["node_id"]);' || exit 1
+    done
+    ;;
   hydrate)
     [[ $# -eq 3 && "$2" =~ ^[0-9a-f]{40}$ ]]
     case "$3" in
@@ -115,12 +144,15 @@ case ${1-} in
     if [[ "$3" == app-prod ]]; then
       fragment=/etc/caddy/orbit-e2e-global.caddy
       rendered_state=/var/lib/orbit-e2e/caddy-rendered-path
-      if [[ -s "$rendered_state" ]]; then
-        rendered=$(cat "$rendered_state")
-      else
-        rendered=$(readlink -f /etc/caddy/Caddyfile)
-        [[ "$rendered" != /etc/caddy/Caddyfile && "$rendered" != /etc/caddy/Caddyfile.orbit-e2e ]]
+      # A managed version behind the live symlink is the current product
+      # render (re-projection publishes a new one); remember it. Behind the
+      # wrapper, reuse the remembered version.
+      rendered=$(readlink -f /etc/caddy/Caddyfile)
+      if [[ "$rendered" != /etc/caddy/Caddyfile && "$rendered" != /etc/caddy/Caddyfile.orbit-e2e ]]; then
         printf '%s\n' "$rendered" >"$rendered_state"
+      else
+        [[ -s "$rendered_state" ]]
+        rendered=$(cat "$rendered_state")
       fi
       [[ -f "$fragment" && -f "$rendered" ]]
       candidate=$(mktemp /etc/caddy/Caddyfile.orbit-e2e.XXXXXX)
@@ -129,6 +161,7 @@ case ${1-} in
       caddy validate --config "$candidate" --adapter caddyfile
       if [[ -f /var/lib/orbit-e2e/caddy-config-sha256 ]] && [[ "$(cat /var/lib/orbit-e2e/caddy-config-sha256)" == "$(sha256sum "$candidate" | awk '{print $1}')" ]]; then
         rm -f "$candidate"
+        ln -sfn Caddyfile.orbit-e2e /etc/caddy/Caddyfile
         ca=$(cat /var/lib/orbit-e2e/caddy-ca-path)
         [[ -s "$ca" ]]
         curl --fail --silent --show-error --retry 10 --retry-delay 2 --retry-connrefused --retry-all-errors --connect-timeout 10 --max-time 30 --cacert "$ca" --resolve laravel.internal:443:127.0.0.1 https://laravel.internal/ >/dev/null

@@ -268,6 +268,62 @@ it('proves the rolling topology contract through public wrappers', function (): 
         Assert::assertSame($release['evidence_id'] ?? null, $repeated['evidence_id'] ?? null);
         Assert::assertNotSame($release['operation_id'] ?? null, $repeated['operation_id'] ?? null);
         $acquired = false;
+
+        // A fresh topology cloned from the rolling generation carries product
+        // projections re-rendered by the refreshed Gateway code (NCK-83):
+        // Doctor reports no projection drift without any setup action. The
+        // app-prod Caddy wrapper issue stays until NCK-84 lands.
+        $fresh = LiveHarness::jsonPhase('acquire fresh topology after rolling refresh', fn (): array => LiveHarness::jsonWrapper(
+            'topology',
+            'acquire',
+            $issue,
+            $featureWorktree,
+        ));
+        $acquired = true;
+        $target = liveAcquiredTarget($fresh, $issue);
+        Assert::assertSame('discovery', $fresh['state'] ?? null);
+        Assert::assertSame($rolling['generation_id'], $fresh['topology']['generation']['id'] ?? null);
+        $doctor = LiveHarness::jsonPhase('doctor on the fresh topology', fn (): array => LiveHarness::jsonWrapper(
+            'topology',
+            'exec',
+            $issue,
+            $target->requireAttempt()->value,
+            'app-dev',
+            '--argv=["orbit","doctor","--json"]',
+        ));
+        Assert::assertSame('executed', $doctor['state'] ?? null);
+        Assert::assertContains($doctor['exit_code'] ?? null, [0, 1]);
+        $report = LiveHarness::json((string) ($doctor['stdout'] ?? ''));
+        $issues = [];
+        foreach ($report['nodes'] ?? [] as $node) {
+            foreach ($node['families'] ?? [] as $family) {
+                foreach ($family['issues'] ?? [] as $reported) {
+                    $issues[] = [$node['node_name'], $family['family'], $reported['code']];
+                }
+            }
+        }
+        Assert::assertCount(3, $report['nodes'] ?? []);
+        Assert::assertSame(
+            [],
+            array_values(array_filter(
+                $issues,
+                static fn (array $reported): bool => $reported !== [
+                    'app-prod',
+                    'instance',
+                    'instance.caddy_projection_mismatch',
+                ],
+            )),
+            'Doctor reported projection drift on a fresh topology: '.json_encode($issues),
+        );
+        $freshRelease = LiveHarness::jsonPhase('release fresh topology', fn (): array => LiveHarness::jsonWrapper(
+            'topology',
+            'release',
+            $issue,
+            $target->requireAttempt()->value,
+        ));
+        Assert::assertSame('released', $freshRelease['state'] ?? null);
+        Assert::assertSame(liveResourceNames($target), $freshRelease['verified_absent'] ?? null);
+        $acquired = false;
     } catch (Throwable $exception) {
         $primaryFailure = $exception;
     } finally {
