@@ -271,8 +271,7 @@ it('proves the rolling topology contract through public wrappers', function (): 
 
         // A fresh topology cloned from the rolling generation carries product
         // projections re-rendered by the refreshed Gateway code (NCK-83):
-        // Doctor reports no projection drift without any setup action. The
-        // app-prod Caddy wrapper issue stays until NCK-84 lands.
+        // Doctor reports no projection drift without any setup action.
         $fresh = LiveHarness::jsonPhase('acquire fresh topology after rolling refresh', fn (): array => LiveHarness::jsonWrapper(
             'topology',
             'acquire',

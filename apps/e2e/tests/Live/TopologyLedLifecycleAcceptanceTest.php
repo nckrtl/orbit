@@ -586,7 +586,10 @@ function lifecycleAssertProof(
     Assert::assertSame($candidateSha, $record['source']['guest_sha'] ?? null);
     Assert::assertFalse($record['source']['dirty'] ?? true);
     Assert::assertFalse($record['source']['mounted'] ?? true);
-    Assert::assertSame(['setup' => $plan->setup, 'acceptance' => $plan->acceptance], $record['plan'] ?? null);
+    // The wrapper returns the proof summary: the persisted record minus the
+    // plan, and no failed_action once the proof passed.
+    Assert::assertArrayNotHasKey('plan', $record);
+    Assert::assertArrayNotHasKey('failed_action', $payload);
     Assert::assertSame($plan->postDeploymentActions, $record['post_deployment_actions'] ?? null);
     Assert::assertTrue($record['verification']['passed'] ?? false);
     foreach (['setup' => $plan->setup, 'acceptance' => $plan->acceptance] as $section => $actions) {
@@ -600,7 +603,9 @@ function lifecycleAssertProof(
             Assert::assertSame(0, $results[$index]['exit_code'] ?? null);
         }
     }
-    Assert::assertSame($record, LiveHarness::jsonFile("{$stateRoot}/evidence/proofs/{$target->issue}/{$attempt}.json"));
+    $persisted = LiveHarness::jsonFile("{$stateRoot}/evidence/proofs/{$target->issue}/{$attempt}.json");
+    Assert::assertSame(['setup' => $plan->setup, 'acceptance' => $plan->acceptance], $persisted['plan'] ?? null);
+    Assert::assertSame($record, array_diff_key($persisted, ['plan' => true]));
 }
 
 /**

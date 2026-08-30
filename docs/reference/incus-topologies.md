@@ -207,3 +207,27 @@ no promoted generation or standby resources exist. It never replaces a
 promoted generation. An operating-system, base-image, cold-epoch, or corrupt
 standby change requires a separate reviewed disaster-recovery procedure before
 the harness mutates Incus resources.
+
+## Live acceptance suites
+
+`composer test:live-incus` in `apps/e2e` runs the lifecycle and rolling
+suites under `tests/Live` against real Incus resources. They skip unless
+`ORBIT_LIVE_INCUS=1`; each test lists its own `ORBIT_LIVE_*` inputs. Contracts
+the inputs do not spell out:
+
+- `XDG_STATE_HOME` must point at the state root the wrappers use (normally
+  `$HOME/.local/state`), because the suites read evidence, journals, and
+  lease files under `<XDG_STATE_HOME>/orbit/e2e`.
+- `ORBIT_LIVE_MAIN_WORKTREE` is the repository the suite runs from, and
+  `ORBIT_LIVE_FEATURE_WORKTREE` is a linked worktree of it that is checked
+  out on a branch whose name starts with the lowercase issue key (for
+  `ORBIT_LIVE_ISSUE=ACC-1`, `acc-1-...`); a detached `HEAD` fails with
+  `The Git command failed.` and any other branch with
+  `The worktree branch does not match the issue.`
+- The lifecycle suite runs the proof plan's first acceptance action as its
+  discovery command and requires that action to print JSON on stdout (for
+  example `orbit node:list --json`). Use a small harness plan for the suite
+  rather than a feature's proof plan.
+- `bin/e2e-topology prove --json` returns the proof summary without `plan`;
+  the full record with the plan is the persisted file at
+  `<XDG_STATE_HOME>/orbit/e2e/evidence/proofs/<issue>/<attempt>.json`.
