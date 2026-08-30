@@ -20,9 +20,10 @@ uses(TestCase::class);
  * wrappers: a mounted discovery attempt is used and released, the worktree
  * HEAD is proved on a fresh attempt, the proved topology refuses mutation and
  * stays alive until release, the same commit proves again, that proved
- * topology is promoted to the standby generation, and a discovery attempt
- * clones the promoted generation. Every phase asserts the state under
- * `<worktree>/.e2e/`, and cleanup only ever names the exact attempt.
+ * topology is promoted to the standby generation, a discovery attempt clones
+ * the promoted generation, and a plan declaring an end state it did not bring
+ * about is refused. Every phase asserts the state under `<worktree>/.e2e/`,
+ * and cleanup only ever names the exact attempt.
  *
  * @mago-expect lint:cyclomatic-complexity,halstead,kan-defect Live acceptance keeps the ordered evidence chain visible.
  * @mago-expect analysis:non-documented-method,mixed-assignment,mixed-argument,mixed-array-access,mixed-method-access,impossible-condition Pest phase callbacks preserve their concrete runtime values.
@@ -304,6 +305,38 @@ it('proves the simple flow through public wrappers', function (): void {
         $releasedAttempts[] = $promotedAttempt;
         lifecycleAssertRelease($promotedRelease, $promotedDiscovery, $stateRoot, $worktreeOption);
 
+        // Phase: a plan may declare the topology it ends with, and the harness
+        // checks the declaration rather than taking it. app-prod is still
+        // registered here, so declaring it absent must end in diagnosis, with
+        // only its own probes skipped and named in the record.
+        $endsWithPlanFile = dirname($proofPlanFile).'/'.$issue.'-ends-with.json';
+        $endsWithPlan = ProofPlan::fromFile($endsWithPlanFile);
+        Assert::assertSame(['gateway', 'app-dev'], $endsWithPlan->endsWith->nodes);
+        Assert::assertTrue($endsWithPlan->mutates);
+        $declared = LiveHarness::jsonPhase(
+            'prove an end state the plan did not bring about',
+            fn (): array => lifecycleProveDiagnosis($issue, $worktreeOption, $endsWithPlanFile),
+            $timings,
+        );
+        $declaredAttempt = lifecycleAttemptId($declared);
+        Assert::assertNotContains($declaredAttempt, $releasedAttempts);
+        Assert::assertSame(['nodes' => ['gateway', 'app-dev']], $declared['ends_with'] ?? null);
+        Assert::assertSame(
+            ['vm.app-prod.running', 'role.app-prod', 'php-fpm.app-prod', 'caddy.app-prod', 'laravel.prod'],
+            $declared['skipped_probes'] ?? null,
+        );
+        // The registry probe is never skipped, so it is what refuses the declaration.
+        Assert::assertStringContainsString('role.assignments', (string) ($declared['error'] ?? ''));
+        Assert::assertSame($declared, LiveHarness::jsonFile("{$stateRoot}/proof.json"));
+        $declaredTopology = TopologyTarget::feature($issue, new AttemptId($declaredAttempt));
+        $declaredRelease = LiveHarness::jsonPhase(
+            'release the declared end state attempt',
+            fn (): array => LiveHarness::jsonWrapper('topology', 'release', $issue, $worktreeOption),
+            $timings,
+        );
+        $releasedAttempts[] = $declaredAttempt;
+        lifecycleAssertRelease($declaredRelease, $declaredTopology, $stateRoot, $worktreeOption);
+
         // Phase: only the standby changed, and only by promotion.
         LiveHarness::voidPhase(
             'verify host',
@@ -423,6 +456,22 @@ function lifecycleCleanup(
         $names = [...$names, ...lifecycleResourceNames(TopologyTarget::feature($issue, new AttemptId($attempt)))];
     }
     LiveHarness::assertIncusAbsent($names);
+}
+
+/**
+ * Prove with a plan that must not succeed, and return its diagnosis record.
+ *
+ * @return array<array-key, mixed>
+ */
+function lifecycleProveDiagnosis(string $issue, string $worktreeOption, string $planFile): array
+{
+    $result = LiveHarness::wrapper('topology', 'prove', $issue, $worktreeOption, "--plan={$planFile}");
+    Assert::assertFalse($result->successful(), 'The proof succeeded but its declared end state is not the truth.');
+    $payload = LiveHarness::json($result->output());
+    Assert::assertSame('diagnosis', $payload['status'] ?? null);
+    Assert::assertSame($issue, $payload['issue'] ?? null);
+
+    return $payload;
 }
 
 /** @param array<array-key, mixed> $payload */

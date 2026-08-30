@@ -4,7 +4,18 @@ umask 077
 
 # Mounted source probes carry one extra trailing argument: the expected SHA-256 of
 # the worktree `.git` pointer file the host mounted at $source_root.
-[[ $# -eq 4 || ( $# -eq 5 && "$1" =~ ^source\.(gateway|app-dev)$ ) || ( $# -eq 6 && "$1" == wireguard.reachability ) || ( ( $# -eq 6 || $# -eq 7 ) && "$1" == source.manifest ) ]]
+# Two probes read the whole fleet, so a proof plan that declares the topology it
+# ends with tells them which nodes to expect: `role.assignments` takes the
+# declared node list, `wireguard.reachability` the declared nodes but the
+# gateway. Without a declaration both are called exactly as before.
+[[ $# -ge 4 ]]
+case "$1" in
+  source.gateway|source.app-dev) [[ $# -eq 4 || $# -eq 5 ]] ;;
+  source.manifest) [[ $# -eq 6 || $# -eq 7 ]] ;;
+  wireguard.reachability) [[ $# -ge 5 ]] ;;
+  role.assignments) [[ $# -eq 4 || $# -eq 5 ]] ;;
+  *) [[ $# -eq 4 ]] ;;
+esac
 probe=$1
 mode=$2
 identity=$3
@@ -18,12 +29,19 @@ esac
 [[ "$mode" == readiness || "$mode" == proof ]]
 [[ "$identity" =~ ^[0-9a-f]{40}$ ]]
 [[ "$instance" =~ ^[a-z0-9][a-z0-9-]{0,62}$ ]]
+peer_names=()
+declared_nodes=
 if [[ "$probe" == wireguard.reachability ]]; then
-  app_dev_name=$5
-  app_prod_name=$6
-  [[ "$app_dev_name" =~ ^[A-Za-z0-9][A-Za-z0-9-]{0,62}$ ]]
-  [[ "$app_prod_name" =~ ^[A-Za-z0-9][A-Za-z0-9-]{0,62}$ ]]
-  [[ "$app_dev_name" != "$app_prod_name" ]]
+  peer_names=("${@:5}")
+  for peer_name in "${peer_names[@]}"; do
+    [[ "$peer_name" =~ ^[A-Za-z0-9][A-Za-z0-9-]{0,62}$ ]]
+  done
+  # One name per node: a repeated peer would prove one node twice and the other never.
+  [[ "$(printf '%s\n' "${peer_names[@]}" | sort | uniq -d | wc -l)" -eq 0 ]]
+fi
+if [[ "$probe" == role.assignments && $# -eq 5 ]]; then
+  declared_nodes=$5
+  [[ "$declared_nodes" =~ ^[a-z0-9][a-z0-9-]*(,[a-z0-9][a-z0-9-]*)*$ ]]
 fi
 expected=healthy
 observed=healthy
@@ -61,10 +79,17 @@ case "$probe" in
   role.assignments)
     db=/home/orbit/.orbit/gateway.sqlite
     [[ -r "$db" ]]
-    # The base topology must be converged. A proof may add roles (Metrics on
-    # app-dev, for example); every extra assignment must be active as well.
-    extra=$(php -r '$pdo = new PDO("sqlite:".$argv[1]); $rows = $pdo->query("SELECT n.name, n.status AS node_status, r.role, r.status AS role_status FROM nodes n INNER JOIN node_roles r ON r.node_id = n.id ORDER BY n.name, r.role")->fetchAll(PDO::FETCH_ASSOC); $base = ["gateway:gateway", "gateway:vpn", "app-dev:app-dev", "app-prod:app-prod"]; $seen = []; $extra = []; foreach ($rows as $row) { if ($row["node_status"] !== "active" || $row["role_status"] !== "active") exit(1); $key = $row["name"].":".$row["role"]; if (in_array($key, $base, true)) { $seen[] = $key; continue; } $extra[] = $key; } foreach ($base as $key) { if (!in_array($key, $seen, true)) exit(1); } echo implode(",", $extra);' -- "$db")
-    expected='gateway:gateway+vpn,app-dev:app-dev,app-prod:app-prod:active'
+    # The declared topology must be converged. A proof may add roles (Metrics on
+    # app-dev, for example); every extra assignment must be active as well. A
+    # node the plan left out of its declaration must not be registered at all,
+    # in any status: that is what fails a plan declaring an absence it did not
+    # bring about.
+    extra=$(php -r '$pdo = new PDO("sqlite:".$argv[1]); $declared = explode(",", $argv[2]); $base = []; foreach ($declared as $node) { if ($node === "gateway") { $base[] = "gateway:gateway"; $base[] = "gateway:vpn"; continue; } $base[] = $node.":".$node; } foreach (array_diff(["gateway", "app-dev", "app-prod"], $declared) as $node) { $statement = $pdo->prepare("SELECT COUNT(*) FROM nodes WHERE name = ?"); $statement->execute([$node]); if ((int) $statement->fetchColumn() !== 0) exit(1); } $rows = $pdo->query("SELECT n.name, n.status AS node_status, r.role, r.status AS role_status FROM nodes n INNER JOIN node_roles r ON r.node_id = n.id ORDER BY n.name, r.role")->fetchAll(PDO::FETCH_ASSOC); $seen = []; $extra = []; foreach ($rows as $row) { if ($row["node_status"] !== "active" || $row["role_status"] !== "active") exit(1); $key = $row["name"].":".$row["role"]; if (in_array($key, $base, true)) { $seen[] = $key; continue; } $extra[] = $key; } foreach ($base as $key) { if (!in_array($key, $seen, true)) exit(1); } echo implode(",", $extra);' -- "$db" "${declared_nodes:-gateway,app-dev,app-prod}")
+    if [[ -n "$declared_nodes" ]]; then
+      expected="ends-with=${declared_nodes}:active"
+    else
+      expected='gateway:gateway+vpn,app-dev:app-dev,app-prod:app-prod:active'
+    fi
     observed=$expected
     if [[ -n "$extra" ]]; then
       observed="${expected}+${extra}"
@@ -82,13 +107,19 @@ case "$probe" in
     key=/home/orbit/.orbit/ssh/id_ed25519
     known_hosts=/home/orbit/.orbit/ssh/known_hosts
     [[ -r "$db" && -r "$key" && -r "$known_hosts" ]]
-    app_dev_address=$(php -r '$pdo = new PDO("sqlite:".$argv[1]); $statement = $pdo->prepare("SELECT wireguard_address FROM nodes WHERE name = ? AND status = ?"); $statement->execute([$argv[2], "active"]); $address = $statement->fetchColumn(); if (!is_string($address) || !preg_match("/\\A(?:[0-9]{1,3}\\.){3}[0-9]{1,3}\\z/D", $address)) exit(1); echo $address;' -- "$db" "$app_dev_name")
-    app_prod_address=$(php -r '$pdo = new PDO("sqlite:".$argv[1]); $statement = $pdo->prepare("SELECT wireguard_address FROM nodes WHERE name = ? AND status = ?"); $statement->execute([$argv[2], "active"]); $address = $statement->fetchColumn(); if (!is_string($address) || !preg_match("/\\A(?:[0-9]{1,3}\\.){3}[0-9]{1,3}\\z/D", $address)) exit(1); echo $address;' -- "$db" "$app_prod_name")
-    wg show orbit allowed-ips | awk -v expected="$app_dev_address/32" '{ for (i = 1; i <= NF; i++) if ($i == expected) found = 1 } END { exit !found }'
-    wg show orbit allowed-ips | awk -v expected="$app_prod_address/32" '{ for (i = 1; i <= NF; i++) if ($i == expected) found = 1 } END { exit !found }'
-    sudo -u orbit -- env HOME=/home/orbit ssh -n -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$known_hosts" -i "$key" "orbit@$app_dev_address" true
-    sudo -u orbit -- env HOME=/home/orbit ssh -n -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$known_hosts" -i "$key" "orbit@$app_prod_address" true
-    expected='app-dev,app-prod:wireguard-route+ssh'
+    # Every declared route first, then every SSH: one missing route must not
+    # reach any node, whatever order the peers were declared in.
+    routes=$(wg show orbit allowed-ips)
+    peer_addresses=()
+    for peer_name in "${peer_names[@]}"; do
+      peer_address=$(php -r '$pdo = new PDO("sqlite:".$argv[1]); $statement = $pdo->prepare("SELECT wireguard_address FROM nodes WHERE name = ? AND status = ?"); $statement->execute([$argv[2], "active"]); $address = $statement->fetchColumn(); if (!is_string($address) || !preg_match("/\\A(?:[0-9]{1,3}\\.){3}[0-9]{1,3}\\z/D", $address)) exit(1); echo $address;' -- "$db" "$peer_name")
+      printf '%s\n' "$routes" | awk -v expected="$peer_address/32" '{ for (i = 1; i <= NF; i++) if ($i == expected) found = 1 } END { exit !found }'
+      peer_addresses+=("$peer_address")
+    done
+    for peer_address in "${peer_addresses[@]}"; do
+      sudo -u orbit -- env HOME=/home/orbit ssh -n -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$known_hosts" -i "$key" "orbit@$peer_address" true
+    done
+    expected="$(IFS=,; printf '%s' "${peer_names[*]}"):wireguard-route+ssh"
     observed=$expected
     ;;
   https.gateway-internal)

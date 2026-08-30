@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\E2E\Value\ProofPlan;
+use App\E2E\Value\TopologyProfile;
 
 /** @return array{setup:list<array<string, mixed>>,acceptance:list<array<string, mixed>>} */
 function proofPlanFixture(): array
@@ -128,7 +129,8 @@ describe('ProofPlan', function (): void {
         expect(fn () => ProofPlan::fromFile(mutatedProofPlanFile($mutate)))
             ->toThrow(
                 InvalidArgumentException::class,
-                'The proof plan must have exactly the keys setup and acceptance, plus an optional mutates.',
+                'The proof plan must have exactly the keys setup and acceptance, '
+                .'plus an optional mutates and ends_with.',
             );
     })->with([
         'missing setup' => [function (array $plan): array {
@@ -350,4 +352,93 @@ describe('ProofPlan', function (): void {
             ->and($plan->acceptance[0]['timeout_seconds'])
             ->toBe(900);
     });
+});
+
+describe('ProofPlan ends_with', function (): void {
+    it('assumes the whole profile and no mutation when a plan declares nothing', function (): void {
+        $plan = ProofPlan::fromFile(proofPlanFile(proofPlanFixture()));
+
+        expect($plan->endsWith->nodes)
+            ->toBe(TopologyProfile::ROLES)
+            ->and($plan->endsWith->declaresAbsence())
+            ->toBeFalse()
+            ->and($plan->mutates)
+            ->toBeFalse()
+            ->and(array_keys($plan->toArray()))
+            ->toBe(['setup', 'acceptance']);
+    });
+
+    it('reads a declared end state and records it', function (): void {
+        $plan = ProofPlan::fromFile(mutatedProofPlanFile(function (array $plan): array {
+            $plan['ends_with'] = ['nodes' => ['gateway', 'app-dev']];
+
+            return $plan;
+        }));
+
+        expect($plan->endsWith->nodes)
+            ->toBe(['gateway', 'app-dev'])
+            ->and($plan->endsWith->absent())
+            ->toBe(['app-prod'])
+            ->and($plan->toArray()['ends_with'] ?? null)
+            ->toBe(['nodes' => ['gateway', 'app-dev']]);
+    });
+
+    it('makes a plan that removes a node a mutating plan whatever it says', function (mixed $declared): void {
+        $plan = ProofPlan::fromFile(mutatedProofPlanFile(function (array $plan) use ($declared): array {
+            $plan['ends_with'] = ['nodes' => ['gateway', 'app-dev']];
+            if ($declared !== null) {
+                $plan['mutates'] = $declared;
+            }
+
+            return $plan;
+        }));
+
+        expect($plan->mutates)
+            ->toBeTrue()
+            ->and($plan->toArray()['mutates'] ?? null)
+            ->toBeTrue();
+    })->with(['unstated' => [null], 'declared false' => [false], 'declared true' => [true]]);
+
+    it('treats a declaration of the whole profile as no declaration at all', function (): void {
+        $plan = ProofPlan::fromFile(mutatedProofPlanFile(function (array $plan): array {
+            $plan['ends_with'] = ['nodes' => ['app-prod', 'gateway', 'app-dev']];
+
+            return $plan;
+        }));
+
+        expect($plan->endsWith->declaresAbsence())
+            ->toBeFalse()
+            ->and($plan->mutates)
+            ->toBeFalse()
+            ->and($plan->toArray())
+            ->not->toHaveKey('ends_with');
+    });
+
+    it('refuses an end state the profile cannot hold', function (mixed $declared, string $message): void {
+        expect(fn (): ProofPlan => ProofPlan::fromFile(mutatedProofPlanFile(
+            function (array $plan) use ($declared): array {
+                $plan['ends_with'] = $declared;
+
+                return $plan;
+            },
+        )))
+            ->toThrow(InvalidArgumentException::class, $message);
+    })->with([
+        'a bare list' => [
+            ['gateway'],
+            'The proof plan key ends_with must be an object with exactly the key nodes.',
+        ],
+        'an empty node list' => [
+            ['nodes' => []],
+            'The proof plan key ends_with.nodes must be a non-empty list.',
+        ],
+        'an unknown node' => [
+            ['nodes' => ['gateway', 'app-staging']],
+            'The proof plan key ends_with.nodes must name nodes from gateway, app-dev, app-prod.',
+        ],
+        'no gateway' => [
+            ['nodes' => ['app-dev']],
+            'The proof plan key ends_with.nodes must keep the gateway node.',
+        ],
+    ]);
 });
