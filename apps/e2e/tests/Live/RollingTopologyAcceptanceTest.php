@@ -557,7 +557,15 @@ function liveTopologyRoleIpv4(TopologyTarget $target, string $role): string
         $target->instance($role),
         ['ip', '-4', '-o', 'addr', 'show', 'scope', 'global'],
     )->output();
-    $addresses = liveGlobalIpv4Addresses($output);
+    // Guests also carry Docker bridges and the WireGuard address; select the topology subnet.
+    $network = LiveHarness::incusResource('network', $target->network());
+    $bridge = (string) ($network['config']['ipv4.address'] ?? '');
+    Assert::assertMatchesRegularExpression('/\A\d+\.\d+\.\d+\.\d+\/24\z/', $bridge);
+    $prefix = substr($bridge, 0, (int) strrpos($bridge, '.') + 1);
+    $addresses = array_values(array_filter(
+        liveGlobalIpv4Addresses($output),
+        static fn (string $address): bool => str_starts_with($address, $prefix),
+    ));
     Assert::assertCount(1, $addresses);
 
     return $addresses[0];
