@@ -82,6 +82,63 @@ function standby_firewall_result(array $command): ?ProcessResult
  * @mago-expect lint:cyclomatic-complexity Cold failure scenarios share one isolated process boundary.
  * @mago-expect lint:kan-defect Exact Incus command fixtures must remain fail closed.
  */
+/** A cold build of the standby a named namespace owns. */
+function namespaced_builder(
+    StandbyIdentity $identity,
+    IncusHost $host,
+    AtomicJsonStore $state,
+    StatePaths $paths,
+): StandbyBuilder {
+    /** @mago-expect analysis:possibly-invalid-argument Test helpers resolve only known class names. */
+    $uninitialized = fn (string $class): object => new ReflectionClass($class)->newInstanceWithoutConstructor();
+
+    return new StandbyBuilder(
+        $host,
+        new IncusNetworkLifecycle($host),
+        $uninitialized(WorktreeSynchronizer::class),
+        $uninitialized(TopologyConverger::class),
+        $uninitialized(TopologyVerifier::class),
+        new StandbyManifestStore($state, $paths, $host),
+        $state,
+        __DIR__,
+        $identity,
+    );
+}
+
+/**
+ * The host of a cold build that fails at the first VM, so the test observes the
+ * exact network and device identities the build asked Incus for.
+ *
+ * @param list<string> $recorded
+ */
+function coldSlotProcess(PendingProcess $process, array &$recorded, StandbyIdentity $identity): ProcessResult
+{
+    $command = $process->command;
+    assert(is_array($command), 'Incus uses argument arrays.');
+    if (($firewall = standby_firewall_result($command)) !== null) {
+        return $firewall;
+    }
+    $recorded[] = implode(' ', $command);
+    if (in_array('image', $command, true)) {
+        return Process::result(json_encode([[
+            'type' => 'virtual-machine',
+            'fingerprint' => str_repeat('f', 64),
+            'aliases' => [['name' => 'orbit-base']],
+        ]], JSON_THROW_ON_ERROR));
+    }
+    if (in_array('network', $command, true) && in_array('list', $command, true)) {
+        return Process::result('[]');
+    }
+    if (($command[3] ?? null) === 'list') {
+        return Process::result('[]');
+    }
+    if (($command[3] ?? null) === 'init') {
+        return Process::result('', 'controlled init failure', 1);
+    }
+
+    return Process::result();
+}
+
 describe('StandbyBuilder', function () {
     beforeEach(function () {
         $container = new Container;
@@ -274,6 +331,46 @@ describe('StandbyBuilder', function () {
                 'post-reset-ipv4:local:orbit-e2e-standby-app-dev',
                 'post-reset-ipv4:local:orbit-e2e-standby-app-prod',
             ]);
+    });
+
+    it('creates the standby network and addresses on the slot its identity owns', function () {
+        $identity = StandbyIdentity::live();
+        $paths = new StatePaths(temporaryPath('orbit-builder-', 4));
+        $state = new AtomicJsonStore($paths);
+        $recorded = [];
+        Process::fake(static function (PendingProcess $process) use (&$recorded, $identity): ProcessResult {
+            return coldSlotProcess($process, $recorded, $identity);
+        });
+
+        expect(fn () => namespaced_builder($identity, new IncusHost(pool: 'orbit-e2e'), $state, $paths)->build(
+            str_repeat('a', 40),
+            new PreparedFingerprint(str_repeat('b', 64), ['base_image_alias' => 'orbit-base']),
+            str_repeat('f', 64),
+            new LaravelRelease('v13.0.0', str_repeat('c', 40)),
+            true,
+            new OperationId(str_repeat('d', 32)),
+        ))
+            ->toThrow(RuntimeException::class);
+
+        $created = array_values(array_filter(
+            $recorded,
+            static fn (string $line): bool => str_contains($line, 'network create'),
+        ));
+        $initialized = array_values(array_filter(
+            $recorded,
+            static fn (string $line): bool => str_contains($line, ' init '),
+        ));
+
+        expect($created)
+            ->toHaveCount(1)
+            ->and($created[0])
+            ->toContain('local:oe-live-standby')
+            ->toContain('ipv4.address=10.232.200.1/24')
+            ->toContain('ipv4.dhcp.ranges=10.232.200.10-10.232.200.12')
+            ->and($initialized[0] ?? '')
+            ->toContain('local:orbit-e2e-live-standby-gateway')
+            ->toContain('eth0,network=oe-live-standby')
+            ->toContain('eth0,ipv4.address=10.232.200.10');
     });
 
     it('adopts and deletes a planned VM when init reports failure after remote creation', function () {

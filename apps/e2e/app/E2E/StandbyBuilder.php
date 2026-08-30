@@ -77,7 +77,7 @@ final readonly class StandbyBuilder
 
         try {
             $resourceMetadata = ['user.orbit.e2e.operation' => $operation->value];
-            $this->networks->create($target->network(), 1, $resourceMetadata);
+            $this->networks->create($target->network(), $this->identity->slot, $resourceMetadata);
             $vms = [];
             foreach (TopologyProfile::ROLES as $role) {
                 $vms[$role] = [
