@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Console\Commands\Topology;
 
 use App\Console\Commands\E2ECommand;
+use App\E2E\OrphanNetworkSweep;
 use App\E2E\TopologyReaper;
 use App\E2E\Value\IssueStateSnapshot;
 use App\E2E\Value\OperationId;
@@ -17,7 +18,7 @@ final class ReapCommand extends E2ECommand
     #[\Override]
     protected $description = 'Reap expired terminal issue topologies';
 
-    public function handle(TopologyReaper $reaper, OperationId $operation): int
+    public function handle(TopologyReaper $reaper, OrphanNetworkSweep $sweep, OperationId $operation): int
     {
         try {
             $path = $this->option('issue-state-file');
@@ -28,13 +29,19 @@ final class ReapCommand extends E2ECommand
                 static fn ($result): array => $result->toArray(),
                 $reaper->reap(IssueStateSnapshot::fromFile($path)),
             );
+            $networksReaped = $sweep->sweep();
             $identity = $operation->value;
             $payload = [
                 'state' => 'reaped',
                 'operation_id' => $identity,
                 'results' => $results,
+                'networks_reaped' => $networksReaped,
             ];
-            $this->line($this->option('json') ? json_encode($payload, JSON_THROW_ON_ERROR) : 'reaped '.count($results));
+            $this->line(
+                $this->option('json')
+                    ? json_encode($payload, JSON_THROW_ON_ERROR)
+                    : 'reaped '.count($results).', networks reaped '.count($networksReaped),
+            );
 
             return self::SUCCESS;
         } catch (Throwable $exception) {

@@ -132,6 +132,21 @@ final readonly class IncusNetworkLifecycle
         $this->host->deleteNetwork($name);
     }
 
+    /**
+     * Delete one orphaned harness network and its host firewall rules. Ownership
+     * metadata is not required: legacy `orbit-e2e-*` networks never carried it.
+     */
+    public function deleteOrphan(string $name): void
+    {
+        if (! OrphanNetworkSweep::isHarnessNetworkName($name)) {
+            throw new RuntimeException('Incus network name is outside the harness prefixes.');
+        }
+        $this->assertLocalRemote();
+
+        $this->reconcileRules('remove', $name);
+        $this->host->deleteOrphanNetwork($name);
+    }
+
     private function assertLocalRemote(): void
     {
         if ($this->host->scope()['remote'] !== 'local') {

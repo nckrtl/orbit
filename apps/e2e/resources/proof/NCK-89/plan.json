@@ -1,0 +1,26 @@
+{
+    "setup": [],
+    "acceptance": [
+        {
+            "id": "node-list-json",
+            "node": "app-dev",
+            "argv": [
+                "orbit",
+                "node:list",
+                "--json"
+            ],
+            "timeout_seconds": 60
+        },
+        {
+            "id": "guest-on-harness-network-app-dev",
+            "node": "app-dev",
+            "argv": [
+                "bash",
+                "-c",
+                "set -eu; ip -4 route show default | grep -q '10\\.232\\.' && echo 'app-dev default route is on a harness oe- network'"
+            ],
+            "timeout_seconds": 30
+        }
+    ],
+    "post_deployment_actions": []
+}

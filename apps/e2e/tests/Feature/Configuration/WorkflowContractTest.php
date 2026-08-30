@@ -106,6 +106,7 @@ it('keeps the topology-led workflow contracts aligned', function (): void {
 
     // Cleanup: proof -> prepared refresh -> worktree -> issue close
     expect($merge)->toMatch('/order: release_proof_then_refresh_then_worktree_then_issue/');
+    expect($merge)->toMatch('/releases the proof topology.*networks_reaped: n.*never `oe-standby`/s');
     expect($merge)->toMatch('/does not\s+revert merged code/');
     expect($workflow)->toMatch(
         '/releases the proof topology.*verifies.*absence.*fingerprint.*worktree.*closes the.*issue/s',

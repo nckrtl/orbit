@@ -6,8 +6,11 @@ use App\E2E\AcquisitionRollback;
 use App\E2E\HostCapacity;
 use App\E2E\IncusHost;
 use App\E2E\IncusNetworkLifecycle;
+use App\E2E\OrphanNetworkSweep;
 use App\E2E\ReleaseReceiptStore;
 use App\E2E\State\AtomicJsonStore;
+use App\E2E\State\OperationJournal;
+use App\E2E\State\SecretRedactor;
 use App\E2E\State\StatePaths;
 use App\E2E\TopologyManifestStore;
 use App\E2E\TopologyReleaser;
@@ -248,12 +251,20 @@ function releaseInstanceJson(
  * @param list<list<string>> $commands
  * @mago-expect lint:cyclomatic-complexity The fake models each exact cleanup branch.
  */
-function fakeReleaseIncus(TopologyTarget $target, array &$instances, bool &$networkExists, array &$commands): void
-{
+/** @param list<string> $orphans Unused harness networks listed next to the exact network; a delete removes them. */
+function fakeReleaseIncus(
+    TopologyTarget $target,
+    array &$instances,
+    bool &$networkExists,
+    array &$commands,
+    array &$orphans = [],
+): void {
+    /** @mago-expect lint:cyclomatic-complexity The fake mirrors every Incus command a release touches. */
     Process::fake(function (\Illuminate\Process\PendingProcess $process) use (
         &$instances,
         &$networkExists,
         &$commands,
+        &$orphans,
         $target,
     ) {
         $command = $process->command;
@@ -268,22 +279,33 @@ function fakeReleaseIncus(TopologyTarget $target, array &$instances, bool &$netw
             return in_array('-C', $command, true) ? Process::result('', '', 1) : Process::result();
         }
         if (($command[3] ?? null) === 'network' && ($command[4] ?? null) === 'list') {
-            return Process::result(json_encode(
-                $networkExists
-                    ? [[
-                        'name' => $target->network(),
-                        'config' => [
-                            'user.orbit.e2e.owner' => 'orbit-e2e',
-                            'user.orbit.e2e.issue' => $target->issue,
-                            'user.orbit.e2e.attempt' => $target->requireAttempt()->value,
-                            'user.orbit.e2e.operation' => str_repeat('a', 32),
-                        ],
-                    ]] : [],
-                JSON_THROW_ON_ERROR,
-            ));
+            $listing = [
+                ['name' => 'oe-standby', 'used_by' => ['/1.0/instances/orbit-e2e-standby-gateway']],
+                ['name' => 'control-unused', 'used_by' => []],
+                ...array_map(static fn (string $name): array => ['name' => $name, 'used_by' => []], $orphans),
+            ];
+            if ($networkExists) {
+                $listing[] = [
+                    'name' => $target->network(),
+                    'used_by' => [],
+                    'config' => [
+                        'user.orbit.e2e.owner' => 'orbit-e2e',
+                        'user.orbit.e2e.issue' => $target->issue,
+                        'user.orbit.e2e.attempt' => $target->requireAttempt()->value,
+                        'user.orbit.e2e.operation' => str_repeat('a', 32),
+                    ],
+                ];
+            }
+
+            return Process::result(json_encode($listing, JSON_THROW_ON_ERROR));
         }
         if (($command[3] ?? null) === 'network' && ($command[4] ?? null) === 'delete') {
-            $networkExists = false;
+            $name = preg_replace('/\A[^:]+:/', '', (string) ($command[5] ?? ''));
+            if ($name === $target->network()) {
+                $networkExists = false;
+            } else {
+                $orphans = array_values(array_diff($orphans, [$name]));
+            }
 
             return Process::result();
         }
@@ -544,6 +566,71 @@ describe('topology release', function () {
                 static fn (array $command): bool => in_array(RELEASE_MOUNT_SOURCE, $command, true),
             ))
             ->toBeFalse();
+    });
+
+    it('ends every release with the orphan network sweep and records each deletion', function () {
+        $paths = new StatePaths(temporaryPath('orbit-release-sweep-', 8));
+        $store = new AtomicJsonStore($paths);
+        $target = featureTarget('NCK-123');
+        readyReleaseState($store, $target->issue);
+        $instances = [];
+        foreach (TopologyProfile::ROLES as $role) {
+            $instances[$target->instance($role)] = releaseInstanceJson($target, $role);
+        }
+        $orphans = ['oe-orphan1', 'orbit-e2e-n-legacy'];
+        $networkExists = true;
+        $commands = [];
+        fakeReleaseIncus($target, $instances, $networkExists, $commands, $orphans);
+        $host = new IncusHost;
+        $sweep = new OrphanNetworkSweep(
+            $host,
+            new IncusNetworkLifecycle($host),
+            $store,
+            $paths,
+            new OperationJournal($paths, new SecretRedactor),
+            new OperationId(str_repeat('a', 32)),
+        );
+        $build = fn (): TopologyReleaser => new TopologyReleaser(
+            $host,
+            new IncusNetworkLifecycle($host),
+            new TopologyManifestStore($store, $paths),
+            $store,
+            $paths,
+            new OperationId(str_repeat('a', 32)),
+            new ReleaseReceiptStore($store, $paths),
+            sweep: $sweep,
+        );
+
+        $result = $build()->release('NCK-123', releaseAttempt());
+        $receipt = $store->read(releaseReceiptPath('NCK-123'));
+
+        expect($result->networksReaped)
+            ->toBe(['oe-orphan1', 'orbit-e2e-n-legacy'])
+            ->and($result->released)
+            ->toContain('deleted:'.$target->network())
+            ->and($receipt['networks_reaped'] ?? null)
+            ->toBe(['oe-orphan1', 'orbit-e2e-n-legacy'])
+            ->and($orphans)
+            ->toBe([])
+            ->and($networkExists)
+            ->toBeFalse();
+
+        // A repeated release sweeps again: nothing left reports 0 and keeps the receipt.
+        $replay = $build()->release('NCK-123', releaseAttempt());
+        expect($replay->networksReaped)
+            ->toBe([])
+            ->and($store->read(releaseReceiptPath('NCK-123')))
+            ->toBe($receipt);
+
+        // A new orphan appearing later is reaped by the replay and added to the receipt.
+        $orphans = ['oe-orphan2'];
+        $replay = $build()->release('NCK-123', releaseAttempt());
+        expect($replay->networksReaped)
+            ->toBe(['oe-orphan2'])
+            ->and($store->read(releaseReceiptPath('NCK-123'))['networks_reaped'] ?? null)
+            ->toBe(['oe-orphan1', 'oe-orphan2', 'orbit-e2e-n-legacy'])
+            ->and($orphans)
+            ->toBe([]);
     });
 
     it('retains the proof record and writes a receipt when a proved attempt is released', function () {

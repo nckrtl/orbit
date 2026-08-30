@@ -102,6 +102,7 @@ describe('release result', function () {
                 'released',
                 'already_absent',
                 'verified_absent',
+                'networks_reaped',
                 'released_at',
             ])
             ->and(ReleaseResult::fromArray($receipt->toArray())->toArray())

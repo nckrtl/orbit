@@ -14,6 +14,7 @@ use App\E2E\IncusNetworkLifecycle;
 use App\E2E\LegacyIncusRevalidator;
 use App\E2E\LegacyRetirement;
 use App\E2E\LegacyRetirementHost;
+use App\E2E\OrphanNetworkSweep;
 use App\E2E\PreparedStateFingerprint;
 use App\E2E\ProofFixtureStager;
 use App\E2E\ProofRecordReader;
@@ -174,6 +175,14 @@ final class AppServiceProvider extends ServiceProvider
                 $repositoryRoot,
             ),
         );
+        $this->app->singleton(OrphanNetworkSweep::class, fn (Application $app): OrphanNetworkSweep => new OrphanNetworkSweep(
+            $app->make(IncusHost::class),
+            $app->make(IncusNetworkLifecycle::class),
+            $app->make(AtomicJsonStore::class),
+            $app->make(StatePaths::class),
+            $app->make(OperationJournal::class),
+            $app->make(OperationId::class),
+        ));
         $this->app->singleton(TopologyReleaser::class, fn (Application $app): TopologyReleaser => new TopologyReleaser(
             $app->make(IncusHost::class),
             $app->make(IncusNetworkLifecycle::class),
@@ -183,6 +192,7 @@ final class AppServiceProvider extends ServiceProvider
             $app->make(OperationId::class),
             $app->make(ReleaseReceiptStore::class),
             $app->make(HostCapacity::class),
+            sweep: $app->make(OrphanNetworkSweep::class),
         ));
         $this->app->singleton(TopologyReaper::class, fn (Application $app): TopologyReaper => new TopologyReaper(
             $app->make(AtomicJsonStore::class),

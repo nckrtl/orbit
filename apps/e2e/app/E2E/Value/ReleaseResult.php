@@ -24,6 +24,21 @@ final readonly class ReleaseResult
         'released',
         'already_absent',
         'verified_absent',
+        'networks_reaped',
+        'released_at',
+    ];
+
+    /** Receipts written before the orphan network sweep existed carry no `networks_reaped`. */
+    private const array LEGACY_KEYS = [
+        'state',
+        'operation_id',
+        'evidence_id',
+        'issue',
+        'attempt_id',
+        'purpose',
+        'released',
+        'already_absent',
+        'verified_absent',
         'released_at',
     ];
 
@@ -31,6 +46,7 @@ final readonly class ReleaseResult
      * @param list<string> $released
      * @param list<string> $alreadyAbsent
      * @param list<string> $verifiedAbsent
+     * @param list<string> $networksReaped Orphaned harness networks the release sweep deleted.
      */
     public function __construct(
         public string $operationId,
@@ -42,6 +58,7 @@ final readonly class ReleaseResult
         public array $alreadyAbsent,
         public array $verifiedAbsent,
         public string $releasedAt,
+        public array $networksReaped = [],
     ) {
         if (
             preg_match('/\A[a-f0-9]{32}\z/D', $operationId) !== 1
@@ -60,8 +77,25 @@ final readonly class ReleaseResult
         return gmdate('Y-m-d\TH:i:s\Z');
     }
 
+    /** @param list<string> $networksReaped */
+    public function withNetworksReaped(array $networksReaped): self
+    {
+        return new self(
+            $this->operationId,
+            $this->evidenceId,
+            $this->issue,
+            $this->attempt,
+            $this->purpose,
+            $this->released,
+            $this->alreadyAbsent,
+            $this->verifiedAbsent,
+            $this->releasedAt,
+            $networksReaped,
+        );
+    }
+
     /**
-     * @return array{state:string,operation_id:string,evidence_id:string,issue:string,attempt_id:string,purpose:string,released:list<string>,already_absent:list<string>,verified_absent:list<string>,released_at:string}
+     * @return array{state:string,operation_id:string,evidence_id:string,issue:string,attempt_id:string,purpose:string,released:list<string>,already_absent:list<string>,verified_absent:list<string>,networks_reaped:list<string>,released_at:string}
      */
     public function toArray(): array
     {
@@ -75,6 +109,7 @@ final readonly class ReleaseResult
             'released' => $this->released,
             'already_absent' => $this->alreadyAbsent,
             'verified_absent' => $this->verifiedAbsent,
+            'networks_reaped' => $this->networksReaped,
             'released_at' => $this->releasedAt,
         ];
     }
@@ -82,6 +117,14 @@ final readonly class ReleaseResult
     /** @param array<array-key, mixed> $value */
     public static function fromArray(array $value): self
     {
+        $keys = array_keys($value);
+        if ($keys === self::LEGACY_KEYS) {
+            $value = [
+                ...array_slice($value, 0, -1, true),
+                'networks_reaped' => [],
+                'released_at' => $value['released_at'],
+            ];
+        }
         if (
             array_keys($value) !== self::KEYS
             || $value['state'] !== 'released'
@@ -93,6 +136,7 @@ final readonly class ReleaseResult
             || ! is_array($value['released'])
             || ! is_array($value['already_absent'])
             || ! is_array($value['verified_absent'])
+            || ! is_array($value['networks_reaped'])
             || ! is_string($value['released_at'])
         ) {
             throw new InvalidArgumentException('The release evidence schema is invalid.');
@@ -119,6 +163,7 @@ final readonly class ReleaseResult
             self::stringList($value['already_absent']),
             self::stringList($value['verified_absent']),
             $value['released_at'],
+            self::stringList($value['networks_reaped']),
         );
     }
 
