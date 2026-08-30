@@ -164,17 +164,26 @@ operator-selected root as rollback.
 Removal uses the immutable checkout path recorded when the checkout was
 created. It does not compare that path with the node's current effective root.
 For an instance, Orbit strips and verifies the exact `<app>` suffix. For a
-workspace, it strips and verifies the exact `<app>/<workspace>` suffix. The
-remaining historical root must pass the same protected-path boundary, and the
-checkout must be a strict descendant of it.
+workspace with a derived path, it strips and verifies the exact
+`<app>/<workspace>` suffix. The remaining historical root must pass the same
+protected-path boundary, and the checkout must be a strict descendant of it.
+
+An explicitly overridden workspace path does not need that derived suffix.
+Its removal keeps the existing explicit-path containment rule: the recorded
+path must be a strict descendant of the managed user's home, every relative
+segment must match the closed safe-segment grammar, and the path must remain
+outside `<managed-user-home>/apps` and hidden control directories other than
+`<managed-user-home>/.orbit/worktrees`. This check uses the recorded immutable
+path and does not use the current worktree setting.
 
 Before deletion, Orbit proves that the checkout and its existing parents are
 not symlinks, their canonical paths match the recorded paths, and the Git
 repository or worktree identity matches the managed record. It deletes only
-the exact checkout. Workspace removal can also remove its now-empty `<app>`
-grouping directory. Orbit never recursively deletes a configured root, an
-ancestor, an unexpected sibling, or unrecognized content. Ambiguous ownership
-or containment fails closed.
+the exact checkout. Removal of a derived workspace can also remove its
+now-empty `<app>` grouping directory. Removal of an explicitly overridden
+workspace never removes its parent directory. Orbit never recursively deletes
+a configured root, an ancestor, an unexpected sibling, or unrecognized
+content. Ambiguous ownership or containment fails closed.
 
 ## Consequences
 
