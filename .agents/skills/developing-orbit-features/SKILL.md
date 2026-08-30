@@ -49,8 +49,8 @@ is missing.
    `bin/e2e-topology prove <ISSUE>`. On `diagnosis`, fix, commit, prove again.
    Leave the proved topology alive.
 7. **Pull request.** Push. Use the template: what changed, why, and
-   "Proved with `proofs/<ISSUE>.json` at `<sha>`", "Harness: `bin/e2e-live
-   <sha>` passed.", or "Automated tests only".
+   "Proved with `proofs/<ISSUE>.json` at `<sha>`",
+   "Harness: `bin/e2e-live <sha>` passed.", or "Automated tests only".
    Short and for humans. Do not wait for CI.
 
 ## Corrections
@@ -60,9 +60,9 @@ push, reply "Addressed in `<sha>`".
 
 ## Harness issues
 
-Harness code is `apps/e2e/app/**`, `apps/e2e/resources/guest/**`,
-`apps/e2e/tests/Live/**`, and `bin/e2e-*`. An issue that changes it skips
-steps 2, 3, 4, and 6:
+Harness code is everything under `apps/e2e` and `bin/e2e-*`, except
+`apps/e2e/tests/Feature/**` and `apps/e2e/tests/Unit/**`. An issue that
+changes it skips steps 2, 3, 4, and 6:
 
 - Implement with unit tests (step 5).
 - Prove with `bin/e2e-live <full sha>`. It builds a standby from your commit

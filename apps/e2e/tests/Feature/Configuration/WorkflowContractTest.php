@@ -20,7 +20,8 @@ it('keeps the developing skill on the nine-step flow', function () use ($read): 
         '## Harness issues',
         'bin/e2e-live <full sha>',
         'follow **Harness issues** below',
-        'Harness: `bin/e2e-live',
+        '"Harness: `bin/e2e-live <sha>` passed."',
+        '`apps/e2e/tests/Feature/**` and `apps/e2e/tests/Unit/**`',
     ] as $needle) {
         expect($skill)->toContain($needle);
     }
@@ -88,6 +89,7 @@ it('keeps the workflow reference aligned with the skills', function () use ($rea
         'bin/e2e-live <sha>',
         '`<worktree>/.e2e/`',
         'Feature branches never modify the harness.',
+        '`apps/e2e/tests/Feature/**` and `apps/e2e/tests/Unit/**`',
     ] as $needle) {
         expect($reference)->toContain($needle);
     }
