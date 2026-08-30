@@ -267,6 +267,7 @@ it('sends the force and purge disable payload', function (): void {
             'node_id' => 7,
             'status' => 'removed',
             'request_id' => '77777777-7777-4777-8777-777777777777',
+            'publication' => null,
         ], JSON_THROW_ON_ERROR))
         ->assertExitCode(0);
 
@@ -451,11 +452,43 @@ it('accepts interactive disable and preserves data', function (): void {
         ->artisan('metrics:disable')
         ->expectsConfirmation('Disable Metrics?', 'yes')
         ->expectsOutput('Metrics operation completed for node #3: removed.')
+        ->doesntExpectOutputToContain('Publication not cleaned')
         ->expectsOutput('Request ID: '.metrics_cli_request_id())
         ->assertSuccessful();
 
     $mock->assertSentInOrder([ShowMetricsStatusRequest::class, DisableMetricsRequest::class]);
     expect($mock->getLastRequest()?->body()->all())->toBe(['force' => true, 'purge_data' => false]);
+});
+
+it('warns when a Metrics disable leaves the Gateway publication uncleaned', function (): void {
+    $mock = MockClient::global([
+        ShowMetricsStatusRequest::class => MockResponse::make([
+            'data' => metrics_cli_status_payload([
+                'id' => 9,
+                'node_id' => 7,
+                'node_name' => 'metrics-node',
+                'status' => 'active',
+                'failed_step' => null,
+                'error_code' => null,
+            ]),
+            'meta' => ['request_id' => metrics_cli_request_id()],
+        ]),
+        DisableMetricsRequest::class => MockResponse::make([
+            'data' => ['node_id' => 7, 'status' => 'removed', 'publication' => 'uncleaned'],
+            'meta' => ['request_id' => metrics_cli_request_id()],
+        ]),
+    ]);
+
+    $this
+        ->artisan('metrics:disable', ['--force' => true])
+        ->expectsOutput('Metrics operation completed for node #7: removed.')
+        ->expectsOutput(
+            'Publication not cleaned: no single active Gateway. The metrics.orbit route, certificate, and DNS record remain on the Gateway.',
+        )
+        ->expectsOutput('Request ID: '.metrics_cli_request_id())
+        ->assertExitCode(0);
+
+    $mock->assertSentInOrder([ShowMetricsStatusRequest::class, DisableMetricsRequest::class]);
 });
 
 it('resets credentials through the focused request and renders exact JSON', function (): void {
@@ -514,6 +547,7 @@ it('enables Metrics on a node given by name', function (): void {
             'node_id' => 2,
             'status' => 'active',
             'request_id' => metrics_cli_request_id(),
+            'publication' => null,
         ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))
         ->assertSuccessful();
 
@@ -578,6 +612,7 @@ it('sends the selected node through each exporter request', function (
             'node_id' => 7,
             'status' => 'active',
             'request_id' => metrics_cli_request_id(),
+            'publication' => null,
         ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))
         ->assertSuccessful();
 

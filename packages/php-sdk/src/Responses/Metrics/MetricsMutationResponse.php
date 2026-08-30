@@ -13,6 +13,7 @@ final readonly class MetricsMutationResponse
         public int $nodeId,
         public string $status,
         public string $requestId,
+        public ?string $publication = null,
     ) {}
 
     /** @param array<string,mixed> $data */
@@ -27,6 +28,9 @@ final readonly class MetricsMutationResponse
             || $data['node_id'] < 1
             || ! is_string($data['status'] ?? null)
             || ! in_array($data['status'], ['active', 'removed', 'enabled', 'disabled'], strict: true)
+            || ! (($data['publication'] ?? null) === null
+            || is_string($data['publication'])
+            && in_array($data['publication'], ['cleaned', 'uncleaned'], strict: true))
         ) {
             throw new GatewayApiException(
                 'Gateway response contains invalid metrics mutation data.',
@@ -34,12 +38,17 @@ final readonly class MetricsMutationResponse
             );
         }
 
-        return new self($data['node_id'], $data['status'], $requestId);
+        return new self($data['node_id'], $data['status'], $requestId, $data['publication'] ?? null);
     }
 
-    /** @return array{node_id:int,status:string,request_id:string} */
+    /** @return array{node_id:int,status:string,request_id:string,publication:?string} */
     public function toArray(): array
     {
-        return ['node_id' => $this->nodeId, 'status' => $this->status, 'request_id' => $this->requestId];
+        return [
+            'node_id' => $this->nodeId,
+            'status' => $this->status,
+            'request_id' => $this->requestId,
+            'publication' => $this->publication,
+        ];
     }
 }

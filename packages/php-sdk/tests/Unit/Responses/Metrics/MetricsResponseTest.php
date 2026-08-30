@@ -227,6 +227,54 @@ it('rejects unbounded mutation status values', function (): void {
         ->toThrow(GatewayApiException::class, 'invalid metrics mutation data');
 });
 
+it('defaults a missing mutation publication to null', function (): void {
+    $response = MetricsMutationResponse::fromGatewayData([
+        'node_id' => 3,
+        'status' => 'active',
+    ], 'req');
+
+    expect($response->publication)->toBeNull();
+});
+
+it('accepts an explicit null mutation publication', function (): void {
+    $response = MetricsMutationResponse::fromGatewayData([
+        'node_id' => 3,
+        'status' => 'removed',
+        'publication' => null,
+    ], 'req');
+
+    expect($response->publication)->toBeNull();
+});
+
+it('accepts a cleaned mutation publication', function (): void {
+    $response = MetricsMutationResponse::fromGatewayData([
+        'node_id' => 3,
+        'status' => 'removed',
+        'publication' => 'cleaned',
+    ], 'req');
+
+    expect($response->publication)->toBe('cleaned');
+});
+
+it('accepts an uncleaned mutation publication', function (): void {
+    $response = MetricsMutationResponse::fromGatewayData([
+        'node_id' => 3,
+        'status' => 'removed',
+        'publication' => 'uncleaned',
+    ], 'req');
+
+    expect($response->publication)->toBe('uncleaned');
+});
+
+it('rejects an unrecognised mutation publication value', function (): void {
+    expect(fn () => MetricsMutationResponse::fromGatewayData([
+        'node_id' => 3,
+        'status' => 'removed',
+        'publication' => 'partially-cleaned',
+    ], 'req'))
+        ->toThrow(GatewayApiException::class, 'invalid metrics mutation data');
+});
+
 it('keeps credential secrets out of debug and serialization output', function (): void {
     $password = str_repeat('s', times: 16);
     $credentials = MetricsCredentialsResponse::fromGatewayData([

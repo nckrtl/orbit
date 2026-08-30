@@ -5,10 +5,10 @@ declare(strict_types=1);
 namespace App\Infrastructure\Nodes\Roles;
 
 use App\Domain\Metrics\MetricsExporterLifecycle;
+use App\Domain\Metrics\MetricsGatewayResolver;
 use App\Domain\Metrics\MetricsPublicationManager;
 use App\Domain\Metrics\MetricsRuntimeLifecycle;
 use App\Domain\Nodes\RoleBaseline;
-use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -19,11 +19,12 @@ final readonly class MetricsRoleBaseline implements RoleBaseline
         private MetricsRuntimeLifecycle $runtime,
         private MetricsExporterLifecycle $exporters,
         private MetricsPublicationManager $publication,
+        private MetricsGatewayResolver $gateways,
     ) {}
 
     public function converge(Node $node, NodeRole $assignment): void
     {
-        $gateway = $this->gateway();
+        $gateway = $this->gateways->resolve();
         $exporters = false;
         $runtime = false;
         $publication = false;
@@ -66,31 +67,25 @@ final readonly class MetricsRoleBaseline implements RoleBaseline
         }
     }
 
+    /**
+     * Removes the role, degrading when no single active Gateway is left.
+     *
+     * Demanding a Gateway here made the role unremovable exactly when the
+     * fleet had lost the Gateway that publishes it. The Metrics node's own
+     * runtime, exporters and firewall rules always come down; only the
+     * Gateway-side publication is left behind, and the caller reports it.
+     */
     public function remove(Node $node, NodeRole $assignment, bool $purgeData): void
     {
-        $gateway = $this->gateway();
-        $this->publication->remove($gateway, $node);
-        $this->exporters->remove($node, $assignment);
-        $this->runtime->remove($node, $assignment, $purgeData);
-    }
+        $gateway = $this->gateways->find();
 
-    private function gateway(): Node
-    {
-        $gateways = Node::query()
-            ->where('status', LifecycleStatus::Active->value)
-            ->whereHas('roles', static fn ($query) => $query
-                ->where('role', 'gateway')
-                ->where('status', LifecycleStatus::Active->value))
-            ->limit(2)
-            ->get();
-
-        if ($gateways->count() !== 1) {
-            throw new ResourceOperationException(
-                'metrics.gateway_ambiguous',
-                'Metrics publication requires exactly one active Gateway.',
-            );
+        if ($gateway instanceof Node) {
+            $this->publication->remove($gateway, $node);
+        } else {
+            $this->publication->abandon($node);
         }
 
-        return $gateways->sole();
+        $this->exporters->remove($node, $assignment);
+        $this->runtime->remove($node, $assignment, $purgeData);
     }
 }

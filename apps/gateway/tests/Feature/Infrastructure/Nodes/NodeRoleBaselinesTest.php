@@ -7,6 +7,7 @@ use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\AppProd\AppProdCaddyManager;
 use App\Domain\Metrics\MetricsExporterLifecycle;
 use App\Domain\Metrics\MetricsFleetReconciler;
+use App\Domain\Metrics\MetricsGatewayResolver;
 use App\Domain\Metrics\MetricsPublicationManager;
 use App\Domain\Metrics\MetricsRuntimeLifecycle;
 use App\Domain\Nodes\ManagedUserAccount;
@@ -228,6 +229,7 @@ it('dispatches every assignment to its code-defined baseline', function (): void
             Mockery::mock(MetricsRuntimeLifecycle::class)->shouldIgnoreMissing(),
             Mockery::mock(MetricsExporterLifecycle::class)->shouldIgnoreMissing(),
             Mockery::mock(MetricsPublicationManager::class)->shouldIgnoreMissing(),
+            new MetricsGatewayResolver,
         ),
         $metricsFleet,
         new NodeRoleOperatingSystemGuard(
@@ -278,6 +280,7 @@ it('checks the remote operating system before every role convergence', function 
             Mockery::mock(MetricsRuntimeLifecycle::class)->shouldIgnoreMissing(),
             Mockery::mock(MetricsExporterLifecycle::class)->shouldIgnoreMissing(),
             Mockery::mock(MetricsPublicationManager::class)->shouldIgnoreMissing(),
+            new MetricsGatewayResolver,
         ),
         $metricsFleet,
         new NodeRoleOperatingSystemGuard(
@@ -334,6 +337,7 @@ it('stops baseline convergence when the remote operating system guard fails', fu
             Mockery::mock(MetricsRuntimeLifecycle::class)->shouldIgnoreMissing(),
             Mockery::mock(MetricsExporterLifecycle::class)->shouldIgnoreMissing(),
             Mockery::mock(MetricsPublicationManager::class)->shouldIgnoreMissing(),
+            new MetricsGatewayResolver,
         ),
         $metricsFleet,
         new NodeRoleOperatingSystemGuard(

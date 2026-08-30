@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Metrics\MetricsExporterLifecycle;
+use App\Domain\Metrics\MetricsGatewayResolver;
 use App\Domain\Metrics\MetricsPublicationManager;
 use App\Domain\Metrics\MetricsRuntimeLifecycle;
 use App\Domain\Nodes\RoleName;
@@ -117,6 +118,22 @@ it('removes publication, exporters, and runtime in that order', function (): voi
     ]);
 });
 
+it('removes node state and abandons the publication when no single Gateway is active', function (
+    int $gatewayCount,
+): void {
+    [$metrics, $assignment] = metricsBaselineTopology($gatewayCount);
+    $events = [];
+    $baseline = metricsBaseline($events);
+
+    $baseline->remove($metrics, $assignment, false);
+
+    expect($events)->toBe([
+        'publication:abandon',
+        'exporters:remove',
+        'runtime:remove',
+    ]);
+})->with([0, 2]);
+
 /** @return array{Node, NodeRole} */
 function metricsBaselineTopology(int $gatewayCount = 1, bool $metricsIsGateway = false): array
 {
@@ -175,6 +192,7 @@ function metricsBaseline(
         runtime: new MetricsBaselineRuntime($events, $failure, $rollbackFailure),
         exporters: new MetricsBaselineExporters($events, $failure, $rollbackFailure),
         publication: new MetricsBaselinePublication($events, $failure, $rollbackFailure),
+        gateways: new MetricsGatewayResolver,
     );
 }
 
@@ -270,6 +288,11 @@ final class MetricsBaselinePublication implements MetricsPublicationManager
     public function remove(Node $gateway, Node $metrics): void
     {
         $this->record('publication:remove');
+    }
+
+    public function abandon(Node $metrics): void
+    {
+        $this->record('publication:abandon');
     }
 
     private function record(string $event): void

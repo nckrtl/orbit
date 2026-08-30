@@ -10,6 +10,8 @@ use App\Data\Metrics\MetricsMutationData;
 use App\Domain\Metrics\ExporterPreference;
 use App\Domain\Metrics\ExporterPreferenceRepository;
 use App\Domain\Metrics\MetricsFleetReconciler;
+use App\Domain\Metrics\MetricsGatewayResolver;
+use App\Domain\Metrics\MetricsPublicationCleanup;
 use App\Domain\Metrics\MetricsRoleManager;
 use App\Domain\Nodes\RoleAssignmentException;
 use App\Domain\Nodes\RoleName;
@@ -24,6 +26,7 @@ final readonly class NativeMetricsRoleManager implements MetricsRoleManager
         private RemoveNodeRoleAction $remove,
         private ExporterPreferenceRepository $preferences,
         private MetricsFleetReconciler $fleet,
+        private MetricsGatewayResolver $gateways,
     ) {}
 
     public function enable(int $nodeId): MetricsMutationData
@@ -59,9 +62,15 @@ final readonly class NativeMetricsRoleManager implements MetricsRoleManager
         }
 
         $node = $nodes->sole();
+        // The baseline can only clean the Gateway side of the publication
+        // while one active Gateway exists. Reading that here, against the
+        // same resolver, reports what the removal below was able to do.
+        $publication = $this->gateways->find() instanceof Node
+            ? MetricsPublicationCleanup::Cleaned
+            : MetricsPublicationCleanup::Uncleaned;
         $this->remove->execute($node, RoleName::Metrics, $force, $purge);
 
-        return new MetricsMutationData($node->id, 'removed');
+        return new MetricsMutationData($node->id, 'removed', $publication);
     }
 
     public function enableExporter(int $nodeId): MetricsMutationData

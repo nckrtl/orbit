@@ -13,6 +13,29 @@ final readonly class MetricsRuntimeSpec
 
     public const string GrafanaImage = 'grafana/grafana:12.1.1';
 
+    /**
+     * Bounded container logging.
+     *
+     * The Docker daemon default keeps a `json-file` log that never rotates,
+     * and Grafana writes a line per request, so a long-lived Metrics node
+     * fills its disk. The driver is named explicitly because the options
+     * below belong to it, and both live in the spec hash so a change to
+     * either re-converges the container.
+     */
+    public const string LogDriver = 'json-file';
+
+    /** @var array<string, string> */
+    public const array LogOptions = [
+        'max-size' => '10m',
+        'max-file' => '3',
+    ];
+
+    /** @param array<string, string> $logOptions */
+    public function __construct(
+        private string $logDriver = self::LogDriver,
+        private array $logOptions = self::LogOptions,
+    ) {}
+
     public function for(
         MetricsService $service,
         int $assignmentId,
@@ -36,6 +59,8 @@ final readonly class MetricsRuntimeSpec
             'mounts' => $definition['mounts'],
             'environment' => $definition['environment'],
             'health_command' => $definition['health_command'],
+            'log_driver' => $this->logDriver,
+            'log_options' => $this->logOptions,
             'configuration_hash' => $configurationHash,
         ];
         $specHash = hash('sha256', $this->encode($publicSpec));
@@ -60,6 +85,8 @@ final readonly class MetricsRuntimeSpec
             mounts: $definition['mounts'],
             environment: $definition['environment'],
             healthCommand: $definition['health_command'],
+            logDriver: $this->logDriver,
+            logOptions: $this->logOptions,
             specHash: $specHash,
         );
     }

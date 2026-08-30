@@ -6,7 +6,8 @@ The role runs Prometheus and Grafana as standalone Docker containers. It runs
 not use Docker Swarm, Compose, public `Process` rows, or public `Tool` rows for
 this role. The containers use Docker host networking: Prometheus listens only
 on loopback on the Metrics node, and Grafana listens only on the node's
-WireGuard address, with UFW governing both ports.
+WireGuard address, with UFW governing both ports. Both containers log to a
+rotating `json-file` driver, capped at 10 MB per file and three files.
 
 ## Placement and recovery
 
@@ -30,6 +31,13 @@ orbit node:role:add <node> metrics --converge
 ```
 
 There is no separate Metrics convergence command.
+
+Each container is converged against its own configuration. Prometheus is bound
+to `prometheus.yml`, Grafana to `grafana.ini` and its provisioning files. So a
+fleet change replaces Prometheus alone and leaves live Grafana sessions and
+in-flight queries running. The provisioned dashboard is bound to neither: the
+Grafana file provider reloads it from the bind mount while Grafana runs. The
+Grafana administrator password is in no hash.
 
 ## Exporter selection
 
@@ -108,6 +116,13 @@ preferences.
 Purge also removes proven Metrics volumes and active or pending credentials.
 It never removes shared packages, Docker, unrelated containers, user files, or
 exporter preferences. Ambiguous ownership fails closed.
+
+Disable does not need a Gateway. Publication belongs to the one active Gateway,
+so with none, or with more than one, Orbit removes every node-side effect and
+leaves the Gateway side alone. The response reports
+`"publication": "uncleaned"`, and the CLI prints a warning. The `metrics.orbit`
+route, its certificate, and its DNS record stay on the Gateway host until an
+operator removes them. A normal disable reports `"publication": "cleaned"`.
 
 ## API surface
 

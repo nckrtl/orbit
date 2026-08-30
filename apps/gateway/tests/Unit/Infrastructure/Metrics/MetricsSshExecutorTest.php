@@ -122,6 +122,40 @@ describe(MetricsSshExecutor::class, function (): void {
             ->toContain("'GF_SERVER_HTTP_ADDR=10.44.0.3'");
     });
 
+    it('bounds container logging with a rotating json-file driver', function (): void {
+        $spec = new MetricsRuntimeSpec()->for(
+            MetricsService::Prometheus,
+            41,
+            '10.44.0.3',
+            'configuration',
+        );
+        $absent = [metricsCommandResult(exitCode: 1), metricsCommandResult()];
+        $ssh = new MetricsCapturingSshExecutor([
+            ...$absent,
+            ...$absent,
+            ...$absent,
+            metricsCommandResult(),
+            metricsCommandResult(),
+            metricsCommandResult(stdout: "running healthy\n"),
+        ]);
+
+        metricsSshExecutor($ssh)->convergeContainers(metricsSshNode(), [$spec]);
+
+        $commands = array_map(
+            static fn (RemoteCommand $command): string => $command->shellCommand(),
+            $ssh->commands,
+        );
+        $containerRun = array_values(array_filter(
+            $commands,
+            static fn (string $command): bool => str_contains($command, "'docker' 'container' 'run'"),
+        ))[0];
+
+        expect($containerRun)
+            ->toContain("'--log-driver' 'json-file'")
+            ->toContain("'--log-opt' 'max-size=10m'")
+            ->toContain("'--log-opt' 'max-file=3'");
+    });
+
     it('removes a proven recovery container', function (): void {
         $spec = new MetricsRuntimeSpec()->for(
             MetricsService::Prometheus,

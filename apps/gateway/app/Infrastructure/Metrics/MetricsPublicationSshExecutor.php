@@ -16,7 +16,10 @@ use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
 
-/** @mago-expect lint:cyclomatic-complexity The adapter keeps firewall ownership, mutation, verification, and recovery together. */
+/**
+ * @mago-expect lint:cyclomatic-complexity The adapter keeps firewall ownership, mutation, verification, and recovery together.
+ * @mago-expect lint:too-many-methods The private methods keep each fixed firewall operation narrow and non-generic.
+ */
 final readonly class MetricsPublicationSshExecutor
 {
     private const string FirewallComment = 'orbit:metrics-grafana-upstream';
@@ -125,6 +128,42 @@ final readonly class MetricsPublicationSshExecutor
         );
 
         if ($this->parser->ownership($this->status($metricsNode)->stdout, $shape) !== UfwRuleOwnership::Missing) {
+            throw new ResourceOperationException(
+                'metrics.publication_firewall_remove_verify_failed',
+                'The Metrics Grafana firewall rule remained after removal.',
+                502,
+            );
+        }
+    }
+
+    /**
+     * Removes the Grafana upstream rule without knowing the Gateway.
+     *
+     * The full ownership shape needs the Gateway address the rule allows, and
+     * that address is exactly what is missing when Metrics is disabled with no
+     * active Gateway. The Orbit comment is the rule's own identity, so
+     * abandonment matches on it alone and still proves the rule is gone.
+     */
+    public function abandon(Node $metricsNode): void
+    {
+        $numbers = $this->ruleNumbers($this->status($metricsNode)->stdout);
+
+        if ($numbers === []) {
+            return;
+        }
+
+        if (count($numbers) !== 1) {
+            $this->ownershipDrift();
+        }
+
+        $this->run(
+            $metricsNode,
+            new RemoteCommand(['sudo', 'ufw', '--force', 'delete', $numbers[0]]),
+            'metrics.publication_firewall_remove_failed',
+            'The Metrics Grafana firewall rule could not be removed.',
+        );
+
+        if ($this->ruleNumbers($this->status($metricsNode)->stdout) !== []) {
             throw new ResourceOperationException(
                 'metrics.publication_firewall_remove_verify_failed',
                 'The Metrics Grafana firewall rule remained after removal.',
