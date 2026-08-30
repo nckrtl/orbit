@@ -29,7 +29,7 @@ Components:
 
 ADR: none
 
-Proof: incus
+Proof: incus        # only when a real machine is needed; omit otherwise
 
 Source: none
 ```
@@ -41,7 +41,7 @@ Source: none
 - Add `Proof: incus` when acceptance depends on a real OS, service manager,
   privilege boundary, network, certificate, filesystem ownership, or
   multi-node behavior. Omit it for automated-only work. The topology is
-  always `gateway + app-dev + app-prod` on Ubuntu 26.04; do not describe it.
+  always `gateway + app-dev + app-prod` on Ubuntu 26.04. Do not describe it.
 
 ## ADR
 

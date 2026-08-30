@@ -29,8 +29,11 @@ Rules that hold everywhere:
   PR never introduces or changes an ADR.
 - Feature branches never modify the harness (`apps/e2e`, `bin/e2e-*`).
   Harness changes are their own issues.
-- Proof plans live at `proofs/<ISSUE>.json`; harness state lives in
-  `<worktree>/.e2e/` and `<primary>/.e2e/` and dies with the worktree.
+- Proof plans live at `proofs/<ISSUE>.json`. Per-issue harness state lives
+  in `<worktree>/.e2e/` and dies with the worktree; the promoted standby
+  generation lives in `<primary>/.e2e/standby/` until the next promote.
+- The repository owns agent behavior and the commands; orchestration of
+  agents stays outside it.
 - Production release is a separate process and never reuses a proof topology.
 
 ## Verification
