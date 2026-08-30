@@ -14,6 +14,7 @@ use Throwable;
 final readonly class IncusNetworkLifecycle
 {
     private const string MANAGED_INTERFACE_PATTERN = 'oe+';
+    private const string MANAGED_NETWORK_PATTERN = '/\Aoe-[a-z0-9](?:[a-z0-9-]{0,10}[a-z0-9])?\z/D';
     private const string OWNER = 'orbit-e2e';
 
     public function __construct(
@@ -133,8 +134,10 @@ final readonly class IncusNetworkLifecycle
     }
 
     /**
-     * Delete one orphaned harness network and its host firewall rules. Ownership
-     * metadata is not required: legacy `orbit-e2e-*` networks never carried it.
+     * Delete one orphaned harness network. A managed `oe-*` network also loses
+     * its host firewall rules; a legacy `orbit-e2e-*` network never had harness
+     * rules and the firewall helper refuses its name, so it is deleted directly.
+     * Ownership metadata is not required: legacy networks never carried it.
      */
     public function deleteOrphan(string $name): void
     {
@@ -143,7 +146,9 @@ final readonly class IncusNetworkLifecycle
         }
         $this->assertLocalRemote();
 
-        $this->reconcileRules('remove', $name);
+        if (preg_match(self::MANAGED_NETWORK_PATTERN, $name) === 1) {
+            $this->reconcileRules('remove', $name);
+        }
         $this->host->deleteOrphanNetwork($name);
     }
 
@@ -156,7 +161,7 @@ final readonly class IncusNetworkLifecycle
 
     private function assertManagedNetworkName(string $name): void
     {
-        if (preg_match('/\Aoe-[a-z0-9](?:[a-z0-9-]{0,10}[a-z0-9])?\z/D', $name) !== 1) {
+        if (preg_match(self::MANAGED_NETWORK_PATTERN, $name) !== 1) {
             throw new RuntimeException('Incus network name is outside the managed interface prefix.');
         }
     }

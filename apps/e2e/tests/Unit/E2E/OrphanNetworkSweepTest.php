@@ -147,7 +147,7 @@ describe('orphan network sweep', function () {
             ->and(array_map(static fn (array $command): string => $command[5], $deletes))
             ->toBe(['local:oe-orphan', 'local:orbit-e2e-n-legacy'])
             ->and($firewall)
-            ->toHaveCount(2)
+            ->toHaveCount(1)
             ->and(array_column($networks, 'name'))
             ->toBe(['oe-standby', 'oe-used', 'control-unused', 'incusbr0']);
     });
