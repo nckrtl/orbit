@@ -19,6 +19,8 @@ final readonly class ProofResult
 
     /**
      * @param list<array{id:string,node:string,exit_code:int,stdout:string,stderr:string}> $actions
+     * @param ?TopologyEndState $endsWith The topology the plan declared it ends with; null means the whole profile.
+     * @param list<string> $skippedProbes The standard probes the declaration did not run, for the record.
      */
     public function __construct(
         public string $issue,
@@ -28,6 +30,8 @@ final readonly class ProofResult
         public array $actions,
         public ?string $error,
         public string $recordedAt,
+        public ?TopologyEndState $endsWith = null,
+        public array $skippedProbes = [],
     ) {
         TopologyTarget::assertIssue($issue);
         if (preg_match('/\A[0-9a-f]{40}\z/D', $candidateSha) !== 1) {
@@ -47,6 +51,16 @@ final readonly class ProofResult
         }
         if ($status === ProofStatus::Proved && ($error !== null || $this->failedAction() !== null)) {
             throw new InvalidArgumentException('A proved result cannot carry a failure.');
+        }
+        foreach ($skippedProbes as $probe) {
+            if (! is_string($probe) || $probe === '') {
+                throw new InvalidArgumentException('A skipped proof probe name is invalid.');
+            }
+        }
+        // Nothing is skipped without a declaration that says which node went, so a
+        // record can never name a skipped probe the plan did not pay for.
+        if ($skippedProbes !== [] && $endsWith?->declaresAbsence() !== true) {
+            throw new InvalidArgumentException('A proof without a declared absence cannot skip probes.');
         }
     }
 
@@ -106,6 +120,10 @@ final readonly class ProofResult
             ),
             'recorded_at' => $this->recordedAt,
         ];
+        if ($this->endsWith?->declaresAbsence() === true) {
+            $payload['ends_with'] = $this->endsWith->toArray();
+            $payload['skipped_probes'] = $this->skippedProbes;
+        }
         $failed = $this->failedAction();
         if ($failed !== null) {
             $payload['failed_action'] = $failed;
