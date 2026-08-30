@@ -1,254 +1,63 @@
 ---
 name: developing-orbit-features
-description: Use when implementing or resuming a Ready Orbit Linear issue anywhere in the Orbit monorepo from a prepared feature worktree.
+description: Use when implementing a Ready Orbit Linear issue from its worktree.
 ---
 
 # Developing Orbit Features
 
-Own Work, Compound, discovery, discovery release, candidate proof, the pull
-request, and review corrections. The external project manager owns issue
-state, the worktree, discovery creation, merge, post-merge cleanup (including
-release of the proved topology), and issue closure. The feature worker owns
-its internal implementation subagents. The flow is governed by
-[ADR 0006](../../../docs/decisions/0006-topology-led-feature-development.md).
+You implement one Linear issue in its worktree and open a pull request. The
+project manager owns the issue state, the worktree, review, merge, and cleanup.
 
-## Automated-only path
+## Inputs
 
-An issue without a `Proof: incus` line runs steps 2, 7, and 10, skips steps 3
-to 9, and returns the handoff with `venue: automated`. Step 7's gates apply in
-full. Review corrections continue from step 11.
+The Linear issue (Ready, unchanged contract) and a bootstrapped worktree under
+`.worktrees/<issue>-<slug>` on a branch from `main`. Stop and say so if either
+is missing.
 
-## Repository scope
+## Steps
 
-This root-owned skill is the implementation workflow for the repository root
-and every project below it, including `apps/cli`, `apps/gateway`,
-`packages/php-sdk`, and `apps/e2e`. Invoke it once per issue from the monorepo
-worktree root, even when the issue changes only one contained project.
-
-Root and project-local `AGENTS.md`, rules, and domain skills add constraints for
-the files they cover. They do not replace this skill or its handoff contract.
-
-## Required input
-
-Require the Linear issue contract, prepared clean worktree, branch, and any
-existing pull request or review comments. Confirm that:
-
-- the issue was Ready when claimed, or remains active with an unchanged
-  contract when work resumes;
-- its outcome, scope, acceptance criteria, components, and ADR links are
-  complete;
-- every linked or otherwise governing ADR is already on `main`; and
-- a `Proof: incus` issue names a supported `Composition`, or adding that
-  support is in scope.
-
-Return `blocked` without changing code when a required input or gate is absent.
-
-## Orchestrate for throughput
-
-Act as the implementation orchestrator. Own decomposition, integration,
-cross-project consistency, final verification, Compound, the pull request, and
-the handoff. Delegate bounded implementation and focused tests whenever they
-can run independently. The worker can use subagents during discovery and
-hardening.
-
-Do the work directly when the change touches at most 5 files or stays inside
-a single project. Delegate above that threshold, and keep every available
-collaboration slot filled while useful independent work exists. Delegate with
-the client's available reasoning model at the lowest effort that fits the
-task, and include all needed context in the task. Keep agent spawning and task
-routing centralized in the implementation orchestrator.
-
-Before spawning, map acceptance criteria and components into the smallest
-independent work items. Prefer vertical slices in which one subagent owns both
-behavior and its focused tests. Establish shared contracts first when one task
-depends on another, then start every unblocked task in parallel. Do not wait
-for one subagent before starting another independent task.
-
-Give each subagent:
-
-- the issue contract and its assigned acceptance criteria;
-- the prepared worktree and exact project path;
-- exclusive file or module ownership;
-- the root and nearest project guidance and the domain skills it must use;
-- the focused checks it must run;
-- the active discovery attempt ID when it may run commands on the topology; and
-- notice that other agents share the worktree, so it must preserve their edits
-  and must not commit, push, update the pull request, or revert unrelated work.
-
-Require each subagent to return changed paths, commands and results, unresolved
-risks, and blockers. Review each result before accepting it. Refill a free slot
-immediately with the next unblocked implementation or correction task.
-
-The orchestrator may edit code for small integration seams, tightly coupled
-work that cannot be split safely, or a task whose delegation overhead exceeds
-its implementation time.
-
-## Flow
-
-Follow these steps in this order. Steps 3 to 9 apply to `Proof: incus` issues.
-Automated-only work skips them and continues at step 10 with
-`venue: automated`.
-
-1. **Prepare issue.** The issue author prepares the Linear issue with
-   `.agents/skills/creating-orbit-issues`.
-2. **Claim issue.** The project manager claims the Ready issue, creates the
-   clean worktree, and starts this worker. Read the root and nearest project
-   `AGENTS.md` files, relevant rules, and required local skills. Complete each
-   changed project's guidance bootstrap before editing its files. Inspect
-   `/home/nckrtl/orbit-old` only when the issue reimplements prior product
-   behavior.
-3. **Select recipe.** Map the Linear `Composition` to repository-supported
-   Gateway node types and the `apps/e2e` recipe. The supported recipe is
-   `gateway_app-dev_app-prod`. An unsupported requirement blocks normal
-   feature work; return `blocked`.
-4. **Create discovery.** Request a discovery attempt from the project manager.
-   It runs `bin/e2e-topology acquire ISSUE WORKTREE --json`; the attempt
-   lives in `<worktree>/.e2e/`. Discovery mounts the worktree read-write at `/home/orbit/orbit`
-   on `gateway` and `app-dev`, so every host edit is live in both guests.
-   Guests never run composer in discovery; host `bin/bootstrap` owns vendor.
-5. **Learn desired state.** Change code and task-owned guest state until the
-   topology shows the required behavior. Open a shell as `orbit` with
-   `bin/e2e-topology shell ISSUE ROLE`, or run exact commands with
-   `bin/e2e-topology exec ISSUE ROLE --argv='["program","arg"]' --json`
-   or, when the command needs stdin, `--argv-file=PATH` where the file holds
-   `{"argv":[...],"stdin":null}`; the two options are mutually exclusive. The
-   vector runs as the orbit user through `env`, so `argv[0]` must resolve on
-   the guest `PATH` or be an absolute path. The harness links the checkout's
-   CLI to `/usr/local/bin/orbit` on `gateway` and `app-dev`, so `orbit`
-   resolves by name in discovery and proof alike. Example:
-
-   ```bash
-   bin/e2e-topology exec NCK-82 app-dev \
-     --argv='["orbit","doctor","--json"]' --json
-   ```
-
-   An issue with no active attempt fails with `ISSUE has no active attempt.`
-
-   Use `bin/e2e-topology verify ISSUE --json` and
-   `bin/e2e-topology status ISSUE --json` to inspect. Discovery output is not
-   proof evidence.
-6. **Codify required state.** Every manual action from discovery becomes one
-   of: repository behavior, proof setup in the proof plan, a
-   `post_deployment_action`, or diagnostic-only work that is not needed later.
-   Repository behavior owns all product state.
-7. **Harden candidate.** Implement only the issue scope. Use test-driven
-   development for behavior. Integrate subagent changes continuously and check
-   cross-project contracts. Compound only reusable learning into the correct
-   existing ADR, reference, solution, or rule; give a specific reason when no
-   durable update is useful. Map each acceptance criterion to a focused
-   acceptance check. Run each changed project's `composer check` and root
-   `bin/test`. A Mago report at level `error` fails `composer check`; lower
-   levels (`warning`, `help`, `note`) are advisory. Commit the clean
-   candidate. That commit is the code freeze. These gates (test-driven
-   development, `composer check`, `bin/test`, and the commit freeze) apply on
-   both the Incus path and the automated-only path.
-   A diagnosis round that changes code moves the code freeze to the new
-   commit; rerun the gates on it before the next proof. The proof plan and
-   the fixtures under `proofs/<issue>/` may change between
-   rounds, because they are proof input rather than product state.
-   A harness-touching diff adds one more gate: when the diff touches
-   `apps/e2e/app/**`, `apps/e2e/resources/guest/**`, `apps/e2e/tests/Live/**`,
-   or `bin/e2e-*`, run the live acceptance suite
-   `tests/Live/TopologyLedLifecycleAcceptanceTest.php` from a validation clone
-   whose `main` is the frozen candidate with
-   `bin/e2e-live <candidate-sha>`, and record the command, assertion count,
-   and duration of the suite in the handoff `checks` and the pull request
-   body. The wrapper refuses to run while the issue's
-   discovery attempt is active, so run it after step 8 and before step 9. A
-   new code freeze reruns the suites. Review and merge treat a harness-touching
-   diff without this evidence as blocking.
-8. **Remove discovery.** The worker runs
-   `bin/e2e-topology release ISSUE --json` for its own discovery attempt; no
-   project-manager round trip is needed. Wait for verified
-   absence before proof. Proof cannot start while a discovery attempt exists.
-9. **Prove fresh.** Write the proof plan file `proofs/<issue>.json`:
+1. **Read the issue.** Outcome, scope, acceptance criteria, components, ADR.
+   If it has no `Proof: incus` line, do steps 5 and 7 only.
+2. **Fresh topology.** `bin/e2e-topology acquire <ISSUE> <worktree>`. Three VMs
+   from the standby snapshot; the worktree is mounted at `/home/orbit/orbit` on
+   `gateway` and `app-dev`. `app-prod` runs no Orbit code.
+3. **Get it right.** `bin/e2e-topology shell <ISSUE> <role>` opens a shell on a
+   node as `orbit`. Edit the worktree (host or node, same files), run Orbit,
+   repeat until the topology shows the behaviour the issue asks for. Use
+   `bin/e2e-topology exec <ISSUE> <role> --argv='[...]'` for scripted checks.
+   Keep a note of every manual step.
+4. **Report harness gaps.** If the harness itself (anything under `apps/e2e`
+   or `bin/e2e-*`) blocks you, stop and report it. Do not change the harness
+   in a feature branch.
+5. **Codify.** Every manual step becomes product code with tests, or is dropped
+   as not needed. Test-driven for behaviour. Run each changed project's
+   `composer check` and root `bin/test`. Commit.
+6. **Prove fresh.** Write `proofs/<ISSUE>.json`:
 
    ```json
    {
-     "setup": [{"id": "text", "node": "gateway", "argv": [], "timeout_seconds": 60}],
-     "acceptance": [{"id": "text", "node": "app-dev", "argv": [], "timeout_seconds": 60}]
+     "setup": [{"id": "text", "node": "gateway", "argv": ["..."], "timeout_seconds": 60}],
+     "acceptance": [{"id": "text", "node": "app-dev", "argv": ["orbit", "..."], "timeout_seconds": 60}]
    }
    ```
 
-   Put proof-only scripts and data in `proofs/<issue>/` and commit them with
-   the candidate; `prove` stages them root-owned at
-   `/var/lib/orbit-e2e/proof/<name>` on every role, including `app-prod`. The
-   worker runs the one-shot proof command for the committed, clean worktree
-   HEAD itself: `bin/e2e-topology prove ISSUE --plan=proofs/ISSUE.json --json`.
-   The harness creates a fresh proof attempt, synchronizes the HEAD commit
-   from Git, verifies clean guest checkout identity, stages the fixtures,
-   converges, runs setup and acceptance, and writes the compact result to
-   `<worktree>/.e2e/proof.json`. Proof never mounts the worktree. A failed
-   proof becomes `diagnosis`, the output ends with `failed_action` (`id`,
-   `node`, `exit_code`, `stdout_tail`, `stderr_tail`), and the topology stays
-   alive to inspect with `shell`; release it and prove again after a fix. A
-   proved attempt refuses `sync` and `exec` and stays alive until `release`.
-10. **Open a normal pull request.** Push the candidate and create the pull
-    request from its template only after proof succeeds. Orbit does not use
-    draft pull requests. CI and independent review start immediately and run
-    in parallel. Return `review_ready`.
-11. **Handle corrections.** On review resumption, assign every unresolved
-    comment in the same worktree. Any new commit changes the pull-request head,
-    so the prior proof is stale. Release the old topology with
-    `bin/e2e-topology release ISSUE --json`, rerun the local gates
-    from step 7, complete fresh proof from step 9, and then push the new
-    candidate. After the push, post one pull request conversation comment for
-    that candidate SHA and return `changes_addressed`:
+   One acceptance action per acceptance criterion; every action must exit 0.
+   Optional fixture files go in `proofs/<ISSUE>/` and are staged to
+   `/var/lib/orbit-e2e/proof/` on every node. Then:
+   `git merge main`, `bin/e2e-topology release <ISSUE>`,
+   `bin/e2e-topology prove <ISSUE>`. On `diagnosis`, fix, commit, prove again.
+   Leave the proved topology alive.
+7. **Pull request.** Push. Use the template: what changed, why, and
+   "Proved with `proofs/<ISSUE>.json` at `<sha>`" (or "Automated tests only").
+   Short and for humans. Do not wait for CI.
 
-    ```text
-    Review feedback addressed in <full-sha>. Ready for re-review.
-    ```
+## Corrections
 
-12. **Merge.** The merge verifier uses
-    `.agents/skills/merging-orbit-pull-requests`.
-13. **Clean development resources.** The project manager keeps post-merge
-    cleanup only: it releases the proof topology, refreshes prepared state
-    when needed, removes the worktree, and closes the issue.
-14. **Deploy separately.** The production deployment process deploys the
-    merged code and performs and verifies `post_deployment_actions`.
+On review comments: fix, commit, `git merge main`, release and prove again,
+push, reply "Addressed in `<sha>`".
 
-Do not approve, merge, close the issue, remove the worktree, release a proved
-attempt while its pull request is open, or mutate standby or unrelated Incus
-resources.
+## Rules
 
-## Handoff
-
-Return this YAML block. `review_ready` requires the normal pull request and
-valid proof for `candidate_sha`. CI fields may remain `null` while CI runs.
-
-```yaml
-role: feature-worker
-status: review_ready|changes_addressed|blocked
-issue: NCK-123|null
-pull_request: URL|null
-candidate_sha: full-sha|null
-proof:
-  venue: automated|incus
-  topology: gateway_app-dev_app-prod|null
-  attempt_id: id|null
-  status: proved|not-applicable
-  acceptance:
-    - criterion: text
-      evidence: text
-post_deployment_actions:
-  - target: text
-    operation: text
-    reason: text
-    recovery: text
-    verification: text
-checks:
-  - command: text
-    result: text
-ci_url: URL|null
-ci_sha: full-sha|null
-compound:
-  disposition: updated|not-needed|not-assessed
-  paths: []
-  reason: text
-blockers: []
-```
-
-Use `venue: automated`, `topology: null`, `attempt_id: null`, and
-`status: not-applicable` for automated-only work. Use `changes_addressed`
-after a correction is proved and pushed. Do not report the feature as
-complete. The development cycle ends after merge and external cleanup.
+- Feature branches never touch `apps/e2e` or `bin/e2e-*`.
+- Proof actions are read-only checks unless the plan says `"mutates": true`.
+- One issue per worktree; do not reuse a topology across issues.

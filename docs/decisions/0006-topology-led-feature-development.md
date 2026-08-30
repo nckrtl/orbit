@@ -4,6 +4,14 @@
 
 Accepted on 2026-08-29.
 
+Amended on 2026-08-30: the flow is the nine steps in
+[development-workflow](../reference/development-workflow.md). Proof plans live
+at `proofs/<ISSUE>.json`; harness state lives in `<worktree>/.e2e/` and
+`<primary>/.e2e/` and is deleted with the worktree; the reviewer re-proves and
+the merge agent promotes the reviewer's topology as the standby generation.
+YAML handoffs, gate checklists, evidence archives, and the rolling acceptance
+suite are withdrawn. Feature branches never modify the harness.
+
 This decision supersedes the shared-live feature-development boundary of
 [ADR 0002](0002-candidate-deployment-proof-boundary.md): its shared-live
 rollout, pre-rollout review, live mutation, restored-pre-state, and post-proof
