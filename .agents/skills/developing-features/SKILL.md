@@ -1,9 +1,9 @@
 ---
-name: developing-orbit-features
+name: developing-features
 description: Use when implementing a Ready Orbit Linear issue from its worktree.
 ---
 
-# Developing Orbit Features
+# Developing Features
 
 You implement one Linear issue in its worktree and open a pull request.
 Issue state, the worktree, review, merge, and cleanup belong to other agents.
@@ -52,6 +52,14 @@ is missing.
    "Proved with `proofs/<ISSUE>.json` at `<sha>`",
    "Harness: `bin/e2e-live <sha>` passed.", or "Automated tests only".
    Short and for humans. Do not wait for CI.
+
+## Delegation
+
+You are the orchestrator for the issue. Delegate bounded pieces to subagents:
+a component's implementation, its tests, a targeted code read. Give each
+subagent the issue, the worktree, and the exact scope. Integrate their work
+yourself. Keep steps 2, 3, 6, and 7 (topology, proof, pull request) in your
+own hands. Do the work directly when the change touches at most five files.
 
 ## Corrections
 

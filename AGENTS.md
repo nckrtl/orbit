@@ -18,10 +18,10 @@ Every change follows the nine-step flow in
 topology → get it right → codify → prove fresh → pull request → review →
 merge. The skills carry the exact commands:
 
-- `.agents/skills/creating-orbit-issues` — write the Linear issue.
-- `.agents/skills/developing-orbit-features` — implement it and open the PR.
-- `.agents/skills/reviewing-orbit-pull-requests` — re-prove and approve.
-- `.agents/skills/merging-orbit-pull-requests` — merge, promote, clean up.
+- `.agents/skills/creating-issues` — write the Linear issue.
+- `.agents/skills/developing-features` — implement it and open the PR.
+- `.agents/skills/reviewing-pull-requests` — re-prove and approve.
+- `.agents/skills/merging-pull-requests` — merge, promote, clean up.
 
 Rules that hold everywhere:
 

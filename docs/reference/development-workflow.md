@@ -9,7 +9,7 @@ merges and cleans up. Governed by
 
 1. **Issue.** Linear (team `NCK`): outcome, scope, acceptance criteria,
    components, ADR. `Proof: incus` when a real machine is needed. Ready when
-   complete. See [creating-orbit-issues](../../.agents/skills/creating-orbit-issues/SKILL.md).
+   complete. See [creating-issues](../../.agents/skills/creating-issues/SKILL.md).
 2. **Worktree.** `bin/worktree-create NCK-123 slug`, then `bin/bootstrap` in it.
    Issue → In Progress.
 3. **Fresh topology.** `bin/e2e-topology acquire NCK-123 <worktree>`: three VMs

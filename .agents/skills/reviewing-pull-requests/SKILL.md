@@ -1,9 +1,9 @@
 ---
-name: reviewing-orbit-pull-requests
+name: reviewing-pull-requests
 description: Use when reviewing an Orbit pull request.
 ---
 
-# Reviewing Orbit Pull Requests
+# Reviewing Pull Requests
 
 Approve only what you re-proved yourself.
 

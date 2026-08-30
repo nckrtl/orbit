@@ -1,9 +1,9 @@
 ---
-name: creating-orbit-issues
+name: creating-issues
 description: Use when turning an Orbit request or production GitHub report into a Linear issue before implementation.
 ---
 
-# Creating Orbit Issues
+# Creating Issues
 
 Create one Linear issue in team `NCK`. Linear owns the outcome, scope,
 acceptance criteria, and ADR decision. Do not create a repository plan.

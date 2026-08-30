@@ -1,9 +1,9 @@
 ---
-name: merging-orbit-pull-requests
+name: merging-pull-requests
 description: Use when merging an approved Orbit pull request and cleaning up.
 ---
 
-# Merging Orbit Pull Requests
+# Merging Pull Requests
 
 ## Steps
 
