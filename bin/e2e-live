@@ -138,6 +138,17 @@ else
     git -C "$validate" worktree add --quiet -B acc-1-live "$feature_worktree" "$candidate"
 fi
 
+# The guests mount the feature worktree, and converging writes
+# apps/gateway/.env there with guest paths (ORBIT_HOME=/home/orbit/.orbit).
+# On the host that file makes bin/bootstrap create a guest directory, so every
+# run after the first fails before it starts. The host bootstrap and the next
+# convergence each write what they need, so the guest copy just goes.
+gateway_env=$feature_worktree/apps/gateway/.env
+if [[ -f "$gateway_env" ]] && grep -q '^ORBIT_HOME=/home/orbit/' "$gateway_env"; then
+    log "removing the guest-written apps/gateway/.env from $feature_worktree"
+    rm -f "$gateway_env"
+fi
+
 bootstrap_targets=("$validate" "$feature_worktree")
 bootstrap_logs=$(mktemp -d)
 bootstrap_pids=()

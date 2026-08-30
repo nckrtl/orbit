@@ -365,7 +365,9 @@ feature flow against a standby built from the candidate. The wrapper:
   topology of another issue shares nothing with the run and is no conflict;
 - fetches the candidate from the calling repository and runs
   `git checkout -B main <sha>` there, resets the linked worktree
-  `.worktrees/acc-1` (branch `acc-1-live`) to the candidate, and runs
+  `.worktrees/acc-1` (branch `acc-1-live`) to the candidate, drops the
+  `apps/gateway/.env` a guest wrote into that mounted worktree (it names guest
+  paths, and `bin/bootstrap` would try to create them on the host), and runs
   `bin/bootstrap` in both;
 - releases a stale `ACC-1` attempt, then refreshes the clone's standby to the
   candidate (`unchanged` when the fingerprint did not move), or runs
