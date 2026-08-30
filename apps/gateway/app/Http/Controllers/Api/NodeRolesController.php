@@ -23,9 +23,9 @@ use App\Models\NodeRole;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
-#[RequiresNodeAccess(ServingNode::Target)]
 final class NodeRolesController extends Controller
 {
+    #[RequiresNodeAccess(ServingNode::Target)]
     public function index(Request $request, Node $node, ListNodeRolesAction $action): JsonResponse
     {
         return response()->json([
@@ -42,6 +42,7 @@ final class NodeRolesController extends Controller
         ]);
     }
 
+    #[RequiresNodeAccess(ServingNode::RoleMutation)]
     public function store(
         AddNodeRoleRequest $request,
         Node $node,
@@ -69,6 +70,7 @@ final class NodeRolesController extends Controller
         );
     }
 
+    #[RequiresNodeAccess(ServingNode::RoleMutation)]
     public function destroy(
         RemoveNodeRoleRequest $request,
         Node $node,

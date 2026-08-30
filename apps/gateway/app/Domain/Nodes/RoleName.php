@@ -10,4 +10,5 @@ enum RoleName: string
     case Vpn = 'vpn';
     case AppDev = 'app-dev';
     case AppProd = 'app-prod';
+    case Metrics = 'metrics';
 }

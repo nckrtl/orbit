@@ -10,6 +10,47 @@ if ! command -v composer >/dev/null 2>&1; then
     exit 2
 fi
 
+if ! command -v openssl >/dev/null 2>&1; then
+    printf 'OpenSSL is required.\n' >&2
+    exit 2
+fi
+
+# The Gateway keeps its encryption key beside its durable state in ORBIT_HOME,
+# so a replaced checkout still decrypts the settings the previous one wrote.
+# `apps/gateway/config/app.php` reads this file when APP_KEY is unset, and
+# nothing else creates it.
+ensure_gateway_app_key() {
+    local env_file="$repository_root/apps/gateway/.env"
+    local orbit_home="${ORBIT_HOME:-}"
+
+    if [[ -z "$orbit_home" && -f "$env_file" ]]; then
+        orbit_home="$(sed -n 's/^ORBIT_HOME=//p' "$env_file" | tail -n 1)"
+        orbit_home="${orbit_home%\"}"
+        orbit_home="${orbit_home#\"}"
+    fi
+
+    if [[ -z "$orbit_home" ]]; then
+        orbit_home="$HOME/.orbit"
+    fi
+
+    local key_file="$orbit_home/gateway.app-key"
+
+    if [[ -s "$key_file" ]]; then
+        return 0
+    fi
+
+    mkdir -p "$orbit_home"
+    chmod 0700 "$orbit_home"
+
+    local candidate key
+    candidate="$(mktemp "$orbit_home/gateway.app-key.XXXXXX")"
+    chmod 0600 "$candidate"
+    key="$(openssl rand -base64 32 | tr -d '\n')"
+    printf 'base64:%s\n' "$key" >"$candidate"
+    mv -f "$candidate" "$key_file"
+    printf '\n[apps/gateway] wrote %s\n' "$key_file"
+}
+
 log_directory="$(mktemp -d)"
 pids=()
 failed=0
@@ -51,6 +92,8 @@ done
 if ((failed != 0)); then
     exit "$failed"
 fi
+
+ensure_gateway_app_key
 
 pids=()
 

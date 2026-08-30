@@ -14,7 +14,7 @@ final class AddNodeRoleCommand extends GatewayCommand
 {
     #[\Override]
     protected $signature = 'node:role:add
-        {node : Numeric node ID}
+        {node : Node ID or name}
         {role : Role name}
         {--converge : Converge an existing assignment}
         {--json : Return machine-readable JSON}';
@@ -26,12 +26,6 @@ final class AddNodeRoleCommand extends GatewayCommand
         GatewayConfigRepository $repository,
         GatewayConnectorFactory $connectors,
     ): int {
-        $nodeId = $this->positiveId('node', 'Node', 'node.id_invalid');
-
-        if ($nodeId === null) {
-            return self::FAILURE;
-        }
-
         $role = $this->stringArgument('role', 'Role', 'node_role.role_required');
 
         if ($role === null) {
@@ -41,6 +35,12 @@ final class AddNodeRoleCommand extends GatewayCommand
         $connector = $this->gatewayConnector($repository, $connectors);
 
         if ($connector === null) {
+            return self::FAILURE;
+        }
+
+        $nodeId = $this->resolveNodeId($connector, $this->argument('node'));
+
+        if ($nodeId === null) {
             return self::FAILURE;
         }
 
