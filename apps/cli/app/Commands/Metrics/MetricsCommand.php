@@ -27,6 +27,11 @@ abstract class MetricsCommand extends GatewayCommand
             return self::SUCCESS;
         }
         $this->line("Metrics operation completed for node #{$response->nodeId}: {$response->status}.");
+        if ($response->publication === 'uncleaned') {
+            $this->warn(
+                'Publication not cleaned: no single active Gateway. The metrics.orbit route, certificate, and DNS record remain on the Gateway.',
+            );
+        }
         $this->line("Request ID: {$response->requestId}");
 
         return self::SUCCESS;

@@ -49,6 +49,31 @@ describe('node role assignment response transport', function (): void {
                     'error_code' => null,
                 ],
                 'removed' => false,
+                'degradation' => null,
+                'retained_on_node' => [],
+                'follow_up' => null,
+                'request_id' => node_role_request_id(),
+            ]);
+    });
+
+    it('maps a degraded node role removal', function (): void {
+        $mutation = NodeRoleMutationResponse::fromGatewayData(
+            node_role_removed_degraded_gateway_data(),
+            node_role_request_id(),
+        );
+
+        expect($mutation->toArray())
+            ->toBe([
+                'node_id' => 7,
+                'node_name' => 'app-1',
+                'role' => 'app-dev',
+                'assignment' => null,
+                'removed' => true,
+                'degradation' => 'unreachable',
+                'retained_on_node' => [
+                    'Caddy site configuration and certificates for the app-dev role',
+                ],
+                'follow_up' => 'Run the node-local Metrics cleanup on the node once it boots, or discard the node.',
                 'request_id' => node_role_request_id(),
             ]);
     });
@@ -336,6 +361,82 @@ describe('node role mutation response transport', function (): void {
                 'removed' => false,
             ], node_role_request_id()),
             message: 'Gateway response contains an invalid node role mutation assignment.',
+        );
+    });
+});
+
+describe('node role mutation response degradation transport', function (): void {
+    it('rejects an invalid degradation for node role mutations', function (): void {
+        assert_node_role_boundary_exception(
+            fn (): NodeRoleMutationResponse => NodeRoleMutationResponse::fromGatewayData([
+                'node_id' => 7,
+                'node_name' => 'app-1',
+                'role' => 'app-dev',
+                'assignment' => null,
+                'removed' => true,
+                'degradation' => 'node_unreachable',
+                'retained_on_node' => [],
+                'follow_up' => null,
+            ], node_role_request_id()),
+            message: 'Gateway response contains an invalid node role mutation degradation.',
+        );
+        assert_node_role_boundary_exception(
+            fn (): NodeRoleMutationResponse => NodeRoleMutationResponse::fromGatewayData([
+                'node_id' => 7,
+                'node_name' => 'app-1',
+                'role' => 'app-dev',
+                'assignment' => null,
+                'removed' => true,
+                'degradation' => true,
+                'retained_on_node' => [],
+                'follow_up' => null,
+            ], node_role_request_id()),
+            message: 'Gateway response contains an invalid node role mutation degradation.',
+        );
+    });
+
+    it('rejects a non-list retained_on_node for node role mutations', function (): void {
+        assert_node_role_boundary_exception(
+            fn (): NodeRoleMutationResponse => NodeRoleMutationResponse::fromGatewayData([
+                'node_id' => 7,
+                'node_name' => 'app-1',
+                'role' => 'app-dev',
+                'assignment' => null,
+                'removed' => true,
+                'degradation' => 'unreachable',
+                'retained_on_node' => 'not-a-list',
+                'follow_up' => null,
+            ], node_role_request_id()),
+            message: 'Gateway response contains an invalid node role mutation retained_on_node.',
+        );
+        assert_node_role_boundary_exception(
+            fn (): NodeRoleMutationResponse => NodeRoleMutationResponse::fromGatewayData([
+                'node_id' => 7,
+                'node_name' => 'app-1',
+                'role' => 'app-dev',
+                'assignment' => null,
+                'removed' => true,
+                'degradation' => 'unreachable',
+                'retained_on_node' => ['fine', 7],
+                'follow_up' => null,
+            ], node_role_request_id()),
+            message: 'Gateway response contains an invalid node role mutation retained_on_node.',
+        );
+    });
+
+    it('rejects a non-string follow_up for node role mutations', function (): void {
+        assert_node_role_boundary_exception(
+            fn (): NodeRoleMutationResponse => NodeRoleMutationResponse::fromGatewayData([
+                'node_id' => 7,
+                'node_name' => 'app-1',
+                'role' => 'app-dev',
+                'assignment' => null,
+                'removed' => true,
+                'degradation' => 'unreachable',
+                'retained_on_node' => [],
+                'follow_up' => 42,
+            ], node_role_request_id()),
+            message: 'Gateway response contains an invalid node role mutation follow_up.',
         );
     });
 });

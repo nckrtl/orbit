@@ -41,4 +41,13 @@ final readonly class AppProdRoleBaseline implements RoleBaseline
         $this->caddy->remove($node);
         $this->firewall->remove($node, RoleName::AppProd, $node->user);
     }
+
+    /**
+     * Nothing here lives on the Gateway.
+     *
+     * The Caddy route and the firewall rule both live on the node itself, so
+     * both steps would have run over SSH. With the node unreachable, both are
+     * reported as retained.
+     */
+    public function removeUnreachable(Node $node, NodeRole $assignment): void {}
 }

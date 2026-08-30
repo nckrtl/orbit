@@ -26,29 +26,15 @@ use Throwable;
  */
 final readonly class MetricsSshExecutor implements MetricsRuntimeHost, MetricsCredentialRuntime
 {
-    private const string ConfigurationDirectory = '/etc/orbit/metrics';
+    private const string ConfigurationDirectory = MetricsFootprint::ConfigurationDirectory;
 
-    private const string OwnershipMarker = '/etc/orbit/metrics/.orbit-owner';
-
-    /** @var non-empty-list<string> */
-    private const array ConfigurationDirectories = [
-        '/etc/orbit/metrics',
-        '/etc/orbit/metrics/grafana',
-        '/etc/orbit/metrics/grafana/provisioning',
-        '/etc/orbit/metrics/grafana/provisioning/datasources',
-        '/etc/orbit/metrics/grafana/provisioning/dashboards',
-        '/etc/orbit/metrics/grafana/dashboards',
-    ];
+    private const string OwnershipMarker = MetricsFootprint::OwnershipMarker;
 
     /** @var non-empty-list<string> */
-    private const array ConfigurationPaths = [
-        '/etc/orbit/metrics/prometheus.yml',
-        '/etc/orbit/metrics/grafana/grafana.ini',
-        '/etc/orbit/metrics/grafana/provisioning/datasources/prometheus.yml',
-        '/etc/orbit/metrics/grafana/provisioning/dashboards/provider.yml',
-        '/etc/orbit/metrics/grafana/dashboards/orbit-node-resources.json',
-        '/etc/orbit/metrics/grafana/admin-password',
-    ];
+    private const array ConfigurationDirectories = MetricsFootprint::ConfigurationDirectories;
+
+    /** @var non-empty-list<string> */
+    private const array ConfigurationPaths = MetricsFootprint::ConfigurationPaths;
 
     public function __construct(
         private SshExecutor $ssh,
@@ -76,7 +62,7 @@ final readonly class MetricsSshExecutor implements MetricsRuntimeHost, MetricsCr
             'Metrics configuration ownership cannot be proved.',
         );
 
-        if ($marker->stdout !== "metrics\n") {
+        if ($marker->stdout !== MetricsFootprint::OwnershipMarkerContents) {
             throw new ResourceOperationException(
                 'metrics.configuration_ownership_drift',
                 'Metrics configuration ownership cannot be proved.',
@@ -163,7 +149,7 @@ final readonly class MetricsSshExecutor implements MetricsRuntimeHost, MetricsCr
 
         $this->publishFile($node, new MetricsGeneratedFile(
             path: self::OwnershipMarker,
-            contents: new ProtectedMetricsSecret("metrics\n"),
+            contents: new ProtectedMetricsSecret(MetricsFootprint::OwnershipMarkerContents),
             mode: 0o640,
         ));
 
@@ -177,7 +163,7 @@ final readonly class MetricsSshExecutor implements MetricsRuntimeHost, MetricsCr
         foreach (self::ConfigurationPaths as $path) {
             $this->run(
                 $node,
-                new RemoteCommand(['sudo', 'rm', '-f', '--', $path.'.orbit-candidate']),
+                new RemoteCommand(['sudo', 'rm', '-f', '--', $path.MetricsFootprint::CandidateSuffix]),
                 'metrics.configuration_rollback_failed',
                 'Metrics configuration recovery did not complete.',
             );
@@ -363,7 +349,7 @@ final readonly class MetricsSshExecutor implements MetricsRuntimeHost, MetricsCr
             'Metrics configuration ownership cannot be proved.',
         );
 
-        if ($marker->stdout !== "metrics\n") {
+        if ($marker->stdout !== MetricsFootprint::OwnershipMarkerContents) {
             throw new ResourceOperationException(
                 'metrics.configuration_ownership_drift',
                 'Metrics configuration ownership cannot be proved.',
@@ -416,7 +402,10 @@ final readonly class MetricsSshExecutor implements MetricsRuntimeHost, MetricsCr
         try {
             $state = $this->inspectContainer($node, $name);
 
-            if ($state === null || ($state['com.orbit.managed'] ?? null) !== 'metrics') {
+            if (
+                $state === null
+                || ($state[MetricsFootprint::ManagedLabel] ?? null) !== MetricsFootprint::ManagedValue
+            ) {
                 return false;
             }
 
@@ -486,7 +475,7 @@ final readonly class MetricsSshExecutor implements MetricsRuntimeHost, MetricsCr
      */
     private function publishFile(Node $node, MetricsGeneratedFile $file): void
     {
-        $candidate = $file->path.'.orbit-candidate';
+        $candidate = $file->path.MetricsFootprint::CandidateSuffix;
         $this->run(
             $node,
             new RemoteCommand(['sudo', 'rm', '-f', '--', $candidate]),
@@ -590,7 +579,7 @@ final readonly class MetricsSshExecutor implements MetricsRuntimeHost, MetricsCr
         }
 
         if (
-            ($labels['com.orbit.managed'] ?? null) !== 'metrics'
+            ($labels[MetricsFootprint::ManagedLabel] ?? null) !== MetricsFootprint::ManagedValue
             || ($labels['com.orbit.metrics.service'] ?? null) !== $spec->service->value
         ) {
             throw new ResourceOperationException(
@@ -609,7 +598,7 @@ final readonly class MetricsSshExecutor implements MetricsRuntimeHost, MetricsCr
         }
 
         if (
-            ($labels['com.orbit.managed'] ?? null) !== 'metrics'
+            ($labels[MetricsFootprint::ManagedLabel] ?? null) !== MetricsFootprint::ManagedValue
             || ($labels['com.orbit.metrics.volume'] ?? null) !== $spec->service->value
         ) {
             throw new ResourceOperationException(
@@ -658,7 +647,14 @@ final readonly class MetricsSshExecutor implements MetricsRuntimeHost, MetricsCr
             'unless-stopped',
             '--network',
             'host',
+            '--log-driver',
+            $spec->logDriver,
         ];
+
+        foreach ($spec->logOptions as $key => $value) {
+            $arguments[] = '--log-opt';
+            $arguments[] = "{$key}={$value}";
+        }
 
         foreach ($spec->labels as $key => $value) {
             $arguments[] = '--label';
@@ -950,7 +946,7 @@ final readonly class MetricsSshExecutor implements MetricsRuntimeHost, MetricsCr
             'output = "/dev/null"',
             'user = '.$this->curlQuote("admin:{$password}"),
             'request = '.$this->curlQuote($method),
-            'url = '.$this->curlQuote("http://{$address}:3000{$path}"),
+            'url = '.$this->curlQuote('http://'.$address.':'.MetricsFootprint::PublicationPort.$path),
         ];
 
         if (is_string($payload)) {

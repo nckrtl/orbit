@@ -330,6 +330,77 @@ describe('Gateway host prerequisite convergence', function () {
     });
 });
 
+/**
+ * A verifier script with the gateway database, SSH material, and the `php`,
+ * `wg`, `sudo`, and `ssh` commands faked under one root. `wg` routes app-dev
+ * only, so a run that declares app-prod finds one route missing.
+ */
+function verifierWireguardFixture(): string
+{
+    $root = temporaryPath('orbit-verifier-wireguard-', 4);
+    mkdir("{$root}/bin", 0o700, true);
+    mkdir("{$root}/home/orbit/.orbit/ssh", 0o700, true);
+    file_put_contents("{$root}/gateway.sqlite", 'fixture');
+    file_put_contents("{$root}/home/orbit/.orbit/ssh/id_ed25519", 'fixture');
+    file_put_contents("{$root}/home/orbit/.orbit/ssh/known_hosts", 'fixture');
+    file_put_contents("{$root}/bin/php", <<<'BASH'
+        #!/usr/bin/env bash
+        case "$*" in
+          *app-dev*) printf '10.0.0.10\n' ;;
+          *app-prod*) printf '10.0.0.20\n' ;;
+          *) exit 1 ;;
+        esac
+        BASH);
+    file_put_contents("{$root}/bin/wg", <<<'BASH'
+        #!/usr/bin/env bash
+        printf '%s\n' 'peer-dev 10.0.0.10/32' 'peer-unrelated 10.0.0.99/32'
+        BASH);
+    file_put_contents("{$root}/bin/sudo", <<<'BASH'
+        #!/usr/bin/env bash
+        shift 3
+        exec "$@"
+        BASH);
+    file_put_contents("{$root}/bin/ssh", "#!/usr/bin/env bash\nprintf 'ssh-reached\\n' >> '{$root}/ssh-reached'\n");
+    foreach (['php', 'wg', 'sudo', 'ssh'] as $command) {
+        chmod("{$root}/bin/{$command}", 0o700);
+    }
+    $script = str_replace(
+        [
+            '/home/orbit/.orbit/gateway.sqlite',
+            '/home/orbit/.orbit/ssh/id_ed25519',
+            '/home/orbit/.orbit/ssh/known_hosts',
+        ],
+        [
+            "{$root}/gateway.sqlite",
+            "{$root}/home/orbit/.orbit/ssh/id_ed25519",
+            "{$root}/home/orbit/.orbit/ssh/known_hosts",
+        ],
+        (string) file_get_contents(dirname(__DIR__, 3).'/resources/guest/verify-topology.sh'),
+    );
+    file_put_contents("{$root}/verify-topology.sh", $script);
+    chmod("{$root}/verify-topology.sh", 0o700);
+
+    return $root;
+}
+
+/**
+ * The reachability probe of one fixture root, for the given declared peers.
+ *
+ * @param list<string> $peers
+ */
+function verifierWireguardProcess(string $root, array $peers): Process
+{
+    return new Process([
+        'bash',
+        "{$root}/verify-topology.sh",
+        'wireguard.reachability',
+        'readiness',
+        str_repeat('a', 40),
+        'orbit-e2e-standby-gateway',
+        ...$peers,
+    ], env: ['PATH' => "{$root}/bin:".getenv('PATH')]);
+}
+
 describe('convergence guest scripts', function () {
     it('runs Gateway Artisan commands from the Gateway checkout', function () {
         $root = temporaryPath('orbit-gateway-converge-', 4);
@@ -572,6 +643,20 @@ describe('convergence guest scripts', function () {
             $process = new Process(['bash', $script, ...$args]);
             expect($process->run())->not->toBe(0)->and(trim($process->getOutput()))->toBe('');
         }
+        $instance = 'orbit-e2e-standby-gateway';
+        // Only the two fleet probes take a declared topology, and only in the shape they take.
+        foreach ([
+            ['vm.gateway.running', 'readiness', $sha, $instance, 'gateway,app-dev'],
+            ['role.gateway', 'readiness', $sha, $instance, 'gateway,app-dev'],
+            ['wireguard.reachability', 'readiness', $sha, $instance],
+            ['role.assignments', 'readiness', $sha, $instance, 'gateway,app-dev', 'extra'],
+            ['role.assignments', 'readiness', $sha, $instance, 'Gateway'],
+            ['role.assignments', 'readiness', $sha, $instance, 'gateway,'],
+            ['role.assignments', 'readiness', $sha, $instance, 'gateway app-dev'],
+        ] as $args) {
+            $process = new Process(['bash', $script, ...$args]);
+            expect($process->run())->not->toBe(0)->and(trim($process->getOutput()))->toBe('');
+        }
     });
 
     it('returns complete structured evidence for a command-only VM probe', function () {
@@ -756,64 +841,26 @@ describe('convergence guest scripts', function () {
         expect($process->run())->not->toBe(0)->and(trim($process->getOutput()))->toBe('');
     });
 
-    it('fails wireguard reachability before SSH when the app-prod route is missing', function () {
-        $root = temporaryPath('orbit-verifier-wireguard-', 4);
-        mkdir("{$root}/bin", 0o700, true);
-        mkdir("{$root}/home/orbit/.orbit/ssh", 0o700, true);
-        file_put_contents("{$root}/gateway.sqlite", 'fixture');
-        file_put_contents("{$root}/home/orbit/.orbit/ssh/id_ed25519", 'fixture');
-        file_put_contents("{$root}/home/orbit/.orbit/ssh/known_hosts", 'fixture');
+    it('proves each peer the plan declares', function () {
+        $root = verifierWireguardFixture();
+        // The fixture routes app-dev only, so a declaration that kept app-dev alone passes.
+        $process = verifierWireguardProcess($root, ['app-dev']);
+        $exit = $process->run();
+        $evidence = json_decode($process->getOutput(), true, 16, JSON_THROW_ON_ERROR);
 
-        file_put_contents("{$root}/bin/php", <<<'BASH'
-            #!/usr/bin/env bash
-            case "$*" in
-              *app-dev*) printf '10.0.0.10\n' ;;
-              *app-prod*) printf '10.0.0.20\n' ;;
-              *) exit 1 ;;
-            esac
-            BASH);
-        file_put_contents("{$root}/bin/wg", <<<'BASH'
-            #!/usr/bin/env bash
-            printf '%s\n' 'peer-dev 10.0.0.10/32' 'peer-unrelated 10.0.0.99/32'
-            BASH);
-        file_put_contents("{$root}/bin/sudo", <<<'BASH'
-            #!/usr/bin/env bash
-            shift 3
-            exec "$@"
-            BASH);
-        file_put_contents("{$root}/bin/ssh", "#!/usr/bin/env bash\nprintf 'ssh-reached\\n' >> '{$root}/ssh-reached'\n");
+        expect($exit)
+            ->toBe(0)
+            ->and($evidence['probe'] ?? null)
+            ->toBe('wireguard.reachability')
+            ->and($evidence['expected'] ?? null)
+            ->toBe('app-dev:wireguard-route+ssh')
+            ->and(file("{$root}/ssh-reached"))
+            ->toHaveCount(1);
+    });
 
-        foreach (['php', 'wg', 'sudo', 'ssh'] as $command) {
-            chmod("{$root}/bin/{$command}", 0o700);
-        }
-
-        $source = file_get_contents(dirname(__DIR__, 3).'/resources/guest/verify-topology.sh');
-        $script = str_replace(
-            [
-                '/home/orbit/.orbit/gateway.sqlite',
-                '/home/orbit/.orbit/ssh/id_ed25519',
-                '/home/orbit/.orbit/ssh/known_hosts',
-            ],
-            [
-                "{$root}/gateway.sqlite",
-                "{$root}/home/orbit/.orbit/ssh/id_ed25519",
-                "{$root}/home/orbit/.orbit/ssh/known_hosts",
-            ],
-            $source,
-        );
-        file_put_contents("{$root}/verify-topology.sh", $script);
-        chmod("{$root}/verify-topology.sh", 0o700);
-
-        $process = new Process([
-            'bash',
-            "{$root}/verify-topology.sh",
-            'wireguard.reachability',
-            'readiness',
-            str_repeat('a', 40),
-            'orbit-e2e-standby-gateway',
-            'app-dev',
-            'app-prod',
-        ], env: ['PATH' => "{$root}/bin:".getenv('PATH')]);
+    it('fails wireguard reachability before SSH when one declared route is missing', function () {
+        $root = verifierWireguardFixture();
+        $process = verifierWireguardProcess($root, ['app-dev', 'app-prod']);
 
         expect($process->run())
             ->not
@@ -973,7 +1020,7 @@ describe('convergence guest scripts', function () {
             '--retry 10 --retry-delay 2 --retry-connrefused --retry-all-errors',
             '--resolve laravel.internal:443:127.0.0.1',
             'SELECT wireguard_address FROM nodes',
-            '"orbit@$app_dev_address"',
+            '"orbit@$peer_address"',
             'StrictHostKeyChecking=yes',
             'known_hosts=/home/orbit/.orbit/ssh/known_hosts',
             'UserKnownHostsFile="$known_hosts"',
@@ -992,10 +1039,7 @@ describe('convergence guest scripts', function () {
             ->not->toContain('echo $address, "\\n";')
             ->not->toContain('HostKeyAlias=')
             ->not->toContain('sqlite3')
-            ->not->toContain('StrictHostKeyChecking=no')->toContain(
-                'awk -v expected="$app_dev_address/32"',
-                'awk -v expected="$app_prod_address/32"',
-            );
+            ->not->toContain('StrictHostKeyChecking=no')->toContain('awk -v expected="$peer_address/32"');
     });
     it('uses fixed paths, safe arguments, idempotent resources, and the stock Laravel repository', function () {
         $guest = dirname(__DIR__, 3).'/resources/guest';

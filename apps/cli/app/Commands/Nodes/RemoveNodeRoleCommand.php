@@ -20,6 +20,7 @@ final class RemoveNodeRoleCommand extends GatewayCommand
         {role : Role name}
         {--force : Confirm destructive role removal and dependent cleanup}
         {--purge-data : Request supported role-owned data cleanup}
+        {--offline : Remove the role from a node Orbit cannot reach}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -62,6 +63,7 @@ final class RemoveNodeRoleCommand extends GatewayCommand
                 role: $role,
                 force: true,
                 purgeData: $this->option('purge-data') === true,
+                offline: $this->option('offline') === true,
             ),
             NodeRoleMutationResponse::class,
         );
@@ -77,6 +79,14 @@ final class RemoveNodeRoleCommand extends GatewayCommand
         }
 
         $this->info("Role [{$response->role}] removed from node [{$response->nodeName}] (#{$response->nodeId}).");
+        NodeOutput::degradationAdvisory(
+            $this,
+            $response->nodeName,
+            $response->degradation,
+            [],
+            $response->retainedOnNode,
+            $response->followUp,
+        );
         $this->line("Request ID: {$response->requestId}");
 
         return self::SUCCESS;
@@ -95,6 +105,7 @@ final class RemoveNodeRoleCommand extends GatewayCommand
                     role: $role,
                     force: false,
                     purgeData: false,
+                    offline: false,
                 ),
                 NodeRoleMutationResponse::class,
             );

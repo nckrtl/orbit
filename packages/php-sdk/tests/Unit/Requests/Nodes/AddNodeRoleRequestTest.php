@@ -52,6 +52,9 @@ describe(AddNodeRoleRequest::class, function (): void {
                     'error_code' => null,
                 ],
                 'removed' => false,
+                'degradation' => null,
+                'retained_on_node' => [],
+                'follow_up' => null,
                 'request_id' => node_role_request_id(),
             ]);
     });

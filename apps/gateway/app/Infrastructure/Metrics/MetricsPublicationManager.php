@@ -73,6 +73,19 @@ final readonly class MetricsPublicationManager implements PublicationManager
         $this->certificatePublisher->remove();
     }
 
+    public function abandon(Node $metrics): void
+    {
+        $this->firewall->abandon($metrics);
+    }
+
+    public function retract(Node $metrics): void
+    {
+        $this->address($metrics);
+        $this->dns->converge();
+        $this->caddy->remove();
+        $this->certificatePublisher->remove();
+    }
+
     private function address(Node $node): string
     {
         $address = $node->wireguard_address;

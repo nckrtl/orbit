@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# A node whose WireGuard interface has lost its address is squarely inside the
+# case this escape exists for. The destination address is then the one field
+# that cannot be checked either way, so the escape proves every other field,
+# says so, and still cleans up.
+source /var/lib/orbit-e2e/proof/lib.sh
+
+readonly DECOY_RULE=orbit:metrics-grafana-upstream
+
+saved=$(sudo ip -4 -o addr show dev orbit | awk '{print $4}' | head -1)
+[[ -n "$saved" ]] || fail "the orbit interface has no IPv4 address to remove"
+address="${saved%%/*}"
+
+# Restore first, whatever happens below: every later action needs this node
+# reachable over WireGuard.
+restore() { sudo ip addr add "$saved" dev orbit 2>/dev/null || true; }
+trap restore EXIT
+
+# A genuine exporter rule, and a rule that keeps an Orbit comment but carries
+# the wrong port. With the address gone the first must still be removed and
+# the second must still be refused.
+sudo ufw allow in on orbit proto tcp from 10.44.0.1 to "$address" port 9100 \
+  comment "$EXPORTER_RULE_COMMENT" >/dev/null
+sudo ufw allow in on orbit proto tcp from 10.44.0.1 to "$address" port 3001 \
+  comment "$DECOY_RULE" >/dev/null
+
+sudo ip addr flush dev orbit
+[[ -z "$(sudo ip -4 -o addr show dev orbit)" ]] || fail "the orbit interface still has an IPv4 address"
+
+run_escape --force
+escape_status="$ESCAPE_STATUS"
+escape_output="$ESCAPE_OUTPUT"
+restore
+trap - EXIT
+
+ESCAPE_STATUS="$escape_status"
+ESCAPE_OUTPUT="$escape_output"
+
+# Exit 3, because the wrong-port rule was refused.
+[[ "$ESCAPE_STATUS" -eq 3 ]] || fail "escape exited $ESCAPE_STATUS, expected 3: $ESCAPE_OUTPUT"
+
+# The downgrade is named before the operator confirms, not only afterwards.
+assert_reports 'Proved with less evidence than usual:'
+assert_reports 'the orbit interface has no IPv4 address, so the destination address of the UFW rules below could not be verified'
+assert_reports "(destination address not verified)"
+[[ "${ESCAPE_OUTPUT%%Will remove:*}" == *'Proved with less evidence than usual:'* ]] \
+  || fail "the downgrade was not reported before the list the operator approves"
+
+# The genuine rule went, on everything except the destination address.
+! firewall_rule_exists "$EXPORTER_RULE_COMMENT" || fail "the genuine exporter rule survived"
+assert_reports "UFW rule commented $EXPORTER_RULE_COMMENT"
+
+# The wrong-port rule stayed, so the reduced proof is still a proof.
+firewall_rule_exists "$DECOY_RULE" || fail "the escape removed a rule whose port does not match Orbit's"
+assert_reports 'are not the rule Orbit writes'
+
+sudo ip -4 -o addr show dev orbit | grep -q "$address" || fail "the orbit address was not restored"
+delete_firewall_rule "$DECOY_RULE"
+
+echo "escape-without-wireguard-address: genuine rule removed, wrong-port rule refused, downgrade reported"

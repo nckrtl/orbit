@@ -177,7 +177,8 @@ directory stages an empty inventory.
 
 `prove --json` prints a compact result: `status` (`proved` or `diagnosis`),
 `issue`, `attempt_id`, `candidate_sha`, `actions` (one `{"id","node","exit_code"}`
-per action that ran), and `recorded_at`. A `diagnosis` adds `error` (the
+per action that ran), and `recorded_at`. A plan that declared the topology it
+ends with adds `ends_with` and `skipped_probes`. A `diagnosis` adds `error` (the
 failed phase and message) and, when a plan action failed, `failed_action`:
 `{"id","node","exit_code","stdout_tail","stderr_tail"}` (each tail keeps the
 final 4096 bytes). The same object is written to `<worktree>/.e2e/proof.json`.
@@ -194,6 +195,35 @@ The proof plan file has this shape:
 
 An optional top-level `"mutates": true` declares that the plan changes the
 topology; `promote` refuses such a proved topology.
+
+### Declaring the topology a plan ends with
+
+A plan whose behaviour is about removing a node declares the topology it ends
+with:
+
+```json
+{"ends_with": {"nodes": ["gateway", "app-dev"]}}
+```
+
+Verification then runs in full against the declared set. Only the probes that
+run *on* a declared-absent node are skipped; they are named in the proof
+result as `skipped_probes`, beside the declaration itself. Nothing else is
+relaxed:
+
+- The two fleet probes still run, told which nodes to expect.
+  `role.assignments` fails when a node the plan declared absent is still
+  registered in any status, so a declaration cannot be used to look away from
+  a node that is still there.
+- Removing a node without declaring it fails exactly as before: the probes of
+  that node still run and find nothing.
+- `gateway` can never be left out; it holds the registry every other probe
+  reads.
+- A declaration implies `"mutates": true`, so a topology whose nodes the plan
+  removed can never become the standby.
+
+The declaration speaks about Orbit's node registry only. All three Incus
+instances still exist and are still checked for network identity; `release`
+remains the only thing that removes a VM.
 
 ## Discovery mount
 

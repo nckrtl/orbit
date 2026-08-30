@@ -16,10 +16,13 @@ use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
 
-/** @mago-expect lint:cyclomatic-complexity The adapter keeps firewall ownership, mutation, verification, and recovery together. */
+/**
+ * @mago-expect lint:cyclomatic-complexity The adapter keeps firewall ownership, mutation, verification, and recovery together.
+ * @mago-expect lint:too-many-methods The private methods keep each fixed firewall operation narrow and non-generic.
+ */
 final readonly class MetricsPublicationSshExecutor
 {
-    private const string FirewallComment = 'orbit:metrics-grafana-upstream';
+    private const string FirewallComment = MetricsFootprint::PublicationFirewallComment;
 
     public function __construct(
         private SshExecutor $ssh,
@@ -59,7 +62,7 @@ final readonly class MetricsPublicationSshExecutor
                     'to',
                     $shape->destination,
                     'port',
-                    '3000',
+                    MetricsFootprint::PublicationPort,
                     'comment',
                     self::FirewallComment,
                 ]),
@@ -133,6 +136,42 @@ final readonly class MetricsPublicationSshExecutor
         }
     }
 
+    /**
+     * Removes the Grafana upstream rule without knowing the Gateway.
+     *
+     * The full ownership shape needs the Gateway address the rule allows, and
+     * that address is exactly what is missing when Metrics is disabled with no
+     * active Gateway. The Orbit comment is the rule's own identity, so
+     * abandonment matches on it alone and still proves the rule is gone.
+     */
+    public function abandon(Node $metricsNode): void
+    {
+        $numbers = $this->ruleNumbers($this->status($metricsNode)->stdout);
+
+        if ($numbers === []) {
+            return;
+        }
+
+        if (count($numbers) !== 1) {
+            $this->ownershipDrift();
+        }
+
+        $this->run(
+            $metricsNode,
+            new RemoteCommand(['sudo', 'ufw', '--force', 'delete', $numbers[0]]),
+            'metrics.publication_firewall_remove_failed',
+            'The Metrics Grafana firewall rule could not be removed.',
+        );
+
+        if ($this->ruleNumbers($this->status($metricsNode)->stdout) !== []) {
+            throw new ResourceOperationException(
+                'metrics.publication_firewall_remove_verify_failed',
+                'The Metrics Grafana firewall rule remained after removal.',
+                502,
+            );
+        }
+    }
+
     private function shape(Node $metricsNode, string $gatewayAddress): UfwRuleShape
     {
         $metricsAddress = $this->address($metricsNode);
@@ -151,7 +190,7 @@ final readonly class MetricsPublicationSshExecutor
             direction: 'in',
             source: $gatewayAddress,
             destination: $metricsAddress,
-            port: '3000',
+            port: MetricsFootprint::PublicationPort,
             protocol: 'tcp',
             inInterface: 'orbit',
             outInterface: null,
@@ -220,16 +259,25 @@ final readonly class MetricsPublicationSshExecutor
         return $result;
     }
 
-    /** @return list<string> */
+    /**
+     * Numbers the UFW rules whose comment is exactly Orbit's Grafana marker.
+     *
+     * The comment ends the line, so the match is anchored there. A prefix
+     * match would also claim a future neighbour such as
+     * `orbit:metrics-grafana-upstream-v2` and delete it silently.
+     *
+     * @return list<string>
+     */
     private function ruleNumbers(string $status): array
     {
         $numbers = [];
+        $comment = '# '.self::FirewallComment;
 
         foreach (explode("\n", $status) as $line) {
             $matches = [];
 
             if (
-                str_contains($line, '# '.self::FirewallComment)
+                str_ends_with(rtrim($line), $comment)
                 && preg_match('/^\s*\[\s*(\d+)\]/', $line, $matches) === 1
             ) {
                 $numbers[] = $matches[1];

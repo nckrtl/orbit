@@ -14,6 +14,7 @@ use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Nodes\ProvisionNodeRequest;
+use App\Http\Requests\Nodes\RemoveNodeRequest;
 use App\Models\Node;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -54,8 +55,12 @@ final class NodesController extends Controller
 
     /** @mago-expect analysis:mixed-assignment The authenticated peer resolver returns a Node. */
     #[RequiresNodeAccess(ServingNode::Target)]
-    public function destroy(Request $request, Node $node, RemoveNodeAction $action): JsonResponse
-    {
+    public function destroy(
+        Request $request,
+        RemoveNodeRequest $removal,
+        Node $node,
+        RemoveNodeAction $action,
+    ): JsonResponse {
         $caller = $request->user();
 
         if (! $caller instanceof Node) {
@@ -68,7 +73,7 @@ final class NodesController extends Controller
         ]);
 
         return response()->json([
-            'data' => $action->execute($node, $caller)->toArray(),
+            'data' => $action->execute($node, $caller, $removal->offline(), $removal->force())->toArray(),
             'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')],
         ]);
     }

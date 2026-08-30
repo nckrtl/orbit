@@ -30,6 +30,8 @@ it('provisions the first peer from the gateway console', function (): void {
         public function converge(Node $node, NodeRole $assignment): void {}
 
         public function remove(Node $node, NodeRole $assignment, bool $purgeData): void {}
+
+        public function removeUnreachable(Node $node, NodeRole $assignment): void {}
     });
 
     $this
@@ -112,6 +114,8 @@ it('passes explicit console user identities', function (): void {
         public function converge(Node $node, NodeRole $assignment): void {}
 
         public function remove(Node $node, NodeRole $assignment, bool $purgeData): void {}
+
+        public function removeUnreachable(Node $node, NodeRole $assignment): void {}
     });
     $this->artisan('orbit:node-provision', [
         'name' => 'console-identity',
