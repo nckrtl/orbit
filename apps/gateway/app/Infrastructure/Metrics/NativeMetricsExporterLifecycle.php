@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Metrics;
 
+use App\Domain\Metrics\ExporterDegradationReason;
+use App\Domain\Metrics\ExporterDegradationRepository;
 use App\Domain\Metrics\ExporterPreferenceRepository;
 use App\Domain\Metrics\ExporterSelector;
 use App\Domain\Metrics\MetricsExporterLifecycle;
@@ -21,6 +23,7 @@ final readonly class NativeMetricsExporterLifecycle implements MetricsExporterLi
         private MetricsExporterRuntime $executor,
         private ExporterSelector $selector,
         private ExporterPreferenceRepository $preferences,
+        private ExporterDegradationRepository $degradations,
     ) {}
 
     public function converge(Node $node, NodeRole $assignment): void
@@ -43,7 +46,13 @@ final readonly class NativeMetricsExporterLifecycle implements MetricsExporterLi
 
     public function removeNode(Node $node, Node $metricsNode): void
     {
-        $this->executor->remove($node, $metricsNode);
+        try {
+            $this->executor->remove($node, $metricsNode);
+        } finally {
+            // The node is leaving the fleet either way, so it must not keep a
+            // degradation record that outlives it.
+            $this->degradations->forget($node->id);
+        }
     }
 
     public function actual(Node $node): string
@@ -130,10 +139,16 @@ final readonly class NativeMetricsExporterLifecycle implements MetricsExporterLi
         $snapshots = [];
 
         foreach ($this->activeNodes() as $candidate) {
-            $snapshots[] = [
-                'node' => $candidate,
-                'state' => $this->executor->snapshot($candidate, $metricsNode),
-            ];
+            try {
+                $state = $this->executor->snapshot($candidate, $metricsNode);
+            } catch (ResourceOperationException $exception) {
+                $this->degrade($candidate, $metricsNode, $exception);
+
+                continue;
+            }
+
+            $this->degradations->forget($candidate->id);
+            $snapshots[] = ['node' => $candidate, 'state' => $state];
         }
 
         $mutated = [];
@@ -164,5 +179,27 @@ final readonly class NativeMetricsExporterLifecycle implements MetricsExporterLi
 
             throw $exception;
         }
+    }
+
+    /**
+     * Records why one candidate is left out of this mutation, or rethrows.
+     *
+     * The snapshot is the only place a candidate is inspected before anything
+     * is mutated, so it is the one honest point to decide that a node cannot
+     * take part. A node skipped here is never mutated, which leaves the
+     * all-or-nothing rollback over the remaining nodes intact.
+     */
+    private function degrade(Node $candidate, Node $metricsNode, ResourceOperationException $exception): void
+    {
+        $reason = ExporterDegradationReason::fromErrorCode($exception->errorCode);
+
+        // The Metrics node owns the exporter projection, the Prometheus
+        // targets, and the runtime. Degrading it would publish a projection
+        // nobody verified, so it stays fail-closed.
+        if ($reason === null || $candidate->is($metricsNode)) {
+            throw $exception;
+        }
+
+        $this->degradations->put($candidate->id, $reason);
     }
 }

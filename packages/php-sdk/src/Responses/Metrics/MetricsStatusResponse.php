@@ -16,7 +16,7 @@ final readonly class MetricsStatusResponse
 {
     /**
      * @param array{id:int,node_id:int,node_name:string,status:string,failed_step:?string,error_code:?string}|null $assignment
-     * @param list<array{id:int,name:string,desired:bool,actual:string,reason:string}> $exporters
+     * @param list<array{id:int,name:string,desired:bool,actual:string,reason:string,degraded_reason:?string}> $exporters
      */
     private function __construct(
         public bool $enabled,
@@ -141,7 +141,7 @@ final readonly class MetricsStatusResponse
 
     /**
      * @mago-expect analysis:mixed-assignment Gateway exporter values remain mixed until validated.
-     * @return list<array{id:int,name:string,desired:bool,actual:string,reason:string}>
+     * @return list<array{id:int,name:string,desired:bool,actual:string,reason:string,degraded_reason:?string}>
      */
     private static function exporters(mixed $value, string $requestId): array
     {
@@ -158,6 +158,7 @@ final readonly class MetricsStatusResponse
             $desired = is_array($row) ? $row['desired'] ?? null : null;
             $actual = is_array($row) ? $row['actual'] ?? null : null;
             $reason = is_array($row) ? $row['reason'] ?? null : null;
+            $degradedReason = is_array($row) ? $row['degraded_reason'] ?? null : null;
 
             if (
                 ! is_array($row)
@@ -170,6 +171,7 @@ final readonly class MetricsStatusResponse
                 || ! self::validActual($actual)
                 || ! is_string($reason)
                 || ! self::validReason($reason)
+                || ! self::validDegradedReason($degradedReason)
             ) {
                 throw new GatewayApiException(
                     'Gateway response contains invalid metrics exporter.',
@@ -178,12 +180,14 @@ final readonly class MetricsStatusResponse
             }
 
             /** @var int $id */
+            /** @var ?string $degradedReason */
             $rows[] = [
                 'id' => $id,
                 'name' => $name,
                 'desired' => $desired,
                 'actual' => $actual,
                 'reason' => $reason,
+                'degraded_reason' => $degradedReason,
             ];
         }
 
@@ -226,6 +230,14 @@ final readonly class MetricsStatusResponse
                 ['metrics_node', 'role_default', 'roleless_default_excluded', 'explicit_enabled', 'explicit_disabled'],
                 strict: true,
             )
+        );
+    }
+
+    private static function validDegradedReason(mixed $value): bool
+    {
+        return (
+            $value === null
+            || is_string($value) && in_array($value, ['unreachable', 'firewall_inactive'], strict: true)
         );
     }
 

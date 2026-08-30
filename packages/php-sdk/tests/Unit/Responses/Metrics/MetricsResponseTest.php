@@ -92,6 +92,85 @@ it('preserves exporter ownership drift for operator recovery', function (): void
     expect($response->exporters[0]['actual'])->toBe('drift');
 });
 
+it('preserves an exporter degraded reason', function (): void {
+    $response = MetricsStatusResponse::fromGatewayData([
+        'enabled' => true,
+        'url' => 'https://metrics.orbit',
+        'assignment' => [
+            'id' => 7,
+            'node_id' => 3,
+            'node_name' => 'app-dev',
+            'status' => 'active',
+            'failed_step' => null,
+            'error_code' => null,
+        ],
+        'prometheus' => 'healthy',
+        'grafana' => 'healthy',
+        'exporters' => [[
+            'id' => 3,
+            'name' => 'app-dev',
+            'desired' => true,
+            'actual' => 'unknown',
+            'reason' => 'metrics_node',
+            'degraded_reason' => 'unreachable',
+        ]],
+    ], 'req');
+
+    expect($response->exporters[0]['degraded_reason'])->toBe('unreachable');
+});
+
+it('defaults a missing exporter degraded reason to null', function (): void {
+    $response = MetricsStatusResponse::fromGatewayData([
+        'enabled' => true,
+        'url' => 'https://metrics.orbit',
+        'assignment' => [
+            'id' => 7,
+            'node_id' => 3,
+            'node_name' => 'app-dev',
+            'status' => 'active',
+            'failed_step' => null,
+            'error_code' => null,
+        ],
+        'prometheus' => 'healthy',
+        'grafana' => 'healthy',
+        'exporters' => [[
+            'id' => 3,
+            'name' => 'app-dev',
+            'desired' => true,
+            'actual' => 'active',
+            'reason' => 'metrics_node',
+        ]],
+    ], 'req');
+
+    expect($response->exporters[0]['degraded_reason'])->toBeNull();
+});
+
+it('rejects an unrecognised exporter degraded reason', function (): void {
+    expect(fn () => MetricsStatusResponse::fromGatewayData([
+        'enabled' => true,
+        'url' => 'https://metrics.orbit',
+        'assignment' => [
+            'id' => 7,
+            'node_id' => 3,
+            'node_name' => 'app-dev',
+            'status' => 'active',
+            'failed_step' => null,
+            'error_code' => null,
+        ],
+        'prometheus' => 'healthy',
+        'grafana' => 'healthy',
+        'exporters' => [[
+            'id' => 3,
+            'name' => 'app-dev',
+            'desired' => true,
+            'actual' => 'unknown',
+            'reason' => 'metrics_node',
+            'degraded_reason' => 'network_partition',
+        ]],
+    ], 'req'))
+        ->toThrow(GatewayApiException::class, 'invalid metrics exporter');
+});
+
 it('rejects unbounded or incomplete assignment rows', function (): void {
     expect(fn () => MetricsStatusResponse::fromGatewayData([
         'enabled' => true,

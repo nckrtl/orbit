@@ -7,6 +7,7 @@ use App\Domain\Metrics\MetricsRuntimeLifecycle;
 use App\Domain\Nodes\RoleAssignmentException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Metrics\NativeMetricsFleetReconciler;
 use App\Models\Node;
 
@@ -90,6 +91,45 @@ it('retires one node before converging the remaining exporter projection', funct
         ->ordered();
 
     new NativeMetricsFleetReconciler($exporters, $runtime)->retire($retiringNode);
+});
+
+it('retires an unreachable node without aborting the removal', function (): void {
+    $metricsNode = metrics_fleet_node('metrics');
+    $assignment = $metricsNode
+        ->roles()
+        ->create([
+            'role' => RoleName::Metrics,
+            'status' => LifecycleStatus::Active,
+        ]);
+    $unreachable = metrics_fleet_node('unreachable');
+    $unreachable->update(['status' => LifecycleStatus::Removing]);
+    $exporters = Mockery::mock(MetricsExporterLifecycle::class);
+    $runtime = Mockery::mock(MetricsRuntimeLifecycle::class);
+    // The node is on its way out of the fleet, so its own exporter teardown is
+    // best effort. The remaining projection must still converge.
+    $exporters
+        ->shouldReceive('removeNode')
+        ->once()
+        ->andThrow(
+            new ResourceOperationException(
+                'metrics.exporter_configuration_inspection_failed',
+                'The Metrics exporter configuration could not be inspected.',
+                502,
+            ),
+        )
+        ->ordered();
+    $exporters
+        ->shouldReceive('converge')
+        ->once()
+        ->withArgs(
+            static fn (Node $actualNode, $actualAssignment): bool => (
+                $actualNode->is($metricsNode) && $actualAssignment->is($assignment)
+            ),
+        )
+        ->ordered();
+    $runtime->shouldReceive('converge')->once()->ordered();
+
+    new NativeMetricsFleetReconciler($exporters, $runtime)->retire($unreachable);
 });
 
 it('fails closed when active Metrics assignments drift', function (): void {
