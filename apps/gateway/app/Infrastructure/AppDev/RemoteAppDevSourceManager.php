@@ -773,8 +773,9 @@ final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
                     fi
                     printf '%s\n' "$traversal_mask" | grep -Eq '^[rwx-]{3}$'
                     traversal_mask="${traversal_mask%?}x"
-                    acl setfacl -n -m "u:caddy:--x,m::$traversal_mask" "$path"
+                    acl setfacl -n -m "u:caddy:--x,u:$managed_user:--x,m::$traversal_mask" "$path"
                     acl getfacl -cp "$path" | grep -Eq '^user:caddy:[r-][w-]x$'
+                    acl getfacl -cp "$path" | grep -Eq "^user:$managed_user:[r-][w-]x$"
                     acl getfacl -cp "$path" | grep -Fqx "mask::$traversal_mask"
                 done
             }

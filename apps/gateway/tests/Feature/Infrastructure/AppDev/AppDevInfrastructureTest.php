@@ -163,6 +163,7 @@ it('uses only generated instance paths and registered Git worktrees for source r
             'find -P "$document_root_real" -type d -exec setfacl -m d:u:caddy:r-x -- {} +',
             'acl() {',
             'sudo -n "$@"',
+            'u:$managed_user:--x',
         )
         ->not->toContain('sudo setfacl')->and($ssh->commands[1]->input)->toContain(
             'git -C "$checkout" symbolic-ref --quiet --short HEAD',
