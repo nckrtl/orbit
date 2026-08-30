@@ -109,7 +109,7 @@ it('keeps the topology-led workflow contracts aligned', function (): void {
     expect($merge)->toMatch('/releases the proof topology.*networks_reaped: n.*never `oe-standby`/s');
     expect($merge)->toMatch('/does not\s+revert merged code/');
     expect($workflow)->toMatch(
-        '/releases the proof topology.*verifies.*absence.*fingerprint.*worktree.*closes the.*issue/s',
+        '/releases the proof topology.*verifies.*absence.*promote.*worktree.*closes the.*issue/s',
     );
     expect($rootGuidance)->toMatch('/releases the proof topology.*refresh.*worktree.*issue/s');
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Run the live Incus acceptance suites against one exact candidate commit from
-# a validation clone whose `main` is that candidate. See docs/reference/incus-topologies.md.
+# One end-to-end run of the feature flow against a standby built from one exact
+# candidate commit in a validation clone. See docs/reference/incus-topologies.md.
 set -euo pipefail
 
 usage() {
@@ -8,22 +8,25 @@ usage() {
 usage: bin/e2e-live <candidate-sha>
 
 Runs apps/e2e/tests/Live/TopologyLedLifecycleAcceptanceTest.php (issue ACC-1)
-against real Incus resources from a validation clone.
+against real Incus resources from a validation clone: acquire, exec, release,
+prove with proofs/ACC-1.json, promote the proved topology into the clone's
+standby, acquire from that generation, release.
 
-The wrapper owns the validation clone:
+The wrapper owns the validation clone, which is its own primary checkout:
   ORBIT_E2E_VALIDATE_ROOT  clone path (default: $HOME/orbit-validate); cloned
                            from this repository when absent
+  ORBIT_E2E_INCUS_PROJECT  Incus project the harness uses (default: default)
+  ORBIT_E2E_INCUS_REMOTE   Incus remote the harness uses (default: local)
 
 It fetches the candidate, checks the clone out on `main` at the candidate,
 resets the linked worktree .worktrees/acc-1 (branch acc-1-live), bootstraps
-it, refreshes the standby when the prepared-state fingerprint changed, exports
-every ORBIT_LIVE_* input, and uses proofs/ACC-1.json as the harness plan. It
-refuses to run while any other worktree of the clone holds a live topology,
-releases a stale ACC-1 attempt, and holds <clone>/.e2e/locks/live.lock so only
-one run drives the clone.
+both, refreshes the clone's standby to the candidate, exports every
+ORBIT_LIVE_* input, and runs the suite. It refuses while any harness topology
+other than ACC-1 is live on the Incus host, releases a stale ACC-1 attempt,
+and holds <clone>/.e2e/locks/live.lock so only one run drives the clone.
 
-The suite ends with one summary line to paste into the pull request:
-  <suite>: passed, <assertions> assertions, <seconds>s
+The run ends with one summary line to paste into the pull request:
+  lifecycle: passed, <assertions> assertions, <seconds> s
 EOF
 }
 
@@ -67,13 +70,14 @@ fi
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 validate=${ORBIT_E2E_VALIDATE_ROOT:-$HOME/orbit-validate}
+incus_project=${ORBIT_E2E_INCUS_PROJECT:-default}
+incus_remote=${ORBIT_E2E_INCUS_REMOTE:-local}
 export PYTHONDONTWRITEBYTECODE=1
 lock_directory=$validate/.e2e/locks
 profile=gateway_app-dev_app-prod
 issue=ACC-1
 feature_worktree=$validate/.worktrees/acc-1
 plan=proofs/ACC-1.json
-summaries=()
 
 # One live run at a time: two runs would race on the clone, the standby, and ACC-1.
 # The lock comes before every other prerequisite so a held lock always exits 75.
@@ -91,16 +95,13 @@ if [[ -e "$validate" && "$(cd "$validate" && pwd -P)" == "$(cd "$root" && pwd -P
     fail 'the validation clone must not be this repository'
 fi
 
-# Refuse while any other worktree of the clone holds a live topology.
-active_issues=()
-for lease in "$validate"/.worktrees/*/.e2e/attempt.json; do
-    [[ -e "$lease" ]] || continue
-    active=$(jq -r '.issue // empty' "$lease" 2>/dev/null || true)
-    [[ -n "$active" && "$active" != "$issue" ]] || continue
-    active_issues+=("$active")
-done
-if ((${#active_issues[@]} > 0)); then
-    fail "a feature topology is active (${active_issues[*]}); release it before running the live suite"
+# The standby is one physical set of VMs: refuse while any other issue's topology is live on the host.
+live_issues=$(incus --project "$incus_project" list "$incus_remote:" --format json \
+    | jq -r --arg issue "$issue" '[.[] | select(.config["user.orbit.e2e.owner"] == "orbit-e2e")
+        | .config["user.orbit.e2e.issue"] // empty] | unique | map(select(. != $issue)) | join(", ")') \
+    || fail 'unable to list the harness instances on the Incus host'
+if [[ -n "$live_issues" ]]; then
+    fail "a harness topology is live on the Incus host ($live_issues); release it before running the live suite"
 fi
 
 # Validation clone on main at the candidate.
@@ -115,19 +116,14 @@ log "fetching $candidate into $validate"
 git -C "$validate" fetch --quiet --no-tags "$root" "$candidate"
 git -C "$validate" checkout --quiet -B main "$candidate"
 
-prepare_worktree() {
-    local path=$1 branch=$2
-    if [[ -d "$path" ]]; then
-        if [[ -n "$(git -C "$path" status --porcelain --untracked-files=all)" ]]; then
-            fail "the linked worktree $path is dirty"
-        fi
-        git -C "$path" checkout --quiet -B "$branch" "$candidate"
-    else
-        git -C "$validate" worktree add --quiet -B "$branch" "$path" "$candidate"
+if [[ -d "$feature_worktree" ]]; then
+    if [[ -n "$(git -C "$feature_worktree" status --porcelain --untracked-files=all)" ]]; then
+        fail "the linked worktree $feature_worktree is dirty"
     fi
-}
-
-prepare_worktree "$feature_worktree" acc-1-live
+    git -C "$feature_worktree" checkout --quiet -B acc-1-live "$candidate"
+else
+    git -C "$validate" worktree add --quiet -B acc-1-live "$feature_worktree" "$candidate"
+fi
 
 bootstrap_targets=("$validate" "$feature_worktree")
 bootstrap_logs=$(mktemp -d)
@@ -156,27 +152,17 @@ if [[ -n "$stale" ]]; then
     harness topology release "$issue" "--worktree=$feature_worktree" >/dev/null
 fi
 
+# The clone is its own primary: its <clone>/.e2e/standby/promoted.json names the standby generation.
 standby_state=$(harness standby status | jq -r '.state')
 if [[ "$standby_state" != promoted ]]; then
-    fail "the standby is $standby_state, not promoted; build it with the reviewed procedure first"
+    fail "the clone's standby is $standby_state, not promoted; copy the primary's .e2e/standby/promoted.json into $validate/.e2e/standby/ once, or build it with the reviewed procedure"
 fi
-refresh_standby() {
-    local sha=$1 result state
-    git -C "$validate" checkout --quiet -B main "$sha"
-    log "refreshing the standby to $sha"
-    result=$(harness standby refresh "--main-sha=$sha") || {
-        printf '%s\n' "$result" >&2
-        fail "standby refresh to $sha failed"
-    }
-    state=$(jq -r '.state' <<<"$result")
-    log "standby refresh: $state ($(jq -r '.generation_id' <<<"$result"))"
+log "refreshing the standby to $candidate"
+refresh=$(harness standby refresh "--main-sha=$candidate") || {
+    printf '%s\n' "$refresh" >&2
+    fail "standby refresh to $candidate failed"
 }
-refresh_standby "$candidate"
-base_sha=$(harness standby status | jq -r '.generation.main_sha')
-if ! git -C "$validate" rev-parse --verify --quiet "${base_sha}^{commit}" >/dev/null; then
-    git -C "$validate" fetch --quiet --no-tags "$root" "$base_sha" \
-        || fail "the promoted generation's main SHA $base_sha is not reachable from $root"
-fi
+log "standby refresh: $(jq -r '.state' <<<"$refresh") ($(jq -r '.generation_id' <<<"$refresh"))"
 
 export ORBIT_LIVE_INCUS=1
 export ORBIT_LIVE_PROFILE=$profile
@@ -185,30 +171,21 @@ export ORBIT_LIVE_MAIN_WORKTREE=$validate
 export ORBIT_LIVE_FEATURE_WORKTREE=$feature_worktree
 export ORBIT_LIVE_CANDIDATE_SHA=$candidate
 export ORBIT_LIVE_PROOF_PLAN=$validate/$plan
-export ORBIT_LIVE_BASE_SHA=$base_sha
 
-run_suite() {
-    local name=$1 test=$2 started output status assertions seconds
-    local command="cd $validate/apps/e2e && vendor/bin/pest --no-tia --compact --colors=never --group=incus-live $test"
-    log "running the $name suite"
-    started=$SECONDS
-    output=$(mktemp -t orbit-e2e-live-suite.XXXXXX.log)
-    set +e
-    (cd "$validate/apps/e2e" && vendor/bin/pest --no-tia --compact --colors=never --group=incus-live "$test") 2>&1 | tee "$output" >&2
-    status=${PIPESTATUS[0]}
-    set -e
-    seconds=$((SECONDS - started))
-    assertions=$(sed 's/\x1b\[[0-9;]*m//g' "$output" | grep -oE '\(([0-9]+) assertions?\)' | tail -1 | tr -dc '0-9')
-    rm -f "$output"
-    if ((status != 0)); then
-        summaries+=("$name suite: FAILED after ${seconds}s (${assertions:-0} assertions) — $command")
-        printf '%s\n' "${summaries[@]}"
-        fail "the $name suite failed"
-    fi
-    summaries+=("$name suite: passed, ${assertions:-?} assertions, ${seconds}s — $command")
-}
+log 'running the lifecycle suite'
+started=$SECONDS
+output=$(mktemp -t orbit-e2e-live.XXXXXX.log)
+set +e
+(cd "$validate/apps/e2e" && vendor/bin/pest --no-tia --compact --colors=never --group=incus-live \
+    tests/Live/TopologyLedLifecycleAcceptanceTest.php) 2>&1 | tee "$output" >&2
+status=${PIPESTATUS[0]}
+set -e
+seconds=$((SECONDS - started))
+assertions=$(sed 's/\x1b\[[0-9;]*m//g' "$output" | grep -oE '\(([0-9]+) assertions?\)' | tail -1 | tr -dc '0-9')
+rm -f "$output"
+if ((status != 0)); then
+    printf '\nlifecycle: FAILED after %s s (%s assertions)\n' "$seconds" "${assertions:-0}"
+    fail 'the lifecycle suite failed'
+fi
 
-run_suite lifecycle tests/Live/TopologyLedLifecycleAcceptanceTest.php
-
-printf '\n'
-printf '%s\n' "${summaries[@]}"
+printf '\nlifecycle: passed, %s assertions, %s s\n' "${assertions:-?}" "$seconds"

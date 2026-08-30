@@ -157,10 +157,9 @@ After merge, the project manager:
 
 1. releases the proof topology with `bin/e2e-topology release ISSUE --json`
    and verifies its exact absence;
-2. computes `bin/e2e-standby fingerprint --main-sha=SHA` for merged `main` and
-   refreshes prepared state with `bin/e2e-standby refresh --main-sha=SHA`
-   only when the fingerprint changed, recording `unchanged`, `promoted`, or
-   `failed`;
+2. promotes the reviewer's proved topology with `bin/e2e-standby promote ISSUE`
+   (fallback: `bin/e2e-standby refresh --main-sha=SHA` for merged `main`),
+   recording `promoted`, `unchanged`, or `failed`;
 3. removes the worktree with `bin/worktree-remove`, which releases any
    topology the worktree still holds; and
 4. closes the Linear issue.

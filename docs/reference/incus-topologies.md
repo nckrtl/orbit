@@ -98,9 +98,10 @@ refuse a stale promoted standby.
 | `bin/e2e-topology release ISSUE` | Release the live attempt, verify absence, and sweep orphaned harness networks (`networks_reaped`) |
 | `bin/e2e-standby status` | Show the promoted standby generation |
 | `bin/e2e-standby fingerprint --main-sha=SHA` | Compute the prepared-state fingerprint |
-| `bin/e2e-standby refresh --main-sha=SHA` | Refresh and promote the standby when the fingerprint changed |
+| `bin/e2e-standby promote ISSUE` | Make the issue's proved topology the standby generation, then release it (see [Standby](#standby)) |
+| `bin/e2e-standby refresh --main-sha=SHA` | Fallback: refresh the standby in place when the fingerprint changed |
 | `bin/e2e-standby restore` | Restore the promoted generation and leave it stopped |
-| `bin/e2e-live SHA` | Run the live acceptance suite against the exact candidate from the validation clone (see [Live acceptance suites](#live-acceptance-suites)) |
+| `bin/e2e-live SHA` | Run the feature flow once against a standby built from the exact candidate in the validation clone (see [Live acceptance suites](#live-acceptance-suites)) |
 
 `bin/worktree-remove ISSUE slug` releases the issue's live topology first when
 `<worktree>/.e2e/attempt.json` exists, then removes the worktree.
@@ -179,6 +180,9 @@ The proof plan file has this shape:
 }
 ```
 
+An optional top-level `"mutates": true` declares that the plan changes the
+topology; `promote` refuses such a proved topology.
+
 ## Discovery mount
 
 Discovery mounts the feature worktree read-write at `/home/orbit/orbit` on
@@ -223,10 +227,42 @@ Known prepared-state limits (first observed on 2026-08-30, NCK-58):
 
 ## Standby
 
-Refresh the standby with `bin/e2e-standby refresh --main-sha=SHA` after a
-merge changes the prepared-state fingerprint. A rolling refresh restores the
-promoted snapshots, converges (including product re-projection), and
-re-snapshots in about two minutes.
+The standby is one physical set of stopped VMs, `orbit-e2e-standby-<role>` on
+`oe-standby`, and one promoted generation in `<primary>/.e2e/standby/promoted.json`.
+Every `acquire` and `prove` clones the promoted snapshot `main-<generation>`.
+
+After a merge, `bin/e2e-standby promote ISSUE` makes the reviewer's proved
+topology the new generation instead of rebuilding it:
+
+1. It refuses, without touching Incus, when the issue's attempt is not a
+   `proved` proof, when the plan (`--plan`, default `proofs/ISSUE.json`)
+   carries `"mutates": true`, when `main` in the primary checkout does not
+   hold the proved candidate (same commit, or same tree), or when the
+   candidate changes the cold base.
+2. Under the standby refresh, generation, and issue locks it stops the three
+   proved VMs and copies each one (`incus copy --instance-only`) to
+   `orbit-e2e-standby-<role>-next`, attached to `oe-standby` with the fixed
+   standby address and MAC, with the attempt metadata removed, and snapshots
+   the copies as `main-<generation>`. The old standby instances are untouched
+   until here; a failure deletes the copies and leaves the proved topology
+   stopped.
+3. It deletes each old standby instance and renames its copy into place, then
+   writes the manifest (`main_sha` = the proved candidate, the fingerprint of
+   that commit with the Laravel pin the proof converged with, the old
+   generation as `previous_generation_id`) and forgets the manifests of the
+   replaced instances' snapshots.
+4. It releases the proved topology (`bin/e2e-topology release`) and prints the
+   generation and the released resources.
+
+The replaced instances take every earlier snapshot with them: after a
+promotion only the promoted generation exists on the host. Another checkout's
+manifest that named an earlier snapshot must copy the new `promoted.json` or
+run `refresh`.
+
+`bin/e2e-standby refresh --main-sha=SHA` is the fallback when no proved
+topology exists: it restores the promoted snapshots, converges (including
+product re-projection), and re-snapshots in about two minutes, and restores
+the previous snapshot when the refreshed standby fails verification.
 
 Guests are reachable from the Gateway only over WireGuard after role
 provisioning; the harness repairs cloned WireGuard endpoints through root
@@ -263,27 +299,31 @@ the inputs do not spell out:
 
 ### `bin/e2e-live`
 
-`bin/e2e-live <candidate-sha>` makes that recipe executable. It
-is the required check for a harness-touching diff (`apps/e2e/app/**`,
-`apps/e2e/resources/guest/**`, `apps/e2e/tests/Live/**`, `bin/e2e-*`). The
-wrapper:
+`bin/e2e-live <candidate-sha>` is the proof of a harness issue: one run of the
+feature flow against a standby built from the candidate. The wrapper:
 
 - owns the validation clone at `ORBIT_E2E_VALIDATE_ROOT` (default
   `$HOME/orbit-validate`), cloning it from the calling repository when
-  absent, and refuses a dirty clone;
+  absent, and refuses a dirty clone; the clone is its own primary checkout,
+  so its standby generation lives in `<clone>/.e2e/standby/promoted.json`
+  (copy the primary's file there once);
+- refuses while any harness topology other than `ACC-1` is live on the Incus
+  host (`ORBIT_E2E_INCUS_PROJECT`, `ORBIT_E2E_INCUS_REMOTE`), and holds
+  `<clone>/.e2e/locks/live.lock` so only one run drives the clone;
 - fetches the candidate from the calling repository and runs
-  `git checkout -B main <sha>` there, because the acquirer fingerprints the
-  `main` ref and the refresher keys off `HEAD`;
-- resets the linked worktree `.worktrees/acc-1` (branch `acc-1-live`) to the
-  candidate, and runs `bin/bootstrap` in the clone and the worktree;
+  `git checkout -B main <sha>` there, resets the linked worktree
+  `.worktrees/acc-1` (branch `acc-1-live`) to the candidate, and runs
+  `bin/bootstrap` in both;
+- releases a stale `ACC-1` attempt, then refreshes the clone's standby to the
+  candidate (`unchanged` when the fingerprint did not move);
 - exports every `ORBIT_LIVE_*` input, with `proofs/ACC-1.json` as the
-  harness plan (its first acceptance action is `orbit node:list --json`);
-- refuses to run while another worktree of the clone holds a live topology,
-  and releases a stale `ACC-1` attempt itself;
-- holds `<clone>/.e2e/locks/live.lock` so only one run drives the clone;
-- refreshes the standby to the candidate when the prepared-state fingerprint
-  changed, then runs the lifecycle suite; and
-- prints one summary line (`lifecycle suite: passed, <n> assertions,
-  <seconds>s — <command>`) for the pull request body.
+  harness plan, and runs the lifecycle suite: acquire, sync, exec, release,
+  prove, release, prove again, promote the proved topology into the clone's
+  standby, acquire from the promoted generation, exec, release; and
+- prints one summary line for the pull request body:
+  `lifecycle: passed, <assertions> assertions, <seconds> s`.
 
-The lifecycle suite takes about 3 minutes on a warm clone.
+The standby is shared with the primary checkout: the promote step replaces
+the standby instances, so after a run the host holds only the candidate's
+generation and the primary must copy the clone's `promoted.json` or `refresh`.
+The run takes about four minutes on a warm clone.
