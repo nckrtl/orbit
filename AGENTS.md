@@ -34,9 +34,10 @@ harness.
   head, the active proved attempt for that head, acceptance results, Compound,
   and post-deployment actions without mutating any topology.
 - After merge, the external project manager releases the proof topology and
-  verifies exact absence, runs the standby refresh only when the prepared-state
-  fingerprint changed, removes the worktree, and closes the issue. A failed
-  refresh keeps the worktree and issue open and does not revert merged code.
+  verifies exact absence, promotes the reviewer's proved topology with
+  `bin/e2e-standby promote` (fallback: standby refresh), removes the
+  worktree, and closes the issue. A failed promotion or refresh keeps the
+  worktree and issue open and does not revert merged code.
 - Keep project-manager orchestration outside this repository. The repository
   owns role behavior and handoff contracts only.
 - Production release and `post_deployment_actions` remain a separate

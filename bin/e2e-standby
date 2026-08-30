@@ -4,7 +4,15 @@ set -euo pipefail
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 
 if [[ $# -lt 1 ]]; then
-    echo "usage: bin/e2e-standby status|fingerprint|refresh|restore [options]" >&2
+    cat >&2 <<'USAGE'
+usage: bin/e2e-standby <action> [options]
+
+  status                        show the promoted standby generation
+  fingerprint --main-sha=SHA    compute the prepared-state fingerprint
+  promote ISSUE                 make the issue's proved topology the standby generation, then release it
+  refresh --main-sha=SHA        fallback: refresh the standby in place when the fingerprint changed
+  restore                       restore the promoted generation and leave it stopped
+USAGE
     exit 64
 fi
 
@@ -12,7 +20,7 @@ action=$1
 shift
 
 case "$action" in
-    status|fingerprint|refresh|restore)
+    status|fingerprint|promote|refresh|restore)
         exec php "$root/apps/e2e/artisan" "standby:$action" "$@"
         ;;
     *)

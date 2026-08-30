@@ -28,6 +28,12 @@ if git worktree list --porcelain | grep -Fxq "worktree $worktree"; then
         exit 1
     fi
 
+    # A live topology dies with its worktree: release it first.
+    if [[ -f "$worktree/.e2e/attempt.json" ]]; then
+        printf 'Releasing the live topology of %s\n' "$linear_id"
+        "$primary_root/bin/e2e-topology" release "$linear_id" "--worktree=$worktree"
+    fi
+
     if ! git merge-base --is-ancestor "$branch" origin/main; then
         printf 'Branch is not merged into origin/main: %s\n' "$branch" >&2
         exit 1

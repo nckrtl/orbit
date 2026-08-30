@@ -17,25 +17,21 @@ use App\E2E\LegacyRetirementHost;
 use App\E2E\OrphanNetworkSweep;
 use App\E2E\PreparedStateFingerprint;
 use App\E2E\ProofFixtureStager;
-use App\E2E\ProofRecordReader;
-use App\E2E\ProofStore;
-use App\E2E\ReleaseReceiptStore;
 use App\E2E\StandbyBuilder;
 use App\E2E\StandbyManifestStore;
+use App\E2E\StandbyPromoter;
 use App\E2E\StandbyRefresher;
 use App\E2E\State\AtomicJsonStore;
-use App\E2E\State\OperationJournal;
 use App\E2E\State\OperationLock;
 use App\E2E\State\SecretRedactor;
 use App\E2E\State\StatePaths;
 use App\E2E\TopologyAcquirer;
 use App\E2E\TopologyConverger;
-use App\E2E\TopologyManifestStore;
 use App\E2E\TopologyProofRunner;
-use App\E2E\TopologyReaper;
 use App\E2E\TopologyReleaser;
 use App\E2E\TopologyVerifier;
 use App\E2E\Value\OperationId;
+use App\E2E\WorktreeLocator;
 use App\E2E\WorktreeSynchronizer;
 use Illuminate\Contracts\Config\Repository;
 use Illuminate\Contracts\Foundation\Application;
@@ -52,17 +48,19 @@ final class AppServiceProvider extends ServiceProvider
 
             return new OperationId($value);
         });
-        $this->app->singleton(StatePaths::class, fn (): StatePaths => StatePaths::fromEnvironment());
+        $repositoryRoot = dirname(__DIR__, 4);
+        $this->app->singleton(GitRepository::class, fn (): GitRepository => new GitRepository($repositoryRoot));
+        // Host-wide state (standby generation, locks) lives in the primary checkout's `.e2e/`.
+        $this->app->singleton(
+            StatePaths::class,
+            fn (): StatePaths => StatePaths::forPrimary(self::primaryCheckout($repositoryRoot)),
+        );
         $this->app->singleton(AtomicJsonStore::class);
-        $this->app->singleton(HostCapacity::class, fn (Application $app): HostCapacity => new HostCapacity(
-            $app->make(AtomicJsonStore::class),
-            $app->make(StatePaths::class),
-            $app->make(OperationId::class),
-            (int) $app->make(Repository::class)->get('e2e.incus.max_vms', 12),
-            $app->make(IncusHost::class),
-        ));
+        $this->app->singleton(
+            WorktreeLocator::class,
+            fn (): WorktreeLocator => new WorktreeLocator(self::primaryCheckout($repositoryRoot)),
+        );
         $this->app->singleton(SecretRedactor::class);
-        $this->app->singleton(OperationJournal::class);
         $this->app->bind(OperationLock::class);
         $this->app->singleton(LegacyRetirementHost::class, fn (): LegacyRetirementHost => new LegacyRetirementHost(
             new LegacyIncusRevalidator,
@@ -80,8 +78,6 @@ final class AppServiceProvider extends ServiceProvider
                 $host->observeCurrent(...),
             );
         });
-        $repositoryRoot = dirname(__DIR__, 4);
-        $this->app->singleton(GitRepository::class, fn (): GitRepository => new GitRepository($repositoryRoot));
         $this->app->singleton(
             PreparedStateFingerprint::class,
             fn (Application $app): PreparedStateFingerprint => new PreparedStateFingerprint($app->make(GitRepository::class)),
@@ -124,34 +120,32 @@ final class AppServiceProvider extends ServiceProvider
                 pool: $pool,
                 ownershipMetadata: $ownership,
                 redactor: $app->make(SecretRedactor::class),
-                journal: $app->make(OperationJournal::class),
-                operationId: $app->make(OperationId::class),
             );
         });
         $this->app->bind(GuestTransport::class, fn (Application $app): IncusHost => $app->make(IncusHost::class));
         $this->app->singleton(IncusNetworkLifecycle::class);
-        $this->app->singleton(ProofRecordReader::class);
-        $this->app->singleton(ProofStore::class);
-        $this->app->singleton(ReleaseReceiptStore::class);
+        $this->app->singleton(HostCapacity::class, fn (Application $app): HostCapacity => new HostCapacity(
+            $app->make(IncusHost::class),
+            (int) $app->make(Repository::class)->get('e2e.incus.max_vms', 12),
+        ));
+        $this->app->singleton(StandbyManifestStore::class, fn (Application $app): StandbyManifestStore => new StandbyManifestStore(
+            $app->make(AtomicJsonStore::class),
+            $app->make(StatePaths::class),
+            $app->make(IncusHost::class),
+        ));
         $this->app->singleton(DiscoveryGuestPreparer::class);
         $this->app->singleton(TopologyAcquirer::class, fn (Application $app): TopologyAcquirer => new TopologyAcquirer(
             host: $app->make(IncusHost::class),
             networks: $app->make(IncusNetworkLifecycle::class),
             fingerprints: $app->make(PreparedStateFingerprint::class),
             standby: $app->make(StandbyManifestStore::class),
-            manifests: $app->make(TopologyManifestStore::class),
             synchronizer: $app->make(WorktreeSynchronizer::class),
-            converger: $app->make(TopologyConverger::class),
             verifier: $app->make(TopologyVerifier::class),
-            state: $app->make(AtomicJsonStore::class),
-            paths: $app->make(StatePaths::class),
-            commandOperation: $app->make(OperationId::class),
-            journal: $app->make(OperationJournal::class),
-            redactor: $app->make(SecretRedactor::class),
-            repositoryRoot: $repositoryRoot,
-            capacity: $app->make(HostCapacity::class),
-            proofs: $app->make(ProofRecordReader::class),
             guests: $app->make(DiscoveryGuestPreparer::class),
+            capacity: $app->make(HostCapacity::class),
+            hostPaths: $app->make(StatePaths::class),
+            operation: $app->make(OperationId::class),
+            repositoryRoot: $repositoryRoot,
         ));
         $this->app->singleton(
             TopologyProofRunner::class,
@@ -159,48 +153,28 @@ final class AppServiceProvider extends ServiceProvider
                 $app->make(IncusHost::class),
                 $app->make(IncusNetworkLifecycle::class),
                 $app->make(StandbyManifestStore::class),
-                $app->make(TopologyManifestStore::class),
                 $app->make(WorktreeSynchronizer::class),
                 $app->make(TopologyConverger::class),
                 $app->make(TopologyVerifier::class),
-                $app->make(ReleaseReceiptStore::class),
-                $app->make(ProofStore::class),
                 new ProofFixtureStager($app->make(IncusHost::class), $app->make(OperationId::class)),
                 $app->make(HostCapacity::class),
-                $app->make(AtomicJsonStore::class),
                 $app->make(StatePaths::class),
                 $app->make(OperationId::class),
-                $app->make(OperationJournal::class),
-                $app->make(SecretRedactor::class),
                 $repositoryRoot,
             ),
         );
         $this->app->singleton(OrphanNetworkSweep::class, fn (Application $app): OrphanNetworkSweep => new OrphanNetworkSweep(
             $app->make(IncusHost::class),
             $app->make(IncusNetworkLifecycle::class),
-            $app->make(AtomicJsonStore::class),
             $app->make(StatePaths::class),
-            $app->make(OperationJournal::class),
             $app->make(OperationId::class),
         ));
         $this->app->singleton(TopologyReleaser::class, fn (Application $app): TopologyReleaser => new TopologyReleaser(
             $app->make(IncusHost::class),
             $app->make(IncusNetworkLifecycle::class),
-            $app->make(TopologyManifestStore::class),
-            $app->make(AtomicJsonStore::class),
             $app->make(StatePaths::class),
             $app->make(OperationId::class),
-            $app->make(ReleaseReceiptStore::class),
-            $app->make(HostCapacity::class),
-            sweep: $app->make(OrphanNetworkSweep::class),
-        ));
-        $this->app->singleton(TopologyReaper::class, fn (Application $app): TopologyReaper => new TopologyReaper(
-            $app->make(AtomicJsonStore::class),
-            $app->make(StatePaths::class),
-            $app->make(TopologyReleaser::class),
-            $app->make(ProofRecordReader::class),
-            $app->make(OperationJournal::class),
-            $app->make(OperationId::class),
+            $app->make(OrphanNetworkSweep::class),
         ));
 
         $this->app->singleton(StandbyBuilder::class, fn (Application $app): StandbyBuilder => new StandbyBuilder(
@@ -211,8 +185,18 @@ final class AppServiceProvider extends ServiceProvider
             $app->make(TopologyVerifier::class),
             $app->make(StandbyManifestStore::class),
             $app->make(AtomicJsonStore::class),
-            $app->make(StatePaths::class),
             $repositoryRoot,
+        ));
+        $this->app->singleton(StandbyPromoter::class, fn (Application $app): StandbyPromoter => new StandbyPromoter(
+            $app->make(IncusHost::class),
+            $app->make(PreparedStateFingerprint::class),
+            $app->make(StandbyManifestStore::class),
+            $app->make(TopologyReleaser::class),
+            $app->make(OperationLock::class),
+            new OperationLock($app->make(StatePaths::class)),
+            $app->make(StatePaths::class),
+            new GitRepository(self::primaryCheckout($repositoryRoot)),
+            $app->make(OperationId::class),
         ));
         $this->app->singleton(StandbyRefresher::class, fn (Application $app): StandbyRefresher => new StandbyRefresher(
             $app->make(IncusHost::class),
@@ -226,12 +210,31 @@ final class AppServiceProvider extends ServiceProvider
             $app->make(\App\E2E\LaravelReleaseResolver::class),
             $app->make(OperationLock::class),
             new OperationLock($app->make(StatePaths::class)),
-            $app->make(OperationJournal::class),
             $app->make(AtomicJsonStore::class),
             $app->make(GitRepository::class),
             $repositoryRoot,
             $app->make(OperationId::class),
         ));
+    }
+
+    /**
+     * The primary checkout is the first entry of `git worktree list`; it is read
+     * directly, not through the Process facade, so a faked process never moves
+     * host state.
+     */
+    private static function primaryCheckout(string $repositoryRoot): string
+    {
+        $process = new \Symfony\Component\Process\Process(['git', 'worktree', 'list', '--porcelain'], $repositoryRoot);
+        $process->run();
+        if (! $process->isSuccessful() || preg_match('/^worktree (.+)$/m', $process->getOutput(), $match) !== 1) {
+            throw new \RuntimeException('The primary Git worktree cannot be determined.');
+        }
+        $primary = realpath(trim($match[1]));
+        if ($primary === false) {
+            throw new \RuntimeException('The primary Git worktree does not exist.');
+        }
+
+        return $primary;
     }
 
     public function boot(): void

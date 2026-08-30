@@ -6,8 +6,6 @@ namespace App\Console\Commands\Topology;
 
 use App\Console\Commands\E2ECommand;
 use App\E2E\TopologyAcquirer;
-use App\E2E\Value\AttemptId;
-use App\E2E\Value\OperationId;
 use InvalidArgumentException;
 use JsonException;
 use Throwable;
@@ -16,34 +14,33 @@ use Throwable;
 final class ExecCommand extends E2ECommand
 {
     #[\Override]
-    protected $signature = 'topology:exec {issue} {attempt} {role} {--argv=} {--argv-file=} {--json}';
+    protected $signature = 'topology:exec {issue} {role} '.self::WORKTREE_OPTION.' {--argv=} {--argv-file=} {--json}';
     #[\Override]
-    protected $description = 'Execute an exact argv vector, as the orbit runtime user, on one role of an exact topology attempt';
+    protected $description = 'Execute an exact argv vector, as the orbit runtime user, on one role of the live topology';
 
-    public function handle(TopologyAcquirer $acquirer, OperationId $operation): int
+    public function handle(TopologyAcquirer $acquirer): int
     {
         try {
             [$argv, $stdin] = $this->commandInput();
-            $result = $acquirer->execute(
-                (string) $this->argument('issue'),
-                new AttemptId((string) $this->argument('attempt')),
-                (string) $this->argument('role'),
-                $argv,
-                $stdin,
-            );
-            $identity = $operation->value;
+            $request = $this->request();
+            $role = (string) $this->argument('role');
+            $result = $acquirer->execute($request, $role, $argv, $stdin);
+            $this->log($request, "role={$role} exit={$result->exitCode} argv=".json_encode($argv, JSON_THROW_ON_ERROR));
             $payload = [
                 'state' => 'executed',
-                'operation_id' => $identity,
                 'exit_code' => $result->exitCode,
                 'stdout' => $result->stdout,
                 'stderr' => $result->stderr,
             ];
-            $this->line($this->option('json') ? json_encode($payload, JSON_THROW_ON_ERROR) : $result->stdout);
+            $this->line(
+                $this->option('json')
+                    ? json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)
+                    : $result->stdout,
+            );
 
             return $result->successful() ? self::SUCCESS : self::FAILURE;
         } catch (Throwable $exception) {
-            $this->outputFailure($exception, $operation);
+            $this->outputFailure($exception);
 
             return self::FAILURE;
         }

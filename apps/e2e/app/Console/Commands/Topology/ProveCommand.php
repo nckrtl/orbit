@@ -6,70 +6,63 @@ namespace App\Console\Commands\Topology;
 
 use App\Console\Commands\E2ECommand;
 use App\E2E\TopologyProofRunner;
-use App\E2E\Value\OperationId;
 use App\E2E\Value\ProofPlan;
 use App\E2E\Value\ProofResult;
 use App\E2E\Value\ProofStatus;
 use App\E2E\Value\TopologyRequest;
-use InvalidArgumentException;
 use Throwable;
 
 final class ProveCommand extends E2ECommand
 {
     #[\Override]
-    protected $signature = 'topology:prove {issue} {worktree} {--candidate-sha=} {--proof-plan-file=} {--json}';
+    protected $signature =
+        'topology:prove {issue} '
+            .self::WORKTREE_OPTION
+            .' {--plan= : The proof plan; defaults to proofs/<ISSUE>.json in the worktree} {--json}';
     #[\Override]
-    protected $description = 'Prove one exact candidate commit on a fresh proof topology';
+    protected $description = 'Prove the worktree HEAD commit on a fresh topology with the proof plan';
 
-    public function handle(TopologyProofRunner $runner, OperationId $operation): int
+    public function handle(TopologyProofRunner $runner): int
     {
         try {
-            $sha = $this->option('candidate-sha');
-            if (! is_string($sha) || $sha === '') {
-                throw new InvalidArgumentException('The exact candidate SHA is required.');
-            }
-            $planFile = $this->option('proof-plan-file');
-            if (! is_string($planFile) || $planFile === '') {
-                throw new InvalidArgumentException('The proof plan file is required.');
-            }
-            $result = $runner->prove(
-                new TopologyRequest((string) $this->argument('issue'), (string) $this->argument('worktree')),
-                $sha,
-                ProofPlan::fromFile($planFile),
-            );
-            $payload = [
-                'state' => $result->status->value,
-                'operation_id' => $operation->value,
-                'issue' => $result->issue,
-                'attempt_id' => $result->attempt->value,
-                'proof' => $result->summary(),
-            ];
-            // A diagnosis ends with the action that failed, so a worker reads the verdict without the record file.
-            if ($result->status === ProofStatus::Diagnosis) {
-                $payload['failed_action'] = $result->failedAction();
-            }
-            $this->outputJson($payload, $this->text($result));
+            $request = $this->request();
+            $result = $runner->prove($request, ProofPlan::fromFile($this->planPath($request)));
+            $this->log($request, 'attempt='.$result->attempt->value.' '.$result->status->value);
+            $this->outputJson($result->toArray(), $this->text($result));
 
             return $result->status === ProofStatus::Proved ? self::SUCCESS : self::FAILURE;
         } catch (Throwable $exception) {
-            $this->outputFailure($exception, $operation);
+            if (isset($request)) {
+                $this->log($request, 'failed: '.$exception->getMessage());
+            }
+            $this->outputFailure($exception);
 
             return self::FAILURE;
         }
     }
 
+    private function planPath(TopologyRequest $request): string
+    {
+        $plan = $this->option('plan');
+        if (! is_string($plan) || $plan === '') {
+            $plan = 'proofs/'.$request->issue.'.json';
+        }
+
+        return str_starts_with($plan, '/') ? $plan : $request->worktree.'/'.$plan;
+    }
+
     private function text(ProofResult $result): string
     {
         $text = $result->status->value.' '.$result->attempt->value;
-        $failed = $result->status === ProofStatus::Diagnosis ? $result->failedAction() : null;
-        if ($failed === null) {
-            return $text;
+        $failed = $result->failedAction();
+        if ($failed !== null) {
+            $text .=
+                " failed_action={$failed['id']} node={$failed['node']} exit_code={$failed['exit_code']}\n"
+                .rtrim($failed['stderr_tail']);
+        } elseif ($result->error !== null) {
+            $text .= "\n".$result->error;
         }
 
-        return (
-            $text
-            ." failed_action={$failed['id']} node={$failed['node']} exit_code={$failed['exit_code']}\n"
-            .rtrim($failed['stderr_tail'])
-        );
+        return $text;
     }
 }

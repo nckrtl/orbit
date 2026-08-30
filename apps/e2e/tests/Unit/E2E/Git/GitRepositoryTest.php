@@ -45,30 +45,30 @@ describe('GitRepository', function (): void {
     });
 
     it('reads the regular files directly under one directory with their modes', function (): void {
-        mkdir($this->path.'/apps/e2e/resources/proof/NCK-82', 0700, true);
-        file_put_contents($this->path.'/apps/e2e/resources/proof/NCK-82/check.sh', "#!/bin/sh\n");
-        chmod($this->path.'/apps/e2e/resources/proof/NCK-82/check.sh', 0755);
-        file_put_contents($this->path.'/apps/e2e/resources/proof/NCK-82/plan.json', "{}\n");
-        file_put_contents($this->path.'/apps/e2e/resources/proof/other.json', "{}\n");
+        mkdir($this->path.'/proofs/NCK-82', 0700, true);
+        file_put_contents($this->path.'/proofs/NCK-82/check.sh', "#!/bin/sh\n");
+        chmod($this->path.'/proofs/NCK-82/check.sh', 0755);
+        file_put_contents($this->path.'/proofs/NCK-82/plan.json', "{}\n");
+        file_put_contents($this->path.'/proofs/other.json', "{}\n");
         git($this->path, ['add', '.']);
         git($this->path, ['commit', '--quiet', '-m', 'fixture']);
         $repository = new GitRepository($this->path);
         $commit = $repository->commit();
 
-        expect($repository->directoryBlobs($commit, 'apps/e2e/resources/proof/NCK-82'))
+        expect($repository->directoryBlobs($commit, 'proofs/NCK-82'))
             ->toBe([
                 'check.sh' => ['mode' => '100755', 'content' => "#!/bin/sh\n"],
                 'plan.json' => ['mode' => '100644', 'content' => "{}\n"],
             ])
-            ->and($repository->directoryBlobs($commit, 'apps/e2e/resources/proof/NCK-58'))
+            ->and($repository->directoryBlobs($commit, 'proofs/NCK-58'))
             ->toBe([]);
 
-        mkdir($this->path.'/apps/e2e/resources/proof/NCK-82/nested', 0700);
-        file_put_contents($this->path.'/apps/e2e/resources/proof/NCK-82/nested/deep.txt', "deep\n");
+        mkdir($this->path.'/proofs/NCK-82/nested', 0700);
+        file_put_contents($this->path.'/proofs/NCK-82/nested/deep.txt', "deep\n");
         git($this->path, ['add', '.']);
         git($this->path, ['commit', '--quiet', '-m', 'nested']);
 
-        expect(fn (): array => $repository->directoryBlobs($repository->commit(), 'apps/e2e/resources/proof/NCK-82'))
+        expect(fn (): array => $repository->directoryBlobs($repository->commit(), 'proofs/NCK-82'))
             ->toThrow(InvalidArgumentException::class, 'is not a regular file')
             ->and(fn (): array => $repository->directoryBlobs($commit, '../outside'))
             ->toThrow(InvalidArgumentException::class);

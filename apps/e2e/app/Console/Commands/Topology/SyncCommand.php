@@ -6,35 +6,34 @@ namespace App\Console\Commands\Topology;
 
 use App\Console\Commands\E2ECommand;
 use App\E2E\TopologyAcquirer;
-use App\E2E\Value\AttemptId;
-use App\E2E\Value\OperationId;
 use Throwable;
 
 final class SyncCommand extends E2ECommand
 {
     #[\Override]
-    protected $signature = 'topology:sync {issue} {attempt} {worktree} {--json}';
+    protected $signature = 'topology:sync {issue} '.self::WORKTREE_OPTION.' {--json}';
     #[\Override]
-    protected $description = 'Synchronize the source identity of one exact topology attempt';
+    protected $description = 'Re-verify the mounted source identity of the live topology';
 
-    public function handle(TopologyAcquirer $acquirer, OperationId $operation): int
+    public function handle(TopologyAcquirer $acquirer): int
     {
         try {
-            $topology = $acquirer->sync(
-                (string) $this->argument('issue'),
-                new AttemptId((string) $this->argument('attempt')),
-                (string) $this->argument('worktree'),
-            );
+            $request = $this->request();
+            $topology = $acquirer->sync($request);
+            $this->log($request, 'attempt='.$topology->attempt->value.' ok');
             $this->outputJson([
                 'state' => 'ready',
-                'operation_id' => $operation->value,
+                'issue' => $request->issue,
                 'attempt_id' => $topology->attempt->value,
                 'source' => $topology->source->toArray(),
-            ], 'ready');
+            ], 'ready '.$topology->attempt->value);
 
             return self::SUCCESS;
         } catch (Throwable $exception) {
-            $this->outputFailure($exception, $operation);
+            if (isset($request)) {
+                $this->log($request, 'failed: '.$exception->getMessage());
+            }
+            $this->outputFailure($exception);
 
             return self::FAILURE;
         }

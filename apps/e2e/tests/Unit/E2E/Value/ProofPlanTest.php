@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 use App\E2E\Value\ProofPlan;
 
-/** @return array{setup:list<array<string, mixed>>,acceptance:list<array<string, mixed>>,post_deployment_actions:list<array<string, mixed>>} */
+/** @return array{setup:list<array<string, mixed>>,acceptance:list<array<string, mixed>>} */
 function proofPlanFixture(): array
 {
     return [
@@ -24,7 +24,6 @@ function proofPlanFixture(): array
                 'timeout_seconds' => 60,
             ],
         ],
-        'post_deployment_actions' => [],
     ];
 }
 
@@ -65,23 +64,12 @@ describe('ProofPlan', function (): void {
                     'timeout_seconds' => 60,
                 ],
             ])
-            ->and($plan->postDeploymentActions)
-            ->toBeEmpty()
             ->and($plan->toArray())
             ->toBe(proofPlanFixture());
     });
 
     it('serializes in canonical key order regardless of the declared order', function (): void {
         $plan = ProofPlan::fromFile(proofPlanFile([
-            'post_deployment_actions' => [
-                [
-                    'verification' => 'orbit doctor reports the new role',
-                    'recovery' => 'orbit node:retarget --previous',
-                    'reason' => 'the gateway must learn the new role',
-                    'operation' => 'orbit node:retarget',
-                    'target' => 'gateway',
-                ],
-            ],
             'acceptance' => [
                 ['timeout_seconds' => 60, 'argv' => ['orbit', 'doctor'], 'node' => 'gateway', 'id' => 'doctor'],
             ],
@@ -94,18 +82,7 @@ describe('ProofPlan', function (): void {
                 'acceptance' => [
                     ['id' => 'doctor', 'node' => 'gateway', 'argv' => ['orbit', 'doctor'], 'timeout_seconds' => 60],
                 ],
-                'post_deployment_actions' => [
-                    [
-                        'target' => 'gateway',
-                        'operation' => 'orbit node:retarget',
-                        'reason' => 'the gateway must learn the new role',
-                        'recovery' => 'orbit node:retarget --previous',
-                        'verification' => 'orbit doctor reports the new role',
-                    ],
-                ],
-            ])
-            ->and($plan->postDeploymentActions)
-            ->toHaveCount(1);
+            ]);
     });
 
     it('rejects a missing or unreadable file', function (): void {
@@ -123,11 +100,35 @@ describe('ProofPlan', function (): void {
         'empty' => [''],
     ]);
 
+    it('reads the optional mutates flag and keeps it out of the record unless set', function (): void {
+        $plain = ProofPlan::fromFile(proofPlanFile(proofPlanFixture()));
+        $mutating = ProofPlan::fromFile(proofPlanFile(proofPlanFixture() + ['mutates' => true]));
+        $explicit = ProofPlan::fromFile(proofPlanFile(proofPlanFixture() + ['mutates' => false]));
+
+        expect($plain->mutates)
+            ->toBeFalse()
+            ->and($plain->toArray())
+            ->toBe(proofPlanFixture())
+            ->and($mutating->mutates)
+            ->toBeTrue()
+            ->and($mutating->toArray())
+            ->toBe(proofPlanFixture() + ['mutates' => true])
+            ->and($explicit->mutates)
+            ->toBeFalse()
+            ->and($explicit->toArray())
+            ->toBe(proofPlanFixture());
+    });
+
+    it('rejects a mutates flag that is not a boolean', function (mixed $value): void {
+        expect(fn () => ProofPlan::fromFile(proofPlanFile(proofPlanFixture() + ['mutates' => $value])))
+            ->toThrow(InvalidArgumentException::class, 'The proof plan key mutates must be a boolean.');
+    })->with(['string' => ['true'], 'integer' => [1], 'null' => [null]]);
+
     it('rejects anything but the exact top-level keys', function (Closure $mutate): void {
         expect(fn () => ProofPlan::fromFile(mutatedProofPlanFile($mutate)))
             ->toThrow(
                 InvalidArgumentException::class,
-                'The proof plan must have exactly the keys setup, acceptance, and post_deployment_actions.',
+                'The proof plan must have exactly the keys setup and acceptance, plus an optional mutates.',
             );
     })->with([
         'missing setup' => [function (array $plan): array {
@@ -135,11 +136,7 @@ describe('ProofPlan', function (): void {
 
             return $plan;
         }],
-        'missing post-deployment actions' => [function (array $plan): array {
-            unset($plan['post_deployment_actions']);
-
-            return $plan;
-        }],
+        'post-deployment actions' => [fn (array $plan): array => $plan + ['post_deployment_actions' => []]],
         'schema version' => [fn (array $plan): array => $plan + ['schema' => 1]],
         'stdin at the top level' => [fn (array $plan): array => $plan + ['stdin' => 'token']],
     ]);
@@ -154,17 +151,14 @@ describe('ProofPlan', function (): void {
     })->with([
         'setup object' => ['setup', ['id' => 'x']],
         'acceptance string' => ['acceptance', 'show-workspace'],
-        'post-deployment null' => ['post_deployment_actions', null],
     ]);
 
     it('rejects a section declared as a JSON object even when its keys look like list indexes', function (): void {
         $content = json_encode([
             'setup' => [],
             'acceptance' => ['0' => proofPlanFixture()['acceptance'][0]],
-            'post_deployment_actions' => [],
         ], JSON_THROW_ON_ERROR | JSON_FORCE_OBJECT);
         $content = str_replace('"setup":{}', '"setup":[]', $content);
-        $content = str_replace('"post_deployment_actions":{}', '"post_deployment_actions":[]', $content);
 
         expect($content)
             ->toContain('"acceptance":{"0":')
@@ -356,66 +350,4 @@ describe('ProofPlan', function (): void {
             ->and($plan->acceptance[0]['timeout_seconds'])
             ->toBe(900);
     });
-
-    it('rejects a post-deployment action without exactly the five approved fields', function (Closure $mutate): void {
-        expect(fn () => ProofPlan::fromFile(mutatedProofPlanFile($mutate)))
-            ->toThrow(
-                InvalidArgumentException::class,
-                'Post-deployment action [#0] must have exactly the keys target, operation, reason, recovery, and verification.',
-            );
-    })->with([
-        'missing recovery' => [function (array $plan): array {
-            $plan['post_deployment_actions'] = [[
-                'target' => 'gateway',
-                'operation' => 'orbit node:retarget',
-                'reason' => 'the gateway must learn the new role',
-                'verification' => 'orbit doctor reports the new role',
-            ]];
-
-            return $plan;
-        }],
-        'extra field' => [function (array $plan): array {
-            $plan['post_deployment_actions'] = [[
-                'target' => 'gateway',
-                'operation' => 'orbit node:retarget',
-                'reason' => 'the gateway must learn the new role',
-                'recovery' => 'orbit node:retarget --previous',
-                'verification' => 'orbit doctor reports the new role',
-                'argv' => ['orbit'],
-            ]];
-
-            return $plan;
-        }],
-        'not an object' => [function (array $plan): array {
-            $plan['post_deployment_actions'] = ['orbit node:retarget'];
-
-            return $plan;
-        }],
-    ]);
-
-    it('rejects a post-deployment field that is not a non-empty string free of NUL bytes', function (
-        mixed $value,
-    ): void {
-        expect(fn () => ProofPlan::fromFile(mutatedProofPlanFile(function (array $plan) use ($value): array {
-            $plan['post_deployment_actions'] = [[
-                'target' => 'gateway',
-                'operation' => 'orbit node:retarget',
-                'reason' => $value,
-                'recovery' => 'orbit node:retarget --previous',
-                'verification' => 'orbit doctor reports the new role',
-            ]];
-
-            return $plan;
-        })))
-            ->toThrow(
-                InvalidArgumentException::class,
-                'Post-deployment action [#0] field [reason] must be a non-empty string free of NUL bytes.',
-            );
-    })->with([
-        'empty' => [''],
-        'whitespace' => ['   '],
-        'NUL byte' => ["because\0"],
-        'integer' => [1],
-        'null' => [null],
-    ]);
 });

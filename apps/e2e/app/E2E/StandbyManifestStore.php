@@ -9,13 +9,19 @@ use App\E2E\State\StatePaths;
 use App\E2E\Value\StandbyGeneration;
 use RuntimeException;
 
-/** @mago-expect lint:cyclomatic-complexity Manifest persistence validates each exact lifecycle state. */
+/**
+ * The promoted standby generation and its recorded siblings, under
+ * `<primary>/.e2e/standby/`. Generations a live topology still runs on are
+ * read from the Incus inventory, never from a ledger.
+ *
+ * @mago-expect lint:cyclomatic-complexity Manifest persistence validates each exact lifecycle state.
+ */
 final readonly class StandbyManifestStore
 {
     public function __construct(
         private AtomicJsonStore $store,
         private StatePaths $paths,
-        private TopologyManifestStore $topologies,
+        private IncusHost $host,
     ) {}
 
     public function promoted(): ?StandbyGeneration
@@ -58,17 +64,20 @@ final readonly class StandbyManifestStore
     /** @return list<StandbyGeneration> */
     public function prunable(StandbyGeneration $current): array
     {
+        $recorded = $this->recorded();
         $protected = [$current->id];
         if ($current->previousGenerationId !== null) {
             $protected[] = $current->previousGenerationId;
         }
-
-        foreach ($this->topologies->activeGenerationIds() as $generationId) {
-            $protected[] = $generationId;
+        foreach ($this->host->harnessInstanceMetadata() as $metadata) {
+            $generation = $metadata['user.orbit.e2e.generation'] ?? null;
+            if (is_string($generation) && $generation !== '') {
+                $protected[] = $generation;
+            }
         }
 
         $prunable = [];
-        foreach ($this->recorded() as $generation) {
+        foreach ($recorded as $generation) {
             if (! in_array($generation->id, $protected, true)) {
                 $prunable[] = $generation;
             }
