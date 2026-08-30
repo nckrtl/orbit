@@ -187,7 +187,7 @@ it('accepts only a complete healthy Docker CE stack as the Docker prerequisite',
     );
     $filesystem->put(
         "{$root}/bin/systemctl",
-        "#!/bin/sh\n[ \"\$DOCTOR_STATE\" = healthy ] || [ \"\$DOCTOR_STATE\" = missing-git ]\n",
+        "#!/bin/sh\n[ \"\$DOCTOR_STATE\" != inactive ]\n",
     );
     chmod("{$root}/bin/dpkg-query", 0o755);
     chmod("{$root}/bin/systemctl", 0o755);
