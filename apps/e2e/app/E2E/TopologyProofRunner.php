@@ -62,7 +62,13 @@ final readonly class TopologyProofRunner
     ];
 
     /** Phases during which the topology resources are not yet complete, so a failure rolls back. */
-    private const array CREATION_PHASES = ['create.network', 'clone', 'start', 'prepare.cloned-host-state'];
+    private const array CREATION_PHASES = [
+        'reserve',
+        'create.network',
+        'clone',
+        'start',
+        'prepare.cloned-host-state',
+    ];
 
     public function __construct(
         private IncusHost $host,
@@ -130,6 +136,21 @@ final readonly class TopologyProofRunner
                 throw new RuntimeException('The active topology attempt is not a proof attempt.');
             }
             $result = $this->proofs->diagnose($issue, $attempt);
+            // Status and verify must not show a passing proof after the verdict moved.
+            $this->manifests->writeActive(new FeatureTopology(
+                $active->target,
+                $active->purpose,
+                $active->generation,
+                $active->network,
+                $active->instances,
+                $active->source,
+                $this->failedVerification(
+                    $active->target,
+                    'diagnosis',
+                    new RuntimeException('The proved attempt was moved to diagnosis.'),
+                ),
+                $active->mounts,
+            ));
             $this->journal->append($this->operation, [
                 'event' => 'topology.diagnose',
                 'state' => 'completed',
@@ -204,6 +225,10 @@ final readonly class TopologyProofRunner
                         $retried = true;
                         continue;
                     }
+                    // Nothing about the candidate was observed before reservation: no verdict to record.
+                    if ($failedPhase === 'reserve') {
+                        throw $exception;
+                    }
                     $verification = $this->failedVerification($target, $failedPhase, $exception);
 
                     return $this->record(
@@ -260,6 +285,8 @@ final readonly class TopologyProofRunner
     ): CandidateSync {
         $issue = $request->issue;
         $attempt = $target->requireAttempt();
+        // No resource exists yet: a failure here rolls back an empty inventory and drops the lease.
+        $phase = 'reserve';
         $this->writeLease($issue, $attempt, 'acquiring');
         $slot = $this->capacity->reserve($issue, $attempt, $this->operation);
         $metadata = [
@@ -401,10 +428,29 @@ final readonly class TopologyProofRunner
             ]);
             $startedAt = $this->timestamp();
             // The declared argv runs as the orbit runtime user; the record keeps it as given.
-            $result = $this->host->exec(
-                $instance,
-                GuestCommand::asOrbitUser($action['argv'], $action['timeout_seconds']),
-            );
+            try {
+                $result = $this->host->exec(
+                    $instance,
+                    GuestCommand::asOrbitUser($action['argv'], $action['timeout_seconds']),
+                );
+            } catch (Throwable $transport) {
+                // A timed-out or unrunnable action still names itself in the record.
+                $results[] = [
+                    'id' => $action['id'],
+                    'node' => $action['node'],
+                    'argv' => $action['argv'],
+                    'exit_code' => -1,
+                    'stdout' => '',
+                    'stderr' => $this->capture($transport->getMessage()),
+                    'started_at' => $startedAt,
+                    'finished_at' => $this->timestamp(),
+                ];
+                throw new RuntimeException(
+                    "Proof {$section} action [{$action['id']}] could not run: "
+                        .$this->redactor->redact($transport->getMessage()),
+                    previous: $transport,
+                );
+            }
             $finishedAt = $this->timestamp();
             $observed = [
                 'id' => $action['id'],

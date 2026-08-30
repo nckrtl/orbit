@@ -58,10 +58,18 @@ final readonly class GuestCommand
      */
     public static function asOrbitUser(array $argv, int $timeout = 60, ?string $stdin = null): self
     {
-        if ($argv === []) {
-            throw new InvalidArgumentException('Guest command and timeout must be valid.');
+        if ($argv === [] || ! self::isProgramArgument($argv[0])) {
+            throw new InvalidArgumentException(
+                'The orbit-user command must start with a program; the first argument cannot carry `=` or start with `-`.',
+            );
         }
 
         return new self([...self::ORBIT_USER_PREFIX, ...$argv], $timeout, $stdin);
+    }
+
+    /** `env` would consume a leading `NAME=VALUE` or option as its own, so the program must come first. */
+    public static function isProgramArgument(string $argument): bool
+    {
+        return $argument !== '' && ! str_contains($argument, '=') && ! str_starts_with($argument, '-');
     }
 }

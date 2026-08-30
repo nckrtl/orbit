@@ -158,6 +158,11 @@ final readonly class ProofPlan
             if (! is_array($argv) || $argv === [] || ! array_is_list($argv)) {
                 throw new InvalidArgumentException("Proof action [{$id}] must have a non-empty argument vector.");
             }
+            if (! is_string($argv[0]) || ! GuestCommand::isProgramArgument($argv[0])) {
+                throw new InvalidArgumentException(
+                    "Proof action [{$id}] must start with a program; the first argument cannot carry `=` or start with `-`.",
+                );
+            }
             $arguments = [];
             /** @mago-expect analysis:mixed-assignment Each argument is validated before it joins the vector. */
             foreach ($argv as $argument) {

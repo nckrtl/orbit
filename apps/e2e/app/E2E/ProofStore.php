@@ -42,13 +42,10 @@ final readonly class ProofStore
 
     public function write(ProofResult $result): void
     {
-        $existing = $this->read($result->issue, $result->attempt);
-        if (
-            $existing !== null
-            && ($existing->status !== ProofStatus::Proved
-            || $result->status !== ProofStatus::Diagnosis)
-        ) {
-            throw new RuntimeException('The proof attempt already has a record; only proved becomes diagnosis.');
+        if ($this->read($result->issue, $result->attempt) !== null) {
+            throw new RuntimeException(
+                'The proof attempt already has a record; only diagnose() moves proved to diagnosis.',
+            );
         }
 
         $this->store->write($this->path($result->issue, $result->attempt), $result->toArray());
@@ -64,9 +61,27 @@ final readonly class ProofStore
         }
 
         $diagnosis = $existing->withStatus(ProofStatus::Diagnosis, ProofResult::now());
-        $this->write($diagnosis);
+        $this->replaceProved($existing, $diagnosis);
 
         return $diagnosis;
+    }
+
+    /** The only overwrite: the same evidence with the verdict moved from proved to diagnosis. */
+    private function replaceProved(ProofResult $existing, ProofResult $diagnosis): void
+    {
+        $identity = static fn (ProofResult $result): array => array_diff_key(
+            $result->toArray(),
+            ['status' => true, 'recorded_at' => true],
+        );
+        if (
+            $existing->status !== ProofStatus::Proved
+            || $diagnosis->status !== ProofStatus::Diagnosis
+            || $identity($existing) !== $identity($diagnosis)
+        ) {
+            throw new RuntimeException('The diagnosis does not carry the proved evidence of the attempt.');
+        }
+
+        $this->store->write($this->path($diagnosis->issue, $diagnosis->attempt), $diagnosis->toArray());
     }
 
     private function path(string $issue, AttemptId $attempt): string

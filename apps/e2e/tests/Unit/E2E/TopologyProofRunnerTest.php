@@ -134,6 +134,7 @@ function proofRunner(
     array $attempts = ['b', 'c'],
     ?AcquisitionRollback $rollback = null,
     ?SecretRedactor $redactor = null,
+    int $maxVms = 12,
 ): TopologyProofRunner {
     $store = new AtomicJsonStore($paths);
     $host = new IncusHost;
@@ -151,7 +152,7 @@ function proofRunner(
         new TopologyVerifier($host, readinessTimeoutSeconds: 1, readinessPollIntervalMicroseconds: 0),
         new ReleaseReceiptStore($store, $paths),
         new ProofStore($store),
-        new HostCapacity($store, $paths, $operation, 12),
+        new HostCapacity($store, $paths, $operation, $maxVms),
         $store,
         $paths,
         $operation,
@@ -234,7 +235,7 @@ function proofIdentity(TopologyTarget $target, string $generationId): array
 function proofRollback(array $targets, string $generationId, array &$mutations): AcquisitionRollback
 {
     $deleted = [];
-    $read = static function (string $resource) use ($targets, $generationId): IncusInstance|IncusNetwork {
+    $read = static function (string $resource) use ($targets, $generationId): IncusInstance|IncusNetwork|null {
         foreach ($targets as $target) {
             if ($resource === $target->network()) {
                 return new IncusNetwork('local', 'default', $resource, proofIdentity($target, $generationId));
@@ -254,7 +255,7 @@ function proofRollback(array $targets, string $generationId, array &$mutations):
             }
         }
 
-        throw new RuntimeException("The rollback fake does not know {$resource}.");
+        return null;
     };
 
     return new AcquisitionRollback(
@@ -970,6 +971,10 @@ it('keeps a proved attempt immutable, read-only verifiable, and one-way diagnosa
             ->toBe(ProofStatus::Diagnosis)
             ->and(new ProofStore($store)->read('NCK-123', attemptId('b'))?->status)
             ->toBe(ProofStatus::Diagnosis)
+            ->and($manifests->read('NCK-123', attemptId('b'))?->verification->passed)
+            ->toBeFalse()
+            ->and(array_keys($manifests->read('NCK-123', attemptId('b'))?->verification->probes ?? []))
+            ->toBe(['proof.diagnosis'])
             ->and(fn () => $runner->diagnose('NCK-123', attemptId('b')))
             ->toThrow(RuntimeException::class, 'not proved')
             ->and($manifests->active('NCK-123')?->attempt->value)
@@ -1025,3 +1030,264 @@ it('release before merge makes the proof inactive while its record and receipt a
         ->and(new ProofStore($store)->read('NCK-123', attemptId('b'))?->status)
         ->toBe(ProofStatus::Proved);
 });
+
+it('drops the acquiring lease without a phantom topology when capacity reservation fails', function () {
+    $fixture = proofFixture('capacity');
+    ['paths' => $paths, 'store' => $store, 'candidate' => $candidate, 'tree' => $tree] = $fixture;
+    $target = featureTarget('NCK-123', 'b');
+    $events = [];
+    fakeProofProcesses([$target], $fixture['generationId'], $candidate, $tree, $events);
+    // Six slots hold the standby and one topology; another issue already holds that topology.
+    new HostCapacity($store, $paths, new OperationId(str_repeat('a', 32)), 6)
+        ->reserve('NCK-999', attemptId('9'), new OperationId(str_repeat('9', 32)));
+    $mutations = [];
+    $rollback = proofRollback([], $fixture['generationId'], $mutations);
+
+    try {
+        expect(fn () => proofRunner($fixture['repositoryRoot'], $paths, ['b'], $rollback, maxVms: 6)->prove(
+            new TopologyRequest('NCK-123', $fixture['worktree']),
+            $candidate,
+            proofPlan(),
+        ))
+            ->toThrow(RuntimeException::class, 'capacity');
+    } finally {
+        Process::run(['git', '-C', $fixture['repositoryRoot'], 'worktree', 'remove', '--force', $fixture['worktree']]);
+    }
+
+    expect(new TopologyManifestStore($store, $paths)->active('NCK-123'))
+        ->toBeNull()
+        ->and(new TopologyManifestStore($store, $paths)->read('NCK-123', attemptId('b')))
+        ->toBeNull()
+        ->and($store->read('leases/NCK-123.json'))
+        ->toBeNull()
+        ->and(array_keys($store->read('capacity/incus.json')['reservations'] ?? []))
+        ->toBe(['NCK-999:'.attemptId('9')->value])
+        ->and($store->read('evidence/proofs/NCK-123/'.attemptId('b')->value.'.json'))
+        ->toBeNull()
+        ->and($mutations)
+        ->toBe([])
+        ->and(collect($events)->contains(
+            static fn (array $command): bool => array_intersect($command, ['create', 'copy', 'start', 'exec']) !== [],
+        ))
+        ->toBeFalse();
+});
+
+it('retries a failed candidate sync once and keeps the second failure active as a diagnosis', function (
+    bool $recovers,
+) {
+    $fixture = proofFixture('sync-'.($recovers ? 'once' : 'twice'));
+    ['paths' => $paths, 'store' => $store, 'candidate' => $candidate, 'tree' => $tree] = $fixture;
+    $first = featureTarget('NCK-123', 'b');
+    $second = featureTarget('NCK-123', 'c');
+    $events = [];
+    $receives = 0;
+    fakeProofProcesses(
+        [$first, $second],
+        $fixture['generationId'],
+        $candidate,
+        $tree,
+        $events,
+        static function (array $guest) use (&$receives, $recovers) {
+            if (($guest[0] ?? null) !== '/usr/local/bin/receive-source.sh') {
+                return null;
+            }
+            $receives++;
+            // Both checkout roles of the first attempt fail; the second attempt succeeds only when it recovers.
+            if ($receives <= 2 || ! $recovers) {
+                return Process::result('', "bundle corrupt\n", 1);
+            }
+
+            return null;
+        },
+    );
+    $mutations = [];
+    $rollback = proofRollback([$first, $second], $fixture['generationId'], $mutations);
+
+    try {
+        $result = proofRunner($fixture['repositoryRoot'], $paths, ['b', 'c'], $rollback)->prove(
+            new TopologyRequest('NCK-123', $fixture['worktree']),
+            $candidate,
+            proofPlan(),
+        );
+    } finally {
+        Process::run(['git', '-C', $fixture['repositoryRoot'], 'worktree', 'remove', '--force', $fixture['worktree']]);
+    }
+
+    $active = new TopologyManifestStore($store, $paths)->active('NCK-123');
+
+    expect($result->attempt->value)
+        ->toBe(attemptId('c')->value)
+        ->and($mutations)
+        ->toContain('delete:'.$first->instance('gateway'), 'network:'.$first->network())
+        ->not
+        ->toContain('delete:'.$second->instance('gateway'))
+        ->and($active?->attempt->value)
+        ->toBe(attemptId('c')->value)
+        ->and($store->read('evidence/proofs/NCK-123/'.attemptId('b')->value.'.json'))
+        ->toBeNull();
+    if ($recovers) {
+        expect($result->status)->toBe(ProofStatus::Proved)->and($result->guestScriptHash)->not->toBeNull();
+    } else {
+        expect($result->status)
+            ->toBe(ProofStatus::Diagnosis)
+            ->and($result->guestScriptHash)
+            ->toBeNull()
+            ->and(array_keys($result->verification->probes))
+            ->toBe(['proof.sync.candidate'])
+            ->and($active?->verification->passed)
+            ->toBeFalse();
+    }
+})->with(['recovers' => [true], 'fails twice' => [false]]);
+
+it('records a diagnosis on an active topology when the identity probe transport fails', function () {
+    $fixture = proofFixture('identity-transport');
+    ['paths' => $paths, 'store' => $store, 'candidate' => $candidate, 'tree' => $tree] = $fixture;
+    $target = featureTarget('NCK-123', 'b');
+    $events = [];
+    $treeProbes = 0;
+    fakeProofProcesses(
+        [$target],
+        $fixture['generationId'],
+        $candidate,
+        $tree,
+        $events,
+        static function (array $guest) use (&$treeProbes) {
+            if (in_array('HEAD^{tree}', $guest, true) && ++$treeProbes > 2) {
+                throw new RuntimeException('Incus guest command batch transport failed.');
+            }
+
+            return null;
+        },
+    );
+
+    try {
+        $result = proofRunner($fixture['repositoryRoot'], $paths)->prove(
+            new TopologyRequest('NCK-123', $fixture['worktree']),
+            $candidate,
+            proofPlan(),
+        );
+    } finally {
+        Process::run(['git', '-C', $fixture['repositoryRoot'], 'worktree', 'remove', '--force', $fixture['worktree']]);
+    }
+
+    expect($result->status)
+        ->toBe(ProofStatus::Diagnosis)
+        ->and(array_keys($result->verification->probes))
+        ->toBe(['proof.identity'])
+        ->and($result->verification->probes['proof.identity']['observed'])
+        ->toContain('transport failed')
+        ->and(new TopologyManifestStore($store, $paths)->active('NCK-123')?->attempt->value)
+        ->toBe(attemptId('b')->value)
+        ->and(proofIncusIndex($events, 'delete'))
+        ->toBe([]);
+});
+
+it('retains the acquiring lease and reservation and writes no record when rollback is refused', function () {
+    $fixture = proofFixture('rollback-refused');
+    ['paths' => $paths, 'store' => $store, 'candidate' => $candidate, 'tree' => $tree] = $fixture;
+    $target = featureTarget('NCK-123', 'b');
+    $events = [];
+    fakeProofProcesses(
+        [$target],
+        $fixture['generationId'],
+        $candidate,
+        $tree,
+        $events,
+        hostOverride: static fn (array $command) => ($command[3] ?? null) === 'copy'
+            ? Process::result('', 'copy failed', 1)
+            : null,
+    );
+    // Every read answers with another operation owner, so cleanup refuses each resource.
+    $reads = 0;
+    $rollback = new AcquisitionRollback(
+        static function (array $resources) use (&$reads, $target, $fixture): array {
+            $reads++;
+            $inventory = [];
+            foreach ($resources as $resource) {
+                $metadata = [
+                    ...proofIdentity($target, $fixture['generationId']),
+                    'user.orbit.e2e.operation' => str_repeat((string) ($reads % 10), 32),
+                ];
+                $inventory[$resource] = $resource === $target->network()
+                    ? new IncusNetwork('local', 'default', $resource, $metadata)
+                    : new IncusInstance(
+                        'local',
+                        'default',
+                        $resource,
+                        'default',
+                        $metadata,
+                        network: $target->network(),
+                    );
+            }
+
+            return $inventory;
+        },
+        static fn (array $resources) => throw new RuntimeException('stop must not run'),
+        static fn (array $resources) => throw new RuntimeException('delete must not run'),
+        static fn (string $resource) => throw new RuntimeException('network delete must not run'),
+    );
+
+    try {
+        expect(fn () => proofRunner($fixture['repositoryRoot'], $paths, ['b'], $rollback)->prove(
+            new TopologyRequest('NCK-123', $fixture['worktree']),
+            $candidate,
+            proofPlan(),
+        ))
+            ->toThrow(RuntimeException::class, 'rollback was refused');
+    } finally {
+        Process::run(['git', '-C', $fixture['repositoryRoot'], 'worktree', 'remove', '--force', $fixture['worktree']]);
+    }
+
+    expect($store->read('leases/NCK-123.json'))
+        ->toMatchArray(['attempt' => attemptId('b')->value, 'state' => 'acquiring'])
+        ->and($store->read('capacity/incus.json')['reservations'] ?? [])
+        ->toHaveKey('NCK-123:'.attemptId('b')->value)
+        ->and($store->read('evidence/proofs/NCK-123/'.attemptId('b')->value.'.json'))
+        ->toBeNull()
+        ->and(new TopologyManifestStore($store, $paths)->active('NCK-123'))
+        ->toBeNull()
+        ->and(proofIncusIndex($events, 'delete'))
+        ->toBe([]);
+});
+
+it('names an action that could not run in the diagnosis record', function () {
+    $fixture = proofFixture('action-transport');
+    ['paths' => $paths, 'candidate' => $candidate, 'tree' => $tree] = $fixture;
+    $target = featureTarget('NCK-123', 'b');
+    $events = [];
+    fakeProofProcesses(
+        [$target],
+        $fixture['generationId'],
+        $candidate,
+        $tree,
+        $events,
+        static fn (array $guest) => $guest === ['touch', '/tmp/seeded']
+            ? throw new RuntimeException('Incus exec timed out after 30 seconds with token configured-secret')
+            : null,
+    );
+
+    try {
+        $result = proofRunner($fixture['repositoryRoot'], $paths, redactor: new SecretRedactor(['configured-secret']))
+            ->prove(new TopologyRequest('NCK-123', $fixture['worktree']), $candidate, proofPlan());
+    } finally {
+        Process::run(['git', '-C', $fixture['repositoryRoot'], 'worktree', 'remove', '--force', $fixture['worktree']]);
+    }
+
+    expect($result->status)
+        ->toBe(ProofStatus::Diagnosis)
+        ->and(array_keys($result->verification->probes))
+        ->toBe(['proof.setup'])
+        ->and($result->setupResults[0])
+        ->toMatchArray(['id' => 'seed', 'exit_code' => -1, 'stdout' => ''])
+        ->and($result->setupResults[0]['stderr'])
+        ->toContain('could not run')
+        ->not
+        ->toContain('configured-secret')
+        ->and($result->acceptanceResults)
+        ->toBe([]);
+});
+
+it('refuses an orbit-user command whose first argument env would consume', function (string $program) {
+    expect(fn () => GuestCommand::asOrbitUser([$program, 'workspace:list']))
+        ->toThrow(InvalidArgumentException::class, 'must start with a program');
+})->with(['HOME=/tmp', '--ignore-environment', '']);

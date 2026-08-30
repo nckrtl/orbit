@@ -18,7 +18,7 @@ final class ExecCommand extends E2ECommand
     #[\Override]
     protected $signature = 'topology:exec {issue} {attempt} {role} {--argv-file=} {--json}';
     #[\Override]
-    protected $description = 'Execute an exact argv vector on one role of an exact topology attempt';
+    protected $description = 'Execute an exact argv vector, as the orbit runtime user, on one role of an exact topology attempt';
 
     public function handle(TopologyAcquirer $acquirer, OperationId $operation): int
     {

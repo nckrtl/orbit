@@ -236,14 +236,24 @@ describe('ProofStore', function () {
             ->toThrow(RuntimeException::class, 'identity');
     });
 
-    it('replaces proved with diagnosis only and never changes back', function () {
+    it('replaces proved with diagnosis only through diagnose and never changes back', function () {
         $paths = new StatePaths(temporaryPath('orbit-proof-store-', 8));
         $store = new AtomicJsonStore($paths);
         $proofs = new ProofStore($store);
         $proofs->write(proofResultFixture());
 
         expect(fn () => $proofs->write(proofResultFixture()))
-            ->toThrow(RuntimeException::class, 'already');
+            ->toThrow(RuntimeException::class, 'already')
+            ->and(fn () => $proofs->write(proofResultFixture([
+                'status' => ProofStatus::Diagnosis,
+                'candidateSha' => str_repeat('9', 40),
+                'source' => new SourceState(str_repeat('9', 40), str_repeat('9', 40)),
+            ])))
+            ->toThrow(RuntimeException::class, 'already')
+            ->and(fn () => $proofs->write(proofResultFixture(['status' => ProofStatus::Diagnosis])))
+            ->toThrow(RuntimeException::class, 'already')
+            ->and($proofs->read('NCK-12', attemptId())?->status)
+            ->toBe(ProofStatus::Proved);
 
         $diagnosis = $proofs->diagnose('NCK-12', attemptId());
 

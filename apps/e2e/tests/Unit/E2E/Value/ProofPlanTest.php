@@ -293,6 +293,19 @@ describe('ProofPlan', function (): void {
         'object' => [['command' => 'orbit']],
     ]);
 
+    it('rejects a first argument that env would consume as its own', function (string $program): void {
+        expect(fn () => ProofPlan::fromFile(mutatedProofPlanFile(function (array $plan) use ($program): array {
+            $plan['setup'][0]['argv'] = [$program, 'workspace:create'];
+
+            return $plan;
+        })))
+            ->toThrow(InvalidArgumentException::class, 'Proof action [create-workspace] must start with a program');
+    })->with([
+        'assignment' => ['DB_DATABASE=/tmp/other.sqlite'],
+        'option' => ['--unset=HOME'],
+        'empty' => [''],
+    ]);
+
     it('rejects an argument that is not a string or carries a NUL byte or newline', function (mixed $argument): void {
         expect(fn () => ProofPlan::fromFile(mutatedProofPlanFile(function (array $plan) use ($argument): array {
             $plan['setup'][0]['argv'] = ['orbit', $argument];
