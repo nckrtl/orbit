@@ -13,7 +13,12 @@ final readonly class OpenSslGatewayCertificateValidator
 {
     private const int MAXIMUM_VALIDITY_SECONDS = 397 * 24 * 60 * 60;
 
-    private const string RENEW_IF_WITHIN_SECONDS = '2592000';
+    /**
+     * Leaves are re-issued once they expire, and once they come within this margin of expiring.
+     * Thirty days is the public-CA convention: it leaves many convergences to notice and repair a
+     * leaf before it stops working, since nothing renews these in the background.
+     */
+    private const int RENEW_IF_WITHIN_SECONDS = 30 * 24 * 60 * 60;
 
     public function __construct(
         private ProcessRunner $processes,
@@ -34,7 +39,7 @@ final readonly class OpenSslGatewayCertificateValidator
                 $paths->certificatePath,
                 '-noout',
                 '-checkend',
-                self::RENEW_IF_WITHIN_SECONDS,
+                (string) self::RENEW_IF_WITHIN_SECONDS,
             ],
         ];
 
