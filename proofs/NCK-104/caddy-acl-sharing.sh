@@ -32,6 +32,22 @@ orbit workspace:remove "$(workspace_id nck104-acl-b)" --json >/dev/null
 [[ "$(getfacl -cp /home/orbit/projects-nck104)" == "$original" ]] \
   || fail "pre-existing parent ACL was not restored after the last dependent"
 
+mkdir -p /home/orbit/projects-nck104-caddy
+setfacl -m u:caddy:r-x /home/orbit/projects-nck104-caddy
+original_caddy=$(getfacl -cp /home/orbit/projects-nck104-caddy)
+orbit workspace:new "$dev_id" nck104-caddy-a --path=/home/orbit/projects-nck104-caddy/a --json >/dev/null
+getfacl -cp /home/orbit/projects-nck104-caddy | grep -Fqx 'user:caddy:r-x' \
+  || fail "pre-existing Caddy r-x was narrowed with one dependent"
+orbit workspace:new "$dev_id" nck104-caddy-b --path=/home/orbit/projects-nck104-caddy/b --json >/dev/null
+getfacl -cp /home/orbit/projects-nck104-caddy | grep -Fqx 'user:caddy:r-x' \
+  || fail "pre-existing Caddy r-x was narrowed with multiple dependents"
+orbit workspace:remove "$(workspace_id nck104-caddy-a)" --json >/dev/null
+getfacl -cp /home/orbit/projects-nck104-caddy | grep -Fqx 'user:caddy:r-x' \
+  || fail "pre-existing Caddy r-x was narrowed after removing one dependent"
+orbit workspace:remove "$(workspace_id nck104-caddy-b)" --json >/dev/null
+[[ "$(getfacl -cp /home/orbit/projects-nck104-caddy)" == "$original_caddy" ]] \
+  || fail "pre-existing Caddy ACL was not restored after the last dependent"
+
 sudo install -d -o root -g root -m 0700 -- /srv/restricted
 original_restricted=$(sudo getfacl -cp /srv/restricted)
 orbit node:settings app-dev --setting=worktree.path:/srv/restricted/root --json >/dev/null

@@ -15,6 +15,7 @@ use Closure;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use JsonException;
+use stdClass;
 
 /** @mago-expect lint:cyclomatic-complexity This request keeps transport normalization and typed payload mapping at one boundary. */
 final class ProvisionNodeRequest extends FormRequest
@@ -156,11 +157,32 @@ final class ProvisionNodeRequest extends FormRequest
             platform: is_string($validated['platform'] ?? null) ? $validated['platform'] : 'linux',
             architecture: is_string($validated['architecture'] ?? null) ? $validated['architecture'] : null,
             tld: is_string($validated['tld'] ?? null) ? $validated['tld'] : null,
-            settingsProvided: array_key_exists('settings', $this->all()),
-            settings: array_key_exists('settings', $this->all())
-                ? new NodeSettingsParser()->parseComplete($this->input('settings'))
+            settingsProvided: $this->settingsMemberProvided(),
+            settings: $this->settingsMemberProvided()
+                ? new NodeSettingsParser()->parseComplete($this->decodedSettingsMember())
                 : null,
         );
+    }
+
+    private function settingsMemberProvided(): bool
+    {
+        return property_exists($this->decodedPayloadObject(), 'settings');
+    }
+
+    private function decodedSettingsMember(): mixed
+    {
+        return $this->decodedPayloadObject()->settings;
+    }
+
+    private function decodedPayloadObject(): stdClass
+    {
+        try {
+            $decoded = json_decode($this->getContent(), associative: false, flags: JSON_THROW_ON_ERROR);
+        } catch (JsonException) {
+            return new stdClass;
+        }
+
+        return $decoded instanceof stdClass ? $decoded : new stdClass;
     }
 
     /** @param array<array-key, mixed> $validated */

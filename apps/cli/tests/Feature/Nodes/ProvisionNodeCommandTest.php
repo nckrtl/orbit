@@ -191,6 +191,32 @@ it('sends repeatable provision settings and rejects invalid setting input locall
     expect($mockClient->getLastPendingRequest())->toBeNull();
 });
 
+it('rejects duplicate and malformed provision settings before making a request', function (
+    array $settings,
+    string $message,
+): void {
+    app(GatewayConfigRepository::class)->add(new GatewayProfile(
+        name: 'test',
+        url: 'https://10.44.0.1',
+    ));
+    $mockClient = MockClient::global();
+
+    $this
+        ->artisan('node:provision', [
+            'name' => 'app-dev',
+            'host' => '94.237.40.75',
+            '--setting' => $settings,
+        ])
+        ->expectsOutputToContain($message)
+        ->assertExitCode(1);
+
+    expect($mockClient->getLastPendingRequest())->toBeNull();
+})->with([
+    'duplicate key' => [['instance.path:/srv/a', 'instance.path:/srv/b'], 'supplied more than once'],
+    'missing colon' => [['instance.path'], 'setting-path'],
+    'empty key' => [[':/srv/a'], 'setting-path'],
+]);
+
 it('rejects non-Linux platform input before making an API request', function (string $platform): void {
     app(GatewayConfigRepository::class)->add(new GatewayProfile(
         name: 'test',

@@ -124,6 +124,20 @@ expect_error() {
   [[ "$(echo "$out" | json_get error.code)" == "$code" ]] || fail "expected error $code: $out"
 }
 
+expect_local_error() {
+  local code=$1
+  shift
+  local out
+  set +e
+  out=$("$@" 2>&1)
+  local status=$?
+  set -e
+  [[ "$status" -eq 1 ]] || fail "expected exit 1 for $code, got $status: $out"
+  [[ "$(echo "$out" | json_get error.code)" == "$code" ]] || fail "expected error $code: $out"
+  [[ "$(echo "$out" | json_get error.request_id)" == null ]] \
+    || fail "CLI syntax error reached the Gateway: $out"
+}
+
 restore_default_roots() {
   orbit node:settings app-dev \
     --setting=instance.path:/srv/orbit/instances \

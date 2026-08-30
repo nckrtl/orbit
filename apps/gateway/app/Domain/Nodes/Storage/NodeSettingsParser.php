@@ -8,6 +8,7 @@ use App\Data\Nodes\InstanceSettingsData;
 use App\Data\Nodes\NodeSettingsData;
 use App\Data\Nodes\WorktreeSettingsData;
 use App\Domain\Shared\ResourceOperationException;
+use stdClass;
 
 /** @mago-expect lint:cyclomatic-complexity Closed-key parsing keeps omit, null, and nested objects together. */
 final readonly class NodeSettingsParser
@@ -29,39 +30,33 @@ final readonly class NodeSettingsParser
 
     public function parsePatch(mixed $value): NodeSettingsPatch
     {
-        if (! is_array($value)) {
-            $this->reject('The settings object is invalid.');
-        }
+        $object = $this->jsonObject($value, 'The settings object is invalid.');
+        $this->assertClosedKeys($object, self::TOP_LEVEL_KEYS);
 
-        $this->assertClosedKeys($value, self::TOP_LEVEL_KEYS);
-
-        if ($value === []) {
+        if ($object === []) {
             $this->reject('The settings object must contain at least one known member.');
         }
 
         return new NodeSettingsPatch(
-            hasInstance: array_key_exists('instance', $value),
-            instance: array_key_exists('instance', $value) ? $this->nestedInstance($value['instance']) : null,
-            hasWorktree: array_key_exists('worktree', $value),
-            worktree: array_key_exists('worktree', $value) ? $this->nestedWorktree($value['worktree']) : null,
+            hasInstance: array_key_exists('instance', $object),
+            instance: array_key_exists('instance', $object) ? $this->nestedInstance($object['instance']) : null,
+            hasWorktree: array_key_exists('worktree', $object),
+            worktree: array_key_exists('worktree', $object) ? $this->nestedWorktree($object['worktree']) : null,
         );
     }
 
     private function parseObject(mixed $value, bool $requiredMember): NodeSettingsData
     {
-        if (! is_array($value)) {
-            $this->reject('The settings object is invalid.');
-        }
+        $object = $this->jsonObject($value, 'The settings object is invalid.');
+        $this->assertClosedKeys($object, self::TOP_LEVEL_KEYS);
 
-        $this->assertClosedKeys($value, self::TOP_LEVEL_KEYS);
-
-        if ($requiredMember && $value === []) {
+        if ($requiredMember && $object === []) {
             $this->reject('The settings object must contain at least one known member.');
         }
 
         return new NodeSettingsData(
-            instance: array_key_exists('instance', $value) ? $this->nestedInstance($value['instance']) : null,
-            worktree: array_key_exists('worktree', $value) ? $this->nestedWorktree($value['worktree']) : null,
+            instance: array_key_exists('instance', $object) ? $this->nestedInstance($object['instance']) : null,
+            worktree: array_key_exists('worktree', $object) ? $this->nestedWorktree($object['worktree']) : null,
         );
     }
 
@@ -71,8 +66,7 @@ final readonly class NodeSettingsParser
             return null;
         }
 
-        $this->assertNestedObject($value);
-
+        $value = $this->assertNestedObject($value);
         $path = $value['path'] ?? null;
 
         if ($path !== null && ! is_string($path)) {
@@ -95,8 +89,7 @@ final readonly class NodeSettingsParser
             return null;
         }
 
-        $this->assertNestedObject($value);
-
+        $value = $this->assertNestedObject($value);
         $path = $value['path'] ?? null;
 
         if ($path !== null && ! is_string($path)) {
@@ -126,13 +119,20 @@ final readonly class NodeSettingsParser
     /** @return array<array-key, mixed> */
     private function assertNestedObject(mixed $value): array
     {
-        if (! is_array($value)) {
-            $this->reject('Nested settings must be an object or null.');
+        $object = $this->jsonObject($value, 'Nested settings must be an object or null.');
+        $this->assertClosedKeys($object, self::NESTED_KEYS);
+
+        return $object;
+    }
+
+    /** @return array<array-key, mixed> */
+    private function jsonObject(mixed $value, string $message): array
+    {
+        if (! $value instanceof stdClass) {
+            $this->reject($message);
         }
 
-        $this->assertClosedKeys($value, self::NESTED_KEYS);
-
-        return $value;
+        return get_object_vars($value);
     }
 
     private function reject(string $message): never

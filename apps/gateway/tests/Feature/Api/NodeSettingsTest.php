@@ -412,6 +412,80 @@ describe('node storage settings', function (): void {
                 'worktree' => ['path' => '/srv/orbit/worktrees'],
             ]);
     });
+
+    it('rejects list settings at every HTTP boundary without changing stored intent', function (
+        string $method,
+        string $path,
+        array $payload,
+        ?array $stored,
+    ): void {
+        $node = Node::query()->create([
+            'name' => 'app-dev',
+            'status' => LifecycleStatus::Active,
+            'public_ssh_host' => '192.0.2.10',
+            'user' => 'orbit',
+            'wireguard_address' => '10.44.0.3',
+            'settings' => $stored,
+        ]);
+        $node->roles()->create([
+            'role' => RoleName::AppDev,
+            'status' => LifecycleStatus::Active,
+        ]);
+        $url = $path === 'settings' ? "/api/v1/nodes/{$node->id}/settings" : '/api/v1/nodes';
+
+        $this
+            ->json($method, $url, $payload)
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'node.settings_invalid');
+
+        expect($node->refresh()->settings)->toBe($stored);
+        if ($path === 'provision') {
+            expect(Node::query()->where('name', 'listed')->exists())->toBeFalse();
+        }
+    })->with([
+        'patch list body' => [
+            'PATCH',
+            'settings',
+            [],
+            ['instance' => ['path' => '/srv/orbit/instances']],
+        ],
+        'patch nested list' => [
+            'PATCH',
+            'settings',
+            ['instance' => []],
+            ['instance' => ['path' => '/srv/orbit/instances']],
+        ],
+        'provision list settings' => [
+            'POST',
+            'provision',
+            [
+                'name' => 'listed',
+                'public_ssh_host' => '192.0.2.11',
+                'platform' => 'linux',
+                'architecture' => 'x86_64',
+                'tld' => 'dev.orbit',
+                'roles' => ['app-dev'],
+                'host_key_fingerprint' => 'SHA256:'.str_repeat('A', 43),
+                'settings' => [],
+            ],
+            ['worktree' => ['path' => '/srv/orbit/worktrees']],
+        ],
+        'provision nested list' => [
+            'POST',
+            'provision',
+            [
+                'name' => 'listed',
+                'public_ssh_host' => '192.0.2.11',
+                'platform' => 'linux',
+                'architecture' => 'x86_64',
+                'tld' => 'dev.orbit',
+                'roles' => ['app-dev'],
+                'host_key_fingerprint' => 'SHA256:'.str_repeat('A', 43),
+                'settings' => ['instance' => []],
+            ],
+            ['worktree' => ['path' => '/srv/orbit/worktrees']],
+        ],
+    ]);
 });
 
 function recording_storage_preparer(array &$inspected, array &$prepared): NodeStorageRootPreparer

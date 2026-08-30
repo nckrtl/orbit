@@ -22,9 +22,9 @@
         },
         {
             "id": "cli-setting-parse",
-            "node": "app-dev",
+            "node": "gateway",
             "argv": ["bash", "/var/lib/orbit-e2e/proof/cli-setting-parse.sh"],
-            "timeout_seconds": 120
+            "timeout_seconds": 300
         },
         {
             "id": "derived-explicit-origin",
@@ -42,7 +42,7 @@
             "id": "reject-invalid-roots",
             "node": "gateway",
             "argv": ["bash", "/var/lib/orbit-e2e/proof/reject-invalid-roots.sh"],
-            "timeout_seconds": 300
+            "timeout_seconds": 600
         },
         {
             "id": "root-ownership",
@@ -54,7 +54,7 @@
             "id": "caddy-acl-sharing",
             "node": "app-dev",
             "argv": ["bash", "/var/lib/orbit-e2e/proof/caddy-acl-sharing.sh"],
-            "timeout_seconds": 300
+            "timeout_seconds": 420
         },
         {
             "id": "checkout-overlap",

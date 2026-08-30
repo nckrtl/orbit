@@ -694,10 +694,30 @@ final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
                         traversal_mask=$(printf '%s\n' "$current_acl" | sed -n 's/^group::\([rwx-]\{3\}\).*$/\1/p')
                     fi
                     printf '%s\n' "$traversal_mask" | grep -Eq '^[rwx-]{3}$'
-                    traversal_mask="${traversal_mask%?}x"
-                    acl setfacl -n -m "u:caddy:--x,u:$managed_user:--x,m::$traversal_mask" "$path"
-                    acl getfacl -cp "$path" | grep -Eq '^user:caddy:[r-][w-]x$'
-                    acl getfacl -cp "$path" | grep -Eq "^user:$managed_user:[r-][w-]x$"
+                    named_execute() {
+                        perms=$(printf '%s\n' "$current_acl" | sed -n "s/^user:${1}:\([rwx-]\{3\}\).*$/\1/p")
+                        if [ -z "$perms" ]; then
+                            perms='---'
+                        fi
+                        printf '%sx' "${perms%?}"
+                    }
+                    union_acl() {
+                        bits=
+                        for slot in r w x; do
+                            case "$1$2" in
+                                *"$slot"*) bits="${bits}${slot}" ;;
+                                *) bits="${bits}-" ;;
+                            esac
+                        done
+                        printf '%s' "$bits"
+                    }
+                    caddy_perms=$(named_execute caddy)
+                    user_perms=$(named_execute "$managed_user")
+                    traversal_mask=$(union_acl "$(union_acl "$traversal_mask" "$caddy_perms")" "$user_perms")
+                    printf '%s\n' "$caddy_perms" "$user_perms" "$traversal_mask" | grep -Eq '^[rwx-]{3}$'
+                    acl setfacl -n -m "u:caddy:$caddy_perms,u:$managed_user:$user_perms,m::$traversal_mask" "$path"
+                    acl getfacl -cp "$path" | grep -Fqx "user:caddy:$caddy_perms"
+                    acl getfacl -cp "$path" | grep -Fqx "user:$managed_user:$user_perms"
                     acl getfacl -cp "$path" | grep -Fqx "mask::$traversal_mask"
                 done
             }
@@ -782,7 +802,7 @@ final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
                     fi
 
                     if ! cmp -s <(tail -n +4 "$state") <(acl getfacl -cp "$path" | sed '/^default:/d'); then
-                        acl getfacl -cp "$path" | grep -Eq '^user:caddy:--x$'
+                        acl getfacl -cp "$path" | grep -Eq '^user:caddy:[r-][w-]x$'
                         acl getfacl -cp "$path" | grep -Eq '^mask::[r-][w-]x$'
                         tail -n +4 "$state" | acl setfacl --set-file=- "$path"
                         cmp -s <(tail -n +4 "$state") <(acl getfacl -cp "$path" | sed '/^default:/d')

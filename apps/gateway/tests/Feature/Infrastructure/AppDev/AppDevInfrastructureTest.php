@@ -163,7 +163,7 @@ it('uses only generated instance paths and registered Git worktrees for source r
             'find -P "$document_root_real" -type d -exec setfacl -m d:u:caddy:r-x -- {} +',
             'acl() {',
             'sudo -n "$@"',
-            'u:$managed_user:--x',
+            'u:$managed_user:$user_perms',
         )
         ->not->toContain('sudo setfacl')->and($ssh->commands[1]->input)->toContain(
             'git -C "$checkout" symbolic-ref --quiet --short HEAD',
@@ -284,7 +284,7 @@ it('restores a pre-existing instance traversal ACL after the last dependent chec
 
         $converged = run_app_dev_command_locally($converge, $root);
         expect($converged->succeeded())->toBeTrue($converged->stderr);
-        expect(acl_for($instances))->toContain('user:nobody:--x');
+        expect(acl_for($instances))->toContain('user:nobody:r-x');
 
         $removed = run_app_dev_command_locally($remove, $root);
         expect($removed->succeeded())
@@ -702,9 +702,9 @@ it('grants and releases traversal for a private custom workspace parent', functi
         expect($converged->succeeded())
             ->toBeTrue($converged->stderr)
             ->and(acl_for($projects))
-            ->toContain('user:nobody:--x', 'other::---')
+            ->toContain('user:nobody:r-x', 'other::---')
             ->and(effective_access_acl_permissions_for(user: 'www-data', path: $projects))
-            ->toBe('--x')
+            ->toBe('r-x')
             ->and(acl_for("{$root}/projects/acme-feature/public"))
             ->toContain('user:nobody:r-x')
             ->and($marker)
@@ -2291,8 +2291,8 @@ function run_app_dev_command_locally(RemoteCommand $command, string $root): Comm
     $input = str_replace('/home/orbit', $root, $command->input ?? '');
     $input = str_replace('sudo -n ', '', $input);
     $input = str_replace(
-        ['u:caddy:', 'user:caddy:'],
-        ['u:nobody:', 'user:nobody:'],
+        ['u:caddy:', 'user:caddy:', 'named_execute caddy'],
+        ['u:nobody:', 'user:nobody:', 'named_execute nobody'],
         $input,
     );
 

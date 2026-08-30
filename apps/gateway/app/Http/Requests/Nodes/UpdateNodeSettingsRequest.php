@@ -26,7 +26,7 @@ final class UpdateNodeSettingsRequest extends FormRequest
     public function payload(): NodeSettingsPatch
     {
         try {
-            $decoded = json_decode($this->getContent(), associative: true, flags: JSON_THROW_ON_ERROR);
+            $decoded = json_decode($this->getContent(), associative: false, flags: JSON_THROW_ON_ERROR);
         } catch (JsonException) {
             throw new ResourceOperationException(
                 errorCode: 'node.settings_invalid',
