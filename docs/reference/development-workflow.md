@@ -21,8 +21,9 @@ continue in ADR 0006.
 ## Agent contracts
 
 Project-manager orchestration stays outside this repository. It claims issues,
-starts role sessions, routes GitHub events, creates and releases topologies on
-request, and owns post-merge cleanup. This repository supplies the versioned
+starts role sessions, routes GitHub events, creates discovery topologies on
+request, and owns post-merge cleanup. The feature worker releases its own
+discovery attempt and runs proof itself. This repository supplies the versioned
 behavior and machine-readable handoff for each development role:
 
 | Role | Repository skill | Successful signal |
@@ -71,16 +72,17 @@ changes. A feature pull request must not introduce or modify its governing ADR.
    (about 21 to 23 s from the promoted standby).
 5. **Learn desired state.** The worker changes code and task-owned guest state
    until the topology shows the required behavior, with
-   `bin/e2e-topology exec ISSUE ATTEMPT ROLE --argv-file=PATH --json`. It can
-   use subagents at any point. Discovery output is not proof evidence.
+   `bin/e2e-topology exec ISSUE ATTEMPT ROLE --argv=JSON --json`; `orbit`
+   resolves by name on `gateway` and `app-dev`. It can use subagents at any
+   point. Discovery output is not proof evidence.
 6. **Codify required state.** Every manual action becomes repository
    behavior, proof setup, a `post_deployment_action`, or diagnostic-only work.
 7. **Harden candidate.** The worker implements, tests, runs each changed
    project's `composer check` and root `bin/test`, compounds durable
    learning, and commits the clean candidate. That commit is the code freeze.
-8. **Remove discovery.** The project manager runs
-   `bin/e2e-topology release ISSUE ATTEMPT --json`. The worker waits for
-   verified absence before proof.
+8. **Remove discovery.** The worker runs
+   `bin/e2e-topology release ISSUE ATTEMPT --json` for its own discovery
+   attempt and waits for verified absence before proof.
 9. **Prove fresh.** The worker runs
    `bin/e2e-topology prove ISSUE WORKTREE --candidate-sha=SHA --proof-plan-file=PATH --json`
    (about 33 s). The harness creates a new proof attempt, synchronizes the
@@ -93,7 +95,7 @@ changes. A feature pull request must not introduce or modify its governing ADR.
     draft pull requests. CI and review start immediately and run in parallel.
 11. **Handle corrections.** A new commit changes the head, so the prior proof
     is stale. The worker moves the old proof to diagnosis only when useful,
-    requests its release, reruns local gates, completes fresh proof, then
+    releases it, reruns local gates, completes fresh proof, then
     pushes the new candidate and posts one comment for that SHA:
 
     ```text

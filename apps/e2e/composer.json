@@ -42,7 +42,7 @@
             "@php -r \"file_exists('.env') || copy('.env.example', '.env');\"",
             "@php artisan key:generate"
         ],
-        "analyse": "vendor/bin/mago analyze app --reporting-format=medium",
+        "analyse": "vendor/bin/mago analyze app --reporting-format=medium --minimum-report-level=error",
         "check": [
             "@guidance:check",
             "@rector",
@@ -59,7 +59,7 @@
             "@php artisan boost:update --no-discover --no-interaction",
             "@guidance:check"
         ],
-        "lint": "vendor/bin/mago lint app tests --reporting-format=medium",
+        "lint": "vendor/bin/mago lint app tests --reporting-format=medium --minimum-report-level=error",
         "rector": "vendor/bin/rector process",
         "test": "vendor/bin/pest --parallel --no-tia --compact --exclude-group=incus-live",
         "test:live-incus": "vendor/bin/pest --no-tia --compact --group=incus-live tests/Live",

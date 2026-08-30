@@ -810,6 +810,7 @@ final readonly class WorktreeSynchronizer
                 ];
             }
             $this->assertBatchSuccessful($this->incus->execAll($hydrate), 'Guest source hydration failed.');
+            $this->exposeOrbitCli($transfers);
             $this->preserveGatewayEnvironment($transfers);
 
             $cleanupInstances = $staged;
@@ -829,6 +830,24 @@ final readonly class WorktreeSynchronizer
             }
             throw $primary;
         }
+    }
+
+    /**
+     * The bundled checkout has no profile on the orbit user's `PATH`, so the CLI is
+     * linked into `/usr/local/bin` on every checkout role once the source is in place.
+     *
+     * @param array<string, array{instance:string, files:array<string, array{string, string}>}> $transfers
+     */
+    private function exposeOrbitCli(array $transfers): void
+    {
+        $link = [];
+        foreach ($transfers as $role => $transfer) {
+            $link["source-orbit-cli.{$role}"] = [
+                'instance' => $transfer['instance'],
+                'command' => GuestCommand::linkOrbitCli(),
+            ];
+        }
+        $this->assertBatchSuccessful($this->incus->execAll($link), 'Guest orbit CLI linking failed.');
     }
 
     /**

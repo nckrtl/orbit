@@ -11,7 +11,9 @@ not require a separate GitHub account. Reviewing from the same GitHub account
 that authored the pull request is acceptable. Review starts when the pull
 request opens and does not wait for CI. The reviewer can approve while CI is
 pending. Do not implement fixes, push commits, merge, close the issue, or
-touch any topology. The reviewer performs no mutation.
+touch any topology. The reviewer performs no mutation. The feature worker
+runs discovery `release` and `prove` for its own issue; the project manager
+keeps post-merge cleanup only.
 
 ## Required input
 

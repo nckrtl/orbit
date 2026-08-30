@@ -841,6 +841,7 @@ describe('WorktreeSynchronizer', function () {
                     ['source-ownership.gateway', 'source-ownership.app-dev'],
                     ['source-receive.gateway', 'source-receive.app-dev'],
                     ['source-hydrate.gateway', 'source-hydrate.app-dev'],
+                    ['source-orbit-cli.gateway', 'source-orbit-cli.app-dev'],
                     ['source-preserve-env.gateway'],
                     ['source-cleanup.gateway', 'source-cleanup.app-dev'],
                 ])
@@ -1908,6 +1909,7 @@ describe('WorktreeSynchronizer::syncCommit', function () {
                         'source-status.app-dev',
                     ],
                     ['source-hydrate.gateway', 'source-hydrate.app-dev'],
+                    ['source-orbit-cli.gateway', 'source-orbit-cli.app-dev'],
                     ['source-preserve-env.gateway'],
                     ['source-cleanup.gateway', 'source-cleanup.app-dev'],
                 ]);

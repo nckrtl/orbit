@@ -84,7 +84,7 @@ final readonly class TopologyReleaser
 
         $lease = $this->state->read('leases/'.$issue.'.json');
         if ($lease === null) {
-            throw new RuntimeException('The exact topology attempt does not exist.');
+            throw new RuntimeException("{$issue} has no active attempt.");
         }
         if (
             ($lease['issue'] ?? null) !== $issue

@@ -653,7 +653,7 @@ describe('topology release', function () {
         $store = new AtomicJsonStore($paths);
 
         expect(fn () => releaser($store, $paths)->release('NCK-12', releaseAttempt()))
-            ->toThrow(RuntimeException::class, 'exact topology attempt does not exist');
+            ->toThrow(RuntimeException::class, 'NCK-12 has no active attempt.');
     });
 
     it('refuses release of an attempt the lease or the active pointer does not name', function () {

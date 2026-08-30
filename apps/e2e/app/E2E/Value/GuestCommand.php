@@ -67,6 +67,16 @@ final readonly class GuestCommand
         return new self([...self::ORBIT_USER_PREFIX, ...$argv], $timeout, $stdin);
     }
 
+    /**
+     * Link the checkout's CLI entrypoint onto the guest `PATH` as root. The guest
+     * `PATH` of the orbit user never loads a profile, so a symlink under
+     * `/usr/local/bin` is the one placement both a mounted and a bundled checkout share.
+     */
+    public static function linkOrbitCli(): self
+    {
+        return new self(['ln', '-sfn', MountPath::ORBIT_CLI_ENTRYPOINT, MountPath::ORBIT_CLI_LINK], 30);
+    }
+
     /** `env` would consume a leading `NAME=VALUE` or option as its own, so the program must come first. */
     public static function isProgramArgument(string $argument): bool
     {

@@ -84,17 +84,21 @@ Passing both is refused. The vector runs as the orbit user through
 `runuser -u orbit -- env ... PROGRAM ARGS`, so `argv[0]` must be a program name
 that resolves on the guest `PATH` (`/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin`)
 or an absolute path. Shell profiles are not loaded, and the first argument
-cannot start with `-` or carry `=`. The Orbit CLI is not on that `PATH`; use
-its checkout path:
+cannot start with `-` or carry `=`. The harness links the checkout's CLI
+entrypoint (`/home/orbit/orbit/apps/cli/orbit`) to `/usr/local/bin/orbit` on
+every checkout role: discovery does it in the `mount.source` phase and proof
+right after hydration, so `orbit` resolves by name for the orbit user on a
+mounted and a bundled checkout alike:
 
 ```bash
 bin/e2e-topology exec NCK-82 ATTEMPT app-dev \
-  --argv='["/home/orbit/orbit/apps/cli/orbit","doctor","--json"]' --json
+  --argv='["orbit","doctor","--json"]' --json
 ```
 
-`--argv='["orbit","doctor","--json"]'` returns exit code `127` with
-`env: 'orbit': No such file or directory` on stderr. Wrap a pipeline in
-`["sh","-c","..."]` and root work in `["sudo","..."]`.
+Wrap a pipeline in `["sh","-c","..."]` and root work in `["sudo","..."]`.
+`exec`, `sync`, `verify`, and `release` on an issue with no lease fail with
+`ISSUE has no active attempt.`; a present but malformed lease is still
+reported as invalid.
 
 ### Proof fixtures
 
