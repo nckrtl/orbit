@@ -39,9 +39,8 @@ workspace_host=$(php -r '
   exit(1);
 ' <<<"$workspace_json")
 
-ca=/home/orbit/.orbit/ca/root.pem
-[[ -s "$ca" ]]
-curl --fail --silent --show-error --cacert "$ca" --resolve "$workspace_host:443:127.0.0.1" \
+curl --fail --silent --show-error --cacert /etc/ssl/certs/ca-certificates.crt \
+  --resolve "$workspace_host:443:127.0.0.1" \
   -o /dev/null -w '%{http_code}\n' "https://$workspace_host/" | grep -qx 200
 
 # Caddy gets traversal on the workspace ancestor, but no read/list access to
