@@ -29,6 +29,33 @@ reject_root() {
   assert_unchanged "provision $path"
 }
 
+http_provision_body() {
+  php -r '
+    $settings = json_decode($argv[1], flags: JSON_THROW_ON_ERROR);
+    echo json_encode([
+      "name" => $argv[2],
+      "public_ssh_host" => "192.0.2.11",
+      "platform" => "linux",
+      "architecture" => "x86_64",
+      "tld" => "dev.orbit",
+      "roles" => ["app-dev"],
+      "host_key_fingerprint" => "SHA256:".str_repeat("A", 43),
+      "settings" => $settings,
+    ], JSON_UNESCAPED_SLASHES);
+  ' -- "$1" "$2"
+}
+
+reject_http_settings() {
+  local code=$1
+  local settings_json=$2
+  local why=$3
+  expect_http_error "$code" PATCH "/api/v1/nodes/${app_dev_id}/settings" "$settings_json"
+  assert_unchanged "PATCH $why"
+  expect_http_error "$code" POST /api/v1/nodes "$(http_provision_body "$settings_json" "$list_node")"
+  assert_unchanged "POST $why"
+  [[ "$(sql_node_exists "$list_node")" == 0 ]] || fail "POST $why created $list_node"
+}
+
 expect_local_error node.setting_unknown orbit node:settings app-dev --setting=packages.path:/srv/orbit/packages --json
 assert_unchanged "local unknown settings"
 expect_local_error node.setting_invalid orbit node:settings app-dev --setting=instance.path --json
@@ -85,6 +112,16 @@ expect_http_error node.settings_invalid POST /api/v1/nodes "$post_nested"
 assert_unchanged "POST nested list"
 [[ "$(sql_node_exists "$list_node")" == 0 ]] || fail "POST nested list created $list_node"
 
+expect_http_error node.settings_invalid PATCH "/api/v1/nodes/${app_dev_id}/settings" '{}'
+assert_unchanged "PATCH empty object"
+reject_http_settings node.settings_invalid '{"packages":{"path":"/srv/orbit/packages"}}' "unknown top-level key"
+reject_http_settings node.settings_invalid '{"instance":{"root":"/srv/orbit/instances"}}' "unknown nested key"
+reject_http_settings node.settings_invalid '{"instance":true}' "wrong nested type"
+reject_http_settings node.settings_invalid '{"instance":{"path":1}}' "wrong path type"
+reject_http_settings node.settings_path_invalid '{"instance":{"path":""}}' "raw empty path"
+reject_http_settings node.settings_path_invalid "$(php -r 'echo json_encode(["instance"=>["path"=>"/srv/orbit/instances"."\0"."x"]]);')" "null byte path"
+reject_http_settings node.settings_path_invalid "$(php -r 'echo json_encode(["instance"=>["path"=>"/srv/orbit/instances"."\n"]]);')" "control character path"
+
 reject_root node.settings_path_invalid /
 reject_root node.settings_path_protected /home/orbit
 reject_root node.settings_path_protected /home
@@ -101,6 +138,7 @@ reject_root node.settings_path_protected /var/www
 reject_root node.settings_path_protected "$app_prod_checkout"
 reject_root node.settings_path_protected /home/orbit/.ssh
 reject_root node.settings_path_protected /home/orbit/.orbit
+reject_root node.settings_path_protected /home/orbit/.orbit/worktrees/instances
 
 expect_error node.settings_roots_overlap orbit node:settings app-dev \
   --setting=instance.path:/srv/orbit/source --setting=worktree.path:/srv/orbit/source/worktrees --json
@@ -111,6 +149,9 @@ expect_error node.settings_path_invalid orbit node:settings app-dev --setting=in
 assert_unchanged "settings trailing slash"
 expect_error node.settings_path_invalid orbit node:settings app-dev --setting=instance.path:/srv/../orbit/instances --json
 assert_unchanged "settings dot-dot"
+reject_root node.settings_path_invalid srv/orbit/instances
+reject_root node.settings_path_invalid /srv/orbit//instances
+reject_root node.settings_path_invalid /srv/orbit/./instances
 expect_error node.settings_path_managed orbit node:settings app-dev --setting=instance.path:/home/orbit/apps/laravel --json
 assert_unchanged "settings managed checkout"
 expect_error node.settings_path_protected orbit node:settings app-dev --setting=instance.path:"$gateway_checkout" --json

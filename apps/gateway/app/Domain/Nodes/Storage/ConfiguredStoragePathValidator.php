@@ -72,7 +72,7 @@ final readonly class ConfiguredStoragePathValidator
         Node $node,
         string $field,
     ): void {
-        if ($this->catalog->isProtected($path, $account)) {
+        if ($this->catalog->isProtected($path, $account, $field)) {
             throw new ResourceOperationException(
                 errorCode: 'node.settings_path_protected',
                 message: "The {$field} storage path is protected.",

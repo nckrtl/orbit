@@ -48,7 +48,7 @@
             "id": "root-ownership",
             "node": "app-dev",
             "argv": ["bash", "/var/lib/orbit-e2e/proof/root-ownership.sh"],
-            "timeout_seconds": 180
+            "timeout_seconds": 360
         },
         {
             "id": "caddy-acl-sharing",

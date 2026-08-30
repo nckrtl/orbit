@@ -157,6 +157,7 @@ it('uses only generated instance paths and registered Git worktrees for source r
             'find -P "$checkout_root" -type d -exec setfacl -m d:u:caddy:--- -- {} +',
             'prepare_traversal_paths',
             'user.orbit.caddy_traversal',
+            'create_missing_directory',
             'setfacl -m u:caddy:--x "$checkout"',
             'setfacl -P -R -m u:caddy:r-X "$document_root_real"',
             'find -P "$document_root_real" -type d -exec setfacl -m d:u:caddy:r-x -- {} +',
@@ -295,6 +296,43 @@ it('restores a pre-existing instance traversal ACL after the last dependent chec
             ->toBeTrue($removed->stderr)
             ->and(acl_for($instances))
             ->toBe($originalAcl)
+            ->and($filesystem->exists($checkout))
+            ->toBeFalse();
+    } finally {
+        $filesystem->deleteDirectory($root);
+    }
+});
+
+it('does not change the mode of a pre-existing instance root while creating a checkout', function (): void {
+    [, $instance] = app_dev_runtime_models();
+    [$manager, $ssh] = source_manager();
+    $manager->convergeInstance($instance);
+    $manager->removeInstance($instance);
+    $converge = $ssh->commands[0];
+    $remove = $ssh->commands[1];
+    $filesystem = new Filesystem;
+    $root = sys_get_temp_dir().'/orbit-instance-mode-'.Str::uuid();
+    $apps = "{$root}/apps";
+    $checkout = "{$apps}/acme";
+
+    try {
+        $filesystem->makeDirectory($apps, mode: 0o750, recursive: true);
+        chmod(filename: $apps, permissions: 0o750);
+        $filesystem->makeDirectory("{$checkout}/public", mode: 0o755, recursive: true);
+        $filesystem->put("{$checkout}/public/index.php", '<?php');
+        initialise_acl_test_repository($checkout, repository: 'git@github.com:acme/site.git');
+
+        $converged = run_app_dev_command_locally($converge, $root);
+        expect($converged->succeeded())
+            ->toBeTrue($converged->stderr)
+            ->and(decoct(fileperms($apps) & 0o777))
+            ->toBe('750');
+
+        $removed = run_app_dev_command_locally($remove, $root);
+        expect($removed->succeeded())
+            ->toBeTrue($removed->stderr)
+            ->and(decoct(fileperms($apps) & 0o777))
+            ->toBe('750')
             ->and($filesystem->exists($checkout))
             ->toBeFalse();
     } finally {

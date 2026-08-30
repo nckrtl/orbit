@@ -379,6 +379,23 @@ describe('workspace API', function (): void {
             ->assertJsonPath('data.checkout_path', '/srv/users/nckrtl/.orbit/worktrees/acme/feature-one');
     });
 
+    it('creates and removes an explicit workspace inside the worktree default', function (): void {
+        $created = $this->postJson('/api/v1/workspaces', [
+            'instance_id' => $this->instance->id,
+            'name' => 'home-explicit',
+            'checkout_path' => '/srv/users/nckrtl/.orbit/worktrees/acme-custom',
+        ]);
+        $created
+            ->assertCreated()
+            ->assertJsonPath('data.checkout_path', '/srv/users/nckrtl/.orbit/worktrees/acme-custom');
+
+        $this
+            ->deleteJson("/api/v1/workspaces/{$created->json('data.id')}")
+            ->assertOk();
+
+        expect(Workspace::query()->count())->toBe(0);
+    });
+
     it('rejects unsafe paths and branch names', function (array $payload, string $field): void {
         $this
             ->postJson('/api/v1/workspaces', [

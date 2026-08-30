@@ -35,6 +35,8 @@ describe('node storage settings', function (): void {
             public function converge(Node $node, NodeRole $assignment): void {}
 
             public function remove(Node $node, NodeRole $assignment, bool $purgeData): void {}
+
+            public function removeUnreachable(Node $node, NodeRole $assignment): void {}
         });
         app()->instance(NodeConverger::class, new class implements NodeConverger {
             public function converge(
@@ -336,6 +338,82 @@ describe('node storage settings', function (): void {
             ->toBe([
                 'instance' => ['path' => '/srv/orbit-apps'],
             ]);
+    });
+
+    it('rejects an instance root inside the worktree default hidden control path', function (): void {
+        $node = Node::query()->create([
+            'name' => 'app-dev',
+            'status' => LifecycleStatus::Active,
+            'public_ssh_host' => '192.0.2.10',
+            'user' => 'orbit',
+            'wireguard_address' => '10.44.0.3',
+        ]);
+        $node->roles()->create([
+            'role' => RoleName::AppDev,
+            'status' => LifecycleStatus::Active,
+        ]);
+
+        $this
+            ->patchJson("/api/v1/nodes/{$node->id}/settings", [
+                'instance' => ['path' => '/home/orbit/.orbit/worktrees/instances'],
+                'worktree' => ['path' => '/srv/orbit/worktrees'],
+            ])
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'node.settings_path_protected');
+
+        expect($node->refresh()->settings)->toBeNull();
+    });
+
+    it('accepts the exact worktree default as the worktree root', function (): void {
+        $inspected = [];
+        $prepared = [];
+        app()->instance(NodeStorageRootPreparer::class, recording_storage_preparer($inspected, $prepared));
+        $node = Node::query()->create([
+            'name' => 'app-dev',
+            'status' => LifecycleStatus::Active,
+            'public_ssh_host' => '192.0.2.10',
+            'user' => 'orbit',
+            'wireguard_address' => '10.44.0.3',
+        ]);
+        $node->roles()->create([
+            'role' => RoleName::AppDev,
+            'status' => LifecycleStatus::Active,
+        ]);
+
+        $this
+            ->patchJson("/api/v1/nodes/{$node->id}/settings", [
+                'worktree' => ['path' => '/home/orbit/.orbit/worktrees'],
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.settings.worktree.path', '/home/orbit/.orbit/worktrees');
+
+        expect($node->refresh()->settings)
+            ->toBe([
+                'worktree' => ['path' => '/home/orbit/.orbit/worktrees'],
+            ]);
+    });
+
+    it('rejects a worktree root that is a descendant of the worktree default', function (): void {
+        $node = Node::query()->create([
+            'name' => 'app-dev',
+            'status' => LifecycleStatus::Active,
+            'public_ssh_host' => '192.0.2.10',
+            'user' => 'orbit',
+            'wireguard_address' => '10.44.0.3',
+        ]);
+        $node->roles()->create([
+            'role' => RoleName::AppDev,
+            'status' => LifecycleStatus::Active,
+        ]);
+
+        $this
+            ->patchJson("/api/v1/nodes/{$node->id}/settings", [
+                'worktree' => ['path' => '/home/orbit/.orbit/worktrees/extra'],
+            ])
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'node.settings_path_protected');
+
+        expect($node->refresh()->settings)->toBeNull();
     });
 
     it('prepares both managed-home defaults before storing the last override as SQL null', function (): void {

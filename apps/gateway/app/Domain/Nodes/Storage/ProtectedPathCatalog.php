@@ -14,7 +14,7 @@ final readonly class ProtectedPathCatalog
     /** @var list<string> */
     private const array ORBIT_ROOTS = ['/opt/orbit', '/var/lib/orbit', '/var/www'];
 
-    public function isProtected(StoragePath $path, ManagedUserAccount $account): bool
+    public function isProtected(StoragePath $path, ManagedUserAccount $account, ?string $field = null): bool
     {
         $home = StoragePath::tryParse($account->home);
 
@@ -40,7 +40,7 @@ final readonly class ProtectedPathCatalog
             return true;
         }
 
-        return $this->isHiddenControlPath($path, $home);
+        return $this->isHiddenControlPath($path, $home, $field);
     }
 
     public function worktreeDefault(ManagedUserAccount $account): ?StoragePath
@@ -65,7 +65,7 @@ final readonly class ProtectedPathCatalog
         return $home->append('apps');
     }
 
-    private function isHiddenControlPath(StoragePath $path, StoragePath $home): bool
+    private function isHiddenControlPath(StoragePath $path, StoragePath $home, ?string $field): bool
     {
         if (! $path->isInside($home)) {
             return false;
@@ -79,6 +79,14 @@ final readonly class ProtectedPathCatalog
         }
 
         $worktreeDefault = $home->append('.orbit', 'worktrees');
+
+        if ($field === 'worktree') {
+            return ! $path->equals($worktreeDefault);
+        }
+
+        if ($field === 'instance') {
+            return true;
+        }
 
         return ! $path->equals($worktreeDefault) && ! $path->isInside($worktreeDefault);
     }

@@ -161,7 +161,16 @@ final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
                         }
                         guard_checkout_parent "$checkout"
                         prepare_traversal_paths
-                        install -d -m 0755 -- "$allowed_root" "$(dirname "$checkout")"
+                        create_missing_directory() {
+                            if [ -e "$1" ] || [ -L "$1" ]; then
+                                test -d "$1"
+                                test ! -L "$1"
+                                return 0
+                            fi
+                            install -d -m 0755 -- "$1"
+                        }
+                        create_missing_directory "$allowed_root"
+                        create_missing_directory "$(dirname "$checkout")"
                         case "$(realpath -e "$(dirname "$checkout")")" in
                             "$allowed_root"|"$allowed_root"/*) ;;
                             *) exit 1 ;;
