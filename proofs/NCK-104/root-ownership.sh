@@ -1,11 +1,19 @@
 #!/usr/bin/env bash
-# Missing roots are created 0755 orbit-owned; pre-existing roots keep owner and mode; foreign owners fail closed.
+# Missing roots are created 0755 orbit-owned; unsafe existing owners and modes fail closed.
 source /var/lib/orbit-e2e/proof/lib.sh
 
 test "$(stat -c '%U:%G %a' /srv/orbit/instances)" = 'orbit:orbit 755'
 test "$(stat -c '%U:%G %a' /srv/orbit/worktrees)" = 'orbit:orbit 755'
 
 before=$(app_dev_settings)
+expect_error node.settings_root_failed orbit node:settings app-dev --setting=instance.path:/mnt/orbit-loose --json
+[[ "$(app_dev_settings)" == "$before" ]] || fail "group-writable root was persisted by node:settings"
+test "$(stat -c '%U:%G %a' /mnt/orbit-loose)" = 'orbit:orbit 775'
+
+expect_error node.settings_root_failed provision_app_dev --setting=instance.path:/mnt/orbit-loose --json
+[[ "$(app_dev_settings)" == "$before" ]] || fail "group-writable root was persisted by node:provision"
+test "$(stat -c '%U:%G %a' /mnt/orbit-loose)" = 'orbit:orbit 775'
+
 expect_error node.settings_root_failed orbit node:settings app-dev --setting=instance.path:/mnt/orbit-foreign --json
 [[ "$(app_dev_settings)" == "$before" ]] || fail "foreign-owned root was persisted"
 test "$(stat -c '%U:%G %a' /mnt/orbit-foreign)" = 'root:root 755'
@@ -38,4 +46,4 @@ expect_error node.settings_root_failed orbit node:settings app-dev --setting=wor
 sudo chown orbit:orbit -- /home/orbit/apps
 restore_default_roots
 
-echo "ownership: missing 755, pre-existing 750 unchanged, foreign rejected, last unset fails closed"
+echo "ownership: missing 755, pre-existing 750 unchanged, loose mode and foreign owner rejected, last unset fails closed"
