@@ -7,7 +7,6 @@ namespace App\Console\Commands\Standby;
 use App\Console\Commands\E2ECommand;
 use App\E2E\StandbyRefresher;
 use App\E2E\Value\MigrationPlan;
-use App\E2E\Value\OperationId;
 use JsonException;
 use Throwable;
 
@@ -22,7 +21,7 @@ final class RefreshCommand extends E2ECommand
     #[\Override]
     protected $description = 'Refresh and promote the standby generation';
 
-    public function handle(StandbyRefresher $refresher, OperationId $operation): int
+    public function handle(StandbyRefresher $refresher): int
     {
         try {
             $sha = $this->option('main-sha');
@@ -34,7 +33,7 @@ final class RefreshCommand extends E2ECommand
 
             return $result->successful() ? self::SUCCESS : self::FAILURE;
         } catch (Throwable $exception) {
-            $this->outputFailure($exception, $operation);
+            $this->outputFailure($exception);
 
             return self::FAILURE;
         }

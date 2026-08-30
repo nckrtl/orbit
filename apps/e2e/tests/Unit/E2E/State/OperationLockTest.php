@@ -28,7 +28,7 @@ describe('OperationLock', function () {
         $second->release();
     });
 
-    it('persists caller ownership and verifies stale process identity', function () {
+    it('persists caller ownership in the lock file', function () {
         $paths = new StatePaths(temporaryPath('orbit-lock-', 4));
         $lock = new OperationLock($paths);
         $operation = new OperationId(str_repeat('d', 32));
@@ -44,39 +44,10 @@ describe('OperationLock', function () {
             ->toHaveKeys(['pid', 'process_start_identity', 'operation_id', 'acquired_at'])
             ->and($owner['operation_id'])
             ->toBe($operation->value)
-            ->and(OperationLock::isStale($owner))
-            ->toBeFalse()
-            ->and(OperationLock::isStale([...$owner, 'process_start_identity' => 'wrong']))
-            ->toBeTrue()
-            ->and(OperationLock::isStale([
-                'pid' => 999_999_999,
-                'process_start_identity' => '1',
-                'operation_id' => str_repeat('e', 32),
-                'acquired_at' => '2026-08-28T00:00:00Z',
-            ]))
-            ->toBeTrue();
+            ->and($owner['pid'])
+            ->toBe(getmypid());
 
         $lock->release();
-    });
-
-    it('clears only an exact stale owner when no process holds the lock', function () {
-        $paths = new StatePaths(temporaryPath('orbit-lock-', 4));
-        $file = $paths->ensureParent('locks/stale.lock');
-        $owner = [
-            'pid' => 999_999_999,
-            'process_start_identity' => '1',
-            'operation_id' => str_repeat('f', 32),
-            'acquired_at' => '2026-08-28T00:00:00Z',
-        ];
-        file_put_contents($file, json_encode($owner, JSON_THROW_ON_ERROR)."\n");
-        $lock = new OperationLock($paths);
-
-        expect($lock->clearStaleOwner('stale', [...$owner, 'operation_id' => 'different']))
-            ->toBeFalse()
-            ->and($lock->clearStaleOwner('stale', $owner))
-            ->toBeTrue()
-            ->and(file_get_contents($file))
-            ->toBe('');
     });
 
     it('uses an injected process identity when proc is unavailable', function () {
@@ -90,10 +61,7 @@ describe('OperationLock', function () {
             512,
             JSON_THROW_ON_ERROR,
         );
-        expect($owner['process_start_identity'])
-            ->toBe('portable-start-'.getmypid())
-            ->and(OperationLock::isStale($owner, fn (int $pid): string => 'portable-start-'.$pid))
-            ->toBeFalse();
+        expect($owner['process_start_identity'])->toBe('portable-start-'.getmypid());
 
         $lock->release();
     });
@@ -108,28 +76,5 @@ describe('OperationLock', function () {
         $next = new OperationLock($paths, fn (int $pid): string => 'start-'.$pid);
         expect($next->acquire('recoverable', new OperationId(str_repeat('3', 32)), true, 0.05))->toBeTrue();
         $next->release();
-    });
-
-    it('closes stale-cleanup handles when another operation holds the lock', function () {
-        $paths = new StatePaths(temporaryPath('orbit-lock-', 4));
-        $holder = new OperationLock($paths, fn (int $pid): string => 'start-'.$pid);
-        $holder->acquire('contended', new OperationId(str_repeat('4', 32)), true, 0.05);
-        $staleOwner = [
-            'pid' => 999_999_999,
-            'process_start_identity' => '1',
-            'operation_id' => str_repeat('5', 32),
-            'acquired_at' => '2026-08-28T00:00:00Z',
-        ];
-        $cleaner = new OperationLock($paths);
-        $descriptorDirectory = '/proc/self/fd';
-        $before = is_dir($descriptorDirectory) ? count(scandir($descriptorDirectory)) : null;
-
-        foreach (range(1, 10) as $_) {
-            expect($cleaner->clearStaleOwner('contended', $staleOwner))->toBeFalse();
-        }
-
-        $after = is_dir($descriptorDirectory) ? count(scandir($descriptorDirectory)) : null;
-        expect($after)->toBe($before);
-        $holder->release();
     });
 });

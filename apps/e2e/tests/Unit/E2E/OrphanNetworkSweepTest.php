@@ -5,15 +5,10 @@ declare(strict_types=1);
 use App\E2E\IncusHost;
 use App\E2E\IncusNetworkLifecycle;
 use App\E2E\OrphanNetworkSweep;
-use App\E2E\State\AtomicJsonStore;
-use App\E2E\State\OperationJournal;
-use App\E2E\State\SecretRedactor;
 use App\E2E\State\StatePaths;
 use App\E2E\Value\AttemptId;
-use App\E2E\Value\AttemptPurpose;
 use App\E2E\Value\IncusNetwork;
 use App\E2E\Value\OperationId;
-use App\E2E\Value\ReleaseResult;
 use App\E2E\Value\TopologyTarget;
 use Illuminate\Container\Container;
 use Illuminate\Process\Factory as ProcessFactory;
@@ -69,9 +64,7 @@ function sweep(StatePaths $paths): OrphanNetworkSweep
     return new OrphanNetworkSweep(
         $host,
         new IncusNetworkLifecycle($host),
-        new AtomicJsonStore($paths),
         $paths,
-        new OperationJournal($paths, new SecretRedactor),
         new OperationId(str_repeat('a', 32)),
     );
 }
@@ -99,13 +92,13 @@ describe('orphan network filter', function () {
         expect(OrphanNetworkSweep::orphans(['oe-standby' => sweepNetwork('oe-standby')]))->toBe([]);
     });
 
-    it('never selects a protected network of an active lease', function () {
-        $leased = TopologyTarget::feature('NCK-12', new AttemptId(str_repeat('a', 32)))->network();
+    it('never selects an explicitly protected network', function () {
+        $protected = TopologyTarget::feature('NCK-12', new AttemptId(str_repeat('a', 32)))->network();
 
         expect(OrphanNetworkSweep::orphans([
-            $leased => sweepNetwork($leased),
+            $protected => sweepNetwork($protected),
             'oe-orphan' => sweepNetwork('oe-orphan'),
-        ], [$leased]))->toBe(['oe-orphan']);
+        ], [$protected]))->toBe(['oe-orphan']);
     });
 
     it('recognizes harness network names by exact prefix', function () {
@@ -123,20 +116,13 @@ describe('orphan network filter', function () {
 });
 
 describe('orphan network sweep', function () {
-    it('deletes only orphans, removes their firewall rules, and journals the result', function () {
+    it('deletes only orphans and removes their firewall rules', function () {
         $paths = new StatePaths(temporaryPath('orbit-sweep-', 8));
-        $leased = TopologyTarget::feature('NCK-12', new AttemptId(str_repeat('a', 32)))->network();
-        new AtomicJsonStore($paths)->write('leases/NCK-12.json', [
-            'issue' => 'NCK-12',
-            'attempt' => str_repeat('a', 32),
-            'state' => 'acquiring',
-        ]);
         $networks = [
             ['name' => 'oe-standby', 'used_by' => []],
             ['name' => 'oe-orphan', 'used_by' => []],
             ['name' => 'orbit-e2e-n-legacy', 'used_by' => []],
             ['name' => 'oe-used', 'used_by' => ['/1.0/instances/x']],
-            ['name' => $leased, 'used_by' => []],
             ['name' => 'control-unused', 'used_by' => []],
             ['name' => 'incusbr0', 'used_by' => ['/1.0/profiles/default']],
         ];
@@ -163,14 +149,25 @@ describe('orphan network sweep', function () {
             ->and($firewall)
             ->toHaveCount(2)
             ->and(array_column($networks, 'name'))
-            ->toBe(['oe-standby', 'oe-used', $leased, 'control-unused', 'incusbr0']);
-        $entries = new OperationJournal($paths, new SecretRedactor)->entries(new OperationId(str_repeat('a', 32)));
-        expect($entries)
-            ->toHaveCount(1)
-            ->and($entries[0]['event'] ?? null)
-            ->toBe('network.sweep')
-            ->and($entries[0]['networks_reaped'] ?? null)
-            ->toBe(['oe-orphan', 'orbit-e2e-n-legacy']);
+            ->toBe(['oe-standby', 'oe-used', 'control-unused', 'incusbr0']);
+    });
+
+    it('waits for the topology creation lock before sweeping', function () {
+        $paths = new StatePaths(temporaryPath('orbit-sweep-', 8));
+        $holder = new \App\E2E\State\OperationLock($paths);
+        $holder->acquire(OrphanNetworkSweep::CREATION_LOCK, new OperationId(str_repeat('b', 32)));
+        $commands = [];
+        $networks = [['name' => 'oe-orphan', 'used_by' => []]];
+        fakeSweepIncus($networks, $commands);
+        $sweep = new OrphanNetworkSweep(
+            $host = new IncusHost,
+            new IncusNetworkLifecycle($host),
+            $paths,
+            new OperationId(str_repeat('a', 32)),
+        );
+        $holder->release();
+
+        expect($sweep->sweep())->toBe(['oe-orphan']);
     });
 
     it('reports nothing and deletes nothing when no orphan exists', function () {
@@ -218,35 +215,5 @@ describe('orphan network sweep', function () {
         });
 
         expect(fn () => sweep($paths)->sweep())->toThrow(RuntimeException::class, 'remain after the sweep');
-    });
-});
-
-describe('release evidence with reaped networks', function () {
-    it('round-trips networks_reaped and reads a legacy receipt without it', function () {
-        $result = new ReleaseResult(
-            str_repeat('a', 32),
-            str_repeat('b', 32),
-            'NCK-12',
-            new AttemptId(str_repeat('c', 32)),
-            AttemptPurpose::Discovery,
-            [],
-            [],
-            ['oe-abc'],
-            '2026-08-30T10:00:00Z',
-            ['oe-orphan'],
-        );
-        $legacy = $result->toArray();
-        unset($legacy['networks_reaped']);
-
-        expect(array_keys($result->toArray()))
-            ->toBe(ReleaseResult::KEYS)
-            ->and(ReleaseResult::fromArray($result->toArray())->networksReaped)
-            ->toBe(['oe-orphan'])
-            ->and(ReleaseResult::fromArray($legacy)->networksReaped)
-            ->toBe([])
-            ->and(ReleaseResult::fromArray($legacy)->toArray()['released_at'])
-            ->toBe('2026-08-30T10:00:00Z')
-            ->and(fn () => ReleaseResult::fromArray([...$result->toArray(), 'networks_reaped' => [1]]))
-            ->toThrow(InvalidArgumentException::class);
     });
 });

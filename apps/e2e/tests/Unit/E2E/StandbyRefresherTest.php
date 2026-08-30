@@ -11,11 +11,9 @@ use App\E2E\StandbyBuilder;
 use App\E2E\StandbyManifestStore;
 use App\E2E\StandbyRefresher;
 use App\E2E\State\AtomicJsonStore;
-use App\E2E\State\OperationJournal;
 use App\E2E\State\OperationLock;
 use App\E2E\State\StatePaths;
 use App\E2E\TopologyConverger;
-use App\E2E\TopologyManifestStore;
 use App\E2E\TopologyVerifier;
 use App\E2E\Value\LaravelRelease;
 use App\E2E\Value\MigrationPlan;
@@ -50,7 +48,7 @@ function standbyRefresherForPowerTests(
     $verifier = new TopologyVerifier($host, 1, 0);
     $paths ??= new StatePaths(temporaryPath('orbit-refresh-', 4));
     $state ??= new AtomicJsonStore($paths);
-    $manifests ??= new StandbyManifestStore($state, $paths, new TopologyManifestStore($state, $paths));
+    $manifests ??= new StandbyManifestStore($state, $paths, new IncusHost);
 
     return new StandbyRefresher(
         $host,
@@ -65,7 +63,6 @@ function standbyRefresherForPowerTests(
             $verifier,
             $manifests,
             $state,
-            $paths,
             $root,
         ),
         $synchronizer,
@@ -74,7 +71,6 @@ function standbyRefresherForPowerTests(
         new LaravelReleaseResolver,
         new OperationLock($paths),
         new OperationLock($paths),
-        new OperationJournal($paths),
         $state,
         $git,
         $root,
@@ -198,7 +194,7 @@ function standbyRestoreFixture(bool $corrupt = true): array
 {
     $paths = new StatePaths(temporaryPath('orbit-refresher-', 4));
     $state = new AtomicJsonStore($paths);
-    $manifests = new StandbyManifestStore($state, $paths, new TopologyManifestStore($state, $paths));
+    $manifests = new StandbyManifestStore($state, $paths, new IncusHost);
     if ($corrupt) {
         $state->write('standby/corrupt.json', ['schema' => 1, 'message' => 'restore required']);
     }
@@ -646,10 +642,10 @@ describe('StandbyRefresher contracts', function () {
         Facade::setFacadeApplication($container);
     });
 
-    it('returns terminal failure with evidence when standby generation is locked', function () {
+    it('returns terminal failure when the standby refresh lock is held', function () {
         $paths = new StatePaths(temporaryPath('orbit-refresh-lock-', 4));
         $state = new AtomicJsonStore($paths);
-        $manifests = new StandbyManifestStore($state, $paths, new TopologyManifestStore($state, $paths));
+        $manifests = new StandbyManifestStore($state, $paths, new IncusHost);
         $root = dirname(__DIR__, 4);
         $host = new IncusHost(pool: 'orbit-e2e');
         $git = new GitRepository($root);
@@ -664,7 +660,6 @@ describe('StandbyRefresher contracts', function () {
             $verifier,
             $manifests,
             $state,
-            $paths,
             $root,
         );
         $requestLock = new OperationLock($paths);
@@ -684,7 +679,6 @@ describe('StandbyRefresher contracts', function () {
                 new LaravelReleaseResolver,
                 $requestLock,
                 new OperationLock($paths),
-                new OperationJournal($paths),
                 $state,
                 $git,
                 $root,
@@ -692,18 +686,11 @@ describe('StandbyRefresher contracts', function () {
                 0,
             );
             $result = $refresher->request(str_repeat('b', 40));
-            $failure = $state->read('standby/failures/'.$result->evidenceId.'.json');
 
             expect($result->state)
                 ->toBe('failed')
-                ->and($failure)
-                ->toMatchArray([
-                    'schema' => 1,
-                    'main_sha' => str_repeat('b', 40),
-                    'message' => 'Unable to acquire the standby refresh lock.',
-                ])
-                ->and($state->read('standby/request.json'))
-                ->toBeNull();
+                ->and($result->error)
+                ->toBe('Unable to acquire the standby refresh lock.');
         } finally {
             $holder->release();
         }
@@ -718,7 +705,7 @@ describe('StandbyRefresher contracts', function () {
                 'stdin' => "value=yes\n",
             ]],
         ]);
-        $result = new RefreshResult('promoted', str_repeat('b', 32), str_repeat('c', 32), 'generation-1');
+        $result = new RefreshResult('promoted', str_repeat('b', 32), 'generation-1');
 
         expect($plan->steps[0]['role'])
             ->toBe('gateway')
@@ -728,9 +715,9 @@ describe('StandbyRefresher contracts', function () {
             ->toBe('promoted')
             ->and($result->successful())
             ->toBeTrue()
-            ->and(new RefreshResult('unchanged', str_repeat('b', 32), str_repeat('c', 32))->successful())
+            ->and(new RefreshResult('unchanged', str_repeat('b', 32), 'generation-1')->successful())
             ->toBeTrue()
-            ->and(new RefreshResult('failed', str_repeat('b', 32), str_repeat('c', 32))->successful())
+            ->and(new RefreshResult('failed', str_repeat('b', 32), error: 'boom')->successful())
             ->toBeFalse();
     });
 
@@ -802,11 +789,10 @@ describe('StandbyRefresher contracts', function () {
                 paths: $paths,
                 repositoryRoot: $worktree,
             )->request(new GitRepository($worktree)->commit());
-            $failure = new AtomicJsonStore($paths)->read("standby/failures/{$result->evidenceId}.json");
 
             expect($result->state)
                 ->toBe('failed')
-                ->and($failure['message'] ?? null)
+                ->and($result->error)
                 ->toBe('Cold standby construction requires explicit permission.')
                 ->and($externalCommands)
                 ->toBeEmpty();
@@ -816,7 +802,7 @@ describe('StandbyRefresher contracts', function () {
         }
     });
 
-    it('journals a migration between rolling convergence and promoted verification', function () {
+    it('runs a migration between rolling convergence and promoted verification', function () {
         $sourceRoot = dirname(__DIR__, 4);
         $worktree = temporaryPath('orbit-refresh-migration-', 4);
         $branch = 'migration-test-'.bin2hex(random_bytes(6));
@@ -877,7 +863,7 @@ describe('StandbyRefresher contracts', function () {
             $desiredFingerprint = new PreparedStateFingerprint($git)->forCommit($newSha, $release);
             $paths = new StatePaths(temporaryPath('orbit-refresh-migration-state-', 4));
             $state = new AtomicJsonStore($paths);
-            $manifests = new StandbyManifestStore($state, $paths, new TopologyManifestStore($state, $paths));
+            $manifests = new StandbyManifestStore($state, $paths, new IncusHost);
             $manifests->promote(new StandbyGeneration(
                 'old-generation',
                 $oldSha,
@@ -966,26 +952,10 @@ describe('StandbyRefresher contracts', function () {
                 $paths,
                 $worktree,
             )->request($newSha, $migration);
-            $journalEntries = new OperationJournal($paths)->entries(new OperationId($result->operationId));
-            $migrationEntries = array_values(array_filter(
-                $journalEntries,
-                fn (array $entry): bool => ($entry['step'] ?? null) === 'migration',
-            ));
             $promoted = $manifests->promoted();
-            $evidence = $state->read("standby/evidence/{$result->evidenceId}.json");
 
             expect($result->state)->toBe('promoted');
             expect($processState->migrationInput)->toBe($migrationInput);
-            expect($migrationEntries)->toHaveCount(1);
-            expect($migrationEntries[0])->toMatchArray([
-                'step' => 'migration',
-                'role' => 'gateway',
-                'argv' => $migrationArguments,
-                'stdin' => '[REDACTED]',
-                'stdout' => "migration applied\n",
-                'stderr' => "migration warning\n",
-                'exit_code' => 0,
-            ]);
             expect($processState->events)->toBe([
                 'start:local:orbit-e2e-standby-gateway',
                 'start:local:orbit-e2e-standby-app-dev',
@@ -1009,9 +979,7 @@ describe('StandbyRefresher contracts', function () {
                 ->and($processState->pruneLockResults)
                 ->toBe([false, false, false, true, true, true])
                 ->and($state->read('standby/generations/stale-generation.json'))
-                ->toBeNull()
-                ->and(array_keys($evidence['timings'] ?? []))
-                ->toBe(['restore', 'start', 'sync', 'converge', 'verify', 'proof', 'stop', 'snapshot']);
+                ->toBeNull();
         } finally {
             $processes->run(['git', '-C', $sourceRoot, 'worktree', 'remove', '--force', $worktree]);
             $processes->run(['git', '-C', $sourceRoot, 'branch', '-D', $branch]);
@@ -1056,7 +1024,7 @@ describe('StandbyRefresher contracts', function () {
             $structural = new PreparedStateFingerprint($git)->forCommit($mainSha);
             $paths = new StatePaths(temporaryPath('orbit-refresh-stopped-', 4));
             $state = new AtomicJsonStore($paths);
-            $manifests = new StandbyManifestStore($state, $paths, new TopologyManifestStore($state, $paths));
+            $manifests = new StandbyManifestStore($state, $paths, new IncusHost);
             $manifests->promote(new \App\E2E\Value\StandbyGeneration(
                 'stopped-test',
                 $mainSha,
@@ -1180,7 +1148,7 @@ describe('StandbyRefresher contracts', function () {
             $newSha = $git->commit('HEAD');
             $paths = new StatePaths(temporaryPath('orbit-refresh-cold-state-', 4));
             $state = new AtomicJsonStore($paths);
-            $manifests = new StandbyManifestStore($state, $paths, new TopologyManifestStore($state, $paths));
+            $manifests = new StandbyManifestStore($state, $paths, new IncusHost);
             $generation = new \App\E2E\Value\StandbyGeneration(
                 'old-generation',
                 $oldSha,
@@ -1207,10 +1175,8 @@ describe('StandbyRefresher contracts', function () {
             $result = $refresher->request($newSha);
             expect($result->state)
                 ->toBe('failed')
-                ->and($state->read('standby/failures/'.$result->evidenceId.'.json')['message'])
+                ->and($result->error)
                 ->toBe('Cold base changed; recovery-required cold standby rebuild.')
-                ->and($state->read('standby/recovery/'.$result->evidenceId.'.json'))
-                ->toMatchArray(['recovered' => true, 'stopped' => true])
                 ->and($manifests->promoted()->toArray())
                 ->toEqual($generation->toArray());
             Process::assertDidntRun(
@@ -1367,7 +1333,7 @@ describe('StandbyRefresher contracts', function () {
     it('clears the corrupt marker only after an exact restore succeeds', function () {
         $paths = new StatePaths(temporaryPath('orbit-refresher-', 4));
         $state = new AtomicJsonStore($paths);
-        $manifests = new StandbyManifestStore($state, $paths, new TopologyManifestStore($state, $paths));
+        $manifests = new StandbyManifestStore($state, $paths, new IncusHost);
         $state->write('standby/corrupt.json', ['schema' => 1, 'message' => 'restore required']);
         $generation = new \App\E2E\Value\StandbyGeneration(
             'g-'.str_repeat('a', 12),

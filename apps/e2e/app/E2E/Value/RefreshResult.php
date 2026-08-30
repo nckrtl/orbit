@@ -13,28 +13,28 @@ final readonly class RefreshResult
     public function __construct(
         public string $state,
         public string $operationId,
-        public string $evidenceId,
         public ?string $generationId = null,
+        public ?string $error = null,
     ) {
         if (
             ! in_array($state, self::STATES, true)
             || preg_match('/\A[0-9a-f]{32}\z/D', $operationId) !== 1
-            || preg_match('/\A[0-9a-f]{32}\z/D', $evidenceId) !== 1
             || $generationId !== null
             && preg_match('/\A[A-Za-z0-9][A-Za-z0-9._-]{0,63}\z/D', $generationId) !== 1
+            || ($state === 'failed') !== ($error !== null)
         ) {
             throw new InvalidArgumentException('The refresh result is invalid.');
         }
     }
 
-    /** @return array{state:string,operation_id:string,evidence_id:string,generation_id:?string} */
+    /** @return array{state:string,operation_id:string,generation_id:?string,error:?string} */
     public function toArray(): array
     {
         return [
             'state' => $this->state,
             'operation_id' => $this->operationId,
-            'evidence_id' => $this->evidenceId,
             'generation_id' => $this->generationId,
+            'error' => $this->error,
         ];
     }
 

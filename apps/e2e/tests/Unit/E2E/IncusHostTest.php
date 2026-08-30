@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\E2E\IncusHost;
-use App\E2E\State\OperationJournal;
 use App\E2E\State\SecretRedactor;
 use App\E2E\State\StatePaths;
 use App\E2E\Value\GuestCommand;
@@ -134,19 +133,13 @@ function snapshotJson(string $name, string $owner = 'orbit-e2e'): string
     ]], JSON_THROW_ON_ERROR);
 }
 
-function incusHost(
-    ?SecretRedactor $redactor = null,
-    ?OperationJournal $journal = null,
-    ?OperationId $operationId = null,
-    int $guestReadinessTimeoutSeconds = 600,
-): IncusHost {
+function incusHost(?SecretRedactor $redactor = null, int $guestReadinessTimeoutSeconds = 600): IncusHost
+{
     return new IncusHost(
         remote: 'lab',
         project: 'orbit',
         pool: 'orbit-e2e',
         redactor: $redactor ?? new SecretRedactor,
-        journal: $journal,
-        operationId: $operationId,
         guestReadinessTimeoutSeconds: $guestReadinessTimeoutSeconds,
     );
 }
@@ -839,10 +832,7 @@ describe('IncusHost mutations', function () {
 
             return Process::result();
         });
-        $host = incusHost(
-            journal: new OperationJournal(new StatePaths(sys_get_temp_dir().'/orbit-test')),
-            operationId: new OperationId(str_repeat('a', 32)),
-        );
+        $host = incusHost();
         $host->instances(['orbit-e2e-nck-123-aaaaaaaa-gateway']);
         expect(fn () => $host->resetClonedHostState('orbit-e2e-nck-123-aaaaaaaa-gateway'))
             ->toThrow(RuntimeException::class, 'ownership metadata');
@@ -2414,9 +2404,7 @@ describe('IncusHost mutations', function () {
 
             return Process::result('ready');
         });
-        $paths = new StatePaths(temporaryPath('orbit-incus-cache-', 6));
-        $operation = new OperationId(str_repeat('a', 32));
-        $host = incusHost(journal: new OperationJournal($paths), operationId: $operation);
+        $host = incusHost();
         $commands = [
             'gateway' => [
                 'instance' => 'orbit-e2e-nck-123-aaaaaaaa-gateway',
@@ -2670,24 +2658,6 @@ describe('IncusHost failures', function () {
 
         expect(fn () => incusHost(new SecretRedactor(['password-value']))->imageFingerprint('ubuntu'))
             ->toThrow(RuntimeException::class, '[REDACTED]');
-    });
-
-    it('journals failures under the caller operation identity', function () {
-        $state = new StatePaths(temporaryPath('orbit-incus-host-', 6));
-        $redactor = new SecretRedactor(['token-value']);
-        $journal = new OperationJournal($state, $redactor);
-        $operationId = new OperationId(str_repeat('a', 32));
-        Process::fake(['*' => Process::result('', 'Bearer token-value', 9)]);
-
-        expect(fn () => incusHost($redactor, $journal, $operationId)->imageFingerprint('ubuntu'))
-            ->toThrow(RuntimeException::class);
-
-        expect($journal->entries($operationId))
-            ->toHaveCount(1)
-            ->and($journal->entries($operationId)[0]['error'])
-            ->toContain('[REDACTED]')
-            ->and(str_contains((string) $journal->entries($operationId)[0]['error'], 'token-value'))
-            ->toBeFalse();
     });
 
     it('rejects unsafe public identities before running Incus', function () {

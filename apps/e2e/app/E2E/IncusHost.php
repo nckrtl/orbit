@@ -4,14 +4,12 @@ declare(strict_types=1);
 
 namespace App\E2E;
 
-use App\E2E\State\OperationJournal;
 use App\E2E\State\SecretRedactor;
 use App\E2E\Value\GuestCommand;
 use App\E2E\Value\GuestCommandResult;
 use App\E2E\Value\IncusInstance;
 use App\E2E\Value\IncusNetwork;
 use App\E2E\Value\MountPath;
-use App\E2E\Value\OperationId;
 use App\E2E\Value\TopologyTarget;
 use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Process\Pool;
@@ -47,8 +45,6 @@ final class IncusHost implements GuestTransport
         private readonly string $pool = 'default',
         private readonly array $ownershipMetadata = ['user.orbit.e2e.owner' => 'orbit-e2e'],
         private readonly SecretRedactor $redactor = new SecretRedactor,
-        private readonly ?OperationJournal $journal = null,
-        private readonly ?OperationId $operationId = null,
         private readonly int $guestReadinessTimeoutSeconds = 600,
     ) {
         $this->validateName($remote, 'remote');
@@ -65,10 +61,28 @@ final class IncusHost implements GuestTransport
         foreach ($ownershipMetadata as $key => $value) {
             $this->validateMetadata($key, $value);
         }
+    }
 
-        if (($journal === null) !== ($operationId === null)) {
-            throw new RuntimeException('Incus journal and operation identity must be provided together.');
+    /**
+     * The harness metadata of every harness-owned instance on the host, keyed by
+     * name. Capacity and generation pinning read this inventory instead of a ledger.
+     *
+     * @return array<string, array<string, string>>
+     */
+    public function harnessInstanceMetadata(): array
+    {
+        $instances = [];
+        foreach ($this->readJson(['list', "{$this->remote}:", '--format=json']) as $resource) {
+            if (! is_array($resource) || ! is_string($resource['name'] ?? null)) {
+                continue;
+            }
+            $metadata = $this->metadata($resource);
+            if (($metadata['user.orbit.e2e.owner'] ?? null) === 'orbit-e2e') {
+                $instances[$resource['name']] = $metadata;
+            }
         }
+
+        return $instances;
     }
 
     public function instance(string $name): ?IncusInstance
@@ -1452,23 +1466,12 @@ final class IncusHost implements GuestTransport
             }
         } catch (Throwable $exception) {
             $message = $this->redactor->redact($exception->getMessage());
-            foreach ($full as $argv) {
-                $this->recordFailure(['incus', '--project', $this->project, ...$argv], null, $message);
-            }
 
             throw new RuntimeException('Incus guest command batch failed: '.$message, 0, $exception);
         }
         $resolved = [];
         foreach ($full as $label => $argv) {
             $result = $results[$label];
-            $error = $this->redactor->redact(trim($result->errorOutput()."\n".$result->output()));
-            if (! $result->successful()) {
-                $this->recordFailure(
-                    ['incus', '--project', $this->project, ...$argv],
-                    $result->exitCode(),
-                    $error,
-                );
-            }
             $resolved[$label] = new GuestCommandResult(
                 $result->output(),
                 $result->errorOutput(),
@@ -1742,11 +1745,6 @@ final class IncusHost implements GuestTransport
             })->run();
         } catch (Throwable $exception) {
             $message = $this->redactor->redact($exception->getMessage());
-            if ($failOnError) {
-                foreach ($fullCommands as $command) {
-                    $this->recordFailure($command, null, $message);
-                }
-            }
 
             throw new RuntimeException("{$failureMessage}: {$message}", 0, $exception);
         }
@@ -1765,9 +1763,6 @@ final class IncusHost implements GuestTransport
 
             $error = $this->redactor->redact(trim($result->errorOutput()."\n".$result->output()));
             $failed[$label] = $error !== '' ? $error : 'exit code '.$result->exitCode();
-            if ($failOnError) {
-                $this->recordFailure($command, $result->exitCode(), $error);
-            }
         }
         if ($failOnError && $failed !== []) {
             $details = [];
@@ -1986,8 +1981,8 @@ final class IncusHost implements GuestTransport
     }
 
     /**
-     * Reuse ownership proof only within one journalled CLI operation. A new
-     * command builds a new IncusHost, so it must validate external state again.
+     * Reuse ownership proof only within one CLI operation. A new command builds
+     * a new IncusHost, so it must validate external state again.
      *
      * @param list<string> $instances
      * @return array<string, IncusInstance>
@@ -2034,16 +2029,12 @@ final class IncusHost implements GuestTransport
             if ($this->isGuestExecCommand($command)) {
                 $message = 'Incus guest command could not run.';
             }
-            $this->recordFailure($command, null, $message);
 
             throw new RuntimeException("Incus command timed out or could not run: {$message}", 0, $exception);
         }
 
         if (! $result->successful()) {
-            // Record every non-zero exit, redacted, so guest failures leave evidence
-            // even when the caller inspects the exit code itself.
             $error = $this->redactor->redact(trim($result->errorOutput()."\n".$result->output()));
-            $this->recordFailure($command, $result->exitCode(), $error);
             if ($failOnError) {
                 throw new RuntimeException("Incus command failed with exit code {$result->exitCode()}: {$error}");
             }
@@ -2073,27 +2064,6 @@ final class IncusHost implements GuestTransport
             ],
             true,
         );
-    }
-
-    /** @param list<string> $command */
-    private function recordFailure(array $command, ?int $exitCode, string $error): void
-    {
-        $journal = $this->journal;
-        $operationId = $this->operationId;
-        if (! $journal instanceof OperationJournal || ! $operationId instanceof OperationId) {
-            return;
-        }
-
-        $journalCommand = $command;
-        if ($this->isGuestExecCommand($command)) {
-            $journalCommand = array_slice($command, 0, 6);
-        }
-
-        $journal->append($operationId, [
-            'command' => $this->redactor->redactArray($journalCommand),
-            'exit_code' => $exitCode,
-            'error' => $error,
-        ]);
     }
 
     /** @param list<string> $command */
