@@ -941,6 +941,10 @@ describe('convergence guest scripts', function () {
             expect(new Process($command, env: $environment)->run())->not->toBe(0);
 
             $pdo->exec("DELETE FROM node_roles WHERE role = 'metrics'");
+            $pdo->exec("UPDATE nodes SET status = 'provisioning' WHERE name = 'app-prod'");
+            expect(new Process($command, env: $environment)->run())->not->toBe(0);
+
+            $pdo->exec("UPDATE nodes SET status = 'active' WHERE name = 'app-prod'");
             $pdo->exec("DELETE FROM node_roles WHERE role = 'vpn'");
             expect(new Process($command, env: $environment)->run())->not->toBe(0);
         } finally {
