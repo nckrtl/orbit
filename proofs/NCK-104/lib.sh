@@ -144,6 +144,20 @@ node_id() {
   ' -- "$1"
 }
 
+node_field() {
+  orbit node:list --json | php -r '
+    $name = $argv[1];
+    $field = $argv[2];
+    foreach (json_decode(stream_get_contents(STDIN), true)["nodes"] ?? [] as $node) {
+      if (($node["name"] ?? null) === $name && array_key_exists($field, $node) && $node[$field] !== null) {
+        echo is_scalar($node[$field]) ? (string) $node[$field] : json_encode($node[$field]);
+        exit(0);
+      }
+    }
+    exit(1);
+  ' -- "$1" "$2"
+}
+
 app_id() {
   orbit app:list --json | php -r '
     $slug = $argv[1];
