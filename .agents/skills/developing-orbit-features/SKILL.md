@@ -56,6 +56,20 @@ is missing.
 On review comments: fix, commit, `git merge main`, release and prove again,
 push, reply "Addressed in `<sha>`".
 
+## Harness issues
+
+If the issue's components include `apps/e2e` (the harness), skip steps 2–4 and
+6: implement with unit tests (step 5), then prove with
+`bin/e2e-live <full sha>` (one end-to-end run of the feature flow against a
+standby built from your commit, ~4 min). The PR's Proof line is
+"Harness: `bin/e2e-live <sha>` passed." Only harness issues touch `apps/e2e`
+or `bin/e2e-*`.
+
+Tips: run `vendor/bin/mago format` before `composer check`; keep `it` bodies
+straight-line and fixtures in helper functions (mago's complexity rule counts
+the enclosing `describe`); verify-probe evidence has a fixed key set — record
+extra detail in `expected`/`observed`.
+
 ## Rules
 
 - Feature branches never touch `apps/e2e` or `bin/e2e-*`.

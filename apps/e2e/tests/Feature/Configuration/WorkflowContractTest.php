@@ -17,11 +17,13 @@ it('keeps the developing skill on the nine-step flow', function () use ($read): 
         'bin/e2e-topology prove <ISSUE>',
         'git merge main',
         'Feature branches never touch `apps/e2e` or `bin/e2e-*`.',
+        '## Harness issues',
+        'bin/e2e-live <full sha>',
     ] as $needle) {
         expect($skill)->toContain($needle);
     }
 
-    foreach (['yaml', 'handoff', 'gpt-', 'fork_turns', 'e2e-live', 'post_deployment'] as $absent) {
+    foreach (['yaml', 'handoff', 'gpt-', 'fork_turns', 'post_deployment'] as $absent) {
         expect(strtolower($skill))->not->toContain($absent);
     }
 });
