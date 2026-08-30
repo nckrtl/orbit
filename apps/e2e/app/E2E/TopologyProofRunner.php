@@ -17,6 +17,7 @@ use App\E2E\Value\ProofResult;
 use App\E2E\Value\ProofStatus;
 use App\E2E\Value\SourceState;
 use App\E2E\Value\StandbyGeneration;
+use App\E2E\Value\StandbyIdentity;
 use App\E2E\Value\TopologyProfile;
 use App\E2E\Value\TopologyRequest;
 use App\E2E\Value\TopologyTarget;
@@ -53,6 +54,7 @@ final readonly class TopologyProofRunner
         private HostCapacity $capacity,
         private StatePaths $hostPaths,
         private OperationId $operation,
+        private StandbyIdentity $standbyIdentity,
         private string $repositoryRoot = '',
         /** @var (Closure(): AttemptId)|null Mints the attempt identity; injectable so tests pin resource names. */
         private ?Closure $attempts = null,
@@ -97,7 +99,7 @@ final readonly class TopologyProofRunner
         $generation = $this->standby->promoted() ?? throw new RuntimeException(
             'No promoted standby generation is available.',
         );
-        $standbyTarget = TopologyTarget::standby();
+        $standbyTarget = TopologyTarget::standby($this->standbyIdentity);
         $this->host->assertOwnedSnapshots(array_combine(
             array_map($standbyTarget->instance(...), TopologyProfile::ROLES),
             $generation->snapshots,
@@ -177,7 +179,7 @@ final readonly class TopologyProofRunner
             $copies = [];
             foreach (TopologyProfile::ROLES as $role) {
                 $copies[$role] = [
-                    'source' => TopologyTarget::standby()->instance($role),
+                    'source' => TopologyTarget::standby($this->standbyIdentity)->instance($role),
                     'snapshot' => $generation->snapshots[$role],
                     'target' => $target->instance($role),
                     'metadata' => [...$metadata, 'user.orbit.e2e.generation' => $generation->id],

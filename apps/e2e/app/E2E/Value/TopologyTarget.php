@@ -14,7 +14,7 @@ final readonly class TopologyTarget
     private function __construct(
         public string $issue,
         public ?AttemptId $attempt,
-        private bool $standby = false,
+        private ?StandbyIdentity $standby = null,
     ) {}
 
     public static function feature(string $issue, AttemptId $attempt): self
@@ -24,9 +24,10 @@ final readonly class TopologyTarget
         return new self($issue, $attempt);
     }
 
-    public static function standby(): self
+    /** The standby of one checkout; the identity says which physical set of VMs that is. */
+    public static function standby(?StandbyIdentity $identity = null): self
     {
-        return new self('standby', null, true);
+        return new self('standby', null, $identity ?? StandbyIdentity::primary());
     }
 
     public static function assertIssue(string $issue): void
@@ -53,12 +54,18 @@ final readonly class TopologyTarget
 
     public function isStandby(): bool
     {
-        return $this->standby;
+        return $this->standby !== null;
+    }
+
+    /** The standby identity of a standby target; a feature target has none. */
+    public function requireStandbyIdentity(): StandbyIdentity
+    {
+        return $this->standby ?? throw new InvalidArgumentException('The feature target has no standby identity.');
     }
 
     public function matchesBranch(string $branch): bool
     {
-        if ($this->standby) {
+        if ($this->standby !== null) {
             return false;
         }
 
@@ -79,8 +86,8 @@ final readonly class TopologyTarget
 
     public function network(): string
     {
-        if ($this->standby) {
-            return 'oe-standby';
+        if ($this->standby !== null) {
+            return $this->standby->network();
         }
 
         return 'oe-'.substr(hash('sha256', $this->issue.':'.$this->requireAttempt()->value), 0, 12);
@@ -90,8 +97,8 @@ final readonly class TopologyTarget
     {
         $this->validateRole($role);
 
-        if ($this->standby) {
-            return 'orbit-e2e-standby-'.$role;
+        if ($this->standby !== null) {
+            return $this->standby->instance($role);
         }
 
         return 'orbit-e2e-'.strtolower($this->issue).'-'.$this->requireAttempt()->short().'-'.$role;

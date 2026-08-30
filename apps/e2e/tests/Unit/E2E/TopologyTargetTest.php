@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\E2E\Value\AttemptId;
+use App\E2E\Value\StandbyIdentity;
 use App\E2E\Value\TopologyTarget;
 
 describe('TopologyTarget', function () {
@@ -99,4 +100,31 @@ describe('TopologyTarget', function () {
         'issue-like suffix' => ['feature/NCK-123A-build-topology', false],
         'unrelated issue' => ['feature/NCK-124-build-topology', false],
     ]);
+
+    it('resolves the live standby target to the live standby identity resources', function () {
+        $live = TopologyTarget::standby(StandbyIdentity::live());
+
+        expect($live->network())
+            ->toBe('oe-live-standby')
+            ->and($live->instance('gateway'))
+            ->toBe('orbit-e2e-live-standby-gateway')
+            ->and($live->mac('gateway'))
+            ->toBe('00:16:3e:'.implode(':', str_split(substr(sha1('oe-live-standby:gateway'), 0, 6), 2)));
+    });
+
+    it('keeps the standby target unchanged when no identity is given', function () {
+        expect(TopologyTarget::standby()->network())
+            ->toBe('oe-standby')
+            ->and(TopologyTarget::standby()->requireStandbyIdentity())
+            ->toEqual(StandbyIdentity::primary());
+    });
+
+    it('carries the standby identity of a standby target only', function () {
+        $attempt = new AttemptId(str_repeat('a', 32));
+
+        expect(TopologyTarget::standby(StandbyIdentity::live())->requireStandbyIdentity())
+            ->toEqual(StandbyIdentity::live())
+            ->and(fn () => TopologyTarget::feature('NCK-123', $attempt)->requireStandbyIdentity())
+            ->toThrow(InvalidArgumentException::class);
+    });
 });

@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Nodes;
 
 use App\Data\Nodes\ProvisionNodeData;
-use App\Domain\AppDev\PrivateDnsManager;
+use App\Domain\AppDev\AppDevTldConverger;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Nodes\LinuxUserName;
@@ -40,7 +40,7 @@ final readonly class ProvisionNodeAction
         private WireGuardAddressAllocator $addresses,
         private GatewayPeerProjectionManager $gatewayPeers,
         private NodeProvisioningLock $provisioningLock,
-        private PrivateDnsManager $dns,
+        private AppDevTldConverger $appDevTldConverger,
         private MetricsFleetReconciler $metrics,
     ) {}
 
@@ -99,11 +99,21 @@ final readonly class ProvisionNodeAction
         $architecture = $this->architecture($node, $data);
         $previousTld = $node->exists && is_string($node->tld) ? $node->tld : null;
         $tld = $this->tld($node, $data);
-        $convergeChangedAppDevTld =
+        $convergeChangedAppDevTld = $node->exists && $previousTld !== $tld && $this->hasActiveAppDevRole($node);
+
+        if (
             $node->exists
             && $previousTld !== $tld
-            && $this->hasActiveAppDevRole($node)
-            && ! in_array(RoleName::AppDev, $data->roles, strict: true);
+            && $this->hasAppDevRole($node, $data)
+            && ! $convergeChangedAppDevTld
+            && $node->instances()->exists()
+        ) {
+            throw new ResourceOperationException(
+                errorCode: 'node.tld_change_unsupported',
+                message: "Node [{$data->name}] cannot change TLD while app-dev is not active.",
+                status: 409,
+            );
+        }
 
         if (
             $platform === 'linux'
@@ -229,16 +239,16 @@ final readonly class ProvisionNodeAction
             throw $failure;
         }
 
+        if ($convergeChangedAppDevTld) {
+            $this->convergeChangedAppDevTld($node, $previousTld);
+        }
+
         $node->update([
             'user' => $managedUser,
             'status' => LifecycleStatus::Active,
             'failed_step' => null,
             'error_code' => null,
         ]);
-
-        if ($convergeChangedAppDevTld) {
-            $this->convergeChangedAppDevTld($node, $previousTld);
-        }
 
         // Role convergence runs while the node is still provisioning, and
         // exporter selection only ever considers active nodes. The node is
@@ -301,19 +311,6 @@ final readonly class ProvisionNodeAction
             throw new ResourceOperationException(
                 errorCode: 'node.tld_invalid',
                 message: "Node TLD [{$requested}] is invalid.",
-            );
-        }
-
-        if (
-            $node->exists
-            && is_string($node->tld)
-            && $node->tld !== $tld
-            && $node->instances()->exists()
-        ) {
-            throw new ResourceOperationException(
-                errorCode: 'node.tld_change_unsupported',
-                message: "Node [{$data->name}] cannot change TLD while it owns instances.",
-                status: 409,
             );
         }
 
@@ -386,17 +383,23 @@ final readonly class ProvisionNodeAction
     private function convergeChangedAppDevTld(Node $node, ?string $previousTld): void
     {
         try {
-            $this->dns->converge($node);
+            $this->appDevTldConverger->converge($node);
         } catch (Throwable $exception) {
             $node->update(['tld' => $previousTld]);
 
             try {
-                $this->dns->converge($node->refresh());
+                $this->appDevTldConverger->converge($node->refresh());
+                $node->update(['status' => LifecycleStatus::Active]);
             } catch (Throwable $rollbackException) {
+                $node->update([
+                    'status' => LifecycleStatus::Failed,
+                    'failed_step' => 'app-dev-tld-rollback',
+                    'error_code' => 'app-dev.tld_rollback_failed',
+                ]);
                 throw new RuntimeConvergenceException(
-                    step: 'private-dns-rollback',
-                    errorCode: 'app-dev.dns_rollback_failed',
-                    message: "Could not restore private DNS after changing node [{$node->name}] TLD.",
+                    step: 'app-dev-tld-rollback',
+                    errorCode: 'app-dev.tld_rollback_failed',
+                    message: "Could not restore node [{$node->name}] TLD projections.",
                     previous: $rollbackException,
                     result: $rollbackException instanceof RuntimeConvergenceException
                         ? $rollbackException->result

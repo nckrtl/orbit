@@ -83,6 +83,16 @@ final readonly class RetirementInventory
         return hash('sha256', json_encode($this->toArray(), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
     }
 
+    /** The standby network or VMs of any checkout that owns one; never a retirement target. */
+    private static function isStandbyResource(string $identity): bool
+    {
+        return array_any(
+            StandbyIdentity::known(),
+            fn ($standby) => $identity === $standby->network()
+            || str_starts_with($identity, rtrim($standby->instancePrefix(), '-')),
+        );
+    }
+
     /** @param array<string, mixed> $resource */
     public static function assertLegacyCandidate(string $kind, array $resource): void
     {
@@ -93,9 +103,8 @@ final readonly class RetirementInventory
         }
         if (
             in_array($kind, ['pools', 'base_images', 'new_namespace', 'evidence'], true)
-            || $identity === 'oe-standby'
+            || self::isStandbyResource($identity)
             || preg_match('/\Aoe-[a-f0-9]{12}\z/i', $identity) === 1
-            || str_starts_with($identity, 'orbit-e2e-standby')
             || preg_match(
                 '/\Aorbit-e2e-[a-z][a-z0-9]{1,9}-[1-9][0-9]{0,8}(?:-[0-9a-f]{8})?-(?:gateway|app-dev|app-prod)(?:\/|\z)/i',
                 $identity,

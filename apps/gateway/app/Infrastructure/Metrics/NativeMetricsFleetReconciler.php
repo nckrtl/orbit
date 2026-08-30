@@ -12,6 +12,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Node;
 use App\Models\NodeRole;
+use Throwable;
 
 final readonly class NativeMetricsFleetReconciler implements MetricsFleetReconciler
 {
@@ -44,7 +45,15 @@ final readonly class NativeMetricsFleetReconciler implements MetricsFleetReconci
 
         $metricsNode = $assignment->node;
 
-        $this->exporters->removeNode($node, $metricsNode);
+        try {
+            $this->exporters->removeNode($node, $metricsNode);
+        } catch (Throwable) {
+            // The node is being removed from the fleet, so its exporter state
+            // is going away with it. A dead node must not hold its own removal
+            // hostage; the converge below drops it from the Prometheus targets
+            // regardless.
+        }
+
         $this->exporters->converge($metricsNode, $assignment);
         $this->runtime->converge($metricsNode, $assignment);
     }

@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Domain\Metrics\ExporterDegradationReason;
+use App\Domain\Metrics\ExporterDegradationRepository;
 use App\Domain\Metrics\ExporterPreference;
 use App\Domain\Metrics\ExporterPreferenceRepository;
 use App\Domain\Metrics\ExporterSelector;
@@ -21,6 +23,7 @@ it('reports disabled state when no metrics assignment exists', function (): void
         app(ExporterPreferenceRepository::class),
         new StatusRuntimeFake,
         new StatusExporterFake,
+        app(ExporterDegradationRepository::class),
     );
 
     expect($reader->status()->toArray())->toMatchArray(['enabled' => false, 'assignment' => null, 'exporters' => []]);
@@ -36,6 +39,7 @@ it('fails closed when metrics has multiple assignments', function (): void {
         app(ExporterPreferenceRepository::class),
         new StatusRuntimeFake,
         new StatusExporterFake,
+        app(ExporterDegradationRepository::class),
     );
 
     expect(fn () => $reader->status())->toThrow(RoleAssignmentException::class);
@@ -58,6 +62,7 @@ it('returns healthy services and deterministic exporter reasons', function (): v
         $preferences,
         new StatusRuntimeFake,
         new StatusExporterFake,
+        app(ExporterDegradationRepository::class),
     )
         ->status()
         ->toArray();
@@ -85,6 +90,7 @@ it('selects a node whose role is still provisioning', function (): void {
         app(ExporterPreferenceRepository::class),
         new StatusRuntimeFake,
         new StatusExporterFake,
+        app(ExporterDegradationRepository::class),
     )
         ->status()
         ->toArray();
@@ -115,6 +121,7 @@ it('keeps failed Metrics assignments visible', function (): void {
         app(ExporterPreferenceRepository::class),
         new StatusRuntimeFake,
         new StatusExporterFake,
+        app(ExporterDegradationRepository::class),
     )
         ->status()
         ->toArray();
@@ -127,6 +134,39 @@ it('keeps failed Metrics assignments visible', function (): void {
         ->toBe('prometheus')
         ->and($data['assignment']['error_code'])
         ->toBe('metrics.runtime_failed');
+});
+
+it('reports a skipped node as unknown with its recorded degradation reason', function (): void {
+    $metrics = statusNode('metrics-degraded');
+    NodeRole::query()->create(['node_id' => $metrics->id, 'role' => 'metrics', 'status' => 'active']);
+    $skipped = statusNode('skipped-node');
+    NodeRole::query()->create(['node_id' => $skipped->id, 'role' => 'app-prod', 'status' => 'active']);
+    $degradations = app(ExporterDegradationRepository::class);
+    $degradations->put($skipped->id, ExporterDegradationReason::Unreachable);
+
+    $data = new NativeMetricsStatusReader(
+        new ExporterSelector,
+        app(ExporterPreferenceRepository::class),
+        new StatusRuntimeFake,
+        new StatusExporterFake,
+        $degradations,
+    )
+        ->status()
+        ->toArray();
+
+    $rows = collect($data['exporters'])->keyBy('name');
+
+    // The fake reports every node as active, so an `unknown` row can only come
+    // from the recorded skip rather than from a live probe.
+    expect($rows['skipped-node'])
+        ->toMatchArray([
+            'desired' => true,
+            'actual' => 'unknown',
+            'reason' => 'role_default',
+            'degraded_reason' => 'unreachable',
+        ])
+        ->and($rows['metrics-degraded'])
+        ->toMatchArray(['actual' => 'active', 'degraded_reason' => null]);
 });
 
 function statusNode(string $name): Node

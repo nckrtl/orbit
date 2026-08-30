@@ -39,13 +39,17 @@ final class StatusMetricsCommand extends MetricsCommand
 
         $this->table(['Field', 'Value'], $this->statusRows($response));
         if ($response->exporters !== []) {
-            $this->table(['ID', 'Node', 'Desired', 'Actual', 'Reason'], array_map(static fn (array $row): array => [
-                $row['id'],
-                $row['name'],
-                $row['desired'] ? 'yes' : 'no',
-                $row['actual'],
-                $row['reason'],
-            ], $response->exporters));
+            $this->table(['ID', 'Node', 'Desired', 'Actual', 'Reason', 'Degraded'], array_map(
+                static fn (array $row): array => [
+                    $row['id'],
+                    $row['name'],
+                    $row['desired'] ? 'yes' : 'no',
+                    $row['actual'],
+                    $row['reason'],
+                    $row['degraded_reason'] ?? '-',
+                ],
+                $response->exporters,
+            ));
         }
         $this->line("Request ID: {$response->requestId}");
 
