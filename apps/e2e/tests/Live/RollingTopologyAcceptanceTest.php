@@ -453,9 +453,9 @@ function liveAssertIncusTopology(mixed $topology, TopologyTarget $target): void
 
         $addressOutput = LiveHarness::incusExec($name, ['ip', '-4', '-o', 'addr', 'show', 'scope', 'global'])->output();
         $roleAddresses = liveGlobalIpv4Addresses($addressOutput);
-        Assert::assertCount(1, $roleAddresses);
-        Assert::assertSame(TopologyTarget::ipv4For($slot, $role), $roleAddresses[0]);
-        $addresses[] = $roleAddresses[0];
+        // Guests also carry Docker bridges and the WireGuard address; the topology NIC must be exact.
+        Assert::assertContains(TopologyTarget::ipv4For($slot, $role), $roleAddresses);
+        $addresses[] = TopologyTarget::ipv4For($slot, $role);
     }
 
     Assert::assertCount(count(TopologyProfile::ROLES), array_unique($machineIds));
