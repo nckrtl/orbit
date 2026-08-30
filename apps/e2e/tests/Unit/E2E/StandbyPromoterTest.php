@@ -18,6 +18,7 @@ use App\E2E\Value\AttemptId;
 use App\E2E\Value\AttemptPurpose;
 use App\E2E\Value\FeatureTopology;
 use App\E2E\Value\OperationId;
+use App\E2E\Value\ProofFixtures;
 use App\E2E\Value\ProofPlan;
 use App\E2E\Value\SourceState;
 use App\E2E\Value\TopologyProfile;
@@ -209,7 +210,12 @@ function fakePromotionHost(
         if (($firewall = topologyFirewallResult($command)) !== null) {
             return $firewall;
         }
+        $recorded = is_array($guestEvents) ? count($guestEvents) : 0;
         if (($batch = pinnedWorktreeBatchResult($process, $guestEvents)) !== null) {
+            foreach (array_slice((array) $guestEvents, $recorded) as $guestEvent) {
+                $events[] = 'exec:'.$guestEvent[4].':'.$guestEvent[6];
+            }
+
             return $batch;
         }
         if (($command[0] ?? null) === 'git') {
@@ -371,6 +377,9 @@ describe('StandbyPromoter', function (): void {
             ->toBeFalse();
 
         $expected = [];
+        foreach (TopologyProfile::ROLES as $role) {
+            $expected[] = 'exec:local:'.$target->instance($role).':rm';
+        }
         foreach (TopologyProfile::ROLES as $role) {
             $expected[] = 'stop:'.$target->instance($role);
         }

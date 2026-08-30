@@ -228,9 +228,11 @@ final readonly class StandbyPromoter
                 ),
             ];
         }
-        foreach ($this->host->execAll($removals) as $result) {
-            if ($result->exitCode !== 0) {
-                throw new RuntimeException('Proof fixture removal failed before promotion.');
+        foreach ($this->host->execAll($removals) as $label => $result) {
+            if (! $result->successful()) {
+                throw new RuntimeException(
+                    "Proof fixture removal failed before promotion [{$label}]: ".trim($result->stderr),
+                );
             }
         }
     }
