@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Processes\ProcessTarget;
 use App\Infrastructure\Processes\SystemdProcessRenderer;
 use App\Models\Node;
@@ -41,6 +42,8 @@ it('renders an Orbit-owned systemd unit with fixed argv and the target identity'
         ->toContain('Environment=NODE_USE_SYSTEM_CA=1')
         ->toContain('ExecStart="/usr/bin/php" "artisan" "queue:work" "--queue=high priority" "$$LITERAL" "%%n"')
         ->toContain('Restart=on-failure')
+        ->not->toContain('VITE_DEV_SERVER_CERT')
+        ->not->toContain('VITE_DEV_SERVER_KEY')
         ->not->toContain('/bin/bash')
         ->not->toContain('sh -c');
 
@@ -73,6 +76,74 @@ it('maps common restart policies to valid systemd values', function (string $pol
     'on failure' => ['on-failure', 'on-failure'],
     'always' => ['always', 'always'],
     'unless stopped' => ['unless-stopped', 'always'],
+]);
+
+it('pins derived instance and workspace Vite TLS paths after the app environment file', function (string $scope): void {
+    $process = new Process([
+        'name' => 'vite',
+        'runtime_config' => [
+            'command' => ['/usr/bin/npm', 'run', 'dev'],
+            'environment_file' => '/tmp/.env',
+            'environment' => [
+                'VITE_DEV_SERVER_CERT' => '/bad/cert.pem',
+                'VITE_DEV_SERVER_KEY' => '/bad/key.pem',
+            ],
+        ],
+        'working_directory' => '/tmp',
+        'restart_policy' => 'never',
+    ]);
+    $process->id = 8;
+    $target = new ProcessTarget(
+        node: new Node(['name' => 'dev']),
+        user: 'orbit',
+        checkoutPath: '/tmp',
+        certificateScope: $scope,
+    );
+
+    $unit = new SystemdProcessRenderer()->render(
+        $process,
+        $target,
+        new ManagedUserAccount('orbit', 'orbit', '/srv/orbit home'),
+    );
+
+    expect($unit)
+        ->toContain(
+            "Environment=VITE_DEV_SERVER_CERT=/srv/orbit\\x20home/.orbit/certificates/{$scope}/current/cert.pem",
+        )
+        ->toContain("Environment=VITE_DEV_SERVER_KEY=/srv/orbit\\x20home/.orbit/certificates/{$scope}/current/key.pem")
+        ->toContain(
+            "ExecStart=\"/usr/bin/env\" \"VITE_DEV_SERVER_CERT=/srv/orbit home/.orbit/certificates/{$scope}/current/cert.pem\" \"VITE_DEV_SERVER_KEY=/srv/orbit home/.orbit/certificates/{$scope}/current/key.pem\" \"/usr/bin/npm\" \"run\" \"dev\"",
+        )
+        ->not->toContain('/bad/cert.pem')
+        ->not->toContain('/bad/key.pem');
+})->with([
+    'instance' => ['instance-3'],
+    'workspace' => ['workspace-4'],
+]);
+
+it('rejects missing or mismatched accounts for certificate scopes', function (?ManagedUserAccount $account): void {
+    $process = new Process([
+        'name' => 'vite',
+        'runtime_config' => [
+            'command' => ['/usr/bin/npm'],
+            'environment_file' => '/tmp/.env',
+        ],
+        'working_directory' => '/tmp',
+        'restart_policy' => 'never',
+    ]);
+    $process->id = 9;
+    $target = new ProcessTarget(
+        node: new Node(['name' => 'dev']),
+        user: 'orbit',
+        checkoutPath: '/tmp',
+        certificateScope: 'instance-9',
+    );
+
+    expect(fn () => new SystemdProcessRenderer()->render($process, $target, $account))
+        ->toThrow(InvalidArgumentException::class);
+})->with([
+    'missing account' => [null],
+    'mismatched account' => [new ManagedUserAccount('other', 'orbit', '/srv/orbit')],
 ]);
 
 it('systemd-escapes accepted working and environment file paths with spaces', function (): void {

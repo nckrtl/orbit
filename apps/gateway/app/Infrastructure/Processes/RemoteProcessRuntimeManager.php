@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Processes;
 
+use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessOperationException;
 use App\Domain\Processes\ProcessRuntime;
@@ -45,6 +46,7 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
 
     public function __construct(
         private ProcessTargetResolver $targets,
+        private ManagedUserAccountResolver $accounts,
         private SshExecutor $ssh,
         private SshKeyProvider $keys,
         private KnownHostsStore $knownHosts,
@@ -426,7 +428,11 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
             ['sudo', 'install', '-m', '0644', '/dev/stdin', $candidate],
             'stage-unit',
             'process.systemd_converge_failed',
-            $this->systemd->render($process, $target),
+            $this->systemd->render(
+                $process,
+                $target,
+                $target->certificateScope === null ? null : $this->accounts->resolve($target->node),
+            ),
         );
         $validation = $this->execute(
             $process,

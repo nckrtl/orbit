@@ -354,25 +354,37 @@ it('uses an isolated app user for app-prod systemd processes', function (): void
 
     $target = $this->targets->resolve(ProcessTargetType::Instance, $this->instance->id);
 
-    expect($target->user)->toBe('orbit-docs');
+    expect($target->user)
+        ->toBe('orbit-docs')
+        ->and($target->certificateScope)
+        ->toBeNull();
 });
 
-it('uses the node managed user for app-dev instance and workspace targets', function (): void {
-    expect($this->targets->resolve(ProcessTargetType::Instance, $this->instance->id)->user)
+it('uses the node managed user and certificate scope for app-dev targets', function (): void {
+    $instanceTarget = $this->targets->resolve(ProcessTargetType::Instance, $this->instance->id);
+    $workspaceTarget = $this->targets->resolve(ProcessTargetType::Workspace, $this->workspace->id);
+
+    expect($instanceTarget->user)
         ->toBe('nckrtl')
-        ->and($this->targets->resolve(ProcessTargetType::Workspace, $this->workspace->id)->user)
+        ->and($instanceTarget->certificateScope)
+        ->toBe("instance-{$this->instance->id}")
+        ->and($workspaceTarget->user)
         ->toBe('nckrtl')
-        ->and($this->targets->forRemoval(Process::query()->create([
-            'owner_type' => Instance::class,
-            'owner_id' => $this->instance->id,
-            'name' => 'removal-target',
-            'runtime' => 'systemd',
-            'working_directory' => '/tmp',
-            'runtime_config' => ['command' => ['/bin/true']],
-            'desired_state' => 'stopped',
-            'status' => LifecycleStatus::Removing,
-        ]))->user)
-        ->toBe('nckrtl');
+        ->and($workspaceTarget->certificateScope)
+        ->toBe("workspace-{$this->workspace->id}");
+
+    $removalTarget = $this->targets->forRemoval(Process::query()->create([
+        'owner_type' => Instance::class,
+        'owner_id' => $this->instance->id,
+        'name' => 'removal-target',
+        'runtime' => 'systemd',
+        'working_directory' => '/tmp',
+        'runtime_config' => ['command' => ['/bin/true']],
+        'desired_state' => 'stopped',
+        'status' => LifecycleStatus::Removing,
+    ]));
+
+    expect($removalTarget->user)->toBe('nckrtl');
 });
 
 it('rejects workspace process targets on app-prod nodes', function (): void {
