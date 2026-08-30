@@ -175,9 +175,17 @@ or a short `sudo bash -c` argument vector.
 Known prepared-state limits (first observed on 2026-08-30, NCK-58):
 
 - A rolling refresh restores the promoted snapshots and skips provisioning, so
-  projections rendered by older Gateway code (for example PHP-FPM pools) stay
-  stale after a renderer change. Doctor reports that as drift. Re-project
-  through product commands in proof setup, or rebuild the standby cold.
+  every convergence ends with the `reproject.product-state` step (NCK-83):
+  `converge-sample-app.sh reproject` on `app-dev` runs the product's own
+  projection path (`node:role:add --converge` for every app role, then
+  `instance:php` for every instance with development instances last, because
+  the app-dev runtime converger publishes the Gateway DNS records for every
+  active site). The prepared-state allowlist tracks the projection renderers
+  and this command closure, so a renderer change invalidates the promoted
+  generation. Before that step, `converge-sample-app.sh unwrap-caddy` on
+  `app-prod` points `/etc/caddy/Caddyfile` back at the remembered managed
+  version so the product publisher can validate; `hydrate` re-wraps it and
+  remembers the newly published version.
 - `converge-sample-app.sh` replaces the product-managed `/etc/caddy/Caddyfile`
   symlink on `app-prod` with an e2e wrapper for internal TLS. The product's
   Caddy publisher then fails validation on the next publish, and Doctor's
@@ -189,7 +197,8 @@ Known prepared-state limits (first observed on 2026-08-30, NCK-58):
 
 Refresh the standby with `bin/e2e-standby refresh --main-sha=SHA` after a
 merge changes the prepared-state fingerprint. A rolling refresh restores the
-promoted snapshots, converges, and re-snapshots in about one minute.
+promoted snapshots, converges (including product re-projection), and
+re-snapshots in about two minutes.
 
 Guests are reachable from the Gateway only over WireGuard after role
 provisioning; the harness repairs cloned WireGuard endpoints through root

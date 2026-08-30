@@ -85,13 +85,6 @@ snapshot() {
 }
 
 case ${1-} in
-  reproject-instances)
-    [[ $# -eq 1 ]] || exit 64
-    "$orbit" instance:list --json | php -r '$list = json_decode(stream_get_contents(STDIN), true, 16, JSON_THROW_ON_ERROR); foreach ($list["instances"] as $instance) { printf("%d %s\n", $instance["id"], $instance["php_version"]); }' | while read -r id version; do
-      result=$("$orbit" instance:php "$id" "$version" --json)
-      printf '%s\n' "$result" | php -r '$instance = json_decode(stream_get_contents(STDIN), true, 16, JSON_THROW_ON_ERROR); if (($instance["status"] ?? null) !== "active") { fwrite(STDERR, "instance is not active after re-projection\n"); exit(1); } printf("doctor-proof: re-projected instance %d (%s) on node %d\n", $instance["id"], $instance["name"], $instance["node_id"]);'
-    done
-    ;;
   expect-healthy)
     [[ $# -eq 1 ]] || exit 64
     run_doctor

@@ -208,6 +208,7 @@ describe('TopologyConverger', function () {
             'authorize.app-dev-operator',
             'configure.app-dev-cli',
             'create.sample-resources',
+            'reproject.product-state',
             'hydrate.sample-apps',
             'normalize.permissions',
         ]);
@@ -222,7 +223,7 @@ describe('TopologyConverger', function () {
             ->all();
 
         expect($guestCommands)
-            ->toHaveCount(22)
+            ->toHaveCount(24)
             ->and(array_column(array_slice($guestCommands, 3, 3), 4))
             ->toBe([
                 'lab:orbit-e2e-nck-123-aaaaaaaa-gateway',
@@ -230,7 +231,7 @@ describe('TopologyConverger', function () {
                 'lab:orbit-e2e-nck-123-aaaaaaaa-gateway',
             ]);
 
-        expect(array_map(fn (array $command): array => array_slice($command, 6), array_slice($guestCommands, 0, 22)))
+        expect(array_map(fn (array $command): array => array_slice($command, 6), array_slice($guestCommands, 0, 24)))
             ->toBe([
                 ['/usr/local/bin/prepare-node.sh', 'align-identity'],
                 ['/usr/local/bin/prepare-node.sh', 'align-identity'],
@@ -260,6 +261,8 @@ describe('TopologyConverger', function () {
                     'app-prod',
                     str_repeat('b', 40),
                 ],
+                ['/usr/local/bin/converge-sample-app.sh', 'unwrap-caddy'],
+                ['/usr/local/bin/converge-sample-app.sh', 'reproject'],
                 ['/usr/local/bin/converge-sample-app.sh', 'hydrate', str_repeat('b', 40), 'app-dev'],
                 ['/usr/local/bin/converge-sample-app.sh', 'hydrate', str_repeat('b', 40), 'app-prod'],
                 ['/usr/local/bin/prepare-node.sh', 'permissions'],

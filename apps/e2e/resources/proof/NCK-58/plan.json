@@ -12,15 +12,6 @@
       "timeout_seconds": 180
     },
     {
-      "id": "reproject-instances",
-      "node": "app-dev",
-      "argv": [
-        "/var/lib/orbit-e2e/proof/doctor-proof.sh",
-        "reproject-instances"
-      ],
-      "timeout_seconds": 600
-    },
-    {
       "id": "baseline-healthy-report",
       "node": "app-dev",
       "argv": [

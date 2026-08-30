@@ -1236,6 +1236,89 @@ describe('convergence guest scripts', function () {
             ->toHaveCount(1);
     });
 
+    it('re-projects app roles first and every instance with development last', function () {
+        $root = temporaryPath('orbit-task7-reproject-', 6);
+        mkdir($root, 0o700, true);
+        $source = file_get_contents(dirname(__DIR__, 3).'/resources/guest/converge-sample-app.sh');
+        file_put_contents(
+            "{$root}/converge.sh",
+            str_replace('orbit=/home/orbit/orbit/apps/cli/orbit', "orbit={$root}/orbit", $source),
+        );
+        file_put_contents("{$root}/orbit", <<<'BASH'
+            #!/usr/bin/env bash
+            set -euo pipefail
+            state=$(dirname "$0")
+            printf '%s\n' "$*" >>"$state/commands"
+            case "$1" in
+              node:list) printf '{"nodes":[{"id":1,"name":"gateway","roles":["gateway","vpn"]},{"id":2,"name":"app-dev","roles":["app-dev"]},{"id":3,"name":"app-prod","roles":["app-prod"]}]}' ;;
+              node:role:add) [[ "$4" == --converge && "$5" == --json ]]; printf '{"node_id":%s,"node_name":"n","role":"%s","assignment":{"id":9,"role":"%s","status":"active"}}' "$2" "$3" "$3" ;;
+              instance:list) printf '{"instances":[{"id":1,"name":"e2e-dev","node_id":2,"environment":"development","php_version":"8.5"},{"id":2,"name":"e2e-prod","node_id":3,"environment":"production","php_version":"8.4"}]}' ;;
+              instance:php) status=active; [[ -e "$state/fail-$2" ]] && status=failed; printf '{"id":%s,"name":"i","node_id":0,"status":"%s"}' "$2" "$status" ;;
+              *) exit 70 ;;
+            esac
+            BASH);
+        chmod("{$root}/orbit", 0o700);
+
+        expect(new Process(['bash', "{$root}/converge.sh", 'reproject'])->run())->toBe(0);
+        expect(file("{$root}/commands", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES))->toBe([
+            'node:list --json',
+            'node:role:add 2 app-dev --converge --json',
+            'node:role:add 3 app-prod --converge --json',
+            'instance:list --json',
+            'instance:php 2 8.4 --json',
+            'instance:php 1 8.5 --json',
+        ]);
+
+        touch("{$root}/fail-2");
+        $failed = new Process(['bash', "{$root}/converge.sh", 'reproject']);
+        expect($failed->run())
+            ->not
+            ->toBe(0)
+            ->and($failed->getErrorOutput())
+            ->toContain('instance is not active after re-projection')
+            ->and(new Process(['bash', "{$root}/converge.sh", 'reproject', 'extra'])->run())
+            ->toBe(64);
+    });
+
+    it('points the live Caddyfile back at the remembered managed version only while the wrapper is live', function () {
+        $root = temporaryPath('orbit-task7-unwrap-', 6);
+        mkdir("{$root}/etc/caddy/orbit-versions/v1", 0o700, true);
+        mkdir("{$root}/state", 0o700, true);
+        file_put_contents("{$root}/etc/caddy/orbit-versions/v1/Caddyfile", "import fragments/*.caddy\n");
+        file_put_contents(
+            "{$root}/etc/caddy/Caddyfile.orbit-e2e",
+            "import global\nimport {$root}/etc/caddy/orbit-versions/v1/Caddyfile\n",
+        );
+        file_put_contents("{$root}/state/caddy-rendered-path", "{$root}/etc/caddy/orbit-versions/v1/Caddyfile\n");
+        $source = file_get_contents(dirname(__DIR__, 3).'/resources/guest/converge-sample-app.sh');
+        file_put_contents("{$root}/converge.sh", str_replace(
+            ['/etc/caddy', '/var/lib/orbit-e2e'],
+            ["{$root}/etc/caddy", "{$root}/state"],
+            $source,
+        ));
+
+        symlink('Caddyfile.orbit-e2e', "{$root}/etc/caddy/Caddyfile");
+        expect(new Process(['bash', "{$root}/converge.sh", 'unwrap-caddy'])->run())
+            ->toBe(0)
+            ->and(readlink("{$root}/etc/caddy/Caddyfile"))
+            ->toBe("{$root}/etc/caddy/orbit-versions/v1/Caddyfile");
+
+        expect(new Process(['bash', "{$root}/converge.sh", 'unwrap-caddy'])->run())
+            ->toBe(0)
+            ->and(readlink("{$root}/etc/caddy/Caddyfile"))
+            ->toBe("{$root}/etc/caddy/orbit-versions/v1/Caddyfile");
+
+        unlink("{$root}/etc/caddy/Caddyfile");
+        symlink('Caddyfile.orbit-e2e', "{$root}/etc/caddy/Caddyfile");
+        unlink("{$root}/state/caddy-rendered-path");
+        expect(new Process(['bash', "{$root}/converge.sh", 'unwrap-caddy'])->run())
+            ->toBe(0)
+            ->and(readlink("{$root}/etc/caddy/Caddyfile"))
+            ->toBe('Caddyfile.orbit-e2e')
+            ->and(new Process(['bash', "{$root}/converge.sh", 'unwrap-caddy', 'extra'])->run())
+            ->toBe(64);
+    });
+
     it('reuses the original rendered Caddy config without recursive imports', function () {
         $root = temporaryPath('orbit-task7-caddy-', 6);
         mkdir("{$root}/etc/caddy", 0o700, true);
@@ -1285,7 +1368,7 @@ describe('convergence guest scripts', function () {
             while [[ $# -gt 0 ]]; do [[ "$1" == --config ]] && config=$2 && shift; shift; done
             [[ -f "$config" ]]
             [[ $(grep -c '^import ' "$config") -le 2 ]]
-            grep -q 'rendered.caddy' "$config" || [[ "$config" == *orbit-e2e-global.caddy ]]
+            grep -q 'rendered' "$config" || [[ "$config" == *orbit-e2e-global.caddy ]]
             BASH);
         $caddy = str_replace('__VALIDATIONS__', "{$root}/validations", file_get_contents("{$root}/bin/caddy"));
         file_put_contents("{$root}/bin/caddy", $caddy);
@@ -1303,6 +1386,26 @@ describe('convergence guest scripts', function () {
         new Process($arguments, env: $environment)->mustRun();
         new Process($arguments, env: $environment)->mustRun();
 
+        // Re-projection publishes a new managed version behind the live symlink;
+        // hydrate remembers it, re-wraps it, and relinks the wrapper on a no-op run.
+        file_put_contents("{$root}/etc/caddy/rendered-v2.caddy", "laravel.internal { respond ok2 }\n");
+        unlink("{$root}/etc/caddy/Caddyfile");
+        symlink('rendered-v2.caddy', "{$root}/etc/caddy/Caddyfile");
+        new Process($arguments, env: $environment)->mustRun();
+        expect(trim((string) file_get_contents("{$root}/state/caddy-rendered-path")))
+            ->toBe("{$root}/etc/caddy/rendered-v2.caddy")
+            ->and(readlink("{$root}/etc/caddy/Caddyfile"))
+            ->toBe('Caddyfile.orbit-e2e')
+            ->and(file_get_contents("{$root}/etc/caddy/Caddyfile.orbit-e2e"))
+            ->toContain("import {$root}/etc/caddy/rendered-v2.caddy");
+        unlink("{$root}/etc/caddy/Caddyfile");
+        symlink('rendered-v2.caddy', "{$root}/etc/caddy/Caddyfile");
+        new Process($arguments, env: $environment)->mustRun();
+        expect(readlink("{$root}/etc/caddy/Caddyfile"))->toBe('Caddyfile.orbit-e2e');
+        unlink("{$root}/etc/caddy/Caddyfile");
+        symlink('rendered.caddy', "{$root}/etc/caddy/Caddyfile");
+        new Process($arguments, env: $environment)->mustRun();
+
         $wrapper = file_get_contents("{$root}/etc/caddy/Caddyfile.orbit-e2e");
         expect($wrapper)
             ->toContain("import {$root}/etc/caddy/rendered.caddy")
@@ -1312,9 +1415,9 @@ describe('convergence guest scripts', function () {
             ->and(file_get_contents("{$root}/etc/caddy/rendered.caddy"))
             ->toBe("laravel.internal { respond ok }\n")
             ->and(file("{$root}/validations", FILE_IGNORE_NEW_LINES))
-            ->toHaveCount(2)
+            ->toHaveCount(5)
             ->and(file("{$root}/reloads", FILE_IGNORE_NEW_LINES))
-            ->toHaveCount(1);
+            ->toHaveCount(3);
         expect(fileperms("{$root}/etc/caddy/Caddyfile.orbit-e2e") & 0o777)->toBe(0o644);
     });
     it('proves a mounted source through the mountpoint and the git pointer hash', function () {
