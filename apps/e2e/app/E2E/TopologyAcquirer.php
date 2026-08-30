@@ -261,7 +261,8 @@ final readonly class TopologyAcquirer
                 'target' => $instance,
                 'argv' => $this->redactor->redactArgv($argv),
             ]);
-            $result = $this->host->exec($instance, new GuestCommand($argv, stdin: $stdin));
+            // The argv runs as the orbit runtime user; the journal keeps it as given.
+            $result = $this->host->exec($instance, GuestCommand::asOrbitUser($argv, stdin: $stdin));
             $this->journal->append($this->commandOperation, [
                 'event' => 'topology.exec',
                 'state' => 'completed',

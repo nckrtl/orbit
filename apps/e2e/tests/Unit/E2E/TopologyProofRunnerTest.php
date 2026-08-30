@@ -26,6 +26,7 @@ use App\E2E\TopologyVerifier;
 use App\E2E\Value\AttemptId;
 use App\E2E\Value\AttemptPurpose;
 use App\E2E\Value\FeatureTopology;
+use App\E2E\Value\GuestCommand;
 use App\E2E\Value\IncusInstance;
 use App\E2E\Value\IncusNetwork;
 use App\E2E\Value\OperationId;
@@ -284,6 +285,24 @@ function proofRollback(array $targets, string $generationId, array &$mutations):
 }
 
 /**
+ * The guest argv without the `runuser` prefix of git commands or of orbit-user actions.
+ *
+ * @param list<string> $guest
+ * @return list<string>
+ */
+function proofNormalizedGuest(array $guest): array
+{
+    if (array_slice($guest, 0, count(GuestCommand::ORBIT_USER_PREFIX)) === GuestCommand::ORBIT_USER_PREFIX) {
+        return array_slice($guest, count(GuestCommand::ORBIT_USER_PREFIX));
+    }
+    if (array_slice($guest, 0, 6) === ['runuser', '-u', 'orbit', '--', 'env', 'HOME=/home/orbit']) {
+        return array_slice($guest, 6);
+    }
+
+    return $guest;
+}
+
+/**
  * Guest answers for one proof: every checkout role reports the candidate commit
  * and tree with a clean status; the acceptance command answers with JSON.
  *
@@ -296,9 +315,7 @@ function proofGuestResult(
     string $tree,
     ?Closure $override,
 ): \Illuminate\Contracts\Process\ProcessResult {
-    if (array_slice($guest, 0, 6) === ['runuser', '-u', 'orbit', '--', 'env', 'HOME=/home/orbit']) {
-        $guest = array_slice($guest, 6);
-    }
+    $guest = proofNormalizedGuest($guest);
     if ($override !== null && ($result = $override($guest)) !== null) {
         return $result;
     }
@@ -461,10 +478,7 @@ function proofGuestIndex(array $events, array $prefix): array
         if (($command[3] ?? null) !== 'exec') {
             continue;
         }
-        $guest = array_slice($command, 6);
-        if (array_slice($guest, 0, 6) === ['runuser', '-u', 'orbit', '--', 'env', 'HOME=/home/orbit']) {
-            $guest = array_slice($guest, 6);
-        }
+        $guest = proofNormalizedGuest(array_slice($command, 6));
         if (array_slice($guest, 0, count($prefix)) === $prefix) {
             $indexes[] = $index;
         }
@@ -590,8 +604,22 @@ it('proves an exact candidate on a fresh proof topology in the locked sequence',
         ->toBe('proof')
         ->and($verifyProbe[9] ?? null)
         ->toBe($candidate)
-        ->and($events[proofGuestIndex($events, ['touch', '/tmp/seeded'])[0]][4] ?? null)
-        ->toBe('local:'.$target->instance('app-dev'));
+        ->and($events[proofGuestIndex($events, ['touch', '/tmp/seeded'])[0]])
+        ->toBe([
+            'incus',
+            '--project',
+            'default',
+            'exec',
+            'local:'.$target->instance('app-dev'),
+            '--',
+            ...GuestCommand::ORBIT_USER_PREFIX,
+            'touch',
+            '/tmp/seeded',
+        ])
+        ->and(array_slice($events[proofGuestIndex($events, PROOF_ACCEPTANCE_ARGV)[0]], 6))
+        ->toBe([...GuestCommand::ORBIT_USER_PREFIX, ...PROOF_ACCEPTANCE_ARGV])
+        ->and($result->acceptanceResults[0]['argv'])
+        ->toBe(PROOF_ACCEPTANCE_ARGV);
 });
 
 it('refuses proof before any Incus mutation when the preconditions fail', function (string $case) {

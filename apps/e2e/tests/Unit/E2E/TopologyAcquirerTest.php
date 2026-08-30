@@ -132,6 +132,60 @@ it('journals successful execution with redacted argv and output without persisti
         ->not->toContain('user:pass');
 });
 
+it('runs the exact argv as the orbit runtime user and journals the argv as given', function () {
+    $repositoryRoot = preparedTopologyRepository();
+    $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));
+    featureTopologyFixture($repositoryRoot, $paths);
+    $topology = new TopologyManifestStore(new AtomicJsonStore($paths), $paths)->active('NCK-123');
+    expect($topology)->not->toBeNull();
+    $target = featureTarget('NCK-123');
+    $instance = $target->instance('app-dev');
+    $executed = [];
+    Process::fake(function (\Illuminate\Process\PendingProcess $process) use (
+        &$executed,
+        $instance,
+        $target,
+        $topology,
+    ) {
+        if (($process->command[3] ?? null) === 'list') {
+            return Process::result(topologyVmJson(
+                $instance,
+                [
+                    'user.orbit.e2e.owner' => 'orbit-e2e',
+                    'user.orbit.e2e.issue' => 'NCK-123',
+                    'user.orbit.e2e.attempt' => attemptId()->value,
+                    'user.orbit.e2e.generation' => $topology->generation->id,
+                ],
+                $target->network(),
+            ));
+        }
+        if (($process->command[3] ?? null) === 'exec') {
+            $executed[] = $process->command;
+        }
+
+        return Process::result("[]\n");
+    });
+    $journal = new OperationJournal($paths);
+    $argv = ['/home/orbit/orbit/apps/cli/orbit', 'node:list', '--json'];
+
+    taskNineAcquirer($repositoryRoot, $paths, journal: $journal)->execute('NCK-123', attemptId(), 'app-dev', $argv);
+    $entries = $journal->entries(new OperationId(str_repeat('a', 32)));
+
+    expect($executed)
+        ->toBe([[
+            'incus',
+            '--project',
+            'default',
+            'exec',
+            'local:'.$instance,
+            '--',
+            ...\App\E2E\Value\GuestCommand::ORBIT_USER_PREFIX,
+            ...$argv,
+        ]])
+        ->and($entries[0]['argv'] ?? null)
+        ->toBe($argv);
+});
+
 it('nonzero execute writes a completed topology.exec entry', function () {
     $repositoryRoot = preparedTopologyRepository();
     $paths = new StatePaths(temporaryPath('orbit-acquirer-state-', 8));

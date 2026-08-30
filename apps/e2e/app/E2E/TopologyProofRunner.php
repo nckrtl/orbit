@@ -400,7 +400,11 @@ final readonly class TopologyProofRunner
                 'argv' => $this->redactor->redactArgv($action['argv']),
             ]);
             $startedAt = $this->timestamp();
-            $result = $this->host->exec($instance, new GuestCommand($action['argv'], $action['timeout_seconds']));
+            // The declared argv runs as the orbit runtime user; the record keeps it as given.
+            $result = $this->host->exec(
+                $instance,
+                GuestCommand::asOrbitUser($action['argv'], $action['timeout_seconds']),
+            );
             $finishedAt = $this->timestamp();
             $observed = [
                 'id' => $action['id'],
