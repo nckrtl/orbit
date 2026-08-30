@@ -28,7 +28,9 @@ final readonly class MetricsConfigurationRenderer
             '/etc/orbit/metrics/grafana/grafana.ini' => $this->grafana->rootUrl(),
             '/etc/orbit/metrics/grafana/provisioning/datasources/prometheus.yml' => $this->grafana->datasource(),
             '/etc/orbit/metrics/grafana/provisioning/dashboards/provider.yml' => $this->grafana->dashboardProvider(),
-            '/etc/orbit/metrics/grafana/dashboards/orbit-node-resources.json' => $this->dashboard->render(),
+            '/etc/orbit/metrics/grafana/dashboards/orbit-node-resources.json' => $this->dashboard->render(
+                array_map(static fn (array $target): string => $target['name'], $targets),
+            ),
         ];
         $files = [];
 
