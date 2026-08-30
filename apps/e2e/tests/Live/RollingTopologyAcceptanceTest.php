@@ -150,6 +150,9 @@ it('proves the rolling topology contract through public wrappers', function (): 
             $isolationTarget->requireAttempt()->value,
         ));
         Assert::assertSame('released', $isolationRelease['state'] ?? null);
+        Assert::assertSame($isolationTarget->requireAttempt()->value, $isolationRelease['attempt_id'] ?? null);
+        Assert::assertSame('discovery', $isolationRelease['purpose'] ?? null);
+        Assert::assertSame(liveResourceNames($isolationTarget), $isolationRelease['verified_absent'] ?? null);
         $isolationAcquired = false;
 
         $manifestPath = "{$stateRoot}/topologies/{$issue}/{$target->requireAttempt()->value}.json";
@@ -160,66 +163,6 @@ it('proves the rolling topology contract through public wrappers', function (): 
             Assert::assertTrue($verified['verification']['passed'] ?? false);
             Assert::assertNotContains(false, $verified['verification']['probes'] ?? []);
         });
-
-        $overlayPath = 'apps/e2e/.live-overlay-'.$issue.'.txt';
-        $overlayFile = $featureWorktree.'/'.$overlayPath;
-        Assert::assertFileDoesNotExist($overlayFile);
-        file_put_contents($overlayFile, "harmless live overlay\n", LOCK_EX);
-        try {
-            $dirty = LiveHarness::jsonPhase('dirty source sync', fn (): array => LiveHarness::jsonWrapper(
-                'topology',
-                'sync',
-                $issue,
-                $target->requireAttempt()->value,
-                $featureWorktree,
-            ));
-            Assert::assertSame('ready', $dirty['state'] ?? null);
-            $dirtyManifest = LiveHarness::jsonFile($manifestPath);
-            Assert::assertTrue($dirtyManifest['source']['dirty'] ?? false);
-            Assert::assertSame([$overlayPath], $dirtyManifest['source']['overlay_paths'] ?? null);
-            Assert::assertMatchesRegularExpression(
-                '/\A[a-f0-9]{64}\z/D',
-                (string) ($dirtyManifest['source']['tree_hash'] ?? ''),
-            );
-            Assert::assertSame($candidateSha, $dirtyManifest['source']['host_sha'] ?? null);
-            Assert::assertSame($candidateSha, $dirtyManifest['source']['guest_sha'] ?? null);
-            Assert::assertSame($dirty['operation_id'] ?? null, $dirtyManifest['source']['operation_id'] ?? null);
-        } finally {
-            Assert::assertTrue(unlink($overlayFile));
-        }
-        Assert::assertSame([], LiveHarness::gitStatus($featureWorktree));
-
-        $clean = LiveHarness::jsonPhase('clean source sync', fn (): array => LiveHarness::jsonWrapper(
-            'topology',
-            'sync',
-            $issue,
-            $target->requireAttempt()->value,
-            $featureWorktree,
-        ));
-        $cleanManifest = LiveHarness::jsonFile($manifestPath);
-        Assert::assertSame('ready', $clean['state'] ?? null);
-        Assert::assertFalse($cleanManifest['source']['dirty'] ?? true);
-        Assert::assertNull($cleanManifest['source']['tree_hash'] ?? 'missing');
-        Assert::assertSame([], $cleanManifest['source']['overlay_paths'] ?? null);
-        Assert::assertSame($candidateSha, $cleanManifest['source']['host_sha'] ?? null);
-        Assert::assertSame($candidateSha, $cleanManifest['source']['guest_sha'] ?? null);
-
-        $proof = LiveHarness::jsonPhase('prove exact candidate', fn (): array => LiveHarness::jsonWrapper(
-            'topology',
-            'prove',
-            $issue,
-            $featureWorktree,
-            "--candidate-sha={$candidateSha}",
-        ));
-        Assert::assertSame('proved', $proof['state'] ?? null);
-        Assert::assertSame($candidateSha, $proof['candidate_sha'] ?? null);
-        Assert::assertSame(
-            LiveHarness::git($featureWorktree, ['rev-parse', '--verify', 'HEAD^{tree}']),
-            $proof['candidate_tree'] ?? null,
-        );
-        Assert::assertMatchesRegularExpression('/\A[a-f0-9]{64}\z/D', (string) ($proof['tree_hash'] ?? ''));
-        Assert::assertTrue($proof['verification']['passed'] ?? false);
-        Assert::assertSame($proof, LiveHarness::jsonFile("{$stateRoot}/proof/{$issue}.json"));
 
         LiveHarness::checkout($mainWorktree, $rollingSha);
         $rollingFingerprint = LiveHarness::jsonWrapper('standby', 'fingerprint', "--main-sha={$rollingSha}");
@@ -288,7 +231,7 @@ it('proves the rolling topology contract through public wrappers', function (): 
         foreach (array_reverse(TopologyProfile::ROLES) as $role) {
             $expectedReleased[] = 'deleted:'.$target->instance($role);
             if (in_array($role, TopologyProfile::CHECKOUT_ROLES, true)) {
-                $expectedReleased[] = 'device:'.$target->instance($role).':orbit-source';
+                $expectedReleased[] = 'device:'.$target->instance($role).':'.FeatureTopology::SOURCE_DEVICE;
             }
         }
         $expectedReleased[] = 'deleted:'.$target->network();
@@ -305,16 +248,19 @@ it('proves the rolling topology contract through public wrappers', function (): 
         Assert::assertSame('discovery', $release['purpose'] ?? null);
         Assert::assertSame($expectedReleased, $release['released'] ?? null);
         Assert::assertSame([], $release['already_absent'] ?? null);
+        Assert::assertSame(liveResourceNames($target), $release['verified_absent'] ?? null);
         Assert::assertSame(
             $release,
             LiveHarness::jsonFile("{$stateRoot}/evidence/releases/{$issue}/{$attemptId}.json"),
         );
         Assert::assertFileDoesNotExist($manifestPath);
+        Assert::assertFileDoesNotExist("{$stateRoot}/topologies/{$issue}/active.json");
         Assert::assertFileDoesNotExist("{$stateRoot}/leases/{$issue}.json");
         $repeated = LiveHarness::jsonWrapper('topology', 'release', $issue, $attemptId);
         Assert::assertSame('released', $repeated['state'] ?? null);
         Assert::assertSame([], $repeated['released'] ?? null);
         Assert::assertSame($expectedReleased, $repeated['already_absent'] ?? null);
+        Assert::assertSame(liveResourceNames($target), $repeated['verified_absent'] ?? null);
         Assert::assertSame($release['evidence_id'] ?? null, $repeated['evidence_id'] ?? null);
         Assert::assertNotSame($release['operation_id'] ?? null, $repeated['operation_id'] ?? null);
         $acquired = false;
@@ -409,6 +355,7 @@ function liveAcquiredTarget(array $acquire, string $issue): TopologyTarget
     return TopologyTarget::feature($issue, new AttemptId($attempt));
 }
 
+/** @mago-expect lint:cyclomatic-complexity The discovery manifest contract is asserted field by field. */
 function liveAssertTopology(mixed $topology, TopologyTarget $target, string $candidateSha): void
 {
     Assert::assertIsArray($topology);
@@ -425,7 +372,25 @@ function liveAssertTopology(mixed $topology, TopologyTarget $target, string $can
     Assert::assertSame($candidateSha, $topology['source']['host_sha'] ?? null);
     Assert::assertSame($candidateSha, $topology['source']['guest_sha'] ?? null);
     Assert::assertFalse($topology['source']['dirty'] ?? true);
+    Assert::assertSame('discovery', $topology['purpose'] ?? null);
+    Assert::assertTrue($topology['source']['mounted'] ?? false);
+    Assert::assertMatchesRegularExpression(
+        '/\A[a-f0-9]{64}\z/D',
+        (string) ($topology['source']['git_pointer_sha256'] ?? ''),
+    );
+    $mounts = $topology['mounts'] ?? null;
+    Assert::assertIsArray($mounts);
+    Assert::assertSame(TopologyProfile::CHECKOUT_ROLES, array_keys($mounts));
+    foreach ($mounts as $mount) {
+        Assert::assertSame(FeatureTopology::SOURCE_DEVICE, $mount['device'] ?? null);
+    }
     Assert::assertTrue($topology['verification']['passed'] ?? false);
+}
+
+/** @return list<string> */
+function liveResourceNames(TopologyTarget $target): array
+{
+    return [...array_map($target->instance(...), TopologyProfile::ROLES), $target->network()];
 }
 
 /** @mago-expect lint:cyclomatic-complexity The assertion verifies the complete live topology contract. */
