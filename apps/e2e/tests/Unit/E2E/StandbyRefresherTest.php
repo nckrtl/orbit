@@ -7,6 +7,7 @@ use App\E2E\IncusHost;
 use App\E2E\IncusNetworkLifecycle;
 use App\E2E\LaravelReleaseResolver;
 use App\E2E\PreparedStateFingerprint;
+use App\E2E\StandbyAvailability;
 use App\E2E\StandbyBuilder;
 use App\E2E\StandbyManifestStore;
 use App\E2E\StandbyRefresher;
@@ -19,6 +20,7 @@ use App\E2E\Value\LaravelRelease;
 use App\E2E\Value\OperationId;
 use App\E2E\Value\RefreshResult;
 use App\E2E\Value\StandbyGeneration;
+use App\E2E\Value\StandbyIdentity;
 use App\E2E\Value\TopologyProfile;
 use App\E2E\Value\TopologyTarget;
 use App\E2E\WorktreeSynchronizer;
@@ -63,6 +65,7 @@ function standbyRefresherForPowerTests(
             $manifests,
             $state,
             $root,
+            StandbyIdentity::primary(),
         ),
         $synchronizer,
         $converger,
@@ -74,6 +77,8 @@ function standbyRefresherForPowerTests(
         $git,
         $root,
         $operation,
+        StandbyIdentity::primary(),
+        new StandbyAvailability($host, StandbyIdentity::primary()),
         $refreshLockTimeoutSeconds,
     );
 }
@@ -722,6 +727,47 @@ function removeRefreshFixture(array $fixture): void
 }
 
 /** @mago-expect lint:cyclomatic-complexity,halstead Test cases share one contract fixture and remain independently asserted. */
+/** The host holds this checkout's standby VMs, but no snapshot the manifest names. */
+function staleManifestProcess(PendingProcess $process, ProcessFactory $real, array &$mutations): ProcessResult
+{
+    $command = $process->command;
+    assert(is_array($command), 'Incus uses argument arrays.');
+    if (($command[0] ?? null) === 'git') {
+        $path = (string) $process->path;
+
+        return ($path === '' ? $real : $real->path($path))->input($process->input)->run($command);
+    }
+    if (in_array('image', $command, true)) {
+        return Process::result(json_encode([[
+            'type' => 'virtual-machine',
+            'fingerprint' => str_repeat('b', 64),
+            'aliases' => [['name' => 'orbit-base-ubuntu-26.04-runtime']],
+        ]], JSON_THROW_ON_ERROR));
+    }
+    if (in_array('snapshot', $command, true) && in_array('list', $command, true)) {
+        return Process::result('[]');
+    }
+    if (($command[3] ?? null) === 'list') {
+        return Process::result(json_encode(
+            array_map(static fn (string $instance): array => [
+                'name' => $instance,
+                'type' => 'virtual-machine',
+                'status' => 'Stopped',
+                'status_code' => 102,
+                'config' => ['user.orbit.e2e.owner' => 'orbit-e2e'],
+                'devices' => ['root' => ['pool' => 'orbit-e2e']],
+            ], array_map(
+                TopologyTarget::standby()->instance(...),
+                TopologyProfile::ROLES,
+            )),
+            JSON_THROW_ON_ERROR,
+        ));
+    }
+    $mutations[] = implode(' ', $command);
+
+    return Process::result();
+}
+
 describe('StandbyRefresher contracts', function () {
     beforeEach(function () {
         $container = new Container;
@@ -749,6 +795,7 @@ describe('StandbyRefresher contracts', function () {
             $manifests,
             $state,
             $root,
+            StandbyIdentity::primary(),
         );
         $requestLock = new OperationLock($paths);
         $holder = new OperationLock($paths);
@@ -771,6 +818,8 @@ describe('StandbyRefresher contracts', function () {
                 $git,
                 $root,
                 new OperationId(str_repeat('a', 32)),
+                StandbyIdentity::primary(),
+                new StandbyAvailability($host, StandbyIdentity::primary()),
                 0,
             );
             $result = $refresher->request(str_repeat('b', 40));
@@ -1553,5 +1602,45 @@ describe('StandbyRefresher contracts', function () {
         );
         $refresher->restore();
         expect($state->read('standby/corrupt.json'))->toBeNull();
+    });
+    it('names a recovery command, and marks nothing corrupt, when the manifest is stale', function () {
+        $fixture = refreshFixture();
+
+        try {
+            $mutations = [];
+            $real = new ProcessFactory;
+            Process::fake(
+                fn (PendingProcess $process): ProcessResult => staleManifestProcess(
+                    $process,
+                    $real,
+                    $mutations,
+                ),
+            );
+
+            $result = standbyRefresherForPowerTests(
+                new IncusHost(pool: 'orbit-e2e'),
+                $fixture['state'],
+                $fixture['manifests'],
+                $fixture['paths'],
+                $fixture['worktree'],
+            )->request($fixture['newSha']);
+
+            expect($result->state)
+                ->toBe('failed')
+                ->and($result->error)
+                ->toContain('bin/e2e-standby rebuild')
+                ->and($result->error)
+                ->toContain('orbit-e2e-standby-gateway')
+                ->and($result->error)
+                ->toContain('old-generation is stale')
+                ->and($fixture['state']->read('standby/corrupt.json'))
+                ->toBeNull()
+                ->and($fixture['manifests']->promoted()?->id)
+                ->toBe('old-generation')
+                ->and($mutations)
+                ->toBe([]);
+        } finally {
+            removeRefreshFixture($fixture);
+        }
     });
 });

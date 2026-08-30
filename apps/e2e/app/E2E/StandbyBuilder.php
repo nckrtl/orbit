@@ -10,6 +10,7 @@ use App\E2E\Value\LaravelRelease;
 use App\E2E\Value\OperationId;
 use App\E2E\Value\PreparedFingerprint;
 use App\E2E\Value\SourceState;
+use App\E2E\Value\StandbyIdentity;
 use App\E2E\Value\TopologyProfile;
 use App\E2E\Value\TopologyTarget;
 use RuntimeException;
@@ -34,6 +35,7 @@ final readonly class StandbyBuilder
         private StandbyManifestStore $manifests,
         private AtomicJsonStore $state,
         private string $mainWorktree,
+        private StandbyIdentity $identity,
     ) {}
 
     public function build(
@@ -61,7 +63,7 @@ final readonly class StandbyBuilder
             throw new RuntimeException('The prepared fingerprint has no base image alias.');
         }
 
-        $target = TopologyTarget::standby();
+        $target = TopologyTarget::standby($this->identity);
         if ($this->host->imageFingerprint($alias) !== $baseImageFingerprint) {
             throw new RuntimeException('The base image alias fingerprint changed before cold construction.');
         }
@@ -84,7 +86,7 @@ final readonly class StandbyBuilder
                     'network' => $target->network(),
                     'role' => $role,
                     'topology' => $target->network(),
-                    'slot' => 1,
+                    'slot' => $this->identity->slot,
                     'metadata' => $resourceMetadata,
                 ];
             }
@@ -118,7 +120,7 @@ final readonly class StandbyBuilder
      */
     public function cleanupCold(OperationId $operation): bool
     {
-        $target = TopologyTarget::standby();
+        $target = TopologyTarget::standby($this->identity);
         $instanceNames = array_map($target->instance(...), TopologyProfile::ROLES);
         try {
             $instances = $this->host->instances($instanceNames);

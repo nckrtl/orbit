@@ -12,6 +12,11 @@ against real Incus resources from a validation clone: acquire, exec, release,
 prove with proofs/ACC-1.json, promote the proved topology into the clone's
 standby, acquire from that generation, release.
 
+The clone owns its own standby (ORBIT_E2E_STANDBY_NAMESPACE=live:
+orbit-e2e-live-standby-<role> on oe-live-standby), so the promote step never
+touches the standby of the repository's primary checkout and a run needs no
+manual file copy afterwards.
+
 The wrapper owns the validation clone, which is its own primary checkout:
   ORBIT_E2E_VALIDATE_ROOT  clone path (default: $HOME/orbit-validate); cloned
                            from this repository when absent
@@ -20,9 +25,11 @@ The wrapper owns the validation clone, which is its own primary checkout:
 
 It fetches the candidate, checks the clone out on `main` at the candidate,
 resets the linked worktree .worktrees/acc-1 (branch acc-1-live), bootstraps
-both, refreshes the clone's standby to the candidate, exports every
-ORBIT_LIVE_* input, and runs the suite. It refuses while any harness topology
-other than ACC-1 is live on the Incus host, releases a stale ACC-1 attempt,
+both, refreshes the clone's standby to the candidate (rebuilding it from the
+base image when the clone has no promoted generation), exports every
+ORBIT_LIVE_* input, and runs the suite. It refuses only while another
+acceptance (ACC-*) topology is live on the Incus host: feature topologies of
+other issues share nothing with this run. It releases a stale ACC-1 attempt,
 and holds <clone>/.e2e/locks/live.lock so only one run drives the clone.
 
 The run ends with one summary line to paste into the pull request:
@@ -70,6 +77,9 @@ fi
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 validate=${ORBIT_E2E_VALIDATE_ROOT:-$HOME/orbit-validate}
+# The clone is a second primary checkout on this host: it owns the `live`
+# standby, never the standby of the repository this wrapper runs from.
+export ORBIT_E2E_STANDBY_NAMESPACE=live
 incus_project=${ORBIT_E2E_INCUS_PROJECT:-default}
 incus_remote=${ORBIT_E2E_INCUS_REMOTE:-local}
 export PYTHONDONTWRITEBYTECODE=1
@@ -95,13 +105,15 @@ if [[ -e "$validate" && "$(cd "$validate" && pwd -P)" == "$(cd "$root" && pwd -P
     fail 'the validation clone must not be this repository'
 fi
 
-# The standby is one physical set of VMs: refuse while any other issue's topology is live on the host.
+# The clone has its own standby, so another issue's topology is no conflict.
+# Only another acceptance topology collides: it would race this run's own issue.
 live_issues=$(incus --project "$incus_project" list "$incus_remote:" --format json \
     | jq -r --arg issue "$issue" '[.[] | select(.config["user.orbit.e2e.owner"] == "orbit-e2e")
-        | .config["user.orbit.e2e.issue"] // empty] | unique | map(select(. != $issue)) | join(", ")') \
+        | .config["user.orbit.e2e.issue"] // empty] | unique | map(select(. != $issue))
+        | map(select(startswith("ACC-"))) | join(", ")') \
     || fail 'unable to list the harness instances on the Incus host'
 if [[ -n "$live_issues" ]]; then
-    fail "a harness topology is live on the Incus host ($live_issues); release it before running the live suite"
+    fail "an acceptance topology is live on the Incus host ($live_issues); release it before running the live suite"
 fi
 
 # Validation clone on main at the candidate.
@@ -153,17 +165,27 @@ if [[ -n "$stale" ]]; then
     harness topology release "$issue" "--worktree=$feature_worktree" >/dev/null
 fi
 
-# The clone is its own primary: its <clone>/.e2e/standby/promoted.json names the standby generation.
-standby_state=$(harness standby status | jq -r '.state')
-if [[ "$standby_state" != promoted ]]; then
-    fail "the clone's standby is $standby_state, not promoted; copy the primary's .e2e/standby/promoted.json into $validate/.e2e/standby/ once, or build it with the reviewed procedure"
+# The clone is its own primary: its <clone>/.e2e/standby/promoted.json names its own standby generation.
+standby_state=missing
+if standby_status=$(harness standby status); then
+    standby_state=$(jq -r '.state // "missing"' <<<"$standby_status")
 fi
-log "refreshing the standby to $candidate"
-refresh=$(harness standby refresh "--main-sha=$candidate") || {
-    printf '%s\n' "$refresh" >&2
-    fail "standby refresh to $candidate failed"
-}
-log "standby refresh: $(jq -r '.state' <<<"$refresh") ($(jq -r '.generation_id' <<<"$refresh"))"
+if [[ "$standby_state" == promoted ]]; then
+    log "refreshing the live standby to $candidate"
+    refresh=$(harness standby refresh "--main-sha=$candidate") || {
+        printf '%s\n' "$refresh" >&2
+        fail "standby refresh to $candidate failed"
+    }
+else
+    # No usable generation: build the clone's own standby from the base image.
+    # This is the first run after the clone stopped sharing the primary's standby.
+    log "the clone's live standby is $standby_state; rebuilding it at $candidate (cold build, several minutes)"
+    refresh=$(harness standby rebuild "--main-sha=$candidate") || {
+        printf '%s\n' "$refresh" >&2
+        fail "standby rebuild to $candidate failed"
+    }
+fi
+log "standby: $(jq -r '.state' <<<"$refresh") ($(jq -r '.generation_id' <<<"$refresh"))"
 
 export ORBIT_LIVE_INCUS=1
 export ORBIT_LIVE_PROFILE=$profile

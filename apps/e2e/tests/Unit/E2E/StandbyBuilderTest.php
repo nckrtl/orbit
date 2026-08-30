@@ -13,6 +13,7 @@ use App\E2E\TopologyVerifier;
 use App\E2E\Value\LaravelRelease;
 use App\E2E\Value\OperationId;
 use App\E2E\Value\PreparedFingerprint;
+use App\E2E\Value\StandbyIdentity;
 use App\E2E\Value\TopologyTarget;
 use App\E2E\WorktreeSynchronizer;
 use Illuminate\Container\Container;
@@ -41,6 +42,7 @@ function cold_cleanup_builder(IncusHost $host, AtomicJsonStore $state, StatePath
         new StandbyManifestStore($state, $paths, $host),
         $state,
         __DIR__,
+        StandbyIdentity::primary(),
     );
 }
 
@@ -120,6 +122,7 @@ describe('StandbyBuilder', function () {
             $manifests,
             $state,
             __DIR__,
+            StandbyIdentity::primary(),
         );
 
         expect(fn () => $builder->build(

@@ -29,7 +29,8 @@ The harness keeps no state outside the repository checkouts:
   (the lease: attempt id, purpose, operation), `topology.json` (the attempt
   record), `proof.json` (the last proof result), and `log` (one line per
   harness command). It dies with the worktree.
-- `<primary checkout>/.e2e/` (gitignored) holds `standby/promoted.json`, the
+- `<primary checkout>/.e2e/` (gitignored) holds the state of the standby that
+  checkout owns (see [Standby identity](#standby-identity)): `standby/promoted.json`, the
   recorded generations under `standby/generations/`, a `standby/corrupt.json`
   marker while recovery is required, and the host locks under `locks/`.
 - Capacity is read from `incus list`: the harness-owned VMs that exist and the
@@ -46,7 +47,8 @@ Every Incus network in the `default` project whose name starts with `oe-`
 (current harness) or `orbit-e2e-` (legacy harness) belongs to the harness. No
 such network may outlive the topology that used it: every
 `bin/e2e-topology release` ends with an orphan sweep that deletes each harness
-network with an empty `used_by`, except `oe-standby`. The sweep holds the
+network with an empty `used_by`, except a standby network (`oe-standby`,
+`oe-live-standby`). The sweep holds the
 host creation lock, so an acquisition between network creation and its first
 VM is never swept. The sweep never touches a network outside those prefixes,
 a network with users, or another Incus project. Each deleted name is reported
@@ -70,7 +72,7 @@ discovery and proof lifecycle passed live acceptance on 2026-08-30 (ADR 0006).
 | Profile ID | `gateway_app-dev_app-prod` |
 | Ordered roles | `gateway` (roles `gateway`, `vpn`), `app-dev`, `app-prod` |
 | Checkout roles | `gateway`, `app-dev` (guest path `/home/orbit/orbit`) |
-| Prepared image | Base image `orbit-base-ubuntu-26.04-runtime`; promoted standby snapshots `main-<generation-id>` on `orbit-e2e-standby-{gateway,app-dev,app-prod}` |
+| Prepared image | Base image `orbit-base-ubuntu-26.04-runtime`; promoted standby snapshots `main-<generation-id>` on `orbit-e2e-standby-{gateway,app-dev,app-prod}` (the validation clone: `orbit-e2e-live-standby-*`) |
 | Addresses | Incus `.10/.11/.12` on `oe-<issue-hash>`; WireGuard `10.44.0.1/.2/.3` |
 | Attempt purpose | `discovery` or `proof`; one active attempt per issue |
 | Proof status | `proved` or `diagnosis` |
@@ -102,6 +104,7 @@ refuse a stale promoted standby.
 | `bin/e2e-standby promote ISSUE` | Make the issue's proved topology the standby generation, then release it (see [Standby](#standby)) |
 | `bin/e2e-standby refresh --main-sha=SHA` | Fallback: refresh the standby in place when the fingerprint changed |
 | `bin/e2e-standby restore` | Restore the promoted generation and leave it stopped |
+| `bin/e2e-standby rebuild --main-sha=SHA` | Recovery: delete this checkout's standby VMs and network, forget its manifests, and cold-build the standby again (see [Stale manifests and rebuild](#stale-manifests-and-rebuild)) |
 | `bin/e2e-live SHA` | Run the feature flow once against a standby built from the exact candidate in the validation clone (see [Live acceptance suites](#live-acceptance-suites)) |
 
 `bin/worktree-remove ISSUE slug` releases the issue's live topology first when
@@ -228,9 +231,37 @@ Known prepared-state limits (first observed on 2026-08-30, NCK-58):
 
 ## Standby
 
-The standby is one physical set of stopped VMs, `orbit-e2e-standby-<role>` on
-`oe-standby`, and one promoted generation in `<primary>/.e2e/standby/promoted.json`.
-Every `acquire` and `prove` clones the promoted snapshot `main-<generation>`.
+A standby is one physical set of stopped VMs and one promoted generation in the
+owning checkout's `<primary>/.e2e/standby/promoted.json`. Every `acquire` and
+`prove` clones the promoted snapshot `main-<generation>`.
+
+### Standby identity
+
+Every checkout that acts as a primary owns its own standby. `ORBIT_E2E_STANDBY_NAMESPACE`
+names which one, and the namespace derives every physical name:
+
+| Namespace | Owner | Network | Instances | Network slot |
+| --- | --- | --- | --- | --- |
+| _(empty, default)_ | the repository's primary checkout | `oe-standby` | `orbit-e2e-standby-<role>` | 1 (`10.232.1.0/24`) |
+| `live` | the validation clone `bin/e2e-live` drives | `oe-live-standby` | `orbit-e2e-live-standby-<role>` | 200 (`10.232.200.0/24`) |
+
+Decided on 2026-08-30 for NCK-102, after a `bin/e2e-live` run promoted from the
+validation clone into the shared standby: the clone deleted the snapshots the
+primary's manifest named, and recovery needed `incus delete` of three instances
+and the network by hand. The alternative — writing the promoted generation into
+every checkout that tracks the same standby — was rejected: it makes one
+checkout write another's state, and it keeps `bin/e2e-live` serialized behind
+every other session's topology. Separate standbys make the clone's promotion
+invisible to the primary, so `bin/e2e-live` only has to refuse an `ACC-*`
+collision of its own.
+
+The namespace is an allowlist, not free text. Each standby needs a distinct
+`10.232.<slot>.0/24` subnet, so `HostCapacity` reserves the slot of every known
+standby and hands feature topologies only the rest, and it counts the VMs of
+both standbys against `ORBIT_E2E_INCUS_MAX_VMS`. Two standbys plus one feature
+topology is nine VMs, so the limit may not go below nine. The orphan network
+sweep and legacy retirement protect the network and instance names of every
+standby, not just this checkout's.
 
 After a merge, `bin/e2e-standby promote ISSUE` makes the reviewer's proved
 topology the new generation instead of rebuilding it:
@@ -256,9 +287,10 @@ topology the new generation instead of rebuilding it:
    generation and the released resources.
 
 The replaced instances take every earlier snapshot with them: after a
-promotion only the promoted generation exists on the host. Another checkout's
-manifest that named an earlier snapshot must copy the new `promoted.json` or
-run `refresh`.
+promotion only the promoted generation exists on the host. A promotion touches
+only the standby of its own namespace, so another checkout's standby is never
+affected; a manifest of the same namespace that named an earlier snapshot is
+stale and `bin/e2e-standby rebuild` recovers it.
 
 `bin/e2e-standby refresh --main-sha=SHA` is the fallback when no proved
 topology exists: it restores the promoted snapshots, converges (including
@@ -276,6 +308,23 @@ no promoted generation or standby resources exist. It never replaces a
 promoted generation. An operating-system, base-image, cold-epoch, or corrupt
 standby change requires a separate reviewed disaster-recovery procedure before
 the harness mutates Incus resources.
+
+### Stale manifests and rebuild
+
+A manifest that names snapshots or VMs the host does not hold is stale, not
+corrupt: the standby was rebuilt, or promoted from another checkout that owns
+the same namespace. `status` reports `state: stale` with a `recovery` command
+and `refresh` refuses before it mutates anything, both naming
+`bin/e2e-standby rebuild --main-sha=<sha>`. Neither writes `standby/corrupt.json`,
+and no manual `incus delete` is needed.
+
+`bin/e2e-standby rebuild --main-sha=SHA` is that recovery. It deletes this
+checkout's standby VMs, the `-next` copies a failed promotion left behind, and
+the standby network itself; it forgets every generation manifest and the
+corrupt marker; then it cold-builds the standby at `SHA` from the base image.
+It refuses to delete a VM that is not harness-owned or that still carries an
+issue's attempt metadata: release that topology first. `SHA` must be what the
+checkout's `main` holds, as for `refresh`.
 
 ## Live acceptance suites
 
@@ -308,15 +357,20 @@ feature flow against a standby built from the candidate. The wrapper:
   absent, and refuses a dirty clone; the clone is its own primary checkout,
   so its standby generation lives in `<clone>/.e2e/standby/promoted.json`
   (copy the primary's file there once);
-- refuses while any harness topology other than `ACC-1` is live on the Incus
-  host (`ORBIT_E2E_INCUS_PROJECT`, `ORBIT_E2E_INCUS_REMOTE`), and holds
-  `<clone>/.e2e/locks/live.lock` so only one run drives the clone;
+- exports `ORBIT_E2E_STANDBY_NAMESPACE=live`, so the clone owns the `live`
+  standby and the promote step never touches the primary's;
+- refuses while another acceptance (`ACC-*`) topology is live on the Incus host
+  (`ORBIT_E2E_INCUS_PROJECT`, `ORBIT_E2E_INCUS_REMOTE`) and holds
+  `<clone>/.e2e/locks/live.lock` so only one run drives the clone; a feature
+  topology of another issue shares nothing with the run and is no conflict;
 - fetches the candidate from the calling repository and runs
   `git checkout -B main <sha>` there, resets the linked worktree
   `.worktrees/acc-1` (branch `acc-1-live`) to the candidate, and runs
   `bin/bootstrap` in both;
 - releases a stale `ACC-1` attempt, then refreshes the clone's standby to the
-  candidate (`unchanged` when the fingerprint did not move);
+  candidate (`unchanged` when the fingerprint did not move), or runs
+  `bin/e2e-standby rebuild` when the clone holds no usable generation, which is
+  how the clone's own standby is built the first time;
 - exports every `ORBIT_LIVE_*` input, with `proofs/ACC-1.json` as the
   harness plan, and runs the lifecycle suite: acquire, sync, exec, release,
   prove, release, prove again, promote the proved topology into the clone's
@@ -324,7 +378,7 @@ feature flow against a standby built from the candidate. The wrapper:
 - prints one summary line for the pull request body:
   `lifecycle: passed, <assertions> assertions, <seconds> s`.
 
-The standby is shared with the primary checkout: the promote step replaces
-the standby instances, so after a run the host holds only the candidate's
-generation and the primary must copy the clone's `promoted.json` or `refresh`.
-The run takes about four minutes on a warm clone.
+The clone's standby is its own: after a run the primary's `bin/e2e-standby
+status` and `bin/e2e-topology acquire` keep working with no manual file copy.
+The run takes about four minutes on a warm clone, plus the one-time cold build
+of the clone's standby.

@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\E2E\Value\AttemptId;
 use App\E2E\Value\FeatureTopology;
 use App\E2E\Value\ProofPlan;
+use App\E2E\Value\StandbyIdentity;
 use App\E2E\Value\TopologyProfile;
 use App\E2E\Value\TopologyTarget;
 use PHPUnit\Framework\Assert;
@@ -319,14 +320,19 @@ it('proves the simple flow through public wrappers', function (): void {
             ): void {
                 Assert::assertSame($promotedStandby, LiveHarness::jsonWrapper('standby', 'status'));
                 Assert::assertSame(
-                    lifecycleInventoryWithoutStandby($initialInventory),
-                    lifecycleInventoryWithoutStandby(LiveHarness::inventoryFingerprint()),
+                    [],
+                    lifecycleUnexpectedInventoryChanges(
+                        $initialInventory,
+                        LiveHarness::inventoryFingerprint(),
+                        $issue,
+                    ),
                 );
+                $standby = lifecycleStandbyTarget();
                 foreach (TopologyProfile::ROLES as $role) {
-                    $instance = LiveHarness::incusResource('instance', TopologyTarget::standby()->instance($role));
+                    $instance = LiveHarness::incusResource('instance', $standby->instance($role));
                     Assert::assertSame('STOPPED', strtoupper((string) ($instance['status'] ?? '')));
                     Assert::assertSame(
-                        TopologyTarget::standby()->network(),
+                        $standby->network(),
                         $instance['expanded_devices']['eth0']['network'] ?? null,
                     );
                     Assert::assertArrayNotHasKey('user.orbit.e2e.issue', $instance['config'] ?? []);
@@ -530,7 +536,9 @@ function lifecycleAssertRelease(array $release, TopologyTarget $target, string $
     Assert::assertEqualsCanonicalizing($expected, $release['released'] ?? null);
     Assert::assertSame([], $release['already_absent'] ?? null);
     Assert::assertIsArray($release['networks_reaped'] ?? null);
-    Assert::assertNotContains('oe-standby', $release['networks_reaped']);
+    foreach (StandbyIdentity::known() as $standby) {
+        Assert::assertNotContains($standby->network(), $release['networks_reaped']);
+    }
     Assert::assertFileDoesNotExist("{$stateRoot}/attempt.json");
     Assert::assertFileDoesNotExist("{$stateRoot}/topology.json");
     Assert::assertSame(
@@ -576,7 +584,9 @@ function lifecycleAssertPromotion(
     $expected[] = 'deleted:'.$target->network();
     Assert::assertEqualsCanonicalizing($expected, $promote['released'] ?? null);
     Assert::assertIsArray($promote['networks_reaped'] ?? null);
-    Assert::assertNotContains('oe-standby', $promote['networks_reaped']);
+    foreach (StandbyIdentity::known() as $standby) {
+        Assert::assertNotContains($standby->network(), $promote['networks_reaped']);
+    }
     Assert::assertFileDoesNotExist("{$stateRoot}/attempt.json");
     Assert::assertFileDoesNotExist("{$stateRoot}/topology.json");
     Assert::assertSame(
@@ -588,17 +598,52 @@ function lifecycleAssertPromotion(
     return $generationId;
 }
 
-/**
- * The inventory without the standby instances, which promotion replaces.
- *
- * @param array{instances: array<string, array<string, mixed>>, networks: array<string, array<string, mixed>>} $inventory
- * @return array{instances: array<string, array<string, mixed>>, networks: array<string, array<string, mixed>>}
- */
-function lifecycleInventoryWithoutStandby(array $inventory): array
+/** The standby this checkout owns; the validation clone owns its own, not the primary's. */
+function lifecycleStandbyTarget(): TopologyTarget
 {
-    foreach (TopologyProfile::ROLES as $role) {
-        unset($inventory['instances'][TopologyTarget::standby()->instance($role)]);
+    return TopologyTarget::standby(app(StandbyIdentity::class));
+}
+
+/**
+ * Every inventory entry that changed and is this run's to account for.
+ *
+ * The run must leave the host exactly as it found it, except for its own
+ * standby instances, which promotion replaces. Resources of another issue and
+ * of a standby another checkout owns change while other sessions work; they
+ * are not this run's evidence, so they are named and skipped rather than
+ * failing the suite.
+ *
+ * @param array{instances: array<string, array<string, mixed>>, networks: array<string, array<string, mixed>>} $before
+ * @param array{instances: array<string, array<string, mixed>>, networks: array<string, array<string, mixed>>} $after
+ * @return list<string>
+ */
+function lifecycleUnexpectedInventoryChanges(array $before, array $after, string $issue): array
+{
+    $mine = app(StandbyIdentity::class);
+    $replaced = $mine->instances();
+    $foreignStandby = [];
+    foreach (StandbyIdentity::known() as $standby) {
+        if ($standby->namespace !== $mine->namespace) {
+            $foreignStandby = [...$foreignStandby, $standby->network(), ...$standby->instances()];
+        }
     }
 
-    return $inventory;
+    $unexpected = [];
+    foreach (['instances', 'networks'] as $kind) {
+        foreach (array_keys($before[$kind] + $after[$kind]) as $name) {
+            $was = $before[$kind][$name] ?? null;
+            $now = $after[$kind][$name] ?? null;
+            if ($was === $now || in_array($name, $replaced, true) || in_array($name, $foreignStandby, true)) {
+                continue;
+            }
+            $owner = ($now ?? $was)['config']['user.orbit.e2e.issue'] ?? null;
+            if (is_string($owner) && $owner !== '' && $owner !== $issue) {
+                continue;
+            }
+            $unexpected[] = $kind.':'.$name;
+        }
+    }
+    sort($unexpected, SORT_STRING);
+
+    return $unexpected;
 }
