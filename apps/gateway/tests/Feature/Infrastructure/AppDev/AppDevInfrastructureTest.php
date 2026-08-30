@@ -185,7 +185,12 @@ it('uses only generated instance paths and registered Git worktrees for source r
             'assert_recorded_parents',
             '%U:%G',
             'preflight_derived_grouping',
+            'branch=$4',
             'test "$(git -C "$instance" remote get-url origin)" = "$repository"',
+            'test "$(realpath -e "$checkout")" = "$(git -C "$checkout" rev-parse --show-toplevel)"',
+            'test "$(git -C "$checkout" remote get-url origin)" = "$repository"',
+            'test "$(git -C "$checkout" symbolic-ref --quiet --short HEAD)" = "$branch"',
+            'rev-parse --git-common-dir',
         )->and($ssh->commands[3]->input)->toContain(
             'if [ -L "$checkout" ]; then',
             'assert_recorded_parents',
@@ -426,6 +431,76 @@ it('rejects a foreign primary repository before workspace converge or removal ch
         expect($remove->succeeded())
             ->toBeFalse()
             ->and(is_dir($instanceCheckout))
+            ->toBeTrue();
+    } finally {
+        $filesystem->deleteDirectory($root);
+    }
+});
+
+it('preserves a still-registered replaced workspace checkout and fails closed', function (): void {
+    [, , $workspace] = app_dev_runtime_models();
+    [$manager, $ssh] = source_manager();
+    $manager->removeWorkspace($workspace);
+    $filesystem = new Filesystem;
+    $root = sys_get_temp_dir().'/orbit-workspace-registered-decoy-'.Str::uuid();
+    $instanceCheckout = "{$root}/apps/acme";
+    $workspaceCheckout = "{$root}/.orbit/worktrees/acme/feature";
+
+    try {
+        $filesystem->makeDirectory("{$instanceCheckout}/public", mode: 0o755, recursive: true);
+        $filesystem->put("{$instanceCheckout}/public/index.php", '<?php');
+        initialise_acl_test_repository($instanceCheckout, repository: 'git@github.com:acme/site.git');
+        add_acl_test_worktree($instanceCheckout, $workspaceCheckout, 'feature');
+        expect($filesystem->deleteDirectory($workspaceCheckout))->toBeTrue();
+        $filesystem->makeDirectory($workspaceCheckout, mode: 0o755, recursive: true);
+        $filesystem->put("{$workspaceCheckout}/KEEP", "decoy\n");
+        initialise_acl_test_repository($workspaceCheckout, repository: 'git@github.com:foreign/decoy.git');
+        expect(worktree_list_for($instanceCheckout))
+            ->toContain("worktree {$workspaceCheckout}");
+
+        $removed = run_app_dev_command_locally($ssh->commands[0], $root);
+
+        expect($removed->succeeded())
+            ->toBeFalse($removed->stderr)
+            ->and($filesystem->exists("{$workspaceCheckout}/KEEP"))
+            ->toBeTrue();
+    } finally {
+        $filesystem->deleteDirectory($root);
+    }
+});
+
+it('preserves a still-registered branch-drifted workspace checkout and fails closed', function (): void {
+    [, , $workspace] = app_dev_runtime_models();
+    [$manager, $ssh] = source_manager();
+    $manager->removeWorkspace($workspace);
+    $filesystem = new Filesystem;
+    $root = sys_get_temp_dir().'/orbit-workspace-branch-drift-'.Str::uuid();
+    $instanceCheckout = "{$root}/apps/acme";
+    $workspaceCheckout = "{$root}/.orbit/worktrees/acme/feature";
+
+    try {
+        $filesystem->makeDirectory("{$instanceCheckout}/public", mode: 0o755, recursive: true);
+        $filesystem->put("{$instanceCheckout}/public/index.php", '<?php');
+        initialise_acl_test_repository($instanceCheckout, repository: 'git@github.com:acme/site.git');
+        add_acl_test_worktree($instanceCheckout, $workspaceCheckout, 'feature');
+        $drifted = new NativeProcessRunner()->run(new ProcessInvocation([
+            'git',
+            '-C',
+            $workspaceCheckout,
+            'checkout',
+            '-b',
+            'drifted',
+        ]));
+        expect($drifted->succeeded())
+            ->toBeTrue($drifted->stderr)
+            ->and(worktree_list_for($instanceCheckout))
+            ->toContain("worktree {$workspaceCheckout}");
+
+        $removed = run_app_dev_command_locally($ssh->commands[0], $root);
+
+        expect($removed->succeeded())
+            ->toBeFalse($removed->stderr)
+            ->and(is_dir($workspaceCheckout))
             ->toBeTrue();
     } finally {
         $filesystem->deleteDirectory($root);
@@ -2244,6 +2319,40 @@ function source_manager(
         ),
         $ssh,
     ];
+}
+
+function add_acl_test_worktree(string $instanceCheckout, string $workspaceCheckout, string $branch): void
+{
+    $add = new NativeProcessRunner()->run(new ProcessInvocation([
+        'git',
+        '-C',
+        $instanceCheckout,
+        'worktree',
+        'add',
+        '-b',
+        $branch,
+        '--',
+        $workspaceCheckout,
+        'HEAD',
+    ]));
+
+    expect($add->succeeded())->toBeTrue($add->stderr);
+}
+
+function worktree_list_for(string $instanceCheckout): string
+{
+    $listed = new NativeProcessRunner()->run(new ProcessInvocation([
+        'git',
+        '-C',
+        $instanceCheckout,
+        'worktree',
+        'list',
+        '--porcelain',
+    ]));
+
+    expect($listed->succeeded())->toBeTrue($listed->stderr);
+
+    return $listed->stdout;
 }
 
 function initialise_acl_test_repository(string $path, string $repository): void

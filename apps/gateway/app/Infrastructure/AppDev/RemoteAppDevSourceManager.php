@@ -481,6 +481,7 @@ final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
                 $workspace->instance->checkout_path,
                 $repository,
                 $workspace->checkout_path,
+                $workspace->branch,
                 $account->user,
                 $account->group,
                 $account->home,
@@ -502,13 +503,14 @@ final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
                             instance=$1
                             repository=$2
                             checkout=$3
-                            managed_user=$4
-                            managed_group=$5
-                            managed_home=$6
-                            allowed_root=$7
-                            grouping_dir=$8
-                            recognized_count=$9
-                            shift 9
+                            branch=$4
+                            managed_user=$5
+                            managed_group=$6
+                            managed_home=$7
+                            allowed_root=$8
+                            grouping_dir=$9
+                            recognized_count=${10}
+                            shift 10
                             printf '%s\n' "$recognized_count" | grep -Eq '^[0-9]+$'
                             recognized_siblings=()
                             i=0
@@ -527,7 +529,19 @@ final readonly class RemoteAppDevSourceManager implements AppDevSourceManager
                         test "$(realpath -e "$instance")" = "$(git -C "$instance" rev-parse --show-toplevel)"
                         test "$(git -C "$instance" remote get-url origin)" = "$repository"
                         if [ -e "$checkout" ]; then
+                            test ! -L "$checkout"
                             test "$(stat -c '%U:%G' "$checkout")" = "$managed_user:$managed_group"
+                            test "$(realpath -e "$checkout")" = "$(git -C "$checkout" rev-parse --show-toplevel)"
+                            test "$(git -C "$checkout" remote get-url origin)" = "$repository"
+                            git_common_dir() {
+                                dir=$(git -C "$1" rev-parse --git-common-dir)
+                                case "$dir" in
+                                    /*) realpath -e "$dir" ;;
+                                    *) realpath -e "$1/$dir" ;;
+                                esac
+                            }
+                            test "$(git_common_dir "$checkout")" = "$(git_common_dir "$instance")"
+                            test "$(git -C "$checkout" symbolic-ref --quiet --short HEAD)" = "$branch"
                         fi
                         preflight_derived_grouping() {
                             if [ "$grouping_dir" = '-' ] || [ -z "$grouping_dir" ]; then

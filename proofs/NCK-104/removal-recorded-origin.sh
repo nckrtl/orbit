@@ -62,4 +62,28 @@ ln -s /missing-orbit-checkout "$checkout"
 expect_error workspace.remove_failed orbit workspace:remove "$(workspace_id nck104-identity)" --json
 test -L "$checkout"
 
-echo "removal: derived grouping gone, explicit parent kept, unsafe origin/grouping/ownership fail closed"
+orbit workspace:new "$dev_id" nck104-registered-decoy --json >/dev/null
+decoy=$(workspace_checkout nck104-registered-decoy)
+git -C /home/orbit/apps/laravel worktree list --porcelain | grep -Fx -- "worktree $decoy" \
+  || fail "registered decoy checkout is not in the instance worktree list"
+rm -rf -- "$decoy"
+mkdir -p -- "$decoy"
+git -C "$decoy" init >/dev/null
+git -C "$decoy" remote add origin git@github.com:foreign/decoy.git
+printf 'decoy\n' > "$decoy/KEEP"
+git -C /home/orbit/apps/laravel worktree list --porcelain | grep -Fx -- "worktree $decoy" \
+  || fail "replaced decoy dropped off the instance worktree list"
+expect_error workspace.remove_failed orbit workspace:remove "$(workspace_id nck104-registered-decoy)" --json
+test -f "$decoy/KEEP" || fail "still-registered replaced checkout was deleted"
+
+orbit workspace:new "$dev_id" nck104-branch-drift --json >/dev/null
+drift=$(workspace_checkout nck104-branch-drift)
+git -C /home/orbit/apps/laravel worktree list --porcelain | grep -Fx -- "worktree $drift" \
+  || fail "branch-drift checkout is not in the instance worktree list"
+git -C "$drift" checkout -b drifted >/dev/null
+expect_error workspace.remove_failed orbit workspace:remove "$(workspace_id nck104-branch-drift)" --json
+test -d "$drift" || fail "branch-drifted checkout was deleted"
+[[ "$(git -C "$drift" symbolic-ref --quiet --short HEAD)" == drifted ]] \
+  || fail "branch-drifted checkout HEAD changed"
+
+echo "removal: derived grouping gone, explicit parent kept, unsafe origin/grouping/ownership/identity fail closed"

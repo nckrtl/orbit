@@ -138,6 +138,56 @@ expect_local_error() {
     || fail "CLI syntax error reached the Gateway: $out"
 }
 
+gateway_profile_field() {
+  php -r '
+    $data = json_decode((string) file_get_contents("/home/orbit/.orbit/config.json"), true);
+    $name = is_array($data) ? ($data["active_gateway"] ?? null) : null;
+    $profile = is_string($name) && is_array($data["gateways"][$name] ?? null)
+      ? $data["gateways"][$name]
+      : [];
+    $value = $profile[$argv[1]] ?? null;
+    if (! is_string($value) || $value === "") {
+      exit(1);
+    }
+    echo $value;
+  ' -- "$1"
+}
+
+gateway_json() {
+  local method=$1
+  local url_path=$2
+  local body=$3
+  local url ca
+  url=$(gateway_profile_field url) || fail "gateway url missing"
+  ca=$(gateway_profile_field ca_path) || fail "gateway ca_path missing"
+  curl -sS --cacert "$ca" \
+    -H 'Content-Type: application/json' \
+    -H 'Accept: application/json' \
+    -X "$method" \
+    --data "$body" \
+    "${url}${url_path}"
+}
+
+expect_http_error() {
+  local code=$1
+  local method=$2
+  local url_path=$3
+  local body=$4
+  local out
+  out=$(gateway_json "$method" "$url_path" "$body")
+  [[ "$(echo "$out" | json_get error.code)" == "$code" ]] \
+    || fail "expected $code from $method $url_path: $out"
+}
+
+sql_node_exists() {
+  php -r '
+    $d = new PDO("sqlite:/home/orbit/.orbit/gateway.sqlite");
+    $statement = $d->prepare("select count(*) from nodes where name = :name");
+    $statement->execute(["name" => $argv[1]]);
+    echo (string) $statement->fetchColumn();
+  ' -- "$1"
+}
+
 restore_default_roots() {
   orbit node:settings app-dev \
     --setting=instance.path:/srv/orbit/instances \
