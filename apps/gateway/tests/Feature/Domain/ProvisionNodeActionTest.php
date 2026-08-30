@@ -1321,6 +1321,65 @@ describe(ProvisionNodeAction::class, function (): void {
             ->toBe([[ToolManagerName::Apt]]);
     });
 
+    it('rejects a populated TLD change when the app-dev assignment is not active', function (LifecycleStatus $roleStatus): void {
+        $nodeConverger = new class implements NodeConverger {
+            public int $calls = 0;
+
+            public function converge(
+                Node $node,
+                NodeProvisioningIdentity $identity,
+                ?string $expectedSshHostFingerprint = null,
+                bool $rolelessOperator = false,
+            ): void {
+                $this->calls++;
+            }
+        };
+        app()->instance(NodeConverger::class, $nodeConverger);
+        $node = provision_node_tld_change_record();
+        $node->roles()->update(['status' => $roleStatus]);
+        $app = App::query()->create([
+            'name' => 'Orbit',
+            'slug' => 'orbit',
+            'repository_url' => 'git@example.test:orbit.git',
+        ]);
+        $node->instances()->create([
+            'app_id' => $app->id,
+            'name' => 'main',
+            'environment' => 'development',
+            'checkout_path' => '/home/orbit/apps/orbit/main',
+            'hostname' => 'main.old.orbit',
+            'certificate_mode' => 'orbit-ca',
+        ]);
+        $converger = new class implements AppDevTldConverger {
+            public int $calls = 0;
+
+            public function converge(Node $node): void
+            {
+                $this->calls++;
+            }
+        };
+        app()->instance(AppDevTldConverger::class, $converger);
+
+        expect(fn () => app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
+            name: $node->name,
+            publicSshHost: $node->public_ssh_host,
+            tld: 'new.orbit',
+        )))->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)
+                ->toBe('node.tld_change_unsupported')
+                ->and($exception->status)
+                ->toBe(409);
+        });
+
+        expect($node->refresh()->tld)->toBe('old.orbit');
+        expect($node->instances()->first()->hostname)->toBe('main.old.orbit');
+        expect($nodeConverger->calls)->toBe(0);
+        expect($converger->calls)->toBe(0);
+    })->with([
+        'provisioning assignment' => LifecycleStatus::Provisioning,
+        'failed assignment' => LifecycleStatus::Failed,
+    ]);
+
     it('converges populated instances when changing an active app-dev TLD', function (): void {
         app()->instance(NodeConverger::class, new class implements NodeConverger {
             public function converge(

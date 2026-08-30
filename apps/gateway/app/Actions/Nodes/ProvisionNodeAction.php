@@ -102,6 +102,20 @@ final readonly class ProvisionNodeAction
         $convergeChangedAppDevTld = $node->exists && $previousTld !== $tld && $this->hasActiveAppDevRole($node);
 
         if (
+            $node->exists
+            && $previousTld !== $tld
+            && $this->hasAppDevRole($node, $data)
+            && ! $convergeChangedAppDevTld
+            && $node->instances()->exists()
+        ) {
+            throw new ResourceOperationException(
+                errorCode: 'node.tld_change_unsupported',
+                message: "Node [{$data->name}] cannot change TLD while app-dev is not active.",
+                status: 409,
+            );
+        }
+
+        if (
             $platform === 'linux'
             && $node->ssh_host_fingerprint === null
             && $data->expectedSshHostFingerprint === null
