@@ -1,0 +1,174 @@
+{
+  "setup": [
+    {
+      "id": "prod-caddy-managed-version",
+      "node": "app-prod",
+      "argv": [
+        "sudo",
+        "bash",
+        "-c",
+        "set -eu; live=/etc/caddy/Caddyfile; target=$(readlink -f \"$live\"); if [ \"$target\" = /etc/caddy/Caddyfile.orbit-e2e ]; then target=$(sed -n 's#^import \\(/etc/caddy/orbit-versions/[0-9a-f]\\{16\\}/Caddyfile\\)$#\\1#p' \"$target\" | tail -n 1); fi; case \"$target\" in /etc/caddy/orbit-versions/*/Caddyfile) ;; *) echo \"unexpected Caddyfile target: $target\" >&2; exit 65 ;; esac; test -f \"$target\"; fragment=$(dirname \"$target\")/fragments/00-orbit-e2e-global.caddy; printf '{\\n    local_certs\\n}\\n' > /run/orbit-e2e-global.caddy.tmp; install -m 0640 -o root -g caddy /run/orbit-e2e-global.caddy.tmp \"$fragment\"; rm -f /run/orbit-e2e-global.caddy.tmp; ln -sfn \"$target\" \"$live\"; caddy validate --config \"$live\" --adapter caddyfile >/dev/null 2>&1; systemctl reload caddy; curl --fail --silent --show-error --retry 10 --retry-delay 2 --retry-all-errors --max-time 20 --cacert \"$(cat /var/lib/orbit-e2e/caddy-ca-path)\" --resolve laravel.internal:443:127.0.0.1 https://laravel.internal/ -o /dev/null; echo \"app-prod Caddy serves the managed version $target with the e2e local CA\""
+      ],
+      "timeout_seconds": 180
+    },
+    {
+      "id": "reproject-instances",
+      "node": "app-dev",
+      "argv": [
+        "/home/orbit/orbit/apps/e2e/resources/proof/doctor-proof.sh",
+        "reproject-instances"
+      ],
+      "timeout_seconds": 600
+    },
+    {
+      "id": "baseline-healthy-report",
+      "node": "app-dev",
+      "argv": [
+        "/home/orbit/orbit/apps/e2e/resources/proof/doctor-proof.sh",
+        "expect-healthy"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "id": "inject-drift",
+      "node": "app-dev",
+      "argv": [
+        "/home/orbit/orbit/apps/e2e/resources/proof/doctor-proof.sh",
+        "inject-drift"
+      ],
+      "timeout_seconds": 120
+    },
+    {
+      "id": "inject-unverifiable",
+      "node": "app-prod",
+      "argv": [
+        "sudo",
+        "bash",
+        "-c",
+        "set -eu; f=/etc/sudoers.d/zz-orbit-doctor-proof; printf 'orbit ALL=(ALL) NOPASSWD:ALL, !/usr/sbin/ufw\\n' > \"$f.tmp\"; chmod 0440 \"$f.tmp\"; visudo -cf \"$f.tmp\" >/dev/null; mv -f \"$f.tmp\" \"$f\"; if sudo -n -u orbit sudo -n /usr/sbin/ufw status >/dev/null 2>&1; then echo 'ufw is still permitted for orbit' >&2; exit 1; fi; echo 'app-prod: orbit may no longer run ufw through sudo (role inspector must fail closed)'"
+      ],
+      "timeout_seconds": 120
+    }
+  ],
+  "acceptance": [
+    {
+      "id": "report-drift-and-unverifiable",
+      "node": "app-dev",
+      "argv": [
+        "/home/orbit/orbit/apps/e2e/resources/proof/doctor-proof.sh",
+        "expect-issues"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "id": "api-http-200-with-issues",
+      "node": "app-dev",
+      "argv": [
+        "/home/orbit/orbit/apps/e2e/resources/proof/doctor-proof.sh",
+        "expect-api",
+        "issues"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "id": "restore-drift",
+      "node": "app-dev",
+      "argv": [
+        "/home/orbit/orbit/apps/e2e/resources/proof/doctor-proof.sh",
+        "restore-drift"
+      ],
+      "timeout_seconds": 120
+    },
+    {
+      "id": "restore-unverifiable",
+      "node": "app-prod",
+      "argv": [
+        "sudo",
+        "bash",
+        "-c",
+        "set -eu; rm -f /etc/sudoers.d/zz-orbit-doctor-proof; sudo -n -u orbit sudo -n /usr/sbin/ufw status >/dev/null; echo 'app-prod: sudo access for orbit restored'"
+      ],
+      "timeout_seconds": 120
+    },
+    {
+      "id": "mutation-snapshot-gateway",
+      "node": "gateway",
+      "argv": [
+        "/home/orbit/orbit/apps/e2e/resources/proof/doctor-proof.sh",
+        "mutation-snapshot",
+        "gateway"
+      ],
+      "timeout_seconds": 120
+    },
+    {
+      "id": "mutation-snapshot-app-dev",
+      "node": "app-dev",
+      "argv": [
+        "/home/orbit/orbit/apps/e2e/resources/proof/doctor-proof.sh",
+        "mutation-snapshot",
+        "app-dev"
+      ],
+      "timeout_seconds": 120
+    },
+    {
+      "id": "report-healthy-after-recovery",
+      "node": "app-dev",
+      "argv": [
+        "/home/orbit/orbit/apps/e2e/resources/proof/doctor-proof.sh",
+        "expect-healthy"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "id": "api-http-200-healthy",
+      "node": "app-dev",
+      "argv": [
+        "/home/orbit/orbit/apps/e2e/resources/proof/doctor-proof.sh",
+        "expect-api",
+        "healthy"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "id": "mutation-compare-gateway",
+      "node": "gateway",
+      "argv": [
+        "/home/orbit/orbit/apps/e2e/resources/proof/doctor-proof.sh",
+        "mutation-compare",
+        "gateway",
+        "3"
+      ],
+      "timeout_seconds": 120
+    },
+    {
+      "id": "mutation-compare-app-dev",
+      "node": "app-dev",
+      "argv": [
+        "/home/orbit/orbit/apps/e2e/resources/proof/doctor-proof.sh",
+        "mutation-compare",
+        "app-dev",
+        "0"
+      ],
+      "timeout_seconds": 120
+    },
+    {
+      "id": "cli-exit-codes",
+      "node": "app-dev",
+      "argv": [
+        "/home/orbit/orbit/apps/e2e/resources/proof/doctor-proof.sh",
+        "exit-codes"
+      ],
+      "timeout_seconds": 600
+    },
+    {
+      "id": "architecture-coverage",
+      "node": "gateway",
+      "argv": [
+        "/home/orbit/orbit/apps/e2e/resources/proof/doctor-proof.sh",
+        "architecture-coverage"
+      ],
+      "timeout_seconds": 300
+    }
+  ],
+  "post_deployment_actions": []
+}

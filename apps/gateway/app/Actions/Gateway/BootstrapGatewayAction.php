@@ -6,6 +6,7 @@ namespace App\Actions\Gateway;
 
 use App\Actions\Nodes\AssignRoleAction;
 use App\Data\Gateway\BootstrapGatewayData;
+use App\Domain\Gateway\GatewaySelfAccessConverger;
 use App\Domain\Gateway\GatewayVpnConverger;
 use App\Domain\Gateway\GatewayWebConverger;
 use App\Domain\Nodes\NodeProvisioningException;
@@ -35,6 +36,7 @@ final readonly class BootstrapGatewayAction
         private ProtectedFileWriter $files,
         private GatewayVpnConverger $vpn,
         private GatewayWebConverger $web,
+        private GatewaySelfAccessConverger $selfAccess,
         private string $orbitHome,
     ) {}
 
@@ -80,6 +82,7 @@ final readonly class BootstrapGatewayAction
 
             $this->ensureDirectories();
             $this->ensureSshKeys();
+            $this->selfAccess->converge($node);
             $wireGuardPublicKey = $this->ensureWireGuardKeys();
             $node->update(['wireguard_public_key' => $wireGuardPublicKey]);
             $this->ensureCertificateAuthority();

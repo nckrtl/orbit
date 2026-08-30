@@ -210,7 +210,7 @@ function role_inspector_ufw(array $comments): string
     foreach ($comments as $comment) {
         $targets = match ($comment) {
             'orbit:vpn-ssh' => ['10.44.0.2 22/tcp on orbit'],
-            'orbit:gateway-https' => ['10.44.0.2 443/tcp on orbit'],
+            'orbit:gateway-https' => ['443/tcp on orbit', '443/tcp (v6) on orbit'],
             'orbit:app-dev-http' => ['10.44.0.2 80/tcp on orbit'],
             'orbit:app-dev-https' => ['10.44.0.2 443/tcp on orbit'],
             'orbit:app-dev-direct-http' => ['80/tcp', '80/tcp (v6)'],

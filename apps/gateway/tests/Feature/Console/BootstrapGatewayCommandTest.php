@@ -6,6 +6,7 @@ use App\Actions\Gateway\BootstrapGatewayAction;
 use App\Actions\Gateway\GatewayBootstrapIdentityValidator;
 use App\Actions\Gateway\GatewayOperatingSystemGuard;
 use App\Data\Gateway\BootstrapGatewayData;
+use App\Domain\Gateway\GatewaySelfAccessConverger;
 use App\Domain\Gateway\GatewayVpnConverger;
 use App\Domain\Gateway\GatewayWebConverger;
 use App\Domain\Nodes\NodeProvisioningException;
@@ -49,6 +50,9 @@ it('reports typed gateway provisioning failures without leaking command output',
         },
         web: new class implements GatewayWebConverger {
             public function converge(string $hostname, string $wireguardAddress): void {}
+        },
+        selfAccess: new class implements GatewaySelfAccessConverger {
+            public function converge(Node $node): void {}
         },
         orbitHome: $orbitHome,
     ));

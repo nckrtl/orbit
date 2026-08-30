@@ -337,6 +337,7 @@ final class RoleFirewallSshExecutor implements SshExecutor
                 'orbit:app-dev-direct-https',
                 'orbit:app-prod-http',
                 'orbit:app-prod-https',
+                'orbit:gateway-https',
             ],
             strict: true,
         )
@@ -381,7 +382,7 @@ final class RoleFirewallSshExecutor implements SshExecutor
             'orbit:app-dev-direct-https' => "[ {$number}] 443/tcp{$v6} ALLOW IN Anywhere{$v6} # {$comment}",
             'orbit:app-prod-http' => "[ {$number}] 80/tcp{$v6} ALLOW IN Anywhere{$v6} # {$comment}",
             'orbit:app-prod-https' => "[ {$number}] 443/tcp{$v6} ALLOW IN Anywhere{$v6} # {$comment}",
-            'orbit:gateway-https' => "[ {$number}] 10.44.0.2 443/tcp on orbit ALLOW IN Anywhere # {$comment}",
+            'orbit:gateway-https' => "[ {$number}] 443/tcp{$v6} on orbit ALLOW IN Anywhere{$v6} # {$comment}",
             default => throw new LogicException("Unknown test comment [{$comment}]."),
         };
     }
