@@ -17,11 +17,16 @@ it('keeps the developing skill on the nine-step flow', function () use ($read): 
         'bin/e2e-topology prove <ISSUE>',
         'git merge main',
         'Feature branches never touch `apps/e2e` or `bin/e2e-*`.',
+        '## Harness issues',
+        'bin/e2e-live <full sha>',
+        'follow **Harness issues** below',
+        '"Harness: `bin/e2e-live <sha>` passed."',
+        '`apps/e2e/tests/Feature/**` and `apps/e2e/tests/Unit/**`',
     ] as $needle) {
         expect($skill)->toContain($needle);
     }
 
-    foreach (['yaml', 'handoff', 'gpt-', 'fork_turns', 'e2e-live', 'post_deployment'] as $absent) {
+    foreach (['yaml', 'handoff', 'gpt-', 'fork_turns', 'post_deployment'] as $absent) {
         expect(strtolower($skill))->not->toContain($absent);
     }
 });
@@ -84,6 +89,7 @@ it('keeps the workflow reference aligned with the skills', function () use ($rea
         'bin/e2e-live <sha>',
         '`<worktree>/.e2e/`',
         'Feature branches never modify the harness.',
+        '`apps/e2e/tests/Feature/**` and `apps/e2e/tests/Unit/**`',
     ] as $needle) {
         expect($reference)->toContain($needle);
     }

@@ -35,8 +35,9 @@ proof), 9 (no promote).
 
 ## Harness flow
 
-Changes to the harness (`apps/e2e`, `bin/e2e-*`) are their own issues with
-`apps/e2e` in Components. No discovery topology. The proof is
+Harness code is everything under `apps/e2e` and `bin/e2e-*`, except
+`apps/e2e/tests/Feature/**` and `apps/e2e/tests/Unit/**`. Changes to it are
+their own issues with `apps/e2e` in Components. No discovery topology. The proof is
 `bin/e2e-live <sha>`: build a standby from the candidate in the validation
 clone and run the feature flow once end to end, promote included. The reviewer
 runs it too; the merge agent promotes the standby it built.
