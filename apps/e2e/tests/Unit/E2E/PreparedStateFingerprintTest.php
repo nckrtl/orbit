@@ -187,6 +187,25 @@ describe('PreparedStateFingerprint', function (): void {
                 'packages/php-sdk/src/Requests/Instances/CreateInstanceRequest.php',
                 'packages/php-sdk/src/Requests/Nodes/ShowNodeRequest.php',
                 'packages/php-sdk/src/Requests/Workspaces/CreateWorkspaceRequest.php',
+                // The standby carries a converged Metrics role, so anything that decides the
+                // bytes on those guests is prepared state: renderers, the values they render
+                // from, and the stores those values live in.
+                'apps/gateway/app/Infrastructure/Metrics/PrometheusConfigRenderer.php',
+                'apps/gateway/app/Infrastructure/Metrics/GrafanaConfigRenderer.php',
+                'apps/gateway/app/Infrastructure/Metrics/MetricsPublicationRenderer.php',
+                'apps/gateway/app/Infrastructure/Metrics/MetricsRuntimeSpec.php',
+                'apps/gateway/app/Infrastructure/Metrics/MetricsExporterRuntime.php',
+                'apps/gateway/app/Infrastructure/Nodes/Roles/MetricsRoleBaseline.php',
+                'apps/gateway/app/Domain/Metrics/ExporterSelector.php',
+                'apps/gateway/app/Domain/Metrics/ExporterPreferenceRepository.php',
+                'apps/gateway/app/Infrastructure/Metrics/NativeMetricsCredentialManager.php',
+                // Rendered onto every selected node during convergence, so its bytes are prepared state.
+                'apps/gateway/app/Infrastructure/Metrics/MetricsUninstallScript.php',
+                'apps/gateway/app/Infrastructure/Metrics/MetricsFootprint.php',
+                // The carrier of every byte written under /etc/orbit/metrics, and the
+                // resolver that decides which host the publication lands on.
+                'apps/gateway/app/Infrastructure/Metrics/ProtectedMetricsSecret.php',
+                'apps/gateway/app/Domain/Metrics/MetricsGatewayResolver.php',
             )
             ->not->toContain(
                 'apps/e2e/app/E2E/StandbyBuilder.php',
