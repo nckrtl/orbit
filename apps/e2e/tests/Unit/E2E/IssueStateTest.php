@@ -29,7 +29,7 @@ function issueStateTopology(string $issue, AttemptId $attempt): FeatureTopology
             str_repeat('d', 64),
             new LaravelRelease('v13.10.1', '5aad4ddf34d5e21dfe6b4c07eeac67d5bd5e08b0'),
             str_repeat('e', 64),
-            1,
+            2,
             'ubuntu-26.04-amd64-v1',
             'orbit-base-ubuntu-26.04-runtime',
             'gateway_app-dev_app-prod',

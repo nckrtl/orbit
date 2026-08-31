@@ -34,7 +34,7 @@ function promotedGenerationFixture(): StandbyGeneration
         str_repeat('d', 64),
         new LaravelRelease('v13.10.1', '5aad4ddf34d5e21dfe6b4c07eeac67d5bd5e08b0'),
         str_repeat('e', 64),
-        1,
+        2,
         'ubuntu-26.04-amd64-v1',
         'orbit-base-ubuntu-26.04-runtime',
         'gateway_app-dev_app-prod',
@@ -355,7 +355,7 @@ function standbyCommandFingerprintRepository(bool $changePreparedInput): array
         $path.'/resources/prepared-state.json',
         json_encode(
             [
-                'schema' => 1,
+                'schema' => 2,
                 'paths' => ['contracts/prepared.php'],
                 'cold_epoch' => 'ubuntu-26.04-amd64-v1',
                 'base_image_alias' => 'orbit-base-ubuntu-26.04-runtime',
@@ -364,6 +364,11 @@ function standbyCommandFingerprintRepository(bool $changePreparedInput): array
                     'profile' => 'gateway_app-dev_app-prod',
                     'roles' => ['gateway', 'app-dev', 'app-prod'],
                     'checkout_roles' => ['gateway', 'app-dev'],
+                    'assignments' => [
+                        'gateway' => ['gateway', 'vpn'],
+                        'app-dev' => ['app-dev', 'metrics'],
+                        'app-prod' => ['app-prod'],
+                    ],
                 ],
             ],
             JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES,

@@ -152,6 +152,7 @@ final readonly class StandbyRefresher
             $baseImageFingerprint = $promoted?->baseImageFingerprint ?? $this->host->imageFingerprint($alias);
             if (
                 $promoted !== null
+                && ! $promoted->isLegacy()
                 && $promotedStructural->value === $structural->value
                 && $promoted->preparedFingerprint === $desired->value
             ) {
@@ -213,10 +214,12 @@ final readonly class StandbyRefresher
                 $this->measure($timings, 'converge', fn () => $this->converger->converge($target, $source, $release));
             }
 
+            $requiredAssignments = $this->requiredAssignments($desired->manifest);
             $verification = $this->measure($timings, 'verify', fn () => $this->verifier->verify(
                 $target,
                 VerificationMode::Readiness,
                 $source,
+                requiredAssignments: $requiredAssignments,
             ));
             if (! $verification->passed) {
                 throw new RuntimeException('Standby verification failed.');
@@ -224,7 +227,12 @@ final readonly class StandbyRefresher
             $proof = $this->measure(
                 $timings,
                 'proof',
-                fn () => $this->verifier->verify($target, VerificationMode::Proof, $source),
+                fn () => $this->verifier->verify(
+                    $target,
+                    VerificationMode::Proof,
+                    $source,
+                    requiredAssignments: $requiredAssignments,
+                ),
             );
             if (! $proof->passed) {
                 throw new RuntimeException('Standby proof verification failed.');
@@ -270,6 +278,42 @@ final readonly class StandbyRefresher
 
             return new RefreshResult('failed', $operation->value, $promoted?->id, $error);
         }
+    }
+
+    /** @param array<array-key, mixed> $manifest
+     * @return array<string, list<string>>
+     */
+    private function requiredAssignments(array $manifest): array
+    {
+        $topology = $manifest['topology'] ?? null;
+        $assignments = is_array($topology) ? $topology['assignments'] ?? null : null;
+        if (! is_array($assignments) || array_is_list($assignments)) {
+            throw new RuntimeException('The prepared fingerprint manifest has an invalid assignment declaration.');
+        }
+
+        $requiredAssignments = [];
+        foreach ($assignments as $node => $roles) {
+            if (! is_string($node) || ! is_array($roles) || ! array_is_list($roles)) {
+                throw new RuntimeException('The prepared fingerprint manifest has an invalid assignment declaration.');
+            }
+
+            $requiredRoles = [];
+            foreach ($roles as $role) {
+                if (! is_string($role)) {
+                    throw new RuntimeException(
+                        'The prepared fingerprint manifest has an invalid assignment declaration.',
+                    );
+                }
+                $requiredRoles[] = $role;
+            }
+            $requiredAssignments[$node] = $requiredRoles;
+        }
+
+        if (serialize($requiredAssignments) !== serialize(TopologyProfile::ASSIGNMENTS)) {
+            throw new RuntimeException('The prepared fingerprint manifest has an invalid assignment declaration.');
+        }
+
+        return $requiredAssignments;
     }
 
     /**
@@ -391,6 +435,7 @@ final readonly class StandbyRefresher
             || ! is_string($manifest['topology']['profile'])
             || ! is_array($manifest['topology']['roles'])
             || ! is_array($manifest['topology']['checkout_roles'])
+            || ! is_array($manifest['topology']['assignments'])
             || ! array_all($manifest['topology']['roles'], static fn (mixed $value, string|int $key): bool => is_string(
                 $value,
             ))
@@ -405,6 +450,8 @@ final readonly class StandbyRefresher
         $topologyRoles = array_values($manifest['topology']['roles']);
         /** @var list<string> $checkoutRoles */
         $checkoutRoles = array_values($manifest['topology']['checkout_roles']);
+        /** @var array<string, list<string>> $assignments */
+        $assignments = $manifest['topology']['assignments'];
 
         return new StandbyGeneration(
             $id,
@@ -421,6 +468,7 @@ final readonly class StandbyRefresher
             $topologyRoles,
             $checkoutRoles,
             $previousGenerationId,
+            $assignments,
         );
     }
 

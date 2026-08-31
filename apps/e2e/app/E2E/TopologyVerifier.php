@@ -98,8 +98,13 @@ final readonly class TopologyVerifier
         VerificationMode $mode,
         SourceState $source,
         ?TopologyEndState $endState = null,
+        array $requiredAssignments = TopologyProfile::ASSIGNMENTS,
     ): VerificationReport {
         $declared = $endState ?? TopologyEndState::complete();
+        $assignments = array_intersect_key($requiredAssignments, array_flip($declared->nodes));
+        if (array_keys($assignments) !== $declared->nodes) {
+            throw new InvalidArgumentException('The required topology assignment map is incomplete.');
+        }
         $probes = self::probesFor($declared);
         $instances = [];
         foreach (TopologyProfile::ROLES as $role) {
@@ -133,9 +138,8 @@ final readonly class TopologyVerifier
                 if ($name === 'wireguard.reachability') {
                     // The registry names the nodes by role; a declared-absent node is not among them.
                     array_push($arguments, ...$declared->peers());
-                } elseif ($name === 'role.assignments' && $declared->declaresAbsence()) {
-                    // Only a declaration adds the argument, so an undeclared proof runs the probe unchanged.
-                    $arguments[] = implode(',', $declared->nodes);
+                } elseif ($name === 'role.assignments') {
+                    $arguments[] = base64_encode(json_encode($assignments, JSON_THROW_ON_ERROR));
                 } elseif ($name === 'source.manifest') {
                     $arguments[] = $source->treeHash ?? '-';
                     $arguments[] = base64_encode(

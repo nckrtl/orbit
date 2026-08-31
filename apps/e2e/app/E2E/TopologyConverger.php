@@ -119,6 +119,8 @@ final readonly class TopologyConverger
             $laravel->commit,
         ]);
         $steps['create.sample-resources'] = true;
+        $this->run($instances['app-dev'], 'converge-sample-app.sh', ['metrics']);
+        $steps['converge.metrics'] = true;
         // Rolling refreshes restore snapshots and skip provisioning, so the
         // product must re-render every projection from the checked-out code.
         // The app-prod internal-TLS fragment lands inside the managed Caddy

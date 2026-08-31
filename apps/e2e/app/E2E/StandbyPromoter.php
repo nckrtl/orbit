@@ -19,6 +19,7 @@ use App\E2E\Value\StandbyIdentity;
 use App\E2E\Value\TopologyProfile;
 use App\E2E\Value\TopologyRequest;
 use App\E2E\Value\TopologyTarget;
+use App\E2E\Value\VerificationMode;
 use RuntimeException;
 use Throwable;
 
@@ -50,6 +51,7 @@ final readonly class StandbyPromoter
     public function __construct(
         private IncusHost $host,
         private PreparedStateFingerprint $fingerprints,
+        private TopologyVerifier $verifier,
         private StandbyManifestStore $manifests,
         private TopologyReleaser $releaser,
         private OperationLock $lock,
@@ -69,7 +71,21 @@ final readonly class StandbyPromoter
         $promoted = $this->manifests->promoted() ?? throw new RuntimeException(
             'There is no promoted standby generation to replace; build the standby first.',
         );
+        if ($promoted->isLegacy() || $topology->generation->isLegacy()) {
+            throw new RuntimeException('A legacy standby generation cannot be promoted. Refresh it first.');
+        }
         $generation = $this->nextGeneration($candidate, $topology, $promoted);
+        $verification = $this->verifier->verify(
+            $topology->target,
+            VerificationMode::Proof,
+            $topology->source,
+            requiredAssignments: $generation->topologyAssignments ?? throw new RuntimeException(
+                'The candidate generation has no assignment declaration.',
+            ),
+        );
+        if (! $verification->passed) {
+            throw new RuntimeException('The candidate topology does not satisfy its required assignments.');
+        }
 
         if (! $this->lock->acquire('standby-refresh', $this->operation, timeoutSeconds: 3600)) {
             throw new RuntimeException('Unable to acquire the standby refresh lock.');
@@ -183,6 +199,7 @@ final readonly class StandbyPromoter
             || ! is_string($manifest['topology']['profile'] ?? null)
             || ! is_array($manifest['topology']['roles'] ?? null)
             || ! is_array($manifest['topology']['checkout_roles'] ?? null)
+            || ! is_array($manifest['topology']['assignments'] ?? null)
         ) {
             throw new RuntimeException('The prepared fingerprint manifest has an invalid topology shape.');
         }
@@ -193,6 +210,8 @@ final readonly class StandbyPromoter
         $roles = array_values(array_map(strval(...), $manifest['topology']['roles']));
         /** @var list<string> $checkoutRoles */
         $checkoutRoles = array_values(array_map(strval(...), $manifest['topology']['checkout_roles']));
+        /** @var array<string, list<string>> $assignments */
+        $assignments = $manifest['topology']['assignments'];
 
         return new StandbyGeneration(
             $id,
@@ -209,6 +228,7 @@ final readonly class StandbyPromoter
             $roles,
             $checkoutRoles,
             $previous,
+            $assignments,
         );
     }
 

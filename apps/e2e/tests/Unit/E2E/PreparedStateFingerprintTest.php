@@ -47,7 +47,7 @@ describe('PreparedStateFingerprint', function (): void {
     it('canonicalizes prepared input while preserving the exact topology role order', function (): void {
         file_put_contents($this->path.'/contracts/a.php', "contract\n");
         writePreparedManifest($this->path, [
-            'schema' => 1,
+            'schema' => 2,
             'paths' => ['contracts/*.php'],
             'cold_epoch' => 'ubuntu-26.04-amd64-v1',
             'base_image_alias' => 'orbit-base-ubuntu-26.04-runtime',
@@ -56,6 +56,11 @@ describe('PreparedStateFingerprint', function (): void {
                 'roles' => ['gateway', 'app-dev', 'app-prod'],
                 'profile' => 'gateway_app-dev_app-prod',
                 'checkout_roles' => ['gateway', 'app-dev'],
+                'assignments' => [
+                    'gateway' => ['gateway', 'vpn'],
+                    'app-dev' => ['app-dev', 'metrics'],
+                    'app-prod' => ['app-prod'],
+                ],
             ],
         ]);
         fingerprintGit($this->path, ['add', '.']);
@@ -67,12 +72,17 @@ describe('PreparedStateFingerprint', function (): void {
                 'checkout_roles' => ['gateway', 'app-dev'],
                 'profile' => 'gateway_app-dev_app-prod',
                 'roles' => ['gateway', 'app-dev', 'app-prod'],
+                'assignments' => [
+                    'gateway' => ['gateway', 'vpn'],
+                    'app-dev' => ['app-dev', 'metrics'],
+                    'app-prod' => ['app-prod'],
+                ],
             ],
             'declared_epochs' => ['base_image' => 2, 'php' => 1],
             'base_image_alias' => 'orbit-base-ubuntu-26.04-runtime',
             'cold_epoch' => 'ubuntu-26.04-amd64-v1',
             'paths' => ['contracts/*.php'],
-            'schema' => 1,
+            'schema' => 2,
         ]);
         fingerprintGit($this->path, ['add', '.']);
         fingerprintGit($this->path, ['commit', '--quiet', '-m', 'second']);
@@ -96,7 +106,13 @@ describe('PreparedStateFingerprint', function (): void {
             ->and($fingerprints->forCommit($second)->manifest['topology']['roles'])
             ->toBe(['gateway', 'app-dev', 'app-prod'])
             ->and($fingerprints->forCommit($second)->manifest['topology']['checkout_roles'])
-            ->toBe(['gateway', 'app-dev']);
+            ->toBe(['gateway', 'app-dev'])
+            ->and($fingerprints->forCommit($second)->manifest['topology']['assignments'])
+            ->toBe([
+                'gateway' => ['gateway', 'vpn'],
+                'app-dev' => ['app-dev', 'metrics'],
+                'app-prod' => ['app-prod'],
+            ]);
     });
 
     it('adds the exact resolved Laravel pin only to a final fingerprint', function (): void {
@@ -144,6 +160,33 @@ describe('PreparedStateFingerprint', function (): void {
         'reordered roles' => [['topology' => ['roles' => ['app-dev', 'gateway', 'app-prod']]]],
         'invalid checkout roles' => [['topology' => ['checkout_roles' => ['gateway', 'app-prod']]]],
         'reordered checkout roles' => [['topology' => ['checkout_roles' => ['app-dev', 'gateway']]]],
+        'missing Metrics assignment' => [[
+            'topology' => [
+                'assignments' => [
+                    'gateway' => ['gateway', 'vpn'],
+                    'app-dev' => ['app-dev', 'vpn'],
+                    'app-prod' => ['app-prod'],
+                ],
+            ],
+        ]],
+        'misplaced Metrics assignment' => [[
+            'topology' => [
+                'assignments' => [
+                    'gateway' => ['gateway', 'vpn', 'metrics'],
+                    'app-dev' => ['app-dev'],
+                    'app-prod' => ['app-prod'],
+                ],
+            ],
+        ]],
+        'reordered assignment roles' => [[
+            'topology' => [
+                'assignments' => [
+                    'gateway' => ['vpn', 'gateway'],
+                    'app-dev' => ['app-dev', 'metrics'],
+                    'app-prod' => ['app-prod'],
+                ],
+            ],
+        ]],
         'invalid path type' => [['paths' => [42]]],
     ]);
 
@@ -227,6 +270,10 @@ describe('PreparedStateFingerprint', function (): void {
             'apps/gateway/app/Actions/Nodes/ProvisionNodeAction.php',
             'apps/gateway/app/Data/Nodes/ProvisionNodeData.php',
             'packages/php-sdk/src/Requests/Instances/CreateInstanceRequest.php',
+            'apps/cli/app/Commands/Metrics/StatusMetricsCommand.php',
+            'packages/php-sdk/src/Responses/Metrics/MetricsStatusResponse.php',
+            'apps/gateway/app/Infrastructure/Metrics/NativeMetricsStatusReader.php',
+            'apps/gateway/app/Infrastructure/Metrics/NativeMetricsRoleManager.php',
         ];
         foreach ($inputs as $input) {
             putFingerprintFixtureFile($this->path, $input, "v1\n");
@@ -372,7 +419,7 @@ function putFingerprintFixtureFile(string $root, string $path, string $contents)
 function preparedManifest(): array
 {
     return [
-        'schema' => 1,
+        'schema' => 2,
         'paths' => ['contracts/*.php'],
         'cold_epoch' => 'ubuntu-26.04-amd64-v1',
         'base_image_alias' => 'orbit-base-ubuntu-26.04-runtime',
@@ -381,6 +428,11 @@ function preparedManifest(): array
             'profile' => 'gateway_app-dev_app-prod',
             'roles' => ['gateway', 'app-dev', 'app-prod'],
             'checkout_roles' => ['gateway', 'app-dev'],
+            'assignments' => [
+                'gateway' => ['gateway', 'vpn'],
+                'app-dev' => ['app-dev', 'metrics'],
+                'app-prod' => ['app-prod'],
+            ],
         ],
     ];
 }

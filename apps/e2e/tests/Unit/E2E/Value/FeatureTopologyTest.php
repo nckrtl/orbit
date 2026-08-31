@@ -35,7 +35,7 @@ function mountedTopologyFixture(bool $mounted = true, ?array $mounts = null): Fe
             str_repeat('d', 64),
             new LaravelRelease('v13.10.1', str_repeat('e', 40)),
             str_repeat('f', 64),
-            1,
+            2,
             'ubuntu-26.04-amd64-v1',
             'orbit-base-ubuntu-26.04-runtime',
             TopologyProfile::NAME,

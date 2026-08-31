@@ -92,7 +92,14 @@ final readonly class TopologyAcquirer
             $this->networks->reconcile($topology->target->network());
             $this->guests->assertSourceMounted($topology->target);
             $source = $this->synchronizer->syncWorkingTree($topology->target, $request->worktree);
-            $verification = $this->verifier->verify($topology->target, VerificationMode::Readiness, $source);
+            $verification = $this->verifier->verify(
+                $topology->target,
+                VerificationMode::Readiness,
+                $source,
+                requiredAssignments: $topology->generation->topologyAssignments ?? throw new RuntimeException(
+                    'The pinned generation has no assignment declaration.',
+                ),
+            );
             if (! $verification->passed) {
                 throw new RuntimeException('Feature topology verification failed.'.$verification->failedSummary());
             }
@@ -115,7 +122,14 @@ final readonly class TopologyAcquirer
             if ($topology->source->mounted) {
                 $this->guests->assertSourceMounted($topology->target);
             }
-            $report = $this->verifier->verify($topology->target, VerificationMode::Readiness, $topology->source);
+            $report = $this->verifier->verify(
+                $topology->target,
+                VerificationMode::Readiness,
+                $topology->source,
+                requiredAssignments: $topology->generation->topologyAssignments ?? throw new RuntimeException(
+                    'The pinned generation has no assignment declaration.',
+                ),
+            );
             if (! $report->passed) {
                 throw new RuntimeException('Feature topology verification failed.'.$report->failedSummary());
             }
@@ -186,7 +200,14 @@ final readonly class TopologyAcquirer
             $this->guests->exposeOrbitCli($target);
             $this->guests->repairCloneIdentity($target);
             $source = $this->synchronizer->syncWorkingTree($target, $request->worktree);
-            $verification = $this->verifier->verify($target, VerificationMode::Readiness, $source);
+            $verification = $this->verifier->verify(
+                $target,
+                VerificationMode::Readiness,
+                $source,
+                requiredAssignments: $generation->topologyAssignments ?? throw new RuntimeException(
+                    'The pinned generation has no assignment declaration.',
+                ),
+            );
             if (! $verification->passed) {
                 throw new RuntimeException(
                     'Feature topology readiness verification failed.'.$verification->failedSummary(),
@@ -333,6 +354,9 @@ final readonly class TopologyAcquirer
         $generation = $this->standby->promoted() ?? throw new RuntimeException(
             'No promoted standby generation is available.',
         );
+        if ($generation->isLegacy()) {
+            throw new RuntimeException('The promoted standby generation is legacy; refresh it before acquisition.');
+        }
         $expectedId = substr($generation->mainSha, 0, 12).'-'.substr($generation->preparedFingerprint, 0, 12);
         if ($generation->id !== $expectedId) {
             throw new RuntimeException('The promoted standby fingerprint is stale or corrupt.');

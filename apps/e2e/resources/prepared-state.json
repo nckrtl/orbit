@@ -1,5 +1,5 @@
 {
-    "schema": 1,
+    "schema": 2,
     "paths": [
         "apps/cli/app/Commands/Apps/CreateAppCommand.php",
         "apps/cli/app/Commands/Apps/ListAppsCommand.php",
@@ -8,6 +8,9 @@
         "apps/cli/app/Commands/Instances/CreateInstanceCommand.php",
         "apps/cli/app/Commands/Instances/ListInstancesCommand.php",
         "apps/cli/app/Commands/Instances/UpdateInstancePhpCommand.php",
+        "apps/cli/app/Commands/Metrics/EnableMetricsCommand.php",
+        "apps/cli/app/Commands/Metrics/MetricsCommand.php",
+        "apps/cli/app/Commands/Metrics/StatusMetricsCommand.php",
         "apps/cli/app/Commands/Nodes/AddNodeRoleCommand.php",
         "apps/cli/app/Commands/Nodes/ListNodesCommand.php",
         "apps/cli/app/Commands/Nodes/NodeOutput.php",
@@ -60,6 +63,10 @@
         "apps/gateway/app/Data/Gateway/BootstrapGatewayData.php",
         "apps/gateway/app/Data/Instances/CreateInstanceData.php",
         "apps/gateway/app/Data/Instances/InstanceData.php",
+        "apps/gateway/app/Data/Metrics/MetricsAssignmentData.php",
+        "apps/gateway/app/Data/Metrics/MetricsExporterData.php",
+        "apps/gateway/app/Data/Metrics/MetricsMutationData.php",
+        "apps/gateway/app/Data/Metrics/MetricsStatusData.php",
         "apps/gateway/app/Data/Nodes/NodeAccessData.php",
         "apps/gateway/app/Data/Nodes/NodeData.php",
         "apps/gateway/app/Data/Nodes/ProvisionNodeData.php",
@@ -91,10 +98,25 @@
         "apps/gateway/app/Domain/Gateway/GatewayVpnConverger.php",
         "apps/gateway/app/Domain/Gateway/GatewayWebConverger.php",
         "apps/gateway/app/Domain/Instances/CertificateMode.php",
+        "apps/gateway/app/Domain/Metrics/ExporterDegradationReason.php",
+        "apps/gateway/app/Domain/Metrics/ExporterDegradationRepository.php",
         "apps/gateway/app/Domain/Metrics/ExporterPreference.php",
         "apps/gateway/app/Domain/Metrics/ExporterPreferenceRepository.php",
+        "apps/gateway/app/Domain/Metrics/ExporterSelection.php",
+        "apps/gateway/app/Domain/Metrics/ExporterSelectionReason.php",
         "apps/gateway/app/Domain/Metrics/ExporterSelector.php",
+        "apps/gateway/app/Domain/Metrics/MetricsCredentialManager.php",
+        "apps/gateway/app/Domain/Metrics/MetricsCredentialRuntime.php",
+        "apps/gateway/app/Domain/Metrics/MetricsExporterLifecycle.php",
+        "apps/gateway/app/Domain/Metrics/MetricsFleetReconciler.php",
         "apps/gateway/app/Domain/Metrics/MetricsGatewayResolver.php",
+        "apps/gateway/app/Domain/Metrics/MetricsPublication.php",
+        "apps/gateway/app/Domain/Metrics/MetricsPublicationCleanup.php",
+        "apps/gateway/app/Domain/Metrics/MetricsPublicationManager.php",
+        "apps/gateway/app/Domain/Metrics/MetricsPublicationReport.php",
+        "apps/gateway/app/Domain/Metrics/MetricsRoleManager.php",
+        "apps/gateway/app/Domain/Metrics/MetricsRuntimeLifecycle.php",
+        "apps/gateway/app/Domain/Metrics/MetricsStatusReader.php",
         "apps/gateway/app/Domain/Nodes/ManagedUserAccount.php",
         "apps/gateway/app/Domain/Nodes/ManagedUserAccountResolver.php",
         "apps/gateway/app/Domain/Nodes/NodeAccessAuthorizer.php",
@@ -134,6 +156,7 @@
         "apps/gateway/app/Http/Authorization/ServingNodeResolver.php",
         "apps/gateway/app/Http/Controllers/Api/AppsController.php",
         "apps/gateway/app/Http/Controllers/Api/InstancesController.php",
+        "apps/gateway/app/Http/Controllers/Api/MetricsController.php",
         "apps/gateway/app/Http/Controllers/Api/NodesController.php",
         "apps/gateway/app/Http/Controllers/Api/RootCaCertificatesController.php",
         "apps/gateway/app/Http/Controllers/Api/WorkspacesController.php",
@@ -144,6 +167,7 @@
         "apps/gateway/app/Http/Middleware/RequireNodeAccess.php",
         "apps/gateway/app/Http/Requests/Apps/StoreAppRequest.php",
         "apps/gateway/app/Http/Requests/Instances/StoreInstanceRequest.php",
+        "apps/gateway/app/Http/Requests/Metrics/EnableMetricsRequest.php",
         "apps/gateway/app/Http/Requests/Nodes/ProvisionNodeRequest.php",
         "apps/gateway/app/Http/Requests/TopLevelJsonObjectInspector.php",
         "apps/gateway/app/Http/Requests/Workspaces/StoreWorkspaceRequest.php",
@@ -204,14 +228,17 @@
         "apps/gateway/app/Infrastructure/Metrics/MetricsCertificatePublisher.php",
         "apps/gateway/app/Infrastructure/Metrics/MetricsConfigurationBundle.php",
         "apps/gateway/app/Infrastructure/Metrics/MetricsConfigurationRenderer.php",
+        "apps/gateway/app/Infrastructure/Metrics/MetricsConfigurationSnapshot.php",
         "apps/gateway/app/Infrastructure/Metrics/MetricsContainerSpec.php",
         "apps/gateway/app/Infrastructure/Metrics/MetricsExporterRuntime.php",
         "apps/gateway/app/Infrastructure/Metrics/MetricsExporterSshExecutor.php",
+        "apps/gateway/app/Infrastructure/Metrics/MetricsExporterState.php",
         "apps/gateway/app/Infrastructure/Metrics/MetricsFootprint.php",
         "apps/gateway/app/Infrastructure/Metrics/MetricsGeneratedFile.php",
         "apps/gateway/app/Infrastructure/Metrics/MetricsPublicationManager.php",
         "apps/gateway/app/Infrastructure/Metrics/MetricsPublicationRenderer.php",
         "apps/gateway/app/Infrastructure/Metrics/MetricsPublicationSshExecutor.php",
+        "apps/gateway/app/Infrastructure/Metrics/MetricsRuntimeHost.php",
         "apps/gateway/app/Infrastructure/Metrics/MetricsRuntimeSpec.php",
         "apps/gateway/app/Infrastructure/Metrics/MetricsService.php",
         "apps/gateway/app/Infrastructure/Metrics/MetricsSshExecutor.php",
@@ -220,6 +247,8 @@
         "apps/gateway/app/Infrastructure/Metrics/NativeMetricsCredentialManager.php",
         "apps/gateway/app/Infrastructure/Metrics/NativeMetricsExporterLifecycle.php",
         "apps/gateway/app/Infrastructure/Metrics/NativeMetricsFleetReconciler.php",
+        "apps/gateway/app/Infrastructure/Metrics/NativeMetricsRoleManager.php",
+        "apps/gateway/app/Infrastructure/Metrics/NativeMetricsStatusReader.php",
         "apps/gateway/app/Infrastructure/Metrics/NodeResourcesDashboardRenderer.php",
         "apps/gateway/app/Infrastructure/Metrics/PrometheusConfigRenderer.php",
         "apps/gateway/app/Infrastructure/Metrics/ProtectedMetricsSecret.php",
@@ -317,6 +346,8 @@
         "packages/php-sdk/src/Requests/Instances/CreateInstanceRequest.php",
         "packages/php-sdk/src/Requests/Instances/ListInstancesRequest.php",
         "packages/php-sdk/src/Requests/Instances/UpdateInstancePhpRequest.php",
+        "packages/php-sdk/src/Requests/Metrics/EnableMetricsRequest.php",
+        "packages/php-sdk/src/Requests/Metrics/ShowMetricsStatusRequest.php",
         "packages/php-sdk/src/Requests/Nodes/AddNodeRoleRequest.php",
         "packages/php-sdk/src/Requests/Nodes/ListNodesRequest.php",
         "packages/php-sdk/src/Requests/Nodes/ShowNodeRequest.php",
@@ -326,6 +357,8 @@
         "packages/php-sdk/src/Responses/Apps/AppsResponse.php",
         "packages/php-sdk/src/Responses/Instances/InstanceResponse.php",
         "packages/php-sdk/src/Responses/Instances/InstancesResponse.php",
+        "packages/php-sdk/src/Responses/Metrics/MetricsMutationResponse.php",
+        "packages/php-sdk/src/Responses/Metrics/MetricsStatusResponse.php",
         "packages/php-sdk/src/Responses/Nodes/NodeResponse.php",
         "packages/php-sdk/src/Responses/Nodes/NodeRoleAssignmentResponse.php",
         "packages/php-sdk/src/Responses/Nodes/NodeRoleMutationResponse.php",
@@ -356,6 +389,19 @@
         "checkout_roles": [
             "gateway",
             "app-dev"
-        ]
+        ],
+        "assignments": {
+            "gateway": [
+                "gateway",
+                "vpn"
+            ],
+            "app-dev": [
+                "app-dev",
+                "metrics"
+            ],
+            "app-prod": [
+                "app-prod"
+            ]
+        }
     }
 }

@@ -204,6 +204,7 @@ final class AppServiceProvider extends ServiceProvider
         $this->app->singleton(StandbyPromoter::class, fn (Application $app): StandbyPromoter => new StandbyPromoter(
             $app->make(IncusHost::class),
             $app->make(PreparedStateFingerprint::class),
+            $app->make(TopologyVerifier::class),
             $app->make(StandbyManifestStore::class),
             $app->make(TopologyReleaser::class),
             $app->make(OperationLock::class),
