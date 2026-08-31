@@ -39,3 +39,9 @@ Use the next four-digit number and a short kebab-case name:
 ```
 
 Each ADR must contain `Status`, `Context`, `Decision`, and `Consequences`.
+
+Current delivery-workflow decisions:
+
+- [ADR 0007: Use the nine-step feature flow](0007-nine-step-feature-flow.md)
+- [ADR 0010: Record decisions before implementation issues](0010-record-decisions-before-implementation-issues.md)
+- [ADR 0011: Separate issue refinement from active delivery](0011-linear-lifecycle-states.md)

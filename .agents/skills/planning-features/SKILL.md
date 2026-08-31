@@ -10,7 +10,8 @@ files, Git history, Linear, or GitHub.
 
 ## Inputs
 
-- The Linear issue has status `Todo` and is ready for implementation.
+- The Linear issue has status `In Progress`; Tom verified that transition
+  before starting or resuming preflight.
 - Its bootstrapped worktree.
 - The prepared `<worktree>/.orbit/plan.md` with `Verdict: PENDING`.
 

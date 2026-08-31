@@ -3,8 +3,9 @@
 Every change to Orbit follows one short flow. A Linear issue defines it, a
 fresh planner maps implementation before coding, one agent implements it in a
 worktree, a reviewer re-proves it, and a merge agent merges and cleans up.
-Governed by [ADR 0007](../decisions/0007-nine-step-feature-flow.md) and
-[ADR 0010](../decisions/0010-record-decisions-before-implementation-issues.md).
+Governed by [ADR 0007](../decisions/0007-nine-step-feature-flow.md),
+[ADR 0010](../decisions/0010-record-decisions-before-implementation-issues.md),
+and [ADR 0011](../decisions/0011-linear-lifecycle-states.md).
 
 ## Decision and issue refinement
 
@@ -25,24 +26,34 @@ one available proof action.
 
 Dependencies must be explicit and acyclic and represent only real
 prerequisites. Start a compatibility bridge when the current product and its
-verifier cannot safely hard-cutover first. Put all independent roots whose
-prerequisites are already on `main` in `Todo` together. Keep dependents in
-`Backlog`; after a prerequisite merges, recheck the dependent issue against
-the new `main` before admitting it to `Todo`.
+verifier cannot safely hard-cutover first. Put every fully refined issue in
+`Todo`; a dependent remains in that ordered queue but is ineligible until all
+of its prerequisites are `Done` and present on current `origin/main`.
 
-`Backlog` means the issue is recorded but is not ready. `Todo` means the
-implementation contract is complete, proof-feasible, and claimable. `Blocked`
-is reserved for claimed work that cannot continue. Issue creation always sets
-`Backlog` or `Todo` explicitly. This refinement shapes Linear work but does not
-create `.orbit/plan.md`; that temporary implementation map begins after claim.
+`Backlog` means the issue is rough and still needs refinement. `Todo` is the
+ordered queue of refined, proof-feasible issues. `In Progress` begins before
+Tom creates or resumes any worktree, Herdr worker, or preflight turn. `Blocked`
+parks started work and retains its artifacts without consuming execution
+concurrency. `In Review` begins before independent PR review. Issue creation
+always sets `Backlog` or `Todo` explicitly. Refinement does not create
+`.orbit/plan.md`; that temporary implementation map begins after claim.
+
+Execution concurrency is the live number of `In Progress` plus `In Review`
+issues, with a maximum of three. When capacity exists, Tom scans Todo in its
+established order, skips every issue with a prerequisite not yet `Done` on
+current `origin/main`, and selects the first eligible issue.
 
 ## Feature flow
 
 1. **Issue.** Linear: explicit state, outcome, readiness when backlogged,
    scope, acceptance criteria, components, governing ADRs, real dependencies,
    and `Proof: incus` when a real machine is needed.
-   A Linear issue with status `Todo` is ready for implementation. See [creating-issues](../../.agents/skills/creating-issues/SKILL.md).
-2. **Worktree and preflight.** `bin/worktree-create <ISSUE> slug` creates and
+   A Linear issue with status `Todo` is refined and queued; it is eligible only
+   when every declared prerequisite is `Done` on current `origin/main`. See
+   [creating-issues](../../.agents/skills/creating-issues/SKILL.md).
+2. **Claim, worktree, and preflight.** Tom moves the selected issue to
+   `In Progress` and reads it back before doing anything in Herdr.
+   `bin/worktree-create <ISSUE> slug` creates and
    bootstraps the worktree and initializes gitignored `.orbit/plan.md`. A fresh
    planner follows [planning-features](../../.agents/skills/planning-features/SKILL.md),
    mapping every criterion to code boundaries and focused proof without
@@ -50,14 +61,24 @@ create `.orbit/plan.md`; that temporary implementation map begins after claim.
    [reviewing-feature-plans](../../.agents/skills/reviewing-feature-plans/SKILL.md)
    and records `PASS`, `FIX`, or `BLOCK`. Every `FIX` starts a fresh correction
    planner and then a fresh independent reviewer. Repeat until `PASS` or
-   `BLOCK`; only `BLOCK` stops preflight. Issue → In Progress only after `PASS`.
-   `PASS` is the normal result. `FIX` means the issue remains implementable but
-   its temporary plan needs correction, so it stays `Todo`. `BLOCK` means the issue was not ready; move claimed work to `Blocked`, repair the issue or
-   dependency graph, return it to `Todo`, and start a fresh preflight. The
-   reviewer must recommend the smallest safe contract, scope, dependency, or
-   harness change, with its supporting evidence and required decision owner. Tom records the blocker and recommendation in a
-   Linear comment when moving claimed work to `Blocked`. Unless `main` drifted
-   after refinement, a block is an issue-creation failure.
+   `BLOCK`; only `BLOCK` stops preflight. `PASS` is the normal result and
+   continues into implementation while the issue stays `In Progress`. `FIX` means the issue remains implementable but only its temporary plan needs
+   correction; keep it `In Progress`. `BLOCK` moves the issue to `Blocked` and parks
+   its worktree, Herdr workspace, branch, and plan without consuming execution
+   concurrency. The
+   reviewer must include a recommended resolution: the smallest safe contract,
+   scope, dependency, or harness change, its supporting evidence, and the
+   required decision owner. Tom is routing only: he moves the issue to
+   `Blocked`, parks its assets, and records the reviewer findings, required
+   owner/action, retained artifacts, and restart condition in a Linear comment.
+   Tom must not choose or approve a recommendation, refine or edit the issue
+   contract or relations, or move `Blocked` back to `Todo`. Nick and Anna own blocker resolution;
+   Anna applies the approved issue, ADR, or dependency
+   changes and moves the resolved issue from `Blocked` to `Todo`. Unless `main`
+   drifted after refinement, a block is an issue-creation failure. On
+   re-selection Tom moves it to `In Progress`, reuses its retained assets,
+   synchronizes current `origin/main`, and starts a wholly fresh planner and
+   preflight review before implementation resumes.
 3. **Fresh topology.** `bin/e2e-topology acquire <ISSUE> <worktree>`: three VMs
    cloned from the standby snapshot (~20 s), worktree mounted at
    `/home/orbit/orbit` on `gateway` and `app-dev`.
@@ -73,11 +94,13 @@ create `.orbit/plan.md`; that temporary implementation map begins after claim.
    commit, full convergence; every acceptance action exits 0.
 7. **Pull request.** Short and human: what changed, "Proved with
    `proofs/<ISSUE>.json` at `<sha>`".
-8. **Review.** A fresh reviewer merges `main`, re-proves with the same plan,
+8. **Review.** Tom moves the issue to `In Review` and reads it back before a
+   fresh reviewer merges `main`, re-proves with the same plan,
    reads the code, and reports all blocking findings in one pass. Findings must
    identify a defect against the issue, ADR, existing invariant/test, or repo
    rule. New requirements become separate Linear work. Approval is exactly
-   `Approved.` and the proved topology stays alive.
+   `Approved.` and the proved topology stays alive. Actionable findings move
+   the issue back to `In Progress` before the retained implementer resumes.
 9. **Merge.** `gh pr merge --merge`; `bin/e2e-standby promote <ISSUE>` makes
    the reviewer's topology the standby generation (fallback `refresh`);
    `bin/worktree-remove <ISSUE> slug` releases and deletes; close the issue.

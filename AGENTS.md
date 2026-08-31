@@ -29,24 +29,29 @@ preflight → fresh topology → get it right → codify → prove fresh → pul
 
 Rules that hold everywhere:
 
-- `Backlog` records work that is not ready. `Todo` means the complete,
-  proof-feasible implementation contract is claimable. `Blocked` is for
-  claimed work that cannot continue. Issue creation sets `Backlog` or `Todo`
-  explicitly. A Linear issue with status `Todo` is ready for implementation.
+- `Backlog` records rough work that still needs refinement. `Todo` is the
+  ordered queue of refined, proof-feasible issues. Tom selects only an eligible
+  `Todo`, moves it to `In Progress`, verifies the transition, and only then
+  starts or resumes its worktree, Herdr workspace, and preflight. A dependency
+  that is not `Done` makes a Todo issue temporarily ineligible.
 - Every governing ADR is accepted on `origin/main` before implementation
   issues are derived; a feature PR never introduces or changes an ADR.
 - Before admitting any issue to `Todo`, refine its complete issue set against
   current `main`: inspect relevant product and harness code, close product and
-  proof decisions, make the dependency graph acyclic, and admit every
-  independent ready root in parallel. Dependents remain in `Backlog` until
-  their real prerequisites merge and are rechecked.
+  proof decisions, and make the dependency graph explicit and acyclic.
+  Refined dependents may wait in `Todo`; Tom skips them until every prerequisite
+  is `Done` and present on current `origin/main`.
 - Implementation does not begin until `.orbit/plan.md` has `Verdict: PASS`.
   Every `FIX` starts a fresh correction planner and then a fresh independent
   reviewer. Repeat until `PASS` or `BLOCK`; only `BLOCK` stops preflight.
-- `PASS` is expected for a correctly refined issue. `FIX` corrects the
-  temporary implementation map while the issue remains `Todo`. `BLOCK` means
-  the issue was not ready; move claimed work to `Blocked`, repair its contract
-  or dependencies, return it to `Todo`, and start fresh preflight.
+- `PASS` is expected for a correctly refined issue. `PASS` and `FIX` keep the
+  active issue `In Progress`; `FIX` corrects the temporary implementation map.
+  `BLOCK` parks the retained worktree and Herdr assets, moves the issue to
+  `Blocked`, and requires a Linear comment with the blocker, evidence,
+  resolution owner, retained assets, and restart condition. `Blocked` does not
+  consume the three-slot execution limit. After resolution it returns to
+  `Todo`; on re-selection Tom synchronizes current `origin/main` and starts a
+  wholly fresh preflight before implementation resumes.
 - One implementer owns the complete feature and its corrections. It may use
   bounded subagents, but there is no agent-per-increment requirement.
 - Feature branches never modify the harness (`apps/e2e`, `bin/e2e-*`).

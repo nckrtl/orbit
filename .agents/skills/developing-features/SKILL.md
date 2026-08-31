@@ -13,7 +13,7 @@ merge, and cleanup belong to other agents.
 
 Require all of:
 
-- the Linear issue has status `Todo` and is ready for implementation;
+- the Linear issue has status `In Progress`;
 - a bootstrapped worktree under `.worktrees/<issue>-<slug>` on a branch from
   `main`;
 - `<worktree>/.orbit/plan.md` with `Verdict: PASS`.
