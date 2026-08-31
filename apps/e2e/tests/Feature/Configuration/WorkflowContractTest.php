@@ -44,7 +44,8 @@ it('keeps feature preflight lightweight and independently reviewed', function ()
         '`FIX`',
         '`BLOCK`',
         'Collect every blocking finding',
-        'one fresh correction',
+        'fresh correction',
+        'Repeat with fresh agents until',
         'Never approve a plan you authored.',
     ] as $needle) {
         expect($reviewer)->toContain($needle);
@@ -140,7 +141,8 @@ it('keeps the workflow reference aligned with the skills', function () use ($rea
         '## Harness flow',
         'Linear `Todo` as its Ready-equivalent',
         'Worktree and preflight',
-        'at most one fresh planner correction',
+        'Every `FIX` starts a fresh correction',
+        'Repeat until `PASS` or',
         'same implementer',
         'bin/e2e-topology shell NCK-123 <role>',
         'bin/e2e-standby promote NCK-123',
@@ -200,7 +202,7 @@ it('amends ADR 0007 without restoring the discarded machinery', function () use 
     foreach ([
         'Amended on 2026-08-31',
         'one gitignored `.orbit/plan.md`',
-        'One `FIX` correction cycle is allowed',
+        'Every `FIX` starts a fresh correction planner',
         'there is no nested feature orchestrator',
         'New requirements become separate work.',
     ] as $needle) {

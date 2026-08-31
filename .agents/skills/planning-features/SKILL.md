@@ -36,7 +36,7 @@ Leave `Verdict: PENDING`. The independent reviewer owns the verdict.
 
 ## Corrections
 
-When correcting one `FIX`, read the review findings already in the plan, update
+When correcting a `FIX`, read the review findings already in the plan, update
 the implementation content, clear resolved findings, and leave
 `Verdict: PENDING`. Do not widen the issue.
 A new requirement belongs in a separate Linear issue.

@@ -39,8 +39,8 @@ promote. Harness changes are covered under Ownership.
 2. Worktree from `main` plus one gitignored `.orbit/plan.md`. A fresh planner
    maps criteria to code boundaries, implementation order, invariants, and
    focused proof. A fresh independent reviewer records `PASS`, `FIX`, or
-   `BLOCK`. One `FIX` correction cycle is allowed; implementation starts only
-   on `PASS`.
+   `BLOCK`. Every `FIX` starts a fresh correction planner and a fresh reviewer;
+   repeat until `PASS` or `BLOCK`. Implementation starts only on `PASS`.
 3. Fresh topology from the standby snapshot, worktree mounted.
 4. One implementer gets it right on the topology (`shell`, edit, run), following
    the approved order. Bounded subagents are optional; per-increment agents and

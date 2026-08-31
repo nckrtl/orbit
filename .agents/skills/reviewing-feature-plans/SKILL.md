@@ -28,8 +28,9 @@ Update only the verdict metadata and reviewer-findings section in
 `.orbit/plan.md`:
 
 - `PASS`: implementation may start; findings must be empty.
-- `FIX`: list concrete, in-scope corrections. Tom may run one fresh correction
-  planner and one fresh reviewer pass only.
+- `FIX`: list concrete, in-scope corrections. Tom starts a fresh correction
+  planner and then a fresh independent reviewer. Repeat with fresh agents until
+  `PASS` or `BLOCK`.
 - `BLOCK`: state the exact missing requirement, conflict, or product decision;
   implementation must not start.
 

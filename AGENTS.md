@@ -33,8 +33,8 @@ Rules that hold everywhere:
 - Every governing ADR is on `main` before implementation starts; a feature
   PR never introduces or changes an ADR.
 - Implementation does not begin until `.orbit/plan.md` has `Verdict: PASS`.
-  Tom may run one fresh planner correction and one fresh reviewer pass after a
-  `FIX`; another `FIX` or any `BLOCK` returns the issue for clarification.
+  Every `FIX` starts a fresh correction planner and then a fresh independent
+  reviewer. Repeat until `PASS` or `BLOCK`; only `BLOCK` stops preflight.
 - One implementer owns the complete feature and its corrections. It may use
   bounded subagents, but there is no agent-per-increment requirement.
 - Feature branches never modify the harness (`apps/e2e`, `bin/e2e-*`).

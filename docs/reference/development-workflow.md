@@ -16,10 +16,9 @@ Governed by [ADR 0007](../decisions/0007-nine-step-feature-flow.md).
    mapping every criterion to code boundaries and focused proof without
    changing code. A fresh independent reviewer follows
    [reviewing-feature-plans](../../.agents/skills/reviewing-feature-plans/SKILL.md)
-   and records `PASS`, `FIX`, or `BLOCK`. Tom allows at most one fresh planner correction
-   plus one fresh reviewer pass after `FIX`; another `FIX` or any
-   `BLOCK` returns the issue for clarification. Issue → In Progress only after
-   `PASS`.
+   and records `PASS`, `FIX`, or `BLOCK`. Every `FIX` starts a fresh correction
+   planner and then a fresh independent reviewer. Repeat until `PASS` or
+   `BLOCK`; only `BLOCK` stops preflight. Issue → In Progress only after `PASS`.
 3. **Fresh topology.** `bin/e2e-topology acquire NCK-123 <worktree>`: three VMs
    cloned from the standby snapshot (~20 s), worktree mounted at
    `/home/orbit/orbit` on `gateway` and `app-dev`.
