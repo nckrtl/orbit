@@ -6,10 +6,58 @@ $root = dirname(__DIR__, 5);
 
 $read = static fn (string $relative): string => (string) file_get_contents($root.'/'.$relative);
 
-it('keeps the developing skill on the nine-step flow', function () use ($read): void {
+it('initializes one gitignored preflight plan with each worktree', function () use ($read): void {
+    $script = $read('bin/worktree-create');
+    $ignore = $read('.gitignore');
+
+    foreach ([
+        'initialize_preflight',
+        'mkdir -p "$worktree/.orbit"',
+        '# Feature preflight',
+        'Verdict: PENDING',
+        'Review round: 0',
+        '## Acceptance map',
+        '## Implementation order',
+        '## Reviewer findings',
+    ] as $needle) {
+        expect($script)->toContain($needle);
+    }
+
+    expect($ignore)->toContain('/.orbit/');
+});
+
+it('keeps feature preflight lightweight and independently reviewed', function () use ($read): void {
+    $planner = $read('.agents/skills/planning-features/SKILL.md');
+    $reviewer = $read('.agents/skills/reviewing-feature-plans/SKILL.md');
+
+    foreach ([
+        '.orbit/plan.md',
+        'Leave `Verdict: PENDING`',
+        'Do not create separate slice files',
+        'A new requirement belongs in a separate Linear issue.',
+    ] as $needle) {
+        expect($planner)->toContain($needle);
+    }
+
+    foreach ([
+        '`PASS`',
+        '`FIX`',
+        '`BLOCK`',
+        'Collect every blocking finding',
+        'one fresh correction',
+        'Never approve a plan you authored.',
+    ] as $needle) {
+        expect($reviewer)->toContain($needle);
+    }
+});
+
+it('requires a passed preflight before one implementer starts', function () use ($read): void {
     $skill = $read('.agents/skills/developing-features/SKILL.md');
 
     foreach ([
+        '.orbit/plan.md` with `Verdict: PASS`',
+        'single implementer',
+        'approved implementation order',
         'bin/e2e-topology acquire <ISSUE> <worktree>',
         'bin/e2e-topology shell <ISSUE> <role>',
         'proofs/<ISSUE>.json',
@@ -19,7 +67,7 @@ it('keeps the developing skill on the nine-step flow', function () use ($read): 
         'Feature branches never touch `apps/e2e` or `bin/e2e-*`.',
         '## Harness issues',
         '## Delegation',
-        'You are the orchestrator for the issue.',
+        'Do not assign one agent per plan increment',
         'bin/e2e-live <full sha>',
         'follow **Harness issues** below',
         '"Harness: `bin/e2e-live <sha>` passed."',
@@ -33,7 +81,7 @@ it('keeps the developing skill on the nine-step flow', function () use ($read): 
     }
 });
 
-it('keeps the reviewing skill on re-proving', function () use ($read): void {
+it('keeps pull request review bounded and on re-proving', function () use ($read): void {
     $skill = $read('.agents/skills/reviewing-pull-requests/SKILL.md');
 
     foreach ([
@@ -42,6 +90,9 @@ it('keeps the reviewing skill on re-proving', function () use ($read): void {
         'bin/e2e-live <sha>',
         'exactly `Approved.`',
         'topology alive for the merge agent',
+        'Collect all blocking findings',
+        'A genuinely new requirement becomes separate Linear work',
+        'Do not drip known findings across rounds.',
     ] as $needle) {
         expect($skill)->toContain($needle);
     }
@@ -85,10 +136,15 @@ it('keeps the workflow reference aligned with the skills', function () use ($rea
 
     foreach ([
         '## Feature flow',
+        '## Correction loop',
         '## Harness flow',
+        'Worktree and preflight',
+        'at most one fresh planner correction',
+        'same implementer',
         'bin/e2e-topology shell NCK-123 <role>',
         'bin/e2e-standby promote NCK-123',
         'bin/e2e-live <sha>',
+        '`<worktree>/.orbit/plan.md`',
         '`<worktree>/.e2e/`',
         'Feature branches never modify the harness.',
         '`apps/e2e/tests/Feature/**` and `apps/e2e/tests/Unit/**`',
@@ -97,16 +153,22 @@ it('keeps the workflow reference aligned with the skills', function () use ($rea
         expect($reference)->toContain($needle);
     }
 
-    expect($reference)->not->toContain('14-step');
+    foreach (['per-slice', 'generated archive', 'review-import'] as $absent) {
+        expect(strtolower($reference))->not->toContain($absent);
+    }
 });
 
-it('keeps the root guidance and the issue skill on the nine-step flow', function () use ($read): void {
+it('keeps the root guidance and the issue skill on the tightened flow', function () use ($read): void {
     $agents = $read('AGENTS.md');
     $issues = $read('.agents/skills/creating-issues/SKILL.md');
 
     foreach ([
         'docs/reference/development-workflow.md',
+        '.agents/skills/planning-features',
+        '.agents/skills/reviewing-feature-plans',
         '.agents/skills/developing-features',
+        'Verdict: PASS',
+        'One implementer owns the complete feature',
         'Feature branches never modify the harness',
         'proofs/<ISSUE>.json',
     ] as $needle) {
@@ -121,5 +183,28 @@ it('keeps the root guidance and the issue skill on the nine-step flow', function
         foreach (['14-step', 'Compound', 'post_deployment', 'Composition', 'project manager'] as $absent) {
             expect($document)->not->toContain($absent);
         }
+    }
+});
+
+it('amends ADR 0007 without restoring the discarded machinery', function () use ($read): void {
+    $adr = $read('docs/decisions/0007-nine-step-feature-flow.md');
+
+    foreach ([
+        'Amended on 2026-08-31',
+        'one gitignored `.orbit/plan.md`',
+        'One `FIX` correction cycle is allowed',
+        'there is no nested feature orchestrator',
+        'New requirements become separate work.',
+    ] as $needle) {
+        expect($adr)->toContain($needle);
+    }
+
+    foreach ([
+        'per-increment state files',
+        'mandatory per-increment commits',
+        'review-import tooling',
+        'generated run archives',
+    ] as $needle) {
+        expect($adr)->toContain($needle);
     }
 });

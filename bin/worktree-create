@@ -7,6 +7,58 @@ usage() {
     exit 2
 }
 
+initialize_preflight() {
+    local worktree="$1"
+    local linear_id="$2"
+    local plan="$worktree/.orbit/plan.md"
+
+    mkdir -p "$worktree/.orbit"
+
+    if [[ -e "$plan" ]]; then
+        return
+    fi
+
+    cat > "$plan" <<EOF
+# Feature preflight
+
+Issue: $linear_id
+Verdict: PENDING
+Review round: 0
+
+## Outcome
+
+## Code boundaries
+
+In scope:
+-
+
+Out of scope:
+-
+
+## Acceptance map
+
+| Criterion | Code boundary | Focused proof |
+| --- | --- | --- |
+| | | |
+
+## Implementation order
+
+1.
+
+## Must preserve
+
+-
+
+## Open questions
+
+-
+
+## Reviewer findings
+
+-
+EOF
+}
+
 [[ $# -eq 2 ]] || usage
 
 linear_id="$1"
@@ -47,6 +99,7 @@ if git worktree list --porcelain | grep -Fxq "worktree $worktree"; then
         exit 1
     fi
 
+    initialize_preflight "$worktree" "$linear_id"
     "$worktree/bin/bootstrap"
     printf '%s\n' "$worktree"
     exit 0
@@ -67,5 +120,6 @@ else
     git worktree add -b "$branch" "$worktree" origin/main
 fi
 
+initialize_preflight "$worktree" "$linear_id"
 "$worktree/bin/bootstrap"
 printf '%s\n' "$worktree"

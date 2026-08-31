@@ -1,24 +1,32 @@
 ---
 name: developing-features
-description: Use when implementing a Ready Orbit Linear issue from its worktree.
+description: Use when implementing a preflight-approved Orbit Linear issue from its worktree.
 ---
 
 # Developing Features
 
-You implement one Linear issue in its worktree and open a pull request.
-Issue state, the worktree, review, merge, and cleanup belong to other agents.
+You are the single implementer for one Linear issue. Implement it in its
+worktree and open a pull request. Issue state, preflight orchestration, review,
+merge, and cleanup belong to other agents.
 
 ## Inputs
 
-The Linear issue (Ready, unchanged contract) and a bootstrapped worktree under
-`.worktrees/<issue>-<slug>` on a branch from `main`. Stop and say so if either
-is missing.
+Require all of:
+
+- the unchanged Ready Linear issue;
+- a bootstrapped worktree under `.worktrees/<issue>-<slug>` on a branch from
+  `main`;
+- `<worktree>/.orbit/plan.md` with `Verdict: PASS`.
+
+Stop and say so if any input is missing, the plan has unresolved reviewer
+findings, or the plan contradicts the issue or a governing ADR. Follow the
+approved implementation order without widening scope.
 
 ## Steps
 
-1. **Read the issue.** Outcome, scope, acceptance criteria, components, ADR.
-   If it changes harness code, follow **Harness issues** below. If it has no
-   `Proof: incus` line, do steps 5 and 7 only.
+1. **Read the contract.** Read the issue, approved preflight, acceptance map,
+   components, and ADR. If it changes harness code, follow **Harness issues** below.
+   If it has no `Proof: incus` line, do steps 5 and 7 only.
 2. **Fresh topology.** `bin/e2e-topology acquire <ISSUE> <worktree>`. Three VMs
    from the standby snapshot; the worktree is mounted at `/home/orbit/orbit` on
    `gateway` and `app-dev`. `app-prod` runs no Orbit code.
@@ -30,9 +38,11 @@ is missing.
 4. **Report harness gaps.** If the harness itself (anything under `apps/e2e`
    or `bin/e2e-*`) blocks you, stop and report it. Do not change the harness
    in a feature branch.
-5. **Codify.** Every manual step becomes product code with tests, or is dropped
-   as not needed. Test-driven for behaviour. Run each changed project's
-   `composer check` and root `bin/test`. Commit.
+5. **Codify.** Work through the approved implementation order. Every manual
+   step becomes product code with tests, or is dropped as not needed.
+   Test-driven for behaviour. Run the focused proof mapped to each completed
+   increment, then each changed project's `composer check` and root `bin/test`.
+   Commit the coherent feature; separate commits per increment are optional.
 6. **Prove fresh.** Write `proofs/<ISSUE>.json`:
 
    ```json
@@ -55,16 +65,19 @@ is missing.
 
 ## Delegation
 
-You are the orchestrator for the issue. Delegate bounded pieces to subagents:
-a component's implementation, its tests, a targeted code read. Give each
-subagent the issue, the worktree, and the exact scope. Integrate their work
-yourself. Keep steps 2, 3, 6, and 7 (topology, proof, pull request) in your
-own hands. Do the work directly when the change touches at most five files.
+You remain responsible for the whole feature, integration, topology, proof,
+and pull request. Use bounded subagents only for genuinely independent targeted
+code reads, tests, or components. Do not assign one agent per plan increment or
+replace yourself with another feature orchestrator. Do the work directly when
+the change touches at most five files.
 
 ## Corrections
 
-On review comments: fix, commit, `git merge main`, release and prove again,
-push, reply "Addressed in `<sha>`".
+You remain the implementer for review corrections. Accept only concrete defects
+against the issue, governing ADRs, existing invariants, tests, or repository
+rules. A genuinely new requirement becomes separate Linear work. Fix all valid
+findings, commit, `git merge main`, release and prove again, push, then reply
+"Addressed in `<sha>`".
 
 ## Harness issues
 
