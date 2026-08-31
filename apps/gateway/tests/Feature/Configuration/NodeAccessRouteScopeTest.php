@@ -80,6 +80,7 @@ it('declares node access scope on every active-peer API route', function (): voi
         'node:role:add' => ServingNode::RoleMutation,
         'node:role:list' => ServingNode::Target,
         'node:role:remove' => ServingNode::RoleMutation,
+        'node:settings' => ServingNode::Target,
         'node:show' => ServingNode::Target,
         'process:add' => ServingNode::ProcessOwning,
         'process:list' => ServingNode::ProcessOwning,

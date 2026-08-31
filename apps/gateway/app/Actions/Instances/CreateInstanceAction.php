@@ -11,6 +11,10 @@ use App\Domain\AppProd\AppProdRuntimeConverger;
 use App\Domain\Instances\CertificateMode;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
+use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
+use App\Domain\Nodes\Storage\StoragePath;
+use App\Domain\Nodes\Storage\StorageRootResolver;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\App as OrbitApp;
@@ -18,13 +22,16 @@ use App\Models\Instance;
 use App\Models\Node;
 use Throwable;
 
-/** @mago-expect lint:cyclomatic-complexity Instance creation keeps role, placement, and immutable identity gates together. */
+/** @mago-expect lint:cyclomatic-complexity,excessive-parameter-list Instance creation keeps role, placement, and immutable identity gates together. */
 final readonly class CreateInstanceAction
 {
     public function __construct(
         private AppDevRuntimeConverger $runtime,
         private AppProdRuntimeConverger $productionRuntime,
         private ManagedUserAccountResolver $managedUserAccountResolver,
+        private StorageRootResolver $storageRoots,
+        private NodeSettingsNormalizer $nodeSettings,
+        private ManagedCheckoutOverlap $checkoutOverlap,
     ) {}
 
     /** @return array{instance: Instance, created: bool} */
@@ -64,9 +71,21 @@ final readonly class CreateInstanceAction
             );
         }
 
-        $checkoutPath = $role === RoleName::AppProd
-            ? "/var/www/{$app->slug}/{$data->name}"
-            : $this->developmentCheckoutPath($node, $app);
+        $checkoutPath = $instance->exists
+            ? $instance->checkout_path
+            : (
+                $role === RoleName::AppProd
+                    ? "/var/www/{$app->slug}/{$data->name}"
+                    : $this->developmentCheckoutPath($node, $app)
+            );
+
+        if (! $instance->exists && $role === RoleName::AppDev) {
+            $this->checkoutOverlap->assertAvailable(
+                $node->id,
+                StoragePath::parse($checkoutPath),
+                'instance.path_taken',
+            );
+        }
 
         $instance->fill([
             'name' => $data->name,
@@ -117,7 +136,12 @@ final readonly class CreateInstanceAction
             );
         }
 
-        return "{$account->home}/apps/{$app->slug}";
+        $roots = $this->storageRoots->resolve(
+            $this->nodeSettings->fromStored($node->settings),
+            $account,
+        );
+
+        return $roots->instance->append($app->slug)->value;
     }
 
     private function resolveAppRole(Node $node, CreateInstanceData $data): RoleName

@@ -6,6 +6,7 @@ namespace Orbit\Sdk\Requests\Nodes;
 
 use Orbit\Sdk\GatewayRequest;
 use Orbit\Sdk\Responses\Nodes\NodeResponse;
+use Orbit\Sdk\Responses\Nodes\NodeSettings;
 use Saloon\Contracts\Body\HasBody;
 use Saloon\Enums\Method;
 use Saloon\Http\Response;
@@ -36,6 +37,8 @@ final class ProvisionNodeRequest extends GatewayRequest implements HasBody
         private readonly string $platform = 'linux',
         private readonly ?string $architecture = null,
         private readonly ?string $tld = null,
+        private readonly bool $settingsProvided = false,
+        private readonly ?NodeSettings $settings = null,
     ) {}
 
     public function resolveEndpoint(): string
@@ -54,7 +57,7 @@ final class ProvisionNodeRequest extends GatewayRequest implements HasBody
     /** @return array<string, mixed> */
     protected function defaultBody(): array
     {
-        return array_filter(
+        $body = array_filter(
             [
                 'name' => $this->name,
                 'public_ssh_host' => $this->publicSshHost,
@@ -72,5 +75,11 @@ final class ProvisionNodeRequest extends GatewayRequest implements HasBody
             ],
             static fn (mixed $value): bool => $value !== null,
         );
+
+        if ($this->settingsProvided) {
+            $body['settings'] = $this->settings?->toArray();
+        }
+
+        return $body;
     }
 }

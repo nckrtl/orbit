@@ -7,9 +7,11 @@ namespace App\Commands\Nodes;
 use App\Commands\GatewayCommand;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
+use App\Support\NodeSettingOptions;
 use Orbit\Sdk\Requests\Nodes\ProvisionNodeRequest;
 use Orbit\Sdk\Responses\Nodes\NodeResponse;
 
+/** @mago-expect lint:cyclomatic-complexity Provision keeps closed setting parsing beside the existing identity gates. */
 final class ProvisionNodeCommand extends GatewayCommand
 {
     #[\Override]
@@ -27,6 +29,7 @@ final class ProvisionNodeCommand extends GatewayCommand
         {--wireguard-address= : Stable WireGuard address}
         {--wireguard-endpoint= : Per-node WireGuard endpoint override}
         {--dns-server= : Per-node DNS server override}
+        {--setting=* : Repeatable node setting as setting-path:value}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -81,6 +84,12 @@ final class ProvisionNodeCommand extends GatewayCommand
             return self::FAILURE;
         }
 
+        $settings = NodeSettingOptions::parse($this->option('setting'));
+
+        if ($settings['ok'] === false) {
+            return $this->renderGatewayFailure($settings['code'], $settings['message']);
+        }
+
         $connector = $this->gatewayConnector($repository, $connectors);
 
         if ($connector === null) {
@@ -103,6 +112,8 @@ final class ProvisionNodeCommand extends GatewayCommand
                 platform: $platform,
                 architecture: $this->stringOption('architecture'),
                 tld: $this->stringOption('tld'),
+                settingsProvided: $settings['provided'],
+                settings: $settings['provided'] ? NodeSettingOptions::settings($settings['body']) : null,
             ),
             NodeResponse::class,
         );

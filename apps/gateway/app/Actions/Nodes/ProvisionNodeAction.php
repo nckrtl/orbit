@@ -9,6 +9,7 @@ use App\Domain\AppDev\AppDevTldConverger;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Nodes\LinuxUserName;
+use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\NodeConverger;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\NodeProvisioningIdentity;
@@ -18,6 +19,7 @@ use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\NodeTld;
 use App\Domain\Nodes\RecoverableNodeConverger;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Nodes\Storage\ConfiguredStoragePathValidator;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ToolManagerMaterializer;
@@ -42,6 +44,9 @@ final readonly class ProvisionNodeAction
         private NodeProvisioningLock $provisioningLock,
         private AppDevTldConverger $appDevTldConverger,
         private MetricsFleetReconciler $metrics,
+        private ConfiguredStoragePathValidator $storagePaths,
+        private UpdateNodeSettingsAction $nodeSettings,
+        private ManagedUserAccountResolver $accounts,
     ) {}
 
     public function execute(ProvisionNodeData $data): Node
@@ -71,8 +76,21 @@ final readonly class ProvisionNodeAction
             );
         }
         $this->validateEndpointOverride($data);
+
+        if ($data->settingsProvided) {
+            $this->storagePaths->validateGrammar($data->settings);
+        }
+
         $node = Node::query()->firstOrNew(['name' => $data->name]);
         $managedUser = $data->orbitUser ?? ($node->exists ? $node->user : 'orbit');
+
+        if ($data->settingsProvided && $node->exists) {
+            $this->storagePaths->validateEffective(
+                $data->settings,
+                $node,
+                $this->accounts->resolve($node),
+            );
+        }
 
         if (! LinuxUserName::isValid($managedUser)) {
             throw new ResourceOperationException(
@@ -249,6 +267,30 @@ final readonly class ProvisionNodeAction
             'failed_step' => null,
             'error_code' => null,
         ]);
+
+        if ($data->settingsProvided) {
+            try {
+                $this->nodeSettings->persistDuringProvisioning($node->refresh(), $data->settings);
+            } catch (ResourceOperationException $exception) {
+                throw $exception;
+            } catch (RuntimeConvergenceException $exception) {
+                throw new ResourceOperationException(
+                    errorCode: $exception->errorCode,
+                    message: $exception->getMessage(),
+                    previous: $exception,
+                );
+            } catch (Throwable $exception) {
+                $failure = new NodeProvisioningException(
+                    step: 'node-storage-root',
+                    errorCode: 'node.settings_root_failed',
+                    message: 'Node storage settings could not be prepared.',
+                    previous: $exception,
+                );
+                $this->markFailed($node, $failure);
+
+                throw $failure;
+            }
+        }
 
         // Role convergence runs while the node is still provisioning, and
         // exporter selection only ever considers active nodes. The node is

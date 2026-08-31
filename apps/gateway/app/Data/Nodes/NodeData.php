@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Data\Nodes;
 
 use App\Domain\Nodes\RoleName;
+use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Models\Node;
 use Illuminate\Support\Collection;
 use Spatie\LaravelData\Attributes\MapOutputName;
@@ -34,6 +35,7 @@ final class NodeData extends Data
         public ?string $failedStep,
         public ?string $errorCode,
         public array $roles,
+        public ?NodeSettingsData $settings = null,
     ) {}
 
     public static function fromModel(Node $node): self
@@ -75,6 +77,7 @@ final class NodeData extends Data
             failedStep: $failedStep,
             errorCode: $errorCode,
             roles: self::roles($node),
+            settings: new NodeSettingsNormalizer()->fromStored($node->settings),
         );
     }
 

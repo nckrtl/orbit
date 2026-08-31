@@ -18,6 +18,7 @@ use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\NodeRoleValidationException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\UbuntuRelease;
+use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
 use App\Infrastructure\AppProd\AppProdSshExecutor;
 use App\Infrastructure\Nodes\Roles\AppDevRoleBaseline;
@@ -57,6 +58,23 @@ it('converges and removes only app development role-owned infrastructure', funct
         'firewall:remove:app-dev',
         'dns:none',
     ]);
+});
+
+it('rejects stored protected settings before preparing app-dev roots', function (): void {
+    $events = [];
+    [$node, $assignment] = role_baseline_models(RoleName::AppDev);
+    $node->update([
+        'settings' => [
+            'instance' => ['path' => '/etc/orbit'],
+            'worktree' => ['path' => '/srv/orbit/worktrees'],
+        ],
+    ]);
+    $baseline = app_dev_role_baseline($events);
+
+    expect(fn () => $baseline->converge($node, $assignment))
+        ->toThrow(ResourceOperationException::class)
+        ->and($events)
+        ->toBe([]);
 });
 
 it('converges only the private DNS record when an app development node is unreachable', function (): void {
@@ -208,6 +226,28 @@ it('passes a nondefault managed account into every baseline prerequisite command
             public function converge(?Node $pendingNode = null): void {}
         },
         $accounts,
+        new App\Domain\Nodes\Storage\NodeSettingsNormalizer,
+        new class implements App\Domain\Nodes\Storage\NodeStorageRootPreparer {
+            public function inspect(
+                Node $node,
+                App\Domain\Nodes\ManagedUserAccount $account,
+                App\Domain\Nodes\Storage\StoragePath $path,
+            ): void {}
+
+            public function prepare(
+                Node $node,
+                App\Domain\Nodes\ManagedUserAccount $account,
+                App\Domain\Nodes\Storage\EffectiveStorageRoots $roots,
+            ): void {}
+        },
+        new App\Domain\Nodes\Storage\ConfiguredStoragePathValidator(
+            new App\Domain\Nodes\Storage\NodeSettingsNormalizer,
+            new App\Domain\Nodes\Storage\StorageRootResolver(
+                new App\Domain\Nodes\Storage\NodeSettingsNormalizer,
+                new App\Domain\Nodes\Storage\ProtectedPathCatalog,
+            ),
+            new App\Domain\Nodes\Storage\ProtectedPathCatalog,
+        ),
     )->converge($appDevNode, $appDevAssignment);
 
     new AppProdRoleBaseline(
@@ -562,6 +602,28 @@ function app_dev_role_baseline(array &$events): AppDevRoleBaseline
         baseline_firewall($events),
         $dns,
         baseline_account_resolver(),
+        new App\Domain\Nodes\Storage\NodeSettingsNormalizer,
+        new class implements App\Domain\Nodes\Storage\NodeStorageRootPreparer {
+            public function inspect(
+                Node $node,
+                App\Domain\Nodes\ManagedUserAccount $account,
+                App\Domain\Nodes\Storage\StoragePath $path,
+            ): void {}
+
+            public function prepare(
+                Node $node,
+                App\Domain\Nodes\ManagedUserAccount $account,
+                App\Domain\Nodes\Storage\EffectiveStorageRoots $roots,
+            ): void {}
+        },
+        new App\Domain\Nodes\Storage\ConfiguredStoragePathValidator(
+            new App\Domain\Nodes\Storage\NodeSettingsNormalizer,
+            new App\Domain\Nodes\Storage\StorageRootResolver(
+                new App\Domain\Nodes\Storage\NodeSettingsNormalizer,
+                new App\Domain\Nodes\Storage\ProtectedPathCatalog,
+            ),
+            new App\Domain\Nodes\Storage\ProtectedPathCatalog,
+        ),
     );
 }
 

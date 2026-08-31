@@ -347,6 +347,7 @@ function list_node_payload(): array
         'failed_step' => null,
         'error_code' => null,
         'roles' => ['app-dev'],
+        'settings' => null,
     ];
 }
 
@@ -418,6 +419,7 @@ function show_node_expected_json_payload(): array
         'failed_step' => null,
         'error_code' => null,
         'roles' => ['app-dev'],
+        'settings' => null,
         'request_id' => request_id(),
         'access' => [
             'can_access' => [

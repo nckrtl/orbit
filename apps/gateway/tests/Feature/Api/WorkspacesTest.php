@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Actions\Workspaces\CreateWorkspaceAction;
+use App\Data\Workspaces\CreateWorkspaceData;
 use App\Domain\AppDev\AppDevRuntimeConverger;
 use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppDev\RuntimeConvergenceException;
@@ -11,6 +13,7 @@ use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Models\App as OrbitApp;
 use App\Models\Instance;
 use App\Models\Node;
@@ -155,6 +158,23 @@ describe('workspace API', function (): void {
             ->toBe($response->json('data.id'))
             ->and($activity->target_node_id)
             ->toBe($this->node->id);
+
+        expect(\App\Models\Workspace::query()->sole()->checkout_path_origin)
+            ->toBe(\App\Domain\Nodes\Storage\CheckoutPathOrigin::Derived->value);
+    });
+
+    it('records explicit origin for an overridden workspace checkout', function (): void {
+        $this
+            ->postJson('/api/v1/workspaces', [
+                'instance_id' => $this->instance->id,
+                'name' => 'feature-one',
+                'checkout_path' => '/srv/users/nckrtl/custom-worktrees/acme-feature-one',
+            ])
+            ->assertCreated()
+            ->assertJsonPath('data.checkout_path', '/srv/users/nckrtl/custom-worktrees/acme-feature-one');
+
+        expect(\App\Models\Workspace::query()->sole()->checkout_path_origin)
+            ->toBe(\App\Domain\Nodes\Storage\CheckoutPathOrigin::Explicit->value);
     });
 
     it('rejects workspaces on an active app-prod node with a stable error', function (): void {
@@ -299,6 +319,43 @@ describe('workspace API', function (): void {
             ->toBeEmpty();
     });
 
+    it('rejects an explicit workspace nested under its own instance checkout', function (): void {
+        $this->instance->update(['checkout_path' => '/srv/users/nckrtl/projects/acme']);
+
+        $this
+            ->postJson('/api/v1/workspaces', [
+                'instance_id' => $this->instance->id,
+                'name' => 'nested',
+                'checkout_path' => '/srv/users/nckrtl/projects/acme/nested',
+            ])
+            ->assertConflict()
+            ->assertJsonPath('error.code', 'workspace.path_taken');
+
+        expect(Workspace::query()->count())
+            ->toBe(0)
+            ->and($this->runtime->calls)
+            ->toBeEmpty();
+    });
+
+    it('rejects an explicit checkout path that cannot be parsed before persistence', function (): void {
+        $data = new CreateWorkspaceData(
+            instanceId: $this->instance->id,
+            name: 'feature-one',
+            branch: 'feature-one',
+            checkoutPath: "/srv/users/nckrtl/custom-worktrees/feature\tone",
+            phpVersion: null,
+        );
+
+        expect(fn (): array => app(CreateWorkspaceAction::class)->execute($data))
+            ->toThrow(function (ResourceOperationException $exception): void {
+                expect($exception->errorCode)->toBe('workspace.checkout_path_invalid');
+            });
+        expect(Workspace::query()->count())
+            ->toBe(0)
+            ->and($this->runtime->calls)
+            ->toBeEmpty();
+    });
+
     it('rejects branch drift when resuming a workspace', function (): void {
         create_workspace_for_api_test($this->instance);
 
@@ -312,6 +369,53 @@ describe('workspace API', function (): void {
             ->assertJsonPath('error.code', 'workspace.branch_change_unsupported');
 
         expect($this->runtime->calls)->toBeEmpty();
+    });
+
+    it('rejects checkout path drift when resuming a workspace', function (): void {
+        $workspace = create_workspace_for_api_test($this->instance);
+
+        $this
+            ->postJson('/api/v1/workspaces', [
+                'instance_id' => $this->instance->id,
+                'name' => 'feature-one',
+                'checkout_path' => '/srv/users/nckrtl/custom-worktrees/other',
+            ])
+            ->assertConflict()
+            ->assertJsonPath('error.code', 'workspace.path_change_unsupported');
+
+        expect($workspace->refresh()->checkout_path)
+            ->toBe('/srv/users/nckrtl/.orbit/worktrees/acme/feature-one')
+            ->and($this->runtime->calls)
+            ->toBeEmpty();
+    });
+
+    it('resumes an existing workspace from the stored checkout when the request omits the path', function (): void {
+        create_workspace_for_api_test($this->instance);
+
+        $this
+            ->postJson('/api/v1/workspaces', [
+                'instance_id' => $this->instance->id,
+                'name' => 'feature-one',
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.checkout_path', '/srv/users/nckrtl/.orbit/worktrees/acme/feature-one');
+    });
+
+    it('creates and removes an explicit workspace inside the worktree default', function (): void {
+        $created = $this->postJson('/api/v1/workspaces', [
+            'instance_id' => $this->instance->id,
+            'name' => 'home-explicit',
+            'checkout_path' => '/srv/users/nckrtl/.orbit/worktrees/acme-custom',
+        ]);
+        $created
+            ->assertCreated()
+            ->assertJsonPath('data.checkout_path', '/srv/users/nckrtl/.orbit/worktrees/acme-custom');
+
+        $this
+            ->deleteJson("/api/v1/workspaces/{$created->json('data.id')}")
+            ->assertOk();
+
+        expect(Workspace::query()->count())->toBe(0);
     });
 
     it('rejects unsafe paths and branch names', function (array $payload, string $field): void {

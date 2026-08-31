@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Instances;
 
 use App\Domain\AppDev\AppDevRuntimeConverger;
+use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\AppProd\AppProdRuntimeConverger;
 use App\Domain\Instances\CertificateMode;
@@ -18,9 +19,20 @@ final readonly class RemoveInstanceAction
     public function __construct(
         private AppDevRuntimeConverger $runtime,
         private AppProdRuntimeConverger $productionRuntime,
+        private AppDevSourceOperationLock $sourceLock,
     ) {}
 
     public function execute(Instance $instance): Instance
+    {
+        $instance->loadMissing('node');
+
+        return $this->sourceLock->synchronized(
+            $instance->node_id,
+            fn (): Instance => $this->executeWithinSourceLock($instance),
+        );
+    }
+
+    private function executeWithinSourceLock(Instance $instance): Instance
     {
         if ($instance->workspaces()->exists()) {
             throw new ResourceOperationException(

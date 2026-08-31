@@ -24,6 +24,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property string|null $wireguard_endpoint_override
  * @property string|null $dns_server_override
  * @property string|null $ssh_host_fingerprint
+ * @property array<string, mixed>|null $settings
  * @property-read \Illuminate\Database\Eloquent\Collection<int, NodeRole> $roles
  * @property-read \Illuminate\Database\Eloquent\Collection<int, ToolManagerRecord> $toolManagers
  * @property-read \Illuminate\Database\Eloquent\Collection<int, Tool> $tools
@@ -58,6 +59,7 @@ final class Node extends Model
         'ssh_host_fingerprint',
         'failed_step',
         'error_code',
+        'settings',
     ];
 
     /** @return HasMany<NodeRole, $this> */
@@ -118,6 +120,7 @@ final class Node extends Model
         return [
             'status' => LifecycleStatus::class,
             'public_ssh_port' => 'integer',
+            'settings' => 'array',
         ];
     }
 }

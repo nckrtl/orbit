@@ -8,6 +8,7 @@ use App\Actions\Nodes\ListNodesAction;
 use App\Actions\Nodes\ProvisionNodeAction;
 use App\Actions\Nodes\RemoveNodeAction;
 use App\Actions\Nodes\ShowNodeAction;
+use App\Actions\Nodes\UpdateNodeSettingsAction;
 use App\Data\Nodes\NodeAccessData;
 use App\Data\Nodes\NodeData;
 use App\Http\Authorization\RequiresNodeAccess;
@@ -15,6 +16,7 @@ use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Nodes\ProvisionNodeRequest;
 use App\Http\Requests\Nodes\RemoveNodeRequest;
+use App\Http\Requests\Nodes\UpdateNodeSettingsRequest;
 use App\Models\Node;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -89,5 +91,19 @@ final class NodesController extends Controller
             'data' => NodeData::fromModel($node)->toArray(),
             'meta' => ['request_id' => is_string($requestId) ? $requestId : null],
         ], 201);
+    }
+
+    #[RequiresNodeAccess(ServingNode::Target)]
+    public function settings(
+        UpdateNodeSettingsRequest $request,
+        Node $node,
+        UpdateNodeSettingsAction $action,
+    ): JsonResponse {
+        $node = $action->execute($node, $request->payload());
+
+        return response()->json([
+            'data' => NodeData::fromModel($node)->toArray(),
+            'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')],
+        ]);
     }
 }

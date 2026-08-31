@@ -9,8 +9,8 @@ gateway application.
 During monorepo development, `apps/cli` consumes this package through a
 Composer path repository with symlinking enabled.
 
-The SDK exposes exactly 52 public Gateway operations (the original 38 plus
-seven Tool and Doctor operations and seven Metrics operations). It preserves
+The SDK exposes exactly 53 public Gateway operations (the original 38 plus
+seven Tool and Doctor operations, seven Metrics operations, and node settings). It preserves
 manager, package, nullable version constraints, outcomes, structured errors,
 and request IDs without applying policy. It does not define CLI presentation
 or manager command behavior.

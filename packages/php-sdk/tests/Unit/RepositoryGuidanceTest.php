@@ -180,9 +180,9 @@ describe('repository guidance bootstrap', function (): void {
         }
 
         expect($requestFileCount)
-            ->toBe(54)
+            ->toBe(55)
             ->and($requestClasses)
-            ->toHaveCount(52)
+            ->toHaveCount(53)
             ->toContain(Orbit\Sdk\Requests\Doctor\RunDoctorRequest::class);
     });
 
@@ -191,9 +191,9 @@ describe('repository guidance bootstrap', function (): void {
         $normalizedPublicContract = repository_guidance_normalized_contents('.ai/rules/public-contract.md');
 
         expect($publicContract)
-            ->toContain('The SDK models exactly 52 concrete public Gateway API operations:')
+            ->toContain('The SDK models exactly 53 concrete public Gateway API operations:')
             ->toContain(
-                '- Node: list, show, provision, remove, access add, access remove, role list, role add, and role remove.',
+                '- Node: list, show, provision, settings update, remove, access add, access remove, role list, role add, and role remove.',
             )
             ->toContain('- Doctor: run the complete typed Gateway report.')
             ->not->toContain('Docker Swarm, permissions, role add/remove')->toContain(

@@ -25,5 +25,7 @@ final class ProvisionNodeData extends Data
         public string $platform = 'linux',
         public ?string $architecture = null,
         public ?string $tld = null,
+        public bool $settingsProvided = false,
+        public ?NodeSettingsData $settings = null,
     ) {}
 }

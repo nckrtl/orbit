@@ -15,6 +15,7 @@ use Illuminate\Database\Eloquent\Relations\MorphMany;
  * @property string $name
  * @property string $branch
  * @property string $checkout_path
+ * @property string|null $checkout_path_origin
  * @property string|null $php_version
  * @property string $hostname
  * @property LifecycleStatus $status
@@ -35,6 +36,7 @@ final class Workspace extends Model
         'name',
         'branch',
         'checkout_path',
+        'checkout_path_origin',
         'php_version',
         'hostname',
         'status',

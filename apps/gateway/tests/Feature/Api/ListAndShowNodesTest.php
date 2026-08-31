@@ -143,6 +143,7 @@ describe('GET /api/v1/nodes serialization', function (): void {
                     'failed_step',
                     'error_code',
                     'roles',
+                    'settings',
                 ]],
                 'meta' => ['request_id'],
             ]);

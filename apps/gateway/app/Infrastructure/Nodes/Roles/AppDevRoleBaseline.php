@@ -10,6 +10,9 @@ use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\RoleBaseline;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Nodes\Storage\ConfiguredStoragePathValidator;
+use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
+use App\Domain\Nodes\Storage\NodeStorageRootPreparer;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -24,11 +27,20 @@ final readonly class AppDevRoleBaseline implements RoleBaseline
         private NodeRoleFirewallManager $firewall,
         private PrivateDnsManager $dns,
         private ManagedUserAccountResolver $accounts,
+        private NodeSettingsNormalizer $nodeSettings,
+        private NodeStorageRootPreparer $storageRootsPreparer,
+        private ConfiguredStoragePathValidator $storagePaths,
     ) {}
 
     public function converge(Node $node, NodeRole $assignment): void
     {
         $account = $this->accounts->resolve($node);
+        $settings = $this->nodeSettings->fromStored($node->settings);
+        $this->storageRootsPreparer->prepare(
+            $node,
+            $account,
+            $this->storagePaths->validateEffective($settings, $node, $account),
+        );
         $this->ssh->execute(
             $node,
             $this->commands->make($node, RoleName::AppDev, $account),
