@@ -205,7 +205,7 @@ describe('StandbyManifestStore', function () {
             ->toBe($legacy);
     });
 
-    it('prunes only owned generations while retaining current, previous, pinned, and legacy state', function () {
+    it('prunes owned and legacy primary generations while retaining current, previous, and pinned state', function () {
         $paths = new StatePaths(temporaryPath('orbit-standby-', 4));
         $json = new AtomicJsonStore($paths);
         $store = new StandbyManifestStore($json, $paths, new IncusHost, StandbyIdentity::primary());
@@ -223,7 +223,7 @@ describe('StandbyManifestStore', function () {
         pinnedTopologyState($pinned);
 
         expect(array_map(fn (StandbyGeneration $item): string => $item->id, $store->prunable($current)))
-            ->toBe(['g1']);
+            ->toBe(['g0', 'g1']);
     });
 
     it('never prunes the generation a live topology attempt pins', function () {

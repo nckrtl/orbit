@@ -480,7 +480,7 @@ describe('StandbyPromoter', function (): void {
         expect($events)->toBe($expected);
     });
 
-    it('retains unbound legacy history while replacing owned manifests', function (): void {
+    it('removes unbound legacy primary history while replacing owned manifests', function (): void {
         $fixture = promotableFixture();
         $legacy = $fixture['manifests']->promoted()?->toArray();
         assert(is_array($legacy));
@@ -500,7 +500,7 @@ describe('StandbyPromoter', function (): void {
                 static fn (StandbyGeneration $generation): string => $generation->id,
                 $fixture['manifests']->recorded(),
             ))
-            ->toContain('legacy-generation');
+            ->not->toContain('legacy-generation');
     });
 
     it('discards the copies and keeps the standby when the snapshot fails before the swap', function (): void {

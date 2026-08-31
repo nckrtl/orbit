@@ -76,20 +76,27 @@ final readonly class StandbyManifestStore
     /** @return list<StandbyGeneration> */
     public function ownedRecorded(): array
     {
+        $allowUnbound = $this->allowsUnboundLegacyHistory($this->promoted());
+
         return array_values(array_filter(
             $this->recorded(),
-            fn (StandbyGeneration $generation): bool => $generation->standbyNamespace === $this->identity->namespace,
+            fn (StandbyGeneration $generation): bool => (
+                $generation->standbyNamespace === $this->identity->namespace
+                || $generation->standbyNamespace === null
+                && $allowUnbound
+            ),
         ));
     }
 
     public function assertOwned(): void
     {
         $promoted = $this->promoted();
+        $allowUnbound = $this->allowsUnboundLegacyHistory($promoted);
         if ($promoted !== null) {
-            $this->assertMatchesIdentity($promoted);
+            $this->assertMatchesIdentity($promoted, allowUnbound: $allowUnbound);
         }
         foreach ($this->recorded() as $generation) {
-            $this->assertMatchesIdentity($generation);
+            $this->assertMatchesIdentity($generation, allowUnbound: $allowUnbound);
         }
     }
 
@@ -120,7 +127,8 @@ final readonly class StandbyManifestStore
 
     public function forget(StandbyGeneration $generation): void
     {
-        $this->assertMatchesIdentity($generation);
+        $allowUnbound = $this->allowsUnboundLegacyHistory($this->promoted());
+        $this->assertMatchesIdentity($generation, allowUnbound: $allowUnbound);
         $file = $this->paths->path("standby/generations/{$generation->id}.json");
         if (! is_file($file) || is_link($file) || ! unlink($file)) {
             throw new RuntimeException('Unable to remove the exact standby generation manifest.');
@@ -162,6 +170,11 @@ final readonly class StandbyManifestStore
         throw new RuntimeException(
             "Standby manifest namespace {$owner} does not match configured standby namespace {$configured}.",
         );
+    }
+
+    private function allowsUnboundLegacyHistory(?StandbyGeneration $promoted): bool
+    {
+        return $this->identity->isPrimary() || $promoted?->standbyNamespace === $this->identity->namespace;
     }
 
     private static function namespaceLabel(?string $namespace): string

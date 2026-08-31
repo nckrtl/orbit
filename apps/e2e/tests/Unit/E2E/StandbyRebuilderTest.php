@@ -150,9 +150,14 @@ function rebuildNetworkInventoryJson(RebuildHost $state): string
 }
 
 /** The recovery boundary under test; the cold build that follows it is the refresher's own. */
-function rebuilderFor(StatePaths $paths, AtomicJsonStore $store, StandbyManifestStore $manifests): StandbyRebuilder
-{
+function rebuilderFor(
+    StatePaths $paths,
+    AtomicJsonStore $store,
+    StandbyManifestStore $manifests,
+    ?StandbyIdentity $identity = null,
+): StandbyRebuilder {
     $host = new IncusHost(pool: 'orbit-e2e');
+    $identity ??= rebuildIdentity();
 
     return new StandbyRebuilder(
         $host,
@@ -162,7 +167,7 @@ function rebuilderFor(StatePaths $paths, AtomicJsonStore $store, StandbyManifest
         $paths,
         new OperationLock($paths),
         new OperationId(str_repeat('a', 32)),
-        rebuildIdentity(),
+        $identity,
     );
 }
 
@@ -421,6 +426,74 @@ describe('StandbyRebuilder', function () {
             ->toBe([$identity->network()])
             ->and($store->read('standby/promoted.json'))
             ->toBe($legacy);
+    });
+
+    it('rebuilds a namespaced standby with an owned current manifest and unbound legacy history', function () {
+        $identity = rebuildIdentity();
+        $state = new RebuildHost;
+        $state->instances = $identity->instances();
+        $state->networks = [$identity->network()];
+        fakeRebuildHost($state);
+
+        $paths = new StatePaths(temporaryPath('orbit-rebuild-', 4));
+        $store = new AtomicJsonStore($paths);
+        $current = rebuildGeneration('live-current')->toArray();
+        $legacy = rebuildGeneration('legacy-previous')->toArray();
+        $legacy['schema'] = 4;
+        unset($legacy['standby_namespace']);
+        $store->write('standby/promoted.json', $current);
+        $store->write('standby/generations/live-current.json', $current);
+        $store->write('standby/generations/legacy-previous.json', $legacy);
+        $manifests = new StandbyManifestStore(
+            $store,
+            $paths,
+            new IncusHost(pool: 'orbit-e2e'),
+            $identity,
+        );
+
+        $teardown = rebuilderFor($paths, $store, $manifests)->teardown();
+
+        expect($teardown['instances_deleted'])->toEqualCanonicalizing($identity->instances());
+        expect($teardown['networks_deleted'])->toBe([$identity->network()]);
+        expect($state->instances)->toBe([]);
+        expect($state->networks)->toBe([]);
+        expect($manifests->promoted())->toBeNull();
+        expect($manifests->recorded())->toBe([]);
+    });
+
+    it('rebuilds the primary standby from its unbound legacy manifests', function () {
+        $identity = StandbyIdentity::primary();
+        $state = new RebuildHost;
+        $state->instances = $identity->instances();
+        $state->networks = [$identity->network()];
+        fakeRebuildHost($state);
+
+        $paths = new StatePaths(temporaryPath('orbit-rebuild-', 4));
+        $store = new AtomicJsonStore($paths);
+        $current = rebuildGeneration('legacy-current')->toArray();
+        $previous = rebuildGeneration('legacy-previous')->toArray();
+        $current['schema'] = 4;
+        unset($current['standby_namespace']);
+        $previous['schema'] = 4;
+        unset($previous['standby_namespace']);
+        $store->write('standby/promoted.json', $current);
+        $store->write('standby/generations/legacy-current.json', $current);
+        $store->write('standby/generations/legacy-previous.json', $previous);
+        $manifests = new StandbyManifestStore(
+            $store,
+            $paths,
+            new IncusHost(pool: 'orbit-e2e'),
+            $identity,
+        );
+
+        $teardown = rebuilderFor($paths, $store, $manifests, $identity)->teardown();
+
+        expect($teardown['instances_deleted'])->toEqualCanonicalizing($identity->instances());
+        expect($teardown['networks_deleted'])->toBe([$identity->network()]);
+        expect($state->instances)->toBe([]);
+        expect($state->networks)->toBe([]);
+        expect($manifests->promoted())->toBeNull();
+        expect($manifests->recorded())->toBe([]);
     });
 
     it('deletes an exact promotion scratch copy that retains valid attempt metadata', function () {

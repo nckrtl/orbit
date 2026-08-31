@@ -131,6 +131,21 @@ describe('feature topology mounts', function () {
     })->with(['schema 2' => [2], 'schema 1' => [1], 'string schema' => ['3']]);
 });
 
+describe('feature topology generations', function () {
+    it('round-trips an unbound schema-4 generation without changing its schema', function () {
+        $value = mountedTopologyFixture(false)->toArray();
+        $value['generation']['schema'] = 4;
+        unset($value['generation']['standby_namespace']);
+        $topology = FeatureTopology::fromArray($value);
+
+        $serialized = $topology->toArray();
+        $reloaded = FeatureTopology::fromArray($serialized);
+
+        expect($serialized['generation'])->toBe($value['generation']);
+        expect($reloaded->generation->standbyNamespace)->toBeNull();
+    });
+});
+
 describe('mount paths', function () {
     it('accepts only absolute separator-free paths', function (string $path, bool $safe) {
         expect(MountPath::isSafe($path))->toBe($safe);
