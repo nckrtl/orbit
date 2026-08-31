@@ -403,7 +403,7 @@ function apt_tool_node(string $platform = 'linux'): Node
         'platform' => $platform,
         'public_ssh_host' => '127.0.0.1',
         'user' => 'orbit',
-        'wireguard_address' => '10.8.0.43',
+        'wireguard_ip' => '10.8.0.43',
     ]);
 }
 

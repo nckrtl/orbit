@@ -464,7 +464,7 @@ function materializer_node(
         'platform' => 'linux',
         'architecture' => 'x86_64',
         'public_ssh_host' => fake()->ipv4(),
-        'wireguard_address' => fake()->unique()->ipv4(),
+        'wireguard_ip' => fake()->unique()->ipv4(),
     ]);
 
     if ($role !== null) {

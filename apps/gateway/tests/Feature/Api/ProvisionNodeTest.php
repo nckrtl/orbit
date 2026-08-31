@@ -12,6 +12,7 @@ use App\Domain\WireGuard\GatewayPeerProjectionManager;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\SshHostKeyScanException;
 use App\Models\Activity;
+use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\NodeRole;
 use Illuminate\Support\Str;
@@ -32,7 +33,7 @@ describe('POST /api/v1/nodes', function (): void {
             'name' => 'operator',
             'status' => LifecycleStatus::Active,
             'public_ssh_host' => '192.0.2.2',
-            'wireguard_address' => '10.44.0.2',
+            'wireguard_ip' => '10.44.0.2',
         ]);
         $this->markAsGateway($operator);
         $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.2']);
@@ -48,6 +49,7 @@ describe('POST /api/v1/nodes', function (): void {
             ): void {}
         });
         $requestId = (string) Str::uuid();
+        $cluster = Cluster::query()->create(['name' => 'development']);
 
         $this
             ->withHeader('X-Orbit-Request-Id', $requestId)
@@ -58,6 +60,9 @@ describe('POST /api/v1/nodes', function (): void {
                 'architecture' => 'x86_64',
                 'tld' => '.App-Dev.Orbit',
                 'roles' => ['app-dev'],
+                'cluster_id' => $cluster->id,
+                'wireguard_ip' => '10.44.0.3',
+                'lan_ip' => '10.0.0.3',
                 'host_key_fingerprint' => 'SHA256:'.str_repeat(string: 'A', times: 43),
                 'wireguard_endpoint_override' => '10.0.0.2:51820',
                 'dns_server_override' => '10.0.0.1',
@@ -68,6 +73,10 @@ describe('POST /api/v1/nodes', function (): void {
             ->assertJsonPath('data.platform', 'linux')
             ->assertJsonPath('data.architecture', 'x86_64')
             ->assertJsonPath('data.tld', 'app-dev.orbit')
+            ->assertJsonPath('data.cluster_id', $cluster->id)
+            ->assertJsonPath('data.wireguard_ip', '10.44.0.3')
+            ->assertJsonPath('data.lan_ip', '10.0.0.3')
+            ->assertJsonMissingPath('data.wireguard_address')
             ->assertJsonPath('data.wireguard_endpoint_override', '10.0.0.2:51820')
             ->assertJsonPath('data.dns_server_override', '10.0.0.1')
             ->assertJsonPath('data.roles.0', 'app-dev')
@@ -83,7 +92,15 @@ describe('POST /api/v1/nodes', function (): void {
             ->and($activity->subject_id)
             ->toBe($node->id)
             ->and($activity->target_node_id)
-            ->toBe($node->id);
+            ->toBe($node->id)
+            ->and($node->cluster_id)
+            ->toBe($cluster->id)
+            ->and($node->wireguard_ip)
+            ->toBe('10.44.0.3')
+            ->and($node->wireguard_address)
+            ->toBe('10.44.0.3')
+            ->and($node->lan_ip)
+            ->toBe('10.0.0.3');
     });
 
     it('returns 502 and redacts role convergence command output in activity', function (): void {
@@ -159,7 +176,7 @@ describe('POST /api/v1/nodes', function (): void {
             'architecture' => 'x86_64',
             'tld' => 'app-dev.orbit',
             'public_ssh_host' => '192.0.2.40',
-            'wireguard_address' => '10.44.0.3',
+            'wireguard_ip' => '10.44.0.3',
             'ssh_host_fingerprint' => 'SHA256:pinned',
         ]);
         $node->roles()->create([
@@ -600,7 +617,7 @@ describe('POST /api/v1/nodes', function (): void {
                 'name' => 'normalized-overrides',
                 'public_ssh_host' => '192.0.2.30',
                 'architecture' => 'x86_64',
-                'wireguard_address' => '10.44.0.3',
+                'wireguard_ip' => '10.44.0.3',
                 'wireguard_endpoint_override' => '',
                 'dns_server_override' => '',
                 'host_key_fingerprint' => 'SHA256:'.str_repeat(string: 'A', times: 43),
@@ -636,7 +653,7 @@ describe('POST /api/v1/nodes', function (): void {
                 'name' => 'outside',
                 'public_ssh_host' => '192.0.2.20',
                 'architecture' => 'x86_64',
-                'wireguard_address' => '10.45.0.2',
+                'wireguard_ip' => '10.45.0.2',
                 'host_key_fingerprint' => $fingerprint,
             ])
             ->assertUnprocessable()
@@ -647,7 +664,7 @@ describe('POST /api/v1/nodes', function (): void {
                 'name' => 'blank',
                 'public_ssh_host' => '192.0.2.24',
                 'architecture' => 'x86_64',
-                'wireguard_address' => '',
+                'wireguard_ip' => '',
                 'host_key_fingerprint' => $fingerprint,
             ])
             ->assertUnprocessable()
@@ -658,7 +675,7 @@ describe('POST /api/v1/nodes', function (): void {
                 'name' => 'whitespace',
                 'public_ssh_host' => '192.0.2.25',
                 'architecture' => 'x86_64',
-                'wireguard_address' => '   ',
+                'wireguard_ip' => '   ',
                 'host_key_fingerprint' => $fingerprint,
             ])
             ->assertUnprocessable()
@@ -669,7 +686,7 @@ describe('POST /api/v1/nodes', function (): void {
                 'name' => 'malformed',
                 'public_ssh_host' => '192.0.2.22',
                 'architecture' => 'x86_64',
-                'wireguard_address' => 'not-an-address',
+                'wireguard_ip' => 'not-an-address',
                 'host_key_fingerprint' => $fingerprint,
             ])
             ->assertUnprocessable()
@@ -680,7 +697,7 @@ describe('POST /api/v1/nodes', function (): void {
                 'name' => 'ipv6',
                 'public_ssh_host' => '192.0.2.23',
                 'architecture' => 'x86_64',
-                'wireguard_address' => 'fd00::2',
+                'wireguard_ip' => 'fd00::2',
                 'host_key_fingerprint' => $fingerprint,
             ])
             ->assertUnprocessable()
@@ -691,7 +708,7 @@ describe('POST /api/v1/nodes', function (): void {
                 'name' => 'duplicate',
                 'public_ssh_host' => '192.0.2.21',
                 'architecture' => 'x86_64',
-                'wireguard_address' => '10.44.0.2',
+                'wireguard_ip' => '10.44.0.2',
                 'host_key_fingerprint' => $fingerprint,
             ])
             ->assertConflict()

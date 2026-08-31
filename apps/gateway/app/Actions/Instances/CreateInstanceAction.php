@@ -137,7 +137,7 @@ final readonly class CreateInstanceAction
         }
 
         $roots = $this->storageRoots->resolve(
-            $this->nodeSettings->fromStored($node->settings),
+            $this->nodeSettings->legacyFromStored($node->settings),
             $account,
         );
 

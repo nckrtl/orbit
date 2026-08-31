@@ -24,7 +24,7 @@ final readonly class NodeRoleOperatingSystemGuard
 
     public function assert(Node $node, RoleName $role): void
     {
-        $wireGuardAddress = $node->wireguard_address;
+        $wireGuardAddress = $node->wireguard_ip;
 
         if (! is_string($wireGuardAddress) || $wireGuardAddress === '') {
             throw new NodeRoleOperationException(

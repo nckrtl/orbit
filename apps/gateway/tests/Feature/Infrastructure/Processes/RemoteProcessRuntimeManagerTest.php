@@ -48,7 +48,7 @@ beforeEach(function (): void {
         'public_ssh_host' => '192.0.2.20',
         'public_ssh_port' => 22,
         'user' => 'nckrtl',
-        'wireguard_address' => '10.44.0.3',
+        'wireguard_ip' => '10.44.0.3',
     ]);
     $node->roles()->create(['role' => 'app-dev', 'status' => LifecycleStatus::Active]);
     $orbitApp = OrbitApp::query()->create([

@@ -96,7 +96,7 @@ final readonly class NativeMetricsContainerRuntime implements MetricsRuntimeLife
         string $prometheusHash,
         string $grafanaHash,
     ): array {
-        $address = is_string($node->wireguard_address) ? $node->wireguard_address : '';
+        $address = is_string($node->wireguard_ip) ? $node->wireguard_ip : '';
 
         return [
             $this->spec->for(MetricsService::Prometheus, $assignment->id, $address, $prometheusHash),

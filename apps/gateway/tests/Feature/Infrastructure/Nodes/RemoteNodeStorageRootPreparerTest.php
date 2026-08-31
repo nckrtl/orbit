@@ -19,7 +19,7 @@ it('prepares configured roots through a narrow sudo bash command', function (): 
         'name' => 'app-dev',
         'status' => LifecycleStatus::Active,
         'public_ssh_host' => '192.0.2.10',
-        'wireguard_address' => '10.44.0.3',
+        'wireguard_ip' => '10.44.0.3',
         'user' => 'orbit',
     ]);
     $ssh = new AppDevFakeSshExecutor;

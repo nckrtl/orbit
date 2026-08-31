@@ -108,7 +108,7 @@ describe(RemoteToolCommandRunner::class, function (): void {
     });
 });
 
-function remote_tool_runner_node(?string $wireguardAddress): Node
+function remote_tool_runner_node(?string $wireguardIp): Node
 {
     return new Node([
         'name' => 'tool-node',
@@ -116,7 +116,7 @@ function remote_tool_runner_node(?string $wireguardAddress): Node
         'platform' => 'linux',
         'public_ssh_host' => '127.0.0.1',
         'user' => 'nckrtl',
-        'wireguard_address' => $wireguardAddress,
+        'wireguard_ip' => $wireguardIp,
     ]);
 }
 

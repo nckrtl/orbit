@@ -44,7 +44,7 @@ it('rejects resource state and process logs from unknown or inactive peers', fun
         'name' => 'trusted-operator',
         'status' => LifecycleStatus::Active,
         'public_ssh_host' => '192.0.2.10',
-        'wireguard_address' => '10.44.0.2',
+        'wireguard_ip' => '10.44.0.2',
     ]);
 
     if ($callerStatus instanceof LifecycleStatus) {
@@ -52,7 +52,7 @@ it('rejects resource state and process logs from unknown or inactive peers', fun
             'name' => 'inactive-operator',
             'status' => $callerStatus,
             'public_ssh_host' => '192.0.2.11',
-            'wireguard_address' => $remoteAddress,
+            'wireguard_ip' => $remoteAddress,
         ]);
     }
 
@@ -170,7 +170,7 @@ it('rejects an active role-less operator without direct node access', function (
         'name' => 'roleless-operator',
         'status' => LifecycleStatus::Active,
         'public_ssh_host' => '192.0.2.10',
-        'wireguard_address' => '10.44.0.2',
+        'wireguard_ip' => '10.44.0.2',
     ]);
     $process = peer_boundary_process($operator);
     $runtime = new PeerBoundaryFakeProcessRuntimeManager;
@@ -179,7 +179,7 @@ it('rejects an active role-less operator without direct node access', function (
     $logsRequestId = (string) Str::uuid();
 
     $this
-        ->withServerVariables(['REMOTE_ADDR' => $operator->wireguard_address])
+        ->withServerVariables(['REMOTE_ADDR' => $operator->wireguard_ip])
         ->withHeader('X-Orbit-Request-Id', $stateRequestId)
         ->getJson('/api/v1/apps')
         ->assertForbidden()
@@ -194,7 +194,7 @@ it('rejects an active role-less operator without direct node access', function (
             ],
         ]);
     $this
-        ->withServerVariables(['REMOTE_ADDR' => $operator->wireguard_address])
+        ->withServerVariables(['REMOTE_ADDR' => $operator->wireguard_ip])
         ->withHeader('X-Orbit-Request-Id', $logsRequestId)
         ->getJson("/api/v1/processes/{$process->id}/logs?lines=25")
         ->assertForbidden()
@@ -206,7 +206,7 @@ it('rejects an active role-less operator without direct node access', function (
         $activity = Activity::query()->where('request_id', $requestId)->sole();
 
         expect($activity->caller_ip)
-            ->toBe($operator->wireguard_address)
+            ->toBe($operator->wireguard_ip)
             ->and($activity->caller_node_id)
             ->toBe($operator->id)
             ->and($activity->error_code)
@@ -224,7 +224,7 @@ it('allows process logs with an explicit self edge', function (): void {
         'name' => 'self-edge-operator',
         'status' => LifecycleStatus::Active,
         'public_ssh_host' => '192.0.2.10',
-        'wireguard_address' => '10.44.0.2',
+        'wireguard_ip' => '10.44.0.2',
     ]);
     $operator->accessibleNodes()->attach($operator);
     $process = peer_boundary_process($operator);
@@ -233,7 +233,7 @@ it('allows process logs with an explicit self edge', function (): void {
     $requestId = (string) Str::uuid();
 
     $this
-        ->withServerVariables(['REMOTE_ADDR' => $operator->wireguard_address])
+        ->withServerVariables(['REMOTE_ADDR' => $operator->wireguard_ip])
         ->withHeader('X-Orbit-Request-Id', $requestId)
         ->getJson("/api/v1/processes/{$process->id}/logs?lines=25")
         ->assertOk()
@@ -255,7 +255,7 @@ it('rejects mutating commands from an unknown peer with the correlated error', f
         'name' => 'operator',
         'status' => LifecycleStatus::Active,
         'public_ssh_host' => '192.0.2.10',
-        'wireguard_address' => '10.44.0.2',
+        'wireguard_ip' => '10.44.0.2',
     ]);
     TrustProxies::at('*');
 
@@ -297,7 +297,7 @@ it('rejects mutating commands from an inactive registered peer', function (): vo
         'name' => 'operator',
         'status' => LifecycleStatus::Failed,
         'public_ssh_host' => '192.0.2.10',
-        'wireguard_address' => '10.44.0.2',
+        'wireguard_ip' => '10.44.0.2',
     ]);
 
     $this
@@ -315,7 +315,7 @@ it('allows Gateway-scoped app creation from an active Gateway peer', function ()
         'name' => 'operator',
         'status' => LifecycleStatus::Active,
         'public_ssh_host' => '192.0.2.10',
-        'wireguard_address' => '10.44.0.2',
+        'wireguard_ip' => '10.44.0.2',
     ]);
     $operator
         ->roles()

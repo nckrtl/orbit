@@ -41,7 +41,7 @@ function reachability_node(): Node
     return new Node([
         'name' => 'app-prod',
         'user' => 'orbit',
-        'wireguard_address' => '10.44.0.3',
+        'wireguard_ip' => '10.44.0.3',
     ]);
 }
 

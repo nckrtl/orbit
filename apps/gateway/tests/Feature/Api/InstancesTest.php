@@ -102,7 +102,7 @@ describe('instance API', function (): void {
             'status' => LifecycleStatus::Active,
             'public_ssh_host' => '192.0.2.10',
             'user' => 'orbit',
-            'wireguard_address' => '10.44.0.3',
+            'wireguard_ip' => '10.44.0.3',
         ]);
         $this->node
             ->roles()
@@ -238,7 +238,7 @@ describe('instance API', function (): void {
             'platform' => 'linux',
             'status' => LifecycleStatus::Active,
             'public_ssh_host' => '192.0.2.20',
-            'wireguard_address' => '10.44.0.5',
+            'wireguard_ip' => '10.44.0.5',
             'user' => 'orbit',
         ]);
         $node->roles()->create([
@@ -273,7 +273,7 @@ describe('instance API', function (): void {
             'platform' => 'linux',
             'status' => LifecycleStatus::Active,
             'public_ssh_host' => '192.0.2.20',
-            'wireguard_address' => '10.44.0.5',
+            'wireguard_ip' => '10.44.0.5',
             'user' => 'orbit',
         ]);
         $node->roles()->create([
@@ -310,7 +310,7 @@ describe('instance API', function (): void {
             'platform' => 'linux',
             'status' => LifecycleStatus::Active,
             'public_ssh_host' => '192.0.2.20',
-            'wireguard_address' => '10.44.0.5',
+            'wireguard_ip' => '10.44.0.5',
             'user' => 'orbit',
         ]);
         $node->roles()->create([
@@ -352,7 +352,7 @@ describe('instance API', function (): void {
             'platform' => 'linux',
             'status' => LifecycleStatus::Active,
             'public_ssh_host' => '192.0.2.20',
-            'wireguard_address' => '10.44.0.5',
+            'wireguard_ip' => '10.44.0.5',
             'user' => 'orbit',
         ]);
         $instance = Instance::query()->create([
@@ -434,7 +434,7 @@ describe('instance API', function (): void {
             'platform' => 'linux',
             'status' => LifecycleStatus::Active,
             'public_ssh_host' => '192.0.2.20',
-            'wireguard_address' => '10.44.0.5',
+            'wireguard_ip' => '10.44.0.5',
             'user' => 'orbit',
             ...$nodeAttributes,
         ]);
@@ -478,7 +478,7 @@ describe('instance API', function (): void {
             'platform' => 'linux',
             'status' => LifecycleStatus::Active,
             'public_ssh_host' => '192.0.2.20',
-            'wireguard_address' => '10.44.0.5',
+            'wireguard_ip' => '10.44.0.5',
             'user' => 'orbit',
         ]);
         $node->roles()->create([
@@ -515,7 +515,7 @@ describe('instance API', function (): void {
             'platform' => 'linux',
             'status' => LifecycleStatus::Active,
             'public_ssh_host' => '192.0.2.20',
-            'wireguard_address' => '10.44.0.5',
+            'wireguard_ip' => '10.44.0.5',
             'user' => 'orbit',
         ]);
         $node->roles()->create([
@@ -583,7 +583,7 @@ describe('instance API', function (): void {
             'tld' => 'other.orbit',
             'status' => LifecycleStatus::Active,
             'public_ssh_host' => '192.0.2.11',
-            'wireguard_address' => '10.44.0.4',
+            'wireguard_ip' => '10.44.0.4',
         ]);
         $this
             ->postJson('/api/v1/instances', [
@@ -749,26 +749,26 @@ describe('instance API', function (): void {
             'name' => 'direct-consumer',
             'status' => LifecycleStatus::Active,
             'public_ssh_host' => '192.0.2.30',
-            'wireguard_address' => '10.44.0.30',
+            'wireguard_ip' => '10.44.0.30',
         ]);
         $gatewayAccessConsumer = Node::query()->create([
             'name' => 'gateway-access-consumer',
             'status' => LifecycleStatus::Active,
             'public_ssh_host' => '192.0.2.31',
-            'wireguard_address' => '10.44.0.31',
+            'wireguard_ip' => '10.44.0.31',
         ]);
         $noEdgeConsumer = Node::query()->create([
             'name' => 'no-edge-consumer',
             'status' => LifecycleStatus::Active,
             'public_ssh_host' => '192.0.2.32',
-            'wireguard_address' => '10.44.0.32',
+            'wireguard_ip' => '10.44.0.32',
         ]);
         $otherNode = Node::query()->create([
             'name' => 'other',
             'tld' => 'other.orbit',
             'status' => LifecycleStatus::Active,
             'public_ssh_host' => '192.0.2.33',
-            'wireguard_address' => '10.44.0.33',
+            'wireguard_ip' => '10.44.0.33',
         ]);
         $otherNode
             ->roles()
@@ -791,25 +791,25 @@ describe('instance API', function (): void {
         ]);
 
         $this
-            ->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_address])
+            ->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
             ->getJson('/api/v1/instances')
             ->assertOk()
             ->assertJsonPath('data.*.id', [$second->id, $first->id]);
 
         $this
-            ->withServerVariables(['REMOTE_ADDR' => $gatewayAccessConsumer->wireguard_address])
+            ->withServerVariables(['REMOTE_ADDR' => $gatewayAccessConsumer->wireguard_ip])
             ->getJson('/api/v1/instances')
             ->assertOk()
             ->assertJsonPath('data.*.id', [$second->id, $first->id]);
 
         $this
-            ->withServerVariables(['REMOTE_ADDR' => $directConsumer->wireguard_address])
+            ->withServerVariables(['REMOTE_ADDR' => $directConsumer->wireguard_ip])
             ->getJson('/api/v1/instances')
             ->assertOk()
             ->assertJsonPath('data.*.id', [$second->id]);
 
         $this
-            ->withServerVariables(['REMOTE_ADDR' => $noEdgeConsumer->wireguard_address])
+            ->withServerVariables(['REMOTE_ADDR' => $noEdgeConsumer->wireguard_ip])
             ->getJson('/api/v1/instances')
             ->assertForbidden()
             ->assertJsonPath('error.code', 'node_access.required');
@@ -837,7 +837,7 @@ function create_app_prod_instance_for_api_test(OrbitApp $app): Instance
         'platform' => 'linux',
         'status' => LifecycleStatus::Active,
         'public_ssh_host' => '192.0.2.20',
-        'wireguard_address' => '10.44.0.5',
+        'wireguard_ip' => '10.44.0.5',
         'user' => 'orbit',
     ]);
     $node->roles()->create([

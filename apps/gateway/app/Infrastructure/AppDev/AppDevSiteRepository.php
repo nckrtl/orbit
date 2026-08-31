@@ -29,7 +29,7 @@ final readonly class AppDevSiteRepository
         $sites = collect();
 
         foreach ($instances as $instance) {
-            if (! is_string($instance->node->wireguard_address)) {
+            if (! is_string($instance->node->wireguard_ip)) {
                 continue;
             }
 
@@ -56,7 +56,7 @@ final readonly class AppDevSiteRepository
     {
         return new AppDevSite(
             nodeId: $instance->node_id,
-            nodeAddress: $instance->node->wireguard_address ?? '',
+            nodeAddress: $instance->node->wireguard_ip ?? '',
             scope: "instance-{$instance->id}",
             checkoutPath: $instance->checkout_path,
             documentRoot: $instance->document_root,
@@ -69,7 +69,7 @@ final readonly class AppDevSiteRepository
     {
         return new AppDevSite(
             nodeId: $instance->node_id,
-            nodeAddress: $instance->node->wireguard_address ?? '',
+            nodeAddress: $instance->node->wireguard_ip ?? '',
             scope: "workspace-{$workspace->id}",
             checkoutPath: $workspace->checkout_path,
             documentRoot: $instance->document_root,

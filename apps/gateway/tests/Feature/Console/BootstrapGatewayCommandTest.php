@@ -49,7 +49,7 @@ it('reports typed gateway provisioning failures without leaking command output',
             }
         },
         web: new class implements GatewayWebConverger {
-            public function converge(string $hostname, string $wireguardAddress): void {}
+            public function converge(string $hostname, string $wireguardIp): void {}
         },
         selfAccess: new class implements GatewaySelfAccessConverger {
             public function converge(Node $node): void {}
@@ -59,7 +59,11 @@ it('reports typed gateway provisioning failures without leaking command output',
 
     try {
         $this
-            ->artisan('orbit:bootstrap', ['public-host' => 'gateway.example.test'])
+            ->artisan('orbit:bootstrap', [
+                'public-host' => 'gateway.example.test',
+                '--wireguard-ip' => '10.44.0.1',
+                '--wireguard-address' => '10.44.0.1',
+            ])
             ->expectsOutput(
                 'Gateway bootstrap failed at step [wireguard-server-install] with error [vpn.server_config_install_failed].',
             )
@@ -70,6 +74,19 @@ it('reports typed gateway provisioning failures without leaking command output',
     } finally {
         $filesystem->deleteDirectory($orbitHome);
     }
+});
+
+it('rejects conflicting bootstrap WireGuard options before mutation', function (): void {
+    $this
+        ->artisan('orbit:bootstrap', [
+            'public-host' => 'gateway.example.test',
+            '--wireguard-ip' => '10.44.0.1',
+            '--wireguard-address' => '10.44.0.2',
+        ])
+        ->expectsOutput('The WireGuard IP options conflict.')
+        ->assertExitCode(1);
+
+    expect(Node::query()->exists())->toBeFalse();
 });
 
 it('does not convert non-provisioning failures into the stable diagnostic', function (): void {

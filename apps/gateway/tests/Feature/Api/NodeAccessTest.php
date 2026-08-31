@@ -15,7 +15,7 @@ describe('node access API', function (): void {
         $requestId = '3a79c8ac-7d93-4eb3-bbf7-c53d63d55c11';
 
         $this
-            ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
+            ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
             ->withHeader('X-Orbit-Request-Id', $requestId)
             ->putJson("/api/v1/nodes/{$serving->id}/access/{$consumer->id}")
             ->assertOk()
@@ -40,7 +40,7 @@ describe('node access API', function (): void {
             ->toBe(1);
 
         $this
-            ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
+            ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
             ->withHeader('X-Orbit-Request-Id', $requestId)
             ->putJson("/api/v1/nodes/{$serving->id}/access/{$consumer->id}")
             ->assertOk()
@@ -49,7 +49,7 @@ describe('node access API', function (): void {
             ->assertJsonPath('meta.request_id', $requestId);
 
         $this
-            ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
+            ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
             ->withHeader('X-Orbit-Request-Id', $requestId)
             ->deleteJson("/api/v1/nodes/{$serving->id}/access/{$consumer->id}")
             ->assertOk()
@@ -67,7 +67,7 @@ describe('node access API', function (): void {
         expect(NodeAccess::query()->count())->toBe(0);
 
         $this
-            ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
+            ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
             ->withHeader('X-Orbit-Request-Id', $requestId)
             ->deleteJson("/api/v1/nodes/{$serving->id}/access/{$consumer->id}")
             ->assertOk()
@@ -86,7 +86,7 @@ describe('node access API', function (): void {
         $requestId = 'f9bd6e3f-9175-41e4-b342-fe964535c765';
 
         $this
-            ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
+            ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
             ->withHeader('X-Orbit-Request-Id', $requestId)
             ->putJson("/api/v1/nodes/{$serving->id}/access/{$consumer->id}")
             ->assertOk()
@@ -95,7 +95,7 @@ describe('node access API', function (): void {
             ->assertJsonPath('meta.request_id', $requestId);
 
         $this
-            ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
+            ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
             ->withHeader('X-Orbit-Request-Id', $requestId)
             ->deleteJson("/api/v1/nodes/{$serving->id}/access/{$consumer->id}")
             ->assertOk()
@@ -112,7 +112,7 @@ describe('node access API', function (): void {
         $caller->accessibleNodes()->attach($serving);
 
         $this
-            ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
+            ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
             ->putJson("/api/v1/nodes/{$serving->id}/access/{$consumer->id}")
             ->assertForbidden()
             ->assertJsonPath('error.code', 'node_access.required');
@@ -124,7 +124,7 @@ describe('node access API', function (): void {
         $consumer = node_access_api_node('consumer');
 
         $this
-            ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
+            ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
             ->deleteJson("/api/v1/nodes/{$serving->id}/access/{$consumer->id}")
             ->assertForbidden()
             ->assertJsonPath('error.code', 'node_access.required');
@@ -136,13 +136,13 @@ describe('node access API', function (): void {
         $caller->accessibleNodes()->attach($gateway);
 
         $this
-            ->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_address])
+            ->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
             ->putJson("/api/v1/nodes/{$caller->id}/access/{$caller->id}")
             ->assertOk()
             ->assertJsonPath('data.already_exists', false);
 
         $this
-            ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
+            ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
             ->deleteJson("/api/v1/nodes/{$gateway->id}/access/{$caller->id}")
             ->assertOk()
             ->assertJsonPath('data.already_absent', false)
@@ -155,14 +155,14 @@ describe('node access API', function (): void {
         $caller->accessibleNodes()->attach($gateway);
 
         $this
-            ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
+            ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
             ->deleteJson("/api/v1/nodes/{$caller->id}/access/{$caller->id}")
             ->assertOk()
             ->assertJsonPath('data.already_absent', true)
             ->assertJsonPath('data.self_lockout', false);
 
         $this
-            ->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_address])
+            ->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
             ->deleteJson("/api/v1/nodes/{$gateway->id}/access/{$gateway->id}")
             ->assertOk()
             ->assertJsonPath('data.already_absent', true)
@@ -177,25 +177,25 @@ describe('node access API', function (): void {
         $inactiveConsumer = node_access_api_node('inactive-consumer', status: LifecycleStatus::Failed);
 
         $this
-            ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
+            ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
             ->putJson('/api/v1/nodes/999999/access/'.$consumer->id)
             ->assertNotFound()
             ->assertJsonPath('error.code', 'http.404');
 
         $this
-            ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
+            ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
             ->putJson("/api/v1/nodes/{$serving->id}/access/999999")
             ->assertNotFound()
             ->assertJsonPath('error.code', 'http.404');
 
         $this
-            ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
+            ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
             ->putJson("/api/v1/nodes/{$inactiveServing->id}/access/{$consumer->id}")
             ->assertNotFound()
             ->assertJsonPath('error.code', 'http.404');
 
         $this
-            ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
+            ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
             ->deleteJson("/api/v1/nodes/{$serving->id}/access/{$inactiveConsumer->id}")
             ->assertNotFound()
             ->assertJsonPath('error.code', 'http.404');
@@ -210,6 +210,6 @@ function node_access_api_node(
         'name' => $name,
         'status' => $status,
         'public_ssh_host' => $name.'.example.test',
-        'wireguard_address' => '10.44.0.'.(Node::query()->count() + 2),
+        'wireguard_ip' => '10.44.0.'.(Node::query()->count() + 2),
     ]);
 }

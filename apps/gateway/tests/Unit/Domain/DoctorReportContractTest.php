@@ -191,7 +191,7 @@ it('defines the exact stable issue-code catalog for every Doctor family', functi
             'node.ssh_unreachable',
             'node.platform_mismatch',
             'node.architecture_mismatch',
-            'node.wireguard_address_mismatch',
+            'node.wireguard_ip_mismatch',
             'node.inspection_failed',
         ],
         'role' => [

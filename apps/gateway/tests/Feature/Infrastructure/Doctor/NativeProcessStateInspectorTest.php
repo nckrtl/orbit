@@ -226,7 +226,7 @@ function native_process_inspector(
         'public_ssh_host' => '192.0.2.51',
         'public_ssh_port' => 2022,
         'user' => 'nckrtl',
-        'wireguard_address' => '10.44.0.51',
+        'wireguard_ip' => '10.44.0.51',
     ]);
     $app = OrbitApp::query()->create([
         'name' => fake()->word(),

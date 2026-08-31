@@ -30,7 +30,7 @@ final readonly class SshManagedUserAccountResolver implements ManagedUserAccount
     public function resolve(Node $node): ManagedUserAccount
     {
         try {
-            $host = $node->wireguard_address;
+            $host = $node->wireguard_ip;
             if (! is_string($host) || $host === '') {
                 throw new \RuntimeException;
             }

@@ -73,7 +73,7 @@ it('converges the persistent and active app development TLD route over WireGuard
         'architecture' => 'x86_64',
         'tld' => 'test',
         'public_ssh_host' => '192.0.2.10',
-        'wireguard_address' => '10.44.0.7',
+        'wireguard_ip' => '10.44.0.7',
         'user' => 'orbit',
     ]);
     $ssh = new AppDevFakeSshExecutor;
@@ -2086,7 +2086,7 @@ it('projects only the explicit provisioning node before its active transition', 
         'platform' => 'linux',
         'tld' => 'pending.orbit',
         'public_ssh_host' => '192.0.2.30',
-        'wireguard_address' => '10.44.0.30',
+        'wireguard_ip' => '10.44.0.30',
     ]);
     $pending->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Provisioning]);
     Node::query()->create([
@@ -2095,7 +2095,7 @@ it('projects only the explicit provisioning node before its active transition', 
         'platform' => 'linux',
         'tld' => 'other-pending.orbit',
         'public_ssh_host' => '192.0.2.31',
-        'wireguard_address' => '10.44.0.31',
+        'wireguard_ip' => '10.44.0.31',
     ]);
     $processes = new AppDevFakeProcessRunner;
     $manager = new DnsmasqPrivateDnsManager($processes, new AppDevDnsConfigRenderer(new AppDevSiteRepository));
@@ -2125,7 +2125,7 @@ it('projects node wildcards only while the app-dev role is provisioning or activ
             'platform' => 'linux',
             'tld' => "role-{$status->value}.orbit",
             'public_ssh_host' => '192.0.2.'.(40 + $index),
-            'wireguard_address' => '10.44.0.'.(40 + $index),
+            'wireguard_ip' => '10.44.0.'.(40 + $index),
         ]);
         $node->roles()->create(['role' => RoleName::AppDev, 'status' => $status]);
     }
@@ -2461,7 +2461,7 @@ function app_dev_runtime_models(
         'status' => LifecycleStatus::Active,
         'tld' => 'app-dev.orbit',
         'public_ssh_host' => '192.0.2.10',
-        'wireguard_address' => '10.44.0.3',
+        'wireguard_ip' => '10.44.0.3',
         'user' => $account->user,
     ]);
     $node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
@@ -2495,7 +2495,7 @@ function app_dev_runtime_models(
         'status' => LifecycleStatus::Active,
         'platform' => 'linux',
         'public_ssh_host' => '85.9.218.89',
-        'wireguard_address' => '10.44.0.1',
+        'wireguard_ip' => '10.44.0.1',
     ]);
     $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
 

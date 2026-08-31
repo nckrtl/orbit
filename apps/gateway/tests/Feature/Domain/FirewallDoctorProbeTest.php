@@ -26,7 +26,7 @@ it('returns a healthy empty report without calling the inspector', function (): 
     $node = Node::create([
         'name' => 'empty',
         'platform' => 'linux',
-        'wireguard_address' => '10.0.0.9',
+        'wireguard_ip' => '10.0.0.9',
         'public_ssh_host' => '192.0.2.9',
         'user' => 'orbit',
     ]);
@@ -49,7 +49,7 @@ it('short-circuits unreachable nodes without inspector calls', function (): void
     $node = Node::create([
         'name' => 'down',
         'platform' => 'linux',
-        'wireguard_address' => '10.0.0.8',
+        'wireguard_ip' => '10.0.0.8',
         'public_ssh_host' => '192.0.2.8',
         'user' => 'orbit',
     ]);
@@ -86,7 +86,7 @@ it('checks real database rows in id order and emits bounded lifecycle issues', f
     $node = Node::create([
         'name' => 'node',
         'platform' => 'linux',
-        'wireguard_address' => '10.0.0.1',
+        'wireguard_ip' => '10.0.0.1',
         'public_ssh_host' => '192.0.2.1',
         'user' => 'orbit',
     ]);
@@ -133,14 +133,14 @@ it('maps backend, rule, exact, typed failure, and excludes other nodes', functio
     $node = Node::create([
         'name' => 'target',
         'platform' => 'linux',
-        'wireguard_address' => '10.0.0.2',
+        'wireguard_ip' => '10.0.0.2',
         'public_ssh_host' => '192.0.2.2',
         'user' => 'orbit',
     ]);
     $other = Node::create([
         'name' => 'other',
         'platform' => 'linux',
-        'wireguard_address' => '10.0.0.3',
+        'wireguard_ip' => '10.0.0.3',
         'public_ssh_host' => '192.0.2.3',
         'user' => 'orbit',
     ]);

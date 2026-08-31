@@ -200,7 +200,7 @@ it('fails closed without mutation when an owned comment has drifted', function (
 it('rejects missing WireGuard addresses before firewall mutation', function (): void {
     $ssh = new RoleFirewallSshExecutor;
     $node = role_firewall_node();
-    $node->wireguard_address = null;
+    $node->wireguard_ip = null;
 
     expect(fn () => role_firewall_manager($ssh)->converge($node, RoleName::Vpn, 'nckrtl'))
         ->toThrow(FirewallOperationException::class);
@@ -214,7 +214,7 @@ function role_firewall_node(): Node
         'platform' => 'linux',
         'public_ssh_host' => '192.0.2.10',
         'public_ssh_port' => 22,
-        'wireguard_address' => '10.44.0.2',
+        'wireguard_ip' => '10.44.0.2',
     ]);
 }
 

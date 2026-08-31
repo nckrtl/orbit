@@ -58,7 +58,7 @@ it('maps a bounded successful SSH observation', function (): void {
 
         public function put(string $host, int $port, \App\Infrastructure\Ssh\HostKey $key): void {}
     };
-    $node = new Node(['user' => 'nckrtl', 'wireguard_address' => '10.44.0.7']);
+    $node = new Node(['user' => 'nckrtl', 'wireguard_ip' => '10.44.0.7']);
 
     $result = new SshNodeStateInspector($ssh, $keys, $hosts, new CommandDeadline)->inspect($node);
 
@@ -102,7 +102,7 @@ it('rejects malformed successful output and bounds architecture aliases', functi
     };
     expect(fn (): mixed => new SshNodeStateInspector($ssh, $keys, $hosts, new CommandDeadline)->inspect(new Node([
         'user' => 'nckrtl',
-        'wireguard_address' => '10.44.0.7',
+        'wireguard_ip' => '10.44.0.7',
     ])))
         ->toThrow(\App\Domain\Doctor\DoctorInspectionException::class);
 });
@@ -138,7 +138,7 @@ it('rejects truncated successful output', function (): void {
             public function put(string $host, int $port, \App\Infrastructure\Ssh\HostKey $key): void {}
         },
         new CommandDeadline,
-    )->inspect(new Node(['user' => 'nckrtl', 'wireguard_address' => '10.44.0.7'])))
+    )->inspect(new Node(['user' => 'nckrtl', 'wireguard_ip' => '10.44.0.7'])))
         ->toThrow(\App\Domain\Doctor\DoctorInspectionException::class);
 });
 
@@ -172,7 +172,7 @@ it('returns reachable with a missing interface and maps arm aliases', function (
     };
     $result = new SshNodeStateInspector($ssh, $keys, $hosts, new CommandDeadline)->inspect(new Node([
         'user' => 'nckrtl',
-        'wireguard_address' => '10.44.0.7',
+        'wireguard_ip' => '10.44.0.7',
     ]));
     expect($result->reachable)
         ->toBeTrue()
@@ -211,7 +211,7 @@ it('maps transport exceptions and missing addresses to unreachable', function ()
         public function put(string $host, int $port, \App\Infrastructure\Ssh\HostKey $key): void {}
     };
     $inspector = new SshNodeStateInspector($ssh, $keys, $hosts, new CommandDeadline);
-    expect($inspector->inspect(new Node(['user' => 'nckrtl', 'wireguard_address' => '10.44.0.7']))->reachable)
+    expect($inspector->inspect(new Node(['user' => 'nckrtl', 'wireguard_ip' => '10.44.0.7']))->reachable)
         ->toBeFalse()
         ->and($inspector->inspect(new Node(['user' => 'nckrtl']))->reachable)
         ->toBeFalse();
@@ -247,7 +247,7 @@ it('maps timeouts to an unreachable bounded observation', function (): void {
     };
     $result = new SshNodeStateInspector($ssh, $keys, $hosts, new CommandDeadline)->inspect(new Node([
         'user' => 'nckrtl',
-        'wireguard_address' => '10.44.0.7',
+        'wireguard_ip' => '10.44.0.7',
     ]));
     expect($result->reachable)
         ->toBeFalse()
@@ -289,7 +289,7 @@ it('maps command failures to an unreachable bounded observation', function (): v
     };
     $result = new SshNodeStateInspector($ssh, $keys, $hosts, new CommandDeadline)->inspect(new Node([
         'user' => 'nckrtl',
-        'wireguard_address' => '10.44.0.7',
+        'wireguard_ip' => '10.44.0.7',
     ]));
     expect($result->reachable)
         ->toBeFalse()

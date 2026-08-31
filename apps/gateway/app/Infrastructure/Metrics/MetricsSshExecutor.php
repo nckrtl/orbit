@@ -829,11 +829,11 @@ final readonly class MetricsSshExecutor implements MetricsRuntimeHost, MetricsCr
 
     private function connection(Node $node): SshConnection
     {
-        $address = $node->wireguard_address;
+        $address = $node->wireguard_ip;
 
         if (! is_string($address) || filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
             throw new ResourceOperationException(
-                'metrics.wireguard_address_missing',
+                'metrics.wireguard_ip_missing',
                 "Node [{$node->name}] has no valid WireGuard address.",
                 409,
             );

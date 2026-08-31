@@ -14,7 +14,7 @@ final class NodeFirewallRuleCatalog
     {
         return [
             $this->rule('orbit:public-ssh-recovery', (string) $node->public_ssh_port),
-            $this->rule('orbit:vpn-ssh', '22', $this->wireguardAddress($node), 'orbit'),
+            $this->rule('orbit:vpn-ssh', '22', $this->wireguardIp($node), 'orbit'),
         ];
     }
 
@@ -24,10 +24,11 @@ final class NodeFirewallRuleCatalog
             RoleName::Gateway => [
                 $this->rule('orbit:gateway-https', '443', 'any', 'orbit'),
             ],
-            RoleName::Vpn => [$this->rule('orbit:vpn-ssh', '22', $this->wireguardAddress($node), 'orbit')],
+            RoleName::Vpn => [$this->rule('orbit:vpn-ssh', '22', $this->wireguardIp($node), 'orbit')],
+            RoleName::Router => [],
             RoleName::AppDev => [
-                $this->rule('orbit:app-dev-http', '80', $this->wireguardAddress($node), 'orbit'),
-                $this->rule('orbit:app-dev-https', '443', $this->wireguardAddress($node), 'orbit'),
+                $this->rule('orbit:app-dev-http', '80', $this->wireguardIp($node), 'orbit'),
+                $this->rule('orbit:app-dev-https', '443', $this->wireguardIp($node), 'orbit'),
                 $this->rule('orbit:app-dev-direct-http', '80'),
                 $this->rule('orbit:app-dev-direct-https', '443'),
             ],
@@ -76,9 +77,9 @@ final class NodeFirewallRuleCatalog
         );
     }
 
-    private function wireguardAddress(Node $node): string
+    private function wireguardIp(Node $node): string
     {
-        if (! is_string($node->wireguard_address) || $node->wireguard_address === '') {
+        if (! is_string($node->wireguard_ip) || $node->wireguard_ip === '') {
             throw new FirewallOperationException(
                 step: 'host-firewall',
                 errorCode: 'node.firewall_convergence_failed',
@@ -86,6 +87,6 @@ final class NodeFirewallRuleCatalog
             );
         }
 
-        return $node->wireguard_address;
+        return $node->wireguard_ip;
     }
 }

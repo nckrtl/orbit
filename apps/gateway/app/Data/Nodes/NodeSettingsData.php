@@ -9,26 +9,18 @@ use Spatie\LaravelData\Data;
 final class NodeSettingsData extends Data
 {
     public function __construct(
-        public ?InstanceSettingsData $instance = null,
-        public ?WorktreeSettingsData $worktree = null,
+        public ?AppsSettingsData $apps = null,
     ) {}
 
-    public function instancePath(): ?string
+    public function appsPath(): ?string
     {
-        $path = $this->instance?->path;
-
-        return is_string($path) ? $path : null;
-    }
-
-    public function worktreePath(): ?string
-    {
-        $path = $this->worktree?->path;
+        $path = $this->apps?->path;
 
         return is_string($path) ? $path : null;
     }
 
     public function isEmpty(): bool
     {
-        return $this->instancePath() === null && $this->worktreePath() === null;
+        return $this->appsPath() === null;
     }
 }

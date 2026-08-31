@@ -18,8 +18,8 @@ final readonly class WireGuardAddressAllocator
     {
         [$first, $last, $subnet] = $this->usableRange();
         $used = Node::query()
-            ->whereNotNull('wireguard_address')
-            ->pluck('wireguard_address')
+            ->whereNotNull('wireguard_ip')
+            ->pluck('wireguard_ip')
             ->filter(static fn (mixed $address): bool => is_string($address))
             ->all();
 
@@ -55,7 +55,7 @@ final readonly class WireGuardAddressAllocator
             );
         }
 
-        $query = Node::query()->where('wireguard_address', $requestedAddress);
+        $query = Node::query()->where('wireguard_ip', $requestedAddress);
 
         if ($node instanceof Node && $node->exists) {
             $query->whereKeyNot($node->getKey());

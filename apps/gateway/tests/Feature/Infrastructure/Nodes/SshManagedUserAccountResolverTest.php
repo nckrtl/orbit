@@ -45,7 +45,7 @@ it('resolves the managed account over the node WireGuard address', function (): 
             return new CommandResult(0, "deploy\n/home/deploy\ndeploy\n", '', 1, false);
         }
     };
-    $node = new Node(['user' => 'deploy', 'wireguard_address' => '10.44.0.8']);
+    $node = new Node(['user' => 'deploy', 'wireguard_ip' => '10.44.0.8']);
     $account = new SshManagedUserAccountResolver(
         $executor,
         new class implements SshKeyProvider {
@@ -92,7 +92,7 @@ it('rejects malformed output with a safe provisioning error', function (): void 
             return new CommandResult(0, "deploy\n../bad\ndeploy\n", 'secret stderr', 1, false);
         }
     };
-    $node = new Node(['user' => 'deploy', 'wireguard_address' => '10.44.0.8']);
+    $node = new Node(['user' => 'deploy', 'wireguard_ip' => '10.44.0.8']);
     expect(
         fn () => new SshManagedUserAccountResolver(
             $executor,
@@ -143,7 +143,7 @@ it('rejects every malformed or failed remote result safely', function (
             return new CommandResult($this->exitCode, $this->stdout, 'stderr-sentinel', 1, $this->truncated);
         }
     };
-    $node = new Node(['user' => 'deploy', 'wireguard_address' => '10.44.0.8']);
+    $node = new Node(['user' => 'deploy', 'wireguard_ip' => '10.44.0.8']);
     expect(
         fn () => new SshManagedUserAccountResolver(
             $executor,
@@ -199,7 +199,7 @@ it('bounds dependency exceptions and is registered as a singleton', function ():
             throw new NodeProvisioningException('dependency', 'secret.code', 'secret-sentinel');
         }
     };
-    $node = new Node(['user' => 'deploy', 'wireguard_address' => '10.44.0.8']);
+    $node = new Node(['user' => 'deploy', 'wireguard_ip' => '10.44.0.8']);
     $resolver = new SshManagedUserAccountResolver(
         $executor,
         new class implements SshKeyProvider {

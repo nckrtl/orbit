@@ -82,7 +82,7 @@ it('fails closed when a selected node has no valid WireGuard address', function 
             'status' => LifecycleStatus::Active,
         ]);
     $invalid = metricsExporterLifecycleNode('invalid-target', '10.44.0.4');
-    $invalid->update(['wireguard_address' => null]);
+    $invalid->update(['wireguard_ip' => null]);
     $invalid
         ->roles()
         ->create([
@@ -315,7 +315,7 @@ function metricsExporterLifecycleNode(string $name, string $address): Node
         'platform' => 'linux',
         'public_ssh_host' => "192.0.2.{$name}",
         'ssh_user' => 'orbit',
-        'wireguard_address' => $address,
+        'wireguard_ip' => $address,
     ]);
 }
 

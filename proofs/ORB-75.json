@@ -1,0 +1,78 @@
+{
+    "setup": [],
+    "acceptance": [
+        {
+            "id": "clusters-normalize-through-api-and-sdk",
+            "node": "gateway",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/proof.sh", "01"],
+            "timeout_seconds": 180
+        },
+        {
+            "id": "cluster-rejections-preserve-state",
+            "node": "gateway",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/proof.sh", "02"],
+            "timeout_seconds": 180
+        },
+        {
+            "id": "single-cluster-membership-through-all-clients",
+            "node": "gateway",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/proof.sh", "03"],
+            "timeout_seconds": 180
+        },
+        {
+            "id": "router-colocation-and-singleton",
+            "node": "gateway",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/proof.sh", "04"],
+            "timeout_seconds": 180
+        },
+        {
+            "id": "router-replacement-and-safe-clear",
+            "node": "gateway",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/proof.sh", "05"],
+            "timeout_seconds": 180
+        },
+        {
+            "id": "canonical-network-identity-and-storage-mirror",
+            "node": "gateway",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/proof.sh", "06"],
+            "timeout_seconds": 900
+        },
+        {
+            "id": "cluster-local-lan-uniqueness",
+            "node": "gateway",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/proof.sh", "07"],
+            "timeout_seconds": 900
+        },
+        {
+            "id": "apps-root-raw-default-and-nonmoving-paths",
+            "node": "gateway",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/proof.sh", "08"],
+            "timeout_seconds": 600
+        },
+        {
+            "id": "complete-cli-surface-and-local-validation",
+            "node": "gateway",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/proof.sh", "09"],
+            "timeout_seconds": 900
+        },
+        {
+            "id": "unsafe-removal-and-detach-preserve-state",
+            "node": "gateway",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/proof.sh", "10"],
+            "timeout_seconds": 180
+        },
+        {
+            "id": "doctor-partition-and-router-health",
+            "node": "gateway",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/proof.sh", "11"],
+            "timeout_seconds": 300
+        },
+        {
+            "id": "legacy-harness-compatibility-and-final-state",
+            "node": "gateway",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/proof.sh", "12"],
+            "timeout_seconds": 180
+        }
+    ],
+    "mutates": true
+}

@@ -180,20 +180,25 @@ describe('repository guidance bootstrap', function (): void {
         }
 
         expect($requestFileCount)
-            ->toBe(55)
+            ->toBe(64)
             ->and($requestClasses)
-            ->toHaveCount(53)
-            ->toContain(Orbit\Sdk\Requests\Doctor\RunDoctorRequest::class);
+            ->toHaveCount(62)
+            ->toContain(Orbit\Sdk\Requests\Doctor\RunDoctorRequest::class)
+            ->toContain(Orbit\Sdk\Requests\Clusters\ListClustersRequest::class)
+            ->toContain(Orbit\Sdk\Requests\Clusters\ClearClusterRouterRequest::class);
     });
 
-    it('documents the 45-operation SDK surface, Doctor, and the binary node access boundary', function (): void {
+    it('documents the 62-operation SDK surface, Clusters, Doctor, and the binary node access boundary', function (): void {
         $publicContract = repository_guidance_contents('.ai/rules/public-contract.md');
         $normalizedPublicContract = repository_guidance_normalized_contents('.ai/rules/public-contract.md');
 
         expect($publicContract)
-            ->toContain('The SDK models exactly 53 concrete public Gateway API operations:')
+            ->toContain('The SDK models exactly 62 concrete public Gateway API operations:')
             ->toContain(
                 '- Node: list, show, provision, settings update, remove, access add, access remove, role list, role add, and role remove.',
+            )
+            ->toContain(
+                '- Cluster: list, show, create, update, remove, Node attach, Node detach, Router set, and Router clear.',
             )
             ->toContain('- Doctor: run the complete typed Gateway report.')
             ->not->toContain('Docker Swarm, permissions, role add/remove')->toContain(

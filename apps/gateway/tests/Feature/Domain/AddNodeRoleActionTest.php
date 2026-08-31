@@ -369,7 +369,7 @@ describe(AddNodeRoleAction::class, function (): void {
         $baseline = new AddNodeRoleBaselineFake;
         app()->instance(RoleBaselineConverger::class, $baseline);
         $first = add_role_node(name: 'first');
-        $second = add_role_node(name: 'second', wireguardAddress: '10.44.0.3');
+        $second = add_role_node(name: 'second', wireguardIp: '10.44.0.3');
         $first->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
 
         expect(fn () => app(AddNodeRoleAction::class)->executeDuringProvisioning($second, RoleName::Gateway))
@@ -458,7 +458,7 @@ describe(AddNodeRoleAction::class, function (): void {
 function add_role_node(
     LifecycleStatus $status = LifecycleStatus::Active,
     string $name = 'app-host',
-    string $wireguardAddress = '10.44.0.2',
+    string $wireguardIp = '10.44.0.2',
 ): Node {
     return Node::query()->create([
         'name' => $name,
@@ -467,7 +467,7 @@ function add_role_node(
         'architecture' => 'x86_64',
         'public_ssh_host' => '192.0.2.10',
         'user' => 'orbit',
-        'wireguard_address' => $wireguardAddress,
+        'wireguard_ip' => $wireguardIp,
     ]);
 }
 

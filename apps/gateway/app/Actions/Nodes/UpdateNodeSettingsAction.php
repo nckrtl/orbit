@@ -73,17 +73,15 @@ final readonly class UpdateNodeSettingsAction
 
     private function persist(Node $node, ?NodeSettingsData $normalized): void
     {
-        $node->settings = $this->normalizer->stored($normalized);
+        $node->settings = $this->normalizer->stored($normalized, $node->settings);
         $node->save();
     }
 
     private function inspectExplicitRoots(Node $node, ManagedUserAccount $account, NodeSettingsData $settings): void
     {
-        foreach ([$settings->instancePath(), $settings->worktreePath()] as $path) {
-            if (! is_string($path) || $path === '') {
-                continue;
-            }
+        $path = $settings->appsPath();
 
+        if (is_string($path) && $path !== '') {
             $this->preparer->inspect($node, $account, StoragePath::parse($path));
         }
     }

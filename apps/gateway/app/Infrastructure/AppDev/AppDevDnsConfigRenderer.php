@@ -32,11 +32,11 @@ final readonly class AppDevDnsConfigRenderer
                 'role',
                 RoleName::AppDev->value,
             )->whereIn('status', [LifecycleStatus::Provisioning->value, LifecycleStatus::Active->value]))
-            ->whereNotNull('wireguard_address')
+            ->whereNotNull('wireguard_ip')
             ->whereNotNull('tld')
             ->get()
             ->flatMap(static fn (Node $n): array => [
-                "address=/.{$n->tld}/{$n->wireguard_address}",
+                "address=/.{$n->tld}/{$n->wireguard_ip}",
                 "local=/{$n->tld}/",
             ]);
         $records = $nodes
@@ -46,14 +46,14 @@ final readonly class AppDevDnsConfigRenderer
             ));
         $gateway = Node::query()
             ->where('status', LifecycleStatus::Active->value)
-            ->whereNotNull('wireguard_address')
+            ->whereNotNull('wireguard_ip')
             ->whereHas('roles', static fn (Builder $q): Builder => $q->where('role', RoleName::Gateway->value)->where(
                 'status',
                 LifecycleStatus::Active->value,
             ))
             ->first();
         if ($gateway instanceof Node) {
-            $records->push("host-record=gateway.orbit,{$gateway->wireguard_address}");
+            $records->push("host-record=gateway.orbit,{$gateway->wireguard_ip}");
 
             $metrics = Node::query()
                 ->where(static function (Builder $q) use ($pendingNode): void {
@@ -63,7 +63,7 @@ final readonly class AppDevDnsConfigRenderer
                         $q->orWhere('id', $pendingNode->id);
                     }
                 })
-                ->whereNotNull('wireguard_address')
+                ->whereNotNull('wireguard_ip')
                 ->whereHas('roles', static function (Builder $q) use ($pendingNode): void {
                     $q->where('role', RoleName::Metrics->value)
                         ->where(static function (Builder $q) use ($pendingNode): void {
@@ -78,7 +78,7 @@ final readonly class AppDevDnsConfigRenderer
                 })
                 ->first();
             if ($metrics instanceof Node) {
-                $records->push("host-record=metrics.orbit,{$gateway->wireguard_address}");
+                $records->push("host-record=metrics.orbit,{$gateway->wireguard_ip}");
             }
         }
 

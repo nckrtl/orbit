@@ -7,6 +7,8 @@ use Illuminate\Support\Facades\Schema;
 
 describe('managed node user migrations', function (): void {
     it('preserves root when a legacy update derives the canonical orbit user', function (): void {
+        rollbackClusterNetworkMigration();
+
         $contract = require base_path('database/migrations/2026_08_28_000001_drop_node_ssh_user.php');
         $expand = require base_path('database/migrations/2026_08_28_000000_add_node_user.php');
 
@@ -30,6 +32,8 @@ describe('managed node user migrations', function (): void {
     });
 
     it('expands, contracts, and rolls back with legacy write compatibility', function (): void {
+        rollbackClusterNetworkMigration();
+
         $contract = require base_path('database/migrations/2026_08_28_000001_drop_node_ssh_user.php');
         $expand = require base_path('database/migrations/2026_08_28_000000_add_node_user.php');
 
@@ -199,6 +203,13 @@ describe('managed node user migrations', function (): void {
             ->toBe('orbit');
     });
 });
+
+function rollbackClusterNetworkMigration(): void
+{
+    $migration = require base_path('database/migrations/2026_08_31_165346_add_clusters_and_node_network_identity.php');
+
+    $migration->down();
+}
 
 /**
  * @return array<string, mixed>

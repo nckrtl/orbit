@@ -30,6 +30,7 @@ it('sends node provisioning to the active gateway', function (): void {
         '*/api/v1/nodes' => MockResponse::make([
             'data' => [
                 'id' => 1,
+                'cluster_id' => 3,
                 'name' => 'app-dev',
                 'status' => 'active',
                 'platform' => 'linux',
@@ -38,7 +39,8 @@ it('sends node provisioning to the active gateway', function (): void {
                 'public_ssh_host' => '94.237.40.75',
                 'public_ssh_port' => 22,
                 'user' => 'orbit',
-                'wireguard_address' => '10.44.0.2',
+                'wireguard_ip' => '10.44.0.2',
+                'lan_ip' => '10.0.0.2',
                 'wireguard_public_key' => 'app-dev-public-key',
                 'wireguard_endpoint_override' => '10.0.0.2:51820',
                 'dns_server_override' => '10.0.0.2',
@@ -52,6 +54,7 @@ it('sends node provisioning to the active gateway', function (): void {
     ]);
     $expected = json_encode([
         'id' => 1,
+        'cluster_id' => 3,
         'name' => 'app-dev',
         'status' => 'active',
         'platform' => 'linux',
@@ -60,7 +63,8 @@ it('sends node provisioning to the active gateway', function (): void {
         'public_ssh_host' => '94.237.40.75',
         'public_ssh_port' => 22,
         'user' => 'orbit',
-        'wireguard_address' => '10.44.0.2',
+        'wireguard_ip' => '10.44.0.2',
+        'lan_ip' => '10.0.0.2',
         'wireguard_public_key' => 'app-dev-public-key',
         'wireguard_endpoint_override' => '10.0.0.2:51820',
         'dns_server_override' => '10.0.0.2',
@@ -80,7 +84,9 @@ it('sends node provisioning to the active gateway', function (): void {
             '--platform' => 'linux',
             '--architecture' => 'x86_64',
             '--tld' => '.App-Dev.Orbit',
-            '--wireguard-address' => '10.44.0.2',
+            '--cluster' => '3',
+            '--wireguard-ip' => '10.44.0.2',
+            '--lan-ip' => '10.0.0.2',
             '--wireguard-endpoint' => '10.0.0.2:51820',
             '--dns-server' => '10.0.0.2',
             '--host-key-fingerprint' => 'SHA256:5jCWsPXzMnd5zy5xVxZ2gzyjH9N3wVfL6n5X0M8W3uQ',
@@ -103,7 +109,9 @@ it('sends node provisioning to the active gateway', function (): void {
             'public_ssh_port' => 22,
             'user' => 'root',
             'roles' => ['app-dev'],
-            'wireguard_address' => '10.44.0.2',
+            'cluster_id' => 3,
+            'wireguard_ip' => '10.44.0.2',
+            'lan_ip' => '10.0.0.2',
             'wireguard_endpoint_override' => '10.0.0.2:51820',
             'dns_server_override' => '10.0.0.2',
             'host_key_fingerprint' => 'SHA256:5jCWsPXzMnd5zy5xVxZ2gzyjH9N3wVfL6n5X0M8W3uQ',
@@ -165,15 +173,13 @@ it('sends repeatable provision settings and rejects invalid setting input locall
         'name' => 'app-dev',
         'host' => '94.237.40.75',
         '--setting' => [
-            'instance.path:/srv/orbit:data/instances',
-            'worktree.path:',
+            'apps.path:/srv/orbit:data/apps',
         ],
     ])->assertExitCode(0);
 
     expect($mockClient->getLastRequest()?->body()->all()['settings'] ?? null)
         ->toBe([
-            'instance' => ['path' => '/srv/orbit:data/instances'],
-            'worktree' => null,
+            'apps' => ['path' => '/srv/orbit:data/apps'],
         ]);
 
     MockClient::destroyGlobal();
@@ -212,9 +218,93 @@ it('rejects duplicate and malformed provision settings before making a request',
 
     expect($mockClient->getLastPendingRequest())->toBeNull();
 })->with([
-    'duplicate key' => [['instance.path:/srv/a', 'instance.path:/srv/b'], 'supplied more than once'],
-    'missing colon' => [['instance.path'], 'setting-path'],
+    'duplicate key' => [['apps.path:/srv/a', 'apps.path:/srv/b'], 'supplied more than once'],
+    'missing colon' => [['apps.path'], 'setting-path'],
     'empty key' => [[':/srv/a'], 'setting-path'],
+]);
+
+it('accepts the deprecated WireGuard alias alone and equal dual values', function (array $options): void {
+    app(GatewayConfigRepository::class)->add(new GatewayProfile(
+        name: 'test',
+        url: 'https://10.44.0.1',
+    ));
+    $mockClient = MockClient::global([
+        '*/api/v1/nodes' => MockResponse::make([
+            'data' => [
+                'id' => 1,
+                'name' => 'app-dev',
+                'status' => 'active',
+                'public_ssh_host' => '94.237.40.75',
+                'public_ssh_port' => 22,
+                'user' => 'orbit',
+                'wireguard_ip' => '10.44.0.2',
+                'roles' => [],
+            ],
+            'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844'],
+        ], 201),
+    ]);
+
+    $this->artisan('node:provision', [
+        'name' => 'app-dev',
+        'host' => '94.237.40.75',
+        ...$options,
+    ])->assertExitCode(0);
+
+    expect($mockClient->getLastRequest()?->body()->all())
+        ->toHaveKey('wireguard_ip', '10.44.0.2')
+        ->not->toHaveKey('wireguard_address');
+})->with([
+    'deprecated alias' => [['--wireguard-address' => '10.44.0.2']],
+    'equal dual values' => [[
+        '--wireguard-ip' => '10.44.0.2',
+        '--wireguard-address' => '10.44.0.2',
+    ]],
+]);
+
+it('rejects conflicting WireGuard values before making a request', function (): void {
+    app(GatewayConfigRepository::class)->add(new GatewayProfile(
+        name: 'test',
+        url: 'https://10.44.0.1',
+    ));
+    $mockClient = MockClient::global();
+
+    $this
+        ->artisan('node:provision', [
+            'name' => 'app-dev',
+            'host' => '94.237.40.75',
+            '--wireguard-ip' => '10.44.0.2',
+            '--wireguard-address' => '10.44.0.3',
+        ])
+        ->expectsOutputToContain('WireGuard options must match')
+        ->assertExitCode(1);
+
+    expect($mockClient->getLastPendingRequest())->toBeNull();
+});
+
+it('rejects malformed Cluster and network input before making a request', function (
+    array $options,
+    string $message,
+): void {
+    app(GatewayConfigRepository::class)->add(new GatewayProfile(
+        name: 'test',
+        url: 'https://10.44.0.1',
+    ));
+    $mockClient = MockClient::global();
+
+    $this
+        ->artisan('node:provision', [
+            'name' => 'app-dev',
+            'host' => '94.237.40.75',
+            ...$options,
+        ])
+        ->expectsOutputToContain($message)
+        ->assertExitCode(1);
+
+    expect($mockClient->getLastPendingRequest())->toBeNull();
+})->with([
+    'Cluster ID' => [['--cluster' => '0'], 'Cluster ID must be a positive integer'],
+    'WireGuard IP' => [['--wireguard-ip' => 'not-an-ip'], 'WireGuard IP must be an IPv4 address'],
+    'LAN IP' => [['--lan-ip' => 'fd00::2'], 'LAN IP must be an IPv4 address'],
 ]);
 
 it('rejects non-Linux platform input before making an API request', function (string $platform): void {

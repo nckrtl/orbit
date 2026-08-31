@@ -6,7 +6,7 @@ namespace Orbit\Sdk\Responses\Nodes;
 
 use SensitiveParameter;
 
-final readonly class InstanceSettings
+final readonly class AppsSettings
 {
     public function __construct(
         public ?string $path = null,

@@ -78,8 +78,8 @@ final readonly class NodeSideResidue
                 '/etc/orbit/metrics including the Orbit ownership marker',
                 'Grafana upstream firewall rule',
             ],
-            // Both are protected from removal, so neither can reach this path.
-            RoleName::Gateway, RoleName::Vpn => [],
+            // Gateway and VPN are protected from removal. Router has no host projection.
+            RoleName::Gateway, RoleName::Vpn, RoleName::Router => [],
         };
     }
 }

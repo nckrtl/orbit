@@ -48,16 +48,16 @@ final readonly class MetricsRuntimeSpec
     public function for(
         MetricsService $service,
         int $assignmentId,
-        string $wireguardAddress,
+        string $wireguardIp,
         string $configurationHash,
     ): MetricsContainerSpec {
-        if (filter_var($wireguardAddress, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
+        if (filter_var($wireguardIp, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
             throw new InvalidArgumentException('Metrics containers require a valid WireGuard IPv4 address.');
         }
 
         $definition = match ($service) {
             MetricsService::Prometheus => $this->prometheusDefinition(),
-            MetricsService::Grafana => $this->grafanaDefinition($wireguardAddress),
+            MetricsService::Grafana => $this->grafanaDefinition($wireguardIp),
         };
         $publicSpec = [
             'service' => $service->value,
@@ -129,7 +129,7 @@ final readonly class MetricsRuntimeSpec
     }
 
     /** @return array{image: string, name: string, volume: string, command: list<string>, mounts: list<string>, environment: array<string, string>, health_command: non-empty-list<string>} */
-    private function grafanaDefinition(string $wireguardAddress): array
+    private function grafanaDefinition(string $wireguardIp): array
     {
         return [
             'image' => self::GrafanaImage,
@@ -145,7 +145,7 @@ final readonly class MetricsRuntimeSpec
             'environment' => [
                 'GF_SECURITY_ADMIN_USER' => 'admin',
                 'GF_SECURITY_ADMIN_PASSWORD__FILE' => '/run/orbit/grafana-admin-password',
-                'GF_SERVER_HTTP_ADDR' => $wireguardAddress,
+                'GF_SERVER_HTTP_ADDR' => $wireguardIp,
                 'GF_SERVER_HTTP_PORT' => MetricsFootprint::PublicationPort,
             ],
             'health_command' => [
@@ -154,7 +154,7 @@ final readonly class MetricsRuntimeSpec
                 '--no-verbose',
                 '--tries=1',
                 '--spider',
-                'http://'.$wireguardAddress.':'.MetricsFootprint::PublicationPort.'/api/health',
+                'http://'.$wireguardIp.':'.MetricsFootprint::PublicationPort.'/api/health',
             ],
         ];
     }

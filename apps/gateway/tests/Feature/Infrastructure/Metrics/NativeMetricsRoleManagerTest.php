@@ -21,7 +21,7 @@ it('fails closed before removal when Metrics assignments drift', function (): vo
             'platform' => 'linux',
             'architecture' => 'x86_64',
             'public_ssh_host' => '192.0.2.'.(Node::query()->count() + 20),
-            'wireguard_address' => '10.44.0.'.(Node::query()->count() + 20),
+            'wireguard_ip' => '10.44.0.'.(Node::query()->count() + 20),
         ]);
         $node->roles()->create([
             'role' => RoleName::Metrics,
@@ -80,7 +80,7 @@ function metricsRoleManagerNode(string $name, string $address, RoleName $role = 
         'platform' => 'linux',
         'architecture' => 'x86_64',
         'public_ssh_host' => str_replace('10.44', '192.0.2', $address),
-        'wireguard_address' => $address,
+        'wireguard_ip' => $address,
     ]);
     $node->roles()->create([
         'role' => $role,

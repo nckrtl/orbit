@@ -24,6 +24,8 @@ it('preserves the original positional constructor contract', function (): void {
         ->toBe('94.237.40.75')
         ->and($response->user)
         ->toBe('nckrtl')
+        ->and($response->wireguardIp)
+        ->toBe('10.44.0.3')
         ->and($response->toArray())
         ->toHaveKey('user', 'nckrtl')
         ->and($response->toArray())
@@ -61,7 +63,7 @@ it('preserves the original named constructor contract', function (): void {
         publicSshHost: '85.9.211.193',
         publicSshPort: 22,
         user: 'orbit',
-        wireguardAddress: '10.44.0.4',
+        wireguardIp: '10.44.0.4',
         roles: ['app-prod'],
         requestId: '0198e15d-16c4-7855-8eb2-182b53ad28ba',
     );
@@ -185,9 +187,11 @@ it('keeps real access in node collections while stripping nested request ids', f
             publicSshHost: '94.237.40.75',
             publicSshPort: 22,
             user: 'orbit',
-            wireguardAddress: '10.44.0.3',
+            wireguardIp: '10.44.0.3',
             roles: ['app-dev'],
             requestId: '0198e15c-bf97-7c23-8f1f-61b8fe67a844',
+            clusterId: 3,
+            lanIp: '10.0.0.3',
             access: new NodeAccessResponse(
                 canAccess: [new NodeAccessNodeResponse(id: 3, name: 'gateway')],
                 accessibleBy: [new NodeAccessNodeResponse(id: 7, name: 'maintainer')],
@@ -212,6 +216,21 @@ it('keeps real access in node collections while stripping nested request ids', f
         ]);
 });
 
+it('uses only canonical node network fields', function (): void {
+    $response = NodeResponse::fromGatewayData(node_response_gateway_data([
+        'wireguard_address' => '10.44.0.99',
+    ]), '0198e15c-bf97-7c23-8f1f-61b8fe67a844');
+
+    expect($response->wireguardIp)
+        ->toBe('10.44.0.3')
+        ->and($response->clusterId)
+        ->toBe(3)
+        ->and($response->lanIp)
+        ->toBe('10.0.0.3')
+        ->and($response->toArray())
+        ->not->toHaveKey('wireguard_address');
+});
+
 /** @param array<string, mixed> $overrides
  * @return array<string, mixed>
  */
@@ -219,12 +238,14 @@ function node_response_gateway_data(array $overrides = []): array
 {
     return array_replace([
         'id' => 4,
+        'cluster_id' => 3,
         'name' => 'app-dev',
         'status' => 'active',
         'public_ssh_host' => '94.237.40.75',
         'public_ssh_port' => 22,
         'user' => 'orbit',
-        'wireguard_address' => '10.44.0.3',
+        'wireguard_ip' => '10.44.0.3',
+        'lan_ip' => '10.0.0.3',
         'roles' => ['app-dev'],
     ], $overrides);
 }
@@ -234,6 +255,7 @@ function node_response_public_data(): array
 {
     return [
         'id' => 4,
+        'cluster_id' => 3,
         'name' => 'app-dev',
         'status' => 'active',
         'platform' => null,
@@ -242,7 +264,8 @@ function node_response_public_data(): array
         'public_ssh_host' => '94.237.40.75',
         'public_ssh_port' => 22,
         'user' => 'orbit',
-        'wireguard_address' => '10.44.0.3',
+        'wireguard_ip' => '10.44.0.3',
+        'lan_ip' => '10.0.0.3',
         'wireguard_public_key' => null,
         'wireguard_endpoint_override' => null,
         'dns_server_override' => null,

@@ -31,23 +31,23 @@ final readonly class VpnRoleBaseline implements RoleBaseline
 
     public function converge(Node $node, NodeRole $assignment): void
     {
-        if (! is_string($node->wireguard_address) || $node->wireguard_address === '') {
+        if (! is_string($node->wireguard_ip) || $node->wireguard_ip === '') {
             throw new NodeRoleOperationException(
                 'role-prerequisites',
                 'node_role.convergence_failed',
-                'vpn.wireguard_address_missing',
+                'vpn.wireguard_ip_missing',
                 "Node [{$node->name}] has no WireGuard address.",
             );
         }
 
         $account = $this->accounts->resolve($node);
 
-        /** @var string $wireguardAddress */
-        $wireguardAddress = $node->wireguard_address;
+        /** @var string $wireguardIp */
+        $wireguardIp = $node->wireguard_ip;
 
         $result = $this->ssh->execute(
             new SshConnection(
-                $wireguardAddress,
+                $wireguardIp,
                 $node->user,
                 22,
                 $this->keys->privateKeyPath(),

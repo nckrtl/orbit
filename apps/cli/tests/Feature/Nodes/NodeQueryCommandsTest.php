@@ -61,8 +61,8 @@ describe('node:list', function (): void {
         $this
             ->artisan('node:list')
             ->expectsTable(
-                ['ID', 'Name', 'Status', 'Roles', 'Platform', 'TLD', 'User', 'WireGuard'],
-                [[2, 'app-dev', 'active', 'app-dev', 'linux', 'app-dev.orbit', 'orbit', '10.44.0.3']],
+                ['ID', 'Name', 'Status', 'Roles', 'Platform', 'TLD', 'User', 'Cluster', 'WireGuard', 'LAN'],
+                [[2, 'app-dev', 'active', 'app-dev', 'linux', 'app-dev.orbit', 'orbit', 3, '10.44.0.3', '10.0.0.3']],
             )
             ->expectsOutput('Request ID: '.request_id())
             ->assertExitCode(0);
@@ -101,8 +101,8 @@ describe('node:list', function (): void {
         $this
             ->artisan('node:list')
             ->expectsTable(
-                ['ID', 'Name', 'Status', 'Roles', 'Platform', 'TLD', 'User', 'WireGuard'],
-                [[2, 'app-dev', 'active', 'app-dev', 'linux', 'app-dev.orbit', 'orbit', '10.44.0.3']],
+                ['ID', 'Name', 'Status', 'Roles', 'Platform', 'TLD', 'User', 'Cluster', 'WireGuard', 'LAN'],
+                [[2, 'app-dev', 'active', 'app-dev', 'linux', 'app-dev.orbit', 'orbit', 3, '10.44.0.3', '10.0.0.3']],
             )
             ->assertExitCode(0);
     });
@@ -208,7 +208,9 @@ describe('node:show', function (): void {
             ->expectsOutput('app-dev: active')
             ->expectsOutput('Roles: app-dev')
             ->expectsOutput('SSH: orbit@94.237.40.75:22')
+            ->expectsOutput('Cluster: 3')
             ->expectsOutput('WireGuard: 10.44.0.3')
+            ->expectsOutput('LAN: 10.0.0.3')
             ->expectsOutput('WireGuard public key: app-dev-public-key')
             ->expectsOutput('WireGuard endpoint override: 10.0.0.2:51820')
             ->expectsOutput('DNS server override: 10.0.0.2')
@@ -331,6 +333,7 @@ function list_node_payload(): array
 {
     return [
         'id' => 2,
+        'cluster_id' => 3,
         'name' => 'app-dev',
         'status' => 'active',
         'platform' => 'linux',
@@ -339,7 +342,8 @@ function list_node_payload(): array
         'public_ssh_host' => '94.237.40.75',
         'public_ssh_port' => 22,
         'user' => 'orbit',
-        'wireguard_address' => '10.44.0.3',
+        'wireguard_ip' => '10.44.0.3',
+        'lan_ip' => '10.0.0.3',
         'wireguard_public_key' => 'app-dev-public-key',
         'wireguard_endpoint_override' => '10.0.0.2:51820',
         'dns_server_override' => '10.0.0.2',
@@ -384,7 +388,9 @@ function show_node_payload(): array
  *     public_ssh_host: string,
  *     public_ssh_port: int,
  *     user: string,
- *     wireguard_address: string,
+ *     cluster_id: int,
+ *     wireguard_ip: string,
+ *     lan_ip: string,
  *     wireguard_public_key: string,
  *     wireguard_endpoint_override: string,
  *     dns_server_override: string,
@@ -403,6 +409,7 @@ function show_node_expected_json_payload(): array
 {
     return [
         'id' => 2,
+        'cluster_id' => 3,
         'name' => 'app-dev',
         'status' => 'active',
         'platform' => 'linux',
@@ -411,7 +418,8 @@ function show_node_expected_json_payload(): array
         'public_ssh_host' => '94.237.40.75',
         'public_ssh_port' => 22,
         'user' => 'orbit',
-        'wireguard_address' => '10.44.0.3',
+        'wireguard_ip' => '10.44.0.3',
+        'lan_ip' => '10.0.0.3',
         'wireguard_public_key' => 'app-dev-public-key',
         'wireguard_endpoint_override' => '10.0.0.2:51820',
         'dns_server_override' => '10.0.0.2',

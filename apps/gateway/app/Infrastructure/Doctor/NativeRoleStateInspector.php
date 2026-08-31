@@ -7,6 +7,7 @@ namespace App\Infrastructure\Doctor;
 use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Doctor\RoleInspectionData;
 use App\Domain\Doctor\RoleStateInspector;
+use App\Domain\Nodes\RoleName;
 use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
 use App\Infrastructure\Firewall\UfwManagedRule;
 use App\Infrastructure\Firewall\UfwRuleOwnership;
@@ -71,6 +72,10 @@ final readonly class NativeRoleStateInspector implements RoleStateInspector
 
     public function inspect(NodeRole $role): RoleInspectionData
     {
+        if ($role->role === RoleName::Router) {
+            return new RoleInspectionData(true, true, true);
+        }
+
         try {
             $role->loadMissing('node');
             $node = $role->node;
@@ -108,7 +113,7 @@ final readonly class NativeRoleStateInspector implements RoleStateInspector
 
     private function connection(Node $node): SshConnection
     {
-        $host = $node->wireguard_address;
+        $host = $node->wireguard_ip;
         if ($node->platform !== 'linux' || ! is_string($host) || $host === '') {
             throw new DoctorInspectionException;
         }

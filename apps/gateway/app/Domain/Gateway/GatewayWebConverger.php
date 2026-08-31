@@ -6,5 +6,5 @@ namespace App\Domain\Gateway;
 
 interface GatewayWebConverger
 {
-    public function converge(string $hostname, string $wireguardAddress): void;
+    public function converge(string $hostname, string $wireguardIp): void;
 }

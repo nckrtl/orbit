@@ -374,12 +374,12 @@ final readonly class NativeUfwFirewallManager implements FirewallManager
 
     private function connection(Node $node): SshConnection
     {
-        $host = $node->wireguard_address;
+        $host = $node->wireguard_ip;
 
         if (! is_string($host) || $host === '') {
             throw new FirewallOperationException(
                 step: 'wireguard-address',
-                errorCode: 'firewall.wireguard_address_missing',
+                errorCode: 'firewall.wireguard_ip_missing',
                 message: "Node [{$node->name}] has no WireGuard address.",
             );
         }

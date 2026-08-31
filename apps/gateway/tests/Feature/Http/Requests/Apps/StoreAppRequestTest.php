@@ -14,7 +14,7 @@ beforeEach(function (): void {
         'name' => 'operator',
         'status' => LifecycleStatus::Active,
         'public_ssh_host' => '192.0.2.2',
-        'wireguard_address' => '10.44.0.2',
+        'wireguard_ip' => '10.44.0.2',
     ]);
     $this->markAsGateway($operator);
     $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.2']);

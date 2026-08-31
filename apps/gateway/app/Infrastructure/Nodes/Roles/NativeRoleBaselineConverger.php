@@ -10,6 +10,7 @@ use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
 use App\Models\Node;
 use App\Models\NodeRole;
+use LogicException;
 
 final readonly class NativeRoleBaselineConverger implements RoleBaselineConverger
 {
@@ -60,6 +61,7 @@ final readonly class NativeRoleBaselineConverger implements RoleBaselineConverge
             RoleName::AppDev => $this->appDev,
             RoleName::AppProd => $this->appProd,
             RoleName::Metrics => $this->metrics,
+            RoleName::Router => throw new LogicException('Router roles do not have a host baseline.'),
         };
     }
 }

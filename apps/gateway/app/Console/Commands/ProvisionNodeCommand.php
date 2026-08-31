@@ -10,6 +10,7 @@ use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\RoleName;
 use Illuminate\Console\Command;
 
+/** @mago-expect lint:cyclomatic-complexity Provision validates each legacy and canonical console input before convergence. */
 final class ProvisionNodeCommand extends Command
 {
     #[\Override]
@@ -22,7 +23,10 @@ final class ProvisionNodeCommand extends Command
         {--architecture= : Node machine architecture}
         {--tld= : Unique development TLD for app-dev}
         {--role=* : Initial role assignment}
-        {--wireguard-address= : Stable WireGuard address}
+        {--cluster= : Cluster ID}
+        {--wireguard-ip= : Stable WireGuard IP}
+        {--wireguard-address= : Deprecated alias for --wireguard-ip}
+        {--lan-ip= : Cluster-local LAN IP}
         {--wireguard-endpoint= : Per-node WireGuard endpoint override}
         {--dns-server= : Per-node DNS server override}
         {--host-key-fingerprint= : Expected first-contact SSH SHA256 fingerprint}';
@@ -37,8 +41,22 @@ final class ProvisionNodeCommand extends Command
         $sshPort = $this->option('ssh-port');
         $user = $this->stringOption('user');
         $roles = $this->roles();
+        $wireguardInput = $this->wireguardIp();
+        $clusterId = $this->positiveIntegerOption('cluster');
+        $lanIp = $this->stringOption('lan-ip');
 
-        if ($name === null || $host === null || ! is_numeric($sshPort) || $user === null || $roles === null) {
+        if (
+            $name === null
+            || $host === null
+            || ! is_numeric($sshPort)
+            || $user === null
+            || $roles === null
+            || ! $wireguardInput['valid']
+            || $this->stringOption('cluster') !== null
+            && $clusterId === null
+            || $lanIp !== null
+            && filter_var($lanIp, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false
+        ) {
             $this->error('Node provisioning arguments are invalid.');
 
             return self::FAILURE;
@@ -52,13 +70,17 @@ final class ProvisionNodeCommand extends Command
                 publicSshPort: (int) $sshPort,
                 user: $user,
                 orbitUser: $this->stringOption('orbit-user'),
-                wireguardAddress: $this->stringOption('wireguard-address'),
+                wireguardIp: $wireguardInput['value'],
                 wireguardEndpointOverride: $this->stringOption('wireguard-endpoint'),
                 dnsServerOverride: $this->stringOption('dns-server'),
                 expectedSshHostFingerprint: $this->stringOption('host-key-fingerprint'),
                 platform: 'linux',
                 architecture: $this->stringOption('architecture'),
                 tld: $this->stringOption('tld'),
+                clusterProvided: $clusterId !== null,
+                clusterId: $clusterId,
+                lanIpProvided: $lanIp !== null,
+                lanIp: $lanIp,
             ));
         } catch (NodeProvisioningException $exception) {
             $this->error(
@@ -85,6 +107,34 @@ final class ProvisionNodeCommand extends Command
         $value = $this->option($name);
 
         return is_string($value) && $value !== '' ? $value : null;
+    }
+
+    /** @return array{valid: bool, value: ?string} */
+    private function wireguardIp(): array
+    {
+        $canonical = $this->stringOption('wireguard-ip');
+        $deprecated = $this->stringOption('wireguard-address');
+
+        if ($canonical !== null && $deprecated !== null && $canonical !== $deprecated) {
+            $this->error('The WireGuard IP options conflict.');
+
+            return ['valid' => false, 'value' => null];
+        }
+
+        return ['valid' => true, 'value' => $canonical ?? $deprecated];
+    }
+
+    private function positiveIntegerOption(string $name): ?int
+    {
+        $value = $this->stringOption($name);
+
+        if ($value === null || preg_match('/\A[1-9][0-9]*\z/D', $value) !== 1) {
+            return null;
+        }
+
+        $integer = filter_var($value, FILTER_VALIDATE_INT);
+
+        return is_int($integer) ? $integer : null;
     }
 
     /**

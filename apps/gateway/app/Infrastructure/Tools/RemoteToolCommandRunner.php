@@ -24,7 +24,7 @@ final readonly class RemoteToolCommandRunner
     /** @param non-empty-list<string> $arguments */
     public function execute(Node $node, array $arguments): CommandResult
     {
-        $host = $node->wireguard_address;
+        $host = $node->wireguard_ip;
 
         if (! is_string($host) || $host === '') {
             throw new ToolManagerException(

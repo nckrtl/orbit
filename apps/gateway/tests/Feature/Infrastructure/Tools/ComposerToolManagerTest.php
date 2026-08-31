@@ -558,7 +558,7 @@ function composer_tool_node(
         'platform' => $platform,
         'public_ssh_host' => '127.0.0.1',
         'user' => 'orbit',
-        'wireguard_address' => '10.8.0.45',
+        'wireguard_ip' => '10.8.0.45',
     ]);
     $roles = [];
 

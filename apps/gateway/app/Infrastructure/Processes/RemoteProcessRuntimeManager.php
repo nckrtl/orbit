@@ -1354,17 +1354,17 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
         try {
             $target ??= $this->targets->forProcess($process);
 
-            if (! is_string($target->node->wireguard_address) || $target->node->wireguard_address === '') {
+            if (! is_string($target->node->wireguard_ip) || $target->node->wireguard_ip === '') {
                 throw new ProcessOperationException(
                     step: 'ssh',
-                    errorCode: 'process.wireguard_address_missing',
+                    errorCode: 'process.wireguard_ip_missing',
                     message: "Node [{$target->node->name}] has no WireGuard address.",
                 );
             }
 
             return $this->ssh->execute(
                 new SshConnection(
-                    host: $target->node->wireguard_address,
+                    host: $target->node->wireguard_ip,
                     user: $target->node->user,
                     port: 22,
                     identityFile: $this->keys->privateKeyPath(),

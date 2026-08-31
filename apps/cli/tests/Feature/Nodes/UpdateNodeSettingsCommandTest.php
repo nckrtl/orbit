@@ -42,8 +42,7 @@ it('sends repeatable known settings including a later colon and an empty unset',
                 'user' => 'orbit',
                 'roles' => ['app-dev'],
                 'settings' => [
-                    'instance' => ['path' => '/srv/orbit:data/instances'],
-                    'worktree' => null,
+                    'apps' => ['path' => '/srv/orbit:data/apps'],
                 ],
             ],
             'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844'],
@@ -66,8 +65,7 @@ it('sends repeatable known settings including a later colon and an empty unset',
         ->artisan('node:settings', [
             'node' => 'app-dev',
             '--setting' => [
-                'instance.path:/srv/orbit:data/instances',
-                'worktree.path:',
+                'apps.path:/srv/orbit:data/apps',
             ],
             '--json' => true,
         ])
@@ -79,8 +77,7 @@ it('sends repeatable known settings including a later colon and an empty unset',
         ->toBeInstanceOf(UpdateNodeSettingsRequest::class)
         ->and($request?->body()->all())
         ->toBe([
-            'instance' => ['path' => '/srv/orbit:data/instances'],
-            'worktree' => null,
+            'apps' => ['path' => '/srv/orbit:data/apps'],
         ]);
 });
 
@@ -101,8 +98,8 @@ it('rejects duplicate, unknown, and malformed settings before making a request',
 
     expect($mockClient->getLastPendingRequest())->toBeNull();
 })->with([
-    'duplicate key' => [['instance.path:/srv/a', 'instance.path:/srv/b'], 'supplied more than once'],
+    'duplicate key' => [['apps.path:/srv/a', 'apps.path:/srv/b'], 'supplied more than once'],
     'unknown key' => [['packages.path:/srv/a'], 'Unknown setting'],
-    'missing colon' => [['instance.path'], 'setting-path'],
+    'missing colon' => [['apps.path'], 'setting-path'],
     'empty key' => [[':/srv/a'], 'setting-path'],
 ]);

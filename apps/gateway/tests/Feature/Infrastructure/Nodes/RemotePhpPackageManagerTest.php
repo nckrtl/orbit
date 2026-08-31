@@ -1329,7 +1329,7 @@ function php_package_node(RoleName $role): Node
         'platform' => 'linux',
         'architecture' => 'x86_64',
         'public_ssh_host' => '192.0.2.44',
-        'wireguard_address' => '10.44.0.'.(44 + $count),
+        'wireguard_ip' => '10.44.0.'.(44 + $count),
         'user' => 'orbit',
     ]);
     $node->roles()->create(['role' => $role]);

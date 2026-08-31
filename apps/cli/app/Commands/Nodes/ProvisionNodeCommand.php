@@ -11,7 +11,7 @@ use App\Support\NodeSettingOptions;
 use Orbit\Sdk\Requests\Nodes\ProvisionNodeRequest;
 use Orbit\Sdk\Responses\Nodes\NodeResponse;
 
-/** @mago-expect lint:cyclomatic-complexity Provision keeps closed setting parsing beside the existing identity gates. */
+/** @mago-expect lint:cyclomatic-complexity,halstead Provision keeps closed setting and network parsing beside the identity gates. */
 final class ProvisionNodeCommand extends GatewayCommand
 {
     #[\Override]
@@ -26,7 +26,10 @@ final class ProvisionNodeCommand extends GatewayCommand
         {--tld= : Unique development TLD for app-dev}
         {--role=* : Initial role assignment}
         {--host-key-fingerprint= : Approved SSH SHA256 host key fingerprint}
-        {--wireguard-address= : Stable WireGuard address}
+        {--cluster= : Optional numeric Cluster ID}
+        {--wireguard-ip= : Stable WireGuard IP address}
+        {--wireguard-address= : Deprecated alias for --wireguard-ip}
+        {--lan-ip= : Optional Cluster-local LAN IPv4 address}
         {--wireguard-endpoint= : Per-node WireGuard endpoint override}
         {--dns-server= : Per-node DNS server override}
         {--setting=* : Repeatable node setting as setting-path:value}
@@ -84,6 +87,68 @@ final class ProvisionNodeCommand extends GatewayCommand
             return self::FAILURE;
         }
 
+        $clusterId = null;
+        $cluster = $this->option('cluster');
+
+        if ($cluster !== null) {
+            if (! is_string($cluster) || preg_match('/\A[1-9]\d*\z/D', $cluster) !== 1) {
+                return $this->renderGatewayFailure(
+                    'cluster.id_invalid',
+                    'Cluster ID must be a positive integer.',
+                );
+            }
+
+            $clusterId = (int) $cluster;
+        }
+
+        $canonicalWireguardIp = $this->option('wireguard-ip');
+        $legacyWireguardIp = $this->option('wireguard-address');
+
+        if (
+            $canonicalWireguardIp !== null
+            && ! is_string($canonicalWireguardIp)
+            || $legacyWireguardIp !== null
+            && ! is_string($legacyWireguardIp)
+        ) {
+            return $this->renderGatewayFailure(
+                'node.wireguard_ip_invalid',
+                'WireGuard IP must be an IPv4 address.',
+            );
+        }
+
+        if (
+            is_string($canonicalWireguardIp)
+            && is_string($legacyWireguardIp)
+            && $canonicalWireguardIp !== $legacyWireguardIp
+        ) {
+            return $this->renderGatewayFailure(
+                'node.wireguard_ip_conflict',
+                'WireGuard options must match when both are supplied.',
+            );
+        }
+
+        $wireguardIp = is_string($canonicalWireguardIp) ? $canonicalWireguardIp : $legacyWireguardIp;
+
+        if (is_string($wireguardIp) && filter_var($wireguardIp, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
+            return $this->renderGatewayFailure(
+                'node.wireguard_ip_invalid',
+                'WireGuard IP must be an IPv4 address.',
+            );
+        }
+
+        $lanIp = $this->option('lan-ip');
+
+        if (
+            $lanIp !== null
+            && (! is_string($lanIp)
+            || filter_var($lanIp, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false)
+        ) {
+            return $this->renderGatewayFailure(
+                'node.lan_ip_invalid',
+                'LAN IP must be an IPv4 address.',
+            );
+        }
+
         $settings = NodeSettingOptions::parse($this->option('setting'));
 
         if ($settings['ok'] === false) {
@@ -105,7 +170,9 @@ final class ProvisionNodeCommand extends GatewayCommand
                 publicSshPort: (int) $sshPort,
                 user: $user,
                 orbitUser: $this->stringOption('orbit-user'),
-                wireguardAddress: $this->stringOption('wireguard-address'),
+                clusterId: $clusterId,
+                wireguardIp: is_string($wireguardIp) ? $wireguardIp : null,
+                lanIp: is_string($lanIp) ? $lanIp : null,
                 wireguardEndpointOverride: $this->stringOption('wireguard-endpoint'),
                 dnsServerOverride: $this->stringOption('dns-server'),
                 hostKeyFingerprint: $hostKeyFingerprint,

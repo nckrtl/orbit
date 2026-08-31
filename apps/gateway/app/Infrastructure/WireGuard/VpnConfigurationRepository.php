@@ -24,11 +24,11 @@ final readonly class VpnConfigurationRepository
             ->whereHas('roles', static fn ($query) => $query->where('role', RoleName::Vpn->value))
             ->first();
 
-        if (! $server instanceof Node || ! is_string($server->wireguard_address)) {
+        if (! $server instanceof Node || ! is_string($server->wireguard_ip)) {
             throw $this->invalid('The VPN role has no configured server node.');
         }
 
-        if (! is_string($peer->wireguard_address)) {
+        if (! is_string($peer->wireguard_ip)) {
             throw $this->invalid("Node [{$peer->name}] has no WireGuard address.");
         }
 
@@ -42,8 +42,8 @@ final readonly class VpnConfigurationRepository
 
         $serverPrivateKey = $this->key('private');
         $serverPublicKey = $this->key('public');
-        $serverAddress = $server->wireguard_address;
-        $peerAddress = $peer->wireguard_address;
+        $serverAddress = $server->wireguard_ip;
+        $peerAddress = $peer->wireguard_ip;
         $endpoint =
             $peer->wireguard_endpoint_override ?? $this->settings->endpoint() ?? "{$server->public_ssh_host}:{$port}";
         $dnsServer = $peer->dns_server_override ?? $this->settings->dnsServer() ?? $serverAddress;

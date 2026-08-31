@@ -19,6 +19,7 @@ final class NodeData extends Data
     /** @param list<string> $roles */
     public function __construct(
         public int $id,
+        public ?int $clusterId,
         public string $name,
         public string $status,
         public ?string $platform,
@@ -27,7 +28,8 @@ final class NodeData extends Data
         public string $publicSshHost,
         public int $publicSshPort,
         public string $user,
-        public ?string $wireguardAddress,
+        public ?string $wireguardIp,
+        public ?string $lanIp,
         public ?string $wireguardPublicKey,
         public ?string $wireguardEndpointOverride,
         public ?string $dnsServerOverride,
@@ -46,6 +48,10 @@ final class NodeData extends Data
         $architecture = $node->getAttribute('architecture');
         /** @var ?string $tld */
         $tld = $node->getAttribute('tld');
+        /** @var ?string $wireguardIp */
+        $wireguardIp = $node->getAttribute('wireguard_ip');
+        /** @var ?string $lanIp */
+        $lanIp = $node->getAttribute('lan_ip');
         /** @var ?string $wireguardPublicKey */
         $wireguardPublicKey = $node->getAttribute('wireguard_public_key');
         /** @var ?string $wireguardEndpointOverride */
@@ -61,6 +67,7 @@ final class NodeData extends Data
 
         return new self(
             id: $node->id,
+            clusterId: $node->cluster_id,
             name: $node->name,
             status: $node->status->value,
             platform: $platform,
@@ -69,7 +76,8 @@ final class NodeData extends Data
             publicSshHost: $node->public_ssh_host,
             publicSshPort: $node->public_ssh_port,
             user: $node->user,
-            wireguardAddress: $node->wireguard_address,
+            wireguardIp: $wireguardIp,
+            lanIp: $lanIp,
             wireguardPublicKey: $wireguardPublicKey,
             wireguardEndpointOverride: $wireguardEndpointOverride,
             dnsServerOverride: $dnsServerOverride,

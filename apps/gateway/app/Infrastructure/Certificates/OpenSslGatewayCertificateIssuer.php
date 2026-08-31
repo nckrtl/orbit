@@ -26,9 +26,9 @@ final readonly class OpenSslGatewayCertificateIssuer implements GatewayCertifica
         private string $orbitHome,
     ) {}
 
-    public function issue(string $hostname, string $wireguardAddress): GatewayCertificatePaths
+    public function issue(string $hostname, string $wireguardIp): GatewayCertificatePaths
     {
-        $this->guardIdentity($hostname, $wireguardAddress);
+        $this->guardIdentity($hostname, $wireguardIp);
         $directory = rtrim(string: $this->orbitHome, characters: '/').'/ca';
         $scope = $hostname === 'metrics.orbit' ? 'metrics' : 'gateway';
         $paths = new GatewayCertificatePaths(
@@ -36,46 +36,46 @@ final readonly class OpenSslGatewayCertificateIssuer implements GatewayCertifica
             certificatePath: $directory.'/'.$scope.'-current/gateway.pem',
         );
 
-        if ($this->isCurrent($paths, $hostname, $wireguardAddress, $directory.'/root.pem')) {
+        if ($this->isCurrent($paths, $hostname, $wireguardIp, $directory.'/root.pem')) {
             $this->protect($paths, $directory);
 
             return $paths;
         }
 
-        $this->issueVersion($paths, $hostname, $wireguardAddress, $directory, $scope);
+        $this->issueVersion($paths, $hostname, $wireguardIp, $directory, $scope);
         $this->protect($paths, $directory);
 
         return $paths;
     }
 
-    private function guardIdentity(string $hostname, string $wireguardAddress): void
+    private function guardIdentity(string $hostname, string $wireguardIp): void
     {
         if (filter_var($hostname, FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME) === false) {
             throw new InvalidArgumentException("Gateway certificate hostname [{$hostname}] is invalid.");
         }
 
-        if (filter_var($wireguardAddress, FILTER_VALIDATE_IP) === false) {
-            throw new InvalidArgumentException("Gateway certificate IP address [{$wireguardAddress}] is invalid.");
+        if (filter_var($wireguardIp, FILTER_VALIDATE_IP) === false) {
+            throw new InvalidArgumentException("Gateway certificate IP address [{$wireguardIp}] is invalid.");
         }
     }
 
     private function isCurrent(
         GatewayCertificatePaths $paths,
         string $hostname,
-        string $wireguardAddress,
+        string $wireguardIp,
         string $rootCertificate,
     ): bool {
         if (! is_file($paths->privateKeyPath) || ! is_file($paths->certificatePath)) {
             return false;
         }
 
-        return $this->validator->matches($paths, $hostname, $wireguardAddress, $rootCertificate);
+        return $this->validator->matches($paths, $hostname, $wireguardIp, $rootCertificate);
     }
 
     private function issueVersion(
         GatewayCertificatePaths $currentPaths,
         string $hostname,
-        string $wireguardAddress,
+        string $wireguardIp,
         string $caDirectory,
         string $scope,
     ): void {
@@ -95,14 +95,14 @@ final readonly class OpenSslGatewayCertificateIssuer implements GatewayCertifica
                 paths: $candidatePaths,
                 requestPath: $candidateRequest,
                 hostname: $hostname,
-                wireguardAddress: $wireguardAddress,
+                wireguardIp: $wireguardIp,
                 caDirectory: $caDirectory,
             );
 
             if (! $this->validator->matches(
                 $candidatePaths,
                 $hostname,
-                $wireguardAddress,
+                $wireguardIp,
                 $caDirectory.'/root.pem',
             )) {
                 throw new NodeProvisioningException(
@@ -158,7 +158,7 @@ final readonly class OpenSslGatewayCertificateIssuer implements GatewayCertifica
         GatewayCertificatePaths $paths,
         string $requestPath,
         string $hostname,
-        string $wireguardAddress,
+        string $wireguardIp,
         string $caDirectory,
     ): void {
         $extensionsPath = dirname($paths->certificatePath).'/gateway.ext';
@@ -188,7 +188,7 @@ final readonly class OpenSslGatewayCertificateIssuer implements GatewayCertifica
             basicConstraints = critical,CA:FALSE
             keyUsage = critical,digitalSignature,keyEncipherment
             extendedKeyUsage = serverAuth
-            subjectAltName = DNS:{$hostname},IP:{$wireguardAddress}
+            subjectAltName = DNS:{$hostname},IP:{$wireguardIp}
             EXTENSIONS;
 
         if (file_put_contents($extensionsPath, $contents) === false) {

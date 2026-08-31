@@ -76,7 +76,7 @@ describe('workspace API', function (): void {
             'status' => LifecycleStatus::Active,
             'public_ssh_host' => '192.0.2.10',
             'user' => 'orbit',
-            'wireguard_address' => '10.44.0.3',
+            'wireguard_ip' => '10.44.0.3',
         ]);
         $this->node
             ->roles()
@@ -470,26 +470,26 @@ describe('workspace API', function (): void {
             'name' => 'direct-consumer',
             'status' => LifecycleStatus::Active,
             'public_ssh_host' => '192.0.2.40',
-            'wireguard_address' => '10.44.0.40',
+            'wireguard_ip' => '10.44.0.40',
         ]);
         $gatewayAccessConsumer = Node::query()->create([
             'name' => 'gateway-access-consumer',
             'status' => LifecycleStatus::Active,
             'public_ssh_host' => '192.0.2.41',
-            'wireguard_address' => '10.44.0.41',
+            'wireguard_ip' => '10.44.0.41',
         ]);
         $noEdgeConsumer = Node::query()->create([
             'name' => 'no-edge-consumer',
             'status' => LifecycleStatus::Active,
             'public_ssh_host' => '192.0.2.42',
-            'wireguard_address' => '10.44.0.42',
+            'wireguard_ip' => '10.44.0.42',
         ]);
         $otherNode = Node::query()->create([
             'name' => 'other-node',
             'tld' => 'other.orbit',
             'status' => LifecycleStatus::Active,
             'public_ssh_host' => '192.0.2.43',
-            'wireguard_address' => '10.44.0.43',
+            'wireguard_ip' => '10.44.0.43',
             'user' => 'orbit',
         ]);
         $otherNode
@@ -526,25 +526,25 @@ describe('workspace API', function (): void {
         ]);
 
         $this
-            ->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_address])
+            ->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
             ->getJson('/api/v1/workspaces')
             ->assertOk()
             ->assertJsonPath('data.*.id', [$second->id, $first->id]);
 
         $this
-            ->withServerVariables(['REMOTE_ADDR' => $gatewayAccessConsumer->wireguard_address])
+            ->withServerVariables(['REMOTE_ADDR' => $gatewayAccessConsumer->wireguard_ip])
             ->getJson('/api/v1/workspaces')
             ->assertOk()
             ->assertJsonPath('data.*.id', [$second->id, $first->id]);
 
         $this
-            ->withServerVariables(['REMOTE_ADDR' => $directConsumer->wireguard_address])
+            ->withServerVariables(['REMOTE_ADDR' => $directConsumer->wireguard_ip])
             ->getJson('/api/v1/workspaces')
             ->assertOk()
             ->assertJsonPath('data.*.id', [$second->id]);
 
         $this
-            ->withServerVariables(['REMOTE_ADDR' => $noEdgeConsumer->wireguard_address])
+            ->withServerVariables(['REMOTE_ADDR' => $noEdgeConsumer->wireguard_ip])
             ->getJson('/api/v1/workspaces')
             ->assertForbidden()
             ->assertJsonPath('error.code', 'node_access.required');

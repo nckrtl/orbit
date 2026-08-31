@@ -20,7 +20,7 @@ beforeEach(function (): void {
     $this->gateway = tools_api_node('tools-gateway', '10.44.0.2');
     $this->markAsGateway($this->gateway);
     $this->node = tools_api_node('tools-node', '10.44.0.3');
-    $this->withServerVariables(['REMOTE_ADDR' => $this->gateway->wireguard_address]);
+    $this->withServerVariables(['REMOTE_ADDR' => $this->gateway->wireguard_ip]);
     $this->toolManager = new FakeToolManager(ToolManagerName::Apt);
     app()->instance(ToolManagerRegistry::class, new ToolManagerRegistry([$this->toolManager]));
     $this->managerRecord = $this->node
@@ -275,7 +275,7 @@ describe('tool request validation and isolation', function (): void {
                 'status' => ToolStatus::Installed,
                 'installed_version' => '1.7.1',
             ]);
-        $this->withServerVariables(['REMOTE_ADDR' => $consumer->wireguard_address]);
+        $this->withServerVariables(['REMOTE_ADDR' => $consumer->wireguard_ip]);
         $payload = tools_api_payload($this->node);
         $responses = [
             $this->getJson('/api/v1/tool-managers?node_id='.$this->node->id),
@@ -614,7 +614,7 @@ function tools_api_node(string $name, string $address): Node
         'status' => LifecycleStatus::Active,
         'platform' => 'linux',
         'public_ssh_host' => '192.0.2.30',
-        'wireguard_address' => $address,
+        'wireguard_ip' => $address,
     ]);
 }
 

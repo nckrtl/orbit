@@ -9,7 +9,7 @@ use App\Models\Node;
 use App\Models\Process;
 
 it('renders an Orbit-owned systemd unit with fixed argv and the target identity', function (): void {
-    $node = new Node(['name' => 'production', 'wireguard_address' => '10.44.0.4']);
+    $node = new Node(['name' => 'production', 'wireguard_ip' => '10.44.0.4']);
     $process = new Process([
         'name' => 'queue',
         'runtime_config' => [

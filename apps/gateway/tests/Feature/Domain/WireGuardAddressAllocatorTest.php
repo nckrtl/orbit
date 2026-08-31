@@ -12,12 +12,12 @@ it('allocates the next unused peer address from the configured subnet', function
     Node::query()->create([
         'name' => 'gateway',
         'public_ssh_host' => '85.9.218.89',
-        'wireguard_address' => '10.44.0.1',
+        'wireguard_ip' => '10.44.0.1',
     ]);
     Node::query()->create([
         'name' => 'operator',
         'public_ssh_host' => '94.237.108.25',
-        'wireguard_address' => '10.44.0.2',
+        'wireguard_ip' => '10.44.0.2',
     ]);
 
     expect(app(WireGuardAddressAllocator::class)->next())->toBe('10.44.0.3');
@@ -48,7 +48,7 @@ it('rejects another nodes address while permitting stable reuse by the same node
     $node = Node::query()->create([
         'name' => 'operator',
         'public_ssh_host' => '192.0.2.2',
-        'wireguard_address' => '10.44.0.2',
+        'wireguard_ip' => '10.44.0.2',
     ]);
     $allocator = app(WireGuardAddressAllocator::class);
 
@@ -72,12 +72,12 @@ it('returns stable errors for invalid and exhausted configured subnets', functio
     Node::query()->create([
         'name' => 'gateway',
         'public_ssh_host' => '192.0.2.1',
-        'wireguard_address' => '10.44.0.1',
+        'wireguard_ip' => '10.44.0.1',
     ]);
     Node::query()->create([
         'name' => 'operator',
         'public_ssh_host' => '192.0.2.2',
-        'wireguard_address' => '10.44.0.2',
+        'wireguard_ip' => '10.44.0.2',
     ]);
 
     expect(fn (): string => app(WireGuardAddressAllocator::class)->next())

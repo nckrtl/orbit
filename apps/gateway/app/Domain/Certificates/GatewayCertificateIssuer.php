@@ -6,5 +6,5 @@ namespace App\Domain\Certificates;
 
 interface GatewayCertificateIssuer
 {
-    public function issue(string $hostname, string $wireguardAddress): GatewayCertificatePaths;
+    public function issue(string $hostname, string $wireguardIp): GatewayCertificatePaths;
 }

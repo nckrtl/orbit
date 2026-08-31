@@ -88,7 +88,7 @@ it('rejects nodes without a WireGuard address before SSH', function (): void {
         knownHosts: node_role_guard_known_hosts(),
     );
     $node = node_role_guard_node();
-    $node->update(['wireguard_address' => null]);
+    $node->update(['wireguard_ip' => null]);
 
     try {
         $guard->assert($node, RoleName::Vpn);
@@ -288,7 +288,7 @@ function node_role_guard_node(): Node
         'public_ssh_host' => '192.0.2.10',
         'public_ssh_port' => 22,
         'user' => 'nckrtl',
-        'wireguard_address' => '10.44.0.2',
+        'wireguard_ip' => '10.44.0.2',
     ]);
 }
 

@@ -77,6 +77,7 @@ function list_nodes_gateway_data(): array
     return [
         [
             'id' => 4,
+            'cluster_id' => 3,
             'name' => 'app-dev',
             'status' => 'active',
             'platform' => 'ubuntu',
@@ -85,7 +86,8 @@ function list_nodes_gateway_data(): array
             'public_ssh_host' => '94.237.40.75',
             'public_ssh_port' => 22,
             'user' => 'orbit',
-            'wireguard_address' => '10.44.0.3',
+            'wireguard_ip' => '10.44.0.3',
+            'lan_ip' => '10.0.0.3',
             'wireguard_public_key' => 'app-dev-public-key',
             'wireguard_endpoint_override' => '10.0.0.2:51820',
             'dns_server_override' => '10.0.0.2',
@@ -97,6 +99,7 @@ function list_nodes_gateway_data(): array
         ],
         [
             'id' => 7,
+            'cluster_id' => null,
             'name' => 'app-prod',
             'status' => 'failed',
             'platform' => null,
@@ -105,7 +108,8 @@ function list_nodes_gateway_data(): array
             'public_ssh_host' => '85.9.211.193',
             'public_ssh_port' => 2202,
             'user' => 'root',
-            'wireguard_address' => null,
+            'wireguard_ip' => null,
+            'lan_ip' => null,
             'wireguard_public_key' => null,
             'wireguard_endpoint_override' => null,
             'dns_server_override' => null,

@@ -53,8 +53,8 @@ final class ProvisionNodeRequest extends FormRequest
             return $data;
         }
 
-        if (is_array($payload) && array_key_exists('wireguard_address', $payload)) {
-            $data['wireguard_address'] = $payload['wireguard_address'];
+        if (is_array($payload) && array_key_exists('wireguard_ip', $payload)) {
+            $data['wireguard_ip'] = $payload['wireguard_ip'];
         }
 
         return $data;
@@ -99,8 +99,10 @@ final class ProvisionNodeRequest extends FormRequest
             ],
             'roles' => ['sometimes', 'array'],
             'roles.*' => ['required', Rule::enum(RoleName::class)],
+            'cluster_id' => ['sometimes', 'nullable', 'integer', 'min:1', Rule::exists('clusters', 'id')],
             // The allocator owns format, family, subnet, and uniqueness errors.
-            'wireguard_address' => ['nullable'],
+            'wireguard_ip' => ['nullable'],
+            'lan_ip' => ['sometimes', 'nullable', 'ipv4'],
             'wireguard_endpoint_override' => [
                 'nullable',
                 'string',
@@ -144,7 +146,7 @@ final class ProvisionNodeRequest extends FormRequest
             publicSshPort: is_int($validated['public_ssh_port'] ?? null) ? $validated['public_ssh_port'] : 22,
             user: is_string($validated['user'] ?? null) ? $validated['user'] : 'root',
             orbitUser: is_string($validated['orbit_user'] ?? null) ? $validated['orbit_user'] : null,
-            wireguardAddress: $this->wireguardAddress($validated),
+            wireguardIp: $this->wireguardIp($validated),
             wireguardEndpointOverride: is_string($validated['wireguard_endpoint_override'] ?? null)
                 ? $validated['wireguard_endpoint_override']
                 : null,
@@ -157,6 +159,10 @@ final class ProvisionNodeRequest extends FormRequest
             platform: is_string($validated['platform'] ?? null) ? $validated['platform'] : 'linux',
             architecture: is_string($validated['architecture'] ?? null) ? $validated['architecture'] : null,
             tld: is_string($validated['tld'] ?? null) ? $validated['tld'] : null,
+            clusterProvided: property_exists($this->decodedPayloadObject(), 'cluster_id'),
+            clusterId: is_int($validated['cluster_id'] ?? null) ? $validated['cluster_id'] : null,
+            lanIpProvided: property_exists($this->decodedPayloadObject(), 'lan_ip'),
+            lanIp: is_string($validated['lan_ip'] ?? null) ? $validated['lan_ip'] : null,
             settingsProvided: $this->settingsMemberProvided(),
             settings: $this->settingsMemberProvided()
                 ? new NodeSettingsParser()->parseComplete($this->decodedSettingsMember())
@@ -186,13 +192,13 @@ final class ProvisionNodeRequest extends FormRequest
     }
 
     /** @param array<array-key, mixed> $validated */
-    private function wireguardAddress(array $validated): ?string
+    private function wireguardIp(array $validated): ?string
     {
-        if (! array_key_exists('wireguard_address', $validated) || $validated['wireguard_address'] === null) {
+        if (! array_key_exists('wireguard_ip', $validated) || $validated['wireguard_ip'] === null) {
             return null;
         }
 
-        return is_string($validated['wireguard_address']) ? $validated['wireguard_address'] : '';
+        return is_string($validated['wireguard_ip']) ? $validated['wireguard_ip'] : '';
     }
 
     private function requiresPublicSshHost(): bool

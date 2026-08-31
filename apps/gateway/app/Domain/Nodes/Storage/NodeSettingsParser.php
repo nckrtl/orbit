@@ -4,9 +4,8 @@ declare(strict_types=1);
 
 namespace App\Domain\Nodes\Storage;
 
-use App\Data\Nodes\InstanceSettingsData;
+use App\Data\Nodes\AppsSettingsData;
 use App\Data\Nodes\NodeSettingsData;
-use App\Data\Nodes\WorktreeSettingsData;
 use App\Domain\Shared\ResourceOperationException;
 use stdClass;
 
@@ -14,7 +13,7 @@ use stdClass;
 final readonly class NodeSettingsParser
 {
     /** @var list<string> */
-    private const array TOP_LEVEL_KEYS = ['instance', 'worktree'];
+    private const array TOP_LEVEL_KEYS = ['apps'];
 
     /** @var list<string> */
     private const array NESTED_KEYS = ['path'];
@@ -38,10 +37,8 @@ final readonly class NodeSettingsParser
         }
 
         return new NodeSettingsPatch(
-            hasInstance: array_key_exists('instance', $object),
-            instance: array_key_exists('instance', $object) ? $this->nestedInstance($object['instance']) : null,
-            hasWorktree: array_key_exists('worktree', $object),
-            worktree: array_key_exists('worktree', $object) ? $this->nestedWorktree($object['worktree']) : null,
+            hasApps: array_key_exists('apps', $object),
+            apps: array_key_exists('apps', $object) ? $this->nestedApps($object['apps']) : null,
         );
     }
 
@@ -55,12 +52,11 @@ final readonly class NodeSettingsParser
         }
 
         return new NodeSettingsData(
-            instance: array_key_exists('instance', $object) ? $this->nestedInstance($object['instance']) : null,
-            worktree: array_key_exists('worktree', $object) ? $this->nestedWorktree($object['worktree']) : null,
+            apps: array_key_exists('apps', $object) ? $this->nestedApps($object['apps']) : null,
         );
     }
 
-    private function nestedInstance(mixed $value): ?InstanceSettingsData
+    private function nestedApps(mixed $value): ?AppsSettingsData
     {
         if ($value === null) {
             return null;
@@ -70,40 +66,17 @@ final readonly class NodeSettingsParser
         $path = $value['path'] ?? null;
 
         if ($path !== null && ! is_string($path)) {
-            $this->reject('The instance path must be a string or null.');
+            $this->reject('The apps path must be a string or null.');
         }
 
         if ($path === '') {
             throw new ResourceOperationException(
                 errorCode: 'node.settings_path_invalid',
-                message: 'The instance storage path is not a normalized absolute path.',
+                message: 'The apps storage path is not a normalized absolute path.',
             );
         }
 
-        return new InstanceSettingsData(is_string($path) ? $path : null);
-    }
-
-    private function nestedWorktree(mixed $value): ?WorktreeSettingsData
-    {
-        if ($value === null) {
-            return null;
-        }
-
-        $value = $this->assertNestedObject($value);
-        $path = $value['path'] ?? null;
-
-        if ($path !== null && ! is_string($path)) {
-            $this->reject('The worktree path must be a string or null.');
-        }
-
-        if ($path === '') {
-            throw new ResourceOperationException(
-                errorCode: 'node.settings_path_invalid',
-                message: 'The worktree storage path is not a normalized absolute path.',
-            );
-        }
-
-        return new WorktreeSettingsData(is_string($path) ? $path : null);
+        return new AppsSettingsData(is_string($path) ? $path : null);
     }
 
     /** @param array<array-key, mixed> $value */

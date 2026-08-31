@@ -27,7 +27,7 @@ final readonly class OpenSslGatewayCertificateValidator
     public function matches(
         GatewayCertificatePaths $paths,
         string $hostname,
-        string $wireguardAddress,
+        string $wireguardIp,
         string $rootCertificate,
     ): bool {
         $checks = [
@@ -103,14 +103,14 @@ final readonly class OpenSslGatewayCertificateValidator
             && is_int($validTo)
             && $validTo >= $validFrom
             && ($validTo - $validFrom) <= self::MAXIMUM_VALIDITY_SECONDS
-            && $this->hasExpectedExtensions($paths->certificatePath, $hostname, $wireguardAddress)
+            && $this->hasExpectedExtensions($paths->certificatePath, $hostname, $wireguardIp)
         );
     }
 
     private function hasExpectedExtensions(
         string $certificatePath,
         string $hostname,
-        string $wireguardAddress,
+        string $wireguardIp,
     ): bool {
         $certificate = file_get_contents($certificatePath);
 
@@ -152,7 +152,7 @@ final readonly class OpenSslGatewayCertificateValidator
             && $this->hasExactSubjectAltNames(
                 $extensions['subjectAltName'] ?? null,
                 $hostname,
-                $wireguardAddress,
+                $wireguardIp,
             )
         );
     }
@@ -181,7 +181,7 @@ final readonly class OpenSslGatewayCertificateValidator
         return $actual === $expected;
     }
 
-    private function hasExactSubjectAltNames(mixed $subjectAltNames, string $hostname, string $wireguardAddress): bool
+    private function hasExactSubjectAltNames(mixed $subjectAltNames, string $hostname, string $wireguardIp): bool
     {
         if (! is_string($subjectAltNames)) {
             return false;
@@ -200,7 +200,7 @@ final readonly class OpenSslGatewayCertificateValidator
 
             $address = substr($name, strlen('IP Address:'));
 
-            return inet_pton($address) === inet_pton($wireguardAddress);
+            return inet_pton($address) === inet_pton($wireguardIp);
         }
 
         return false;

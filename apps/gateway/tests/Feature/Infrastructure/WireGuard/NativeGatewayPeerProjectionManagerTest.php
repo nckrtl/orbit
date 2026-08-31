@@ -26,20 +26,20 @@ it('removes and restores only the selected peer in the serialized gateway projec
         $gateway = Node::query()->create([
             'name' => 'gateway',
             'public_ssh_host' => '85.9.218.89',
-            'wireguard_address' => '10.44.0.1',
+            'wireguard_ip' => '10.44.0.1',
             'wireguard_public_key' => str_repeat(string: 'P', times: 43).'=',
         ]);
         $gateway->roles()->create(['role' => RoleName::Vpn]);
         $removedPeer = Node::query()->create([
             'name' => 'removed-peer',
             'public_ssh_host' => '94.237.40.75',
-            'wireguard_address' => '10.44.0.2',
+            'wireguard_ip' => '10.44.0.2',
             'wireguard_public_key' => str_repeat(string: 'A', times: 43).'=',
         ]);
         Node::query()->create([
             'name' => 'remaining-peer',
             'public_ssh_host' => '94.237.40.76',
-            'wireguard_address' => '10.44.0.3',
+            'wireguard_ip' => '10.44.0.3',
             'wireguard_public_key' => str_repeat(string: 'B', times: 43).'=',
         ]);
         $settings = new VpnSettings(app(SettingRepository::class));
@@ -464,7 +464,7 @@ function gateway_peer_projection_harness(bool $active, bool $enabled, ?string $f
     $node = Node::query()->create([
         'name' => 'gateway-shell',
         'public_ssh_host' => '85.9.218.90',
-        'wireguard_address' => '10.45.0.1',
+        'wireguard_ip' => '10.45.0.1',
         'wireguard_public_key' => str_repeat(string: 'G', times: 43).'=',
     ]);
     $node->roles()->create(['role' => RoleName::Vpn]);

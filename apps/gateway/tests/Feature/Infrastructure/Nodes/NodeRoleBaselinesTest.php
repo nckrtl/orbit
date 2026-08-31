@@ -305,7 +305,7 @@ it('dispatches every assignment to its code-defined baseline', function (): void
         ),
     );
 
-    foreach (RoleName::cases() as $role) {
+    foreach (role_baseline_roles() as $role) {
         [$node, $assignment] = role_baseline_models($role, "dispatch-{$role->value}");
 
         if ($role === RoleName::Gateway) {
@@ -438,7 +438,7 @@ it('checks the remote operating system before every role convergence', function 
         ),
     );
 
-    foreach (RoleName::cases() as $role) {
+    foreach (role_baseline_roles() as $role) {
         [$node, $assignment] = role_baseline_models($role, "guard-{$role->value}");
         if ($role === RoleName::Gateway) {
             $assignment->update(['status' => 'active']);
@@ -557,11 +557,20 @@ function role_baseline_models(RoleName $role, string $name = 'role-node'): array
         'public_ssh_host' => '192.0.2.10',
         'public_ssh_port' => 22,
         'user' => 'orbit',
-        'wireguard_address' => $address,
+        'wireguard_ip' => $address,
     ]);
     $assignment = $node->roles()->create(['role' => $role, 'status' => 'provisioning']);
 
     return [$node, $assignment];
+}
+
+/** @return list<RoleName> */
+function role_baseline_roles(): array
+{
+    return array_values(array_filter(
+        RoleName::cases(),
+        static fn (RoleName $role): bool => $role !== RoleName::Router,
+    ));
 }
 
 /** @param list<string> $events */

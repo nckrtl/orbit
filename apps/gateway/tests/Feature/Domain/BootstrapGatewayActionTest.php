@@ -27,9 +27,9 @@ it('initializes the portable gateway authority idempotently', function (): void 
         /** @var list<array{hostname: string, address: string}> */
         public array $calls = [];
 
-        public function converge(string $hostname, string $wireguardAddress): void
+        public function converge(string $hostname, string $wireguardIp): void
         {
-            $this->calls[] = ['hostname' => $hostname, 'address' => $wireguardAddress];
+            $this->calls[] = ['hostname' => $hostname, 'address' => $wireguardIp];
         }
     };
     $selfAccess = new class implements GatewaySelfAccessConverger {
@@ -55,7 +55,7 @@ it('initializes the portable gateway authority idempotently', function (): void 
     );
     $data = new BootstrapGatewayData(
         publicHost: '85.9.218.89',
-        wireguardAddress: '10.44.0.1',
+        wireguardIp: '10.44.0.1',
         wireguardSubnet: '10.44.0.0/24',
         wireguardEndpoint: '85.9.218.89:51820',
         dnsServer: '10.44.0.1',
@@ -153,7 +153,7 @@ it('fails closed without mutating a partial root CA containing only :filename', 
         files: new ProtectedFileWriter,
         vpn: gateway_vpn_noop(),
         web: new class implements GatewayWebConverger {
-            public function converge(string $hostname, string $wireguardAddress): void
+            public function converge(string $hostname, string $wireguardIp): void
             {
                 throw new LogicException('Web convergence must not run after CA generation fails.');
             }
@@ -242,7 +242,7 @@ it('rejects a mismatched complete root CA pair without replacing it', function (
         files: new ProtectedFileWriter,
         vpn: gateway_vpn_noop(),
         web: new class implements GatewayWebConverger {
-            public function converge(string $hostname, string $wireguardAddress): void
+            public function converge(string $hostname, string $wireguardIp): void
             {
                 throw new LogicException('Web convergence must not run for an invalid CA pair.');
             }
@@ -311,7 +311,7 @@ it('rejects an existing root CA that is not RSA 4096', function (): void {
         files: new ProtectedFileWriter,
         vpn: gateway_vpn_noop(),
         web: new class implements GatewayWebConverger {
-            public function converge(string $hostname, string $wireguardAddress): void {}
+            public function converge(string $hostname, string $wireguardIp): void {}
         },
         selfAccess: gateway_self_access_noop(),
         orbitHome: $orbitHome,
@@ -351,7 +351,7 @@ it('rejects an invalid static identity before persistence or host side effects',
         files: new ProtectedFileWriter,
         vpn: gateway_vpn_noop(),
         web: new class implements GatewayWebConverger {
-            public function converge(string $hostname, string $wireguardAddress): void
+            public function converge(string $hostname, string $wireguardIp): void
             {
                 throw new LogicException('Web convergence must not run.');
             }
@@ -362,7 +362,7 @@ it('rejects an invalid static identity before persistence or host side effects',
 
     expect(fn () => $action->execute(new BootstrapGatewayData(
         publicHost: '85.9.218.89',
-        wireguardAddress: '10.44.0.1',
+        wireguardIp: '10.44.0.1',
         wireguardSubnet: '10.44.0.0/24',
         wireguardEndpoint: '85.9.218.89:51820',
         dnsServer: '10.44.0.1',
@@ -385,7 +385,7 @@ it('records provisioning and failed host convergence state and activates an idem
         /** @var list<array{node: LifecycleStatus, roles: list<LifecycleStatus>}> */
         public array $observedStates = [];
 
-        public function converge(string $hostname, string $wireguardAddress): void
+        public function converge(string $hostname, string $wireguardIp): void
         {
             $node = Node::query()->where('name', 'gateway')->firstOrFail();
             /** @var list<LifecycleStatus> $roleStatuses */
@@ -418,7 +418,7 @@ it('records provisioning and failed host convergence state and activates an idem
     );
     $data = new BootstrapGatewayData(
         publicHost: '85.9.218.89',
-        wireguardAddress: '10.44.0.1',
+        wireguardIp: '10.44.0.1',
         wireguardSubnet: '10.44.0.0/24',
         wireguardEndpoint: '85.9.218.89:51820',
         dnsServer: '10.44.0.1',
@@ -476,7 +476,7 @@ it('records stable gateway failure state when bootstrap throws an unexpected exc
         files: new ProtectedFileWriter,
         vpn: gateway_vpn_noop(),
         web: new class implements GatewayWebConverger {
-            public function converge(string $hostname, string $wireguardAddress): void
+            public function converge(string $hostname, string $wireguardIp): void
             {
                 throw new RuntimeException('Unexpected gateway web failure.');
             }
@@ -486,7 +486,7 @@ it('records stable gateway failure state when bootstrap throws an unexpected exc
     );
     $data = new BootstrapGatewayData(
         publicHost: '85.9.218.89',
-        wireguardAddress: '10.44.0.1',
+        wireguardIp: '10.44.0.1',
         wireguardSubnet: '10.44.0.0/24',
         wireguardEndpoint: '85.9.218.89:51820',
         dnsServer: '10.44.0.1',
@@ -555,7 +555,7 @@ it('rejects unsupported local gateway operating systems before any persistence o
     $web = new class implements GatewayWebConverger {
         public int $calls = 0;
 
-        public function converge(string $hostname, string $wireguardAddress): void
+        public function converge(string $hostname, string $wireguardIp): void
         {
             $this->calls++;
         }
@@ -634,7 +634,7 @@ function bootstrap_gateway_action_data(): BootstrapGatewayData
 {
     return new BootstrapGatewayData(
         publicHost: '85.9.218.89',
-        wireguardAddress: '10.44.0.1',
+        wireguardIp: '10.44.0.1',
         wireguardSubnet: '10.44.0.0/24',
         wireguardEndpoint: '85.9.218.89:51820',
         dnsServer: '10.44.0.1',

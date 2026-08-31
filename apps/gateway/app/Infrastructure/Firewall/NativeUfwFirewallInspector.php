@@ -32,7 +32,7 @@ final readonly class NativeUfwFirewallInspector implements FirewallInspector
     {
         $rule->loadMissing('node');
         $node = $rule->node;
-        $host = $node->wireguard_address;
+        $host = $node->wireguard_ip;
         if ($node->platform !== 'linux' || ! is_string($host) || $host === '') {
             throw new DoctorInspectionException;
         }

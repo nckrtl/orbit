@@ -11,7 +11,7 @@ final class BootstrapGatewayData extends Data
 {
     public function __construct(
         public string $publicHost,
-        public string $wireguardAddress,
+        public string $wireguardIp,
         public string $wireguardSubnet,
         public string $wireguardEndpoint,
         public string $dnsServer,

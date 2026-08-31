@@ -9,6 +9,7 @@ use App\Domain\Nodes\NodeProvisioningIdentity;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Tools\ToolManagerMaterializer;
 use App\Infrastructure\Processes\CommandResult;
+use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\NodeRole;
 use Tests\Support\FakeToolManagerMaterializer;
@@ -34,6 +35,8 @@ it('provisions the first peer from the gateway console', function (): void {
         public function removeUnreachable(Node $node, NodeRole $assignment): void {}
     });
 
+    $cluster = Cluster::query()->create(['name' => 'development']);
+
     $this
         ->artisan('orbit:node-provision', [
             'name' => 'operator',
@@ -42,6 +45,9 @@ it('provisions the first peer from the gateway console', function (): void {
             '--architecture' => 'x86_64',
             '--tld' => '.Operator.Orbit',
             '--wireguard-address' => '10.44.0.2',
+            '--wireguard-ip' => '10.44.0.2',
+            '--cluster' => (string) $cluster->id,
+            '--lan-ip' => '10.0.0.2',
             '--wireguard-endpoint' => '10.0.0.2:51820',
             '--dns-server' => '10.0.0.2',
             '--host-key-fingerprint' => 'SHA256:pinned',
@@ -56,7 +62,29 @@ it('provisions the first peer from the gateway console', function (): void {
         ->and($node->architecture)
         ->toBe('x86_64')
         ->and($node->tld)
-        ->toBe('operator.orbit');
+        ->toBe('operator.orbit')
+        ->and($node->cluster_id)
+        ->toBe($cluster->id)
+        ->and($node->wireguard_ip)
+        ->toBe('10.44.0.2')
+        ->and($node->wireguard_address)
+        ->toBe('10.44.0.2')
+        ->and($node->lan_ip)
+        ->toBe('10.0.0.2');
+});
+
+it('rejects conflicting WireGuard options before provisioning', function (): void {
+    $this
+        ->artisan('orbit:node-provision', [
+            'name' => 'conflict',
+            'host' => '192.0.2.50',
+            '--wireguard-ip' => '10.44.0.5',
+            '--wireguard-address' => '10.44.0.6',
+        ])
+        ->expectsOutput('The WireGuard IP options conflict.')
+        ->assertExitCode(1);
+
+    expect(Node::query()->where('name', 'conflict')->exists())->toBeFalse();
 });
 
 it('reports typed provisioning failures without leaking command output', function (): void {

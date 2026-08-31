@@ -38,7 +38,7 @@ final readonly class NativeWorkspaceStateInspector implements WorkspaceStateInsp
         $instance = $workspace->instance;
         $site = new AppDevSite(
             nodeId: $instance->node_id,
-            nodeAddress: $instance->node->wireguard_address ?? '',
+            nodeAddress: $instance->node->wireguard_ip ?? '',
             scope: "workspace-{$workspace->id}",
             checkoutPath: $workspace->checkout_path,
             documentRoot: $instance->document_root,
@@ -75,7 +75,7 @@ final readonly class NativeWorkspaceStateInspector implements WorkspaceStateInsp
                 commandTimeout: $this->deadline->cap(30.0),
             );
             $values = $this->parse($result, 7);
-            $dns = $this->dnsMatches($workspace->hostname, $instance->node->wireguard_address);
+            $dns = $this->dnsMatches($workspace->hostname, $instance->node->wireguard_ip);
         } catch (\Throwable) {
             throw new DoctorInspectionException;
         }

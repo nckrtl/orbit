@@ -73,8 +73,8 @@ final readonly class NativeGatewayVpnConverger implements GatewayVpnConverger
             dnsServer: $data->dnsServer,
             dnsThroughWireGuard: true,
             domain: $data->domain,
-            serverAddress: "{$data->wireguardAddress}/{$prefixLength}",
-            peerAddress: "{$data->wireguardAddress}/{$prefixLength}",
+            serverAddress: "{$data->wireguardIp}/{$prefixLength}",
+            peerAddress: "{$data->wireguardIp}/{$prefixLength}",
             serverPrivateKey: $privateKey,
             serverPublicKey: $publicKey,
         );
@@ -226,7 +226,7 @@ final readonly class NativeGatewayVpnConverger implements GatewayVpnConverger
             'server=1.1.1.1',
             'server=8.8.8.8',
             "local=/{$data->domain}/",
-            "host-record={$data->name}.{$data->domain},{$data->wireguardAddress}",
+            "host-record={$data->name}.{$data->domain},{$data->wireguardIp}",
             '',
         ]);
         $generatedPath = rtrim(string: $this->orbitHome, characters: '/').'/generated/dnsmasq/orbit-vpn.conf';
@@ -592,7 +592,7 @@ final readonly class NativeGatewayVpnConverger implements GatewayVpnConverger
                 action: 'allow',
                 direction: 'in',
                 source: 'any',
-                destination: $data->wireguardAddress,
+                destination: $data->wireguardIp,
                 port: '22',
                 protocol: 'tcp',
                 inInterface: 'orbit',
@@ -609,7 +609,7 @@ final readonly class NativeGatewayVpnConverger implements GatewayVpnConverger
                 'proto',
                 'tcp',
                 'to',
-                $data->wireguardAddress,
+                $data->wireguardIp,
                 'port',
                 '22',
                 'comment',

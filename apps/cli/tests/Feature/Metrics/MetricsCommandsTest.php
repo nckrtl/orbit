@@ -281,9 +281,9 @@ it('prompts from the active eligible node list before enabling Metrics', functio
         ]),
         ListNodesRequest::class => MockResponse::make([
             'data' => [
-                metrics_cli_node_payload(3, 'app-dev', 'active', ['app-dev']),
-                metrics_cli_node_payload(7, 'orbit-ops', 'active', []),
-                metrics_cli_node_payload(8, 'pending', 'provisioning', []),
+                metrics_cli_node_payload(id: 3, name: 'app-dev', status: 'active', roles: ['app-dev']),
+                metrics_cli_node_payload(id: 7, name: 'orbit-ops', status: 'active', roles: []),
+                metrics_cli_node_payload(id: 8, name: 'pending', status: 'provisioning', roles: []),
             ],
             'meta' => ['request_id' => metrics_cli_request_id()],
         ]),
@@ -324,8 +324,8 @@ it('resolves a typed node name against the already-fetched node list without lis
         ]),
         ListNodesRequest::class => MockResponse::make([
             'data' => [
-                metrics_cli_node_payload(3, 'app-dev', 'active', ['app-dev']),
-                metrics_cli_node_payload(7, 'orbit-ops', 'active', []),
+                metrics_cli_node_payload(id: 3, name: 'app-dev', status: 'active', roles: ['app-dev']),
+                metrics_cli_node_payload(id: 7, name: 'orbit-ops', status: 'active', roles: []),
             ],
             'meta' => ['request_id' => metrics_cli_request_id()],
         ]),
@@ -529,8 +529,8 @@ it('enables Metrics on a node given by name', function (): void {
         ]),
         ListNodesRequest::class => MockResponse::make([
             'data' => [
-                metrics_cli_node_payload(1, 'gateway', 'active', ['gateway', 'vpn']),
-                metrics_cli_node_payload(2, 'app-dev', 'active', ['app-dev']),
+                metrics_cli_node_payload(id: 1, name: 'gateway', status: 'active', roles: ['gateway', 'vpn']),
+                metrics_cli_node_payload(id: 2, name: 'app-dev', status: 'active', roles: ['app-dev']),
             ],
             'meta' => ['request_id' => metrics_cli_request_id()],
         ]),
@@ -559,7 +559,7 @@ it('rejects an unknown node name before any Metrics mutation', function (): void
             'meta' => ['request_id' => metrics_cli_request_id()],
         ]),
         ListNodesRequest::class => MockResponse::make([
-            'data' => [metrics_cli_node_payload(2, 'app-dev', 'active', ['app-dev'])],
+            'data' => [metrics_cli_node_payload(id: 2, name: 'app-dev', status: 'active', roles: ['app-dev'])],
             'meta' => ['request_id' => metrics_cli_request_id()],
         ]),
     ]);
@@ -575,7 +575,7 @@ it('rejects an unknown node name before any Metrics mutation', function (): void
 it('resolves exporter node names through the node list', function (): void {
     $mock = MockClient::global([
         ListNodesRequest::class => MockResponse::make([
-            'data' => [metrics_cli_node_payload(3, 'app-prod', 'active', ['app-prod'])],
+            'data' => [metrics_cli_node_payload(id: 3, name: 'app-prod', status: 'active', roles: ['app-prod'])],
             'meta' => ['request_id' => metrics_cli_request_id()],
         ]),
         DisableMetricsExporterRequest::class => MockResponse::make([
@@ -786,7 +786,7 @@ function metrics_cli_node_payload(int $id, string $name, string $status, array $
         'public_ssh_host' => "{$name}.example.test",
         'public_ssh_port' => 22,
         'ssh_user' => 'orbit',
-        'wireguard_address' => "10.44.0.{$id}",
+        'wireguard_ip' => "10.44.0.{$id}",
         'wireguard_public_key' => "{$name}-public-key",
         'wireguard_endpoint_override' => null,
         'dns_server_override' => null,

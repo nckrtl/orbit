@@ -155,7 +155,7 @@ function tld_converger_node(
         'architecture' => 'x86_64',
         'tld' => $tld,
         'public_ssh_host' => "{$name}.example.test",
-        'wireguard_address' => '10.44.0.'.(Node::query()->count() + 10),
+        'wireguard_ip' => '10.44.0.'.(Node::query()->count() + 10),
     ]);
 }
 
