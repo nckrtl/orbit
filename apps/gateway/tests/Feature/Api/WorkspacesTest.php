@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Actions\Workspaces\CreateWorkspaceAction;
+use App\Data\Workspaces\CreateWorkspaceData;
 use App\Domain\AppDev\AppDevRuntimeConverger;
 use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppDev\RuntimeConvergenceException;
@@ -11,6 +13,7 @@ use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Models\App as OrbitApp;
 use App\Models\Instance;
 use App\Models\Node;
@@ -328,6 +331,25 @@ describe('workspace API', function (): void {
             ->assertConflict()
             ->assertJsonPath('error.code', 'workspace.path_taken');
 
+        expect(Workspace::query()->count())
+            ->toBe(0)
+            ->and($this->runtime->calls)
+            ->toBeEmpty();
+    });
+
+    it('rejects an explicit checkout path that cannot be parsed before persistence', function (): void {
+        $data = new CreateWorkspaceData(
+            instanceId: $this->instance->id,
+            name: 'feature-one',
+            branch: 'feature-one',
+            checkoutPath: "/srv/users/nckrtl/custom-worktrees/feature\tone",
+            phpVersion: null,
+        );
+
+        expect(fn (): array => app(CreateWorkspaceAction::class)->execute($data))
+            ->toThrow(function (ResourceOperationException $exception): void {
+                expect($exception->errorCode)->toBe('workspace.checkout_path_invalid');
+            });
         expect(Workspace::query()->count())
             ->toBe(0)
             ->and($this->runtime->calls)

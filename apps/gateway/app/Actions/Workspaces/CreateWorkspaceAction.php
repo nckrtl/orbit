@@ -69,13 +69,18 @@ final readonly class CreateWorkspaceAction
         if (! $workspace->exists) {
             $checkout = StoragePath::tryParse($checkoutPath);
 
-            if ($checkout instanceof StoragePath) {
-                $this->checkoutOverlap->assertAvailable(
-                    $instance->node_id,
-                    $checkout,
-                    'workspace.path_taken',
+            if (! $checkout instanceof StoragePath) {
+                throw new ResourceOperationException(
+                    'workspace.checkout_path_invalid',
+                    'Workspace checkout path is not allowed.',
                 );
             }
+
+            $this->checkoutOverlap->assertAvailable(
+                $instance->node_id,
+                $checkout,
+                'workspace.path_taken',
+            );
         }
         if (
             ! $workspace->exists
