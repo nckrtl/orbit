@@ -8,9 +8,10 @@ harness.
 - Read the nearest nested `AGENTS.md` before changing a project.
 - Keep the CLI, Gateway, SDK, and E2E harness as separate Composer projects.
 - Use root commands only to coordinate projects.
-- Linear owns feature scope, acceptance criteria, the ADR decision, and the
+- Accepted repository ADRs own architectural decisions. Linear owns
+  implementation outcomes, scope, acceptance criteria, relationships, and the
   proof venue. The worktree-local `.orbit/plan.md` is only an ephemeral
-  implementation map and is never committed.
+  post-claim implementation map and is never committed.
 
 ## Workflow
 
@@ -28,12 +29,24 @@ preflight → fresh topology → get it right → codify → prove fresh → pul
 
 Rules that hold everywhere:
 
-- A Linear issue with status `Todo` is ready for implementation.
-- Every governing ADR is on `main` before implementation starts; a feature
-  PR never introduces or changes an ADR.
+- `Backlog` records work that is not ready. `Todo` means the complete,
+  proof-feasible implementation contract is claimable. `Blocked` is for
+  claimed work that cannot continue. Issue creation sets `Backlog` or `Todo`
+  explicitly. A Linear issue with status `Todo` is ready for implementation.
+- Every governing ADR is accepted on `origin/main` before implementation
+  issues are derived; a feature PR never introduces or changes an ADR.
+- Before admitting any issue to `Todo`, refine its complete issue set against
+  current `main`: inspect relevant product and harness code, close product and
+  proof decisions, make the dependency graph acyclic, and admit every
+  independent ready root in parallel. Dependents remain in `Backlog` until
+  their real prerequisites merge and are rechecked.
 - Implementation does not begin until `.orbit/plan.md` has `Verdict: PASS`.
   Every `FIX` starts a fresh correction planner and then a fresh independent
   reviewer. Repeat until `PASS` or `BLOCK`; only `BLOCK` stops preflight.
+- `PASS` is expected for a correctly refined issue. `FIX` corrects the
+  temporary implementation map while the issue remains `Todo`. `BLOCK` means
+  the issue was not ready; move claimed work to `Blocked`, repair its contract
+  or dependencies, return it to `Todo`, and start fresh preflight.
 - One implementer owns the complete feature and its corrections. It may use
   bounded subagents, but there is no agent-per-increment requirement.
 - Feature branches never modify the harness (`apps/e2e`, `bin/e2e-*`).
