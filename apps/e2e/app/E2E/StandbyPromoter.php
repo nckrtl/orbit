@@ -227,8 +227,9 @@ final readonly class StandbyPromoter
             $manifest['topology']['profile'],
             $roles,
             $checkoutRoles,
-            $previous,
-            $assignments,
+            previousGenerationId: $previous,
+            topologyAssignments: $assignments,
+            standbyNamespace: $this->identity->namespace,
         );
     }
 
@@ -371,10 +372,10 @@ final readonly class StandbyPromoter
         throw new RuntimeException("The {$label} VMs did not stop within the bounded wait.");
     }
 
-    /** The replaced instances took every earlier snapshot with them; their manifests go too. */
+    /** The replaced instances took every earlier owned snapshot with them; their owned manifests go too. */
     private function forgetReplacedGenerations(StandbyGeneration $current): void
     {
-        foreach ($this->manifests->recorded() as $generation) {
+        foreach ($this->manifests->ownedRecorded() as $generation) {
             if ($generation->id !== $current->id) {
                 $this->manifests->forget($generation);
             }

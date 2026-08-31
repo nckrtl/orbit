@@ -8,6 +8,7 @@ use App\E2E\State\AtomicJsonStore;
 use App\E2E\State\StatePaths;
 use App\E2E\Value\LaravelRelease;
 use App\E2E\Value\StandbyGeneration;
+use App\E2E\Value\StandbyIdentity;
 use App\E2E\Value\TopologyProfile;
 use Illuminate\Container\Container;
 use Illuminate\Process\Factory as ProcessFactory;
@@ -24,7 +25,12 @@ describe('StandbyManifestStore', function () {
 
     it('round-trips a typed generation with exact ordered snapshots', function () {
         $paths = new StatePaths(temporaryPath('orbit-standby-', 4));
-        $store = new StandbyManifestStore($json = new AtomicJsonStore($paths), $paths, new IncusHost);
+        $store = new StandbyManifestStore(
+            $json = new AtomicJsonStore($paths),
+            $paths,
+            new IncusHost,
+            StandbyIdentity::live(),
+        );
         $generation = new StandbyGeneration(
             'g1',
             str_repeat('a', 40),
@@ -44,11 +50,12 @@ describe('StandbyManifestStore', function () {
             ['gateway', 'app-dev', 'app-prod'],
             ['gateway', 'app-dev'],
             null,
-            [
+            topologyAssignments: [
                 'gateway' => ['gateway', 'vpn'],
                 'app-dev' => ['app-dev', 'metrics'],
                 'app-prod' => ['app-prod'],
             ],
+            standbyNamespace: 'live',
         );
         $store->record($generation);
         $store->promote($generation);
@@ -59,7 +66,8 @@ describe('StandbyManifestStore', function () {
             ->toEqual([$generation])
             ->and(new AtomicJsonStore($paths)->read('standby/promoted.json'))
             ->toMatchArray([
-                'schema' => 5,
+                'schema' => 6,
+                'standby_namespace' => 'live',
                 'prepared_fingerprint' => str_repeat('b', 64),
                 'base_image_fingerprint' => str_repeat('c', 64),
                 'structural_fingerprint' => str_repeat('d', 64),
@@ -80,6 +88,68 @@ describe('StandbyManifestStore', function () {
             ])
             ->and(file_exists($paths->path('standby/promoted-fingerprint.json')))
             ->toBeFalse();
+    });
+
+    it('keeps an exact legacy manifest readable as unbound state', function () {
+        $paths = new StatePaths(temporaryPath('orbit-standby-', 4));
+        $json = new AtomicJsonStore($paths);
+        $legacy = new StandbyGeneration(
+            'g1',
+            str_repeat('a', 40),
+            ['gateway' => 'main-g1', 'app-dev' => 'main-g1', 'app-prod' => 'main-g1'],
+            str_repeat('b', 64),
+            str_repeat('c', 64),
+            new LaravelRelease('v13.10.1', '5aad4ddf34d5e21dfe6b4c07eeac67d5bd5e08b0'),
+            str_repeat('d', 64),
+            1,
+            'ubuntu-26.04-amd64-v1',
+            'orbit-base-ubuntu-26.04-runtime',
+            'gateway_app-dev_app-prod',
+            ['gateway', 'app-dev', 'app-prod'],
+            ['gateway', 'app-dev'],
+        )->toArray();
+        $legacy['schema'] = 4;
+        unset($legacy['standby_namespace']);
+        $json->write('standby/promoted.json', $legacy);
+        $store = new StandbyManifestStore($json, $paths, new IncusHost, StandbyIdentity::live());
+
+        $generation = $store->promoted();
+
+        expect($generation)
+            ->not
+            ->toBeNull()
+            ->and($generation?->standbyNamespace)
+            ->toBeNull();
+    });
+
+    it('refuses to persist a generation owned by another standby namespace', function () {
+        $paths = new StatePaths(temporaryPath('orbit-standby-', 4));
+        $generation = new StandbyGeneration(
+            'g1',
+            str_repeat('a', 40),
+            ['gateway' => 'main-g1', 'app-dev' => 'main-g1', 'app-prod' => 'main-g1'],
+            str_repeat('b', 64),
+            str_repeat('c', 64),
+            new LaravelRelease('v13.10.1', '5aad4ddf34d5e21dfe6b4c07eeac67d5bd5e08b0'),
+            str_repeat('d', 64),
+            1,
+            'ubuntu-26.04-amd64-v1',
+            'orbit-base-ubuntu-26.04-runtime',
+            'gateway_app-dev_app-prod',
+            ['gateway', 'app-dev', 'app-prod'],
+            ['gateway', 'app-dev'],
+            null,
+            '',
+        );
+        $store = new StandbyManifestStore(
+            new AtomicJsonStore($paths),
+            $paths,
+            new IncusHost,
+            StandbyIdentity::live(),
+        );
+
+        expect(fn () => $store->record($generation))
+            ->toThrow(RuntimeException::class, 'primary does not match configured standby namespace live');
     });
 
     it('rejects missing roles and persisted schema drift', function () {
@@ -109,6 +179,7 @@ describe('StandbyManifestStore', function () {
                 $json = new AtomicJsonStore($paths),
                 $paths,
                 new IncusHost,
+                StandbyIdentity::primary(),
             )->promoted(),
         )
             ->toThrow(InvalidArgumentException::class);
@@ -124,7 +195,7 @@ describe('StandbyManifestStore', function () {
         unset($legacy['topology']['assignments']);
         $json->write('standby/promoted.json', $legacy);
 
-        $loaded = new StandbyManifestStore($json, $paths, new IncusHost)->promoted();
+        $loaded = new StandbyManifestStore($json, $paths, new IncusHost, StandbyIdentity::primary())->promoted();
 
         expect($loaded?->isLegacy())
             ->toBeTrue()
@@ -134,10 +205,10 @@ describe('StandbyManifestStore', function () {
             ->toBe($legacy);
     });
 
-    it('retains current, previous, and topology-pinned generations when pruning', function () {
+    it('prunes only owned generations while retaining current, previous, pinned, and legacy state', function () {
         $paths = new StatePaths(temporaryPath('orbit-standby-', 4));
         $json = new AtomicJsonStore($paths);
-        $store = new StandbyManifestStore($json, $paths, new IncusHost);
+        $store = new StandbyManifestStore($json, $paths, new IncusHost, StandbyIdentity::primary());
         $old = standbyPruneGeneration('g1');
         $pinned = standbyPruneGeneration('g2');
         $previous = standbyPruneGeneration('g3');
@@ -145,6 +216,10 @@ describe('StandbyManifestStore', function () {
         foreach ([$old, $pinned, $previous, $current] as $item) {
             $json->write("standby/generations/{$item->id}.json", $item->toArray());
         }
+        $legacy = standbyPruneGeneration('g0')->toArray();
+        $legacy['schema'] = 4;
+        unset($legacy['standby_namespace']);
+        $json->write('standby/generations/g0.json', $legacy);
         pinnedTopologyState($pinned);
 
         expect(array_map(fn (StandbyGeneration $item): string => $item->id, $store->prunable($current)))
@@ -154,7 +229,7 @@ describe('StandbyManifestStore', function () {
     it('never prunes the generation a live topology attempt pins', function () {
         $paths = new StatePaths(temporaryPath('orbit-standby-', 4));
         $json = new AtomicJsonStore($paths);
-        $store = new StandbyManifestStore($json, $paths, new IncusHost);
+        $store = new StandbyManifestStore($json, $paths, new IncusHost, StandbyIdentity::primary());
         $pinned = standbyPruneGeneration('g1');
         $current = standbyPruneGeneration('g2');
         foreach ([$pinned, $current] as $item) {
@@ -168,7 +243,7 @@ describe('StandbyManifestStore', function () {
     it('fails closed when a manifest collection cannot be inspected', function (string $collection) {
         $paths = new StatePaths(temporaryPath('orbit-standby-', 4));
         $json = new AtomicJsonStore($paths);
-        $store = new StandbyManifestStore($json, $paths, new IncusHost);
+        $store = new StandbyManifestStore($json, $paths, new IncusHost, StandbyIdentity::primary());
         $current = new StandbyGeneration(
             'g1',
             str_repeat('a', 40),
@@ -183,6 +258,8 @@ describe('StandbyManifestStore', function () {
             'gateway_app-dev_app-prod',
             ['gateway', 'app-dev', 'app-prod'],
             ['gateway', 'app-dev'],
+            null,
+            '',
         );
         $paths->ensureParent($collection.'-placeholder');
         file_put_contents($paths->path($collection), 'not a directory');
@@ -193,7 +270,12 @@ describe('StandbyManifestStore', function () {
 
     it('fails closed when a manifest collection is a broken symbolic link', function (string $collection) {
         $paths = new StatePaths(temporaryPath('orbit-standby-', 4));
-        $store = new StandbyManifestStore($json = new AtomicJsonStore($paths), $paths, new IncusHost);
+        $store = new StandbyManifestStore(
+            $json = new AtomicJsonStore($paths),
+            $paths,
+            new IncusHost,
+            StandbyIdentity::primary(),
+        );
         $current = new StandbyGeneration(
             'g1',
             str_repeat('a', 40),
@@ -208,6 +290,8 @@ describe('StandbyManifestStore', function () {
             'gateway_app-dev_app-prod',
             ['gateway', 'app-dev', 'app-prod'],
             ['gateway', 'app-dev'],
+            null,
+            '',
         );
         $link = $paths->root().'/'.$collection;
         if (! is_dir(dirname($link)) && ! mkdir(dirname($link), 0700, true) && ! is_dir(dirname($link))) {
@@ -257,5 +341,6 @@ function standbyPruneGeneration(string $id, ?string $previous = null): StandbyGe
         ['gateway', 'app-dev', 'app-prod'],
         ['gateway', 'app-dev'],
         $previous,
+        '',
     );
 }

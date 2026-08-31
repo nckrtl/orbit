@@ -22,6 +22,7 @@ use App\E2E\Value\OperationId;
 use App\E2E\Value\ProofFixtures;
 use App\E2E\Value\ProofPlan;
 use App\E2E\Value\SourceState;
+use App\E2E\Value\StandbyGeneration;
 use App\E2E\Value\StandbyIdentity;
 use App\E2E\Value\TopologyProfile;
 use App\E2E\Value\TopologyRequest;
@@ -59,7 +60,12 @@ function promotableFixture(bool $mainHoldsCandidate = true, AttemptPurpose $purp
     }
     $paths = new StatePaths(temporaryPath('orbit-promote-state-', 4));
     promoteDiscoveryGeneration($root, $paths);
-    $manifests = new StandbyManifestStore(new AtomicJsonStore($paths), $paths, new IncusHost);
+    $manifests = new StandbyManifestStore(
+        new AtomicJsonStore($paths),
+        $paths,
+        new IncusHost,
+        StandbyIdentity::primary(),
+    );
     $promoted = $manifests->promoted();
     assert($promoted !== null);
 
@@ -472,6 +478,29 @@ describe('StandbyPromoter', function (): void {
         expect($removals)->toHaveCount(3)->and($removals[0])->toContain(ProofFixtures::GUEST_DIRECTORY);
 
         expect($events)->toBe($expected);
+    });
+
+    it('retains unbound legacy history while replacing owned manifests', function (): void {
+        $fixture = promotableFixture();
+        $legacy = $fixture['manifests']->promoted()?->toArray();
+        assert(is_array($legacy));
+        $legacy['schema'] = 4;
+        $legacy['id'] = 'legacy-generation';
+        unset($legacy['standby_namespace']);
+        new AtomicJsonStore($fixture['paths'])->write('standby/generations/legacy-generation.json', $legacy);
+        $events = [];
+        fakePromotionHost($fixture['target'], $events);
+
+        $result = promoterFor($fixture['root'], $fixture['paths'], $fixture['manifests'])
+            ->promote($fixture['request'], $fixture['plan']);
+
+        expect($result['state'])
+            ->toBe('promoted')
+            ->and(array_map(
+                static fn (StandbyGeneration $generation): string => $generation->id,
+                $fixture['manifests']->recorded(),
+            ))
+            ->toContain('legacy-generation');
     });
 
     it('discards the copies and keeps the standby when the snapshot fails before the swap', function (): void {

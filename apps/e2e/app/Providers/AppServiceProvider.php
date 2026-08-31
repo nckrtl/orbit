@@ -143,6 +143,7 @@ final class AppServiceProvider extends ServiceProvider
             $app->make(AtomicJsonStore::class),
             $app->make(StatePaths::class),
             $app->make(IncusHost::class),
+            $app->make(StandbyIdentity::class),
         ));
         $this->app->singleton(DiscoveryGuestPreparer::class);
         $this->app->singleton(TopologyAcquirer::class, fn (Application $app): TopologyAcquirer => new TopologyAcquirer(

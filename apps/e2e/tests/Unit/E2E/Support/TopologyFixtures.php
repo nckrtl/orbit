@@ -17,6 +17,7 @@ use App\E2E\State\AtomicJsonStore;
 use App\E2E\State\StatePaths;
 use App\E2E\Value\LaravelRelease;
 use App\E2E\Value\StandbyGeneration;
+use App\E2E\Value\StandbyIdentity;
 use App\E2E\Value\TopologyTarget;
 use Illuminate\Process\Factory as ProcessFactory;
 use Illuminate\Support\Facades\Process;
@@ -28,7 +29,12 @@ function promoteDiscoveryGeneration(string $repositoryRoot, StatePaths $paths): 
     $prepared = topologyFinalPreparedFingerprint($repositoryRoot);
     $mainSha = new GitRepository($repositoryRoot)->commit();
     $structural = new PreparedStateFingerprint(new GitRepository($repositoryRoot))->forCommit($mainSha);
-    new StandbyManifestStore($store, $paths, new \App\E2E\IncusHost)->promote(new StandbyGeneration(
+    new StandbyManifestStore(
+        $store,
+        $paths,
+        new \App\E2E\IncusHost,
+        StandbyIdentity::primary(),
+    )->promote(new StandbyGeneration(
         substr($mainSha, 0, 12).'-'.substr($prepared->value, 0, 12),
         $mainSha,
         ['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod'],
@@ -42,6 +48,7 @@ function promoteDiscoveryGeneration(string $repositoryRoot, StatePaths $paths): 
         $structural->manifest['topology']['profile'],
         $structural->manifest['topology']['roles'],
         $structural->manifest['topology']['checkout_roles'],
+        standbyNamespace: '',
     ));
 }
 

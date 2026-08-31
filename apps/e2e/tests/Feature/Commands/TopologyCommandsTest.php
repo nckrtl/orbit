@@ -239,6 +239,7 @@ function commandTopologyFixture(string $issue, AttemptId $attempt): \App\E2E\Val
             'gateway_app-dev_app-prod',
             ['gateway', 'app-dev', 'app-prod'],
             ['gateway', 'app-dev'],
+            standbyNamespace: '',
         ),
         $target->network(),
         array_combine(

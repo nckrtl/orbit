@@ -35,6 +35,7 @@ function issueStateTopology(string $issue, AttemptId $attempt): FeatureTopology
             'gateway_app-dev_app-prod',
             ['gateway', 'app-dev', 'app-prod'],
             ['gateway', 'app-dev'],
+            standbyNamespace: '',
         ),
         $target->network(),
         array_combine(TopologyProfile::ROLES, array_map($target->instance(...), TopologyProfile::ROLES)),

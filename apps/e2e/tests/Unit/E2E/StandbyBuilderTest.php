@@ -39,7 +39,7 @@ function cold_cleanup_builder(IncusHost $host, AtomicJsonStore $state, StatePath
         $uninitialized(WorktreeSynchronizer::class),
         $uninitialized(TopologyConverger::class),
         $uninitialized(TopologyVerifier::class),
-        new StandbyManifestStore($state, $paths, $host),
+        new StandbyManifestStore($state, $paths, $host, StandbyIdentity::primary()),
         $state,
         __DIR__,
         StandbyIdentity::primary(),
@@ -98,7 +98,7 @@ function namespaced_builder(
         $uninitialized(WorktreeSynchronizer::class),
         $uninitialized(TopologyConverger::class),
         $uninitialized(TopologyVerifier::class),
-        new StandbyManifestStore($state, $paths, $host),
+        new StandbyManifestStore($state, $paths, $host, $identity),
         $state,
         __DIR__,
         $identity,
@@ -169,7 +169,7 @@ describe('StandbyBuilder', function () {
         $paths = new StatePaths(temporaryPath('orbit-builder-', 4));
         $state = new AtomicJsonStore($paths);
         $host = $uninitialized(IncusHost::class);
-        $manifests = new StandbyManifestStore($state, $paths, $host);
+        $manifests = new StandbyManifestStore($state, $paths, $host, StandbyIdentity::primary());
         $builder = new StandbyBuilder(
             $host,
             $uninitialized(IncusNetworkLifecycle::class),

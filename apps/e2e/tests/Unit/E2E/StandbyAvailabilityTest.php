@@ -31,6 +31,7 @@ function availabilityGeneration(): StandbyGeneration
         'gateway_app-dev_app-prod',
         TopologyProfile::ROLES,
         ['gateway', 'app-dev'],
+        standbyNamespace: '',
     );
 }
 

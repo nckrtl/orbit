@@ -41,6 +41,7 @@ function mountedTopologyFixture(bool $mounted = true, ?array $mounts = null): Fe
             TopologyProfile::NAME,
             TopologyProfile::ROLES,
             TopologyProfile::CHECKOUT_ROLES,
+            standbyNamespace: '',
         ),
         $target->network(),
         array_combine(TopologyProfile::ROLES, array_map($target->instance(...), TopologyProfile::ROLES)),

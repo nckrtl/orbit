@@ -44,7 +44,7 @@ function rebuildIdentity(): StandbyIdentity
     return StandbyIdentity::live();
 }
 
-function rebuildGeneration(string $id): StandbyGeneration
+function rebuildGeneration(string $id, string $standbyNamespace = 'live'): StandbyGeneration
 {
     return new StandbyGeneration(
         $id,
@@ -60,6 +60,8 @@ function rebuildGeneration(string $id): StandbyGeneration
         'gateway_app-dev_app-prod',
         TopologyProfile::ROLES,
         ['gateway', 'app-dev'],
+        null,
+        $standbyNamespace,
     );
 }
 
@@ -181,7 +183,12 @@ describe('StandbyRebuilder', function () {
 
         $paths = new StatePaths(temporaryPath('orbit-rebuild-', 4));
         $store = new AtomicJsonStore($paths);
-        $manifests = new StandbyManifestStore($store, $paths, new IncusHost(pool: 'orbit-e2e'));
+        $manifests = new StandbyManifestStore(
+            $store,
+            $paths,
+            new IncusHost(pool: 'orbit-e2e'),
+            rebuildIdentity(),
+        );
         $manifests->promote(rebuildGeneration('old-generation'));
         $manifests->record(rebuildGeneration('old-generation'));
         $store->write('standby/corrupt.json', ['schema' => 2, 'message' => 'stranded']);
@@ -211,7 +218,12 @@ describe('StandbyRebuilder', function () {
 
         $paths = new StatePaths(temporaryPath('orbit-rebuild-', 4));
         $store = new AtomicJsonStore($paths);
-        $manifests = new StandbyManifestStore($store, $paths, new IncusHost(pool: 'orbit-e2e'));
+        $manifests = new StandbyManifestStore(
+            $store,
+            $paths,
+            new IncusHost(pool: 'orbit-e2e'),
+            rebuildIdentity(),
+        );
         $manifests->promote(rebuildGeneration('old-generation'));
         $manifests->record(rebuildGeneration('old-generation'));
         $manifests->record(rebuildGeneration('older-generation'));
@@ -263,7 +275,12 @@ describe('StandbyRebuilder', function () {
 
         $paths = new StatePaths(temporaryPath('orbit-rebuild-', 4));
         $store = new AtomicJsonStore($paths);
-        $manifests = new StandbyManifestStore($store, $paths, new IncusHost(pool: 'orbit-e2e'));
+        $manifests = new StandbyManifestStore(
+            $store,
+            $paths,
+            new IncusHost(pool: 'orbit-e2e'),
+            rebuildIdentity(),
+        );
         $teardown = rebuilderFor($paths, $store, $manifests)->teardown();
 
         expect($teardown['networks_deleted'])
@@ -280,7 +297,12 @@ describe('StandbyRebuilder', function () {
 
         $paths = new StatePaths(temporaryPath('orbit-rebuild-', 4));
         $store = new AtomicJsonStore($paths);
-        $manifests = new StandbyManifestStore($store, $paths, new IncusHost(pool: 'orbit-e2e'));
+        $manifests = new StandbyManifestStore(
+            $store,
+            $paths,
+            new IncusHost(pool: 'orbit-e2e'),
+            rebuildIdentity(),
+        );
         $teardown = rebuilderFor($paths, $store, $manifests)->teardown();
 
         expect($teardown['instances_deleted'])
@@ -302,7 +324,12 @@ describe('StandbyRebuilder', function () {
 
         $paths = new StatePaths(temporaryPath('orbit-rebuild-', 4));
         $store = new AtomicJsonStore($paths);
-        $manifests = new StandbyManifestStore($store, $paths, new IncusHost(pool: 'orbit-e2e'));
+        $manifests = new StandbyManifestStore(
+            $store,
+            $paths,
+            new IncusHost(pool: 'orbit-e2e'),
+            rebuildIdentity(),
+        );
         expect(fn () => rebuilderFor($paths, $store, $manifests)->teardown())
             ->toThrow(RuntimeException::class, 'is not harness-owned')
             ->and($state->deleted)
@@ -321,9 +348,134 @@ describe('StandbyRebuilder', function () {
 
         $paths = new StatePaths(temporaryPath('orbit-rebuild-', 4));
         $store = new AtomicJsonStore($paths);
-        $manifests = new StandbyManifestStore($store, $paths, new IncusHost(pool: 'orbit-e2e'));
+        $manifests = new StandbyManifestStore(
+            $store,
+            $paths,
+            new IncusHost(pool: 'orbit-e2e'),
+            rebuildIdentity(),
+        );
         expect(fn () => rebuilderFor($paths, $store, $manifests)->teardown())
             ->toThrow(RuntimeException::class, 'belongs to issue NCK-104')
+            ->and($state->deleted)
+            ->toBe([]);
+    });
+
+    it('refuses primary-owned manifests before mutating the live standby', function () {
+        $identity = rebuildIdentity();
+        $state = new RebuildHost;
+        $state->instances = $identity->instances();
+        $state->networks = [$identity->network()];
+        fakeRebuildHost($state);
+
+        $paths = new StatePaths(temporaryPath('orbit-rebuild-', 4));
+        $store = new AtomicJsonStore($paths);
+        $primaryGeneration = rebuildGeneration('primary-generation', '');
+        $store->write('standby/promoted.json', $primaryGeneration->toArray());
+        $store->write("standby/generations/{$primaryGeneration->id}.json", $primaryGeneration->toArray());
+        $manifests = new StandbyManifestStore(
+            $store,
+            $paths,
+            new IncusHost(pool: 'orbit-e2e'),
+            $identity,
+        );
+
+        expect(fn () => rebuilderFor($paths, $store, $manifests)->teardown())
+            ->toThrow(RuntimeException::class, 'primary does not match configured standby namespace live')
+            ->and($state->deleted)
+            ->toBe([])
+            ->and($state->instances)
+            ->toBe($identity->instances())
+            ->and($state->networks)
+            ->toBe([$identity->network()])
+            ->and($store->read('standby/promoted.json'))
+            ->toBe($primaryGeneration->toArray());
+    });
+
+    it('refuses an unbound legacy manifest before mutating the live standby', function () {
+        $identity = rebuildIdentity();
+        $state = new RebuildHost;
+        $state->instances = $identity->instances();
+        $state->networks = [$identity->network()];
+        fakeRebuildHost($state);
+
+        $paths = new StatePaths(temporaryPath('orbit-rebuild-', 4));
+        $store = new AtomicJsonStore($paths);
+        $legacy = rebuildGeneration('legacy-generation')->toArray();
+        $legacy['schema'] = 4;
+        unset($legacy['standby_namespace']);
+        $store->write('standby/promoted.json', $legacy);
+        $manifests = new StandbyManifestStore(
+            $store,
+            $paths,
+            new IncusHost(pool: 'orbit-e2e'),
+            $identity,
+        );
+
+        expect(fn () => rebuilderFor($paths, $store, $manifests)->teardown())
+            ->toThrow(RuntimeException::class, 'unbound does not match configured standby namespace live')
+            ->and($state->deleted)
+            ->toBe([])
+            ->and($state->instances)
+            ->toBe($identity->instances())
+            ->and($state->networks)
+            ->toBe([$identity->network()])
+            ->and($store->read('standby/promoted.json'))
+            ->toBe($legacy);
+    });
+
+    it('deletes an exact promotion scratch copy that retains valid attempt metadata', function () {
+        $identity = rebuildIdentity();
+        $copy = $identity->instance('gateway').'-next';
+        $state = new RebuildHost;
+        $state->instances = [$copy];
+        $state->instanceMetadata[$copy] = [
+            'user.orbit.e2e.owner' => 'orbit-e2e',
+            'user.orbit.e2e.issue' => 'ORB-15',
+            'user.orbit.e2e.attempt' => str_repeat('b', 32),
+            'user.orbit.e2e.operation' => str_repeat('c', 32),
+        ];
+        fakeRebuildHost($state);
+
+        $paths = new StatePaths(temporaryPath('orbit-rebuild-', 4));
+        $store = new AtomicJsonStore($paths);
+        $manifests = new StandbyManifestStore(
+            $store,
+            $paths,
+            new IncusHost(pool: 'orbit-e2e'),
+            $identity,
+        );
+
+        $teardown = rebuilderFor($paths, $store, $manifests)->teardown();
+
+        expect($teardown['instances_deleted'])
+            ->toBe([$copy])
+            ->and($state->instances)
+            ->toBe([]);
+    });
+
+    it('refuses an issue-bound promotion scratch copy with incomplete attempt metadata', function () {
+        $identity = rebuildIdentity();
+        $copy = $identity->instance('gateway').'-next';
+        $state = new RebuildHost;
+        $state->instances = [$copy];
+        $state->instanceMetadata[$copy] = [
+            'user.orbit.e2e.owner' => 'orbit-e2e',
+            'user.orbit.e2e.issue' => 'ORB-15',
+            'user.orbit.e2e.attempt' => str_repeat('b', 32),
+        ];
+        fakeRebuildHost($state);
+
+        $paths = new StatePaths(temporaryPath('orbit-rebuild-', 4));
+        $store = new AtomicJsonStore($paths);
+        $manifests = new StandbyManifestStore(
+            $store,
+            $paths,
+            new IncusHost(pool: 'orbit-e2e'),
+            $identity,
+        );
+
+        expect(fn () => rebuilderFor($paths, $store, $manifests)->teardown())
+            ->toThrow(RuntimeException::class, 'belongs to issue ORB-15')
             ->and($state->deleted)
             ->toBe([]);
     });

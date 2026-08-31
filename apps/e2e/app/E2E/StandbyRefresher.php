@@ -467,8 +467,9 @@ final readonly class StandbyRefresher
             $manifest['topology']['profile'],
             $topologyRoles,
             $checkoutRoles,
-            $previousGenerationId,
-            $assignments,
+            previousGenerationId: $previousGenerationId,
+            topologyAssignments: $assignments,
+            standbyNamespace: $this->identity->namespace,
         );
     }
 

@@ -49,7 +49,7 @@ function standbyRefresherForPowerTests(
     $verifier = new TopologyVerifier($host, 1, 10_000);
     $paths ??= new StatePaths(temporaryPath('orbit-refresh-', 4));
     $state ??= new AtomicJsonStore($paths);
-    $manifests ??= new StandbyManifestStore($state, $paths, new IncusHost);
+    $manifests ??= new StandbyManifestStore($state, $paths, new IncusHost, StandbyIdentity::primary());
 
     return new StandbyRefresher(
         $host,
@@ -113,6 +113,7 @@ function standbyRestoreGeneration(): \App\E2E\Value\StandbyGeneration
         'gateway_app-dev_app-prod',
         ['gateway', 'app-dev', 'app-prod'],
         ['gateway', 'app-dev'],
+        standbyNamespace: '',
     );
 }
 
@@ -198,7 +199,7 @@ function standbyRestoreFixture(bool $corrupt = true): array
 {
     $paths = new StatePaths(temporaryPath('orbit-refresher-', 4));
     $state = new AtomicJsonStore($paths);
-    $manifests = new StandbyManifestStore($state, $paths, new IncusHost);
+    $manifests = new StandbyManifestStore($state, $paths, new IncusHost, StandbyIdentity::primary());
     if ($corrupt) {
         $state->write('standby/corrupt.json', ['schema' => 1, 'message' => 'restore required']);
     }
@@ -649,7 +650,7 @@ function refreshFixture(): array
     $newSha = $git->commit('HEAD');
     $paths = new StatePaths(temporaryPath('orbit-refresh-fixture-state-', 4));
     $state = new AtomicJsonStore($paths);
-    $manifests = new StandbyManifestStore($state, $paths, new IncusHost);
+    $manifests = new StandbyManifestStore($state, $paths, new IncusHost, StandbyIdentity::primary());
     $generation = static fn (
         string $id,
         string $snapshotPrefix,
@@ -673,6 +674,7 @@ function refreshFixture(): array
         $oldStructuralFingerprint->manifest['topology']['roles'],
         $oldStructuralFingerprint->manifest['topology']['checkout_roles'],
         $previous,
+        standbyNamespace: '',
     );
     $manifests->promote($generation('old-generation', 'old', 'rollback-generation'));
     $manifests->record($generation('rollback-generation', 'rollback'));
@@ -803,7 +805,7 @@ describe('StandbyRefresher contracts', function () {
     it('returns terminal failure when the standby refresh lock is held', function () {
         $paths = new StatePaths(temporaryPath('orbit-refresh-lock-', 4));
         $state = new AtomicJsonStore($paths);
-        $manifests = new StandbyManifestStore($state, $paths, new IncusHost);
+        $manifests = new StandbyManifestStore($state, $paths, new IncusHost, StandbyIdentity::primary());
         $root = dirname(__DIR__, 4);
         $host = new IncusHost(pool: 'orbit-e2e');
         $git = new GitRepository($root);
@@ -1190,7 +1192,7 @@ describe('StandbyRefresher contracts', function () {
             $structural = new PreparedStateFingerprint($git)->forCommit($mainSha);
             $paths = new StatePaths(temporaryPath('orbit-refresh-stopped-', 4));
             $state = new AtomicJsonStore($paths);
-            $manifests = new StandbyManifestStore($state, $paths, new IncusHost);
+            $manifests = new StandbyManifestStore($state, $paths, new IncusHost, StandbyIdentity::primary());
             $manifests->promote(new \App\E2E\Value\StandbyGeneration(
                 'stopped-test',
                 $mainSha,
@@ -1205,6 +1207,7 @@ describe('StandbyRefresher contracts', function () {
                 $structural->manifest['topology']['profile'],
                 $structural->manifest['topology']['roles'],
                 $structural->manifest['topology']['checkout_roles'],
+                standbyNamespace: '',
             ));
             fakeStandbyRestoreProcesses();
 
@@ -1315,7 +1318,7 @@ describe('StandbyRefresher contracts', function () {
             $newSha = $git->commit('HEAD');
             $paths = new StatePaths(temporaryPath('orbit-refresh-cold-state-', 4));
             $state = new AtomicJsonStore($paths);
-            $manifests = new StandbyManifestStore($state, $paths, new IncusHost);
+            $manifests = new StandbyManifestStore($state, $paths, new IncusHost, StandbyIdentity::primary());
             $generation = new \App\E2E\Value\StandbyGeneration(
                 'old-generation',
                 $oldSha,
@@ -1330,6 +1333,7 @@ describe('StandbyRefresher contracts', function () {
                 $oldStructuralFingerprint->manifest['topology']['profile'],
                 $oldStructuralFingerprint->manifest['topology']['roles'],
                 $oldStructuralFingerprint->manifest['topology']['checkout_roles'],
+                standbyNamespace: '',
             );
             $manifests->promote($generation);
             $refresher = standbyRefresherForPowerTests(
@@ -1493,7 +1497,7 @@ describe('StandbyRefresher contracts', function () {
     it('clears the corrupt marker only after an exact restore succeeds', function () {
         $paths = new StatePaths(temporaryPath('orbit-refresher-', 4));
         $state = new AtomicJsonStore($paths);
-        $manifests = new StandbyManifestStore($state, $paths, new IncusHost);
+        $manifests = new StandbyManifestStore($state, $paths, new IncusHost, StandbyIdentity::primary());
         $state->write('standby/corrupt.json', ['schema' => 1, 'message' => 'restore required']);
         $generation = new \App\E2E\Value\StandbyGeneration(
             'g-'.str_repeat('a', 12),
@@ -1509,6 +1513,7 @@ describe('StandbyRefresher contracts', function () {
             'gateway_app-dev_app-prod',
             ['gateway', 'app-dev', 'app-prod'],
             ['gateway', 'app-dev'],
+            standbyNamespace: '',
         );
         $manifests->promote($generation);
 

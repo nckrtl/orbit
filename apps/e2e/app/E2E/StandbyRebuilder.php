@@ -7,10 +7,13 @@ namespace App\E2E;
 use App\E2E\State\AtomicJsonStore;
 use App\E2E\State\OperationLock;
 use App\E2E\State\StatePaths;
+use App\E2E\Value\AttemptId;
 use App\E2E\Value\IncusInstance;
 use App\E2E\Value\OperationId;
 use App\E2E\Value\StandbyIdentity;
 use App\E2E\Value\TopologyProfile;
+use App\E2E\Value\TopologyTarget;
+use InvalidArgumentException;
 use RuntimeException;
 
 /**
@@ -23,7 +26,7 @@ use RuntimeException;
  * checkout's standby identity owns are touched, and only when Incus reports
  * them as harness-owned; anything else refuses the rebuild instead.
  *
- * @mago-expect lint:cyclomatic-complexity,excessive-parameter-list The recovery keeps its exact resource transaction at one boundary.
+ * @mago-expect lint:cyclomatic-complexity,excessive-parameter-list,kan-defect The recovery keeps its exact resource transaction at one boundary.
  */
 final readonly class StandbyRebuilder
 {
@@ -57,6 +60,7 @@ final readonly class StandbyRebuilder
         }
 
         try {
+            $this->manifests->assertOwned();
             $instancesDeleted = $this->deleteInstances();
             $networksDeleted = $this->deleteNetwork();
             $this->forgetManifests();
@@ -156,10 +160,33 @@ final readonly class StandbyRebuilder
             );
         }
         $issue = $instance->metadata['user.orbit.e2e.issue'] ?? null;
-        if (is_string($issue) && $issue !== '') {
+        if (is_string($issue) && $issue !== '' && ! $this->isPromotionScratchCopy($instance, $name, $issue)) {
             throw new RuntimeException(
                 "Incus instance {$name} belongs to issue {$issue}; release that topology before rebuilding the standby.",
             );
         }
+    }
+
+    private function isPromotionScratchCopy(IncusInstance $instance, string $name, string $issue): bool
+    {
+        $copyNames = array_map(
+            fn (string $role): string => $this->identity->instance($role).self::COPY_SUFFIX,
+            TopologyProfile::ROLES,
+        );
+        $attempt = $instance->metadata['user.orbit.e2e.attempt'] ?? null;
+        $operation = $instance->metadata['user.orbit.e2e.operation'] ?? null;
+        if (! in_array($name, $copyNames, true) || ! is_string($attempt) || ! is_string($operation)) {
+            return false;
+        }
+
+        try {
+            TopologyTarget::assertIssue($issue);
+            new AttemptId($attempt);
+            new OperationId($operation);
+        } catch (InvalidArgumentException) {
+            return false;
+        }
+
+        return true;
     }
 }

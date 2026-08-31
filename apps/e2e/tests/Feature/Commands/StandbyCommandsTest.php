@@ -40,6 +40,7 @@ function promotedGenerationFixture(): StandbyGeneration
         'gateway_app-dev_app-prod',
         ['gateway', 'app-dev', 'app-prod'],
         ['gateway', 'app-dev'],
+        standbyNamespace: '',
     );
 }
 
@@ -47,7 +48,7 @@ function bindPromotedStandby(StandbyGeneration $generation): void
 {
     $paths = new StatePaths(temporaryPath('orbit-standby-command-', 8));
     $store = new AtomicJsonStore($paths);
-    $manifests = new StandbyManifestStore($store, $paths, new IncusHost);
+    $manifests = new StandbyManifestStore($store, $paths, new IncusHost, StandbyIdentity::primary());
     $manifests->promote($generation);
     app()->instance(StandbyManifestStore::class, $manifests);
 }
@@ -141,6 +142,7 @@ describe('standby commands', function () {
                 $structuralFingerprint->manifest['topology']['profile'],
                 $structuralFingerprint->manifest['topology']['roles'],
                 $structuralFingerprint->manifest['topology']['checkout_roles'],
+                standbyNamespace: '',
             ));
             app()->instance(PreparedStateFingerprint::class, $fingerprints);
             app()->instance(LaravelReleaseResolver::class, new LaravelReleaseResolver('/missing/laravel.git'));
@@ -180,6 +182,7 @@ describe('standby commands', function () {
                 $structuralFingerprint->manifest['topology']['profile'],
                 $structuralFingerprint->manifest['topology']['roles'],
                 $structuralFingerprint->manifest['topology']['checkout_roles'],
+                standbyNamespace: '',
             ));
             app()->instance(PreparedStateFingerprint::class, $fingerprints);
             app()->instance(LaravelReleaseResolver::class, new LaravelReleaseResolver($repository['path']));
