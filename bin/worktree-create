@@ -24,6 +24,8 @@ initialize_preflight() {
 Issue: $linear_id
 Verdict: PENDING
 Review round: 0
+Reconciliation verdict: PENDING
+Reconciliation round: 0
 
 ## Outcome
 
@@ -54,6 +56,10 @@ Out of scope:
 -
 
 ## Reviewer findings
+
+-
+
+## Reconciler recommendation
 
 -
 EOF

@@ -5,7 +5,8 @@ fresh planner maps implementation before coding, one agent implements it in a
 worktree, a reviewer re-proves it, and a merge agent merges and cleans up.
 Governed by [ADR 0007](../decisions/0007-nine-step-feature-flow.md),
 [ADR 0010](../decisions/0010-record-decisions-before-implementation-issues.md),
-and [ADR 0011](../decisions/0011-linear-lifecycle-states.md).
+[ADR 0011](../decisions/0011-linear-lifecycle-states.md), and
+[ADR 0014](../decisions/0014-reconcile-technical-preflight-blocks.md).
 
 ## Decision and issue refinement
 
@@ -60,25 +61,42 @@ current `origin/main`, and selects the first eligible issue.
    changing code. A fresh independent reviewer follows
    [reviewing-feature-plans](../../.agents/skills/reviewing-feature-plans/SKILL.md)
    and records `PASS`, `FIX`, or `BLOCK`. Every `FIX` starts a fresh correction
-   planner and then a fresh independent reviewer. Repeat until `PASS` or
-   `BLOCK`; only `BLOCK` stops preflight. `PASS` is the normal result and
+   planner and then a fresh independent reviewer. `PASS` is the normal result and
    continues into implementation while the issue stays `In Progress`. `FIX` means the issue remains implementable but only its temporary plan needs
-   correction; keep it `In Progress`. `BLOCK` moves the issue to `Blocked` and parks
-   its worktree, Herdr workspace, branch, and plan without consuming execution
-   concurrency. The
-   reviewer must include a recommended resolution: the smallest safe contract,
-   scope, dependency, or harness change, its supporting evidence, and the
-   required decision owner. Tom is routing only: he moves the issue to
-   `Blocked`, parks its assets, and records the reviewer findings, required
-   owner/action, retained artifacts, and restart condition in a Linear comment.
-   Tom must not choose or approve a recommendation, refine or edit the issue
-   contract or relations, or move `Blocked` back to `Todo`. Nick and Anna own blocker resolution;
-   Anna applies the approved issue, ADR, or dependency
-   changes and moves the resolved issue from `Blocked` to `Todo`. Unless `main`
-   drifted after refinement, a block is an issue-creation failure. On
-   re-selection Tom moves it to `In Progress`, reuses its retained assets,
-   synchronizes current `origin/main`, and starts a wholly fresh planner and
-   preflight review before implementation resumes.
+   correction; keep it `In Progress`.
+
+   `BLOCK` stops implementation but does not immediately change Linear state.
+   The reviewer includes the exact blocker, evidence, smallest safe recommended
+   resolution, and apparent decision boundary. Tom exits that reviewer and
+   starts a fresh Codex `gpt-5.6-sol` xhigh reconciler following
+   [reconciling-feature-blocks](../../.agents/skills/reconciling-feature-blocks/SKILL.md).
+   The reconciler independently checks the finding and searches for a simpler,
+   narrower, more elegant, or less invasive resolution.
+
+   - `TECHNICAL_RESOLUTION`: keep the issue `In Progress`. Internal harness
+     behavior, test mechanics, proof technique, sequencing, implementation
+     boundaries, or narrow scope may change when necessary to satisfy the
+     already accepted outcome without changing product behavior or weakening
+     proof. If only the plan changes, Tom starts a fresh correction planner. If
+     Linear or a relation needs a durable mutation, Tom routes the exact
+     proposal to Anna; Anna verifies delegated technical authority, applies and
+     reads back the change, and signals Tom to continue. Tom then starts a
+     wholly fresh planner and reviewer. The fresh reviewer's `PASS` is agreement
+     with the resolution.
+   - `HUMAN_DECISION_REQUIRED`: move the issue to `Blocked`, park its worktree,
+     Herdr workspace, branch, and plan, and record the bounded decision,
+     evidence, owner, retained artifacts, and restart condition in Linear. Use
+     this only for product-visible behavior, conflicting requirements, weakened
+     outcomes, ownership, migration, compatibility, security, privacy, data
+     integrity, rollback, material irreversible risk, any new or changed ADR,
+     or unguided architectural direction. Internal technical or harness choices
+     are not enough. Anna prepares the bounded ADR proposal; Nick's exact-text
+     approval remains required before acceptance.
+
+   Tom remains routing only: he never judges the recommendation or edits the
+   issue contract or relations. Repeated technical `BLOCK` results remain active
+   preflight non-convergence for Tom and Anna to diagnose; they are not
+   misrepresented as Nick-owned product decisions.
 3. **Fresh topology.** `bin/e2e-topology acquire <ISSUE> <worktree>`: three VMs
    cloned from the standby snapshot (~20 s), worktree mounted at
    `/home/orbit/orbit` on `gateway` and `app-dev`.

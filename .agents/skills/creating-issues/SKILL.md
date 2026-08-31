@@ -141,25 +141,23 @@ should normally pass on its first review.
   misstated a code boundary, invariant, order, or acceptance-to-proof mapping.
   Keep the issue `In Progress` while fresh planner and reviewer rounds correct
   it.
-- `BLOCK` means the issue was not ready: a product decision, prerequisite,
-  ordering boundary, proof path, harness capability, or governing contract is
-  missing or contradictory. The reviewer must recommend the smallest safe
-  resolution and identify the evidence and decision owner. Tom is routing only:
-  he moves the issue to `Blocked`, parks its assets, and records the reviewer
-  findings, required owner/action, retained worktree and Herdr assets, and the
-  exact restart condition in a Linear comment. It remains parked without consuming execution
-  concurrency. Tom must not choose or approve a recommendation,
-  refine or edit the issue contract or relations, or move `Blocked` back to
-  `Todo`. Nick and Anna own blocker resolution; Anna applies
-  approved issue, ADR, or dependency changes and moves the resolved issue to
-  `Todo`. On re-selection Tom synchronizes current `origin/main`, preserves the
-  issue branch state, and runs a wholly fresh preflight before implementation
-  resumes.
+- `BLOCK` stops implementation and starts a fresh reconciler while the issue
+  stays `In Progress`. The reviewer must recommend the smallest safe resolution
+  and identify the evidence and apparent decision boundary. The reconciler may
+  return `TECHNICAL_RESOLUTION` for an internal implementation, harness, test,
+  proof, sequencing, or narrow scope correction that preserves product behavior
+  and acceptance strength. Tom routes any durable issue or relation edit to
+  Anna; after the approved change, a wholly fresh planner and reviewer must
+  return `PASS`. Only `HUMAN_DECISION_REQUIRED` moves the issue to `Blocked` and
+  parks its assets without consuming execution concurrency. Reserve that result
+  for a product-visible, policy, authority, material irreversible-risk, or
+  unguided architectural choice. Tom never judges the proposal or edits the
+  contract.
 
-Unless `main` materially changed after refinement, a `BLOCK` is an
-issue-creation failure. Classify it as product refinement, dependency
-ordering, proof or harness feasibility, or repository drift and feed the cause
-back into this skill.
+Unless `main` materially changed after refinement, an initial `BLOCK` is
+refinement feedback. Classify it as product refinement, dependency ordering,
+proof or harness feasibility, or repository drift and feed the cause back into
+this skill. A reconciled technical resolution is not a human-owned blocker.
 
 ## Production reports
 
