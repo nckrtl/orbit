@@ -32,7 +32,10 @@ Update only the verdict metadata and reviewer-findings section in
   planner and then a fresh independent reviewer. Repeat with fresh agents until
   `PASS` or `BLOCK`.
 - `BLOCK`: state the exact missing requirement, conflict, or product decision;
-  implementation must not start.
+  implementation must not start. Include a **Recommended resolution** that names
+  the smallest safe contract, scope, dependency, or harness change that would
+  unblock the issue, the evidence supporting it, and who must decide. Do not
+  silently expand scope or present a recommendation as an approved decision.
 
 Increase `Review round` by one. Never approve a plan you authored. A genuinely
 new requirement is separate Linear work, not a finding against this plan.

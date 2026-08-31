@@ -136,8 +136,11 @@ should normally pass on its first review.
   Keep the issue in `Todo` while fresh planner and reviewer rounds correct it.
 - `BLOCK` means the issue was not ready: a product decision, prerequisite,
   ordering boundary, proof path, harness capability, or governing contract is
-  missing or contradictory. Move claimed work to `Blocked`, repair the issue
-  or graph, return it to `Todo`, and run a fresh preflight.
+  missing or contradictory. The reviewer must recommend the smallest safe
+  resolution and identify the evidence and decision owner. Tom records both the
+  blocker and recommendation in a Linear comment when moving claimed work to
+  `Blocked`. Repair the issue or graph, return it to `Todo`, and run a fresh
+  preflight.
 
 Unless `main` materially changed after refinement, a `BLOCK` is an
 issue-creation failure. Classify it as product refinement, dependency

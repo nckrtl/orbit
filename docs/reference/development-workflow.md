@@ -53,8 +53,11 @@ create `.orbit/plan.md`; that temporary implementation map begins after claim.
    `BLOCK`; only `BLOCK` stops preflight. Issue → In Progress only after `PASS`.
    `PASS` is the normal result. `FIX` means the issue remains implementable but
    its temporary plan needs correction, so it stays `Todo`. `BLOCK` means the issue was not ready; move claimed work to `Blocked`, repair the issue or
-   dependency graph, return it to `Todo`, and start a fresh preflight. Unless
-   `main` drifted after refinement, a block is an issue-creation failure.
+   dependency graph, return it to `Todo`, and start a fresh preflight. The
+   reviewer must recommend the smallest safe contract, scope, dependency, or
+   harness change, with its supporting evidence and required decision owner. Tom records the blocker and recommendation in a
+   Linear comment when moving claimed work to `Blocked`. Unless `main` drifted
+   after refinement, a block is an issue-creation failure.
 3. **Fresh topology.** `bin/e2e-topology acquire <ISSUE> <worktree>`: three VMs
    cloned from the standby snapshot (~20 s), worktree mounted at
    `/home/orbit/orbit` on `gateway` and `app-dev`.
