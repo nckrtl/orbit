@@ -133,7 +133,7 @@ describe(ProvisionNodeAction::class, function (): void {
             'platform' => 'linux',
             'architecture' => 'x86_64',
             'public_ssh_host' => '192.0.2.71',
-            'wireguard_address' => '10.44.0.71',
+            'wireguard_ip' => '10.44.0.71',
             'user' => 'invalid user',
         ]);
         $converged = false;
@@ -229,7 +229,7 @@ describe(ProvisionNodeAction::class, function (): void {
             'platform' => 'linux',
             'architecture' => 'x86_64',
             'public_ssh_host' => '192.0.2.40',
-            'wireguard_address' => '10.44.0.40',
+            'wireguard_ip' => '10.44.0.40',
             'wireguard_public_key' => 'prior-key',
             'ssh_host_fingerprint' => 'SHA256:pinned',
         ]);
@@ -288,7 +288,7 @@ describe(ProvisionNodeAction::class, function (): void {
             'platform' => 'linux',
             'architecture' => 'x86_64',
             'public_ssh_host' => '192.0.2.41',
-            'wireguard_address' => '10.44.0.41',
+            'wireguard_ip' => '10.44.0.41',
             'wireguard_public_key' => 'prior-key',
             'ssh_host_fingerprint' => 'SHA256:pinned',
         ]);
@@ -349,7 +349,7 @@ describe(ProvisionNodeAction::class, function (): void {
             'platform' => 'linux',
             'architecture' => 'x86_64',
             'public_ssh_host' => '192.0.2.42',
-            'wireguard_address' => '10.44.0.42',
+            'wireguard_ip' => '10.44.0.42',
             'wireguard_public_key' => 'prior-key',
             'ssh_host_fingerprint' => 'SHA256:pinned',
             'failed_step' => null,
@@ -442,7 +442,7 @@ describe(ProvisionNodeAction::class, function (): void {
             'platform' => 'linux',
             'architecture' => 'x86_64',
             'public_ssh_host' => '192.0.2.43',
-            'wireguard_address' => '10.44.0.43',
+            'wireguard_ip' => '10.44.0.43',
             'wireguard_public_key' => 'prior-key',
             'ssh_host_fingerprint' => 'SHA256:pinned',
         ]);
@@ -508,7 +508,7 @@ describe(ProvisionNodeAction::class, function (): void {
             'platform' => 'linux',
             'architecture' => 'x86_64',
             'public_ssh_host' => '192.0.2.44',
-            'wireguard_address' => '10.44.0.44',
+            'wireguard_ip' => '10.44.0.44',
             'wireguard_public_key' => 'prior-key',
             'ssh_host_fingerprint' => 'SHA256:pinned',
         ]);
@@ -534,14 +534,14 @@ describe(ProvisionNodeAction::class, function (): void {
 
             public function converge(Node $node): void
             {
-                $this->peers[] = [$node->wireguard_address, $node->wireguard_public_key];
+                $this->peers[] = [$node->wireguard_ip, $node->wireguard_public_key];
             }
 
             public function remove(Node $node): void {}
 
             public function restore(Node $node): void
             {
-                $this->peers[] = [$node->wireguard_address, $node->wireguard_public_key];
+                $this->peers[] = [$node->wireguard_ip, $node->wireguard_public_key];
             }
         };
         app()->instance(GatewayPeerProjectionManager::class, $projection);
@@ -571,7 +571,7 @@ describe(ProvisionNodeAction::class, function (): void {
             'public_ssh_host' => '192.0.2.50',
             'public_ssh_port' => 2222,
             'user' => 'prior-user',
-            'wireguard_address' => '10.44.0.50',
+            'wireguard_ip' => '10.44.0.50',
             'wireguard_endpoint_override' => '10.0.0.2:51820',
             'dns_server_override' => '10.0.0.1',
             'wireguard_public_key' => 'prior-key',
@@ -585,7 +585,7 @@ describe(ProvisionNodeAction::class, function (): void {
             name: $existing->name,
             publicSshHost: '192.0.2.51',
             tld: 'changed.orbit',
-            wireguardAddress: '10.44.0.51',
+            wireguardIp: '10.44.0.51',
             wireguardEndpointOverride: '10.0.0.3:51820',
             dnsServerOverride: '10.0.0.2',
         )))
@@ -598,7 +598,7 @@ describe(ProvisionNodeAction::class, function (): void {
                 'public_ssh_host',
                 'public_ssh_port',
                 'user',
-                'wireguard_address',
+                'wireguard_ip',
                 'wireguard_endpoint_override',
                 'dns_server_override',
                 'ssh_host_key_type',
@@ -614,7 +614,7 @@ describe(ProvisionNodeAction::class, function (): void {
                 'public_ssh_host' => '192.0.2.50',
                 'public_ssh_port' => 2222,
                 'user' => 'prior-user',
-                'wireguard_address' => '10.44.0.50',
+                'wireguard_ip' => '10.44.0.50',
                 'wireguard_endpoint_override' => '10.0.0.2:51820',
                 'dns_server_override' => '10.0.0.1',
                 'ssh_host_key_type' => 'ed25519',
@@ -705,7 +705,7 @@ describe(ProvisionNodeAction::class, function (): void {
             'platform' => 'linux',
             'architecture' => 'x86_64',
             'public_ssh_host' => '192.0.2.95',
-            'wireguard_address' => '10.44.0.95',
+            'wireguard_ip' => '10.44.0.95',
             'ssh_host_fingerprint' => 'SHA256:pinned',
         ]);
         app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
@@ -719,7 +719,7 @@ describe(ProvisionNodeAction::class, function (): void {
             'platform' => 'linux',
             'architecture' => 'x86_64',
             'public_ssh_host' => '192.0.2.96',
-            'wireguard_address' => '10.44.0.96',
+            'wireguard_ip' => '10.44.0.96',
             'ssh_host_fingerprint' => 'SHA256:pinned',
         ]);
         app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
@@ -806,7 +806,7 @@ describe(ProvisionNodeAction::class, function (): void {
             'platform' => 'linux',
             'architecture' => 'x86_64',
             'public_ssh_host' => '192.0.2.97',
-            'wireguard_address' => '10.44.0.97',
+            'wireguard_ip' => '10.44.0.97',
             'user' => 'orbit',
             'ssh_host_fingerprint' => 'SHA256:pinned',
         ]);
@@ -916,7 +916,7 @@ describe(ProvisionNodeAction::class, function (): void {
             'platform' => 'linux',
             'architecture' => 'x86_64',
             'public_ssh_host' => '192.0.2.98',
-            'wireguard_address' => '10.44.0.98',
+            'wireguard_ip' => '10.44.0.98',
             'wireguard_public_key' => 'prior-key',
             'user' => 'orbit',
             'ssh_host_fingerprint' => 'SHA256:pinned',
@@ -1188,7 +1188,7 @@ describe(ProvisionNodeAction::class, function (): void {
             'architecture' => 'x86_64',
             'tld' => 'existing.orbit',
             'public_ssh_host' => '192.0.2.81',
-            'wireguard_address' => '10.44.0.8',
+            'wireguard_ip' => '10.44.0.8',
             'ssh_host_fingerprint' => 'SHA256:pinned',
         ]);
         $requested = $node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
@@ -1305,7 +1305,7 @@ describe(ProvisionNodeAction::class, function (): void {
             'public_ssh_host' => '192.0.2.20',
             'public_ssh_port' => 2222,
             'user' => 'orbit',
-            'wireguard_address' => '10.44.0.3',
+            'wireguard_ip' => '10.44.0.3',
             'wireguard_endpoint_override' => '10.0.0.2:51820',
             'dns_server_override' => '10.0.0.1',
             'ssh_host_fingerprint' => 'SHA256:pinned',
@@ -1409,7 +1409,7 @@ describe(ProvisionNodeAction::class, function (): void {
             'architecture' => 'x86_64',
             'tld' => 'app-dev.orbit',
             'public_ssh_host' => '192.0.2.20',
-            'wireguard_address' => '10.44.0.3',
+            'wireguard_ip' => '10.44.0.3',
             'ssh_host_fingerprint' => 'SHA256:pinned',
         ]);
         $node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
@@ -1576,7 +1576,7 @@ describe(ProvisionNodeAction::class, function (): void {
             'architecture' => 'x86_64',
             'user' => 'orbit',
             'public_ssh_host' => '192.0.2.20',
-            'wireguard_address' => '10.44.0.3',
+            'wireguard_ip' => '10.44.0.3',
             'ssh_host_fingerprint' => 'SHA256:pinned',
         ]);
         $app = App::query()->create([
@@ -1634,7 +1634,7 @@ describe(ProvisionNodeAction::class, function (): void {
             'user' => 'orbit',
             'tld' => 'role-node.orbit',
             'public_ssh_host' => '192.0.2.21',
-            'wireguard_address' => '10.44.0.4',
+            'wireguard_ip' => '10.44.0.4',
             'ssh_host_fingerprint' => 'SHA256:pinned',
         ]);
         $node->roles()->create([
@@ -1681,7 +1681,7 @@ describe(ProvisionNodeAction::class, function (): void {
             'platform' => 'linux',
             'architecture' => 'x86_64',
             'public_ssh_host' => '192.0.2.30',
-            'wireguard_address' => '10.44.0.3',
+            'wireguard_ip' => '10.44.0.3',
             'ssh_host_fingerprint' => 'SHA256:pinned',
         ]);
         $node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
@@ -1967,7 +1967,7 @@ describe(ProvisionNodeAction::class, function (): void {
             'platform' => 'linux',
             'architecture' => 'x86_64',
             'public_ssh_host' => '192.0.2.82',
-            'wireguard_address' => '10.44.0.82',
+            'wireguard_ip' => '10.44.0.82',
             'user' => 'nckrtl',
             'ssh_host_fingerprint' => 'SHA256:pinned',
         ]);
@@ -1990,7 +1990,7 @@ function provision_node_tld_change_record(): Node
         'architecture' => 'x86_64',
         'tld' => 'old.orbit',
         'public_ssh_host' => '192.0.2.21',
-        'wireguard_address' => '10.44.0.4',
+        'wireguard_ip' => '10.44.0.4',
         'ssh_host_fingerprint' => 'SHA256:pinned',
     ]);
     $node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);

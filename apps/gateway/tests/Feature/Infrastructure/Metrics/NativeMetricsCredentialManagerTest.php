@@ -261,7 +261,7 @@ function metricsCredentialNode(): Node
         'name' => 'metrics-credentials',
         'status' => LifecycleStatus::Active,
         'public_ssh_host' => '192.0.2.73',
-        'wireguard_address' => '10.44.0.3',
+        'wireguard_ip' => '10.44.0.3',
     ]);
     $node->roles()->create([
         'role' => RoleName::Metrics,

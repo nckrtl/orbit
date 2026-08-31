@@ -20,7 +20,7 @@ it('projects a provisioning Metrics assignment to the active Gateway address', f
         'platform' => 'linux',
         'public_ssh_host' => '192.0.2.1',
         'ssh_user' => 'orbit',
-        'wireguard_address' => '10.44.0.1',
+        'wireguard_ip' => '10.44.0.1',
     ]);
     $gateway
         ->roles()
@@ -34,7 +34,7 @@ it('projects a provisioning Metrics assignment to the active Gateway address', f
         'platform' => 'linux',
         'public_ssh_host' => '192.0.2.3',
         'ssh_user' => 'orbit',
-        'wireguard_address' => '10.44.0.3',
+        'wireguard_ip' => '10.44.0.3',
     ]);
     $metrics
         ->roles()

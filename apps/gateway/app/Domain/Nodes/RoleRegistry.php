@@ -12,6 +12,7 @@ final readonly class RoleRegistry
         return [
             RoleName::Gateway,
             RoleName::Vpn,
+            RoleName::Router,
             RoleName::AppDev,
             RoleName::AppProd,
             RoleName::Metrics,
@@ -32,6 +33,12 @@ final readonly class RoleRegistry
                 name: $role,
                 singleton: true,
                 assignableDuringProvisioning: true,
+                mutable: false,
+            ),
+            RoleName::Router => new RoleDefinition(
+                name: $role,
+                singleton: false,
+                assignableDuringProvisioning: false,
                 mutable: false,
             ),
             RoleName::AppDev => new RoleDefinition(

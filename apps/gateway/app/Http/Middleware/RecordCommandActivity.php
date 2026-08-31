@@ -248,7 +248,7 @@ final readonly class RecordCommandActivity
     private function callerNodeId(string $callerIp): ?int
     {
         $node = Node::query()
-            ->where('wireguard_address', $callerIp)
+            ->where('wireguard_ip', $callerIp)
             ->where('status', 'active')
             ->first();
 

@@ -55,10 +55,8 @@ final class UpdateNodeSettingsCommand extends GatewayCommand
             $connector,
             new UpdateNodeSettingsRequest(
                 nodeId: $nodeId,
-                hasInstance: array_key_exists('instance', $settings['body']),
-                instance: NodeSettingOptions::instance($settings['body']['instance'] ?? null),
-                hasWorktree: array_key_exists('worktree', $settings['body']),
-                worktree: NodeSettingOptions::worktree($settings['body']['worktree'] ?? null),
+                hasApps: array_key_exists('apps', $settings['body']),
+                apps: NodeSettingOptions::apps($settings['body']['apps'] ?? null),
             ),
             NodeResponse::class,
         );

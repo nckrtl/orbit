@@ -19,10 +19,10 @@ beforeEach(function (): void {
         'public_ssh_host' => '192.0.2.20',
         'public_ssh_port' => 22,
         'user' => 'orbit',
-        'wireguard_address' => '10.44.0.3',
+        'wireguard_ip' => '10.44.0.3',
     ]);
     $this->node->accessibleNodes()->attach($this->node);
-    $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_address]);
+    $this->withServerVariables(['REMOTE_ADDR' => $this->node->wireguard_ip]);
 });
 
 it('returns a stable unavailable error and retains failed intent when UFW is inactive', function (): void {
@@ -153,7 +153,7 @@ it('returns 404 without exposing a rule that belongs to another node', function 
         'public_ssh_host' => '192.0.2.21',
         'public_ssh_port' => 22,
         'user' => 'orbit',
-        'wireguard_address' => '10.44.0.4',
+        'wireguard_ip' => '10.44.0.4',
     ]);
     $other
         ->firewallRules()
@@ -181,7 +181,7 @@ it('binds identical firewall rule names through the requested node', function ()
         'public_ssh_host' => '192.0.2.22',
         'public_ssh_port' => 22,
         'user' => 'orbit',
-        'wireguard_address' => '10.44.0.5',
+        'wireguard_ip' => '10.44.0.5',
     ]);
     $otherRule = $other
         ->firewallRules()

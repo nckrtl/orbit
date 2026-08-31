@@ -28,7 +28,9 @@ use App\Domain\WireGuard\GatewayPeerProjectionManager;
 use App\Domain\WireGuard\WireGuardAddressAllocator;
 use App\Domain\WireGuard\WireGuardEndpoint;
 use App\Infrastructure\Ssh\SshHostKeyScanException;
+use App\Models\Cluster;
 use App\Models\Node;
+use Illuminate\Database\QueryException;
 use Throwable;
 
 /** @mago-expect lint:cyclomatic-complexity,kan-defect,too-many-methods Node provisioning keeps its ordered identity, role, and recovery gates together. */
@@ -82,6 +84,48 @@ final readonly class ProvisionNodeAction
         }
 
         $node = Node::query()->firstOrNew(['name' => $data->name]);
+        $clusterId = $data->clusterId ?? ($node->exists ? $node->cluster_id : null);
+        $lanIp = $data->lanIpProvided
+            ? $data->lanIp
+            : (is_string($node->getAttribute('lan_ip')) ? $node->getAttribute('lan_ip') : null);
+
+        if (
+            $data->clusterId !== null
+            && $node->exists
+            && $node->cluster_id !== null
+            && $node->cluster_id !== $data->clusterId
+        ) {
+            throw new ResourceOperationException(
+                errorCode: 'cluster.membership_conflict',
+                message: "Node [{$node->name}] already belongs to another Cluster.",
+                status: 409,
+            );
+        }
+
+        if ($clusterId !== null && ! Cluster::query()->whereKey($clusterId)->exists()) {
+            throw new ResourceOperationException(
+                errorCode: 'cluster.not_found',
+                message: 'The selected Cluster does not exist.',
+                status: 404,
+            );
+        }
+
+        if (
+            $clusterId !== null
+            && $lanIp !== null
+            && Node::query()
+                ->where('cluster_id', $clusterId)
+                ->where('lan_ip', $lanIp)
+                ->when($node->exists, static fn ($query) => $query->whereKeyNot($node->id))
+                ->exists()
+        ) {
+            throw new ResourceOperationException(
+                errorCode: 'cluster.lan_ip_conflict',
+                message: "LAN IP [{$lanIp}] is already assigned in the Cluster.",
+                status: 409,
+            );
+        }
+
         $managedUser = $data->orbitUser ?? ($node->exists ? $node->user : 'orbit');
 
         if ($data->settingsProvided && $node->exists) {
@@ -144,9 +188,8 @@ final readonly class ProvisionNodeAction
             );
         }
 
-        $requestedAddress =
-            $data->wireguardAddress ?? (is_string($node->wireguard_address) ? $node->wireguard_address : null);
-        $wireguardAddress = $this->addresses->forProvisioning($requestedAddress, $node);
+        $requestedAddress = $data->wireguardIp ?? (is_string($node->wireguard_ip) ? $node->wireguard_ip : null);
+        $wireguardIp = $this->addresses->forProvisioning($requestedAddress, $node);
         $publicSshHost = $data->publicSshHost;
         /** @var ?string $failedStep */
         $failedStep = $node->getAttribute('failed_step');
@@ -160,13 +203,15 @@ final readonly class ProvisionNodeAction
         $priorActiveState = $node->exists && $node->status === LifecycleStatus::Active
             ? [
                 'status' => $node->status,
+                'cluster_id' => $node->cluster_id,
                 'platform' => $node->platform,
                 'architecture' => $node->architecture,
                 'tld' => $node->tld,
                 'public_ssh_host' => $node->public_ssh_host,
                 'public_ssh_port' => $node->public_ssh_port,
                 'user' => $node->user,
-                'wireguard_address' => $node->wireguard_address,
+                'wireguard_ip' => $node->wireguard_ip,
+                'lan_ip' => $node->getAttribute('lan_ip'),
                 'wireguard_endpoint_override' => $node->wireguard_endpoint_override,
                 'dns_server_override' => $node->dns_server_override,
                 'failed_step' => $failedStep,
@@ -183,7 +228,7 @@ final readonly class ProvisionNodeAction
         }
 
         if ($publicSshHost === '') {
-            $publicSshHost = $wireguardAddress;
+            $publicSshHost = $wireguardIp;
         }
 
         foreach ($data->roles as $role) {
@@ -193,18 +238,31 @@ final readonly class ProvisionNodeAction
 
         $node->fill([
             'status' => LifecycleStatus::Provisioning,
+            'cluster_id' => $clusterId,
             'platform' => $platform,
             'architecture' => $architecture,
             'tld' => $tld,
             'user' => $priorActiveState !== null ? $node->user : $managedUser,
             'public_ssh_host' => $publicSshHost,
             'public_ssh_port' => $node->exists ? $node->public_ssh_port : $data->publicSshPort,
-            'wireguard_address' => $wireguardAddress,
+            'wireguard_ip' => $wireguardIp,
+            'lan_ip' => $lanIp,
             'wireguard_endpoint_override' => $data->wireguardEndpointOverride ?? $node->wireguard_endpoint_override,
             'dns_server_override' => $data->dnsServerOverride ?? $node->dns_server_override,
             'failed_step' => null,
             'error_code' => null,
-        ])->save();
+        ]);
+
+        try {
+            $node->save();
+        } catch (QueryException $exception) {
+            throw new ResourceOperationException(
+                errorCode: 'cluster.lan_ip_conflict',
+                message: 'The Node network identity conflicts with existing Cluster state.',
+                status: 409,
+                previous: $exception,
+            );
+        }
 
         try {
             if ($priorActiveState !== null && $this->converger instanceof RecoverableNodeConverger) {

@@ -16,6 +16,7 @@ describe(ShowNodeRequest::class, function (): void {
             ShowNodeRequest::class => MockResponse::make([
                 'data' => [
                     'id' => 12,
+                    'cluster_id' => 3,
                     'name' => 'operator',
                     'status' => 'active',
                     'platform' => 'ubuntu',
@@ -24,7 +25,8 @@ describe(ShowNodeRequest::class, function (): void {
                     'public_ssh_host' => '94.237.108.25',
                     'public_ssh_port' => 22,
                     'user' => 'orbit',
-                    'wireguard_address' => '10.44.0.2',
+                    'wireguard_ip' => '10.44.0.2',
+                    'lan_ip' => '10.0.0.2',
                     'wireguard_public_key' => 'operator-public-key',
                     'wireguard_endpoint_override' => null,
                     'dns_server_override' => '10.0.0.2',
@@ -58,6 +60,8 @@ describe(ShowNodeRequest::class, function (): void {
             ->toBeInstanceOf(NodeResponse::class)
             ->and($response->id)
             ->toBe(12)
+            ->and($response->clusterId)
+            ->toBe(3)
             ->and($response->platform)
             ->toBe('ubuntu')
             ->and($response->architecture)
@@ -66,6 +70,10 @@ describe(ShowNodeRequest::class, function (): void {
             ->toBe('operator.orbit')
             ->and($response->wireguardPublicKey)
             ->toBe('operator-public-key')
+            ->and($response->wireguardIp)
+            ->toBe('10.44.0.2')
+            ->and($response->lanIp)
+            ->toBe('10.0.0.2')
             ->and($response->dnsServerOverride)
             ->toBe('10.0.0.2')
             ->and($response->sshHostFingerprint)

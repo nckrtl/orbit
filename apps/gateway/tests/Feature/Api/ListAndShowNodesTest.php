@@ -15,12 +15,12 @@ describe('GET /api/v1/nodes caller envelope', function (): void {
             'name' => 'operator',
             'status' => LifecycleStatus::Active,
             'public_ssh_host' => '192.0.2.2',
-            'wireguard_address' => '10.44.0.2',
+            'wireguard_ip' => '10.44.0.2',
         ]));
         $requestId = (string) Str::uuid();
 
         $this
-            ->withServerVariables(['REMOTE_ADDR' => $operator->wireguard_address])
+            ->withServerVariables(['REMOTE_ADDR' => $operator->wireguard_ip])
             ->withHeader('X-Orbit-Request-Id', $requestId)
             ->getJson('/api/v1/nodes')
             ->assertOk()
@@ -52,7 +52,7 @@ describe('GET /api/v1/nodes serialization', function (): void {
             'public_ssh_host' => '203.0.113.20',
             'public_ssh_port' => 2202,
             'user' => 'orbit',
-            'wireguard_address' => '10.0.0.22',
+            'wireguard_ip' => '10.0.0.22',
             'wireguard_public_key' => 'wg-zulu-public',
             'wireguard_endpoint_override' => 'vpn.example.com:51820',
             'dns_server_override' => '10.0.0.53',
@@ -71,7 +71,7 @@ describe('GET /api/v1/nodes serialization', function (): void {
             'public_ssh_host' => '203.0.113.10',
             'public_ssh_port' => 22,
             'user' => 'root',
-            'wireguard_address' => '10.0.0.11',
+            'wireguard_ip' => '10.0.0.11',
             'wireguard_public_key' => 'wg-alpha-public',
             'wireguard_endpoint_override' => 'private.example.com:51820',
             'dns_server_override' => '10.0.0.1',
@@ -99,7 +99,7 @@ describe('GET /api/v1/nodes serialization', function (): void {
         $requestId = (string) Str::uuid();
 
         $response = $this
-            ->withServerVariables(['REMOTE_ADDR' => $alpha->wireguard_address])
+            ->withServerVariables(['REMOTE_ADDR' => $alpha->wireguard_ip])
             ->withHeader('X-Orbit-Request-Id', $requestId)
             ->getJson('/api/v1/nodes');
 
@@ -117,7 +117,7 @@ describe('GET /api/v1/nodes serialization', function (): void {
             ->assertJsonPath('data.0.public_ssh_host', '203.0.113.10')
             ->assertJsonPath('data.0.public_ssh_port', 22)
             ->assertJsonPath('data.0.user', 'root')
-            ->assertJsonPath('data.0.wireguard_address', '10.0.0.11')
+            ->assertJsonPath('data.0.wireguard_ip', '10.0.0.11')
             ->assertJsonPath('data.0.ssh_host_fingerprint', 'SHA256:alpha')
             ->assertJsonMissingPath('data.0.host_key_fingerprint')
             ->assertJsonPath('data.0.wireguard_public_key', 'wg-alpha-public')
@@ -135,7 +135,7 @@ describe('GET /api/v1/nodes serialization', function (): void {
                     'public_ssh_host',
                     'public_ssh_port',
                     'user',
-                    'wireguard_address',
+                    'wireguard_ip',
                     'wireguard_public_key',
                     'wireguard_endpoint_override',
                     'dns_server_override',
@@ -162,7 +162,7 @@ describe('GET /api/v1/nodes/{node}', function (): void {
             'public_ssh_host' => '203.0.113.10',
             'public_ssh_port' => 22,
             'user' => 'root',
-            'wireguard_address' => '10.0.0.11',
+            'wireguard_ip' => '10.0.0.11',
             'wireguard_public_key' => 'wg-alpha-public',
             'wireguard_endpoint_override' => 'private.example.com:51820',
             'dns_server_override' => '10.0.0.1',
@@ -174,7 +174,7 @@ describe('GET /api/v1/nodes/{node}', function (): void {
         $requestId = (string) Str::uuid();
 
         $this
-            ->withServerVariables(['REMOTE_ADDR' => $node->wireguard_address])
+            ->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip])
             ->withHeader('X-Orbit-Request-Id', $requestId)
             ->getJson("/api/v1/nodes/{$node->id}")
             ->assertOk()
@@ -204,12 +204,12 @@ describe('GET /api/v1/nodes/{node}', function (): void {
             'name' => 'operator',
             'status' => LifecycleStatus::Active,
             'public_ssh_host' => '192.0.2.2',
-            'wireguard_address' => '10.44.0.2',
+            'wireguard_ip' => '10.44.0.2',
         ]));
         $requestId = (string) Str::uuid();
 
         $this
-            ->withServerVariables(['REMOTE_ADDR' => $operator->wireguard_address])
+            ->withServerVariables(['REMOTE_ADDR' => $operator->wireguard_ip])
             ->withHeader('X-Orbit-Request-Id', $requestId)
             ->getJson('/api/v1/nodes/999999')
             ->assertNotFound()
@@ -233,44 +233,44 @@ describe('GET /api/v1/nodes/{node}', function (): void {
             'name' => 'operator',
             'status' => LifecycleStatus::Active,
             'public_ssh_host' => '192.0.2.20',
-            'wireguard_address' => '10.44.0.20',
+            'wireguard_ip' => '10.44.0.20',
         ]));
         $node = Node::query()->create([
             'name' => 'serving-node',
             'status' => LifecycleStatus::Active,
             'public_ssh_host' => '192.0.2.21',
-            'wireguard_address' => '10.44.0.21',
+            'wireguard_ip' => '10.44.0.21',
         ]);
         $zuluOutbound = Node::query()->create([
             'name' => 'zulu-outbound',
             'status' => LifecycleStatus::Active,
             'public_ssh_host' => '192.0.2.22',
-            'wireguard_address' => '10.44.0.22',
+            'wireguard_ip' => '10.44.0.22',
         ]);
         $alphaOutbound = Node::query()->create([
             'name' => 'alpha-outbound',
             'status' => LifecycleStatus::Active,
             'public_ssh_host' => '192.0.2.23',
-            'wireguard_address' => '10.44.0.23',
+            'wireguard_ip' => '10.44.0.23',
         ]);
         $zuluInbound = Node::query()->create([
             'name' => 'zulu-inbound',
             'status' => LifecycleStatus::Active,
             'public_ssh_host' => '192.0.2.24',
-            'wireguard_address' => '10.44.0.24',
+            'wireguard_ip' => '10.44.0.24',
         ]);
         $alphaInbound = Node::query()->create([
             'name' => 'alpha-inbound',
             'status' => LifecycleStatus::Active,
             'public_ssh_host' => '192.0.2.25',
-            'wireguard_address' => '10.44.0.25',
+            'wireguard_ip' => '10.44.0.25',
         ]);
 
         $node->accessibleNodes()->attach([$alphaOutbound->id, $zuluOutbound->id]);
         $node->accessingNodes()->attach([$alphaInbound->id, $zuluInbound->id]);
 
         $this
-            ->withServerVariables(['REMOTE_ADDR' => $operator->wireguard_address])
+            ->withServerVariables(['REMOTE_ADDR' => $operator->wireguard_ip])
             ->getJson("/api/v1/nodes/{$node->id}")
             ->assertOk()
             ->assertJsonPath('data.access.can_access', [
@@ -288,17 +288,17 @@ describe('GET /api/v1/nodes/{node}', function (): void {
             'name' => 'operator',
             'status' => LifecycleStatus::Active,
             'public_ssh_host' => '192.0.2.30',
-            'wireguard_address' => '10.44.0.30',
+            'wireguard_ip' => '10.44.0.30',
         ]));
         $node = Node::query()->create([
             'name' => 'isolated-node',
             'status' => LifecycleStatus::Active,
             'public_ssh_host' => '192.0.2.31',
-            'wireguard_address' => '10.44.0.31',
+            'wireguard_ip' => '10.44.0.31',
         ]);
 
         $this
-            ->withServerVariables(['REMOTE_ADDR' => $operator->wireguard_address])
+            ->withServerVariables(['REMOTE_ADDR' => $operator->wireguard_ip])
             ->getJson("/api/v1/nodes/{$node->id}")
             ->assertOk()
             ->assertJsonPath('data.access.can_access', [])
@@ -312,43 +312,43 @@ describe('GET /api/v1/nodes collection access', function (): void {
             'name' => 'gateway',
             'status' => LifecycleStatus::Active,
             'public_ssh_host' => '192.0.2.10',
-            'wireguard_address' => '10.44.0.10',
+            'wireguard_ip' => '10.44.0.10',
         ]));
         $first = Node::query()->create([
             'name' => 'alpha',
             'status' => LifecycleStatus::Active,
             'public_ssh_host' => '192.0.2.11',
-            'wireguard_address' => '10.44.0.11',
+            'wireguard_ip' => '10.44.0.11',
         ]);
         $second = Node::query()->create([
             'name' => 'zulu',
             'status' => LifecycleStatus::Active,
             'public_ssh_host' => '192.0.2.12',
-            'wireguard_address' => '10.44.0.12',
+            'wireguard_ip' => '10.44.0.12',
         ]);
         $directConsumer = Node::query()->create([
             'name' => 'direct-consumer',
             'status' => LifecycleStatus::Active,
             'public_ssh_host' => '192.0.2.13',
-            'wireguard_address' => '10.44.0.13',
+            'wireguard_ip' => '10.44.0.13',
         ]);
         $gatewayAccessConsumer = Node::query()->create([
             'name' => 'gateway-access-consumer',
             'status' => LifecycleStatus::Active,
             'public_ssh_host' => '192.0.2.14',
-            'wireguard_address' => '10.44.0.14',
+            'wireguard_ip' => '10.44.0.14',
         ]);
         $noEdgeConsumer = Node::query()->create([
             'name' => 'no-edge-consumer',
             'status' => LifecycleStatus::Active,
             'public_ssh_host' => '192.0.2.15',
-            'wireguard_address' => '10.44.0.15',
+            'wireguard_ip' => '10.44.0.15',
         ]);
         $directConsumer->accessibleNodes()->attach($second);
         $gatewayAccessConsumer->accessibleNodes()->attach($gateway);
 
         $this
-            ->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_address])
+            ->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
             ->getJson('/api/v1/nodes')
             ->assertOk()
             ->assertJsonPath('data.*.id', [
@@ -361,7 +361,7 @@ describe('GET /api/v1/nodes collection access', function (): void {
             ]);
 
         $this
-            ->withServerVariables(['REMOTE_ADDR' => $gatewayAccessConsumer->wireguard_address])
+            ->withServerVariables(['REMOTE_ADDR' => $gatewayAccessConsumer->wireguard_ip])
             ->getJson('/api/v1/nodes')
             ->assertOk()
             ->assertJsonPath('data.*.id', [
@@ -374,13 +374,13 @@ describe('GET /api/v1/nodes collection access', function (): void {
             ]);
 
         $this
-            ->withServerVariables(['REMOTE_ADDR' => $directConsumer->wireguard_address])
+            ->withServerVariables(['REMOTE_ADDR' => $directConsumer->wireguard_ip])
             ->getJson('/api/v1/nodes')
             ->assertOk()
             ->assertJsonPath('data.*.id', [$second->id]);
 
         $this
-            ->withServerVariables(['REMOTE_ADDR' => $noEdgeConsumer->wireguard_address])
+            ->withServerVariables(['REMOTE_ADDR' => $noEdgeConsumer->wireguard_ip])
             ->getJson('/api/v1/nodes')
             ->assertForbidden()
             ->assertJsonPath('error.code', 'node_access.required');
@@ -391,17 +391,17 @@ describe('GET /api/v1/nodes collection access', function (): void {
             'name' => 'operator',
             'status' => LifecycleStatus::Active,
             'public_ssh_host' => '192.0.2.40',
-            'wireguard_address' => '10.44.0.40',
+            'wireguard_ip' => '10.44.0.40',
         ]));
         Node::query()->create([
             'name' => 'listed-node',
             'status' => LifecycleStatus::Active,
             'public_ssh_host' => '192.0.2.41',
-            'wireguard_address' => '10.44.0.41',
+            'wireguard_ip' => '10.44.0.41',
         ]);
 
         $this
-            ->withServerVariables(['REMOTE_ADDR' => $operator->wireguard_address])
+            ->withServerVariables(['REMOTE_ADDR' => $operator->wireguard_ip])
             ->getJson('/api/v1/nodes')
             ->assertOk()
             ->assertJsonMissingPath('data.0.access')

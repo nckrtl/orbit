@@ -22,14 +22,14 @@ it('resolves peer overrides and renders the complete server peer set', function 
         $gateway = Node::query()->create([
             'name' => 'gateway',
             'public_ssh_host' => '85.9.218.89',
-            'wireguard_address' => '10.44.0.1',
+            'wireguard_ip' => '10.44.0.1',
             'wireguard_public_key' => 'SERVER_PUBLIC',
         ]);
         $gateway->roles()->create(['role' => RoleName::Vpn]);
         $peer = Node::query()->create([
             'name' => 'app-dev',
             'public_ssh_host' => '94.237.40.75',
-            'wireguard_address' => '10.44.0.2',
+            'wireguard_ip' => '10.44.0.2',
             'wireguard_public_key' => 'PEER_PUBLIC',
             'wireguard_endpoint_override' => '10.0.0.2:51820',
             'dns_server_override' => '10.0.0.2',
@@ -72,14 +72,14 @@ it('rejects unsafe endpoint, DNS, and domain values before rendering peer shell 
         $gateway = Node::query()->create([
             'name' => 'gateway',
             'public_ssh_host' => '85.9.218.89',
-            'wireguard_address' => '10.44.0.1',
+            'wireguard_ip' => '10.44.0.1',
             'wireguard_public_key' => 'SERVER_PUBLIC',
         ]);
         $gateway->roles()->create(['role' => RoleName::Vpn]);
         $peer = Node::query()->create([
             'name' => 'app-dev',
             'public_ssh_host' => '94.237.40.75',
-            'wireguard_address' => '10.44.0.2',
+            'wireguard_ip' => '10.44.0.2',
             'dns_server_override' => '10.0.0.2; touch /tmp/orbit-injected',
         ]);
         $settings = new VpnSettings(app(SettingRepository::class));

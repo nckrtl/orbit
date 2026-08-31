@@ -66,7 +66,7 @@ it('checks only selected-node app projections through the fixed SSH boundary', f
         ->and($ssh->commands[1]->arguments[4])
         ->toBe($workspace->checkout_path)
         ->and($ssh->connections[0]->host)
-        ->toBe($node->wireguard_address)
+        ->toBe($node->wireguard_ip)
         ->and($ssh->connections[0]->user)
         ->toBe('nckrtl')
         ->and($ssh->connections[0]->port)
@@ -197,7 +197,7 @@ it('observes every app-development instance projection with shared renderers', f
             'bash',
             '-seu',
             '--',
-            "host-record={$instance->hostname},{$node->wireguard_address}",
+            "host-record={$instance->hostname},{$node->wireguard_ip}",
         ])->and($processes->invocations[0]->timeout)->toBe(30.0)->and($processes->invocations[0]->input)
         ->not->toContain($instance->hostname);
 });
@@ -324,7 +324,7 @@ it('observes every workspace projection in one bounded remote tuple and local DN
         ->not
         ->toContain($workspace->checkout_path, $workspace->branch)
         ->and($processes->invocations[0]->arguments)
-        ->toBe(['bash', '-seu', '--', "host-record={$workspace->hostname},{$node->wireguard_address}"]);
+        ->toBe(['bash', '-seu', '--', "host-record={$workspace->hostname},{$node->wireguard_ip}"]);
 });
 
 it('maps each workspace observation field', function (
@@ -529,7 +529,7 @@ function application_inspector_node(): Node
         'public_ssh_host' => "192.0.2.{$number}",
         'public_ssh_port' => 22,
         'user' => 'nckrtl',
-        'wireguard_address' => "10.44.0.{$number}",
+        'wireguard_ip' => "10.44.0.{$number}",
         'tld' => "node-{$number}.test",
     ]);
 }
@@ -666,7 +666,7 @@ function application_dev_site(Instance $instance): AppDevSite
 {
     return new AppDevSite(
         $instance->node_id,
-        $instance->node->wireguard_address ?? '',
+        $instance->node->wireguard_ip ?? '',
         "instance-{$instance->id}",
         $instance->checkout_path,
         $instance->document_root,
@@ -718,7 +718,7 @@ function application_workspace_site(Workspace $workspace): AppDevSite
 
     return new AppDevSite(
         $instance->node_id,
-        $instance->node->wireguard_address ?? '',
+        $instance->node->wireguard_ip ?? '',
         "workspace-{$workspace->id}",
         $workspace->checkout_path,
         $instance->document_root,

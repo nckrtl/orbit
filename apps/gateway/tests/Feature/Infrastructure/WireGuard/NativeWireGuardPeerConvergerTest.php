@@ -40,14 +40,14 @@ it('validates a candidate config under /etc/wireguard before replacing the live 
         $gateway = Node::query()->create([
             'name' => 'gateway',
             'public_ssh_host' => '85.9.218.89',
-            'wireguard_address' => '10.44.0.1',
+            'wireguard_ip' => '10.44.0.1',
             'wireguard_public_key' => str_repeat(string: 'P', times: 43).'=',
         ]);
         $gateway->roles()->create(['role' => RoleName::Vpn]);
         $peer = Node::query()->create([
             'name' => 'app-dev',
             'public_ssh_host' => '94.237.40.75',
-            'wireguard_address' => '10.44.0.2',
+            'wireguard_ip' => '10.44.0.2',
             'tld' => 'custom.internal',
         ]);
         $settings = new VpnSettings(app(SettingRepository::class));
@@ -233,14 +233,14 @@ it('does not replace or restart the live service when candidate validation fails
         $gateway = Node::query()->create([
             'name' => 'gateway',
             'public_ssh_host' => '85.9.218.89',
-            'wireguard_address' => '10.44.0.1',
+            'wireguard_ip' => '10.44.0.1',
             'wireguard_public_key' => str_repeat(string: 'P', times: 43).'=',
         ]);
         $gateway->roles()->create(['role' => RoleName::Vpn]);
         $peer = Node::query()->create([
             'name' => 'app-dev',
             'public_ssh_host' => '94.237.40.75',
-            'wireguard_address' => '10.44.0.2',
+            'wireguard_ip' => '10.44.0.2',
         ]);
         $settings = new VpnSettings(app(SettingRepository::class));
         $settings->configure(
@@ -352,14 +352,14 @@ it('attempts candidate cleanup and preserves the original failure when atomic re
         $gateway = Node::query()->create([
             'name' => 'gateway',
             'public_ssh_host' => '85.9.218.89',
-            'wireguard_address' => '10.44.0.1',
+            'wireguard_ip' => '10.44.0.1',
             'wireguard_public_key' => str_repeat(string: 'P', times: 43).'=',
         ]);
         $gateway->roles()->create(['role' => RoleName::Vpn]);
         $peer = Node::query()->create([
             'name' => 'app-dev',
             'public_ssh_host' => '94.237.40.75',
-            'wireguard_address' => '10.44.0.2',
+            'wireguard_ip' => '10.44.0.2',
         ]);
         $settings = new VpnSettings(app(SettingRepository::class));
         $settings->configure(
@@ -1385,14 +1385,14 @@ it('uses a wg-quick compatible candidate filename', function (): void {
         $gateway = Node::query()->create([
             'name' => 'gateway',
             'public_ssh_host' => '85.9.218.89',
-            'wireguard_address' => '10.44.0.1',
+            'wireguard_ip' => '10.44.0.1',
             'wireguard_public_key' => str_repeat(string: 'P', times: 43).'=',
         ]);
         $gateway->roles()->create(['role' => RoleName::Vpn]);
         $peer = Node::query()->create([
             'name' => 'app-dev',
             'public_ssh_host' => '94.237.40.75',
-            'wireguard_address' => '10.44.0.2',
+            'wireguard_ip' => '10.44.0.2',
         ]);
         $settings = new VpnSettings(app(SettingRepository::class));
         $settings->configure(
@@ -1476,14 +1476,14 @@ function wireguard_peer_harness(ProcessRunner $processes, SshExecutor $ssh, ?\Cl
     $gateway = Node::query()->create([
         'name' => 'gateway',
         'public_ssh_host' => '85.9.218.89',
-        'wireguard_address' => '10.44.0.1',
+        'wireguard_ip' => '10.44.0.1',
         'wireguard_public_key' => str_repeat(string: 'P', times: 43).'=',
     ]);
     $gateway->roles()->create(['role' => RoleName::Vpn]);
     $peer = Node::query()->create([
         'name' => 'app-dev',
         'public_ssh_host' => '94.237.40.75',
-        'wireguard_address' => '10.44.0.2',
+        'wireguard_ip' => '10.44.0.2',
     ]);
     $settings = new VpnSettings(app(SettingRepository::class));
     $settings->configure(
@@ -1753,14 +1753,14 @@ function remote_wireguard_peer_install_harness(
     $gateway = Node::query()->create([
         'name' => 'gateway-peer-shell',
         'public_ssh_host' => '192.0.2.10',
-        'wireguard_address' => '10.43.0.1',
+        'wireguard_ip' => '10.43.0.1',
         'wireguard_public_key' => str_repeat(string: 'P', times: 43).'=',
     ]);
     $gateway->roles()->create(['role' => RoleName::Vpn]);
     $peer = Node::query()->create([
         'name' => 'peer-shell',
         'public_ssh_host' => '192.0.2.7',
-        'wireguard_address' => '10.43.0.7',
+        'wireguard_ip' => '10.43.0.7',
         'wireguard_public_key' => str_repeat(string: 'A', times: 43).'=',
         'tld' => $peerTld,
     ]);

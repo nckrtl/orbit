@@ -7,6 +7,7 @@ namespace App\Http\Authorization;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\App as OrbitApp;
+use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
@@ -32,6 +33,7 @@ final readonly class ServingNodeResolver
             ServingNode::WorkspaceOwning => $this->workspaceOwning($request),
             ServingNode::ProcessOwning => $this->processOwning($request),
             ServingNode::ToolOwning => $this->toolOwning($request),
+            ServingNode::ClusterOwning => $this->clusterOwning($request),
             ServingNode::RoleMutation => $this->roleMutation($request),
             ServingNode::Collection => [],
         };
@@ -189,6 +191,21 @@ final readonly class ServingNodeResolver
         }
 
         return [Node::query()->findOrFail($nodeId)];
+    }
+
+    /** @return list<Node> */
+    private function clusterOwning(Request $request): array
+    {
+        $cluster = $request->route('cluster');
+
+        if (! $cluster instanceof Cluster) {
+            return [];
+        }
+
+        /** @var list<Node> $nodes */
+        $nodes = $cluster->nodes()->orderBy('id')->get()->all();
+
+        return $nodes !== [] ? $nodes : $this->gateway();
     }
 
     /**

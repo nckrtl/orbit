@@ -6,11 +6,13 @@ namespace App\Models;
 
 use App\Domain\Shared\LifecycleStatus;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
  * @property int $id
+ * @property int|null $cluster_id
  * @property string $name
  * @property LifecycleStatus $status
  * @property string $platform
@@ -19,7 +21,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property int $public_ssh_port
  * @property string $user
  * @property string|null $tld
- * @property string|null $wireguard_address
+ * @property string|null $wireguard_ip
+ * @property string|null $lan_ip
  * @property string|null $wireguard_public_key
  * @property string|null $wireguard_endpoint_override
  * @property string|null $dns_server_override
@@ -30,6 +33,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property-read \Illuminate\Database\Eloquent\Collection<int, Tool> $tools
  * @property-read \Illuminate\Database\Eloquent\Collection<int, Node> $accessibleNodes
  * @property-read \Illuminate\Database\Eloquent\Collection<int, Node> $accessingNodes
+ * @property-read Cluster|null $cluster
  */
 final class Node extends Model
 {
@@ -43,6 +47,7 @@ final class Node extends Model
     #[\Override]
     protected $fillable = [
         'name',
+        'cluster_id',
         'status',
         'platform',
         'architecture',
@@ -50,7 +55,8 @@ final class Node extends Model
         'public_ssh_host',
         'public_ssh_port',
         'user',
-        'wireguard_address',
+        'wireguard_ip',
+        'lan_ip',
         'wireguard_public_key',
         'wireguard_endpoint_override',
         'dns_server_override',
@@ -66,6 +72,12 @@ final class Node extends Model
     public function roles(): HasMany
     {
         return $this->hasMany(NodeRole::class);
+    }
+
+    /** @return BelongsTo<Cluster, $this> */
+    public function cluster(): BelongsTo
+    {
+        return $this->belongsTo(Cluster::class);
     }
 
     /** @return HasMany<Instance, $this> */

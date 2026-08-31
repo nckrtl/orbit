@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\Nodes\ProvisionNodeRequest;
-use Orbit\Sdk\Responses\Nodes\InstanceSettings;
+use Orbit\Sdk\Responses\Nodes\AppsSettings;
 use Orbit\Sdk\Responses\Nodes\NodeResponse;
 use Orbit\Sdk\Responses\Nodes\NodeSettings;
 use Saloon\Enums\Method;
@@ -24,7 +24,9 @@ it('omits absent optional node payload fields and maps the typed response', func
                 'public_ssh_host' => '94.237.40.75',
                 'public_ssh_port' => 22,
                 'user' => 'orbit',
-                'wireguard_address' => '10.44.0.2',
+                'cluster_id' => 3,
+                'wireguard_ip' => '10.44.0.2',
+                'lan_ip' => '10.0.0.2',
                 'wireguard_public_key' => 'app-dev-public-key',
                 'wireguard_endpoint_override' => '10.0.0.2:51820',
                 'dns_server_override' => '10.0.0.2',
@@ -78,7 +80,9 @@ it('sends explicit optional node payload fields exactly as supplied and maps the
                 'public_ssh_host' => '94.237.40.75',
                 'public_ssh_port' => 22,
                 'user' => 'orbit',
-                'wireguard_address' => '10.44.0.2',
+                'cluster_id' => 3,
+                'wireguard_ip' => '10.44.0.2',
+                'lan_ip' => '10.0.0.2',
                 'wireguard_public_key' => 'app-dev-public-key',
                 'wireguard_endpoint_override' => '10.0.0.2:51820',
                 'dns_server_override' => '10.0.0.2',
@@ -98,7 +102,9 @@ it('sends explicit optional node payload fields exactly as supplied and maps the
         roles: ['app-dev'],
         user: 'bootstrap',
         orbitUser: 'orbit',
-        wireguardAddress: '10.44.0.2',
+        clusterId: 3,
+        wireguardIp: '10.44.0.2',
+        lanIp: '10.0.0.2',
         wireguardEndpointOverride: '10.0.0.2:51820',
         dnsServerOverride: '10.0.0.2',
         hostKeyFingerprint: 'SHA256:5jCWsPXzMnd5zy5xVxZ2gzyjH9N3wVfL6n5X0M8W3uQ',
@@ -124,7 +130,9 @@ it('sends explicit optional node payload fields exactly as supplied and maps the
             'user' => 'bootstrap',
             'orbit_user' => 'orbit',
             'roles' => ['app-dev'],
-            'wireguard_address' => '10.44.0.2',
+            'cluster_id' => 3,
+            'wireguard_ip' => '10.44.0.2',
+            'lan_ip' => '10.0.0.2',
             'wireguard_endpoint_override' => '10.0.0.2:51820',
             'dns_server_override' => '10.0.0.2',
             'host_key_fingerprint' => 'SHA256:5jCWsPXzMnd5zy5xVxZ2gzyjH9N3wVfL6n5X0M8W3uQ',
@@ -175,7 +183,7 @@ it('sends an explicit settings object when supplied and omits it otherwise', fun
         publicSshHost: '94.237.40.75',
         settingsProvided: true,
         settings: new NodeSettings(
-            instance: new InstanceSettings('/srv/orbit/instances'),
+            apps: new AppsSettings('/srv/orbit/apps'),
         ),
     );
     $withoutSettings = new ProvisionNodeRequest(
@@ -185,8 +193,7 @@ it('sends an explicit settings object when supplied and omits it otherwise', fun
 
     expect($withSettings->body()->all())
         ->toHaveKey('settings', [
-            'instance' => ['path' => '/srv/orbit/instances'],
-            'worktree' => null,
+            'apps' => ['path' => '/srv/orbit/apps'],
         ])
         ->and($withoutSettings->body()->all())
         ->not->toHaveKey('settings');

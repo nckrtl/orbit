@@ -35,7 +35,7 @@ final readonly class SshNodeStateInspector implements NodeStateInspector
 
     public function inspect(Node $node): NodeInspectionData
     {
-        $address = $node->wireguard_address;
+        $address = $node->wireguard_ip;
         if (! is_string($address) || $address === '') {
             return new NodeInspectionData(false, null, null, null);
         }

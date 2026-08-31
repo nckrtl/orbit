@@ -22,6 +22,21 @@ use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
 
+it('reports the empty Router projection as healthy without remote inspection', function (): void {
+    $ssh = new RoleInspectorSshExecutor([]);
+
+    $state = role_state_inspector($ssh)->inspect(role_inspector_assignment(RoleName::Router));
+
+    expect($state->packagesPresent)
+        ->toBeTrue()
+        ->and($state->servicesActive)
+        ->toBeTrue()
+        ->and($state->firewallProjectionMatches)
+        ->toBeTrue()
+        ->and($ssh->calls)
+        ->toBe([]);
+});
+
 it('inspects each role with exact package service and firewall requirements', function (
     RoleName $role,
     array $packages,
@@ -237,7 +252,7 @@ function role_inspector_assignment(RoleName $role): NodeRole
         'public_ssh_host' => '192.0.2.2',
         'public_ssh_port' => 2022,
         'user' => 'nckrtl',
-        'wireguard_address' => '10.44.0.2',
+        'wireguard_ip' => '10.44.0.2',
     ]);
     $node->id = 7;
     $assignment = new NodeRole([

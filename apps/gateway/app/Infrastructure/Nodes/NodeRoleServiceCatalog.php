@@ -13,6 +13,7 @@ final class NodeRoleServiceCatalog
         return match ($role) {
             RoleName::Gateway => ['caddy', 'php8.5-fpm'],
             RoleName::Vpn => ['wg-quick@orbit', 'dnsmasq'],
+            RoleName::Router => [],
             RoleName::AppDev, RoleName::AppProd => ['caddy', 'docker'],
             RoleName::Metrics => ['docker'],
         };

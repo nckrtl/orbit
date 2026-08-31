@@ -191,7 +191,7 @@ final readonly class NativeProcessStateInspector implements ProcessStateInspecto
 
     private function connection(Node $node): SshConnection
     {
-        $host = $node->wireguard_address;
+        $host = $node->wireguard_ip;
         if ($node->platform !== 'linux' || ! is_string($host) || $host === '') {
             throw new DoctorInspectionException;
         }

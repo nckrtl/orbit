@@ -10,7 +10,7 @@ enum NodeDoctorIssueCode: string implements DoctorIssueCode
     case SshUnreachable = 'node.ssh_unreachable';
     case PlatformMismatch = 'node.platform_mismatch';
     case ArchitectureMismatch = 'node.architecture_mismatch';
-    case WireGuardAddressMismatch = 'node.wireguard_address_mismatch';
+    case WireGuardAddressMismatch = 'node.wireguard_ip_mismatch';
     case InspectionFailed = 'node.inspection_failed';
 
     public function code(): string

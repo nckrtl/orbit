@@ -99,7 +99,7 @@ final readonly class NativeGatewaySelfAccessConverger implements GatewaySelfAcce
 
     private function pinHostKey(Node $node): void
     {
-        $address = $node->wireguard_address;
+        $address = $node->wireguard_ip;
 
         if (! is_string($address) || $address === '') {
             $this->fail("Node [{$node->name}] has no WireGuard address.");

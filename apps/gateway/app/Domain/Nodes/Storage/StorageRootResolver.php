@@ -15,9 +15,8 @@ final readonly class StorageRootResolver
         private ProtectedPathCatalog $catalog,
     ) {}
 
-    public function resolve(?NodeSettingsData $settings, ManagedUserAccount $account): EffectiveStorageRoots
+    public function resolve(?LegacyNodeSettings $settings, ManagedUserAccount $account): EffectiveStorageRoots
     {
-        $normalized = $this->normalizer->normalize($settings);
         $instanceDefault = $this->catalog->instanceDefault($account);
         $worktreeDefault = $this->catalog->worktreeDefault($account);
 
@@ -28,11 +27,24 @@ final readonly class StorageRootResolver
             );
         }
 
-        $instancePath = $normalized instanceof NodeSettingsData ? $normalized->instancePath() : null;
-        $worktreePath = $normalized instanceof NodeSettingsData ? $normalized->worktreePath() : null;
+        $instancePath = $settings?->instancePath;
+        $worktreePath = $settings?->worktreePath;
         $instance = $instancePath === null ? $instanceDefault : StoragePath::parse($instancePath);
         $worktree = $worktreePath === null ? $worktreeDefault : StoragePath::parse($worktreePath);
 
         return new EffectiveStorageRoots($instance, $worktree);
+    }
+
+    public function resolveApps(
+        ?NodeSettingsData $settings,
+        ?LegacyNodeSettings $legacy,
+        ManagedUserAccount $account,
+    ): EffectiveStorageRoots {
+        $defaults = $this->resolve($legacy, $account);
+        $normalized = $this->normalizer->normalize($settings);
+        $appsPath = $normalized?->appsPath() ?? $legacy?->instancePath;
+        $apps = $appsPath === null ? $defaults->instance : StoragePath::parse($appsPath);
+
+        return new EffectiveStorageRoots($apps, $defaults->worktree);
     }
 }

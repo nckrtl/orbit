@@ -13,6 +13,7 @@ describe(RoleRegistry::class, function (): void {
             ->toBe([
                 RoleName::Gateway,
                 RoleName::Vpn,
+                RoleName::Router,
                 RoleName::AppDev,
                 RoleName::AppProd,
                 RoleName::Metrics,
@@ -28,6 +29,12 @@ describe(RoleRegistry::class, function (): void {
             ->and($registry->definition(RoleName::Vpn)->assignableDuringProvisioning)
             ->toBeTrue()
             ->and($registry->definition(RoleName::Vpn)->mutable)
+            ->toBeFalse()
+            ->and($registry->definition(RoleName::Router)->singleton)
+            ->toBeFalse()
+            ->and($registry->definition(RoleName::Router)->assignableDuringProvisioning)
+            ->toBeFalse()
+            ->and($registry->definition(RoleName::Router)->mutable)
             ->toBeFalse()
             ->and($registry->definition(RoleName::AppDev)->singleton)
             ->toBeFalse()
@@ -71,6 +78,10 @@ describe(RoleRegistry::class, function (): void {
             ->and($registry->conflicts(RoleName::AppDev, RoleName::AppProd))
             ->toBeTrue()
             ->and($registry->conflicts(RoleName::Gateway, RoleName::Vpn))
+            ->toBeFalse()
+            ->and($registry->conflicts(RoleName::Router, RoleName::AppDev))
+            ->toBeFalse()
+            ->and($registry->conflicts(RoleName::Router, RoleName::AppProd))
             ->toBeFalse();
     });
 });

@@ -139,7 +139,7 @@ it('lists only one node rules in stable name order', function (): void {
     $other = firewall_action_node(
         name: 'other',
         publicHost: '192.0.2.21',
-        wireguardAddress: '10.44.0.4',
+        wireguardIp: '10.44.0.4',
     );
     firewall_action_rule(node: $node, name: 'z-last');
     firewall_action_rule(node: $node, name: 'a-first');
@@ -153,7 +153,7 @@ it('lists only one node rules in stable name order', function (): void {
 function firewall_action_node(
     string $name = 'app-dev',
     string $publicHost = '192.0.2.20',
-    string $wireguardAddress = '10.44.0.3',
+    string $wireguardIp = '10.44.0.3',
 ): Node {
     return Node::query()->create([
         'name' => $name,
@@ -162,7 +162,7 @@ function firewall_action_node(
         'public_ssh_host' => $publicHost,
         'public_ssh_port' => 22,
         'user' => 'orbit',
-        'wireguard_address' => $wireguardAddress,
+        'wireguard_ip' => $wireguardIp,
     ]);
 }
 

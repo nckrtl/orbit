@@ -276,7 +276,7 @@ final readonly class NativeNodeRoleFirewallManager implements NodeRoleFirewallMa
     /** @mago-expect lint:no-boolean-flag-parameter The flag selects the public recovery or private role boundary. */
     private function connection(Node $node, bool $publicConnection, string $managedUser): SshConnection
     {
-        $host = $publicConnection ? $node->public_ssh_host : $node->wireguard_address;
+        $host = $publicConnection ? $node->public_ssh_host : $node->wireguard_ip;
         $port = $publicConnection ? $node->public_ssh_port : 22;
 
         if (! is_string($host) || $host === '') {

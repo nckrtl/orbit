@@ -50,12 +50,12 @@ it('rejects enable payloads with missing or unsupported fields', function (): vo
         'name' => 'gateway',
         'status' => LifecycleStatus::Active,
         'public_ssh_host' => '192.0.2.1',
-        'wireguard_address' => '10.44.0.1',
+        'wireguard_ip' => '10.44.0.1',
     ]);
     $this->markAsGateway($gateway);
 
     $this
-        ->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_address])
+        ->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
         ->postJson('/api/v1/metrics', ['unexpected' => true])
         ->assertUnprocessable()
         ->assertJsonPath('error.code', 'validation.failed')
@@ -67,12 +67,12 @@ it('rejects purge requests unless force is true', function (): void {
         'name' => 'gateway',
         'status' => LifecycleStatus::Active,
         'public_ssh_host' => '192.0.2.1',
-        'wireguard_address' => '10.44.0.1',
+        'wireguard_ip' => '10.44.0.1',
     ]);
     $this->markAsGateway($gateway);
 
     $this
-        ->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_address])
+        ->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
         ->deleteJson('/api/v1/metrics', ['purge_data' => true])
         ->assertUnprocessable()
         ->assertJsonPath('error.code', 'validation.failed')
@@ -84,7 +84,7 @@ it('returns status data through the API envelope', function (): void {
         'name' => 'gateway',
         'status' => LifecycleStatus::Active,
         'public_ssh_host' => '192.0.2.1',
-        'wireguard_address' => '10.44.0.1',
+        'wireguard_ip' => '10.44.0.1',
     ]);
     $this->markAsGateway($gateway);
     app()->instance(MetricsStatusReader::class, new class implements MetricsStatusReader {
@@ -95,7 +95,7 @@ it('returns status data through the API envelope', function (): void {
     });
 
     $this
-        ->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_address])
+        ->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
         ->getJson('/api/v1/metrics/status')
         ->assertOk()
         ->assertJsonPath('data.enabled', false)
@@ -107,7 +107,7 @@ it('allows the active Gateway caller without a directed grant', function (): voi
         'name' => 'gateway',
         'status' => LifecycleStatus::Active,
         'public_ssh_host' => '192.0.2.1',
-        'wireguard_address' => '10.44.0.1',
+        'wireguard_ip' => '10.44.0.1',
     ]);
     $this->markAsGateway($gateway);
     app()->instance(MetricsStatusReader::class, new class implements MetricsStatusReader {
@@ -118,7 +118,7 @@ it('allows the active Gateway caller without a directed grant', function (): voi
     });
 
     $this
-        ->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_address])
+        ->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
         ->getJson('/api/v1/metrics/status')
         ->assertOk();
 });
@@ -128,13 +128,13 @@ it('fails closed before reading Metrics state when active Gateway authority drif
         'name' => 'gateway-first',
         'status' => LifecycleStatus::Active,
         'public_ssh_host' => '192.0.2.1',
-        'wireguard_address' => '10.44.0.1',
+        'wireguard_ip' => '10.44.0.1',
     ]);
     $second = Node::query()->create([
         'name' => 'gateway-second',
         'status' => LifecycleStatus::Active,
         'public_ssh_host' => '192.0.2.2',
-        'wireguard_address' => '10.44.0.2',
+        'wireguard_ip' => '10.44.0.2',
     ]);
     $this->markAsGateway($first);
     $this->markAsGateway($second);
@@ -143,7 +143,7 @@ it('fails closed before reading Metrics state when active Gateway authority drif
     app()->instance(MetricsStatusReader::class, $reader);
 
     $this
-        ->withServerVariables(['REMOTE_ADDR' => $first->wireguard_address])
+        ->withServerVariables(['REMOTE_ADDR' => $first->wireguard_ip])
         ->getJson('/api/v1/metrics/status')
         ->assertForbidden()
         ->assertJsonPath('error.code', 'node_access.required');
@@ -154,13 +154,13 @@ it('allows a caller with a directed grant to the active Gateway', function (): v
         'name' => 'gateway',
         'status' => LifecycleStatus::Active,
         'public_ssh_host' => '192.0.2.1',
-        'wireguard_address' => '10.44.0.1',
+        'wireguard_ip' => '10.44.0.1',
     ]);
     $caller = Node::query()->create([
         'name' => 'caller',
         'status' => LifecycleStatus::Active,
         'public_ssh_host' => '192.0.2.2',
-        'wireguard_address' => '10.44.0.2',
+        'wireguard_ip' => '10.44.0.2',
     ]);
     $this->markAsGateway($gateway);
     $caller->accessibleNodes()->attach($gateway);
@@ -172,7 +172,7 @@ it('allows a caller with a directed grant to the active Gateway', function (): v
     });
 
     $this
-        ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
+        ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
         ->getJson('/api/v1/metrics/status')
         ->assertOk()
         ->assertJsonPath('data.enabled', false);
@@ -183,19 +183,19 @@ it('rejects access to only a Metrics or exporter node before reading status', fu
         'name' => 'gateway',
         'status' => LifecycleStatus::Active,
         'public_ssh_host' => '192.0.2.1',
-        'wireguard_address' => '10.44.0.1',
+        'wireguard_ip' => '10.44.0.1',
     ]);
     $metrics = Node::query()->create([
         'name' => 'metrics',
         'status' => LifecycleStatus::Active,
         'public_ssh_host' => '192.0.2.2',
-        'wireguard_address' => '10.44.0.2',
+        'wireguard_ip' => '10.44.0.2',
     ]);
     $caller = Node::query()->create([
         'name' => 'caller',
         'status' => LifecycleStatus::Active,
         'public_ssh_host' => '192.0.2.3',
-        'wireguard_address' => '10.44.0.3',
+        'wireguard_ip' => '10.44.0.3',
     ]);
     $this->markAsGateway($gateway);
     $caller->accessibleNodes()->attach($metrics);
@@ -204,7 +204,7 @@ it('rejects access to only a Metrics or exporter node before reading status', fu
     app()->instance(MetricsStatusReader::class, $reader);
 
     $this
-        ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
+        ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
         ->getJson('/api/v1/metrics/status')
         ->assertForbidden()
         ->assertJsonPath('error.code', 'node_access.required');
@@ -215,13 +215,13 @@ it('passes focused enable and purge mutations to the Metrics role manager', func
         'name' => 'gateway',
         'status' => LifecycleStatus::Active,
         'public_ssh_host' => '192.0.2.1',
-        'wireguard_address' => '10.44.0.1',
+        'wireguard_ip' => '10.44.0.1',
     ]);
     $target = Node::query()->create([
         'name' => 'target',
         'status' => LifecycleStatus::Active,
         'public_ssh_host' => '192.0.2.2',
-        'wireguard_address' => '10.44.0.2',
+        'wireguard_ip' => '10.44.0.2',
     ]);
     $this->markAsGateway($gateway);
     $manager = Mockery::mock(MetricsRoleManager::class);
@@ -238,13 +238,13 @@ it('passes focused enable and purge mutations to the Metrics role manager', func
     app()->instance(MetricsRoleManager::class, $manager);
 
     $this
-        ->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_address])
+        ->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
         ->postJson('/api/v1/metrics', ['node_id' => $target->id])
         ->assertCreated()
         ->assertJsonPath('data.status', 'active');
 
     $this
-        ->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_address])
+        ->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
         ->deleteJson('/api/v1/metrics', ['force' => true, 'purge_data' => true])
         ->assertOk()
         ->assertJsonPath('data.status', 'removed')
@@ -256,13 +256,13 @@ it('rejects unauthorized metrics requests before reading credentials', function 
         'name' => 'gateway',
         'status' => LifecycleStatus::Active,
         'public_ssh_host' => '192.0.2.1',
-        'wireguard_address' => '10.44.0.1',
+        'wireguard_ip' => '10.44.0.1',
     ]);
     $caller = Node::query()->create([
         'name' => 'caller',
         'status' => LifecycleStatus::Active,
         'public_ssh_host' => '192.0.2.2',
-        'wireguard_address' => '10.44.0.2',
+        'wireguard_ip' => '10.44.0.2',
     ]);
     $this->markAsGateway($gateway);
     $manager = Mockery::mock(MetricsCredentialManager::class);
@@ -270,7 +270,7 @@ it('rejects unauthorized metrics requests before reading credentials', function 
     app()->instance(MetricsCredentialManager::class, $manager);
 
     $this
-        ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
+        ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
         ->getJson('/api/v1/metrics/credentials')
         ->assertForbidden();
 });
@@ -280,7 +280,7 @@ it('marks credentials responses as non-cacheable', function (string $method, str
         'name' => 'gateway',
         'status' => LifecycleStatus::Active,
         'public_ssh_host' => '192.0.2.1',
-        'wireguard_address' => '10.44.0.1',
+        'wireguard_ip' => '10.44.0.1',
     ]);
     $this->markAsGateway($gateway);
     $manager = Mockery::mock(MetricsCredentialManager::class);
@@ -291,7 +291,7 @@ it('marks credentials responses as non-cacheable', function (string $method, str
     app()->instance(MetricsCredentialManager::class, $manager);
 
     $response = $this
-        ->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_address])
+        ->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
         ->withHeaders(['Content-Type' => 'application/json'])
         ->call($method, $uri, [], [], [], [], $method === 'POST' ? '{}' : '');
 
@@ -309,19 +309,19 @@ it('refuses to disable the exporter on the Metrics node with a stable error code
         'name' => 'gateway',
         'status' => LifecycleStatus::Active,
         'public_ssh_host' => '192.0.2.1',
-        'wireguard_address' => '10.44.0.1',
+        'wireguard_ip' => '10.44.0.1',
     ]);
     $this->markAsGateway($gateway);
     $metricsNode = Node::query()->create([
         'name' => 'app-dev',
         'status' => LifecycleStatus::Active,
         'public_ssh_host' => '192.0.2.2',
-        'wireguard_address' => '10.44.0.2',
+        'wireguard_ip' => '10.44.0.2',
     ]);
     $metricsNode->roles()->create(['role' => RoleName::Metrics, 'status' => LifecycleStatus::Active]);
 
     $this
-        ->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_address])
+        ->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
         ->deleteJson("/api/v1/metrics/exporters/{$metricsNode->id}")
         ->assertStatus(422)
         ->assertJsonPath('error.code', 'node.role_conflict')
@@ -333,25 +333,25 @@ it('refuses a second Metrics claim through the generic role route with a stable 
         'name' => 'gateway',
         'status' => LifecycleStatus::Active,
         'public_ssh_host' => '192.0.2.1',
-        'wireguard_address' => '10.44.0.1',
+        'wireguard_ip' => '10.44.0.1',
     ]);
     $this->markAsGateway($gateway);
     $held = Node::query()->create([
         'name' => 'app-dev',
         'status' => LifecycleStatus::Active,
         'public_ssh_host' => '192.0.2.2',
-        'wireguard_address' => '10.44.0.2',
+        'wireguard_ip' => '10.44.0.2',
     ]);
     $held->roles()->create(['role' => RoleName::Metrics, 'status' => LifecycleStatus::Active]);
     $other = Node::query()->create([
         'name' => 'app-prod',
         'status' => LifecycleStatus::Active,
         'public_ssh_host' => '192.0.2.3',
-        'wireguard_address' => '10.44.0.3',
+        'wireguard_ip' => '10.44.0.3',
     ]);
 
     $this
-        ->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_address])
+        ->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
         ->postJson("/api/v1/nodes/{$other->id}/roles", ['role' => 'metrics'])
         ->assertStatus(422)
         ->assertJsonPath('error.code', 'validation.failed');

@@ -48,13 +48,13 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
         ?string $expectedSshHostFingerprint = null,
         bool $rolelessOperator = false,
     ): void {
-        [$hostKey, $wireguardAddress] = $this->prepare($node, $identity, $expectedSshHostFingerprint);
+        [$hostKey, $wireguardIp] = $this->prepare($node, $identity, $expectedSshHostFingerprint);
         $this->wireGuard->converge(
             $node,
             $this->connection($node, $identity->managedUser),
             $rolelessOperator,
         );
-        $this->finishWireGuard($node, $identity->managedUser, $hostKey, $wireguardAddress);
+        $this->finishWireGuard($node, $identity->managedUser, $hostKey, $wireguardIp);
     }
 
     public function convergeRecoverably(
@@ -64,10 +64,10 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
         Closure $completion,
         bool $rolelessOperator = false,
     ): void {
-        [$hostKey, $wireguardAddress] = $this->prepare($node, $identity, $expectedSshHostFingerprint);
+        [$hostKey, $wireguardIp] = $this->prepare($node, $identity, $expectedSshHostFingerprint);
 
         if ($node->roles()->exists()) {
-            $this->finishWireGuard($node, $identity->managedUser, $hostKey, $wireguardAddress);
+            $this->finishWireGuard($node, $identity->managedUser, $hostKey, $wireguardIp);
             $completion();
 
             return;
@@ -79,7 +79,7 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
                 $this->connection($node, $identity->managedUser),
                 $rolelessOperator,
             );
-            $this->finishWireGuard($node, $identity->managedUser, $hostKey, $wireguardAddress);
+            $this->finishWireGuard($node, $identity->managedUser, $hostKey, $wireguardIp);
             $completion();
 
             return;
@@ -88,8 +88,8 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
         $this->wireGuard->convergeRecoverably(
             $node,
             $this->connection($node, $identity->managedUser),
-            function () use ($node, $identity, $hostKey, $wireguardAddress, $completion): void {
-                $this->finishWireGuard($node, $identity->managedUser, $hostKey, $wireguardAddress);
+            function () use ($node, $identity, $hostKey, $wireguardIp, $completion): void {
+                $this->finishWireGuard($node, $identity->managedUser, $hostKey, $wireguardIp);
                 $completion();
             },
             $rolelessOperator,
@@ -176,7 +176,7 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
             );
         }
 
-        if (! is_string($node->wireguard_address)) {
+        if (! is_string($node->wireguard_ip)) {
             throw new NodeProvisioningException(
                 'wireguard-address',
                 'vpn.peer_address_missing',
@@ -184,7 +184,7 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
             );
         }
 
-        $wireguardAddress = $node->wireguard_address;
+        $wireguardIp = $node->wireguard_ip;
 
         if ($node->roles()->doesntExist()) {
             try {
@@ -200,18 +200,18 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
             }
         }
 
-        return [$hostKey, $wireguardAddress];
+        return [$hostKey, $wireguardIp];
     }
 
     private function finishWireGuard(
         Node $node,
         string $managedUser,
         \App\Infrastructure\Ssh\HostKey $hostKey,
-        string $wireguardAddress,
+        string $wireguardIp,
     ): void {
-        $this->knownHosts->put($wireguardAddress, 22, $hostKey);
+        $this->knownHosts->put($wireguardIp, 22, $hostKey);
         $privateVerification = $this->ssh->execute(
-            $this->connection($node, $managedUser, $wireguardAddress, 22),
+            $this->connection($node, $managedUser, $wireguardIp, 22),
             new RemoteCommand(['true']),
         );
         foreach (self::WIREGUARD_SSH_RETRY_DELAYS as $delay) {
@@ -225,7 +225,7 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
 
             ($this->sleep ?? usleep(...))($delay);
             $privateVerification = $this->ssh->execute(
-                $this->connection($node, $managedUser, $wireguardAddress, 22),
+                $this->connection($node, $managedUser, $wireguardIp, 22),
                 new RemoteCommand(['true']),
             );
         }
@@ -282,7 +282,7 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
             return [$node->public_ssh_host, $node->public_ssh_port];
         }
 
-        if (! is_string($node->wireguard_address) || $node->wireguard_address === '') {
+        if (! is_string($node->wireguard_ip) || $node->wireguard_ip === '') {
             throw new NodeProvisioningException(
                 'wireguard-address',
                 'vpn.peer_address_missing',
@@ -290,6 +290,6 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
             );
         }
 
-        return [$node->wireguard_address, 22];
+        return [$node->wireguard_ip, 22];
     }
 }

@@ -52,7 +52,9 @@ final class ListNodesCommand extends GatewayCommand
                 $node->platform ?? '-',
                 $node->tld ?? '-',
                 $node->user,
-                $node->wireguardAddress ?? '-',
+                $node->clusterId ?? '-',
+                $node->wireguardIp ?? '-',
+                $node->lanIp ?? '-',
             ];
         }
 
@@ -63,7 +65,18 @@ final class ListNodesCommand extends GatewayCommand
             return self::SUCCESS;
         }
 
-        $this->table(['ID', 'Name', 'Status', 'Roles', 'Platform', 'TLD', 'User', 'WireGuard'], $rows);
+        $this->table([
+            'ID',
+            'Name',
+            'Status',
+            'Roles',
+            'Platform',
+            'TLD',
+            'User',
+            'Cluster',
+            'WireGuard',
+            'LAN',
+        ], $rows);
 
         $this->line("Request ID: {$response->requestId}");
 

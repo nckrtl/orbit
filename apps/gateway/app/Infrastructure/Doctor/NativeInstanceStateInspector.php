@@ -81,7 +81,7 @@ final readonly class NativeInstanceStateInspector implements InstanceStateInspec
                 commandTimeout: $this->deadline->cap(30.0),
             );
             $values = $this->parse($result, 5);
-            $dns = $appDevelopment ? $this->dnsMatches($instance->hostname, $instance->node->wireguard_address) : null;
+            $dns = $appDevelopment ? $this->dnsMatches($instance->hostname, $instance->node->wireguard_ip) : null;
         } catch (\Throwable) {
             throw new DoctorInspectionException;
         }
@@ -136,7 +136,7 @@ final readonly class NativeInstanceStateInspector implements InstanceStateInspec
         }
         $site = new AppDevSite(
             nodeId: $instance->node_id,
-            nodeAddress: $instance->node->wireguard_address ?? '',
+            nodeAddress: $instance->node->wireguard_ip ?? '',
             scope: "instance-{$instance->id}",
             checkoutPath: $instance->checkout_path,
             documentRoot: $instance->document_root,

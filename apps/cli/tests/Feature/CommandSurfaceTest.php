@@ -25,6 +25,15 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'app:new',
         'app:remove',
         'app:show',
+        'cluster:list',
+        'cluster:new',
+        'cluster:node:attach',
+        'cluster:node:detach',
+        'cluster:remove',
+        'cluster:router:clear',
+        'cluster:router:set',
+        'cluster:show',
+        'cluster:update',
         'dns:resolve',
         'doctor',
         'firewall:allow',
@@ -81,7 +90,7 @@ it('does not register hidden Orbit product commands', function (): void {
     $orbitCommands = collect(app(Kernel::class)->all())
         ->filter(static fn (Command $command): bool => str_starts_with($command::class, 'App\\Commands\\'));
 
-    expect($orbitCommands)->toHaveCount(55);
+    expect($orbitCommands)->toHaveCount(64);
     expect($orbitCommands->every(
         static fn (Command $command): bool => ! $command->isHidden(),
     ))->toBeTrue();
@@ -120,6 +129,18 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'app:new' => [['slug', 'repository'], ['name' => null, 'json' => false]],
         'app:remove' => [['app'], ['json' => false]],
         'app:show' => [['app'], ['json' => false]],
+        'cluster:list' => [[], ['json' => false]],
+        'cluster:new' => [['name'], ['tld' => null, 'json' => false]],
+        'cluster:node:attach' => [['cluster', 'node'], ['json' => false]],
+        'cluster:node:detach' => [['cluster', 'node'], ['force' => false, 'json' => false]],
+        'cluster:remove' => [['cluster'], ['force' => false, 'json' => false]],
+        'cluster:router:clear' => [['cluster'], ['force' => false, 'json' => false]],
+        'cluster:router:set' => [['cluster', 'node'], ['json' => false]],
+        'cluster:show' => [['cluster'], ['json' => false]],
+        'cluster:update' => [
+            ['cluster'],
+            ['name' => null, 'tld' => null, 'state' => null, 'json' => false],
+        ],
         'dns:resolve' => [['tld', 'target'], ['reset' => false, 'json' => false]],
         'doctor' => [[], ['node' => null, 'family' => [], 'json' => false]],
         'firewall:allow' => [
@@ -170,7 +191,10 @@ it('keeps the exact approved arguments options and defaults', function (): void 
                 'tld' => null,
                 'role' => [],
                 'host-key-fingerprint' => null,
+                'cluster' => null,
+                'wireguard-ip' => null,
                 'wireguard-address' => null,
+                'lan-ip' => null,
                 'wireguard-endpoint' => null,
                 'dns-server' => null,
                 'setting' => [],
@@ -324,6 +348,18 @@ it('renders one exact json failure envelope for every Orbit product command', fu
         'app:new' => [['slug' => 'app', 'repository' => 'https://example.test/app.git'], ...$profileMissing],
         'app:remove' => [['app' => '1'], ...$profileMissing],
         'app:show' => [['app' => '1'], ...$profileMissing],
+        'cluster:list' => [[], ...$profileMissing],
+        'cluster:new' => [['name' => 'development'], ...$profileMissing],
+        'cluster:node:attach' => [['cluster' => '1', 'node' => '2'], ...$profileMissing],
+        'cluster:node:detach' => [
+            ['cluster' => '1', 'node' => '2', '--force' => true],
+            ...$profileMissing,
+        ],
+        'cluster:remove' => [['cluster' => '1', '--force' => true], ...$profileMissing],
+        'cluster:router:clear' => [['cluster' => '1', '--force' => true], ...$profileMissing],
+        'cluster:router:set' => [['cluster' => '1', 'node' => '2'], ...$profileMissing],
+        'cluster:show' => [['cluster' => '1'], ...$profileMissing],
+        'cluster:update' => [['cluster' => '1', '--state' => 'inactive'], ...$profileMissing],
         'dns:resolve' => [
             ['tld' => '.validation-secret', 'target' => '127.0.0.1'],
             'code' => 'dns.tld_invalid',
@@ -365,7 +401,7 @@ it('renders one exact json failure envelope for every Orbit product command', fu
         'node:role:add' => [['node' => '7', 'role' => 'app-dev'], ...$profileMissing],
         'node:role:list' => [['node' => '7'], ...$profileMissing],
         'node:role:remove' => [['node' => '7', 'role' => 'app-dev', '--force' => true], ...$profileMissing],
-        'node:settings' => [['node' => '1', '--setting' => ['instance.path:/srv/orbit/instances']], ...$profileMissing],
+        'node:settings' => [['node' => '1', '--setting' => ['apps.path:/srv/orbit/apps']], ...$profileMissing],
         'node:show' => [['node' => '1'], ...$profileMissing],
         'process:add' => [
             ['name' => 'worker', '--instance' => '1', '--command' => ['/usr/bin/php']],

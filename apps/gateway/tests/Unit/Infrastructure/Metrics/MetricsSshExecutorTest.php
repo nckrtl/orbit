@@ -320,7 +320,7 @@ function metricsSshNode(): Node
 {
     $node = new Node([
         'name' => 'metrics-ssh',
-        'wireguard_address' => '10.44.0.3',
+        'wireguard_ip' => '10.44.0.3',
     ]);
     $node->id = 3;
 

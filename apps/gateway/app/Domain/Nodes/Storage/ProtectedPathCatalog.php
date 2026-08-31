@@ -84,7 +84,7 @@ final readonly class ProtectedPathCatalog
             return ! $path->equals($worktreeDefault);
         }
 
-        if ($field === 'instance') {
+        if (in_array($field, ['apps', 'instance'], strict: true)) {
             return true;
         }
 

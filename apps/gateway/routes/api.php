@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Http\Controllers\Api\ActivitiesController;
 use App\Http\Controllers\Api\AppsController;
+use App\Http\Controllers\Api\ClustersController;
 use App\Http\Controllers\Api\DoctorRunsController;
 use App\Http\Controllers\Api\FirewallRulesController;
 use App\Http\Controllers\Api\GatewayStatusesController;
@@ -33,6 +34,32 @@ Route::prefix('v1')->group(function (): void {
     ])->group(function (): void {
         Route::get('nodes', [NodesController::class, 'index'])
             ->name('node:list');
+        Route::get('clusters', [ClustersController::class, 'index'])->name('cluster:list');
+        Route::post('clusters', [ClustersController::class, 'store'])->name('cluster:new');
+        Route::get('clusters/{cluster}', [ClustersController::class, 'show'])
+            ->whereNumber('cluster')
+            ->name('cluster:show');
+        Route::patch('clusters/{cluster}', [ClustersController::class, 'update'])
+            ->whereNumber('cluster')
+            ->name('cluster:update');
+        Route::delete('clusters/{cluster}', [ClustersController::class, 'destroy'])
+            ->whereNumber('cluster')
+            ->name('cluster:remove');
+        Route::put('clusters/{cluster}/nodes/{node}', [ClustersController::class, 'attach'])
+            ->whereNumber('cluster')
+            ->whereNumber('node')
+            ->name('cluster:node:attach');
+        Route::delete('clusters/{cluster}/nodes/{node}', [ClustersController::class, 'detach'])
+            ->whereNumber('cluster')
+            ->whereNumber('node')
+            ->name('cluster:node:detach');
+        Route::put('clusters/{cluster}/router/{node}', [ClustersController::class, 'setRouter'])
+            ->whereNumber('cluster')
+            ->whereNumber('node')
+            ->name('cluster:router:set');
+        Route::delete('clusters/{cluster}/router', [ClustersController::class, 'clearRouter'])
+            ->whereNumber('cluster')
+            ->name('cluster:router:clear');
         Route::post('doctor', [DoctorRunsController::class, 'store'])
             ->name('doctor:run');
         Route::get('nodes/{node}', [NodesController::class, 'show'])

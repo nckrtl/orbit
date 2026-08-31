@@ -19,6 +19,7 @@ final class NodeBootstrapPackageCatalog
         return match ($role) {
             RoleName::Gateway => ['ca-certificates'],
             RoleName::Vpn => ['dnsmasq', 'openssl'],
+            RoleName::Router => [],
             RoleName::AppDev, RoleName::AppProd => [
                 'acl',
                 'attr',

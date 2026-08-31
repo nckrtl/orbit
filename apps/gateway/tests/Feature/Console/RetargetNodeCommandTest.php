@@ -68,7 +68,7 @@ it('retargets a node from the gateway console', function (): void {
         'public_ssh_host' => '192.0.2.10',
         'public_ssh_port' => 22,
         'user' => 'nckrtl',
-        'wireguard_address' => '10.44.0.3',
+        'wireguard_ip' => '10.44.0.3',
         'ssh_host_fingerprint' => 'SHA256:pinned',
     ]);
 
@@ -138,7 +138,7 @@ it('explains the node-side recovery when a converged node is unreachable over wi
         'name' => 'app-dev',
         'status' => LifecycleStatus::Active,
         'public_ssh_host' => '192.0.2.10',
-        'wireguard_address' => '10.44.0.3',
+        'wireguard_ip' => '10.44.0.3',
         'ssh_host_fingerprint' => 'SHA256:pinned',
     ]);
     $node->roles()->create(['role' => \App\Domain\Nodes\RoleName::AppDev, 'status' => LifecycleStatus::Active]);

@@ -14,7 +14,7 @@ beforeEach(function (): void {
         'name' => 'operator',
         'status' => LifecycleStatus::Active,
         'public_ssh_host' => '192.0.2.2',
-        'wireguard_address' => '10.44.0.2',
+        'wireguard_ip' => '10.44.0.2',
     ]);
     $this->operator = $this->markAsGateway($this->operator);
     $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.2']);
@@ -308,31 +308,31 @@ describe('app list access', function (): void {
             'name' => 'accessible-node',
             'status' => LifecycleStatus::Active,
             'public_ssh_host' => '192.0.2.20',
-            'wireguard_address' => '10.44.0.20',
+            'wireguard_ip' => '10.44.0.20',
         ]);
         $inaccessibleNode = Node::query()->create([
             'name' => 'inaccessible-node',
             'status' => LifecycleStatus::Active,
             'public_ssh_host' => '192.0.2.21',
-            'wireguard_address' => '10.44.0.21',
+            'wireguard_ip' => '10.44.0.21',
         ]);
         $directConsumer = Node::query()->create([
             'name' => 'direct-consumer',
             'status' => LifecycleStatus::Active,
             'public_ssh_host' => '192.0.2.22',
-            'wireguard_address' => '10.44.0.22',
+            'wireguard_ip' => '10.44.0.22',
         ]);
         $gatewayAccessConsumer = Node::query()->create([
             'name' => 'gateway-access-consumer',
             'status' => LifecycleStatus::Active,
             'public_ssh_host' => '192.0.2.23',
-            'wireguard_address' => '10.44.0.23',
+            'wireguard_ip' => '10.44.0.23',
         ]);
         $noEdgeConsumer = Node::query()->create([
             'name' => 'no-edge-consumer',
             'status' => LifecycleStatus::Active,
             'public_ssh_host' => '192.0.2.24',
-            'wireguard_address' => '10.44.0.24',
+            'wireguard_ip' => '10.44.0.24',
         ]);
         $directConsumer->accessibleNodes()->attach($accessibleNode);
         $gatewayAccessConsumer->accessibleNodes()->attach($gateway);
@@ -371,25 +371,25 @@ describe('app list access', function (): void {
         ]);
 
         $this
-            ->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_address])
+            ->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
             ->getJson('/api/v1/apps')
             ->assertOk()
             ->assertJsonPath('data.*.id', [$inaccessible->id, $accessible->id, $unplaced->id]);
 
         $this
-            ->withServerVariables(['REMOTE_ADDR' => $gatewayAccessConsumer->wireguard_address])
+            ->withServerVariables(['REMOTE_ADDR' => $gatewayAccessConsumer->wireguard_ip])
             ->getJson('/api/v1/apps')
             ->assertOk()
             ->assertJsonPath('data.*.id', [$inaccessible->id, $accessible->id, $unplaced->id]);
 
         $this
-            ->withServerVariables(['REMOTE_ADDR' => $directConsumer->wireguard_address])
+            ->withServerVariables(['REMOTE_ADDR' => $directConsumer->wireguard_ip])
             ->getJson('/api/v1/apps')
             ->assertOk()
             ->assertJsonPath('data.*.id', [$accessible->id]);
 
         $this
-            ->withServerVariables(['REMOTE_ADDR' => $noEdgeConsumer->wireguard_address])
+            ->withServerVariables(['REMOTE_ADDR' => $noEdgeConsumer->wireguard_ip])
             ->getJson('/api/v1/apps')
             ->assertForbidden()
             ->assertJsonPath('error.code', 'node_access.required');

@@ -219,7 +219,7 @@ function firewall_rule(array $attributes = []): FirewallRule
         'public_ssh_host' => '192.0.2.20',
         'public_ssh_port' => 22,
         'user' => 'nckrtl',
-        'wireguard_address' => '10.44.0.3',
+        'wireguard_ip' => '10.44.0.3',
     ]);
     $node->id = 7;
     $rule = new FirewallRule([

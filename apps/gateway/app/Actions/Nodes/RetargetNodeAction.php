@@ -205,7 +205,7 @@ final readonly class RetargetNodeAction
 
     private function wireGuardAddress(Node $node): string
     {
-        if (! is_string($node->wireguard_address) || $node->wireguard_address === '') {
+        if (! is_string($node->wireguard_ip) || $node->wireguard_ip === '') {
             throw new NodeProvisioningException(
                 'wireguard-address',
                 'vpn.peer_address_missing',
@@ -213,7 +213,7 @@ final readonly class RetargetNodeAction
             );
         }
 
-        return $node->wireguard_address;
+        return $node->wireguard_ip;
     }
 
     private function probeWireGuard(Node $node, string $address): void

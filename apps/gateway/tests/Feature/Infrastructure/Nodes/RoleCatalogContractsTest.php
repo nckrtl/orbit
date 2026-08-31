@@ -11,7 +11,7 @@ use App\Infrastructure\Nodes\NodeRoleServiceCatalog;
 use App\Models\Node;
 
 it('covers exact package and service matrices', function (): void {
-    $node = new Node(['public_ssh_port' => 22, 'wireguard_address' => '10.0.0.1']);
+    $node = new Node(['public_ssh_port' => 22, 'wireguard_ip' => '10.0.0.1']);
     $p = new NodeBootstrapPackageCatalog;
     $s = new NodeRoleServiceCatalog;
     expect($p->forNode($node))
@@ -20,6 +20,8 @@ it('covers exact package and service matrices', function (): void {
         ->toBe(['ca-certificates'])
         ->and($p->forRole($node, RoleName::Vpn))
         ->toBe(['dnsmasq', 'openssl'])
+        ->and($p->forRole($node, RoleName::Router))
+        ->toBe([])
         ->and($p->forRole($node, RoleName::AppDev))
         ->toBe(['acl', 'attr', 'caddy', 'composer', 'docker.io', 'git', 'openssl', 'unzip'])
         ->and($p->forRole($node, RoleName::AppProd))
@@ -28,15 +30,28 @@ it('covers exact package and service matrices', function (): void {
         ->toBe(['caddy', 'php8.5-fpm'])
         ->and($s->forRole(RoleName::Vpn))
         ->toBe(['wg-quick@orbit', 'dnsmasq'])
+        ->and($s->forRole(RoleName::Router))
+        ->toBe([])
         ->and($s->forRole(RoleName::AppDev))
         ->toBe(['caddy', 'docker'])
         ->and($s->forRole(RoleName::AppProd))
         ->toBe(['caddy', 'docker']);
 });
+
+it('gives Router no package service or firewall projection', function (): void {
+    $node = new Node(['public_ssh_port' => 22, 'wireguard_ip' => '10.0.0.1']);
+
+    expect(new NodeBootstrapPackageCatalog()->forRole($node, RoleName::Router))
+        ->toBe([])
+        ->and(new NodeRoleServiceCatalog()->forRole(RoleName::Router))
+        ->toBe([])
+        ->and(new NodeFirewallRuleCatalog()->forRole($node, RoleName::Router))
+        ->toBe([]);
+});
 it('returns typed exact firewall rules', function (): void {
     $rules = new NodeFirewallRuleCatalog()->forNode(new Node([
         'public_ssh_port' => 22,
-        'wireguard_address' => '10.0.0.1',
+        'wireguard_ip' => '10.0.0.1',
     ]));
     expect($rules[0])
         ->toBeInstanceOf(UfwManagedRule::class)
@@ -46,7 +61,7 @@ it('returns typed exact firewall rules', function (): void {
 
 it('keeps public app-production rules independent of a WireGuard address', function (): void {
     $rules = new NodeFirewallRuleCatalog()->forRole(
-        new Node(['public_ssh_port' => 22, 'wireguard_address' => null]),
+        new Node(['public_ssh_port' => 22, 'wireguard_ip' => null]),
         RoleName::AppProd,
     );
 
@@ -56,7 +71,7 @@ it('keeps public app-production rules independent of a WireGuard address', funct
 
 it('matches the gateway writer exact shape independently of a WireGuard address', function (): void {
     $rules = new NodeFirewallRuleCatalog()->forRole(
-        new Node(['public_ssh_port' => 22, 'wireguard_address' => null]),
+        new Node(['public_ssh_port' => 22, 'wireguard_ip' => null]),
         RoleName::Gateway,
     );
 

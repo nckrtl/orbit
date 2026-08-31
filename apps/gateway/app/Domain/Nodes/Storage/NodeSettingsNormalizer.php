@@ -4,11 +4,10 @@ declare(strict_types=1);
 
 namespace App\Domain\Nodes\Storage;
 
-use App\Data\Nodes\InstanceSettingsData;
+use App\Data\Nodes\AppsSettingsData;
 use App\Data\Nodes\NodeSettingsData;
-use App\Data\Nodes\WorktreeSettingsData;
 
-/** @mago-expect lint:cyclomatic-complexity Nested path normalization stays in one closed DTO mapper. */
+/** @mago-expect lint:cyclomatic-complexity Normalization preserves two legacy keys while exposing one typed apps setting. */
 final readonly class NodeSettingsNormalizer
 {
     public function normalize(?NodeSettingsData $settings): ?NodeSettingsData
@@ -17,38 +16,24 @@ final readonly class NodeSettingsNormalizer
             return null;
         }
 
-        $instance = $this->nested($settings->instancePath());
-        $worktree = $this->nestedWorktree($settings->worktreePath());
         $normalized = new NodeSettingsData(
-            instance: $instance,
-            worktree: $worktree,
+            apps: $this->nested($settings->appsPath()),
         );
 
         return $normalized->isEmpty() ? null : $normalized;
     }
 
     /** @return array<string, mixed>|null */
-    public function stored(?NodeSettingsData $settings): ?array
+    public function stored(?NodeSettingsData $settings, mixed $existing = null): ?array
     {
         $normalized = $this->normalize($settings);
+        $payload = $this->legacyPayload($existing);
 
-        if (! $normalized instanceof NodeSettingsData) {
-            return null;
+        if ($normalized instanceof NodeSettingsData) {
+            $payload['apps'] = ['path' => $normalized->appsPath()];
         }
 
-        $payload = [];
-        $instancePath = $normalized->instancePath();
-        $worktreePath = $normalized->worktreePath();
-
-        if ($instancePath !== null) {
-            $payload['instance'] = ['path' => $instancePath];
-        }
-
-        if ($worktreePath !== null) {
-            $payload['worktree'] = ['path' => $worktreePath];
-        }
-
-        return $payload;
+        return $payload === [] ? null : $payload;
     }
 
     public function fromStored(mixed $value): ?NodeSettingsData
@@ -57,23 +42,36 @@ final readonly class NodeSettingsNormalizer
             return null;
         }
 
-        return $this->normalize(new NodeSettingsData(
-            instance: $this->nestedFromStored($value['instance'] ?? null),
-            worktree: $this->nestedWorktreeFromStored($value['worktree'] ?? null),
-        ));
+        return $this->normalize(new NodeSettingsData(apps: $this->nestedFromStored($value['apps'] ?? null)));
     }
 
-    private function nested(?string $path): ?InstanceSettingsData
+    public function legacyFromStored(mixed $value): ?LegacyNodeSettings
     {
-        return $path === null ? null : new InstanceSettingsData($path);
+        if (! is_array($value)) {
+            return null;
+        }
+
+        $settings = new LegacyNodeSettings(
+            instancePath: $this->pathFromStored($value['instance'] ?? null),
+            worktreePath: $this->pathFromStored($value['worktree'] ?? null),
+        );
+
+        return $settings->isEmpty() ? null : $settings;
     }
 
-    private function nestedWorktree(?string $path): ?WorktreeSettingsData
+    private function nested(?string $path): ?AppsSettingsData
     {
-        return $path === null ? null : new WorktreeSettingsData($path);
+        return $path === null ? null : new AppsSettingsData($path);
     }
 
-    private function nestedFromStored(mixed $value): ?InstanceSettingsData
+    private function nestedFromStored(mixed $value): ?AppsSettingsData
+    {
+        $path = $this->pathFromStored($value);
+
+        return $path === null ? null : new AppsSettingsData($path);
+    }
+
+    private function pathFromStored(mixed $value): ?string
     {
         if (! is_array($value)) {
             return null;
@@ -81,17 +79,24 @@ final readonly class NodeSettingsNormalizer
 
         $path = $value['path'] ?? null;
 
-        return is_string($path) ? new InstanceSettingsData($path) : null;
+        return is_string($path) ? $path : null;
     }
 
-    private function nestedWorktreeFromStored(mixed $value): ?WorktreeSettingsData
+    /** @return array<string, mixed> */
+    private function legacyPayload(mixed $value): array
     {
         if (! is_array($value)) {
-            return null;
+            return [];
         }
 
-        $path = $value['path'] ?? null;
+        $payload = [];
 
-        return is_string($path) ? new WorktreeSettingsData($path) : null;
+        foreach (['instance', 'worktree'] as $key) {
+            if (array_key_exists($key, $value)) {
+                $payload[$key] = $value[$key];
+            }
+        }
+
+        return $payload;
     }
 }

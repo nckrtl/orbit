@@ -12,11 +12,13 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 /**
  * @property int $id
  * @property int $node_id
+ * @property int|null $cluster_id
  * @property RoleName $role
  * @property LifecycleStatus $status
  * @property string|null $failed_step
  * @property string|null $error_code
  * @property-read Node $node
+ * @property-read Cluster|null $cluster
  */
 final class NodeRole extends Model
 {
@@ -24,6 +26,7 @@ final class NodeRole extends Model
     #[\Override]
     protected $fillable = [
         'node_id',
+        'cluster_id',
         'role',
         'status',
         'failed_step',
@@ -34,6 +37,12 @@ final class NodeRole extends Model
     public function node(): BelongsTo
     {
         return $this->belongsTo(Node::class);
+    }
+
+    /** @return BelongsTo<Cluster, $this> */
+    public function cluster(): BelongsTo
+    {
+        return $this->belongsTo(Cluster::class);
     }
 
     public function canClaimConvergence(): bool

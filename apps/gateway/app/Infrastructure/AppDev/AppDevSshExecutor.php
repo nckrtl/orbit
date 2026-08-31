@@ -28,17 +28,17 @@ final readonly class AppDevSshExecutor
         string $errorCode,
         ?float $commandTimeout = null,
     ): CommandResult {
-        if (! is_string($node->wireguard_address) || $node->wireguard_address === '') {
+        if (! is_string($node->wireguard_ip) || $node->wireguard_ip === '') {
             throw new RuntimeConvergenceException(
                 step: $step,
-                errorCode: 'app-dev.wireguard_address_missing',
+                errorCode: 'app-dev.wireguard_ip_missing',
                 message: "Node [{$node->name}] has no WireGuard address.",
             );
         }
 
         $result = $this->ssh->execute(
             new SshConnection(
-                host: $node->wireguard_address,
+                host: $node->wireguard_ip,
                 user: $node->user,
                 port: 22,
                 identityFile: $this->keys->privateKeyPath(),

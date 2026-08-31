@@ -150,7 +150,7 @@ it('publishes complete validated FPM Caddy and certificate configurations throug
 it('adapts Caddy to a listener bound only to the gateway WireGuard address', function (): void {
     $configuration = new GatewayCaddyConfigRenderer()->render(
         hostname: 'gateway.orbit',
-        wireguardAddress: '10.44.0.1',
+        wireguardIp: '10.44.0.1',
         checkoutPath: '/home/orbit/orbit-gateway',
     );
     $result = caddy_adapt($configuration);
@@ -356,9 +356,9 @@ function gateway_web_converger(?string $failure = null, string $checkoutPath = '
             private readonly string $orbitHome,
         ) {}
 
-        public function issue(string $hostname, string $wireguardAddress): GatewayCertificatePaths
+        public function issue(string $hostname, string $wireguardIp): GatewayCertificatePaths
         {
-            $this->calls[] = ['hostname' => $hostname, 'address' => $wireguardAddress];
+            $this->calls[] = ['hostname' => $hostname, 'address' => $wireguardIp];
 
             return new GatewayCertificatePaths(
                 privateKeyPath: $this->orbitHome.'/ca/gateway-current/gateway.key',

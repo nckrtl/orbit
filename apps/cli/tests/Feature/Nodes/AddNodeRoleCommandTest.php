@@ -62,7 +62,7 @@ it('rejects an invalid node id before connector io', function (string $nodeId): 
 it('resolves a node name through the node list before adding the role', function (): void {
     $mockClient = MockClient::global([
         ListNodesRequest::class => MockResponse::make([
-            'data' => [node_role_add_node_payload(7, 'app-dev')],
+            'data' => [node_role_add_node_payload(id: 7, name: 'app-dev')],
             'meta' => ['request_id' => node_role_add_request_id()],
         ]),
         AddNodeRoleRequest::class => MockResponse::make([
@@ -81,7 +81,7 @@ it('resolves a node name through the node list before adding the role', function
 it('rejects an unknown node name before the role request', function (): void {
     $mockClient = MockClient::global([
         ListNodesRequest::class => MockResponse::make([
-            'data' => [node_role_add_node_payload(7, 'app-dev')],
+            'data' => [node_role_add_node_payload(id: 7, name: 'app-dev')],
             'meta' => ['request_id' => node_role_add_request_id()],
         ]),
     ]);
@@ -287,7 +287,7 @@ function node_role_add_node_payload(int $id, string $name): array
         'public_ssh_host' => '203.0.113.7',
         'public_ssh_port' => 22,
         'user' => 'orbit',
-        'wireguard_address' => '10.44.0.7',
+        'wireguard_ip' => '10.44.0.7',
         'wireguard_public_key' => 'key',
         'wireguard_endpoint_override' => null,
         'dns_server_override' => null,

@@ -169,7 +169,7 @@ function metrics_publication_manager(
 
 function metrics_publication_manager_node(string $name, string $address): Node
 {
-    return new Node(['name' => $name, 'wireguard_address' => $address]);
+    return new Node(['name' => $name, 'wireguard_ip' => $address]);
 }
 
 function metrics_publication_manager_result(string $stdout = ''): CommandResult
@@ -221,7 +221,7 @@ final class MetricsPublicationManagerCertificateIssuer implements GatewayCertifi
         private array &$events,
     ) {}
 
-    public function issue(string $hostname, string $wireguardAddress): GatewayCertificatePaths
+    public function issue(string $hostname, string $wireguardIp): GatewayCertificatePaths
     {
         $this->events[] = 'certificate:issue';
 

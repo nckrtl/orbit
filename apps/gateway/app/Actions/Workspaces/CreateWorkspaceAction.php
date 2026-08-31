@@ -60,7 +60,7 @@ final readonly class CreateWorkspaceAction
             $checkoutPath = $workspace->checkout_path;
         } else {
             $roots = $this->storageRoots->resolve(
-                $this->nodeSettings->fromStored($instance->node->settings),
+                $this->nodeSettings->legacyFromStored($instance->node->settings),
                 $account,
             );
             $checkoutPath = $roots->worktree->append($instance->app->slug, $data->name)->value;

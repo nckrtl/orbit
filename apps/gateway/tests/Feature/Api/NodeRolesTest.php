@@ -25,7 +25,7 @@ beforeEach(function (): void {
 
     $this->caller = $this->markAsGateway(node_roles_api_node('gateway-peer'));
     $this->node = node_roles_api_node('role-target');
-    $this->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_address]);
+    $this->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip]);
 });
 
 it('rejects direct target access for Metrics role mutation', function (): void {
@@ -34,7 +34,7 @@ it('rejects direct target access for Metrics role mutation', function (): void {
     $direct->accessibleNodes()->attach($target);
 
     $this
-        ->withServerVariables(['REMOTE_ADDR' => $direct->wireguard_address])
+        ->withServerVariables(['REMOTE_ADDR' => $direct->wireguard_ip])
         ->postJson("/api/v1/nodes/{$target->id}/roles", ['role' => 'metrics'])
         ->assertForbidden();
 });
@@ -51,7 +51,7 @@ it('rejects direct target access for Metrics role removal', function (): void {
     $direct->accessibleNodes()->attach($target);
 
     $this
-        ->withServerVariables(['REMOTE_ADDR' => $direct->wireguard_address])
+        ->withServerVariables(['REMOTE_ADDR' => $direct->wireguard_ip])
         ->deleteJson("/api/v1/nodes/{$target->id}/roles/metrics", ['force' => true])
         ->assertForbidden();
 });
@@ -62,12 +62,12 @@ it('allows Metrics role mutation through directed Gateway access', function (): 
     $consumer->accessibleNodes()->attach($this->caller);
 
     $this
-        ->withServerVariables(['REMOTE_ADDR' => $consumer->wireguard_address])
+        ->withServerVariables(['REMOTE_ADDR' => $consumer->wireguard_ip])
         ->postJson("/api/v1/nodes/{$target->id}/roles", ['role' => 'metrics'])
         ->assertCreated();
 
     $this
-        ->withServerVariables(['REMOTE_ADDR' => $consumer->wireguard_address])
+        ->withServerVariables(['REMOTE_ADDR' => $consumer->wireguard_ip])
         ->deleteJson("/api/v1/nodes/{$target->id}/roles/metrics", ['force' => true])
         ->assertOk();
 });
@@ -378,14 +378,14 @@ it('requires active peer identity and direct target access for all role routes',
     $direct->accessibleNodes()->attach($this->node);
 
     $this
-        ->withServerVariables(['REMOTE_ADDR' => $direct->wireguard_address])
+        ->withServerVariables(['REMOTE_ADDR' => $direct->wireguard_ip])
         ->getJson("/api/v1/nodes/{$this->node->id}/roles")
         ->assertOk();
 
     $denied = node_roles_api_node('denied-peer');
 
     $this
-        ->withServerVariables(['REMOTE_ADDR' => $denied->wireguard_address])
+        ->withServerVariables(['REMOTE_ADDR' => $denied->wireguard_ip])
         ->getJson("/api/v1/nodes/{$this->node->id}/roles")
         ->assertForbidden()
         ->assertJsonPath('error.code', 'node_access.required');
@@ -511,7 +511,7 @@ it('rejects unsafe raw JSON without mutation or rejected activity input', functi
         method: $method,
         uri: str_replace('{node}', (string) $this->node->id, $path),
         json: str_replace('{sentinel}', $sentinel, $json),
-        remoteAddress: (string) $this->caller->wireguard_address,
+        remoteAddress: (string) $this->caller->wireguard_ip,
         requestId: $requestId,
     );
 
@@ -601,7 +601,7 @@ function node_roles_api_node(
         'status' => $status,
         'platform' => 'linux',
         'public_ssh_host' => $name.'.example.test',
-        'wireguard_address' => '10.44.10.'.(Node::query()->count() + 2),
+        'wireguard_ip' => '10.44.10.'.(Node::query()->count() + 2),
     ]);
 }
 

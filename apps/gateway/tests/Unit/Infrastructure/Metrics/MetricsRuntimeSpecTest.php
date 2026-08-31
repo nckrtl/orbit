@@ -12,13 +12,13 @@ describe(MetricsRuntimeSpec::class, function (): void {
         $prometheus = $spec->for(
             MetricsService::Prometheus,
             assignmentId: 41,
-            wireguardAddress: '10.44.0.3',
+            wireguardIp: '10.44.0.3',
             configurationHash: 'prometheus-config-hash',
         );
         $grafana = $spec->for(
             MetricsService::Grafana,
             assignmentId: 41,
-            wireguardAddress: '10.44.0.3',
+            wireguardIp: '10.44.0.3',
             configurationHash: 'grafana-config-hash',
         );
 

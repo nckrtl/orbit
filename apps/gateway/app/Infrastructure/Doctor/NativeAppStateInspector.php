@@ -32,7 +32,7 @@ final readonly class NativeAppStateInspector implements AppStateInspector
 
     public function inspect(App $app, Node $node): AppInspectionData
     {
-        if (! is_string($node->wireguard_address) || $node->wireguard_address === '') {
+        if (! is_string($node->wireguard_ip) || $node->wireguard_ip === '') {
             throw new DoctorInspectionException;
         }
 
@@ -94,7 +94,7 @@ final readonly class NativeAppStateInspector implements AppStateInspector
             try {
                 $result = $this->ssh->execute(
                     new SshConnection(
-                        $node->wireguard_address,
+                        $node->wireguard_ip,
                         $node->user,
                         22,
                         $this->keys->privateKeyPath(),

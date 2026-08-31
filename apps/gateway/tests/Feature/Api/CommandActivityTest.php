@@ -38,7 +38,7 @@ it('records exactly one bounded doctor activity without report findings or diagn
     });
 
     $this
-        ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
+        ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
         ->withHeader('X-Orbit-Request-Id', $requestId)
         ->postJson('/api/v1/doctor', [
             'node_id' => $selected->id,
@@ -90,7 +90,7 @@ it('does not persist rejected doctor request data in activity', function (string
             'CONTENT_TYPE' => 'application/json',
             'HTTP_ACCEPT' => 'application/json',
             'HTTP_X_ORBIT_REQUEST_ID' => $requestId,
-            'REMOTE_ADDR' => $caller->wireguard_address,
+            'REMOTE_ADDR' => $caller->wireguard_ip,
         ],
         str_replace('__SENTINEL__', $sentinel, $body),
     );
@@ -148,7 +148,7 @@ it('recursively redacts sensitive input and URL userinfo before persistence', fu
         'name' => 'operator',
         'status' => LifecycleStatus::Active,
         'public_ssh_host' => '192.0.2.2',
-        'wireguard_address' => '10.44.0.2',
+        'wireguard_ip' => '10.44.0.2',
     ]);
     $this->markAsGateway($operator);
 
@@ -190,7 +190,7 @@ it('redacts secret repository query parameters before persistence and activity s
         'name' => 'operator',
         'status' => LifecycleStatus::Active,
         'public_ssh_host' => '192.0.2.2',
-        'wireguard_address' => '10.44.0.2',
+        'wireguard_ip' => '10.44.0.2',
     ]);
     $this->markAsGateway($operator);
 
@@ -228,7 +228,7 @@ it('records route model binding failures as http 404', function (): void {
         'name' => 'operator',
         'status' => LifecycleStatus::Active,
         'public_ssh_host' => '192.0.2.2',
-        'wireguard_address' => '10.44.0.2',
+        'wireguard_ip' => '10.44.0.2',
     ]);
     $this->markAsGateway($operator);
 
@@ -249,7 +249,7 @@ it('correlates unhandled failures without exposing exception text', function ():
         'name' => 'operator',
         'status' => LifecycleStatus::Active,
         'public_ssh_host' => '192.0.2.2',
-        'wireguard_address' => '10.44.0.2',
+        'wireguard_ip' => '10.44.0.2',
     ]);
     $this->markAsGateway($operator);
     OrbitApp::creating(static function () use ($secret): never {
@@ -282,25 +282,25 @@ it('records node access add and remove commands against the serving node and pre
         'name' => 'gateway',
         'status' => LifecycleStatus::Active,
         'public_ssh_host' => '192.0.2.2',
-        'wireguard_address' => '10.44.0.2',
+        'wireguard_ip' => '10.44.0.2',
     ]));
     $serving = Node::query()->create([
         'name' => 'serving',
         'status' => LifecycleStatus::Active,
         'public_ssh_host' => '192.0.2.3',
-        'wireguard_address' => '10.44.0.3',
+        'wireguard_ip' => '10.44.0.3',
     ]);
     $consumer = Node::query()->create([
         'name' => 'consumer',
         'status' => LifecycleStatus::Active,
         'public_ssh_host' => '192.0.2.4',
-        'wireguard_address' => '10.44.0.4',
+        'wireguard_ip' => '10.44.0.4',
     ]);
     $directOnly = Node::query()->create([
         'name' => 'direct-only',
         'status' => LifecycleStatus::Active,
         'public_ssh_host' => '192.0.2.5',
-        'wireguard_address' => '10.44.0.5',
+        'wireguard_ip' => '10.44.0.5',
     ]);
     $directOnly->accessibleNodes()->attach($serving);
     $addRequestId = (string) Str::uuid();
@@ -308,19 +308,19 @@ it('records node access add and remove commands against the serving node and pre
     $forbiddenRequestId = (string) Str::uuid();
 
     $this
-        ->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_address])
+        ->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
         ->withHeader('X-Orbit-Request-Id', $addRequestId)
         ->putJson("/api/v1/nodes/{$serving->id}/access/{$consumer->id}")
         ->assertOk();
 
     $this
-        ->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_address])
+        ->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
         ->withHeader('X-Orbit-Request-Id', $removeRequestId)
         ->deleteJson("/api/v1/nodes/{$serving->id}/access/{$consumer->id}")
         ->assertOk();
 
     $this
-        ->withServerVariables(['REMOTE_ADDR' => $directOnly->wireguard_address])
+        ->withServerVariables(['REMOTE_ADDR' => $directOnly->wireguard_ip])
         ->withHeader('X-Orbit-Request-Id', $forbiddenRequestId)
         ->putJson("/api/v1/nodes/{$serving->id}/access/{$consumer->id}")
         ->assertForbidden()
@@ -353,13 +353,13 @@ it('records node role commands against the node with bounded inputs and stable f
         'name' => 'role-activity-gateway',
         'status' => LifecycleStatus::Active,
         'public_ssh_host' => '192.0.2.20',
-        'wireguard_address' => '10.44.0.20',
+        'wireguard_ip' => '10.44.0.20',
     ]));
     $node = Node::query()->create([
         'name' => 'role-activity-target',
         'status' => LifecycleStatus::Active,
         'public_ssh_host' => '192.0.2.21',
-        'wireguard_address' => '10.44.0.21',
+        'wireguard_ip' => '10.44.0.21',
     ]);
     $lifecycle = new CommandActivityNodeRoleLifecycleFake;
     app()->instance(RoleBaselineConverger::class, $lifecycle);
@@ -369,12 +369,12 @@ it('records node role commands against the node with bounded inputs and stable f
     $removeRequestId = (string) Str::uuid();
 
     $this
-        ->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_address])
+        ->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
         ->withHeader('X-Orbit-Request-Id', $listRequestId)
         ->getJson("/api/v1/nodes/{$node->id}/roles")
         ->assertOk();
     $this
-        ->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_address])
+        ->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
         ->withHeader('X-Orbit-Request-Id', $addRequestId)
         ->postJson("/api/v1/nodes/{$node->id}/roles", [
             'role' => 'app-dev',
@@ -382,7 +382,7 @@ it('records node role commands against the node with bounded inputs and stable f
         ])
         ->assertCreated();
     $this
-        ->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_address])
+        ->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
         ->withHeader('X-Orbit-Request-Id', $removeRequestId)
         ->deleteJson("/api/v1/nodes/{$node->id}/roles/app-dev", [
             'force' => false,
@@ -443,7 +443,7 @@ it('records tool manager and tool lists with the node target and no tool subject
         'name' => 'tool-list-node',
         'status' => LifecycleStatus::Active,
         'public_ssh_host' => '192.0.2.30',
-        'wireguard_address' => '10.44.0.30',
+        'wireguard_ip' => '10.44.0.30',
     ]);
     $this->markAsGateway($node);
     foreach ([
@@ -452,7 +452,7 @@ it('records tool manager and tool lists with the node target and no tool subject
     ] as [$command, $url]) {
         $requestId = (string) Str::uuid();
         $this
-            ->withServerVariables(['REMOTE_ADDR' => $node->wireguard_address])
+            ->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip])
             ->withHeader('X-Orbit-Request-Id', $requestId)
             ->getJson($url);
         $activity = Activity::query()->where('request_id', $requestId)->sole();
@@ -470,7 +470,7 @@ it('records tool show with the tool subject and node target', function (): void 
         'name' => 'tool-node',
         'status' => LifecycleStatus::Active,
         'public_ssh_host' => '192.0.2.31',
-        'wireguard_address' => '10.44.0.31',
+        'wireguard_ip' => '10.44.0.31',
     ]);
     $this->markAsGateway($node);
     $manager = ToolManagerRecord::query()->create([
@@ -487,7 +487,7 @@ it('records tool show with the tool subject and node target', function (): void 
     $requestId = (string) Str::uuid();
 
     $this
-        ->withServerVariables(['REMOTE_ADDR' => $node->wireguard_address])
+        ->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip])
         ->withHeader('X-Orbit-Request-Id', $requestId)
         ->getJson("/api/v1/tools/{$tool->id}");
 
@@ -508,7 +508,7 @@ it('records successful install with the created tool and an exact safe projectio
         'name' => 'tool-install-node',
         'status' => LifecycleStatus::Active,
         'public_ssh_host' => '192.0.2.33',
-        'wireguard_address' => '10.44.0.33',
+        'wireguard_ip' => '10.44.0.33',
     ]);
     $this->markAsGateway($node);
     $manager = ToolManagerRecord::query()->create([
@@ -522,7 +522,7 @@ it('records successful install with the created tool and an exact safe projectio
     app()->instance(ToolManagerRegistry::class, new ToolManagerRegistry([$fake]));
     $requestId = (string) Str::uuid();
     $this
-        ->withServerVariables(['REMOTE_ADDR' => $node->wireguard_address])
+        ->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip])
         ->withHeader('X-Orbit-Request-Id', $requestId)
         ->postJson('/api/v1/tools', [
             'node_id' => $node->id,
@@ -557,13 +557,13 @@ it('records pre-row tool failures safely without substituting the node subject',
         'name' => 'tool-failure-node',
         'status' => LifecycleStatus::Active,
         'public_ssh_host' => '192.0.2.34',
-        'wireguard_address' => '10.44.0.34',
+        'wireguard_ip' => '10.44.0.34',
     ]);
     $this->markAsGateway($node);
     app()->instance(ToolManagerRegistry::class, new ToolManagerRegistry([new Tests\Support\FakeToolManager]));
     $requestId = (string) Str::uuid();
     $this
-        ->withServerVariables(['REMOTE_ADDR' => $node->wireguard_address])
+        ->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip])
         ->withHeader('X-Orbit-Request-Id', $requestId)
         ->postJson('/api/v1/tools', ['node_id' => $node->id, 'manager' => 'unsupported', 'package' => 'jq'])
         ->assertStatus(422);
@@ -595,7 +595,7 @@ it('records retained failed tools as subjects with safe outcomes', function (): 
         'name' => 'tool-retained-node',
         'status' => LifecycleStatus::Active,
         'public_ssh_host' => '192.0.2.35',
-        'wireguard_address' => '10.44.0.35',
+        'wireguard_ip' => '10.44.0.35',
     ]);
     $this->markAsGateway($node);
     ToolManagerRecord::query()->create([
@@ -607,7 +607,7 @@ it('records retained failed tools as subjects with safe outcomes', function (): 
         'name' => 'other-tool-retained-node',
         'status' => LifecycleStatus::Active,
         'public_ssh_host' => '192.0.2.45',
-        'wireguard_address' => '10.44.0.45',
+        'wireguard_ip' => '10.44.0.45',
     ]);
     $otherManager = ToolManagerRecord::query()->create([
         'node_id' => $otherNode->id,
@@ -625,7 +625,7 @@ it('records retained failed tools as subjects with safe outcomes', function (): 
     app()->instance(ToolManagerRegistry::class, new ToolManagerRegistry([$fake]));
     $requestId = (string) Str::uuid();
     $this
-        ->withServerVariables(['REMOTE_ADDR' => $node->wireguard_address])
+        ->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip])
         ->withHeader('X-Orbit-Request-Id', $requestId)
         ->postJson('/api/v1/tools', ['node_id' => $node->id, 'manager' => 'apt', 'package' => 'jq'])
         ->assertStatus(502);
@@ -656,7 +656,7 @@ it('does not persist command result data from manager failures', function (): vo
         'name' => 'tool-redaction-node',
         'status' => LifecycleStatus::Active,
         'public_ssh_host' => '192.0.2.36',
-        'wireguard_address' => '10.44.0.36',
+        'wireguard_ip' => '10.44.0.36',
     ]);
     $this->markAsGateway($node);
     ToolManagerRecord::query()->create([
@@ -673,7 +673,7 @@ it('does not persist command result data from manager failures', function (): vo
     app()->instance(ToolManagerRegistry::class, new ToolManagerRegistry([$fake]));
     $requestId = (string) Str::uuid();
     $response = $this
-        ->withServerVariables(['REMOTE_ADDR' => $node->wireguard_address])
+        ->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip])
         ->withHeader('X-Orbit-Request-Id', $requestId)
         ->postJson('/api/v1/tools', ['node_id' => $node->id, 'manager' => 'apt', 'package' => 'jq'])
         ->assertStatus(502);
@@ -693,7 +693,7 @@ it('records a successful remove against the deleted tool snapshot', function ():
         'name' => 'tool-remove-node',
         'status' => LifecycleStatus::Active,
         'public_ssh_host' => '192.0.2.37',
-        'wireguard_address' => '10.44.0.37',
+        'wireguard_ip' => '10.44.0.37',
     ]);
     $this->markAsGateway($node);
     $manager = ToolManagerRecord::query()->create([
@@ -715,7 +715,7 @@ it('records a successful remove against the deleted tool snapshot', function ():
     $requestId = (string) Str::uuid();
 
     $this
-        ->withServerVariables(['REMOTE_ADDR' => $node->wireguard_address])
+        ->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip])
         ->withHeader('X-Orbit-Request-Id', $requestId)
         ->deleteJson("/api/v1/tools/{$originalId}")
         ->assertOk();
@@ -749,14 +749,14 @@ it('redacts unsupported values from invalid tool request activity', function ():
         'name' => 'tool-validation-node',
         'status' => LifecycleStatus::Active,
         'public_ssh_host' => '192.0.2.38',
-        'wireguard_address' => '10.44.0.38',
+        'wireguard_ip' => '10.44.0.38',
     ]);
     $this->markAsGateway($node);
     $requestId = (string) Str::uuid();
     $sentinel = 'RAW_TOOL_VALIDATION_SENTINEL';
 
     $response = $this
-        ->withServerVariables(['REMOTE_ADDR' => $node->wireguard_address])
+        ->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip])
         ->call(
             'POST',
             '/api/v1/tools',
@@ -801,7 +801,7 @@ it('records tool update outcomes with an exact safe projection', function (
         'name' => 'tool-update-node-'.$outcome,
         'status' => LifecycleStatus::Active,
         'public_ssh_host' => '192.0.2.39',
-        'wireguard_address' => '10.44.0.39',
+        'wireguard_ip' => '10.44.0.39',
     ]);
     $this->markAsGateway($node);
     $manager = ToolManagerRecord::query()->create([
@@ -826,7 +826,7 @@ it('records tool update outcomes with an exact safe projection', function (
     $requestId = (string) Str::uuid();
 
     $this
-        ->withServerVariables(['REMOTE_ADDR' => $node->wireguard_address])
+        ->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip])
         ->withHeader('X-Orbit-Request-Id', $requestId)
         ->postJson("/api/v1/tools/{$tool->id}/update")
         ->assertOk()
@@ -862,7 +862,7 @@ it('keeps failed update tools retained and redacted', function (): void {
         'name' => 'tool-update-failure-node',
         'status' => LifecycleStatus::Active,
         'public_ssh_host' => '192.0.2.40',
-        'wireguard_address' => '10.44.0.40',
+        'wireguard_ip' => '10.44.0.40',
     ]);
     $this->markAsGateway($node);
     $manager = ToolManagerRecord::query()->create([
@@ -884,7 +884,7 @@ it('keeps failed update tools retained and redacted', function (): void {
     $requestId = (string) Str::uuid();
 
     $this
-        ->withServerVariables(['REMOTE_ADDR' => $node->wireguard_address])
+        ->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip])
         ->withHeader('X-Orbit-Request-Id', $requestId)
         ->postJson("/api/v1/tools/{$tool->id}/update")
         ->assertStatus(502)
@@ -920,7 +920,7 @@ it('keeps failed remove tools retained and redacted', function (): void {
         'name' => 'tool-remove-failure-node',
         'status' => LifecycleStatus::Active,
         'public_ssh_host' => '192.0.2.41',
-        'wireguard_address' => '10.44.0.41',
+        'wireguard_ip' => '10.44.0.41',
     ]);
     $this->markAsGateway($node);
     $manager = ToolManagerRecord::query()->create([
@@ -943,7 +943,7 @@ it('keeps failed remove tools retained and redacted', function (): void {
     $requestId = (string) Str::uuid();
 
     $this
-        ->withServerVariables(['REMOTE_ADDR' => $node->wireguard_address])
+        ->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip])
         ->withHeader('X-Orbit-Request-Id', $requestId)
         ->deleteJson("/api/v1/tools/{$tool->id}")
         ->assertStatus(502)
@@ -989,6 +989,6 @@ function command_activity_doctor_node(string $name): Node
         'public_ssh_host' => "192.0.2.{$number}",
         'public_ssh_port' => 22,
         'user' => 'orbit',
-        'wireguard_address' => "10.44.0.{$number}",
+        'wireguard_ip' => "10.44.0.{$number}",
     ]);
 }

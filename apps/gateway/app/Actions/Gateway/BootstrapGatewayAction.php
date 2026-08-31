@@ -54,7 +54,7 @@ final readonly class BootstrapGatewayAction
                 'public_ssh_host' => $data->publicHost,
                 'public_ssh_port' => 22,
                 'user' => 'orbit',
-                'wireguard_address' => $data->wireguardAddress,
+                'wireguard_ip' => $data->wireguardIp,
                 'failed_step' => null,
                 'error_code' => null,
             ],
@@ -87,7 +87,7 @@ final readonly class BootstrapGatewayAction
             $node->update(['wireguard_public_key' => $wireGuardPublicKey]);
             $this->ensureCertificateAuthority();
             $this->vpn->converge($node, $data);
-            $this->web->converge("{$data->name}.{$data->domain}", $data->wireguardAddress);
+            $this->web->converge("{$data->name}.{$data->domain}", $data->wireguardIp);
         } catch (Throwable $exception) {
             $failure = $exception instanceof NodeProvisioningException
                 ? $exception

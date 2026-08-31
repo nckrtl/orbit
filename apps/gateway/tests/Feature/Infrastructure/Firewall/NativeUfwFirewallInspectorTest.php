@@ -105,7 +105,7 @@ it('fails closed for command errors and transport timeouts without redaction lea
 
 function inspector_rule(): FirewallRule
 {
-    $node = new Node(['platform' => 'linux', 'user' => 'nckrtl', 'wireguard_address' => '10.44.0.3']);
+    $node = new Node(['platform' => 'linux', 'user' => 'nckrtl', 'wireguard_ip' => '10.44.0.3']);
     $node->id = 7;
     $rule = new FirewallRule([
         'node_id' => 7,

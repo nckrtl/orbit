@@ -163,7 +163,7 @@ function metricsRuntimeModels(): array
 {
     $node = new Node([
         'name' => 'metrics-runtime',
-        'wireguard_address' => '10.44.0.3',
+        'wireguard_ip' => '10.44.0.3',
     ]);
     $node->id = 3;
     $assignment = new NodeRole;

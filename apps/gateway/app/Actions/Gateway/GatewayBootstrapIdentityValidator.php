@@ -22,11 +22,11 @@ final readonly class GatewayBootstrapIdentityValidator
             throw new InvalidArgumentException("Gateway public host [{$data->publicHost}] is invalid.");
         }
 
-        if (filter_var($data->wireguardAddress, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
-            throw new InvalidArgumentException("Gateway WireGuard address [{$data->wireguardAddress}] is invalid.");
+        if (filter_var($data->wireguardIp, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
+            throw new InvalidArgumentException("Gateway WireGuard address [{$data->wireguardIp}] is invalid.");
         }
 
-        $this->validateSubnet($data->wireguardSubnet, $data->wireguardAddress);
+        $this->validateSubnet($data->wireguardSubnet, $data->wireguardIp);
 
         if (filter_var($data->dnsServer, FILTER_VALIDATE_IP) === false) {
             throw new InvalidArgumentException("Gateway DNS server [{$data->dnsServer}] is invalid.");

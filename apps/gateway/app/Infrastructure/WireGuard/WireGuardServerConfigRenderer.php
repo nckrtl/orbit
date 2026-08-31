@@ -22,7 +22,7 @@ final readonly class WireGuardServerConfigRenderer
         foreach ($nodes->sortBy('id') as $node) {
             if (
                 $node->is($configuration->server)
-                || $node->wireguard_address === null
+                || $node->wireguard_ip === null
                 || $node->wireguard_public_key === null
             ) {
                 continue;
@@ -34,7 +34,7 @@ final readonly class WireGuardServerConfigRenderer
                 '[Peer]',
                 "# {$node->name}",
                 "PublicKey = {$node->wireguard_public_key}",
-                "AllowedIPs = {$node->wireguard_address}/32",
+                "AllowedIPs = {$node->wireguard_ip}/32",
             ];
         }
 

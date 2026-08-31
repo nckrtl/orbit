@@ -57,7 +57,7 @@ it('reports lifecycle and identity drift', function (): void {
             'node.lifecycle_not_active',
             'node.platform_mismatch',
             'node.architecture_mismatch',
-            'node.wireguard_address_mismatch',
+            'node.wireguard_ip_mismatch',
         ])
         ->and($report->issues[1]->kind->value)
         ->toBe('drift')

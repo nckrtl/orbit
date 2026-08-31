@@ -201,7 +201,7 @@ function metricsBaselineTopology(int $gatewayCount = 1, bool $metricsIsGateway =
         'platform' => 'linux',
         'public_ssh_host' => '192.0.2.3',
         'ssh_user' => 'orbit',
-        'wireguard_address' => '10.44.0.3',
+        'wireguard_ip' => '10.44.0.3',
     ]);
     $assignment = $metrics
         ->roles()
@@ -228,7 +228,7 @@ function metricsBaselineTopology(int $gatewayCount = 1, bool $metricsIsGateway =
             'platform' => 'linux',
             'public_ssh_host' => "192.0.2.{$index}",
             'ssh_user' => 'orbit',
-            'wireguard_address' => "10.44.0.{$index}",
+            'wireguard_ip' => "10.44.0.{$index}",
         ]);
         $gateway
             ->roles()

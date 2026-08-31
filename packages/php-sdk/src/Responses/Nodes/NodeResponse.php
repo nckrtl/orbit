@@ -21,11 +21,13 @@ final readonly class NodeResponse
         public string $publicSshHost,
         public int $publicSshPort,
         public string $user,
-        public ?string $wireguardAddress,
+        public ?string $wireguardIp,
         public array $roles,
         public string $requestId,
+        public ?int $clusterId = null,
         public ?string $platform = null,
         public ?string $architecture = null,
+        public ?string $lanIp = null,
         public ?string $sshHostFingerprint = null,
         public ?string $failedStep = null,
         public ?string $errorCode = null,
@@ -46,6 +48,7 @@ final readonly class NodeResponse
     ): self {
         return new self(
             id: is_int($data['id'] ?? null) ? $data['id'] : 0,
+            clusterId: is_int($data['cluster_id'] ?? null) ? $data['cluster_id'] : null,
             name: is_string($data['name'] ?? null) ? $data['name'] : '',
             status: is_string($data['status'] ?? null) ? $data['status'] : '',
             platform: is_string($data['platform'] ?? null) ? $data['platform'] : null,
@@ -54,7 +57,8 @@ final readonly class NodeResponse
             publicSshHost: is_string($data['public_ssh_host'] ?? null) ? $data['public_ssh_host'] : '',
             publicSshPort: is_int($data['public_ssh_port'] ?? null) ? $data['public_ssh_port'] : 0,
             user: is_string($data['user'] ?? null) && $data['user'] !== '' ? $data['user'] : 'orbit',
-            wireguardAddress: is_string($data['wireguard_address'] ?? null) ? $data['wireguard_address'] : null,
+            wireguardIp: is_string($data['wireguard_ip'] ?? null) ? $data['wireguard_ip'] : null,
+            lanIp: is_string($data['lan_ip'] ?? null) ? $data['lan_ip'] : null,
             wireguardPublicKey: is_string($data['wireguard_public_key'] ?? null)
                 ? $data['wireguard_public_key']
                 : null,
@@ -77,15 +81,13 @@ final readonly class NodeResponse
     }
 
     /**
-     * @return array<string, int|string|list<string>|null|array{
-     *     can_access: list<array{id: int, name: string}>,
-     *     accessible_by: list<array{id: int, name: string}>
-     * }|array{instance: array{path: string|null}|null, worktree: array{path: string|null}|null}>
+     * @return array<string, mixed>
      */
     public function toArray(): array
     {
         $data = [
             'id' => $this->id,
+            'cluster_id' => $this->clusterId,
             'name' => $this->name,
             'status' => $this->status,
             'platform' => $this->platform,
@@ -94,7 +96,8 @@ final readonly class NodeResponse
             'public_ssh_host' => $this->publicSshHost,
             'public_ssh_port' => $this->publicSshPort,
             'user' => $this->user,
-            'wireguard_address' => $this->wireguardAddress,
+            'wireguard_ip' => $this->wireguardIp,
+            'lan_ip' => $this->lanIp,
             'wireguard_public_key' => $this->wireguardPublicKey,
             'wireguard_endpoint_override' => $this->wireguardEndpointOverride,
             'dns_server_override' => $this->dnsServerOverride,

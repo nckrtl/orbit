@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\Nodes\UpdateNodeSettingsRequest;
-use Orbit\Sdk\Responses\Nodes\InstanceSettings;
+use Orbit\Sdk\Responses\Nodes\AppsSettings;
 use Orbit\Sdk\Responses\Nodes\NodeResponse;
 use Saloon\Enums\Method;
 use Saloon\Http\Faking\MockClient;
@@ -22,8 +22,7 @@ it('sends a partial settings patch and preserves omitted members', function (): 
                 'user' => 'orbit',
                 'roles' => ['app-dev'],
                 'settings' => [
-                    'instance' => ['path' => '/srv/orbit/instances'],
-                    'worktree' => ['path' => '/srv/orbit/worktrees'],
+                    'apps' => ['path' => '/srv/orbit/apps'],
                 ],
             ],
             'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844'],
@@ -33,8 +32,8 @@ it('sends a partial settings patch and preserves omitted members', function (): 
     $connector->withMockClient($mockClient);
     $request = new UpdateNodeSettingsRequest(
         nodeId: 2,
-        hasInstance: true,
-        instance: new InstanceSettings('/srv/orbit/instances'),
+        hasApps: true,
+        apps: new AppsSettings('/srv/orbit/apps'),
     );
 
     $response = $connector->send($request)->dto();
@@ -45,24 +44,22 @@ it('sends a partial settings patch and preserves omitted members', function (): 
         ->toBe('/api/v1/nodes/2/settings')
         ->and($request->body()->all())
         ->toBe([
-            'instance' => ['path' => '/srv/orbit/instances'],
+            'apps' => ['path' => '/srv/orbit/apps'],
         ])
         ->and($response)
         ->toBeInstanceOf(NodeResponse::class)
-        ->and($response->settings?->instance?->path)
-        ->toBe('/srv/orbit/instances')
-        ->and($response->settings?->worktree?->path)
-        ->toBe('/srv/orbit/worktrees');
+        ->and($response->settings?->apps?->path)
+        ->toBe('/srv/orbit/apps');
 });
 
 it('sends an explicit null nested member to unset a setting', function (): void {
     $request = new UpdateNodeSettingsRequest(
         nodeId: 2,
-        hasWorktree: true,
-        worktree: null,
+        hasApps: true,
+        apps: null,
     );
 
     expect($request->body()->all())->toBe([
-        'worktree' => null,
+        'apps' => null,
     ]);
 });

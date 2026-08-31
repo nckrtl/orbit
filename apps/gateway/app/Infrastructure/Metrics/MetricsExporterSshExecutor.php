@@ -636,7 +636,7 @@ final readonly class MetricsExporterSshExecutor implements MetricsExporterRuntim
 
     private function address(Node $node): string
     {
-        $address = $node->wireguard_address;
+        $address = $node->wireguard_ip;
 
         if (! is_string($address) || filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
             throw new ResourceOperationException(

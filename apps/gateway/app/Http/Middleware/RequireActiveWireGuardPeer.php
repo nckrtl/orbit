@@ -25,7 +25,7 @@ final class RequireActiveWireGuardPeer
         }
 
         $node = Node::query()
-            ->where('wireguard_address', $remoteAddress)
+            ->where('wireguard_ip', $remoteAddress)
             ->where('status', LifecycleStatus::Active->value)
             ->first();
 

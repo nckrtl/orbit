@@ -331,7 +331,7 @@ function middleware_node(string $name): Node
         'name' => $name,
         'status' => LifecycleStatus::Active,
         'public_ssh_host' => $name.'.example.test',
-        'wireguard_address' => '10.44.0.'.(Node::query()->count() + 2),
+        'wireguard_ip' => '10.44.0.'.(Node::query()->count() + 2),
     ]);
 }
 
@@ -387,7 +387,7 @@ function middleware_tool(string $package, ?Node $toolNode = null, ?Node $manager
 function middleware_get(Tests\TestCase $test, Node $consumer, string $uri): Illuminate\Testing\TestResponse
 {
     return $test
-        ->withServerVariables(['REMOTE_ADDR' => $consumer->wireguard_address])
+        ->withServerVariables(['REMOTE_ADDR' => $consumer->wireguard_ip])
         ->getJson($uri);
 }
 
@@ -399,7 +399,7 @@ function middleware_post(
     array $input,
 ): Illuminate\Testing\TestResponse {
     return $test
-        ->withServerVariables(['REMOTE_ADDR' => $consumer->wireguard_address])
+        ->withServerVariables(['REMOTE_ADDR' => $consumer->wireguard_ip])
         ->postJson($uri, $input);
 }
 

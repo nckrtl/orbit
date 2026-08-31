@@ -155,7 +155,7 @@ function metricsPublicationNode(string $name, string $address): Node
 {
     return new Node([
         'name' => $name,
-        'wireguard_address' => $address,
+        'wireguard_ip' => $address,
     ]);
 }
 

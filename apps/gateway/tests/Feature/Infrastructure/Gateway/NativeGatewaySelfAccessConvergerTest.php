@@ -141,7 +141,7 @@ function gateway_self_access_node(): Node
     return new Node([
         'name' => 'gateway',
         'user' => 'orbit',
-        'wireguard_address' => '10.44.0.1',
+        'wireguard_ip' => '10.44.0.1',
     ]);
 }
 

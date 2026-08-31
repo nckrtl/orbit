@@ -10,6 +10,7 @@ use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\Requests\Nodes\ShowNodeRequest;
 use Orbit\Sdk\Responses\Nodes\NodeResponse;
 
+/** @mago-expect lint:cyclomatic-complexity Human output renders each optional Node identity field defensively. */
 final class ShowNodeCommand extends GatewayCommand
 {
     #[\Override]
@@ -59,7 +60,9 @@ final class ShowNodeCommand extends GatewayCommand
         $this->info("{$node->name}: {$node->status}");
         $this->line("Roles: {$roles}");
         $this->line('SSH: '.NodeOutput::sshEndpoint($node));
-        $this->line('WireGuard: '.($node->wireguardAddress ?? '-'));
+        $this->line('Cluster: '.($node->clusterId ?? '-'));
+        $this->line('WireGuard: '.($node->wireguardIp ?? '-'));
+        $this->line('LAN: '.($node->lanIp ?? '-'));
         $this->line('WireGuard public key: '.($node->wireguardPublicKey ?? '-'));
         $this->line('WireGuard endpoint override: '.($node->wireguardEndpointOverride ?? '-'));
         $this->line('DNS server override: '.($node->dnsServerOverride ?? '-'));

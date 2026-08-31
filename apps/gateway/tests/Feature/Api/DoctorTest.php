@@ -56,7 +56,7 @@ describe('Doctor API', function (): void {
         bind_doctor_api_inspector(new NodeInspectionData(true, 'linux', 'x86_64', true));
 
         $response = $this
-            ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
+            ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
             ->postJson('/api/v1/doctor', [
                 'node_id' => $selected->id,
                 'families' => ['firewall', 'role', 'node'],
@@ -77,7 +77,7 @@ describe('Doctor API', function (): void {
         $caller->accessibleNodes()->attach($selected->id);
 
         $this
-            ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
+            ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
             ->postJson('/api/v1/doctor', ['families' => $families])
             ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation.failed');
@@ -95,7 +95,7 @@ describe('Doctor API', function (): void {
         $caller->accessibleNodes()->attach($selected->id);
 
         $response = $this
-            ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
+            ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
             ->postJson('/api/v1/doctor', ['families' => ['unknown']])
             ->assertUnprocessable();
 
@@ -153,7 +153,7 @@ describe('Doctor API', function (): void {
         $caller->accessibleNodes()->attach($selected->id);
 
         $this
-            ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
+            ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
             ->postJson('/api/v1/doctor', ['node_id' => $nodeId, 'families' => ['node']])
             ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation.failed');
@@ -170,7 +170,7 @@ describe('Doctor API', function (): void {
         $caller->accessibleNodes()->attach($selected->id);
 
         $this
-            ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
+            ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
             ->postJson('/api/v1/doctor', ['node_id' => '1', 'families' => ['node']])
             ->assertUnprocessable()
             ->assertJsonPath('error.details.node_id.0', 'The node_id field must be an integer.');
@@ -183,7 +183,7 @@ describe('Doctor API', function (): void {
         $inspector = bind_doctor_api_inspector(new NodeInspectionData(true, 'linux', 'x86_64', true));
 
         $this
-            ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
+            ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
             ->postJson('/api/v1/doctor', ['node_id' => 999_999, 'families' => ['node']])
             ->assertNotFound()
             ->assertJsonPath('error.code', 'http.404');
@@ -199,7 +199,7 @@ describe('Doctor API', function (): void {
         $inspector = bind_doctor_api_inspector(new NodeInspectionData(true, 'linux', 'x86_64', true));
 
         $this
-            ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
+            ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
             ->postJson('/api/v1/doctor', ['node_id' => $inaccessible->id, 'families' => ['node']])
             ->assertForbidden()
             ->assertJsonPath('error.code', 'node_access.required')
@@ -212,14 +212,14 @@ describe('Doctor API', function (): void {
         $caller = doctor_api_node('caller');
 
         $this
-            ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
+            ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
             ->postJson('/api/v1/doctor', ['families' => ['node']])
             ->assertForbidden()
             ->assertJsonPath('error.code', 'node_access.required');
     });
 
     it('returns 403 for an unknown or inactive WireGuard peer', function (?Node $caller): void {
-        $remoteAddress = $caller?->wireguard_address ?? '10.44.0.254';
+        $remoteAddress = $caller?->wireguard_ip ?? '10.44.0.254';
 
         $this
             ->withServerVariables(['REMOTE_ADDR' => $remoteAddress])
@@ -242,7 +242,7 @@ describe('Doctor API', function (): void {
         bind_doctor_api_inspector($inspection);
 
         $response = $this
-            ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_address])
+            ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
             ->postJson('/api/v1/doctor', ['node_id' => $selected->id, 'families' => ['node']])
             ->assertOk();
 
@@ -295,7 +295,7 @@ function doctor_api_node(
         'public_ssh_host' => "192.0.2.{$number}",
         'public_ssh_port' => 22,
         'user' => 'orbit',
-        'wireguard_address' => "10.44.0.{$number}",
+        'wireguard_ip' => "10.44.0.{$number}",
     ]);
 }
 
@@ -316,7 +316,7 @@ function doctor_api_raw(
     $server = [
         'CONTENT_TYPE' => 'application/json',
         'HTTP_ACCEPT' => 'application/json',
-        'REMOTE_ADDR' => $caller->wireguard_address,
+        'REMOTE_ADDR' => $caller->wireguard_ip,
     ];
 
     if ($requestId !== null) {

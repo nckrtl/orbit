@@ -4,18 +4,16 @@ declare(strict_types=1);
 
 namespace App\Support;
 
-use Orbit\Sdk\Responses\Nodes\InstanceSettings;
+use Orbit\Sdk\Responses\Nodes\AppsSettings;
 use Orbit\Sdk\Responses\Nodes\NodeSettings;
-use Orbit\Sdk\Responses\Nodes\WorktreeSettings;
 
-/** @mago-expect lint:cyclomatic-complexity Closed setting-path parsing stays beside the typed DTO mapping. */
 final readonly class NodeSettingOptions
 {
     /** @var list<string> */
-    private const array KNOWN = ['instance.path', 'worktree.path'];
+    private const array KNOWN = ['apps.path'];
 
     /**
-     * @return array{ok: true, provided: bool, body: array{instance?: array{path: string}|null, worktree?: array{path: string}|null}}|array{ok: false, code: string, message: string}
+     * @return array{ok: true, provided: bool, body: array{apps?: array{path: string}|null}}|array{ok: false, code: string, message: string}
      */
     public static function parse(mixed $options): array
     {
@@ -31,16 +29,16 @@ final readonly class NodeSettingOptions
                 return self::invalid();
             }
 
-            $separator = strpos($option, ':');
+            $separator = strpos(haystack: $option, needle: ':');
 
             if ($separator === false || $separator === 0) {
                 return self::invalid();
             }
 
-            $key = substr($option, 0, $separator);
-            $value = substr($option, $separator + 1);
+            $key = substr(string: $option, offset: 0, length: $separator);
+            $value = substr(string: $option, offset: $separator + 1);
 
-            if (! in_array($key, self::KNOWN, true)) {
+            if (! in_array($key, self::KNOWN, strict: true)) {
                 return [
                     'ok' => false,
                     'code' => 'node.setting_unknown',
@@ -59,28 +57,21 @@ final readonly class NodeSettingOptions
             $seen[$key] = true;
             $nested = $value === '' ? null : ['path' => $value];
 
-            if ($key === 'instance.path') {
-                $body['instance'] = $nested;
-
-                continue;
-            }
-
-            $body['worktree'] = $nested;
+            $body['apps'] = $nested;
         }
 
         return ['ok' => true, 'provided' => true, 'body' => $body];
     }
 
-    /** @param array{instance?: array{path: string}|null, worktree?: array{path: string}|null} $body */
+    /** @param array{apps?: array{path: string}|null} $body */
     public static function settings(array $body): NodeSettings
     {
         return new NodeSettings(
-            instance: array_key_exists('instance', $body) ? self::instance($body['instance']) : null,
-            worktree: array_key_exists('worktree', $body) ? self::worktree($body['worktree']) : null,
+            apps: array_key_exists('apps', $body) ? self::apps($body['apps']) : null,
         );
     }
 
-    public static function instance(mixed $value): ?InstanceSettings
+    public static function apps(mixed $value): ?AppsSettings
     {
         if (! is_array($value)) {
             return null;
@@ -88,18 +79,7 @@ final readonly class NodeSettingOptions
 
         $path = $value['path'] ?? null;
 
-        return new InstanceSettings(is_string($path) ? $path : null);
-    }
-
-    public static function worktree(mixed $value): ?WorktreeSettings
-    {
-        if (! is_array($value)) {
-            return null;
-        }
-
-        $path = $value['path'] ?? null;
-
-        return new WorktreeSettings(is_string($path) ? $path : null);
+        return new AppsSettings(path: is_string($path) ? $path : null);
     }
 
     /** @return array{ok: false, code: string, message: string} */

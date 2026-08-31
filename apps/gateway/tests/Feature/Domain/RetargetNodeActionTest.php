@@ -105,7 +105,7 @@ describe(RetargetNodeAction::class, function (): void {
             'public_ssh_host' => '192.0.2.10',
             'public_ssh_port' => 2222,
             'user' => 'nckrtl',
-            'wireguard_address' => '10.44.0.3',
+            'wireguard_ip' => '10.44.0.3',
             'wireguard_endpoint_override' => '198.51.100.10:51820',
             'dns_server_override' => '10.44.0.1',
             'ssh_host_fingerprint' => 'SHA256:pinned',
@@ -132,7 +132,7 @@ describe(RetargetNodeAction::class, function (): void {
             'public_ssh_host',
             'public_ssh_port',
             'user',
-            'wireguard_address',
+            'wireguard_ip',
             'wireguard_endpoint_override',
             'dns_server_override',
         ]))
@@ -144,7 +144,7 @@ describe(RetargetNodeAction::class, function (): void {
                 'public_ssh_host' => '198.51.100.25',
                 'public_ssh_port' => 2202,
                 'user' => 'nckrtl',
-                'wireguard_address' => '10.44.0.3',
+                'wireguard_ip' => '10.44.0.3',
                 'wireguard_endpoint_override' => '198.51.100.10:51820',
                 'dns_server_override' => '10.44.0.1',
             ])
@@ -279,7 +279,7 @@ describe(RetargetNodeAction::class, function (): void {
             'status' => LifecycleStatus::Active,
             'public_ssh_host' => '192.0.2.10',
             'public_ssh_port' => 22,
-            'wireguard_address' => '10.44.0.3',
+            'wireguard_ip' => '10.44.0.3',
             'ssh_host_fingerprint' => 'SHA256:pinned',
         ]);
 
@@ -314,7 +314,7 @@ describe(RetargetNodeAction::class, function (): void {
             'name' => 'app-dev',
             'status' => LifecycleStatus::Active,
             'public_ssh_host' => '192.0.2.10',
-            'wireguard_address' => '10.44.0.3',
+            'wireguard_ip' => '10.44.0.3',
             'ssh_host_fingerprint' => 'SHA256:pinned',
         ]);
 
@@ -371,7 +371,7 @@ describe(RetargetNodeAction::class, function (): void {
                 'public_ssh_host' => '192.0.2.10',
                 'public_ssh_port' => 22,
                 'user' => 'nckrtl',
-                'wireguard_address' => '10.44.0.3',
+                'wireguard_ip' => '10.44.0.3',
                 'ssh_host_fingerprint' => 'SHA256:pinned',
             ]);
             $this->node
@@ -398,12 +398,12 @@ describe(RetargetNodeAction::class, function (): void {
             /** @var SshExecutor&object{calls:list<array{connection:SshConnection,command:RemoteCommand}>} $ssh */
             $ssh = app(SshExecutor::class);
 
-            expect($retargeted->only(['status', 'public_ssh_host', 'public_ssh_port', 'wireguard_address']))
+            expect($retargeted->only(['status', 'public_ssh_host', 'public_ssh_port', 'wireguard_ip']))
                 ->toBe([
                     'status' => LifecycleStatus::Active,
                     'public_ssh_host' => '198.51.100.25',
                     'public_ssh_port' => 2202,
-                    'wireguard_address' => '10.44.0.3',
+                    'wireguard_ip' => '10.44.0.3',
                 ])
                 ->and($scanner->scans)
                 ->toBe([['host' => '10.44.0.3', 'port' => 22]])
@@ -515,7 +515,7 @@ describe(RetargetNodeAction::class, function (): void {
         });
 
         it('fails closed when the node has no wireguard address', function (): void {
-            $this->node->update(['wireguard_address' => null]);
+            $this->node->update(['wireguard_ip' => null]);
 
             expect(fn () => app(RetargetNodeAction::class)->execute(new RetargetNodeData(
                 name: 'app-dev',

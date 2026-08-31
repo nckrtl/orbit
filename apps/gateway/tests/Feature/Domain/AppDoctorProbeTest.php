@@ -151,7 +151,7 @@ function app_probe_node(): Node
         'public_ssh_host' => "192.0.2.{$number}",
         'public_ssh_port' => 22,
         'user' => 'orbit',
-        'wireguard_address' => "10.44.0.{$number}",
+        'wireguard_ip' => "10.44.0.{$number}",
     ]);
 }
 

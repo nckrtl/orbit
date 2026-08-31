@@ -22,7 +22,7 @@ it('activates the gateway WireGuard address through a validated atomic server co
     $node = Node::query()->create([
         'name' => 'gateway',
         'public_ssh_host' => '85.9.218.89',
-        'wireguard_address' => '10.44.0.1',
+        'wireguard_ip' => '10.44.0.1',
     ]);
 
     try {
@@ -281,7 +281,7 @@ it('does not reapply exact managed gateway firewall rules', function (): void {
     $node = Node::query()->create([
         'name' => 'gateway',
         'public_ssh_host' => '85.9.218.89',
-        'wireguard_address' => '10.44.0.1',
+        'wireguard_ip' => '10.44.0.1',
     ]);
 
     try {
@@ -313,7 +313,7 @@ it('keeps SSH on WireGuard and removes public recovery after gateway VPN converg
     $node = Node::query()->create([
         'name' => 'gateway',
         'public_ssh_host' => '85.9.218.89',
-        'wireguard_address' => '10.44.0.1',
+        'wireguard_ip' => '10.44.0.1',
     ]);
 
     try {
@@ -352,7 +352,7 @@ it('verifies public SSH recovery before enabling and converging an inactive UFW 
     $node = Node::query()->create([
         'name' => 'gateway',
         'public_ssh_host' => '85.9.218.89',
-        'wireguard_address' => '10.44.0.1',
+        'wireguard_ip' => '10.44.0.1',
     ]);
 
     try {
@@ -408,7 +408,7 @@ it('refuses to enable inactive UFW when the protected stored recovery rule is mi
     $node = Node::query()->create([
         'name' => 'gateway',
         'public_ssh_host' => '85.9.218.89',
-        'wireguard_address' => '10.44.0.1',
+        'wireguard_ip' => '10.44.0.1',
     ]);
 
     try {
@@ -444,7 +444,7 @@ it('fails closed before mutating inactive UFW when the stored VPN comment has a 
     $node = Node::query()->create([
         'name' => 'gateway',
         'public_ssh_host' => '85.9.218.89',
-        'wireguard_address' => '10.44.0.1',
+        'wireguard_ip' => '10.44.0.1',
     ]);
 
     try {
@@ -475,7 +475,7 @@ it('limits private DNS to the WireGuard and explicit private interfaces', functi
     $node = Node::query()->create([
         'name' => 'gateway',
         'public_ssh_host' => '85.9.218.89',
-        'wireguard_address' => '10.44.0.1',
+        'wireguard_ip' => '10.44.0.1',
     ]);
 
     try {
@@ -531,7 +531,7 @@ it('fails when the active firewall does not expose every managed rule after conv
     $node = Node::query()->create([
         'name' => 'gateway',
         'public_ssh_host' => '85.9.218.89',
-        'wireguard_address' => '10.44.0.1',
+        'wireguard_ip' => '10.44.0.1',
     ]);
 
     try {
@@ -552,7 +552,7 @@ it('does not accept prefixed or suffixed firewall comments as managed rules', fu
     $node = Node::query()->create([
         'name' => 'gateway',
         'public_ssh_host' => '85.9.218.89',
-        'wireguard_address' => '10.44.0.1',
+        'wireguard_ip' => '10.44.0.1',
     ]);
 
     try {
@@ -573,7 +573,7 @@ it('fails closed before mutating UFW when the VPN comment identifies a broader r
     $node = Node::query()->create([
         'name' => 'gateway',
         'public_ssh_host' => '85.9.218.89',
-        'wireguard_address' => '10.44.0.1',
+        'wireguard_ip' => '10.44.0.1',
     ]);
 
     try {
@@ -604,7 +604,7 @@ it('reports the bounded dnsmasq journal tail when the managed restart fails', fu
     $node = Node::query()->create([
         'name' => 'gateway',
         'public_ssh_host' => '85.9.218.89',
-        'wireguard_address' => '10.44.0.1',
+        'wireguard_ip' => '10.44.0.1',
     ]);
 
     try {
@@ -629,7 +629,7 @@ it('does not touch UFW when dnsmasq convergence fails and includes rollback', fu
     $node = Node::query()->create([
         'name' => 'gateway',
         'public_ssh_host' => '85.9.218.89',
-        'wireguard_address' => '10.44.0.1',
+        'wireguard_ip' => '10.44.0.1',
     ]);
 
     try {
@@ -675,7 +675,7 @@ it('does not replace or start the gateway WireGuard service when validation fail
     $node = Node::query()->create([
         'name' => 'gateway',
         'public_ssh_host' => '85.9.218.89',
-        'wireguard_address' => '10.44.0.1',
+        'wireguard_ip' => '10.44.0.1',
     ]);
 
     try {
@@ -714,7 +714,7 @@ it('keeps live VPN and forwarding configs untouched when forwarding validation f
     $node = Node::query()->create([
         'name' => 'gateway',
         'public_ssh_host' => '85.9.218.89',
-        'wireguard_address' => '10.44.0.1',
+        'wireguard_ip' => '10.44.0.1',
     ]);
 
     try {
@@ -767,7 +767,7 @@ it('restores and restarts the previous gateway WireGuard config when activation 
     $node = Node::query()->create([
         'name' => 'gateway',
         'public_ssh_host' => '85.9.218.89',
-        'wireguard_address' => '10.44.0.1',
+        'wireguard_ip' => '10.44.0.1',
     ]);
 
     try {
@@ -887,7 +887,7 @@ function gateway_bootstrap_data(?string $privateInterface = null): BootstrapGate
 {
     return new BootstrapGatewayData(
         publicHost: '85.9.218.89',
-        wireguardAddress: '10.44.0.1',
+        wireguardIp: '10.44.0.1',
         wireguardSubnet: '10.44.0.0/24',
         wireguardEndpoint: '85.9.218.89:51820',
         dnsServer: '10.44.0.1',

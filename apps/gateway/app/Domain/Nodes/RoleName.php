@@ -8,6 +8,7 @@ enum RoleName: string
 {
     case Gateway = 'gateway';
     case Vpn = 'vpn';
+    case Router = 'router';
     case AppDev = 'app-dev';
     case AppProd = 'app-prod';
     case Metrics = 'metrics';
