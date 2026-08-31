@@ -208,9 +208,12 @@ case "$criterion" in
     app_dev=$(node_id app-dev)
     report=$(orbit doctor --node="$app_dev" --family=role --json)
     [[ "$(echo "$report" | json_get healthy)" == true ]] || fail "Router role Doctor report was not healthy: $report"
-    php /home/orbit/orbit/apps/gateway/vendor/bin/pest \
-      /home/orbit/orbit/apps/gateway/tests/Unit/Architecture/DoctorModelCoverageTest.php \
-      --colors=never >/dev/null
+    (
+      cd /home/orbit/orbit/apps/gateway
+      php vendor/bin/pest tests/Unit/Architecture/DoctorModelCoverageTest.php \
+        --no-tia \
+        --colors=never >/dev/null
+    )
     echo "criterion 11: Doctor partition and active Router projection are healthy"
     ;;
   12)
