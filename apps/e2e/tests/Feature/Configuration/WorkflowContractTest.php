@@ -47,9 +47,11 @@ it('keeps feature preflight lightweight and independently reviewed', function ()
         'fresh correction',
         'Repeat with fresh agents until',
         'Never approve a plan you authored.',
+        "unchanged Todo Linear issue that satisfies Orbit's admission gate",
     ] as $needle) {
         expect($reviewer)->toContain($needle);
     }
+    expect($reviewer)->not->toContain('unchanged Ready issue');
 });
 
 it('requires a passed preflight before one implementer starts', function () use ($read): void {
