@@ -109,9 +109,11 @@ final readonly class StandbyGeneration
         return [
             'schema' => $this->manifestSchema,
             'id' => $this->id,
-            ...($this->manifestSchema === self::SCHEMA
-                ? ['standby_namespace' => $this->standbyNamespace]
-                : []),
+            ...(
+                $this->manifestSchema === self::SCHEMA
+                    ? ['standby_namespace' => $this->standbyNamespace]
+                    : []
+            ),
             'main_sha' => $this->mainSha,
             'snapshots' => $this->snapshots,
             'prepared_fingerprint' => $this->preparedFingerprint,

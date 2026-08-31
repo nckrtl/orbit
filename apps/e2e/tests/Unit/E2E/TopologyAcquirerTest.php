@@ -126,8 +126,13 @@ it('refuses acquisition from a schema 4 generation before creating an attempt', 
     try {
         $paths = new StatePaths(temporaryPath('orbit-legacy-acquisition-state-', 4));
         $state = new AtomicJsonStore($paths);
-        $manifests = new StandbyManifestStore($state, $paths, new IncusHost(pool: 'orbit-e2e'));
-        $manifests->promote(legacyAcquisitionGeneration());
+        $state->write('standby/promoted.json', legacyAcquisitionGeneration()->toArray());
+        $manifests = new StandbyManifestStore(
+            $state,
+            $paths,
+            new IncusHost(pool: 'orbit-e2e'),
+            StandbyIdentity::primary(),
+        );
         $request = new TopologyRequest('ORB-4', $fixture['worktree']);
 
         expect(

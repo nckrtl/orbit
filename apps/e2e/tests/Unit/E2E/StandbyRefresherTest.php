@@ -701,9 +701,10 @@ function promoteLegacyRefreshGeneration(array $fixture): StandbyGeneration
     $legacy = $current->toArray();
     $legacy['schema'] = StandbyGeneration::LEGACY_SCHEMA;
     $legacy['prepared_schema'] = 1;
+    unset($legacy['standby_namespace']);
     unset($legacy['topology']['assignments']);
     $generation = StandbyGeneration::fromArray($legacy);
-    $fixture['manifests']->promote($generation);
+    $fixture['state']->write('standby/promoted.json', $generation->toArray());
 
     return $generation;
 }

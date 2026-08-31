@@ -132,18 +132,34 @@ describe('feature topology mounts', function () {
 });
 
 describe('feature topology generations', function () {
-    it('round-trips an unbound schema-4 generation without changing its schema', function () {
+    it('round-trips an unbound prior generation without changing its schema', function (
+        int $schema,
+        bool $hasAssignments,
+    ) {
         $value = mountedTopologyFixture(false)->toArray();
-        $value['generation']['schema'] = 4;
+        $value['generation']['schema'] = $schema;
         unset($value['generation']['standby_namespace']);
+        if (! $hasAssignments) {
+            $value['generation']['prepared_schema'] = 1;
+            unset($value['generation']['topology']['assignments']);
+        }
         $topology = FeatureTopology::fromArray($value);
 
         $serialized = $topology->toArray();
         $reloaded = FeatureTopology::fromArray($serialized);
 
-        expect($serialized['generation'])->toBe($value['generation']);
-        expect($reloaded->generation->standbyNamespace)->toBeNull();
-    });
+        expect($serialized['generation'])
+            ->toBe($value['generation'])
+            ->and($reloaded->generation->manifestSchema)
+            ->toBe($schema)
+            ->and($reloaded->generation->topologyAssignments !== null)
+            ->toBe($hasAssignments)
+            ->and($reloaded->generation->standbyNamespace)
+            ->toBeNull();
+    })->with([
+        'schema 4 without assignments' => [StandbyGeneration::LEGACY_SCHEMA, false],
+        'schema 5 with assignments' => [StandbyGeneration::ASSIGNMENT_SCHEMA, true],
+    ]);
 });
 
 describe('mount paths', function () {

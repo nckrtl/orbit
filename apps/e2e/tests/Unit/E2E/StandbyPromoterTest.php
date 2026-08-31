@@ -392,10 +392,11 @@ describe('StandbyPromoter', function (): void {
         $current = $fixture['manifests']->promoted();
         assert($current !== null);
         $legacy = $current->toArray();
-        $legacy['schema'] = 4;
+        $legacy['schema'] = StandbyGeneration::LEGACY_SCHEMA;
         $legacy['prepared_schema'] = 1;
+        unset($legacy['standby_namespace']);
         unset($legacy['topology']['assignments']);
-        $fixture['manifests']->promote(\App\E2E\Value\StandbyGeneration::fromArray($legacy));
+        new AtomicJsonStore($fixture['paths'])->write('standby/promoted.json', $legacy);
         $events = [];
         fakePromotionHost($fixture['target'], $events);
 
@@ -484,9 +485,11 @@ describe('StandbyPromoter', function (): void {
         $fixture = promotableFixture();
         $legacy = $fixture['manifests']->promoted()?->toArray();
         assert(is_array($legacy));
-        $legacy['schema'] = 4;
+        $legacy['schema'] = StandbyGeneration::LEGACY_SCHEMA;
         $legacy['id'] = 'legacy-generation';
+        $legacy['prepared_schema'] = 1;
         unset($legacy['standby_namespace']);
+        unset($legacy['topology']['assignments']);
         new AtomicJsonStore($fixture['paths'])->write('standby/generations/legacy-generation.json', $legacy);
         $events = [];
         fakePromotionHost($fixture['target'], $events);

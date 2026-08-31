@@ -90,25 +90,11 @@ describe('StandbyManifestStore', function () {
             ->toBeFalse();
     });
 
-    it('keeps an exact legacy manifest readable as unbound state', function () {
+    it('keeps an exact schema 5 manifest readable as unbound state', function () {
         $paths = new StatePaths(temporaryPath('orbit-standby-', 4));
         $json = new AtomicJsonStore($paths);
-        $legacy = new StandbyGeneration(
-            'g1',
-            str_repeat('a', 40),
-            ['gateway' => 'main-g1', 'app-dev' => 'main-g1', 'app-prod' => 'main-g1'],
-            str_repeat('b', 64),
-            str_repeat('c', 64),
-            new LaravelRelease('v13.10.1', '5aad4ddf34d5e21dfe6b4c07eeac67d5bd5e08b0'),
-            str_repeat('d', 64),
-            1,
-            'ubuntu-26.04-amd64-v1',
-            'orbit-base-ubuntu-26.04-runtime',
-            'gateway_app-dev_app-prod',
-            ['gateway', 'app-dev', 'app-prod'],
-            ['gateway', 'app-dev'],
-        )->toArray();
-        $legacy['schema'] = 4;
+        $legacy = standbyPruneGeneration('g1')->toArray();
+        $legacy['schema'] = StandbyGeneration::ASSIGNMENT_SCHEMA;
         unset($legacy['standby_namespace']);
         $json->write('standby/promoted.json', $legacy);
         $store = new StandbyManifestStore($json, $paths, new IncusHost, StandbyIdentity::live());
@@ -119,7 +105,11 @@ describe('StandbyManifestStore', function () {
             ->not
             ->toBeNull()
             ->and($generation?->standbyNamespace)
-            ->toBeNull();
+            ->toBeNull()
+            ->and($generation?->topologyAssignments)
+            ->toBe(TopologyProfile::ASSIGNMENTS)
+            ->and($generation?->toArray())
+            ->toBe($legacy);
     });
 
     it('refuses to persist a generation owned by another standby namespace', function () {
@@ -132,14 +122,13 @@ describe('StandbyManifestStore', function () {
             str_repeat('c', 64),
             new LaravelRelease('v13.10.1', '5aad4ddf34d5e21dfe6b4c07eeac67d5bd5e08b0'),
             str_repeat('d', 64),
-            1,
+            2,
             'ubuntu-26.04-amd64-v1',
             'orbit-base-ubuntu-26.04-runtime',
             'gateway_app-dev_app-prod',
             ['gateway', 'app-dev', 'app-prod'],
             ['gateway', 'app-dev'],
-            null,
-            '',
+            standbyNamespace: '',
         );
         $store = new StandbyManifestStore(
             new AtomicJsonStore($paths),
@@ -168,6 +157,7 @@ describe('StandbyManifestStore', function () {
                 'gateway_app-dev_app-prod',
                 ['gateway', 'app-dev', 'app-prod'],
                 ['gateway', 'app-dev'],
+                standbyNamespace: '',
             ),
         )
             ->toThrow(InvalidArgumentException::class);
@@ -192,6 +182,7 @@ describe('StandbyManifestStore', function () {
         $legacy = $generation->toArray();
         $legacy['schema'] = 4;
         $legacy['prepared_schema'] = 1;
+        unset($legacy['standby_namespace']);
         unset($legacy['topology']['assignments']);
         $json->write('standby/promoted.json', $legacy);
 
@@ -217,8 +208,10 @@ describe('StandbyManifestStore', function () {
             $json->write("standby/generations/{$item->id}.json", $item->toArray());
         }
         $legacy = standbyPruneGeneration('g0')->toArray();
-        $legacy['schema'] = 4;
+        $legacy['schema'] = StandbyGeneration::LEGACY_SCHEMA;
+        $legacy['prepared_schema'] = 1;
         unset($legacy['standby_namespace']);
+        unset($legacy['topology']['assignments']);
         $json->write('standby/generations/g0.json', $legacy);
         pinnedTopologyState($pinned);
 
@@ -258,8 +251,7 @@ describe('StandbyManifestStore', function () {
             'gateway_app-dev_app-prod',
             ['gateway', 'app-dev', 'app-prod'],
             ['gateway', 'app-dev'],
-            null,
-            '',
+            standbyNamespace: '',
         );
         $paths->ensureParent($collection.'-placeholder');
         file_put_contents($paths->path($collection), 'not a directory');
@@ -290,8 +282,7 @@ describe('StandbyManifestStore', function () {
             'gateway_app-dev_app-prod',
             ['gateway', 'app-dev', 'app-prod'],
             ['gateway', 'app-dev'],
-            null,
-            '',
+            standbyNamespace: '',
         );
         $link = $paths->root().'/'.$collection;
         if (! is_dir(dirname($link)) && ! mkdir(dirname($link), 0700, true) && ! is_dir(dirname($link))) {
@@ -340,7 +331,7 @@ function standbyPruneGeneration(string $id, ?string $previous = null): StandbyGe
         'gateway_app-dev_app-prod',
         ['gateway', 'app-dev', 'app-prod'],
         ['gateway', 'app-dev'],
-        $previous,
-        '',
+        previousGenerationId: $previous,
+        standbyNamespace: '',
     );
 }

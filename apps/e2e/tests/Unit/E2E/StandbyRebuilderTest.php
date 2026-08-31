@@ -60,8 +60,7 @@ function rebuildGeneration(string $id, string $standbyNamespace = 'live'): Stand
         'gateway_app-dev_app-prod',
         TopologyProfile::ROLES,
         ['gateway', 'app-dev'],
-        null,
-        $standbyNamespace,
+        standbyNamespace: $standbyNamespace,
     );
 }
 
@@ -70,6 +69,7 @@ function legacyRebuildGeneration(string $id): StandbyGeneration
     $legacy = rebuildGeneration($id)->toArray();
     $legacy['schema'] = StandbyGeneration::LEGACY_SCHEMA;
     $legacy['prepared_schema'] = 1;
+    unset($legacy['standby_namespace']);
     unset($legacy['topology']['assignments']);
 
     return StandbyGeneration::fromArray($legacy);
@@ -245,8 +245,8 @@ describe('StandbyRebuilder', function () {
             ->toEqualCanonicalizing($identity->instances());
     });
 
-    it('tears down schema 4 resources and forgets their legacy manifests', function () {
-        $identity = rebuildIdentity();
+    it('tears down primary schema 4 resources and forgets their legacy manifests', function () {
+        $identity = StandbyIdentity::primary();
         $state = new RebuildHost;
         $state->instances = $identity->instances();
         $state->networks = [$identity->network()];
@@ -254,12 +254,12 @@ describe('StandbyRebuilder', function () {
 
         $paths = new StatePaths(temporaryPath('orbit-rebuild-legacy-', 4));
         $store = new AtomicJsonStore($paths);
-        $manifests = new StandbyManifestStore($store, $paths, new IncusHost(pool: 'orbit-e2e'));
         $legacy = legacyRebuildGeneration('legacy-generation');
-        $manifests->promote($legacy);
-        $manifests->record($legacy);
+        $store->write('standby/promoted.json', $legacy->toArray());
+        $store->write('standby/generations/legacy-generation.json', $legacy->toArray());
+        $manifests = new StandbyManifestStore($store, $paths, new IncusHost(pool: 'orbit-e2e'), $identity);
 
-        $teardown = rebuilderFor($paths, $store, $manifests)->teardown();
+        $teardown = rebuilderFor($paths, $store, $manifests, $identity)->teardown();
 
         expect($teardown['instances_deleted'])
             ->toEqualCanonicalizing($identity->instances())
@@ -396,7 +396,7 @@ describe('StandbyRebuilder', function () {
             ->toBe($primaryGeneration->toArray());
     });
 
-    it('refuses an unbound legacy manifest before mutating the live standby', function () {
+    it('refuses an unbound schema 5 manifest before mutating the live standby', function () {
         $identity = rebuildIdentity();
         $state = new RebuildHost;
         $state->instances = $identity->instances();
@@ -406,7 +406,7 @@ describe('StandbyRebuilder', function () {
         $paths = new StatePaths(temporaryPath('orbit-rebuild-', 4));
         $store = new AtomicJsonStore($paths);
         $legacy = rebuildGeneration('legacy-generation')->toArray();
-        $legacy['schema'] = 4;
+        $legacy['schema'] = StandbyGeneration::ASSIGNMENT_SCHEMA;
         unset($legacy['standby_namespace']);
         $store->write('standby/promoted.json', $legacy);
         $manifests = new StandbyManifestStore(
@@ -428,7 +428,7 @@ describe('StandbyRebuilder', function () {
             ->toBe($legacy);
     });
 
-    it('rebuilds a namespaced standby with an owned current manifest and unbound legacy history', function () {
+    it('rebuilds a namespaced standby with an owned current manifest and unbound schema 5 history', function () {
         $identity = rebuildIdentity();
         $state = new RebuildHost;
         $state->instances = $identity->instances();
@@ -439,7 +439,7 @@ describe('StandbyRebuilder', function () {
         $store = new AtomicJsonStore($paths);
         $current = rebuildGeneration('live-current')->toArray();
         $legacy = rebuildGeneration('legacy-previous')->toArray();
-        $legacy['schema'] = 4;
+        $legacy['schema'] = StandbyGeneration::ASSIGNMENT_SCHEMA;
         unset($legacy['standby_namespace']);
         $store->write('standby/promoted.json', $current);
         $store->write('standby/generations/live-current.json', $current);
@@ -461,7 +461,7 @@ describe('StandbyRebuilder', function () {
         expect($manifests->recorded())->toBe([]);
     });
 
-    it('rebuilds the primary standby from its unbound legacy manifests', function () {
+    it('rebuilds the primary standby from unbound schema 5 and schema 4 manifests', function () {
         $identity = StandbyIdentity::primary();
         $state = new RebuildHost;
         $state->instances = $identity->instances();
@@ -472,10 +472,12 @@ describe('StandbyRebuilder', function () {
         $store = new AtomicJsonStore($paths);
         $current = rebuildGeneration('legacy-current')->toArray();
         $previous = rebuildGeneration('legacy-previous')->toArray();
-        $current['schema'] = 4;
+        $current['schema'] = StandbyGeneration::ASSIGNMENT_SCHEMA;
         unset($current['standby_namespace']);
-        $previous['schema'] = 4;
+        $previous['schema'] = StandbyGeneration::LEGACY_SCHEMA;
+        $previous['prepared_schema'] = 1;
         unset($previous['standby_namespace']);
+        unset($previous['topology']['assignments']);
         $store->write('standby/promoted.json', $current);
         $store->write('standby/generations/legacy-current.json', $current);
         $store->write('standby/generations/legacy-previous.json', $previous);

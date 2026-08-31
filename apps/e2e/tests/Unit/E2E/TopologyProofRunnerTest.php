@@ -126,8 +126,13 @@ it('refuses proof from a schema 4 generation before creating an attempt', functi
     try {
         $paths = new StatePaths(temporaryPath('orbit-legacy-proof-state-', 4));
         $state = new AtomicJsonStore($paths);
-        $manifests = new StandbyManifestStore($state, $paths, new IncusHost(pool: 'orbit-e2e'));
-        $manifests->promote(legacyProofGeneration());
+        $state->write('standby/promoted.json', legacyProofGeneration()->toArray());
+        $manifests = new StandbyManifestStore(
+            $state,
+            $paths,
+            new IncusHost(pool: 'orbit-e2e'),
+            StandbyIdentity::primary(),
+        );
         $request = new TopologyRequest('ORB-4', $fixture['worktree']);
         $plan = ProofPlan::fromArray([
             'setup' => [],
