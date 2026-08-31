@@ -53,18 +53,22 @@ Source: none
 
 ## Linear states
 
-`Backlog` means the issue is recorded but is not ready. Its contract may be
-incomplete, its proof may be infeasible, or a real prerequisite may not yet be
-on `main`. State the readiness condition in the description.
+`Backlog` means the issue is rough or incomplete and still needs refinement.
+Its contract, decisions, dependency graph, or proof path may be missing. State
+the refinement or readiness condition in the description. Tom never claims it.
 
 `Todo` means the implementation contract is complete, every governing ADR is
-on `origin/main`, every acceptance criterion is verifiable, and no unresolved
-prerequisite prevents work from starting. A `Todo` issue is claimable without
-another product decision.
+on `origin/main`, and every acceptance criterion is verifiable. Todo is the
+ordered execution queue. A declared prerequisite may keep a refined Todo issue
+temporarily ineligible; Tom skips it until every prerequisite is `Done` and
+present on current `origin/main`.
 
-`Blocked` is reserved for claimed work that started and cannot continue. Issue
-creation always sets a new or reshaped issue explicitly to `Backlog` or `Todo`;
-never rely on the team's configurable default.
+`In Progress` begins when Tom selects an eligible Todo issue, before any
+worktree, Herdr worker, or preflight turn starts or resumes. `Blocked` is
+reserved for started work that cannot continue; its worktree and Herdr assets
+remain parked. `In Review` begins before independent PR review. Issue creation
+always sets a new or reshaped issue explicitly to `Backlog` or `Todo`; never
+rely on the team's configurable default.
 
 ## ADR
 
@@ -111,8 +115,8 @@ Verify all of the following:
 - the issue dependency graph is explicit and acyclic;
 - relationships encode only real prerequisites, not preference, staffing,
   shared files, or possible merge conflicts;
-- every prerequisite is already on `main` before its dependent enters `Todo`;
-  and
+- every prerequisite is explicit, and its status determines whether the
+  dependent Todo issue is currently eligible for selection; and
 - each issue can be implemented and proved at its graph position without
   redesigning the feature.
 
@@ -121,26 +125,33 @@ start with a compatibility bridge that lands and passes against current
 `main`. Follow with the product change and remove the fallback only after the
 migration. Never create mutually blocking hard cutovers.
 
-Put all independent roots whose prerequisites are already on `main` into
-`Todo` together so they can execute in parallel. Keep dependent issues in
-`Backlog`. After a prerequisite merges, the creator rechecks the dependent issue against the new `main` before moving it to `Todo`.
+Put every fully refined issue into `Todo` and encode real prerequisites as
+Linear relationships. Independent roots can execute in parallel. Refined
+dependents remain in `Todo` but are skipped until every prerequisite is `Done`
+and present on current `origin/main`.
 
 ## Preflight accountability
 
 Preflight remains independent and substantive, but correct issue refinement
 should normally pass on its first review.
 
-- `PASS` is the normal result. Move the issue to `In Progress` and implement.
+- `PASS` is the normal result. The issue is already `In Progress`; continue to
+  implementation.
 - `FIX` means the issue remains implementable but the temporary plan missed or
   misstated a code boundary, invariant, order, or acceptance-to-proof mapping.
-  Keep the issue in `Todo` while fresh planner and reviewer rounds correct it.
+  Keep the issue `In Progress` while fresh planner and reviewer rounds correct
+  it.
 - `BLOCK` means the issue was not ready: a product decision, prerequisite,
   ordering boundary, proof path, harness capability, or governing contract is
   missing or contradictory. The reviewer must recommend the smallest safe
   resolution and identify the evidence and decision owner. Tom records both the
   blocker and recommendation in a Linear comment when moving claimed work to
-  `Blocked`. Repair the issue or graph, return it to `Todo`, and run a fresh
-  preflight.
+  `Blocked`. The comment also names why routine recovery cannot resolve it,
+  the required owner/action, retained worktree and Herdr assets, and the exact
+  restart condition. It remains parked without consuming execution concurrency.
+  After resolution, return it to `Todo`; on re-selection synchronize current
+  `origin/main`, preserve the issue branch state, and run a wholly fresh
+  preflight before implementation resumes.
 
 Unless `main` materially changed after refinement, a `BLOCK` is an
 issue-creation failure. Classify it as product refinement, dependency
@@ -155,6 +166,7 @@ expected and observed behavior, and evidence.
 
 ## Implementation readiness
 
-A Linear issue with status `Todo` is ready for implementation. No issue enters
-`Todo` merely because its text looks complete; the complete-set feasibility
-and dependency admission checks above must also pass.
+A Linear issue with status `Todo` is refined and ready to enter the execution
+queue. Tom may select it only when its declared prerequisites are `Done` and
+present on current `origin/main`. No issue enters `Todo` merely because its text
+looks complete; the complete-set feasibility checks above must also pass.

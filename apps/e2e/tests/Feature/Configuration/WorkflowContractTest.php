@@ -49,7 +49,7 @@ it('keeps feature preflight lightweight and independently reviewed', function ()
         'fresh correction',
         'Repeat with fresh agents until',
         'Never approve a plan you authored.',
-        'Linear issue, which has status `Todo` and is ready for implementation',
+        'Linear issue, which has status `In Progress`',
     ] as $needle) {
         expect($reviewer)->toContain($needle);
     }
@@ -143,8 +143,8 @@ it('keeps the workflow reference aligned with the skills', function () use ($rea
         '## Feature flow',
         '## Correction loop',
         '## Harness flow',
-        'A Linear issue with status `Todo` is ready for implementation.',
-        'Worktree and preflight',
+        'A Linear issue with status `Todo` is refined and queued',
+        'Claim, worktree, and preflight',
         'Every `FIX` starts a fresh correction',
         'Repeat until `PASS` or',
         'same implementer',
@@ -156,6 +156,7 @@ it('keeps the workflow reference aligned with the skills', function () use ($rea
         'Feature branches never modify the harness.',
         '`apps/e2e/tests/Feature/**` and `apps/e2e/tests/Unit/**`',
         '0007-nine-step-feature-flow.md',
+        '0011-linear-lifecycle-states.md',
     ] as $needle) {
         expect($reference)->toContain($needle);
     }
@@ -174,7 +175,7 @@ it('keeps the root guidance and the issue skill on the tightened flow', function
         '.agents/skills/planning-features',
         '.agents/skills/reviewing-feature-plans',
         '.agents/skills/developing-features',
-        'A Linear issue with status `Todo` is ready for implementation.',
+        'moves it to `In Progress`',
         'Verdict: PASS',
         'One implementer owns the complete feature',
         'Feature branches never modify the harness',
@@ -188,7 +189,7 @@ it('keeps the root guidance and the issue skill on the tightened flow', function
         'issue never lists it',
         'Status: Todo',
         'Implementation readiness',
-        'A Linear issue with status `Todo` is ready for implementation.',
+        'A Linear issue with status `Todo` is refined and ready to enter the execution',
     ] as $needle) {
         expect($issues)->toContain($needle);
     }
@@ -215,9 +216,10 @@ it('makes issue creation ADR-first, feasibility-checked, and parallel-safe', fun
     $decisions = $read('docs/decisions/README.md');
 
     foreach ([
-        '`Backlog` means the issue is recorded but is not ready',
+        '`Backlog` means the issue is rough or incomplete',
         '`Todo` means the implementation contract is complete',
-        '`Blocked` is reserved for claimed work',
+        '`In Progress` begins when Tom selects',
+        'reserved for started work that cannot continue',
         'explicitly to `Backlog` or `Todo`',
         'current `main`',
         'product, migration, proof, and harness',
@@ -226,8 +228,8 @@ it('makes issue creation ADR-first, feasibility-checked, and parallel-safe', fun
         'explicit and acyclic',
         'real prerequisites',
         'compatibility bridge',
-        'independent roots',
-        'rechecks the dependent issue',
+        'Independent roots',
+        'dependents remain in `Todo`',
     ] as $needle) {
         expect($issues)->toContain($needle);
     }
@@ -235,8 +237,6 @@ it('makes issue creation ADR-first, feasibility-checked, and parallel-safe', fun
     foreach ([
         '`PASS` is the normal result',
         '`FIX` means the issue remains implementable',
-        '`BLOCK` means the issue was not ready',
-        'reviewer must recommend the smallest safe',
         'Linear comment',
         'issue-creation failure',
     ] as $needle) {
@@ -298,4 +298,37 @@ it('amends ADR 0007 without restoring the discarded machinery', function () use 
     ] as $needle) {
         expect($adr)->toContain($needle);
     }
+});
+
+it('separates refinement, active delivery, review, and parked blockers', function () use ($read): void {
+    $adr = $read('docs/decisions/0011-linear-lifecycle-states.md');
+    $reference = $read('docs/reference/development-workflow.md');
+    $issues = $read('.agents/skills/creating-issues/SKILL.md');
+
+    foreach ([
+        '`Backlog`: a rough or incomplete issue',
+        '`Todo`: a refined, proof-feasible issue',
+        '`In Progress`: Tom has selected the issue',
+        '`Blocked`: a started issue cannot continue',
+        '`In Review`: implementation and required proof are complete',
+        '`Done`: the PR is merged to `main`',
+        '`Canceled`: the issue is canceled or superseded',
+        'Execution concurrency is the number of Linear issues',
+        '`Blocked` does not consume execution capacity',
+        'first issue whose declared prerequisites are all `Done`',
+        'moves the issue to `Blocked`',
+        'Tom adds a Linear comment naming',
+        'moves it to `In Progress` and verifies the transition',
+        'synchronizes the worktree with current `origin/main`',
+        'runs a fresh planner and fresh preflight review',
+    ] as $needle) {
+        expect($adr)->toContain($needle);
+    }
+
+    foreach ([$reference, $issues] as $document) {
+        expect($document)
+            ->toContain('without consuming execution');
+    }
+
+    expect($reference)->toContain('starts a wholly fresh')->and($issues)->toContain('wholly fresh');
 });
