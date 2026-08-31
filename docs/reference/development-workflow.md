@@ -8,8 +8,8 @@ Governed by [ADR 0007](../decisions/0007-nine-step-feature-flow.md).
 ## Feature flow
 
 1. **Issue.** Linear (team `NCK`): outcome, scope, acceptance criteria,
-   components, ADR. `Proof: incus` when a real machine is needed. Ready when
-   complete. See [creating-issues](../../.agents/skills/creating-issues/SKILL.md).
+   components, ADR. `Proof: incus` when a real machine is needed. Orbit uses
+   Linear `Todo` as its Ready-equivalent; enter Todo only when complete. See [creating-issues](../../.agents/skills/creating-issues/SKILL.md).
 2. **Worktree and preflight.** `bin/worktree-create NCK-123 slug` creates and
    bootstraps the worktree and initializes gitignored `.orbit/plan.md`. A fresh
    planner follows [planning-features](../../.agents/skills/planning-features/SKILL.md),

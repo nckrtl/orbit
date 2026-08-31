@@ -138,6 +138,7 @@ it('keeps the workflow reference aligned with the skills', function () use ($rea
         '## Feature flow',
         '## Correction loop',
         '## Harness flow',
+        'Linear `Todo` as its Ready-equivalent',
         'Worktree and preflight',
         'at most one fresh planner correction',
         'same implementer',
@@ -167,6 +168,7 @@ it('keeps the root guidance and the issue skill on the tightened flow', function
         '.agents/skills/planning-features',
         '.agents/skills/reviewing-feature-plans',
         '.agents/skills/developing-features',
+        'Linear `Todo` is Orbit\'s canonical Ready-equivalent',
         'Verdict: PASS',
         'One implementer owns the complete feature',
         'Feature branches never modify the harness',
@@ -175,7 +177,13 @@ it('keeps the root guidance and the issue skill on the tightened flow', function
         expect($agents)->toContain($needle);
     }
 
-    foreach (['Proof: incus', 'issue never lists it'] as $needle) {
+    foreach ([
+        'Proof: incus',
+        'issue never lists it',
+        'Status: Todo',
+        'Todo admission gate',
+        'Linear `Todo` as its Ready-equivalent',
+    ] as $needle) {
         expect($issues)->toContain($needle);
     }
 

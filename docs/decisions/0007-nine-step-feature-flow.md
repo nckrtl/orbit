@@ -18,7 +18,10 @@ the harness. A dozen issues through that flow showed the ceremony cost more
 than the topologies and blurred who owns what. The requirement is the smallest
 flow that still proves every change on a fresh machine.
 
-The first nine-step feature runs also showed a narrower problem: implementation
+The first nine-step feature runs also showed two narrower problems. First, the
+repository called the admission state Ready even though the NCK Linear workflow
+has no Ready status; `Todo` is therefore the canonical Ready-equivalent and may
+contain only complete contracts. Second, implementation
 could begin before code boundaries and focused proof were independently
 checked. Missing assumptions then surfaced during PR review, causing repeated
 implementation and review rounds. The correction must catch that uncertainty
@@ -31,7 +34,8 @@ A change with `Proof: incus` follows nine steps, written in full in
 changes run steps 1, 2, 5, 7, 8 (CI green instead of a proof), and 9 without
 promote. Harness changes are covered under Ownership.
 
-1. Linear issue (`Proof: incus` when a real machine is needed).
+1. Linear issue in `Todo`, Orbit's canonical Ready-equivalent because the team
+   has no separate Ready status (`Proof: incus` when a real machine is needed).
 2. Worktree from `main` plus one gitignored `.orbit/plan.md`. A fresh planner
    maps criteria to code boundaries, implementation order, invariants, and
    focused proof. A fresh independent reviewer records `PASS`, `FIX`, or

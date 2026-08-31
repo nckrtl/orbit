@@ -11,7 +11,7 @@ acceptance criteria, and ADR decision. Do not create a repository plan.
 ## Issue contract
 
 ```text
-Status: Ready
+Status: Todo
 
 Outcome:
 
@@ -48,7 +48,7 @@ Source: none
 Use `ADR: none` only when no ADR applies. List every governing decision as a
 `docs/decisions/` URL. Create an ADR for a cross-component contract, a durable
 boundary, a security or ownership model, or a costly-to-reverse choice. A
-required ADR is merged into `main` before the issue enters Ready; otherwise
+required ADR is merged into `main` before the issue enters Todo; otherwise
 keep the issue in Preparation.
 
 ## Production reports
@@ -57,7 +57,8 @@ Create a Linear bug for a post-deploy defect. Keep the feature closed. Set
 `Source` to the GitHub issue and include the deployed commit, environment,
 expected and observed behavior, and evidence.
 
-## Ready gate
+## Todo admission gate
 
-Ready when every field is complete, linked ADRs are on `main`, and the
-criteria are verifiable.
+Orbit uses Linear `Todo` as its Ready-equivalent because the team has no
+separate Ready status. An issue enters Todo only when every field is complete,
+linked ADRs are on `main`, and the criteria are verifiable.
