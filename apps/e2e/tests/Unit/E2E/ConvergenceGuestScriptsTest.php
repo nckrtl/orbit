@@ -401,6 +401,7 @@ function verifierWireguardProcess(string $root, array $peers): Process
     ], env: ['PATH' => "{$root}/bin:".getenv('PATH')]);
 }
 
+/** @mago-expect lint:kan-defect The guest-script tests keep the complete shell contract in one specification. */
 describe('convergence guest scripts', function () {
     it('runs Gateway Artisan commands from the Gateway checkout', function () {
         $root = temporaryPath('orbit-gateway-converge-', 4);
@@ -929,7 +930,7 @@ describe('convergence guest scripts', function () {
             );
             $pdo->exec(
                 "INSERT INTO node_roles VALUES (1, 'gateway', 'active'), (1, 'vpn', 'active'), "
-                ."(2, 'app-dev', 'active'), (3, 'app-prod', 'active')",
+                ."(2, 'app-dev', 'active'), (2, 'metrics', 'active'), (3, 'app-prod', 'active')",
             );
             file_put_contents("{$root}/bin/php", "#!/usr/bin/env bash\nexec /usr/bin/php \"\$@\"\n");
             chmod("{$root}/bin/php", 0o700);
@@ -947,6 +948,7 @@ describe('convergence guest scripts', function () {
                 'proof',
                 str_repeat('a', 40),
                 'orbit-e2e-standby-gateway',
+                base64_encode(json_encode(\App\E2E\Value\TopologyProfile::ASSIGNMENTS, JSON_THROW_ON_ERROR)),
             ];
             $environment = ['PATH' => "{$root}/bin:".getenv('PATH')];
 
@@ -961,8 +963,8 @@ describe('convergence guest scripts', function () {
                     'probe' => 'role.assignments',
                     'passed' => true,
                     'identity' => str_repeat('a', 40),
-                    'expected' => 'gateway:gateway+vpn,app-dev:app-dev,app-prod:app-prod:active',
-                    'observed' => 'gateway:gateway+vpn,app-dev:app-dev,app-prod:app-prod:active',
+                    'expected' => 'gateway:gateway+vpn,app-dev:app-dev+metrics,app-prod:app-prod:active',
+                    'observed' => 'gateway:gateway+vpn,app-dev:app-dev+metrics,app-prod:app-prod:active',
                     'evidence_ref' => 'incus://orbit-e2e-standby-gateway/role.assignments',
                 ]);
 
@@ -971,7 +973,7 @@ describe('convergence guest scripts', function () {
 
             // A proof may add a role. An active extra passes and is named in the evidence.
             $pdo->exec("UPDATE node_roles SET status = 'active' WHERE role = 'app-dev'");
-            $pdo->exec("INSERT INTO node_roles VALUES (2, 'metrics', 'active')");
+            $pdo->exec("INSERT INTO node_roles VALUES (2, 'proof-role', 'active')");
             $withExtra = json_decode(
                 new Process($command, env: $environment)->mustRun()->getOutput(),
                 true,
@@ -980,14 +982,21 @@ describe('convergence guest scripts', function () {
             );
             expect($withExtra)->toMatchArray([
                 'passed' => true,
-                'observed' => 'gateway:gateway+vpn,app-dev:app-dev,app-prod:app-prod:active+app-dev:metrics',
+                'observed' => 'gateway:gateway+vpn,app-dev:app-dev+metrics,app-prod:app-prod:active+app-dev:proof-role',
             ]);
 
             // An extra that is not active fails, and so does a missing base assignment.
-            $pdo->exec("UPDATE node_roles SET status = 'failed' WHERE role = 'metrics'");
+            $pdo->exec("UPDATE node_roles SET status = 'failed' WHERE role = 'proof-role'");
             expect(new Process($command, env: $environment)->run())->not->toBe(0);
 
+            $pdo->exec("DELETE FROM node_roles WHERE role = 'proof-role'");
             $pdo->exec("DELETE FROM node_roles WHERE role = 'metrics'");
+            expect(new Process($command, env: $environment)->run())->not->toBe(0);
+
+            $pdo->exec("INSERT INTO node_roles VALUES (3, 'metrics', 'active')");
+            expect(new Process($command, env: $environment)->run())->not->toBe(0);
+            $pdo->exec("DELETE FROM node_roles WHERE role = 'metrics'");
+            $pdo->exec("INSERT INTO node_roles VALUES (2, 'metrics', 'active')");
             $pdo->exec("UPDATE nodes SET status = 'provisioning' WHERE name = 'app-prod'");
             expect(new Process($command, env: $environment)->run())->not->toBe(0);
 
@@ -1472,6 +1481,54 @@ describe('convergence guest scripts', function () {
             ->toContain('instance is not active after re-projection')
             ->and(new Process(['bash', "{$root}/converge.sh", 'reproject', 'extra'])->run())
             ->toBe(64);
+    });
+
+    it('establishes Metrics only when absent or failed on app-dev', function (): void {
+        $root = temporaryPath('orbit-task7-metrics-', 6);
+        mkdir($root, 0o700, true);
+        $source = file_get_contents(dirname(__DIR__, 3).'/resources/guest/converge-sample-app.sh');
+        file_put_contents(
+            "{$root}/converge.sh",
+            str_replace('orbit=/home/orbit/orbit/apps/cli/orbit', "orbit={$root}/orbit", $source),
+        );
+        file_put_contents("{$root}/orbit", <<<'BASH'
+            #!/usr/bin/env bash
+            set -euo pipefail
+            state=$(dirname "$0")
+            printf '%s\n' "$*" >>"$state/commands-$METRICS_MODE"
+            case "$1" in
+              metrics:status)
+                case "$METRICS_MODE" in
+                  absent) printf '{"enabled":false,"assignment":null}' ;;
+                  active) printf '{"enabled":true,"assignment":{"id":9,"node_id":2,"node_name":"app-dev","status":"active"}}' ;;
+                  failed) printf '{"enabled":true,"assignment":{"id":9,"node_id":2,"node_name":"app-dev","status":"failed"}}' ;;
+                  wrong) printf '{"enabled":true,"assignment":{"id":9,"node_id":3,"node_name":"app-prod","status":"active"}}' ;;
+                  provisioning) printf '{"enabled":true,"assignment":{"id":9,"node_id":2,"node_name":"app-dev","status":"provisioning"}}' ;;
+                esac
+                ;;
+              metrics:enable) printf '{"node_id":2,"status":"enabled"}' ;;
+              node:role:add) printf '{"node_id":2,"role":"metrics","assignment":{"status":"active"}}' ;;
+              *) exit 70 ;;
+            esac
+            BASH);
+        chmod("{$root}/orbit", 0o700);
+
+        foreach (['absent', 'active', 'failed'] as $mode) {
+            expect(new Process(['bash', "{$root}/converge.sh", 'metrics'], env: ['METRICS_MODE' => $mode])->run())
+                ->toBe(0);
+        }
+        expect(file("{$root}/commands-absent", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES))
+            ->toBe(['metrics:status --json', 'metrics:enable app-dev --json'])
+            ->and(file("{$root}/commands-active", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES))
+            ->toBe(['metrics:status --json'])
+            ->and(file("{$root}/commands-failed", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES))
+            ->toBe(['metrics:status --json', 'node:role:add 2 metrics --converge --json']);
+
+        foreach (['wrong', 'provisioning'] as $mode) {
+            expect(new Process(['bash', "{$root}/converge.sh", 'metrics'], env: ['METRICS_MODE' => $mode])->run())
+                ->not
+                ->toBe(0);
+        }
     });
 
     it('installs the local_certs fragment inside the managed Caddy version and keeps the product symlink', function () {

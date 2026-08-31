@@ -107,7 +107,7 @@ function standbyRestoreGeneration(): \App\E2E\Value\StandbyGeneration
         str_repeat('d', 64),
         new LaravelRelease('v13.10.1', '5aad4ddf34d5e21dfe6b4c07eeac67d5bd5e08b0'),
         str_repeat('e', 64),
-        1,
+        2,
         'ubuntu-26.04-amd64-v1',
         'orbit-base-ubuntu-26.04-runtime',
         'gateway_app-dev_app-prod',
@@ -629,6 +629,7 @@ function refreshFixture(): array
         $processes->run(['git', '-C', $sourceRoot, 'worktree', 'add', '--detach', $worktree, 'HEAD'])->successful(),
     )->toBeTrue();
     expect($processes->run(['git', '-C', $worktree, 'switch', '-c', $branch])->successful())->toBeTrue();
+    copyPreparedStateManifest($worktree);
     $git = new GitRepository($worktree);
     $manifestPath = $worktree.'/apps/e2e/resources/prepared-state.json';
     $manifest = json_decode((string) file_get_contents($manifestPath), true, 512, JSON_THROW_ON_ERROR);
@@ -709,6 +710,14 @@ function refreshFixtureCommit(ProcessFactory $processes, string $worktree, array
             $message,
         ])->successful(),
     )->toBeTrue();
+}
+
+function copyPreparedStateManifest(string $worktree): void
+{
+    $source = dirname(__DIR__, 3).'/resources/prepared-state.json';
+    $destination = $worktree.'/apps/e2e/resources/prepared-state.json';
+
+    expect(copy($source, $destination))->toBeTrue();
 }
 
 /** @param array{sourceRoot: string, worktree: string, branch: string, processes: ProcessFactory} $fixture */
@@ -857,6 +866,7 @@ describe('StandbyRefresher contracts', function () {
 
         try {
             expect($processes->run(['git', '-C', $worktree, 'switch', '-c', $branch])->successful())->toBeTrue();
+            copyPreparedStateManifest($worktree);
             $manifestPath = $worktree.'/apps/e2e/resources/prepared-state.json';
             $manifest = json_decode((string) file_get_contents($manifestPath), true, 512, JSON_THROW_ON_ERROR);
             unset($manifest['laravel_pin']);
@@ -1039,6 +1049,7 @@ describe('StandbyRefresher contracts', function () {
 
         try {
             expect($processes->run(['git', '-C', $cleanRoot, 'switch', '-c', $branch])->successful())->toBeTrue();
+            copyPreparedStateManifest($cleanRoot);
             $git = new GitRepository($cleanRoot);
             $manifestPath = $cleanRoot.'/apps/e2e/resources/prepared-state.json';
             $manifest = json_decode((string) file_get_contents($manifestPath), true, 512, JSON_THROW_ON_ERROR);
@@ -1144,6 +1155,7 @@ describe('StandbyRefresher contracts', function () {
         try {
             $git = new GitRepository($worktree);
             expect($processes->run(['git', '-C', $worktree, 'switch', '-c', $branch])->successful())->toBeTrue();
+            copyPreparedStateManifest($worktree);
             $manifestPath = $worktree.'/apps/e2e/resources/prepared-state.json';
             $manifest = json_decode((string) file_get_contents($manifestPath), true, 512, JSON_THROW_ON_ERROR);
             unset($manifest['laravel_pin']);
@@ -1245,13 +1257,14 @@ describe('StandbyRefresher contracts', function () {
         $fingerprint = str_repeat('b', 64);
         $release = new LaravelRelease('v13.10.1', '5aad4ddf34d5e21dfe6b4c07eeac67d5bd5e08b0');
         $manifest = [
-            'schema' => 1,
+            'schema' => 2,
             'cold_epoch' => 'ubuntu-26.04-amd64-v1',
             'base_image_alias' => 'orbit-base-ubuntu-26.04-runtime',
             'topology' => [
                 'profile' => 'gateway_app-dev_app-prod',
                 'roles' => ['gateway', 'app-dev', 'app-prod'],
                 'checkout_roles' => ['gateway', 'app-dev'],
+                'assignments' => TopologyProfile::ASSIGNMENTS,
             ],
         ];
 
@@ -1341,13 +1354,14 @@ describe('StandbyRefresher contracts', function () {
         $refresher = standbyRefresherForPowerTests(new IncusHost(pool: 'orbit-e2e'));
         $snapshot = new ReflectionMethod($refresher, 'snapshot');
         $manifest = [
-            'schema' => 1,
+            'schema' => 2,
             'cold_epoch' => 'ubuntu-26.04-amd64-v1',
             'base_image_alias' => 'orbit-base-ubuntu-26.04-runtime',
             'topology' => [
                 'profile' => 'gateway_app-dev_app-prod',
                 'roles' => ['gateway', 'app-dev', 'app-prod'],
                 'checkout_roles' => ['gateway', 'app-dev'],
+                'assignments' => TopologyProfile::ASSIGNMENTS,
             ],
         ];
 
@@ -1377,7 +1391,7 @@ describe('StandbyRefresher contracts', function () {
             str_repeat('d', 64),
             new LaravelRelease('v13.10.1', '5aad4ddf34d5e21dfe6b4c07eeac67d5bd5e08b0'),
             str_repeat('e', 64),
-            1,
+            2,
             'ubuntu-26.04-amd64-v1',
             'orbit-base-ubuntu-26.04-runtime',
             'gateway_app-dev_app-prod',

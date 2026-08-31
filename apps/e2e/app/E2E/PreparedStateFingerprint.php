@@ -11,7 +11,7 @@ use App\E2E\Value\TopologyProfile;
 use InvalidArgumentException;
 use JsonException;
 
-/** @mago-expect lint:cyclomatic-complexity,kan-defect Manifest validation stays at one trust boundary. */
+/** @mago-expect lint:cyclomatic-complexity,kan-defect,too-many-methods Manifest validation stays at one trust boundary. */
 final readonly class PreparedStateFingerprint
 {
     private const array ROOT_KEYS = [
@@ -46,7 +46,7 @@ final readonly class PreparedStateFingerprint
             $hashes[$path] = hash('sha256', $content);
         }
 
-        $payload = $this->canonicalizeArray([
+        $payload = $this->canonicalizeManifest([
             'schema' => $manifest['schema'],
             'paths' => $hashes,
             'cold_epoch' => $manifest['cold_epoch'],
@@ -62,7 +62,7 @@ final readonly class PreparedStateFingerprint
 
     public function withLaravel(PreparedFingerprint $structural, LaravelRelease $laravel): PreparedFingerprint
     {
-        $payload = $this->canonicalizeArray($structural->manifest);
+        $payload = $this->canonicalizeManifest($structural->manifest);
         $keys = array_keys($payload);
         sort($keys, SORT_STRING);
         $expected = self::ROOT_KEYS;
@@ -73,13 +73,13 @@ final readonly class PreparedStateFingerprint
         }
 
         $payload['laravel_pin'] = ['tag' => $laravel->tag, 'commit' => $laravel->commit];
-        $payload = $this->canonicalizeArray($payload);
+        $payload = $this->canonicalizeManifest($payload);
         $encoded = json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
 
         return new PreparedFingerprint(hash('sha256', $encoded), $payload);
     }
 
-    /** @return array{schema: int, paths: list<string>, cold_epoch: string, base_image_alias: string, declared_epochs: array<string, int>, topology: array{profile: string, roles: list<string>, checkout_roles: list<string>}} */
+    /** @return array{schema: int, paths: list<string>, cold_epoch: string, base_image_alias: string, declared_epochs: array<string, int>, topology: array{profile: string, roles: list<string>, checkout_roles: list<string>, assignments: array<string, list<string>>}} */
     private function validateManifest(mixed $manifest): array
     {
         if (! is_array($manifest) || array_is_list($manifest)) {
@@ -91,7 +91,7 @@ final readonly class PreparedStateFingerprint
         sort($keys, SORT_STRING);
         sort($expected, SORT_STRING);
 
-        if ($keys !== $expected || $manifest['schema'] !== 1) {
+        if ($keys !== $expected || $manifest['schema'] !== 2) {
             throw new InvalidArgumentException('The prepared-state manifest schema is invalid.');
         }
 
@@ -100,7 +100,7 @@ final readonly class PreparedStateFingerprint
         $this->validateEpochs($manifest['declared_epochs']);
         $this->validateTopology($manifest['topology']);
 
-        /** @var array{schema: int, paths: list<string>, cold_epoch: string, base_image_alias: string, declared_epochs: array<string, int>, topology: array{profile: string, roles: list<string>, checkout_roles: list<string>}} $manifest */
+        /** @var array{schema: int, paths: list<string>, cold_epoch: string, base_image_alias: string, declared_epochs: array<string, int>, topology: array{profile: string, roles: list<string>, checkout_roles: list<string>, assignments: array<string, list<string>>}} $manifest */
         return $manifest;
     }
 
@@ -156,18 +156,24 @@ final readonly class PreparedStateFingerprint
         $keys = array_keys($topology);
         sort($keys, SORT_STRING);
 
-        if ($keys !== ['checkout_roles', 'profile', 'roles'] || $topology['profile'] !== 'gateway_app-dev_app-prod') {
+        if (
+            $keys !== ['assignments', 'checkout_roles', 'profile', 'roles']
+            || $topology['profile'] !== TopologyProfile::NAME
+        ) {
             throw new InvalidArgumentException('The prepared-state topology is invalid.');
         }
 
         $roles = $topology['roles'];
         $checkoutRoles = $topology['checkout_roles'];
+        $assignments = $topology['assignments'];
 
         if (
             ! is_array($roles)
             || ! array_is_list($roles)
             || ! is_array($checkoutRoles)
             || ! array_is_list($checkoutRoles)
+            || ! is_array($assignments)
+            || array_is_list($assignments)
         ) {
             throw new InvalidArgumentException('The prepared-state topology is invalid.');
         }
@@ -178,12 +184,26 @@ final readonly class PreparedStateFingerprint
             }
         }
 
-        /** @var list<string> $roles */
-        /** @var list<string> $checkoutRoles */
+        /** @var list<string> $orderedRoles */
+        $orderedRoles = array_values($roles);
+        /** @var list<string> $orderedCheckoutRoles */
+        $orderedCheckoutRoles = array_values($checkoutRoles);
+
+        foreach ($assignments as $node => $rolesForNode) {
+            if (
+                ! is_string($node)
+                || ! is_array($rolesForNode)
+                || ! array_is_list($rolesForNode)
+                || ! array_all($rolesForNode, static fn (mixed $role): bool => is_string($role))
+            ) {
+                throw new InvalidArgumentException('The prepared-state topology is invalid.');
+            }
+        }
 
         if (
-            ! $this->isExactOrderedList($roles, TopologyProfile::ROLES)
-            || ! $this->isExactOrderedList($checkoutRoles, TopologyProfile::CHECKOUT_ROLES)
+            ! $this->isExactOrderedList($orderedRoles, TopologyProfile::ROLES)
+            || ! $this->isExactOrderedList($orderedCheckoutRoles, TopologyProfile::CHECKOUT_ROLES)
+            || serialize($assignments) !== serialize(TopologyProfile::ASSIGNMENTS)
         ) {
             throw new InvalidArgumentException('The prepared-state topology is invalid.');
         }
@@ -197,6 +217,24 @@ final readonly class PreparedStateFingerprint
         }
 
         return array_all($expected, fn ($value, $index) => ! ($actual[$index] !== $value));
+    }
+
+    /** @param array<array-key, mixed> $manifest
+     * @return array<array-key, mixed>
+     */
+    private function canonicalizeManifest(array $manifest): array
+    {
+        $payload = $this->canonicalizeArray($manifest);
+        $topology = $payload['topology'] ?? null;
+
+        if (! is_array($topology) || array_is_list($topology)) {
+            throw new InvalidArgumentException('The structural prepared fingerprint is invalid.');
+        }
+
+        $topology['assignments'] = TopologyProfile::ASSIGNMENTS;
+        $payload['topology'] = $topology;
+
+        return $payload;
     }
 
     /** @param array<array-key, mixed> $value

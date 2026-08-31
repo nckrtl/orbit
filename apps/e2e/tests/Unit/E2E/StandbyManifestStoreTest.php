@@ -37,12 +37,18 @@ describe('StandbyManifestStore', function () {
             str_repeat('c', 64),
             new LaravelRelease('v13.10.1', '5aad4ddf34d5e21dfe6b4c07eeac67d5bd5e08b0'),
             str_repeat('d', 64),
-            1,
+            2,
             'ubuntu-26.04-amd64-v1',
             'orbit-base-ubuntu-26.04-runtime',
             'gateway_app-dev_app-prod',
             ['gateway', 'app-dev', 'app-prod'],
             ['gateway', 'app-dev'],
+            null,
+            [
+                'gateway' => ['gateway', 'vpn'],
+                'app-dev' => ['app-dev', 'metrics'],
+                'app-prod' => ['app-prod'],
+            ],
         );
         $store->record($generation);
         $store->promote($generation);
@@ -53,17 +59,22 @@ describe('StandbyManifestStore', function () {
             ->toEqual([$generation])
             ->and(new AtomicJsonStore($paths)->read('standby/promoted.json'))
             ->toMatchArray([
-                'schema' => 4,
+                'schema' => 5,
                 'prepared_fingerprint' => str_repeat('b', 64),
                 'base_image_fingerprint' => str_repeat('c', 64),
                 'structural_fingerprint' => str_repeat('d', 64),
-                'prepared_schema' => 1,
+                'prepared_schema' => 2,
                 'cold_epoch' => 'ubuntu-26.04-amd64-v1',
                 'base_image_alias' => 'orbit-base-ubuntu-26.04-runtime',
                 'topology' => [
                     'profile' => 'gateway_app-dev_app-prod',
                     'roles' => ['gateway', 'app-dev', 'app-prod'],
                     'checkout_roles' => ['gateway', 'app-dev'],
+                    'assignments' => [
+                        'gateway' => ['gateway', 'vpn'],
+                        'app-dev' => ['app-dev', 'metrics'],
+                        'app-prod' => ['app-prod'],
+                    ],
                 ],
                 'previous_generation_id' => null,
             ])
@@ -81,7 +92,7 @@ describe('StandbyManifestStore', function () {
                 str_repeat('c', 64),
                 new LaravelRelease('v13.10.1', '5aad4ddf34d5e21dfe6b4c07eeac67d5bd5e08b0'),
                 str_repeat('d', 64),
-                1,
+                2,
                 'ubuntu-26.04-amd64-v1',
                 'orbit-base-ubuntu-26.04-runtime',
                 'gateway_app-dev_app-prod',
@@ -101,6 +112,26 @@ describe('StandbyManifestStore', function () {
             )->promoted(),
         )
             ->toThrow(InvalidArgumentException::class);
+    });
+
+    it('reads schema 4 generations as assignment-less legacy records', function () {
+        $paths = new StatePaths(temporaryPath('orbit-standby-', 4));
+        $json = new AtomicJsonStore($paths);
+        $generation = standbyPruneGeneration('legacy1');
+        $legacy = $generation->toArray();
+        $legacy['schema'] = 4;
+        $legacy['prepared_schema'] = 1;
+        unset($legacy['topology']['assignments']);
+        $json->write('standby/promoted.json', $legacy);
+
+        $loaded = new StandbyManifestStore($json, $paths, new IncusHost)->promoted();
+
+        expect($loaded?->isLegacy())
+            ->toBeTrue()
+            ->and($loaded?->topologyAssignments)
+            ->toBeNull()
+            ->and($loaded?->toArray())
+            ->toBe($legacy);
     });
 
     it('retains current, previous, and topology-pinned generations when pruning', function () {
@@ -146,7 +177,7 @@ describe('StandbyManifestStore', function () {
             str_repeat('c', 64),
             new LaravelRelease('v13.10.1', '5aad4ddf34d5e21dfe6b4c07eeac67d5bd5e08b0'),
             str_repeat('d', 64),
-            1,
+            2,
             'ubuntu-26.04-amd64-v1',
             'orbit-base-ubuntu-26.04-runtime',
             'gateway_app-dev_app-prod',
@@ -171,7 +202,7 @@ describe('StandbyManifestStore', function () {
             str_repeat('c', 64),
             new LaravelRelease('v13.10.1', '5aad4ddf34d5e21dfe6b4c07eeac67d5bd5e08b0'),
             str_repeat('d', 64),
-            1,
+            2,
             'ubuntu-26.04-amd64-v1',
             'orbit-base-ubuntu-26.04-runtime',
             'gateway_app-dev_app-prod',
@@ -219,7 +250,7 @@ function standbyPruneGeneration(string $id, ?string $previous = null): StandbyGe
         str_repeat('b', 64),
         new LaravelRelease('v13.10.1', '5aad4ddf34d5e21dfe6b4c07eeac67d5bd5e08b0'),
         str_repeat('d', 64),
-        1,
+        2,
         'ubuntu-26.04-amd64-v1',
         'orbit-base-ubuntu-26.04-runtime',
         'gateway_app-dev_app-prod',

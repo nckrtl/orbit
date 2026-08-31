@@ -13,7 +13,7 @@ case "$1" in
   source.gateway|source.app-dev) [[ $# -eq 4 || $# -eq 5 ]] ;;
   source.manifest) [[ $# -eq 6 || $# -eq 7 ]] ;;
   wireguard.reachability) [[ $# -ge 5 ]] ;;
-  role.assignments) [[ $# -eq 4 || $# -eq 5 ]] ;;
+  role.assignments) [[ $# -eq 5 ]] ;;
   *) [[ $# -eq 4 ]] ;;
 esac
 probe=$1
@@ -30,7 +30,7 @@ esac
 [[ "$identity" =~ ^[0-9a-f]{40}$ ]]
 [[ "$instance" =~ ^[a-z0-9][a-z0-9-]{0,62}$ ]]
 peer_names=()
-declared_nodes=
+required_assignments=
 if [[ "$probe" == wireguard.reachability ]]; then
   peer_names=("${@:5}")
   for peer_name in "${peer_names[@]}"; do
@@ -39,9 +39,9 @@ if [[ "$probe" == wireguard.reachability ]]; then
   # One name per node: a repeated peer would prove one node twice and the other never.
   [[ "$(printf '%s\n' "${peer_names[@]}" | sort | uniq -d | wc -l)" -eq 0 ]]
 fi
-if [[ "$probe" == role.assignments && $# -eq 5 ]]; then
-  declared_nodes=$5
-  [[ "$declared_nodes" =~ ^[a-z0-9][a-z0-9-]*(,[a-z0-9][a-z0-9-]*)*$ ]]
+if [[ "$probe" == role.assignments ]]; then
+  required_assignments=$5
+  [[ "$required_assignments" =~ ^[A-Za-z0-9+/]*={0,2}$ ]]
 fi
 expected=healthy
 observed=healthy
@@ -84,12 +84,7 @@ case "$probe" in
     # node the plan left out of its declaration must not be registered at all,
     # in any status: that is what fails a plan declaring an absence it did not
     # bring about.
-    extra=$(php -r '$pdo = new PDO("sqlite:".$argv[1]); $declared = explode(",", $argv[2]); $base = []; foreach ($declared as $node) { if ($node === "gateway") { $base[] = "gateway:gateway"; $base[] = "gateway:vpn"; continue; } $base[] = $node.":".$node; } foreach (array_diff(["gateway", "app-dev", "app-prod"], $declared) as $node) { $statement = $pdo->prepare("SELECT COUNT(*) FROM nodes WHERE name = ?"); $statement->execute([$node]); if ((int) $statement->fetchColumn() !== 0) exit(1); } $rows = $pdo->query("SELECT n.name, n.status AS node_status, r.role, r.status AS role_status FROM nodes n INNER JOIN node_roles r ON r.node_id = n.id ORDER BY n.name, r.role")->fetchAll(PDO::FETCH_ASSOC); $seen = []; $extra = []; foreach ($rows as $row) { if ($row["node_status"] !== "active" || $row["role_status"] !== "active") exit(1); $key = $row["name"].":".$row["role"]; if (in_array($key, $base, true)) { $seen[] = $key; continue; } $extra[] = $key; } foreach ($base as $key) { if (!in_array($key, $seen, true)) exit(1); } echo implode(",", $extra);' -- "$db" "${declared_nodes:-gateway,app-dev,app-prod}")
-    if [[ -n "$declared_nodes" ]]; then
-      expected="ends-with=${declared_nodes}:active"
-    else
-      expected='gateway:gateway+vpn,app-dev:app-dev,app-prod:app-prod:active'
-    fi
+    read -r expected extra < <(php -r '$pdo = new PDO("sqlite:".$argv[1]); $required = json_decode(base64_decode($argv[2], true), true, 16, JSON_THROW_ON_ERROR); if (!is_array($required) || array_is_list($required) || $required === []) exit(65); $base=[]; $parts=[]; foreach ($required as $node => $roles) { if (!is_string($node) || !in_array($node, ["gateway", "app-dev", "app-prod"], true) || !is_array($roles) || !array_is_list($roles) || $roles === []) exit(65); $parts[]=$node.":".implode("+", $roles); foreach ($roles as $role) { if (!is_string($role) || $role === "") exit(65); $base[]=$node.":".$role; } } foreach (array_diff(["gateway", "app-dev", "app-prod"], array_keys($required)) as $node) { $statement=$pdo->prepare("SELECT COUNT(*) FROM nodes WHERE name = ?"); $statement->execute([$node]); if ((int)$statement->fetchColumn() !== 0) exit(1); } $rows=$pdo->query("SELECT n.name, n.status AS node_status, r.role, r.status AS role_status FROM nodes n INNER JOIN node_roles r ON r.node_id = n.id ORDER BY n.name, r.role")->fetchAll(PDO::FETCH_ASSOC); $seen=[]; $extra=[]; foreach ($rows as $row) { if ($row["node_status"] !== "active" || $row["role_status"] !== "active") exit(1); $key=$row["name"].":".$row["role"]; if (in_array($key, $base, true)) { $seen[]=$key; continue; } $extra[]=$key; } foreach ($base as $key) { if (!in_array($key, $seen, true)) exit(1); } echo implode(",", $parts), ":active ", implode(",", $extra), "\n";' -- "$db" "$required_assignments")
     observed=$expected
     if [[ -n "$extra" ]]; then
       observed="${expected}+${extra}"

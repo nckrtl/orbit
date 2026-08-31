@@ -99,6 +99,9 @@ final readonly class TopologyProofRunner
         $generation = $this->standby->promoted() ?? throw new RuntimeException(
             'No promoted standby generation is available.',
         );
+        if ($generation->isLegacy()) {
+            throw new RuntimeException('The promoted standby generation is legacy; refresh it before proof.');
+        }
         $standbyTarget = TopologyTarget::standby($this->standbyIdentity);
         $this->host->assertOwnedSnapshots(array_combine(
             array_map($standbyTarget->instance(...), TopologyProfile::ROLES),
@@ -135,7 +138,15 @@ final readonly class TopologyProofRunner
             $phase = 'acceptance';
             $this->runActions($target, 'acceptance', $plan->acceptance, $actions);
             $phase = 'verify';
-            $verification = $this->verifier->verify($target, VerificationMode::Proof, $source, $plan->endsWith);
+            $verification = $this->verifier->verify(
+                $target,
+                VerificationMode::Proof,
+                $source,
+                $plan->endsWith,
+                $generation->topologyAssignments ?? throw new RuntimeException(
+                    'The pinned generation has no assignment declaration.',
+                ),
+            );
             if (! $verification->passed) {
                 throw new RuntimeException('Candidate proof verification failed.'.$verification->failedSummary());
             }

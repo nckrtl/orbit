@@ -6,10 +6,11 @@ namespace App\E2E\Value;
 
 use InvalidArgumentException;
 
-/** @mago-expect lint:cyclomatic-complexity,excessive-parameter-list The promoted generation validates one atomic identity record. */
+/** @mago-expect lint:cyclomatic-complexity,excessive-parameter-list,kan-defect The promoted generation validates one atomic identity record. */
 final readonly class StandbyGeneration
 {
-    public const int SCHEMA = 4;
+    public const int SCHEMA = 5;
+    public const int LEGACY_SCHEMA = 4;
 
     /** @param array<string, string> $snapshots */
     public function __construct(
@@ -29,6 +30,9 @@ final readonly class StandbyGeneration
         /** @var list<string> */
         public array $checkoutRoles,
         public ?string $previousGenerationId = null,
+        /** @var array<string, list<string>>|null */
+        public ?array $topologyAssignments = TopologyProfile::ASSIGNMENTS,
+        public int $manifestSchema = self::SCHEMA,
     ) {
         if (
             preg_match('/\A[A-Za-z0-9][A-Za-z0-9._-]{0,63}\z/D', $id) !== 1
@@ -40,6 +44,7 @@ final readonly class StandbyGeneration
             || $coldEpoch === ''
             || $baseImageAlias === ''
             || $topologyProfile === ''
+            || ! in_array($manifestSchema, [self::LEGACY_SCHEMA, self::SCHEMA], true)
             || $previousGenerationId !== null
             && preg_match('/\A[A-Za-z0-9][A-Za-z0-9._-]{0,63}\z/D', $previousGenerationId) !== 1
         ) {
@@ -57,6 +62,18 @@ final readonly class StandbyGeneration
             throw new InvalidArgumentException('The generation topology profile is invalid.');
         }
 
+        if (
+            $manifestSchema === self::SCHEMA
+            && ($preparedSchema !== 2
+            || serialize($topologyAssignments) !== serialize(TopologyProfile::ASSIGNMENTS))
+        ) {
+            throw new InvalidArgumentException('The generation assignment declaration is invalid.');
+        }
+
+        if ($manifestSchema === self::LEGACY_SCHEMA && $topologyAssignments !== null) {
+            throw new InvalidArgumentException('A legacy generation cannot declare assignments.');
+        }
+
         foreach ($snapshots as $snapshot) {
             if (preg_match('/\Amain-[A-Za-z0-9][A-Za-z0-9._-]{0,122}\z/D', $snapshot) !== 1) {
                 throw new InvalidArgumentException('A snapshot identity is invalid.');
@@ -67,8 +84,17 @@ final readonly class StandbyGeneration
     /** @return array<string,mixed> */
     public function toArray(): array
     {
+        $topology = [
+            'profile' => $this->topologyProfile,
+            'roles' => $this->topologyRoles,
+            'checkout_roles' => $this->checkoutRoles,
+        ];
+        if ($this->topologyAssignments !== null) {
+            $topology['assignments'] = $this->topologyAssignments;
+        }
+
         return [
-            'schema' => self::SCHEMA,
+            'schema' => $this->manifestSchema,
             'id' => $this->id,
             'main_sha' => $this->mainSha,
             'snapshots' => $this->snapshots,
@@ -78,11 +104,7 @@ final readonly class StandbyGeneration
             'prepared_schema' => $this->preparedSchema,
             'cold_epoch' => $this->coldEpoch,
             'base_image_alias' => $this->baseImageAlias,
-            'topology' => [
-                'profile' => $this->topologyProfile,
-                'roles' => $this->topologyRoles,
-                'checkout_roles' => $this->checkoutRoles,
-            ],
+            'topology' => $topology,
             'laravel_pin' => ['tag' => $this->laravel->tag, 'commit' => $this->laravel->commit],
             'previous_generation_id' => $this->previousGenerationId,
         ];
@@ -91,6 +113,7 @@ final readonly class StandbyGeneration
     /** @param array<array-key, mixed> $value */
     public static function fromArray(array $value): self
     {
+        $schema = $value['schema'] ?? null;
         if (
             array_keys($value) !== [
                 'schema',
@@ -107,7 +130,7 @@ final readonly class StandbyGeneration
                 'laravel_pin',
                 'previous_generation_id',
             ]
-            || $value['schema'] !== self::SCHEMA
+            || ! in_array($schema, [self::LEGACY_SCHEMA, self::SCHEMA], true)
             || ! is_string($value['id'])
             || ! is_string($value['main_sha'])
             || ! is_array($value['snapshots'])
@@ -127,6 +150,14 @@ final readonly class StandbyGeneration
             || $value['previous_generation_id'] !== null
             && ! is_string($value['previous_generation_id'])
         ) {
+            throw new InvalidArgumentException('The generation schema is invalid.');
+        }
+
+        $topologyKeys = array_keys($value['topology']);
+        $expectedTopologyKeys = $schema === self::SCHEMA
+            ? ['profile', 'roles', 'checkout_roles', 'assignments']
+            : ['profile', 'roles', 'checkout_roles'];
+        if ($topologyKeys !== $expectedTopologyKeys) {
             throw new InvalidArgumentException('The generation schema is invalid.');
         }
 
@@ -151,6 +182,27 @@ final readonly class StandbyGeneration
         $topologyRoles = array_values($value['topology']['roles']);
         /** @var list<string> $checkoutRoles */
         $checkoutRoles = array_values($value['topology']['checkout_roles']);
+        /** @var array<string, list<string>>|null $assignments */
+        $assignments = null;
+        if ($schema === self::SCHEMA) {
+            if (! is_array($value['topology']['assignments']) || array_is_list($value['topology']['assignments'])) {
+                throw new InvalidArgumentException('The generation schema is invalid.');
+            }
+            $assignments = [];
+            foreach ($value['topology']['assignments'] as $node => $rolesForNode) {
+                if (
+                    ! is_string($node)
+                    || ! is_array($rolesForNode)
+                    || ! array_is_list($rolesForNode)
+                    || ! array_all($rolesForNode, static fn (mixed $role): bool => is_string($role))
+                ) {
+                    throw new InvalidArgumentException('The generation schema is invalid.');
+                }
+                /** @var list<string> $orderedRoles */
+                $orderedRoles = array_values($rolesForNode);
+                $assignments[$node] = $orderedRoles;
+            }
+        }
 
         return new self(
             $value['id'],
@@ -167,6 +219,13 @@ final readonly class StandbyGeneration
             $topologyRoles,
             $checkoutRoles,
             $value['previous_generation_id'],
+            $assignments,
+            $schema,
         );
+    }
+
+    public function isLegacy(): bool
+    {
+        return $this->manifestSchema === self::LEGACY_SCHEMA;
     }
 }

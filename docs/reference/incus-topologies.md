@@ -70,7 +70,8 @@ discovery and proof lifecycle passed live acceptance on 2026-08-30 (ADR 0006).
 | Field | Value |
 | --- | --- |
 | Profile ID | `gateway_app-dev_app-prod` |
-| Ordered roles | `gateway` (roles `gateway`, `vpn`), `app-dev`, `app-prod` |
+| Ordered roles | `gateway`, `app-dev`, `app-prod` |
+| Required assignments | `gateway`: `gateway`, `vpn`; `app-dev`: `app-dev`, `metrics`; `app-prod`: `app-prod` |
 | Checkout roles | `gateway`, `app-dev` (guest path `/home/orbit/orbit`) |
 | Prepared image | Base image `orbit-base-ubuntu-26.04-runtime`; promoted standby snapshots `main-<generation-id>` on `orbit-e2e-standby-{gateway,app-dev,app-prod}` (the validation clone: `orbit-e2e-live-standby-*`) |
 | Addresses | Incus `.10/.11/.12` on `oe-<issue-hash>`; WireGuard `10.44.0.1/.2/.3` |

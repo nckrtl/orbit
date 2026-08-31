@@ -62,6 +62,19 @@ case ${1-} in
       "$orbit" workspace:new "$dev_instance_id" e2e --branch=e2e --json >/dev/null
     fi
     ;;
+  metrics)
+    [[ "$(id -u)" -eq 0 ]] && exec sudo -u orbit -- env HOME=/home/orbit ORBIT_HOME=/home/orbit/.orbit DB_DATABASE=/home/orbit/.orbit/gateway.sqlite bash "$0" "$@"
+    [[ $# -eq 1 ]] || exit 64
+    status=$("$orbit" metrics:status --json)
+    read -r action node_id < <(php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); $a=$v["assignment"] ?? null; if ($a === null) { echo "enable -\n"; exit; } if (($a["node_name"] ?? null) !== "app-dev" || !is_int($a["node_id"] ?? null)) exit(65); $status=$a["status"] ?? null; if ($status === "active") { echo "noop ", $a["node_id"], "\n"; exit; } if ($status === "failed") { echo "recover ", $a["node_id"], "\n"; exit; } exit(65);' <<<"$status")
+    case "$action" in
+      enable) mutation=$("$orbit" metrics:enable app-dev --json) ;;
+      recover) mutation=$("$orbit" node:role:add "$node_id" metrics --converge --json) ;;
+      noop) exit 0 ;;
+      *) exit 65 ;;
+    esac
+    php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); $status=$v["assignment"]["status"] ?? $v["status"] ?? null; if (!in_array($status, ["active", "enabled"], true)) exit(1);' <<<"$mutation"
+    ;;
   internal-tls)
     # Internal TLS for the sample production site lives inside the product's
     # own Caddy layout: the `local_certs` global block becomes an unmanaged

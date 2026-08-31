@@ -6,6 +6,7 @@ use App\E2E\IncusHost;
 use App\E2E\TopologyVerifier;
 use App\E2E\Value\SourceState;
 use App\E2E\Value\TopologyEndState;
+use App\E2E\Value\TopologyProfile;
 use App\E2E\Value\TopologyTarget;
 use App\E2E\Value\VerificationMode;
 use App\E2E\Value\VerificationReport;
@@ -170,6 +171,8 @@ function assertTopologyVerifierRequest(array $request, array $probeRoles, string
     if ($probe === 'wireguard.reachability') {
         $arguments[] = 'app-dev';
         $arguments[] = 'app-prod';
+    } elseif ($probe === 'role.assignments') {
+        $arguments[] = base64_encode(json_encode(TopologyProfile::ASSIGNMENTS, JSON_THROW_ON_ERROR));
     } elseif ($probe === 'source.manifest') {
         $arguments[] = '-';
         $arguments[] = '';
@@ -531,7 +534,17 @@ describe('TopologyVerifier declared end state', function (): void {
         expect($run['report']->passed)
             ->toBeTrue()
             ->and($run['argv']['role.assignments'] ?? null)
-            ->toBe([$script, 'role.assignments', 'proof', $sha, $gateway, 'gateway,app-dev'])
+            ->toBe([
+                $script,
+                'role.assignments',
+                'proof',
+                $sha,
+                $gateway,
+                base64_encode(json_encode([
+                    'gateway' => ['gateway', 'vpn'],
+                    'app-dev' => ['app-dev', 'metrics'],
+                ], JSON_THROW_ON_ERROR)),
+            ])
             ->and($run['argv']['wireguard.reachability'] ?? null)
             ->toBe([$script, 'wireguard.reachability', 'proof', $sha, $gateway, 'app-dev'])
             ->and(array_keys($run['argv']))
@@ -550,7 +563,14 @@ describe('TopologyVerifier declared end state', function (): void {
         $gateway = TopologyTarget::standby()->instance('gateway');
 
         expect($run['argv']['role.assignments'] ?? null)
-            ->toBe([$script, 'role.assignments', 'proof', $sha, $gateway])
+            ->toBe([
+                $script,
+                'role.assignments',
+                'proof',
+                $sha,
+                $gateway,
+                base64_encode(json_encode(TopologyProfile::ASSIGNMENTS, JSON_THROW_ON_ERROR)),
+            ])
             ->and($run['argv']['wireguard.reachability'] ?? null)
             ->toBe([$script, 'wireguard.reachability', 'proof', $sha, $gateway, 'app-dev', 'app-prod'])
             ->and($run['report']->probes)

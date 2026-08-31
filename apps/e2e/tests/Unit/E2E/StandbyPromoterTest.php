@@ -14,6 +14,7 @@ use App\E2E\State\AtomicJsonStore;
 use App\E2E\State\OperationLock;
 use App\E2E\State\StatePaths;
 use App\E2E\TopologyReleaser;
+use App\E2E\TopologyVerifier;
 use App\E2E\Value\AttemptId;
 use App\E2E\Value\AttemptPurpose;
 use App\E2E\Value\FeatureTopology;
@@ -125,6 +126,7 @@ function promoterFor(string $root, StatePaths $paths, StandbyManifestStore $mani
     return new StandbyPromoter(
         $host,
         new PreparedStateFingerprint(new GitRepository($root)),
+        new TopologyVerifier($host, readinessTimeoutSeconds: 1, readinessPollIntervalMicroseconds: 0),
         $manifests,
         new TopologyReleaser(
             $host,
@@ -154,6 +156,7 @@ function fakePromotionHost(
     array &$events,
     ?string $failAt = null,
     ?array &$guestEvents = null,
+    bool $failAssignments = false,
 ): void {
     $standby = TopologyTarget::standby();
     $instances = [];
@@ -188,14 +191,27 @@ function fakePromotionHost(
         ]],
     ];
     $realProcess = new ProcessFactory;
-    $vm = static fn (string $name, array $instance): array => [
-        'name' => $name,
-        'type' => 'virtual-machine',
-        'status' => $instance['status'],
-        'status_code' => $instance['status'] === 'Running' ? 103 : 102,
-        'config' => $instance['config'],
-        'devices' => ['root' => ['pool' => 'default'], 'eth0' => ['network' => $instance['network']]],
-    ];
+    $vm = static function (string $name, array $instance) use ($target): array {
+        $role = str_ends_with($name, '-gateway')
+            ? 'gateway'
+            : (str_ends_with($name, '-app-dev') ? 'app-dev' : 'app-prod');
+
+        return [
+            'name' => $name,
+            'type' => 'virtual-machine',
+            'status' => $instance['status'],
+            'status_code' => $instance['status'] === 'Running' ? 103 : 102,
+            'config' => $instance['config'],
+            'devices' => [
+                'root' => ['pool' => 'default'],
+                'eth0' => [
+                    'network' => $instance['network'],
+                    'hwaddr' => TopologyTarget::macFor($instance['network'], $role),
+                    'ipv4.address' => TopologyTarget::ipv4For(2, $role),
+                ],
+            ],
+        ];
+    };
 
     Process::fake(function (PendingProcess $process) use (
         &$events,
@@ -206,6 +222,7 @@ function fakePromotionHost(
         $realProcess,
         $vm,
         $failAt,
+        $failAssignments,
     ): ProcessResult {
         $command = $process->command;
         assert(is_array($command));
@@ -213,9 +230,18 @@ function fakePromotionHost(
             return $firewall;
         }
         $recorded = is_array($guestEvents) ? count($guestEvents) : 0;
-        if (($batch = pinnedWorktreeBatchResult($process, $guestEvents)) !== null) {
+        $guestOverride = static function (array $guest) use ($failAssignments): ProcessResult {
+            if ($failAssignments && ($guest[1] ?? null) === 'role.assignments') {
+                return Process::result('', 'required assignment missing', 1);
+            }
+
+            return pinnedWorktreeGuestCommandResult($guest);
+        };
+        if (($batch = pinnedWorktreeBatchResult($process, $guestEvents, $guestOverride)) !== null) {
             foreach (array_slice((array) $guestEvents, $recorded) as $guestEvent) {
-                $events[] = 'exec:'.$guestEvent[4].':'.$guestEvent[6];
+                if (($guestEvent[6] ?? null) === 'rm') {
+                    $events[] = 'exec:'.$guestEvent[4].':'.$guestEvent[6];
+                }
             }
 
             return $batch;
@@ -339,6 +365,41 @@ function fakePromotionHost(
 
 /** @mago-expect lint:kan-defect The promotion test asserts the complete ordered command chain. */
 describe('StandbyPromoter', function (): void {
+    it('refuses a candidate with a missing required assignment before any mutation', function (): void {
+        $fixture = promotableFixture();
+        $events = [];
+        fakePromotionHost($fixture['target'], $events, failAssignments: true);
+        $old = $fixture['manifests']->promoted()?->toArray();
+
+        expect(fn () => promoterFor($fixture['root'], $fixture['paths'], $fixture['manifests'])
+            ->promote($fixture['request'], $fixture['plan']))
+            ->toThrow(RuntimeException::class, 'required assignments');
+
+        expect($events)
+            ->toBe([])
+            ->and($fixture['manifests']->promoted()?->toArray())
+            ->toBe($old);
+    });
+
+    it('refuses a legacy promoted generation before any mutation', function (): void {
+        $fixture = promotableFixture();
+        $current = $fixture['manifests']->promoted();
+        assert($current !== null);
+        $legacy = $current->toArray();
+        $legacy['schema'] = 4;
+        $legacy['prepared_schema'] = 1;
+        unset($legacy['topology']['assignments']);
+        $fixture['manifests']->promote(\App\E2E\Value\StandbyGeneration::fromArray($legacy));
+        $events = [];
+        fakePromotionHost($fixture['target'], $events);
+
+        expect(fn () => promoterFor($fixture['root'], $fixture['paths'], $fixture['manifests'])
+            ->promote($fixture['request'], $fixture['plan']))
+            ->toThrow(RuntimeException::class, 'legacy');
+
+        expect($events)->toBe([]);
+    });
+
     /** @mago-expect lint:kan-defect The promotion test asserts the complete ordered command chain. */
     it('replaces the standby with the proved topology, promotes the manifest, and releases the attempt', function (): void {
         $fixture = promotableFixture();

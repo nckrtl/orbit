@@ -49,6 +49,12 @@ describe('StatePaths', function () {
             ->toBe(['gateway', 'app-dev', 'app-prod'])
             ->and(TopologyProfile::CHECKOUT_ROLES)
             ->toBe(['gateway', 'app-dev'])
+            ->and(TopologyProfile::ASSIGNMENTS)
+            ->toBe([
+                'gateway' => ['gateway', 'vpn'],
+                'app-dev' => ['app-dev', 'metrics'],
+                'app-prod' => ['app-prod'],
+            ])
             ->and($target->network())
             ->toBe('oe-3ed34a09f138')
             ->and($target->instance('app-prod'))
