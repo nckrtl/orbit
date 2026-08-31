@@ -94,9 +94,10 @@ current `origin/main`, and selects the first eligible issue.
      approval remains required before acceptance.
 
    Tom remains routing only: he never judges the recommendation or edits the
-   issue contract or relations. Repeated technical `BLOCK` results remain active
-   preflight non-convergence for Tom and Anna to diagnose; they are not
-   misrepresented as Nick-owned product decisions.
+   issue contract or relations. Every later reviewer `BLOCK` starts another
+   fresh reconciler. An unchanged repeated technical finding is recorded as
+   active preflight non-convergence and routed to Anna; Tom does not diagnose or
+   resolve it and does not misrepresent it as a Nick-owned product decision.
 3. **Fresh topology.** `bin/e2e-topology acquire <ISSUE> <worktree>`: three VMs
    cloned from the standby snapshot (~20 s), worktree mounted at
    `/home/orbit/orbit` on `gateway` and `app-dev`.

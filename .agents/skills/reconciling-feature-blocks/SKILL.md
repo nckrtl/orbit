@@ -100,9 +100,11 @@ preflight reviewer may admit implementation.
 - The fresh reviewer's `PASS` is agreement with the applied resolution.
 - For `HUMAN_DECISION_REQUIRED`, Tom moves the issue to `Blocked`, parks its
   assets, and routes the bounded decision to Anna or Nick.
-- A repeated technical `BLOCK` remains active recovery. Tom diagnoses it with
-  Anna as preflight non-convergence instead of mislabeling it as a Nick-owned
-  decision.
+- Every later reviewer `BLOCK` starts another fresh reconciler. If the same
+  technical finding repeats without changed evidence, record preflight
+  non-convergence and require Tom to route it to Anna while the issue remains
+  active. Tom does not diagnose or resolve the technical finding himself and
+  does not mislabel it as a Nick-owned decision.
 
 ## Boundaries
 

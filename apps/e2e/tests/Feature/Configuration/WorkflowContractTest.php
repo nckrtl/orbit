@@ -237,6 +237,8 @@ it('keeps the root guidance and the issue skill on the tightened flow', function
 it('makes issue creation ADR-first, feasibility-checked, and parallel-safe', function () use ($read): void {
     $agents = $read('AGENTS.md');
     $issues = $read('.agents/skills/creating-issues/SKILL.md');
+    $reviewer = $read('.agents/skills/reviewing-feature-plans/SKILL.md');
+    $reconciler = $read('.agents/skills/reconciling-feature-blocks/SKILL.md');
     $reference = $read('docs/reference/development-workflow.md');
     $decisions = $read('docs/decisions/README.md');
 
@@ -272,12 +274,29 @@ it('makes issue creation ADR-first, feasibility-checked, and parallel-safe', fun
 
     expect($issues)
         ->toContain('Tom routes any durable issue or relation edit')
+        ->toContain('Anna; after the approved change')
         ->toContain('material irreversible-risk')
+        ->toContain('Tom never judges the proposal or edits the')
         ->toContain('A reconciled technical resolution is not a human-owned blocker.');
 
     expect($reference)
         ->toContain('Internal technical or harness choices')
-        ->toContain('Repeated technical `BLOCK` results remain active');
+        ->toContain('Tom routes the exact')
+        ->toContain('proposal to Anna')
+        ->toContain('Tom remains routing only')
+        ->toContain('material irreversible risk')
+        ->toContain('Nick\'s exact-text')
+        ->toContain('Every later reviewer `BLOCK` starts another');
+
+    expect($reconciler)
+        ->toContain('durable Linear or relation mutation')
+        ->toContain('Tom routes the exact proposal to Anna')
+        ->toContain('material irreversible risk')
+        ->toContain('Nick\'s exact-text approval')
+        ->toContain('Every later reviewer `BLOCK` starts another fresh reconciler')
+        ->toContain('Tom does not diagnose or resolve the technical finding himself');
+
+    expect($reviewer)->toContain('issue remains `In Progress`');
 
     foreach ([$agents, $issues, $reference] as $document) {
         expect($document)
@@ -315,6 +334,13 @@ it('records approved ADRs before deriving implementation issues', function () us
 it('records technical block reconciliation before human escalation', function () use ($read): void {
     $adr = $read('docs/decisions/0014-reconcile-technical-preflight-blocks.md');
     $decisions = $read('docs/decisions/README.md');
+    $current = [
+        $read('AGENTS.md'),
+        $read('.agents/skills/creating-issues/SKILL.md'),
+        $read('.agents/skills/reviewing-feature-plans/SKILL.md'),
+        $read('.agents/skills/reconciling-feature-blocks/SKILL.md'),
+        $read('docs/reference/development-workflow.md'),
+    ];
 
     foreach ([
         'Accepted on 2026-08-31',
@@ -326,12 +352,19 @@ it('records technical block reconciliation before human escalation', function ()
         'Nick\'s exact-text approval',
         'fresh reviewer\'s `PASS` is agreement',
         '`Blocked` therefore means human judgment is genuinely required',
+        'Every later reviewer `BLOCK` starts another fresh reconciler',
         'Tom remains a routing and lifecycle coordinator',
     ] as $needle) {
         expect($adr)->toContain($needle);
     }
 
     expect($decisions)->toContain('0014-reconcile-technical-preflight-blocks.md');
+
+    foreach ($current as $document) {
+        expect($document)
+            ->not->toContain('`BLOCK` moves the issue to `Blocked`')
+            ->not->toContain('Tom adds a Linear comment naming');
+    }
 });
 
 it('amends ADR 0007 without restoring the discarded machinery', function () use ($read): void {
