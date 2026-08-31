@@ -181,8 +181,15 @@ describe('StandbyRebuilder', function () {
 
     it('deletes the standby VMs, the promotion leftovers, and the network itself', function () {
         $identity = rebuildIdentity();
+        $copy = $identity->instance('gateway').'-next';
         $state = new RebuildHost;
-        $state->instances = [...$identity->instances(), $identity->instance('gateway').'-next'];
+        $state->instances = [...$identity->instances(), $copy];
+        $state->instanceMetadata[$copy] = [
+            'user.orbit.e2e.owner' => 'orbit-e2e',
+            'user.orbit.e2e.issue' => 'ORB-15',
+            'user.orbit.e2e.attempt' => str_repeat('b', 32),
+            'user.orbit.e2e.operation' => str_repeat('c', 32),
+        ];
         $state->networks = [$identity->network()];
         fakeRebuildHost($state);
 
@@ -528,16 +535,14 @@ describe('StandbyRebuilder', function () {
             ->toBe([]);
     });
 
-    it('refuses an issue-bound promotion scratch copy with incomplete attempt metadata', function () {
+    it('refuses a promotion scratch copy with incomplete or malformed topology metadata', function (array $metadata) {
         $identity = rebuildIdentity();
         $copy = $identity->instance('gateway').'-next';
         $state = new RebuildHost;
         $state->instances = [$copy];
-        $state->instanceMetadata[$copy] = [
+        $state->instanceMetadata[$copy] = array_merge([
             'user.orbit.e2e.owner' => 'orbit-e2e',
-            'user.orbit.e2e.issue' => 'ORB-15',
-            'user.orbit.e2e.attempt' => str_repeat('b', 32),
-        ];
+        ], $metadata);
         fakeRebuildHost($state);
 
         $paths = new StatePaths(temporaryPath('orbit-rebuild-', 4));
@@ -550,8 +555,36 @@ describe('StandbyRebuilder', function () {
         );
 
         expect(fn () => rebuilderFor($paths, $store, $manifests)->teardown())
-            ->toThrow(RuntimeException::class, 'belongs to issue ORB-15')
+            ->toThrow(RuntimeException::class, 'has invalid promotion scratch metadata')
             ->and($state->deleted)
             ->toBe([]);
-    });
+    })->with([
+        'missing issue' => [[
+            'user.orbit.e2e.attempt' => str_repeat('b', 32),
+            'user.orbit.e2e.operation' => str_repeat('c', 32),
+        ]],
+        'malformed issue' => [[
+            'user.orbit.e2e.issue' => 'not an issue',
+            'user.orbit.e2e.attempt' => str_repeat('b', 32),
+            'user.orbit.e2e.operation' => str_repeat('c', 32),
+        ]],
+        'missing attempt' => [[
+            'user.orbit.e2e.issue' => 'ORB-15',
+            'user.orbit.e2e.operation' => str_repeat('c', 32),
+        ]],
+        'malformed attempt' => [[
+            'user.orbit.e2e.issue' => 'ORB-15',
+            'user.orbit.e2e.attempt' => 'invalid',
+            'user.orbit.e2e.operation' => str_repeat('c', 32),
+        ]],
+        'missing operation' => [[
+            'user.orbit.e2e.issue' => 'ORB-15',
+            'user.orbit.e2e.attempt' => str_repeat('b', 32),
+        ]],
+        'malformed operation' => [[
+            'user.orbit.e2e.issue' => 'ORB-15',
+            'user.orbit.e2e.attempt' => str_repeat('b', 32),
+            'user.orbit.e2e.operation' => 'invalid',
+        ]],
+    ]);
 });

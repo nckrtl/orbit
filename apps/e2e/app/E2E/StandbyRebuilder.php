@@ -159,23 +159,47 @@ final readonly class StandbyRebuilder
                 "Incus instance {$name} is not harness-owned; the standby rebuild refuses to delete it.",
             );
         }
+        if ($this->isPromotionScratchName($name)) {
+            if (! $this->isPromotionScratchCopy($instance, $name)) {
+                throw new RuntimeException(
+                    "Incus instance {$name} has invalid promotion scratch metadata; the standby rebuild refuses to delete it.",
+                );
+            }
+
+            return;
+        }
+
         $issue = $instance->metadata['user.orbit.e2e.issue'] ?? null;
-        if (is_string($issue) && $issue !== '' && ! $this->isPromotionScratchCopy($instance, $name, $issue)) {
+        if (is_string($issue) && $issue !== '') {
             throw new RuntimeException(
                 "Incus instance {$name} belongs to issue {$issue}; release that topology before rebuilding the standby.",
             );
         }
     }
 
-    private function isPromotionScratchCopy(IncusInstance $instance, string $name, string $issue): bool
+    private function isPromotionScratchName(string $name): bool
     {
-        $copyNames = array_map(
-            fn (string $role): string => $this->identity->instance($role).self::COPY_SUFFIX,
-            TopologyProfile::ROLES,
+        return in_array(
+            $name,
+            array_map(
+                fn (string $role): string => $this->identity->instance($role).self::COPY_SUFFIX,
+                TopologyProfile::ROLES,
+            ),
+            true,
         );
+    }
+
+    private function isPromotionScratchCopy(IncusInstance $instance, string $name): bool
+    {
+        $issue = $instance->metadata['user.orbit.e2e.issue'] ?? null;
         $attempt = $instance->metadata['user.orbit.e2e.attempt'] ?? null;
         $operation = $instance->metadata['user.orbit.e2e.operation'] ?? null;
-        if (! in_array($name, $copyNames, true) || ! is_string($attempt) || ! is_string($operation)) {
+        if (
+            ! $this->isPromotionScratchName($name)
+            || ! is_string($issue)
+            || ! is_string($attempt)
+            || ! is_string($operation)
+        ) {
             return false;
         }
 
