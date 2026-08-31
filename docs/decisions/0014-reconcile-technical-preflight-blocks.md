@@ -74,11 +74,13 @@ assets, and routes the smallest bounded decision to Anna or Nick. Linear
 that the first technical proposal failed. Anna may prepare an ADR proposal, but
 Nick must approve its exact text before it becomes accepted.
 
-A later technical `BLOCK` is active preflight non-convergence. Tom diagnoses it
-with Anna and may run another fresh reconciliation round when evidence or the
-blocker changed. He does not misrepresent technical non-convergence as a
-Nick-owned product decision. Every role remains fresh; no reviewer or
-reconciler conversation is resumed across rounds.
+Every later reviewer `BLOCK` starts another fresh reconciler. If the same
+technical finding repeats without changed evidence, that reconciler records
+preflight non-convergence and Tom routes it to Anna for diagnosis while the
+issue remains active. Tom does not diagnose or resolve the technical finding
+himself and does not misrepresent non-convergence as a Nick-owned product
+decision. Every role remains fresh; no reviewer or reconciler conversation is
+resumed across rounds.
 
 Tom remains a routing and lifecycle coordinator. He does not judge the
 reconciler proposal, edit the issue contract or relations, or perform the
