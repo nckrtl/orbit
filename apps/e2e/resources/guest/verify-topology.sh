@@ -4,10 +4,10 @@ umask 077
 
 # Mounted source probes carry one extra trailing argument: the expected SHA-256 of
 # the worktree `.git` pointer file the host mounted at $source_root.
-# Two probes read the whole fleet, so a proof plan that declares the topology it
-# ends with tells them which nodes to expect: `role.assignments` takes the
-# declared node list, `wireguard.reachability` the declared nodes but the
-# gateway. Without a declaration both are called exactly as before.
+# Two probes read the whole fleet. `role.assignments` always takes the encoded
+# required assignment map, filtered to the nodes the proof declares present.
+# `wireguard.reachability` takes those declared nodes except the gateway. Without
+# a declaration, both probes receive the complete canonical topology.
 [[ $# -ge 4 ]]
 case "$1" in
   source.gateway|source.app-dev) [[ $# -eq 4 || $# -eq 5 ]] ;;

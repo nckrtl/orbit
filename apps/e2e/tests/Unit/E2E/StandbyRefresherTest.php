@@ -46,7 +46,7 @@ function standbyRefresherForPowerTests(
     $git = new GitRepository($root);
     $synchronizer = new WorktreeSynchronizer($host, $root, $operation);
     $converger = new TopologyConverger($host);
-    $verifier = new TopologyVerifier($host, 1, 0);
+    $verifier = new TopologyVerifier($host, 1, 10_000);
     $paths ??= new StatePaths(temporaryPath('orbit-refresh-', 4));
     $state ??= new AtomicJsonStore($paths);
     $manifests ??= new StandbyManifestStore($state, $paths, new IncusHost);
@@ -691,6 +691,21 @@ function refreshFixture(): array
     ];
 }
 
+/** @param array{manifests: StandbyManifestStore} $fixture */
+function promoteLegacyRefreshGeneration(array $fixture): StandbyGeneration
+{
+    $current = $fixture['manifests']->promoted();
+    expect($current)->not->toBeNull();
+    $legacy = $current->toArray();
+    $legacy['schema'] = StandbyGeneration::LEGACY_SCHEMA;
+    $legacy['prepared_schema'] = 1;
+    unset($legacy['topology']['assignments']);
+    $generation = StandbyGeneration::fromArray($legacy);
+    $fixture['manifests']->promote($generation);
+
+    return $generation;
+}
+
 /** @param list<string> $paths */
 function refreshFixtureCommit(ProcessFactory $processes, string $worktree, array $paths, string $message): void
 {
@@ -984,6 +999,103 @@ describe('StandbyRefresher contracts', function () {
                 ->and($processState->pruneLockResults)
                 ->toBe([false, false, false, true, true, true])
                 ->and($fixture['state']->read('standby/generations/stale-generation.json'))
+                ->toBeNull();
+        } finally {
+            removeRefreshFixture($fixture);
+        }
+    });
+
+    it('migrates a matching schema 4 generation instead of returning it unchanged', function () {
+        $fixture = refreshFixture();
+
+        try {
+            promoteLegacyRefreshGeneration($fixture);
+            expect(
+                $fixture['processes']->run([
+                    'git',
+                    '-C',
+                    $fixture['worktree'],
+                    'switch',
+                    '--detach',
+                    $fixture['oldSha'],
+                ])->successful(),
+            )->toBeTrue();
+            $processState = refreshProcessState($fixture['paths']);
+            Process::fake(fn (PendingProcess $process): ProcessResult => refreshProcess(
+                $process,
+                $processState,
+                $fixture['processes'],
+                $fixture['oldSha'],
+            ));
+
+            $result = standbyRefresherForPowerTests(
+                new IncusHost(pool: 'orbit-e2e'),
+                $fixture['state'],
+                $fixture['manifests'],
+                $fixture['paths'],
+                $fixture['worktree'],
+            )->request($fixture['oldSha']);
+            $promoted = $fixture['manifests']->promoted();
+
+            expect($result->state)
+                ->toBe('promoted')
+                ->and($promoted?->isLegacy())
+                ->toBeFalse()
+                ->and($promoted?->preparedSchema)
+                ->toBe(2)
+                ->and($promoted?->topologyAssignments)
+                ->toBe(TopologyProfile::ASSIGNMENTS)
+                ->and($promoted?->previousGenerationId)
+                ->toBe('old-generation')
+                ->and($processState->events)
+                ->toContain('convergence', 'readiness', 'proof', 'snapshot');
+        } finally {
+            removeRefreshFixture($fixture);
+        }
+    });
+
+    it('keeps a schema 4 generation promoted when migration verification fails', function () {
+        $fixture = refreshFixture();
+
+        try {
+            $legacy = promoteLegacyRefreshGeneration($fixture);
+            expect(
+                $fixture['processes']->run([
+                    'git',
+                    '-C',
+                    $fixture['worktree'],
+                    'switch',
+                    '--detach',
+                    $fixture['oldSha'],
+                ])->successful(),
+            )->toBeTrue();
+            $processState = refreshProcessState($fixture['paths'], failReadiness: true);
+            Process::fake(fn (PendingProcess $process): ProcessResult => refreshProcess(
+                $process,
+                $processState,
+                $fixture['processes'],
+                $fixture['oldSha'],
+            ));
+
+            $result = standbyRefresherForPowerTests(
+                new IncusHost(pool: 'orbit-e2e'),
+                $fixture['state'],
+                $fixture['manifests'],
+                $fixture['paths'],
+                $fixture['worktree'],
+            )->request($fixture['oldSha']);
+
+            expect($result->state)
+                ->toBe('failed')
+                ->and($result->error)
+                ->toBe('Standby verification failed.')
+                ->and($result->generationId)
+                ->toBe('old-generation')
+                ->and($fixture['manifests']->promoted()?->toArray())
+                ->toBe($legacy->toArray())
+                ->and($fixture['manifests']->promoted()?->isLegacy())
+                ->toBeTrue()
+                ->and($fixture['state']->read('standby/corrupt.json'))
                 ->toBeNull();
         } finally {
             removeRefreshFixture($fixture);

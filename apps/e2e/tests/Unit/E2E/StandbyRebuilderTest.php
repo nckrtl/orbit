@@ -63,6 +63,16 @@ function rebuildGeneration(string $id): StandbyGeneration
     );
 }
 
+function legacyRebuildGeneration(string $id): StandbyGeneration
+{
+    $legacy = rebuildGeneration($id)->toArray();
+    $legacy['schema'] = StandbyGeneration::LEGACY_SCHEMA;
+    $legacy['prepared_schema'] = 1;
+    unset($legacy['topology']['assignments']);
+
+    return StandbyGeneration::fromArray($legacy);
+}
+
 function fakeRebuildHost(RebuildHost $state): void
 {
     Process::fake(function (PendingProcess $process) use ($state): ProcessResult {
@@ -216,6 +226,32 @@ describe('StandbyRebuilder', function () {
             ->toBeNull()
             ->and($teardown['instances_deleted'])
             ->toEqualCanonicalizing($identity->instances());
+    });
+
+    it('tears down schema 4 resources and forgets their legacy manifests', function () {
+        $identity = rebuildIdentity();
+        $state = new RebuildHost;
+        $state->instances = $identity->instances();
+        $state->networks = [$identity->network()];
+        fakeRebuildHost($state);
+
+        $paths = new StatePaths(temporaryPath('orbit-rebuild-legacy-', 4));
+        $store = new AtomicJsonStore($paths);
+        $manifests = new StandbyManifestStore($store, $paths, new IncusHost(pool: 'orbit-e2e'));
+        $legacy = legacyRebuildGeneration('legacy-generation');
+        $manifests->promote($legacy);
+        $manifests->record($legacy);
+
+        $teardown = rebuilderFor($paths, $store, $manifests)->teardown();
+
+        expect($teardown['instances_deleted'])
+            ->toEqualCanonicalizing($identity->instances())
+            ->and($teardown['networks_deleted'])
+            ->toBe([$identity->network()])
+            ->and($manifests->promoted())
+            ->toBeNull()
+            ->and($manifests->recorded())
+            ->toBe([]);
     });
 
     it('deletes a standby network a failed cold build left without ownership metadata', function () {
