@@ -31,11 +31,14 @@ Update only the verdict metadata and reviewer-findings section in
 - `FIX`: list concrete, in-scope corrections. Tom starts a fresh correction
   planner and then a fresh independent reviewer. Repeat with fresh agents until
   `PASS` or `BLOCK`.
-- `BLOCK`: state the exact missing requirement, conflict, or product decision;
-  implementation must not start. Include a **Recommended resolution** that names
+- `BLOCK`: state the exact technical incompatibility, missing requirement,
+  conflict, or product decision; implementation must not start. Include a
+  **Recommended resolution** that names
   the smallest safe contract, scope, dependency, or harness change that would
-  unblock the issue, the evidence supporting it, and who must decide. Do not
-  silently expand scope or present a recommendation as an approved decision.
+  unblock the issue, the evidence supporting it, and the apparent decision
+  boundary. Tom starts a fresh reconciler; the issue remains `In Progress`
+  unless that reconciler returns `HUMAN_DECISION_REQUIRED`. Do not silently
+  expand scope or present a recommendation as an approved decision.
 
 Increase `Review round` by one. Never approve a plan you authored. A genuinely
 new requirement is separate Linear work, not a finding against this plan.

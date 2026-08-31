@@ -23,6 +23,7 @@ preflight → fresh topology → get it right → codify → prove fresh → pul
 - `.agents/skills/creating-issues` — write the Linear issue.
 - `.agents/skills/planning-features` — prepare the worktree preflight.
 - `.agents/skills/reviewing-feature-plans` — independently pass, fix, or block it.
+- `.agents/skills/reconciling-feature-blocks` — resolve a technical block before escalation.
 - `.agents/skills/developing-features` — implement the passed plan and open the PR.
 - `.agents/skills/reviewing-pull-requests` — re-prove and approve.
 - `.agents/skills/merging-pull-requests` — merge, promote, clean up.
@@ -43,15 +44,17 @@ Rules that hold everywhere:
   is `Done` and present on current `origin/main`.
 - Implementation does not begin until `.orbit/plan.md` has `Verdict: PASS`.
   Every `FIX` starts a fresh correction planner and then a fresh independent
-  reviewer. Repeat until `PASS` or `BLOCK`; only `BLOCK` stops preflight.
+  reviewer. A reviewer `BLOCK` stops implementation and starts a fresh
+  reconciler before any human escalation.
 - `PASS` is expected for a correctly refined issue. `PASS` and `FIX` keep the
   active issue `In Progress`; `FIX` corrects the temporary implementation map.
-  `BLOCK` parks the retained worktree and Herdr assets, moves the issue to
-  `Blocked`, and requires a Linear comment with the blocker, evidence,
-  resolution owner, retained assets, and restart condition. `Blocked` does not
-  consume the three-slot execution limit. After resolution it returns to
-  `Todo`; on re-selection Tom synchronizes current `origin/main` and starts a
-  wholly fresh preflight before implementation resumes.
+  A fresh reconciler may propose the smallest internal technical, harness,
+  proof, or scope correction that preserves product behavior and acceptance
+  strength. The issue remains `In Progress`; after approved artifact changes,
+  a wholly fresh planner and reviewer must return `PASS`. Linear `Blocked` is
+  reserved for a reconciler's `HUMAN_DECISION_REQUIRED` verdict. It parks the
+  retained worktree and Herdr assets and does not consume the three-slot
+  execution limit.
 - One implementer owns the complete feature and its corrections. It may use
   bounded subagents, but there is no agent-per-increment requirement.
 - Feature branches never modify the harness (`apps/e2e`, `bin/e2e-*`).

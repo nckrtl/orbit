@@ -16,9 +16,12 @@ it('initializes one gitignored preflight plan with each worktree', function () u
         '# Feature preflight',
         'Verdict: PENDING',
         'Review round: 0',
+        'Reconciliation verdict: PENDING',
+        'Reconciliation round: 0',
         '## Acceptance map',
         '## Implementation order',
         '## Reviewer findings',
+        '## Reconciler recommendation',
     ] as $needle) {
         expect($script)->toContain($needle);
     }
@@ -29,6 +32,7 @@ it('initializes one gitignored preflight plan with each worktree', function () u
 it('keeps feature preflight lightweight and independently reviewed', function () use ($read): void {
     $planner = $read('.agents/skills/planning-features/SKILL.md');
     $reviewer = $read('.agents/skills/reviewing-feature-plans/SKILL.md');
+    $reconciler = $read('.agents/skills/reconciling-feature-blocks/SKILL.md');
 
     foreach ([
         '.orbit/plan.md',
@@ -46,6 +50,8 @@ it('keeps feature preflight lightweight and independently reviewed', function ()
         'Collect every blocking finding',
         '**Recommended resolution**',
         'smallest safe contract, scope, dependency, or harness change',
+        'Tom starts a fresh reconciler',
+        'issue remains `In Progress`',
         'fresh correction',
         'Repeat with fresh agents until',
         'Never approve a plan you authored.',
@@ -54,6 +60,20 @@ it('keeps feature preflight lightweight and independently reviewed', function ()
         expect($reviewer)->toContain($needle);
     }
     expect($reviewer)->not->toContain('unchanged Ready issue');
+
+    foreach ([
+        '`TECHNICAL_RESOLUTION`',
+        '`HUMAN_DECISION_REQUIRED`',
+        'smallest safe, elegant, and contract-preserving technical resolution',
+        '**Behavior changed:**',
+        '**Behavior unchanged:**',
+        'Internal harness behavior, test mechanics',
+        'The fresh reviewer\'s `PASS` is agreement',
+        'Do not edit product code, tests, proof files, Git history, Linear, or GitHub.',
+        'replacing an uncatchable timeout `SIGKILL`',
+    ] as $needle) {
+        expect($reconciler)->toContain($needle);
+    }
 });
 
 it('requires a passed preflight before one implementer starts', function () use ($read): void {
@@ -146,7 +166,10 @@ it('keeps the workflow reference aligned with the skills', function () use ($rea
         'A Linear issue with status `Todo` is refined and queued',
         'Claim, worktree, and preflight',
         'Every `FIX` starts a fresh correction',
-        'Repeat until `PASS` or',
+        '`TECHNICAL_RESOLUTION`',
+        '`HUMAN_DECISION_REQUIRED`',
+        'fresh Codex `gpt-5.6-sol` xhigh reconciler',
+        'fresh reviewer\'s `PASS` is agreement',
         'same implementer',
         'bin/e2e-topology shell <ISSUE> <role>',
         'bin/e2e-standby promote <ISSUE>',
@@ -157,6 +180,7 @@ it('keeps the workflow reference aligned with the skills', function () use ($rea
         '`apps/e2e/tests/Feature/**` and `apps/e2e/tests/Unit/**`',
         '0007-nine-step-feature-flow.md',
         '0011-linear-lifecycle-states.md',
+        '0014-reconcile-technical-preflight-blocks.md',
     ] as $needle) {
         expect($reference)->toContain($needle);
     }
@@ -174,6 +198,7 @@ it('keeps the root guidance and the issue skill on the tightened flow', function
         'docs/reference/development-workflow.md',
         '.agents/skills/planning-features',
         '.agents/skills/reviewing-feature-plans',
+        '.agents/skills/reconciling-feature-blocks',
         '.agents/skills/developing-features',
         'moves it to `In Progress`',
         'Verdict: PASS',
@@ -237,16 +262,22 @@ it('makes issue creation ADR-first, feasibility-checked, and parallel-safe', fun
     foreach ([
         '`PASS` is the normal result',
         '`FIX` means the issue remains implementable',
-        'Linear comment',
-        'Tom is routing only',
-        'Tom must not choose or approve a recommendation',
-        'Nick and Anna own blocker resolution',
-        'moves the resolved issue',
-        'issue-creation failure',
+        '`TECHNICAL_RESOLUTION`',
+        '`HUMAN_DECISION_REQUIRED`',
+        'wholly fresh planner and reviewer',
     ] as $needle) {
         expect($issues)->toContain($needle);
         expect($reference)->toContain($needle);
     }
+
+    expect($issues)
+        ->toContain('Tom routes any durable issue or relation edit')
+        ->toContain('material irreversible-risk')
+        ->toContain('A reconciled technical resolution is not a human-owned blocker.');
+
+    expect($reference)
+        ->toContain('Internal technical or harness choices')
+        ->toContain('Repeated technical `BLOCK` results remain active');
 
     foreach ([$agents, $issues, $reference] as $document) {
         expect($document)
@@ -279,6 +310,28 @@ it('records approved ADRs before deriving implementation issues', function () us
         expect($issues)->toContain($needle);
         expect($decisions)->toContain($needle);
     }
+});
+
+it('records technical block reconciliation before human escalation', function () use ($read): void {
+    $adr = $read('docs/decisions/0014-reconcile-technical-preflight-blocks.md');
+    $decisions = $read('docs/decisions/README.md');
+
+    foreach ([
+        'Accepted on 2026-08-31',
+        'ORB-7',
+        '`TECHNICAL_RESOLUTION`',
+        '`HUMAN_DECISION_REQUIRED`',
+        'deliver `TERM`, allow a bounded cleanup grace period',
+        'Nick is not involved for internal technical or harness choices',
+        'Nick\'s exact-text approval',
+        'fresh reviewer\'s `PASS` is agreement',
+        '`Blocked` therefore means human judgment is genuinely required',
+        'Tom remains a routing and lifecycle coordinator',
+    ] as $needle) {
+        expect($adr)->toContain($needle);
+    }
+
+    expect($decisions)->toContain('0014-reconcile-technical-preflight-blocks.md');
 });
 
 it('amends ADR 0007 without restoring the discarded machinery', function () use ($read): void {
@@ -334,5 +387,5 @@ it('separates refinement, active delivery, review, and parked blockers', functio
             ->toContain('without consuming execution');
     }
 
-    expect($reference)->toContain('starts a wholly fresh')->and($issues)->toContain('wholly fresh');
+    expect($reference)->toContain('wholly fresh planner and reviewer')->and($issues)->toContain('wholly fresh');
 });

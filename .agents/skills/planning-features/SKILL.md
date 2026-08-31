@@ -37,7 +37,9 @@ Leave `Verdict: PENDING`. The independent reviewer owns the verdict.
 
 ## Corrections
 
-When correcting a `FIX`, read the review findings already in the plan, update
-the implementation content, clear resolved findings, and leave
-`Verdict: PENDING`. Do not widen the issue.
+When correcting a `FIX` or an approved `TECHNICAL_RESOLUTION`, read the review
+findings and reconciler recommendation already in the plan, plus any verified
+durable issue or ADR update. Change only the implementation content required by
+that authority, clear resolved findings, and leave `Verdict: PENDING`. Do not
+widen product intent or weaken proof.
 A new requirement belongs in a separate Linear issue.
