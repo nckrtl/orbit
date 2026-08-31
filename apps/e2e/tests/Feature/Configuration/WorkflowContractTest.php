@@ -44,6 +44,8 @@ it('keeps feature preflight lightweight and independently reviewed', function ()
         '`FIX`',
         '`BLOCK`',
         'Collect every blocking finding',
+        '**Recommended resolution**',
+        'smallest safe contract, scope, dependency, or harness change',
         'fresh correction',
         'Repeat with fresh agents until',
         'Never approve a plan you authored.',
@@ -234,6 +236,8 @@ it('makes issue creation ADR-first, feasibility-checked, and parallel-safe', fun
         '`PASS` is the normal result',
         '`FIX` means the issue remains implementable',
         '`BLOCK` means the issue was not ready',
+        'reviewer must recommend the smallest safe',
+        'Linear comment',
         'issue-creation failure',
     ] as $needle) {
         expect($issues)->toContain($needle);
