@@ -10,7 +10,7 @@ product code, tests, proof files, Git history, Linear, or GitHub.
 
 ## Review
 
-Read the unchanged Todo Linear issue that satisfies Orbit's admission gate, governing ADRs, the plan, named code
+Read the Linear issue, which has status `Todo` and is ready for implementation, governing ADRs, the plan, named code
 boundaries, nearby tests, and available proof commands. Check that:
 
 - every acceptance criterion maps to a concrete code boundary and focused proof;

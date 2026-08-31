@@ -13,7 +13,7 @@ merge, and cleanup belong to other agents.
 
 Require all of:
 
-- the unchanged Todo Linear issue that passed Orbit's admission gate;
+- the Linear issue has status `Todo` and is ready for implementation;
 - a bootstrapped worktree under `.worktrees/<issue>-<slug>` on a branch from
   `main`;
 - `<worktree>/.orbit/plan.md` with `Verdict: PASS`.

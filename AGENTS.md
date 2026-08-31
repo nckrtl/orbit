@@ -28,8 +28,7 @@ preflight → fresh topology → get it right → codify → prove fresh → pul
 
 Rules that hold everywhere:
 
-- Linear `Todo` is Orbit's canonical Ready-equivalent admission state; the team
-  has no separate Ready workflow status. Only complete contracts enter Todo.
+- A Linear issue with status `Todo` is ready for implementation.
 - Every governing ADR is on `main` before implementation starts; a feature
   PR never introduces or changes an ADR.
 - Implementation does not begin until `.orbit/plan.md` has `Verdict: PASS`.

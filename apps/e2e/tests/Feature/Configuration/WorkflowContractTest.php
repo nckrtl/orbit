@@ -47,7 +47,7 @@ it('keeps feature preflight lightweight and independently reviewed', function ()
         'fresh correction',
         'Repeat with fresh agents until',
         'Never approve a plan you authored.',
-        "unchanged Todo Linear issue that satisfies Orbit's admission gate",
+        'Linear issue, which has status `Todo` and is ready for implementation',
     ] as $needle) {
         expect($reviewer)->toContain($needle);
     }
@@ -129,7 +129,7 @@ it('keeps the pull request template short', function () use ($read): void {
         ->and($template)
         ->toContain('## Proof')
         ->and($template)
-        ->toContain('proofs/NCK-123.json')
+        ->toContain('proofs/<ISSUE>.json')
         ->and(substr_count($template, "\n"))
         ->toBeLessThan(20);
 });
@@ -141,13 +141,13 @@ it('keeps the workflow reference aligned with the skills', function () use ($rea
         '## Feature flow',
         '## Correction loop',
         '## Harness flow',
-        'Linear `Todo` as its Ready-equivalent',
+        'A Linear issue with status `Todo` is ready for implementation.',
         'Worktree and preflight',
         'Every `FIX` starts a fresh correction',
         'Repeat until `PASS` or',
         'same implementer',
-        'bin/e2e-topology shell NCK-123 <role>',
-        'bin/e2e-standby promote NCK-123',
+        'bin/e2e-topology shell <ISSUE> <role>',
+        'bin/e2e-standby promote <ISSUE>',
         'bin/e2e-live <sha>',
         '`<worktree>/.orbit/plan.md`',
         '`<worktree>/.e2e/`',
@@ -158,7 +158,7 @@ it('keeps the workflow reference aligned with the skills', function () use ($rea
         expect($reference)->toContain($needle);
     }
 
-    foreach (['per-slice', 'generated archive', 'review-import'] as $absent) {
+    foreach (['per-slice', 'generated archive', 'review-import', 'ready-equivalent', 'nck'] as $absent) {
         expect(strtolower($reference))->not->toContain($absent);
     }
 });
@@ -172,7 +172,7 @@ it('keeps the root guidance and the issue skill on the tightened flow', function
         '.agents/skills/planning-features',
         '.agents/skills/reviewing-feature-plans',
         '.agents/skills/developing-features',
-        'Linear `Todo` is Orbit\'s canonical Ready-equivalent',
+        'A Linear issue with status `Todo` is ready for implementation.',
         'Verdict: PASS',
         'One implementer owns the complete feature',
         'Feature branches never modify the harness',
@@ -185,14 +185,22 @@ it('keeps the root guidance and the issue skill on the tightened flow', function
         'Proof: incus',
         'issue never lists it',
         'Status: Todo',
-        'Todo admission gate',
-        'Linear `Todo` as its Ready-equivalent',
+        'Implementation readiness',
+        'A Linear issue with status `Todo` is ready for implementation.',
     ] as $needle) {
         expect($issues)->toContain($needle);
     }
 
     foreach ([$agents, $issues] as $document) {
-        foreach (['14-step', 'Compound', 'post_deployment', 'Composition', 'project manager'] as $absent) {
+        foreach ([
+            '14-step',
+            'Compound',
+            'post_deployment',
+            'Composition',
+            'project manager',
+            'Ready-equivalent',
+            'NCK',
+        ] as $absent) {
             expect($document)->not->toContain($absent);
         }
     }

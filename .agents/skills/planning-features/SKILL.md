@@ -10,7 +10,7 @@ files, Git history, Linear, or GitHub.
 
 ## Inputs
 
-- The unchanged Todo Linear issue that satisfies Orbit's admission gate.
+- The Linear issue has status `Todo` and is ready for implementation.
 - Its bootstrapped worktree.
 - The prepared `<worktree>/.orbit/plan.md` with `Verdict: PENDING`.
 

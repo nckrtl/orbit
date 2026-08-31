@@ -5,7 +5,7 @@ description: Use when turning an Orbit request or production GitHub report into 
 
 # Creating Issues
 
-Create one Linear issue in team `NCK`. Linear owns the outcome, scope,
+Create one Linear issue. Linear owns the outcome, scope,
 acceptance criteria, and ADR decision. Do not create a repository plan.
 
 ## Issue contract
@@ -57,8 +57,6 @@ Create a Linear bug for a post-deploy defect. Keep the feature closed. Set
 `Source` to the GitHub issue and include the deployed commit, environment,
 expected and observed behavior, and evidence.
 
-## Todo admission gate
+## Implementation readiness
 
-Orbit uses Linear `Todo` as its Ready-equivalent because the team has no
-separate Ready status. An issue enters Todo only when every field is complete,
-linked ADRs are on `main`, and the criteria are verifiable.
+A Linear issue with status `Todo` is ready for implementation.
