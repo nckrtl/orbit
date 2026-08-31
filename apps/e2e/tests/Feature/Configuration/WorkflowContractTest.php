@@ -206,6 +206,73 @@ it('keeps the root guidance and the issue skill on the tightened flow', function
     }
 });
 
+it('makes issue creation ADR-first, feasibility-checked, and parallel-safe', function () use ($read): void {
+    $agents = $read('AGENTS.md');
+    $issues = $read('.agents/skills/creating-issues/SKILL.md');
+    $reference = $read('docs/reference/development-workflow.md');
+    $decisions = $read('docs/decisions/README.md');
+
+    foreach ([
+        '`Backlog` means the issue is recorded but is not ready',
+        '`Todo` means the implementation contract is complete',
+        '`Blocked` is reserved for claimed work',
+        'explicitly to `Backlog` or `Todo`',
+        'current `main`',
+        'product, migration, proof, and harness',
+        'lifecycle, ownership, migration, compatibility, failure, rollback, and removal',
+        'one available proof action',
+        'explicit and acyclic',
+        'real prerequisites',
+        'compatibility bridge',
+        'independent roots',
+        'rechecks the dependent issue',
+    ] as $needle) {
+        expect($issues)->toContain($needle);
+    }
+
+    foreach ([
+        '`PASS` is the normal result',
+        '`FIX` means the issue remains implementable',
+        '`BLOCK` means the issue was not ready',
+        'issue-creation failure',
+    ] as $needle) {
+        expect($issues)->toContain($needle);
+        expect($reference)->toContain($needle);
+    }
+
+    foreach ([$agents, $issues, $reference] as $document) {
+        expect($document)
+            ->toContain('origin/main')
+            ->not->toContain('Preparation');
+    }
+
+    expect($issues)
+        ->toContain('does not create `.orbit/plan.md`')
+        ->not->toContain('Do not create a repository plan');
+});
+
+it('records approved ADRs before deriving implementation issues', function () use ($read): void {
+    $issues = $read('.agents/skills/creating-issues/SKILL.md');
+    $decisions = $read('docs/decisions/README.md');
+
+    foreach ([
+        'architectural significance',
+        '`Proposed`',
+        'exact final text',
+        '`Accepted`',
+        'Accepted ADRs remain immutable',
+        'extends, amends, or supersedes',
+        'commit contains only the approved ADR',
+        'local `main` matches the current remote base',
+        'unrelated work',
+        'pull request remains optional',
+        'before implementation issues are derived',
+    ] as $needle) {
+        expect($issues)->toContain($needle);
+        expect($decisions)->toContain($needle);
+    }
+});
+
 it('amends ADR 0007 without restoring the discarded machinery', function () use ($read): void {
     $adr = $read('docs/decisions/0007-nine-step-feature-flow.md');
 

@@ -1,18 +1,36 @@
 # Architecture decisions
 
-Architecture decision records explain durable choices that are difficult to
-reverse or that govern more than one feature.
+Architecture decision records explain why Orbit chose a significant direction
+and how that choice relates to earlier decisions. Accepted ADRs form an
+append-only decision history as the project progresses; they are not
+implementation tasks or substitutes for Linear contracts.
 
-Create an ADR for:
+The threshold is architectural significance, not mere durability. Create an
+ADR for:
 
 - a cross-component contract;
 - a durable architecture boundary;
 - a security or ownership model; or
 - a costly-to-reverse operational choice.
 
-Do not put a new ADR in a dependent feature pull request. Review and merge the
-ADR to `main` first. Then link its canonical GitHub URL from every dependent
-Linear issue. This lets multiple feature branches use one decision in parallel.
+Draft a new ADR as `Proposed`. Revise the actual record with the user until the
+user explicitly approves the exact final text, then mark it `Accepted`.
+Accepted ADRs remain immutable. A later direction becomes a new ADR that names
+the decision it extends, amends, or supersedes.
+
+An approved ADR does not intrinsically need a Linear issue or pull request. It
+may be committed directly to `main` only when:
+
+- the user approved the exact final text;
+- the commit contains only the approved ADR;
+- local `main` matches the current remote base; and
+- no unrelated work is included, modified, stashed, reset, or discarded.
+
+If the remote base moves, recheck the ADR before committing. A pull request remains optional when the user requests independent review, multiple people share decision authority, or branch protection requires it.
+
+Put the accepted ADR on `origin/main` before implementation issues are derived. Then reconcile affected open work and link the canonical GitHub URL
+from every governed Linear issue. This lets independent issue roots proceed in
+parallel from the same decision authority.
 
 Use the next four-digit number and a short kebab-case name:
 
@@ -21,4 +39,3 @@ Use the next four-digit number and a short kebab-case name:
 ```
 
 Each ADR must contain `Status`, `Context`, `Decision`, and `Consequences`.
-Keep accepted ADRs immutable. Add a new ADR that supersedes an old decision.

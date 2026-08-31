@@ -3,12 +3,44 @@
 Every change to Orbit follows one short flow. A Linear issue defines it, a
 fresh planner maps implementation before coding, one agent implements it in a
 worktree, a reviewer re-proves it, and a merge agent merges and cleans up.
-Governed by [ADR 0007](../decisions/0007-nine-step-feature-flow.md).
+Governed by [ADR 0007](../decisions/0007-nine-step-feature-flow.md) and
+[ADR 0010](../decisions/0010-record-decisions-before-implementation-issues.md).
+
+## Decision and issue refinement
+
+Feature discussion can begin without a Linear issue. When it introduces or
+changes a choice of architectural significance, stop issue creation. Draft a
+`Proposed` ADR, revise its exact text with the user, mark the approved decision
+`Accepted`, and put it on `origin/main` before implementation issues are
+derived. The approved ADR may be an ADR-only direct commit when the user
+approved its exact final text, the commit contains only that ADR, local `main`
+matches the current remote base, and unrelated work is preserved. A pull
+request remains optional.
+
+After the decision lands, reconcile affected open work and refine the complete
+issue set against current `main`. Inspect relevant product, migration, proof,
+and harness code; close lifecycle, ownership, migration, compatibility,
+failure, rollback, and removal decisions; and give every acceptance criterion
+one available proof action.
+
+Dependencies must be explicit and acyclic and represent only real
+prerequisites. Start a compatibility bridge when the current product and its
+verifier cannot safely hard-cutover first. Put all independent roots whose
+prerequisites are already on `main` in `Todo` together. Keep dependents in
+`Backlog`; after a prerequisite merges, recheck the dependent issue against
+the new `main` before admitting it to `Todo`.
+
+`Backlog` means the issue is recorded but is not ready. `Todo` means the
+implementation contract is complete, proof-feasible, and claimable. `Blocked`
+is reserved for claimed work that cannot continue. Issue creation always sets
+`Backlog` or `Todo` explicitly. This refinement shapes Linear work but does not
+create `.orbit/plan.md`; that temporary implementation map begins after claim.
 
 ## Feature flow
 
-1. **Issue.** Linear: outcome, scope, acceptance criteria, components, ADR.
-   `Proof: incus` when a real machine is needed.
+1. **Issue.** Linear: explicit state, outcome, readiness when backlogged,
+   scope, acceptance criteria, components, governing ADRs, real dependencies,
+   and `Proof: incus` when a real machine is needed.
    A Linear issue with status `Todo` is ready for implementation. See [creating-issues](../../.agents/skills/creating-issues/SKILL.md).
 2. **Worktree and preflight.** `bin/worktree-create <ISSUE> slug` creates and
    bootstraps the worktree and initializes gitignored `.orbit/plan.md`. A fresh
@@ -19,6 +51,10 @@ Governed by [ADR 0007](../decisions/0007-nine-step-feature-flow.md).
    and records `PASS`, `FIX`, or `BLOCK`. Every `FIX` starts a fresh correction
    planner and then a fresh independent reviewer. Repeat until `PASS` or
    `BLOCK`; only `BLOCK` stops preflight. Issue → In Progress only after `PASS`.
+   `PASS` is the normal result. `FIX` means the issue remains implementable but
+   its temporary plan needs correction, so it stays `Todo`. `BLOCK` means the issue was not ready; move claimed work to `Blocked`, repair the issue or
+   dependency graph, return it to `Todo`, and start a fresh preflight. Unless
+   `main` drifted after refinement, a block is an issue-creation failure.
 3. **Fresh topology.** `bin/e2e-topology acquire <ISSUE> <worktree>`: three VMs
    cloned from the standby snapshot (~20 s), worktree mounted at
    `/home/orbit/orbit` on `gateway` and `app-dev`.
