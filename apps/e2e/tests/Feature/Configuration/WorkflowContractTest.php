@@ -238,6 +238,10 @@ it('makes issue creation ADR-first, feasibility-checked, and parallel-safe', fun
         '`PASS` is the normal result',
         '`FIX` means the issue remains implementable',
         'Linear comment',
+        'Tom is routing only',
+        'Tom must not choose or approve a recommendation',
+        'Nick and Anna own blocker resolution',
+        'moves the resolved issue',
         'issue-creation failure',
     ] as $needle) {
         expect($issues)->toContain($needle);

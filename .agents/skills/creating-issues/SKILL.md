@@ -144,14 +144,17 @@ should normally pass on its first review.
 - `BLOCK` means the issue was not ready: a product decision, prerequisite,
   ordering boundary, proof path, harness capability, or governing contract is
   missing or contradictory. The reviewer must recommend the smallest safe
-  resolution and identify the evidence and decision owner. Tom records both the
-  blocker and recommendation in a Linear comment when moving claimed work to
-  `Blocked`. The comment also names why routine recovery cannot resolve it,
-  the required owner/action, retained worktree and Herdr assets, and the exact
-  restart condition. It remains parked without consuming execution concurrency.
-  After resolution, return it to `Todo`; on re-selection synchronize current
-  `origin/main`, preserve the issue branch state, and run a wholly fresh
-  preflight before implementation resumes.
+  resolution and identify the evidence and decision owner. Tom is routing only:
+  he moves the issue to `Blocked`, parks its assets, and records the reviewer
+  findings, required owner/action, retained worktree and Herdr assets, and the
+  exact restart condition in a Linear comment. It remains parked without consuming execution
+  concurrency. Tom must not choose or approve a recommendation,
+  refine or edit the issue contract or relations, or move `Blocked` back to
+  `Todo`. Nick and Anna own blocker resolution; Anna applies
+  approved issue, ADR, or dependency changes and moves the resolved issue to
+  `Todo`. On re-selection Tom synchronizes current `origin/main`, preserves the
+  issue branch state, and runs a wholly fresh preflight before implementation
+  resumes.
 
 Unless `main` materially changed after refinement, a `BLOCK` is an
 issue-creation failure. Classify it as product refinement, dependency

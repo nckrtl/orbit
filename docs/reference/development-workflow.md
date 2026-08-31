@@ -68,14 +68,17 @@ current `origin/main`, and selects the first eligible issue.
    concurrency. The
    reviewer must include a recommended resolution: the smallest safe contract,
    scope, dependency, or harness change, its supporting evidence, and the
-   required decision owner. Tom records the blocker and recommendation in a
-   Linear comment when moving claimed work to `Blocked`; the comment also names
-   why routine recovery cannot resolve it, the required owner/action, retained
-   artifacts, and restart condition. Unless `main` drifted after refinement, a
-   block is an issue-creation failure. After resolution the issue returns to
-   `Todo`. On re-selection Tom moves it to `In Progress`, reuses its retained
-   assets, synchronizes current `origin/main`, and starts a wholly fresh
-   planner and preflight review before implementation resumes.
+   required decision owner. Tom is routing only: he moves the issue to
+   `Blocked`, parks its assets, and records the reviewer findings, required
+   owner/action, retained artifacts, and restart condition in a Linear comment.
+   Tom must not choose or approve a recommendation, refine or edit the issue
+   contract or relations, or move `Blocked` back to `Todo`. Nick and Anna own blocker resolution;
+   Anna applies the approved issue, ADR, or dependency
+   changes and moves the resolved issue from `Blocked` to `Todo`. Unless `main`
+   drifted after refinement, a block is an issue-creation failure. On
+   re-selection Tom moves it to `In Progress`, reuses its retained assets,
+   synchronizes current `origin/main`, and starts a wholly fresh planner and
+   preflight review before implementation resumes.
 3. **Fresh topology.** `bin/e2e-topology acquire <ISSUE> <worktree>`: three VMs
    cloned from the standby snapshot (~20 s), worktree mounted at
    `/home/orbit/orbit` on `gateway` and `app-dev`.
