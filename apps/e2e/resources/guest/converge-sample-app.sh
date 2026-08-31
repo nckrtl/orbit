@@ -75,6 +75,16 @@ case ${1-} in
     esac
     php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); $status=$v["assignment"]["status"] ?? $v["status"] ?? null; if (!in_array($status, ["active", "enabled"], true)) exit(1);' <<<"$mutation"
     ;;
+  metrics-publication)
+    [[ "$(id -u)" -eq 0 ]] && exec sudo -u orbit -- env HOME=/home/orbit ORBIT_HOME=/home/orbit/.orbit DB_DATABASE=/home/orbit/.orbit/gateway.sqlite bash "$0" "$@"
+    [[ $# -eq 1 ]] || exit 64
+    status=$("$orbit" metrics:status --json)
+    read -r action node_id assignment_id < <(php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); $a=$v["assignment"] ?? null; if ($a === null) { echo "noop - -\n"; exit; } if (!is_array($a) || ($a["node_name"] ?? null) !== "app-dev" || !is_int($a["node_id"] ?? null) || !is_int($a["id"] ?? null) || ($a["status"] ?? null) !== "active") exit(65); echo "converge ", $a["node_id"], " ", $a["id"], "\n";' <<<"$status")
+    [[ "$action" == noop ]] && exit 0
+    [[ "$action" == converge && "$node_id" =~ ^[1-9][0-9]*$ && "$assignment_id" =~ ^[1-9][0-9]*$ ]] || exit 65
+    mutation=$("$orbit" node:role:add "$node_id" metrics --converge --json)
+    php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); if (($v["node_id"] ?? null) !== (int)$argv[1] || ($v["node_name"] ?? null) !== "app-dev" || ($v["role"] ?? null) !== "metrics" || ($v["assignment"]["id"] ?? null) !== (int)$argv[2] || ($v["assignment"]["role"] ?? null) !== "metrics" || ($v["assignment"]["status"] ?? null) !== "active") exit(1);' "$node_id" "$assignment_id" <<<"$mutation"
+    ;;
   internal-tls)
     # Internal TLS for the sample production site lives inside the product's
     # own Caddy layout: the `local_certs` global block becomes an unmanaged

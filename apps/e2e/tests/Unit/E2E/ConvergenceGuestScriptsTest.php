@@ -128,6 +128,121 @@ function internal_tls_fixture(string $root): array
     return ['environment' => ['PATH' => "{$root}/bin:".getenv('PATH')]];
 }
 
+/** @return array{root:string,script:string,environment:array<string,string>,fragment:string,commands:string} */
+function metrics_publication_probe_fixture(bool $metricsAssigned): array
+{
+    $root = temporaryPath('orbit-metrics-publication-probe-', 5);
+    $sourceRoot = dirname(__DIR__, 5);
+    $version = "{$root}/etc/caddy/orbit-versions/1234567890abcdef";
+    $fragment = "{$version}/fragments/metrics.caddy";
+    $certificateVersion = "{$root}/etc/caddy/orbit-metrics-cert-versions/1234567890abcdef";
+    $certificateCurrent = "{$root}/etc/caddy/orbit-metrics-cert-current";
+    $commands = "{$root}/commands";
+    mkdir("{$root}/bin", 0o700, true);
+    mkdir("{$version}/fragments", 0o700, true);
+    mkdir("{$root}/ca", 0o700, true);
+    mkdir("{$root}/ssh", 0o700, true);
+    file_put_contents("{$version}/Caddyfile", "import {$version}/fragments/*.caddy\n");
+    symlink("{$version}/Caddyfile", "{$root}/etc/caddy/Caddyfile");
+    file_put_contents("{$root}/ca/root.pem", "fixture root\n");
+    file_put_contents("{$root}/ssh/id_ed25519", "fixture key\n");
+    file_put_contents("{$root}/ssh/known_hosts", "fixture host\n");
+
+    $db = "{$root}/gateway.sqlite";
+    $pdo = new PDO("sqlite:{$db}");
+    $pdo->exec('CREATE TABLE nodes (id INTEGER PRIMARY KEY, name TEXT, status TEXT, wireguard_address TEXT)');
+    $pdo->exec('CREATE TABLE node_roles (node_id INTEGER, role TEXT, status TEXT)');
+    $pdo->exec(
+        "INSERT INTO nodes VALUES (1, 'gateway', 'active', '10.44.0.1'), (3, 'app-prod', 'active', '10.44.0.3')",
+    );
+    $pdo->exec(
+        "INSERT INTO node_roles VALUES (1, 'gateway', 'active'), (1, 'vpn', 'active'), (3, 'app-prod', 'active')",
+    );
+    if ($metricsAssigned) {
+        mkdir($certificateVersion, 0o700, true);
+        file_put_contents("{$certificateVersion}/metrics.pem", "fixture certificate\n");
+        file_put_contents("{$certificateVersion}/metrics.key", "fixture key\n");
+        symlink($certificateVersion, $certificateCurrent);
+        $pdo->exec("INSERT INTO nodes VALUES (2, 'app-dev', 'active', '10.44.0.2')");
+        $pdo->exec("INSERT INTO node_roles VALUES (2, 'app-dev', 'active'), (2, 'metrics', 'active')");
+        $render = new Process([
+            '/usr/bin/php',
+            '-r',
+            'require $argv[1]; echo (new App\\Infrastructure\\Metrics\\MetricsPublicationRenderer)->caddy($argv[2], $argv[3]);',
+            "{$sourceRoot}/apps/gateway/vendor/autoload.php",
+            '10.44.0.2',
+            '10.44.0.1',
+        ]);
+        file_put_contents($fragment, $render->mustRun()->getOutput());
+    }
+
+    file_put_contents("{$root}/bin/dig", str_replace('__COMMANDS__', $commands, <<<'BASH'
+        #!/usr/bin/env bash
+        printf 'dig %s\n' "$*" >> '__COMMANDS__'
+        printf '%s' "${METRICS_DNS_OUTPUT:-}"
+        exit "${METRICS_DIG_EXIT:-0}"
+        BASH));
+    file_put_contents("{$root}/bin/openssl", str_replace('__COMMANDS__', $commands, <<<'BASH'
+        #!/usr/bin/env bash
+        printf 'openssl %s\n' "$*" >> '__COMMANDS__'
+        exit "${METRICS_OPENSSL_EXIT:-0}"
+        BASH));
+    file_put_contents("{$root}/bin/ssh", str_replace('__COMMANDS__', $commands, <<<'BASH'
+        #!/usr/bin/env bash
+        printf 'ssh %s\n' "$*" >> '__COMMANDS__'
+        printf '%s' "${METRICS_UFW_STATUS:-}"
+        BASH));
+    file_put_contents("{$root}/bin/curl", str_replace('__COMMANDS__', $commands, <<<'BASH'
+        #!/usr/bin/env bash
+        printf 'curl %s\n' "$*" >> '__COMMANDS__'
+        printf '%s' "${METRICS_HEALTH:-}"
+        BASH));
+    foreach (['dig', 'openssl', 'ssh', 'curl'] as $command) {
+        chmod("{$root}/bin/{$command}", 0o700);
+    }
+
+    $script = str_replace(
+        [
+            'source_root=/home/orbit/orbit',
+            '/home/orbit/.orbit/gateway.sqlite',
+            '/home/orbit/.orbit/ca/root.pem',
+            '/home/orbit/.orbit/ssh/id_ed25519',
+            '/home/orbit/.orbit/ssh/known_hosts',
+            '/etc/caddy/Caddyfile',
+            '/etc/caddy/orbit-versions',
+            '/etc/caddy/orbit-metrics-cert-versions',
+            '/etc/caddy/orbit-metrics-cert-current',
+        ],
+        [
+            "source_root={$sourceRoot}",
+            $db,
+            "{$root}/ca/root.pem",
+            "{$root}/ssh/id_ed25519",
+            "{$root}/ssh/known_hosts",
+            "{$root}/etc/caddy/Caddyfile",
+            "{$root}/etc/caddy/orbit-versions",
+            "{$root}/etc/caddy/orbit-metrics-cert-versions",
+            "{$root}/etc/caddy/orbit-metrics-cert-current",
+        ],
+        (string) file_get_contents(dirname(__DIR__, 3).'/resources/guest/verify-topology.sh'),
+    );
+    file_put_contents("{$root}/verify.sh", $script);
+    chmod("{$root}/verify.sh", 0o700);
+
+    return [
+        'root' => $root,
+        'script' => "{$root}/verify.sh",
+        'environment' => [
+            'PATH' => "{$root}/bin:".getenv('PATH'),
+            'METRICS_DNS_OUTPUT' => $metricsAssigned ? "10.44.0.1\n" : '',
+            'METRICS_HEALTH' => '{"database":"ok"}',
+            'METRICS_UFW_STATUS' => "Status: active\n\n[ 7] 10.44.0.2 3000/tcp on orbit ALLOW IN 10.44.0.1 # orbit:metrics-grafana-upstream\n",
+        ],
+        'fragment' => $fragment,
+        'commands' => $commands,
+    ];
+}
+
 /** @return array{root:string,script:string,state:string,commands:string,caddy:string,ca:string} */
 function convergence_app_fixture(string $scriptName): array
 {
@@ -401,7 +516,7 @@ function verifierWireguardProcess(string $root, array $peers): Process
     ], env: ['PATH' => "{$root}/bin:".getenv('PATH')]);
 }
 
-/** @mago-expect lint:kan-defect The guest-script tests keep the complete shell contract in one specification. */
+/** @mago-expect lint:cyclomatic-complexity,kan-defect The guest-script tests keep the complete shell contract in one specification. */
 describe('convergence guest scripts', function () {
     it('runs Gateway Artisan commands from the Gateway checkout', function () {
         $root = temporaryPath('orbit-gateway-converge-', 4);
@@ -914,6 +1029,131 @@ describe('convergence guest scripts', function () {
             ->toBe(['2', '2'])
             ->and($run['curl'])
             ->toBeNull();
+    });
+
+    it('proves the complete Metrics publication from candidate-rendered bytes', function (): void {
+        $fixture = metrics_publication_probe_fixture(true);
+        try {
+            $assignments = base64_encode(json_encode(
+                \App\E2E\Value\TopologyProfile::ASSIGNMENTS,
+                JSON_THROW_ON_ERROR,
+            ));
+            $command = [
+                'bash',
+                $fixture['script'],
+                'metrics.publication',
+                'proof',
+                str_repeat('a', 40),
+                'orbit-e2e-standby-gateway',
+                $assignments,
+            ];
+            $process = new Process($command, env: $fixture['environment']);
+            $evidence = json_decode($process->mustRun()->getOutput(), true, 16, JSON_THROW_ON_ERROR);
+            $commands = file($fixture['commands'], FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+
+            expect($evidence)
+                ->toMatchArray([
+                    'probe' => 'metrics.publication',
+                    'passed' => true,
+                    'identity' => str_repeat('a', 40),
+                    'expected' => 'metrics.orbit:current-product-publication',
+                    'evidence_ref' => 'incus://orbit-e2e-standby-gateway/metrics.publication',
+                ])
+                ->and($evidence['observed'])
+                ->toContain(
+                    'dns=10.44.0.1',
+                    'certificate=metrics.orbit+orbit-ca',
+                    'firewall=10.44.0.1>10.44.0.2:3000/tcp',
+                    'grafana.database=ok',
+                )
+                ->and($commands)
+                ->toContain(
+                    'dig +time=3 +tries=1 +short metrics.orbit A @10.44.0.1',
+                    'openssl x509 -in '
+                    .$fixture['root']
+                    .'/etc/caddy/orbit-metrics-cert-current/metrics.pem -noout -checkhost metrics.orbit',
+                );
+            expect(collect($commands)->contains(
+                fn (string $line): bool => (
+                    str_starts_with($line, 'ssh ') && str_contains($line, 'orbit@10.44.0.2 sudo ufw status numbered')
+                ),
+            ))->toBeTrue();
+            expect(collect($commands)->contains(
+                fn (string $line): bool => (
+                    str_starts_with($line, 'curl ')
+                    && str_contains($line, '--resolve metrics.orbit:443:10.44.0.1 https://metrics.orbit/api/health')
+                ),
+            ))->toBeTrue();
+
+            $currentFragment = file_get_contents($fixture['fragment']);
+            file_put_contents($fixture['fragment'], "# stale Metrics publication\n");
+            $stale = new Process($command, env: $fixture['environment']);
+            expect($stale->run())
+                ->not
+                ->toBe(0)
+                ->and(trim($stale->getOutput()))
+                ->toBe('');
+
+            file_put_contents($fixture['fragment'], $currentFragment);
+            $certificateCurrent = $fixture['root'].'/etc/caddy/orbit-metrics-cert-current';
+            $foreignCertificate = $fixture['root'].'/etc/caddy/foreign-metrics-certificate';
+            mkdir($foreignCertificate, 0o700);
+            file_put_contents("{$foreignCertificate}/metrics.pem", "fixture certificate\n");
+            file_put_contents("{$foreignCertificate}/metrics.key", "fixture key\n");
+            unlink($certificateCurrent);
+            symlink($foreignCertificate, $certificateCurrent);
+            expect(new Process($command, env: $fixture['environment'])->run())->not->toBe(0);
+        } finally {
+            new Illuminate\Filesystem\Filesystem()->deleteDirectory($fixture['root']);
+        }
+    });
+
+    it('proves Metrics publication is absent when the declared map omits app-dev', function (): void {
+        $fixture = metrics_publication_probe_fixture(false);
+        try {
+            $assignments = base64_encode(json_encode([
+                'gateway' => ['gateway', 'vpn'],
+                'app-prod' => ['app-prod'],
+            ], JSON_THROW_ON_ERROR));
+            $command = [
+                'bash',
+                $fixture['script'],
+                'metrics.publication',
+                'proof',
+                str_repeat('a', 40),
+                'orbit-e2e-standby-gateway',
+                $assignments,
+            ];
+            $process = new Process($command, env: $fixture['environment']);
+            $evidence = json_decode($process->mustRun()->getOutput(), true, 16, JSON_THROW_ON_ERROR);
+            $commands = file($fixture['commands'], FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+
+            expect($evidence)
+                ->toMatchArray([
+                    'probe' => 'metrics.publication',
+                    'passed' => true,
+                    'expected' => 'metrics.orbit:absent',
+                    'observed' => 'metrics.orbit:absent',
+                ])
+                ->and(collect($commands)->contains(
+                    fn (string $line): bool => (
+                        str_starts_with($line, 'ssh ')
+                        || str_starts_with($line, 'curl ')
+                        || str_starts_with($line, 'openssl ')
+                    ),
+                ))
+                ->toBeFalse()
+                ->and($commands)
+                ->toContain('dig +time=3 +tries=1 +short metrics.orbit A @10.44.0.1');
+
+            $failedDns = new Process($command, env: [
+                ...$fixture['environment'],
+                'METRICS_DIG_EXIT' => '1',
+            ]);
+            expect($failedDns->run())->not->toBe(0);
+        } finally {
+            new Illuminate\Filesystem\Filesystem()->deleteDirectory($fixture['root']);
+        }
     });
 
     it('proves the base control-plane role assignments and accepts active extras', function () {
@@ -1529,6 +1769,97 @@ describe('convergence guest scripts', function () {
                 ->not
                 ->toBe(0);
         }
+    });
+
+    it('refreshes only an existing active app-dev Metrics publication', function (): void {
+        $root = temporaryPath('orbit-task13-metrics-publication-', 6);
+        mkdir($root, 0o700, true);
+        $source = file_get_contents(dirname(__DIR__, 3).'/resources/guest/converge-sample-app.sh');
+        file_put_contents(
+            "{$root}/converge.sh",
+            str_replace('orbit=/home/orbit/orbit/apps/cli/orbit', "orbit={$root}/orbit", $source),
+        );
+        file_put_contents("{$root}/orbit", <<<'BASH'
+            #!/usr/bin/env bash
+            set -euo pipefail
+            state=$(dirname "$0")
+            printf '%s\n' "$*" >>"$state/commands-$METRICS_MODE"
+            case "$1" in
+              metrics:status)
+                case "$METRICS_MODE" in
+                  absent) printf '{"enabled":false,"assignment":null}' ;;
+                  active) printf '{"enabled":true,"assignment":{"id":9,"node_id":2,"node_name":"app-dev","status":"active"}}' ;;
+                  failed) printf '{"enabled":true,"assignment":{"id":9,"node_id":2,"node_name":"app-dev","status":"failed"}}' ;;
+                  misplaced) printf '{"enabled":true,"assignment":{"id":9,"node_id":3,"node_name":"app-prod","status":"active"}}' ;;
+                  malformed) printf '{"enabled":true,"assignment":{"id":9,"node_id":"2","node_name":"app-dev","status":"active"}}' ;;
+                  missing-id) printf '{"enabled":true,"assignment":{"node_id":2,"node_name":"app-dev","status":"active"}}' ;;
+                  response-wrong-node) printf '{"enabled":true,"assignment":{"id":9,"node_id":2,"node_name":"app-dev","status":"active"}}' ;;
+                  response-wrong-assignment) printf '{"enabled":true,"assignment":{"id":9,"node_id":2,"node_name":"app-dev","status":"active"}}' ;;
+                  response-inactive) printf '{"enabled":true,"assignment":{"id":9,"node_id":2,"node_name":"app-dev","status":"active"}}' ;;
+                esac
+                ;;
+              node:role:add)
+                node_id=$2
+                assignment_id=9
+                status=active
+                [[ "$METRICS_MODE" == response-wrong-node ]] && node_id=3
+                [[ "$METRICS_MODE" == response-wrong-assignment ]] && assignment_id=10
+                [[ "$METRICS_MODE" == response-inactive ]] && status=failed
+                printf '{"node_id":%s,"node_name":"app-dev","role":"metrics","assignment":{"id":%s,"role":"metrics","status":"%s"}}' "$node_id" "$assignment_id" "$status"
+                ;;
+              *) exit 70 ;;
+            esac
+            BASH);
+        chmod("{$root}/orbit", 0o700);
+
+        foreach (['active', 'active', 'absent'] as $mode) {
+            expect(
+                new Process(
+                    ['bash', "{$root}/converge.sh", 'metrics-publication'],
+                    env: ['METRICS_MODE' => $mode],
+                )->run(),
+            )
+                ->toBe(0);
+        }
+
+        expect(file("{$root}/commands-active", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES))
+            ->toBe([
+                'metrics:status --json',
+                'node:role:add 2 metrics --converge --json',
+                'metrics:status --json',
+                'node:role:add 2 metrics --converge --json',
+            ])
+            ->and(file("{$root}/commands-absent", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES))
+            ->toBe(['metrics:status --json']);
+
+        foreach ([
+            'failed',
+            'misplaced',
+            'malformed',
+            'missing-id',
+            'response-wrong-node',
+            'response-wrong-assignment',
+            'response-inactive',
+        ] as $mode) {
+            expect(
+                new Process(
+                    ['bash', "{$root}/converge.sh", 'metrics-publication'],
+                    env: ['METRICS_MODE' => $mode],
+                )->run(),
+            )
+                ->not
+                ->toBe(0);
+        }
+
+        expect(
+            new Process([
+                'bash',
+                "{$root}/converge.sh",
+                'metrics-publication',
+                'extra',
+            ], env: ['METRICS_MODE' => 'active'])->run(),
+        )
+            ->toBe(64);
     });
 
     it('installs the local_certs fragment inside the managed Caddy version and keeps the product symlink', function () {
