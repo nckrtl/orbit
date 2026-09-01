@@ -1,173 +1,93 @@
-# ADR 0006: Use topology-led disposable feature development
+# ADR 0006: Separate disposable discovery from immutable proof
 
 ## Status
 
-Superseded on 2026-08-30 by [ADR 0007](0007-nine-step-feature-flow.md). Kept as
-the record of the topology-led decision and its ceremony.
-
-Amended on 2026-08-30 (before supersession): proof plans moved to
-`proofs/<ISSUE>.json`; harness state moved to `<worktree>/.e2e/` and
-`<primary>/.e2e/`; the reviewer re-proves and the merge agent promotes the
-reviewer's topology; YAML handoffs, gate checklists, evidence archives, and the
-rolling acceptance suite were withdrawn.
-
-This decision supersedes the shared-live feature-development boundary of
-[ADR 0002](0002-candidate-deployment-proof-boundary.md): its shared-live
-rollout, pre-rollout review, live mutation, restored-pre-state, and post-proof
-review requirements no longer govern development proof. ADR 0002's ownership
-and production-separation principles remain in force and are restated below.
-[ADR 0005](0005-rolling-incus-development-topology.md) provides the prepared
-topology that this decision builds on.
+Accepted on 2026-08-29. This decision builds on
+[ADR 0005](0005-rolling-incus-development-topology.md) and supersedes the
+shared-live development-proof venue from
+[ADR 0002](0002-candidate-deployment-proof-boundary.md). ADR 0002's ownership
+and production-separation principles remain in force.
 
 ## Context
 
 ADR 0002 proved candidate code on registered shared live nodes. That venue
-forced a serial rollout, two review events, a recorded pre-state for every
-mutation, and a restore step before final approval. Each rule existed because
-the nodes were shared and the proof state could outlive the feature.
+required serial rollout, recorded pre-state, careful restoration, and broad
+coordination because proof state could outlive one change.
 
-ADR 0005 replaced that venue for Incus-backed work. It gives each feature a
-disposable, issue-specific `gateway_app-dev_app-prod` topology on an isolated
-network, acquired from a prepared standby generation. Live acceptance of that
-harness on 2026-08-29 showed that a fresh three-node topology is cheap. A
-disposable topology also has no pre-state to restore and no shared owner to
-protect. The ADR 0002 rules that guard shared state therefore add cost without
-adding safety.
-
-Two needs remain. The agent must learn what the code must become by changing a
-live topology freely. The reviewer and merge verifier must trust that proof
-shows the exact candidate and nothing else. One topology cannot serve both
-needs: discovery state must not leak into proof.
+ADR 0005 introduced cheap issue-specific Incus topologies created from a
+prepared standby generation. Disposable resources remove the shared-state
+constraints, but exploratory changes must not contaminate evidence for the
+exact candidate commit.
 
 ## Decision
 
-### Discover on one disposable topology
+### Separate discovery and proof attempts
 
-Every feature that needs Incus proof uses two separate disposable attempts on
-the profile from ADR 0005. Each attempt has its own attempt ID and its own
-exact Incus resources. The purpose is `discovery` or `proof`. Only one attempt
-is active for an issue at a time.
+Work requiring real-machine proof uses separate disposable attempts:
 
-Discovery is intentionally flexible. The implementation agent changes code and
-task-owned guest state until the topology shows the required behavior. It can
-run exact commands on the topology's nodes and use subagents at any point.
+- `discovery` may mount the worktree and may be changed while diagnosing and
+  developing the requested behavior;
+- `proof` never mounts host state and synchronizes one exact candidate commit
+  from Git.
 
-Discovery mounts the feature worktree. The harness attaches the worktree to
-the checkout roles (`gateway` and `app-dev`) with an Incus virtiofs disk
-device, so every host edit is live in both guests without a transfer step. The
-device is part of the attempt inventory, and exact release removes it. Proof
-never mounts host state; it synchronizes the exact candidate commit from Git.
-This amends the ADR 0005 rule that the host worktree is never mounted into a
-VM: that rule now applies to proof only.
+Each attempt has its own ID, network, instances, devices, inventory, and state.
+Only one attempt is active for an issue at a time.
 
-Discovery passes when the topology demonstrates the required behavior, the
-agent understands every required state change, repository behavior owns all
-product state, and every remaining manual action has one disposition:
-repository behavior, declared proof setup, a `post_deployment_actions` entry,
-or diagnostic-only work. Discovery output is not proof evidence.
+Discovery output is diagnostic context, not proof evidence. Release discovery
+resources and verify their exact absence before starting proof.
 
-The agent then hardens the candidate: implementation, tests, affected project
-checks, root checks, quality checks, and useful Compound work. The clean
-candidate commit is the code freeze.
+### Prove one exact commit
 
-The discovery topology is released and its exact absence is verified before
-proof starts. This verified cleanup is a hard gate.
+A proof attempt:
 
-### Prove the exact commit on a fresh topology
-
-Proof is one harness-owned operation. The agent does not drive each step, and
-later worktree edits cannot affect it. The harness:
-
-1. creates a new proof topology with its own attempt ID and Incus resources;
+1. creates a fresh topology from the prepared standby generation;
 2. synchronizes the exact candidate commit from Git;
 3. verifies clean guest checkout identity at that commit;
 4. runs repository convergence;
-5. runs the declared proof setup;
-6. runs the acceptance checks; and
-7. records the result.
+5. runs declared proof setup;
+6. runs one acceptance action per acceptance criterion; and
+7. records the complete result.
 
 The proof record binds the attempt ID, candidate commit, topology recipe,
-declared proof actions, the observed result of every acceptance check, and a
-status of `proved` or `diagnosis`.
+declared actions, observed result of each action, and a status of `proved` or
+`diagnosis`.
 
-The harness can retry one transport failure that occurs before clean guest
-checkout identity is verified. Any later failure, or a second transport
-failure, moves the topology to `diagnosis`. A diagnosis topology can be
-inspected and changed. It cannot become proved. It must be released before
-another proof attempt starts.
+A transport failure may be retried once before clean guest checkout identity is
+verified. Any later failure, or a second transport failure, changes the attempt
+to `diagnosis`. Diagnosis resources may be inspected but can never become
+proved; release them before another proof attempt.
 
-### Keep successful proof immutable through merge
+### Keep successful proof immutable
 
-A proved topology stays immutable through review and merge. The harness
-rejects sync, exec, and state changes on a proved attempt. Moving proved to
-diagnosis is one-way. Releasing a proved topology before merge makes its proof
-unusable. The TTL reaper does not release a proved topology while its pull
-request is open.
+A proved topology is immutable. The harness rejects synchronization, command
+execution, and state changes against it. Changing it to diagnosis is one-way.
+Releasing it invalidates the proof.
 
-A corrective commit changes the pull-request head, so the prior proof is stale
-automatically. No separate invalidation state or command is required. The
-agent releases the old topology and completes fresh proof for the corrected
-candidate.
+A new candidate commit makes prior proof stale automatically. Proof consumers
+must require an active proved topology whose recorded candidate equals the
+commit being evaluated and whose acceptance results are complete.
 
-The merge verifier requires an active proof topology whose record has status
-`proved` and whose candidate commit equals the current pull-request head, with
-observed results for every acceptance check. It performs no topology mutation
-or cleanup.
+### Clean up by exact inventory
 
-### Review while CI runs
+Cleanup revalidates ownership and removes only the exact resources recorded for
+the attempt. It never deletes by prefix, glob, age, broad query, or unresolved
+variable. Every resource records its Orbit owner, issue, attempt, and operation.
 
-The agent opens a normal pull request only after proof succeeds. Orbit does
-not use draft pull requests. CI and independent review start immediately and
-run in parallel. The reviewer can approve while CI is pending. The merge
-verifier still requires passing current-head CI, approval for the current
-candidate, no unresolved actionable findings, a complete Compound disposition,
-and complete post-deployment actions.
+The prepared standby generation may be refreshed only after disposable proof
+resources are released and their absence is verified.
 
-ADR 0002's two review events are replaced by one review anchored to the
-candidate commit. The reviewer verifies the Linear contract, candidate,
-topology recipe, proof record, acceptance mapping, manual-action dispositions,
-Compound result, and existing review comments. Review is read-only for the
-proof topology.
+### Preserve production separation
 
-### Clean proof before prepared-state refresh
-
-After merge, the external project manager releases the proof topology and
-verifies exact absence. Only then does it refresh the default prepared
-topology when the prepared-state fingerprint from ADR 0005 shows a change,
-remove the worktree, and close the Linear issue. If refresh fails, merged code
-stays merged and the proof topology stays absent; the worktree and issue stay
-open for maintenance triage.
-
-Cleanup uses the exact resource inventory recorded when the attempt was
-created. Each resource records its Orbit owner, issue, and attempt. Cleanup
-revalidates live ownership, removes only those exact resources, and verifies
-absence. It never deletes by prefix, glob, age, broad query, or unresolved
-variable. A cleanup failure blocks the next topology. The TTL reaper is only a
-fallback for abandoned discovery or diagnosis attempts.
-
-The ownership and production-separation principles of ADR 0002 stay exact:
-every proof resource names its task owner; shared and pre-existing resources
-are never adopted as task-owned state; the merge verifier is read-only for
-live resources; and production release, `post_deployment_actions`, and
-post-deploy verification remain a separate operations process. Production
-never reuses a disposable proof topology.
+Development proof never reuses production resources. Production release and
+post-release verification remain separate operations. Shared or pre-existing
+resources are never adopted as task-owned state.
 
 ## Consequences
 
-- Discovery is fast and free-form because a disposable topology has no shared
-  pre-state to protect or restore.
-- Proof is trustworthy because it runs the exact commit on a physically fresh
-  topology that discovery state cannot reach.
-- One review event replaces ADR 0002's pre-rollout and post-proof reviews, and
-  review no longer waits for CI.
-- A stale proof is detected by the pull-request head alone; there is no
-  separate invalidation state.
-- Exact cleanup and verified absence gate every transition: discovery to
-  proof, diagnosis to retry, and merge to prepared-state refresh.
-- The repository must maintain attempt-scoped inventories, proof records, and
-  cleanup receipts in the `apps/e2e` harness, and must update the issue,
-  worker, reviewer, and merge contracts in a dependent change after this
-  decision is on `main`. Until then, those contracts keep their current text.
-- Automated-only work stays independent of Incus. Automated proof remains
-  mandatory and implicit; Linear adds `Proof: incus` and a `Composition` line
-  only when Incus proof applies.
+- Exploration remains fast and flexible without weakening proof.
+- Proof demonstrates one exact commit on a physically fresh topology.
+- Stale proof is detected from candidate identity rather than a separate
+  invalidation ledger.
+- Exact ownership and cleanup protect unrelated Incus resources.
+- The repository must maintain attempt-scoped inventories, proof records,
+  immutable proved-state checks, and exact cleanup in `apps/e2e`.

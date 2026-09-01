@@ -1,9 +1,8 @@
 # Architecture decisions
 
-Architecture decision records explain why Orbit chose a significant direction
-and how that choice relates to earlier decisions. Accepted ADRs form an
-append-only decision history as the project progresses; they are not
-implementation tasks or substitutes for Linear contracts.
+Architecture decision records explain why Orbit chose a significant product or
+technical direction. Accepted ADRs form an append-only decision history; they
+are not implementation tasks, issue lifecycle rules, or agent instructions.
 
 The threshold is architectural significance, not mere durability. Create an
 ADR for:
@@ -11,7 +10,7 @@ ADR for:
 - a cross-component contract;
 - a durable architecture boundary;
 - a security or ownership model; or
-- a costly-to-reverse operational choice.
+- a costly-to-reverse operational choice in the product or its infrastructure.
 
 Draft a new ADR as `Proposed`. Revise the actual record with the user until the
 user explicitly approves the exact final text, then mark it `Accepted`.
@@ -26,11 +25,12 @@ may be committed directly to `main` only when:
 - local `main` matches the current remote base; and
 - no unrelated work is included, modified, stashed, reset, or discarded.
 
-If the remote base moves, recheck the ADR before committing. A pull request remains optional when the user requests independent review, multiple people share decision authority, or branch protection requires it.
+If the remote base moves, recheck the ADR before committing. A pull request
+remains optional when the user requests independent review, multiple people
+share decision authority, or branch protection requires it.
 
-Put the accepted ADR on `origin/main` before implementation issues are derived. Then reconcile affected open work and link the canonical GitHub URL
-from every governed Linear issue. This lets independent issue roots proceed in
-parallel from the same decision authority.
+Put an accepted ADR on `origin/main` before deriving implementation issues that
+depend on it. Link the canonical GitHub URL from each governed issue.
 
 Use the next four-digit number and a short kebab-case name:
 
@@ -40,9 +40,6 @@ Use the next four-digit number and a short kebab-case name:
 
 Each ADR must contain `Status`, `Context`, `Decision`, and `Consequences`.
 
-Current delivery-workflow decisions:
+Current contributor-governance decision:
 
-- [ADR 0007: Use the nine-step feature flow](0007-nine-step-feature-flow.md)
 - [ADR 0010: Record decisions before implementation issues](0010-record-decisions-before-implementation-issues.md)
-- [ADR 0011: Separate issue refinement from active delivery](0011-linear-lifecycle-states.md)
-- [ADR 0014: Reconcile technical preflight blocks before escalation](0014-reconcile-technical-preflight-blocks.md)

@@ -1,24 +1,29 @@
 ---
 name: merging-pull-requests
-description: Use when merging an approved Orbit pull request and cleaning up.
+description: Use when merging an approved Orbit pull request.
 ---
 
 # Merging Pull Requests
 
+Merge one approved pull request and clean up repository-owned development
+resources.
+
 ## Steps
 
-1. **Gates.** PR targets `main`, CI green on the head, an `Approved.` review on
-   the head, no open review comments. For `Proof: incus`, the reviewer's
-   topology is alive and proved on `main` + head (`bin/e2e-topology status
-   <ISSUE>`). If `main` moved since that proof, ask the reviewer to re-prove.
-2. **Merge.** `gh pr merge <n> --merge`.
-3. **Promote.** For `Proof: incus`: `bin/e2e-standby promote <ISSUE>` snapshots
-   the reviewer's topology as the new standby generation. If it refuses (plan
-   marked `mutates`, or `main` differs), run `bin/e2e-standby refresh` instead.
-   For a harness issue: `bin/e2e-standby refresh --main-sha=<merge sha>` on
-   the primary checkout (`bin/e2e-live` promoted into the validation clone's
-   standby, not the primary's).
-4. **Clean up.** `bin/worktree-remove <ISSUE> <slug>` (releases the topology,
-   deletes the worktree and its `.e2e/`). Close the Linear issue.
+1. **Verify the candidate.** The pull request targets `main`, CI is green for
+   the current head, an `Approved.` review applies to that head, and no
+   actionable review comments remain. For `Proof: incus`, require an active
+   proved topology whose recorded candidate equals `main` plus the current head.
+   If `main` moved, stop until current-head proof exists.
+2. **Merge.** Run `gh pr merge <n> --merge` and verify the merge commit on
+   `origin/main`.
+3. **Promote or refresh.** For Incus proof, run
+   `bin/e2e-standby promote <ISSUE>`. If promotion is invalid because the proof
+   plan mutates state or `main` differs, run `bin/e2e-standby refresh` instead.
+   For a harness change, refresh the primary standby with the merge SHA.
+4. **Clean repository resources.** Run
+   `bin/worktree-remove <ISSUE> <slug>`, then verify topology, worktree, and local
+   branch cleanup.
 
-One PR at a time from step 1 to step 3.
+Do not report success from command exit status alone; verify GitHub, `origin/main`,
+standby identity, and cleanup state directly.
