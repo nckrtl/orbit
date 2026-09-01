@@ -7,12 +7,12 @@ usage() {
     cat <<'EOF'
 usage: bin/e2e-live <candidate-sha>
 
-Runs apps/e2e/tests/Live/TopologyLedLifecycleAcceptanceTest.php (issue ACC-1)
-against real Incus resources from a validation clone: acquire, exec, release,
-prove with proofs/ACC-1.json, promote the proved topology into the clone's
-standby, acquire from that generation, release, and prove once more with
-proofs/ACC-1-ends-with.json, whose declared end state the topology does not
-have, so the run proves a declaration is checked and never taken.
+Runs apps/e2e/tests/Live/LegacyStandbyRecoveryAcceptanceTest.php and
+TopologyLedLifecycleAcceptanceTest.php (issue ACC-1) against real Incus
+resources from a validation clone. It first proves that ordinary rebuild
+refuses present resources, runs recover-legacy, and verifies its retained
+evidence. It then runs acquire, exec, release, proof, promotion, and the
+remaining topology lifecycle with proofs/ACC-1.json.
 
 The clone owns its own standby (ORBIT_E2E_STANDBY_NAMESPACE=live:
 orbit-e2e-live-standby-<role> on oe-live-standby), so the promote step never
@@ -171,6 +171,14 @@ harness() {
     "$validate/bin/e2e-$1" "${@:2}" --json
 }
 
+primary_inventory() {
+    {
+        incus --project "$incus_project" list "$incus_remote:" --format json
+        incus --project "$incus_project" network list "$incus_remote:" --format json
+    } | jq -s '[.[][] | select(.name == "oe-standby" or (.name | startswith("orbit-e2e-standby-")))]
+        | sort_by(.name)'
+}
+
 # A stale attempt of the suite's own issue blocks its first assertion.
 stale=$(harness topology status "$issue" "--worktree=$feature_worktree" | jq -r '.attempt_id // empty')
 if [[ -n "$stale" ]]; then
@@ -178,27 +186,64 @@ if [[ -n "$stale" ]]; then
     harness topology release "$issue" "--worktree=$feature_worktree" >/dev/null
 fi
 
-# The clone is its own primary: its <clone>/.e2e/standby/promoted.json names its own standby generation.
-standby_state=missing
-if standby_status=$(harness standby status); then
-    standby_state=$(jq -r '.state // "missing"' <<<"$standby_status")
-fi
-if [[ "$standby_state" == promoted ]]; then
-    log "refreshing the live standby to $candidate"
-    refresh=$(harness standby refresh "--main-sha=$candidate") || {
-        printf '%s\n' "$refresh" >&2
-        fail "standby refresh to $candidate failed"
+# The clone is its own primary: its <clone>/.e2e/standby/promoted.json names
+# only its live standby generation. Create one when this is a fresh clone, then
+# exercise the explicit schema-4/5 recovery on every proof run.
+primary_before=$(primary_inventory) || fail 'unable to inventory the primary standby before live recovery'
+set +e
+standby_status=$(harness standby status)
+standby_status_code=$?
+set -e
+standby_state=$(jq -r '.state // "invalid"' <<<"$standby_status") \
+    || fail 'standby status did not return JSON'
+if [[ "$standby_state" == missing && $standby_status_code -eq 0 ]]; then
+    log "building the clone's missing live standby at $candidate (cold build, several minutes)"
+    initial=$(harness standby rebuild "--main-sha=$candidate") || {
+        printf '%s\n' "$initial" >&2
+        fail "initial standby build at $candidate failed"
     }
-else
-    # No usable generation: build the clone's own standby from the base image.
-    # This is the first run after the clone stopped sharing the primary's standby.
-    log "the clone's live standby is $standby_state; rebuilding it at $candidate (cold build, several minutes)"
-    refresh=$(harness standby rebuild "--main-sha=$candidate") || {
-        printf '%s\n' "$refresh" >&2
-        fail "standby rebuild to $candidate failed"
-    }
+    standby_status=$(harness standby status) || fail 'the initial live standby is unavailable'
+    standby_state=$(jq -r '.state' <<<"$standby_status")
+elif [[ "$standby_state" != promoted && "$standby_state" != stale ]]; then
+    printf '%s\n' "$standby_status" >&2
+    fail "the live standby state $standby_state cannot enter legacy recovery"
 fi
+
+standby_schema=$(jq -r '.generation.schema // 5' <<<"$standby_status")
+if [[ "$standby_schema" != 4 && "$standby_schema" != 5 ]]; then
+    fail "the live standby manifest schema $standby_schema is not eligible for legacy recovery"
+fi
+
+log 'proving ordinary rebuild refuses the present live standby before mutation'
+if refusal=$(harness standby rebuild "--main-sha=$candidate"); then
+    printf '%s\n' "$refusal" >&2
+    fail 'ordinary rebuild accepted present live standby resources'
+fi
+for resource in \
+    orbit-e2e-live-standby-gateway \
+    orbit-e2e-live-standby-app-dev \
+    orbit-e2e-live-standby-app-prod \
+    oe-live-standby; do
+    jq -e --arg resource "$resource" '.error | contains($resource)' <<<"$refusal" >/dev/null \
+        || fail "ordinary rebuild did not name $resource"
+done
+jq -e '.error | contains("recover-legacy")' <<<"$refusal" >/dev/null \
+    || fail 'ordinary rebuild did not name the supported legacy recovery command'
+after_refusal=$(harness standby status 2>/dev/null || true)
+if [[ "$(jq -S . <<<"$after_refusal")" != "$(jq -S . <<<"$standby_status")" ]]; then
+    fail 'ordinary rebuild changed the live standby before refusing'
+fi
+
+log "recovering the live standby at $candidate (cold build, several minutes)"
+refresh=$(harness standby recover-legacy "--main-sha=$candidate") || {
+    printf '%s\n' "$refresh" >&2
+    fail "legacy standby recovery at $candidate failed"
+}
 log "standby: $(jq -r '.state' <<<"$refresh") ($(jq -r '.generation_id' <<<"$refresh"))"
+primary_after=$(primary_inventory) || fail 'unable to inventory the primary standby after live recovery'
+if [[ "$(jq -S . <<<"$primary_after")" != "$(jq -S . <<<"$primary_before")" ]]; then
+    fail 'legacy recovery changed the primary standby inventory'
+fi
 
 export ORBIT_LIVE_INCUS=1
 export ORBIT_LIVE_PROFILE=$profile
@@ -213,6 +258,7 @@ started=$SECONDS
 output=$(mktemp -t orbit-e2e-live.XXXXXX.log)
 set +e
 (cd "$validate/apps/e2e" && vendor/bin/pest --no-tia --compact --colors=never --group=incus-live \
+    tests/Live/LegacyStandbyRecoveryAcceptanceTest.php \
     tests/Live/TopologyLedLifecycleAcceptanceTest.php) 2>&1 | tee "$output" >&2
 status=${PIPESTATUS[0]}
 set -e

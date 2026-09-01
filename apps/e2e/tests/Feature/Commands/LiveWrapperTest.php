@@ -57,6 +57,13 @@ it('describes the validation clone, suites, and inputs with --help', function ()
     expect($result->exitCode())
         ->toBe(0)
         ->and($result->output())
-        ->toContain('ORBIT_E2E_VALIDATE_ROOT', 'TopologyLedLifecycleAcceptanceTest', 'proofs/ACC-1.json', 'ACC-1')
+        ->toContain(
+            'ORBIT_E2E_VALIDATE_ROOT',
+            'LegacyStandbyRecoveryAcceptanceTest',
+            'TopologyLedLifecycleAcceptanceTest',
+            'recover-legacy',
+            'proofs/ACC-1.json',
+            'ACC-1',
+        )
         ->not->toContain('--rolling');
 });
