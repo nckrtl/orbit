@@ -2,31 +2,29 @@
 
 declare(strict_types=1);
 
-namespace Orbit\Sdk\Responses\Instances;
+namespace Orbit\Sdk\Responses\AppInstances;
 
-use Orbit\Sdk\Support\GatewayErrorCode;
 use SensitiveParameter;
 
 /**
- * @mago-expect lint:cyclomatic-complexity Gateway values are validated at the DTO boundary.
- * @mago-expect lint:excessive-parameter-list
+ * @mago-expect lint:cyclomatic-complexity The DTO bounds every AppInstance response field in one factory.
+ * @mago-expect lint:excessive-parameter-list The DTO exposes the complete bounded AppInstance response.
  */
-final readonly class InstanceResponse
+final readonly class AppInstanceResponse
 {
     public function __construct(
         public int $id,
         public int $appId,
         public int $nodeId,
+        public int $clusterId,
         public string $name,
         public string $environment,
         public string $checkoutPath,
-        public string $documentRoot,
-        public string $phpVersion,
-        public string $hostname,
-        public string $certificateMode,
+        public ?string $root,
+        public ?string $effectiveRoot,
+        public ?string $branch,
+        public ?string $startingCommit,
         public string $status,
-        public ?string $failedStep,
-        public ?string $errorCode,
         public string $requestId,
     ) {}
 
@@ -41,16 +39,15 @@ final readonly class InstanceResponse
             id: is_int($data['id'] ?? null) ? $data['id'] : 0,
             appId: is_int($data['app_id'] ?? null) ? $data['app_id'] : 0,
             nodeId: is_int($data['node_id'] ?? null) ? $data['node_id'] : 0,
+            clusterId: is_int($data['cluster_id'] ?? null) ? $data['cluster_id'] : 0,
             name: is_string($data['name'] ?? null) ? $data['name'] : '',
             environment: is_string($data['environment'] ?? null) ? $data['environment'] : '',
             checkoutPath: is_string($data['checkout_path'] ?? null) ? $data['checkout_path'] : '',
-            documentRoot: is_string($data['document_root'] ?? null) ? $data['document_root'] : '',
-            phpVersion: is_string($data['php_version'] ?? null) ? $data['php_version'] : '',
-            hostname: is_string($data['hostname'] ?? null) ? $data['hostname'] : '',
-            certificateMode: is_string($data['certificate_mode'] ?? null) ? $data['certificate_mode'] : '',
+            root: is_string($data['root'] ?? null) ? $data['root'] : null,
+            effectiveRoot: is_string($data['effective_root'] ?? null) ? $data['effective_root'] : null,
+            branch: is_string($data['branch'] ?? null) ? $data['branch'] : null,
+            startingCommit: is_string($data['starting_commit'] ?? null) ? $data['starting_commit'] : null,
             status: is_string($data['status'] ?? null) ? $data['status'] : '',
-            failedStep: is_string($data['failed_step'] ?? null) ? $data['failed_step'] : null,
-            errorCode: GatewayErrorCode::fromTransport($data['error_code'] ?? null),
             requestId: $requestId,
         );
     }
@@ -62,16 +59,15 @@ final readonly class InstanceResponse
             'id' => $this->id,
             'app_id' => $this->appId,
             'node_id' => $this->nodeId,
+            'cluster_id' => $this->clusterId,
             'name' => $this->name,
             'environment' => $this->environment,
             'checkout_path' => $this->checkoutPath,
-            'document_root' => $this->documentRoot,
-            'php_version' => $this->phpVersion,
-            'hostname' => $this->hostname,
-            'certificate_mode' => $this->certificateMode,
+            'root' => $this->root,
+            'effective_root' => $this->effectiveRoot,
+            'branch' => $this->branch,
+            'starting_commit' => $this->startingCommit,
             'status' => $this->status,
-            'failed_step' => $this->failedStep,
-            'error_code' => $this->errorCode,
             'request_id' => $this->requestId,
         ];
     }

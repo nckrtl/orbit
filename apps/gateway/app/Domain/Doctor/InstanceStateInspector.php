@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Domain\Doctor;
 
-use App\Models\Instance;
+use App\Models\AppInstance;
 
 interface InstanceStateInspector
 {
-    public function inspect(Instance $instance): InstanceInspectionData;
+    public function inspect(AppInstance $appInstance): InstanceInspectionData;
 }

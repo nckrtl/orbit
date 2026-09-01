@@ -7,6 +7,7 @@ namespace App\Http\Authorization;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\App as OrbitApp;
+use App\Models\AppInstance;
 use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\Node;
@@ -91,7 +92,11 @@ final readonly class ServingNodeResolver
 
         /** @var list<Node> $nodes */
         $nodes = Node::query()
-            ->whereIn('id', $app->instances()->select('node_id'))
+            ->where(function ($query) use ($app): void {
+                $query
+                    ->whereIn('id', $app->instances()->select('node_id'))
+                    ->orWhereIn('id', $app->appInstances()->select('node_id'));
+            })
             ->orderBy('id')
             ->get()
             ->all();
@@ -108,7 +113,7 @@ final readonly class ServingNodeResolver
     {
         $instance = $request->route('instance');
 
-        if ($instance instanceof Instance) {
+        if ($instance instanceof AppInstance || $instance instanceof Instance) {
             return [Node::query()->findOrFail($instance->node_id)];
         }
 

@@ -11,6 +11,14 @@ final readonly class RemoveAppAction
 {
     public function execute(OrbitApp $app): OrbitApp
     {
+        if ($app->appInstances()->exists()) {
+            throw new ResourceOperationException(
+                errorCode: 'app.has_app_instances',
+                message: "App [{$app->slug}] still has AppInstances.",
+                status: 409,
+            );
+        }
+
         if ($app->instances()->exists()) {
             throw new ResourceOperationException(
                 errorCode: 'app.has_instances',

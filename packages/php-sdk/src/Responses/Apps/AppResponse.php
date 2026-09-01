@@ -16,6 +16,8 @@ final readonly class AppResponse
         public string $name,
         public string $slug,
         public string $repositoryUrl,
+        public ?string $mainBranch,
+        public ?string $root,
         public ?array $defaults,
         public string $requestId,
     ) {}
@@ -37,6 +39,8 @@ final readonly class AppResponse
             repositoryUrl: is_string($data['repository_url'] ?? null)
                 ? $redactor->redactText($data['repository_url'])
                 : '',
+            mainBranch: is_string($data['main_branch'] ?? null) ? $data['main_branch'] : null,
+            root: is_string($data['root'] ?? null) ? $data['root'] : null,
             defaults: $defaults === null ? null : $redactor->redactTransportArray($defaults),
             requestId: $requestId,
         );
@@ -50,6 +54,8 @@ final readonly class AppResponse
             'name' => $this->name,
             'slug' => $this->slug,
             'repository_url' => $this->repositoryUrl,
+            'main_branch' => $this->mainBranch,
+            'root' => $this->root,
             'defaults' => $this->defaults,
             'request_id' => $this->requestId,
         ];

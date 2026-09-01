@@ -2,7 +2,11 @@
 
 declare(strict_types=1);
 
+use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\Clusters\ClusterState;
 use App\Domain\Shared\LifecycleStatus;
+use App\Models\App as OrbitApp;
+use App\Models\AppInstance;
 use App\Models\Cluster;
 use App\Models\Node;
 
@@ -111,5 +115,42 @@ describe('Cluster lifecycle', function (): void {
             ->assertJsonPath('error.code', 'cluster.router_required');
 
         expect($cluster->refresh()->state->value)->toBe('inactive');
+    });
+
+    it('refuses to detach a Node that owns an AppInstance before changing membership', function (): void {
+        $cluster = Cluster::query()->create(['name' => 'development', 'state' => ClusterState::Active]);
+        $node = Node::query()->create([
+            'cluster_id' => $cluster->id,
+            'name' => 'app-dev',
+            'status' => LifecycleStatus::Active,
+            'public_ssh_host' => '192.0.2.10',
+        ]);
+        $app = OrbitApp::query()->create([
+            'name' => 'Acme',
+            'slug' => 'acme',
+            'repository_url' => 'https://github.com/acme/site.git',
+            'main_branch' => 'main',
+            'root' => 'public',
+        ]);
+        AppInstance::query()->create([
+            'app_id' => $app->id,
+            'node_id' => $node->id,
+            'cluster_id' => $cluster->id,
+            'name' => 'dev',
+            'checkout_path' => '/srv/orbit/apps/acme/dev',
+            'branch' => 'dev',
+            'starting_commit' => str_repeat('a', 40),
+            'status' => AppInstanceState::Active,
+        ]);
+
+        $this
+            ->deleteJson("/api/v1/clusters/{$cluster->id}/nodes/{$node->id}", ['force' => true])
+            ->assertConflict()
+            ->assertJsonPath('error.code', 'cluster.node_has_app_instances');
+
+        expect($node->refresh()->cluster_id)
+            ->toBe($cluster->id)
+            ->and(AppInstance::query()->count())
+            ->toBe(1);
     });
 });

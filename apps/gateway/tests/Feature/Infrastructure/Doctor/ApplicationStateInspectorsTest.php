@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\Clusters\ClusterState;
 use App\Domain\Doctor\AppInspectionData;
 use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Doctor\InstanceInspectionData;
@@ -10,6 +12,8 @@ use App\Domain\Instances\CertificateMode;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Nodes\Storage\CheckoutRemovalBoundary;
+use App\Domain\Nodes\Storage\ProtectedPathCatalog;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AppDev\AppDevCaddyConfigRenderer;
 use App\Infrastructure\AppDev\AppDevPhpFpmConfigRenderer;
@@ -30,6 +34,8 @@ use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\App;
+use App\Models\AppInstance;
+use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -169,137 +175,48 @@ it('fails app inspection closed for invalid intent and failed observations', fun
     'truncated output' => ['https://github.com/acme/project.git', app_inspector_result("1\n", truncated: true)],
 ]);
 
-it('observes every app-development instance projection with shared renderers', function (): void {
-    [, $node, $instance] = application_inspector_models();
-    $ssh = new AppDevFakeSshExecutor([app_inspector_result("1\n1\n1\n1\n1\n")]);
-    $processes = new ApplicationInspectorProcessRunner(app_inspector_result("1\n"));
+it('observes only AppInstance source evidence through the fixed SSH boundary', function (): void {
+    $node = application_inspector_node();
+    $appInstance = application_app_instance(application_inspector_app(), $node);
+    $ssh = new AppDevFakeSshExecutor([app_inspector_result("1\n1\n1\n1\n")]);
 
-    $inspection = application_instance_inspector($ssh, $processes)->inspect($instance);
+    $inspection = application_instance_inspector($ssh)->inspect($appInstance);
 
     expect($inspection)
-        ->toEqual(new InstanceInspectionData(true, true, true, true, true, true))
-        ->and($ssh->commands[0]->arguments[0])
-        ->toBe('sudo')
+        ->toEqual(new InstanceInspectionData(true, true, true, true))
         ->and($ssh->commands[0]->arguments)
-        ->toContain(
-            'app-dev',
-            $instance->checkout_path,
-            '/etc/caddy/orbit-certificates/instance-'.$instance->id.'/current',
-            base64_encode(application_dev_caddy($instance)),
-            base64_encode(application_dev_fpm($instance)),
-        )
-        ->and($ssh->commands[0]->input)
-        ->toContain('case "$mode:$checkout" in', 'contains_exact_block')
-        ->not->toContain(
-            $instance->checkout_path,
-            $instance->hostname,
-        )->and($processes->invocations[0]->arguments)->toBe([
+        ->toBe([
             'bash',
             '-seu',
             '--',
-            "host-record={$instance->hostname},{$node->wireguard_ip}",
-        ])->and($processes->invocations[0]->timeout)->toBe(30.0)->and($processes->invocations[0]->input)
-        ->not->toContain($instance->hostname);
+            $appInstance->app->repository_url,
+            $appInstance->checkout_path,
+            '/srv/users/nckrtl/apps',
+            'nckrtl',
+            'nckrtl',
+            $appInstance->branch,
+            $appInstance->starting_commit,
+        ])
+        ->and($ssh->commands[0]->input)
+        ->toContain('repository_independent', 'origin_matches', 'source_identity_matches')
+        ->not->toContain('caddy', 'php', 'certificate', 'dns', 'hostname');
 });
 
-it('uses the tenth positional argument as the managed home in the instance script', function (): void {
-    [, , $instance] = application_inspector_models();
-    $ssh = new AppDevFakeSshExecutor([app_inspector_result("1\n1\n1\n1\n1\n")]);
-
-    application_instance_inspector($ssh, new ApplicationInspectorProcessRunner(app_inspector_result("1\n")))
-        ->inspect($instance);
-
-    expect($ssh->commands[0]->input)
-        ->toContain('managed_home=${10}')
-        ->not->toContain('managed_home=$10');
-});
-
-it('maps each app-development instance observation without retaining diagnostics', function (
+it('maps each AppInstance source observation without retaining diagnostics', function (
     string $remote,
-    string $dns,
     InstanceInspectionData $expected,
 ): void {
-    [, , $instance] = application_inspector_models();
+    $appInstance = application_app_instance(application_inspector_app(), application_inspector_node());
     $ssh = new AppDevFakeSshExecutor([app_inspector_result($remote, stderr: 'private-stderr')]);
-    $processes = new ApplicationInspectorProcessRunner(app_inspector_result($dns, stderr: 'private-dns'));
 
-    $inspection = application_instance_inspector($ssh, $processes)->inspect($instance);
+    $inspection = application_instance_inspector($ssh)->inspect($appInstance);
 
     expect($inspection)->toEqual($expected)->and(json_encode($inspection))->not->toContain('private');
 })->with([
-    'checkout missing' => ["0\n1\n1\n1\n1\n", "1\n", new InstanceInspectionData(false, true, true, true, true, true)],
-    'document root missing' => [
-        "1\n0\n1\n1\n1\n",
-        "1\n",
-        new InstanceInspectionData(true, false, true, true, true, true),
-    ],
-    'Caddy mismatch' => ["1\n1\n0\n1\n1\n", "1\n", new InstanceInspectionData(true, true, false, true, true, true)],
-    'PHP-FPM mismatch' => ["1\n1\n1\n0\n1\n", "1\n", new InstanceInspectionData(true, true, true, false, true, true)],
-    'certificate mismatch' => [
-        "1\n1\n1\n1\n0\n",
-        "1\n",
-        new InstanceInspectionData(true, true, true, true, false, true),
-    ],
-    'DNS mismatch' => ["1\n1\n1\n1\n1\n", "0\n", new InstanceInspectionData(true, true, true, true, true, false)],
-]);
-
-it('uses production projections and marks certificate and private DNS not applicable', function (): void {
-    $node = application_inspector_node();
-    $app = application_inspector_app();
-    $instance = application_inspector_instance($app, $node, CertificateMode::Acme);
-    $ssh = new AppDevFakeSshExecutor([app_inspector_result("1\n1\n1\n1\n1\n")]);
-    $processes = new ApplicationInspectorProcessRunner(app_inspector_result('private-output'));
-
-    $inspection = application_instance_inspector($ssh, $processes)->inspect($instance);
-
-    expect($inspection)
-        ->toEqual(new InstanceInspectionData(true, true, true, true, null, null))
-        ->and($ssh->commands[0]->arguments)
-        ->toContain(
-            'app-prod',
-            base64_encode(application_prod_caddy($instance)),
-            base64_encode(application_prod_fpm($instance)),
-        )
-        ->and($processes->invocations)
-        ->toBeEmpty();
-});
-
-it('fails closed when instance assignment and certificate mode disagree', function (
-    string $assignment,
-    CertificateMode $certificateMode,
-): void {
-    [, $node, $instance] = application_inspector_models();
-    $instance->update([
-        'certificate_mode' => $certificateMode,
-    ]);
-    NodeRole::query()->where('node_id', $node->id)->delete();
-    if ($assignment !== 'none') {
-        NodeRole::query()->create([
-            'node_id' => $node->id,
-            'role' => $assignment === 'conflict' ? RoleName::AppDev->value : $assignment,
-            'status' => LifecycleStatus::Active,
-        ]);
-        if ($assignment === 'conflict') {
-            NodeRole::query()->create([
-                'node_id' => $node->id,
-                'role' => RoleName::AppProd,
-                'status' => LifecycleStatus::Active,
-            ]);
-        }
-    }
-
-    expect(
-        fn (): InstanceInspectionData => application_instance_inspector(
-            new AppDevFakeSshExecutor([app_inspector_result("1\n1\n1\n1\n1\n")]),
-            new ApplicationInspectorProcessRunner(app_inspector_result("1\n")),
-        )->inspect($instance),
-    )
-        ->toThrow(DoctorInspectionException::class, '');
-})->with([
-    'no assignment' => ['none', CertificateMode::OrbitCa],
-    'conflicting assignments' => ['conflict', CertificateMode::OrbitCa],
-    'development assignment with production mode' => [RoleName::AppDev->value, CertificateMode::Acme],
-    'production assignment with development mode' => [RoleName::AppProd->value, CertificateMode::OrbitCa],
+    'checkout missing' => ["0\n1\n1\n1\n", new InstanceInspectionData(false, true, true, true)],
+    'repository not independent' => ["1\n0\n1\n1\n", new InstanceInspectionData(true, false, true, true)],
+    'origin mismatch' => ["1\n1\n0\n1\n", new InstanceInspectionData(true, true, false, true)],
+    'source identity mismatch' => ["1\n1\n1\n0\n", new InstanceInspectionData(true, true, true, false)],
 ]);
 
 it('observes every workspace projection in one bounded remote tuple and local DNS check', function (): void {
@@ -388,12 +305,13 @@ it('fails instance and workspace observations closed on remote and local errors'
     CommandResult $local,
 ): void {
     [, , $instance, $workspace] = application_inspector_models();
+    $appInstance = application_app_instance(application_inspector_app(), $instance->node);
 
     expect(
         fn (): InstanceInspectionData => application_instance_inspector(
             new AppDevFakeSshExecutor([$remote]),
-            new ApplicationInspectorProcessRunner($local),
-        )->inspect($instance),
+        )
+            ->inspect($appInstance),
     )
         ->toThrow(DoctorInspectionException::class, '');
     expect(
@@ -420,33 +338,17 @@ it('fails instance and workspace observations closed on remote and local errors'
 
 it('redacts thrown remote and local timeouts while preserving the capped deadlines', function (): void {
     [, $node, $instance, $workspace] = application_inspector_models();
+    $appInstance = application_app_instance(application_inspector_app(), $node);
     $remoteTimeout = application_timeout('remote-secret-token');
     expect((string) $remoteTimeout)->toContain('remote-secret-token');
     $remote = new ApplicationInspectorTimeoutSshExecutor($remoteTimeout);
     $remoteException = application_capture_exception(
-        fn (): InstanceInspectionData => application_instance_inspector(
-            $remote,
-            new ApplicationInspectorProcessRunner(app_inspector_result("1\n")),
-        )->inspect($instance),
+        fn (): InstanceInspectionData => application_instance_inspector($remote)->inspect($appInstance),
     );
     application_assert_sanitized($remoteException, sentinel: 'remote-secret-token');
     expect($remote->connections[0]->commandTimeout)
         ->toBe(30.0)
         ->and(json_encode($remote->connections))
-        ->not->toContain('sentinel');
-
-    $localTimeout = application_timeout('local-secret-token');
-    expect((string) $localTimeout)->toContain('local-secret-token');
-    $processes = new ApplicationInspectorProcessRunner($localTimeout);
-    $localException = application_capture_exception(
-        fn (): InstanceInspectionData => application_instance_inspector(new AppDevFakeSshExecutor([app_inspector_result(
-            "1\n1\n1\n1\n1\n",
-        )]), $processes)->inspect($instance),
-    );
-    application_assert_sanitized($localException, sentinel: 'local-secret-token');
-    expect($processes->invocations[0]->timeout)
-        ->toBe(30.0)
-        ->and(json_encode($localTimeout))
         ->not->toContain('sentinel');
 
     $workspaceRemote = new ApplicationInspectorTimeoutSshExecutor(application_timeout('workspace-remote-secret'));
@@ -575,6 +477,27 @@ function application_inspector_instance(App $app, Node $node, CertificateMode $m
     return $instance;
 }
 
+function application_app_instance(App $app, Node $node): AppInstance
+{
+    $cluster = Cluster::query()->create([
+        'name' => "doctor-cluster-{$node->id}",
+        'state' => ClusterState::Active,
+    ]);
+    $node->update(['cluster_id' => $cluster->id]);
+    $app->update(['main_branch' => 'main', 'root' => 'public']);
+
+    return AppInstance::query()->create([
+        'app_id' => $app->id,
+        'node_id' => $node->id,
+        'cluster_id' => $cluster->id,
+        'name' => 'development',
+        'checkout_path' => "/srv/users/nckrtl/apps/{$app->slug}/development",
+        'branch' => 'development',
+        'starting_commit' => str_repeat('a', 40),
+        'status' => AppInstanceState::Active,
+    ]);
+}
+
 function application_app_inspector(AppDevFakeSshExecutor $ssh): NativeAppStateInspector
 {
     return new NativeAppStateInspector(
@@ -588,17 +511,12 @@ function application_app_inspector(AppDevFakeSshExecutor $ssh): NativeAppStateIn
 
 function application_instance_inspector(
     SshExecutor $ssh,
-    ApplicationInspectorProcessRunner $processes,
 ): NativeInstanceStateInspector {
     return new NativeInstanceStateInspector(
         new AppDevSshExecutor($ssh, application_inspector_keys(), application_inspector_hosts()),
-        $processes,
-        new AppDevCaddyConfigRenderer,
-        new AppDevPhpFpmConfigRenderer,
-        new AppProdCaddyConfigRenderer,
-        new AppProdPhpFpmConfigRenderer,
         new CommandDeadline,
         application_inspector_accounts(),
+        new CheckoutRemovalBoundary(new ProtectedPathCatalog),
     );
 }
 

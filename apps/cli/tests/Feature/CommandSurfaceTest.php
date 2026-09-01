@@ -46,7 +46,6 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'gateway:use',
         'instance:list',
         'instance:new',
-        'instance:php',
         'instance:remove',
         'instance:show',
         'metrics:credentials',
@@ -90,7 +89,7 @@ it('does not register hidden Orbit product commands', function (): void {
     $orbitCommands = collect(app(Kernel::class)->all())
         ->filter(static fn (Command $command): bool => str_starts_with($command::class, 'App\\Commands\\'));
 
-    expect($orbitCommands)->toHaveCount(64);
+    expect($orbitCommands)->toHaveCount(63);
     expect($orbitCommands->every(
         static fn (Command $command): bool => ! $command->isHidden(),
     ))->toBeTrue();
@@ -126,7 +125,10 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'activity:list' => [[], ['limit' => '25', 'request-id' => null, 'json' => false]],
         'activity:show' => [['activity'], ['json' => false]],
         'app:list' => [[], ['json' => false]],
-        'app:new' => [['slug', 'repository'], ['name' => null, 'json' => false]],
+        'app:new' => [
+            ['slug', 'repository'],
+            ['name' => null, 'main-branch' => null, 'root' => 'public', 'json' => false],
+        ],
         'app:remove' => [['app'], ['json' => false]],
         'app:show' => [['app'], ['json' => false]],
         'cluster:list' => [[], ['json' => false]],
@@ -160,16 +162,9 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'instance:list' => [[], ['json' => false]],
         'instance:new' => [
             ['app', 'node', 'name'],
-            [
-                'environment' => null,
-                'hostname' => null,
-                'document-root' => 'public',
-                'php' => '8.5',
-                'json' => false,
-            ],
+            ['root' => null, 'json' => false],
         ],
-        'instance:php' => [['instance', 'version'], ['json' => false]],
-        'instance:remove' => [['instance'], ['json' => false]],
+        'instance:remove' => [['instance'], ['discard-source' => false, 'json' => false]],
         'instance:show' => [['instance'], ['json' => false]],
         'metrics:credentials' => [[], ['reset' => false, 'json' => false]],
         'metrics:disable' => [[], ['force' => false, 'purge-data' => false, 'json' => false]],
@@ -384,7 +379,6 @@ it('renders one exact json failure envelope for every Orbit product command', fu
         ],
         'instance:list' => [[], ...$profileMissing],
         'instance:new' => [['app' => '1', 'node' => '1', 'name' => 'web'], ...$profileMissing],
-        'instance:php' => [['instance' => '1', 'version' => '8.5'], ...$profileMissing],
         'instance:remove' => [['instance' => '1'], ...$profileMissing],
         'instance:show' => [['instance' => '1'], ...$profileMissing],
         'metrics:credentials' => [[], ...$profileMissing],

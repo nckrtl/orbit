@@ -3,8 +3,11 @@
 This section groups documentation by the part of Orbit you want to use. It will
 grow as Orbit gains more features.
 
-There are no separate product-area guides yet. For now, start with
-[Architecture](../architecture.md) and [Concepts](../concepts.md). Use the
+- [Applications](applications.md) explains App source defaults and the
+  development AppInstance source lifecycle.
+
+Start with [Architecture](../architecture.md) and
+[Concepts](../concepts.md) for the product-wide model. Use the
 [Reference](../reference/) section when you need detailed operational
 information.
 

@@ -64,6 +64,16 @@ final readonly class RemoveNodeRoleAction
             return $this->removeIngress($node, $force);
         }
 
+        if ($role === RoleName::AppDev && $node->appInstances()->exists()) {
+            throw new NodeRoleValidationException(
+                message: "Role [{$role->value}] cannot be removed while node [{$node->name}] owns AppInstances.",
+                details: [
+                    'reason' => 'app_instances_attached',
+                    'role' => $role->value,
+                ],
+            );
+        }
+
         $this->guardPolicy($node, $role);
         $this->toolIntentGuard->assertRemovalSafe($node, $role);
         $preview = $this->withRetirementPreview(
@@ -275,6 +285,17 @@ final readonly class RemoveNodeRoleAction
                 ->lockForUpdate()
                 ->firstOrFail();
             $this->guardPolicy($node->refresh(), $role);
+
+            if ($role === RoleName::AppDev && $node->appInstances()->exists()) {
+                throw new NodeRoleValidationException(
+                    message: "Role [{$role->value}] cannot be removed while node [{$node->name}] owns AppInstances.",
+                    details: [
+                        'reason' => 'app_instances_attached',
+                        'role' => $role->value,
+                    ],
+                );
+            }
+
             $this->toolIntentGuard->assertRemovalSafe($node, $role);
 
             if (! $this->canClaim($assignment)) {

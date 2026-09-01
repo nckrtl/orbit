@@ -3,12 +3,12 @@
 declare(strict_types=1);
 
 use App\Http\Controllers\Api\ActivitiesController;
+use App\Http\Controllers\Api\AppInstancesController;
 use App\Http\Controllers\Api\AppsController;
 use App\Http\Controllers\Api\ClustersController;
 use App\Http\Controllers\Api\DoctorRunsController;
 use App\Http\Controllers\Api\FirewallRulesController;
 use App\Http\Controllers\Api\GatewayStatusesController;
-use App\Http\Controllers\Api\InstancesController;
 use App\Http\Controllers\Api\MetricsController;
 use App\Http\Controllers\Api\NodeAccessController;
 use App\Http\Controllers\Api\NodeRolesController;
@@ -110,13 +110,11 @@ Route::prefix('v1')->group(function (): void {
         Route::get('apps/{app}', [AppsController::class, 'show'])->name('app:show');
         Route::post('apps', [AppsController::class, 'store'])->name('app:new');
         Route::delete('apps/{app}', [AppsController::class, 'destroy'])->name('app:remove');
-        Route::get('instances', [InstancesController::class, 'index'])->name('instance:list');
-        Route::get('instances/{instance}', [InstancesController::class, 'show'])->name('instance:show');
-        Route::post('instances', [InstancesController::class, 'store'])->name('instance:new');
-        Route::delete('instances/{instance}', [InstancesController::class, 'destroy'])
+        Route::get('instances', [AppInstancesController::class, 'index'])->name('instance:list');
+        Route::get('instances/{instance}', [AppInstancesController::class, 'show'])->name('instance:show');
+        Route::post('instances', [AppInstancesController::class, 'store'])->name('instance:new');
+        Route::delete('instances/{instance}', [AppInstancesController::class, 'destroy'])
             ->name('instance:remove');
-        Route::patch('instances/{instance}/php', [InstancesController::class, 'php'])
-            ->name('instance:php');
         Route::get('workspaces', [WorkspacesController::class, 'index'])->name('workspace:list');
         Route::get('workspaces/{workspace}', [WorkspacesController::class, 'show'])
             ->name('workspace:show');

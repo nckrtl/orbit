@@ -7,8 +7,8 @@ namespace App\Commands\Instances;
 use App\Commands\GatewayCommand;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
-use Orbit\Sdk\Requests\Instances\ListInstancesRequest;
-use Orbit\Sdk\Responses\Instances\InstancesResponse;
+use Orbit\Sdk\Requests\AppInstances\ListAppInstancesRequest;
+use Orbit\Sdk\Responses\AppInstances\AppInstancesResponse;
 
 final class ListInstancesCommand extends GatewayCommand
 {
@@ -29,9 +29,9 @@ final class ListInstancesCommand extends GatewayCommand
             return self::FAILURE;
         }
 
-        $response = $this->send($connector, new ListInstancesRequest, InstancesResponse::class);
+        $response = $this->send($connector, new ListAppInstancesRequest, AppInstancesResponse::class);
 
-        if (! $response instanceof InstancesResponse) {
+        if (! $response instanceof AppInstancesResponse) {
             return self::FAILURE;
         }
 
@@ -43,20 +43,21 @@ final class ListInstancesCommand extends GatewayCommand
 
         $rows = [];
 
-        foreach ($response->instances as $instance) {
+        foreach ($response->appInstances as $instance) {
             $rows[] = [
                 $instance->id,
                 $instance->appId,
                 $instance->nodeId,
+                $instance->clusterId,
                 $instance->name,
                 $instance->environment,
+                $instance->effectiveRoot ?? '-',
+                $instance->branch ?? '-',
                 $instance->status,
-                $instance->phpVersion,
-                $instance->hostname,
             ];
         }
 
-        $this->table(['ID', 'App', 'Node', 'Name', 'Environment', 'Status', 'PHP', 'Hostname'], $rows);
+        $this->table(['ID', 'App', 'Node', 'Cluster', 'Name', 'Environment', 'Root', 'Branch', 'Status'], $rows);
         $this->line("Request ID: {$response->requestId}");
 
         return self::SUCCESS;

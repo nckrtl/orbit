@@ -7,6 +7,7 @@ namespace App\Infrastructure\Activity;
 use App\Domain\Processes\ProcessTargetType;
 use App\Domain\Tools\ToolOperationException;
 use App\Models\App as OrbitApp;
+use App\Models\AppInstance;
 use App\Models\FirewallRule;
 use App\Models\Instance;
 use App\Models\Node;
@@ -162,9 +163,9 @@ final readonly class CommandActivityTargetResolver
         return match ($request->route()?->getName()) {
             'node:provision' => Node::query()->where('name', $request->input('name'))->first(),
             'app:new' => OrbitApp::query()->where('slug', $request->input('slug'))->first(),
-            'instance:new' => Instance::query()
+            'instance:new' => AppInstance::query()
                 ->where('app_id', $request->integer('app_id'))
-                ->where('node_id', $request->integer('node_id'))
+                ->where('name', $request->input('name'))
                 ->first(),
             'workspace:new' => Workspace::query()
                 ->where('instance_id', $request->integer('instance_id'))
@@ -237,7 +238,7 @@ final readonly class CommandActivityTargetResolver
             return $subject->exists ? $subject->id : null;
         }
 
-        if ($subject instanceof Instance) {
+        if ($subject instanceof AppInstance || $subject instanceof Instance) {
             return $subject->node_id;
         }
 

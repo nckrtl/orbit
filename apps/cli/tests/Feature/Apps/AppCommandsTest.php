@@ -60,6 +60,7 @@ describe('app:new', function (): void {
                 'name' => 'Orbit',
                 'slug' => 'orbit',
                 'repository_url' => 'git@github.com:nckrtl/orbit.git',
+                'root' => 'public',
             ]);
     });
 
@@ -122,6 +123,7 @@ describe('app:new', function (): void {
             ->toBe([
                 'slug' => 'Orbit App',
                 'repository_url' => 'nckrtl/orbit',
+                'root' => 'public',
             ]);
     });
 });
@@ -204,6 +206,7 @@ describe('app:new repository boundary', function (): void {
             ->toBe([
                 'slug' => 'orbit',
                 'repository_url' => $repository,
+                'root' => 'public',
             ]);
     })->with([
         'unrecognized reference' => 'not-a-repository',
@@ -242,8 +245,8 @@ describe('app:list', function (): void {
         $this
             ->artisan('app:list')
             ->expectsTable(
-                ['ID', 'Name', 'Slug', 'Repository'],
-                [[3, 'Orbit', 'orbit', 'git@github.com:nckrtl/orbit.git']],
+                ['ID', 'Name', 'Slug', 'Repository', 'Main branch', 'Root'],
+                [[3, 'Orbit', 'orbit', 'git@github.com:nckrtl/orbit.git', 'main', 'public']],
             )
             ->expectsOutput('Request ID: '.app_request_id())
             ->assertExitCode(0);
@@ -350,6 +353,8 @@ describe('app:show', function (): void {
             ->artisan('app:show', ['app' => '3'])
             ->expectsOutput('Orbit [orbit] (#3)')
             ->expectsOutput('Repository: git@github.com:nckrtl/orbit.git')
+            ->expectsOutput('Main branch: main')
+            ->expectsOutput('Root: public')
             ->expectsOutput('Request ID: '.app_request_id())
             ->assertExitCode(0);
     });
@@ -404,6 +409,8 @@ function app_payload(): array
         'name' => 'Orbit',
         'slug' => 'orbit',
         'repository_url' => 'git@github.com:nckrtl/orbit.git',
+        'main_branch' => 'main',
+        'root' => 'public',
         'defaults' => ['php_version' => '8.5'],
     ];
 }

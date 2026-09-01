@@ -175,11 +175,13 @@ describe('gateway object-state boundary', function (): void {
             'name' => 'Orbit',
             'slug' => 'orbit',
             'repository_url' => $repositoryUrl,
+            'root' => 'public',
             'defaults' => $defaults,
         ];
         $request = new CreateAppRequest(
             slug: 'orbit',
             repositoryUrl: $repositoryUrl,
+            root: 'public',
             name: 'Orbit',
             defaults: $defaults,
         );
@@ -414,7 +416,7 @@ describe('gateway object-state boundary', function (): void {
 
     it('rejects inherited raw Saloon debugging', function (string $target, string $operation): void {
         $transport = $target === 'request'
-            ? new CreateAppRequest('orbit', 'https://git.example.test/orbit.git')
+            ? new CreateAppRequest('orbit', 'https://git.example.test/orbit.git', 'public')
             : new GatewayConnector('https://gateway.test');
 
         expect(fn (): object => gateway_object_state_raw_debug_operation($transport, $operation))
@@ -482,6 +484,7 @@ function gateway_object_state_app_constructor_exception(string $repositoryUrl, a
         new CreateAppRequest(
             slug: 'orbit',
             repositoryUrl: $repositoryUrl,
+            root: 'public',
             name: [],
             defaults: $defaults,
         );

@@ -2,9 +2,13 @@
 
 declare(strict_types=1);
 
+use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\Clusters\ClusterState;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Activity;
 use App\Models\App as OrbitApp;
+use App\Models\AppInstance;
+use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\Node;
 use Illuminate\Support\Str;
@@ -28,6 +32,8 @@ describe('app creation', function (): void {
             ->postJson('/api/v1/apps', [
                 'slug' => 'acme',
                 'repository_url' => 'git@github.com:acme/site.git',
+                'main_branch' => 'main',
+                'root' => 'public',
             ]);
 
         $first
@@ -43,6 +49,8 @@ describe('app creation', function (): void {
                 'name' => 'Acme website',
                 'slug' => 'acme',
                 'repository_url' => 'git@github.com:acme/site.git',
+                'main_branch' => 'main',
+                'root' => 'public',
                 'defaults' => ['php_version' => '8.5'],
             ]);
 
@@ -76,6 +84,7 @@ describe('app creation', function (): void {
             ->postJson('/api/v1/apps', [
                 'slug' => 'acme',
                 'repository_url' => 'https://github.com/acme/other.git',
+                'root' => 'public',
             ])
             ->assertConflict()
             ->assertJsonPath('error.code', 'app.repository_change_unsupported');
@@ -96,6 +105,8 @@ describe('app defaults projection', function (): void {
                 'name' => 'Acme',
                 'slug' => 'acme',
                 'repository_url' => 'https://github.com/acme/site.git',
+                'main_branch' => 'main',
+                'root' => 'public',
                 'defaults' => $defaults,
             ])
             ->assertCreated()
@@ -155,6 +166,8 @@ describe('app defaults diagnostics', function (): void {
             ->postJson('/api/v1/apps', [
                 'slug' => 'acme',
                 'repository_url' => 'https://github.com/acme/site.git',
+                'main_branch' => 'main',
+                'root' => 'public',
                 'defaults' => $defaults,
             ])
             ->assertCreated();
@@ -187,6 +200,7 @@ describe('app defaults diagnostics', function (): void {
             ->postJson('/api/v1/apps', [
                 'slug' => 'acme',
                 'repository_url' => 'https://github.com/acme/other.git',
+                'root' => 'public',
                 'defaults' => [
                     'nested' => ['api_token' => $errorSecret],
                     'diagnostic' => "request token={$errorSecret} branch=main",
@@ -266,6 +280,44 @@ describe('app lifecycle', function (): void {
             ->assertJsonPath('error.code', 'app.has_instances');
 
         expect($app->fresh())->not->toBeNull();
+    });
+
+    it('does not remove an App that still owns AppInstances', function (): void {
+        $cluster = Cluster::query()->create(['name' => 'development', 'state' => ClusterState::Active]);
+        $node = Node::query()->create([
+            'cluster_id' => $cluster->id,
+            'name' => 'app-dev',
+            'status' => LifecycleStatus::Active,
+            'public_ssh_host' => '192.0.2.10',
+        ]);
+        $app = OrbitApp::query()->create([
+            'name' => 'Acme',
+            'slug' => 'acme',
+            'repository_url' => 'https://github.com/acme/site.git',
+            'main_branch' => 'main',
+            'root' => 'public',
+        ]);
+        AppInstance::query()->create([
+            'app_id' => $app->id,
+            'node_id' => $node->id,
+            'cluster_id' => $cluster->id,
+            'name' => 'dev',
+            'checkout_path' => '/srv/orbit/apps/acme/dev',
+            'branch' => 'dev',
+            'starting_commit' => str_repeat('a', 40),
+            'status' => AppInstanceState::Active,
+        ]);
+
+        $this
+            ->deleteJson("/api/v1/apps/{$app->id}")
+            ->assertConflict()
+            ->assertJsonPath('error.code', 'app.has_app_instances');
+
+        expect($app->fresh())
+            ->not
+            ->toBeNull()
+            ->and(AppInstance::query()->count())
+            ->toBe(1);
     });
 });
 

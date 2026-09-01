@@ -44,10 +44,17 @@ final class ListAppsCommand extends GatewayCommand
         $rows = [];
 
         foreach ($response->apps as $app) {
-            $rows[] = [$app->id, $app->name, $app->slug, $app->repositoryUrl];
+            $rows[] = [
+                $app->id,
+                $app->name,
+                $app->slug,
+                $app->repositoryUrl,
+                $app->mainBranch ?? '-',
+                $app->root ?? '-',
+            ];
         }
 
-        $this->table(['ID', 'Name', 'Slug', 'Repository'], $rows);
+        $this->table(['ID', 'Name', 'Slug', 'Repository', 'Main branch', 'Root'], $rows);
         $this->line("Request ID: {$response->requestId}");
 
         return self::SUCCESS;

@@ -7,14 +7,15 @@ namespace App\Commands\Instances;
 use App\Commands\GatewayCommand;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
-use Orbit\Sdk\Requests\Instances\RemoveInstanceRequest;
-use Orbit\Sdk\Responses\Instances\InstanceResponse;
+use Orbit\Sdk\Requests\AppInstances\RemoveAppInstanceRequest;
+use Orbit\Sdk\Responses\AppInstances\AppInstanceResponse;
 
 final class RemoveInstanceCommand extends GatewayCommand
 {
     #[\Override]
     protected $signature = 'instance:remove
         {instance : Numeric instance ID}
+        {--discard-source : Delete dirty or unpublished source after identity checks}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -38,11 +39,14 @@ final class RemoveInstanceCommand extends GatewayCommand
 
         $instance = $this->send(
             $connector,
-            new RemoveInstanceRequest($instanceId),
-            InstanceResponse::class,
+            new RemoveAppInstanceRequest(
+                $instanceId,
+                discardSource: $this->option('discard-source') === true ? true : null,
+            ),
+            AppInstanceResponse::class,
         );
 
-        if (! $instance instanceof InstanceResponse) {
+        if (! $instance instanceof AppInstanceResponse) {
             return self::FAILURE;
         }
 

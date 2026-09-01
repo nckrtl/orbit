@@ -386,15 +386,15 @@ it('renders local validation failures through the exact json boundary', function
         'firewall.port_invalid',
         'Firewall port must be from 1 to 65535 or an ordered range.',
     ],
-    'instance runtime options' => [
+    'instance name' => [
         'instance:new',
-        ['app' => '1', 'node' => '1', 'name' => 'web', '--document-root' => ''],
-        'instance.options_required',
-        'Document root and PHP version are required.',
+        ['app' => '1', 'node' => '1', 'name' => ''],
+        'instance.name_required',
+        'Instance name is required.',
     ],
     'PHP version helper' => [
-        'instance:php',
-        ['instance' => '1', 'version' => 'validation-secret'],
+        'workspace:php',
+        ['workspace' => '1', 'version' => 'validation-secret'],
         'php.version_invalid',
         'PHP version must use major.minor format, for example 8.5.',
     ],

@@ -84,6 +84,15 @@ final readonly class ProvisionNodeAction
         }
 
         $node = Node::query()->firstOrNew(['name' => $data->name]);
+
+        if ($node->exists && $node->appInstances()->exists()) {
+            throw new ResourceOperationException(
+                errorCode: 'node.has_app_instances',
+                message: "Node [{$node->name}] cannot be reprovisioned while it owns AppInstances.",
+                status: 409,
+            );
+        }
+
         $clusterId = $data->clusterId ?? ($node->exists ? $node->cluster_id : null);
         $lanIp = $data->lanIpProvided
             ? $data->lanIp

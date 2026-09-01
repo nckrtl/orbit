@@ -54,9 +54,29 @@ by each Node's assigned roles.
 ## Applications and traffic
 
 Orbit groups related Nodes and applications in a Cluster. An App represents an
-application and its shared settings. An AppInstance represents one place where
-that App is developed or runs in production. A Route connects a hostname to an
-AppInstance.
+application and owns its repository, default branch, relative web root, and
+shared settings. An AppInstance represents one place where that App is
+developed or runs in production. Each AppInstance belongs to the Cluster of
+its selected Node. A Route connects a hostname to an AppInstance.
+
+A development AppInstance uses one independent Git clone at
+*<apps-root>/<app-slug>/<instance-name>*. Orbit records this path before source
+work and never moves it when the Node apps root changes. Creation has four
+durable states:
+
+    reserved -> checkout_prepared -> source_resolved -> active
+
+Each retry verifies the evidence stored by the current state. Orbit selects an
+existing remote branch with the AppInstance name. If that branch does not
+exist, Orbit creates it from the exact fetched App default branch commit.
+Source resolution records the selected branch and starting commit before the
+AppInstance becomes active.
+
+This development lifecycle owns source only. It does not install PHP, converge
+an application runtime, publish Caddy configuration, create certificates,
+change DNS, or create Routes. The Node app-dev role owns runtime prerequisites.
+Later issues own runtime and publication behavior. See
+[Applications](domains/applications.md).
 
 A Cluster has one Router for private traffic. Public traffic first reaches the
 Ingress, which accepts the connection and forwards it to the Router. Caddy on
@@ -65,10 +85,9 @@ this design in
 [ADR 0009](decisions/0009-clustered-app-instance-routing.md) and
 [ADR 0011](decisions/0011-clustered-production-ingress-and-app-prod-placement.md).
 
-These application and routing features are still being built. Some APIs still
-use the older Instance and Workspace names, and not every AppInstance, Route,
-or Ingress feature is available yet. Check the code before using these newer
-features.
+Legacy Instance and Workspace records remain available during staged
+conversion. New instance commands use AppInstance. Route, runtime, and Ingress
+work remains separate.
 
 ## Doctor
 

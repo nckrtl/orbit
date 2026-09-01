@@ -40,6 +40,12 @@ final class Cluster extends Model
         return $this->hasMany(Node::class);
     }
 
+    /** @return HasMany<AppInstance, $this> */
+    public function appInstances(): HasMany
+    {
+        return $this->hasMany(AppInstance::class);
+    }
+
     /** @return HasOne<NodeRole, $this> */
     public function routerAssignment(): HasOne
     {
