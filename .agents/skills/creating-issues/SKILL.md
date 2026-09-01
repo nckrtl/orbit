@@ -33,6 +33,8 @@ Acceptance criteria:
 Components:
 - ...
 
+Documentation: required  # or none: concise rationale
+
 ADR: none
 
 Proof: incus           # only when a real machine is required; omit otherwise
@@ -46,7 +48,7 @@ status in the description.
 - Use observable behavior. Each acceptance criterion must have one available
   proof action.
 - component names are repository-owned. Use the smallest affected set:
-  `apps/cli`, `apps/gateway`, `packages/php-sdk`, or `apps/e2e`.
+  `apps/cli`, `apps/docs`, `apps/gateway`, `packages/php-sdk`, or `apps/e2e`.
 - Paths under `proofs/` are proof artifacts, not components.
 - Name `apps/e2e` only for a dedicated harness issue. Product feature issues do
   not include harness changes.
@@ -54,6 +56,9 @@ status in the description.
   privilege boundary, network, certificate, filesystem ownership, or
   multi-node behavior. Omit it for automated-only work.
 - Record the source issue, report, review, or discussion when one exists.
+- Use `Documentation: required` when durable behavior, terminology,
+  architecture synthesis, an operational or public contract, agent context, or
+  reusable knowledge changes. Otherwise use `none` with a concise rationale.
 
 ## Issue maturity
 
@@ -63,9 +68,9 @@ proof path, component boundary, inventory, or acceptance detail.
 
 Use `Todo` only when the contract is current, every governing ADR is accepted on
 `origin/main`, every criterion is verifiable, every required component is
-allowed, and every real prerequisite is explicit.
-Remove `Readiness` before moving the issue to `Todo`; resolved history belongs in relations, comments, or
-`Source`, not in the active contract.
+allowed, and every real prerequisite and documentation impact is explicit.
+Remove `Readiness` before moving the issue to `Todo`; resolved history belongs
+in relations, comments, or `Source`, not in the active contract.
 
 A Todo issue may depend on unfinished work; the relationship communicates that
 fact without weakening the contract. When the prerequisite becomes `Done`,
@@ -127,5 +132,6 @@ original report or GitHub issue.
 ## Verification
 
 Before saving, confirm bounded outcome, explicit scope, observable criteria,
-valid smallest components, applicable ADRs, exact proof venue, real relations,
-atomicity, and no unresolved product or architectural choice.
+valid smallest components, applicable ADRs, correct documentation impact, exact
+proof venue, real relations, atomicity, and no unresolved product or
+architectural choice.

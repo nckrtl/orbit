@@ -28,7 +28,8 @@ accepted ADR, or mixes product work with a harness change.
 ## Steps
 
 1. **Read the contract.** Read the issue, ADRs, nearest `AGENTS.md`, supplied
-   plan, and acceptance-to-proof mapping.
+   plan, documentation-impact classification, relevant context from
+   `composer docs-context`, and acceptance-to-proof mapping.
 2. **Acquire a topology when needed.** For `Proof: incus`, run
    `bin/e2e-topology acquire <ISSUE> <worktree>`. The worktree is mounted on
    `gateway` and `app-dev`; `app-prod` runs no Orbit code.
@@ -38,8 +39,10 @@ accepted ADR, or mixes product work with a harness change.
 4. **Report harness gaps.** If `apps/e2e` or `bin/e2e-*` prevents product work,
    stop and report a dedicated harness issue. Do not modify harness from a
    product feature branch.
-5. **Codify.** Put required behavior in product code with tests. Run focused
-   checks, each changed project's `composer check`, and root `bin/test`.
+5. **Codify.** Put required behavior in product code with tests. Reconcile
+   required documentation in the same pull request, or preserve the issue's
+   explicit `none` rationale. Run focused checks, `composer docs-lint`, each
+   changed project's `composer check`, and root `bin/test`.
 6. **Prove the exact commit.** For Incus proof, write
    `proofs/<ISSUE>.json`, merge current `main`, release any discovery attempt,
    and run `bin/e2e-topology prove <ISSUE>`. Diagnosis cannot become proof;
@@ -74,3 +77,6 @@ For a dedicated harness issue:
 - Proof actions are read-only unless the proof plan sets `"mutates": true`.
 - A plan that removes a node declares the expected final node set.
 - One issue per worktree and topology; never reuse proof resources across issues.
+- Do not create a meaningless documentation diff when impact is `none`. Do not
+  leave durable behavior, terminology, operational contracts, agent context, or
+  reusable knowledge stale when impact is `required`.
