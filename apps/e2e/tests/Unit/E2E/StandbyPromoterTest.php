@@ -519,10 +519,18 @@ describe('StandbyPromoter', function (): void {
         $events = [];
         fakePromotionHost($fixture['target'], $events);
         $plan = ProofPlan::fromArray($fixture['plan']->toArray() + ['mutates' => true]);
+        $promoted = $fixture['manifests']->promoted()?->toArray();
+        $state = IssueState::forWorktree('NCK-123', $fixture['worktree']);
 
         expect(fn () => promoterFor($fixture['root'], $fixture['paths'], $fixture['manifests'])
             ->promote($fixture['request'], $plan))
             ->toThrow(RuntimeException::class, 'mutates: true');
+        expect($events)
+            ->toBe([])
+            ->and($fixture['manifests']->promoted()?->toArray())
+            ->toBe($promoted)
+            ->and($state->hasAttempt())
+            ->toBeTrue();
         Process::assertDidntRun(fn (PendingProcess $process): bool => ($process->command[0] ?? null) === 'incus');
     });
 
