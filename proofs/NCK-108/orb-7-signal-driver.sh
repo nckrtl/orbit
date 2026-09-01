@@ -8,8 +8,17 @@ deadline=${3:?deadline required}
 expected=130
 [[ "$signal" == TERM ]] && expected=143
 
-setsid --wait env ORBIT_E2E_ORB7_MODE=signal ORBIT_E2E_ORB7_CASE="$action" \
-  bash /var/lib/orbit-e2e/proof/metrics-node-fails-closed.sh &
+env ORBIT_E2E_ORB7_MODE=signal ORBIT_E2E_ORB7_CASE="$action" \
+  python3 - /var/lib/orbit-e2e/proof/metrics-node-fails-closed.sh <<'PY' &
+import os
+import signal
+import sys
+
+os.setsid()
+signal.signal(signal.SIGINT, signal.SIG_DFL)
+signal.signal(signal.SIGTERM, signal.SIG_DFL)
+os.execv('/usr/bin/bash', ['bash', sys.argv[1]])
+PY
 pid=$!
 for _ in $(seq 1 300); do
   sudo test ! -f "$ORB7_CLEANUP_ROOT/$action/checkpoint" || break
