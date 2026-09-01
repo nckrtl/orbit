@@ -11,7 +11,7 @@ checkpoint=
 
 matrix_cleanup() {
   bash "$fixture" cleanup || true
-  [[ -z "$checkpoint" ]] || sudo rm -f -- "$checkpoint"
+  [[ -z "$checkpoint" ]] || sudo rm -f -- "$checkpoint" "$checkpoint.continue"
   sudo rm -f -- "$target"
 }
 trap matrix_cleanup EXIT INT TERM
@@ -34,6 +34,7 @@ for window in post-record post-mutation; do
   for event in EXIT INT TERM; do
     checkpoint="/var/tmp/orbit-e2e-orb-7-representative-${window}-${event}.ready"
     sudo test ! -e "$checkpoint" || fail "checkpoint already exists: $checkpoint"
+    sudo test ! -e "$checkpoint.continue" || fail "checkpoint acknowledgement already exists: $checkpoint.continue"
     env ORBIT_E2E_ORB7_EVENT="$event" ORBIT_E2E_ORB7_WINDOW="$window" \
       ORBIT_E2E_ORB7_CHECKPOINT="$checkpoint" python3 - "$fixture" <<'PY' &
 import os
@@ -60,7 +61,9 @@ PY
       sudo test ! -e "$stub" || fail "$event fixture mutated before the post-record checkpoint"
       [[ "$(sudo cat "$target")" == baseline ]] || fail "$event fixture changed state before mutation"
     fi
-    if [[ "$event" != EXIT ]]; then
+    if [[ "$event" == EXIT ]]; then
+      sudo touch -- "$checkpoint.continue"
+    else
       kill -s "$event" -- "-$pid"
     fi
     timeout 12s tail --pid="$pid" -f /dev/null || fail "$event fixture did not finish cleanup"
@@ -75,7 +78,7 @@ PY
     assert_restored "$event at $window"
     bash "$fixture" cleanup
     assert_restored "$event at $window idempotent cleanup"
-    sudo rm -f -- "$checkpoint"
+    sudo rm -f -- "$checkpoint" "$checkpoint.continue"
     checkpoint=
   done
 done

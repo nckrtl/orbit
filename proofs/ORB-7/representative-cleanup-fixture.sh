@@ -31,8 +31,10 @@ fi
 checkpoint() {
   local window="$1"
   if [[ "${ORBIT_E2E_ORB7_WINDOW:-}" == "$window" ]]; then
-    printf 'ready\n' | sudo tee "${ORBIT_E2E_ORB7_CHECKPOINT:?}" >/dev/null
+    local checkpoint=${ORBIT_E2E_ORB7_CHECKPOINT:?}
+    printf 'ready\n' | sudo tee "$checkpoint" >/dev/null
     if [[ "${ORBIT_E2E_ORB7_EVENT:-}" == EXIT ]]; then
+      until sudo test -f "$checkpoint.continue"; do sleep 0.1; done
       exit 0
     fi
     while true; do sleep 1; done
