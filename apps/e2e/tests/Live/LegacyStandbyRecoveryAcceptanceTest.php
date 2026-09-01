@@ -2,6 +2,12 @@
 
 declare(strict_types=1);
 
+use App\E2E\IncusHost;
+use App\E2E\LegacyStandbyRecovery;
+use App\E2E\StandbyManifestStore;
+use App\E2E\State\AtomicJsonStore;
+use App\E2E\State\StatePaths;
+use App\E2E\Value\OperationId;
 use App\E2E\Value\StandbyIdentity;
 use App\E2E\Value\TopologyProfile;
 use PHPUnit\Framework\Assert;
@@ -9,6 +15,70 @@ use Tests\Live\Support\LiveHarness;
 use Tests\TestCase;
 
 uses(TestCase::class);
+
+it('writes a network-only recovery record for a fresh process', function (): void {
+    if (getenv('ORBIT_LIVE_INCUS') !== '1') {
+        test()->markTestSkipped('Set ORBIT_LIVE_INCUS=1 to run.');
+    }
+
+    $inputs = LiveHarness::inputs([
+        'ORBIT_LIVE_MAIN_WORKTREE',
+        'ORBIT_LIVE_CANDIDATE_SHA',
+    ]);
+    $paths = StatePaths::forPrimary($inputs['ORBIT_LIVE_MAIN_WORKTREE']);
+    $store = new AtomicJsonStore($paths);
+    $host = app(IncusHost::class);
+    $recovery = new LegacyStandbyRecovery(
+        $host,
+        new StandbyManifestStore($store, $paths, $host),
+        $store,
+        app(OperationId::class),
+        app(StandbyIdentity::class),
+    );
+    $inventory = $recovery->authorize();
+
+    Assert::assertSame([], $inventory->instances);
+    Assert::assertSame([], $inventory->snapshots);
+    Assert::assertSame([StandbyIdentity::live()->network()], $inventory->resourceNames());
+
+    $recovery->start($inputs['ORBIT_LIVE_CANDIDATE_SHA'], $inventory);
+    $record = LiveHarness::jsonFile(
+        rtrim($inputs['ORBIT_LIVE_MAIN_WORKTREE'], '/').'/.e2e/standby/recovery.json',
+    );
+    Assert::assertSame('authorized', $record['phase'] ?? null);
+    Assert::assertSame([], $record['inventory']['instances'] ?? null);
+    Assert::assertSame([], $record['inventory']['snapshots'] ?? null);
+})->group('incus-live-network-record');
+
+it('archives the completed network-only recovery before the next start', function (): void {
+    if (getenv('ORBIT_LIVE_INCUS') !== '1') {
+        test()->markTestSkipped('Set ORBIT_LIVE_INCUS=1 to run.');
+    }
+
+    $inputs = LiveHarness::inputs([
+        'ORBIT_LIVE_MAIN_WORKTREE',
+        'ORBIT_LIVE_CANDIDATE_SHA',
+    ]);
+    $root = rtrim($inputs['ORBIT_LIVE_MAIN_WORKTREE'], '/').'/.e2e';
+    $completed = LiveHarness::jsonFile($root.'/standby/recovery.json');
+    $operation = $completed['operation_id'] ?? null;
+    Assert::assertSame('construction_verified', $completed['phase'] ?? null);
+    Assert::assertSame([], $completed['inventory']['instances'] ?? null);
+    Assert::assertSame([], $completed['inventory']['snapshots'] ?? null);
+    Assert::assertMatchesRegularExpression('/\A[a-f0-9]{32}\z/D', is_string($operation) ? $operation : '');
+
+    $result = LiveHarness::jsonWrapper(
+        'standby',
+        'recover-legacy',
+        '--main-sha='.$inputs['ORBIT_LIVE_CANDIDATE_SHA'],
+    );
+
+    Assert::assertSame('promoted', $result['state'] ?? null);
+    Assert::assertSame($completed, LiveHarness::jsonFile($root.'/standby/recoveries/'.$operation.'.json'));
+    $current = LiveHarness::jsonFile($root.'/standby/recovery.json');
+    Assert::assertSame('construction_verified', $current['phase'] ?? null);
+    Assert::assertNotSame([], $current['inventory']['instances'] ?? []);
+})->group('incus-live');
 
 /**
  * The wrapper has just refused ordinary rebuild and completed the supported

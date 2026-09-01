@@ -79,9 +79,9 @@ final readonly class LegacyStandbyInventory
             || ! array_is_list($value['recorded_manifests'])
             || ! array_all($value['recorded_manifests'], static fn (mixed $item): bool => is_array($item))
             || ! is_array($value['instances'])
-            || array_is_list($value['instances'])
+            || ! self::isMap($value['instances'])
             || ! is_array($value['snapshots'])
-            || array_is_list($value['snapshots'])
+            || ! self::isMap($value['snapshots'])
             || $value['network'] !== null
             && (! is_array($value['network'])
             || array_is_list($value['network']))
@@ -103,5 +103,11 @@ final readonly class LegacyStandbyInventory
         $network = $value['network'];
 
         return new self($scope, $promotedManifest, $recordedManifests, $instances, $snapshots, $network);
+    }
+
+    /** @param array<array-key, mixed> $value */
+    private static function isMap(array $value): bool
+    {
+        return $value === [] || array_all(array_keys($value), static fn (int|string $key): bool => is_string($key));
     }
 }

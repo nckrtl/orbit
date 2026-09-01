@@ -19,6 +19,7 @@ use App\E2E\State\StatePaths;
 use App\E2E\TopologyConverger;
 use App\E2E\TopologyVerifier;
 use App\E2E\Value\LaravelRelease;
+use App\E2E\Value\LegacyStandbyInventory;
 use App\E2E\Value\OperationId;
 use App\E2E\Value\StandbyGeneration;
 use App\E2E\Value\StandbyIdentity;
@@ -460,6 +461,91 @@ it('retains hash-bound authorization and ordered mutation evidence', function ()
     ]);
     expect($store->read('standby/promoted.json'))->toBe($inventory->promotedManifest);
 });
+
+it('round trips a network-only authorization through retained JSON and a fresh recovery process', function (): void {
+    [$recovery, $store, $host, $paths] = legacyRecoveryService();
+    $host->instances = [];
+    $host->networkUsers = [];
+    $inventory = $recovery->authorize();
+    $mainSha = str_repeat('b', 40);
+
+    $recovery->start($mainSha, $inventory);
+    $written = json_decode(
+        (string) file_get_contents($paths->path('standby/recovery.json')),
+        true,
+        512,
+        JSON_THROW_ON_ERROR,
+    );
+    $fresh = new LegacyStandbyRecovery(
+        new IncusHost(project: 'default', pool: 'orbit-e2e'),
+        new StandbyManifestStore($store, $paths, new IncusHost(project: 'default', pool: 'orbit-e2e')),
+        $store,
+        new OperationId(str_repeat('c', 32)),
+        StandbyIdentity::live(),
+    );
+
+    expect($written['inventory']['instances'] ?? null)
+        ->toBe([])
+        ->and($written['inventory']['snapshots'] ?? null)
+        ->toBe([])
+        ->and(LegacyStandbyInventory::fromArray($written['inventory'])->toArray())
+        ->toBe($inventory->toArray())
+        ->and($fresh->resume($mainSha)?->toArray())
+        ->toBe($inventory->toArray());
+});
+
+it('archives a completed network-only record before the next recovery starts', function (): void {
+    [$recovery, $store, $host, $paths] = legacyRecoveryService();
+    $host->instances = [];
+    $host->networkUsers = [];
+    $inventory = $recovery->authorize();
+    $mainSha = str_repeat('b', 40);
+    $recovery->start($mainSha, $inventory);
+    $recovery->record('construction_verified', [
+        'generation_id' => 'network-only-replacement',
+        'main_sha' => $mainSha,
+        'next_action' => 'bin/e2e-standby status',
+    ]);
+    $completed = $store->read('standby/recovery.json');
+    $next = new LegacyStandbyRecovery(
+        new IncusHost(project: 'default', pool: 'orbit-e2e'),
+        new StandbyManifestStore($store, $paths, new IncusHost(project: 'default', pool: 'orbit-e2e')),
+        $store,
+        new OperationId(str_repeat('c', 32)),
+        StandbyIdentity::live(),
+    );
+
+    $next->start(str_repeat('d', 40), $next->authorize());
+
+    expect($store->read('standby/recoveries/'.str_repeat('a', 32).'.json'))
+        ->toBe($completed)
+        ->and($store->read('standby/recovery.json'))
+        ->operation_id->toBe(str_repeat('c', 32))
+        ->main_sha->toBe(str_repeat('d', 40))
+        ->phase->toBe('authorized');
+});
+
+it('rejects non-empty lists and mixed map shapes in retained inventory', function (Closure $mutate): void {
+    [$recovery] = legacyRecoveryService();
+    $value = $recovery->authorize()->toArray();
+    $mutate($value);
+
+    expect(fn () => LegacyStandbyInventory::fromArray($value))
+        ->toThrow(\InvalidArgumentException::class, 'The legacy standby inventory is invalid.');
+})->with([
+    'non-empty instance list' => [function (array &$value): void {
+        $value['instances'] = [['name' => 'orbit-e2e-live-standby-gateway']];
+    }],
+    'non-empty snapshot list' => [function (array &$value): void {
+        $value['snapshots'] = [['name' => 'main-legacy-generation']];
+    }],
+    'mixed instance map' => [function (array &$value): void {
+        $value['instances'][0] = ['name' => 'foreign'];
+    }],
+    'mixed snapshot map' => [function (array &$value): void {
+        $value['snapshots'][0] = [['name' => 'foreign', 'created_at' => '2026-09-01T12:00:00Z']];
+    }],
+]);
 
 it('archives completed evidence before starting a separately authorized recovery', function (): void {
     [$recovery, $store, , $paths] = legacyRecoveryService();

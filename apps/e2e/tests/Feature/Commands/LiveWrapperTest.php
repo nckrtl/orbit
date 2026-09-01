@@ -86,6 +86,28 @@ it('routes a missing standby with present resources into resumable legacy recove
     expect($missingBranch)
         ->toContain('standby rebuild')
         ->toContain('assert_rebuild_refusal')
-        ->toContain('standby recover-legacy')
-        ->toContain('recovery_completed=1');
+        ->toContain('standby recover-legacy');
+});
+
+it('registers the network-only retained-record resume and archive proof', function () use ($wrapper): void {
+    $source = file_get_contents($wrapper);
+
+    expect($source)
+        ->toContain(
+            'prepare_network_only',
+            '--group=incus-live-network-record',
+            'live_instance_count',
+            'live_network_count',
+            'normalizing a retained network-only live standby',
+            'resuming retained legacy recovery at its recorded SHA',
+            'retained_sha=$(jq -er',
+            'checkout_validation_sha "$retained_sha"',
+            'checkout_validation_sha "$candidate"',
+            '.inventory.instances | type == "array" and length == 0',
+            '.inventory.snapshots | type == "array" and length == 0',
+            'any(.history[]; .phase == "resumed")',
+            'tests/Live/LegacyStandbyRecoveryAcceptanceTest.php',
+        )
+        ->and(substr_count($source, 'remove_guest_gateway_env'))
+        ->toBe(4);
 });

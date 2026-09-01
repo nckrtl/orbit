@@ -141,32 +141,50 @@ else
     git -C "$validate" worktree add --quiet -B acc-1-live "$feature_worktree" "$candidate"
 fi
 
-# The guests mount the feature worktree, and converging writes
-# apps/gateway/.env there with guest paths (ORBIT_HOME=/home/orbit/.orbit).
-# On the host that file makes bin/bootstrap create a guest directory, so every
-# run after the first fails before it starts. The host bootstrap and the next
-# convergence each write what they need, so the guest copy just goes.
 gateway_env=$feature_worktree/apps/gateway/.env
-if [[ -f "$gateway_env" ]] && grep -q '^ORBIT_HOME=/home/orbit/' "$gateway_env"; then
-    log "removing the guest-written apps/gateway/.env from $feature_worktree"
-    rm -f "$gateway_env"
-fi
-
-bootstrap_targets=("$validate" "$feature_worktree")
-bootstrap_logs=$(mktemp -d)
-bootstrap_pids=()
-for target in "${bootstrap_targets[@]}"; do
-    log "bootstrapping $target"
-    "$target/bin/bootstrap" >"$bootstrap_logs/$(basename "$target").log" 2>&1 &
-    bootstrap_pids+=("$!")
-done
-for index in "${!bootstrap_targets[@]}"; do
-    if ! wait "${bootstrap_pids[$index]}"; then
-        cat "$bootstrap_logs/$(basename "${bootstrap_targets[$index]}").log" >&2
-        fail "bootstrap failed for ${bootstrap_targets[$index]}"
+remove_guest_gateway_env() {
+    # The guests mount the feature worktree, and convergence writes guest paths
+    # there. Host bootstrap and the next convergence each write what they need.
+    if [[ -f "$gateway_env" ]] && grep -q '^ORBIT_HOME=/home/orbit/' "$gateway_env"; then
+        log "removing the guest-written apps/gateway/.env from $feature_worktree"
+        rm -f "$gateway_env"
     fi
-done
-rm -rf "$bootstrap_logs"
+}
+
+bootstrap_validation() {
+    local bootstrap_logs
+    local index
+    local target
+    local -a bootstrap_pids=()
+    local -a bootstrap_targets=("$validate" "$feature_worktree")
+
+    bootstrap_logs=$(mktemp -d)
+    for target in "${bootstrap_targets[@]}"; do
+        log "bootstrapping $target"
+        "$target/bin/bootstrap" >"$bootstrap_logs/$(basename "$target").log" 2>&1 &
+        bootstrap_pids+=("$!")
+    done
+    for index in "${!bootstrap_targets[@]}"; do
+        if ! wait "${bootstrap_pids[$index]}"; then
+            cat "$bootstrap_logs/$(basename "${bootstrap_targets[$index]}").log" >&2
+            fail "bootstrap failed for ${bootstrap_targets[$index]}"
+        fi
+    done
+    rm -rf "$bootstrap_logs"
+}
+
+checkout_validation_sha() {
+    local sha=$1
+
+    remove_guest_gateway_env
+    git -C "$validate" fetch --quiet --no-tags "$root" "$sha"
+    git -C "$validate" checkout --quiet -B main "$sha"
+    git -C "$feature_worktree" checkout --quiet -B acc-1-live "$sha"
+    bootstrap_validation
+}
+
+remove_guest_gateway_env
+bootstrap_validation
 
 harness() {
     "$validate/bin/e2e-$1" "${@:2}" --json
@@ -229,11 +247,87 @@ assert_rebuild_refusal() {
     fi
 }
 
+prepare_network_only() {
+    local instances
+    local networks
+    local resource
+
+    instances=$(incus --project "$incus_project" list "$incus_remote:" --format json) \
+        || fail 'unable to inventory the live standby before network-only recovery'
+    jq -e '[.[] | select(
+        .name == "orbit-e2e-live-standby-gateway-next"
+        or .name == "orbit-e2e-live-standby-app-dev-next"
+        or .name == "orbit-e2e-live-standby-app-prod-next"
+    )] | length == 0' <<<"$instances" >/dev/null \
+        || fail 'a promotion copy blocks the network-only proof setup'
+    for resource in \
+        orbit-e2e-live-standby-gateway \
+        orbit-e2e-live-standby-app-dev \
+        orbit-e2e-live-standby-app-prod; do
+        jq -e --arg resource "$resource" '
+            [.[] | select(.name == $resource)]
+            | length == 1
+                and .[0].config["user.orbit.e2e.owner"] == "orbit-e2e"
+                and (.[0].config["user.orbit.e2e.issue"] // "") == ""
+        ' <<<"$instances" >/dev/null \
+            || fail "the network-only proof cannot remove unowned or ambiguous instance $resource"
+        incus --project "$incus_project" delete "$incus_remote:$resource" --force \
+            || fail "unable to remove exact proof instance $resource"
+    done
+
+    instances=$(incus --project "$incus_project" list "$incus_remote:" --format json) \
+        || fail 'unable to verify the network-only instance boundary'
+    jq -e '[.[] | select(.name | startswith("orbit-e2e-live-standby-"))] | length == 0' \
+        <<<"$instances" >/dev/null \
+        || fail 'an exact live standby instance remains after network-only proof setup'
+    networks=$(incus --project "$incus_project" network list "$incus_remote:" --format json) \
+        || fail 'unable to verify the network-only network boundary'
+    jq -e '[.[] | select(.name == "oe-live-standby")]
+        | length == 1
+            and .[0].config["user.orbit.e2e.owner"] == "orbit-e2e"
+            and (.[0].used_by // []) == []' <<<"$networks" >/dev/null \
+        || fail 'the exact owned live standby network is not retained without users'
+}
+
 # A stale attempt of the suite's own issue blocks its first assertion.
 stale=$(harness topology status "$issue" "--worktree=$feature_worktree" | jq -r '.attempt_id // empty')
 if [[ -n "$stale" ]]; then
     log "releasing stale $issue attempt $stale"
     harness topology release "$issue" "--worktree=$feature_worktree" >/dev/null
+fi
+
+export ORBIT_LIVE_INCUS=1
+export ORBIT_LIVE_PROFILE=$profile
+export ORBIT_LIVE_ISSUE=$issue
+export ORBIT_LIVE_MAIN_WORKTREE=$validate
+export ORBIT_LIVE_FEATURE_WORKTREE=$feature_worktree
+export ORBIT_LIVE_CANDIDATE_SHA=$candidate
+export ORBIT_LIVE_PROOF_PLAN=$validate/$plan
+
+recovery_record=$validate/.e2e/standby/recovery.json
+if [[ -f "$recovery_record" ]]; then
+    retained_phase=$(jq -er '.phase | strings' "$recovery_record") \
+        || fail 'the retained legacy recovery phase is invalid'
+    if [[ "$retained_phase" != construction_verified ]]; then
+        retained_sha=$(jq -er '.main_sha | strings' "$recovery_record") \
+            || fail 'the retained legacy recovery SHA is invalid'
+        if [[ ! "$retained_sha" =~ ^[0-9a-f]{40}$ ]]; then
+            fail 'the retained legacy recovery SHA is invalid'
+        fi
+        if [[ "$retained_sha" != "$candidate" ]]; then
+            log "checking out retained legacy recovery SHA $retained_sha"
+            checkout_validation_sha "$retained_sha"
+        fi
+        log "resuming retained legacy recovery at its recorded SHA $retained_sha"
+        retained_refresh=$(harness standby recover-legacy "--main-sha=$retained_sha") || {
+            printf '%s\n' "$retained_refresh" >&2
+            fail "retained legacy standby recovery at $retained_sha failed"
+        }
+        if [[ "$retained_sha" != "$candidate" ]]; then
+            log "restoring candidate SHA $candidate after retained recovery"
+            checkout_validation_sha "$candidate"
+        fi
+    fi
 fi
 
 # The clone is its own primary: its <clone>/.e2e/standby/promoted.json names
@@ -246,7 +340,6 @@ standby_status_code=$?
 set -e
 standby_state=$(jq -r '.state // "invalid"' <<<"$standby_status") \
     || fail 'standby status did not return JSON'
-recovery_completed=0
 if [[ "$standby_state" == missing && $standby_status_code -eq 0 ]]; then
     log "building the clone's missing live standby at $candidate (cold build, several minutes)"
     set +e
@@ -264,7 +357,6 @@ if [[ "$standby_state" == missing && $standby_status_code -eq 0 ]]; then
             printf '%s\n' "$refresh" >&2
             fail "legacy standby recovery at $candidate failed"
         }
-        recovery_completed=1
     fi
     standby_status=$(harness standby status) || fail 'the initial live standby is unavailable'
     standby_state=$(jq -r '.state' <<<"$standby_status")
@@ -278,34 +370,58 @@ if [[ "$standby_schema" != 4 && "$standby_schema" != 5 ]]; then
     fail "the live standby manifest schema $standby_schema is not eligible for legacy recovery"
 fi
 
-if ((recovery_completed == 0)); then
-    log 'proving ordinary rebuild refuses the present live standby before mutation'
-    if refusal=$(harness standby rebuild "--main-sha=$candidate"); then
-        printf '%s\n' "$refusal" >&2
-        fail 'ordinary rebuild accepted present live standby resources'
-    fi
-    assert_rebuild_refusal "$refusal" "$standby_status"
-
-    log "recovering the live standby at $candidate (cold build, several minutes)"
+live_instance_count=$(incus --project "$incus_project" list "$incus_remote:" --format json \
+    | jq '[.[] | select(.name | startswith("orbit-e2e-live-standby-"))] | length') \
+    || fail 'unable to count exact live standby instances'
+live_network_count=$(incus --project "$incus_project" network list "$incus_remote:" --format json \
+    | jq '[.[] | select(.name == "oe-live-standby")] | length') \
+    || fail 'unable to count the exact live standby network'
+if [[ "$live_instance_count" == 0 && "$live_network_count" == 1 ]]; then
+    log "normalizing a retained network-only live standby at $candidate (cold build, several minutes)"
     refresh=$(harness standby recover-legacy "--main-sha=$candidate") || {
         printf '%s\n' "$refresh" >&2
-        fail "legacy standby recovery at $candidate failed"
+        fail "retained network-only standby recovery at $candidate failed"
     }
+    standby_status=$(harness standby status) || fail 'the normalized live standby is unavailable'
 fi
+
+log 'proving ordinary rebuild refuses the present live standby before mutation'
+if refusal=$(harness standby rebuild "--main-sha=$candidate"); then
+    printf '%s\n' "$refusal" >&2
+    fail 'ordinary rebuild accepted present live standby resources'
+fi
+assert_rebuild_refusal "$refusal" "$standby_status"
+
+log 'retaining the network while removing exact proof VMs'
+prepare_network_only
+log 'writing a network-only retained recovery record'
+(cd "$validate/apps/e2e" && vendor/bin/pest --no-tia --compact --colors=never \
+    --group=incus-live-network-record tests/Live/LegacyStandbyRecoveryAcceptanceTest.php) \
+    || fail 'the network-only retained recovery record was not written'
+jq -e '.phase == "authorized"
+    and (.inventory.instances | type == "array" and length == 0)
+    and (.inventory.snapshots | type == "array" and length == 0)' \
+    "$validate/.e2e/standby/recovery.json" >/dev/null \
+    || fail 'the retained network-only recovery record is not exact'
+
+log "resuming the network-only recovery in a fresh process at $candidate (cold build, several minutes)"
+refresh=$(harness standby recover-legacy "--main-sha=$candidate") || {
+    printf '%s\n' "$refresh" >&2
+    fail "network-only legacy standby recovery at $candidate failed"
+}
+jq -e '.phase == "construction_verified"
+    and (.inventory.instances | type == "array" and length == 0)
+    and (.inventory.snapshots | type == "array" and length == 0)
+    and any(.history[]; .phase == "resumed")' \
+    "$validate/.e2e/standby/recovery.json" >/dev/null \
+    || fail 'the fresh process did not resume and complete the network-only recovery'
 log "standby: $(jq -r '.state' <<<"$refresh") ($(jq -r '.generation_id' <<<"$refresh"))"
 primary_after=$(primary_inventory) || fail 'unable to inventory the primary standby after live recovery'
 if [[ "$(jq -S . <<<"$primary_after")" != "$(jq -S . <<<"$primary_before")" ]]; then
     fail 'legacy recovery changed the primary standby inventory'
 fi
 
-export ORBIT_LIVE_INCUS=1
-export ORBIT_LIVE_PROFILE=$profile
-export ORBIT_LIVE_ISSUE=$issue
-export ORBIT_LIVE_MAIN_WORKTREE=$validate
-export ORBIT_LIVE_FEATURE_WORKTREE=$feature_worktree
-export ORBIT_LIVE_CANDIDATE_SHA=$candidate
-export ORBIT_LIVE_PROOF_PLAN=$validate/$plan
-
+remove_guest_gateway_env
 log 'running the lifecycle suite'
 started=$SECONDS
 output=$(mktemp -t orbit-e2e-live.XXXXXX.log)
