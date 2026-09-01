@@ -358,7 +358,9 @@
                 "App",
                 "Doctor",
                 "Gateway",
-                "Node"
+                "Legacy Instance",
+                "Node",
+                "Workspace"
             ],
             "governing_adrs": [
                 "0005",
