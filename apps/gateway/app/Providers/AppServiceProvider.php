@@ -40,6 +40,8 @@ use App\Domain\Gateway\GatewayWebConverger;
 use App\Domain\Metrics\MetricsCredentialManager;
 use App\Domain\Metrics\MetricsCredentialRuntime;
 use App\Domain\Metrics\MetricsExporterLifecycle;
+use App\Domain\Metrics\MetricsExporterProjection;
+use App\Domain\Metrics\MetricsFirewallExpectationProvider;
 use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Metrics\MetricsPublicationManager as MetricsPublicationManagerContract;
 use App\Domain\Metrics\MetricsPublicationReport;
@@ -110,6 +112,8 @@ use App\Infrastructure\Metrics\MetricsSshExecutor;
 use App\Infrastructure\Metrics\NativeMetricsContainerRuntime;
 use App\Infrastructure\Metrics\NativeMetricsCredentialManager;
 use App\Infrastructure\Metrics\NativeMetricsExporterLifecycle;
+use App\Infrastructure\Metrics\NativeMetricsExporterProjection;
+use App\Infrastructure\Metrics\NativeMetricsFirewallExpectationProvider;
 use App\Infrastructure\Metrics\NativeMetricsFleetReconciler;
 use App\Infrastructure\Metrics\NativeMetricsRoleManager;
 use App\Infrastructure\Metrics\NativeMetricsStatusReader;
@@ -178,6 +182,8 @@ final class AppServiceProvider extends ServiceProvider
         MetricsCredentialManager::class => NativeMetricsCredentialManager::class,
         MetricsCredentialRuntime::class => MetricsSshExecutor::class,
         MetricsExporterLifecycle::class => NativeMetricsExporterLifecycle::class,
+        MetricsExporterProjection::class => NativeMetricsExporterProjection::class,
+        MetricsFirewallExpectationProvider::class => NativeMetricsFirewallExpectationProvider::class,
         MetricsExporterRuntime::class => MetricsExporterSshExecutor::class,
         MetricsFleetReconciler::class => NativeMetricsFleetReconciler::class,
         MetricsPublicationManagerContract::class => MetricsPublicationManager::class,

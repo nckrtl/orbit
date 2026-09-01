@@ -6,6 +6,8 @@ namespace App\Infrastructure\Firewall;
 
 use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Metrics\MetricsFootprint;
 use App\Models\Node;
 
 final class NodeFirewallRuleCatalog
@@ -35,6 +37,34 @@ final class NodeFirewallRuleCatalog
             RoleName::AppProd => [$this->rule('orbit:app-prod-http', '80'), $this->rule('orbit:app-prod-https', '443')],
             RoleName::Metrics => [],
         };
+    }
+
+    public function metricsExporter(Node $node, Node $metricsNode): UfwManagedRule
+    {
+        return $this->metricsRule(
+            MetricsFootprint::ExporterFirewallComment,
+            $this->metricsExporterAddress($metricsNode),
+            $this->metricsExporterAddress($node),
+            MetricsFootprint::ExporterPort,
+        );
+    }
+
+    public function metricsGrafanaUpstream(Node $metricsNode, string $gatewayAddress): UfwManagedRule
+    {
+        if (filter_var($gatewayAddress, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
+            throw new ResourceOperationException(
+                'metrics.publication_address_invalid',
+                'Metrics publication requires valid WireGuard IPv4 addresses.',
+                409,
+            );
+        }
+
+        return $this->metricsRule(
+            MetricsFootprint::PublicationFirewallComment,
+            $gatewayAddress,
+            $this->metricsPublicationAddress($metricsNode),
+            MetricsFootprint::PublicationPort,
+        );
     }
 
     private function rule(
@@ -75,6 +105,76 @@ final class NodeFirewallRuleCatalog
                 $comment,
             ],
         );
+    }
+
+    private function metricsRule(
+        string $comment,
+        string $source,
+        string $destination,
+        string $port,
+    ): UfwManagedRule {
+        return new UfwManagedRule(
+            new UfwRuleShape(
+                comment: $comment,
+                action: 'allow',
+                direction: 'in',
+                source: $source,
+                destination: $destination,
+                port: $port,
+                protocol: 'tcp',
+                inInterface: MetricsFootprint::WireGuardInterface,
+                outInterface: null,
+                family: 'v4',
+            ),
+            [
+                'sudo',
+                'ufw',
+                'allow',
+                'in',
+                'on',
+                MetricsFootprint::WireGuardInterface,
+                'proto',
+                'tcp',
+                'from',
+                $source,
+                'to',
+                $destination,
+                'port',
+                $port,
+                'comment',
+                $comment,
+            ],
+        );
+    }
+
+    private function metricsExporterAddress(Node $node): string
+    {
+        $address = $node->wireguard_ip;
+
+        if (! is_string($address) || filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
+            throw new ResourceOperationException(
+                'metrics.exporter_address_invalid',
+                "Node [{$node->name}] has no valid WireGuard IPv4 address.",
+                409,
+            );
+        }
+
+        return $address;
+    }
+
+    private function metricsPublicationAddress(Node $node): string
+    {
+        $address = $node->wireguard_ip;
+
+        if (! is_string($address) || filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
+            throw new ResourceOperationException(
+                'metrics.publication_address_invalid',
+                'Metrics publication requires valid WireGuard IPv4 addresses.',
+                409,
+            );
+        }
+
+        return $address;
     }
 
     private function wireguardIp(Node $node): string

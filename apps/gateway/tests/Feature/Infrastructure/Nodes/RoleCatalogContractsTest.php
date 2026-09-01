@@ -91,3 +91,80 @@ it('matches the gateway writer exact shape independently of a WireGuard address'
             family: null,
         ));
 });
+
+it('returns Metrics firewall rules in exporter then publication catalog order', function (): void {
+    $metrics = new Node(['name' => 'metrics', 'wireguard_ip' => '10.44.0.3']);
+    $exporter = new Node(['name' => 'app-prod', 'wireguard_ip' => '10.44.0.4']);
+    $catalog = new NodeFirewallRuleCatalog;
+    $rules = [
+        $catalog->metricsExporter($exporter, $metrics),
+        $catalog->metricsGrafanaUpstream($metrics, '10.44.0.1'),
+    ];
+
+    expect(array_map(static fn (UfwManagedRule $rule): UfwRuleShape => $rule->shape, $rules))
+        ->toEqual([
+            new UfwRuleShape(
+                comment: 'orbit:metrics-node-exporter',
+                action: 'allow',
+                direction: 'in',
+                source: '10.44.0.3',
+                destination: '10.44.0.4',
+                port: '9100',
+                protocol: 'tcp',
+                inInterface: 'orbit',
+                outInterface: null,
+                family: 'v4',
+            ),
+            new UfwRuleShape(
+                comment: 'orbit:metrics-grafana-upstream',
+                action: 'allow',
+                direction: 'in',
+                source: '10.44.0.1',
+                destination: '10.44.0.3',
+                port: '3000',
+                protocol: 'tcp',
+                inInterface: 'orbit',
+                outInterface: null,
+                family: 'v4',
+            ),
+        ])
+        ->and(array_map(static fn (UfwManagedRule $rule): array => $rule->arguments, $rules))
+        ->toBe([
+            [
+                'sudo',
+                'ufw',
+                'allow',
+                'in',
+                'on',
+                'orbit',
+                'proto',
+                'tcp',
+                'from',
+                '10.44.0.3',
+                'to',
+                '10.44.0.4',
+                'port',
+                '9100',
+                'comment',
+                'orbit:metrics-node-exporter',
+            ],
+            [
+                'sudo',
+                'ufw',
+                'allow',
+                'in',
+                'on',
+                'orbit',
+                'proto',
+                'tcp',
+                'from',
+                '10.44.0.1',
+                'to',
+                '10.44.0.3',
+                'port',
+                '3000',
+                'comment',
+                'orbit:metrics-grafana-upstream',
+            ],
+        ]);
+});

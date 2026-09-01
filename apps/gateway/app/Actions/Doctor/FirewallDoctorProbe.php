@@ -13,8 +13,10 @@ use App\Domain\Doctor\DoctorIssueKind;
 use App\Domain\Doctor\DoctorNodeContext;
 use App\Domain\Doctor\FirewallDoctorIssueCode;
 use App\Domain\Firewall\FirewallBackendStatus;
+use App\Domain\Firewall\FirewallInspectionTarget;
 use App\Domain\Firewall\FirewallInspector;
 use App\Domain\Firewall\FirewallRuleInspectionStatus;
+use App\Domain\Metrics\MetricsFirewallExpectationProvider;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\FirewallRule;
 
@@ -22,6 +24,7 @@ final readonly class FirewallDoctorProbe implements DoctorFamilyProbe
 {
     public function __construct(
         private FirewallInspector $inspector,
+        private MetricsFirewallExpectationProvider $expectations,
     ) {}
 
     public function family(): DoctorFamily
@@ -32,9 +35,12 @@ final readonly class FirewallDoctorProbe implements DoctorFamilyProbe
     public function inspect(DoctorNodeContext $context): DoctorFamilyReportData
     {
         $rules = FirewallRule::query()->where('node_id', $context->node->id)->orderBy('id')->get();
-        if ($rules->isEmpty()) {
+        $expectations = $this->expectations->for($context->node);
+
+        if ($rules->isEmpty() && $expectations === []) {
             return DoctorFamilyReportData::fromIssues(DoctorFamily::Firewall, 0, []);
         }
+
         if (! $context->inspection->reachable) {
             return DoctorFamilyReportData::fromIssues(DoctorFamily::Firewall, $rules->count(), [new DoctorIssueData(
                 FirewallDoctorIssueCode::NodeUnreachable,
@@ -49,9 +55,11 @@ final readonly class FirewallDoctorProbe implements DoctorFamilyProbe
         }
         $issues = [];
         foreach ($rules as $rule) {
+            $target = FirewallInspectionTarget::fromRule($rule);
+
             if ($rule->status !== LifecycleStatus::Active) {
                 $issues[] = $this->issue(
-                    $rule,
+                    $target,
                     FirewallDoctorIssueCode::LifecycleNotActive,
                     DoctorIssueKind::Drift,
                     'active',
@@ -59,41 +67,67 @@ final readonly class FirewallDoctorProbe implements DoctorFamilyProbe
                 );
                 continue;
             }
-            try {
-                $inspection = $this->inspector->inspect($rule);
-            } catch (DoctorInspectionException) {
-                $issues[] = $this->issue(
-                    $rule,
-                    FirewallDoctorIssueCode::InspectionFailed,
-                    DoctorIssueKind::Unverifiable,
-                    'verifiable',
-                    'unverifiable',
-                );
-                continue;
+            $issue = $this->inspectTarget($target);
+
+            if ($issue instanceof DoctorIssueData) {
+                $issues[] = $issue;
             }
-            if ($inspection->backend !== FirewallBackendStatus::Active) {
-                $issues[] = $this->issue(
-                    $rule,
-                    FirewallDoctorIssueCode::BackendInactive,
-                    DoctorIssueKind::Drift,
-                    'active',
-                    $inspection->backend->value,
-                );
-                continue;
-            }
-            if ($inspection->rule !== FirewallRuleInspectionStatus::Exact) {
-                $code = $inspection->rule === FirewallRuleInspectionStatus::Missing
-                    ? FirewallDoctorIssueCode::RuleMissing
-                    : FirewallDoctorIssueCode::RuleMismatch;
-                $issues[] = $this->issue($rule, $code, DoctorIssueKind::Drift, 'exact', $inspection->rule->value);
+        }
+
+        foreach ($expectations as $target) {
+            $issue = $this->inspectTarget($target);
+
+            if ($issue instanceof DoctorIssueData) {
+                $issues[] = $issue;
             }
         }
 
         return DoctorFamilyReportData::fromIssues(DoctorFamily::Firewall, $rules->count(), $issues);
     }
 
+    private function inspectTarget(FirewallInspectionTarget $target): ?DoctorIssueData
+    {
+        try {
+            $inspection = $this->inspector->inspect($target);
+        } catch (DoctorInspectionException) {
+            return $this->issue(
+                $target,
+                FirewallDoctorIssueCode::InspectionFailed,
+                DoctorIssueKind::Unverifiable,
+                'verifiable',
+                'unverifiable',
+            );
+        }
+
+        if ($inspection->backend !== FirewallBackendStatus::Active) {
+            return $this->issue(
+                $target,
+                FirewallDoctorIssueCode::BackendInactive,
+                DoctorIssueKind::Drift,
+                'active',
+                $inspection->backend->value,
+            );
+        }
+
+        if ($inspection->rule === FirewallRuleInspectionStatus::Exact) {
+            return null;
+        }
+
+        $code = $inspection->rule === FirewallRuleInspectionStatus::Missing
+            ? FirewallDoctorIssueCode::RuleMissing
+            : FirewallDoctorIssueCode::RuleMismatch;
+
+        return $this->issue(
+            $target,
+            $code,
+            DoctorIssueKind::Drift,
+            'exact',
+            $inspection->rule->value,
+        );
+    }
+
     private function issue(
-        FirewallRule $rule,
+        FirewallInspectionTarget $target,
         FirewallDoctorIssueCode $code,
         DoctorIssueKind $kind,
         string $expected,
@@ -103,8 +137,8 @@ final readonly class FirewallDoctorProbe implements DoctorFamilyProbe
             $code,
             $kind,
             'firewall',
-            $rule->id,
-            $rule->name,
+            $target->resourceId,
+            $target->resourceName,
             'Firewall rule does not match its managed state.',
             $expected,
             $observed,

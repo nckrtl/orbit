@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Infrastructure\Metrics;
 
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
+use App\Infrastructure\Firewall\UfwManagedRule;
 use App\Infrastructure\Firewall\UfwRuleOwnership;
 use App\Infrastructure\Firewall\UfwRuleShape;
 use App\Infrastructure\Firewall\UfwStatusParser;
@@ -27,23 +29,24 @@ final readonly class MetricsExporterSshExecutor implements MetricsExporterRuntim
 {
     private const string ConfigurationPath = MetricsFootprint::ExporterDropIn;
 
-    private const string WireGuardInterface = MetricsFootprint::WireGuardInterface;
-
     private const string FirewallComment = MetricsFootprint::ExporterFirewallComment;
 
     private const string OwnershipMarker = MetricsFootprint::ExporterDropInMarker;
 
+    /** @mago-expect lint:excessive-parameter-list The executor keeps each fixed SSH, ownership, and recovery dependency explicit. */
     public function __construct(
         private SshExecutor $ssh,
         private SshKeyProvider $keys,
         private KnownHostsStore $knownHosts,
         private UfwStatusParser $parser = new UfwStatusParser,
         private MetricsUninstallScript $uninstall = new MetricsUninstallScript,
+        private NodeFirewallRuleCatalog $firewallRules = new NodeFirewallRuleCatalog,
     ) {}
 
     public function converge(Node $node, Node $metricsNode): void
     {
-        $shape = $this->firewallShape($node, $metricsNode);
+        $rule = $this->firewallRules->metricsExporter($node, $metricsNode);
+        $shape = $rule->shape;
         $state = $this->snapshot($node, $metricsNode);
         $ownership = $state->firewallOwnership;
         $expected = $this->expectedConfiguration($node);
@@ -68,7 +71,7 @@ final readonly class MetricsExporterSshExecutor implements MetricsExporterRuntim
             $this->setServiceActive($node, true, 'metrics.exporter_service_failed');
 
             if ($ownership === UfwRuleOwnership::Missing) {
-                $this->addFirewall($node, $shape);
+                $this->addFirewall($node, $rule);
             }
 
             if (! hash_equals($expected, $this->configuration($node) ?? '')) {
@@ -106,7 +109,7 @@ final readonly class MetricsExporterSshExecutor implements MetricsExporterRuntim
 
     public function remove(Node $node, Node $metricsNode): void
     {
-        $shape = $this->firewallShape($node, $metricsNode);
+        $shape = $this->firewallRules->metricsExporter($node, $metricsNode)->shape;
         $state = $this->snapshot($node, $metricsNode);
         $configuration = $state->configuration;
         $ownership = $state->firewallOwnership;
@@ -162,7 +165,7 @@ final readonly class MetricsExporterSshExecutor implements MetricsExporterRuntim
     {
         $configuration = $this->configuration($node);
         $this->guardConfigurationOwnership($configuration);
-        $shape = $this->firewallShape($node, $metricsNode);
+        $shape = $this->firewallRules->metricsExporter($node, $metricsNode)->shape;
         $firewall = $this->firewallStatus($node);
         $ownership = $this->parser->ownership($firewall->stdout, $shape);
         $this->guardFirewallOwnership($ownership);
@@ -177,7 +180,8 @@ final readonly class MetricsExporterSshExecutor implements MetricsExporterRuntim
 
     public function restore(Node $node, Node $metricsNode, MetricsExporterState $state): void
     {
-        $shape = $this->firewallShape($node, $metricsNode);
+        $rule = $this->firewallRules->metricsExporter($node, $metricsNode);
+        $shape = $rule->shape;
         $currentConfiguration = $this->configuration($node);
         $this->guardConfigurationOwnership($currentConfiguration);
 
@@ -207,7 +211,7 @@ final readonly class MetricsExporterSshExecutor implements MetricsExporterRuntim
             $state->firewallOwnership === UfwRuleOwnership::Exact
             && $currentOwnership === UfwRuleOwnership::Missing
         ) {
-            $this->addFirewall($node, $shape);
+            $this->addFirewall($node, $rule);
         }
 
         if (
@@ -225,7 +229,7 @@ final readonly class MetricsExporterSshExecutor implements MetricsExporterRuntim
         try {
             $configuration = $this->configuration($node);
             $this->guardConfigurationOwnership($configuration);
-            $shape = $this->firewallShape($node, $metricsNode);
+            $shape = $this->firewallRules->metricsExporter($node, $metricsNode)->shape;
             $ownership = $this->parser->ownership($this->firewallStatus($node)->stdout, $shape);
 
             if ($ownership === UfwRuleOwnership::Drift) {
@@ -301,22 +305,6 @@ final readonly class MetricsExporterSshExecutor implements MetricsExporterRuntim
             'metrics.exporter_configuration_ownership_drift',
             'Metrics exporter configuration ownership cannot be proved.',
             409,
-        );
-    }
-
-    private function firewallShape(Node $node, Node $metricsNode): UfwRuleShape
-    {
-        return new UfwRuleShape(
-            comment: self::FirewallComment,
-            action: 'allow',
-            direction: 'in',
-            source: $this->address($metricsNode),
-            destination: $this->address($node),
-            port: MetricsFootprint::ExporterPort,
-            protocol: 'tcp',
-            inInterface: self::WireGuardInterface,
-            outInterface: null,
-            family: 'v4',
         );
     }
 
@@ -508,28 +496,11 @@ final readonly class MetricsExporterSshExecutor implements MetricsExporterRuntim
         );
     }
 
-    private function addFirewall(Node $node, UfwRuleShape $shape): void
+    private function addFirewall(Node $node, UfwManagedRule $rule): void
     {
         $this->run(
             $node,
-            new RemoteCommand([
-                'sudo',
-                'ufw',
-                'allow',
-                'in',
-                'on',
-                self::WireGuardInterface,
-                'proto',
-                'tcp',
-                'from',
-                $shape->source,
-                'to',
-                $shape->destination,
-                'port',
-                MetricsFootprint::ExporterPort,
-                'comment',
-                self::FirewallComment,
-            ]),
+            new RemoteCommand($rule->arguments),
             'metrics.exporter_firewall_failed',
             'The Metrics exporter firewall rule could not be applied.',
         );

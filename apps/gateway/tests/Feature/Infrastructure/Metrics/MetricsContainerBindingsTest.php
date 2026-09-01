@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Metrics\MetricsCredentialManager;
 use App\Domain\Metrics\MetricsCredentialRuntime;
 use App\Domain\Metrics\MetricsExporterLifecycle;
+use App\Domain\Metrics\MetricsExporterProjection;
 use App\Domain\Metrics\MetricsPublicationManager;
 use App\Domain\Metrics\MetricsRoleManager;
 use App\Domain\Metrics\MetricsRuntimeLifecycle;
@@ -19,6 +20,7 @@ it('resolves every Metrics production boundary and role baseline', function (): 
         app(MetricsRuntimeHost::class),
         app(MetricsRuntimeLifecycle::class),
         app(MetricsExporterLifecycle::class),
+        app(MetricsExporterProjection::class),
         app(MetricsPublicationManager::class),
         app(MetricsRoleManager::class),
         app(MetricsStatusReader::class),

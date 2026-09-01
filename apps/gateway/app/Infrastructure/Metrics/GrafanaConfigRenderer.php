@@ -12,7 +12,7 @@ final readonly class GrafanaConfigRenderer
             throw new \InvalidArgumentException('Invalid datasource URL.');
         }
 
-        return "apiVersion: 1\ndatasources:\n  - name: Prometheus\n    type: prometheus\n    uid: orbit-prometheus\n    url: {$url}\n    access: proxy\n    isDefault: true\n";
+        return "apiVersion: 1\ndeleteDatasources:\n  - name: Prometheus\n    orgId: 1\nprune: true\ndatasources:\n  - name: orbit-prometheus\n    type: prometheus\n    uid: orbit-prometheus\n    orgId: 1\n    version: 1\n    url: {$url}\n    access: proxy\n    isDefault: true\n";
     }
 
     /**
@@ -26,7 +26,7 @@ final readonly class GrafanaConfigRenderer
      */
     public function dashboardProvider(): string
     {
-        return "apiVersion: 1\nproviders:\n  - name: Orbit\n    type: file\n    disableDeletion: true\n    allowUiUpdates: false\n    updateIntervalSeconds: 10\n    options:\n      path: /var/lib/grafana/dashboards\n";
+        return "apiVersion: 1\nproviders:\n  - name: Orbit\n    type: file\n    folder: Orbit\n    folderUid: orbit\n    disableDeletion: true\n    allowUiUpdates: false\n    updateIntervalSeconds: 10\n    options:\n      path: /var/lib/grafana/dashboards\n";
     }
 
     public function rootUrl(): string
