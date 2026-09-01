@@ -46,8 +46,7 @@ These features grow over time, but they all belong to the same view of your
 infrastructure.
 
 Orbit only manages machines and resources you explicitly add. You still choose
-and operate the infrastructure. When a change depends on Linux itself, Orbit
-tests it on temporary machines before relying on it.
+and operate the infrastructure.
 
 To see how the main parts work together, continue with
 [Architecture](architecture.md).
