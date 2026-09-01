@@ -38,10 +38,38 @@ it('renders stable prometheus targets and labels', function (): void {
 });
 it('renders grafana, publication, and secret contracts', function (): void {
     expect(new GrafanaConfigRenderer()->datasource())
-        ->toContain('uid: orbit-prometheus')
-        ->toContain('url: http://127.0.0.1:9090')
+        ->toBe(<<<'YAML'
+            apiVersion: 1
+            deleteDatasources:
+              - name: Prometheus
+                orgId: 1
+            prune: true
+            datasources:
+              - name: orbit-prometheus
+                type: prometheus
+                uid: orbit-prometheus
+                orgId: 1
+                version: 1
+                url: http://127.0.0.1:9090
+                access: proxy
+                isDefault: true
+
+            YAML)
         ->and(new GrafanaConfigRenderer()->dashboardProvider())
-        ->toContain('updateIntervalSeconds: 10')
+        ->toBe(<<<'YAML'
+            apiVersion: 1
+            providers:
+              - name: Orbit
+                type: file
+                folder: Orbit
+                folderUid: orbit
+                disableDeletion: true
+                allowUiUpdates: false
+                updateIntervalSeconds: 10
+                options:
+                  path: /var/lib/grafana/dashboards
+
+            YAML)
         ->and(new MetricsPublicationRenderer()->caddy('10.0.0.3'))
         ->toContain('metrics.orbit')
         ->and(new NodeResourcesDashboardRenderer()->render())

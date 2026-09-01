@@ -38,6 +38,12 @@ describe(MetricsRuntimeSpec::class, function (): void {
             ])
             ->and($prometheus->specHash)
             ->toMatch('/^[a-f0-9]{64}$/')
+            ->and($prometheus->healthStartPeriodSeconds)
+            ->toBe(30)
+            ->and($prometheus->healthIntervalSeconds)
+            ->toBe(5)
+            ->and($prometheus->healthRetries)
+            ->toBe(12)
             ->and($grafana->image)
             ->toBe('grafana/grafana:12.1.1')
             ->and($grafana->environment)
@@ -47,6 +53,12 @@ describe(MetricsRuntimeSpec::class, function (): void {
             ])
             ->and($grafana->healthCommand)
             ->toContain('http://10.44.0.3:3000/api/health')
+            ->and($grafana->healthStartPeriodSeconds)
+            ->toBe(30)
+            ->and($grafana->healthIntervalSeconds)
+            ->toBe(5)
+            ->and($grafana->healthRetries)
+            ->toBe(12)
             ->and($grafana->labels['com.orbit.metrics.spec-hash'])
             ->toBe($grafana->specHash);
     });
@@ -58,6 +70,15 @@ describe(MetricsRuntimeSpec::class, function (): void {
         $second = $spec->for(MetricsService::Prometheus, 41, '10.44.0.3', 'second');
 
         expect($first->specHash)->not->toBe($second->specHash);
+    });
+
+    it('changes the spec hash when the health start period changes', function (): void {
+        $current = new MetricsRuntimeSpec;
+        $legacy = new MetricsRuntimeSpec(healthStartPeriodSeconds: 0);
+
+        expect($current->for(MetricsService::Prometheus, 41, '10.44.0.3', 'config')->specHash)
+            ->not
+            ->toBe($legacy->for(MetricsService::Prometheus, 41, '10.44.0.3', 'config')->specHash);
     });
 
     it('bounds container logging and re-converges when the policy changes', function (): void {

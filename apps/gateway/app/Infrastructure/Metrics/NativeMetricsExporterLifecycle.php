@@ -6,11 +6,10 @@ namespace App\Infrastructure\Metrics;
 
 use App\Domain\Metrics\ExporterDegradationReason;
 use App\Domain\Metrics\ExporterDegradationRepository;
-use App\Domain\Metrics\ExporterPreferenceRepository;
-use App\Domain\Metrics\ExporterSelector;
 use App\Domain\Metrics\MetricsExporterLifecycle;
+use App\Domain\Metrics\MetricsExporterProjection;
+use App\Domain\Metrics\MetricsExporterProjectionItem;
 use App\Domain\Nodes\RoleName;
-use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -21,18 +20,16 @@ final readonly class NativeMetricsExporterLifecycle implements MetricsExporterLi
 {
     public function __construct(
         private MetricsExporterRuntime $executor,
-        private ExporterSelector $selector,
-        private ExporterPreferenceRepository $preferences,
+        private MetricsExporterProjection $projection,
         private ExporterDegradationRepository $degradations,
     ) {}
 
     public function converge(Node $node, NodeRole $assignment): void
     {
-        $node->loadMissing('roles');
-        $this->mutateFleet($node, function (Node $candidate) use ($node): void {
-            $this->selected($candidate, $node)
-                ? $this->executor->converge($candidate, $node)
-                : $this->executor->remove($candidate, $node);
+        $this->mutateFleet($node, function (MetricsExporterProjectionItem $item) use ($node): void {
+            $item->selection->selected
+                ? $this->executor->converge($item->node, $node)
+                : $this->executor->remove($item->node, $node);
         });
     }
 
@@ -40,7 +37,7 @@ final readonly class NativeMetricsExporterLifecycle implements MetricsExporterLi
     {
         $this->mutateFleet(
             $node,
-            fn (Node $candidate): mixed => $this->executor->remove($candidate, $node),
+            fn (MetricsExporterProjectionItem $item): mixed => $this->executor->remove($item->node, $node),
         );
     }
 
@@ -72,14 +69,14 @@ final readonly class NativeMetricsExporterLifecycle implements MetricsExporterLi
 
     public function targets(Node $metricsNode): array
     {
-        $metricsNode->loadMissing('roles');
         $targets = [];
 
-        foreach ($this->activeNodes() as $node) {
-            if (! $this->selected($node, $metricsNode)) {
+        foreach ($this->projection->for($metricsNode) as $item) {
+            if (! $item->selection->selected) {
                 continue;
             }
 
+            $node = $item->node;
             $address = $node->wireguard_ip;
 
             if (! is_string($address) || filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
@@ -98,47 +95,15 @@ final readonly class NativeMetricsExporterLifecycle implements MetricsExporterLi
         return $targets;
     }
 
-    /** @return list<Node> */
-    private function activeNodes(): array
-    {
-        return array_values(
-            Node::query()
-                ->with('roles')
-                ->where('status', LifecycleStatus::Active->value)
-                ->orderBy('id')
-                ->get()
-                ->all(),
-        );
-    }
-
-    private function selected(Node $node, Node $metricsNode): bool
-    {
-        $roles = array_values(
-            $node
-                ->roles
-                ->filter(static fn (NodeRole $role): bool => in_array(
-                    $role->status,
-                    [LifecycleStatus::Provisioning, LifecycleStatus::Active],
-                    strict: true,
-                ))
-                ->map(static fn (NodeRole $role): RoleName => $role->role)
-                ->all(),
-        );
-
-        return $this->selector->select(
-            $roles,
-            $this->preferences->get($node->id),
-            $node->is($metricsNode),
-        )->selected;
-    }
-
-    /** @param Closure(Node): mixed $mutation */
+    /** @param Closure(MetricsExporterProjectionItem): mixed $mutation */
     private function mutateFleet(Node $metricsNode, Closure $mutation): void
     {
-        /** @var list<array{node: Node, state: MetricsExporterState}> $snapshots */
+        /** @var list<array{item: MetricsExporterProjectionItem, state: MetricsExporterState}> $snapshots */
         $snapshots = [];
 
-        foreach ($this->activeNodes() as $candidate) {
+        foreach ($this->projection->for($metricsNode) as $item) {
+            $candidate = $item->node;
+
             try {
                 $state = $this->executor->snapshot($candidate, $metricsNode);
             } catch (ResourceOperationException $exception) {
@@ -148,7 +113,7 @@ final readonly class NativeMetricsExporterLifecycle implements MetricsExporterLi
             }
 
             $this->degradations->forget($candidate->id);
-            $snapshots[] = ['node' => $candidate, 'state' => $state];
+            $snapshots[] = ['item' => $item, 'state' => $state];
         }
 
         $mutated = [];
@@ -156,12 +121,12 @@ final readonly class NativeMetricsExporterLifecycle implements MetricsExporterLi
         try {
             foreach ($snapshots as $snapshot) {
                 $mutated[] = $snapshot;
-                $mutation($snapshot['node']);
+                $mutation($snapshot['item']);
             }
         } catch (Throwable $exception) {
             try {
                 foreach (array_reverse($mutated) as $snapshot) {
-                    $this->executor->restore($snapshot['node'], $metricsNode, $snapshot['state']);
+                    $this->executor->restore($snapshot['item']->node, $metricsNode, $snapshot['state']);
                 }
             } catch (Throwable $rollback) {
                 throw new ResourceOperationException(

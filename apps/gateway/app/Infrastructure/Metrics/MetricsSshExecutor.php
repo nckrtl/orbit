@@ -677,10 +677,12 @@ final readonly class MetricsSshExecutor implements MetricsRuntimeHost, MetricsCr
 
         $arguments[] = '--health-cmd';
         $arguments[] = implode(' ', array_slice($spec->healthCommand, 1));
+        $arguments[] = '--health-start-period';
+        $arguments[] = "{$spec->healthStartPeriodSeconds}s";
         $arguments[] = '--health-interval';
-        $arguments[] = '5s';
+        $arguments[] = "{$spec->healthIntervalSeconds}s";
         $arguments[] = '--health-retries';
-        $arguments[] = '12';
+        $arguments[] = (string) $spec->healthRetries;
         $arguments[] = '--';
         $arguments[] = $spec->image;
         array_push($arguments, ...$spec->command);
