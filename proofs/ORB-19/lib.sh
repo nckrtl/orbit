@@ -35,7 +35,7 @@ node_id() {
 gateway_address() {
   orbit node:list --json | php -r '
     foreach (json_decode(stream_get_contents(STDIN), true)["nodes"] ?? [] as $node) {
-      if (in_array("gateway", $node["roles"] ?? [], true)) { echo $node["wireguard_address"]; exit(0); }
+      if (in_array("gateway", $node["roles"] ?? [], true)) { echo $node["wireguard_ip"]; exit(0); }
     }
     exit(1);
   '
