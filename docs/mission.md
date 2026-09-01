@@ -27,9 +27,9 @@ work, such as running an application or routing traffic.
 Actions go through the Gateway, which authorizes them before passing them to
 managed Nodes.
 
-## Built for people and agents
+## Built for humans and agents
 
-People and coding agents use the same commands. Human output should be easy to
+Humans and coding agents use the same commands. Human output should be easy to
 read, while structured output gives automation reliable data to work with.
 Orbit keeps a history of changes so you can understand what happened when
 something goes wrong.
