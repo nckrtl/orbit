@@ -3,7 +3,7 @@
     "documents": [
         {
             "path": "docs/README.md",
-            "title": "Orbit Documentation",
+            "title": "Orbit documentation",
             "kind": "product",
             "components": [
                 "apps/docs",

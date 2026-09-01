@@ -1,7 +1,7 @@
 # Tech Stack
 
-Orbit is a PHP monorepo. Each application or package has its own dependencies,
-tests, and Composer lock file.
+Orbit is built as several PHP projects in one repository. Each application or
+package keeps its own dependencies, tests, and Composer lock file.
 
 ## PHP applications
 
@@ -14,29 +14,31 @@ All projects run on PHP 8.5 and use Composer 2.
 
 ## Managed machines
 
-Orbit manages Ubuntu Nodes. It uses the Sury packages for PHP and runs services
-with systemd. [PHP runtime defaults](reference/php-runtime.md) lists the
-versions and settings used on those machines.
+Orbit manages Ubuntu Nodes. It installs PHP from the Sury packages and manages
+services with systemd. The [PHP runtime defaults](reference/php-runtime.md)
+page lists the exact versions and settings used on those machines.
 
 Caddy handles HTTP and HTTPS traffic. WireGuard provides the private network
-between Nodes. Orbit uses native files and services where they are a better fit
-than a container.
+between Nodes. Orbit runs these services directly instead of putting everything
+in containers.
 
 ## Data
 
-The Gateway stores its data in SQLite. Application data stays with the
-application and is not stored in the Gateway database.
+The Gateway stores Orbit's data in SQLite. Your applications continue to manage
+their own data.
 
 Documentation is Markdown in the root `docs/` directory. A generated JSON file
-helps tools find relevant pages.
+helps humans and agents find pages about the part of Orbit they are working on.
 
 ## Development and testing
 
+Orbit uses these tools to keep its code and documentation consistent:
+
 - Pest runs the automated test suites.
 - Mago formats, lints, and analyzes PHP code.
-- Rector checks automated refactors.
+- Rector checks PHP refactoring rules.
 - Librarian checks documentation.
 - Incus creates temporary Linux machines for end-to-end testing.
 
-GitHub Actions tests each project separately. The scripts at the repository
-root make it easy to install and test everything together.
+GitHub Actions tests each project separately. Scripts at the repository root
+let you install and test everything together.

@@ -1,9 +1,9 @@
 # Concepts
 
-These are the main words you will see throughout the Orbit documentation.
+These are the common terms you will see throughout the Orbit documentation.
 
 - **Gateway** — The central Orbit service. It stores information about your
-  machines and applications and coordinates changes across them. See
+  machines and applications, authorizes actions, and coordinates changes. See
   [Architecture](architecture.md#gateway).
 - **Cluster** — A group of Nodes and applications that share networking and
   routing. See
@@ -12,10 +12,10 @@ These are the main words you will see throughout the Orbit documentation.
   See
   [ADR 0012](decisions/0012-ubuntu-24-04-roleless-operator-clients.md).
 - **App** — An application managed by Orbit. It holds the settings shared by
-  its development and production placements. See
+  its AppInstances. See
   [ADR 0009](decisions/0009-clustered-app-instance-routing.md).
-- **AppInstance** — One development checkout or production placement of an App
-  on a Node. See
+- **AppInstance** — One place on a Node where an App is developed or runs in
+  production. See
   [ADR 0011](decisions/0011-clustered-production-ingress-and-app-prod-placement.md).
 - **Route** — A hostname that sends traffic to one or more AppInstances. See
   [ADR 0009](decisions/0009-clustered-app-instance-routing.md).
@@ -28,9 +28,9 @@ These are the main words you will see throughout the Orbit documentation.
 - **Doctor** — A check that compares what Orbit expects with what is actually
   on a machine. Doctor reports problems without changing anything. See
   [ADR 0004](decisions/0004-verify-only-doctor-boundary.md).
-- **Proof topology** — A temporary set of Incus machines used to test one
-  change on real Linux systems. See
+- **Proof topology** — A temporary group of Incus machines used to test a
+  change on Linux. See
   [Incus topology registry](reference/incus-topologies.md).
-- **Documentation context** — A short list of pages selected for the part of
-  Orbit being changed. See
+- **Documentation context** — A short list of pages that helps a contributor or
+  agent understand the part of Orbit being changed. See
   [ADR 0014](decisions/0014-maintain-verified-documentation-context.md).

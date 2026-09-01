@@ -1,12 +1,14 @@
-# Orbit Documentation
+# Orbit documentation
 
-Welcome to the Orbit documentation. These pages explain what Orbit does, how
-its main parts fit together, and how to work with it.
+These pages explain what Orbit can do, how its main parts work together, and
+how to use it.
 
-If you are new to Orbit, start with the mission and architecture. You can then
-use the concepts page whenever you meet an unfamiliar Orbit term.
+If you are new to Orbit, start with the mission and architecture. Keep the
+concepts page nearby for any Orbit terms you do not know yet.
 
 ## Start here
+
+Choose a page based on what you want to learn:
 
 - [Mission](mission.md) explains why Orbit exists and what it is trying to
   make easier.
@@ -24,8 +26,8 @@ use the concepts page whenever you meet an unfamiliar Orbit term.
 
 ## Keeping the docs up to date
 
-Orbit includes a small documentation tool in `apps/docs`. It checks the docs
-and builds an index that helps contributors find the right pages for a change.
+The `apps/docs` tool checks these pages and builds an index that helps
+contributors find the right information for a change.
 
 Check the documentation from the repository root:
 
@@ -33,13 +35,13 @@ Check the documentation from the repository root:
 composer docs-lint
 ```
 
-Rebuild the index after adding a page or changing what a page covers:
+After adding a page or changing what it covers, rebuild the index:
 
 ```bash
 composer docs-build
 ```
 
-Find documentation for a part of Orbit or a product concept:
+To find pages for a part of Orbit or an Orbit term, run:
 
 ```bash
 composer docs-context -- --component=apps/gateway --concept=Cluster
