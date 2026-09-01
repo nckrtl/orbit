@@ -125,9 +125,7 @@ placement, migrate workloads automatically, or rebalance a Cluster.
 
 PHP and other application-runtime prerequisites belong to the Node's
 application role. An AppInstance can require a compatible role, but it does
-not select, install, or own a private PHP or application runtime. Herdr,
-shells, agent sessions, and development-process orchestration remain outside
-Orbit.
+not select, install, or own a private PHP or application runtime.
 
 ### Generate development Routes and accept explicit Routes
 
@@ -256,9 +254,9 @@ boundaries:
 
 The operation records durable progress for every phase and resource. A retry
 continues from verified state and does not create duplicate AppInstances,
-clones, Routes, certificates, or traffic projections. External orchestration
-must stop active development processes before conversion; Orbit does not use
-Herdr or manage agent sessions during the operation.
+clones, Routes, certificates, or traffic projections. Development processes
+using legacy source must be stopped before conversion; Orbit does not manage
+those processes.
 
 ## Consequences
 
@@ -284,5 +282,6 @@ Herdr or manage agent sessions during the operation.
   projections. That overlap is required for verification and rollback. Legacy
   worktrees remain until successful cutover and source-safe cleanup.
 - Public DNS automation, Nodes in multiple Clusters, private AppInstance
-  runtimes, automatic placement, Kubernetes behavior, Herdr orchestration, and
-  multi-target load-balancing policy remain outside this decision.
+  runtimes, automatic placement, Kubernetes behavior, development-process
+  management, and multi-target load-balancing policy remain outside this
+  decision.

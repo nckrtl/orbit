@@ -1,17 +1,17 @@
 ---
 name: creating-issues
-description: Use when turning an Orbit request or production GitHub report into a Linear issue before implementation.
+description: Use when refining an Orbit request into a Linear issue.
 ---
 
 # Creating Issues
 
-Refine an approved request into one or more Linear implementation contracts.
-Accepted repository ADRs own architectural decisions. Linear owns outcomes,
-scope, acceptance criteria, relationships, affected components, and proof
-requirements.
+Refine an approved request or production report into one or more verifiable
+Linear contracts. Accepted repository ADRs own architectural decisions. Linear
+owns requested outcomes, scope, acceptance criteria, relationships, affected
+components, and proof requirements.
 
-Issue refinement researches current `main` and shapes Linear work. It does not create `.orbit/plan.md` or another implementation plan. That temporary map is
-created only after a `Todo` issue is claimed for implementation preflight.
+This skill produces issue contracts only. It does not create an implementation
+plan or assume how, when, or by whom the issue will be implemented.
 
 ## Issue contract
 
@@ -37,137 +37,84 @@ Components:
 
 ADR: none
 
-Proof: incus        # only when a real machine is needed; omit otherwise
+Proof: incus           # only when a real machine is required; omit otherwise
 
 Source: none
 ```
 
-- Use verifiable behavior. One acceptance criterion becomes one proof action.
-- Name the smallest affected components (`apps/cli`, `apps/gateway`,
-  `packages/php-sdk`). Name `apps/e2e` only for a harness issue; a feature
-  issue never lists it.
+- Use observable behavior. Each acceptance criterion must have one available
+  proof action.
+- Name the smallest affected components: `apps/cli`, `apps/gateway`, or
+  `packages/php-sdk`.
+- Name `apps/e2e` only for a dedicated harness issue. Product feature issues do
+  not include harness changes.
 - Add `Proof: incus` when acceptance depends on a real OS, service manager,
   privilege boundary, network, certificate, filesystem ownership, or
-  multi-node behavior. Omit it for automated-only work. The topology is
-  always `gateway + app-dev + app-prod` on Ubuntu 26.04. Do not describe it.
+  multi-node behavior. Omit it for automated-only work.
+- Record the source issue, report, review, or discussion when one exists.
 
-## Linear states
+## Issue maturity
 
-`Backlog` means the issue is rough or incomplete and still needs refinement.
-Its contract, decisions, dependency graph, or proof path may be missing. State
-the refinement or readiness condition in the description. Tom never claims it.
+Use `Backlog` when the request is rough or incomplete. State the exact readiness
+condition: missing product decision, architectural direction, dependency,
+compatibility boundary, proof path, or acceptance detail.
 
-`Todo` means the implementation contract is complete, every governing ADR is
-on `origin/main`, and every acceptance criterion is verifiable. Todo is the
-ordered execution queue. A declared prerequisite may keep a refined Todo issue
-temporarily ineligible; Tom skips it until every prerequisite is `Done` and
-present on current `origin/main`.
+Use `Todo` when the contract is complete, every governing ADR is accepted on
+`origin/main`, every acceptance criterion is verifiable, and every real
+prerequisite is explicit. A Todo issue may still depend on unfinished work; the
+relationship communicates that fact without weakening the issue contract.
 
-`In Progress` begins when Tom selects an eligible Todo issue, before any
-worktree, Herdr worker, or preflight turn starts or resumes. `Blocked` is
-reserved for started work that cannot continue; its worktree and Herdr assets
-remain parked. `In Review` begins before independent PR review. Issue creation
-always sets a new or reshaped issue explicitly to `Backlog` or `Todo`; never
-rely on the team's configurable default.
+Always set `Backlog` or `Todo` explicitly instead of relying on a configurable
+team default.
 
-## ADR
+## ADR boundary
 
-Use `ADR: none` only when no ADR applies. List every governing decision as a
-canonical `docs/decisions/` URL on `origin/main`.
+Use `ADR: none` only when no ADR applies. Otherwise link every governing decision
+with its canonical `docs/decisions/` URL on `origin/main`.
 
-The ADR threshold is architectural significance, not mere durability. Stop
-issue creation when discussion changes architecture, ownership, security, a
-cross-feature boundary, or another choice that materially constrains future
-work. Tactical implementation choices remain in code, tests, and temporary
-implementation planning.
+Stop issue creation when the request changes architecture, ownership, security,
+a cross-component contract, or another choice that materially constrains future
+work. Draft an ADR as `Proposed`, revise its actual text with the user, and mark
+it `Accepted` only after exact-text approval.
 
-Draft the ADR as `Proposed`. The user reviews its actual text; revise it until
-the user explicitly approves the exact final text, then mark it `Accepted`.
 Accepted ADRs remain immutable. A later direction becomes a new ADR that names
 the decision it extends, amends, or supersedes.
 
-An approved ADR needs neither a Linear issue nor an intrinsic pull request.
-It may be committed directly when:
-
-- the user approved the exact final text;
-- the commit contains only the approved ADR;
-- local `main` matches the current remote base; and
-- no unrelated work is modified, included, stashed, reset, or discarded.
-
-If the remote base moves after approval, recheck the ADR against it. A pull request remains optional when the user wants independent review, decision authority is shared, or branch protection requires it.
-
-Push the accepted ADR to `origin/main` before implementation issues are derived. Then reconcile every open issue whose outcome or scope intersects the
-decision: surface conflicts, move incomplete work to `Backlog`, block claimed
-work that cannot continue, and remove or cancel obsolete work only with
-explicit authority.
+An approved ADR may be committed directly when the user approved its exact
+text, the commit contains only that ADR, local `main` matches the current remote
+base, and unrelated work is untouched. A pull request remains optional.
 
 ## Complete-set feasibility
 
-Before any issue in a derived set enters `Todo`, refine the complete set
-against current `main`. Inspect the relevant existing product, migration, proof, and harness implementation rather than inferring feasibility from the ADR alone.
+When a request needs multiple issues, refine the complete set against current
+`main` before finalizing it. Inspect relevant product, migration, proof, and
+harness code rather than inferring feasibility from prose alone.
 
-Verify all of the following:
+Verify that:
 
-- product behavior is decided, including lifecycle, ownership, migration, compatibility, failure, rollback, and removal boundaries that affect the requested outcome;
-- each acceptance criterion states observable behavior and has one available proof action through its declared automated or Incus venue;
-- the current proof machinery can express that action without a forbidden
-  feature-branch harness change;
-- the issue dependency graph is explicit and acyclic;
-- relationships encode only real prerequisites, not preference, staffing,
-  shared files, or possible merge conflicts;
-- every prerequisite is explicit, and its status determines whether the
-  dependent Todo issue is currently eligible for selection; and
+- product behavior is decided, including ownership, migration, compatibility,
+  failure, rollback, and removal boundaries that affect the outcome;
+- every acceptance criterion has one available automated or Incus proof action;
+- current proof machinery can express those actions without mixing product and
+  harness changes;
+- the dependency graph is explicit and acyclic;
+- relationships encode real prerequisites, not staffing preference, shared
+  files, or possible merge conflicts; and
 - each issue can be implemented and proved at its graph position without
-  redesigning the feature.
+  redesigning the request.
 
-When a product contract and its verifier would otherwise block each other,
-start with a compatibility bridge that lands and passes against current
-`main`. Follow with the product change and remove the fallback only after the
-migration. Never create mutually blocking hard cutovers.
-
-Put every fully refined issue into `Todo` and encode real prerequisites as
-Linear relationships. Independent roots can execute in parallel. Refined
-dependents remain in `Todo` but are skipped until every prerequisite is `Done`
-and present on current `origin/main`.
-
-## Preflight accountability
-
-Preflight remains independent and substantive, but correct issue refinement
-should normally pass on its first review.
-
-- `PASS` is the normal result. The issue is already `In Progress`; continue to
-  implementation.
-- `FIX` means the issue remains implementable but the temporary plan missed or
-  misstated a code boundary, invariant, order, or acceptance-to-proof mapping.
-  Keep the issue `In Progress` while fresh planner and reviewer rounds correct
-  it.
-- `BLOCK` stops implementation and starts a fresh reconciler while the issue
-  stays `In Progress`. The reviewer must recommend the smallest safe resolution
-  and identify the evidence and apparent decision boundary. The reconciler may
-  return `TECHNICAL_RESOLUTION` for an internal implementation, harness, test,
-  proof, sequencing, or narrow scope correction that preserves product behavior
-  and acceptance strength. Tom routes any durable issue or relation edit to
-  Anna; after the approved change, a wholly fresh planner and reviewer must
-  return `PASS`. Only `HUMAN_DECISION_REQUIRED` moves the issue to `Blocked` and
-  parks its assets without consuming execution concurrency. Reserve that result
-  for a product-visible, policy, authority, material irreversible-risk, or
-  unguided architectural choice. Tom never judges the proposal or edits the
-  contract.
-
-Unless `main` materially changed after refinement, an initial `BLOCK` is
-refinement feedback. Classify it as product refinement, dependency ordering,
-proof or harness feasibility, or repository drift and feed the cause back into
-this skill. A reconciled technical resolution is not a human-owned blocker.
+When a product contract and its verifier would otherwise require mutually
+blocking hard cutovers, define a compatibility bridge first. Follow with the
+product change and remove the fallback only after migration.
 
 ## Production reports
 
-Create a Linear bug for a post-deploy defect. Keep the feature closed. Set
-`Source` to the GitHub issue and include the deployed commit, environment,
-expected and observed behavior, and evidence.
+Create a Linear bug for a post-release defect. Include the deployed commit,
+environment, expected and observed behavior, and evidence. Set `Source` to the
+original report or GitHub issue.
 
-## Implementation readiness
+## Verification
 
-A Linear issue with status `Todo` is refined and ready to enter the execution
-queue. Tom may select it only when its declared prerequisites are `Done` and
-present on current `origin/main`. No issue enters `Todo` merely because its text
-looks complete; the complete-set feasibility checks above must also pass.
+Before saving issues, confirm that every issue has a bounded outcome, explicit
+scope, observable criteria, smallest component set, applicable ADR links,
+correct proof venue, real relationships, and no unresolved architectural choice.

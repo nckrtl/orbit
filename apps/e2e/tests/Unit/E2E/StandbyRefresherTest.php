@@ -644,9 +644,9 @@ function refreshFixture(): array
     $release = new LaravelRelease('v13.10.1', str_repeat('e', 40));
     $oldFingerprint = new PreparedStateFingerprint($git)->forCommit($oldSha, $release);
     $oldStructuralFingerprint = new PreparedStateFingerprint($git)->forCommit($oldSha);
-    $convergerPath = $worktree.'/apps/e2e/app/E2E/TopologyConverger.php';
-    expect(file_put_contents($convergerPath, "\n", FILE_APPEND))->not->toBeFalse();
-    refreshFixtureCommit($processes, $worktree, [$convergerPath], 'refresh fixture change');
+    $rendererPath = $worktree.'/apps/gateway/app/Infrastructure/Metrics/MetricsPublicationRenderer.php';
+    expect(file_put_contents($rendererPath, "\n", FILE_APPEND))->not->toBeFalse();
+    refreshFixtureCommit($processes, $worktree, [$rendererPath], 'refresh fixture change');
     $newSha = $git->commit('HEAD');
     $paths = new StatePaths(temporaryPath('orbit-refresh-fixture-state-', 4));
     $state = new AtomicJsonStore($paths);

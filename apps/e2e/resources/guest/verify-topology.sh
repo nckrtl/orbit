@@ -13,7 +13,7 @@ case "$1" in
   source.gateway|source.app-dev) [[ $# -eq 4 || $# -eq 5 ]] ;;
   source.manifest) [[ $# -eq 6 || $# -eq 7 ]] ;;
   wireguard.reachability) [[ $# -ge 5 ]] ;;
-  role.assignments) [[ $# -eq 5 ]] ;;
+  role.assignments|metrics.publication) [[ $# -eq 5 ]] ;;
   *) [[ $# -eq 4 ]] ;;
 esac
 probe=$1
@@ -39,7 +39,7 @@ if [[ "$probe" == wireguard.reachability ]]; then
   # One name per node: a repeated peer would prove one node twice and the other never.
   [[ "$(printf '%s\n' "${peer_names[@]}" | sort | uniq -d | wc -l)" -eq 0 ]]
 fi
-if [[ "$probe" == role.assignments ]]; then
+if [[ "$probe" == role.assignments || "$probe" == metrics.publication ]]; then
   required_assignments=$5
   [[ "$required_assignments" =~ ^[A-Za-z0-9+/]*={0,2}$ ]]
 fi
@@ -88,6 +88,55 @@ case "$probe" in
     observed=$expected
     if [[ -n "$extra" ]]; then
       observed="${expected}+${extra}"
+    fi
+    ;;
+  metrics.publication)
+    db=/home/orbit/.orbit/gateway.sqlite
+    [[ -r "$db" ]]
+    read -r publication gateway_address metrics_address < <(php -r '$pdo=new PDO("sqlite:".$argv[1]); $required=json_decode(base64_decode($argv[2], true), true, 16, JSON_THROW_ON_ERROR); if (!is_array($required) || array_is_list($required) || $required === []) exit(65); foreach ($required as $node => $roles) { if (!is_string($node) || !in_array($node, ["gateway", "app-dev", "app-prod"], true) || !is_array($roles) || !array_is_list($roles) || $roles === []) exit(65); foreach ($roles as $role) { if (!is_string($role) || $role === "") exit(65); } } $address=static function (string $node, string $role) use ($pdo): string { $statement=$pdo->prepare("SELECT n.wireguard_address FROM nodes n INNER JOIN node_roles r ON r.node_id = n.id WHERE n.name = ? AND n.status = ? AND r.role = ? AND r.status = ?"); $statement->execute([$node, "active", $role, "active"]); $addresses=$statement->fetchAll(PDO::FETCH_COLUMN); if (count($addresses) !== 1 || !is_string($addresses[0]) || filter_var($addresses[0], FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) exit(1); return $addresses[0]; }; $gateway=$address("gateway", "gateway"); if (!in_array("metrics", $required["app-dev"] ?? [], true)) { echo "absent ", $gateway, " -\n"; exit; } echo "present ", $gateway, " ", $address("app-dev", "metrics"), "\n";' -- "$db" "$required_assignments")
+    live=/etc/caddy/Caddyfile
+    live_main=$(readlink -f -- "$live")
+    case "$live_main" in
+      /etc/caddy/orbit-versions/*/Caddyfile) ;;
+      *) exit 1 ;;
+    esac
+    live_fragment=$(dirname "$live_main")/fragments/metrics.caddy
+    certificate_current=/etc/caddy/orbit-metrics-cert-current
+    dns_output=$(dig +time=3 +tries=1 +short metrics.orbit A @"$gateway_address")
+    mapfile -t resolved < <(printf '%s' "$dns_output" | awk 'NF')
+    if [[ "$publication" == absent ]]; then
+      [[ "${#resolved[@]}" -eq 0 ]]
+      [[ ! -e "$certificate_current" && ! -L "$certificate_current" ]]
+      [[ ! -e "$live_fragment" ]]
+      expected='metrics.orbit:absent'
+      observed=$expected
+    elif [[ "$publication" == present ]]; then
+      [[ "$gateway_address" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ && "$metrics_address" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]
+      [[ "${#resolved[@]}" -eq 1 && "${resolved[0]}" == "$gateway_address" ]]
+      [[ -L "$certificate_current" && -s "$certificate_current/metrics.pem" && -s "$certificate_current/metrics.key" ]]
+      certificate_target=$(readlink -f -- "$certificate_current")
+      case "$certificate_target" in
+        /etc/caddy/orbit-metrics-cert-versions/*) ;;
+        *) exit 1 ;;
+      esac
+      [[ -f "$live_fragment" ]]
+      expected_fragment=$(mktemp)
+      trap 'rm -f -- "$expected_fragment"' EXIT
+      /usr/bin/php -r 'require $argv[1]; echo (new App\Infrastructure\Metrics\MetricsPublicationRenderer)->caddy($argv[2], $argv[3]);' -- "$source_root/apps/gateway/vendor/autoload.php" "$metrics_address" "$gateway_address" >"$expected_fragment"
+      cmp -s -- "$expected_fragment" "$live_fragment"
+      openssl verify -CAfile /home/orbit/.orbit/ca/root.pem "$certificate_current/metrics.pem" >/dev/null
+      openssl x509 -in "$certificate_current/metrics.pem" -noout -checkhost metrics.orbit >/dev/null
+      ufw_status=$(ssh -n -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/orbit/.orbit/ssh/known_hosts -i /home/orbit/.orbit/ssh/id_ed25519 "orbit@$metrics_address" sudo ufw status numbered)
+      php -r '$status=stream_get_contents(STDIN); if (preg_match("/^Status:\\s+active$/mi", $status) !== 1) exit(1); $marker="# orbit:metrics-grafana-upstream"; $owned=array_values(array_filter(preg_split("/\\R/", $status) ?: [], static fn(string $line): bool => str_ends_with(rtrim($line), $marker))); if (count($owned) !== 1) exit(1); $pattern="/\\A\\s*\\[\\s*\\d+\\]\\s+".preg_quote($argv[1], "/")."\\s+3000\\/tcp on orbit\\s+ALLOW IN\\s+".preg_quote($argv[2], "/")."\\s+\\# orbit:metrics-grafana-upstream\\s*\\z/D"; if (preg_match($pattern, $owned[0]) !== 1) exit(1);' -- "$metrics_address" "$gateway_address" <<<"$ufw_status"
+      health=$(curl --fail --silent --show-error --max-time 10 --cacert /home/orbit/.orbit/ca/root.pem --resolve "metrics.orbit:443:$gateway_address" https://metrics.orbit/api/health)
+      php -r '$health=json_decode(stream_get_contents(STDIN), true, 16, JSON_THROW_ON_ERROR); if (($health["database"] ?? null) !== "ok") exit(1);' <<<"$health"
+      fragment_sha=$(sha256sum -- "$live_fragment" | cut -d ' ' -f 1)
+      expected='metrics.orbit:current-product-publication'
+      observed="dns=$gateway_address,caddy=$fragment_sha,certificate=metrics.orbit+orbit-ca,firewall=$gateway_address>$metrics_address:3000/tcp,grafana.database=ok"
+      rm -f -- "$expected_fragment"
+      trap - EXIT
+    else
+      exit 65
     fi
     ;;
   role.app-dev) [[ -d /home/orbit/apps/laravel && -d /home/orbit/.orbit/worktrees/laravel/e2e ]]; expected='app-dev,workspace:prepared'; observed=$expected ;;

@@ -27,6 +27,7 @@ final readonly class TopologyVerifier
         'role.app-dev' => 'app-dev',
         'role.app-prod' => 'app-prod',
         'role.assignments' => 'gateway',
+        'metrics.publication' => 'gateway',
         'service.gateway' => 'gateway',
         'service.vpn' => 'gateway',
         'wireguard.reachability' => 'gateway',
@@ -138,7 +139,7 @@ final readonly class TopologyVerifier
                 if ($name === 'wireguard.reachability') {
                     // The registry names the nodes by role; a declared-absent node is not among them.
                     array_push($arguments, ...$declared->peers());
-                } elseif ($name === 'role.assignments') {
+                } elseif (in_array($name, ['role.assignments', 'metrics.publication'], true)) {
                     $arguments[] = base64_encode(json_encode($assignments, JSON_THROW_ON_ERROR));
                 } elseif ($name === 'source.manifest') {
                     $arguments[] = $source->treeHash ?? '-';

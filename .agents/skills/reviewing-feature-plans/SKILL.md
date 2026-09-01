@@ -1,44 +1,48 @@
 ---
 name: reviewing-feature-plans
-description: Use when independently reviewing an Orbit implementation preflight.
+description: Use when independently reviewing an Orbit plan.
 ---
 
 # Reviewing Feature Plans
 
-Review one prepared `.orbit/plan.md` before implementation. Do not change
-product code, tests, proof files, Git history, Linear, or GitHub.
+Review one prepared `.orbit/plan.md`. Do not change product code, tests, proof
+files, Git history, Linear, or GitHub.
+
+This role reports the quality of the plan only. It does not start other roles,
+change issue state, or decide what happens after the verdict.
 
 ## Review
 
-Read the Linear issue, which has status `In Progress`, governing ADRs, the plan, named code
+Read the issue or equivalent contract, governing ADRs, the plan, named code
 boundaries, nearby tests, and available proof commands. Check that:
 
 - every acceptance criterion maps to a concrete code boundary and focused proof;
 - exclusions prevent unrelated cleanup or harness changes;
-- implementation order can proceed without rediscovering feature design;
+- implementation order is coherent and does not require rediscovering product
+  behavior;
 - existing behavior that may regress has a named test, invariant, or proof;
-- the plan does not invent requirements or contradict the issue or ADR.
+- open questions identify facts rather than hide product decisions; and
+- the plan does not invent requirements or contradict the issue or ADRs.
 
-Collect every blocking finding before returning a verdict. Do not spread known
-findings across multiple rounds.
+Collect every known blocking finding before returning a verdict.
 
 ## Verdict
 
-Update only the verdict metadata and reviewer-findings section in
-`.orbit/plan.md`:
+Update only `Review verdict` and `## Review findings` in `.orbit/plan.md`:
 
-- `PASS`: implementation may start; findings must be empty.
-- `FIX`: list concrete, in-scope corrections. Tom starts a fresh correction
-  planner and then a fresh independent reviewer. Repeat with fresh agents until
-  `PASS` or `BLOCK`.
+- `PASS`: no blocking findings; leave the findings section empty.
+- `FIX`: list concrete, in-scope plan corrections.
 - `BLOCK`: state the exact technical incompatibility, missing requirement,
-  conflict, or product decision; implementation must not start. Include a
-  **Recommended resolution** that names
-  the smallest safe contract, scope, dependency, or harness change that would
-  unblock the issue, the evidence supporting it, and the apparent decision
-  boundary. Tom starts a fresh reconciler; the issue remains `In Progress`
-  unless that reconciler returns `HUMAN_DECISION_REQUIRED`. Do not silently
-  expand scope or present a recommendation as an approved decision.
+  conflict, or product decision. Include a **Recommended resolution** naming the
+  smallest safe contract, scope, dependency, or harness change, the evidence
+  supporting it, and the apparent decision boundary.
 
-Increase `Review round` by one. Never approve a plan you authored. A genuinely
-new requirement is separate Linear work, not a finding against this plan.
+Do not silently expand scope or present a recommendation as approved authority.
+Never approve a plan you authored. A genuinely new requirement belongs in a
+separate Linear issue.
+
+## Verification
+
+The verdict is complete when all known findings are included, every finding
+cites a contract or repository boundary, and the recommendation is no broader
+than necessary.
