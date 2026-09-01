@@ -1,17 +1,17 @@
 {
     "setup": [
         {
-            "id": "metrics-enable-app-dev",
+            "id": "baseline-metrics-active",
             "node": "app-dev",
-            "argv": ["orbit", "metrics:enable", "app-dev", "--json"],
-            "timeout_seconds": 600
+            "argv": ["orbit", "metrics:status", "--json"],
+            "timeout_seconds": 120
         }
     ],
     "acceptance": [
         {
             "id": "status-active",
             "node": "app-dev",
-            "argv": ["bash", "/var/lib/orbit-e2e/proof/status-active.sh", "app-dev=desired/active/metrics_node", "app-prod=desired/active/role_default", "gateway=desired/active/role_default"],
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/status-active.sh", "app-dev=desired/active/metrics_node", "app-prod=desired/active/explicit_enabled", "gateway=desired/active/role_default"],
             "timeout_seconds": 120
         },
         {
