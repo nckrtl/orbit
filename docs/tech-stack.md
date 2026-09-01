@@ -10,7 +10,8 @@ All projects run on PHP 8.5 and use Composer 2.
 - `apps/gateway` is a Laravel 13 application.
 - `apps/cli` uses Laravel Zero 13.
 - `apps/docs` uses Laravel 13 and Librarian.
-- `packages/php-sdk` is a plain PHP package with no Laravel dependency.
+- `packages/php-sdk` uses Saloon for its HTTP connector and request classes. It
+  does not depend on Laravel.
 
 ## Managed machines
 
