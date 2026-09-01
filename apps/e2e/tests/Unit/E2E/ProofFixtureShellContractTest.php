@@ -218,3 +218,107 @@ it('restores firewall deltas from the root-owned shape manifest', function () {
 
     expect($result->isSuccessful())->toBeTrue($result->getErrorOutput());
 });
+
+it('maps every ORB-7 acceptance criterion to an issue-owned proof action', function () {
+    $repositoryRoot = dirname(__DIR__, 5);
+    $plan = json_decode(
+        (string) file_get_contents($repositoryRoot.'/proofs/ORB-7.json'),
+        true,
+        flags: JSON_THROW_ON_ERROR,
+    );
+
+    expect(array_column($plan['acceptance'], 'id'))
+        ->toBe([
+            'pipefail-assertions-remain-truthful',
+            'fixtures-restore-on-exit-int-term',
+            'terminated-firewall-fixture-restores-owned-state',
+            'timeouts-send-term-then-force-kill',
+            'historical-metrics-proof-remains-valid',
+        ])
+        ->and(array_column($plan['acceptance'], 'argv'))
+        ->toBe([
+            ['bash', '/var/lib/orbit-e2e/proof/pipefail-assertions.sh'],
+            ['bash', '/var/lib/orbit-e2e/proof/fixture-cleanup-matrix.sh'],
+            ['bash', '/var/lib/orbit-e2e/proof/firewall-timeout-restoration.sh'],
+            ['bash', '/var/lib/orbit-e2e/proof/timeout-boundary.sh'],
+            ['bash', '/var/lib/orbit-e2e/proof/historical-metrics-proof.sh'],
+        ])
+        ->and($plan['mutates'])
+        ->toBeTrue();
+});
+
+it('keeps the NCK-104 ORB-7 cleanup active while restoring the home ACL', function () {
+    $repositoryRoot = dirname(__DIR__, 5);
+    $fixture = (string) file_get_contents($repositoryRoot.'/proofs/NCK-104/removal-restoration.sh');
+    $library = (string) file_get_contents($repositoryRoot.'/proofs/NCK-104/lib.sh');
+    $hook = strpos($fixture, 'orb7_set_cleanup_hook restore_home_acl');
+    $mutation = strpos($fixture, 'sudo setfacl -m u:caddy:--- /home');
+
+    expect($fixture)
+        ->not->toContain('trap restore_home_acl EXIT')
+        ->not->toContain('trap - EXIT')->and($hook)
+        ->not->toBeFalse()->and($mutation)
+        ->not->toBeFalse()->and($hook)->toBeLessThan($mutation)->and($library)->toContain(
+            '"$ORB7_ACTIVE_CLEANUP_HOOK"',
+        )->toContain('orb7_restore_action "$action" "$@"');
+});
+
+it('requires positive pre-signal evidence in the NCK-116 timeout proof', function () {
+    $repositoryRoot = dirname(__DIR__, 5);
+    $seed = (string) file_get_contents($repositoryRoot.'/proofs/NCK-116/seed-orb-7-timeout.sh');
+    $fixture = (string) file_get_contents($repositoryRoot.'/proofs/NCK-116/refuses-a-shifted-rule-number.sh');
+    $inspector = (string) file_get_contents($repositoryRoot.'/proofs/NCK-116/inspect-orb-7-timeout.sh');
+    $witness = strpos($fixture, 'printf \'installed\\n\' | sudo tee "$ORB7_TIMEOUT_WITNESS"');
+    $checkpoint = strpos($fixture, 'orb7_timeout_checkpoint refuses-a-shifted-rule-number');
+
+    expect($seed)
+        ->toContain('sudo rm -f -- "$ORB7_TIMEOUT_WITNESS"')
+        ->and($fixture)
+        ->toContain('sudo test -x "$STUB"')
+        ->toContain('sudo test -s "$STUB_STATE"')
+        ->toContain('grep -q "# $FOREIGN_RULE\\$" <<<"$numbered"')
+        ->toContain('grep -q "# $EXPORTER_RULE_COMMENT\\$" <<<"$numbered"')
+        ->toContain('grep -q "# $TRANSIENT_RULE\\$" <<<"$numbered"')
+        ->and($witness)
+        ->not->toBeFalse()->and($checkpoint)
+        ->not->toBeFalse()->and($witness)->toBeLessThan($checkpoint)->and($inspector)->toContain(
+            'sudo test -f "$ORB7_TIMEOUT_WITNESS"',
+        )->toContain('sudo rm -f -- "$ORB7_TIMEOUT_WITNESS"');
+});
+
+it('preserves the historical NCK-73 proof semantics', function () {
+    $repositoryRoot = dirname(__DIR__, 5);
+    $plan = json_decode(
+        (string) file_get_contents($repositoryRoot.'/proofs/NCK-73.json'),
+        true,
+        flags: JSON_THROW_ON_ERROR,
+    );
+    $library = (string) file_get_contents($repositoryRoot.'/proofs/NCK-73/lib.sh');
+
+    expect($plan['setup'])
+        ->toBe([[
+            'id' => 'metrics-enable-app-dev',
+            'node' => 'app-dev',
+            'argv' => ['orbit', 'metrics:enable', 'app-dev', '--json'],
+            'timeout_seconds' => 600,
+        ]])
+        ->and($plan['acceptance'][0]['argv'])
+        ->toContain('app-prod=desired/active/role_default')
+        ->and($library)
+        ->not
+        ->toContain('$node["wireguard_ip"]')
+        ->toContain('$node["wireguard_address"]');
+});
+
+it('arms the ORB-7 firewall driver cleanup before its first mutation', function () {
+    $repositoryRoot = dirname(__DIR__, 5);
+    $fixture = (string) file_get_contents($repositoryRoot.'/proofs/ORB-7/firewall-timeout-restoration.sh');
+    $trap = strpos($fixture, 'trap \'driver_cleanup "$?"\' EXIT INT TERM');
+    $mutation = strpos($fixture, 'sudo /usr/sbin/ufw allow');
+
+    expect($fixture)
+        ->toContain('driver_cleanup()')
+        ->and($trap)
+        ->not->toBeFalse()->and($mutation)
+        ->not->toBeFalse()->and($trap)->toBeLessThan($mutation);
+});

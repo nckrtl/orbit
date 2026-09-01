@@ -6,6 +6,7 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 
 readonly ORB7_CLEANUP_ROOT=/var/lib/orbit-e2e/proof-cleanup
 readonly ORB7_STATE_HELPER=/var/lib/orbit-e2e/proof/orb-7-node-state.sh
+ORB7_ACTIVE_CLEANUP_HOOK=
 readonly -a ORB7_SSH=(
   ssh
   -i /home/orbit/.orbit/ssh/id_ed25519
@@ -86,7 +87,14 @@ orb7_cleanup_exit() {
   shift 2
   trap - EXIT INT TERM
   local cleanup_status=0
-  orb7_restore_action "$action" "$@" || cleanup_status=$?
+  if [[ -n "${ORB7_ACTIVE_CLEANUP_HOOK:-}" ]]; then
+    "$ORB7_ACTIVE_CLEANUP_HOOK" || cleanup_status=$?
+  fi
+  local restore_status=0
+  orb7_restore_action "$action" "$@" || restore_status=$?
+  if [[ "$cleanup_status" -eq 0 && "$restore_status" -ne 0 ]]; then
+    cleanup_status=$restore_status
+  fi
   if [[ "$status" -eq 0 && "$cleanup_status" -ne 0 ]]; then
     exit "$cleanup_status"
   fi
@@ -98,9 +106,20 @@ orb7_traps() {
   shift
   ORB7_ACTIVE_ACTION="$action"
   ORB7_ACTIVE_REMOTES=("$@")
+  ORB7_ACTIVE_CLEANUP_HOOK=
   trap 'orb7_cleanup_exit "$?" "$ORB7_ACTIVE_ACTION" "${ORB7_ACTIVE_REMOTES[@]}"' EXIT
   trap 'exit 130' INT
   trap 'exit 143' TERM
+}
+
+orb7_set_cleanup_hook() {
+  local hook="$1"
+  declare -F "$hook" >/dev/null || fail "cleanup hook is not a function: $hook"
+  ORB7_ACTIVE_CLEANUP_HOOK="$hook"
+}
+
+orb7_clear_cleanup_hook() {
+  ORB7_ACTIVE_CLEANUP_HOOK=
 }
 
 orb7_mark_active() {

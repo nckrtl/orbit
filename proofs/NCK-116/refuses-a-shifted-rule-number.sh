@@ -65,6 +65,15 @@ exec "$REAL" "$@"
 STUBEOF
 sudo chmod 0755 "$STUB"
 echo 0 | sudo tee "$STUB_STATE" >/dev/null
+if [[ "${ORBIT_E2E_ORB7_MODE:-}" == timeout && "${ORBIT_E2E_ORB7_CASE:-}" == refuses-a-shifted-rule-number ]]; then
+  sudo test -x "$STUB" || fail "the timeout fixture did not install its fake ufw binary"
+  sudo test -s "$STUB_STATE" || fail "the timeout fixture did not install its call log"
+  numbered=$(orb7_ufw_numbered)
+  grep -q "# $FOREIGN_RULE\$" <<<"$numbered" || fail "the timeout fixture did not install its foreign rule"
+  grep -q "# $EXPORTER_RULE_COMMENT\$" <<<"$numbered" || fail "the timeout fixture did not install its exporter rule"
+  grep -q "# $TRANSIENT_RULE\$" <<<"$numbered" || fail "the timeout fixture did not install its transient rule"
+  printf 'installed\n' | sudo tee "$ORB7_TIMEOUT_WITNESS" >/dev/null
+fi
 orb7_timeout_checkpoint refuses-a-shifted-rule-number
 
 planned_number=$(sudo /usr/sbin/ufw status numbered 2>/dev/null \

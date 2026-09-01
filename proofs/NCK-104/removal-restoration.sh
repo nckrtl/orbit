@@ -40,7 +40,7 @@ original_home_acl=$(sudo getfacl -cp /home)
 restore_home_acl() {
   printf '%s\n' "$original_home_acl" | sudo setfacl --set-file=- /home
 }
-trap restore_home_acl EXIT
+orb7_set_cleanup_hook restore_home_acl
 sudo setfacl -m u:caddy:--- /home
 nontraversable_home_acl=$(sudo getfacl -cp /home)
 grep -Fqx 'user:caddy:---' <<<"$(sudo getfacl -cp /home)" \
@@ -59,7 +59,7 @@ test ! -e /home/orbit/apps/nck104-home-ancestor
 [[ "$(sudo getfacl -cp /home)" == "$nontraversable_home_acl" ]] \
   || fail "last managed-home dependent did not restore the non-traversable /home ACL"
 restore_home_acl
-trap - EXIT
+orb7_clear_cleanup_hook
 [[ "$(sudo getfacl -cp /home)" == "$original_home_acl" ]] \
   || fail "proof did not restore the original /home ACL"
 

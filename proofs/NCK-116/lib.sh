@@ -5,6 +5,7 @@ set -euo pipefail
 readonly ESCAPE=/usr/local/sbin/orbit-metrics-uninstall
 readonly EXPORTER_RULE_COMMENT=orbit:metrics-node-exporter
 readonly ORB7_CLEANUP_ROOT=/var/lib/orbit-e2e/proof-cleanup
+readonly ORB7_TIMEOUT_WITNESS=/var/tmp/orbit-e2e-orb7-timeout-witness
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 

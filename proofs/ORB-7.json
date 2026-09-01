@@ -1,11 +1,36 @@
 {
   "setup": [],
-  "acceptance": [
-    {
-      "id": "large-output-stays-successful",
-      "node": "app-dev",
-      "argv": ["bash", "/var/lib/orbit-e2e/proof/large-output.sh"],
-      "timeout_seconds": 60
-    }
-  ]
+    "acceptance": [
+        {
+            "id": "pipefail-assertions-remain-truthful",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/pipefail-assertions.sh"],
+            "timeout_seconds": 60
+        },
+        {
+            "id": "fixtures-restore-on-exit-int-term",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/fixture-cleanup-matrix.sh"],
+            "timeout_seconds": 120
+        },
+        {
+            "id": "terminated-firewall-fixture-restores-owned-state",
+            "node": "app-prod",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/firewall-timeout-restoration.sh"],
+            "timeout_seconds": 120
+        },
+        {
+            "id": "timeouts-send-term-then-force-kill",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/timeout-boundary.sh"],
+            "timeout_seconds": 30
+        },
+        {
+            "id": "historical-metrics-proof-remains-valid",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/historical-metrics-proof.sh"],
+            "timeout_seconds": 60
+        }
+    ],
+    "mutates": true
 }
