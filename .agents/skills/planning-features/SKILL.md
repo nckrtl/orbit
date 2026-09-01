@@ -1,45 +1,51 @@
 ---
 name: planning-features
-description: Use when preparing an Orbit feature worktree before implementation.
+description: Use when preparing an Orbit implementation plan.
 ---
 
 # Planning Features
 
-Prepare one implementation preflight. Do not change product code, tests, proof
-files, Git history, Linear, or GitHub.
+Prepare a concise implementation plan for one Orbit issue. Do not change product
+code, tests, proof files, Git history, Linear, or GitHub.
+
+This is an independently invokable planning role.
 
 ## Inputs
 
-- The Linear issue has status `In Progress`; the delivery coordinator verified that transition
-  before starting or resuming preflight.
-- Its bootstrapped worktree.
-- The prepared `<worktree>/.orbit/plan.md` with `Verdict: PENDING`.
+- The Linear issue or equivalent written contract.
+- A repository checkout or worktree at the intended base.
+- Applicable ADRs, nearby code, tests, and available proof commands.
+- `.orbit/plan.md`. `bin/worktree-create` initializes it; create the same
+  structure manually when using another checkout workflow.
 
-Stop if any input is missing. Read the issue, governing ADRs, the nearest
-`AGENTS.md`, only the relevant code, and the available proof commands.
+Stop if the requested outcome or acceptance criteria are too incomplete to map
+safely.
 
 ## Write the plan
 
-Complete `.orbit/plan.md` without copying the issue into it. Keep it short and
-implementation-facing:
+Complete `.orbit/plan.md` without copying the issue into it:
 
 - **Outcome:** the observable result in one sentence.
 - **Code boundaries:** likely files/components and explicit exclusions.
-- **Acceptance map:** one row per issue criterion, mapping it to the relevant
+- **Acceptance map:** one row per issue criterion, mapped to the relevant code
   boundary and focused proof.
-- **Implementation order:** the smallest ordered increments needed.
-- Do not create separate slice files or require one agent or commit per increment.
-- **Must preserve:** existing tests, contracts, and invariants that protect
+- **Implementation order:** the smallest coherent ordered changes.
+- **Must preserve:** existing contracts, tests, and invariants protecting
   adjacent behavior.
-- **Open questions:** only unresolved facts that prevent safe implementation.
+- **Open questions:** only unresolved facts that prevent a safe implementation.
 
-Leave `Verdict: PENDING`. The independent reviewer owns the verdict.
+Set `Review verdict: PENDING`, clear stale review findings, and leave
+`Reconciliation verdict: PENDING`. Do not create slice files, mandatory
+per-increment commits, or an agent-per-increment plan.
 
 ## Corrections
 
-When correcting a `FIX` or an approved `TECHNICAL_RESOLUTION`, read the review
-findings and reconciler recommendation already in the plan, plus any verified
-durable issue or ADR update. Change only the implementation content required by
-that authority, clear resolved findings, and leave `Verdict: PENDING`. Do not
-widen product intent or weaken proof.
-A new requirement belongs in a separate Linear issue.
+When given review findings or a reconciliation recommendation, change only the
+plan content required by that evidence. Do not widen product intent, weaken
+proof, or absorb genuinely new requirements into the current issue.
+
+## Verification
+
+The plan is complete when every criterion maps to a boundary and proof action,
+implementation order is explicit, exclusions prevent unrelated cleanup, and no
+open question requires guessing product behavior.
