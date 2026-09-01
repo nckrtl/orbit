@@ -75,7 +75,8 @@ orb7_record_ufw_delta() {
   {
     sudo cat "$record/ufw.before"
     for shape in "$record"/rules/*.shape; do
-      sudo test -e "$shape" && sudo cat "$shape"
+      sudo test -e "$shape" || continue
+      sudo cat "$shape"
     done
   } | sort >"$expected"
   orb7_ufw_shapes | sort >"$current"
