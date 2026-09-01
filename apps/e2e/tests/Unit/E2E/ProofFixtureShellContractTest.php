@@ -87,10 +87,15 @@ it('records the first owned firewall delta when no earlier rule shape exists', f
               printf 'Status: active\n\n[ 1] BASELINE\n[ 2] DECOY\n'
               ;;
             cat)
-              printf 'BASELINE\n'
+              if [[ "$2" == */ufw.before ]]; then
+                printf 'BASELINE\n'
+              fi
               ;;
             install)
               return 0
+              ;;
+            tee)
+              cat >/dev/null
               ;;
             test)
               return 1
@@ -105,6 +110,110 @@ it('records the first owned firewall delta when no earlier rule shape exists', f
         BASH;
 
     $result = new Process(['bash', '-c', $script, 'orb7-firewall-delta', $fixture]);
+    $result->run();
+
+    expect($result->isSuccessful())->toBeTrue($result->getErrorOutput());
+});
+
+it('records consecutive owned firewall deltas without globbing the root record', function () {
+    $fixture = dirname(__DIR__, 5) . '/proofs/NCK-116/lib.sh';
+    $script = <<<'BASH'
+        source "$1"
+
+        manifest=$(mktemp)
+        trap 'rm -f -- "$manifest"' EXIT
+        ufw_state=first
+
+        sudo() {
+          case "$1" in
+            /usr/sbin/ufw)
+              printf 'Status: active\n\n[ 1] BASELINE\n[ 2] FIRST\n'
+              [[ "$ufw_state" == second ]] && printf '[ 3] SECOND\n'
+              ;;
+            cat)
+              if [[ "$2" == */ufw.before ]]; then
+                printf 'BASELINE\n'
+              elif [[ "$2" == */rules.tsv ]]; then
+                cat "$manifest"
+              fi
+              ;;
+            install)
+              return 0
+              ;;
+            tee)
+              cat >>"$manifest"
+              ;;
+            test)
+              return 1
+              ;;
+            *)
+              return 1
+              ;;
+          esac
+        }
+
+        orb7_record_ufw_delta escape-without-wireguard-address first
+        ufw_state=second
+        orb7_record_ufw_delta escape-without-wireguard-address second
+        [[ "$(cat "$manifest")" == $'FIRST\nSECOND' ]]
+        BASH;
+
+    $result = new Process(['bash', '-c', $script, 'orb7-firewall-deltas', $fixture]);
+    $result->run();
+
+    expect($result->isSuccessful())->toBeTrue($result->getErrorOutput());
+});
+
+it('restores firewall deltas from the root-owned shape manifest', function () {
+    $fixture = dirname(__DIR__, 5) . '/proofs/NCK-116/lib.sh';
+    $script = <<<'BASH'
+        source "$1"
+
+        manifest=$(mktemp)
+        deleted=$(mktemp)
+        trap 'rm -f -- "$manifest" "$deleted"' EXIT
+        printf 'OWNED\n' >"$manifest"
+
+        sudo() {
+          case "$1" in
+            /usr/sbin/ufw)
+              if [[ "$2" == status ]]; then
+                printf 'Status: active\n\n[ 1] BASELINE\n[ 2] OWNED\n'
+              elif [[ "$2" == --force && "$3" == delete ]]; then
+                printf '%s\n' "$4" >"$deleted"
+              fi
+              ;;
+            cat)
+              if [[ "$2" == */rules.tsv ]]; then
+                cat "$manifest"
+              fi
+              ;;
+            mkdir)
+              return 0
+              ;;
+            rm)
+              return 0
+              ;;
+            tee)
+              cat >/dev/null
+              ;;
+            test)
+              if [[ "$2" == -e && "$3" == "$ORB7_CLEANUP_ROOT/cleanup-case" ]]; then
+                return 0
+              fi
+              return 1
+              ;;
+            *)
+              return 1
+              ;;
+          esac
+        }
+
+        orb7_restore_owned cleanup-case
+        [[ "$(cat "$deleted")" == 2 ]]
+        BASH;
+
+    $result = new Process(['bash', '-c', $script, 'orb7-firewall-cleanup', $fixture]);
     $result->run();
 
     expect($result->isSuccessful())->toBeTrue($result->getErrorOutput());

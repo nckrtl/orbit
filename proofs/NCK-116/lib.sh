@@ -20,9 +20,9 @@ orb7_arm() {
   sudo test ! -e "$record" || fail "cleanup record already exists: $record"
   sudo install -d -o root -g root -m 0700 -- "$record/paths" "$record/rules"
   orb7_ufw_shapes | sort | sudo tee "$record/ufw.before" >/dev/null
-  sudo touch "$record/paths.tsv"
-  sudo chown root:root "$record/paths.tsv"
-  sudo chmod 0600 "$record/paths.tsv"
+  sudo touch "$record/paths.tsv" "$record/rules.tsv"
+  sudo chown root:root "$record/paths.tsv" "$record/rules.tsv"
+  sudo chmod 0600 "$record/paths.tsv" "$record/rules.tsv"
   printf 'armed\n' | sudo tee "$record/state" >/dev/null
 }
 
@@ -74,15 +74,13 @@ orb7_record_ufw_delta() {
   delta=$(mktemp)
   {
     sudo cat "$record/ufw.before"
-    for shape in "$record"/rules/*.shape; do
-      sudo test -e "$shape" || continue
-      sudo cat "$shape"
-    done
+    sudo cat "$record/rules.tsv"
   } | sort >"$expected"
   orb7_ufw_shapes | sort >"$current"
   comm -13 "$expected" "$current" >"$delta"
   [[ "$(wc -l <"$delta")" -eq 1 ]] || fail "UFW mutation did not create one exact owned delta"
   sudo install -o root -g root -m 0600 -- "$delta" "$record/rules/$label.shape"
+  sudo tee -a "$record/rules.tsv" <"$delta" >/dev/null
   rm -f -- "$expected" "$current" "$delta"
 }
 
@@ -128,10 +126,8 @@ orb7_restore_owned() {
     done < <(tac < <(sudo cat "$record/docker.tsv"))
   fi
 
-  local shape_file shape numbered matching number reread
-  for shape_file in "$record"/rules/*.shape; do
-    sudo test -e "$shape_file" || continue
-    shape=$(sudo cat "$shape_file")
+  local shape numbered matching number reread
+  while IFS= read -r shape; do
     numbered=$(orb7_ufw_numbered)
     matching=$(awk -v shape="$shape" '
       { normalized=$0; sub(/^ *\[ *[0-9]+\] +/, "", normalized); if (normalized == shape) print $0 }
@@ -142,7 +138,7 @@ orb7_restore_owned() {
     reread=$(orb7_ufw_numbered | sed -n -E "s/^ *\\[ *$number\\] +//p")
     [[ "$reread" == "$shape" ]] || return 1
     sudo /usr/sbin/ufw --force delete "$number" >/dev/null
-  done
+  done < <(sudo cat "$record/rules.tsv")
 
   if sudo test -f "$record/addresses.before"; then
     orb7_restore_addresses "$action"
