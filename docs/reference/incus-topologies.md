@@ -283,6 +283,13 @@ names which one, and the namespace derives every physical name:
 | _(empty, default)_ | the repository's primary checkout | `oe-standby` | `orbit-e2e-standby-<role>` | 1 (`10.232.1.0/24`) |
 | `live` | the validation clone `bin/e2e-live` drives | `oe-live-standby` | `orbit-e2e-live-standby-<role>` | 200 (`10.232.200.0/24`) |
 
+Generation manifest schema 6 records `standby_namespace`, which binds persisted
+standby state to the identity that created it. Schema 4 and 5 manifests have no
+namespace and remain readable and unchanged as unbound history. The primary
+identity can recover an unbound current generation. A named identity can retain
+unbound history only when its current schema 6 promoted manifest records that
+identity; it cannot claim an unbound current generation.
+
 Decided on 2026-08-30 for NCK-102, after a `bin/e2e-live` run promoted from the
 validation clone into the shared standby: the clone deleted the snapshots the
 primary's manifest named, and recovery needed `incus delete` of three instances
@@ -361,15 +368,21 @@ and no manual `incus delete` is needed.
 checkout's standby VMs, the `-next` copies a failed promotion left behind, and
 the standby network itself; it forgets every generation manifest and the
 corrupt marker; then it cold-builds the standby at `SHA` from the base image.
-It refuses to delete a VM that is not harness-owned. It also refuses an ordinary
-standby VM that still carries an issue ID: release that topology first. The
-only exemption to the issue-ID refusal is an exact promotion scratch name for
-this standby identity and role, with the `-next` suffix. That copy must carry a
-valid `user.orbit.e2e.operation`; any retained issue or attempt metadata must
-also be valid, but can be absent because promotion strips it before
-snapshotting. A scratch copy with missing or malformed operation metadata is
-refused with `has invalid promotion scratch metadata`. `SHA` must be what the
-checkout's `main` holds, as for `refresh`.
+Before it calls Incus, rebuild checks every manifest under the standby refresh
+lock. It refuses if a schema 6 manifest records a namespace other than the
+configured standby namespace. A named standby also refuses an unbound current
+schema 4 or 5 manifest. The error names the recorded or unbound namespace and
+the configured namespace, and the refusal leaves all Incus resources and
+manifests unchanged. It refuses to delete a VM that is not harness-owned. It
+also refuses an ordinary standby VM that still carries an issue ID: release
+that topology first. The only exemption to the issue-ID refusal is an exact
+promotion scratch name for this standby identity and role, with the `-next`
+suffix. That copy must carry a valid `user.orbit.e2e.operation`; any retained
+issue or attempt metadata must also be valid, but can be absent because
+promotion strips it before snapshotting. A scratch copy with missing or
+malformed operation metadata is refused with
+`has invalid promotion scratch metadata`. `SHA` must be what the checkout's
+`main` holds, as for `refresh`.
 
 ## Live acceptance suites
 
