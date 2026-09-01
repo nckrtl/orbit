@@ -28,6 +28,7 @@ function topologyVerifierProbeRoles(): array
         'role.app-dev' => 'app-dev',
         'role.app-prod' => 'app-prod',
         'role.assignments' => 'gateway',
+        'metrics.publication' => 'gateway',
         'service.gateway' => 'gateway',
         'service.vpn' => 'gateway',
         'wireguard.reachability' => 'gateway',
@@ -171,7 +172,7 @@ function assertTopologyVerifierRequest(array $request, array $probeRoles, string
     if ($probe === 'wireguard.reachability') {
         $arguments[] = 'app-dev';
         $arguments[] = 'app-prod';
-    } elseif ($probe === 'role.assignments') {
+    } elseif (in_array($probe, ['role.assignments', 'metrics.publication'], true)) {
         $arguments[] = base64_encode(json_encode(TopologyProfile::ASSIGNMENTS, JSON_THROW_ON_ERROR));
     } elseif ($probe === 'source.manifest') {
         $arguments[] = '-';
@@ -299,7 +300,7 @@ describe('TopologyVerifier', function () {
         expect($report->passed)
             ->toBeTrue()
             ->and($report->probes)
-            ->toHaveCount(22)
+            ->toHaveCount(23)
             ->and($report->probes['service.vpn'] ?? null)
             ->toBe([
                 'passed' => true,
@@ -518,6 +519,7 @@ describe('TopologyVerifier declared end state', function (): void {
                 'vm.gateway.running' => 'gateway',
                 'role.gateway' => 'gateway',
                 'role.assignments' => 'gateway',
+                'metrics.publication' => 'gateway',
                 'service.gateway' => 'gateway',
                 'service.vpn' => 'gateway',
                 'source.gateway' => 'gateway',
@@ -547,6 +549,18 @@ describe('TopologyVerifier declared end state', function (): void {
             ])
             ->and($run['argv']['wireguard.reachability'] ?? null)
             ->toBe([$script, 'wireguard.reachability', 'proof', $sha, $gateway, 'app-dev'])
+            ->and($run['argv']['metrics.publication'] ?? null)
+            ->toBe([
+                $script,
+                'metrics.publication',
+                'proof',
+                $sha,
+                $gateway,
+                base64_encode(json_encode([
+                    'gateway' => ['gateway', 'vpn'],
+                    'app-dev' => ['app-dev', 'metrics'],
+                ], JSON_THROW_ON_ERROR)),
+            ])
             ->and(array_keys($run['argv']))
             ->not
             ->toContain('role.app-prod')
@@ -574,7 +588,30 @@ describe('TopologyVerifier declared end state', function (): void {
             ->and($run['argv']['wireguard.reachability'] ?? null)
             ->toBe([$script, 'wireguard.reachability', 'proof', $sha, $gateway, 'app-dev', 'app-prod'])
             ->and($run['report']->probes)
-            ->toHaveCount(22);
+            ->toHaveCount(23);
+    });
+
+    it('keeps the Gateway publication probe when app-dev is declared absent', function (): void {
+        $endState = TopologyEndState::fromArray(['nodes' => ['gateway', 'app-prod']]);
+        $run = runTopologyVerifierWithEndState($endState);
+        $sha = str_repeat('a', 40);
+
+        expect($run['report']->passed)
+            ->toBeTrue()
+            ->and($run['argv']['metrics.publication'] ?? null)
+            ->toBe([
+                '/usr/local/bin/verify-topology.sh',
+                'metrics.publication',
+                'proof',
+                $sha,
+                TopologyTarget::standby()->instance('gateway'),
+                base64_encode(json_encode([
+                    'gateway' => ['gateway', 'vpn'],
+                    'app-prod' => ['app-prod'],
+                ], JSON_THROW_ON_ERROR)),
+            ])
+            ->and(TopologyVerifier::skippedProbes($endState))
+            ->not->toContain('metrics.publication');
     });
 
     it('fails when a node declared absent is still registered', function (): void {
