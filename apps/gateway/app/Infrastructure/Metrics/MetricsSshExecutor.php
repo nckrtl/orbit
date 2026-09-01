@@ -108,6 +108,7 @@ final readonly class MetricsSshExecutor implements MetricsRuntimeHost, MetricsCr
             $node,
             new RemoteCommand(
                 [
+                    'sudo',
                     'docker',
                     'container',
                     'run',
@@ -290,7 +291,7 @@ final readonly class MetricsSshExecutor implements MetricsRuntimeHost, MetricsCr
                 foreach (array_reverse($createdVolumes) as $spec) {
                     $this->run(
                         $node,
-                        new RemoteCommand(['docker', 'volume', 'rm', '--', $spec->volume]),
+                        new RemoteCommand(['sudo', 'docker', 'volume', 'rm', '--', $spec->volume]),
                         'metrics.volume_rollback_failed',
                         'A created Metrics volume could not be removed during recovery.',
                     );
@@ -384,7 +385,7 @@ final readonly class MetricsSshExecutor implements MetricsRuntimeHost, MetricsCr
             if ($states[$spec->service->value] !== null) {
                 $this->run(
                     $node,
-                    new RemoteCommand(['docker', 'volume', 'rm', '--', $spec->volume]),
+                    new RemoteCommand(['sudo', 'docker', 'volume', 'rm', '--', $spec->volume]),
                     'metrics.volume_purge_failed',
                     'A proven Metrics volume could not be removed.',
                 );
@@ -512,7 +513,15 @@ final readonly class MetricsSshExecutor implements MetricsRuntimeHost, MetricsCr
     {
         $result = $this->raw(
             $node,
-            new RemoteCommand(['docker', 'container', 'inspect', '--format={{json .Config.Labels}}', '--', $name]),
+            new RemoteCommand([
+                'sudo',
+                'docker',
+                'container',
+                'inspect',
+                '--format={{json .Config.Labels}}',
+                '--',
+                $name,
+            ]),
         );
 
         if ($result->succeeded()) {
@@ -522,6 +531,7 @@ final readonly class MetricsSshExecutor implements MetricsRuntimeHost, MetricsCr
         $absence = $this->raw(
             $node,
             new RemoteCommand([
+                'sudo',
                 'docker',
                 'container',
                 'ls',
@@ -548,7 +558,7 @@ final readonly class MetricsSshExecutor implements MetricsRuntimeHost, MetricsCr
     {
         $result = $this->raw(
             $node,
-            new RemoteCommand(['docker', 'volume', 'inspect', '--format={{json .Labels}}', '--', $name]),
+            new RemoteCommand(['sudo', 'docker', 'volume', 'inspect', '--format={{json .Labels}}', '--', $name]),
         );
 
         if ($result->succeeded()) {
@@ -557,7 +567,7 @@ final readonly class MetricsSshExecutor implements MetricsRuntimeHost, MetricsCr
 
         $absence = $this->raw(
             $node,
-            new RemoteCommand(['docker', 'volume', 'ls', '--filter', "name=^{$name}$", '--format={{.Name}}']),
+            new RemoteCommand(['sudo', 'docker', 'volume', 'ls', '--filter', "name=^{$name}$", '--format={{.Name}}']),
         );
 
         if ($absence->succeeded() && trim($absence->stdout) === '') {
@@ -617,7 +627,7 @@ final readonly class MetricsSshExecutor implements MetricsRuntimeHost, MetricsCr
 
     private function createVolume(Node $node, MetricsContainerSpec $spec): void
     {
-        $arguments = ['docker', 'volume', 'create'];
+        $arguments = ['sudo', 'docker', 'volume', 'create'];
 
         foreach ($spec->volumeLabels as $key => $value) {
             $arguments[] = '--label';
@@ -637,6 +647,7 @@ final readonly class MetricsSshExecutor implements MetricsRuntimeHost, MetricsCr
     private function runContainer(Node $node, MetricsContainerSpec $spec): void
     {
         $arguments = [
+            'sudo',
             'docker',
             'container',
             'run',
@@ -699,7 +710,7 @@ final readonly class MetricsSshExecutor implements MetricsRuntimeHost, MetricsCr
     {
         $this->run(
             $node,
-            new RemoteCommand(['docker', 'container', 'stop', '--time', '30', '--', $name]),
+            new RemoteCommand(['sudo', 'docker', 'container', 'stop', '--time', '30', '--', $name]),
             'metrics.container_stop_failed',
             'A Metrics container could not be stopped.',
         );
@@ -709,7 +720,7 @@ final readonly class MetricsSshExecutor implements MetricsRuntimeHost, MetricsCr
     {
         $this->run(
             $node,
-            new RemoteCommand(['docker', 'container', 'start', '--', $name]),
+            new RemoteCommand(['sudo', 'docker', 'container', 'start', '--', $name]),
             'metrics.container_start_failed',
             'A Metrics container could not be started.',
         );
@@ -719,7 +730,7 @@ final readonly class MetricsSshExecutor implements MetricsRuntimeHost, MetricsCr
     {
         $this->run(
             $node,
-            new RemoteCommand(['docker', 'container', 'rename', $from, $to]),
+            new RemoteCommand(['sudo', 'docker', 'container', 'rename', $from, $to]),
             'metrics.container_rename_failed',
             'A Metrics container recovery name could not be published.',
         );
@@ -729,7 +740,7 @@ final readonly class MetricsSshExecutor implements MetricsRuntimeHost, MetricsCr
     {
         $this->run(
             $node,
-            new RemoteCommand(['docker', 'container', 'rm', '--force', '--', $name]),
+            new RemoteCommand(['sudo', 'docker', 'container', 'rm', '--force', '--', $name]),
             'metrics.container_remove_failed',
             'A proven Metrics container could not be removed.',
         );
@@ -776,6 +787,7 @@ final readonly class MetricsSshExecutor implements MetricsRuntimeHost, MetricsCr
         $result = $this->raw(
             $node,
             new RemoteCommand([
+                'sudo',
                 'docker',
                 'container',
                 'inspect',
@@ -798,7 +810,15 @@ final readonly class MetricsSshExecutor implements MetricsRuntimeHost, MetricsCr
     {
         $result = $this->raw(
             $node,
-            new RemoteCommand(['docker', 'container', 'inspect', '--format={{.State.Health.Status}}', '--', $name]),
+            new RemoteCommand([
+                'sudo',
+                'docker',
+                'container',
+                'inspect',
+                '--format={{.State.Health.Status}}',
+                '--',
+                $name,
+            ]),
         );
 
         return $result->succeeded() && trim($result->stdout) === 'healthy';

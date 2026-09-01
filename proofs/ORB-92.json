@@ -1,0 +1,55 @@
+{
+    "setup": [
+        {
+            "id": "deny-direct-docker-access",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/prepare-boundary.sh"],
+            "timeout_seconds": 120
+        },
+        {
+            "id": "start-with-metrics-disabled",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/reset-metrics.sh"],
+            "timeout_seconds": 900
+        }
+    ],
+    "acceptance": [
+        {
+            "id": "enable-through-privileged-boundary",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/enable-owned.sh"],
+            "timeout_seconds": 900
+        },
+        {
+            "id": "repeated-convergence-is-idempotent",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/idempotent.sh"],
+            "timeout_seconds": 900
+        },
+        {
+            "id": "replacement-rollback-and-recovery",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/replacement-recovery.sh"],
+            "timeout_seconds": 1200
+        },
+        {
+            "id": "docker-access-boundary-is-unchanged",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/boundary-unchanged.sh"],
+            "timeout_seconds": 120
+        },
+        {
+            "id": "disable-purge-and-ownership-remain-fail-closed",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/disable-purge-ownership.sh"],
+            "timeout_seconds": 1200
+        },
+        {
+            "id": "final-lifecycle-is-healthy-without-direct-docker",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/final-state.sh"],
+            "timeout_seconds": 120
+        }
+    ],
+    "mutates": true
+}
