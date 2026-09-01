@@ -153,6 +153,11 @@ describe('repository guidance bootstrap', function (): void {
         }
 
         $requestDirectory = "{$root}/src/Requests";
+        $retiredInstanceRequestPaths = [
+            'Instances/CreateInstanceRequest.php',
+            'Instances/ListInstancesRequest.php',
+            'Instances/UpdateInstancePhpRequest.php',
+        ];
         $requestClasses = [];
         $requestFileCount = 0;
         $files = new RecursiveIteratorIterator(
@@ -164,13 +169,21 @@ describe('repository guidance bootstrap', function (): void {
                 continue;
             }
 
-            $requestFileCount++;
-
             $relative = str_replace(
                 search: $requestDirectory.'/',
                 replace: '',
                 subject: $file->getPathname(),
             );
+
+            if (in_array($relative, $retiredInstanceRequestPaths, strict: true)) {
+                expect((string) file_get_contents($file->getPathname()))
+                    ->not
+                    ->toMatch('/\b(?:class|interface|trait|enum)\s+[A-Za-z_]/');
+
+                continue;
+            }
+
+            $requestFileCount++;
             $class = 'Orbit\\Sdk\\Requests\\'.str_replace(['/', '.php'], ['\\', ''], $relative);
             $reflection = new ReflectionClass($class);
 
