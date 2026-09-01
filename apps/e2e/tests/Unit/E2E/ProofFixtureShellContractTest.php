@@ -201,6 +201,9 @@ it('restores firewall deltas from the root-owned shape manifest', function () {
               if [[ "$2" == -e && "$3" == "$ORB7_CLEANUP_ROOT/cleanup-case" ]]; then
                 return 0
               fi
+              if [[ "$2" == -f && "$3" == "$ORB7_CLEANUP_ROOT/cleanup-case/rules.tsv" ]]; then
+                return 0
+              fi
               return 1
               ;;
             *)
@@ -219,7 +222,7 @@ it('restores firewall deltas from the root-owned shape manifest', function () {
     expect($result->isSuccessful())->toBeTrue($result->getErrorOutput());
 });
 
-it('maps every ORB-7 acceptance criterion to an issue-owned proof action', function () {
+it('maps ORB-7 proof to exact candidate fixtures and harness timeout exits', function () {
     $repositoryRoot = dirname(__DIR__, 5);
     $plan = json_decode(
         (string) file_get_contents($repositoryRoot.'/proofs/ORB-7.json'),
@@ -227,36 +230,177 @@ it('maps every ORB-7 acceptance criterion to an issue-owned proof action', funct
         flags: JSON_THROW_ON_ERROR,
     );
 
-    expect(array_column($plan['acceptance'], 'id'))
-        ->toBe([
-            'pipefail-assertions-remain-truthful',
-            'fixtures-restore-on-exit-int-term',
-            'terminated-firewall-fixture-restores-owned-state',
-            'timeouts-send-term-then-force-kill',
-            'historical-metrics-proof-remains-valid',
-        ])
-        ->and(array_column($plan['acceptance'], 'argv'))
-        ->toBe([
-            ['bash', '/var/lib/orbit-e2e/proof/pipefail-assertions.sh'],
-            ['bash', '/var/lib/orbit-e2e/proof/fixture-cleanup-matrix.sh'],
-            ['bash', '/var/lib/orbit-e2e/proof/firewall-timeout-restoration.sh'],
-            ['bash', '/var/lib/orbit-e2e/proof/timeout-boundary.sh'],
-            ['bash', '/var/lib/orbit-e2e/proof/historical-metrics-proof.sh'],
-        ])
+    $actions = collect($plan['acceptance'])->keyBy('id');
+
+    expect($plan['fixture_issues'])
+        ->toBe(['NCK-73', 'NCK-104', 'NCK-108', 'NCK-116'])
         ->and($plan['mutates'])
-        ->toBeTrue();
+        ->toBeTrue()
+        ->and($actions->get('pipefail-assertions-remain-truthful')['argv'] ?? null)
+        ->toBe(['bash', '/var/lib/orbit-e2e/proof/pipefail-assertions.sh'])
+        ->and($actions->get('real-firewall-fixture-times-out')['expected_exit_code'] ?? null)
+        ->toBe(124)
+        ->and($actions->get('hung-cleanup-is-force-killed')['expected_exit_code'] ?? null)
+        ->toBe(137)
+        ->and(json_encode($plan, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))
+        ->toContain('/var/lib/orbit-e2e/proof/NCK-73')
+        ->toContain('/var/lib/orbit-e2e/proof/NCK-104')
+        ->toContain('/var/lib/orbit-e2e/proof/NCK-108')
+        ->toContain('/var/lib/orbit-e2e/proof/NCK-116');
 });
+
+it('keeps only the owned ORB-7 proof plan at the top level', function () {
+    $repositoryRoot = dirname(__DIR__, 5);
+
+    expect(glob($repositoryRoot.'/proofs/*orb-7*.json'))
+        ->toBe([])
+        ->and(is_file($repositoryRoot.'/proofs/ORB-7-hung.json'))
+        ->toBeFalse();
+});
+
+it('arms cleanup before records and exposes both signal windows in every affected fixture', function (
+    string $relativePath,
+    string $trap,
+    string $record,
+    string $action,
+) {
+    $fixture = (string) file_get_contents(dirname(__DIR__, 5).'/proofs/'.$relativePath);
+    $trapPosition = strpos($fixture, $trap);
+    $recordPosition = strpos($fixture, $record);
+
+    expect($trapPosition)
+        ->not->toBeFalse()->and($recordPosition)
+        ->not->toBeFalse()->and($trapPosition)->toBeLessThan($recordPosition)->and($fixture)->toContain(
+            "orb7_checkpoint $action post-record",
+        )->toContain("orb7_checkpoint $action post-mutation");
+})->with([
+    'NCK-73 recover' => ['NCK-73/recover.sh', 'orb7_service_traps recover', 'orb7_service_record recover', 'recover'],
+    'NCK-108 metrics node' => [
+        'NCK-108/metrics-node-fails-closed.sh',
+        'orb7_service_traps metrics-node-fails-closed',
+        'orb7_service_record metrics-node-fails-closed',
+        'metrics-node-fails-closed',
+    ],
+    'NCK-104 prepare roots' => [
+        'NCK-104/prepare-roots.sh',
+        'orb7_traps prepare-roots',
+        'orb7_arm_paths nck104-original-paths',
+        'prepare-roots',
+    ],
+    'NCK-104 retrieve settings' => [
+        'NCK-104/retrieve-settings-sql.sh',
+        'orb7_traps retrieve-settings-sql',
+        'orb7_arm_database nck104-original-database',
+        'retrieve-settings-sql',
+    ],
+    'NCK-104 patch omit null' => [
+        'NCK-104/patch-omit-null.sh',
+        'orb7_traps patch-omit-null',
+        'orb7_arm_database patch-omit-null',
+        'patch-omit-null',
+    ],
+    'NCK-104 CLI parse' => [
+        'NCK-104/cli-setting-parse.sh',
+        'orb7_traps cli-setting-parse',
+        'orb7_arm_database cli-setting-parse',
+        'cli-setting-parse',
+    ],
+    'NCK-104 derived origin' => [
+        'NCK-104/derived-explicit-origin.sh',
+        'orb7_traps derived-explicit-origin',
+        'orb7_arm_database derived-explicit-origin',
+        'derived-explicit-origin',
+    ],
+    'NCK-104 app prod' => [
+        'NCK-104/non-migrating-app-prod.sh',
+        'orb7_traps non-migrating-app-prod',
+        'orb7_arm_database non-migrating-app-prod',
+        'non-migrating-app-prod',
+    ],
+    'NCK-104 root ownership' => [
+        'NCK-104/root-ownership.sh',
+        'orb7_traps root-ownership',
+        'orb7_arm_paths root-ownership',
+        'root-ownership',
+    ],
+    'NCK-104 checkout overlap' => [
+        'NCK-104/checkout-overlap.sh',
+        'orb7_traps checkout-overlap',
+        'orb7_arm_paths checkout-overlap',
+        'checkout-overlap',
+    ],
+    'NCK-104 Caddy ACL' => [
+        'NCK-104/caddy-acl-sharing.sh',
+        'orb7_traps caddy-acl-sharing',
+        'orb7_arm_paths caddy-acl-sharing',
+        'caddy-acl-sharing',
+    ],
+    'NCK-104 recorded removal' => [
+        'NCK-104/removal-recorded-origin.sh',
+        'orb7_traps removal-recorded-origin',
+        'orb7_arm_paths removal-recorded-origin',
+        'removal-recorded-origin',
+    ],
+    'NCK-104 repair origin' => [
+        'NCK-104/repair-removal-origin.sh',
+        'orb7_traps repair-removal-origin',
+        'orb7_arm_database repair-removal-origin',
+        'repair-removal-origin',
+    ],
+    'NCK-104 removal restoration' => [
+        'NCK-104/removal-restoration.sh',
+        'orb7_traps removal-restoration',
+        'orb7_arm_paths removal-restoration',
+        'removal-restoration',
+    ],
+    'NCK-104 restore origin' => [
+        'NCK-104/restore-legacy-origin.sh',
+        'orb7_traps restore-legacy-origin',
+        'orb7_arm_database restore-legacy-origin',
+        'restore-legacy-origin',
+    ],
+    'NCK-116 metrics node' => [
+        'NCK-116/escape-metrics-node.sh',
+        'orb7_traps escape-metrics-node',
+        'orb7_arm escape-metrics-node',
+        'escape-metrics-node',
+    ],
+    'NCK-116 exporter node' => [
+        'NCK-116/escape-exporter-node.sh',
+        'orb7_traps escape-exporter-node',
+        'orb7_arm escape-exporter-node',
+        'escape-exporter-node',
+    ],
+    'NCK-116 no proof' => [
+        'NCK-116/refuses-without-proof.sh',
+        'orb7_traps refuses-without-proof',
+        'orb7_arm refuses-without-proof',
+        'refuses-without-proof',
+    ],
+    'NCK-116 no WireGuard address' => [
+        'NCK-116/escape-without-wireguard-address.sh',
+        'orb7_traps escape-without-wireguard-address',
+        'orb7_arm escape-without-wireguard-address',
+        'escape-without-wireguard-address',
+    ],
+    'NCK-116 shifted rule' => [
+        'NCK-116/refuses-a-shifted-rule-number.sh',
+        'orb7_traps refuses-a-shifted-rule-number',
+        'orb7_arm refuses-a-shifted-rule-number',
+        'refuses-a-shifted-rule-number',
+    ],
+]);
 
 it('keeps the NCK-104 ORB-7 cleanup active while restoring the home ACL', function () {
     $repositoryRoot = dirname(__DIR__, 5);
     $fixture = (string) file_get_contents($repositoryRoot.'/proofs/NCK-104/removal-restoration.sh');
     $library = (string) file_get_contents($repositoryRoot.'/proofs/NCK-104/lib.sh');
-    $hook = strpos($fixture, 'orb7_set_cleanup_hook restore_home_acl');
+    $hook = strpos($fixture, 'orb7_set_cleanup_hook restore_fixture_state');
     $mutation = strpos($fixture, 'sudo setfacl -m u:caddy:--- /home');
 
     expect($fixture)
         ->not->toContain('trap restore_home_acl EXIT')
-        ->not->toContain('trap - EXIT')->and($hook)
+        ->not->toContain('orb7_clear_cleanup_hook')->and($hook)
         ->not->toBeFalse()->and($mutation)
         ->not->toBeFalse()->and($hook)->toBeLessThan($mutation)->and($library)->toContain(
             '"$ORB7_ACTIVE_CLEANUP_HOOK"',
@@ -286,6 +430,27 @@ it('requires positive pre-signal evidence in the NCK-116 timeout proof', functio
         )->toContain('sudo rm -f -- "$ORB7_TIMEOUT_WITNESS"');
 });
 
+it('passes the exact NCK-116 action name through the TERM trap', function () {
+    $fixture = dirname(__DIR__, 5).'/proofs/NCK-116/lib.sh';
+    $script = <<<'BASH'
+        source "$1"
+
+        orb7_term_exit() {
+          trap - EXIT INT TERM
+          [[ "$1" == sample-action ]] || exit 99
+          exit 143
+        }
+
+        orb7_traps sample-action
+        kill -TERM "$$"
+        BASH;
+
+    $result = new Process(['bash', '-c', $script, 'orb7-term-trap', $fixture]);
+    $result->run();
+
+    expect($result->getExitCode())->toBe(143, $result->getErrorOutput());
+});
+
 it('preserves the historical NCK-73 proof semantics', function () {
     $repositoryRoot = dirname(__DIR__, 5);
     $plan = json_decode(
@@ -297,10 +462,10 @@ it('preserves the historical NCK-73 proof semantics', function () {
 
     expect($plan['setup'])
         ->toBe([[
-            'id' => 'metrics-enable-app-dev',
+            'id' => 'metrics-active-precondition',
             'node' => 'app-dev',
-            'argv' => ['orbit', 'metrics:enable', 'app-dev', '--json'],
-            'timeout_seconds' => 600,
+            'argv' => ['orbit', 'metrics:status', '--json'],
+            'timeout_seconds' => 120,
         ]])
         ->and($plan['acceptance'][0]['argv'])
         ->toContain('app-prod=desired/active/role_default')
@@ -310,15 +475,12 @@ it('preserves the historical NCK-73 proof semantics', function () {
         ->toContain('$node["wireguard_address"]');
 });
 
-it('arms the ORB-7 firewall driver cleanup before its first mutation', function () {
+it('drives both cleanup windows through the exact staged fixture', function () {
     $repositoryRoot = dirname(__DIR__, 5);
-    $fixture = (string) file_get_contents($repositoryRoot.'/proofs/ORB-7/firewall-timeout-restoration.sh');
-    $trap = strpos($fixture, 'trap \'driver_cleanup "$?"\' EXIT INT TERM');
-    $mutation = strpos($fixture, 'sudo /usr/sbin/ufw allow');
+    $driver = (string) file_get_contents($repositoryRoot.'/proofs/ORB-7/actual-fixture-driver.sh');
 
-    expect($fixture)
-        ->toContain('driver_cleanup()')
-        ->and($trap)
-        ->not->toBeFalse()->and($mutation)
-        ->not->toBeFalse()->and($trap)->toBeLessThan($mutation);
+    expect($driver)
+        ->toContain('post-record post-mutation')
+        ->toContain('EXIT INT TERM')
+        ->toContain('bash "$fixture_root/orb-7-signal-driver.sh"');
 });

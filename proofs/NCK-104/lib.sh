@@ -5,7 +5,8 @@ set -euo pipefail
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
 readonly ORB7_CLEANUP_ROOT=/var/lib/orbit-e2e/proof-cleanup
-readonly ORB7_STATE_HELPER=/var/lib/orbit-e2e/proof/orb-7-node-state.sh
+readonly ORB7_PROOF_ROOT=${ORBIT_E2E_PROOF_ROOT:-/var/lib/orbit-e2e/proof}
+readonly ORB7_STATE_HELPER="$ORB7_PROOF_ROOT/orb-7-node-state.sh"
 ORB7_ACTIVE_CLEANUP_HOOK=
 readonly -a ORB7_SSH=(
   ssh
@@ -134,8 +135,14 @@ orb7_mark_active() {
 
 orb7_checkpoint() {
   local action="$1"
-  if [[ "${ORBIT_E2E_ORB7_MODE:-}" == signal && "${ORBIT_E2E_ORB7_CASE:-}" == "$action" ]]; then
-    printf 'ready\n' | sudo tee "$ORB7_CLEANUP_ROOT/$action/checkpoint" >/dev/null
+  local window="$2"
+  if [[ "${ORBIT_E2E_ORB7_MODE:-}" == signal \
+    && "${ORBIT_E2E_ORB7_CASE:-}" == "$action" \
+    && "${ORBIT_E2E_ORB7_WINDOW:-}" == "$window" ]]; then
+    printf 'ready\n' | sudo tee "${ORBIT_E2E_ORB7_CHECKPOINT:?}" >/dev/null
+    if [[ "${ORBIT_E2E_ORB7_EVENT:-}" == EXIT ]]; then
+      exit 0
+    fi
     while true; do sleep 1; done
   fi
 }

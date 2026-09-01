@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 # Removal uses recorded path and origin; unsafe origin, grouping, and ownership fail closed.
-source /var/lib/orbit-e2e/proof/lib.sh
+proof_root=${ORBIT_E2E_PROOF_ROOT:-/var/lib/orbit-e2e/proof}
+source "$proof_root/lib.sh"
 
+orb7_traps removal-recorded-origin gateway
 orb7_arm_paths removal-recorded-origin /srv/orbit/worktrees/laravel/nck104-shared /home/orbit/apps/laravel/.git/worktrees
 orb7_arm_remote_database removal-recorded-origin
-orb7_traps removal-recorded-origin gateway
+orb7_checkpoint removal-recorded-origin post-record
 orbit workspace:remove "$(workspace_id nck104-shared)" --json >/dev/null
 orb7_mark_active removal-recorded-origin gateway
-orb7_checkpoint removal-recorded-origin
+orb7_checkpoint removal-recorded-origin post-mutation
 test ! -e /srv/orbit/worktrees/laravel/nck104-shared
 test ! -e /srv/orbit/worktrees/laravel
 test -d /srv/orbit/worktrees

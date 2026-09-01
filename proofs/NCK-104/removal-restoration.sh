@@ -1,13 +1,26 @@
 #!/usr/bin/env bash
 # Clean up fail-closed fixtures and prove managed-home ancestor restoration.
-source /var/lib/orbit-e2e/proof/lib.sh
+proof_root=${ORBIT_E2E_PROOF_ROOT:-/var/lib/orbit-e2e/proof}
+source "$proof_root/lib.sh"
 
-orb7_arm_paths removal-restoration /home/orbit/custom-worktrees/nck104-unsafe /home/orbit/apps/laravel/.git/worktrees
-orb7_arm_remote_database removal-restoration
+runtime_state=
+original_home_acl=
+restore_fixture_state() {
+  if [[ -n "$original_home_acl" ]]; then
+    printf '%s\n' "$original_home_acl" | sudo setfacl --set-file=- /home
+  fi
+  if [[ -n "$runtime_state" && -e "$runtime_state" ]]; then
+    sudo rm -rf -- "$runtime_state"
+  fi
+}
 orb7_traps removal-restoration gateway
+orb7_set_cleanup_hook restore_fixture_state
+orb7_arm_paths removal-restoration /home/orbit/custom-worktrees/nck104-unsafe /home/orbit/apps/laravel
+orb7_arm_remote_database removal-restoration
+orb7_checkpoint removal-restoration post-record
 orbit workspace:remove "$(workspace_id nck104-unsafe)" --json >/dev/null
 orb7_mark_active removal-restoration gateway
-orb7_checkpoint removal-restoration
+orb7_checkpoint removal-restoration post-mutation
 
 instance_checkout_path=$(instance_checkout e2e-dev)
 identity=/srv/orbit/worktrees/laravel/nck104-identity
@@ -40,7 +53,6 @@ original_home_acl=$(sudo getfacl -cp /home)
 restore_home_acl() {
   printf '%s\n' "$original_home_acl" | sudo setfacl --set-file=- /home
 }
-orb7_set_cleanup_hook restore_home_acl
 sudo setfacl -m u:caddy:--- /home
 nontraversable_home_acl=$(sudo getfacl -cp /home)
 grep -Fqx 'user:caddy:---' <<<"$(sudo getfacl -cp /home)" \
@@ -59,7 +71,6 @@ test ! -e /home/orbit/apps/nck104-home-ancestor
 [[ "$(sudo getfacl -cp /home)" == "$nontraversable_home_acl" ]] \
   || fail "last managed-home dependent did not restore the non-traversable /home ACL"
 restore_home_acl
-orb7_clear_cleanup_hook
 [[ "$(sudo getfacl -cp /home)" == "$original_home_acl" ]] \
   || fail "proof did not restore the original /home ACL"
 

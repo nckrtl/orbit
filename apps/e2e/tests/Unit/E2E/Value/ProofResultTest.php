@@ -8,6 +8,35 @@ use App\E2E\Value\ProofStatus;
 use App\E2E\Value\TopologyEndState;
 
 describe('ProofResult', function () {
+    it('records exact expected and actual exits without treating an expected timeout as failure', function (): void {
+        $result = new ProofResult(
+            'ORB-7',
+            new AttemptId(str_repeat('a', 32)),
+            ProofStatus::Proved,
+            str_repeat('b', 40),
+            [[
+                'id' => 'term-cleanup',
+                'node' => 'app-prod',
+                'expected_exit_code' => 124,
+                'exit_code' => 124,
+                'stdout' => 'term observed',
+                'stderr' => '',
+            ]],
+            null,
+            '2026-09-01T13:00:00Z',
+        );
+
+        expect($result->toArray()['actions'])
+            ->toBe([[
+                'id' => 'term-cleanup',
+                'node' => 'app-prod',
+                'expected_exit_code' => 124,
+                'exit_code' => 124,
+            ]])
+            ->and($result->toArray())
+            ->not->toHaveKey('failed_action');
+    });
+
     it('prints a compact verdict with per-action exit codes and the failing tails', function () {
         $result = new ProofResult(
             'NCK-12',
@@ -43,8 +72,8 @@ describe('ProofResult', function () {
             ])
             ->and($payload['actions'])
             ->toBe([
-                ['id' => 'setup-1', 'node' => 'gateway', 'exit_code' => 0],
-                ['id' => 'check', 'node' => 'app-dev', 'exit_code' => 3],
+                ['id' => 'setup-1', 'node' => 'gateway', 'expected_exit_code' => 0, 'exit_code' => 0],
+                ['id' => 'check', 'node' => 'app-dev', 'expected_exit_code' => 0, 'exit_code' => 3],
             ])
             ->and($payload['failed_action']['id'])
             ->toBe('check')

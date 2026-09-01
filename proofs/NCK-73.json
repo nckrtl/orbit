@@ -1,10 +1,10 @@
 {
     "setup": [
         {
-            "id": "metrics-enable-app-dev",
+            "id": "metrics-active-precondition",
             "node": "app-dev",
-            "argv": ["orbit", "metrics:enable", "app-dev", "--json"],
-            "timeout_seconds": 600
+            "argv": ["orbit", "metrics:status", "--json"],
+            "timeout_seconds": 120
         }
     ],
     "acceptance": [

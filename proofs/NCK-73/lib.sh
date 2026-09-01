@@ -38,17 +38,19 @@ orb7_restore_services() {
   sudo test -e "$record" || return 0
   sudo mkdir "$record/restoring" 2>/dev/null || return 0
   local unit exists active
-  while IFS=$'\t' read -r unit exists active; do
-    if [[ "$exists" -eq 1 ]]; then
-      if [[ "$active" == active ]]; then
-        sudo systemctl start "$unit"
+  if sudo test -f "$record/services.tsv"; then
+    while IFS=$'\t' read -r unit exists active; do
+      if [[ "$exists" -eq 1 ]]; then
+        if [[ "$active" == active ]]; then
+          sudo systemctl start "$unit"
+        else
+          sudo systemctl stop "$unit"
+        fi
       else
-        sudo systemctl stop "$unit"
+        ! systemctl cat "$unit" >/dev/null 2>&1 || return 1
       fi
-    else
-      ! systemctl cat "$unit" >/dev/null 2>&1 || return 1
-    fi
-  done < <(sudo cat "$record/services.tsv")
+    done < <(sudo cat "$record/services.tsv")
+  fi
   printf 'restored\n' | sudo tee "$record/state" >/dev/null
   sudo rm -rf -- "$record"
 }
@@ -74,9 +76,14 @@ orb7_service_traps() {
 
 orb7_checkpoint() {
   local action="$1"
-  if [[ "${ORBIT_E2E_ORB7_MODE:-}" == signal && "${ORBIT_E2E_ORB7_CASE:-}" == "$action" ]]; then
-    printf 'active\n' | sudo tee "$ORB7_CLEANUP_ROOT/$action/state" >/dev/null
-    printf 'ready\n' | sudo tee "$ORB7_CLEANUP_ROOT/$action/checkpoint" >/dev/null
+  local window="$2"
+  if [[ "${ORBIT_E2E_ORB7_MODE:-}" == signal \
+    && "${ORBIT_E2E_ORB7_CASE:-}" == "$action" \
+    && "${ORBIT_E2E_ORB7_WINDOW:-}" == "$window" ]]; then
+    printf 'ready\n' | sudo tee "${ORBIT_E2E_ORB7_CHECKPOINT:?}" >/dev/null
+    if [[ "${ORBIT_E2E_ORB7_EVENT:-}" == EXIT ]]; then
+      exit 0
+    fi
     while true; do sleep 1; done
   fi
 }

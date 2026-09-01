@@ -130,7 +130,7 @@ final readonly class TopologyProofRunner
             $phase = 'identity';
             $this->synchronizer->probeCheckoutIdentity($target, $candidateSha, $candidateTree);
             $phase = 'fixtures';
-            $this->fixtures->stage($target, $repository, $candidateSha);
+            $this->fixtures->stage($target, $repository, $candidateSha, $plan->fixtureIssues);
             $phase = 'converge';
             $this->converger->converge($target, $source, $generation->laravel);
             $phase = 'setup';
@@ -212,8 +212,8 @@ final readonly class TopologyProofRunner
     }
 
     /**
-     * @param list<array{id:string,node:string,argv:list<string>,timeout_seconds:int}> $declared
-     * @param list<array{id:string,node:string,exit_code:int,stdout:string,stderr:string}> $actions
+     * @param list<array{id:string,node:string,argv:list<string>,timeout_seconds:int,expected_exit_code:int}> $declared
+     * @param list<array{id:string,node:string,expected_exit_code:int,exit_code:int,stdout:string,stderr:string}> $actions
      */
     private function runActions(TopologyTarget $target, string $section, array $declared, array &$actions): void
     {
@@ -228,6 +228,7 @@ final readonly class TopologyProofRunner
                 $actions[] = [
                     'id' => $action['id'],
                     'node' => $action['node'],
+                    'expected_exit_code' => $action['expected_exit_code'],
                     'exit_code' => -1,
                     'stdout' => '',
                     'stderr' => $transport->getMessage(),
@@ -240,13 +241,15 @@ final readonly class TopologyProofRunner
             $actions[] = [
                 'id' => $action['id'],
                 'node' => $action['node'],
+                'expected_exit_code' => $action['expected_exit_code'],
                 'exit_code' => $result->exitCode,
                 'stdout' => ProofResult::tail($result->stdout),
                 'stderr' => ProofResult::tail($result->stderr),
             ];
-            if (! $result->successful()) {
+            if ($result->exitCode !== $action['expected_exit_code']) {
                 throw new RuntimeException(
-                    "Proof {$section} action [{$action['id']}] failed with exit code {$result->exitCode}.",
+                    "Proof {$section} action [{$action['id']}] expected exit code "
+                    ."{$action['expected_exit_code']}, got {$result->exitCode}.",
                 );
             }
         }

@@ -1,19 +1,21 @@
 #!/usr/bin/env bash
 # New workspaces record derived or explicit origin; legacy rows stay SQL null.
-source /var/lib/orbit-e2e/proof/lib.sh
+proof_root=${ORBIT_E2E_PROOF_ROOT:-/var/lib/orbit-e2e/proof}
+source "$proof_root/lib.sh"
 
 [[ "$(sql_workspace_origin e2e)" == null ]] || fail "legacy e2e origin was rewritten"
 
 dev_id=$(instance_id e2e-dev)
 [[ -n "$dev_id" ]] || fail "missing e2e-dev instance"
 
+orb7_traps derived-explicit-origin app-dev
 orb7_arm_database derived-explicit-origin
 orb7_arm_remote_paths app-dev derived-explicit-origin \
   /srv/orbit/worktrees /home/orbit/custom-worktrees /home/orbit/apps/laravel/.git/worktrees
-orb7_traps derived-explicit-origin app-dev
+orb7_checkpoint derived-explicit-origin post-record
 derived=$(orbit workspace:new "$dev_id" nck104-derived --json)
 orb7_mark_active derived-explicit-origin app-dev
-orb7_checkpoint derived-explicit-origin
+orb7_checkpoint derived-explicit-origin post-mutation
 [[ "$(echo "$derived" | json_get checkout_path)" == /srv/orbit/worktrees/laravel/nck104-derived ]] \
   || fail "derived checkout was not under the configured worktree root: $derived"
 [[ "$(sql_workspace_origin nck104-derived)" == derived ]] || fail "derived origin was not stored"

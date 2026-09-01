@@ -1,20 +1,26 @@
 #!/usr/bin/env bash
 # Nodes provisioned without settings stay SQL null; provision with settings round-trips raw overrides.
-source /var/lib/orbit-e2e/proof/lib.sh
+proof_root=${ORBIT_E2E_PROOF_ROOT:-/var/lib/orbit-e2e/proof}
+source "$proof_root/lib.sh"
 
 [[ "$(app_dev_settings)" == null ]] || fail "app-dev JSON settings were not null"
 [[ "$(sql_node_settings app-dev)" == null ]] || fail "app-dev SQL settings were not null"
 [[ "$(sql_node_settings app-prod)" == null ]] || fail "app-prod SQL settings were not null"
 [[ "$(sql_node_settings gateway)" == null ]] || fail "gateway SQL settings were not null"
 
+restore_original_database() {
+  bash "$ORB7_STATE_HELPER" restore nck104-original-database
+}
+orb7_traps retrieve-settings-sql app-dev app-prod
+orb7_set_cleanup_hook restore_original_database
 orb7_arm_database nck104-original-database
 orb7_arm_database retrieve-settings-sql
 orb7_arm_remote_paths app-dev retrieve-settings-sql /srv/orbit
 orb7_arm_remote_paths app-prod retrieve-settings-sql /var/www/laravel/e2e-prod
-orb7_traps retrieve-settings-sql app-dev app-prod
+orb7_checkpoint retrieve-settings-sql post-record
 provision_app_prod --json >/dev/null || fail "provision without settings failed"
 orb7_mark_active retrieve-settings-sql app-dev app-prod
-orb7_checkpoint retrieve-settings-sql
+orb7_checkpoint retrieve-settings-sql post-mutation
 [[ "$(sql_node_settings app-prod)" == null ]] || fail "provision without settings stored overrides"
 
 out=$(provision_app_dev \

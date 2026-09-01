@@ -1,20 +1,22 @@
 #!/usr/bin/env bash
 # The Metrics node removes its whole footprint with no Gateway, and leaves
 # every look-alike it cannot prove Orbit owns.
-source /var/lib/orbit-e2e/proof/lib.sh
+proof_root=${ORBIT_E2E_PROOF_ROOT:-/var/lib/orbit-e2e/proof}
+source "$proof_root/lib.sh"
 
 readonly DECOY_CONTAINER=orbit-metrics-prometheus-decoy
 readonly DECOY_VOLUME=orbit-metrics-prometheus-backup
 readonly DECOY_RULE=orbit:metrics-grafana-upstream-v2
 
-orb7_arm escape-metrics-node
 orb7_traps escape-metrics-node
+orb7_arm escape-metrics-node
+orb7_checkpoint escape-metrics-node post-record
 address=$(this_address)
 docker container create --name "$DECOY_CONTAINER" --label com.orbit.managed=other \
   prom/prometheus:v3.5.0 >/dev/null
 orb7_record_container escape-metrics-node container "$DECOY_CONTAINER" "$(docker inspect --format '{{.Id}}' "$DECOY_CONTAINER")"
 orb7_mark_active escape-metrics-node
-orb7_checkpoint escape-metrics-node
+orb7_checkpoint escape-metrics-node post-mutation
 docker volume create --label com.orbit.managed=other "$DECOY_VOLUME" >/dev/null
 orb7_record_container escape-metrics-node volume "$DECOY_VOLUME" "$DECOY_VOLUME"
 sudo ufw allow in on orbit proto tcp to "$address" port 3001 comment "$DECOY_RULE" >/dev/null

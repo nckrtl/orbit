@@ -125,9 +125,13 @@ function topologyProofRunnerWithLegacyGeneration(
     );
 }
 
-/** @return array{id:string,node:string,exit_code:int,stdout:string,stderr:string} */
-function runProofAction(int $exitCode, int &$transportTimeout, array &$transportArgv): array
-{
+/** @return array{id:string,node:string,expected_exit_code:int,exit_code:int,stdout:string,stderr:string} */
+function runProofAction(
+    int $exitCode,
+    int &$transportTimeout,
+    array &$transportArgv,
+    int $expectedExitCode = 0,
+): array {
     $attempt = new AttemptId(str_repeat('a', 32));
     $target = TopologyTarget::feature('ORB-7', $attempt);
     $instance = $target->instance('app-dev');
@@ -169,6 +173,7 @@ function runProofAction(int $exitCode, int &$transportTimeout, array &$transport
                 'node' => 'app-dev',
                 'argv' => ['bash', '/var/lib/orbit-e2e/proof/action.sh'],
                 'timeout_seconds' => 30,
+                'expected_exit_code' => $expectedExitCode,
             ]],
             &$actions,
         ]);
@@ -236,12 +241,13 @@ it('records a proof action that exits after its term deadline', function () {
     $transportTimeout = 0;
     $transportArgv = [];
 
-    $action = runProofAction(124, $transportTimeout, $transportArgv);
+    $action = runProofAction(124, $transportTimeout, $transportArgv, 124);
 
     expect($action)
         ->toBe([
             'id' => 'proof-action',
             'node' => 'app-dev',
+            'expected_exit_code' => 124,
             'exit_code' => 124,
             'stdout' => "action output\n",
             'stderr' => "action error\n",
@@ -254,12 +260,13 @@ it('records a proof action force-killed after its cleanup grace', function () {
     $transportTimeout = 0;
     $transportArgv = [];
 
-    $action = runProofAction(137, $transportTimeout, $transportArgv);
+    $action = runProofAction(137, $transportTimeout, $transportArgv, 137);
 
     expect($action)
         ->toBe([
             'id' => 'proof-action',
             'node' => 'app-dev',
+            'expected_exit_code' => 137,
             'exit_code' => 137,
             'stdout' => "action output\n",
             'stderr' => "action error\n",

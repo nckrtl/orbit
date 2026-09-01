@@ -1,22 +1,24 @@
 #!/usr/bin/env bash
 # The escape refuses a drop-in and a configuration directory that carry no
 # Orbit ownership proof, and reports both instead of guessing.
-source /var/lib/orbit-e2e/proof/lib.sh
+proof_root=${ORBIT_E2E_PROOF_ROOT:-/var/lib/orbit-e2e/proof}
+source "$proof_root/lib.sh"
 
 readonly FOREIGN_DROPIN=/etc/systemd/system/prometheus-node-exporter.service.d/orbit.conf
 readonly FOREIGN_MARKER=/etc/orbit/metrics/.orbit-owner
 readonly FOREIGN_FILE=/etc/orbit/metrics/prometheus.yml
 
+orb7_traps refuses-without-proof
 orb7_arm refuses-without-proof
 orb7_capture_path refuses-without-proof foreign-dropin /etc/systemd/system/prometheus-node-exporter.service.d
 orb7_capture_path refuses-without-proof foreign-metrics /etc/orbit/metrics
-orb7_traps refuses-without-proof
+orb7_checkpoint refuses-without-proof post-record
 sudo test ! -e "$FOREIGN_DROPIN" || fail "this node still holds an Orbit drop-in; plant on a cleaned node"
 
 printf '# hand written by the platform team\n[Service]\nExecStart=\n' \
   | sudo install -D -m 0644 /dev/stdin "$FOREIGN_DROPIN"
 orb7_mark_active refuses-without-proof
-orb7_checkpoint refuses-without-proof
+orb7_checkpoint refuses-without-proof post-mutation
 sudo install -d /etc/orbit/metrics
 printf 'someone-else\n' | sudo install -m 0640 /dev/stdin "$FOREIGN_MARKER"
 printf 'scrape_configs: []\n' | sudo install -m 0644 /dev/stdin "$FOREIGN_FILE"

@@ -92,8 +92,14 @@ orb7_mark_active() {
 
 orb7_checkpoint() {
   local action="$1"
-  if [[ "${ORBIT_E2E_ORB7_MODE:-}" == signal && "${ORBIT_E2E_ORB7_CASE:-}" == "$action" ]]; then
-    printf 'ready\n' | sudo tee "$ORB7_CLEANUP_ROOT/$action/checkpoint" >/dev/null
+  local window="$2"
+  if [[ "${ORBIT_E2E_ORB7_MODE:-}" == signal \
+    && "${ORBIT_E2E_ORB7_CASE:-}" == "$action" \
+    && "${ORBIT_E2E_ORB7_WINDOW:-}" == "$window" ]]; then
+    printf 'ready\n' | sudo tee "${ORBIT_E2E_ORB7_CHECKPOINT:?}" >/dev/null
+    if [[ "${ORBIT_E2E_ORB7_EVENT:-}" == EXIT ]]; then
+      exit 0
+    fi
     while true; do sleep 1; done
   fi
 }
@@ -101,7 +107,6 @@ orb7_checkpoint() {
 orb7_timeout_checkpoint() {
   local action="$1"
   if [[ "${ORBIT_E2E_ORB7_MODE:-}" == timeout && "${ORBIT_E2E_ORB7_CASE:-}" == "$action" ]]; then
-    printf 'ready\n' | sudo tee "$ORB7_CLEANUP_ROOT/$action/timeout-checkpoint" >/dev/null
     while true; do sleep 1; done
   fi
 }
@@ -128,30 +133,34 @@ orb7_restore_owned() {
   fi
 
   local shape numbered matching number reread
-  while IFS= read -r shape; do
-    numbered=$(orb7_ufw_numbered)
-    matching=$(awk -v shape="$shape" '
-      { normalized=$0; sub(/^ *\[ *[0-9]+\] +/, "", normalized); if (normalized == shape) print $0 }
-    ' <<<"$numbered")
-    [[ "$(grep -c . <<<"$matching")" -le 1 ]] || return 1
-    [[ -n "$matching" ]] || continue
-    number=$(sed -E 's/^ *\[ *([0-9]+)\].*/\1/' <<<"$matching")
-    reread=$(orb7_ufw_numbered | sed -n -E "s/^ *\\[ *$number\\] +//p")
-    [[ "$reread" == "$shape" ]] || return 1
-    sudo /usr/sbin/ufw --force delete "$number" >/dev/null
-  done < <(sudo cat "$record/rules.tsv")
+  if sudo test -f "$record/rules.tsv"; then
+    while IFS= read -r shape; do
+      numbered=$(orb7_ufw_numbered)
+      matching=$(awk -v shape="$shape" '
+        { normalized=$0; sub(/^ *\[ *[0-9]+\] +/, "", normalized); if (normalized == shape) print $0 }
+      ' <<<"$numbered")
+      [[ "$(grep -c . <<<"$matching")" -le 1 ]] || return 1
+      [[ -n "$matching" ]] || continue
+      number=$(sed -E 's/^ *\[ *([0-9]+)\].*/\1/' <<<"$matching")
+      reread=$(orb7_ufw_numbered | sed -n -E "s/^ *\\[ *$number\\] +//p")
+      [[ "$reread" == "$shape" ]] || return 1
+      sudo /usr/sbin/ufw --force delete "$number" >/dev/null
+    done < <(sudo cat "$record/rules.tsv")
+  fi
 
   if sudo test -f "$record/addresses.before"; then
     orb7_restore_addresses "$action"
   fi
 
   local label path existed
-  while IFS=$'\t' read -r label path existed; do
-    sudo rm -rf -- "$path"
-    if [[ "$existed" -eq 1 ]]; then
-      sudo tar --acls --xattrs --numeric-owner -C / -xpf "$record/paths/$label.tar"
-    fi
-  done < <(tac < <(sudo cat "$record/paths.tsv"))
+  if sudo test -f "$record/paths.tsv"; then
+    while IFS=$'\t' read -r label path existed; do
+      sudo rm -rf -- "$path"
+      if [[ "$existed" -eq 1 ]]; then
+        sudo tar --acls --xattrs --numeric-owner -C / -xpf "$record/paths/$label.tar"
+      fi
+    done < <(tac < <(sudo cat "$record/paths.tsv"))
+  fi
 
   printf 'restored\n' | sudo tee "$record/state" >/dev/null
   sudo rm -rf -- "$record"
@@ -163,17 +172,29 @@ orb7_cleanup_exit() {
   trap - EXIT INT TERM
   local cleanup_status=0
   orb7_restore_owned "$action" || cleanup_status=$?
+  if [[ "$cleanup_status" -eq 0 && "${ORBIT_E2E_ORB7_MODE:-}" == timeout \
+    && "${ORBIT_E2E_ORB7_CASE:-}" == "$action" ]]; then
+    printf 'restored\n' | sudo tee -a "$ORB7_TIMEOUT_WITNESS" >/dev/null
+  fi
   if [[ "$status" -eq 0 && "$cleanup_status" -ne 0 ]]; then
     exit "$cleanup_status"
   fi
   exit "$status"
 }
 
+orb7_term_exit() {
+  local action="$1"
+  if [[ "${ORBIT_E2E_ORB7_MODE:-}" == timeout && "${ORBIT_E2E_ORB7_CASE:-}" == "$action" ]]; then
+    printf 'term\n' | sudo tee -a "$ORB7_TIMEOUT_WITNESS" >/dev/null
+  fi
+  exit 143
+}
+
 orb7_traps() {
   local action="$1"
   trap 'orb7_cleanup_exit "$?" '"'"$action"'"'' EXIT
   trap 'exit 130' INT
-  trap 'exit 143' TERM
+  trap 'orb7_term_exit '"'"$action"'"'' TERM
 }
 
 # Extracts one JSON path (dot separated) from stdin with PHP; prints nothing when absent.

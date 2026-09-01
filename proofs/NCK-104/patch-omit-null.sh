@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 # PATCH omits preserve stored members; nested null restores the derived default.
-source /var/lib/orbit-e2e/proof/lib.sh
+proof_root=${ORBIT_E2E_PROOF_ROOT:-/var/lib/orbit-e2e/proof}
+source "$proof_root/lib.sh"
 
+orb7_traps patch-omit-null app-dev
 orb7_arm_database patch-omit-null
 orb7_arm_remote_paths app-dev patch-omit-null /mnt/orbit-apps /srv/orbit
-orb7_traps patch-omit-null app-dev
+orb7_checkpoint patch-omit-null post-record
 out=$(orbit node:settings app-dev --setting=instance.path:/mnt/orbit-apps --json)
 orb7_mark_active patch-omit-null app-dev
-orb7_checkpoint patch-omit-null
+orb7_checkpoint patch-omit-null post-mutation
 [[ "$(echo "$out" | json_get settings.instance.path)" == /mnt/orbit-apps ]] || fail "omit did not patch instance: $out"
 [[ "$(echo "$out" | json_get settings.worktree.path)" == /srv/orbit/worktrees ]] || fail "omit overwrote worktree: $out"
 

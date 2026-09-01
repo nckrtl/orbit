@@ -1,14 +1,16 @@
 #!/usr/bin/env bash
 # Caddy traverse ACLs are shared, restore after the last dependent, and preserve pre-existing ACLs.
-source /var/lib/orbit-e2e/proof/lib.sh
+proof_root=${ORBIT_E2E_PROOF_ROOT:-/var/lib/orbit-e2e/proof}
+source "$proof_root/lib.sh"
 
+orb7_traps caddy-acl-sharing gateway
 orb7_arm_paths caddy-acl-sharing /home/orbit/.orbit/worktrees/laravel/e2e /home/orbit/apps/laravel/.git/worktrees
 orb7_arm_remote_database caddy-acl-sharing
-orb7_traps caddy-acl-sharing gateway
+orb7_checkpoint caddy-acl-sharing post-record
 dev_id=$(instance_id e2e-dev)
 orbit workspace:remove "$(workspace_id e2e)" --json >/dev/null
 orb7_mark_active caddy-acl-sharing gateway
-orb7_checkpoint caddy-acl-sharing
+orb7_checkpoint caddy-acl-sharing post-mutation
 test ! -e /home/orbit/.orbit/worktrees/laravel/e2e
 
 setfacl -m u:caddy:r-x /home/orbit/.orbit/worktrees

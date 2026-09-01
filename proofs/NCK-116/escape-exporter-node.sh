@@ -1,17 +1,19 @@
 #!/usr/bin/env bash
 # An exporter-only node removes the drop-in, the service and the 9100 rule,
 # and nothing else. It keeps the package it cannot prove Orbit owns.
-source /var/lib/orbit-e2e/proof/lib.sh
+proof_root=${ORBIT_E2E_PROOF_ROOT:-/var/lib/orbit-e2e/proof}
+source "$proof_root/lib.sh"
 
 readonly DECOY_RULE=orbit:metrics-node-exporter-v2
 
-orb7_arm escape-exporter-node
 orb7_traps escape-exporter-node
+orb7_arm escape-exporter-node
+orb7_checkpoint escape-exporter-node post-record
 address=$(this_address)
 sudo ufw allow in on orbit proto tcp to "$address" port 9101 comment "$DECOY_RULE" >/dev/null
 orb7_record_ufw_delta escape-exporter-node decoy
 orb7_mark_active escape-exporter-node
-orb7_checkpoint escape-exporter-node
+orb7_checkpoint escape-exporter-node post-mutation
 
 run_escape --force
 [[ "$ESCAPE_STATUS" -eq 0 ]] || fail "escape exited $ESCAPE_STATUS: $ESCAPE_OUTPUT"

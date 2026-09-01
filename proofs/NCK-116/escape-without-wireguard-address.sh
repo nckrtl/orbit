@@ -3,13 +3,15 @@
 # case this escape exists for. The destination address is then the one field
 # that cannot be checked either way, so the escape proves every other field,
 # says so, and still cleans up.
-source /var/lib/orbit-e2e/proof/lib.sh
+proof_root=${ORBIT_E2E_PROOF_ROOT:-/var/lib/orbit-e2e/proof}
+source "$proof_root/lib.sh"
 
 readonly DECOY_RULE=orbit:metrics-grafana-upstream
 
+orb7_traps escape-without-wireguard-address
 orb7_arm escape-without-wireguard-address
 orb7_capture_addresses escape-without-wireguard-address
-orb7_traps escape-without-wireguard-address
+orb7_checkpoint escape-without-wireguard-address post-record
 addresses=$(sudo ip -4 -o addr show dev orbit)
 saved=$(awk 'NR == 1 {print $4}' <<<"$addresses")
 [[ -n "$saved" ]] || fail "the orbit interface has no IPv4 address to remove"
@@ -22,7 +24,7 @@ sudo ufw allow in on orbit proto tcp from 10.44.0.1 to "$address" port 9100 \
   comment "$EXPORTER_RULE_COMMENT" >/dev/null
 orb7_record_ufw_delta escape-without-wireguard-address exporter
 orb7_mark_active escape-without-wireguard-address
-orb7_checkpoint escape-without-wireguard-address
+orb7_checkpoint escape-without-wireguard-address post-mutation
 sudo ufw allow in on orbit proto tcp from 10.44.0.1 to "$address" port 3001 \
   comment "$DECOY_RULE" >/dev/null
 orb7_record_ufw_delta escape-without-wireguard-address decoy

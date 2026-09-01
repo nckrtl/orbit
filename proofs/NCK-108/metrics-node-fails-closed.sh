@@ -1,14 +1,16 @@
 #!/usr/bin/env bash
 # The Metrics node is never degraded. With its own sshd down, a fleet mutation
 # must fail closed rather than skip the node that owns the projection.
-source /var/lib/orbit-e2e/proof/lib.sh
+proof_root=${ORBIT_E2E_PROOF_ROOT:-/var/lib/orbit-e2e/proof}
+source "$proof_root/lib.sh"
 
-orb7_service_record metrics-node-fails-closed ssh.socket ssh.service
 orb7_service_traps metrics-node-fails-closed
+orb7_service_record metrics-node-fails-closed ssh.socket ssh.service
+orb7_checkpoint metrics-node-fails-closed post-record
 for unit in ssh.socket ssh.service; do
   systemctl cat "$unit" >/dev/null 2>&1 && sudo systemctl stop "$unit" || true
 done
-orb7_checkpoint metrics-node-fails-closed
+orb7_checkpoint metrics-node-fails-closed post-mutation
 
 attempt=$(orbit metrics:exporter:disable gateway --json || true)
 grep -q '"code":"metrics.exporter_configuration_inspection_failed"' <<<"$attempt" \

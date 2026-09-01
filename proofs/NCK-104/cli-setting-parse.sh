@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # CLI --setting splits on the first colon and rejects unknown, duplicate, and malformed keys.
-source /var/lib/orbit-e2e/proof/lib.sh
+proof_root=${ORBIT_E2E_PROOF_ROOT:-/var/lib/orbit-e2e/proof}
+source "$proof_root/lib.sh"
 
 expect_local_error node.setting_unknown orbit node:settings app-dev --setting=packages.path:/srv/orbit/packages --json
 expect_local_error node.setting_duplicate orbit node:settings app-dev \
@@ -8,15 +9,16 @@ expect_local_error node.setting_duplicate orbit node:settings app-dev \
 expect_local_error node.setting_invalid orbit node:settings app-dev --setting=instance.path --json
 expect_local_error node.setting_invalid orbit node:settings app-dev --setting=:/srv/a --json
 
+orb7_traps cli-setting-parse app-dev
 orb7_arm_database cli-setting-parse
 orb7_arm_remote_paths app-dev cli-setting-parse '/srv/orbit:data'
-orb7_traps cli-setting-parse app-dev
+orb7_checkpoint cli-setting-parse post-record
 out=$(orbit node:settings app-dev \
   --setting=instance.path:/srv/orbit:data/instances \
   --setting=worktree.path: \
   --json)
 orb7_mark_active cli-setting-parse app-dev
-orb7_checkpoint cli-setting-parse
+orb7_checkpoint cli-setting-parse post-mutation
 [[ "$(echo "$out" | json_get settings.instance.path)" == '/srv/orbit:data/instances' ]] \
   || fail "first-colon split dropped later colons: $out"
 [[ "$(echo "$out" | json_get settings.worktree)" == null ]] \

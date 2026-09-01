@@ -54,6 +54,7 @@ restore_database() {
   local was_active=0
   systemctl is-active --quiet php8.5-fpm && was_active=1
   sudo systemctl stop php8.5-fpm
+  sudo rm -f -- /home/orbit/.orbit/gateway.sqlite-wal /home/orbit/.orbit/gateway.sqlite-shm
   sudo install -o orbit -g orbit -m 0600 -- "$record/gateway.sqlite" /home/orbit/.orbit/gateway.sqlite
   if [[ "$was_active" -eq 1 ]]; then
     sudo systemctl start php8.5-fpm
