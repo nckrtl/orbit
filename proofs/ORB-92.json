@@ -30,7 +30,7 @@
             "id": "replacement-rollback-and-recovery",
             "node": "app-dev",
             "argv": ["bash", "/var/lib/orbit-e2e/proof/replacement-recovery.sh"],
-            "timeout_seconds": 1200
+            "timeout_seconds": 900
         },
         {
             "id": "docker-access-boundary-is-unchanged",
@@ -42,7 +42,7 @@
             "id": "disable-purge-and-ownership-remain-fail-closed",
             "node": "app-dev",
             "argv": ["bash", "/var/lib/orbit-e2e/proof/disable-purge-ownership.sh"],
-            "timeout_seconds": 1200
+            "timeout_seconds": 900
         },
         {
             "id": "final-lifecycle-is-healthy-without-direct-docker",
