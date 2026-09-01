@@ -10,6 +10,7 @@ use App\Domain\Doctor\ProcessStateInspector;
 use App\Domain\Doctor\RoleStateInspector;
 use App\Domain\Doctor\WorkspaceStateInspector;
 use App\Domain\Firewall\FirewallInspector;
+use App\Domain\Metrics\MetricsFirewallExpectationProvider;
 use App\Domain\Tools\ToolInspector;
 use App\Infrastructure\Doctor\NativeAppStateInspector;
 use App\Infrastructure\Doctor\NativeGatewayVpnStateInspector;
@@ -19,6 +20,7 @@ use App\Infrastructure\Doctor\NativeRoleStateInspector;
 use App\Infrastructure\Doctor\NativeWorkspaceStateInspector;
 use App\Infrastructure\Doctor\SshNodeStateInspector;
 use App\Infrastructure\Firewall\NativeUfwFirewallInspector;
+use App\Infrastructure\Metrics\NativeMetricsFirewallExpectationProvider;
 use App\Infrastructure\Tools\NativeToolInspector;
 
 it('resolves every read-only inspector through its domain contract', function (): void {
@@ -39,5 +41,7 @@ it('resolves every read-only inspector through its domain contract', function ()
         ->and(app(ToolInspector::class))
         ->toBeInstanceOf(NativeToolInspector::class)
         ->and(app(FirewallInspector::class))
-        ->toBeInstanceOf(NativeUfwFirewallInspector::class);
+        ->toBeInstanceOf(NativeUfwFirewallInspector::class)
+        ->and(app(MetricsFirewallExpectationProvider::class))
+        ->toBeInstanceOf(NativeMetricsFirewallExpectationProvider::class);
 });

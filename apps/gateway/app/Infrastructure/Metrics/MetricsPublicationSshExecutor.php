@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace App\Infrastructure\Metrics;
 
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
 use App\Infrastructure\Firewall\UfwRuleOwnership;
-use App\Infrastructure\Firewall\UfwRuleShape;
 use App\Infrastructure\Firewall\UfwStatusParser;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -29,11 +29,13 @@ final readonly class MetricsPublicationSshExecutor
         private SshKeyProvider $keys,
         private KnownHostsStore $knownHosts,
         private UfwStatusParser $parser = new UfwStatusParser,
+        private NodeFirewallRuleCatalog $firewallRules = new NodeFirewallRuleCatalog,
     ) {}
 
     public function converge(Node $metricsNode, string $gatewayAddress): bool
     {
-        $shape = $this->shape($metricsNode, $gatewayAddress);
+        $rule = $this->firewallRules->metricsGrafanaUpstream($metricsNode, $gatewayAddress);
+        $shape = $rule->shape;
         $status = $this->status($metricsNode);
         $ownership = $this->parser->ownership($status->stdout, $shape);
 
@@ -48,24 +50,7 @@ final readonly class MetricsPublicationSshExecutor
         try {
             $this->run(
                 $metricsNode,
-                new RemoteCommand([
-                    'sudo',
-                    'ufw',
-                    'allow',
-                    'in',
-                    'on',
-                    'orbit',
-                    'proto',
-                    'tcp',
-                    'from',
-                    $gatewayAddress,
-                    'to',
-                    $shape->destination,
-                    'port',
-                    MetricsFootprint::PublicationPort,
-                    'comment',
-                    self::FirewallComment,
-                ]),
+                new RemoteCommand($rule->arguments),
                 'metrics.publication_firewall_apply_failed',
                 'The Metrics Grafana firewall rule could not be applied.',
             );
@@ -102,7 +87,7 @@ final readonly class MetricsPublicationSshExecutor
 
     public function remove(Node $metricsNode, string $gatewayAddress): void
     {
-        $shape = $this->shape($metricsNode, $gatewayAddress);
+        $shape = $this->firewallRules->metricsGrafanaUpstream($metricsNode, $gatewayAddress)->shape;
         $status = $this->status($metricsNode);
         $ownership = $this->parser->ownership($status->stdout, $shape);
 
@@ -170,32 +155,6 @@ final readonly class MetricsPublicationSshExecutor
                 502,
             );
         }
-    }
-
-    private function shape(Node $metricsNode, string $gatewayAddress): UfwRuleShape
-    {
-        $metricsAddress = $this->address($metricsNode);
-
-        if (filter_var($gatewayAddress, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
-            throw new ResourceOperationException(
-                'metrics.publication_address_invalid',
-                'Metrics publication requires valid WireGuard IPv4 addresses.',
-                409,
-            );
-        }
-
-        return new UfwRuleShape(
-            comment: self::FirewallComment,
-            action: 'allow',
-            direction: 'in',
-            source: $gatewayAddress,
-            destination: $metricsAddress,
-            port: MetricsFootprint::PublicationPort,
-            protocol: 'tcp',
-            inInterface: 'orbit',
-            outInterface: null,
-            family: 'v4',
-        );
     }
 
     private function status(Node $node): CommandResult

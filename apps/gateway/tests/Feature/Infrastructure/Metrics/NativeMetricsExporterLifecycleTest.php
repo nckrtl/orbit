@@ -15,6 +15,7 @@ use App\Infrastructure\Metrics\MetricsExporterRuntime;
 use App\Infrastructure\Metrics\MetricsExporterSshExecutor;
 use App\Infrastructure\Metrics\MetricsExporterState;
 use App\Infrastructure\Metrics\NativeMetricsExporterLifecycle;
+use App\Infrastructure\Metrics\NativeMetricsExporterProjection;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
@@ -60,8 +61,7 @@ it('returns stable targets from explicit defaults and prospective roles', functi
             keys: app(SshKeyProvider::class),
             knownHosts: app(KnownHostsStore::class),
         ),
-        selector: new ExporterSelector,
-        preferences: $preferences,
+        projection: new NativeMetricsExporterProjection(new ExporterSelector, $preferences),
         degradations: app(ExporterDegradationRepository::class),
     );
 
@@ -95,8 +95,10 @@ it('fails closed when a selected node has no valid WireGuard address', function 
             keys: app(SshKeyProvider::class),
             knownHosts: app(KnownHostsStore::class),
         ),
-        selector: new ExporterSelector,
-        preferences: app(ExporterPreferenceRepository::class),
+        projection: new NativeMetricsExporterProjection(
+            new ExporterSelector,
+            app(ExporterPreferenceRepository::class),
+        ),
         degradations: app(ExporterDegradationRepository::class),
     );
 
@@ -129,8 +131,10 @@ it('restores every earlier exporter mutation when a later fleet node fails', fun
     $runtime = new MetricsExporterFleetRuntimeFake('later');
     $lifecycle = new NativeMetricsExporterLifecycle(
         executor: $runtime,
-        selector: new ExporterSelector,
-        preferences: app(ExporterPreferenceRepository::class),
+        projection: new NativeMetricsExporterProjection(
+            new ExporterSelector,
+            app(ExporterPreferenceRepository::class),
+        ),
         degradations: app(ExporterDegradationRepository::class),
     );
 
@@ -162,8 +166,10 @@ it('skips a fleet node it cannot inspect and records why', function (): void {
 
     new NativeMetricsExporterLifecycle(
         executor: $runtime,
-        selector: new ExporterSelector,
-        preferences: app(ExporterPreferenceRepository::class),
+        projection: new NativeMetricsExporterProjection(
+            new ExporterSelector,
+            app(ExporterPreferenceRepository::class),
+        ),
         degradations: $degradations,
     )->converge($metrics, $assignment);
 
@@ -193,8 +199,10 @@ it('degrades a fleet node whose firewall is inactive', function (): void {
                 409,
             ),
         ]),
-        selector: new ExporterSelector,
-        preferences: app(ExporterPreferenceRepository::class),
+        projection: new NativeMetricsExporterProjection(
+            new ExporterSelector,
+            app(ExporterPreferenceRepository::class),
+        ),
         degradations: $degradations,
     )->converge($metrics, $assignment);
 
@@ -212,8 +220,10 @@ it('fails closed when the Metrics node itself cannot be inspected', function ():
                 502,
             ),
         ]),
-        selector: new ExporterSelector,
-        preferences: app(ExporterPreferenceRepository::class),
+        projection: new NativeMetricsExporterProjection(
+            new ExporterSelector,
+            app(ExporterPreferenceRepository::class),
+        ),
         degradations: $degradations,
     );
 
@@ -233,8 +243,10 @@ it('keeps failing closed when a fleet node cannot prove exporter ownership', fun
                 409,
             ),
         ]),
-        selector: new ExporterSelector,
-        preferences: app(ExporterPreferenceRepository::class),
+        projection: new NativeMetricsExporterProjection(
+            new ExporterSelector,
+            app(ExporterPreferenceRepository::class),
+        ),
         degradations: $degradations,
     );
 
@@ -250,8 +262,10 @@ it('clears a recorded degradation once the node can be inspected again', functio
 
     new NativeMetricsExporterLifecycle(
         executor: new MetricsExporterDegradingRuntimeFake,
-        selector: new ExporterSelector,
-        preferences: app(ExporterPreferenceRepository::class),
+        projection: new NativeMetricsExporterProjection(
+            new ExporterSelector,
+            app(ExporterPreferenceRepository::class),
+        ),
         degradations: $degradations,
     )->converge($metrics, $assignment);
 
@@ -264,8 +278,10 @@ it('forgets a retired node degradation even when its exporter cannot be removed'
     $degradations->put($dead->id, ExporterDegradationReason::Unreachable);
     $lifecycle = new NativeMetricsExporterLifecycle(
         executor: new MetricsExporterDegradingRuntimeFake(removeFailures: ['dead']),
-        selector: new ExporterSelector,
-        preferences: app(ExporterPreferenceRepository::class),
+        projection: new NativeMetricsExporterProjection(
+            new ExporterSelector,
+            app(ExporterPreferenceRepository::class),
+        ),
         degradations: $degradations,
     );
 
