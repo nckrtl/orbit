@@ -254,14 +254,20 @@ Known prepared-state limits (first observed on 2026-08-30, NCK-58):
 
 - A standby refresh restores the promoted snapshots and skips provisioning, so
   every convergence ends with the `reproject.product-state` step (NCK-83):
-  `converge-sample-app.sh reproject` on `app-dev` runs the product's own
-  projection path (`node:role:add --converge` for every app role, then
-  `instance:php` for every instance with development instances last, because
-  the app-dev runtime converger publishes the Gateway DNS records for every
-  active site). The prepared-state allowlist tracks the projection renderers
-  and this command closure, so a renderer change invalidates the promoted
-  generation. Before that step, `converge-sample-app.sh internal-tls` on
-  `app-prod` places the e2e `local_certs` global block as
+  `converge-sample-app.sh reproject` on `app-dev` first runs
+  `node:role:add --converge` for every app role. The legacy `instances` branch
+  then runs `instance:php` for every Instance, with development Instances last
+  because the app-dev runtime converger publishes the Gateway DNS records for
+  every active site. The typed `app_instances` branch validates the persisted
+  source-ready `e2e-dev` item instead. This branch is source-only. It
+  never runs `instance:php`, creates a Workspace, or prepares an app-prod site.
+  It hydrates and verifies only the typed item's recorded `checkout_path`.
+  The prepared-state allowlist tracks the App, legacy Instance, typed item, Node,
+  and legacy Workspace command closure used by these two deterministic
+  branches. A change in either branch therefore invalidates the promoted
+  generation. Before legacy re-projection,
+  `converge-sample-app.sh internal-tls` on `app-prod` places the e2e
+  `local_certs` global block as
   `fragments/00-orbit-e2e-global.caddy` inside the managed Caddy version
   behind the product-owned `/etc/caddy/Caddyfile` symlink (NCK-84); the
   product publisher copies unmanaged fragments forward, so Doctor reports no
@@ -389,7 +395,18 @@ the inputs do not spell out:
 ### `bin/e2e-live`
 
 `bin/e2e-live <candidate-sha>` is the proof of a harness issue: one run of the
-feature flow against a standby built from the candidate. The wrapper:
+feature flow against a standby built from the candidate.
+
+For ORB-94, focused automated fixtures are the complete evidence for the typed
+`app_instances` path, including empty-to-active creation, idempotence,
+fail-closed shape validation, source-only re-projection, hydration, and probe
+selection. The ORB-94 `bin/e2e-live` run uses current-main product code and
+therefore proves only unchanged legacy `instances` integration. It does not
+prove typed live behavior. After ORB-94 is `Done` on `origin/main`, ORB-76 owns
+the first exact-head live proof of typed empty-to-active `e2e-dev` creation and
+cannot close without that result.
+
+The wrapper:
 
 - owns the validation clone at `ORBIT_E2E_VALIDATE_ROOT` (default
   `$HOME/orbit-validate`), cloning it from the calling repository when

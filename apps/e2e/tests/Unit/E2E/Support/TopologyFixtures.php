@@ -334,6 +334,9 @@ function pinnedWorktreeGuestCommandResult(array $guest): \Illuminate\Contracts\P
             'tree_hash' => $treeHash,
         ], JSON_THROW_ON_ERROR));
     }
+    if ($guest === ['/usr/local/bin/converge-sample-app.sh', 'inspect-state']) {
+        return Process::result('{"shape":"instances"}');
+    }
     if (($guest[0] ?? null) === '/usr/local/bin/verify-topology.sh') {
         return Process::result(json_encode([
             'probe' => $guest[1],

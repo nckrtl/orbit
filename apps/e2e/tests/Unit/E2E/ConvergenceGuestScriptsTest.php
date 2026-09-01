@@ -29,7 +29,7 @@ function gateway_prerequisite_fixture(): string
     return $root;
 }
 
-/** @return array{root:string, checkout:string, script:string, environment:array<string, string>} */
+/** @return array{root:string,checkout:string,script:string,state:string,environment:array<string,string>} */
 function sample_hydration_fixture(bool $commitPresent = true): array
 {
     $root = temporaryPath('orbit-sample-hydration-', 4);
@@ -72,9 +72,14 @@ function sample_hydration_fixture(bool $commitPresent = true): array
     chmod("{$root}/bin/composer", 0o700);
 
     $source = file_get_contents(dirname(__DIR__, 3).'/resources/guest/converge-sample-app.sh');
+    $state = "{$root}/sample-app-state.json";
     $script = str_replace(
-        'checkouts=(/home/orbit/apps/laravel /home/orbit/.orbit/worktrees/laravel/e2e)',
-        "checkouts=({$checkout})",
+        [
+            'orbit=/home/orbit/orbit/apps/cli/orbit',
+            'sample_state=/home/orbit/.orbit/e2e-sample-app-state.json',
+            'checkouts=(/home/orbit/apps/laravel /home/orbit/.orbit/worktrees/laravel/e2e)',
+        ],
+        ["orbit={$root}/orbit", "sample_state={$state}", "checkouts=({$checkout})"],
         $source,
     );
     file_put_contents("{$root}/converge.sh", $script);
@@ -85,6 +90,7 @@ function sample_hydration_fixture(bool $commitPresent = true): array
         'root' => $root,
         'checkout' => $checkout,
         'script' => "{$root}/converge.sh",
+        'state' => $state,
         'environment' => [
             'PATH' => "{$root}/bin:".getenv('PATH'),
             'SAMPLE_COMMIT_PRESENT' => $commitPresent ? '1' : '0',
@@ -98,6 +104,53 @@ function sample_hydration_fixture(bool $commitPresent = true): array
             'SAMPLE_REMOTE_URL' => 'https://github.com/laravel/laravel.git',
         ],
     ];
+}
+
+/** @return array{root:string,script:string,state:string} */
+function typed_sample_resource_fixture(): array
+{
+    $root = temporaryPath('orbit-typed-sample-resources-', 5);
+    mkdir($root, 0o700, true);
+    $state = "{$root}/sample-app-state.json";
+    $source = file_get_contents(dirname(__DIR__, 3).'/resources/guest/converge-sample-app.sh');
+    $script = str_replace(
+        [
+            'orbit=/home/orbit/orbit/apps/cli/orbit',
+            'sample_state=/home/orbit/.orbit/e2e-sample-app-state.json',
+        ],
+        ["orbit={$root}/orbit", "sample_state={$state}"],
+        $source,
+    );
+    file_put_contents("{$root}/converge.sh", $script);
+    file_put_contents("{$root}/orbit", <<<'BASH'
+        #!/usr/bin/env bash
+        set -euo pipefail
+        state=$(dirname "$0")
+        printf '%s\n' "$*" >>"$state/commands"
+        case "$1" in
+          node:list) printf '{"nodes":[{"id":2,"name":"app-dev","status":"%s"},{"id":3,"name":"app-prod","status":"active"}]}' "${NODE_STATUS:-active}" ;;
+          app:list) [[ -e "$state/app" ]] && printf '{"apps":[{"id":1,"slug":"laravel","name":"Laravel","repository_url":"https://github.com/laravel/laravel.git","main_branch":"main","root":"public"}]}' || printf '{"apps":[]}' ;;
+          app:new) touch "$state/app"; printf '{"id":1}' ;;
+          instance:list)
+            prefix=
+            [[ "${TYPED_METADATA:-0}" == 1 ]] && prefix='"meta":{"page":1},'
+            if [[ -e "$state/instance" ]]; then
+              if [[ -n "${TYPED_RESPONSE:-}" ]]; then
+                printf '%s' "$TYPED_RESPONSE"
+              else
+                printf '{%s"app_instances":[{"id":4,"app_id":1,"node_id":2,"name":"e2e-dev","status":"active","checkout_path":"%s/laravel/e2e-dev","selected_branch":"e2e-dev","starting_commit":"%s","effective_root":"public"}]}' "$prefix" "$state" "$(printf a%.0s {1..40})"
+              fi
+            else
+              printf '{%s"app_instances":[]}' "$prefix"
+            fi
+            ;;
+          instance:new) touch "$state/instance"; printf '{"id":4}' ;;
+          *) exit 70 ;;
+        esac
+        BASH);
+    chmod("{$root}/orbit", 0o700);
+
+    return ['root' => $root, 'script' => "{$root}/converge.sh", 'state' => $state];
 }
 
 /** @return array{environment: array<string, string>} */
@@ -1308,6 +1361,47 @@ describe('convergence guest scripts', function () {
             ->not->toContain('sqlite3')
             ->not->toContain('StrictHostKeyChecking=no')->toContain('awk -v expected="$peer_address/32"');
     });
+
+    it('probes the validated typed development checkout without legacy paths', function (): void {
+        $root = temporaryPath('orbit-typed-source-probes-', 5);
+        $checkout = "{$root}/laravel/e2e-dev";
+        mkdir("{$root}/bin", 0o700, true);
+        mkdir($checkout, 0o700, true);
+        file_put_contents("{$checkout}/artisan", "#!/usr/bin/env php\n");
+        file_put_contents("{$root}/bin/php", <<<'BASH'
+            #!/usr/bin/env bash
+            set -euo pipefail
+            printf '%s\n' "$*" >>"$TYPED_PROBE_COMMANDS"
+            BASH);
+        chmod("{$root}/bin/php", 0o700);
+        $script = dirname(__DIR__, 3).'/resources/guest/verify-topology.sh';
+        $environment = [
+            'PATH' => "{$root}/bin:".getenv('PATH'),
+            'TYPED_PROBE_COMMANDS' => "{$root}/commands",
+        ];
+
+        try {
+            foreach (['role.app-dev', 'laravel.dev'] as $probe) {
+                $process = new Process([
+                    'bash',
+                    $script,
+                    $probe,
+                    'proof',
+                    str_repeat('a', 40),
+                    'orbit-e2e-orb-94-app-dev',
+                    $checkout,
+                ], env: $environment);
+                $evidence = json_decode($process->mustRun()->getOutput(), true, 16, JSON_THROW_ON_ERROR);
+                expect($evidence['probe'] ?? null)->toBe($probe);
+            }
+
+            expect(file("{$root}/commands", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES))->toBe([
+                "{$checkout}/artisan --version",
+            ]);
+        } finally {
+            new Illuminate\Filesystem\Filesystem()->deleteDirectory($root);
+        }
+    });
     it('uses fixed paths, safe arguments, idempotent resources, and the stock Laravel repository', function () {
         $guest = dirname(__DIR__, 3).'/resources/guest';
         $scripts = [
@@ -1640,11 +1734,59 @@ describe('convergence guest scripts', function () {
         'wrong head' => ['SAMPLE_HEAD_SHA', str_repeat('c', 40)],
     ]);
 
+    it('hydrates only an authoritative typed checkout path', function (): void {
+        $fixture = sample_hydration_fixture();
+        try {
+            file_put_contents($fixture['state'], json_encode([
+                'shape' => 'app_instances',
+                'app_id' => 1,
+                'node_id' => 2,
+                'name' => 'e2e-dev',
+                'checkout_path' => $fixture['checkout'],
+                'effective_root' => 'public',
+            ], JSON_THROW_ON_ERROR));
+            file_put_contents("{$fixture['root']}/orbit", <<<'BASH'
+                #!/usr/bin/env bash
+                set -euo pipefail
+                [[ "$*" == 'instance:list --json' ]]
+                state=$(dirname "$0")
+                printf '%s\n' "$*" >>"$state/orbit-commands"
+                printf '{"app_instances":[{"id":4,"app_id":1,"node_id":2,"name":"e2e-dev","status":"active","checkout_path":"%s/checkout","selected_branch":"e2e-dev","starting_commit":"%s","effective_root":"public"}]}' "$state" "$(printf a%.0s {1..40})"
+                BASH);
+            chmod("{$fixture['root']}/orbit", 0o700);
+            file_put_contents("{$fixture['checkout']}/vendor/autoload.php", "autoloaded\n");
+            file_put_contents(
+                "{$fixture['checkout']}/vendor/.orbit-e2e-composer-lock",
+                hash_file('sha256', "{$fixture['checkout']}/composer.lock"),
+            );
+
+            $process = new Process([
+                'bash',
+                $fixture['script'],
+                'hydrate',
+                str_repeat('b', 40),
+                'app-dev',
+                $fixture['checkout'],
+            ], env: $fixture['environment']);
+
+            expect($process->run())->toBe(0, $process->getErrorOutput());
+            expect(file("{$fixture['root']}/orbit-commands", FILE_IGNORE_NEW_LINES))->toBe([
+                'instance:list --json',
+            ]);
+        } finally {
+            new Illuminate\Filesystem\Filesystem()->deleteDirectory($fixture['root']);
+        }
+    });
+
     it('does not create duplicate sample resources on a second run', function () {
         $root = temporaryPath('orbit-task7-resources-', 6);
         mkdir($root, 0o700, true);
         $source = file_get_contents(dirname(__DIR__, 3).'/resources/guest/converge-sample-app.sh');
-        $script = str_replace('orbit=/home/orbit/orbit/apps/cli/orbit', "orbit={$root}/orbit", $source);
+        $script = str_replace(
+            ['orbit=/home/orbit/orbit/apps/cli/orbit', 'sample_state=/home/orbit/.orbit/e2e-sample-app-state.json'],
+            ["orbit={$root}/orbit", "sample_state={$root}/sample-app-state.json"],
+            $source,
+        );
         file_put_contents("{$root}/converge.sh", $script);
         file_put_contents("{$root}/orbit", <<<'BASH'
             #!/usr/bin/env bash
@@ -1684,6 +1826,14 @@ describe('convergence guest scripts', function () {
             str_repeat('a', 40),
         ];
         expect(new Process($arguments)->run())->toBe(0);
+        $firstRunCommands = file("{$root}/commands", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+        expect(array_slice($firstRunCommands, 0, 5))->toBe([
+            'node:list --json',
+            'instance:list --json',
+            'app:list --json',
+            'app:new laravel https://github.com/laravel/laravel.git --name=Laravel --json',
+            'instance:list --json',
+        ]);
         expect(new Process($arguments)->run())->toBe(0);
         $commands = file("{$root}/commands", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
 
@@ -1693,6 +1843,22 @@ describe('convergence guest scripts', function () {
             ->toHaveCount(2)
             ->and(array_filter($commands, fn (string $command): bool => str_starts_with($command, 'workspace:new ')))
             ->toHaveCount(1);
+        expect($commands)->toBe([
+            'node:list --json',
+            'instance:list --json',
+            'app:list --json',
+            'app:new laravel https://github.com/laravel/laravel.git --name=Laravel --json',
+            'instance:list --json',
+            'instance:new 1 2 e2e-dev --environment=development --json',
+            'instance:new 1 3 e2e-prod --environment=production --hostname=laravel.internal --json',
+            'workspace:list --json',
+            'workspace:new 4 e2e --branch=e2e --json',
+            'node:list --json',
+            'instance:list --json',
+            'app:list --json',
+            'instance:list --json',
+            'workspace:list --json',
+        ]);
 
         file_put_contents("{$root}/app", 'wrong');
         expect(new Process($arguments)->run())->not->toBe(0);
@@ -1700,6 +1866,268 @@ describe('convergence guest scripts', function () {
         expect(array_filter($commands, fn (string $command): bool => str_starts_with($command, 'app:new ')))
             ->toHaveCount(1);
     });
+
+    it('creates one typed development AppInstance with only authorized source inputs', function (): void {
+        $fixture = typed_sample_resource_fixture();
+        try {
+            $arguments = [
+                'bash',
+                $fixture['script'],
+                'create-resources',
+                'app-dev',
+                'app-prod',
+                str_repeat('a', 40),
+            ];
+
+            $first = new Process($arguments);
+            expect($first->run())->toBe(0, $first->getErrorOutput());
+            $firstCommands = file("{$fixture['root']}/commands", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+
+            expect($firstCommands)->toBe([
+                'node:list --json',
+                'instance:list --json',
+                'app:list --json',
+                'app:new laravel https://github.com/laravel/laravel.git --name=Laravel --root=public --json',
+                'instance:new 1 2 e2e-dev --json',
+                'instance:list --json',
+            ]);
+            expect(implode("\n", $firstCommands))
+                ->not
+                ->toContain(
+                    'e2e-prod',
+                    'workspace:',
+                    '--environment',
+                    '--hostname',
+                    '--php',
+                    '--repository',
+                    '--main-branch',
+                    '--branch',
+                    '--command',
+                    '--runtime',
+                    'instance:php',
+                );
+
+            $state = json_decode((string) file_get_contents($fixture['state']), true, 16, JSON_THROW_ON_ERROR);
+            expect($state)->toBe([
+                'shape' => 'app_instances',
+                'app_id' => 1,
+                'node_id' => 2,
+                'name' => 'e2e-dev',
+                'checkout_path' => "{$fixture['root']}/laravel/e2e-dev",
+                'effective_root' => 'public',
+            ]);
+
+            $second = new Process($arguments);
+            expect($second->run())->toBe(0, $second->getErrorOutput());
+            $allCommands = file("{$fixture['root']}/commands", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+            expect($allCommands)->toBe([
+                ...$firstCommands,
+                'node:list --json',
+                'instance:list --json',
+                'app:list --json',
+            ]);
+            expect(array_filter($allCommands, fn (string $command): bool => str_starts_with($command, 'app:new ')))
+                ->toHaveCount(1)
+                ->and(array_filter($allCommands, fn (string $command): bool => str_starts_with(
+                    $command,
+                    'instance:new ',
+                )))
+                ->toHaveCount(1);
+
+            $inspection = new Process(['bash', $fixture['script'], 'inspect-state']);
+            $inspected = json_decode($inspection->mustRun()->getOutput(), true, 16, JSON_THROW_ON_ERROR);
+            expect($inspected)->toBe($state);
+
+            $emptyInspection = new Process(
+                ['bash', $fixture['script'], 'inspect-state'],
+                env: ['TYPED_RESPONSE' => '{"app_instances":[]}'],
+            );
+            expect($emptyInspection->run())->not->toBe(0);
+        } finally {
+            new Illuminate\Filesystem\Filesystem()->deleteDirectory($fixture['root']);
+        }
+    });
+
+    it('rejects a non-canonical checkout path during later typed validation', function (): void {
+        $fixture = typed_sample_resource_fixture();
+        try {
+            $checkout = 'relative/laravel/e2e-dev';
+            touch("{$fixture['root']}/instance");
+            file_put_contents($fixture['state'], json_encode([
+                'shape' => 'app_instances',
+                'app_id' => 1,
+                'node_id' => 2,
+                'name' => 'e2e-dev',
+                'checkout_path' => $checkout,
+                'effective_root' => 'public',
+            ], JSON_THROW_ON_ERROR));
+            $response = json_encode([
+                'app_instances' => [[
+                    'app_id' => 1,
+                    'node_id' => 2,
+                    'name' => 'e2e-dev',
+                    'status' => 'active',
+                    'checkout_path' => $checkout,
+                    'selected_branch' => 'e2e-dev',
+                    'starting_commit' => str_repeat('a', 40),
+                    'effective_root' => 'public',
+                ]],
+            ], JSON_THROW_ON_ERROR);
+
+            $process = new Process(
+                ['bash', $fixture['script'], 'inspect-state'],
+                env: ['TYPED_RESPONSE' => $response],
+            );
+
+            expect($process->run())->not->toBe(0);
+        } finally {
+            new Illuminate\Filesystem\Filesystem()->deleteDirectory($fixture['root']);
+        }
+    });
+
+    it('selects a recognized typed array when unrelated top-level metadata is present', function (): void {
+        $fixture = typed_sample_resource_fixture();
+        try {
+            $process = new Process([
+                'bash',
+                $fixture['script'],
+                'create-resources',
+                'app-dev',
+                'app-prod',
+                str_repeat('a', 40),
+            ], env: ['TYPED_METADATA' => '1']);
+
+            expect($process->run())->toBe(0, $process->getErrorOutput());
+        } finally {
+            new Illuminate\Filesystem\Filesystem()->deleteDirectory($fixture['root']);
+        }
+    });
+
+    it('fails before App mutation when the typed app-dev Node is not active', function (): void {
+        $fixture = typed_sample_resource_fixture();
+        try {
+            $process = new Process([
+                'bash',
+                $fixture['script'],
+                'create-resources',
+                'app-dev',
+                'app-prod',
+                str_repeat('a', 40),
+            ], env: ['NODE_STATUS' => 'provisioning']);
+
+            expect($process->run())->not->toBe(0);
+            expect(file("{$fixture['root']}/commands", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES))->toBe([
+                'node:list --json',
+                'instance:list --json',
+            ]);
+        } finally {
+            new Illuminate\Filesystem\Filesystem()->deleteDirectory($fixture['root']);
+        }
+    });
+
+    it('fails before resource mutation for an invalid instance-list shape', function (string $response): void {
+        $root = temporaryPath('orbit-invalid-instance-shape-', 5);
+        mkdir($root, 0o700, true);
+        $source = file_get_contents(dirname(__DIR__, 3).'/resources/guest/converge-sample-app.sh');
+        file_put_contents("{$root}/converge.sh", str_replace(
+            'orbit=/home/orbit/orbit/apps/cli/orbit',
+            "orbit={$root}/orbit",
+            $source,
+        ));
+        file_put_contents("{$root}/orbit", <<<'BASH'
+            #!/usr/bin/env bash
+            set -euo pipefail
+            state=$(dirname "$0")
+            printf '%s\n' "$*" >>"$state/commands"
+            case "$1" in
+              node:list) printf '{"nodes":[{"id":2,"name":"app-dev"},{"id":3,"name":"app-prod"}]}' ;;
+              instance:list) printf '%s' "$SHAPE_RESPONSE" ;;
+              *) touch "$state/mutated"; exit 70 ;;
+            esac
+            BASH);
+        chmod("{$root}/orbit", 0o700);
+
+        try {
+            $process = new Process([
+                'bash',
+                "{$root}/converge.sh",
+                'create-resources',
+                'app-dev',
+                'app-prod',
+                str_repeat('a', 40),
+            ], env: ['SHAPE_RESPONSE' => $response]);
+
+            expect($process->run())->not->toBe(0);
+            expect(file("{$root}/commands", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES))->toBe([
+                'node:list --json',
+                'instance:list --json',
+            ]);
+            expect(file_exists("{$root}/mutated"))->toBeFalse();
+        } finally {
+            new Illuminate\Filesystem\Filesystem()->deleteDirectory($root);
+        }
+    })->with([
+        'invalid JSON' => ['{'],
+        'both recognized keys' => ['{"instances":[],"app_instances":[]}'],
+        'neither recognized key' => ['{"data":[]}'],
+        'legacy key is not an array' => ['{"instances":{}}'],
+        'typed key is not an array' => ['{"app_instances":"invalid"}'],
+        'duplicate legacy target' => ['{"instances":[{"name":"e2e-dev"},{"name":"e2e-dev"}]}'],
+        'duplicate typed target' => ['{"app_instances":[{"name":"e2e-dev"},{"name":"e2e-dev"}]}'],
+    ]);
+
+    it('fails closed when created typed source state is not authoritative', function (string $response): void {
+        $fixture = typed_sample_resource_fixture();
+        try {
+            $process = new Process([
+                'bash',
+                $fixture['script'],
+                'create-resources',
+                'app-dev',
+                'app-prod',
+                str_repeat('a', 40),
+            ], env: ['TYPED_RESPONSE' => str_replace('{checkout}', $fixture['root'].'/laravel/e2e-dev', $response)]);
+
+            expect($process->run())->not->toBe(0);
+            $commands = file("{$fixture['root']}/commands", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+            expect($commands)->toContain('instance:new 1 2 e2e-dev --json');
+            expect(file_exists($fixture['state']))->toBeFalse();
+            expect(implode("\n", $commands))
+                ->not
+                ->toContain(
+                    '--environment',
+                    'instance:php',
+                    'workspace:',
+                );
+        } finally {
+            new Illuminate\Filesystem\Filesystem()->deleteDirectory($fixture['root']);
+        }
+    })->with([
+        'empty later read' => ['{"app_instances":[]}'],
+        'ambiguous later shape' => ['{"instances":[],"app_instances":[]}'],
+        'duplicate target' => ['{"app_instances":[{"name":"e2e-dev"},{"name":"e2e-dev"}]}'],
+        'wrong App' => [
+            '{"app_instances":[{"app_id":9,"node_id":2,"name":"e2e-dev","status":"active","checkout_path":"{checkout}","selected_branch":"e2e-dev","starting_commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","effective_root":"public"}]}',
+        ],
+        'wrong Node' => [
+            '{"app_instances":[{"app_id":1,"node_id":3,"name":"e2e-dev","status":"active","checkout_path":"{checkout}","selected_branch":"e2e-dev","starting_commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","effective_root":"public"}]}',
+        ],
+        'inactive lifecycle' => [
+            '{"app_instances":[{"app_id":1,"node_id":2,"name":"e2e-dev","status":"source_resolved","checkout_path":"{checkout}","selected_branch":"e2e-dev","starting_commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","effective_root":"public"}]}',
+        ],
+        'missing branch evidence' => [
+            '{"app_instances":[{"app_id":1,"node_id":2,"name":"e2e-dev","status":"active","checkout_path":"{checkout}","starting_commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","effective_root":"public"}]}',
+        ],
+        'invalid commit evidence' => [
+            '{"app_instances":[{"app_id":1,"node_id":2,"name":"e2e-dev","status":"active","checkout_path":"{checkout}","selected_branch":"e2e-dev","starting_commit":"invalid","effective_root":"public"}]}',
+        ],
+        'relative checkout identity' => [
+            '{"app_instances":[{"app_id":1,"node_id":2,"name":"e2e-dev","status":"active","checkout_path":"relative/path","selected_branch":"e2e-dev","starting_commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","effective_root":"public"}]}',
+        ],
+        'wrong effective root' => [
+            '{"app_instances":[{"app_id":1,"node_id":2,"name":"e2e-dev","status":"active","checkout_path":"{checkout}","selected_branch":"e2e-dev","starting_commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","effective_root":"web"}]}',
+        ],
+    ]);
 
     it('re-projects app roles first and every instance with development last', function () {
         $root = temporaryPath('orbit-task7-reproject-', 6);
@@ -1743,6 +2171,54 @@ describe('convergence guest scripts', function () {
             ->toContain('instance is not active after re-projection')
             ->and(new Process(['bash', "{$root}/converge.sh", 'reproject', 'extra'])->run())
             ->toBe(64);
+    });
+
+    it('re-projects typed source state without a per-AppInstance runtime mutation', function (): void {
+        $root = temporaryPath('orbit-typed-reproject-', 5);
+        mkdir($root, 0o700, true);
+        $checkout = "{$root}/laravel/e2e-dev";
+        $state = "{$root}/sample-app-state.json";
+        file_put_contents($state, json_encode([
+            'shape' => 'app_instances',
+            'app_id' => 1,
+            'node_id' => 2,
+            'name' => 'e2e-dev',
+            'checkout_path' => $checkout,
+            'effective_root' => 'public',
+        ], JSON_THROW_ON_ERROR));
+        $source = file_get_contents(dirname(__DIR__, 3).'/resources/guest/converge-sample-app.sh');
+        file_put_contents("{$root}/converge.sh", str_replace(
+            ['orbit=/home/orbit/orbit/apps/cli/orbit', 'sample_state=/home/orbit/.orbit/e2e-sample-app-state.json'],
+            ["orbit={$root}/orbit", "sample_state={$state}"],
+            $source,
+        ));
+        file_put_contents("{$root}/orbit", <<<'BASH'
+            #!/usr/bin/env bash
+            set -euo pipefail
+            state=$(dirname "$0")
+            printf '%s\n' "$*" >>"$state/commands"
+            case "$1" in
+              node:list) printf '{"nodes":[{"id":2,"name":"app-dev","roles":["app-dev"]},{"id":3,"name":"app-prod","roles":["app-prod"]}]}' ;;
+              node:role:add) printf '{"node_id":%s,"role":"%s","assignment":{"status":"active"}}' "$2" "$3" ;;
+              instance:list) printf '{"app_instances":[{"id":4,"app_id":1,"node_id":2,"name":"e2e-dev","status":"active","checkout_path":"%s/laravel/e2e-dev","selected_branch":"e2e-dev","starting_commit":"%s","effective_root":"public"}]}' "$state" "$(printf a%.0s {1..40})" ;;
+              instance:php) exit 99 ;;
+              *) exit 70 ;;
+            esac
+            BASH);
+        chmod("{$root}/orbit", 0o700);
+
+        try {
+            $process = new Process(['bash', "{$root}/converge.sh", 'reproject']);
+            expect($process->run())->toBe(0, $process->getErrorOutput());
+            expect(file("{$root}/commands", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES))->toBe([
+                'node:list --json',
+                'node:role:add 2 app-dev --converge --json',
+                'node:role:add 3 app-prod --converge --json',
+                'instance:list --json',
+            ]);
+        } finally {
+            new Illuminate\Filesystem\Filesystem()->deleteDirectory($root);
+        }
     });
 
     it('establishes Metrics only when absent or failed on app-dev', function (): void {

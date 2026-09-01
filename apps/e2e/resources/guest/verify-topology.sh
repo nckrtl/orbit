@@ -12,6 +12,7 @@ umask 077
 case "$1" in
   source.gateway|source.app-dev) [[ $# -eq 4 || $# -eq 5 ]] ;;
   source.manifest) [[ $# -eq 6 || $# -eq 7 ]] ;;
+  role.app-dev|laravel.dev) [[ $# -eq 4 || $# -eq 5 ]] ;;
   wireguard.reachability) [[ $# -ge 5 ]] ;;
   role.assignments|metrics.publication) [[ $# -eq 5 ]] ;;
   *) [[ $# -eq 4 ]] ;;
@@ -21,11 +22,14 @@ mode=$2
 identity=$3
 instance=$4
 expected_pointer=
+typed_checkout=
 case "$probe" in
   source.gateway|source.app-dev) [[ $# -eq 4 ]] || expected_pointer=$5 ;;
   source.manifest) [[ $# -eq 6 ]] || expected_pointer=$7 ;;
+  role.app-dev|laravel.dev) [[ $# -eq 4 ]] || typed_checkout=$5 ;;
 esac
 [[ -z "$expected_pointer" || "$expected_pointer" =~ ^[0-9a-f]{64}$ ]]
+[[ -z "$typed_checkout" || "$typed_checkout" == /* ]]
 [[ "$mode" == readiness || "$mode" == proof ]]
 [[ "$identity" =~ ^[0-9a-f]{40}$ ]]
 [[ "$instance" =~ ^[a-z0-9][a-z0-9-]{0,62}$ ]]
@@ -139,7 +143,16 @@ case "$probe" in
       exit 65
     fi
     ;;
-  role.app-dev) [[ -d /home/orbit/apps/laravel && -d /home/orbit/.orbit/worktrees/laravel/e2e ]]; expected='app-dev,workspace:prepared'; observed=$expected ;;
+  role.app-dev)
+    if [[ -n "$typed_checkout" ]]; then
+      [[ -d "$typed_checkout" ]]
+      expected='app-dev,typed-source:prepared'
+    else
+      [[ -d /home/orbit/apps/laravel && -d /home/orbit/.orbit/worktrees/laravel/e2e ]]
+      expected='app-dev,workspace:prepared'
+    fi
+    observed=$expected
+    ;;
   role.app-prod) [[ -d /var/www/laravel/e2e-prod ]]; expected='app-prod:prepared'; observed=$expected ;;
   service.gateway) caddy_state=$(systemctl is-active caddy 2>/dev/null); php_state=$(systemctl is-active php8.5-fpm 2>/dev/null); expected='caddy=active,php8.5-fpm=active'; observed="caddy=$caddy_state,php8.5-fpm=$php_state"; [[ "$observed" == "$expected" ]] ;;
   service.vpn) vpn_state=$(systemctl is-active wg-quick@orbit 2>/dev/null); expected='wg-quick@orbit=active'; observed="wg-quick@orbit=$vpn_state"; [[ "$observed" == "$expected" ]] ;;
@@ -189,7 +202,12 @@ case "$probe" in
     ;;
   php-fpm.app-dev|php-fpm.app-prod) php_state=$(systemctl is-active php8.5-fpm 2>/dev/null); expected='php8.5-fpm=active'; observed="php8.5-fpm=$php_state"; [[ "$observed" == "$expected" ]] ;;
   caddy.app-dev|caddy.app-prod) caddy_state=$(systemctl is-active caddy 2>/dev/null); caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1; expected='caddy=active,config=valid'; observed="caddy=$caddy_state,config=valid"; [[ "$observed" == "$expected" ]] ;;
-  laravel.dev) [[ -f /home/orbit/apps/laravel/artisan ]] && php /home/orbit/apps/laravel/artisan --version >/dev/null; expected='app-dev-laravel:operational'; observed=$expected ;;
+  laravel.dev)
+    laravel_checkout=${typed_checkout:-/home/orbit/apps/laravel}
+    [[ -f "$laravel_checkout/artisan" ]] && php "$laravel_checkout/artisan" --version >/dev/null
+    expected='app-dev-laravel:operational'
+    observed=$expected
+    ;;
   laravel.prod) [[ -f /var/www/laravel/e2e-prod/artisan ]] && php /var/www/laravel/e2e-prod/artisan --version >/dev/null && curl --fail --silent --show-error --retry 10 --retry-delay 2 --retry-connrefused --retry-all-errors --connect-timeout 10 --max-time 30 --cacert "$(cat /var/lib/orbit-e2e/caddy-ca-path)" --resolve laravel.internal:443:127.0.0.1 https://laravel.internal/ >/dev/null; expected='app-prod-laravel:https-operational'; observed=$expected ;;
   workspace.app-dev) [[ -d /home/orbit/.orbit/worktrees/laravel/e2e && -f /home/orbit/.orbit/worktrees/laravel/e2e/artisan ]]; expected='app-dev-workspace:operational'; observed=$expected ;;
   source.gateway|source.app-dev)
