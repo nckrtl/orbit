@@ -490,11 +490,13 @@ The wrapper:
   `apps/gateway/.env` a guest wrote into that mounted worktree (it names guest
   paths, and `bin/bootstrap` would try to create them on the host), and runs
   `bin/bootstrap` in both;
-- releases a stale `ACC-1` attempt and builds the clone's standby when it is
-  initially absent; then proves that ordinary rebuild refuses all present live
-  standby resources without mutation, runs `recover-legacy` at the candidate,
-  verifies the retained journal, and proves that the primary standby inventory
-  did not change;
+- releases a stale `ACC-1` attempt and builds the clone's standby when its
+  manifest and exact resources are absent. If an interrupted recovery left the
+  manifest missing while exact resources remain, it verifies ordinary rebuild's
+  refusal without mutation and resumes `recover-legacy` at the same candidate.
+  Otherwise it proves that refusal against the promoted standby and starts
+  `recover-legacy`; both routes verify the retained journal and prove that the
+  primary standby inventory did not change;
 - exports every `ORBIT_LIVE_*` input, with `proofs/ACC-1.json` as the
   harness plan, and runs the legacy recovery and lifecycle suites: acquire,
   sync, exec, release, prove, release, prove again, promote the proved topology

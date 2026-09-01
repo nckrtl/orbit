@@ -28,7 +28,8 @@ The wrapper owns the validation clone, which is its own primary checkout:
 It fetches the candidate, checks the clone out on `main` at the candidate,
 resets the linked worktree .worktrees/acc-1 (branch acc-1-live), bootstraps
 both, refreshes the clone's standby to the candidate (rebuilding it from the
-base image when the clone has no promoted generation), exports every
+base image when no resources exist, or resuming retained legacy recovery when
+exact resources remain without a promoted generation), exports every
 ORBIT_LIVE_* input, and runs the suite. It refuses only while another
 acceptance (ACC-*) topology is live on the Incus host: feature topologies of
 other issues share nothing with this run. It releases a stale ACC-1 attempt,
@@ -206,6 +207,28 @@ primary_inventory() {
         }'
 }
 
+assert_rebuild_refusal() {
+    local refusal=$1
+    local before_refusal=$2
+    local after_refusal
+    local resource
+
+    for resource in \
+        orbit-e2e-live-standby-gateway \
+        orbit-e2e-live-standby-app-dev \
+        orbit-e2e-live-standby-app-prod \
+        oe-live-standby; do
+        jq -e --arg resource "$resource" '.error | contains($resource)' <<<"$refusal" >/dev/null \
+            || fail "ordinary rebuild did not name $resource"
+    done
+    jq -e '.error | contains("recover-legacy")' <<<"$refusal" >/dev/null \
+        || fail 'ordinary rebuild did not name the supported legacy recovery command'
+    after_refusal=$(harness standby status 2>/dev/null || true)
+    if [[ "$(jq -S . <<<"$after_refusal")" != "$(jq -S . <<<"$before_refusal")" ]]; then
+        fail 'ordinary rebuild changed the live standby before refusing'
+    fi
+}
+
 # A stale attempt of the suite's own issue blocks its first assertion.
 stale=$(harness topology status "$issue" "--worktree=$feature_worktree" | jq -r '.attempt_id // empty')
 if [[ -n "$stale" ]]; then
@@ -223,12 +246,26 @@ standby_status_code=$?
 set -e
 standby_state=$(jq -r '.state // "invalid"' <<<"$standby_status") \
     || fail 'standby status did not return JSON'
+recovery_completed=0
 if [[ "$standby_state" == missing && $standby_status_code -eq 0 ]]; then
     log "building the clone's missing live standby at $candidate (cold build, several minutes)"
-    initial=$(harness standby rebuild "--main-sha=$candidate") || {
-        printf '%s\n' "$initial" >&2
-        fail "initial standby build at $candidate failed"
-    }
+    set +e
+    initial=$(harness standby rebuild "--main-sha=$candidate")
+    initial_status=$?
+    set -e
+    if ((initial_status != 0)); then
+        if ! jq -e '.error | contains("recover-legacy")' <<<"$initial" >/dev/null; then
+            printf '%s\n' "$initial" >&2
+            fail "initial standby build at $candidate failed"
+        fi
+        assert_rebuild_refusal "$initial" "$standby_status"
+        log "resuming legacy standby recovery at $candidate (cold build, several minutes)"
+        refresh=$(harness standby recover-legacy "--main-sha=$candidate") || {
+            printf '%s\n' "$refresh" >&2
+            fail "legacy standby recovery at $candidate failed"
+        }
+        recovery_completed=1
+    fi
     standby_status=$(harness standby status) || fail 'the initial live standby is unavailable'
     standby_state=$(jq -r '.state' <<<"$standby_status")
 elif [[ "$standby_state" != promoted && "$standby_state" != stale ]]; then
@@ -241,31 +278,20 @@ if [[ "$standby_schema" != 4 && "$standby_schema" != 5 ]]; then
     fail "the live standby manifest schema $standby_schema is not eligible for legacy recovery"
 fi
 
-log 'proving ordinary rebuild refuses the present live standby before mutation'
-if refusal=$(harness standby rebuild "--main-sha=$candidate"); then
-    printf '%s\n' "$refusal" >&2
-    fail 'ordinary rebuild accepted present live standby resources'
-fi
-for resource in \
-    orbit-e2e-live-standby-gateway \
-    orbit-e2e-live-standby-app-dev \
-    orbit-e2e-live-standby-app-prod \
-    oe-live-standby; do
-    jq -e --arg resource "$resource" '.error | contains($resource)' <<<"$refusal" >/dev/null \
-        || fail "ordinary rebuild did not name $resource"
-done
-jq -e '.error | contains("recover-legacy")' <<<"$refusal" >/dev/null \
-    || fail 'ordinary rebuild did not name the supported legacy recovery command'
-after_refusal=$(harness standby status 2>/dev/null || true)
-if [[ "$(jq -S . <<<"$after_refusal")" != "$(jq -S . <<<"$standby_status")" ]]; then
-    fail 'ordinary rebuild changed the live standby before refusing'
-fi
+if ((recovery_completed == 0)); then
+    log 'proving ordinary rebuild refuses the present live standby before mutation'
+    if refusal=$(harness standby rebuild "--main-sha=$candidate"); then
+        printf '%s\n' "$refusal" >&2
+        fail 'ordinary rebuild accepted present live standby resources'
+    fi
+    assert_rebuild_refusal "$refusal" "$standby_status"
 
-log "recovering the live standby at $candidate (cold build, several minutes)"
-refresh=$(harness standby recover-legacy "--main-sha=$candidate") || {
-    printf '%s\n' "$refresh" >&2
-    fail "legacy standby recovery at $candidate failed"
-}
+    log "recovering the live standby at $candidate (cold build, several minutes)"
+    refresh=$(harness standby recover-legacy "--main-sha=$candidate") || {
+        printf '%s\n' "$refresh" >&2
+        fail "legacy standby recovery at $candidate failed"
+    }
+fi
 log "standby: $(jq -r '.state' <<<"$refresh") ($(jq -r '.generation_id' <<<"$refresh"))"
 primary_after=$(primary_inventory) || fail 'unable to inventory the primary standby after live recovery'
 if [[ "$(jq -S . <<<"$primary_after")" != "$(jq -S . <<<"$primary_before")" ]]; then

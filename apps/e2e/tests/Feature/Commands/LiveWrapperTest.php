@@ -77,3 +77,15 @@ it('compares only stable primary standby identity fields', function () use ($wra
         ->toContain('managed,')
         ->not->toContain("jq -s '[.[][] | select(.name == \"oe-standby\"");
 });
+
+it('routes a missing standby with present resources into resumable legacy recovery', function () use ($wrapper): void {
+    $source = file_get_contents($wrapper);
+    preg_match('/if \\[\\[ "\\$standby_state" == missing.*?then(?<branch>.*?)elif/s', $source, $matches);
+    $missingBranch = $matches['branch'] ?? '';
+
+    expect($missingBranch)
+        ->toContain('standby rebuild')
+        ->toContain('assert_rebuild_refusal')
+        ->toContain('standby recover-legacy')
+        ->toContain('recovery_completed=1');
+});

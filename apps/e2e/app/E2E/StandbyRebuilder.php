@@ -7,12 +7,15 @@ namespace App\E2E;
 use App\E2E\State\AtomicJsonStore;
 use App\E2E\State\OperationLock;
 use App\E2E\State\StatePaths;
+use App\E2E\Value\AttemptId;
 use App\E2E\Value\IncusInstance;
 use App\E2E\Value\LegacyStandbyInventory;
 use App\E2E\Value\OperationId;
 use App\E2E\Value\StandbyIdentity;
 use App\E2E\Value\TopologyProfile;
+use App\E2E\Value\TopologyTarget;
 use Closure;
+use InvalidArgumentException;
 use RuntimeException;
 
 /**
@@ -101,11 +104,11 @@ final readonly class StandbyRebuilder
         $present = $this->host->instances($this->standbyInstanceNames());
         sort($authorizedInstances, SORT_STRING);
         foreach ($present as $name => $instance) {
-            $this->assertHarnessOwned($instance, $name);
+            $this->assertHarnessOwned($instance, $name, allowPromotionCopy: true);
         }
 
         $record('instances_pending', ['instances' => $authorizedInstances]);
-        $instancesDeleted = $this->deleteInstances();
+        $instancesDeleted = $this->deleteInstances(allowPromotionCopy: true);
         $record('instances_verified', ['instances_deleted' => $instancesDeleted]);
 
         $authorizedNetwork = $authorization->network['name'] ?? null;
@@ -137,12 +140,12 @@ final readonly class StandbyRebuilder
     }
 
     /** @return list<string> */
-    private function deleteInstances(): array
+    private function deleteInstances(bool $allowPromotionCopy = false): array
     {
         $names = $this->standbyInstanceNames();
         $present = $this->host->instances($names);
         foreach ($present as $name => $instance) {
-            $this->assertHarnessOwned($instance, $name);
+            $this->assertHarnessOwned($instance, $name, $allowPromotionCopy);
         }
         if ($present === []) {
             return [];
@@ -217,8 +220,11 @@ final readonly class StandbyRebuilder
         return $names;
     }
 
-    private function assertHarnessOwned(IncusInstance $instance, string $name): void
-    {
+    private function assertHarnessOwned(
+        IncusInstance $instance,
+        string $name,
+        bool $allowPromotionCopy = false,
+    ): void {
         if (($instance->metadata['user.orbit.e2e.owner'] ?? null) !== 'orbit-e2e') {
             throw new RuntimeException(
                 "Incus instance {$name} is not harness-owned; the standby rebuild refuses to delete it.",
@@ -226,6 +232,32 @@ final readonly class StandbyRebuilder
         }
         $issue = $instance->metadata['user.orbit.e2e.issue'] ?? null;
         if (is_string($issue) && $issue !== '') {
+            if ($allowPromotionCopy && str_ends_with($name, self::COPY_SUFFIX)) {
+                $attempt = $instance->metadata['user.orbit.e2e.attempt'] ?? null;
+                $operation = $instance->metadata['user.orbit.e2e.operation'] ?? null;
+                try {
+                    TopologyTarget::assertIssue($issue);
+                    new AttemptId(is_string($attempt) ? $attempt : '');
+                    new OperationId(is_string($operation) ? $operation : '');
+                } catch (InvalidArgumentException) {
+                    throw new RuntimeException("Incus instance {$name} promotion identity is incomplete.");
+                }
+                $expected = [
+                    'user.orbit.e2e.owner' => 'orbit-e2e',
+                    'user.orbit.e2e.operation' => $operation,
+                    'user.orbit.e2e.issue' => $issue,
+                    'user.orbit.e2e.attempt' => $attempt,
+                ];
+                $metadata = $instance->metadata;
+                ksort($expected, SORT_STRING);
+                ksort($metadata, SORT_STRING);
+                if ($metadata !== $expected) {
+                    throw new RuntimeException("Incus instance {$name} promotion identity is incomplete.");
+                }
+
+                return;
+            }
+
             throw new RuntimeException(
                 "Incus instance {$name} belongs to issue {$issue}; release that topology before rebuilding the standby.",
             );
@@ -258,7 +290,7 @@ final readonly class StandbyRebuilder
             throw new RuntimeException('The exact standby instance inventory changed after authorization.');
         }
         foreach ($present as $name => $instance) {
-            $this->assertHarnessOwned($instance, $name);
+            $this->assertHarnessOwned($instance, $name, allowPromotionCopy: true);
             $authorized = $authorization->instances[$name] ?? null;
             if (! is_array($authorized)) {
                 throw new RuntimeException('The exact standby instance inventory changed after authorization.');

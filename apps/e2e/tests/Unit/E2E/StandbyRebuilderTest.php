@@ -307,6 +307,38 @@ describe('StandbyRebuilder', function () {
             ]);
     });
 
+    it('recovers an authorized promotion copy with complete attempt identity', function () {
+        $identity = rebuildIdentity();
+        $copy = $identity->instance('gateway').'-next';
+        $state = new RebuildHost;
+        $state->instances = [...$identity->instances(), $copy];
+        $state->instanceMetadata[$copy] = [
+            'user.orbit.e2e.owner' => 'orbit-e2e',
+            'user.orbit.e2e.operation' => str_repeat('a', 32),
+            'user.orbit.e2e.issue' => 'ORB-92',
+            'user.orbit.e2e.attempt' => str_repeat('b', 32),
+        ];
+        $state->networks = [$identity->network()];
+        fakeRebuildHost($state);
+
+        $paths = new StatePaths(temporaryPath('orbit-rebuild-copy-', 4));
+        $store = new AtomicJsonStore($paths);
+        $manifests = new StandbyManifestStore($store, $paths, new IncusHost(pool: 'orbit-e2e'));
+        $generation = rebuildGeneration('old-generation');
+        $manifests->promote($generation);
+        $manifests->record($generation);
+
+        $teardown = rebuilderFor($paths, $store, $manifests)->recover(
+            rebuildAuthorization($state, $generation),
+            static function (string $_phase): void {},
+        );
+
+        expect($teardown['instances_deleted'])
+            ->toContain($copy)
+            ->and($state->instances)
+            ->toBe([]);
+    });
+
     it('forgets every manifest and the corrupt marker so a cold build is permitted', function () {
         $identity = rebuildIdentity();
         $state = new RebuildHost;
