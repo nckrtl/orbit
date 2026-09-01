@@ -55,6 +55,5 @@ The command creates `.worktrees/nck-123-concise-feature-name` on branch
 bootstraps all projects.
 
 Repository-owned skills under `.agents/skills/` are independently invokable
-helpers for issue creation, planning, implementation, review, reconciliation,
-and merge operations. They are optional task guides for contributors and coding
-agents.
+helpers for issue creation, planning, implementation, review, and merge
+operations. They are optional task guides for contributors and coding agents.

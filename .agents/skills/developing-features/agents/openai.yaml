@@ -1,4 +1,4 @@
 interface:
   display_name: "Developing Features"
   short_description: "Implement a feature and open the pull request"
-  default_prompt: "Use $developing-features to implement the supplied Ready Orbit issue in this prepared worktree."
+  default_prompt: "Use $developing-features to implement the supplied Todo Orbit issue in this prepared worktree."

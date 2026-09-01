@@ -1,33 +1,38 @@
 ---
 name: reviewing-pull-requests
-description: Use when independently reviewing an Orbit pull request.
+description: Use when independently reviewing one exact Orbit PR head.
 ---
 
 # Reviewing Pull Requests
 
-Review one Orbit pull request against its issue, governing product ADRs,
-repository invariants, tests, and proof. Do not expand the requested contract.
+Independently review one exact remote PR head against its issue, governing ADRs,
+repository invariants, tests, and proof. Do not expand the requested contract or
+edit code.
 
 ## Steps
 
-1. **Read.** Read the issue, pull request, diff, relevant ADRs, nearest
-   `AGENTS.md`, documentation-impact classification, relevant documentation
-   context, and any supplied plan. Product feature diffs do not touch `apps/e2e`
-   or `bin/e2e-*`.
-2. **Update the checkout.** Merge current `main` into the pull-request worktree.
-3. **Re-prove.** For `Proof: incus`, release any non-proof attempt and run
-   `bin/e2e-topology prove <ISSUE>`. Require status `proved` for the exact
-   current head. For a harness issue, run `bin/e2e-live <sha>`. For
-   automated-only changes, require green CI and relevant local checks.
-4. **Review the code.** Check correctness, acceptance coverage, regressions,
+1. **Bind the candidate.** Read the PR and record its exact remote PR head SHA.
+   Require the local checkout to be clean and equal to that remote head.
+2. **Check current main.** Fetch `origin/main` and inspect whether the candidate
+   includes it. The reviewer must not merge or rebase `main`. If current main is
+   not in the candidate, stop until the candidate is updated and pushed, then
+   review the new remote head in a new pass.
+3. **Read.** Read the issue, exact diff, relevant ADRs, nearest `AGENTS.md`,
+   documentation-impact classification, relevant documentation context, and any
+   supplied Feature plan. Product feature diffs do not touch `apps/e2e` or
+   `bin/e2e-*`.
+4. **Re-prove.** For `Proof: incus`, release any non-proof attempt and run
+   `bin/e2e-topology prove <ISSUE>`. Require `proved` for the exact remote head.
+   For a harness issue run `bin/e2e-live <sha>`. For automated-only changes,
+   require green CI and relevant local checks.
+5. **Review the code.** Check correctness, acceptance coverage, regressions,
    repository conventions, documentation reconciliation, and proof
    completeness. Require `composer docs-lint` when documentation is required.
-   Collect every blocking finding in one pass. Each requested change must cite
-   an issue criterion, ADR, existing invariant or test, or repository rule. A
-   genuinely new requirement is separate work, not a blocker for this pull
-   request.
-5. **Report.** Post all blocking findings with concrete evidence. When there are
-   none, post a review whose body is exactly `Approved.`
+   Collect every blocking finding in one pass. Each finding must cite an issue
+   criterion, ADR, existing invariant/test, or repository rule. A new
+   requirement is separate work.
+6. **Report.** Post all blocking findings with evidence. When none exist, post a
+   review whose body is exactly `Approved.` and bind it to the reviewed SHA.
 
 ## Rules
 
