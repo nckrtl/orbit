@@ -67,3 +67,13 @@ it('describes the validation clone, suites, and inputs with --help', function ()
         )
         ->not->toContain('--rolling');
 });
+
+it('compares only stable primary standby identity fields', function () use ($wrapper): void {
+    $source = file_get_contents($wrapper);
+
+    expect($source)
+        ->toContain('with_entries(select(.key | startswith("volatile.") | not))')
+        ->toContain('devices: (.expanded_devices // .devices // {})')
+        ->toContain('managed,')
+        ->not->toContain("jq -s '[.[][] | select(.name == \"oe-standby\"");
+});

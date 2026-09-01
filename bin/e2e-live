@@ -175,8 +175,35 @@ primary_inventory() {
     {
         incus --project "$incus_project" list "$incus_remote:" --format json
         incus --project "$incus_project" network list "$incus_remote:" --format json
-    } | jq -s '[.[][] | select(.name == "oe-standby" or (.name | startswith("orbit-e2e-standby-")))]
-        | sort_by(.name)'
+    } | jq -S -s '
+        def stable_config:
+            with_entries(select(.key | startswith("volatile.") | not));
+        {
+            instances: (
+                .[0]
+                | map(select(.name | startswith("orbit-e2e-standby-")))
+                | map({
+                    name,
+                    type,
+                    status,
+                    project,
+                    config: ((.config // {}) | stable_config),
+                    devices: (.expanded_devices // .devices // {})
+                })
+                | sort_by(.name)
+            ),
+            networks: (
+                .[1]
+                | map(select(.name == "oe-standby"))
+                | map({
+                    name,
+                    type,
+                    managed,
+                    config: ((.config // {}) | stable_config)
+                })
+                | sort_by(.name)
+            )
+        }'
 }
 
 # A stale attempt of the suite's own issue blocks its first assertion.
