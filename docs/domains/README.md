@@ -1,11 +1,13 @@
-# Product domains
+# Product Areas
 
-Domain documentation describes current product behavior once a domain has
-enough maintained material to justify its own boundary. Add it incrementally as
-features land; do not bulk-copy the previous repository's command hierarchy.
+This section will grow as Orbit gains more features. Each product area will have
+its own guide when there is enough to explain in one place.
 
-Each domain document links its governing accepted ADRs, names its current
-components and concepts, and stays aligned with code, tests, and proof. Until a
-domain is introduced here, use [Architecture](../architecture.md),
-[Concepts](../concepts.md), [Reference](../reference/), and the accepted
-[decisions](../decisions/README.md).
+There are no separate product-area guides yet. For now, start with
+[Architecture](../architecture.md) and [Concepts](../concepts.md). Use the
+[Reference](../reference/) section when you need detailed operational
+information.
+
+New guides should explain what a reader can do, show the common path first, and
+link to deeper details only when they are useful. The old repository's large
+command catalog will not be copied here automatically.

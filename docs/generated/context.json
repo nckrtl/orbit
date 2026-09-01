@@ -3,7 +3,7 @@
     "documents": [
         {
             "path": "docs/README.md",
-            "title": "Orbit documentation",
+            "title": "Orbit Documentation",
             "kind": "product",
             "components": [
                 "apps/docs",
@@ -11,8 +11,7 @@
             ],
             "concepts": [
                 "Cluster",
-                "Gateway",
-                "Route"
+                "Gateway"
             ],
             "governing_adrs": []
         },
@@ -293,7 +292,7 @@
         },
         {
             "path": "docs/domains/README.md",
-            "title": "Product domains",
+            "title": "Product Areas",
             "kind": "domain",
             "components": [],
             "concepts": [],
@@ -303,16 +302,9 @@
             "path": "docs/mission.md",
             "title": "Mission",
             "kind": "product",
-            "components": [
-                "apps/cli",
-                "apps/docs",
-                "apps/e2e",
-                "apps/gateway",
-                "packages/php-sdk"
-            ],
+            "components": [],
             "concepts": [
-                "Gateway",
-                "Ingress"
+                "Gateway"
             ],
             "governing_adrs": []
         },
@@ -421,9 +413,7 @@
                 "packages/php-sdk"
             ],
             "concepts": [
-                "Documentation context",
-                "Gateway",
-                "Node"
+                "Gateway"
             ],
             "governing_adrs": []
         }

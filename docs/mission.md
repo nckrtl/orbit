@@ -1,51 +1,54 @@
 # Mission
 
-Orbit is a typed, agent-friendly system for developing and operating Laravel
-applications across infrastructure the operator controls. It gives humans and
-agents one verifiable path from repository intent to managed Nodes and running
-application workloads.
+Orbit helps you build and run Laravel applications on machines you control. It
+brings local development, production, and day-to-day maintenance into one
+place, so you do not need a different tool for every stage of an application's
+life.
 
-## Why
+## Why Orbit exists
 
-Application development and infrastructure operation otherwise fragment state,
-identity, networking, deployment, and diagnostics across unrelated tools. That
-fragmentation forces contributors and agents to reconstruct system ownership
-before each change and makes unsafe assumptions difficult to detect.
+Modern development tools are good at individual jobs. One tool may handle local
+development, another may deploy an application, and another may monitor a
+server. The trouble starts when those tools need to work together. They often
+have separate logins, separate settings, and different ideas about the same
+application.
 
-Orbit keeps durable intent, typed operations, verification, and reusable
-documentation close enough that new work can start from established contracts
-instead of rediscovering them.
+Orbit connects those stages. It keeps track of your applications and machines,
+gives them a private network, and lets you manage them through the same CLI.
+You can see what changed without rebuilding the story from several dashboards
+and configuration files.
 
-## How
+## How Orbit helps
 
-The Gateway owns durable fleet state and exposes typed HTTP operations. The PHP
-SDK transports those contracts, while the CLI provides deterministic human and
-machine-readable interaction. Managed Nodes host role-specific infrastructure
-and application workloads. Repository tests and disposable Incus proof
-topologies verify behavior at the boundary proportional to each change.
+The Gateway is the center of an Orbit setup. It remembers which machines and
+applications belong to Orbit and coordinates changes across them. The CLI is
+how people and coding agents talk to the Gateway. Managed Nodes do the actual
+work, such as running an application or routing traffic.
 
-Accepted ADRs record significant direction before implementation issues.
-Maintained documentation then explains the resulting system and is reconciled
-as each feature lands.
+Orbit connects its machines through a private network. Normal operations go
+through the Gateway, so you do not need public SSH access to every machine.
 
-## What
+## Built for people and agents
 
-Orbit manages the control-plane and workload concepts needed to connect local
-development and self-operated production: Clusters, Nodes, Apps, AppInstances,
-Routes, Ingress, runtime roles, tools, processes, metrics, and supporting
-network and certificate state.
+People and coding agents use the same commands. Human output should be easy to
+read, while structured output gives automation reliable data to work with.
+Orbit keeps a history of changes so you can understand what happened when
+something goes wrong.
 
-The monorepo contains the `apps/cli`, `apps/gateway`, `apps/docs`, `apps/e2e`,
-and `packages/php-sdk` projects. Each project owns its code and verification;
-root commands coordinate repository-wide work.
+Agents can help with routine development and operations, but they do not get
+unrestricted access to every machine. Their actions stay focused, visible, and
+testable.
 
-## Boundaries
+## What Orbit manages
 
-Orbit owns only state and resources covered by an accepted contract. It does
-not infer ownership from arbitrary host state, turn typed inputs into a generic
-remote-execution surface, or treat a successful automated test as proof of a
-real machine boundary when Incus proof is required.
+Orbit manages applications, development environments, production servers,
+routes, processes, tools, settings, metrics, networking, and certificates.
+These features grow over time, but they all belong to the same view of your
+infrastructure.
 
-Generated context helps contributors find maintained sources but never creates
-product authority. Production deployment remains separate from disposable
-development proof.
+Orbit only manages machines and resources you explicitly add. You still choose
+and operate the infrastructure. When a change depends on Linux itself, Orbit
+tests it on temporary machines before relying on it.
+
+To see how the main parts work together, continue with
+[Architecture](architecture.md).

@@ -42,7 +42,7 @@
         ],
         "context": "@php artisan orbit:docs-context",
         "context:build": "@php artisan orbit:docs-index",
-        "docs:lint": "@php artisan librarian:lint --format=agent",
+        "docs:lint": "@php artisan orbit:docs-lint --format=agent",
         "format": "vendor/bin/mago format",
         "format:check": "vendor/bin/mago format --check",
         "guidance:check": "vendor/bin/pest --no-tia --compact tests/Unit/RepositoryGuidanceTest.php",

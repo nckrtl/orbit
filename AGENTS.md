@@ -57,6 +57,9 @@ invoke any one of them directly; no required order is implied.
 - Put architecture decisions in `docs/decisions`.
 - Put stable operational or API reference in `docs/reference`.
 - Put reusable implementation lessons in `docs/solutions`.
+- Write human-facing documentation for people first. Use plain language, short
+  paragraphs, and concrete examples. Keep delivery rules and internal workflow
+  language in contributor guidance or ADRs.
 - Do not add a document when the change has no durable project learning.
 - Every implementation contract classifies documentation impact as `required`
   or `none` with a rationale. Reconcile required documentation in the same pull

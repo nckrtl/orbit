@@ -1,37 +1,36 @@
 # Concepts
 
-This index defines canonical Orbit terms and links each term to its owning
-architecture or reference document. Keep definitions short; detailed behavior
-belongs in the linked source.
+These are the main words you will see throughout the Orbit documentation.
 
-- **Gateway** — The singleton control plane that owns durable Orbit state,
-  authorization, typed API behavior, and convergence policy. See
-  [Architecture](architecture.md#components).
-- **Cluster** — The trust and routing boundary that groups Nodes, AppInstances,
-  and Routes. See
+- **Gateway** — The central Orbit service. It stores information about your
+  machines and applications and coordinates changes across them. See
+  [Architecture](architecture.md#gateway).
+- **Cluster** — A group of Nodes and applications that share networking and
+  routing. See
   [ADR 0009](decisions/0009-clustered-app-instance-routing.md).
-- **Node** — An enrolled machine with control-plane identity and optional
-  Orbit-managed roles. See
+- **Node** — A machine connected to Orbit. A Node can run one or more roles.
+  See
   [ADR 0012](decisions/0012-ubuntu-24-04-roleless-operator-clients.md).
-- **App** — The logical identity and shared defaults for one application. See
+- **App** — An application managed by Orbit. It holds the settings shared by
+  its development and production placements. See
   [ADR 0009](decisions/0009-clustered-app-instance-routing.md).
-- **AppInstance** — One concrete development checkout or production runtime
-  placement for an App in a Cluster. See
+- **AppInstance** — One development checkout or production placement of an App
+  on a Node. See
   [ADR 0011](decisions/0011-clustered-production-ingress-and-app-prod-placement.md).
-- **Route** — A hostname and target set that publishes AppInstances through a
-  Cluster Router. See
+- **Route** — A hostname that sends traffic to one or more AppInstances. See
   [ADR 0009](decisions/0009-clustered-app-instance-routing.md).
-- **Router** — The Cluster role that owns Route target selection and private
-  workload routing. See
+- **Router** — The Node role that sends private traffic to the right
+  AppInstance. See
   [ADR 0011](decisions/0011-clustered-production-ingress-and-app-prod-placement.md).
-- **Ingress** — The Cluster role that owns public listeners, public TLS, edge
-  policy, and forwarding to the Router. See
+- **Ingress** — The Node role that receives public HTTP and HTTPS traffic and
+  forwards it to the Router. See
   [ADR 0011](decisions/0011-clustered-production-ingress-and-app-prod-placement.md).
-- **Doctor** — Verify-only inspection of desired and observed state. See
+- **Doctor** — A check that compares what Orbit expects with what is actually
+  on a machine. Doctor reports problems without changing anything. See
   [ADR 0004](decisions/0004-verify-only-doctor-boundary.md).
-- **Proof topology** — A fresh disposable Incus environment used to prove one
-  exact issue and commit. See
+- **Proof topology** — A temporary set of Incus machines used to test one
+  change on real Linux systems. See
   [Incus topology registry](reference/incus-topologies.md).
-- **Documentation context** — The ordered routing set derived from maintained
-  docs for an affected component or concept. See
+- **Documentation context** — A short list of pages selected for the part of
+  Orbit being changed. See
   [ADR 0014](decisions/0014-maintain-verified-documentation-context.md).

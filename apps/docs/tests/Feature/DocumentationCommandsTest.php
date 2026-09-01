@@ -4,6 +4,20 @@ declare(strict_types=1);
 
 use Illuminate\Support\Facades\Artisan;
 
+it('lints documentation without imposing Librarian core page templates', function (): void {
+    $exitCode = Artisan::call('orbit:docs-lint', ['--format' => 'json']);
+    $output = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)
+        ->toBe(0)
+        ->and($output['tool'])
+        ->toBe('librarian')
+        ->and($output['result'])
+        ->toBe('passed')
+        ->and(config('orbit-docs.ignored_librarian_rules'))
+        ->toContain('librarian.core_docs_structure');
+});
+
 it('keeps the committed documentation context index current', function (): void {
     $exitCode = Artisan::call('orbit:docs-index', ['--check' => true]);
 

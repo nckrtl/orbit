@@ -1,56 +1,49 @@
-# Orbit documentation
+# Orbit Documentation
 
-This directory is Orbit's single maintained documentation corpus. It gives
-humans and agents current product context without replacing the authority of
-accepted architecture decisions or Linear implementation contracts.
+Welcome to the Orbit documentation. These pages explain what Orbit does, how
+its main parts fit together, and how to work with it.
 
-## Authority
-
-- Accepted records under [decisions](decisions/README.md) own product
-  architecture and durable technical boundaries.
-- Linear issues own requested outcomes, scope, acceptance criteria, affected
-  components, relationships, and proof requirements.
-- [Architecture](architecture.md), [concepts](concepts.md), domain documents,
-  references, and solutions explain the current system within those
-  authorities.
-- Files under `generated/` route readers to maintained sources. They are never
-  product authority.
-
-When these sources conflict, stop and reconcile the conflict. Do not silently
-change an accepted ADR, weaken an issue, or trust generated output over its
-sources.
+If you are new to Orbit, start with the mission and architecture. You can then
+use the concepts page whenever you meet an unfamiliar Orbit term.
 
 ## Start here
 
-- [Mission](mission.md) describes Orbit's purpose and boundaries.
-- [Architecture](architecture.md) summarizes components, relationships, state,
-  and ownership.
-- [Tech stack](tech-stack.md) records current implementation technologies.
-- [Concepts](concepts.md) routes canonical product terminology.
-- [Product domains](domains/README.md) holds current behavior by domain as it is
-  introduced.
-- [Reference](reference/) records stable operational and API contracts.
-- [Solutions](solutions/README.md) records reusable implementation lessons.
+- [Mission](mission.md) explains why Orbit exists and what it is trying to
+  make easier.
+- [Architecture](architecture.md) shows how the CLI, Gateway, and managed
+  machines work together.
+- [Tech stack](tech-stack.md) lists the main tools and technologies used by
+  Orbit.
+- [Concepts](concepts.md) gives short explanations of common Orbit terms.
+- [Product areas](domains/README.md) groups feature documentation as it grows.
+- [Decisions](decisions/README.md) keeps the history behind important design
+  choices.
+- [Reference](reference/) contains detailed operational information.
+- [Solutions](solutions/README.md) collects useful fixes and lessons from past
+  work.
 
-## Verified context
+## Keeping the docs up to date
 
-The console-only `apps/docs` project owns documentation linting and context
-generation. Its Librarian configuration reads this root corpus directly.
+Orbit includes a small documentation tool in `apps/docs`. It checks the docs
+and builds an index that helps contributors find the right pages for a change.
 
-Run the read-only quality gate from the repository root:
+Check the documentation from the repository root:
 
 ```bash
 composer docs-lint
 ```
 
-Rebuild the committed routing index explicitly after changing its sources:
+Rebuild the index after adding a page or changing what a page covers:
 
 ```bash
 composer docs-build
 ```
 
-Ask for an ordered reading set by component, concept, or both:
+Find documentation for a part of Orbit or a product concept:
 
 ```bash
 composer docs-context -- --component=apps/gateway --concept=Cluster
 ```
+
+The generated index lives at `docs/generated/context.json`. Do not edit it by
+hand.

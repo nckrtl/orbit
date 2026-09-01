@@ -1,44 +1,42 @@
 # Tech Stack
 
-This page records the implementation technologies that shape current Orbit
-development. Product behavior remains governed by accepted ADRs and the owning
-project's contracts.
+Orbit is a PHP monorepo. Each application or package has its own dependencies,
+tests, and Composer lock file.
 
-## Runtime
+## PHP applications
 
-Repository projects run on PHP 8.5 with Composer 2. Managed Laravel application
-runtimes use the pinned Sury package source and PHP-FPM policies documented in
-[PHP runtime defaults](reference/php-runtime.md).
+All projects run on PHP 8.5 and use Composer 2.
 
-Orbit-managed Ubuntu Nodes use native operating-system services and protected
-files where the owning feature requires them. Runtime-specific proof uses the
-repository's Incus harness.
+- `apps/gateway` is a Laravel 13 application.
+- `apps/cli` uses Laravel Zero 13.
+- `apps/docs` uses Laravel 13 and Librarian.
+- `packages/php-sdk` is a plain PHP package with no Laravel dependency.
 
-## Frameworks
+## Managed machines
 
-- `apps/gateway` uses Laravel 13 for the HTTP control plane.
-- `apps/cli` uses Laravel Zero 13 for the command-line client.
-- `apps/docs` uses Laravel 13 and Librarian for console-only documentation
-  verification.
-- `packages/php-sdk` remains framework-neutral PHP.
-- Pest provides automated tests, Mago provides formatting, linting, and static
-  analysis, and Rector provides automated refactoring checks.
+Orbit manages Ubuntu Nodes. It uses the Sury packages for PHP and runs services
+with systemd. [PHP runtime defaults](reference/php-runtime.md) lists the
+versions and settings used on those machines.
 
-## Storage
+Caddy handles HTTP and HTTPS traffic. WireGuard provides the private network
+between Nodes. Orbit uses native files and services where they are a better fit
+than a container.
 
-The Gateway uses SQLite for durable Orbit-owned control-plane state. Each
-project keeps an independent Composer lock file and verification configuration.
+## Data
 
-Documentation is stored as Markdown under root `docs/`. The generated JSON
-context index is committed derived state and contains no separate product
-intent.
+The Gateway stores its data in SQLite. Application data stays with the
+application and is not stored in the Gateway database.
 
-## Infrastructure
+Documentation is Markdown in the root `docs/` directory. A generated JSON file
+helps tools find relevant pages.
 
-Incus provides disposable development and proof topologies. Caddy, WireGuard,
-systemd, PHP-FPM, and role-specific services form managed Node infrastructure
-where accepted feature contracts require them.
+## Development and testing
 
-GitHub Actions installs and verifies each Composer project independently. Root
-scripts coordinate bootstrap, the full Pest suites, documentation context, and
-repository-wide checks without combining project dependency boundaries.
+- Pest runs the automated test suites.
+- Mago formats, lints, and analyzes PHP code.
+- Rector checks automated refactors.
+- Librarian checks documentation.
+- Incus creates temporary Linux machines for end-to-end testing.
+
+GitHub Actions tests each project separately. The scripts at the repository
+root make it easy to install and test everything together.
