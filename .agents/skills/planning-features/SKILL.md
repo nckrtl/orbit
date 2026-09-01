@@ -10,7 +10,7 @@ files, Git history, Linear, or GitHub.
 
 ## Inputs
 
-- The Linear issue has status `In Progress`; Tom verified that transition
+- The Linear issue has status `In Progress`; the delivery coordinator verified that transition
   before starting or resuming preflight.
 - Its bootstrapped worktree.
 - The prepared `<worktree>/.orbit/plan.md` with `Verdict: PENDING`.

@@ -33,14 +33,14 @@ of its prerequisites are `Done` and present on current `origin/main`.
 
 `Backlog` means the issue is rough and still needs refinement. `Todo` is the
 ordered queue of refined, proof-feasible issues. `In Progress` begins before
-Tom creates or resumes any worktree, Herdr worker, or preflight turn. `Blocked`
+the delivery coordinator creates or resumes any worktree, Herdr worker, or preflight turn. `Blocked`
 parks started work and retains its artifacts without consuming execution
 concurrency. `In Review` begins before independent PR review. Issue creation
 always sets `Backlog` or `Todo` explicitly. Refinement does not create
 `.orbit/plan.md`; that temporary implementation map begins after claim.
 
 Execution concurrency is the live number of `In Progress` plus `In Review`
-issues, with a maximum of three. When capacity exists, Tom scans Todo in its
+issues, with a maximum of three. When capacity exists, the delivery coordinator scans Todo in its
 established order, skips every issue with a prerequisite not yet `Done` on
 current `origin/main`, and selects the first eligible issue.
 
@@ -52,7 +52,7 @@ current `origin/main`, and selects the first eligible issue.
    A Linear issue with status `Todo` is refined and queued; it is eligible only
    when every declared prerequisite is `Done` on current `origin/main`. See
    [creating-issues](../../.agents/skills/creating-issues/SKILL.md).
-2. **Claim, worktree, and preflight.** Tom moves the selected issue to
+2. **Claim, worktree, and preflight.** the delivery coordinator moves the selected issue to
    `In Progress` and reads it back before doing anything in Herdr.
    `bin/worktree-create <ISSUE> slug` creates and
    bootstraps the worktree and initializes gitignored `.orbit/plan.md`. A fresh
@@ -67,7 +67,7 @@ current `origin/main`, and selects the first eligible issue.
 
    `BLOCK` stops implementation but does not immediately change Linear state.
    The reviewer includes the exact blocker, evidence, smallest safe recommended
-   resolution, and apparent decision boundary. Tom exits that reviewer and
+   resolution, and apparent decision boundary. The delivery coordinator exits that reviewer and
    starts a fresh Codex `gpt-5.6-sol` xhigh reconciler following
    [reconciling-feature-blocks](../../.agents/skills/reconciling-feature-blocks/SKILL.md).
    The reconciler independently checks the finding and searches for a simpler,
@@ -77,10 +77,10 @@ current `origin/main`, and selects the first eligible issue.
      behavior, test mechanics, proof technique, sequencing, implementation
      boundaries, or narrow scope may change when necessary to satisfy the
      already accepted outcome without changing product behavior or weakening
-     proof. If only the plan changes, Tom starts a fresh correction planner. If
-     Linear or a relation needs a durable mutation, Tom routes the exact
-     proposal to Anna; Anna verifies delegated technical authority, applies and
-     reads back the change, and signals Tom to continue. Tom then starts a
+     proof. If only the plan changes, the delivery coordinator starts a fresh correction planner. If
+     Linear or a relation needs a durable mutation, the delivery coordinator routes the exact
+     proposal to the authority agent; the authority agent verifies delegated technical authority, applies and
+     reads back the change, and signals the delivery coordinator to continue. The delivery coordinator then starts a
      wholly fresh planner and reviewer. The fresh reviewer's `PASS` is agreement
      with the resolution.
    - `HUMAN_DECISION_REQUIRED`: move the issue to `Blocked`, park its worktree,
@@ -90,13 +90,13 @@ current `origin/main`, and selects the first eligible issue.
      outcomes, ownership, migration, compatibility, security, privacy, data
      integrity, rollback, material irreversible risk, any new or changed ADR,
      or unguided architectural direction. Internal technical or harness choices
-     are not enough. Anna prepares the bounded ADR proposal; Nick's exact-text
+     are not enough. The authority agent prepares the bounded ADR proposal; Nick's exact-text
      approval remains required before acceptance.
 
-   Tom remains routing only: he never judges the recommendation or edits the
+   The delivery coordinator remains routing only: it never judges the recommendation or edits the
    issue contract or relations. Every later reviewer `BLOCK` starts another
    fresh reconciler. An unchanged repeated technical finding is recorded as
-   active preflight non-convergence and routed to Anna; Tom does not diagnose or
+   active preflight non-convergence and routed to the authority agent; the delivery coordinator does not diagnose or
    resolve it and does not misrepresent it as a Nick-owned product decision.
 3. **Fresh topology.** `bin/e2e-topology acquire <ISSUE> <worktree>`: three VMs
    cloned from the standby snapshot (~20 s), worktree mounted at
@@ -113,7 +113,7 @@ current `origin/main`, and selects the first eligible issue.
    commit, full convergence; every acceptance action exits 0.
 7. **Pull request.** Short and human: what changed, "Proved with
    `proofs/<ISSUE>.json` at `<sha>`".
-8. **Review.** Tom moves the issue to `In Review` and reads it back before a
+8. **Review.** the delivery coordinator moves the issue to `In Review` and reads it back before a
    fresh reviewer merges `main`, re-proves with the same plan,
    reads the code, and reports all blocking findings in one pass. Findings must
    identify a defect against the issue, ADR, existing invariant/test, or repo
@@ -131,7 +131,7 @@ proof), and 9 without promote.
 
 The same implementer handles every valid requested change. Every pushed head
 gets a fresh PR reviewer. Review does not widen the feature contract. If more
-than two PR review rounds are needed, Tom pauses that issue and diagnoses
+than two PR review rounds are needed, the delivery coordinator pauses that issue and diagnoses
 whether the issue contract, preflight, repository guidance, or automated proof
 is missing a durable guard before continuing.
 

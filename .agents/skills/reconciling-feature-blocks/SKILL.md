@@ -69,7 +69,7 @@ within delegated technical authority. The recommendation must include:
 
 This verdict may propose a narrow Linear scope clarification or internal
 component expansion when it is required to make the already accepted outcome
-feasible. It does not itself authorize Tom to edit Linear.
+feasible. It does not itself authorize the delivery coordinator to edit Linear.
 
 ### `HUMAN_DECISION_REQUIRED`
 
@@ -91,19 +91,19 @@ preflight reviewer may admit implementation.
 
 ## Handoff
 
-- For `TECHNICAL_RESOLUTION` requiring only plan correction, Tom starts a fresh
+- For `TECHNICAL_RESOLUTION` requiring only plan correction, the delivery coordinator starts a fresh
   correction planner and then a fresh reviewer.
 - For `TECHNICAL_RESOLUTION` requiring a durable Linear or relation mutation,
-  Tom routes the exact proposal to Anna. Anna verifies the delegated authority
-  boundary, applies and reads back approved changes, then signals Tom to start
+  the delivery coordinator routes the exact proposal to the authority agent. The authority agent verifies the delegated authority
+  boundary, applies and reads back approved changes, then signals the delivery coordinator to start
   a wholly fresh planner and reviewer.
 - The fresh reviewer's `PASS` is agreement with the applied resolution.
-- For `HUMAN_DECISION_REQUIRED`, Tom moves the issue to `Blocked`, parks its
-  assets, and routes the bounded decision to Anna or Nick.
+- For `HUMAN_DECISION_REQUIRED`, the delivery coordinator moves the issue to `Blocked`, parks its
+  assets, and routes the bounded decision to the authority agent or Nick.
 - Every later reviewer `BLOCK` starts another fresh reconciler. If the same
   technical finding repeats without changed evidence, record preflight
-  non-convergence and require Tom to route it to Anna while the issue remains
-  active. Tom does not diagnose or resolve the technical finding himself and
+  non-convergence and require the delivery coordinator to route it to the authority agent while the issue remains
+  active. The delivery coordinator does not diagnose or resolve the technical finding itself and
   does not mislabel it as a Nick-owned decision.
 
 ## Boundaries

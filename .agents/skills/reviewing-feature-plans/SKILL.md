@@ -28,7 +28,7 @@ Update only the verdict metadata and reviewer-findings section in
 `.orbit/plan.md`:
 
 - `PASS`: implementation may start; findings must be empty.
-- `FIX`: list concrete, in-scope corrections. Tom starts a fresh correction
+- `FIX`: list concrete, in-scope corrections. The delivery coordinator starts a fresh correction
   planner and then a fresh independent reviewer. Repeat with fresh agents until
   `PASS` or `BLOCK`.
 - `BLOCK`: state the exact technical incompatibility, missing requirement,
@@ -36,7 +36,7 @@ Update only the verdict metadata and reviewer-findings section in
   **Recommended resolution** that names
   the smallest safe contract, scope, dependency, or harness change that would
   unblock the issue, the evidence supporting it, and the apparent decision
-  boundary. Tom starts a fresh reconciler; the issue remains `In Progress`
+  boundary. The delivery coordinator starts a fresh reconciler; the issue remains `In Progress`
   unless that reconciler returns `HUMAN_DECISION_REQUIRED`. Do not silently
   expand scope or present a recommendation as an approved decision.
 
