@@ -59,7 +59,7 @@ orb7_restore_addresses() {
   sudo test -f "$record/addresses.before" || return 0
   sudo ip -4 addr flush dev orbit
   local cidr
-  while read -r _ _ _ _ cidr _; do
+  while read -r _ _ _ cidr _; do
     [[ -n "$cidr" ]] && sudo ip addr add "$cidr" dev orbit
   done < <(sudo cat "$record/addresses.before")
 }
