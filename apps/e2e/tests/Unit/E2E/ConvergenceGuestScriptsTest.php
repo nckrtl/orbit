@@ -132,7 +132,9 @@ function internal_tls_fixture(string $root): array
 function metrics_publication_probe_fixture(bool $metricsAssigned): array
 {
     $root = temporaryPath('orbit-metrics-publication-probe-', 5);
-    $sourceRoot = dirname(__DIR__, 5);
+    $repositoryRoot = dirname(__DIR__, 5);
+    $sourceRoot = "{$root}/source";
+    $metricsSource = "{$sourceRoot}/apps/gateway/app/Infrastructure/Metrics";
     $version = "{$root}/etc/caddy/orbit-versions/1234567890abcdef";
     $fragment = "{$version}/fragments/metrics.caddy";
     $certificateVersion = "{$root}/etc/caddy/orbit-metrics-cert-versions/1234567890abcdef";
@@ -142,6 +144,20 @@ function metrics_publication_probe_fixture(bool $metricsAssigned): array
     mkdir("{$version}/fragments", 0o700, true);
     mkdir("{$root}/ca", 0o700, true);
     mkdir("{$root}/ssh", 0o700, true);
+    mkdir("{$sourceRoot}/apps/gateway/vendor", 0o700, true);
+    mkdir($metricsSource, 0o700, true);
+    foreach (['MetricsFootprint', 'MetricsPublicationRenderer'] as $class) {
+        file_put_contents(
+            "{$metricsSource}/{$class}.php",
+            file_get_contents("{$repositoryRoot}/apps/gateway/app/Infrastructure/Metrics/{$class}.php"),
+        );
+    }
+    file_put_contents("{$sourceRoot}/apps/gateway/vendor/autoload.php", <<<'PHP'
+        <?php
+
+        require __DIR__.'/../app/Infrastructure/Metrics/MetricsFootprint.php';
+        require __DIR__.'/../app/Infrastructure/Metrics/MetricsPublicationRenderer.php';
+        PHP);
     file_put_contents("{$version}/Caddyfile", "import {$version}/fragments/*.caddy\n");
     symlink("{$version}/Caddyfile", "{$root}/etc/caddy/Caddyfile");
     file_put_contents("{$root}/ca/root.pem", "fixture root\n");
