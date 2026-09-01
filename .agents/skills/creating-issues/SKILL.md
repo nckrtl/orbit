@@ -55,15 +55,15 @@ Source: none
 
 `Backlog` means the issue is rough or incomplete and still needs refinement.
 Its contract, decisions, dependency graph, or proof path may be missing. State
-the refinement or readiness condition in the description. Tom never claims it.
+the refinement or readiness condition in the description. The delivery coordinator never claims it.
 
 `Todo` means the implementation contract is complete, every governing ADR is
 on `origin/main`, and every acceptance criterion is verifiable. Todo is the
 ordered execution queue. A declared prerequisite may keep a refined Todo issue
-temporarily ineligible; Tom skips it until every prerequisite is `Done` and
+temporarily ineligible; the delivery coordinator skips it until every prerequisite is `Done` and
 present on current `origin/main`.
 
-`In Progress` begins when Tom selects an eligible Todo issue, before any
+`In Progress` begins when the delivery coordinator selects an eligible Todo issue, before any
 worktree, Herdr worker, or preflight turn starts or resumes. `Blocked` is
 reserved for started work that cannot continue; its worktree and Herdr assets
 remain parked. `In Review` begins before independent PR review. Issue creation
@@ -146,12 +146,12 @@ should normally pass on its first review.
   and identify the evidence and apparent decision boundary. The reconciler may
   return `TECHNICAL_RESOLUTION` for an internal implementation, harness, test,
   proof, sequencing, or narrow scope correction that preserves product behavior
-  and acceptance strength. Tom routes any durable issue or relation edit to
-  Anna; after the approved change, a wholly fresh planner and reviewer must
+  and acceptance strength. The delivery coordinator routes any durable issue or relation edit to
+  the authority agent; after the approved change, a wholly fresh planner and reviewer must
   return `PASS`. Only `HUMAN_DECISION_REQUIRED` moves the issue to `Blocked` and
   parks its assets without consuming execution concurrency. Reserve that result
   for a product-visible, policy, authority, material irreversible-risk, or
-  unguided architectural choice. Tom never judges the proposal or edits the
+  unguided architectural choice. The delivery coordinator never judges the proposal or edits the
   contract.
 
 Unless `main` materially changed after refinement, an initial `BLOCK` is
@@ -168,6 +168,6 @@ expected and observed behavior, and evidence.
 ## Implementation readiness
 
 A Linear issue with status `Todo` is refined and ready to enter the execution
-queue. Tom may select it only when its declared prerequisites are `Done` and
+queue. The delivery coordinator may select it only when its declared prerequisites are `Done` and
 present on current `origin/main`. No issue enters `Todo` merely because its text
 looks complete; the complete-set feasibility checks above must also pass.

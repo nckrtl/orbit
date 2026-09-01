@@ -50,7 +50,7 @@ it('keeps feature preflight lightweight and independently reviewed', function ()
         'Collect every blocking finding',
         '**Recommended resolution**',
         'smallest safe contract, scope, dependency, or harness change',
-        'Tom starts a fresh reconciler',
+        'The delivery coordinator starts a fresh reconciler',
         'issue remains `In Progress`',
         'fresh correction',
         'Repeat with fresh agents until',
@@ -245,7 +245,7 @@ it('makes issue creation ADR-first, feasibility-checked, and parallel-safe', fun
     foreach ([
         '`Backlog` means the issue is rough or incomplete',
         '`Todo` means the implementation contract is complete',
-        '`In Progress` begins when Tom selects',
+        '`In Progress` begins when the delivery coordinator selects',
         'reserved for started work that cannot continue',
         'explicitly to `Backlog` or `Todo`',
         'current `main`',
@@ -273,28 +273,28 @@ it('makes issue creation ADR-first, feasibility-checked, and parallel-safe', fun
     }
 
     expect($issues)
-        ->toContain('Tom routes any durable issue or relation edit')
-        ->toContain('Anna; after the approved change')
+        ->toContain('The delivery coordinator routes any durable issue or relation edit')
+        ->toContain('the authority agent; after the approved change')
         ->toContain('material irreversible-risk')
-        ->toContain('Tom never judges the proposal or edits the')
+        ->toContain('The delivery coordinator never judges the proposal or edits the')
         ->toContain('A reconciled technical resolution is not a human-owned blocker.');
 
     expect($reference)
         ->toContain('Internal technical or harness choices')
-        ->toContain('Tom routes the exact')
-        ->toContain('proposal to Anna')
-        ->toContain('Tom remains routing only')
+        ->toContain('the delivery coordinator routes the exact')
+        ->toContain('proposal to the authority agent')
+        ->toContain('The delivery coordinator remains routing only')
         ->toContain('material irreversible risk')
         ->toContain('Nick\'s exact-text')
         ->toContain('Every later reviewer `BLOCK` starts another');
 
     expect($reconciler)
         ->toContain('durable Linear or relation mutation')
-        ->toContain('Tom routes the exact proposal to Anna')
+        ->toContain('the delivery coordinator routes the exact proposal to the authority agent')
         ->toContain('material irreversible risk')
         ->toContain('Nick\'s exact-text approval')
         ->toContain('Every later reviewer `BLOCK` starts another fresh reconciler')
-        ->toContain('Tom does not diagnose or resolve the technical finding himself');
+        ->toContain('The delivery coordinator does not diagnose or resolve the technical finding itself');
 
     expect($reviewer)->toContain('issue remains `In Progress`');
 
@@ -353,7 +353,7 @@ it('records technical block reconciliation before human escalation', function ()
         'fresh reviewer\'s `PASS` is agreement',
         '`Blocked` therefore means human judgment is genuinely required',
         'Every later reviewer `BLOCK` starts another fresh reconciler',
-        'Tom remains a routing and lifecycle coordinator',
+        'The delivery coordinator remains a routing and lifecycle coordinator',
     ] as $needle) {
         expect($adr)->toContain($needle);
     }
@@ -363,7 +363,7 @@ it('records technical block reconciliation before human escalation', function ()
     foreach ($current as $document) {
         expect($document)
             ->not->toContain('`BLOCK` moves the issue to `Blocked`')
-            ->not->toContain('Tom adds a Linear comment naming');
+            ->not->toContain('The delivery coordinator adds a Linear comment naming');
     }
 });
 
@@ -398,7 +398,7 @@ it('separates refinement, active delivery, review, and parked blockers', functio
     foreach ([
         '`Backlog`: a rough or incomplete issue',
         '`Todo`: a refined, proof-feasible issue',
-        '`In Progress`: Tom has selected the issue',
+        '`In Progress`: the delivery coordinator has selected the issue',
         '`Blocked`: a started issue cannot continue',
         '`In Review`: implementation and required proof are complete',
         '`Done`: the PR is merged to `main`',
@@ -407,7 +407,7 @@ it('separates refinement, active delivery, review, and parked blockers', functio
         '`Blocked` does not consume execution capacity',
         'first issue whose declared prerequisites are all `Done`',
         'moves the issue to `Blocked`',
-        'Tom adds a Linear comment naming',
+        'The delivery coordinator adds a Linear comment naming',
         'moves it to `In Progress` and verifies the transition',
         'synchronizes the worktree with current `origin/main`',
         'runs a fresh planner and fresh preflight review',

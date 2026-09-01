@@ -65,7 +65,7 @@ Where things live:
 
 Ownership:
 
-- Tom owns role dispatch and lifecycle transitions; there is no nested feature orchestrator.
+- The delivery coordinator owns role dispatch and lifecycle transitions; there is no nested feature orchestrator.
 - The same implementer owns the feature and requested-change corrections.
 - Feature branches never modify the harness (`apps/e2e`, `bin/e2e-*`, except
   `apps/e2e/tests/Feature/**` and `apps/e2e/tests/Unit/**`).

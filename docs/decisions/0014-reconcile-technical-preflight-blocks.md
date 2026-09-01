@@ -9,7 +9,7 @@ their direct preflight `BLOCK` to Linear `Blocked` transition.
 
 An independent preflight reviewer must stop implementation when the prepared
 plan cannot satisfy the issue contract. The existing workflow immediately
-parks every `BLOCK` for Nick or Anna to resolve. That treats an agent's
+parks every `BLOCK` for Nick or the authority agent to resolve. That treats an agent's
 technical inability to find a path as proof that a human product decision is
 required.
 
@@ -29,7 +29,7 @@ requirements merely to keep delivery moving.
 
 A preflight reviewer still records `PASS`, `FIX`, or `BLOCK`. `BLOCK` stops
 implementation but does not immediately move the Linear issue out of
-`In Progress`. Tom exits the reviewer and starts one fresh reconciler in the
+`In Progress`. The delivery coordinator exits the reviewer and starts one fresh reconciler in the
 same retained worktree and Herdr workspace.
 
 The reconciler independently reads the issue, accepted ADRs, plan, reviewer
@@ -57,34 +57,34 @@ return `PASS`. It does not resume or negotiate with the reviewer that returned
 
 For `TECHNICAL_RESOLUTION`:
 
-1. If only the ephemeral plan must change, Tom starts a fresh correction
+1. If only the ephemeral plan must change, the delivery coordinator starts a fresh correction
    planner.
-2. If Linear or a relation requires a durable mutation, Tom routes the exact
-   proposal to Anna. Anna verifies that it remains within delegated
-   technical authority, applies and reads back the change, and signals Tom to
+2. If Linear or a relation requires a durable mutation, the delivery coordinator routes the exact
+   proposal to the authority agent. The authority agent verifies that it remains within delegated
+   technical authority, applies and reads back the change, and signals the delivery coordinator to
    continue. Nick is not involved for internal technical or harness choices
    that preserve product behavior and the accepted outcome.
-3. Tom starts a wholly fresh planner and a wholly fresh preflight reviewer.
+3. The delivery coordinator starts a wholly fresh planner and a wholly fresh preflight reviewer.
 4. The fresh reviewer's `PASS` is agreement with the applied resolution and
    admits implementation.
 
-For `HUMAN_DECISION_REQUIRED`, Tom moves the issue to `Blocked`, parks its
-assets, and routes the smallest bounded decision to Anna or Nick. Linear
+For `HUMAN_DECISION_REQUIRED`, the delivery coordinator moves the issue to `Blocked`, parks its
+assets, and routes the smallest bounded decision to the authority agent or Nick. Linear
 `Blocked` therefore means human judgment is genuinely required, not merely
-that the first technical proposal failed. Anna may prepare an ADR proposal, but
+that the first technical proposal failed. The authority agent may prepare an ADR proposal, but
 Nick must approve its exact text before it becomes accepted.
 
 Every later reviewer `BLOCK` starts another fresh reconciler. If the same
 technical finding repeats without changed evidence, that reconciler records
-preflight non-convergence and Tom routes it to Anna for diagnosis while the
-issue remains active. Tom does not diagnose or resolve the technical finding
-himself and does not misrepresent non-convergence as a Nick-owned product
+preflight non-convergence and the delivery coordinator routes it to the authority agent for diagnosis while the
+issue remains active. The delivery coordinator does not diagnose or resolve the technical finding
+itself and does not misrepresent non-convergence as a Nick-owned product
 decision. Every role remains fresh; no reviewer or reconciler conversation is
 resumed across rounds.
 
-Tom remains a routing and lifecycle coordinator. He does not judge the
+The delivery coordinator remains a routing and lifecycle coordinator. It does not judge the
 reconciler proposal, edit the issue contract or relations, or perform the
-resolution himself.
+resolution itself.
 
 ## Consequences
 
@@ -98,4 +98,4 @@ resolution himself.
 - Linear `Blocked` becomes a stronger signal that human judgment is actually
   needed.
 - Technical non-convergence remains visible as active recovery and may consume
-  an execution slot until Anna and Tom restore convergence.
+  an execution slot until the authority agent and the delivery coordinator restore convergence.
