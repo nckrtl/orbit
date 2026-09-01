@@ -304,6 +304,7 @@
             "kind": "product",
             "components": [],
             "concepts": [
+                "App",
                 "Gateway"
             ],
             "governing_adrs": []

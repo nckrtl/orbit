@@ -1,9 +1,8 @@
 # Mission
 
-Orbit helps you build and run Laravel applications on machines you control. It
-brings local development, production, and day-to-day maintenance into one
-place, so you do not need a different tool for every stage of an application's
-life.
+Orbit is an AI-first, all-in-one tool for local app development, production
+hosting, and day-to-day fleet maintenance. It can be fully operated by your AI
+agent, so you can focus on building products without operational distractions.
 
 ## Why Orbit exists
 
