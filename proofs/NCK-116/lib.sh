@@ -5,6 +5,8 @@ set -euo pipefail
 readonly ESCAPE=/usr/local/sbin/orbit-metrics-uninstall
 readonly EXPORTER_RULE_COMMENT=orbit:metrics-node-exporter
 readonly ORB7_CLEANUP_ROOT=/var/lib/orbit-e2e/proof-cleanup
+readonly ORB7_TIMEOUT_BASELINE_RECORD=$ORB7_CLEANUP_ROOT/orb-7-timeout-baseline
+readonly ORB7_TIMEOUT_SEED_ACTION=orb-7-timeout-seed
 readonly ORB7_TIMEOUT_WITNESS=/var/tmp/orbit-e2e-orb7-timeout-witness
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
@@ -254,6 +256,27 @@ delete_firewall_rule() {
   number=$(grep "# $1\$" <<<"$(firewall_status_text)" | sed -E 's/^ *\[ *([0-9]+)\].*/\1/' | head -1 || true)
   [[ -n "$number" ]] || return 0
   sudo ufw --force delete "$number" >/dev/null
+}
+
+orb7_restore_timeout_seed() {
+  if ! sudo test -e "$ORB7_TIMEOUT_BASELINE_RECORD"; then
+    orb7_restore_owned "$ORB7_TIMEOUT_SEED_ACTION"
+    return 0
+  fi
+
+  local before exporter_number address
+  before=$(sudo cat "$ORB7_TIMEOUT_BASELINE_RECORD/ufw.before")
+  exporter_number=$(sudo cat "$ORB7_TIMEOUT_BASELINE_RECORD/exporter.number" 2>/dev/null || true)
+  orb7_restore_owned "$ORB7_TIMEOUT_SEED_ACTION"
+
+  if [[ -n "$exporter_number" ]] && ! firewall_rule_exists "$EXPORTER_RULE_COMMENT"; then
+    address=$(this_address)
+    sudo /usr/sbin/ufw insert "$exporter_number" allow in on orbit proto tcp \
+      from 10.44.0.2 to "$address" port 9100 comment "$EXPORTER_RULE_COMMENT" >/dev/null
+  fi
+
+  [[ "$(orb7_ufw_shapes)" == "$before" ]]
+  sudo rm -rf -- "$ORB7_TIMEOUT_BASELINE_RECORD"
 }
 
 package_installed() {

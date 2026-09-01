@@ -413,22 +413,35 @@ it('requires positive pre-signal evidence in the NCK-116 timeout proof', functio
     $seed = (string) file_get_contents($repositoryRoot.'/proofs/NCK-116/seed-orb-7-timeout.sh');
     $fixture = (string) file_get_contents($repositoryRoot.'/proofs/NCK-116/refuses-a-shifted-rule-number.sh');
     $inspector = (string) file_get_contents($repositoryRoot.'/proofs/NCK-116/inspect-orb-7-timeout.sh');
+    $library = (string) file_get_contents($repositoryRoot.'/proofs/NCK-116/lib.sh');
+    $seedTrap = strpos($seed, 'trap \'seed_cleanup "$?"\' EXIT');
+    $seedRecord = strpos($seed, 'orb7_arm "$ORB7_TIMEOUT_SEED_ACTION"');
+    $baselineMutation = strpos($seed, 'sudo /usr/sbin/ufw --force delete "$exporter_number"');
+    $baselineRestored = strpos($library, '[[ "$(orb7_ufw_shapes)" == "$before" ]]');
+    $baselineRecordReleased = strpos($library, 'sudo rm -rf -- "$ORB7_TIMEOUT_BASELINE_RECORD"');
     $witness = strpos($fixture, 'printf \'installed\\n\' | sudo tee "$ORB7_TIMEOUT_WITNESS"');
     $checkpoint = strpos($fixture, 'orb7_timeout_checkpoint refuses-a-shifted-rule-number');
 
     expect($seed)
         ->toContain('sudo rm -f -- "$ORB7_TIMEOUT_WITNESS"')
-        ->and($fixture)
-        ->toContain('sudo test -x "$STUB"')
-        ->toContain('sudo test -s "$STUB_STATE"')
-        ->toContain('grep -q "# $FOREIGN_RULE\\$" <<<"$numbered"')
-        ->toContain('grep -q "# $EXPORTER_RULE_COMMENT\\$" <<<"$numbered"')
-        ->toContain('grep -q "# $TRANSIENT_RULE\\$" <<<"$numbered"')
-        ->and($witness)
+        ->and($seedTrap)
+        ->not->toBeFalse()->and($seedRecord)
+        ->not->toBeFalse()->and($baselineMutation)
+        ->not->toBeFalse()->and($seedTrap)->toBeLessThan($seedRecord)->and($seedRecord)->toBeLessThan(
+            $baselineMutation,
+        )->and($fixture)->toContain('sudo test -x "$STUB"')->toContain('sudo test -s "$STUB_STATE"')->toContain(
+            'grep -q "# $FOREIGN_RULE\\$" <<<"$numbered"',
+        )->toContain('grep -q "# $EXPORTER_RULE_COMMENT\\$" <<<"$numbered"')->toContain(
+            'grep -q "# $TRANSIENT_RULE\\$" <<<"$numbered"',
+        )->and($witness)
         ->not->toBeFalse()->and($checkpoint)
         ->not->toBeFalse()->and($witness)->toBeLessThan($checkpoint)->and($inspector)->toContain(
             'sudo test -f "$ORB7_TIMEOUT_WITNESS"',
-        )->toContain('sudo rm -f -- "$ORB7_TIMEOUT_WITNESS"');
+        )->toContain('orb7_restore_timeout_seed')->toContain('sudo rm -f -- "$ORB7_TIMEOUT_WITNESS"')->and(
+            $library,
+        )->toContain('orb7_restore_timeout_seed()')->toContain('ORB7_TIMEOUT_BASELINE_RECORD')->and($baselineRestored)
+        ->not->toBeFalse()->and($baselineRecordReleased)
+        ->not->toBeFalse()->and($baselineRestored)->toBeLessThan($baselineRecordReleased);
 });
 
 it('passes the exact NCK-116 action name through the TERM trap', function () {

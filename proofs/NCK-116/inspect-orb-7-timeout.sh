@@ -3,8 +3,7 @@ proof_root=${ORBIT_E2E_PROOF_ROOT:-/var/lib/orbit-e2e/proof}
 source "$proof_root/lib.sh"
 
 cleanup_witness() {
-  delete_firewall_rule ORB7-FOREIGN-KEEP
-  delete_firewall_rule orbit:metrics-node-exporter-v2
+  orb7_restore_timeout_seed
   sudo rm -f -- "$ORB7_TIMEOUT_WITNESS"
 }
 trap cleanup_witness EXIT
@@ -19,4 +18,6 @@ sudo test ! -e "$ORB7_CLEANUP_ROOT/refuses-a-shifted-rule-number" || fail "the t
 ! firewall_rule_exists PRODUCTION-DB-ACCESS || fail "the timed-out fixture left its planted foreign rule"
 firewall_rule_exists ORB7-FOREIGN-KEEP || fail "cleanup removed a foreign rule"
 firewall_rule_exists orbit:metrics-node-exporter-v2 || fail "cleanup removed an exporter look-alike"
+cleanup_witness
+trap - EXIT
 echo "timeout inspector: installed state, TERM, and restoration witnessed; stub, log, and owned rules absent"
