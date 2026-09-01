@@ -24,8 +24,8 @@ applications belong to Orbit and coordinates changes across them. The CLI is
 how people and coding agents talk to the Gateway. Managed Nodes do the actual
 work, such as running an application or routing traffic.
 
-Orbit connects its machines through a private network. Normal operations go
-through the Gateway, so you do not need public SSH access to every machine.
+Actions go through the Gateway, which authorizes them before passing them to
+managed Nodes.
 
 ## Built for people and agents
 
