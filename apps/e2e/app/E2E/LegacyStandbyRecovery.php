@@ -417,7 +417,10 @@ final readonly class LegacyStandbyRecovery
             $query = is_array($url) ? $url['query'] ?? '' : '';
             parse_str(is_string($query) ? $query : '', $parameters);
             $name = is_string($path) ? basename($path) : '';
-            if (! in_array($name, $instanceNames, true) || ($parameters['project'] ?? null) !== $network->project) {
+            $projectMatches =
+                $parameters === ['project' => $network->project]
+                || $network->project === 'default' && $parameters === [];
+            if (! in_array($name, $instanceNames, true) || ! $projectMatches) {
                 throw new RuntimeException("Incus network {$network->name} has an unexpected user {$user}.");
             }
         }

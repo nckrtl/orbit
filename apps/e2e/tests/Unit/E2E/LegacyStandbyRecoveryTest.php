@@ -314,6 +314,16 @@ it('refuses foreign instance ownership without writing recovery evidence', funct
     expect($store->read('standby/recovery.json'))->toBeNull();
 });
 
+it('authorizes project-less network users in the default Incus project', function (): void {
+    [$recovery, , $host] = legacyRecoveryService();
+    $host->networkUsers = array_map(
+        static fn (string $user): string => (string) parse_url($user, PHP_URL_PATH),
+        $host->networkUsers,
+    );
+
+    expect($recovery->authorize()->resourceNames())->toContain('oe-live-standby');
+});
+
 it('authorizes an exact promotion copy with complete attempt identity', function (): void {
     [$recovery, , $host] = legacyRecoveryService();
     $copy = 'orbit-e2e-live-standby-gateway-next';
