@@ -361,8 +361,14 @@ and no manual `incus delete` is needed.
 checkout's standby VMs, the `-next` copies a failed promotion left behind, and
 the standby network itself; it forgets every generation manifest and the
 corrupt marker; then it cold-builds the standby at `SHA` from the base image.
-It refuses to delete a VM that is not harness-owned or that still carries an
-issue's attempt metadata: release that topology first. `SHA` must be what the
+It refuses to delete a VM that is not harness-owned. It also refuses an ordinary
+standby VM that still carries an issue ID: release that topology first. The
+only exemption to the issue-ID refusal is an exact promotion scratch name for
+this standby identity and role, with the `-next` suffix. That copy must carry a
+valid `user.orbit.e2e.operation`; any retained issue or attempt metadata must
+also be valid, but can be absent because promotion strips it before
+snapshotting. A scratch copy with missing or malformed operation metadata is
+refused with `has invalid promotion scratch metadata`. `SHA` must be what the
 checkout's `main` holds, as for `refresh`.
 
 ## Live acceptance suites
@@ -393,9 +399,10 @@ feature flow against a standby built from the candidate. The wrapper:
 
 - owns the validation clone at `ORBIT_E2E_VALIDATE_ROOT` (default
   `$HOME/orbit-validate`), cloning it from the calling repository when
-  absent, and refuses a dirty clone; the clone is its own primary checkout,
-  so its standby generation lives in `<clone>/.e2e/standby/promoted.json`
-  (copy the primary's file there once);
+  absent, and refuses a dirty clone; do not seed the clone by copying the
+  primary checkout's `.e2e/standby/promoted.json`, because that generation
+  belongs to the primary namespace. Run `bin/e2e-live`; when the clone has no
+  usable generation, the wrapper cold-builds the clone's own standby;
 - exports `ORBIT_E2E_STANDBY_NAMESPACE=live`, so the clone owns the `live`
   standby and the promote step never touches the primary's;
 - refuses while another acceptance (`ACC-*`) topology is live on the Incus host
