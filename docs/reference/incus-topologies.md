@@ -1,13 +1,12 @@
 # Incus topology registry
 
-Incus provides the disposable development topology for issues marked
+Incus provides disposable development and proof topologies for issues marked
 `Proof: incus`. The lifecycle is governed by
 [ADR 0005](../decisions/0005-rolling-incus-development-topology.md) (prepared
 standby, refresh, exact cleanup) and
-[ADR 0007](../decisions/0007-nine-step-feature-flow.md) (the nine-step flow)
-and [ADR 0006](../decisions/0006-topology-led-feature-development.md) (discovery,
-fresh proof, immutable proved attempts). Automated-only work stays independent
-of Incus.
+[ADR 0006](../decisions/0006-topology-led-feature-development.md) (separate
+discovery, fresh proof, immutable proved attempts). Automated-only work stays
+independent of Incus.
 
 A profile is registered only when the repository provides and verifies all of
 these exact-ID operations:

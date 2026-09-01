@@ -7,7 +7,7 @@ usage() {
     exit 2
 }
 
-initialize_preflight() {
+initialize_feature_plan() {
     local worktree="$1"
     local linear_id="$2"
     local plan="$worktree/.orbit/plan.md"
@@ -19,13 +19,11 @@ initialize_preflight() {
     fi
 
     cat > "$plan" <<EOF
-# Feature preflight
+# Feature plan
 
 Issue: $linear_id
-Verdict: PENDING
-Review round: 0
+Review verdict: PENDING
 Reconciliation verdict: PENDING
-Reconciliation round: 0
 
 ## Outcome
 
@@ -55,11 +53,11 @@ Out of scope:
 
 -
 
-## Reviewer findings
+## Review findings
 
 -
 
-## Reconciler recommendation
+## Reconciliation notes
 
 -
 EOF
@@ -105,7 +103,7 @@ if git worktree list --porcelain | grep -Fxq "worktree $worktree"; then
         exit 1
     fi
 
-    initialize_preflight "$worktree" "$linear_id"
+    initialize_feature_plan "$worktree" "$linear_id"
     "$worktree/bin/bootstrap"
     printf '%s\n' "$worktree"
     exit 0
@@ -126,6 +124,6 @@ else
     git worktree add -b "$branch" "$worktree" origin/main
 fi
 
-initialize_preflight "$worktree" "$linear_id"
+initialize_feature_plan "$worktree" "$linear_id"
 "$worktree/bin/bootstrap"
 printf '%s\n' "$worktree"

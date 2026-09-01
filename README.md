@@ -37,17 +37,18 @@ standalone package publication; do not maintain the old repositories by hand.
 ## Feature work
 
 Feature branches use one repository worktree. A worktree contains the CLI,
-Gateway, and SDK at one commit, so cross-project changes stay atomic.
+Gateway, SDK, and E2E harness at one commit, so cross-project changes stay
+atomic.
 
 ```bash
 bin/worktree-create NCK-123 concise-feature-name
 ```
 
 The command creates `.worktrees/nck-123-concise-feature-name` on branch
-`nck-123-concise-feature-name` and bootstraps all projects.
+`nck-123-concise-feature-name`, initializes a gitignored `.orbit/plan.md`, and
+bootstraps all projects.
 
-See [the development workflow](docs/reference/development-workflow.md) for the
-Linear, Slack, pull request, review, compound, and cleanup contracts.
-Repository-owned skills configure issue creation, feature work, independent
-review, and merge verification. External orchestration invokes those roles and
-handles lifecycle state.
+Repository-owned skills under `.agents/skills/` are independently invokable
+helpers for issue creation, planning, implementation, review, reconciliation,
+and merge operations. They are optional task guides for contributors and coding
+agents.
