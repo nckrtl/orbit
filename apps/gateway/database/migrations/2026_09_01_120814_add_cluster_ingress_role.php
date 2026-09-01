@@ -59,4 +59,41 @@ return new class extends Migration {
             END
             SQL);
     }
+
+    public function down(): void
+    {
+        DB::statement('DROP TRIGGER IF EXISTS nodes_cluster_role_ownership_update');
+        DB::statement('DROP TRIGGER IF EXISTS node_roles_cluster_ownership_update');
+        DB::statement('DROP TRIGGER IF EXISTS node_roles_cluster_ownership_insert');
+        DB::statement('DROP INDEX IF EXISTS node_roles_cluster_ingress_active_unique');
+
+        DB::statement(<<<'SQL'
+            CREATE TRIGGER node_roles_router_cluster_insert
+            BEFORE INSERT ON node_roles
+            WHEN (
+                (NEW.role = 'router' AND (
+                    NEW.cluster_id IS NULL
+                    OR NEW.cluster_id IS NOT (SELECT cluster_id FROM nodes WHERE id = NEW.node_id)
+                ))
+                OR (NEW.role <> 'router' AND NEW.cluster_id IS NOT NULL)
+            )
+            BEGIN
+                SELECT RAISE(ABORT, 'Invalid Router Cluster ownership.');
+            END
+            SQL);
+        DB::statement(<<<'SQL'
+            CREATE TRIGGER node_roles_router_cluster_update
+            BEFORE UPDATE OF node_id, cluster_id, role ON node_roles
+            WHEN (
+                (NEW.role = 'router' AND (
+                    NEW.cluster_id IS NULL
+                    OR NEW.cluster_id IS NOT (SELECT cluster_id FROM nodes WHERE id = NEW.node_id)
+                ))
+                OR (NEW.role <> 'router' AND NEW.cluster_id IS NOT NULL)
+            )
+            BEGIN
+                SELECT RAISE(ABORT, 'Invalid Router Cluster ownership.');
+            END
+            SQL);
+    }
 };

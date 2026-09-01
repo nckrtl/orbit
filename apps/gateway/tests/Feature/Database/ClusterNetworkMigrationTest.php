@@ -12,11 +12,7 @@ describe('cluster and node network migration', function (): void {
             base_path('database/migrations/2026_08_31_165346_add_clusters_and_node_network_identity.php');
         $ingressMigration = require base_path('database/migrations/2026_09_01_120814_add_cluster_ingress_role.php');
 
-        DB::statement('DROP TRIGGER IF EXISTS nodes_cluster_role_ownership_update');
-        DB::statement('DROP TRIGGER IF EXISTS node_roles_cluster_ownership_update');
-        DB::statement('DROP TRIGGER IF EXISTS node_roles_cluster_ownership_insert');
-        DB::statement('DROP INDEX IF EXISTS node_roles_cluster_ingress_active_unique');
-
+        $ingressMigration->down();
         $migration->down();
 
         $timestamp = now();
@@ -55,6 +51,47 @@ describe('cluster and node network migration', function (): void {
                 'instance' => ['path' => '/srv/legacy-instances'],
                 'worktree' => ['path' => '/srv/legacy-worktrees'],
             ]);
+    });
+
+    it('owns its rollback and leaves the preceding Cluster migration reversible', function (): void {
+        $migration = require
+            base_path('database/migrations/2026_08_31_165346_add_clusters_and_node_network_identity.php');
+        $ingressMigration = require base_path('database/migrations/2026_09_01_120814_add_cluster_ingress_role.php');
+
+        $ingressMigration->down();
+
+        expect(
+            DB::table('sqlite_master')
+                ->whereIn('name', [
+                    'node_roles_cluster_ingress_active_unique',
+                    'node_roles_cluster_ownership_insert',
+                    'node_roles_cluster_ownership_update',
+                    'nodes_cluster_role_ownership_update',
+                ])
+                ->exists(),
+        )
+            ->toBeFalse()
+            ->and(
+                DB::table('sqlite_master')
+                    ->whereIn('name', [
+                        'node_roles_router_cluster_insert',
+                        'node_roles_router_cluster_update',
+                    ])
+                    ->count(),
+            )
+            ->toBe(2);
+
+        $migration->down();
+
+        expect(Schema::hasTable('clusters'))
+            ->toBeFalse()
+            ->and(Schema::hasColumn('nodes', 'cluster_id'))
+            ->toBeFalse()
+            ->and(Schema::hasColumn('node_roles', 'cluster_id'))
+            ->toBeFalse();
+
+        $migration->up();
+        $ingressMigration->up();
     });
 
     it('enforces Cluster-scoped LAN and Router ownership constraints', function (): void {

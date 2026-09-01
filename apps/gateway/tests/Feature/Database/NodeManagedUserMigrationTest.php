@@ -206,12 +206,10 @@ describe('managed node user migrations', function (): void {
 
 function rollbackClusterNetworkMigration(): void
 {
-    DB::statement('DROP TRIGGER IF EXISTS nodes_cluster_role_ownership_update');
-    DB::statement('DROP TRIGGER IF EXISTS node_roles_cluster_ownership_update');
-    DB::statement('DROP TRIGGER IF EXISTS node_roles_cluster_ownership_insert');
-    DB::statement('DROP INDEX IF EXISTS node_roles_cluster_ingress_active_unique');
+    $ingressMigration = require base_path('database/migrations/2026_09_01_120814_add_cluster_ingress_role.php');
     $migration = require base_path('database/migrations/2026_08_31_165346_add_clusters_and_node_network_identity.php');
 
+    $ingressMigration->down();
     $migration->down();
 }
 
