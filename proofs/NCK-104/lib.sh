@@ -23,7 +23,7 @@ orb7_node_address() {
   orbit node:list --json | php -r '
     $name=$argv[1];
     foreach (json_decode(stream_get_contents(STDIN), true)["nodes"] ?? [] as $node) {
-      if (($node["name"] ?? null) === $name) { echo $node["wireguard_address"]; exit(0); }
+      if (($node["name"] ?? null) === $name) { echo $node["wireguard_ip"]; exit(0); }
     }
     exit(1);
   ' -- "$name"

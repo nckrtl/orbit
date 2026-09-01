@@ -104,7 +104,7 @@ wireguard_address() {
 gateway_address() {
   orbit node:list --json | php -r '
     $nodes = json_decode(stream_get_contents(STDIN), true)["nodes"] ?? [];
-    foreach ($nodes as $node) { if (in_array("gateway", $node["roles"] ?? [], true)) { echo $node["wireguard_address"]; exit(0); } }
+    foreach ($nodes as $node) { if (in_array("gateway", $node["roles"] ?? [], true)) { echo $node["wireguard_ip"]; exit(0); } }
     exit(1);
   '
 }
@@ -114,7 +114,7 @@ metrics_address() {
     read -r id
     orbit node:list --json | php -r '
       $id = (int) $argv[1];
-      foreach (json_decode(stream_get_contents(STDIN), true)["nodes"] ?? [] as $node) { if ((int) $node["id"] === $id) { echo $node["wireguard_address"]; exit(0); } }
+      foreach (json_decode(stream_get_contents(STDIN), true)["nodes"] ?? [] as $node) { if ((int) $node["id"] === $id) { echo $node["wireguard_ip"]; exit(0); } }
       exit(1);
     ' -- "$id"
   }
