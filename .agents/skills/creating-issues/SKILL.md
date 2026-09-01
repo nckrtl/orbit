@@ -47,7 +47,7 @@ status in the description.
 
 - Use observable behavior. Each acceptance criterion must have one available
   proof action.
-- Component names are repository-owned. Use the smallest affected set:
+- component names are repository-owned. Use the smallest affected set:
   `apps/cli`, `apps/docs`, `apps/gateway`, `packages/php-sdk`, or `apps/e2e`.
 - Paths under `proofs/` are proof artifacts, not components.
 - Name `apps/e2e` only for a dedicated harness issue. Product feature issues do
