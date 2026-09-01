@@ -12,8 +12,8 @@ server. The challenge starts when those tools need to work together. They often
 have separate logins, separate settings, and different concepts of the same
 application.
 
-Orbit connects those stages. It keeps track of your applications and machines,
-gives them a private network, and lets you manage them through the same CLI.
+Orbit connects those stages. It keeps track of your applications and machines
+and lets you manage them through the same CLI.
 You can see what changed without rebuilding the story from several dashboards
 and configuration files.
 
