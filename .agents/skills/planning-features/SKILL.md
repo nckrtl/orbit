@@ -27,6 +27,9 @@ Complete `.orbit/plan.md` without copying the issue into it:
 
 - **Outcome:** the observable result in one sentence.
 - **Code boundaries:** likely files/components and explicit exclusions.
+- **Documentation boundaries:** relevant context selected from the issue and
+  expected code boundaries; name required documentation changes or preserve the
+  issue's `none` rationale.
 - **Acceptance map:** one row per issue criterion, mapped to the relevant code
   boundary and focused proof.
 - **Implementation order:** the smallest coherent ordered changes.
@@ -47,5 +50,6 @@ proof, or absorb genuinely new requirements into the current issue.
 ## Verification
 
 The plan is complete when every criterion maps to a boundary and proof action,
-implementation order is explicit, exclusions prevent unrelated cleanup, and no
-open question requires guessing product behavior.
+documentation impact is mapped, implementation order is explicit, exclusions
+prevent unrelated cleanup, and no open question requires guessing product
+behavior.

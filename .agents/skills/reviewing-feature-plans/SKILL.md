@@ -17,6 +17,8 @@ Read the issue or equivalent contract, governing ADRs, the plan, named code
 boundaries, nearby tests, and available proof commands. Check that:
 
 - every acceptance criterion maps to a concrete code boundary and focused proof;
+- documentation boundaries match the issue's required-or-none classification
+  and the relevant repository context;
 - exclusions prevent unrelated cleanup or harness changes;
 - implementation order is coherent and does not require rediscovering product
   behavior;

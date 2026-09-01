@@ -35,6 +35,8 @@ Acceptance criteria:
 Components:
 - ...
 
+Documentation: required  # or none: concise rationale
+
 ADR: none
 
 Proof: incus           # only when a real machine is required; omit otherwise
@@ -44,14 +46,17 @@ Source: none
 
 - Use observable behavior. Each acceptance criterion must have one available
   proof action.
-- Name the smallest affected components: `apps/cli`, `apps/gateway`, or
-  `packages/php-sdk`.
+- Name the smallest affected components: `apps/cli`, `apps/docs`,
+  `apps/gateway`, or `packages/php-sdk`.
 - Name `apps/e2e` only for a dedicated harness issue. Product feature issues do
   not include harness changes.
 - Add `Proof: incus` when acceptance depends on a real OS, service manager,
   privilege boundary, network, certificate, filesystem ownership, or
   multi-node behavior. Omit it for automated-only work.
 - Record the source issue, report, review, or discussion when one exists.
+- Use `Documentation: required` when durable behavior, terminology,
+  architecture synthesis, an operational or public contract, agent context, or
+  reusable knowledge changes. Otherwise use `none` with a concise rationale.
 
 ## Issue maturity
 
@@ -61,8 +66,9 @@ compatibility boundary, proof path, or acceptance detail.
 
 Use `Todo` when the contract is complete, every governing ADR is accepted on
 `origin/main`, every acceptance criterion is verifiable, and every real
-prerequisite is explicit. A Todo issue may still depend on unfinished work; the
-relationship communicates that fact without weakening the issue contract.
+prerequisite and documentation impact is explicit. A Todo issue may still
+depend on unfinished work; the relationship communicates that fact without
+weakening the issue contract.
 
 Always set `Backlog` or `Todo` explicitly instead of relying on a configurable
 team default.
@@ -117,4 +123,5 @@ original report or GitHub issue.
 
 Before saving issues, confirm that every issue has a bounded outcome, explicit
 scope, observable criteria, smallest component set, applicable ADR links,
-correct proof venue, real relationships, and no unresolved architectural choice.
+correct documentation impact, correct proof venue, real relationships, and no
+unresolved architectural choice.
