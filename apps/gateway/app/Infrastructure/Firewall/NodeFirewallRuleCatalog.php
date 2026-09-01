@@ -27,7 +27,7 @@ final class NodeFirewallRuleCatalog
                 $this->rule('orbit:gateway-https', '443', 'any', 'orbit'),
             ],
             RoleName::Vpn => [$this->rule('orbit:vpn-ssh', '22', $this->wireguardIp($node), 'orbit')],
-            RoleName::Router => [],
+            RoleName::Router, RoleName::Ingress => [],
             RoleName::AppDev => [
                 $this->rule('orbit:app-dev-http', '80', $this->wireguardIp($node), 'orbit'),
                 $this->rule('orbit:app-dev-https', '443', $this->wireguardIp($node), 'orbit'),

@@ -49,6 +49,13 @@ final readonly class AddNodeRoleAction
         return $this->withAppManagerScope($node, $role, function () use ($node, $role, $convergeExisting): array {
             $claim = $convergeExisting ? $this->claimExisting($node, $role) : $this->claimNew($node, $role);
 
+            if ($role === RoleName::Ingress && ! $convergeExisting && ! $claim['created']) {
+                return [
+                    'assignment' => $claim['assignment']->refresh(),
+                    'created' => false,
+                ];
+            }
+
             return $this->convergeClaim($node, $role, $claim);
         });
     }
@@ -89,6 +96,10 @@ final readonly class AddNodeRoleAction
             $assignment = $this->assignRole->execute($node, $role);
 
             if (! $assignment->wasRecentlyCreated) {
+                if ($role === RoleName::Ingress && $assignment->status === LifecycleStatus::Active) {
+                    return ['assignment' => $assignment, 'created' => false];
+                }
+
                 throw new RoleAssignmentException(
                     "Role [{$role->value}] is already assigned; explicit convergence is required.",
                 );

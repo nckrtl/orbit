@@ -7,6 +7,7 @@ use App\Repositories\GatewayConfigRepository;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
+use Orbit\Sdk\Requests\Nodes\AddNodeRoleRequest;
 use Orbit\Sdk\Requests\Nodes\RemoveNodeRoleRequest;
 use Saloon\Enums\Method;
 use Saloon\Http\Faking\MockClient;
@@ -103,6 +104,48 @@ it('sends one forced node role removal request as json', function (): void {
         ])
         ->and($mockClient->getRecordedResponses())
         ->toHaveCount(1);
+});
+
+it('repeats Ingress removal and supports remove-then-add replacement in human and JSON modes', function (): void {
+    $mockClient = MockClient::global([
+        RemoveNodeRoleRequest::class => MockResponse::make([
+            'data' => ingress_removed_node_role_payload(),
+            'meta' => ['request_id' => node_role_remove_request_id()],
+        ]),
+        AddNodeRoleRequest::class => MockResponse::make([
+            'data' => ingress_replacement_node_role_payload(),
+            'meta' => ['request_id' => node_role_remove_request_id()],
+        ], 201),
+    ]);
+
+    $this
+        ->artisan('node:role:remove', ['node' => '17', 'role' => 'ingress', '--force' => true])
+        ->expectsOutput('Role [ingress] removed from node [ingress-old] (#17).')
+        ->assertExitCode(0);
+    $this
+        ->artisan('node:role:remove', [
+            'node' => '17',
+            'role' => 'ingress',
+            '--force' => true,
+            '--json' => true,
+        ])
+        ->expectsOutput(json_encode([
+            ...ingress_removed_node_role_payload(),
+            'degradation' => null,
+            'retained_on_node' => [],
+            'follow_up' => null,
+            'request_id' => node_role_remove_request_id(),
+        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))
+        ->assertExitCode(0);
+    $this
+        ->artisan('node:role:add', ['node' => '18', 'role' => 'ingress', '--json' => true])
+        ->assertExitCode(0);
+
+    $mockClient->assertSentCount(2, RemoveNodeRoleRequest::class);
+    expect($mockClient->getLastRequest())
+        ->toBeInstanceOf(AddNodeRoleRequest::class)
+        ->and($mockClient->getLastPendingRequest()?->body()->all())
+        ->toBe(['role' => 'ingress', 'converge_existing' => false]);
 });
 
 it('requires the preview failure in json mode and sends no forced retry', function (): void {
@@ -455,6 +498,36 @@ function removed_node_role_payload(): array
         'role' => 'app-dev',
         'assignment' => null,
         'removed' => true,
+    ];
+}
+
+/** @return array<string, mixed> */
+function ingress_removed_node_role_payload(): array
+{
+    return [
+        'node_id' => 17,
+        'node_name' => 'ingress-old',
+        'role' => 'ingress',
+        'assignment' => null,
+        'removed' => true,
+    ];
+}
+
+/** @return array<string, mixed> */
+function ingress_replacement_node_role_payload(): array
+{
+    return [
+        'node_id' => 18,
+        'node_name' => 'ingress-new',
+        'role' => 'ingress',
+        'assignment' => [
+            'id' => 42,
+            'role' => 'ingress',
+            'status' => 'active',
+            'failed_step' => null,
+            'error_code' => null,
+        ],
+        'removed' => false,
     ];
 }
 

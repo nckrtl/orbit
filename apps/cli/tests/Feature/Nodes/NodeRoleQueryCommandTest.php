@@ -93,6 +93,38 @@ it('shows a concise node role table with lifecycle and failure columns', functio
         ->assertExitCode(0);
 });
 
+it('lists Ingress lifecycle identity in JSON and human modes without extra settings', function (): void {
+    $assignment = [
+        'id' => 41,
+        'role' => 'ingress',
+        'status' => 'active',
+        'failed_step' => null,
+        'error_code' => null,
+    ];
+    MockClient::global([
+        ListNodeRolesRequest::class => MockResponse::make([
+            'data' => [$assignment],
+            'meta' => ['request_id' => node_role_command_request_id()],
+        ]),
+    ]);
+
+    $this
+        ->artisan('node:role:list', ['node' => '17', '--json' => true])
+        ->expectsOutput(json_encode([
+            'assignments' => [$assignment],
+            'request_id' => node_role_command_request_id(),
+        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))
+        ->assertExitCode(0);
+    $this
+        ->artisan('node:role:list', ['node' => '17'])
+        ->expectsTable(
+            ['ID', 'Role', 'Status', 'Failed step', 'Error code'],
+            [[41, 'ingress', 'active', '-', '-']],
+        )
+        ->expectsOutput('Request ID: '.node_role_command_request_id())
+        ->assertExitCode(0);
+});
+
 it('shows an empty node role result clearly', function (): void {
     MockClient::global([
         ListNodeRolesRequest::class => MockResponse::make([

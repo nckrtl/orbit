@@ -27,6 +27,10 @@ final readonly class NativeRoleBaselineConverger implements RoleBaselineConverge
 
     public function converge(Node $node, NodeRole $assignment): void
     {
+        if ($assignment->role === RoleName::Ingress) {
+            return;
+        }
+
         $this->operatingSystem->assert($node, $assignment->role);
         $this->baseline($assignment->role)->converge($node, $assignment);
 
@@ -37,6 +41,10 @@ final readonly class NativeRoleBaselineConverger implements RoleBaselineConverge
 
     public function remove(Node $node, NodeRole $assignment, bool $purgeData): void
     {
+        if ($assignment->role === RoleName::Ingress) {
+            return;
+        }
+
         $this->baseline($assignment->role)->remove($node, $assignment, $purgeData);
 
         if ($assignment->role !== RoleName::Metrics) {
@@ -46,6 +54,10 @@ final readonly class NativeRoleBaselineConverger implements RoleBaselineConverge
 
     public function removeUnreachable(Node $node, NodeRole $assignment): void
     {
+        if ($assignment->role === RoleName::Ingress) {
+            return;
+        }
+
         $this->baseline($assignment->role)->removeUnreachable($node, $assignment);
 
         if ($assignment->role !== RoleName::Metrics) {
@@ -61,7 +73,9 @@ final readonly class NativeRoleBaselineConverger implements RoleBaselineConverge
             RoleName::AppDev => $this->appDev,
             RoleName::AppProd => $this->appProd,
             RoleName::Metrics => $this->metrics,
-            RoleName::Router => throw new LogicException('Router roles do not have a host baseline.'),
+            RoleName::Router, RoleName::Ingress => throw new LogicException(
+                'Router and Ingress roles do not have a host baseline.',
+            ),
         };
     }
 }

@@ -19,6 +19,7 @@ use App\Infrastructure\Metrics\MetricsExporterRuntime;
 use App\Infrastructure\Metrics\MetricsExporterState;
 use App\Models\Activity;
 use App\Models\App as OrbitApp;
+use App\Models\Cluster;
 use App\Models\FirewallRule;
 use App\Models\Instance;
 use App\Models\Node;
@@ -340,8 +341,16 @@ it('returns 409 when the target still has any role assignment', function (RoleNa
     $caller = remove_node_record(name: 'operator', wireguardIp: '10.44.0.2');
     $target = remove_node_record(name: 'retired', wireguardIp: '10.44.0.3');
     $caller->accessibleNodes()->attach($target);
+    $clusterId = null;
+
+    if ($role === RoleName::Ingress) {
+        $clusterId = Cluster::query()->create(['name' => 'retired-ingress'])->id;
+        $target->update(['cluster_id' => $clusterId]);
+    }
+
     NodeRole::query()->create([
         'node_id' => $target->id,
+        'cluster_id' => $clusterId,
         'role' => $role,
         'status' => LifecycleStatus::Active,
     ]);

@@ -11,6 +11,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tools\ToolManagerMaterializer;
 use App\Infrastructure\Processes\CommandResult;
 use App\Models\Activity;
+use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\NodeRole;
 use Illuminate\Support\Str;
@@ -215,6 +216,171 @@ it('returns 201 for a new assignment and 200 for explicit convergence', function
         ->assertJsonPath('meta.request_id', $requestId);
 
     expect($this->roleLifecycle->converged)->toBe(['app-dev', 'app-dev']);
+});
+
+it('assigns lists and retries one Ingress through the existing exact lifecycle contract', function (): void {
+    $cluster = Cluster::query()->create(['name' => 'ingress-api']);
+    $this->node->update(['cluster_id' => $cluster->id]);
+    $requestId = (string) Str::uuid();
+
+    $created = $this
+        ->withHeader('X-Orbit-Request-Id', $requestId)
+        ->postJson("/api/v1/nodes/{$this->node->id}/roles", ['role' => 'ingress']);
+    $assignment = $this->node->roles()->where('role', RoleName::Ingress)->sole();
+
+    $created
+        ->assertCreated()
+        ->assertExactJson([
+            'data' => [
+                'node_id' => $this->node->id,
+                'node_name' => $this->node->name,
+                'role' => 'ingress',
+                'degradation' => null,
+                'retained_on_node' => [],
+                'follow_up' => null,
+                'assignment' => [
+                    'id' => $assignment->id,
+                    'role' => 'ingress',
+                    'status' => 'active',
+                    'failed_step' => null,
+                    'error_code' => null,
+                ],
+                'removed' => false,
+            ],
+            'meta' => ['request_id' => $requestId],
+        ]);
+
+    $this
+        ->postJson("/api/v1/nodes/{$this->node->id}/roles", ['role' => 'ingress'])
+        ->assertOk()
+        ->assertJsonPath('data.assignment.id', $assignment->id);
+    $this
+        ->postJson("/api/v1/nodes/{$this->node->id}/roles", [
+            'role' => 'ingress',
+            'converge_existing' => true,
+        ])
+        ->assertOk()
+        ->assertJsonPath('data.assignment.id', $assignment->id);
+    $this
+        ->getJson("/api/v1/nodes/{$this->node->id}/roles")
+        ->assertOk()
+        ->assertExactJson([
+            'data' => [[
+                'id' => $assignment->id,
+                'role' => 'ingress',
+                'status' => 'active',
+                'failed_step' => null,
+                'error_code' => null,
+            ]],
+            'meta' => ['request_id' => $requestId],
+        ]);
+
+    expect($assignment->refresh()->cluster_id)
+        ->toBe($cluster->id)
+        ->and($this->roleLifecycle->converged)
+        ->toBe(['ingress', 'ingress']);
+});
+
+it('rejects an unclustered Ingress assignment without partial state', function (): void {
+    $this
+        ->postJson("/api/v1/nodes/{$this->node->id}/roles", ['role' => 'ingress'])
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'validation.failed')
+        ->assertJsonPath('error.message', 'Role [ingress] requires Cluster membership.');
+
+    expect($this->node->roles()->exists())
+        ->toBeFalse()
+        ->and($this->roleLifecycle->converged)
+        ->toBeEmpty();
+});
+
+it('rejects a second Cluster Ingress and permits one in each of two Clusters', function (): void {
+    $firstCluster = Cluster::query()->create(['name' => 'first-ingress-api']);
+    $secondCluster = Cluster::query()->create(['name' => 'second-ingress-api']);
+    $this->node->update(['cluster_id' => $firstCluster->id]);
+    $second = node_roles_api_node('second-same-cluster');
+    $second->update(['cluster_id' => $firstCluster->id]);
+    $other = node_roles_api_node('other-cluster');
+    $other->update(['cluster_id' => $secondCluster->id]);
+
+    $this->postJson("/api/v1/nodes/{$this->node->id}/roles", ['role' => 'ingress'])->assertCreated();
+    $original = $this->node->roles()->where('role', RoleName::Ingress)->sole();
+    $this
+        ->postJson("/api/v1/nodes/{$second->id}/roles", ['role' => 'ingress'])
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'validation.failed');
+    $this->postJson("/api/v1/nodes/{$other->id}/roles", ['role' => 'ingress'])->assertCreated();
+
+    expect($original->fresh()?->status)
+        ->toBe(LifecycleStatus::Active)
+        ->and($second->roles()->exists())
+        ->toBeFalse()
+        ->and(NodeRole::query()->where('role', RoleName::Ingress)->count())
+        ->toBe(2);
+});
+
+it('supports Ingress compatibility and rejects app-dev in both assignment orders', function (
+    array $existingRoles,
+    string $assignedRole,
+    bool $accepted,
+): void {
+    $cluster = Cluster::query()->create(['name' => 'compatibility-'.implode('-', $existingRoles).$assignedRole]);
+    $this->node->update(['cluster_id' => $cluster->id]);
+
+    foreach ($existingRoles as $role) {
+        $this->node
+            ->roles()
+            ->create([
+                'role' => $role,
+                'status' => LifecycleStatus::Active,
+                'cluster_id' => in_array($role, ['router', 'ingress'], strict: true) ? $cluster->id : null,
+            ]);
+    }
+
+    $response = $this->postJson("/api/v1/nodes/{$this->node->id}/roles", ['role' => $assignedRole]);
+
+    if ($accepted) {
+        $response->assertCreated();
+    } else {
+        $response->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
+    }
+
+    expect($this->node->roles()->where('role', $assignedRole)->exists())->toBe($accepted);
+})->with([
+    'Ingress with Router' => [['router'], 'ingress', true],
+    'Ingress with app-prod' => [['app-prod'], 'ingress', true],
+    'Ingress with Router and app-prod' => [['router', 'app-prod'], 'ingress', true],
+    'Ingress after app-dev' => [['app-dev'], 'ingress', false],
+    'app-dev after Ingress' => [['ingress'], 'app-dev', false],
+]);
+
+it('removes Ingress repeatedly and supports remove then add replacement', function (): void {
+    $cluster = Cluster::query()->create(['name' => 'replace-ingress-api']);
+    $this->node->update(['cluster_id' => $cluster->id]);
+    $replacement = node_roles_api_node('replacement-ingress');
+    $replacement->update(['cluster_id' => $cluster->id]);
+    $this->postJson("/api/v1/nodes/{$this->node->id}/roles", ['role' => 'ingress'])->assertCreated();
+
+    $this
+        ->deleteJson("/api/v1/nodes/{$this->node->id}/roles/ingress", ['force' => true])
+        ->assertOk()
+        ->assertJsonPath('data.removed', true)
+        ->assertJsonPath('data.retained_on_node', []);
+    $this
+        ->deleteJson("/api/v1/nodes/{$this->node->id}/roles/ingress", ['force' => true])
+        ->assertOk()
+        ->assertJsonPath('data.removed', true);
+    $this
+        ->postJson("/api/v1/nodes/{$replacement->id}/roles", ['role' => 'ingress'])
+        ->assertCreated()
+        ->assertJsonPath('data.assignment.role', 'ingress');
+
+    expect($this->node->roles()->where('role', RoleName::Ingress)->exists())
+        ->toBeFalse()
+        ->and($replacement->roles()->where('role', RoleName::Ingress)->sole()->cluster_id)
+        ->toBe($cluster->id)
+        ->and($this->roleLifecycle->removed)
+        ->toBeEmpty();
 });
 
 it('returns standard validation failures for protected unknown and duplicate assignments', function (

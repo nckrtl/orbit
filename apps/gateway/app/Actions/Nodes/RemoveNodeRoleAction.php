@@ -60,6 +60,10 @@ final readonly class RemoveNodeRoleAction
         bool $purgeData = false,
         bool $offline = false,
     ): NodeRoleRemovalOutcome {
+        if ($role === RoleName::Ingress) {
+            return $this->removeIngress($node, $force);
+        }
+
         $this->guardPolicy($node, $role);
         $this->toolIntentGuard->assertRemovalSafe($node, $role);
         $preview = $this->withRetirementPreview(
@@ -90,6 +94,35 @@ final readonly class RemoveNodeRoleAction
         }
 
         return $this->removeClaimedRole($node, $role, $purgeData, $degradation);
+    }
+
+    private function removeIngress(Node $node, bool $force): NodeRoleRemovalOutcome
+    {
+        $this->guardMutableNode($node, RoleName::Ingress);
+        $assignment = NodeRole::query()
+            ->where('node_id', $node->id)
+            ->where('role', RoleName::Ingress)
+            ->first();
+
+        if (! $force) {
+            throw new NodeRoleValidationException(
+                message: 'Use --force to remove this node role.',
+                details: [
+                    'field' => 'force',
+                    'reason' => 'destructive_consent_required',
+                    'role' => RoleName::Ingress->value,
+                    'dependents' => [],
+                ],
+            );
+        }
+
+        if ($assignment instanceof NodeRole) {
+            DB::transaction(static function () use ($assignment): void {
+                NodeRole::query()->whereKey($assignment->id)->lockForUpdate()->sole()->delete();
+            });
+        }
+
+        return new NodeRoleRemovalOutcome(new NodeRoleDependencySet([], [], [], []));
     }
 
     private function removeAppRole(
@@ -317,16 +350,21 @@ final readonly class RemoveNodeRoleAction
 
     private function guardPolicy(Node $node, RoleName $role): void
     {
+        $this->guardMutableNode($node, $role);
+
+        if (! NodeRole::query()->where('node_id', $node->id)->where('role', $role)->exists()) {
+            throw new NodeRoleValidationException("Role [{$role->value}] is not assigned to node [{$node->name}].");
+        }
+    }
+
+    private function guardMutableNode(Node $node, RoleName $role): void
+    {
         if (! $node->exists || $node->status !== LifecycleStatus::Active) {
             throw new NodeRoleValidationException('Roles can be changed only on an active node.');
         }
 
         if (! $this->registry->definition($role)->mutable) {
             throw new NodeRoleValidationException("Role [{$role->value}] is protected from removal.");
-        }
-
-        if (! NodeRole::query()->where('node_id', $node->id)->where('role', $role)->exists()) {
-            throw new NodeRoleValidationException("Role [{$role->value}] is not assigned to node [{$node->name}].");
         }
     }
 
