@@ -221,6 +221,15 @@
         "600"
       ],
       "timeout_seconds": 660
+    },
+    {
+      "id": "recover-failed-assignment",
+      "node": "app-dev",
+      "argv": [
+        "bash",
+        "/var/lib/orbit-e2e/proof/recover.sh"
+      ],
+      "timeout_seconds": 600
     }
   ],
   "mutates": true
