@@ -18,10 +18,9 @@ The skills under `.agents/skills/` are standalone task guides. A contributor may
 invoke any one directly; no private orchestration order is implied.
 
 - `creating-issues` — refine a request into a current, verifiable Linear contract.
-- `planning-features` — let a Builder prepare or correct a concise Feature plan.
+- `planning-features` — prepare or correct a concise Feature plan.
 - `reviewing-feature-plans` — independently review a Feature plan.
-- `developing-features` — implement and prove one issue, optionally continuing
-  in the same Builder context after plan approval.
+- `developing-features` — implement and prove one issue.
 - `reviewing-pull-requests` — independently review and re-prove one pushed head.
 - `merging-pull-requests` — deterministic merge, promotion, and cleanup steps.
 

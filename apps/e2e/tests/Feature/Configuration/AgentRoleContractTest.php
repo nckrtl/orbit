@@ -137,13 +137,12 @@ it('keeps repository guidance and agent manifests current', function () use ($re
     $decisions = $read('docs/decisions/README.md');
     $topologies = $read('docs/reference/incus-topologies.md');
 
-    expect($agents)
-        ->toContain('## Independent agent-role skills')
-        ->not
-        ->toContain('reconciling-feature-blocks')
-        ->toContain('Product feature branches never modify the harness')
-        ->toContain('A proved topology is immutable evidence')
-        ->toContain('Production release is separate from development proof');
+    expect($agents)->toContain('## Independent agent-role skills');
+    expect($agents)->not->toContain('reconciling-feature-blocks');
+    expect($agents)->not->toContain('Builder');
+    expect($agents)->toContain('Product feature branches never modify the harness');
+    expect($agents)->toContain('A proved topology is immutable evidence');
+    expect($agents)->toContain('Production release is separate from development proof');
 
     expect($readme)
         ->toContain('bin/worktree-create NCK-123 concise-feature-name')
