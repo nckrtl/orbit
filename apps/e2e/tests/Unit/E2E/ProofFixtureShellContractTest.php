@@ -222,7 +222,7 @@ it('restores firewall deltas from the root-owned shape manifest', function () {
     expect($result->isSuccessful())->toBeTrue($result->getErrorOutput());
 });
 
-it('maps ORB-7 proof to actual cleanup families and harness timeout exits', function () {
+it('maps ORB-7 proof to authorized cleanup and timeout boundaries', function () {
     $repositoryRoot = dirname(__DIR__, 5);
     $plan = json_decode(
         (string) file_get_contents($repositoryRoot.'/proofs/ORB-7.json'),
@@ -246,31 +246,29 @@ it('maps ORB-7 proof to actual cleanup families and harness timeout exits', func
         ->toContain('/var/lib/orbit-e2e/proof/NCK-108')
         ->and($actions->get('nck-104-local-path-cleanup')['argv'] ?? null)
         ->toContain('/var/lib/orbit-e2e/proof/nck-104-cleanup-matrix.sh')
-        ->and($actions->get('nck-116-metrics-cleanup')['argv'] ?? null)
-        ->toContain('escape-metrics-node:120')
-        ->and($actions->get('nck-116-app-prod-cleanup')['argv'] ?? null)
-        ->toContain('refuses-a-shifted-rule-number:120')
         ->and($actions->get('real-firewall-fixture-times-out')['expected_exit_code'] ?? null)
         ->toBe(124)
         ->and($actions->get('hung-cleanup-is-force-killed')['expected_exit_code'] ?? null)
         ->toBe(137)
         ->and(json_encode($plan, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))
-        ->toContain('/var/lib/orbit-e2e/proof/actual-fixture-cleanup-matrix.sh');
-});
+        ->toContain('/var/lib/orbit-e2e/proof/actual-fixture-cleanup-matrix.sh')
+        ->not->toContain('nck-116-cleaned-node-precondition')
+        ->not->toContain('nck-116-app-prod-cleanup')
+        ->not->toContain('nck-116-metrics-cleanup');
 
-it('seeds the shifted-rule precondition before its actual fixture matrix', function () {
-    $plan = json_decode(
-        (string) file_get_contents(dirname(__DIR__, 5).'/proofs/ORB-7.json'),
-        true,
-        flags: JSON_THROW_ON_ERROR,
-    );
-    $actionIds = array_column($plan['acceptance'], 'id');
-    $seed = array_search('firewall-timeout-seed', $actionIds, true);
-    $matrix = array_search('nck-116-app-prod-cleanup', $actionIds, true);
+    $nck116ActionIds = collect($plan['acceptance'])
+        ->filter(fn (array $action): bool => str_contains(
+            json_encode($action['argv'], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),
+            '/NCK-116',
+        ))
+        ->pluck('id')
+        ->all();
 
-    expect($seed)
-        ->not->toBeFalse()->and($matrix)
-        ->not->toBeFalse()->and($seed)->toBeLessThan($matrix);
+    expect($nck116ActionIds)->toBe([
+        'firewall-timeout-seed',
+        'real-firewall-fixture-times-out',
+        'firewall-timeout-restoration-inspected',
+    ]);
 });
 
 it('keeps only the owned ORB-7 proof plan at the top level', function () {
