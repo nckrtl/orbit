@@ -10,6 +10,7 @@ use App\Domain\Metrics\ExporterSelector;
 use App\Domain\Metrics\MetricsExporterLifecycle;
 use App\Domain\Metrics\MetricsRuntimeLifecycle;
 use App\Domain\Nodes\RoleAssignmentException;
+use App\Infrastructure\Metrics\NativeMetricsExporterProjection;
 use App\Infrastructure\Metrics\NativeMetricsStatusReader;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -19,8 +20,7 @@ uses(RefreshDatabase::class);
 
 it('reports disabled state when no metrics assignment exists', function (): void {
     $reader = new NativeMetricsStatusReader(
-        new ExporterSelector,
-        app(ExporterPreferenceRepository::class),
+        new NativeMetricsExporterProjection(new ExporterSelector, app(ExporterPreferenceRepository::class)),
         new StatusRuntimeFake,
         new StatusExporterFake,
         app(ExporterDegradationRepository::class),
@@ -35,8 +35,7 @@ it('fails closed when metrics has multiple assignments', function (): void {
     NodeRole::query()->create(['node_id' => $first->id, 'role' => 'metrics', 'status' => 'active']);
     NodeRole::query()->create(['node_id' => $second->id, 'role' => 'metrics', 'status' => 'active']);
     $reader = new NativeMetricsStatusReader(
-        new ExporterSelector,
-        app(ExporterPreferenceRepository::class),
+        new NativeMetricsExporterProjection(new ExporterSelector, app(ExporterPreferenceRepository::class)),
         new StatusRuntimeFake,
         new StatusExporterFake,
         app(ExporterDegradationRepository::class),
@@ -58,8 +57,7 @@ it('returns healthy services and deterministic exporter reasons', function (): v
     $preferences->put($explicitDisabled->id, ExporterPreference::Disabled);
 
     $data = new NativeMetricsStatusReader(
-        new ExporterSelector,
-        $preferences,
+        new NativeMetricsExporterProjection(new ExporterSelector, $preferences),
         new StatusRuntimeFake,
         new StatusExporterFake,
         app(ExporterDegradationRepository::class),
@@ -86,8 +84,7 @@ it('selects a node whose role is still provisioning', function (): void {
     NodeRole::query()->create(['node_id' => $provisioning->id, 'role' => 'app-prod', 'status' => 'provisioning']);
 
     $data = new NativeMetricsStatusReader(
-        new ExporterSelector,
-        app(ExporterPreferenceRepository::class),
+        new NativeMetricsExporterProjection(new ExporterSelector, app(ExporterPreferenceRepository::class)),
         new StatusRuntimeFake,
         new StatusExporterFake,
         app(ExporterDegradationRepository::class),
@@ -117,8 +114,7 @@ it('keeps failed Metrics assignments visible', function (): void {
     ]);
 
     $data = new NativeMetricsStatusReader(
-        new ExporterSelector,
-        app(ExporterPreferenceRepository::class),
+        new NativeMetricsExporterProjection(new ExporterSelector, app(ExporterPreferenceRepository::class)),
         new StatusRuntimeFake,
         new StatusExporterFake,
         app(ExporterDegradationRepository::class),
@@ -145,8 +141,7 @@ it('reports a skipped node as unknown with its recorded degradation reason', fun
     $degradations->put($skipped->id, ExporterDegradationReason::Unreachable);
 
     $data = new NativeMetricsStatusReader(
-        new ExporterSelector,
-        app(ExporterPreferenceRepository::class),
+        new NativeMetricsExporterProjection(new ExporterSelector, app(ExporterPreferenceRepository::class)),
         new StatusRuntimeFake,
         new StatusExporterFake,
         $degradations,

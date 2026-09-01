@@ -23,7 +23,6 @@ initialize_feature_plan() {
 
 Issue: $linear_id
 Review verdict: PENDING
-Reconciliation verdict: PENDING
 
 ## Outcome
 
@@ -56,10 +55,6 @@ Out of scope:
 ## Review findings
 
 -
-
-## Reconciliation notes
-
--
 EOF
 }
 
@@ -73,7 +68,7 @@ slug="$2"
 
 name="${linear_id,,}-$slug"
 branch="$name"
-primary_root="$(git worktree list --porcelain | awk '/^worktree / { print substr($0, 10); exit }')"
+primary_root="$(git worktree list --porcelain | awk '/^worktree / && !found { print substr($0, 10); found=1 }')"
 worktree="$primary_root/.worktrees/$name"
 
 git fetch --prune origin
@@ -91,7 +86,7 @@ if [[ -n "$(git -C "$primary_root" status --porcelain)" ]]; then
     exit 1
 fi
 
-if git worktree list --porcelain | grep -Fxq "worktree $worktree"; then
+if git worktree list --porcelain | grep -Fx "worktree $worktree" >/dev/null; then
     if [[ -n "$(git -C "$worktree" status --porcelain)" ]]; then
         printf 'Existing worktree is dirty: %s\n' "$worktree" >&2
         exit 1

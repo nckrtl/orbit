@@ -7,16 +7,15 @@ namespace App\Infrastructure\Firewall;
 use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Firewall\FirewallBackendStatus;
 use App\Domain\Firewall\FirewallInspectionData;
+use App\Domain\Firewall\FirewallInspectionTarget;
 use App\Domain\Firewall\FirewallInspector;
 use App\Domain\Firewall\FirewallRuleInspectionStatus;
-use App\Domain\Firewall\FirewallSource;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Models\FirewallRule;
 
 final readonly class NativeUfwFirewallInspector implements FirewallInspector
 {
@@ -28,10 +27,9 @@ final readonly class NativeUfwFirewallInspector implements FirewallInspector
         private UfwStatusParser $parser = new UfwStatusParser,
     ) {}
 
-    public function inspect(FirewallRule $rule): FirewallInspectionData
+    public function inspect(FirewallInspectionTarget $target): FirewallInspectionData
     {
-        $rule->loadMissing('node');
-        $node = $rule->node;
+        $node = $target->node;
         $host = $node->wireguard_ip;
         if ($node->platform !== 'linux' || ! is_string($host) || $host === '') {
             throw new DoctorInspectionException;
@@ -64,20 +62,20 @@ final readonly class NativeUfwFirewallInspector implements FirewallInspector
             throw new DoctorInspectionException;
         }
         try {
-            $family = FirewallSource::family($rule->source);
+            $shape = $target->shape;
             $o = $this->parser->ownership(
                 $r->stdout,
                 new UfwRuleShape(
-                    "orbit:node:{$rule->node_id}:firewall:{$rule->name}",
-                    $rule->action->value,
-                    'in',
-                    $rule->source,
-                    'any',
-                    $rule->port,
-                    $rule->protocol,
-                    null,
-                    null,
-                    $family === 'both' ? null : $family,
+                    $shape->comment,
+                    $shape->action,
+                    $shape->direction,
+                    $shape->source,
+                    $shape->destination,
+                    $shape->port,
+                    $shape->protocol,
+                    $shape->inInterface,
+                    $shape->outInterface,
+                    $shape->family,
                 ),
             );
         } catch (\Throwable) {

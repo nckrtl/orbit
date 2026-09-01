@@ -110,6 +110,9 @@ describe(MetricsSshExecutor::class, function (): void {
         foreach ($containerRuns as $command) {
             expect($command)
                 ->toContain("'--network' 'host'")
+                ->toContain("'--health-start-period' '30s'")
+                ->toContain("'--health-interval' '5s'")
+                ->toContain("'--health-retries' '12'")
                 ->not->toContain("'--publish'");
         }
 
@@ -154,6 +157,40 @@ describe(MetricsSshExecutor::class, function (): void {
             ->toContain("'--log-driver' 'json-file'")
             ->toContain("'--log-opt' 'max-size=10m'")
             ->toContain("'--log-opt' 'max-file=3'");
+    });
+
+    it('replaces an owned healthy container with a legacy health specification', function (): void {
+        $spec = new MetricsRuntimeSpec()->for(
+            MetricsService::Prometheus,
+            41,
+            '10.44.0.3',
+            'configuration',
+        );
+        $legacyLabels = [...$spec->labels, 'com.orbit.metrics.spec-hash' => 'legacy-health-hash'];
+        $ssh = new MetricsCapturingSshExecutor([
+            metricsCommandResult(stdout: json_encode($legacyLabels, JSON_THROW_ON_ERROR)."\n"),
+            metricsCommandResult(exitCode: 1),
+            metricsCommandResult(),
+            metricsCommandResult(stdout: json_encode($spec->volumeLabels, JSON_THROW_ON_ERROR)."\n"),
+            metricsCommandResult(),
+            metricsCommandResult(),
+            metricsCommandResult(),
+            metricsCommandResult(stdout: "running healthy\n"),
+            metricsCommandResult(),
+        ]);
+
+        metricsSshExecutor($ssh)->convergeContainers(metricsSshNode(), [$spec]);
+
+        $commands = array_map(
+            static fn (RemoteCommand $command): string => $command->shellCommand(),
+            $ssh->commands,
+        );
+        expect($commands)
+            ->toContain("'docker' 'container' 'stop' '--time' '30' '--' 'orbit-metrics-prometheus'")
+            ->toContain(
+                "'docker' 'container' 'rename' 'orbit-metrics-prometheus' 'orbit-metrics-prometheus-orbit-rollback'",
+            )
+            ->toContain("'docker' 'container' 'rm' '--force' '--' 'orbit-metrics-prometheus-orbit-rollback'");
     });
 
     it('removes a proven recovery container', function (): void {

@@ -33,6 +33,12 @@ final readonly class MetricsRuntimeSpec
      */
     public const string LogDriver = 'json-file';
 
+    public const int HealthStartPeriodSeconds = 30;
+
+    public const int HealthIntervalSeconds = 5;
+
+    public const int HealthRetries = 12;
+
     /** @var array<string, string> */
     public const array LogOptions = [
         'max-size' => '10m',
@@ -43,6 +49,9 @@ final readonly class MetricsRuntimeSpec
     public function __construct(
         private string $logDriver = self::LogDriver,
         private array $logOptions = self::LogOptions,
+        private int $healthStartPeriodSeconds = self::HealthStartPeriodSeconds,
+        private int $healthIntervalSeconds = self::HealthIntervalSeconds,
+        private int $healthRetries = self::HealthRetries,
     ) {}
 
     public function for(
@@ -68,6 +77,9 @@ final readonly class MetricsRuntimeSpec
             'mounts' => $definition['mounts'],
             'environment' => $definition['environment'],
             'health_command' => $definition['health_command'],
+            'health_start_period_seconds' => $this->healthStartPeriodSeconds,
+            'health_interval_seconds' => $this->healthIntervalSeconds,
+            'health_retries' => $this->healthRetries,
             'log_driver' => $this->logDriver,
             'log_options' => $this->logOptions,
             'configuration_hash' => $configurationHash,
@@ -94,6 +106,9 @@ final readonly class MetricsRuntimeSpec
             mounts: $definition['mounts'],
             environment: $definition['environment'],
             healthCommand: $definition['health_command'],
+            healthStartPeriodSeconds: $this->healthStartPeriodSeconds,
+            healthIntervalSeconds: $this->healthIntervalSeconds,
+            healthRetries: $this->healthRetries,
             logDriver: $this->logDriver,
             logOptions: $this->logOptions,
             specHash: $specHash,
