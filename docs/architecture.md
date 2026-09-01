@@ -11,8 +11,6 @@ Human or AI agent
         ↓
        CLI
         ↓
-     PHP SDK
-        ↓
       HTTP
         ↓
      Gateway
@@ -31,8 +29,7 @@ The CLI lives in `apps/cli`. It is the main way to use Orbit from a terminal.
 It shows clear output to humans and can return structured output for scripts
 and agents.
 
-The CLI uses `packages/php-sdk` to send HTTP requests to the Gateway. The SDK
-keeps the details of the Gateway API in one place.
+The CLI sends HTTP requests to the Gateway.
 
 ## Gateway
 

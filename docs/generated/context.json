@@ -23,8 +23,7 @@
                 "apps/cli",
                 "apps/docs",
                 "apps/e2e",
-                "apps/gateway",
-                "packages/php-sdk"
+                "apps/gateway"
             ],
             "concepts": [
                 "App",
