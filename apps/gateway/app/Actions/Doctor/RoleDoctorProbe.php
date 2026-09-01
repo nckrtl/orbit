@@ -25,6 +25,7 @@ use Illuminate\Database\Eloquent\Collection;
 /**
  * @mago-expect lint:cyclomatic-complexity The probe keeps every stable role issue branch explicit.
  * @mago-expect lint:kan-defect The score reflects the closed lifecycle, conflict, and projection matrix.
+ * @mago-expect lint:too-many-methods Each helper reports one stable role issue category.
  */
 final readonly class RoleDoctorProbe implements DoctorFamilyProbe
 {
@@ -62,9 +63,13 @@ final readonly class RoleDoctorProbe implements DoctorFamilyProbe
         }
         $this->addAssignmentConflicts($issues, $roles);
         $this->addSingletonConflicts($issues, $roles);
+        $this->addIngressClusterIssues($issues, $roles);
 
         $needsLiveInspection = $roles->contains(
-            static fn (NodeRole $role): bool => $role->status === LifecycleStatus::Active,
+            static fn (NodeRole $role): bool => (
+                $role->status === LifecycleStatus::Active
+                && $role->role !== RoleName::Ingress
+            ),
         );
         if ($needsLiveInspection && ($context->inspectionFailed || ! $context->inspection->reachable)) {
             $ordered = $this->ordered($issues);
@@ -83,7 +88,7 @@ final readonly class RoleDoctorProbe implements DoctorFamilyProbe
         }
 
         foreach ($roles as $role) {
-            if ($role->status !== LifecycleStatus::Active) {
+            if ($role->status !== LifecycleStatus::Active || $role->role === RoleName::Ingress) {
                 continue;
             }
 
@@ -141,6 +146,68 @@ final readonly class RoleDoctorProbe implements DoctorFamilyProbe
                 'compatible',
                 'conflict',
             ));
+        }
+    }
+
+    /**
+     * @param array<int, list<DoctorIssueData>> $issues
+     * @param Collection<int, NodeRole> $roles
+     */
+    private function addIngressClusterIssues(array &$issues, Collection $roles): void
+    {
+        $ingressRoles = $roles->where('role', RoleName::Ingress);
+
+        foreach ($ingressRoles as $role) {
+            $role->loadMissing('node');
+
+            if (is_int($role->cluster_id) && $role->cluster_id === $role->node->cluster_id) {
+                continue;
+            }
+
+            $this->add($issues, $role, $this->issue(
+                $role,
+                RoleDoctorIssueCode::ClusterOwnershipMismatch,
+                DoctorIssueKind::Drift,
+                'Ingress Cluster ownership does not match its Node.',
+                'node_cluster',
+                'mismatch',
+            ));
+        }
+
+        $clusterIds = $ingressRoles
+            ->where('status', LifecycleStatus::Active)
+            ->pluck('cluster_id')
+            ->filter(static fn (mixed $clusterId): bool => is_int($clusterId))
+            ->unique()
+            ->values();
+
+        if ($clusterIds->isEmpty()) {
+            return;
+        }
+
+        $fleetRoles = NodeRole::query()
+            ->where('role', RoleName::Ingress)
+            ->where('status', LifecycleStatus::Active)
+            ->whereIn('cluster_id', $clusterIds)
+            ->orderBy('id')
+            ->get()
+            ->groupBy('cluster_id');
+
+        foreach ($fleetRoles as $clusterRoles) {
+            if ($clusterRoles->count() < 2) {
+                continue;
+            }
+
+            foreach ($clusterRoles as $role) {
+                $this->add($issues, $role, $this->issue(
+                    $role,
+                    RoleDoctorIssueCode::ClusterCardinalityConflict,
+                    DoctorIssueKind::Drift,
+                    'Cluster has more than one active Ingress role.',
+                    'unique',
+                    'conflict',
+                ));
+            }
         }
     }
 

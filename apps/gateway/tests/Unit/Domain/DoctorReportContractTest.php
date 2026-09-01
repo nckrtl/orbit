@@ -198,6 +198,8 @@ it('defines the exact stable issue-code catalog for every Doctor family', functi
             'role.lifecycle_not_active',
             'role.assignment_conflict',
             'role.singleton_conflict',
+            'role.cluster_ownership_mismatch',
+            'role.cluster_cardinality_conflict',
             'role.packages_missing',
             'role.services_inactive',
             'role.firewall_projection_mismatch',

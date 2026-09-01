@@ -18,6 +18,7 @@ use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\NodeRoleValidationException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\UbuntuRelease;
+use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
 use App\Infrastructure\AppProd\AppProdSshExecutor;
@@ -327,6 +328,49 @@ it('dispatches every assignment to its code-defined baseline', function (): void
     );
 });
 
+it('keeps every Ingress lifecycle operation inside the database boundary', function (): void {
+    $events = [];
+    $metricsFleet = Mockery::mock(MetricsFleetReconciler::class);
+    $metricsFleet->shouldNotReceive('reconcile');
+    $dispatcher = new NativeRoleBaselineConverger(
+        new GatewayRoleBaseline(baseline_firewall($events)),
+        new VpnRoleBaseline(
+            new NodeRolePrerequisiteCommandFactory,
+            baseline_ssh($events),
+            baseline_keys(),
+            baseline_known_hosts(),
+            baseline_firewall($events),
+            baseline_account_resolver(),
+        ),
+        app_dev_role_baseline($events),
+        app_prod_role_baseline($events),
+        new MetricsRoleBaseline(
+            Mockery::mock(MetricsRuntimeLifecycle::class)->shouldIgnoreMissing(),
+            Mockery::mock(MetricsExporterLifecycle::class)->shouldIgnoreMissing(),
+            Mockery::mock(MetricsPublicationManager::class)->shouldIgnoreMissing(),
+            new MetricsGatewayResolver,
+            new MetricsPublicationReport,
+        ),
+        $metricsFleet,
+        new NodeRoleOperatingSystemGuard(
+            baseline_guard_ssh($events),
+            baseline_keys(),
+            baseline_known_hosts(),
+        ),
+    );
+    $node = new Node(['name' => 'ingress', 'public_ssh_host' => '192.0.2.86']);
+    $assignment = new NodeRole([
+        'role' => RoleName::Ingress,
+        'status' => LifecycleStatus::Provisioning,
+    ]);
+
+    $dispatcher->converge($node, $assignment);
+    $dispatcher->remove($node, $assignment, purgeData: false);
+    $dispatcher->removeUnreachable($node, $assignment);
+
+    expect($events)->toBe([]);
+});
+
 it('dispatches removeUnreachable to the matching baseline and skips fleet reconciliation for Metrics', function (): void {
     $events = [];
     $metricsFleet = Mockery::mock(MetricsFleetReconciler::class);
@@ -569,7 +613,7 @@ function role_baseline_roles(): array
 {
     return array_values(array_filter(
         RoleName::cases(),
-        static fn (RoleName $role): bool => $role !== RoleName::Router,
+        static fn (RoleName $role): bool => ! in_array($role, [RoleName::Router, RoleName::Ingress], strict: true),
     ));
 }
 

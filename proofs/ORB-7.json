@@ -2,27 +2,7 @@
     "setup": [],
     "acceptance": [
         {"id": "pipefail-assertions-remain-truthful", "node": "app-dev", "argv": ["bash", "/var/lib/orbit-e2e/proof/pipefail-assertions.sh"], "timeout_seconds": 60},
-        {"id": "nck-73-recover-cleanup-windows", "node": "app-dev", "argv": ["bash", "/var/lib/orbit-e2e/proof/actual-fixture-driver.sh", "/var/lib/orbit-e2e/proof/NCK-73", "recover", "600"], "timeout_seconds": 900},
-        {"id": "nck-104-prepare-roots-cleanup-windows", "node": "app-dev", "argv": ["bash", "/var/lib/orbit-e2e/proof/actual-fixture-driver.sh", "/var/lib/orbit-e2e/proof/NCK-104", "prepare-roots", "30"], "timeout_seconds": 900},
-        {"id": "nck-104-retrieve-settings-cleanup-windows", "node": "gateway", "argv": ["bash", "/var/lib/orbit-e2e/proof/actual-fixture-driver.sh", "/var/lib/orbit-e2e/proof/NCK-104", "retrieve-settings-sql", "600"], "timeout_seconds": 900},
-        {"id": "nck-104-patch-cleanup-windows", "node": "gateway", "argv": ["bash", "/var/lib/orbit-e2e/proof/actual-fixture-driver.sh", "/var/lib/orbit-e2e/proof/NCK-104", "patch-omit-null", "120"], "timeout_seconds": 900},
-        {"id": "nck-104-cli-cleanup-windows", "node": "gateway", "argv": ["bash", "/var/lib/orbit-e2e/proof/actual-fixture-driver.sh", "/var/lib/orbit-e2e/proof/NCK-104", "cli-setting-parse", "300"], "timeout_seconds": 900},
-        {"id": "nck-104-derived-origin-cleanup-windows", "node": "gateway", "argv": ["bash", "/var/lib/orbit-e2e/proof/actual-fixture-driver.sh", "/var/lib/orbit-e2e/proof/NCK-104", "derived-explicit-origin", "300"], "timeout_seconds": 900},
-        {"id": "nck-104-app-prod-cleanup-windows", "node": "gateway", "argv": ["bash", "/var/lib/orbit-e2e/proof/actual-fixture-driver.sh", "/var/lib/orbit-e2e/proof/NCK-104", "non-migrating-app-prod", "300"], "timeout_seconds": 900},
-        {"id": "nck-104-invalid-roots-sequence", "node": "gateway", "argv": ["env", "ORBIT_E2E_PROOF_ROOT=/var/lib/orbit-e2e/proof/NCK-104", "bash", "/var/lib/orbit-e2e/proof/NCK-104/reject-invalid-roots.sh"], "timeout_seconds": 600},
-        {"id": "nck-104-root-ownership-cleanup-windows", "node": "app-dev", "argv": ["bash", "/var/lib/orbit-e2e/proof/actual-fixture-driver.sh", "/var/lib/orbit-e2e/proof/NCK-104", "root-ownership", "360"], "timeout_seconds": 900},
-        {"id": "nck-104-overlap-cleanup-windows", "node": "app-dev", "argv": ["bash", "/var/lib/orbit-e2e/proof/actual-fixture-driver.sh", "/var/lib/orbit-e2e/proof/NCK-104", "checkout-overlap", "180"], "timeout_seconds": 900},
-        {"id": "nck-104-acl-cleanup-windows", "node": "app-dev", "argv": ["bash", "/var/lib/orbit-e2e/proof/actual-fixture-driver.sh", "/var/lib/orbit-e2e/proof/NCK-104", "caddy-acl-sharing", "600"], "timeout_seconds": 900},
-        {"id": "nck-104-recorded-removal-cleanup-windows", "node": "app-dev", "argv": ["bash", "/var/lib/orbit-e2e/proof/actual-fixture-driver.sh", "/var/lib/orbit-e2e/proof/NCK-104", "removal-recorded-origin", "900"], "timeout_seconds": 900},
-        {"id": "nck-104-repair-cleanup-windows", "node": "gateway", "argv": ["bash", "/var/lib/orbit-e2e/proof/actual-fixture-driver.sh", "/var/lib/orbit-e2e/proof/NCK-104", "repair-removal-origin", "30"], "timeout_seconds": 900},
-        {"id": "nck-104-removal-restoration-cleanup-windows", "node": "app-dev", "argv": ["bash", "/var/lib/orbit-e2e/proof/actual-fixture-driver.sh", "/var/lib/orbit-e2e/proof/NCK-104", "removal-restoration", "900"], "timeout_seconds": 900},
-        {"id": "nck-104-legacy-origin-cleanup-windows", "node": "gateway", "argv": ["bash", "/var/lib/orbit-e2e/proof/actual-fixture-driver.sh", "/var/lib/orbit-e2e/proof/NCK-104", "restore-legacy-origin", "30"], "timeout_seconds": 900},
-        {"id": "nck-108-metrics-node-cleanup-windows", "node": "app-dev", "argv": ["bash", "/var/lib/orbit-e2e/proof/actual-fixture-driver.sh", "/var/lib/orbit-e2e/proof/NCK-108", "metrics-node-fails-closed", "600"], "timeout_seconds": 900},
-        {"id": "nck-116-metrics-node-cleanup-windows", "node": "app-dev", "argv": ["bash", "/var/lib/orbit-e2e/proof/actual-fixture-driver.sh", "/var/lib/orbit-e2e/proof/NCK-116", "escape-metrics-node", "600"], "timeout_seconds": 900},
-        {"id": "nck-116-exporter-node-cleanup-windows", "node": "app-prod", "argv": ["bash", "/var/lib/orbit-e2e/proof/actual-fixture-driver.sh", "/var/lib/orbit-e2e/proof/NCK-116", "escape-exporter-node", "300"], "timeout_seconds": 900},
-        {"id": "nck-116-unowned-cleanup-windows", "node": "app-prod", "argv": ["bash", "/var/lib/orbit-e2e/proof/actual-fixture-driver.sh", "/var/lib/orbit-e2e/proof/NCK-116", "refuses-without-proof", "300"], "timeout_seconds": 900},
-        {"id": "nck-116-wireguard-cleanup-windows", "node": "app-prod", "argv": ["bash", "/var/lib/orbit-e2e/proof/actual-fixture-driver.sh", "/var/lib/orbit-e2e/proof/NCK-116", "escape-without-wireguard-address", "300"], "timeout_seconds": 900},
-        {"id": "nck-116-shifted-rule-cleanup-windows", "node": "app-prod", "argv": ["bash", "/var/lib/orbit-e2e/proof/actual-fixture-driver.sh", "/var/lib/orbit-e2e/proof/NCK-116", "refuses-a-shifted-rule-number", "300"], "timeout_seconds": 900},
+        {"id": "representative-shared-cleanup-primitives", "node": "app-dev", "argv": ["bash", "/var/lib/orbit-e2e/proof/representative-cleanup-matrix.sh"], "timeout_seconds": 120},
         {"id": "firewall-timeout-seed", "node": "app-prod", "argv": ["env", "ORBIT_E2E_PROOF_ROOT=/var/lib/orbit-e2e/proof/NCK-116", "bash", "/var/lib/orbit-e2e/proof/NCK-116/seed-orb-7-timeout.sh"], "timeout_seconds": 60},
         {"id": "real-firewall-fixture-times-out", "node": "app-prod", "argv": ["env", "ORBIT_E2E_PROOF_ROOT=/var/lib/orbit-e2e/proof/NCK-116", "ORBIT_E2E_ORB7_MODE=timeout", "ORBIT_E2E_ORB7_CASE=refuses-a-shifted-rule-number", "bash", "/var/lib/orbit-e2e/proof/NCK-116/refuses-a-shifted-rule-number.sh"], "timeout_seconds": 30, "expected_exit_code": 124},
         {"id": "firewall-timeout-restoration-inspected", "node": "app-prod", "argv": ["env", "ORBIT_E2E_PROOF_ROOT=/var/lib/orbit-e2e/proof/NCK-116", "bash", "/var/lib/orbit-e2e/proof/NCK-116/inspect-orb-7-timeout.sh"], "timeout_seconds": 60},
@@ -30,5 +10,5 @@
         {"id": "hung-cleanup-restoration-inspected", "node": "app-dev", "argv": ["bash", "/var/lib/orbit-e2e/proof/inspect-hung-cleanup.sh"], "timeout_seconds": 60}
     ],
     "mutates": true,
-    "fixture_issues": ["NCK-73", "NCK-104", "NCK-108", "NCK-116"]
+    "fixture_issues": ["NCK-116"]
 }

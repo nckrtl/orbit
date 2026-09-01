@@ -38,16 +38,19 @@ it('covers exact package and service matrices', function (): void {
         ->toBe(['caddy', 'docker']);
 });
 
-it('gives Router no package service or firewall projection', function (): void {
+it('gives Router and Ingress no package service or firewall projection', function (RoleName $role): void {
     $node = new Node(['public_ssh_port' => 22, 'wireguard_ip' => '10.0.0.1']);
 
-    expect(new NodeBootstrapPackageCatalog()->forRole($node, RoleName::Router))
+    expect(new NodeBootstrapPackageCatalog()->forRole($node, $role))
         ->toBe([])
-        ->and(new NodeRoleServiceCatalog()->forRole(RoleName::Router))
+        ->and(new NodeRoleServiceCatalog()->forRole($role))
         ->toBe([])
-        ->and(new NodeFirewallRuleCatalog()->forRole($node, RoleName::Router))
+        ->and(new NodeFirewallRuleCatalog()->forRole($node, $role))
         ->toBe([]);
-});
+})->with([
+    'Router' => [RoleName::Router],
+    'Ingress' => [RoleName::Ingress],
+]);
 it('returns typed exact firewall rules', function (): void {
     $rules = new NodeFirewallRuleCatalog()->forNode(new Node([
         'public_ssh_port' => 22,

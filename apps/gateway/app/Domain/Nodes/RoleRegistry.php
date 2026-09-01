@@ -13,6 +13,7 @@ final readonly class RoleRegistry
             RoleName::Gateway,
             RoleName::Vpn,
             RoleName::Router,
+            RoleName::Ingress,
             RoleName::AppDev,
             RoleName::AppProd,
             RoleName::Metrics,
@@ -40,6 +41,13 @@ final readonly class RoleRegistry
                 singleton: false,
                 assignableDuringProvisioning: false,
                 mutable: false,
+            ),
+            RoleName::Ingress => new RoleDefinition(
+                name: $role,
+                singleton: false,
+                assignableDuringProvisioning: false,
+                mutable: true,
+                conflicts: [RoleName::AppDev],
             ),
             RoleName::AppDev => new RoleDefinition(
                 name: $role,

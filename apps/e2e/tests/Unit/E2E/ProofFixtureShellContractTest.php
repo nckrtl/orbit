@@ -222,7 +222,7 @@ it('restores firewall deltas from the root-owned shape manifest', function () {
     expect($result->isSuccessful())->toBeTrue($result->getErrorOutput());
 });
 
-it('maps ORB-7 proof to exact candidate fixtures and harness timeout exits', function () {
+it('maps ORB-7 proof to representative cleanup and harness timeout exits', function () {
     $repositoryRoot = dirname(__DIR__, 5);
     $plan = json_decode(
         (string) file_get_contents($repositoryRoot.'/proofs/ORB-7.json'),
@@ -233,20 +233,21 @@ it('maps ORB-7 proof to exact candidate fixtures and harness timeout exits', fun
     $actions = collect($plan['acceptance'])->keyBy('id');
 
     expect($plan['fixture_issues'])
-        ->toBe(['NCK-73', 'NCK-104', 'NCK-108', 'NCK-116'])
+        ->toBe(['NCK-116'])
         ->and($plan['mutates'])
         ->toBeTrue()
         ->and($actions->get('pipefail-assertions-remain-truthful')['argv'] ?? null)
         ->toBe(['bash', '/var/lib/orbit-e2e/proof/pipefail-assertions.sh'])
+        ->and($actions->get('representative-shared-cleanup-primitives')['argv'] ?? null)
+        ->toBe(['bash', '/var/lib/orbit-e2e/proof/representative-cleanup-matrix.sh'])
         ->and($actions->get('real-firewall-fixture-times-out')['expected_exit_code'] ?? null)
         ->toBe(124)
         ->and($actions->get('hung-cleanup-is-force-killed')['expected_exit_code'] ?? null)
         ->toBe(137)
         ->and(json_encode($plan, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))
-        ->toContain('/var/lib/orbit-e2e/proof/NCK-73')
-        ->toContain('/var/lib/orbit-e2e/proof/NCK-104')
-        ->toContain('/var/lib/orbit-e2e/proof/NCK-108')
-        ->toContain('/var/lib/orbit-e2e/proof/NCK-116');
+        ->toContain('/var/lib/orbit-e2e/proof/NCK-116')
+        ->not->toContain('actual-fixture-driver.sh')
+        ->not->toContain('/var/lib/orbit-e2e/proof/NCK-104');
 });
 
 it('keeps only the owned ORB-7 proof plan at the top level', function () {
@@ -475,15 +476,32 @@ it('preserves the historical NCK-73 proof semantics', function () {
         ->toContain('$node["wireguard_address"]');
 });
 
-it('drives both cleanup windows through the exact staged fixture', function () {
+it('labels representative cleanup evidence and preserves unreachable NCK-104 semantics', function () {
     $repositoryRoot = dirname(__DIR__, 5);
-    $driver = (string) file_get_contents($repositoryRoot.'/proofs/ORB-7/actual-fixture-driver.sh');
+    $matrix = (string) file_get_contents($repositoryRoot.'/proofs/ORB-7/representative-cleanup-matrix.sh');
+    $fixture = (string) file_get_contents($repositoryRoot.'/proofs/ORB-7/representative-cleanup-fixture.sh');
     $plan = (string) file_get_contents($repositoryRoot.'/proofs/ORB-7.json');
+    $patch = (string) file_get_contents($repositoryRoot.'/proofs/NCK-104/patch-omit-null.sh');
+    $cli = (string) file_get_contents($repositoryRoot.'/proofs/NCK-104/cli-setting-parse.sh');
+    $actualDriverExists = is_file($repositoryRoot.'/proofs/ORB-7/actual-fixture-driver.sh');
 
-    expect($driver)
+    expect($matrix)
+        ->toContain('representative shared cleanup primitive')
         ->toContain('post-record post-mutation')
         ->toContain('EXIT INT TERM')
-        ->toContain('bash "$fixture_root/orb-7-signal-driver.sh"')
-        ->not->toContain('advance')->and($plan)
-        ->not->toContain('advance');
+        ->toContain('sudo test -x "$stub"')
+        ->toContain('[[ "$(sudo cat "$target")" == mutated ]]')
+        ->and($fixture)
+        ->toContain("trap 'cleanup \"\$?\"' EXIT")
+        ->toContain('checkpoint post-record')
+        ->toContain('checkpoint post-mutation')
+        ->and($patch)
+        ->toContain('--setting=instance.path:/mnt/orbit-apps')
+        ->toContain('settings.worktree.path')
+        ->and($cli)
+        ->toContain('--setting=instance.path:/srv/orbit:data/instances')
+        ->toContain('--setting=worktree.path:')
+        ->and($plan)
+        ->not->toContain('advance')
+        ->not->toContain('nck-104-')->and($actualDriverExists)->toBeFalse();
 });

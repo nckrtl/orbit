@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayConnector;
+use Orbit\Sdk\Requests\Nodes\AddNodeRoleRequest;
 use Orbit\Sdk\Requests\Nodes\RemoveNodeRoleRequest;
 use Orbit\Sdk\Responses\Nodes\NodeRoleMutationResponse;
 use Saloon\Enums\Method;
@@ -11,6 +12,23 @@ use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
 describe(RemoveNodeRoleRequest::class, function (): void {
+    it('transports repeated Ingress removal and remove-then-add replacement', function (): void {
+        $remove = new RemoveNodeRoleRequest(nodeId: 17, role: 'ingress', force: true);
+        $repeat = new RemoveNodeRoleRequest(nodeId: 17, role: 'ingress', force: true);
+        $replacement = new AddNodeRoleRequest(nodeId: 18, role: 'ingress');
+
+        expect($remove->resolveEndpoint())
+            ->toBe('/api/v1/nodes/17/roles/ingress')
+            ->and($remove->body()->all())
+            ->toBe(['force' => true, 'purge_data' => false, 'offline' => false])
+            ->and($repeat->resolveEndpoint())
+            ->toBe('/api/v1/nodes/17/roles/ingress')
+            ->and($replacement->resolveEndpoint())
+            ->toBe('/api/v1/nodes/18/roles')
+            ->and($replacement->body()->all())
+            ->toBe(['role' => 'ingress', 'converge_existing' => false]);
+    });
+
     it('uses the numeric node ID exact body and typed removal response', function (): void {
         $mockClient = new MockClient([
             RemoveNodeRoleRequest::class => MockResponse::make([

@@ -7,6 +7,72 @@ use Orbit\Sdk\Responses\Nodes\NodeRoleMutationResponse;
 use Orbit\Sdk\Responses\Nodes\NodeRolesResponse;
 
 describe('node role assignment response transport', function (): void {
+    it('preserves every Ingress assignment retry replacement and removal lifecycle result', function (): void {
+        $assignments = array_map(
+            static fn (array $data): array => NodeRoleAssignmentResponse::fromGatewayData(
+                $data,
+                node_role_request_id(),
+            )->toArray(),
+            [
+                [
+                    'id' => 41,
+                    'role' => 'ingress',
+                    'status' => 'provisioning',
+                    'failed_step' => null,
+                    'error_code' => null,
+                ],
+                [
+                    'id' => 41,
+                    'role' => 'ingress',
+                    'status' => 'failed',
+                    'failed_step' => 'converge:baseline',
+                    'error_code' => 'node_role.convergence_failed',
+                ],
+                [
+                    'id' => 41,
+                    'role' => 'ingress',
+                    'status' => 'active',
+                    'failed_step' => null,
+                    'error_code' => null,
+                ],
+                [
+                    'id' => 41,
+                    'role' => 'ingress',
+                    'status' => 'removing',
+                    'failed_step' => null,
+                    'error_code' => null,
+                ],
+            ],
+        );
+        $removed = NodeRoleMutationResponse::fromGatewayData([
+            'node_id' => 17,
+            'node_name' => 'ingress-old',
+            'role' => 'ingress',
+            'assignment' => null,
+            'removed' => true,
+            'degradation' => null,
+            'retained_on_node' => [],
+            'follow_up' => null,
+        ], node_role_request_id());
+
+        expect(array_column($assignments, 'status'))
+            ->toBe(['provisioning', 'failed', 'active', 'removing'])
+            ->and(array_unique(array_column($assignments, 'role')))
+            ->toBe(['ingress'])
+            ->and($removed->toArray())
+            ->toBe([
+                'node_id' => 17,
+                'node_name' => 'ingress-old',
+                'role' => 'ingress',
+                'assignment' => null,
+                'removed' => true,
+                'degradation' => null,
+                'retained_on_node' => [],
+                'follow_up' => null,
+                'request_id' => node_role_request_id(),
+            ]);
+    });
+
     it('maps list and mutation responses with the stable request id', function (): void {
         $list = new NodeRolesResponse(
             assignments: [
