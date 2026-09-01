@@ -7,17 +7,18 @@ description: Use for deterministic closeout of an approved Orbit pull request.
 
 Execute deterministic closeout for one independently approved pull request.
 This task does not provide review or approval; it acts only after exact-head
-gates are satisfied and may be followed directly by an external coordinator.
+gates are satisfied.
 
 ## Steps
 
-1. **Verify the candidate.** The pull request targets `main`, CI is green for
-   the current head, an independent `Approved.` review applies to that head, no
-   actionable comments remain, and no later commit exists. For `Proof: incus`,
-   require an active proved topology whose candidate equals `main` plus the
-   current head. If `main` moved, stop until current-head proof exists.
-2. **Merge.** Run `gh pr merge <n> --merge` and verify the merge commit on
-   `origin/main`.
+1. **Verify the candidate.** Record the exact current head SHA. Require target
+   `main`, green CI for that SHA, an independent `Approved.` review bound to that
+   SHA, no actionable comments, and no later commit. For `Proof: incus`, require
+   an active proved topology whose candidate equals `main` plus that exact head.
+   If `main` moved, stop until current-head proof exists.
+2. **Merge the bound head.** Run
+   `gh pr merge <n> --merge --match-head-commit <sha>` and verify the merge
+   commit on `origin/main`. A concurrent push must make the command fail closed.
 3. **Promote or refresh.** For Incus proof, run
    `bin/e2e-standby promote <ISSUE>`. If promotion is invalid because the proof
    plan mutates state or `main` differs, run `bin/e2e-standby refresh` instead.

@@ -1,23 +1,23 @@
 ---
 name: planning-features
-description: Use when a Builder prepares or corrects an Orbit Feature plan.
+description: Use when preparing or correcting an Orbit Feature plan.
 ---
 
 # Planning Features
 
-As the retained Builder, prepare a concise implementation map for one Orbit
-issue. Do not change product code, tests, proof files, Git history, Linear, or
-GitHub during planning.
+Prepare a concise implementation plan for one Orbit issue. Do not change product
+code, tests, proof files, Git history, Linear, or GitHub.
 
-This task may be invoked independently. In an orchestrated lifecycle the same
-retained Builder may continue implementation after an independent plan `PASS`.
+This is an independently invokable planning task. It does not assume who will
+implement the plan or what orchestration lifecycle surrounds it.
 
 ## Inputs
 
 - The current Linear issue or equivalent written contract.
 - A checkout or worktree at the intended base.
 - Applicable ADRs, nearby code, tests, and available proof commands.
-- `.orbit/plan.md`; `bin/worktree-create` initializes it.
+- `.orbit/plan.md`. `bin/worktree-create` initializes it; create the same
+  structure manually when using another checkout workflow.
 
 Stop when the outcome, component boundary, acceptance criteria, dependency, or
 proof feasibility is incomplete enough to require guessing. Do not turn the
@@ -42,18 +42,14 @@ agent-per-increment plan.
 
 The plan is an implementation map, not an exhaustive migration specification,
 command transcript, tracker history, or orchestration ledger. If it must absorb
-multiple independently shippable designs, stop and report that the issue needs
-splitting or contract repair.
+multiple independently shippable designs, report that the issue needs splitting
+or contract repair.
 
-## One correction
+## Corrections
 
-When the independent reviewer returns the first `FIX`, change only the plan
-content required by the complete findings. Do not widen product intent, weaken
-proof, or absorb a new requirement. Return the corrected plan to the same
-reviewer for the single allowed recheck.
-
-A second non-`PASS` is non-convergence; stop rather than expanding the plan
-again.
+When supplied independent review findings, change only plan content required by
+that evidence. Do not widen product intent, weaken proof, or absorb a genuinely
+new requirement.
 
 ## Verification
 

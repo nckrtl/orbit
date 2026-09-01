@@ -1,6 +1,6 @@
 ---
 name: developing-features
-description: Use when a Builder implements one Orbit issue from a worktree.
+description: Use when implementing one Orbit issue from a worktree.
 ---
 
 # Developing Features
@@ -9,9 +9,9 @@ Implement one current Linear issue or equivalent written contract in its
 worktree and open a pull request. Own code, tests, integration, proof, commits,
 and the pull request.
 
-This task may be invoked directly. In an orchestrated lifecycle the same retained
-Builder that prepared `.orbit/plan.md` may continue only after independent plan
-`PASS`. The Builder never reviews or approves its own plan or PR.
+This task may be invoked directly. A supplied `.orbit/plan.md` is implementation
+guidance, not a required lifecycle gate. Never review or approve your own pull
+request.
 
 ## Inputs
 
@@ -19,9 +19,8 @@ Require:
 
 - a bounded issue with observable criteria;
 - a bootstrapped worktree on a branch from `main`;
-- applicable ADRs and repository guidance;
-- any Feature plan and review findings; and
-- when used as a gated continuation, an independent plan `PASS`.
+- applicable ADRs and repository guidance; and
+- any supplied Feature plan or review findings.
 
 Stop if the contract requires guessing product behavior, conflicts with an
 accepted ADR, or mixes product work with a harness change.
@@ -51,10 +50,10 @@ accepted ADR, or mixes product work with a harness change.
 
 ## Corrections
 
-Keep the same retained Builder for concrete defects against the issue, ADRs,
-repository invariants, tests, or proof. A genuinely new requirement becomes
-separate Linear work. After a valid correction, rerun affected checks, create a
-new commit, and repeat exact-commit proof where required.
+Apply concrete defects against the issue, ADRs, repository invariants, tests, or
+proof. A genuinely new requirement becomes separate Linear work. After a valid
+correction, rerun affected checks, create a new commit, and repeat exact-commit
+proof where required.
 
 ## Harness issues
 
@@ -70,7 +69,7 @@ For a dedicated harness issue:
 
 ## Rules
 
-- One writer per issue; never create competing Builder sessions.
+- Do not run concurrent writers in one worktree.
 - Product feature branches never touch `apps/e2e` or `bin/e2e-*`.
 - Proof actions are read-only unless the proof plan sets `"mutates": true`.
 - A plan that removes a node declares the expected final node set.

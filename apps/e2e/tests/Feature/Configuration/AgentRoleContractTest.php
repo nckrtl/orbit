@@ -29,10 +29,7 @@ it('initializes one current feature-plan artifact', function () use ($read): voi
 });
 
 it('reads complete worktree listings without early-exit SIGPIPE', function () use ($read): void {
-    $create = $read('bin/worktree-create');
-    $remove = $read('bin/worktree-remove');
-
-    foreach ([$create, $remove] as $script) {
+    foreach ([$read('bin/worktree-create'), $read('bin/worktree-remove')] as $script) {
         expect($script)
             ->not
             ->toContain("awk '/^worktree / { print substr(\$0, 10); exit }'")
@@ -40,34 +37,39 @@ it('reads complete worktree listings without early-exit SIGPIPE', function () us
     }
 });
 
-it('keeps one builder and a bounded independent plan review', function () use ($read, $root): void {
+it('keeps planning, plan review, and development independently invokable', function () use ($read, $root): void {
     $planner = $read('.agents/skills/planning-features/SKILL.md');
     $reviewer = $read('.agents/skills/reviewing-feature-plans/SKILL.md');
     $developer = $read('.agents/skills/developing-features/SKILL.md');
 
     expect($planner)
-        ->toContain('retained Builder')
-        ->toContain('continue implementation after')
+        ->toContain('independently invokable planning task')
+        ->toContain('structure manually')
         ->toContain('Review verdict: PENDING')
         ->toContain('one row per issue criterion')
-        ->toContain('Do not create slice files');
+        ->toContain('Do not create slice files')
+        ->not->toContain('retained Builder')
+        ->not->toContain('second non-`PASS`');
 
     expect($reviewer)
         ->toContain('reports plan quality only')
+        ->toContain('may update only `Review verdict` and `## Review findings`')
+        ->toContain('never edits planning content')
         ->toContain('`PASS`')
         ->toContain('`FIX`')
         ->toContain('`BLOCK`')
         ->toContain('Collect every known blocking finding')
-        ->toContain('same reviewer')
-        ->toContain('one correction')
-        ->toContain('second non-`PASS`')
-        ->toContain('stop automatic review cycling')
-        ->toContain('Never approve a plan you authored');
+        ->toContain('smallest safe recommended')
+        ->toContain('Never approve a')
+        ->not->toContain('same reviewer')
+        ->not->toContain('one correction')
+        ->not->toContain('second non-`PASS`');
 
     expect($developer)
-        ->toContain('same retained Builder')
-        ->toContain('independent plan `PASS`')
-        ->toContain('One writer per issue');
+        ->toContain('may be invoked directly')
+        ->toContain('One issue per worktree and topology')
+        ->not->toContain('retained Builder')
+        ->not->toContain('plan `PASS`');
 
     expect(file_exists($root.'/.agents/skills/reconciling-feature-blocks/SKILL.md'))->toBeFalse();
 });
@@ -88,23 +90,25 @@ it('keeps implementation guidance on Orbit code and proof', function () use ($re
     }
 });
 
-it('keeps pull-request review independent and closeout deterministic', function () use ($read): void {
+it('binds review and merge to one exact remote head', function () use ($read): void {
     $review = $read('.agents/skills/reviewing-pull-requests/SKILL.md');
     $merge = $read('.agents/skills/merging-pull-requests/SKILL.md');
 
     expect($review)
-        ->toContain('fresh reviewer')
-        ->toContain('current pushed head')
+        ->toContain('exact remote PR head')
+        ->toContain('must not merge or rebase `main`')
+        ->toContain('stop until the candidate is updated and pushed')
         ->toContain('bin/e2e-topology prove <ISSUE>')
         ->toContain('bin/e2e-live <sha>')
         ->toContain('exactly `Approved.`')
         ->toContain('Collect every blocking')
         ->toContain('finding in one pass')
-        ->toContain('Do not merge, promote, release a proved topology');
+        ->toContain('Do not merge, promote, release a proved topology')
+        ->not->toContain('fresh reviewer');
 
     expect($merge)
         ->toContain('deterministic closeout')
-        ->toContain('gh pr merge <n> --merge')
+        ->toContain('gh pr merge <n> --merge --match-head-commit <sha>')
         ->toContain('bin/e2e-standby promote <ISSUE>')
         ->toContain('bin/e2e-standby refresh')
         ->toContain('bin/worktree-remove <ISSUE> <slug>')
@@ -126,9 +130,10 @@ it('keeps issue creation current, atomic, and proof feasible', function () use (
         )->toContain('compatibility bridge');
 });
 
-it('keeps repository guidance on standalone tasks and product boundaries', function () use ($read): void {
+it('keeps repository guidance and agent manifests current', function () use ($read): void {
     $agents = $read('AGENTS.md');
     $readme = $read('README.md');
+    $developerManifest = $read('.agents/skills/developing-features/agents/openai.yaml');
     $decisions = $read('docs/decisions/README.md');
     $topologies = $read('docs/reference/incus-topologies.md');
 
@@ -144,7 +149,12 @@ it('keeps repository guidance on standalone tasks and product boundaries', funct
         ->toContain('bin/worktree-create NCK-123 concise-feature-name')
         ->toContain('independently invokable')
         ->toContain('optional task guides')
-        ->toContain('contributors and coding');
+        ->toContain('contributors and coding')
+        ->not->toContain('reconciliation');
+
+    expect($developerManifest)
+        ->toContain('Todo Orbit issue')
+        ->not->toContain('Ready Orbit issue');
 
     expect($decisions)
         ->toContain('significant product or')
