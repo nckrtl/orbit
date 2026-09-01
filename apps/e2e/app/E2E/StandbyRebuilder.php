@@ -194,19 +194,24 @@ final readonly class StandbyRebuilder
         $issue = $instance->metadata['user.orbit.e2e.issue'] ?? null;
         $attempt = $instance->metadata['user.orbit.e2e.attempt'] ?? null;
         $operation = $instance->metadata['user.orbit.e2e.operation'] ?? null;
-        if (
-            ! $this->isPromotionScratchName($name)
-            || ! is_string($issue)
-            || ! is_string($attempt)
-            || ! is_string($operation)
-        ) {
+        if (! $this->isPromotionScratchName($name) || ! is_string($operation)) {
             return false;
         }
 
         try {
-            TopologyTarget::assertIssue($issue);
-            new AttemptId($attempt);
             new OperationId($operation);
+            if ($issue !== null) {
+                if (! is_string($issue)) {
+                    return false;
+                }
+                TopologyTarget::assertIssue($issue);
+            }
+            if ($attempt !== null) {
+                if (! is_string($attempt)) {
+                    return false;
+                }
+                new AttemptId($attempt);
+            }
         } catch (InvalidArgumentException) {
             return false;
         }

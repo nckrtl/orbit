@@ -535,6 +535,34 @@ describe('StandbyRebuilder', function () {
             ->toBe([]);
     });
 
+    it('deletes an exact promotion scratch copy after attempt metadata is stripped', function () {
+        $identity = rebuildIdentity();
+        $copy = $identity->instance('gateway').'-next';
+        $state = new RebuildHost;
+        $state->instances = [$copy];
+        $state->instanceMetadata[$copy] = [
+            'user.orbit.e2e.owner' => 'orbit-e2e',
+            'user.orbit.e2e.operation' => str_repeat('c', 32),
+        ];
+        fakeRebuildHost($state);
+
+        $paths = new StatePaths(temporaryPath('orbit-rebuild-', 4));
+        $store = new AtomicJsonStore($paths);
+        $manifests = new StandbyManifestStore(
+            $store,
+            $paths,
+            new IncusHost(pool: 'orbit-e2e'),
+            $identity,
+        );
+
+        $teardown = rebuilderFor($paths, $store, $manifests)->teardown();
+
+        expect($teardown['instances_deleted'])
+            ->toBe([$copy])
+            ->and($state->instances)
+            ->toBe([]);
+    });
+
     it('refuses a promotion scratch copy with incomplete or malformed topology metadata', function (array $metadata) {
         $identity = rebuildIdentity();
         $copy = $identity->instance('gateway').'-next';
@@ -559,17 +587,9 @@ describe('StandbyRebuilder', function () {
             ->and($state->deleted)
             ->toBe([]);
     })->with([
-        'missing issue' => [[
-            'user.orbit.e2e.attempt' => str_repeat('b', 32),
-            'user.orbit.e2e.operation' => str_repeat('c', 32),
-        ]],
         'malformed issue' => [[
             'user.orbit.e2e.issue' => 'not an issue',
             'user.orbit.e2e.attempt' => str_repeat('b', 32),
-            'user.orbit.e2e.operation' => str_repeat('c', 32),
-        ]],
-        'missing attempt' => [[
-            'user.orbit.e2e.issue' => 'ORB-15',
             'user.orbit.e2e.operation' => str_repeat('c', 32),
         ]],
         'malformed attempt' => [[
