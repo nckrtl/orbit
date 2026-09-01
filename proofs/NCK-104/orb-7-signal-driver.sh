@@ -9,6 +9,17 @@ deadline=${3:?deadline required}
 expected=130
 [[ "$signal" == TERM ]] && expected=143
 
+remotes=()
+case "$action" in
+  retrieve-settings-sql) remotes=(app-dev app-prod) ;;
+  patch-omit-null|cli-setting-parse|derived-explicit-origin|non-migrating-app-prod|restore-legacy-origin)
+    remotes=(app-dev)
+    ;;
+  root-ownership|checkout-overlap|caddy-acl-sharing|removal-recorded-origin|removal-restoration)
+    remotes=(gateway)
+    ;;
+esac
+
 env ORBIT_E2E_ORB7_MODE=signal ORBIT_E2E_ORB7_CASE="$action" \
   python3 - "/var/lib/orbit-e2e/proof/$action.sh" <<'PY' &
 import os
@@ -34,7 +45,7 @@ wait "$pid"
 status=$?
 set -e
 [[ "$status" -eq "$expected" ]] || fail "$action returned $status after $signal, expected $expected"
-orb7_restore_action "$action" gateway app-dev app-prod
+orb7_restore_action "$action" "${remotes[@]}"
 if [[ "$action" == prepare-roots ]]; then
   bash "$ORB7_STATE_HELPER" restore nck104-original-paths
 fi

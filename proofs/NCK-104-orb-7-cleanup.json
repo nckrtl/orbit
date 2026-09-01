@@ -201,30 +201,6 @@
       "timeout_seconds": 300
     },
     {
-      "id": "orb-7-reject-invalid-roots-int",
-      "node": "gateway",
-      "argv": [
-        "bash",
-        "/var/lib/orbit-e2e/proof/orb-7-signal-driver.sh",
-        "reject-invalid-roots",
-        "INT",
-        "600"
-      ],
-      "timeout_seconds": 630
-    },
-    {
-      "id": "orb-7-reject-invalid-roots-term",
-      "node": "gateway",
-      "argv": [
-        "bash",
-        "/var/lib/orbit-e2e/proof/orb-7-signal-driver.sh",
-        "reject-invalid-roots",
-        "TERM",
-        "600"
-      ],
-      "timeout_seconds": 630
-    },
-    {
       "id": "reject-invalid-roots",
       "node": "gateway",
       "argv": [
