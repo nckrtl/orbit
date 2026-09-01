@@ -1,9 +1,9 @@
 {
     "setup": [
         {
-            "id": "enable-metrics",
+            "id": "converge-metrics",
             "node": "app-dev",
-            "argv": ["orbit", "metrics:enable", "app-dev", "--json"],
+            "argv": ["orbit", "node:role:add", "app-dev", "metrics", "--converge", "--json"],
             "timeout_seconds": 900
         }
     ],
