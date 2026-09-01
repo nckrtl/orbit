@@ -219,6 +219,34 @@ it('does not let discard waive origin or symlink identity checks', function (str
         ->toBeTrue();
 })->with(['origin', 'symlink']);
 
+it('does not let discard remove a checkout with shared Git administration', function (): void {
+    $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
+    $this->source->prepare($instance);
+    $resolution = $this->source->resolve($instance);
+    $instance->update([
+        'branch' => $resolution->branch,
+        'starting_commit' => $resolution->startingCommit,
+        'status' => AppInstanceState::Active,
+    ]);
+    $sharedGitDirectory = $this->sandbox.'/shared.git';
+    $this->files->copyDirectory($instance->checkout_path.'/.git', $sharedGitDirectory);
+    file_put_contents($instance->checkout_path.'/.git/commondir', "{$sharedGitDirectory}\n");
+
+    expect(trim(orb76_run([
+        'git',
+        '-C',
+        $instance->checkout_path,
+        'rev-parse',
+        '--git-common-dir',
+    ])->stdout))
+        ->toBe($sharedGitDirectory);
+    expect(fn () => $this->source->remove($instance, true))->toThrow(RuntimeConvergenceException::class);
+    expect(is_dir($instance->checkout_path))
+        ->toBeTrue()
+        ->and(is_dir($sharedGitDirectory))
+        ->toBeTrue();
+});
+
 it('refuses a recorded path that is outside the exact App and instance identity', function (): void {
     $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
     $instance->update(['checkout_path' => $this->sandbox.'/unrelated']);

@@ -342,6 +342,8 @@ final readonly class RemoteDevelopmentAppInstanceSourceLifecycle implements Deve
                 test -d "$checkout/.git"
                 test ! -L "$checkout/.git"
                 test "$(git -C "$checkout" rev-parse --show-toplevel)" = "$checkout"
+                test "$(git -C "$checkout" rev-parse --absolute-git-dir)" = "$checkout/.git"
+                test "$(git -C "$checkout" rev-parse --path-format=absolute --git-common-dir)" = "$checkout/.git"
                 test "$(git -C "$checkout" remote get-url origin)" = "$repository"
             }
 
