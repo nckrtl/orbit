@@ -128,6 +128,8 @@ final readonly class TopologyConverger
         $this->run($instances['app-prod'], 'converge-sample-app.sh', ['internal-tls']);
         $this->run($instances['app-dev'], 'converge-sample-app.sh', ['reproject']);
         $steps['reproject.product-state'] = true;
+        $this->run($instances['app-dev'], 'converge-sample-app.sh', ['metrics-publication']);
+        $steps['refresh.metrics-publication'] = true;
 
         $this->runAll([
             'app-dev' => [
