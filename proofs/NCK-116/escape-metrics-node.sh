@@ -7,11 +7,18 @@ readonly DECOY_CONTAINER=orbit-metrics-prometheus-decoy
 readonly DECOY_VOLUME=orbit-metrics-prometheus-backup
 readonly DECOY_RULE=orbit:metrics-grafana-upstream-v2
 
+orb7_arm escape-metrics-node
+orb7_traps escape-metrics-node
 address=$(this_address)
 docker container create --name "$DECOY_CONTAINER" --label com.orbit.managed=other \
   prom/prometheus:v3.5.0 >/dev/null
+orb7_record_container escape-metrics-node container "$DECOY_CONTAINER" "$(docker inspect --format '{{.Id}}' "$DECOY_CONTAINER")"
+orb7_mark_active escape-metrics-node
+orb7_checkpoint escape-metrics-node
 docker volume create --label com.orbit.managed=other "$DECOY_VOLUME" >/dev/null
+orb7_record_container escape-metrics-node volume "$DECOY_VOLUME" "$DECOY_VOLUME"
 sudo ufw allow in on orbit proto tcp to "$address" port 3001 comment "$DECOY_RULE" >/dev/null
+orb7_record_ufw_delta escape-metrics-node decoy
 
 run_escape --force
 [[ "$ESCAPE_STATUS" -eq 0 ]] || fail "escape exited $ESCAPE_STATUS: $ESCAPE_OUTPUT"
@@ -46,8 +53,7 @@ assert_reports 'sudo apt-get purge --yes prometheus-node-exporter'
 assert_reports 'the metrics.orbit route, its certificate and its private DNS record'
 assert_reports 'Every Orbit-owned Metrics resource on this node is gone.'
 
-docker container rm --force --volumes "$DECOY_CONTAINER" >/dev/null
-docker volume rm "$DECOY_VOLUME" >/dev/null
-delete_firewall_rule "$DECOY_RULE"
+orb7_restore_owned escape-metrics-node
+trap - EXIT INT TERM
 
 echo "escape-metrics-node: the Metrics footprint is gone and three planted look-alikes are untouched"

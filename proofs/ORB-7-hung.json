@@ -1,0 +1,11 @@
+{
+  "setup": [],
+  "acceptance": [
+    {
+      "id": "hung-cleanup-is-force-killed",
+      "node": "app-dev",
+      "argv": ["bash", "/var/lib/orbit-e2e/proof/hung-cleanup.sh"],
+      "timeout_seconds": 2
+    }
+  ]
+}

@@ -9,15 +9,11 @@ readonly FOREIGN_RULE=PRODUCTION-DB-ACCESS
 readonly STUB=/usr/local/sbin/ufw
 readonly STUB_STATE=/var/tmp/orbit-proof-ufw-calls
 
+orb7_arm refuses-a-shifted-rule-number
+orb7_capture_path refuses-a-shifted-rule-number stub "$STUB"
+orb7_capture_path refuses-a-shifted-rule-number stub-state "$STUB_STATE"
+orb7_traps refuses-a-shifted-rule-number
 address=$(this_address)
-
-cleanup() {
-  sudo rm -f "$STUB" "$STUB_STATE"
-  delete_firewall_rule "$FOREIGN_RULE"
-  delete_firewall_rule "$TRANSIENT_RULE"
-  delete_firewall_rule "$EXPORTER_RULE_COMMENT"
-}
-trap cleanup EXIT
 
 rule_number() {
   grep "# $1\$" <<<"$(firewall_status_text)" | sed -E 's/^ *\[ *([0-9]+)\].*/\1/' | head -1 || true
@@ -27,13 +23,18 @@ rule_number() {
 # Orbit plans addresses the foreign rule once the rule above them both goes.
 sudo ufw allow in on orbit proto tcp from 10.44.0.1 to "$address" port 5432 \
   comment "$FOREIGN_RULE" >/dev/null
+orb7_record_ufw_delta refuses-a-shifted-rule-number foreign
+orb7_mark_active refuses-a-shifted-rule-number
+orb7_checkpoint refuses-a-shifted-rule-number
 foreign_number=$(rule_number "$FOREIGN_RULE")
 [[ -n "$foreign_number" ]] || fail "the planted foreign rule has no number"
 
 sudo ufw insert "$foreign_number" allow in on orbit proto tcp from 10.44.0.1 to "$address" \
   port 9100 comment "$EXPORTER_RULE_COMMENT" >/dev/null
+orb7_record_ufw_delta refuses-a-shifted-rule-number exporter
 sudo ufw insert 1 allow in on orbit proto tcp from 10.44.0.1 to "$address" port 9999 \
   comment "$TRANSIENT_RULE" >/dev/null
+orb7_record_ufw_delta refuses-a-shifted-rule-number transient
 
 [[ "$(rule_number "$FOREIGN_RULE")" -eq "$(( $(rule_number "$EXPORTER_RULE_COMMENT") + 1 ))" ]] \
   || fail "the foreign rule is not directly below Orbit's; the shift would prove nothing"
@@ -64,6 +65,7 @@ exec "$REAL" "$@"
 STUBEOF
 sudo chmod 0755 "$STUB"
 echo 0 | sudo tee "$STUB_STATE" >/dev/null
+orb7_timeout_checkpoint refuses-a-shifted-rule-number
 
 planned_number=$(sudo /usr/sbin/ufw status numbered 2>/dev/null \
   | grep "# $EXPORTER_RULE_COMMENT\$" | sed -E 's/^ *\[ *([0-9]+)\].*/\1/' | head -1 || true)
@@ -84,5 +86,8 @@ firewall_rule_exists "$EXPORTER_RULE_COMMENT" \
   || fail "Orbit's rule was removed even though its number no longer addressed it"
 [[ "$ESCAPE_OUTPUT" != *"Removed:"*"UFW rule commented $EXPORTER_RULE_COMMENT"* ]] \
   || fail "the escape reported a firewall removal that did not happen"
+
+orb7_restore_owned refuses-a-shifted-rule-number
+trap - EXIT INT TERM
 
 echo "refuses-a-shifted-rule-number: stale number refused, $FOREIGN_RULE and Orbit's rule both intact"

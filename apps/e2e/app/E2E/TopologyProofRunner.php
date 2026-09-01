@@ -222,7 +222,7 @@ final readonly class TopologyProofRunner
             try {
                 $result = $this->host->exec(
                     $instance,
-                    GuestCommand::asOrbitUser($action['argv'], $action['timeout_seconds']),
+                    GuestCommand::asProofAction($action['argv'], $action['timeout_seconds']),
                 );
             } catch (Throwable $transport) {
                 $actions[] = [

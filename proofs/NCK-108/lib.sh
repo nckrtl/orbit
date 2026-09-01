@@ -4,6 +4,80 @@ set -euo pipefail
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
+ORB7_CLEANUP_ROOT=/var/lib/orbit-e2e/proof-cleanup
+
+orb7_service_record() {
+  local action="$1"
+  shift
+  local record="$ORB7_CLEANUP_ROOT/$action"
+  sudo test ! -e "$record" || fail "cleanup record already exists: $record"
+  local baseline
+  baseline=$(mktemp)
+  local unit exists active
+  for unit in "$@"; do
+    exists=0
+    active=inactive
+    if systemctl cat "$unit" >/dev/null 2>&1; then
+      exists=1
+      active=$(systemctl is-active "$unit" 2>/dev/null || true)
+    fi
+    printf '%s\t%s\t%s\n' "$unit" "$exists" "$active" >>"$baseline"
+  done
+  sudo install -d -o root -g root -m 0700 -- "$record"
+  sudo install -o root -g root -m 0600 -- "$baseline" "$record/services.tsv"
+  printf 'armed\n' | sudo tee "$record/state" >/dev/null
+  rm -f -- "$baseline"
+}
+
+orb7_restore_services() {
+  local action="$1"
+  local record="$ORB7_CLEANUP_ROOT/$action"
+  sudo test -e "$record" || return 0
+  sudo mkdir "$record/restoring" 2>/dev/null || return 0
+  local unit exists active
+  while IFS=$'\t' read -r unit exists active; do
+    if [[ "$exists" -eq 1 ]]; then
+      if [[ "$active" == active ]]; then
+        sudo systemctl start "$unit"
+      else
+        sudo systemctl stop "$unit"
+      fi
+    else
+      ! systemctl cat "$unit" >/dev/null 2>&1 || return 1
+    fi
+  done < <(sudo cat "$record/services.tsv")
+  printf 'restored\n' | sudo tee "$record/state" >/dev/null
+  sudo rm -rf -- "$record"
+}
+
+orb7_cleanup_exit() {
+  local status="$1"
+  local action="$2"
+  trap - EXIT INT TERM
+  local cleanup_status=0
+  orb7_restore_services "$action" || cleanup_status=$?
+  if [[ "$status" -eq 0 && "$cleanup_status" -ne 0 ]]; then
+    exit "$cleanup_status"
+  fi
+  exit "$status"
+}
+
+orb7_service_traps() {
+  local action="$1"
+  trap 'orb7_cleanup_exit "$?" '"'"$action"'"'' EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+}
+
+orb7_checkpoint() {
+  local action="$1"
+  if [[ "${ORBIT_E2E_ORB7_MODE:-}" == signal && "${ORBIT_E2E_ORB7_CASE:-}" == "$action" ]]; then
+    printf 'active\n' | sudo tee "$ORB7_CLEANUP_ROOT/$action/state" >/dev/null
+    printf 'ready\n' | sudo tee "$ORB7_CLEANUP_ROOT/$action/checkpoint" >/dev/null
+    while true; do sleep 1; done
+  fi
+}
+
 # Extracts one JSON path (dot separated) from stdin with PHP; prints nothing when absent.
 json_get() {
   php -r '

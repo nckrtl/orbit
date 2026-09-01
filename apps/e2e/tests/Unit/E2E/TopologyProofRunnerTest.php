@@ -13,6 +13,8 @@ use App\E2E\State\StatePaths;
 use App\E2E\TopologyConverger;
 use App\E2E\TopologyProofRunner;
 use App\E2E\TopologyVerifier;
+use App\E2E\Value\AttemptId;
+use App\E2E\Value\GuestCommand;
 use App\E2E\Value\LaravelRelease;
 use App\E2E\Value\OperationId;
 use App\E2E\Value\ProofPlan;
@@ -20,10 +22,13 @@ use App\E2E\Value\StandbyGeneration;
 use App\E2E\Value\StandbyIdentity;
 use App\E2E\Value\TopologyProfile;
 use App\E2E\Value\TopologyRequest;
+use App\E2E\Value\TopologyTarget;
 use App\E2E\WorktreeSynchronizer;
 use Illuminate\Container\Container;
 use Illuminate\Process\Factory as ProcessFactory;
+use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Facades\Facade;
+use Illuminate\Support\Facades\Process;
 
 beforeEach(function () {
     $container = new Container;
@@ -120,6 +125,59 @@ function topologyProofRunnerWithLegacyGeneration(
     );
 }
 
+/** @return array{id:string,node:string,exit_code:int,stdout:string,stderr:string} */
+function runProofAction(int $exitCode, int &$transportTimeout, array &$transportArgv): array
+{
+    $attempt = new AttemptId(str_repeat('a', 32));
+    $target = TopologyTarget::feature('ORB-7', $attempt);
+    $instance = $target->instance('app-dev');
+    Process::fake(function (PendingProcess $process) use ($exitCode, $instance, &$transportTimeout, &$transportArgv) {
+        if (($process->command[3] ?? null) === 'list') {
+            return Process::result(json_encode([[
+                'name' => $instance,
+                'type' => 'virtual-machine',
+                'status' => 'Running',
+                'status_code' => 103,
+                'config' => ['user.orbit.e2e.owner' => 'orbit-e2e'],
+                'devices' => ['root' => ['pool' => 'orbit-e2e']],
+            ]], JSON_THROW_ON_ERROR));
+        }
+
+        $transportTimeout = $process->timeout;
+        $transportArgv = array_slice($process->command, 6);
+
+        return Process::result('action output', 'action error', $exitCode);
+    });
+    $runner = topologyProofRunnerWithLegacyGeneration(
+        dirname(__DIR__, 5),
+        new StatePaths(temporaryPath('orbit-proof-action-state-', 4)),
+        new StandbyManifestStore(
+            new AtomicJsonStore(new StatePaths(temporaryPath('orbit-proof-action-manifest-', 4))),
+            new StatePaths(temporaryPath('orbit-proof-action-paths-', 4)),
+            new IncusHost(pool: 'orbit-e2e'),
+        ),
+    );
+    $actions = [];
+    $method = new ReflectionMethod(TopologyProofRunner::class, 'runActions');
+
+    try {
+        $method->invokeArgs($runner, [
+            $target,
+            'acceptance',
+            [[
+                'id' => 'proof-action',
+                'node' => 'app-dev',
+                'argv' => ['bash', '/var/lib/orbit-e2e/proof/action.sh'],
+                'timeout_seconds' => 30,
+            ]],
+            &$actions,
+        ]);
+    } catch (RuntimeException) {
+    }
+
+    return $actions[0];
+}
+
 it('refuses proof from a schema 4 generation before creating an attempt', function () {
     $fixture = legacyProofWorktree();
 
@@ -152,4 +210,69 @@ it('refuses proof from a schema 4 generation before creating an attempt', functi
     } finally {
         removeLegacyProofWorktree($fixture);
     }
+});
+
+it('gives proof actions a catchable deadline and bounded transport headroom', function () {
+    $transportTimeout = 0;
+    $transportArgv = [];
+
+    runProofAction(0, $transportTimeout, $transportArgv);
+
+    expect($transportArgv)
+        ->toBe([
+            ...GuestCommand::ORBIT_USER_PREFIX,
+            'timeout',
+            '--signal=TERM',
+            '--kill-after=5s',
+            '30s',
+            'bash',
+            '/var/lib/orbit-e2e/proof/action.sh',
+        ])
+        ->and($transportTimeout)
+        ->toBe(37);
+});
+
+it('records a proof action that exits after its term deadline', function () {
+    $transportTimeout = 0;
+    $transportArgv = [];
+
+    $action = runProofAction(124, $transportTimeout, $transportArgv);
+
+    expect($action)
+        ->toBe([
+            'id' => 'proof-action',
+            'node' => 'app-dev',
+            'exit_code' => 124,
+            'stdout' => "action output\n",
+            'stderr' => "action error\n",
+        ])
+        ->and($transportTimeout)
+        ->toBe(37);
+});
+
+it('records a proof action force-killed after its cleanup grace', function () {
+    $transportTimeout = 0;
+    $transportArgv = [];
+
+    $action = runProofAction(137, $transportTimeout, $transportArgv);
+
+    expect($action)
+        ->toBe([
+            'id' => 'proof-action',
+            'node' => 'app-dev',
+            'exit_code' => 137,
+            'stdout' => "action output\n",
+            'stderr' => "action error\n",
+        ])
+        ->and($transportTimeout)
+        ->toBe(37);
+});
+
+it('keeps ordinary orbit-user commands unchanged', function () {
+    $command = GuestCommand::asOrbitUser(['orbit', 'node:list', '--json'], 30);
+
+    expect($command->command)
+        ->toBe([...GuestCommand::ORBIT_USER_PREFIX, 'orbit', 'node:list', '--json'])
+        ->and($command->timeout)
+        ->toBe(30);
 });

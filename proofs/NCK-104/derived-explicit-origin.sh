@@ -7,7 +7,13 @@ source /var/lib/orbit-e2e/proof/lib.sh
 dev_id=$(instance_id e2e-dev)
 [[ -n "$dev_id" ]] || fail "missing e2e-dev instance"
 
+orb7_arm_database derived-explicit-origin
+orb7_arm_remote_paths app-dev derived-explicit-origin \
+  /srv/orbit/worktrees /home/orbit/custom-worktrees /home/orbit/apps/laravel/.git/worktrees
+orb7_traps derived-explicit-origin app-dev
 derived=$(orbit workspace:new "$dev_id" nck104-derived --json)
+orb7_mark_active derived-explicit-origin app-dev
+orb7_checkpoint derived-explicit-origin
 [[ "$(echo "$derived" | json_get checkout_path)" == /srv/orbit/worktrees/laravel/nck104-derived ]] \
   || fail "derived checkout was not under the configured worktree root: $derived"
 [[ "$(sql_workspace_origin nck104-derived)" == derived ]] || fail "derived origin was not stored"
@@ -29,4 +35,5 @@ unsafe=$(orbit workspace:new "$dev_id" nck104-unsafe --path=/home/orbit/custom-w
 sql_set_workspace_origin nck104-unsafe bogus
 [[ "$(sql_workspace_origin nck104-unsafe)" == bogus ]] || fail "unsafe origin was not stored"
 
+orb7_complete derived-explicit-origin app-dev
 echo "origin: derived, explicit, and legacy null"

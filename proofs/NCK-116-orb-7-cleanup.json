@@ -1,0 +1,237 @@
+{
+  "setup": [
+    {
+      "id": "render-from-branch",
+      "node": "app-dev",
+      "argv": [
+        "orbit",
+        "metrics:exporter:enable",
+        "gateway",
+        "--json"
+      ],
+      "timeout_seconds": 900
+    },
+    {
+      "id": "gateway-offline",
+      "node": "gateway",
+      "argv": [
+        "bash",
+        "/var/lib/orbit-e2e/proof/gateway-offline.sh"
+      ],
+      "timeout_seconds": 120
+    }
+  ],
+  "acceptance": [
+    {
+      "id": "escape-published-on-a-node-without-orbit",
+      "node": "app-prod",
+      "argv": [
+        "bash",
+        "/var/lib/orbit-e2e/proof/escape-published.sh"
+      ],
+      "timeout_seconds": 120
+    },
+    {
+      "id": "remote-path-refused-without-a-gateway",
+      "node": "app-dev",
+      "argv": [
+        "bash",
+        "/var/lib/orbit-e2e/proof/remote-path-refused.sh"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "id": "orb-7-metrics-node-cleans-up-locally-int",
+      "node": "app-dev",
+      "argv": [
+        "bash",
+        "/var/lib/orbit-e2e/proof/orb-7-signal-driver.sh",
+        "escape-metrics-node",
+        "INT",
+        "600"
+      ],
+      "timeout_seconds": 630
+    },
+    {
+      "id": "orb-7-metrics-node-cleans-up-locally-term",
+      "node": "app-dev",
+      "argv": [
+        "bash",
+        "/var/lib/orbit-e2e/proof/orb-7-signal-driver.sh",
+        "escape-metrics-node",
+        "TERM",
+        "600"
+      ],
+      "timeout_seconds": 630
+    },
+    {
+      "id": "metrics-node-cleans-up-locally",
+      "node": "app-dev",
+      "argv": [
+        "bash",
+        "/var/lib/orbit-e2e/proof/escape-metrics-node.sh"
+      ],
+      "timeout_seconds": 600
+    },
+    {
+      "id": "orb-7-exporter-node-cleans-up-locally-int",
+      "node": "app-prod",
+      "argv": [
+        "bash",
+        "/var/lib/orbit-e2e/proof/orb-7-signal-driver.sh",
+        "escape-exporter-node",
+        "INT",
+        "300"
+      ],
+      "timeout_seconds": 330
+    },
+    {
+      "id": "orb-7-exporter-node-cleans-up-locally-term",
+      "node": "app-prod",
+      "argv": [
+        "bash",
+        "/var/lib/orbit-e2e/proof/orb-7-signal-driver.sh",
+        "escape-exporter-node",
+        "TERM",
+        "300"
+      ],
+      "timeout_seconds": 330
+    },
+    {
+      "id": "exporter-node-cleans-up-locally",
+      "node": "app-prod",
+      "argv": [
+        "bash",
+        "/var/lib/orbit-e2e/proof/escape-exporter-node.sh"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "id": "orb-7-refuses-resources-without-ownership-proof-int",
+      "node": "app-prod",
+      "argv": [
+        "bash",
+        "/var/lib/orbit-e2e/proof/orb-7-signal-driver.sh",
+        "refuses-without-proof",
+        "INT",
+        "300"
+      ],
+      "timeout_seconds": 330
+    },
+    {
+      "id": "orb-7-refuses-resources-without-ownership-proof-term",
+      "node": "app-prod",
+      "argv": [
+        "bash",
+        "/var/lib/orbit-e2e/proof/orb-7-signal-driver.sh",
+        "refuses-without-proof",
+        "TERM",
+        "300"
+      ],
+      "timeout_seconds": 330
+    },
+    {
+      "id": "refuses-resources-without-ownership-proof",
+      "node": "app-prod",
+      "argv": [
+        "bash",
+        "/var/lib/orbit-e2e/proof/refuses-without-proof.sh"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "id": "orb-7-cleans-up-with-no-wireguard-address-int",
+      "node": "app-prod",
+      "argv": [
+        "bash",
+        "/var/lib/orbit-e2e/proof/orb-7-signal-driver.sh",
+        "escape-without-wireguard-address",
+        "INT",
+        "300"
+      ],
+      "timeout_seconds": 330
+    },
+    {
+      "id": "orb-7-cleans-up-with-no-wireguard-address-term",
+      "node": "app-prod",
+      "argv": [
+        "bash",
+        "/var/lib/orbit-e2e/proof/orb-7-signal-driver.sh",
+        "escape-without-wireguard-address",
+        "TERM",
+        "300"
+      ],
+      "timeout_seconds": 330
+    },
+    {
+      "id": "cleans-up-with-no-wireguard-address",
+      "node": "app-prod",
+      "argv": [
+        "bash",
+        "/var/lib/orbit-e2e/proof/escape-without-wireguard-address.sh"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "id": "orb-7-refuses-a-rule-number-that-shifted-under-the-plan-int",
+      "node": "app-prod",
+      "argv": [
+        "bash",
+        "/var/lib/orbit-e2e/proof/orb-7-signal-driver.sh",
+        "refuses-a-shifted-rule-number",
+        "INT",
+        "300"
+      ],
+      "timeout_seconds": 330
+    },
+    {
+      "id": "orb-7-refuses-a-rule-number-that-shifted-under-the-plan-term",
+      "node": "app-prod",
+      "argv": [
+        "bash",
+        "/var/lib/orbit-e2e/proof/orb-7-signal-driver.sh",
+        "refuses-a-shifted-rule-number",
+        "TERM",
+        "300"
+      ],
+      "timeout_seconds": 330
+    },
+    {
+      "id": "refuses-a-rule-number-that-shifted-under-the-plan",
+      "node": "app-prod",
+      "argv": [
+        "bash",
+        "/var/lib/orbit-e2e/proof/refuses-a-shifted-rule-number.sh"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "id": "gateway-online",
+      "node": "gateway",
+      "argv": [
+        "bash",
+        "/var/lib/orbit-e2e/proof/gateway-online.sh"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "id": "stale-role-comes-off-through-orbit",
+      "node": "app-dev",
+      "argv": [
+        "bash",
+        "/var/lib/orbit-e2e/proof/clear-stale-role.sh"
+      ],
+      "timeout_seconds": 900
+    },
+    {
+      "id": "reenabling-converges-healthy",
+      "node": "app-dev",
+      "argv": [
+        "bash",
+        "/var/lib/orbit-e2e/proof/reenable-healthy.sh"
+      ],
+      "timeout_seconds": 900
+    }
+  ],
+  "mutates": true
+}

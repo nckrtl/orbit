@@ -1,0 +1,96 @@
+{
+  "setup": [
+    {
+      "id": "stop-app-prod-ssh",
+      "node": "app-prod",
+      "argv": [
+        "bash",
+        "/var/lib/orbit-e2e/proof/ssh-service.sh",
+        "stop"
+      ],
+      "timeout_seconds": 60
+    }
+  ],
+  "acceptance": [
+    {
+      "id": "role-mutation-with-unreachable-peer",
+      "node": "app-dev",
+      "argv": [
+        "bash",
+        "/var/lib/orbit-e2e/proof/role-mutation.sh"
+      ],
+      "timeout_seconds": 600
+    },
+    {
+      "id": "metrics-role-restored-with-unreachable-peer",
+      "node": "app-dev",
+      "argv": [
+        "bash",
+        "/var/lib/orbit-e2e/proof/metrics-restore.sh"
+      ],
+      "timeout_seconds": 900
+    },
+    {
+      "id": "status-reports-skipped-node",
+      "node": "app-dev",
+      "argv": [
+        "bash",
+        "/var/lib/orbit-e2e/proof/status-degraded.sh"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "id": "orb-7-metrics-node-fails-closed-int",
+      "node": "app-dev",
+      "argv": [
+        "bash",
+        "/var/lib/orbit-e2e/proof/orb-7-signal-driver.sh",
+        "metrics-node-fails-closed",
+        "INT",
+        "600"
+      ],
+      "timeout_seconds": 660
+    },
+    {
+      "id": "orb-7-metrics-node-fails-closed-term",
+      "node": "app-dev",
+      "argv": [
+        "bash",
+        "/var/lib/orbit-e2e/proof/orb-7-signal-driver.sh",
+        "metrics-node-fails-closed",
+        "TERM",
+        "600"
+      ],
+      "timeout_seconds": 660
+    },
+    {
+      "id": "metrics-node-still-fails-closed",
+      "node": "app-dev",
+      "argv": [
+        "bash",
+        "/var/lib/orbit-e2e/proof/metrics-node-fails-closed.sh"
+      ],
+      "timeout_seconds": 600
+    },
+    {
+      "id": "restore-app-prod-ssh",
+      "node": "app-prod",
+      "argv": [
+        "bash",
+        "/var/lib/orbit-e2e/proof/ssh-service.sh",
+        "start"
+      ],
+      "timeout_seconds": 60
+    },
+    {
+      "id": "degradation-clears-on-recovery",
+      "node": "app-dev",
+      "argv": [
+        "bash",
+        "/var/lib/orbit-e2e/proof/status-recovered.sh"
+      ],
+      "timeout_seconds": 600
+    }
+  ],
+  "mutates": true
+}

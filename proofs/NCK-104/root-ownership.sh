@@ -18,7 +18,12 @@ expect_error node.settings_root_failed orbit node:settings app-dev --setting=ins
 [[ "$(app_dev_settings)" == "$before" ]] || fail "foreign-owned root was persisted"
 test "$(stat -c '%U:%G %a' /mnt/orbit-foreign)" = 'root:root 755'
 
+orb7_arm_paths root-ownership /mnt/orbit-ok /home/orbit/apps /srv/orbit
+orb7_arm_remote_database root-ownership
+orb7_traps root-ownership gateway
 out=$(orbit node:settings app-dev --setting=instance.path:/mnt/orbit-ok --json)
+orb7_mark_active root-ownership gateway
+orb7_checkpoint root-ownership
 [[ "$(echo "$out" | json_get settings.instance.path)" == /mnt/orbit-ok ]] || fail "pre-existing orbit root was rejected: $out"
 test "$(stat -c '%U:%G %a' /mnt/orbit-ok)" = 'orbit:orbit 750'
 
@@ -46,4 +51,6 @@ expect_error node.settings_root_failed orbit node:settings app-dev --setting=wor
 sudo chown orbit:orbit -- /home/orbit/apps
 restore_default_roots
 
+orb7_restore_action prepare-roots
+orb7_complete root-ownership gateway
 echo "ownership: missing 755, pre-existing 750 unchanged, loose mode and foreign owner rejected, last unset fails closed"

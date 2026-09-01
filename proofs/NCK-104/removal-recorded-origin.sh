@@ -2,7 +2,12 @@
 # Removal uses recorded path and origin; unsafe origin, grouping, and ownership fail closed.
 source /var/lib/orbit-e2e/proof/lib.sh
 
+orb7_arm_paths removal-recorded-origin /srv/orbit/worktrees/laravel/nck104-shared /home/orbit/apps/laravel/.git/worktrees
+orb7_arm_remote_database removal-recorded-origin
+orb7_traps removal-recorded-origin gateway
 orbit workspace:remove "$(workspace_id nck104-shared)" --json >/dev/null
+orb7_mark_active removal-recorded-origin gateway
+orb7_checkpoint removal-recorded-origin
 test ! -e /srv/orbit/worktrees/laravel/nck104-shared
 test ! -e /srv/orbit/worktrees/laravel
 test -d /srv/orbit/worktrees
@@ -27,7 +32,7 @@ sudo chown orbit:orbit -- "$owned_instance"
 orbit instance:remove "$(instance_id nck104-dev)" --json >/dev/null
 test ! -e /srv/orbit/instances/nck104
 test -d /srv/orbit/instances
-if getfacl -cp /srv/orbit/instances | grep -Eq '^user:caddy:'; then
+if grep -Eq '^user:caddy:' <<<"$(getfacl -cp /srv/orbit/instances)"; then
   fail "instance root kept a Caddy traversal grant after the last checkout"
 fi
 
@@ -86,4 +91,5 @@ test -d "$drift" || fail "branch-drifted checkout was deleted"
 [[ "$(git -C "$drift" symbolic-ref --quiet --short HEAD)" == drifted ]] \
   || fail "branch-drifted checkout HEAD changed"
 
+orb7_complete removal-recorded-origin gateway
 echo "removal: unsafe origin, grouping, ownership, checkout identity, and branch drift fail closed"

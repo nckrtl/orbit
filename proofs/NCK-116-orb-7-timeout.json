@@ -1,0 +1,102 @@
+{
+  "setup": [
+    {
+      "id": "render-from-branch",
+      "node": "app-dev",
+      "argv": [
+        "orbit",
+        "metrics:exporter:enable",
+        "gateway",
+        "--json"
+      ],
+      "timeout_seconds": 900
+    },
+    {
+      "id": "gateway-offline",
+      "node": "gateway",
+      "argv": [
+        "bash",
+        "/var/lib/orbit-e2e/proof/gateway-offline.sh"
+      ],
+      "timeout_seconds": 120
+    }
+  ],
+  "acceptance": [
+    {
+      "id": "escape-published-on-a-node-without-orbit",
+      "node": "app-prod",
+      "argv": [
+        "bash",
+        "/var/lib/orbit-e2e/proof/escape-published.sh"
+      ],
+      "timeout_seconds": 120
+    },
+    {
+      "id": "remote-path-refused-without-a-gateway",
+      "node": "app-dev",
+      "argv": [
+        "bash",
+        "/var/lib/orbit-e2e/proof/remote-path-refused.sh"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "id": "metrics-node-cleans-up-locally",
+      "node": "app-dev",
+      "argv": [
+        "bash",
+        "/var/lib/orbit-e2e/proof/escape-metrics-node.sh"
+      ],
+      "timeout_seconds": 600
+    },
+    {
+      "id": "exporter-node-cleans-up-locally",
+      "node": "app-prod",
+      "argv": [
+        "bash",
+        "/var/lib/orbit-e2e/proof/escape-exporter-node.sh"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "id": "refuses-resources-without-ownership-proof",
+      "node": "app-prod",
+      "argv": [
+        "bash",
+        "/var/lib/orbit-e2e/proof/refuses-without-proof.sh"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "id": "cleans-up-with-no-wireguard-address",
+      "node": "app-prod",
+      "argv": [
+        "bash",
+        "/var/lib/orbit-e2e/proof/escape-without-wireguard-address.sh"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "id": "orb-7-timeout-seed",
+      "node": "app-prod",
+      "argv": [
+        "bash",
+        "/var/lib/orbit-e2e/proof/seed-orb-7-timeout.sh"
+      ],
+      "timeout_seconds": 60
+    },
+    {
+      "id": "orb-7-shifted-rule-timeout",
+      "node": "app-prod",
+      "argv": [
+        "env",
+        "ORBIT_E2E_ORB7_MODE=timeout",
+        "ORBIT_E2E_ORB7_CASE=refuses-a-shifted-rule-number",
+        "bash",
+        "/var/lib/orbit-e2e/proof/refuses-a-shifted-rule-number.sh"
+      ],
+      "timeout_seconds": 4
+    }
+  ],
+  "mutates": true
+}

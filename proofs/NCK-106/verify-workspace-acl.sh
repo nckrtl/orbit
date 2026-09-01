@@ -39,14 +39,15 @@ workspace_host=$(php -r '
   exit(1);
 ' <<<"$workspace_json")
 
-curl --fail --silent --show-error --cacert /etc/ssl/certs/ca-certificates.crt \
+http_status=$(curl --fail --silent --show-error --cacert /etc/ssl/certs/ca-certificates.crt \
   --resolve "$workspace_host:443:127.0.0.1" \
-  -o /dev/null -w '%{http_code}\n' "https://$workspace_host/" | grep -qx 200
+  -o /dev/null -w '%{http_code}\n' "https://$workspace_host/")
+[[ "$http_status" == 200 ]]
 
 # Caddy gets traversal on the workspace ancestor, but no read/list access to
 # unrelated Orbit state.
 ! sudo -u caddy -- test -r "$config"
-! sudo -u caddy -- find /home/orbit/.orbit -maxdepth 1 -type f -print -quit 2>/dev/null | grep -q .
+[[ -z "$(sudo -u caddy -- find /home/orbit/.orbit -maxdepth 1 -type f -print -quit 2>/dev/null)" ]]
 
 cli_home=$(mktemp -d /tmp/orbit-nck-106-cli-only.XXXXXX)
 trap 'rm -rf -- "$cli_home"' EXIT
@@ -55,4 +56,4 @@ install -m 0600 -- "$config" "$cli_home/config.json"
 ORBIT_HOME="$cli_home" "$orbit" gateway:use e2e --json >/dev/null
 [[ "$(stat -c '%a' -- "$cli_home")" == 700 ]]
 [[ "$(stat -c '%a' -- "$cli_home/config.json")" == 600 ]]
-! getfacl -cp -- "$cli_home" 2>/dev/null | grep -q '^user:caddy:'
+! grep -q '^user:caddy:' <<<"$(getfacl -cp -- "$cli_home" 2>/dev/null)"

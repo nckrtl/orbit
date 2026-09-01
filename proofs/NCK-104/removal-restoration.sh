@@ -2,7 +2,12 @@
 # Clean up fail-closed fixtures and prove managed-home ancestor restoration.
 source /var/lib/orbit-e2e/proof/lib.sh
 
+orb7_arm_paths removal-restoration /home/orbit/custom-worktrees/nck104-unsafe /home/orbit/apps/laravel/.git/worktrees
+orb7_arm_remote_database removal-restoration
+orb7_traps removal-restoration gateway
 orbit workspace:remove "$(workspace_id nck104-unsafe)" --json >/dev/null
+orb7_mark_active removal-restoration gateway
+orb7_checkpoint removal-restoration
 
 instance_checkout_path=$(instance_checkout e2e-dev)
 identity=/srv/orbit/worktrees/laravel/nck104-identity
@@ -38,7 +43,7 @@ restore_home_acl() {
 trap restore_home_acl EXIT
 sudo setfacl -m u:caddy:--- /home
 nontraversable_home_acl=$(sudo getfacl -cp /home)
-sudo getfacl -cp /home | grep -Fqx 'user:caddy:---' \
+grep -Fqx 'user:caddy:---' <<<"$(sudo getfacl -cp /home)" \
   || fail "managed-home ancestor remained traversable before the fresh checkout"
 
 home_app=$(orbit app:new nck104-home-ancestor https://github.com/laravel/laravel.git --json)
@@ -46,7 +51,7 @@ home_app_id=$(echo "$home_app" | json_get id)
 home_instance=$(orbit instance:new "$home_app_id" "$(node_id app-dev)" nck104-home-ancestor --json)
 [[ "$(echo "$home_instance" | json_get checkout_path)" == /home/orbit/apps/nck104-home-ancestor ]] \
   || fail "fresh managed-home instance used the wrong checkout: $home_instance"
-sudo getfacl -cp /home | grep -Fqx 'user:caddy:--x' \
+grep -Fqx 'user:caddy:--x' <<<"$(sudo getfacl -cp /home)" \
   || fail "fresh managed-home checkout did not grant Caddy traversal on /home"
 
 orbit instance:remove "$(instance_id nck104-home-ancestor)" --json >/dev/null
@@ -71,4 +76,5 @@ rmdir "$runtime_state"
 php /home/orbit/apps/laravel/artisan --version >/dev/null
 orbit workspace:new "$recreated_instance_id" e2e --branch=e2e --json >/dev/null
 
+orb7_complete removal-restoration gateway
 echo "removal: fixtures cleaned; exact checkout removal restored the managed-home ancestor ACL"

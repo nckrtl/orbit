@@ -13,12 +13,18 @@ expect_error workspace.path_taken orbit workspace:new "$dev_id" nck104-child-ove
 expect_error workspace.path_taken orbit workspace:new "$dev_id" nck104-instance-child \
   --path=/home/orbit/apps/laravel/nested --json
 
+orb7_arm_paths checkout-overlap /home/orbit/.orbit/worktrees/laravel/e2e-extra /home/orbit/apps/laravel/.git/worktrees
+orb7_arm_remote_database checkout-overlap
+orb7_traps checkout-overlap gateway
 lookalike=$(orbit workspace:new "$dev_id" nck104-lookalike \
   --path=/home/orbit/.orbit/worktrees/laravel/e2e-extra --json)
+orb7_mark_active checkout-overlap gateway
+orb7_checkpoint checkout-overlap
 [[ "$(echo "$lookalike" | json_get checkout_path)" == /home/orbit/.orbit/worktrees/laravel/e2e-extra ]] \
   || fail "lookalike prefix was treated as overlap: $lookalike"
 
 orbit workspace:remove "$(workspace_id nck104-lookalike)" --json >/dev/null
 test ! -e /home/orbit/.orbit/worktrees/laravel/e2e-extra
 
+orb7_complete checkout-overlap gateway
 echo "overlap: equal, parent, child, and child-of-instance paths rejected; e2e-extra prefix allowed"

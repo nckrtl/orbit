@@ -1,0 +1,11 @@
+{
+  "setup": [],
+  "acceptance": [
+    {
+      "id": "large-output-stays-successful",
+      "node": "app-dev",
+      "argv": ["bash", "/var/lib/orbit-e2e/proof/large-output.sh"],
+      "timeout_seconds": 60
+    }
+  ]
+}

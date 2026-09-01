@@ -5,8 +5,13 @@ source /var/lib/orbit-e2e/proof/lib.sh
 
 readonly DECOY_RULE=orbit:metrics-node-exporter-v2
 
+orb7_arm escape-exporter-node
+orb7_traps escape-exporter-node
 address=$(this_address)
 sudo ufw allow in on orbit proto tcp to "$address" port 9101 comment "$DECOY_RULE" >/dev/null
+orb7_record_ufw_delta escape-exporter-node decoy
+orb7_mark_active escape-exporter-node
+orb7_checkpoint escape-exporter-node
 
 run_escape --force
 [[ "$ESCAPE_STATUS" -eq 0 ]] || fail "escape exited $ESCAPE_STATUS: $ESCAPE_OUTPUT"
@@ -28,6 +33,7 @@ assert_reports 'Every Orbit-owned Metrics resource on this node is gone.'
 [[ "$ESCAPE_OUTPUT" != *'metrics.orbit route'* ]] \
   || fail "an exporter-only node reported Gateway-side Metrics-node leftovers"
 
-delete_firewall_rule "$DECOY_RULE"
+orb7_restore_owned escape-exporter-node
+trap - EXIT INT TERM
 
 echo "escape-exporter-node: the exporter footprint is gone, the package and a look-alike rule remain"
