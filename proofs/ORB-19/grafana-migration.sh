@@ -5,18 +5,36 @@ password=$(grafana_password)
 address=$(wireguard_address)
 api="http://$address:3000/api"
 
-curl --silent --show-error --fail --max-time 15 --user "admin:$password" \
-  --request DELETE "$api/datasources/uid/orbit-prometheus" >/dev/null
-curl --silent --show-error --fail --max-time 15 --user "admin:$password" \
-  --header 'Content-Type: application/json' \
-  --data '{"name":"Prometheus","type":"prometheus","access":"proxy","url":"http://127.0.0.1:9090","isDefault":true}' \
-  "$api/datasources" >/dev/null
+sudo tee /etc/orbit/metrics/grafana/provisioning/datasources/prometheus.yml >/dev/null <<'YAML'
+apiVersion: 1
+deleteDatasources:
+  - name: orbit-prometheus
+    orgId: 1
+prune: true
+datasources:
+  - name: Prometheus
+    type: prometheus
+    uid: orbit-prometheus
+    orgId: 1
+    url: http://127.0.0.1:9090
+    access: proxy
+    isDefault: true
+YAML
+docker container restart orbit-metrics-grafana >/dev/null
 
-before=$(curl --silent --show-error --fail --max-time 15 --user "admin:$password" "$api/datasources")
+before=''
+for attempt in {1..30}; do
+  before=$(curl --silent --show-error --fail --max-time 5 --user "admin:$password" "$api/datasources" 2>/dev/null || true)
+  [[ -n "$before" ]] && break
+  sleep 1
+done
+
 echo "$before" | php -r '
   $rows = json_decode(stream_get_contents(STDIN), true);
+  if (!is_array($rows)) { exit(1); }
   $legacy = array_values(array_filter($rows, fn ($row) => ($row["name"] ?? null) === "Prometheus"));
-  exit(count($legacy) === 1 ? 0 : 1);
+  $pinned = array_values(array_filter($rows, fn ($row) => ($row["name"] ?? null) === "orbit-prometheus"));
+  exit(count($legacy) === 1 && count($pinned) === 0 ? 0 : 1);
 ' || fail "legacy Prometheus datasource precondition was not planted"
 
 grafana_before=$(docker container inspect --format '{{.Id}}' orbit-metrics-grafana)
