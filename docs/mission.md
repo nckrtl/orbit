@@ -9,7 +9,7 @@ agent, so you can focus on building products without operational distractions.
 Modern development tools are good at individual jobs. One tool may handle local
 development, another may deploy an application, and another may monitor a
 server. The challenge starts when those tools need to work together. They often
-have separate logins, separate settings, and different ideas about the same
+have separate logins, separate settings, and different concepts of the same
 application.
 
 Orbit connects those stages. It keeps track of your applications and machines,
