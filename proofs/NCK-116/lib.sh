@@ -271,7 +271,7 @@ orb7_restore_timeout_seed() {
 
   if [[ -n "$exporter_number" ]] && ! firewall_rule_exists "$EXPORTER_RULE_COMMENT"; then
     address=$(this_address)
-    sudo /usr/sbin/ufw insert "$exporter_number" allow in on orbit proto tcp \
+    sudo /usr/sbin/ufw allow in on orbit proto tcp \
       from 10.44.0.2 to "$address" port 9100 comment "$EXPORTER_RULE_COMMENT" >/dev/null
   fi
 

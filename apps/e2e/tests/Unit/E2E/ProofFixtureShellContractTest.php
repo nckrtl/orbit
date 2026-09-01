@@ -439,7 +439,10 @@ it('requires positive pre-signal evidence in the NCK-116 timeout proof', functio
             'sudo test -f "$ORB7_TIMEOUT_WITNESS"',
         )->toContain('orb7_restore_timeout_seed')->toContain('sudo rm -f -- "$ORB7_TIMEOUT_WITNESS"')->and(
             $library,
-        )->toContain('orb7_restore_timeout_seed()')->toContain('ORB7_TIMEOUT_BASELINE_RECORD')->and($baselineRestored)
+        )->toContain('orb7_restore_timeout_seed()')->toContain('ORB7_TIMEOUT_BASELINE_RECORD')->toContain(
+            'sudo /usr/sbin/ufw allow in on orbit proto tcp',
+        )
+        ->not->toContain('sudo /usr/sbin/ufw insert "$exporter_number"')->and($baselineRestored)
         ->not->toBeFalse()->and($baselineRecordReleased)
         ->not->toBeFalse()->and($baselineRestored)->toBeLessThan($baselineRecordReleased);
 });
