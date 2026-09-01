@@ -140,6 +140,7 @@ it('keeps repository guidance and agent manifests current', function () use ($re
     expect($agents)->toContain('## Independent agent-role skills');
     expect($agents)->not->toContain('reconciling-feature-blocks');
     expect($agents)->not->toContain('Builder');
+    expect($agents)->not->toContain('after plan approval');
     expect($agents)->toContain('Product feature branches never modify the harness');
     expect($agents)->toContain('A proved topology is immutable evidence');
     expect($agents)->toContain('Production release is separate from development proof');
