@@ -86,7 +86,7 @@ if [[ -n "$(git -C "$primary_root" status --porcelain)" ]]; then
     exit 1
 fi
 
-if git worktree list --porcelain | grep -Fxq "worktree $worktree"; then
+if git worktree list --porcelain | grep -Fx "worktree $worktree" >/dev/null; then
     if [[ -n "$(git -C "$worktree" status --porcelain)" ]]; then
         printf 'Existing worktree is dirty: %s\n' "$worktree" >&2
         exit 1
