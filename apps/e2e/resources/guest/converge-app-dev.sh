@@ -4,7 +4,7 @@ umask 077
 cd /home/orbit/orbit/apps/gateway
 [[ $# -eq 3 && "$1" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]{0,62}$ && "$2" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || exit 64
 [[ "$3" =~ ^(x86_64|aarch64)$ ]] || exit 65
-wireguard_address=10.44.0.2
+wireguard_ip=10.44.0.2
 db=/home/orbit/.orbit/gateway.sqlite
 # The Gateway store is the source of truth: an active node with an active
 # role is already provisioned. Public SSH closes after provisioning, so a
@@ -27,7 +27,7 @@ provision() {
   [[ "$fingerprint" =~ ^SHA256:[A-Za-z0-9+/]{43}$ ]]
   sudo -u orbit -- env HOME=/home/orbit ORBIT_HOME=/home/orbit/.orbit ORBIT_GATEWAY_CHECKOUT=/home/orbit/orbit/apps/gateway DB_DATABASE=/home/orbit/.orbit/gateway.sqlite php /home/orbit/orbit/apps/gateway/artisan orbit:node-provision "$1" "$2" \
     --role=app-dev --tld=beast --architecture="$3" --user=orbit \
-    --wireguard-address="$wireguard_address" \
+    --wireguard-ip="$wireguard_ip" \
     --host-key-fingerprint="$fingerprint" --no-interaction
 }
 if ! node_active "$1" app-dev; then

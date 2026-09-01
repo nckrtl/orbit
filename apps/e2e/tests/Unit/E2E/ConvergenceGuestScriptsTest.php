@@ -166,7 +166,7 @@ function metrics_publication_probe_fixture(bool $metricsAssigned): array
 
     $db = "{$root}/gateway.sqlite";
     $pdo = new PDO("sqlite:{$db}");
-    $pdo->exec('CREATE TABLE nodes (id INTEGER PRIMARY KEY, name TEXT, status TEXT, wireguard_address TEXT)');
+    $pdo->exec('CREATE TABLE nodes (id INTEGER PRIMARY KEY, name TEXT, status TEXT, wireguard_ip TEXT)');
     $pdo->exec('CREATE TABLE node_roles (node_id INTEGER, role TEXT, status TEXT)');
     $pdo->exec(
         "INSERT INTO nodes VALUES (1, 'gateway', 'active', '10.44.0.1'), (3, 'app-prod', 'active', '10.44.0.3')",
@@ -607,7 +607,8 @@ describe('convergence guest scripts', function () {
                 ->toBe(0)
                 ->and(file_get_contents($fixture['commands']))
                 ->toContain('orbit:node-provision app-dev 192.0.2.11')
-                ->toContain('--wireguard-address=10.44.0.2')
+                ->toContain('--wireguard-ip=10.44.0.2')
+                ->not->toContain('--wireguard-address')
                 ->not->toContain('orbit:node-retarget');
         } finally {
             new Illuminate\Filesystem\Filesystem()->deleteDirectory($fixture['root']);
@@ -1270,7 +1271,7 @@ describe('convergence guest scripts', function () {
             'php8.5-fpm',
             'wg-quick@orbit',
             'wg show orbit',
-            'SELECT wireguard_address FROM nodes WHERE name = ?',
+            'SELECT wireguard_ip FROM nodes WHERE name = ?',
             'orbit',
             '/home/orbit/apps/laravel',
             '/home/orbit/.orbit/worktrees/laravel/e2e',
@@ -1284,7 +1285,7 @@ describe('convergence guest scripts', function () {
             'caddy-ca-path',
             '--retry 10 --retry-delay 2 --retry-connrefused --retry-all-errors',
             '--resolve laravel.internal:443:127.0.0.1',
-            'SELECT wireguard_address FROM nodes',
+            'SELECT wireguard_ip FROM nodes',
             '"orbit@$peer_address"',
             'StrictHostKeyChecking=yes',
             'known_hosts=/home/orbit/.orbit/ssh/known_hosts',
@@ -1301,6 +1302,7 @@ describe('convergence guest scripts', function () {
             'repo_git env GIT_INDEX_FILE="$index" git -C "$repo" write-tree',
         );
         expect($source)
+            ->not->toContain('wireguard_address')
             ->not->toContain('echo $address, "\\n";')
             ->not->toContain('HostKeyAlias=')
             ->not->toContain('sqlite3')
@@ -1376,7 +1378,7 @@ describe('convergence guest scripts', function () {
                 '-o UserKnownHostsFile=/home/orbit/.orbit/ssh/known_hosts',
                 '-o BatchMode=yes',
                 '-o StrictHostKeyChecking=yes',
-                '-- orbit@"$wireguard_address"',
+                '-- orbit@"$wireguard_ip"',
             )
             ->not->toContain('ssh -o BatchMode=yes -- "$1"');
         expect(file_get_contents("{$guest}/converge-app-dev.sh"))
@@ -1389,10 +1391,10 @@ describe('convergence guest scripts', function () {
                 '[[ "$3" =~ ^(x86_64|aarch64)$ ]]',
                 '--architecture="$3"',
                 '--user=orbit',
-                'wireguard_address=10.44.0.2',
-                '--wireguard-address="$wireguard_address"',
+                'wireguard_ip=10.44.0.2',
+                '--wireguard-ip="$wireguard_ip"',
             )
-            ->not->toContain('uname -m');
+            ->not->toContain('wireguard_address', '--wireguard-address', 'uname -m');
         expect($production)
             ->toContain(
                 'cd /home/orbit/orbit/apps/gateway',
@@ -1403,10 +1405,10 @@ describe('convergence guest scripts', function () {
                 '[[ "$3" =~ ^(x86_64|aarch64)$ ]]',
                 '--architecture="$3"',
                 '--user=orbit',
-                'wireguard_address=10.44.0.3',
-                '--wireguard-address="$wireguard_address"',
+                'wireguard_ip=10.44.0.3',
+                '--wireguard-ip="$wireguard_ip"',
             )
-            ->not->toContain('uname -m');
+            ->not->toContain('wireguard_address', '--wireguard-address', 'uname -m');
     });
 
     it('hydrates Composer dependencies only when the lock marker is stale', function () {
