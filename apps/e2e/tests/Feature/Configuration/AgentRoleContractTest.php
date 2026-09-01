@@ -6,7 +6,7 @@ $root = dirname(__DIR__, 5);
 
 $read = static fn (string $relative): string => (string) file_get_contents($root.'/'.$relative);
 
-it('initializes a standalone feature plan with each worktree', function () use ($read): void {
+it('initializes one current feature-plan artifact', function () use ($read): void {
     $script = $read('bin/worktree-create');
     $ignore = $read('.gitignore');
 
@@ -15,56 +15,67 @@ it('initializes a standalone feature plan with each worktree', function () use (
         'mkdir -p "$worktree/.orbit"',
         '# Feature plan',
         'Review verdict: PENDING',
-        'Reconciliation verdict: PENDING',
         '## Acceptance map',
         '## Implementation order',
         '## Review findings',
-        '## Reconciliation notes',
     ] as $needle) {
         expect($script)->toContain($needle);
     }
 
+    expect($script)
+        ->not->toContain('Reconciliation verdict')
+        ->not->toContain('## Reconciliation notes');
     expect($ignore)->toContain('/.orbit/');
 });
 
-it('keeps planning, review, and reconciliation independently invokable', function () use ($read): void {
+it('reads complete worktree listings without early-exit SIGPIPE', function () use ($read): void {
+    $create = $read('bin/worktree-create');
+    $remove = $read('bin/worktree-remove');
+
+    foreach ([$create, $remove] as $script) {
+        expect($script)
+            ->not
+            ->toContain("awk '/^worktree / { print substr(\$0, 10); exit }'")
+            ->toContain("awk '/^worktree / && !found { print substr(\$0, 10); found=1 }'");
+    }
+});
+
+it('keeps one builder and a bounded independent plan review', function () use ($read, $root): void {
     $planner = $read('.agents/skills/planning-features/SKILL.md');
     $reviewer = $read('.agents/skills/reviewing-feature-plans/SKILL.md');
-    $reconciler = $read('.agents/skills/reconciling-feature-blocks/SKILL.md');
+    $developer = $read('.agents/skills/developing-features/SKILL.md');
 
     expect($planner)
-        ->toContain('independently invokable planning role')
+        ->toContain('retained Builder')
+        ->toContain('continue implementation after')
         ->toContain('Review verdict: PENDING')
-        ->toContain('Reconciliation verdict: PENDING')
         ->toContain('one row per issue criterion')
         ->toContain('Do not create slice files');
 
     expect($reviewer)
-        ->toContain('reports the quality of the plan only')
+        ->toContain('reports plan quality only')
         ->toContain('`PASS`')
         ->toContain('`FIX`')
         ->toContain('`BLOCK`')
         ->toContain('Collect every known blocking finding')
-        ->toContain('**Recommended resolution**')
+        ->toContain('same reviewer')
+        ->toContain('one correction')
+        ->toContain('second non-`PASS`')
+        ->toContain('stop automatic review cycling')
         ->toContain('Never approve a plan you authored');
 
-    expect($reconciler)
-        ->toContain('`TECHNICAL_RESOLUTION`')
-        ->toContain('`HUMAN_DECISION_REQUIRED`')
-        ->toContain('smallest safe,')
-        ->toContain('contract-preserving resolution')
-        ->toContain('**Behavior changed:**')
-        ->toContain('**Behavior unchanged:**')
-        ->toContain('does not itself authorize any')
-        ->toContain('external mutation')
-        ->toContain('Do not edit product code, tests, proof files, Git history, Linear, or GitHub.');
+    expect($developer)
+        ->toContain('same retained Builder')
+        ->toContain('independent plan `PASS`')
+        ->toContain('One writer per issue');
+
+    expect(file_exists($root.'/.agents/skills/reconciling-feature-blocks/SKILL.md'))->toBeFalse();
 });
 
 it('keeps implementation guidance on Orbit code and proof', function () use ($read): void {
     $skill = $read('.agents/skills/developing-features/SKILL.md');
 
     foreach ([
-        'may be invoked directly',
         'bin/e2e-topology acquire <ISSUE> <worktree>',
         'bin/e2e-topology shell <ISSUE> <role>',
         'proofs/<ISSUE>.json',
@@ -77,11 +88,13 @@ it('keeps implementation guidance on Orbit code and proof', function () use ($re
     }
 });
 
-it('keeps pull request roles on candidate verification and repository cleanup', function () use ($read): void {
+it('keeps pull-request review independent and closeout deterministic', function () use ($read): void {
     $review = $read('.agents/skills/reviewing-pull-requests/SKILL.md');
     $merge = $read('.agents/skills/merging-pull-requests/SKILL.md');
 
     expect($review)
+        ->toContain('fresh reviewer')
+        ->toContain('current pushed head')
         ->toContain('bin/e2e-topology prove <ISSUE>')
         ->toContain('bin/e2e-live <sha>')
         ->toContain('exactly `Approved.`')
@@ -90,6 +103,7 @@ it('keeps pull request roles on candidate verification and repository cleanup', 
         ->toContain('Do not merge, promote, release a proved topology');
 
     expect($merge)
+        ->toContain('deterministic closeout')
         ->toContain('gh pr merge <n> --merge')
         ->toContain('bin/e2e-standby promote <ISSUE>')
         ->toContain('bin/e2e-standby refresh')
@@ -98,30 +112,21 @@ it('keeps pull request roles on candidate verification and repository cleanup', 
         ->toContain('standby identity, and cleanup state directly');
 });
 
-it('keeps issue creation focused on contract quality and feasibility', function () use ($read): void {
+it('keeps issue creation current, atomic, and proof feasible', function () use ($read): void {
     $skill = $read('.agents/skills/creating-issues/SKILL.md');
 
-    foreach ([
-        'Status: Todo',
-        'Readiness:',
-        'Proof: incus',
-        'Each acceptance criterion must have one available',
-        'proof action',
-        'Use `Backlog` when the request is rough or incomplete',
-        'Use `Todo` when the contract is complete',
-        'changes architecture',
-        '`Proposed`',
-        'exact-text approval',
-        'refine the complete set against current',
-        '`main` before finalizing',
-        'dependency graph is explicit and acyclic',
-        'compatibility bridge',
-    ] as $needle) {
-        expect($skill)->toContain($needle);
-    }
+    expect($skill)
+        ->not->toContain('Status: Todo')
+        ->not->toContain('Status: Backlog')->toContain('Set the Linear status field directly')->toContain(
+            'Remove `Readiness` before moving the issue to `Todo`',
+        )->toContain('Each acceptance criterion must have one available')->toContain('proof action')->toContain(
+            'split them into ordered issues',
+        )->toContain('component names are repository-owned')->toContain('`apps/e2e`')->toContain(
+            'dependency graph is explicit and acyclic',
+        )->toContain('compatibility bridge');
 });
 
-it('keeps repository guidance on product and technical boundaries', function () use ($read): void {
+it('keeps repository guidance on standalone tasks and product boundaries', function () use ($read): void {
     $agents = $read('AGENTS.md');
     $readme = $read('README.md');
     $decisions = $read('docs/decisions/README.md');
@@ -129,6 +134,8 @@ it('keeps repository guidance on product and technical boundaries', function () 
 
     expect($agents)
         ->toContain('## Independent agent-role skills')
+        ->not
+        ->toContain('reconciling-feature-blocks')
         ->toContain('Product feature branches never modify the harness')
         ->toContain('A proved topology is immutable evidence')
         ->toContain('Production release is separate from development proof');

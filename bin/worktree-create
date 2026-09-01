@@ -23,7 +23,6 @@ initialize_feature_plan() {
 
 Issue: $linear_id
 Review verdict: PENDING
-Reconciliation verdict: PENDING
 
 ## Outcome
 
@@ -56,10 +55,6 @@ Out of scope:
 ## Review findings
 
 -
-
-## Reconciliation notes
-
--
 EOF
 }
 
@@ -73,7 +68,7 @@ slug="$2"
 
 name="${linear_id,,}-$slug"
 branch="$name"
-primary_root="$(git worktree list --porcelain | awk '/^worktree / { print substr($0, 10); exit }')"
+primary_root="$(git worktree list --porcelain | awk '/^worktree / && !found { print substr($0, 10); found=1 }')"
 worktree="$primary_root/.worktrees/$name"
 
 git fetch --prune origin
