@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Cluster;
 use App\Models\Node;
@@ -60,6 +61,51 @@ it('requires explicit consent to detach a Node and preserves membership on refus
 
     expect($this->node->refresh()->cluster_id)->toBeNull();
 });
+
+it('protects Cluster membership until every persisted Ingress lifecycle row is deleted', function (
+    LifecycleStatus $status,
+    ?string $failedStep,
+): void {
+    $this->node->update(['cluster_id' => $this->firstCluster->id]);
+    $assignment = $this->node
+        ->roles()
+        ->create([
+            'role' => RoleName::Ingress,
+            'status' => $status,
+            'cluster_id' => $this->firstCluster->id,
+            'failed_step' => $failedStep,
+        ]);
+
+    $this
+        ->deleteJson(
+            "/api/v1/clusters/{$this->firstCluster->id}/nodes/{$this->node->id}",
+            ['force' => true],
+        )
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'cluster.ingress_detach_forbidden');
+
+    expect($this->node->refresh()->cluster_id)
+        ->toBe($this->firstCluster->id)
+        ->and($assignment->fresh()?->status)
+        ->toBe($status);
+
+    $assignment->delete();
+
+    $this
+        ->deleteJson(
+            "/api/v1/clusters/{$this->firstCluster->id}/nodes/{$this->node->id}",
+            ['force' => true],
+        )
+        ->assertOk();
+
+    expect($this->node->refresh()->cluster_id)->toBeNull();
+})->with([
+    'provisioning' => [LifecycleStatus::Provisioning, null],
+    'active' => [LifecycleStatus::Active, null],
+    'removing' => [LifecycleStatus::Removing, null],
+    'retryable convergence failure' => [LifecycleStatus::Failed, 'converge:baseline'],
+    'retryable removal failure' => [LifecycleStatus::Failed, 'remove:baseline'],
+]);
 
 it('rejects removal of a non-empty Cluster without changing membership', function (): void {
     $this->node->update(['cluster_id' => $this->firstCluster->id]);

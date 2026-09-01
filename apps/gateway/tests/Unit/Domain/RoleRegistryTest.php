@@ -14,6 +14,7 @@ describe(RoleRegistry::class, function (): void {
                 RoleName::Gateway,
                 RoleName::Vpn,
                 RoleName::Router,
+                RoleName::Ingress,
                 RoleName::AppDev,
                 RoleName::AppProd,
                 RoleName::Metrics,
@@ -36,6 +37,12 @@ describe(RoleRegistry::class, function (): void {
             ->toBeFalse()
             ->and($registry->definition(RoleName::Router)->mutable)
             ->toBeFalse()
+            ->and($registry->definition(RoleName::Ingress)->singleton)
+            ->toBeFalse()
+            ->and($registry->definition(RoleName::Ingress)->assignableDuringProvisioning)
+            ->toBeFalse()
+            ->and($registry->definition(RoleName::Ingress)->mutable)
+            ->toBeTrue()
             ->and($registry->definition(RoleName::AppDev)->singleton)
             ->toBeFalse()
             ->and($registry->definition(RoleName::AppDev)->assignableDuringProvisioning)
@@ -82,6 +89,14 @@ describe(RoleRegistry::class, function (): void {
             ->and($registry->conflicts(RoleName::Router, RoleName::AppDev))
             ->toBeFalse()
             ->and($registry->conflicts(RoleName::Router, RoleName::AppProd))
-            ->toBeFalse();
+            ->toBeFalse()
+            ->and($registry->conflicts(RoleName::Ingress, RoleName::Router))
+            ->toBeFalse()
+            ->and($registry->conflicts(RoleName::Ingress, RoleName::AppProd))
+            ->toBeFalse()
+            ->and($registry->conflicts(RoleName::Ingress, RoleName::AppDev))
+            ->toBeTrue()
+            ->and($registry->conflicts(RoleName::AppDev, RoleName::Ingress))
+            ->toBeTrue();
     });
 });

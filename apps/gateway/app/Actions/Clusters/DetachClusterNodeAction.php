@@ -38,6 +38,14 @@ final readonly class DetachClusterNodeAction
                 );
             }
 
+            if ($lockedNode->roles()->where('role', RoleName::Ingress)->exists()) {
+                throw new ResourceOperationException(
+                    errorCode: 'cluster.ingress_detach_forbidden',
+                    message: 'Remove the Cluster Ingress role before detaching its Node.',
+                    status: 409,
+                );
+            }
+
             $lockedNode->update(['cluster_id' => null]);
 
             return $lockedCluster->refresh();

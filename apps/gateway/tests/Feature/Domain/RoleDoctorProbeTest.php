@@ -15,8 +15,10 @@ use App\Domain\Doctor\RoleInspectionData;
 use App\Domain\Doctor\RoleStateInspector;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
+use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\NodeRole;
+use Illuminate\Support\Facades\DB;
 
 it('returns a healthy empty report without live inspection when the node has no roles', function (): void {
     $roleCalls = 0;
@@ -308,6 +310,132 @@ it('maps a typed VPN inspection failure to the role row and does not stop later 
         ->toBe($vpn->id);
 });
 
+it('checks active Ingress from persisted state without live inspection or reachability', function (): void {
+    $cluster = Cluster::query()->create(['name' => 'doctor-healthy-ingress']);
+    $node = role_probe_node('healthy-ingress');
+    $node->update(['cluster_id' => $cluster->id]);
+    role_probe_assignment($node, RoleName::Ingress, clusterId: $cluster->id);
+    $roleCalls = 0;
+    $vpnCalls = 0;
+
+    $report = new RoleDoctorProbe(
+        role_probe_state_inspector($roleCalls),
+        role_probe_vpn_inspector($vpnCalls),
+    )->inspect(role_probe_context($node, reachable: false));
+
+    expect($report->checked)
+        ->toBe(1)
+        ->and($report->issues)
+        ->toBeEmpty()
+        ->and($roleCalls)
+        ->toBe(0)
+        ->and($vpnCalls)
+        ->toBe(0);
+});
+
+it('reports bounded Ingress Cluster ownership drift for every persisted lifecycle status', function (
+    LifecycleStatus $status,
+    ?string $failedStep,
+): void {
+    $cluster = Cluster::query()->create(['name' => "doctor-ownership-{$status->value}-{$failedStep}"]);
+    $other = Cluster::query()->create(['name' => "doctor-other-{$status->value}-{$failedStep}"]);
+    $node = role_probe_node("ownership-{$status->value}-{$failedStep}");
+    $node->update(['cluster_id' => $cluster->id]);
+    $trigger = DB::selectOne(
+        "SELECT sql FROM sqlite_master WHERE type = 'trigger' AND name = 'node_roles_cluster_ownership_insert'",
+    );
+    DB::statement('DROP TRIGGER node_roles_cluster_ownership_insert');
+
+    try {
+        $assignment = role_probe_assignment(
+            $node,
+            RoleName::Ingress,
+            $status,
+            failedStep: $failedStep,
+            clusterId: $other->id,
+        );
+        $roleCalls = 0;
+        $vpnCalls = 0;
+
+        $report = new RoleDoctorProbe(
+            role_probe_state_inspector($roleCalls),
+            role_probe_vpn_inspector($vpnCalls),
+        )->inspect(role_probe_context($node));
+    } finally {
+        DB::statement((string) $trigger->sql);
+    }
+
+    expect(array_map(
+        static fn (DoctorIssueData $issue): array => [
+            $issue->resourceId,
+            $issue->code,
+            $issue->expected,
+            $issue->observed,
+        ],
+        $report->issues,
+    ))
+        ->toContain([
+            $assignment->id,
+            'role.cluster_ownership_mismatch',
+            'node_cluster',
+            'mismatch',
+        ])
+        ->and($roleCalls)
+        ->toBe(0)
+        ->and($vpnCalls)
+        ->toBe(0);
+})->with([
+    'provisioning' => [LifecycleStatus::Provisioning, null],
+    'active' => [LifecycleStatus::Active, null],
+    'removing' => [LifecycleStatus::Removing, null],
+    'retryable convergence failure' => [LifecycleStatus::Failed, 'converge:baseline'],
+    'retryable removal failure' => [LifecycleStatus::Failed, 'remove:baseline'],
+]);
+
+it('reports every active Ingress in a persisted Cluster cardinality conflict', function (): void {
+    $cluster = Cluster::query()->create(['name' => 'doctor-cardinality']);
+    $first = role_probe_node('cardinality-first');
+    $second = role_probe_node('cardinality-second');
+    $first->update(['cluster_id' => $cluster->id]);
+    $second->update(['cluster_id' => $cluster->id]);
+    DB::statement('DROP INDEX node_roles_cluster_ingress_active_unique');
+
+    try {
+        $firstRole = role_probe_assignment($first, RoleName::Ingress, clusterId: $cluster->id);
+        $secondRole = role_probe_assignment($second, RoleName::Ingress, clusterId: $cluster->id);
+        $roleCalls = 0;
+        $vpnCalls = 0;
+
+        $report = new RoleDoctorProbe(
+            role_probe_state_inspector($roleCalls),
+            role_probe_vpn_inspector($vpnCalls),
+        )->inspect(role_probe_context($first));
+    } finally {
+        NodeRole::query()
+            ->where('role', RoleName::Ingress)
+            ->where('cluster_id', $cluster->id)
+            ->delete();
+        DB::statement(<<<'SQL'
+            CREATE UNIQUE INDEX node_roles_cluster_ingress_active_unique
+            ON node_roles (cluster_id)
+            WHERE role = 'ingress' AND status = 'active'
+            SQL);
+    }
+
+    expect(array_map(
+        static fn (DoctorIssueData $issue): array => [$issue->resourceId, $issue->code],
+        $report->issues,
+    ))
+        ->toBe([
+            [$firstRole->id, 'role.cluster_cardinality_conflict'],
+            [$secondRole->id, 'role.cluster_cardinality_conflict'],
+        ])
+        ->and($roleCalls)
+        ->toBe(0)
+        ->and($vpnCalls)
+        ->toBe(0);
+});
+
 function role_probe_node(string $name): Node
 {
     static $number = 0;
@@ -324,18 +452,21 @@ function role_probe_node(string $name): Node
     ]);
 }
 
+/** @mago-expect lint:excessive-parameter-list The fixture exposes each persisted lifecycle field under test. */
 function role_probe_assignment(
     Node $node,
     RoleName $role,
     LifecycleStatus $status = LifecycleStatus::Active,
     ?string $failedStep = null,
     ?string $errorCode = null,
+    ?int $clusterId = null,
 ): NodeRole {
     return $node->roles()->create([
         'role' => $role,
         'status' => $status,
         'failed_step' => $failedStep,
         'error_code' => $errorCode,
+        'cluster_id' => $clusterId,
     ]);
 }
 

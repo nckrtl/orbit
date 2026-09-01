@@ -155,6 +155,46 @@ it('sends converge true when requested and accepts HTTP 200 for an existing assi
         ]);
 });
 
+it('assigns and retries Ingress in JSON and human modes', function (): void {
+    $mockClient = MockClient::global([
+        AddNodeRoleRequest::class => MockResponse::make([
+            'data' => ingress_added_node_role_payload(),
+            'meta' => ['request_id' => node_role_add_request_id()],
+        ], 200),
+    ]);
+
+    $this
+        ->artisan('node:role:add', ['node' => '17', 'role' => 'ingress', '--json' => true])
+        ->expectsOutput(json_encode([
+            ...ingress_added_node_role_payload(),
+            'degradation' => null,
+            'retained_on_node' => [],
+            'follow_up' => null,
+            'request_id' => node_role_add_request_id(),
+        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))
+        ->assertExitCode(0);
+    $this
+        ->artisan('node:role:add', [
+            'node' => '17',
+            'role' => 'ingress',
+            '--converge' => true,
+        ])
+        ->expectsOutput('Role [ingress] added to node [ingress-1] (#17).')
+        ->expectsOutput('Request ID: '.node_role_add_request_id())
+        ->assertExitCode(0);
+
+    $mockClient->assertSentInOrder([
+        static fn (AddNodeRoleRequest $request): bool => $request->body()->all() === [
+            'role' => 'ingress',
+            'converge_existing' => false,
+        ],
+        static fn (AddNodeRoleRequest $request): bool => $request->body()->all() === [
+            'role' => 'ingress',
+            'converge_existing' => true,
+        ],
+    ]);
+});
+
 it('shows deterministic human output for a new node role assignment', function (): void {
     MockClient::global([
         AddNodeRoleRequest::class => MockResponse::make([
@@ -234,6 +274,24 @@ function added_node_role_payload(): array
         'assignment' => [
             'id' => 34,
             'role' => 'app-dev',
+            'status' => 'active',
+            'failed_step' => null,
+            'error_code' => null,
+        ],
+        'removed' => false,
+    ];
+}
+
+/** @return array<string, mixed> */
+function ingress_added_node_role_payload(): array
+{
+    return [
+        'node_id' => 17,
+        'node_name' => 'ingress-1',
+        'role' => 'ingress',
+        'assignment' => [
+            'id' => 41,
+            'role' => 'ingress',
             'status' => 'active',
             'failed_step' => null,
             'error_code' => null,

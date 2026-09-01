@@ -11,6 +11,18 @@ use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
 describe(AddNodeRoleRequest::class, function (): void {
+    it('transports Ingress assignment and explicit retry through the same typed request', function (): void {
+        $assignment = new AddNodeRoleRequest(nodeId: 17, role: 'ingress');
+        $retry = new AddNodeRoleRequest(nodeId: 17, role: 'ingress', convergeExisting: true);
+
+        expect($assignment->resolveEndpoint())
+            ->toBe('/api/v1/nodes/17/roles')
+            ->and($assignment->body()->all())
+            ->toBe(['role' => 'ingress', 'converge_existing' => false])
+            ->and($retry->body()->all())
+            ->toBe(['role' => 'ingress', 'converge_existing' => true]);
+    });
+
     it('uses the numeric node ID exact body and typed mutation response', function (): void {
         $mockClient = new MockClient([
             AddNodeRoleRequest::class => MockResponse::make([

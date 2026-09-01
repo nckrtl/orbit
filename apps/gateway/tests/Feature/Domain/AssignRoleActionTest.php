@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Actions\Nodes\AssignRoleAction;
 use App\Domain\Nodes\RoleAssignmentException;
 use App\Domain\Nodes\RoleName;
+use App\Models\Cluster;
 use App\Models\Node;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Facades\DB;
@@ -170,6 +171,90 @@ describe(AssignRoleAction::class, function (): void {
             ->and($node->roles()->where('role', RoleName::AppDev->value)->count())
             ->toBe(1);
     });
+
+    it('assigns one idempotent Ingress claim with its Node Cluster ownership', function (): void {
+        $cluster = Cluster::query()->create(['name' => 'ingress-cluster']);
+        $node = Node::query()->create([
+            'name' => 'ingress-node',
+            'public_ssh_host' => '192.0.2.80',
+            'cluster_id' => $cluster->id,
+        ]);
+        $action = app(AssignRoleAction::class);
+
+        $first = $action->execute($node, RoleName::Ingress);
+        $second = $action->execute($node, RoleName::Ingress);
+
+        expect($first->is($second))
+            ->toBeTrue()
+            ->and($first->cluster_id)
+            ->toBe($cluster->id)
+            ->and($node->roles()->where('role', RoleName::Ingress)->count())
+            ->toBe(1);
+    });
+
+    it('rejects Ingress without Cluster membership before writing an assignment', function (): void {
+        $node = Node::query()->create([
+            'name' => 'unclustered-ingress',
+            'public_ssh_host' => '192.0.2.81',
+        ]);
+
+        expect(fn () => app(AssignRoleAction::class)->execute($node, RoleName::Ingress))
+            ->toThrow(RoleAssignmentException::class, 'Role [ingress] requires Cluster membership.');
+
+        expect($node->roles()->exists())->toBeFalse();
+    });
+
+    it('rejects a second persisted Ingress claim in one Cluster without changing the first', function (): void {
+        $cluster = Cluster::query()->create(['name' => 'claimed-ingress-cluster']);
+        $first = Node::query()->create([
+            'name' => 'first-ingress',
+            'public_ssh_host' => '192.0.2.82',
+            'cluster_id' => $cluster->id,
+        ]);
+        $second = Node::query()->create([
+            'name' => 'second-ingress',
+            'public_ssh_host' => '192.0.2.83',
+            'cluster_id' => $cluster->id,
+        ]);
+        $action = app(AssignRoleAction::class);
+        $assignment = $action->execute($first, RoleName::Ingress);
+
+        expect(fn () => $action->execute($second, RoleName::Ingress))
+            ->toThrow(
+                RoleAssignmentException::class,
+                'Role [ingress] is already assigned to Cluster [claimed-ingress-cluster] node [first-ingress].',
+            );
+
+        expect($assignment->fresh()?->node_id)
+            ->toBe($first->id)
+            ->and($second->roles()->exists())
+            ->toBeFalse();
+    });
+
+    it('rejects Ingress and app-dev conflicts in both assignment orders', function (
+        RoleName $first,
+        RoleName $second,
+    ): void {
+        $cluster = Cluster::query()->create(['name' => "conflict-{$first->value}"]);
+        $node = Node::query()->create([
+            'name' => "conflict-{$first->value}",
+            'public_ssh_host' => $first === RoleName::Ingress ? '192.0.2.84' : '192.0.2.85',
+            'cluster_id' => $cluster->id,
+        ]);
+        $action = app(AssignRoleAction::class);
+        $assignment = $action->execute($node, $first);
+
+        expect(fn () => $action->execute($node, $second))
+            ->toThrow(RoleAssignmentException::class);
+
+        expect($assignment->fresh()?->role)
+            ->toBe($first)
+            ->and($node->roles()->count())
+            ->toBe(1);
+    })->with([
+        'Ingress then app-dev' => [RoleName::Ingress, RoleName::AppDev],
+        'app-dev then Ingress' => [RoleName::AppDev, RoleName::Ingress],
+    ]);
 });
 
 /** @return array{0: 'claim-lock'|'claim-source-read'|'role-policy', 1: int|null}|null */
