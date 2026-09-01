@@ -478,9 +478,12 @@ it('preserves the historical NCK-73 proof semantics', function () {
 it('drives both cleanup windows through the exact staged fixture', function () {
     $repositoryRoot = dirname(__DIR__, 5);
     $driver = (string) file_get_contents($repositoryRoot.'/proofs/ORB-7/actual-fixture-driver.sh');
+    $plan = (string) file_get_contents($repositoryRoot.'/proofs/ORB-7.json');
 
     expect($driver)
         ->toContain('post-record post-mutation')
         ->toContain('EXIT INT TERM')
-        ->toContain('bash "$fixture_root/orb-7-signal-driver.sh"');
+        ->toContain('bash "$fixture_root/orb-7-signal-driver.sh"')
+        ->not->toContain('advance')->and($plan)
+        ->not->toContain('advance');
 });
