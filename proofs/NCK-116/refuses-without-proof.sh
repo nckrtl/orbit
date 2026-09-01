@@ -17,8 +17,6 @@ sudo test ! -e "$FOREIGN_DROPIN" || fail "this node still holds an Orbit drop-in
 
 printf '# hand written by the platform team\n[Service]\nExecStart=\n' \
   | sudo install -D -m 0644 /dev/stdin "$FOREIGN_DROPIN"
-orb7_mark_active refuses-without-proof
-orb7_checkpoint refuses-without-proof post-mutation
 sudo install -d /etc/orbit/metrics
 printf 'someone-else\n' | sudo install -m 0640 /dev/stdin "$FOREIGN_MARKER"
 printf 'scrape_configs: []\n' | sudo install -m 0644 /dev/stdin "$FOREIGN_FILE"
@@ -29,6 +27,8 @@ address=$(this_address)
 sudo ufw allow in on orbit proto tcp to "$address" port 9100 \
   comment orbit:metrics-node-exporter >/dev/null
 orb7_record_ufw_delta refuses-without-proof drifted-exporter
+orb7_mark_active refuses-without-proof
+orb7_checkpoint refuses-without-proof post-mutation
 
 run_escape --force
 [[ "$ESCAPE_STATUS" -eq 3 ]] || fail "escape exited $ESCAPE_STATUS, expected 3: $ESCAPE_OUTPUT"

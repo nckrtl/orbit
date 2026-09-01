@@ -3,12 +3,21 @@
     "acceptance": [
         {"id": "pipefail-assertions-remain-truthful", "node": "app-dev", "argv": ["bash", "/var/lib/orbit-e2e/proof/pipefail-assertions.sh"], "timeout_seconds": 60},
         {"id": "representative-shared-cleanup-primitives", "node": "app-dev", "argv": ["bash", "/var/lib/orbit-e2e/proof/representative-cleanup-matrix.sh"], "timeout_seconds": 120},
+        {"id": "nck-73-actual-cleanup", "node": "app-dev", "argv": ["bash", "/var/lib/orbit-e2e/proof/actual-fixture-cleanup-matrix.sh", "/var/lib/orbit-e2e/proof/NCK-73", "recover:120"], "timeout_seconds": 900},
+        {"id": "nck-108-actual-cleanup", "node": "app-dev", "argv": ["bash", "/var/lib/orbit-e2e/proof/actual-fixture-cleanup-matrix.sh", "/var/lib/orbit-e2e/proof/NCK-108", "metrics-node-fails-closed:120"], "timeout_seconds": 900},
+        {"id": "nck-104-local-path-cleanup", "node": "gateway", "argv": ["bash", "/var/lib/orbit-e2e/proof/nck-104-cleanup-matrix.sh", "local-path"], "timeout_seconds": 900},
+        {"id": "nck-104-local-database-cleanup", "node": "gateway", "argv": ["bash", "/var/lib/orbit-e2e/proof/nck-104-cleanup-matrix.sh", "local-database"], "timeout_seconds": 900},
+        {"id": "nck-104-remote-path-cleanup", "node": "gateway", "argv": ["bash", "/var/lib/orbit-e2e/proof/nck-104-cleanup-matrix.sh", "remote-path"], "timeout_seconds": 900},
+        {"id": "nck-104-remote-database-cleanup", "node": "gateway", "argv": ["bash", "/var/lib/orbit-e2e/proof/nck-104-cleanup-matrix.sh", "remote-database"], "timeout_seconds": 900},
+        {"id": "nck-104-custom-hook-cleanup", "node": "gateway", "argv": ["bash", "/var/lib/orbit-e2e/proof/nck-104-cleanup-matrix.sh", "custom-hook"], "timeout_seconds": 900},
+        {"id": "nck-116-metrics-cleanup", "node": "app-dev", "argv": ["bash", "/var/lib/orbit-e2e/proof/actual-fixture-cleanup-matrix.sh", "/var/lib/orbit-e2e/proof/NCK-116", "escape-metrics-node:120"], "timeout_seconds": 900},
         {"id": "firewall-timeout-seed", "node": "app-prod", "argv": ["env", "ORBIT_E2E_PROOF_ROOT=/var/lib/orbit-e2e/proof/NCK-116", "bash", "/var/lib/orbit-e2e/proof/NCK-116/seed-orb-7-timeout.sh"], "timeout_seconds": 60},
+        {"id": "nck-116-app-prod-cleanup", "node": "app-prod", "argv": ["bash", "/var/lib/orbit-e2e/proof/actual-fixture-cleanup-matrix.sh", "/var/lib/orbit-e2e/proof/NCK-116", "escape-exporter-node:120", "escape-without-wireguard-address:120", "refuses-a-shifted-rule-number:120", "refuses-without-proof:120"], "timeout_seconds": 900},
         {"id": "real-firewall-fixture-times-out", "node": "app-prod", "argv": ["env", "ORBIT_E2E_PROOF_ROOT=/var/lib/orbit-e2e/proof/NCK-116", "ORBIT_E2E_ORB7_MODE=timeout", "ORBIT_E2E_ORB7_CASE=refuses-a-shifted-rule-number", "bash", "/var/lib/orbit-e2e/proof/NCK-116/refuses-a-shifted-rule-number.sh"], "timeout_seconds": 30, "expected_exit_code": 124},
         {"id": "firewall-timeout-restoration-inspected", "node": "app-prod", "argv": ["env", "ORBIT_E2E_PROOF_ROOT=/var/lib/orbit-e2e/proof/NCK-116", "bash", "/var/lib/orbit-e2e/proof/NCK-116/inspect-orb-7-timeout.sh"], "timeout_seconds": 60},
         {"id": "hung-cleanup-is-force-killed", "node": "app-dev", "argv": ["bash", "/var/lib/orbit-e2e/proof/hung-cleanup.sh"], "timeout_seconds": 2, "expected_exit_code": 137},
         {"id": "hung-cleanup-restoration-inspected", "node": "app-dev", "argv": ["bash", "/var/lib/orbit-e2e/proof/inspect-hung-cleanup.sh"], "timeout_seconds": 60}
     ],
     "mutates": true,
-    "fixture_issues": ["NCK-116"]
+    "fixture_issues": ["NCK-73", "NCK-104", "NCK-108", "NCK-116"]
 }

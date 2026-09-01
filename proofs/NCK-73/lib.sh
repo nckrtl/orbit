@@ -82,6 +82,7 @@ orb7_checkpoint() {
     && "${ORBIT_E2E_ORB7_WINDOW:-}" == "$window" ]]; then
     printf 'ready\n' | sudo tee "${ORBIT_E2E_ORB7_CHECKPOINT:?}" >/dev/null
     if [[ "${ORBIT_E2E_ORB7_EVENT:-}" == EXIT ]]; then
+      until sudo test -f "${ORBIT_E2E_ORB7_CHECKPOINT:?}.continue"; do sleep 0.1; done
       exit 0
     fi
     while true; do sleep 1; done

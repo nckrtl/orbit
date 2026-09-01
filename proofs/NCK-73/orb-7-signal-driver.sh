@@ -12,9 +12,11 @@ expected=130
 [[ "$event" == EXIT ]] && expected=0
 [[ "$event" == TERM ]] && expected=143
 checkpoint="/var/tmp/orbit-e2e-orb7-${action}-${window}-${event}.ready"
+snapshot=$(mktemp)
 
 driver_cleanup() {
-  sudo rm -f -- "$checkpoint"
+  sudo rm -f -- "$checkpoint" "$checkpoint.continue"
+  rm -f -- "$snapshot"
 }
 trap driver_cleanup EXIT INT TERM
 sudo test ! -e "$checkpoint" || fail "checkpoint already exists: $checkpoint"
@@ -38,7 +40,21 @@ for _ in $(seq 1 300); do
   sleep 0.1
 done
 sudo test -f "$checkpoint" || fail "$action did not reach its $window checkpoint"
-if [[ "$event" != EXIT ]]; then
+record="$ORB7_CLEANUP_ROOT/$action"
+sudo test -f "$record/services.tsv" || fail "$action did not publish its service baseline"
+sudo cat "$record/services.tsv" >"$snapshot"
+while IFS=$'\t' read -r unit exists active; do
+  [[ "$exists" -eq 1 ]] || continue
+  current=$(systemctl is-active "$unit" 2>/dev/null || true)
+  if [[ "$window" == post-record ]]; then
+    [[ "$current" == "$active" ]] || fail "$action changed $unit before its mutation checkpoint"
+  else
+    [[ "$current" != active ]] || fail "$action did not stop $unit before the signal"
+  fi
+done <"$snapshot"
+if [[ "$event" == EXIT ]]; then
+  sudo touch -- "$checkpoint.continue"
+else
   kill -s "$event" -- "-$pid"
 fi
 timeout "$((deadline + 7))s" tail --pid="$pid" -f /dev/null || fail "$action did not exit within its deadline and cleanup grace"
@@ -47,6 +63,11 @@ wait "$pid"
 status=$?
 set -e
 [[ "$status" -eq "$expected" ]] || fail "$action returned $status after $event, expected $expected"
+while IFS=$'\t' read -r unit exists active; do
+  [[ "$exists" -eq 1 ]] || continue
+  current=$(systemctl is-active "$unit" 2>/dev/null || true)
+  [[ "$current" == "$active" ]] || fail "$action restored $unit as $current, expected $active"
+done <"$snapshot"
 orb7_restore_services "$action"
 sudo test ! -e "$ORB7_CLEANUP_ROOT/$action" || fail "$action cleanup was not idempotent"
 echo "$action: $event at $window restored service state and returned $status"

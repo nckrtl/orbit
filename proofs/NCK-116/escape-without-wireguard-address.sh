@@ -23,14 +23,14 @@ address="${saved%%/*}"
 sudo ufw allow in on orbit proto tcp from 10.44.0.1 to "$address" port 9100 \
   comment "$EXPORTER_RULE_COMMENT" >/dev/null
 orb7_record_ufw_delta escape-without-wireguard-address exporter
-orb7_mark_active escape-without-wireguard-address
-orb7_checkpoint escape-without-wireguard-address post-mutation
 sudo ufw allow in on orbit proto tcp from 10.44.0.1 to "$address" port 3001 \
   comment "$DECOY_RULE" >/dev/null
 orb7_record_ufw_delta escape-without-wireguard-address decoy
 
 sudo ip addr flush dev orbit
 [[ -z "$(sudo ip -4 -o addr show dev orbit)" ]] || fail "the orbit interface still has an IPv4 address"
+orb7_mark_active escape-without-wireguard-address
+orb7_checkpoint escape-without-wireguard-address post-mutation
 
 run_escape --force
 escape_status="$ESCAPE_STATUS"

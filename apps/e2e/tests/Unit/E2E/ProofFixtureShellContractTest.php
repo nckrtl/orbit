@@ -222,7 +222,7 @@ it('restores firewall deltas from the root-owned shape manifest', function () {
     expect($result->isSuccessful())->toBeTrue($result->getErrorOutput());
 });
 
-it('maps ORB-7 proof to representative cleanup and harness timeout exits', function () {
+it('maps ORB-7 proof to actual cleanup families and harness timeout exits', function () {
     $repositoryRoot = dirname(__DIR__, 5);
     $plan = json_decode(
         (string) file_get_contents($repositoryRoot.'/proofs/ORB-7.json'),
@@ -233,21 +233,44 @@ it('maps ORB-7 proof to representative cleanup and harness timeout exits', funct
     $actions = collect($plan['acceptance'])->keyBy('id');
 
     expect($plan['fixture_issues'])
-        ->toBe(['NCK-116'])
+        ->toBe(['NCK-73', 'NCK-104', 'NCK-108', 'NCK-116'])
         ->and($plan['mutates'])
         ->toBeTrue()
         ->and($actions->get('pipefail-assertions-remain-truthful')['argv'] ?? null)
         ->toBe(['bash', '/var/lib/orbit-e2e/proof/pipefail-assertions.sh'])
         ->and($actions->get('representative-shared-cleanup-primitives')['argv'] ?? null)
         ->toBe(['bash', '/var/lib/orbit-e2e/proof/representative-cleanup-matrix.sh'])
+        ->and($actions->get('nck-73-actual-cleanup')['argv'] ?? null)
+        ->toContain('/var/lib/orbit-e2e/proof/NCK-73')
+        ->and($actions->get('nck-108-actual-cleanup')['argv'] ?? null)
+        ->toContain('/var/lib/orbit-e2e/proof/NCK-108')
+        ->and($actions->get('nck-104-local-path-cleanup')['argv'] ?? null)
+        ->toContain('/var/lib/orbit-e2e/proof/nck-104-cleanup-matrix.sh')
+        ->and($actions->get('nck-116-metrics-cleanup')['argv'] ?? null)
+        ->toContain('escape-metrics-node:120')
+        ->and($actions->get('nck-116-app-prod-cleanup')['argv'] ?? null)
+        ->toContain('refuses-a-shifted-rule-number:120')
         ->and($actions->get('real-firewall-fixture-times-out')['expected_exit_code'] ?? null)
         ->toBe(124)
         ->and($actions->get('hung-cleanup-is-force-killed')['expected_exit_code'] ?? null)
         ->toBe(137)
         ->and(json_encode($plan, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))
-        ->toContain('/var/lib/orbit-e2e/proof/NCK-116')
-        ->not->toContain('actual-fixture-driver.sh')
-        ->not->toContain('/var/lib/orbit-e2e/proof/NCK-104');
+        ->toContain('/var/lib/orbit-e2e/proof/actual-fixture-cleanup-matrix.sh');
+});
+
+it('seeds the shifted-rule precondition before its actual fixture matrix', function () {
+    $plan = json_decode(
+        (string) file_get_contents(dirname(__DIR__, 5).'/proofs/ORB-7.json'),
+        true,
+        flags: JSON_THROW_ON_ERROR,
+    );
+    $actionIds = array_column($plan['acceptance'], 'id');
+    $seed = array_search('firewall-timeout-seed', $actionIds, true);
+    $matrix = array_search('nck-116-app-prod-cleanup', $actionIds, true);
+
+    expect($seed)
+        ->not->toBeFalse()->and($matrix)
+        ->not->toBeFalse()->and($seed)->toBeLessThan($matrix);
 });
 
 it('keeps only the owned ORB-7 proof plan at the top level', function () {
@@ -479,11 +502,19 @@ it('preserves the historical NCK-73 proof semantics', function () {
 
     expect($plan['setup'])
         ->toBe([[
-            'id' => 'metrics-active-precondition',
+            'id' => 'metrics-baseline-active',
             'node' => 'app-dev',
-            'argv' => ['orbit', 'metrics:status', '--json'],
+            'argv' => [
+                'bash',
+                '/var/lib/orbit-e2e/proof/status-active.sh',
+                'app-dev=desired/active/metrics_node',
+                'app-prod=desired/active/role_default',
+                'gateway=desired/active/role_default',
+            ],
             'timeout_seconds' => 120,
         ]])
+        ->and($plan['mutates'])
+        ->toBeTrue()
         ->and($plan['acceptance'][0]['argv'])
         ->toContain('app-prod=desired/active/role_default')
         ->and($library)
@@ -492,14 +523,15 @@ it('preserves the historical NCK-73 proof semantics', function () {
         ->toContain('$node["wireguard_address"]');
 });
 
-it('labels representative cleanup evidence and preserves unreachable NCK-104 semantics', function () {
+it('labels representative evidence and invokes the actual NCK-104 helper boundary', function () {
     $repositoryRoot = dirname(__DIR__, 5);
     $matrix = (string) file_get_contents($repositoryRoot.'/proofs/ORB-7/representative-cleanup-matrix.sh');
     $fixture = (string) file_get_contents($repositoryRoot.'/proofs/ORB-7/representative-cleanup-fixture.sh');
     $plan = (string) file_get_contents($repositoryRoot.'/proofs/ORB-7.json');
     $patch = (string) file_get_contents($repositoryRoot.'/proofs/NCK-104/patch-omit-null.sh');
     $cli = (string) file_get_contents($repositoryRoot.'/proofs/NCK-104/cli-setting-parse.sh');
-    $actualDriverExists = is_file($repositoryRoot.'/proofs/ORB-7/actual-fixture-driver.sh');
+    $actualMatrix = (string) file_get_contents($repositoryRoot.'/proofs/ORB-7/actual-fixture-cleanup-matrix.sh');
+    $nck104Matrix = (string) file_get_contents($repositoryRoot.'/proofs/ORB-7/nck-104-cleanup-matrix.sh');
 
     expect($matrix)
         ->toContain('representative shared cleanup primitive')
@@ -520,6 +552,115 @@ it('labels representative cleanup evidence and preserves unreachable NCK-104 sem
         ->toContain('--setting=instance.path:/srv/orbit:data/instances')
         ->toContain('--setting=worktree.path:')
         ->and($plan)
-        ->not->toContain('advance')
-        ->not->toContain('nck-104-')->and($actualDriverExists)->toBeFalse();
+        ->not->toContain('advance')->toContain('nck-104-cleanup-matrix.sh')->and($actualMatrix)->toContain(
+            '[[ -f "$proof_root/orb-7-signal-driver.sh" ]]',
+        )
+        ->not->toContain('[[ -x "$proof_root/orb-7-signal-driver.sh" ]]')->toContain(
+            'orb-7-signal-driver.sh',
+        )->toContain('post-record post-mutation')->toContain('EXIT INT TERM')->and($nck104Matrix)->toContain(
+            'readonly proof_root=/var/lib/orbit-e2e/proof/NCK-104',
+        )->toContain('source "$proof_root/lib.sh"')->toContain('prepare-roots')->toContain(
+            'removal-restoration',
+        )->toContain('orb7_restore_action');
+});
+
+it('makes NCK-104 path records recoverable during arming', function () {
+    $helper = (string) file_get_contents(dirname(__DIR__, 5).'/proofs/NCK-104/orb-7-node-state.sh');
+    $state = strpos($helper, "printf 'arming\\n'");
+    $record = strpos($helper, 'printf \'%s\\t%s\\t%s\\n\' "$index" "$path" "$existed"');
+    $capture = strpos($helper, 'sudo tar --acls --xattrs --numeric-owner');
+
+    expect($helper)
+        ->toContain('recover_record "$action"')
+        ->toContain('restore "$action"')
+        ->toContain('sudo test ! -e "$record"')
+        ->and($state)
+        ->not->toBeFalse()->and($record)
+        ->not->toBeFalse()->and($capture)
+        ->not->toBeFalse()->and($state)->toBeLessThan($capture)->and($capture)->toBeLessThan($record);
+});
+
+it('holds EXIT cleanup until each driver records its pre-exit evidence', function () {
+    $repositoryRoot = dirname(__DIR__, 5);
+
+    foreach (['NCK-73', 'NCK-108', 'NCK-116'] as $issue) {
+        $library = (string) file_get_contents("$repositoryRoot/proofs/$issue/lib.sh");
+        $driver = (string) file_get_contents("$repositoryRoot/proofs/$issue/orb-7-signal-driver.sh");
+
+        expect($library)
+            ->toContain('until sudo test -f "${ORBIT_E2E_ORB7_CHECKPOINT:?}.continue"; do sleep 0.1; done')
+            ->and($driver)
+            ->toContain('sudo touch -- "$checkpoint.continue"')
+            ->toContain('sudo rm -f -- "$checkpoint" "$checkpoint.continue"');
+    }
+
+    $library = (string) file_get_contents($repositoryRoot.'/proofs/NCK-104/lib.sh');
+    $matrix = (string) file_get_contents($repositoryRoot.'/proofs/ORB-7/nck-104-cleanup-matrix.sh');
+
+    expect($library)
+        ->toContain('until sudo test -f "${ORBIT_E2E_ORB7_CHECKPOINT:?}.continue"; do sleep 0.1; done')
+        ->and($matrix)
+        ->toContain('sudo touch -- "$checkpoint.continue"')
+        ->toContain('sudo rm -f -- "$checkpoint" "$checkpoint.continue"')
+        ->toContain('did not create its database mutation');
+});
+
+it('marks NCK-104 remote-only records on their owning nodes', function () {
+    $matrix = (string) file_get_contents(dirname(__DIR__, 5).'/proofs/ORB-7/nck-104-cleanup-matrix.sh');
+
+    expect($matrix)
+        ->toContain('orb7_remote_state app-dev mark "$action" active')
+        ->toContain('orb7_remote_state gateway mark "$action" active');
+});
+
+it('runs each NCK-104 cleanup family as its own proof action', function () {
+    $repositoryRoot = dirname(__DIR__, 5);
+    $plan = json_decode(
+        (string) file_get_contents($repositoryRoot.'/proofs/ORB-7.json'),
+        true,
+        flags: JSON_THROW_ON_ERROR,
+    );
+    $actions = collect($plan['acceptance'])
+        ->filter(fn (array $action): bool => str_starts_with($action['id'], 'nck-104-'))
+        ->values();
+
+    expect($actions->pluck('id')->all())
+        ->toBe([
+            'nck-104-local-path-cleanup',
+            'nck-104-local-database-cleanup',
+            'nck-104-remote-path-cleanup',
+            'nck-104-remote-database-cleanup',
+            'nck-104-custom-hook-cleanup',
+        ])
+        ->and($actions->map(fn (array $action): string => $action['argv'][2])->all())
+        ->toBe([
+            'local-path',
+            'local-database',
+            'remote-path',
+            'remote-database',
+            'custom-hook',
+        ]);
+});
+
+it('uses fixture-owned database evidence and reaps an active NCK-104 matrix child', function () {
+    $matrix = (string) file_get_contents(dirname(__DIR__, 5).'/proofs/ORB-7/nck-104-cleanup-matrix.sh');
+
+    expect($matrix)
+        ->not
+        ->toContain('database_before=$(sha256sum')
+        ->toContain('! database_has_mutation || fail "$family changed its database before mutation"')
+        ->toContain('! database_has_mutation || fail "$family left its database mutation"')
+        ->toContain('trap matrix_cleanup EXIT')
+        ->toContain('kill -TERM -- "-$active_pid"')
+        ->toContain('active_pid=');
+});
+
+it('clears the NCK-104 restore rate limit before restarting an inherited active service', function () {
+    $helper = (string) file_get_contents(dirname(__DIR__, 5).'/proofs/NCK-104/orb-7-node-state.sh');
+    $reset = strpos($helper, 'sudo systemctl reset-failed php8.5-fpm');
+    $start = strpos($helper, 'sudo systemctl start php8.5-fpm');
+
+    expect($reset)
+        ->not->toBeFalse()->and($start)
+        ->not->toBeFalse()->and($reset)->toBeLessThan($start);
 });

@@ -209,6 +209,7 @@ describe('ProofPlan', function (): void {
                 'gateway=desired/active/role_default',
             ],
             'timeout_seconds' => 120,
+            'expected_exit_code' => 0,
         ]]);
     });
 

@@ -164,6 +164,13 @@ guest path on any node:
 {"id": "fixture-app-prod", "node": "app-prod", "argv": ["/var/lib/orbit-e2e/proof/fixture-check.sh", "app-prod"], "timeout_seconds": 60}
 ```
 
+A plan can declare `fixture_issues` when its acceptance actions must execute an
+affected historical fixture. The harness stages each declared directory under
+its issue namespace, such as
+`/var/lib/orbit-e2e/proof/NCK-116/refuses-a-shifted-rule-number.sh`. It still
+stages the plan owner's fixtures at `/var/lib/orbit-e2e/proof/`. The list is an
+explicit allowlist of valid issue IDs. It cannot contain duplicates.
+
 File names are flat and match `[a-z0-9][a-z0-9._-]*`; a nested directory or
 symlink is refused. Staging happens after the candidate identity check and
 before convergence. Every role prints its installed inventory
@@ -176,8 +183,9 @@ directory stages an empty inventory.
 ### Proof output
 
 `prove --json` prints a compact result: `status` (`proved` or `diagnosis`),
-`issue`, `attempt_id`, `candidate_sha`, `actions` (one `{"id","node","exit_code"}`
-per action that ran), and `recorded_at`. A plan that declared the topology it
+`issue`, `attempt_id`, `candidate_sha`, `actions` (one
+`{"id","node","expected_exit_code","exit_code"}` per action that ran), and
+`recorded_at`. A plan that declared the topology it
 ends with adds `ends_with` and `skipped_probes`. A `diagnosis` adds `error` (the
 failed phase and message) and, when a plan action failed, `failed_action`:
 `{"id","node","exit_code","stdout_tail","stderr_tail"}` (each tail keeps the
@@ -189,12 +197,24 @@ The proof plan file has this shape:
 ```json
 {
   "setup": [{"id": "text", "node": "gateway", "argv": [], "timeout_seconds": 60}],
-  "acceptance": [{"id": "text", "node": "app-dev", "argv": [], "timeout_seconds": 60}]
+  "acceptance": [{"id": "text", "node": "app-dev", "argv": [], "timeout_seconds": 60, "expected_exit_code": 0}]
 }
 ```
 
+`expected_exit_code` defaults to `0`. A plan can declare only the exact timeout
+exits `124` and `137`. The runner accepts an action only when its actual exit
+equals the declared exit. All other nonzero exits remain a diagnosis.
+
+Every proof action runs through a guest deadline. The harness sends `TERM` at
+`timeout_seconds`, gives the fixture five seconds to run its cleanup traps,
+then sends `SIGKILL` if it still runs. The Incus transport has seven seconds of
+headroom beyond the declared deadline. This keeps `TERM` catchable and keeps a
+hung cleanup bounded.
+
 An optional top-level `"mutates": true` declares that the plan changes the
-topology; `promote` refuses such a proved topology.
+topology. Every plan that writes reusable node state must declare it. `promote`
+refuses a proved mutating topology, including a topology whose expected timeout
+left a killed process or temporary record for an inspector to examine.
 
 ### Declaring the topology a plan ends with
 

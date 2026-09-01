@@ -15,12 +15,12 @@ address=$(this_address)
 docker container create --name "$DECOY_CONTAINER" --label com.orbit.managed=other \
   prom/prometheus:v3.5.0 >/dev/null
 orb7_record_container escape-metrics-node container "$DECOY_CONTAINER" "$(docker inspect --format '{{.Id}}' "$DECOY_CONTAINER")"
-orb7_mark_active escape-metrics-node
-orb7_checkpoint escape-metrics-node post-mutation
 docker volume create --label com.orbit.managed=other "$DECOY_VOLUME" >/dev/null
 orb7_record_container escape-metrics-node volume "$DECOY_VOLUME" "$DECOY_VOLUME"
 sudo ufw allow in on orbit proto tcp to "$address" port 3001 comment "$DECOY_RULE" >/dev/null
 orb7_record_ufw_delta escape-metrics-node decoy
+orb7_mark_active escape-metrics-node
+orb7_checkpoint escape-metrics-node post-mutation
 
 run_escape --force
 [[ "$ESCAPE_STATUS" -eq 0 ]] || fail "escape exited $ESCAPE_STATUS: $ESCAPE_OUTPUT"

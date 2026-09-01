@@ -26,8 +26,6 @@ rule_number() {
 sudo ufw allow in on orbit proto tcp from 10.44.0.1 to "$address" port 5432 \
   comment "$FOREIGN_RULE" >/dev/null
 orb7_record_ufw_delta refuses-a-shifted-rule-number foreign
-orb7_mark_active refuses-a-shifted-rule-number
-orb7_checkpoint refuses-a-shifted-rule-number post-mutation
 foreign_number=$(rule_number "$FOREIGN_RULE")
 [[ -n "$foreign_number" ]] || fail "the planted foreign rule has no number"
 
@@ -67,6 +65,8 @@ exec "$REAL" "$@"
 STUBEOF
 sudo chmod 0755 "$STUB"
 echo 0 | sudo tee "$STUB_STATE" >/dev/null
+orb7_mark_active refuses-a-shifted-rule-number
+orb7_checkpoint refuses-a-shifted-rule-number post-mutation
 if [[ "${ORBIT_E2E_ORB7_MODE:-}" == timeout && "${ORBIT_E2E_ORB7_CASE:-}" == refuses-a-shifted-rule-number ]]; then
   sudo test -x "$STUB" || fail "the timeout fixture did not install its fake ufw binary"
   sudo test -s "$STUB_STATE" || fail "the timeout fixture did not install its call log"
