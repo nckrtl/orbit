@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Console\Commands\Standby\FingerprintCommand;
 use App\Console\Commands\Standby\PromoteCommand;
 use App\Console\Commands\Standby\RebuildCommand;
+use App\Console\Commands\Standby\RecoverLegacyCommand;
 use App\Console\Commands\Standby\RefreshCommand;
 use App\Console\Commands\Standby\RestoreCommand;
 use App\Console\Commands\Standby\StatusCommand;
@@ -52,6 +53,7 @@ function bindPromotedStandby(StandbyGeneration $generation): void
     app()->instance(StandbyManifestStore::class, $manifests);
 }
 
+/** @mago-expect lint:cyclomatic-complexity The command contract stays grouped by its public standby surface. */
 describe('standby commands', function () {
     it('resolves a separate stateful lock for each lifecycle owner', function () {
         expect(app(OperationLock::class))->not->toBe(app(OperationLock::class));
@@ -69,6 +71,7 @@ describe('standby commands', function () {
             new RefreshCommand()->getName(),
             new RestoreCommand()->getName(),
             new RebuildCommand()->getName(),
+            new RecoverLegacyCommand()->getName(),
         ])->toBe([
             'standby:status',
             'standby:fingerprint',
@@ -76,6 +79,7 @@ describe('standby commands', function () {
             'standby:refresh',
             'standby:restore',
             'standby:rebuild',
+            'standby:recover-legacy',
         ]);
     });
 
@@ -221,6 +225,59 @@ describe('standby commands', function () {
         $this
             ->artisan('standby:rebuild', ['--main-sha' => 'main'])
             ->expectsOutputToContain('The exact main SHA is required.')
+            ->assertFailed();
+
+        Process::assertNothingRan();
+    });
+
+    it('refuses ordinary rebuild before mutation when an exact standby VM exists', function () {
+        app()->instance(StatePaths::class, new StatePaths(temporaryPath('orbit-rebuild-command-', 8)));
+        Process::fake(function (PendingProcess $process) {
+            $command = $process->command;
+            assert(is_array($command));
+
+            if (($command[3] ?? null) === 'network' && ($command[4] ?? null) === 'list') {
+                return Process::result('[]');
+            }
+
+            return Process::result(json_encode([[
+                'name' => 'orbit-e2e-standby-gateway',
+                'type' => 'virtual-machine',
+                'status' => 'Stopped',
+                'status_code' => 102,
+                'config' => [],
+                'devices' => ['root' => ['pool' => 'orbit-e2e']],
+            ]], JSON_THROW_ON_ERROR));
+        });
+
+        $this
+            ->artisan('standby:rebuild', ['--main-sha' => str_repeat('a', 40), '--json' => true])
+            ->expectsOutputToContain(
+                'Standby resources are present: orbit-e2e-standby-gateway. '.'Use bin/e2e-standby recover-legacy',
+            )
+            ->assertFailed();
+
+        Process::assertDidntRun(function (PendingProcess $process): bool {
+            $command = $process->command;
+            assert(is_array($command));
+
+            return (
+                in_array('delete', $command, true)
+                || in_array('stop', $command, true)
+                || ($command[0] ?? null) === 'python3'
+            );
+        });
+    });
+
+    it('refuses legacy recovery without the exact main SHA before touching Incus', function () {
+        Process::fake();
+
+        $this
+            ->artisan('standby:recover-legacy', ['--main-sha' => 'main', '--json' => true])
+            ->expectsOutputToContain(
+                '"error":"The exact main SHA is required.","recovery_evidence":null,'
+                .'"recovery_phase":null,"next_action":"bin/e2e-standby recover-legacy --main-sha=<sha>"',
+            )
             ->assertFailed();
 
         Process::assertNothingRan();

@@ -112,7 +112,8 @@ refuse a stale promoted standby.
 | `bin/e2e-standby promote ISSUE` | Make the issue's proved topology the standby generation, then release it (see [Standby](#standby)) |
 | `bin/e2e-standby refresh --main-sha=SHA` | Fallback: refresh the standby in place when the fingerprint changed |
 | `bin/e2e-standby restore` | Restore the promoted generation and leave it stopped |
-| `bin/e2e-standby rebuild --main-sha=SHA` | Recovery: delete this checkout's standby VMs and network, forget its manifests, and cold-build the standby again (see [Stale manifests and rebuild](#stale-manifests-and-rebuild)) |
+| `bin/e2e-standby rebuild --main-sha=SHA` | Recover stale state only when every exact configured standby VM, `-next` VM, and network is absent (see [Stale manifests and rebuild](#stale-manifests-and-rebuild)) |
+| `bin/e2e-standby recover-legacy --main-sha=SHA` | Prove ownership of present schema-4/5 standby resources, retain recovery evidence, and cold-build a verified replacement |
 | `bin/e2e-live SHA` | Run the feature flow once against a standby built from the exact candidate in the validation clone (see [Live acceptance suites](#live-acceptance-suites)) |
 
 `bin/worktree-remove ISSUE slug` releases the issue's live topology first when
@@ -368,13 +369,77 @@ and `refresh` refuses before it mutates anything, both naming
 `bin/e2e-standby rebuild --main-sha=<sha>`. Neither writes `standby/corrupt.json`,
 and no manual `incus delete` is needed.
 
-`bin/e2e-standby rebuild --main-sha=SHA` is that recovery. It deletes this
-checkout's standby VMs, the `-next` copies a failed promotion left behind, and
-the standby network itself; it forgets every generation manifest and the
-corrupt marker; then it cold-builds the standby at `SHA` from the base image.
-It refuses to delete a VM that is not harness-owned or that still carries an
-issue's attempt metadata: release that topology first. `SHA` must be what the
-checkout's `main` holds, as for `refresh`.
+`bin/e2e-standby rebuild --main-sha=SHA` is the ordinary absent-resource
+recovery. It inventories all exact configured base VM names, their `-next`
+names, and the configured network while it holds `standby-refresh`. It refuses
+before any Incus or manifest mutation when one of those resources exists. The
+refusal lists every present exact name and directs the operator to
+`recover-legacy`. This rule does not depend on whether the promoted manifest is
+missing, malformed, or readable. When all exact resources are absent, rebuild
+forgets stale manifests and cold-builds the standby at `SHA`. `SHA` must be the
+clean commit checked out on `main`.
+
+### Legacy standby disaster recovery
+
+Use this supported command when ordinary rebuild reports present resources:
+
+```bash
+bin/e2e-standby recover-legacy --main-sha=<full-main-sha>
+```
+
+Recovery accepts only a readable, unbound schema-4 or schema-5 promoted
+manifest. It takes one complete inventory from the configured Incus remote,
+project, and storage pool. It authorizes only the configured standby namespace
+and these exact identities:
+
+- each configured base VM or its exact `-next` promotion copy;
+- Orbit owner and valid operation metadata;
+- complete issue and attempt metadata when a `-next` copy still carries its
+  promotion attempt identity, and no feature issue metadata on a base VM;
+- the configured network, deterministic role MAC, expected storage pool, and
+  no unexpected host disk;
+- each promoted snapshot on its base VM;
+- the exact bridge subnet, NAT, DHCP, IPv6, and dnsmasq configuration; and
+- network users that are exact inventoried VMs in the configured project.
+
+Missing, duplicated, changing, incomplete, unavailable, or foreign evidence
+fails closed. Recovery does not adopt a resource from its name alone. It does
+not use a prefix, glob, age, or operator-supplied Incus name as deletion
+authority.
+
+Before mutation, recovery writes the canonical inventory and its SHA-256 digest
+to `<primary>/.e2e/standby/recovery.json`. It retains the promoted and recorded
+manifests there. The journal records `authorized`, then pending and verified
+boundaries for instances, network, manifests, and construction. Final evidence
+records the new generation, requested SHA, stopped exact VMs, configured
+network, and absence of every `-next` VM. A later recovery archives completed
+evidence as `.e2e/standby/recoveries/<operation-id>.json` before it starts a new
+authorized record.
+
+One `standby-refresh` lock remains held from inventory and authorization through
+teardown, cold construction, promotion, final verification, and the final
+journal write. A retry with the same SHA resumes only from retained inventory
+whose digest and observed exact state still agree. It accepts already verified
+deletions. If construction was interrupted, it records
+`construction_cleanup_pending`, removes only resources stamped with that exact
+construction operation, verifies absence, and records
+`construction_cleanup_verified` before it constructs again. Any other change
+fails closed.
+
+Every nonzero JSON result includes `error`, `recovery_evidence`,
+`recovery_phase`, and `next_action`. Use these actions:
+
+| Diagnostic | Next action |
+| --- | --- |
+| The refresh lock is busy | Retry the same `recover-legacy --main-sha=SHA` command after the current standby operation ends. |
+| The retained record is incomplete | Preserve all remaining resources and rerun the same SHA so recovery can resume its verified boundaries. |
+| Inventory or ownership evidence is missing, foreign, ambiguous, unavailable, or changed | Preserve the resources, correct the reported evidence problem, and retry the same recovery command. |
+| The promoted manifest is missing, malformed, bound, or not schema 4/5 | Preserve the named resources and restore the matching readable legacy manifest before retrying. |
+| Recovery is complete | Run `bin/e2e-standby status`. |
+
+Do not run `incus delete`, remove a manifest, or edit retained recovery evidence
+by hand. Those actions discard the authority or retry evidence that makes this
+workflow safe.
 
 ## Live acceptance suites
 
@@ -435,14 +500,18 @@ The wrapper:
   `apps/gateway/.env` a guest wrote into that mounted worktree (it names guest
   paths, and `bin/bootstrap` would try to create them on the host), and runs
   `bin/bootstrap` in both;
-- releases a stale `ACC-1` attempt, then refreshes the clone's standby to the
-  candidate (`unchanged` when the fingerprint did not move), or runs
-  `bin/e2e-standby rebuild` when the clone holds no usable generation, which is
-  how the clone's own standby is built the first time;
+- releases a stale `ACC-1` attempt and builds the clone's standby when its
+  manifest and exact resources are absent. If an interrupted recovery left the
+  manifest missing while exact resources remain, it verifies ordinary rebuild's
+  refusal without mutation and resumes `recover-legacy` at the same candidate.
+  Otherwise it proves that refusal against the promoted standby and starts
+  `recover-legacy`; both routes verify the retained journal and prove that the
+  primary standby inventory did not change;
 - exports every `ORBIT_LIVE_*` input, with `proofs/ACC-1.json` as the
-  harness plan, and runs the lifecycle suite: acquire, sync, exec, release,
-  prove, release, prove again, promote the proved topology into the clone's
-  standby, acquire from the promoted generation, exec, release; and
+  harness plan, and runs the legacy recovery and lifecycle suites: acquire,
+  sync, exec, release, prove, release, prove again, promote the proved topology
+  into the clone's standby, acquire from the promoted generation, exec,
+  release; and
 - prints one summary line for the pull request body:
   `lifecycle: passed, <assertions> assertions, <seconds> s`.
 

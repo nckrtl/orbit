@@ -75,6 +75,115 @@ final readonly class StandbyRefresher
         }
     }
 
+    public function recoverLegacy(
+        string $mainSha,
+        LegacyStandbyRecovery $recovery,
+        StandbyRebuilder $rebuilder,
+    ): RefreshResult {
+        if (preg_match('/\A[a-f0-9]{40}\z/D', $mainSha) !== 1) {
+            throw new RuntimeException('The legacy recovery SHA is invalid.');
+        }
+        if (! $this->lock->acquire(
+            'standby-refresh',
+            $this->operation,
+            timeoutSeconds: $this->refreshLockTimeoutSeconds,
+        )) {
+            return new RefreshResult(
+                'failed',
+                $this->operation->value,
+                error: 'Unable to acquire the standby refresh lock.',
+            );
+        }
+
+        $started = false;
+        try {
+            $resumable = ['instances' => false, 'network' => false, 'manifests' => false];
+            if ($recovery->completed()) {
+                $inventory = $recovery->authorize();
+                $recovery->start($mainSha, $inventory);
+            } else {
+                $interruptedConstruction = $recovery->interruptedConstructionOperation();
+                $resumable = $recovery->resumableBoundaries();
+                $inventory = $recovery->resume($mainSha);
+                if ($inventory === null) {
+                    $inventory = $recovery->authorize();
+                    $recovery->start($mainSha, $inventory);
+                } elseif ($interruptedConstruction !== null) {
+                    $recovery->record('construction_cleanup_pending', [
+                        'operation_id' => $interruptedConstruction->value,
+                        'next_action' => "bin/e2e-standby recover-legacy --main-sha={$mainSha}",
+                    ]);
+                    if (! $this->builder->cleanupCold($interruptedConstruction)) {
+                        throw new RuntimeException('Interrupted legacy standby construction could not be cleaned up.');
+                    }
+                    $recovery->record('construction_cleanup_verified', [
+                        'operation_id' => $interruptedConstruction->value,
+                    ]);
+                }
+            }
+            $started = true;
+            $rebuilder->recover(
+                $inventory,
+                $recovery->record(...),
+                instancesMayBeAbsent: $resumable['instances'],
+                networkMayBeAbsent: $resumable['network'],
+                manifestsMayBeAbsent: $resumable['manifests'],
+            );
+            $recovery->record('construction_pending', [
+                'operation_id' => $this->operation->value,
+                'next_action' => "bin/e2e-standby recover-legacy --main-sha={$mainSha}",
+            ]);
+            $result = $this->refresh($mainSha, allowCold: true, operation: $this->operation);
+            if (! $result->successful()) {
+                $recovery->record('failed', [
+                    'error' => $result->error,
+                    'next_action' => "bin/e2e-standby recover-legacy --main-sha={$mainSha}",
+                ]);
+
+                return $result;
+            }
+
+            $generation = $this->manifests->promoted();
+            if ($generation === null || $generation->id !== $result->generationId) {
+                throw new RuntimeException('The recovered standby generation identity does not match.');
+            }
+            $this->assertGenerationAvailable($generation);
+            $this->assertStopped();
+            $copyNames = array_map(
+                fn (string $role): string => $this->identity->instance($role).'-next',
+                TopologyProfile::ROLES,
+            );
+            if ($this->host->instances($copyNames) !== []) {
+                throw new RuntimeException('A promotion copy remains after legacy standby recovery.');
+            }
+            $recovery->record('construction_verified', [
+                'generation_id' => $generation->id,
+                'main_sha' => $generation->mainSha,
+                'instances' => $this->identity->instances(),
+                'network' => $this->identity->network(),
+                'next_action' => 'bin/e2e-standby status',
+            ]);
+
+            return $result;
+        } catch (Throwable $exception) {
+            $error = $exception->getMessage();
+            if ($started) {
+                try {
+                    $recovery->record('failed', [
+                        'error' => $error,
+                        'next_action' => "bin/e2e-standby recover-legacy --main-sha={$mainSha}",
+                    ]);
+                } catch (Throwable $evidenceException) {
+                    $error .= ' The recovery evidence write also failed: '.$evidenceException->getMessage();
+                }
+            }
+
+            return new RefreshResult('failed', $this->operation->value, error: $error);
+        } finally {
+            $this->lock->release();
+        }
+    }
+
     public function restore(): StandbyGeneration
     {
         if (! $this->lock->acquire(

@@ -57,6 +57,57 @@ it('describes the validation clone, suites, and inputs with --help', function ()
     expect($result->exitCode())
         ->toBe(0)
         ->and($result->output())
-        ->toContain('ORBIT_E2E_VALIDATE_ROOT', 'TopologyLedLifecycleAcceptanceTest', 'proofs/ACC-1.json', 'ACC-1')
+        ->toContain(
+            'ORBIT_E2E_VALIDATE_ROOT',
+            'LegacyStandbyRecoveryAcceptanceTest',
+            'TopologyLedLifecycleAcceptanceTest',
+            'recover-legacy',
+            'proofs/ACC-1.json',
+            'ACC-1',
+        )
         ->not->toContain('--rolling');
+});
+
+it('compares only stable primary standby identity fields', function () use ($wrapper): void {
+    $source = file_get_contents($wrapper);
+
+    expect($source)
+        ->toContain('with_entries(select(.key | startswith("volatile.") | not))')
+        ->toContain('devices: (.expanded_devices // .devices // {})')
+        ->toContain('managed,')
+        ->not->toContain("jq -s '[.[][] | select(.name == \"oe-standby\"");
+});
+
+it('routes a missing standby with present resources into resumable legacy recovery', function () use ($wrapper): void {
+    $source = file_get_contents($wrapper);
+    preg_match('/if \\[\\[ "\\$standby_state" == missing.*?then(?<branch>.*?)elif/s', $source, $matches);
+    $missingBranch = $matches['branch'] ?? '';
+
+    expect($missingBranch)
+        ->toContain('standby rebuild')
+        ->toContain('assert_rebuild_refusal')
+        ->toContain('standby recover-legacy');
+});
+
+it('registers the network-only retained-record resume and archive proof', function () use ($wrapper): void {
+    $source = file_get_contents($wrapper);
+
+    expect($source)
+        ->toContain(
+            'prepare_network_only',
+            '--group=incus-live-network-record',
+            'live_instance_count',
+            'live_network_count',
+            'normalizing a retained network-only live standby',
+            'resuming retained legacy recovery at its recorded SHA',
+            'retained_sha=$(jq -er',
+            'checkout_validation_sha "$retained_sha"',
+            'checkout_validation_sha "$candidate"',
+            '.inventory.instances | type == "array" and length == 0',
+            '.inventory.snapshots | type == "array" and length == 0',
+            'any(.history[]; .phase == "resumed")',
+            'tests/Live/LegacyStandbyRecoveryAcceptanceTest.php',
+        )
+        ->and(substr_count($source, 'remove_guest_gateway_env'))
+        ->toBe(4);
 });
