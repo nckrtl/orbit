@@ -1394,7 +1394,9 @@ describe('convergence guest scripts', function () {
                 'wireguard_ip=10.44.0.2',
                 '--wireguard-ip="$wireguard_ip"',
             )
-            ->not->toContain('wireguard_address', '--wireguard-address', 'uname -m');
+            ->not->toContain('wireguard_address')
+            ->not->toContain('--wireguard-address')
+            ->not->toContain('uname -m');
         expect($production)
             ->toContain(
                 'cd /home/orbit/orbit/apps/gateway',
@@ -1408,7 +1410,9 @@ describe('convergence guest scripts', function () {
                 'wireguard_ip=10.44.0.3',
                 '--wireguard-ip="$wireguard_ip"',
             )
-            ->not->toContain('wireguard_address', '--wireguard-address', 'uname -m');
+            ->not->toContain('wireguard_address')
+            ->not->toContain('--wireguard-address')
+            ->not->toContain('uname -m');
     });
 
     it('hydrates Composer dependencies only when the lock marker is stale', function () {
