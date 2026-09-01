@@ -79,7 +79,7 @@ function task7_ipv4(array $command): ?string
 
 /** @param list<list<string>> $recorded */
 /** @mago-expect lint:cyclomatic-complexity The process fake models all ordered convergence responses in one test boundary. */
-function task7_process_result(PendingProcess $process, array &$recorded): ProcessResult
+function task7_process_result(PendingProcess $process, array &$recorded, bool $typed = false): ProcessResult
 {
     $command = $process->command;
     assert(is_array($command));
@@ -114,7 +114,7 @@ function task7_process_result(PendingProcess $process, array &$recorded): Proces
             $nested = new PendingProcess(app(ProcessFactory::class));
             $nested->command = $argv;
             $nestedRecorded = [];
-            $result = task7_process_result($nested, $nestedRecorded);
+            $result = task7_process_result($nested, $nestedRecorded, $typed);
             $results[] = [
                 'label' => $request['label'],
                 'stdout' => $result->output(),
@@ -142,6 +142,18 @@ function task7_process_result(PendingProcess $process, array &$recorded): Proces
 
     if (in_array('uname', $command, true) && str_contains(implode(' ', $command), 'app-prod')) {
         return Process::result("aarch64\n");
+    }
+
+    if ($typed && in_array('create-resources', $command, true)) {
+        return Process::result(json_encode([
+            'shape' => 'app_instances',
+            'app_id' => 1,
+            'node_id' => 2,
+            'name' => 'e2e-dev',
+            'checkout_path' => '/srv/orbit/apps/laravel/e2e-dev',
+            'effective_root' => 'public',
+        ], JSON_THROW_ON_ERROR)
+            ."\n");
     }
 
     if (array_slice($command, -4) === ['network', 'list', 'lab:', '--format=json']) {
@@ -289,6 +301,38 @@ describe('TopologyConverger', function () {
                 is_array($process->command) && in_array('start', $process->command, true)
             ),
         );
+    });
+
+    it('hydrates only the validated typed development checkout', function (): void {
+        $recorded = [];
+        Process::fake(function (PendingProcess $process) use (&$recorded): ProcessResult {
+            return task7_process_result($process, $recorded, typed: true);
+        });
+
+        new TopologyConverger(task7_host())->converge(
+            featureTarget('NCK-123'),
+            new SourceState(str_repeat('a', 40), str_repeat('a', 40), false),
+            new LaravelRelease('v13.10.1', str_repeat('b', 40)),
+        );
+
+        $arguments = collect($recorded)
+            ->filter(fn (array $command): bool => in_array('exec', $command, true))
+            ->map(fn (array $command): array => array_slice($command, 6))
+            ->values()
+            ->all();
+
+        expect($arguments)
+            ->toContain([
+                '/usr/local/bin/converge-sample-app.sh',
+                'hydrate',
+                str_repeat('b', 40),
+                'app-dev',
+                '/srv/orbit/apps/laravel/e2e-dev',
+            ])
+            ->not->toContain(
+                ['/usr/local/bin/converge-sample-app.sh', 'internal-tls'],
+                ['/usr/local/bin/converge-sample-app.sh', 'hydrate', str_repeat('b', 40), 'app-prod'],
+            );
     });
 
     it('fails before mutation when a required network is absent', function () {
