@@ -1,12 +1,15 @@
 # Orbit Monorepo
 
-This repository contains the Orbit CLI, Gateway, PHP SDK, and Incus E2E
-harness.
+This repository contains the Orbit CLI, Gateway, documentation tooling, PHP
+SDK, and Incus E2E harness.
 
 ## Scope
 
 - Read the nearest nested `AGENTS.md` before changing a project.
-- Keep the CLI, Gateway, SDK, and E2E harness as separate Composer projects.
+- Keep the CLI, Gateway, Docs, SDK, and E2E harness as separate Composer
+  projects.
+- Keep maintained documentation under root `docs/`; `apps/docs` owns only its
+  console tooling, generators, rules, and tests.
 - Use root commands only to coordinate project checks and repository tooling.
 - Accepted repository ADRs own product architecture and durable technical
   boundaries. Linear issues own requested outcomes, scope, acceptance criteria,
@@ -45,6 +48,7 @@ invoke any one directly; no private orchestration order is implied.
 
 - Run `bin/test` for all full Pest suites without TIA.
 - Run the nearest project's `composer check` for changed PHP code.
+- Run `composer docs-lint` when maintained documentation changes.
 - GitHub Actions runs each project as an independent matrix job.
 
 ## Durable knowledge
@@ -52,4 +56,10 @@ invoke any one directly; no private orchestration order is implied.
 - Put architecture decisions in `docs/decisions`.
 - Put stable operational or API reference in `docs/reference`.
 - Put reusable implementation lessons in `docs/solutions`.
+- Write human-facing documentation for people first. Use plain language, short
+  paragraphs, and concrete examples. Keep delivery rules and internal workflow
+  language in contributor guidance or ADRs.
 - Do not add a document when the change has no durable project learning.
+- Every implementation contract classifies documentation impact as `required`
+  or `none` with a rationale. Reconcile required documentation in the same pull
+  request as the behavior it describes.

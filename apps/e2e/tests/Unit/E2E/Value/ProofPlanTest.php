@@ -43,6 +43,11 @@ function mutatedProofPlanFile(Closure $mutate): string
     return proofPlanFile($mutate(proofPlanFixture()));
 }
 
+function nck73ProofPlan(): ProofPlan
+{
+    return ProofPlan::fromFile(dirname(__DIR__, 6).'/proofs/NCK-73.json');
+}
+
 describe('ProofPlan', function (): void {
     it('reads the declared setup, acceptance, and post-deployment actions from a file', function (): void {
         $plan = ProofPlan::fromFile(proofPlanFile(proofPlanFixture()));
@@ -187,6 +192,25 @@ describe('ProofPlan', function (): void {
         'lowercase' => [['nck-73']],
         'empty' => [[]],
     ]);
+
+    it('classifies the NCK-73 lifecycle proof as mutating', function (): void {
+        expect(nck73ProofPlan()->mutates)->toBeTrue();
+    });
+
+    it('asserts the prepared Metrics baseline before NCK-73 acceptance', function (): void {
+        expect(nck73ProofPlan()->setup)->toBe([[
+            'id' => 'metrics-baseline-active',
+            'node' => 'app-dev',
+            'argv' => [
+                'bash',
+                '/var/lib/orbit-e2e/proof/status-active.sh',
+                'app-dev=desired/active/metrics_node',
+                'app-prod=desired/active/role_default',
+                'gateway=desired/active/role_default',
+            ],
+            'timeout_seconds' => 120,
+        ]]);
+    });
 
     it('rejects a mutates flag that is not a boolean', function (mixed $value): void {
         expect(fn () => ProofPlan::fromFile(proofPlanFile(proofPlanFixture() + ['mutates' => $value])))

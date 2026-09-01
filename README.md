@@ -1,10 +1,12 @@
 # Orbit
 
-Orbit is one Git repository with three independently installable PHP projects.
+Orbit is one Git repository with five independently installable PHP projects.
 The repository keeps their release boundaries and Composer lock files separate.
 
 ```text
 apps/cli            Laravel Zero client
+apps/docs           Documentation linter and context generator
+apps/e2e            Incus proof harness
 apps/gateway        Laravel control plane
 packages/php-sdk    Framework-neutral PHP SDK
 ```
@@ -29,6 +31,10 @@ The equivalent Composer command is `composer test`.
 
 Each project keeps its own `AGENTS.md`, quality commands, and release contract.
 Read the nearest guidance file before changing a project.
+
+The maintained documentation corpus stays under root `docs/`. Run
+`composer docs-lint` to verify it, `composer docs-build` to update its committed
+context index, and `composer docs-context` to select an ordered reading set.
 
 The former standalone repositories are history snapshots. This repository is
 the source of truth. Add an explicit split or artifact workflow before the next

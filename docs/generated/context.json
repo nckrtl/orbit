@@ -1,0 +1,421 @@
+{
+    "schema_version": 1,
+    "documents": [
+        {
+            "path": "docs/README.md",
+            "title": "Orbit documentation",
+            "kind": "product",
+            "components": [
+                "apps/docs",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Cluster",
+                "Gateway"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/architecture.md",
+            "title": "Architecture",
+            "kind": "product",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/e2e",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "App",
+                "AppInstance",
+                "Cluster",
+                "Doctor",
+                "Gateway",
+                "Ingress",
+                "Node",
+                "Route",
+                "Router"
+            ],
+            "governing_adrs": [
+                "0004",
+                "0006",
+                "0009",
+                "0011",
+                "0014"
+            ]
+        },
+        {
+            "path": "docs/concepts.md",
+            "title": "Concepts",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "AppInstance",
+                "Cluster",
+                "Doctor",
+                "Documentation context",
+                "Gateway",
+                "Ingress",
+                "Node",
+                "Proof topology",
+                "Route",
+                "Router"
+            ],
+            "governing_adrs": [
+                "0004",
+                "0009",
+                "0011",
+                "0012",
+                "0014"
+            ]
+        },
+        {
+            "path": "docs/decisions/0001-tool-management.md",
+            "title": "ADR 0001: Adopt the closed Tool Management contract",
+            "kind": "decision",
+            "components": [],
+            "concepts": [
+                "App",
+                "Gateway",
+                "Node"
+            ],
+            "governing_adrs": [
+                "0001",
+                "2026"
+            ]
+        },
+        {
+            "path": "docs/decisions/0002-candidate-deployment-proof-boundary.md",
+            "title": "ADR 0002: Keep proof resources task-owned and production separate",
+            "kind": "decision",
+            "components": [],
+            "concepts": [],
+            "governing_adrs": [
+                "0002",
+                "0006"
+            ]
+        },
+        {
+            "path": "docs/decisions/0003-singleton-metrics-role.md",
+            "title": "ADR 0003: Adopt the singleton Metrics role contract",
+            "kind": "decision",
+            "components": [],
+            "concepts": [
+                "App",
+                "Gateway",
+                "Node"
+            ],
+            "governing_adrs": [
+                "0003",
+                "2026"
+            ]
+        },
+        {
+            "path": "docs/decisions/0004-verify-only-doctor-boundary.md",
+            "title": "ADR 0004: Define the verify-only Doctor boundary",
+            "kind": "decision",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "App",
+                "Doctor",
+                "Gateway",
+                "Node"
+            ],
+            "governing_adrs": [
+                "0004",
+                "2026"
+            ]
+        },
+        {
+            "path": "docs/decisions/0005-rolling-incus-development-topology.md",
+            "title": "ADR 0005: Adopt a rolling Incus development topology",
+            "kind": "decision",
+            "components": [
+                "apps/e2e"
+            ],
+            "concepts": [
+                "App",
+                "Gateway",
+                "Node"
+            ],
+            "governing_adrs": [
+                "0005",
+                "0006"
+            ]
+        },
+        {
+            "path": "docs/decisions/0006-topology-led-feature-development.md",
+            "title": "ADR 0006: Separate disposable discovery from immutable proof",
+            "kind": "decision",
+            "components": [
+                "apps/e2e"
+            ],
+            "concepts": [],
+            "governing_adrs": [
+                "0002",
+                "0005",
+                "0006"
+            ]
+        },
+        {
+            "path": "docs/decisions/0008-typed-app-dev-node-storage-settings.md",
+            "title": "ADR 0008: Define typed app-dev node storage settings",
+            "kind": "decision",
+            "components": [],
+            "concepts": [
+                "App",
+                "Gateway",
+                "Node"
+            ],
+            "governing_adrs": [
+                "0008"
+            ]
+        },
+        {
+            "path": "docs/decisions/0009-clustered-app-instance-routing.md",
+            "title": "ADR 0009: Adopt clustered AppInstance routing",
+            "kind": "decision",
+            "components": [],
+            "concepts": [
+                "App",
+                "AppInstance",
+                "Cluster",
+                "Gateway",
+                "Ingress",
+                "Node",
+                "Route",
+                "Router"
+            ],
+            "governing_adrs": [
+                "0008",
+                "0009"
+            ]
+        },
+        {
+            "path": "docs/decisions/0010-record-decisions-before-implementation-issues.md",
+            "title": "ADR 0010: Record decisions before implementation issues",
+            "kind": "decision",
+            "components": [],
+            "concepts": [],
+            "governing_adrs": [
+                "0010"
+            ]
+        },
+        {
+            "path": "docs/decisions/0011-clustered-production-ingress-and-app-prod-placement.md",
+            "title": "ADR 0011: Define clustered production ingress and app-prod placement",
+            "kind": "decision",
+            "components": [],
+            "concepts": [
+                "App",
+                "AppInstance",
+                "Cluster",
+                "Ingress",
+                "Node",
+                "Route",
+                "Router"
+            ],
+            "governing_adrs": [
+                "0009",
+                "0011"
+            ]
+        },
+        {
+            "path": "docs/decisions/0012-ubuntu-24-04-roleless-operator-clients.md",
+            "title": "ADR 0012: Allow Ubuntu 24.04 role-less operator clients",
+            "kind": "decision",
+            "components": [],
+            "concepts": [
+                "App",
+                "Doctor",
+                "Gateway",
+                "Ingress",
+                "Node",
+                "Router"
+            ],
+            "governing_adrs": [
+                "0012"
+            ]
+        },
+        {
+            "path": "docs/decisions/0013-native-systemd-schedule-management.md",
+            "title": "ADR 0013: Manage schedules with native systemd timers",
+            "kind": "decision",
+            "components": [],
+            "concepts": [
+                "App",
+                "AppInstance",
+                "Cluster",
+                "Doctor",
+                "Gateway",
+                "Ingress",
+                "Node",
+                "Proof topology"
+            ],
+            "governing_adrs": [
+                "0002",
+                "0004",
+                "0009",
+                "0011",
+                "0013"
+            ]
+        },
+        {
+            "path": "docs/decisions/0014-maintain-verified-documentation-context.md",
+            "title": "ADR 0014: Maintain verified documentation as implementation context",
+            "kind": "decision",
+            "components": [
+                "apps/docs"
+            ],
+            "concepts": [
+                "Route"
+            ],
+            "governing_adrs": [
+                "0010",
+                "0014"
+            ]
+        },
+        {
+            "path": "docs/decisions/README.md",
+            "title": "Architecture decisions",
+            "kind": "decision",
+            "components": [],
+            "concepts": [],
+            "governing_adrs": [
+                "0001",
+                "0010"
+            ]
+        },
+        {
+            "path": "docs/domains/README.md",
+            "title": "Product Areas",
+            "kind": "domain",
+            "components": [],
+            "concepts": [],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/mission.md",
+            "title": "Mission",
+            "kind": "product",
+            "components": [],
+            "concepts": [
+                "App",
+                "Gateway"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/incus-topologies.md",
+            "title": "Incus topology registry",
+            "kind": "reference",
+            "components": [
+                "apps/cli",
+                "apps/e2e",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "App",
+                "Doctor",
+                "Gateway",
+                "Node"
+            ],
+            "governing_adrs": [
+                "0005",
+                "0006"
+            ]
+        },
+        {
+            "path": "docs/reference/metrics.md",
+            "title": "Metrics role",
+            "kind": "reference",
+            "components": [],
+            "concepts": [
+                "App",
+                "Gateway",
+                "Node",
+                "Route"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/node-retarget.md",
+            "title": "Node retarget",
+            "kind": "reference",
+            "components": [
+                "apps/e2e"
+            ],
+            "concepts": [
+                "Gateway",
+                "Node"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/php-runtime.md",
+            "title": "PHP runtime defaults",
+            "kind": "reference",
+            "components": [],
+            "concepts": [
+                "App",
+                "Node",
+                "Route"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/solutions/README.md",
+            "title": "Solutions",
+            "kind": "solution",
+            "components": [],
+            "concepts": [],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/solutions/doctor-incus-proof.md",
+            "title": "Prove the verify-only Doctor on an Incus topology",
+            "kind": "solution",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "App",
+                "Doctor",
+                "Gateway",
+                "Node"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/solutions/remote-file-writes-on-uutils-coreutils.md",
+            "title": "Remote file writes on uutils coreutils",
+            "kind": "solution",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "App",
+                "Gateway"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/tech-stack.md",
+            "title": "Tech Stack",
+            "kind": "product",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Gateway"
+            ],
+            "governing_adrs": []
+        }
+    ]
+}

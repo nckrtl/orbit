@@ -23,6 +23,8 @@ jobs:
         include:
           - name: CLI
             directory: apps/cli
+          - name: Docs
+            directory: apps/docs
           - name: Gateway
             directory: apps/gateway
           - name: E2E
@@ -59,7 +61,7 @@ jobs:
           echo "$(brew --prefix)/bin" >> "$GITHUB_PATH"
 
       - name: Prepare application environment
-        if: matrix.directory == 'apps/gateway' || matrix.directory == 'apps/e2e'
+        if: matrix.directory == 'apps/docs' || matrix.directory == 'apps/gateway' || matrix.directory == 'apps/e2e'
         run: cp .env.example .env
 
       - name: Install dependencies
@@ -70,6 +72,10 @@ jobs:
 
       - name: Verify repository guidance
         run: composer guidance:check
+
+      - name: Lint maintained documentation
+        if: matrix.directory == 'apps/docs'
+        run: composer docs:lint
 
       - name: Run full tests in parallel
         run: vendor/bin/pest --parallel --processes=2 --no-tia --compact --exclude-group=incus-live

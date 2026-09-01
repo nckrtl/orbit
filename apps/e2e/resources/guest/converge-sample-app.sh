@@ -5,6 +5,7 @@ umask 077
 # processes spawned by the CLI need a readable working directory.
 cd /
 orbit=/home/orbit/orbit/apps/cli/orbit
+sample_state=/home/orbit/.orbit/e2e-sample-app-state.json
 case ${1-} in
   grant-operator)
     [[ "$(id -u)" -eq 0 ]] && exec sudo -u orbit -- env HOME=/home/orbit ORBIT_HOME=/home/orbit/.orbit DB_DATABASE=/home/orbit/.orbit/gateway.sqlite bash "$0" "$@"
@@ -42,7 +43,34 @@ case ${1-} in
     nodes=$("$orbit" node:list --json)
     dev_id=$(php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); $m=array_values(array_filter($v["nodes"], fn($x) => ($x["name"] ?? null)===$argv[1])); if(count($m)!==1 || !is_int($m[0]["id"] ?? null)) exit(65); echo $m[0]["id"];' "$2" <<<"$nodes")
     prod_id=$(php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); $m=array_values(array_filter($v["nodes"], fn($x) => ($x["name"] ?? null)===$argv[1])); if(count($m)!==1 || !is_int($m[0]["id"] ?? null)) exit(65); echo $m[0]["id"];' "$3" <<<"$nodes")
+    initial_instances=$("$orbit" instance:list --json)
+    instance_shape=$(php -r '$v=json_decode(stream_get_contents(STDIN), false, 512, JSON_THROW_ON_ERROR); if(!is_object($v)) exit(65); $legacy=property_exists($v, "instances"); $typed=property_exists($v, "app_instances"); if($legacy===$typed) exit(65); $key=$legacy ? "instances" : "app_instances"; $items=$v->{$key}; if(!is_array($items)) exit(65); $targets=[]; foreach($items as $item) { if(!is_object($item)) exit(65); $name=$item->name ?? null; if(in_array($name, ["e2e-dev", "e2e-prod"], true)) { if(isset($targets[$name])) exit(65); $targets[$name]=true; } } echo $key;' <<<"$initial_instances")
+    if [[ "$instance_shape" == app_instances ]]; then
+      php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); $m=array_values(array_filter($v["nodes"], fn($x) => ($x["name"] ?? null)===$argv[1])); if(count($m)!==1 || ($m[0]["id"] ?? null)!==(int)$argv[2] || ($m[0]["status"] ?? null)!=="active") exit(65);' "$2" "$dev_id" <<<"$nodes"
+    fi
     apps=$("$orbit" app:list --json)
+    if [[ "$instance_shape" == app_instances ]]; then
+      app_id=$(php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); $m=array_values(array_filter($v["apps"], fn($x) => ($x["slug"] ?? null)===$argv[1])); if(count($m)>1 || $m && (($m[0]["repository_url"] ?? null)!==$argv[2] || ($m[0]["name"] ?? null)!==$argv[3] || ($m[0]["root"] ?? null)!==$argv[4] || !is_string($m[0]["main_branch"] ?? null) || $m[0]["main_branch"]==="") || $m && !is_int($m[0]["id"] ?? null)) exit(65); echo $m[0]["id"] ?? "";' laravel https://github.com/laravel/laravel.git Laravel public <<<"$apps")
+      if [[ -z "$app_id" ]]; then
+        app_id=$("$orbit" app:new laravel https://github.com/laravel/laravel.git --name=Laravel --root=public --json | php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); if(!is_int($v["id"] ?? null)) exit(65); echo $v["id"];')
+      fi
+      typed_instances=$initial_instances
+      typed_count=$(php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); echo count($v["app_instances"]);' <<<"$typed_instances")
+      if [[ "$typed_count" -eq 0 ]]; then
+        "$orbit" instance:new "$app_id" "$dev_id" e2e-dev --json >/dev/null
+        typed_instances=$("$orbit" instance:list --json)
+      fi
+      previous_checkout=
+      if [[ -f "$sample_state" ]]; then
+        previous_checkout=$(php -r '$v=json_decode(file_get_contents($argv[1]), true, 16, JSON_THROW_ON_ERROR); if(($v["shape"] ?? null)==="app_instances" && is_string($v["checkout_path"] ?? null)) echo $v["checkout_path"];' "$sample_state")
+      fi
+      typed_state=$(php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); if(!is_array($v) || array_key_exists("instances", $v) || !array_key_exists("app_instances", $v) || !is_array($v["app_instances"]) || !array_is_list($v["app_instances"])) exit(65); $m=array_values(array_filter($v["app_instances"], fn($x) => is_array($x) && ($x["name"] ?? null)===$argv[1])); if(count($m)!==1) exit(65); $x=$m[0]; $path=$x["checkout_path"] ?? null; $branch=$x["selected_branch"] ?? null; $commit=$x["starting_commit"] ?? null; if(($x["app_id"] ?? null)!==(int)$argv[2] || ($x["node_id"] ?? null)!==(int)$argv[3] || ($x["status"] ?? null)!=="active" || !is_string($path) || !str_starts_with($path, "/") || str_contains($path, "//") || preg_match("#(?:\\A|/)\\.\\.?(/|\\z)#D", $path)===1 || ($argv[4]!=="" && $path!==$argv[4]) || !is_string($branch) || $branch==="" || !is_string($commit) || preg_match("/\\A[0-9a-f]{40}\\z/D", $commit)!==1 || ($x["effective_root"] ?? null)!=="public") exit(65); echo json_encode(["shape"=>"app_instances", "app_id"=>(int)$argv[2], "node_id"=>(int)$argv[3], "name"=>$argv[1], "checkout_path"=>$path, "effective_root"=>"public"], JSON_THROW_ON_ERROR);' e2e-dev "$app_id" "$dev_id" "$previous_checkout" <<<"$typed_instances")
+      state_tmp=$(mktemp "$sample_state.XXXXXX")
+      printf '%s\n' "$typed_state" >"$state_tmp"
+      mv -f "$state_tmp" "$sample_state"
+      printf '%s\n' "$typed_state"
+      exit 0
+    fi
     app_id=$(php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); $m=array_values(array_filter($v["apps"], fn($x) => ($x["slug"] ?? null)===$argv[1])); if(count($m)>1 || $m && (($m[0]["repository_url"] ?? null)!==$argv[2] || ($m[0]["name"] ?? null)!==$argv[3])) exit(65); echo $m[0]["id"] ?? "";' laravel https://github.com/laravel/laravel.git Laravel <<<"$apps")
     if [[ -z "$app_id" ]]; then
       app_id=$("$orbit" app:new laravel https://github.com/laravel/laravel.git --name=Laravel --json | php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); echo $v["id"];')
@@ -61,6 +89,21 @@ case ${1-} in
     if [[ -z "$workspace_id" ]]; then
       "$orbit" workspace:new "$dev_instance_id" e2e --branch=e2e --json >/dev/null
     fi
+    ;;
+  inspect-state)
+    [[ "$(id -u)" -eq 0 ]] && exec sudo -u orbit -- env HOME=/home/orbit ORBIT_HOME=/home/orbit/.orbit DB_DATABASE=/home/orbit/.orbit/gateway.sqlite bash "$0" "$@"
+    [[ $# -eq 1 ]] || exit 64
+    if [[ ! -e "$sample_state" ]]; then
+      printf '{"shape":"instances"}\n'
+      exit 0
+    fi
+    [[ -f "$sample_state" ]] || exit 65
+    sample_shape=$(php -r '$v=json_decode(file_get_contents($argv[1]), true, 16, JSON_THROW_ON_ERROR); $shape=$v["shape"] ?? null; if(!in_array($shape, ["instances", "app_instances"], true)) exit(65); echo $shape;' "$sample_state")
+    if [[ "$sample_shape" == instances ]]; then
+      printf '{"shape":"instances"}\n'
+      exit 0
+    fi
+    php -r '$s=json_decode(file_get_contents($argv[1]), true, 16, JSON_THROW_ON_ERROR); $path=$s["checkout_path"] ?? null; if(array_keys($s)!==["shape","app_id","node_id","name","checkout_path","effective_root"] || $s["shape"]!=="app_instances" || !is_int($s["app_id"]) || !is_int($s["node_id"]) || $s["name"]!=="e2e-dev" || !is_string($path) || !str_starts_with($path, "/") || str_contains($path, "//") || preg_match("#(?:\\A|/)\\.\\.?(/|\\z)#D", $path)===1 || $s["effective_root"]!=="public") exit(65); $v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); if(!is_array($v) || array_key_exists("instances", $v) || !array_key_exists("app_instances", $v) || !is_array($v["app_instances"]) || !array_is_list($v["app_instances"])) exit(65); $m=array_values(array_filter($v["app_instances"], fn($x) => is_array($x) && ($x["name"] ?? null)==="e2e-dev")); if(count($m)!==1) exit(65); $x=$m[0]; if(($x["app_id"] ?? null)!==$s["app_id"] || ($x["node_id"] ?? null)!==$s["node_id"] || ($x["status"] ?? null)!=="active" || ($x["checkout_path"] ?? null)!==$path || !is_string($x["selected_branch"] ?? null) || $x["selected_branch"]==="" || !is_string($x["starting_commit"] ?? null) || preg_match("/\\A[0-9a-f]{40}\\z/D", $x["starting_commit"])!==1 || ($x["effective_root"] ?? null)!=="public") exit(65); echo json_encode($s, JSON_THROW_ON_ERROR), "\n";' "$sample_state" < <("$orbit" instance:list --json)
     ;;
   metrics)
     [[ "$(id -u)" -eq 0 ]] && exec sudo -u orbit -- env HOME=/home/orbit ORBIT_HOME=/home/orbit/.orbit DB_DATABASE=/home/orbit/.orbit/gateway.sqlite bash "$0" "$@"
@@ -136,14 +179,31 @@ case ${1-} in
     "$orbit" node:list --json | php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); foreach ($v["nodes"] as $n) { foreach ($n["roles"] ?? [] as $r) { if (in_array($r, ["app-dev", "app-prod"], true)) { printf("%d %s\n", $n["id"], $r); } } }' | while read -r node_id role; do
       "$orbit" node:role:add "$node_id" "$role" --converge --json | php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); if (($v["assignment"]["status"] ?? null) !== "active") { fwrite(STDERR, "role is not active after re-projection\n"); exit(1); } printf("reprojected role %s on node %d\n", $v["role"], $v["node_id"]);' || exit 1
     done
-    "$orbit" instance:list --json | php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); $i=$v["instances"]; usort($i, fn($a, $b) => [$a["environment"] === "development", $a["id"]] <=> [$b["environment"] === "development", $b["id"]]); foreach ($i as $x) { printf("%d %s\n", $x["id"], $x["php_version"]); }' | while read -r id version; do
+    instances=$("$orbit" instance:list --json)
+    instance_shape=$(php -r '$v=json_decode(stream_get_contents(STDIN), false, 512, JSON_THROW_ON_ERROR); if(!is_object($v)) exit(65); $legacy=property_exists($v, "instances"); $typed=property_exists($v, "app_instances"); if($legacy===$typed) exit(65); $key=$legacy ? "instances" : "app_instances"; if(!is_array($v->{$key})) exit(65); echo $key;' <<<"$instances")
+    if [[ "$instance_shape" == app_instances ]]; then
+      [[ -f "$sample_state" ]]
+      read -r app_id node_id checkout_path < <(php -r '$v=json_decode(file_get_contents($argv[1]), true, 16, JSON_THROW_ON_ERROR); $path=$v["checkout_path"] ?? null; if(array_keys($v)!==["shape","app_id","node_id","name","checkout_path","effective_root"] || $v["shape"]!=="app_instances" || !is_int($v["app_id"]) || !is_int($v["node_id"]) || $v["name"]!=="e2e-dev" || !is_string($path) || !str_starts_with($path, "/") || str_contains($path, "//") || preg_match("#(?:\\A|/)\\.\\.?(/|\\z)#D", $path)===1 || $v["effective_root"]!=="public") exit(65); echo $v["app_id"], " ", $v["node_id"], " ", $path, "\n";' "$sample_state")
+      php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); $m=array_values(array_filter($v["app_instances"], fn($x) => is_array($x) && ($x["name"] ?? null)==="e2e-dev")); if(count($m)!==1) exit(65); $x=$m[0]; if(($x["app_id"] ?? null)!==(int)$argv[1] || ($x["node_id"] ?? null)!==(int)$argv[2] || ($x["status"] ?? null)!=="active" || ($x["checkout_path"] ?? null)!==$argv[3] || !is_string($x["selected_branch"] ?? null) || $x["selected_branch"]==="" || !is_string($x["starting_commit"] ?? null) || preg_match("/\\A[0-9a-f]{40}\\z/D", $x["starting_commit"])!==1 || ($x["effective_root"] ?? null)!=="public") exit(65);' "$app_id" "$node_id" "$checkout_path" <<<"$instances"
+      exit 0
+    fi
+    php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); $i=$v["instances"]; usort($i, fn($a, $b) => [$a["environment"] === "development", $a["id"]] <=> [$b["environment"] === "development", $b["id"]]); foreach ($i as $x) { printf("%d %s\n", $x["id"], $x["php_version"]); }' <<<"$instances" | while read -r id version; do
       "$orbit" instance:php "$id" "$version" --json | php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); if (($v["status"] ?? null) !== "active") { fwrite(STDERR, "instance is not active after re-projection\n"); exit(1); } printf("reprojected instance %d (%s) on node %d\n", $v["id"], $v["name"], $v["node_id"]);' || exit 1
     done
     ;;
   hydrate)
-    [[ $# -eq 3 && "$2" =~ ^[0-9a-f]{40}$ ]]
+    [[ "$2" =~ ^[0-9a-f]{40}$ ]]
+    [[ $# -eq 3 || ( $# -eq 4 && "$3" == app-dev ) ]]
+    if [[ $# -eq 4 ]]; then
+      [[ -f "$sample_state" ]]
+      php -r '$v=json_decode(file_get_contents($argv[1]), true, 16, JSON_THROW_ON_ERROR); $path=$v["checkout_path"] ?? null; if(array_keys($v)!==["shape","app_id","node_id","name","checkout_path","effective_root"] || $v["shape"]!=="app_instances" || !is_int($v["app_id"]) || !is_int($v["node_id"]) || $v["name"]!=="e2e-dev" || !is_string($path) || !str_starts_with($path, "/") || str_contains($path, "//") || preg_match("#(?:\\A|/)\\.\\.?(/|\\z)#D", $path)===1 || $path!==$argv[2] || $v["effective_root"]!=="public") exit(65); $r=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); if(!is_array($r) || array_key_exists("instances", $r) || !array_key_exists("app_instances", $r) || !is_array($r["app_instances"]) || !array_is_list($r["app_instances"])) exit(65); $m=array_values(array_filter($r["app_instances"], fn($x) => is_array($x) && ($x["name"] ?? null)==="e2e-dev")); if(count($m)!==1) exit(65); $x=$m[0]; if(($x["app_id"] ?? null)!==$v["app_id"] || ($x["node_id"] ?? null)!==$v["node_id"] || ($x["status"] ?? null)!=="active" || ($x["checkout_path"] ?? null)!==$path || !is_string($x["selected_branch"] ?? null) || $x["selected_branch"]==="" || !is_string($x["starting_commit"] ?? null) || preg_match("/\\A[0-9a-f]{40}\\z/D", $x["starting_commit"])!==1 || ($x["effective_root"] ?? null)!=="public") exit(65);' "$sample_state" "$4" < <("$orbit" instance:list --json)
+    fi
     case "$3" in
-      app-dev) runtime_user=orbit; runtime_home=/home/orbit; checkouts=(/home/orbit/apps/laravel /home/orbit/.orbit/worktrees/laravel/e2e) ;;
+      app-dev)
+        runtime_user=orbit
+        runtime_home=/home/orbit
+        if [[ $# -eq 4 ]]; then checkouts=("$4"); else checkouts=(/home/orbit/apps/laravel /home/orbit/.orbit/worktrees/laravel/e2e); fi
+        ;;
       app-prod) runtime_user=orbit-laravel; runtime_home=/var/www/laravel; checkouts=(/var/www/laravel/e2e-prod) ;;
       *) exit 64 ;;
     esac

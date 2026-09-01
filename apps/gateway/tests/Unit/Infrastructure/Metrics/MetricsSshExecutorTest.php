@@ -60,6 +60,8 @@ describe(MetricsSshExecutor::class, function (): void {
                 $ssh->commands,
             ))
             ->not->toContain("'docker' 'container' 'rm'");
+
+        expectMetricsDockerCommandsUsePrivilegedBoundary($ssh);
     });
 
     it('runs both Metrics containers on host networking with no published ports', function (): void {
@@ -123,6 +125,8 @@ describe(MetricsSshExecutor::class, function (): void {
             ->toContain("'--web.listen-address=127.0.0.1:9090'")
             ->and($grafanaRun)
             ->toContain("'GF_SERVER_HTTP_ADDR=10.44.0.3'");
+
+        expectMetricsDockerCommandsUsePrivilegedBoundary($ssh);
     });
 
     it('bounds container logging with a rotating json-file driver', function (): void {
@@ -157,6 +161,8 @@ describe(MetricsSshExecutor::class, function (): void {
             ->toContain("'--log-driver' 'json-file'")
             ->toContain("'--log-opt' 'max-size=10m'")
             ->toContain("'--log-opt' 'max-file=3'");
+
+        expectMetricsDockerCommandsUsePrivilegedBoundary($ssh);
     });
 
     it('replaces an owned healthy container with a legacy health specification', function (): void {
@@ -186,11 +192,13 @@ describe(MetricsSshExecutor::class, function (): void {
             $ssh->commands,
         );
         expect($commands)
-            ->toContain("'docker' 'container' 'stop' '--time' '30' '--' 'orbit-metrics-prometheus'")
+            ->toContain("'sudo' 'docker' 'container' 'stop' '--time' '30' '--' 'orbit-metrics-prometheus'")
             ->toContain(
-                "'docker' 'container' 'rename' 'orbit-metrics-prometheus' 'orbit-metrics-prometheus-orbit-rollback'",
+                "'sudo' 'docker' 'container' 'rename' 'orbit-metrics-prometheus' 'orbit-metrics-prometheus-orbit-rollback'",
             )
-            ->toContain("'docker' 'container' 'rm' '--force' '--' 'orbit-metrics-prometheus-orbit-rollback'");
+            ->toContain("'sudo' 'docker' 'container' 'rm' '--force' '--' 'orbit-metrics-prometheus-orbit-rollback'");
+
+        expectMetricsDockerCommandsUsePrivilegedBoundary($ssh);
     });
 
     it('removes a proven recovery container', function (): void {
@@ -214,7 +222,160 @@ describe(MetricsSshExecutor::class, function (): void {
             $ssh->commands,
         );
         expect($commands)
-            ->toContain("'docker' 'container' 'rm' '--force' '--' 'orbit-metrics-prometheus-orbit-rollback'");
+            ->toContain("'sudo' 'docker' 'container' 'rm' '--force' '--' 'orbit-metrics-prometheus-orbit-rollback'");
+
+        expectMetricsDockerCommandsUsePrivilegedBoundary($ssh);
+    });
+
+    it('keeps an owned healthy container unchanged through privileged inspection', function (): void {
+        $spec = new MetricsRuntimeSpec()->for(
+            MetricsService::Prometheus,
+            41,
+            '10.44.0.3',
+            'configuration',
+        );
+        $ssh = new MetricsCapturingSshExecutor([
+            metricsCommandResult(stdout: json_encode($spec->labels, JSON_THROW_ON_ERROR)."\n"),
+            metricsCommandResult(exitCode: 1),
+            metricsCommandResult(),
+            metricsCommandResult(stdout: json_encode($spec->volumeLabels, JSON_THROW_ON_ERROR)."\n"),
+            metricsCommandResult(stdout: "healthy\n"),
+        ]);
+
+        metricsSshExecutor($ssh)->convergeContainers(metricsSshNode(), [$spec]);
+
+        expect(array_map(
+            static fn (RemoteCommand $command): array => $command->arguments,
+            $ssh->commands,
+        ))->toBe([
+            ['sudo', 'docker', 'container', 'inspect', '--format={{json .Config.Labels}}', '--', $spec->name],
+            [
+                'sudo',
+                'docker',
+                'container',
+                'inspect',
+                '--format={{json .Config.Labels}}',
+                '--',
+                $spec->name.'-orbit-rollback',
+            ],
+            [
+                'sudo',
+                'docker',
+                'container',
+                'ls',
+                '--all',
+                '--filter',
+                "name=^/{$spec->name}-orbit-rollback$",
+                '--format={{.Names}}',
+            ],
+            ['sudo', 'docker', 'volume', 'inspect', '--format={{json .Labels}}', '--', $spec->volume],
+            [
+                'sudo',
+                'docker',
+                'container',
+                'inspect',
+                '--format={{.State.Health.Status}}',
+                '--',
+                $spec->name,
+            ],
+        ]);
+
+        expectMetricsDockerCommandsUsePrivilegedBoundary($ssh);
+    });
+
+    it('restores a proven recovery container through privileged rename and start', function (): void {
+        $spec = new MetricsRuntimeSpec()->for(
+            MetricsService::Prometheus,
+            41,
+            '10.44.0.3',
+            'configuration',
+        );
+        $ssh = new MetricsCapturingSshExecutor([
+            metricsCommandResult(exitCode: 1),
+            metricsCommandResult(),
+            metricsCommandResult(stdout: json_encode($spec->labels, JSON_THROW_ON_ERROR)."\n"),
+            metricsCommandResult(stdout: json_encode($spec->volumeLabels, JSON_THROW_ON_ERROR)."\n"),
+            metricsCommandResult(),
+            metricsCommandResult(),
+            metricsCommandResult(stdout: "healthy\n"),
+        ]);
+
+        metricsSshExecutor($ssh)->convergeContainers(metricsSshNode(), [$spec]);
+
+        $commands = array_map(
+            static fn (RemoteCommand $command): string => $command->shellCommand(),
+            $ssh->commands,
+        );
+        expect($commands)
+            ->toContain(
+                "'sudo' 'docker' 'container' 'rename' 'orbit-metrics-prometheus-orbit-rollback' 'orbit-metrics-prometheus'",
+            )
+            ->toContain("'sudo' 'docker' 'container' 'start' '--' 'orbit-metrics-prometheus'");
+
+        expectMetricsDockerCommandsUsePrivilegedBoundary($ssh);
+    });
+
+    it('purges only a proven volume through the privileged boundary', function (): void {
+        $spec = new MetricsRuntimeSpec()->for(
+            MetricsService::Prometheus,
+            41,
+            '10.44.0.3',
+            'configuration',
+        );
+        $ssh = new MetricsCapturingSshExecutor([
+            metricsCommandResult(stdout: json_encode($spec->volumeLabels, JSON_THROW_ON_ERROR)."\n"),
+            metricsCommandResult(),
+        ]);
+
+        metricsSshExecutor($ssh)->purgeVolumes(metricsSshNode(), [$spec]);
+
+        expect(array_map(
+            static fn (RemoteCommand $command): array => $command->arguments,
+            $ssh->commands,
+        ))->toBe([
+            ['sudo', 'docker', 'volume', 'inspect', '--format={{json .Labels}}', '--', $spec->volume],
+            ['sudo', 'docker', 'volume', 'rm', '--', $spec->volume],
+        ]);
+
+        expectMetricsDockerCommandsUsePrivilegedBoundary($ssh);
+    });
+
+    it('removes a newly created volume when container recovery succeeds', function (): void {
+        $spec = new MetricsRuntimeSpec()->for(
+            MetricsService::Prometheus,
+            41,
+            '10.44.0.3',
+            'configuration',
+        );
+        $ssh = new MetricsCapturingSshExecutor([
+            metricsCommandResult(exitCode: 1),
+            metricsCommandResult(),
+            metricsCommandResult(exitCode: 1),
+            metricsCommandResult(),
+            metricsCommandResult(exitCode: 1),
+            metricsCommandResult(),
+            metricsCommandResult(),
+            metricsCommandResult(),
+            metricsCommandResult(stdout: "unhealthy\n"),
+            metricsCommandResult(stdout: json_encode($spec->labels, JSON_THROW_ON_ERROR)."\n"),
+            metricsCommandResult(),
+            metricsCommandResult(),
+        ]);
+        $executor = metricsSshExecutor($ssh);
+
+        try {
+            $executor->convergeContainers(metricsSshNode(), [$spec]);
+            test()->fail('Expected container convergence to fail after successful recovery.');
+        } catch (\App\Domain\Shared\ResourceOperationException $exception) {
+            expect($exception->errorCode)->toBe('metrics.container_convergence_failed');
+        }
+
+        expect(array_map(
+            static fn (RemoteCommand $command): array => $command->arguments,
+            $ssh->commands,
+        ))->toContain(['sudo', 'docker', 'volume', 'rm', '--', $spec->volume]);
+
+        expectMetricsDockerCommandsUsePrivilegedBoundary($ssh);
     });
 
     it('validates the generated Prometheus configuration through the pinned promtool entrypoint', function (): void {
@@ -227,11 +388,17 @@ describe(MetricsSshExecutor::class, function (): void {
 
         $executor->publishConfiguration(metricsSshNode(), $bundle);
 
+        $protectedConfiguration = stream_get_contents($ssh->commands[0]->protectedInput?->stream());
+
         expect($ssh->commands[0]->shellCommand())
             ->toBe(
-                "'docker' 'container' 'run' '--rm' '--interactive' '--entrypoint' '/bin/promtool' "
+                "'sudo' 'docker' 'container' 'run' '--rm' '--interactive' '--entrypoint' '/bin/promtool' "
                 ."'prom/prometheus:v3.5.0' 'check' 'config' '/dev/stdin'",
-            );
+            )
+            ->and($protectedConfiguration)
+            ->toContain('scrape_configs:');
+
+        expectMetricsDockerCommandsUsePrivilegedBoundary($ssh);
     });
 
     it('stages a generated file as root-only then chowns it for the container identity', function (): void {
@@ -339,6 +506,8 @@ describe(MetricsSshExecutor::class, function (): void {
         } catch (\App\Domain\Shared\ResourceOperationException $exception) {
             expect($exception->errorCode)->toBe('metrics.container_rollback_failed');
         }
+
+        expectMetricsDockerCommandsUsePrivilegedBoundary($ssh);
     });
 });
 
@@ -367,6 +536,26 @@ function metricsSshNode(): Node
 function metricsCommandResult(int $exitCode = 0, string $stdout = ''): CommandResult
 {
     return new CommandResult($exitCode, $stdout, '', 1, false);
+}
+
+function expectMetricsDockerCommandsUsePrivilegedBoundary(MetricsCapturingSshExecutor $ssh): void
+{
+    $dockerCommands = array_values(array_filter(
+        $ssh->commands,
+        static fn (RemoteCommand $command): bool => in_array('docker', $command->arguments, true),
+    ));
+
+    expect($dockerCommands)->not->toBeEmpty();
+
+    foreach ($dockerCommands as $command) {
+        expect(array_slice($command->arguments, 0, 2))
+            ->toBe(['sudo', 'docker'])
+            ->and(implode("\0", $command->arguments))
+            ->not->toContain('/var/run/docker.sock')
+            ->not->toContain('usermod')
+            ->not->toContain('gpasswd')
+            ->not->toContain('sudoers');
+    }
 }
 
 final class MetricsCapturingSshExecutor implements SshExecutor
