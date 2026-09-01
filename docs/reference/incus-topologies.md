@@ -285,10 +285,14 @@ names which one, and the namespace derives every physical name:
 
 Generation manifest schema 6 records `standby_namespace`, which binds persisted
 standby state to the identity that created it. Schema 4 and 5 manifests have no
-namespace and remain readable and unchanged as unbound history. The primary
-identity can recover an unbound current generation. A named identity can retain
-unbound history only when its current schema 6 promoted manifest records that
-identity; it cannot claim an unbound current generation.
+namespace and remain readable and unchanged as unbound history. `promoted()`
+and `refresh` can read an unbound schema 4 or 5 current generation. Refresh can
+use it as the predecessor of a schema 6 successor owned by the configured
+identity. Rebuild is stricter: it calls `assertOwned()` before any Incus
+mutation. For a named identity, that guard refuses an unbound current manifest.
+For every identity, it refuses a schema 6 manifest owned by another namespace.
+A named identity can retain unbound history only after its current schema 6
+promoted manifest records that identity.
 
 Decided on 2026-08-30 for NCK-102, after a `bin/e2e-live` run promoted from the
 validation clone into the shared standby: the clone deleted the snapshots the
