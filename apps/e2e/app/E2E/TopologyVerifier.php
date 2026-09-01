@@ -112,6 +112,10 @@ final readonly class TopologyVerifier
             $instances[$role] = $target->instance($role);
         }
         $this->host->assertTopologyNetworkIdentity($instances, $target->network());
+        $typedCheckoutPath = $this->typedCheckoutPath($instances['app-dev']);
+        if ($typedCheckoutPath !== null) {
+            unset($probes['role.app-prod'], $probes['workspace.app-dev'], $probes['laravel.prod']);
+        }
 
         $results = [];
         foreach ($probes as $name => $role) {
@@ -146,6 +150,9 @@ final readonly class TopologyVerifier
                     $arguments[] = base64_encode(
                         $source->overlayPaths === [] ? '' : implode("\0", $source->overlayPaths)."\0",
                     );
+                }
+                if ($typedCheckoutPath !== null && in_array($name, ['role.app-dev', 'laravel.dev'], true)) {
+                    $arguments[] = $typedCheckoutPath;
                 }
                 // A mounted source adds the expected `.git` pointer hash: the guest
                 // must hash the pointer file it sees through the mount itself.
@@ -197,6 +204,45 @@ final readonly class TopologyVerifier
         $passed = ! array_filter($results, static fn (array $probe): bool => ! $probe['passed']);
 
         return new VerificationReport($passed, $results);
+    }
+
+    private function typedCheckoutPath(string $appDevInstance): ?string
+    {
+        $results = $this->host->execAll([
+            'sample-app-state' => [
+                'instance' => $appDevInstance,
+                'command' => new GuestCommand(['/usr/local/bin/converge-sample-app.sh', 'inspect-state'], 30),
+            ],
+        ]);
+        $result = $results['sample-app-state'] ?? null;
+        if (! $result instanceof GuestCommandResult || ! $result->successful()) {
+            throw new RuntimeException('Failed to inspect the sample App convergence state.');
+        }
+
+        try {
+            $state = json_decode(trim($result->stdout), true, 16, JSON_THROW_ON_ERROR);
+        } catch (JsonException $exception) {
+            throw new RuntimeException('Sample App convergence state is malformed.', 0, $exception);
+        }
+
+        if ($state === ['shape' => 'instances']) {
+            return null;
+        }
+        if (
+            ! is_array($state)
+            || array_keys($state) !== ['shape', 'app_id', 'node_id', 'name', 'checkout_path', 'effective_root']
+            || ($state['shape'] ?? null) !== 'app_instances'
+            || ! is_int($state['app_id'] ?? null)
+            || ! is_int($state['node_id'] ?? null)
+            || ($state['name'] ?? null) !== 'e2e-dev'
+            || ! is_string($state['checkout_path'] ?? null)
+            || ! str_starts_with($state['checkout_path'], '/')
+            || ($state['effective_root'] ?? null) !== 'public'
+        ) {
+            throw new RuntimeException('Sample App convergence state is invalid.');
+        }
+
+        return $state['checkout_path'];
     }
 
     /** @return array{passed:bool,checked_at:string,expected:string,observed:string,evidence_ref:string}|null */

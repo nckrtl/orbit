@@ -11,6 +11,7 @@ use App\E2E\Value\LaravelRelease;
 use App\E2E\Value\SourceState;
 use App\E2E\Value\TopologyProfile;
 use App\E2E\Value\TopologyTarget;
+use JsonException;
 use RuntimeException;
 
 /**
@@ -112,12 +113,13 @@ final readonly class TopologyConverger
         $steps['authorize.app-dev-operator'] = true;
         $this->run($instances['app-dev'], 'converge-sample-app.sh', ['configure-cli', '10.44.0.1']);
         $steps['configure.app-dev-cli'] = true;
-        $this->run($instances['app-dev'], 'converge-sample-app.sh', [
+        $sampleResources = $this->run($instances['app-dev'], 'converge-sample-app.sh', [
             'create-resources',
             'app-dev',
             'app-prod',
             $laravel->commit,
         ]);
+        $typedCheckoutPath = $this->typedCheckoutPath($sampleResources);
         $steps['create.sample-resources'] = true;
         $this->run($instances['app-dev'], 'converge-sample-app.sh', ['metrics']);
         $steps['converge.metrics'] = true;
@@ -125,24 +127,35 @@ final readonly class TopologyConverger
         // product must re-render every projection from the checked-out code.
         // The app-prod internal-TLS fragment lands inside the managed Caddy
         // layout first so the product publisher carries it forward.
-        $this->run($instances['app-prod'], 'converge-sample-app.sh', ['internal-tls']);
+        if ($typedCheckoutPath === null) {
+            $this->run($instances['app-prod'], 'converge-sample-app.sh', ['internal-tls']);
+        }
         $this->run($instances['app-dev'], 'converge-sample-app.sh', ['reproject']);
         $steps['reproject.product-state'] = true;
         $this->run($instances['app-dev'], 'converge-sample-app.sh', ['metrics-publication']);
         $steps['refresh.metrics-publication'] = true;
 
-        $this->runAll([
-            'app-dev' => [
-                'instance' => $instances['app-dev'],
-                'script' => 'converge-sample-app.sh',
-                'arguments' => ['hydrate', $laravel->commit, 'app-dev'],
-            ],
-            'app-prod' => [
-                'instance' => $instances['app-prod'],
-                'script' => 'converge-sample-app.sh',
-                'arguments' => ['hydrate', $laravel->commit, 'app-prod'],
-            ],
-        ]);
+        if ($typedCheckoutPath !== null) {
+            $this->run($instances['app-dev'], 'converge-sample-app.sh', [
+                'hydrate',
+                $laravel->commit,
+                'app-dev',
+                $typedCheckoutPath,
+            ]);
+        } else {
+            $this->runAll([
+                'app-dev' => [
+                    'instance' => $instances['app-dev'],
+                    'script' => 'converge-sample-app.sh',
+                    'arguments' => ['hydrate', $laravel->commit, 'app-dev'],
+                ],
+                'app-prod' => [
+                    'instance' => $instances['app-prod'],
+                    'script' => 'converge-sample-app.sh',
+                    'arguments' => ['hydrate', $laravel->commit, 'app-prod'],
+                ],
+            ]);
+        }
 
         $steps['hydrate.sample-apps'] = true;
 
@@ -232,7 +245,7 @@ final readonly class TopologyConverger
     }
 
     /** @param list<string> $arguments */
-    private function run(string $instance, string $script, array $arguments): void
+    private function run(string $instance, string $script, array $arguments): GuestCommandResult
     {
         $result = $this->host->exec(
             $instance,
@@ -245,6 +258,37 @@ final readonly class TopologyConverger
                 ."with exit code {$result->exitCode}{$this->failureDetails($script, $result)}.",
             );
         }
+
+        return $result;
+    }
+
+    private function typedCheckoutPath(GuestCommandResult $result): ?string
+    {
+        if ($result->stdout === '') {
+            return null;
+        }
+
+        try {
+            $state = json_decode(trim($result->stdout), true, 16, JSON_THROW_ON_ERROR);
+        } catch (JsonException $exception) {
+            throw new RuntimeException('Sample resource convergence returned malformed typed state.', 0, $exception);
+        }
+
+        if (
+            ! is_array($state)
+            || array_keys($state) !== ['shape', 'app_id', 'node_id', 'name', 'checkout_path', 'effective_root']
+            || ($state['shape'] ?? null) !== 'app_instances'
+            || ! is_int($state['app_id'] ?? null)
+            || ! is_int($state['node_id'] ?? null)
+            || ($state['name'] ?? null) !== 'e2e-dev'
+            || ! is_string($state['checkout_path'] ?? null)
+            || ! str_starts_with($state['checkout_path'], '/')
+            || ($state['effective_root'] ?? null) !== 'public'
+        ) {
+            throw new RuntimeException('Sample resource convergence returned invalid typed state.');
+        }
+
+        return $state['checkout_path'];
     }
 
     private function failureDetails(string $script, GuestCommandResult $result): string

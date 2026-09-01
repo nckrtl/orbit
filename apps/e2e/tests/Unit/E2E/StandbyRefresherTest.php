@@ -582,6 +582,10 @@ function refreshGuestProcess(array $guestArguments, string $target, object $stat
         return Process::result("x86_64\n");
     }
 
+    if ($guestArguments === ['/usr/local/bin/converge-sample-app.sh', 'inspect-state']) {
+        return Process::result('{"shape":"instances"}');
+    }
+
     if (
         $guestArguments === ['/usr/local/bin/prepare-node.sh', 'permissions']
         && str_ends_with($target, '-app-prod')
