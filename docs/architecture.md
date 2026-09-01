@@ -13,7 +13,11 @@ Human or AI agent
         ↓
      PHP SDK
         ↓
+      HTTP
+        ↓
      Gateway
+        ↓
+       SSH
         ↓
   Managed Nodes
 ```
@@ -27,8 +31,8 @@ The CLI lives in `apps/cli`. It is the main way to use Orbit from a terminal.
 It shows clear output to humans and can return structured output for scripts
 and agents.
 
-The CLI uses `packages/php-sdk` to talk to the Gateway. The SDK keeps the
-details of the Gateway API in one place.
+The CLI uses `packages/php-sdk` to send HTTP requests to the Gateway. The SDK
+keeps the details of the Gateway API in one place.
 
 ## Gateway
 
@@ -46,8 +50,9 @@ A Node is a machine connected to Orbit. A Node can have one or more roles. For
 example, an `app-dev` Node runs development applications, while a Router sends
 traffic to the right application.
 
-Nodes communicate with the Gateway over WireGuard. Orbit manages the files and
-services needed by their assigned roles.
+The Gateway manages Nodes over SSH. After setup, WireGuard provides the private
+network used for those connections. Orbit manages the files and services needed
+by each Node's assigned roles.
 
 ## Applications and traffic
 
