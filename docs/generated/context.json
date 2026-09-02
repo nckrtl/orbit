@@ -319,9 +319,11 @@
             ],
             "concepts": [
                 "App",
+                "Cluster",
                 "Doctor",
                 "Gateway",
-                "Node"
+                "Node",
+                "Router"
             ],
             "governing_adrs": [
                 "0005",
