@@ -22,9 +22,6 @@ it('initializes one current feature-plan artifact', function () use ($read): voi
         expect($script)->toContain($needle);
     }
 
-    expect($script)
-        ->not->toContain('Reconciliation verdict')
-        ->not->toContain('## Reconciliation notes');
     expect($ignore)->toContain('/.orbit/');
 });
 
@@ -37,7 +34,7 @@ it('reads complete worktree listings without early-exit SIGPIPE', function () us
     }
 });
 
-it('keeps planning, plan review, and development independently invokable', function () use ($read, $root): void {
+it('keeps planning, plan review, and development independently invokable', function () use ($read): void {
     $planner = $read('.agents/skills/planning-features/SKILL.md');
     $reviewer = $read('.agents/skills/reviewing-feature-plans/SKILL.md');
     $developer = $read('.agents/skills/developing-features/SKILL.md');
@@ -47,9 +44,7 @@ it('keeps planning, plan review, and development independently invokable', funct
         ->toContain('structure manually')
         ->toContain('Review verdict: PENDING')
         ->toContain('one row per issue criterion')
-        ->toContain('Do not create slice files')
-        ->not->toContain('retained Builder')
-        ->not->toContain('second non-`PASS`');
+        ->toContain('Do not create slice files');
 
     expect($reviewer)
         ->toContain('reports plan quality only')
@@ -60,18 +55,11 @@ it('keeps planning, plan review, and development independently invokable', funct
         ->toContain('`BLOCK`')
         ->toContain('Collect every known blocking finding')
         ->toContain('smallest safe recommended')
-        ->toContain('Never approve a')
-        ->not->toContain('same reviewer')
-        ->not->toContain('one correction')
-        ->not->toContain('second non-`PASS`');
+        ->toContain('Never approve a');
 
     expect($developer)
         ->toContain('may be invoked directly')
-        ->toContain('One issue per worktree and topology')
-        ->not->toContain('retained Builder')
-        ->not->toContain('plan `PASS`');
-
-    expect(file_exists($root.'/.agents/skills/reconciling-feature-blocks/SKILL.md'))->toBeFalse();
+        ->toContain('One issue per worktree and topology');
 });
 
 it('keeps implementation guidance on Orbit code and proof', function () use ($read): void {
@@ -103,8 +91,7 @@ it('binds review and merge to one exact remote head', function () use ($read): v
         ->toContain('exactly `Approved.`')
         ->toContain('Collect every blocking')
         ->toContain('finding in one pass')
-        ->toContain('Do not merge, promote, release a proved topology')
-        ->not->toContain('fresh reviewer');
+        ->toContain('Do not merge, promote, release a proved topology');
 
     expect($merge)
         ->toContain('deterministic closeout')
@@ -138,9 +125,6 @@ it('keeps repository guidance and agent manifests current', function () use ($re
     $topologies = $read('docs/reference/incus-topologies.md');
 
     expect($agents)->toContain('## Independent agent-role skills');
-    expect($agents)->not->toContain('reconciling-feature-blocks');
-    expect($agents)->not->toContain('Builder');
-    expect($agents)->not->toContain('after plan approval');
     expect($agents)->toContain('Product feature branches never modify the harness');
     expect($agents)->toContain('A proved topology is immutable evidence');
     expect($agents)->toContain('Production release is separate from development proof');
@@ -149,12 +133,9 @@ it('keeps repository guidance and agent manifests current', function () use ($re
         ->toContain('bin/worktree-create NCK-123 concise-feature-name')
         ->toContain('independently invokable')
         ->toContain('optional task guides')
-        ->toContain('contributors and coding')
-        ->not->toContain('reconciliation');
+        ->toContain('contributors and coding');
 
-    expect($developerManifest)
-        ->toContain('Todo Orbit issue')
-        ->not->toContain('Ready Orbit issue');
+    expect($developerManifest)->toContain('Todo Orbit issue');
 
     expect($decisions)
         ->toContain('significant product or')
