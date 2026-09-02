@@ -2274,9 +2274,8 @@ describe('convergence guest scripts', function () {
             expect($transcript)->not->toContain('cluster:update ');
             expect($transcript)->not->toContain('app:new ');
             expect($transcript)->not->toContain('instance:new ');
-            expect(file_exists("{$fixture['root']}/app"))
-                ->toBeFalse()
-                ->and(file_exists("{$fixture['root']}/instance"))
+            expect(file_exists("{$fixture['root']}/app"))->toBeFalse();
+            expect(file_exists("{$fixture['root']}/instance"))
                 ->toBeFalse()
                 ->and(file_exists("{$fixture['root']}/app-before-cluster"))
                 ->toBeFalse()
@@ -2447,6 +2446,9 @@ describe('convergence guest scripts', function () {
                 ]],
             ], JSON_THROW_ON_ERROR)],
         };
+        if ($conflict === 'AppInstance') {
+            touch("{$fixture['root']}/app");
+        }
 
         try {
             $process = typed_sample_create_resources_process($fixture, $environment);
@@ -2457,9 +2459,8 @@ describe('convergence guest scripts', function () {
                 'instance:list --json',
                 'app:list --json',
             ]);
-            expect(file_exists("{$fixture['root']}/app"))
-                ->toBeFalse()
-                ->and(file_exists("{$fixture['root']}/instance"))
+            expect(file_exists("{$fixture['root']}/app"))->toBe($conflict === 'AppInstance');
+            expect(file_exists("{$fixture['root']}/instance"))
                 ->toBeFalse()
                 ->and(file_exists("{$fixture['root']}/cluster"))
                 ->toBeFalse()
