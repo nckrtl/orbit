@@ -24,9 +24,17 @@ function runNck73ProofHelper(string $helper, array $nodes): Process
 
     $fixture = dirname(__DIR__, 5).'/proofs/NCK-73/lib.sh';
     $process = new Process(
-        ['bash', '-c', 'source "$1"; "$2"', 'nck-73-proof', $fixture, $helper],
+        [
+            'bash',
+            '-c',
+            'source "$1"; if [[ "$2" == metrics_address ]]; then json_get() { cat >/dev/null; printf "%s\n" "$NCK73_ASSIGNMENT_NODE_ID"; }; fi; "$2"',
+            'nck-73-proof',
+            $fixture,
+            $helper,
+        ],
         env: [
             'PATH' => "{$root}/bin:".getenv('PATH'),
+            'NCK73_ASSIGNMENT_NODE_ID' => '20',
             'NCK73_NODE_LIST_JSON' => json_encode(['nodes' => $nodes], JSON_THROW_ON_ERROR),
             'NCK73_METRICS_STATUS_JSON' => json_encode(
                 ['assignment' => ['node_id' => 20]],
@@ -49,6 +57,7 @@ it('keeps the local interface lookup separate from canonical Node JSON access', 
               ip -4 -o addr show dev orbit | awk '{ print $4 }' | cut -d/ -f1 | head -n 1
             }
             BASH)
+        ->toContain('orbit metrics:status --json | json_get assignment.node_id | {')
         ->toContain('$node["wireguard_ip"]')
         ->not->toContain('$node["wireguard_address"]');
 });

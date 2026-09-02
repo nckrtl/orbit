@@ -42,7 +42,7 @@ gateway_address() {
 
 metrics_address() {
   orbit metrics:status --json | json_get assignment.node_id | {
-    IFS= read -r id || [[ -n "${id:-}" ]]
+    read -r id
     orbit node:list --json | php -r '
       $id = (int) $argv[1];
       foreach (json_decode(stream_get_contents(STDIN), true)["nodes"] ?? [] as $node) {
