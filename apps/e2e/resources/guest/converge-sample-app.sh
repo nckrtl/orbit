@@ -45,6 +45,7 @@ case ${1-} in
     prod_id=$(php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); $m=array_values(array_filter($v["nodes"], fn($x) => ($x["name"] ?? null)===$argv[1])); if(count($m)!==1 || !is_int($m[0]["id"] ?? null)) exit(65); echo $m[0]["id"];' "$3" <<<"$nodes")
     initial_instances=$("$orbit" instance:list --json)
     instance_shape=$(php -r '$v=json_decode(stream_get_contents(STDIN), false, 512, JSON_THROW_ON_ERROR); if(!is_object($v)) exit(65); $legacy=property_exists($v, "instances"); $typed=property_exists($v, "app_instances"); if($legacy===$typed) exit(65); $key=$legacy ? "instances" : "app_instances"; $items=$v->{$key}; if(!is_array($items)) exit(65); $targets=[]; foreach($items as $item) { if(!is_object($item)) exit(65); $name=$item->name ?? null; if(in_array($name, ["e2e-dev", "e2e-prod"], true)) { if(isset($targets[$name])) exit(65); $targets[$name]=true; } } echo $key;' <<<"$initial_instances")
+    apps=$("$orbit" app:list --json)
     if [[ "$instance_shape" == app_instances ]]; then
       typed_cluster_name=e2e-development
       typed_dev_name=$2
@@ -57,46 +58,57 @@ case ${1-} in
       typed_cluster_state() {
         php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); if(!is_array($v) || !array_key_exists("clusters", $v) || !is_array($v["clusters"]) || !array_is_list($v["clusters"])) exit(65); $matches=[]; foreach($v["clusters"] as $cluster) { if(!is_array($cluster) || !is_string($cluster["name"] ?? null)) exit(65); if($cluster["name"]===$argv[1]) $matches[]=$cluster; } if(count($matches)>1) exit(65); if($matches===[]) { if($argv[4]!=="none") exit(65); echo "0 create\n"; exit; } $cluster=$matches[0]; $id=$cluster["id"] ?? null; $state=$cluster["state"] ?? null; $nodes=$cluster["nodes"] ?? null; if(!is_int($id) || $id<1 || !array_key_exists("tld", $cluster) || $cluster["tld"]!==null || !in_array($state, ["inactive", "active"], true) || !is_array($nodes) || !array_is_list($nodes) || !array_key_exists("router", $cluster) || count($nodes)>1) exit(65); $hasNode=count($nodes)===1; if($hasNode && (!is_array($nodes[0]) || ($nodes[0]["id"] ?? null)!==(int)$argv[2] || ($nodes[0]["name"] ?? null)!==$argv[3] || ($nodes[0]["status"] ?? null)!=="active")) exit(65); $router=$cluster["router"]; $hasRouter=$router!==null; if($hasRouter && (!is_array($router) || ($router["id"] ?? null)!==(int)$argv[2] || ($router["name"] ?? null)!==$argv[3] || ($router["status"] ?? null)!=="active")) exit(65); $nodeClusterId=$argv[4]==="none" ? null : (int)$argv[4]; if(($hasNode && $nodeClusterId!==$id) || (!$hasNode && $nodeClusterId!==null)) exit(65); if($state==="inactive" && !$hasNode && !$hasRouter) $phase="attach"; elseif($state==="inactive" && $hasNode && !$hasRouter) $phase="router"; elseif($state==="inactive" && $hasNode && $hasRouter) $phase="activate"; elseif($state==="active" && $hasNode && $hasRouter) $phase="verified"; else exit(65); echo $id, " ", $phase, "\n";' "$typed_cluster_name" "$dev_id" "$typed_dev_name" "$1"
       }
-      typed_nodes=$("$orbit" node:list --json)
-      node_cluster_id=$(typed_node_cluster_id <<<"$typed_nodes")
+      app_id=$(php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); $m=array_values(array_filter($v["apps"], fn($x) => ($x["slug"] ?? null)===$argv[1])); if(count($m)>1 || $m && (($m[0]["repository_url"] ?? null)!==$argv[2] || ($m[0]["name"] ?? null)!==$argv[3] || ($m[0]["root"] ?? null)!==$argv[4] || !is_string($m[0]["main_branch"] ?? null) || $m[0]["main_branch"]==="") || $m && !is_int($m[0]["id"] ?? null)) exit(65); echo $m[0]["id"] ?? "";' laravel-typed https://github.com/laravel/laravel.git Laravel public <<<"$apps")
+      typed_target_count=$(php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); echo count(array_filter($v["app_instances"], fn($x) => ($x["name"] ?? null)===$argv[1]));' e2e-dev <<<"$initial_instances")
+      [[ -n "$app_id" || "$typed_target_count" -eq 0 ]] || exit 65
+      node_cluster_id=$(typed_node_cluster_id <<<"$nodes")
       clusters=$("$orbit" cluster:list --json)
-      read -r cluster_id cluster_phase < <(typed_cluster_state "$node_cluster_id" <<<"$clusters")
+      cluster_state=$(typed_cluster_state "$node_cluster_id" <<<"$clusters")
+      read -r cluster_id cluster_phase <<<"$cluster_state"
+      cluster_mutated=0
       if [[ "$cluster_phase" == create ]]; then
-        cluster_id=$("$orbit" cluster:new "$typed_cluster_name" --json | php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); if(!is_array($v) || !is_int($v["id"] ?? null) || $v["id"]<1 || ($v["name"] ?? null)!==$argv[1] || !array_key_exists("tld", $v) || $v["tld"]!==null || ($v["state"] ?? null)!=="inactive" || ($v["nodes"] ?? null)!==[] || !array_key_exists("router", $v) || $v["router"]!==null) exit(65); echo $v["id"];' "$typed_cluster_name")
+        cluster_response=$("$orbit" cluster:new "$typed_cluster_name" --json)
+        cluster_response=$(typed_cluster_envelope <<<"$cluster_response")
+        cluster_state=$(typed_cluster_state none <<<"$cluster_response")
+        read -r cluster_id cluster_phase <<<"$cluster_state"
+        [[ "$cluster_phase" == attach ]]
+        cluster_mutated=1
         cluster_phase=attach
       fi
       if [[ "$cluster_phase" == attach ]]; then
         cluster_response=$("$orbit" cluster:node:attach "$cluster_id" "$dev_id" --json)
         cluster_response=$(typed_cluster_envelope <<<"$cluster_response")
-        node_cluster_id=$cluster_id
-        read -r mutation_cluster_id mutation_phase < <(typed_cluster_state "$node_cluster_id" <<<"$cluster_response")
+        mutation_state=$(typed_cluster_state "$cluster_id" <<<"$cluster_response")
+        read -r mutation_cluster_id mutation_phase <<<"$mutation_state"
         [[ "$mutation_cluster_id" == "$cluster_id" && "$mutation_phase" == router ]]
+        cluster_mutated=1
         cluster_phase=router
       fi
       if [[ "$cluster_phase" == router ]]; then
         cluster_response=$("$orbit" cluster:router:set "$cluster_id" "$dev_id" --json)
         cluster_response=$(typed_cluster_envelope <<<"$cluster_response")
-        read -r mutation_cluster_id mutation_phase < <(typed_cluster_state "$node_cluster_id" <<<"$cluster_response")
+        mutation_state=$(typed_cluster_state "$cluster_id" <<<"$cluster_response")
+        read -r mutation_cluster_id mutation_phase <<<"$mutation_state"
         [[ "$mutation_cluster_id" == "$cluster_id" && "$mutation_phase" == activate ]]
+        cluster_mutated=1
         cluster_phase=activate
       fi
       if [[ "$cluster_phase" == activate ]]; then
         cluster_response=$("$orbit" cluster:update "$cluster_id" --state=active --json)
         cluster_response=$(typed_cluster_envelope <<<"$cluster_response")
-        read -r mutation_cluster_id mutation_phase < <(typed_cluster_state "$node_cluster_id" <<<"$cluster_response")
+        mutation_state=$(typed_cluster_state "$cluster_id" <<<"$cluster_response")
+        read -r mutation_cluster_id mutation_phase <<<"$mutation_state"
         [[ "$mutation_cluster_id" == "$cluster_id" && "$mutation_phase" == verified ]]
+        cluster_mutated=1
       fi
-      typed_nodes=$("$orbit" node:list --json)
-      node_cluster_id=$(typed_node_cluster_id <<<"$typed_nodes")
-      clusters=$("$orbit" cluster:list --json)
-      read -r verified_cluster_id cluster_phase < <(typed_cluster_state "$node_cluster_id" <<<"$clusters")
-      [[ "$cluster_phase" == verified && "$verified_cluster_id" == "$cluster_id" ]]
-    fi
-    apps=$("$orbit" app:list --json)
-    if [[ "$instance_shape" == app_instances ]]; then
-      app_id=$(php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); $m=array_values(array_filter($v["apps"], fn($x) => ($x["slug"] ?? null)===$argv[1])); if(count($m)>1 || $m && (($m[0]["repository_url"] ?? null)!==$argv[2] || ($m[0]["name"] ?? null)!==$argv[3] || ($m[0]["root"] ?? null)!==$argv[4] || !is_string($m[0]["main_branch"] ?? null) || $m[0]["main_branch"]==="") || $m && !is_int($m[0]["id"] ?? null)) exit(65); echo $m[0]["id"] ?? "";' laravel-typed https://github.com/laravel/laravel.git Laravel public <<<"$apps")
-      typed_target_count=$(php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); echo count(array_filter($v["app_instances"], fn($x) => ($x["name"] ?? null)===$argv[1]));' e2e-dev <<<"$initial_instances")
-      [[ -n "$app_id" || "$typed_target_count" -eq 0 ]] || exit 65
+      if [[ "$cluster_mutated" -eq 1 ]]; then
+        typed_nodes=$("$orbit" node:list --json)
+        node_cluster_id=$(typed_node_cluster_id <<<"$typed_nodes")
+        clusters=$("$orbit" cluster:list --json)
+        cluster_state=$(typed_cluster_state "$node_cluster_id" <<<"$clusters")
+        read -r verified_cluster_id cluster_phase <<<"$cluster_state"
+        [[ "$cluster_phase" == verified && "$verified_cluster_id" == "$cluster_id" ]]
+      fi
       if [[ -z "$app_id" ]]; then
         app_id=$("$orbit" app:new laravel-typed https://github.com/laravel/laravel.git --name=Laravel --root=public --json | php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); if(!is_int($v["id"] ?? null)) exit(65); echo $v["id"];')
       fi

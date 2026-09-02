@@ -156,11 +156,9 @@ function typed_sample_resource_fixture(): array
         printf '%s\n' "$*" >>"$state/commands"
         case "$1" in
           node:list)
-            node_reads=$(($(cat "$state/node-reads" 2>/dev/null || printf 0) + 1))
-            printf '%s\n' "$node_reads" >"$state/node-reads"
-            if [[ "$node_reads" -ge 3 && -n "${FINAL_NODE_RESPONSE:-}" ]]; then
+            if [[ -e "$state/active" && -n "${FINAL_NODE_RESPONSE:-}" ]]; then
               printf '%s' "$FINAL_NODE_RESPONSE"
-            elif [[ "$node_reads" -ge 2 && -n "${TYPED_NODE_RESPONSE:-}" ]]; then
+            elif [[ -n "${TYPED_NODE_RESPONSE:-}" ]]; then
               printf '%s' "$TYPED_NODE_RESPONSE"
             else
               normal_nodes
@@ -170,9 +168,7 @@ function typed_sample_resource_fixture(): array
             fi
             ;;
           cluster:list)
-            cluster_reads=$(($(cat "$state/cluster-reads" 2>/dev/null || printf 0) + 1))
-            printf '%s\n' "$cluster_reads" >"$state/cluster-reads"
-            if [[ "$cluster_reads" -ge 2 && -n "${FINAL_CLUSTER_RESPONSE:-}" ]]; then
+            if [[ -e "$state/active" && -n "${FINAL_CLUSTER_RESPONSE:-}" ]]; then
               printf '%s' "$FINAL_CLUSTER_RESPONSE"
             elif [[ -n "${CLUSTER_RESPONSE:-}" ]]; then
               printf '%s' "$CLUSTER_RESPONSE"
@@ -186,27 +182,26 @@ function typed_sample_resource_fixture(): array
             fi
             ;;
           cluster:new)
-            [[ "$*" == 'cluster:new e2e-development --json' && ! -e "$state/cluster" ]]
+            [[ "$*" == 'cluster:new e2e-development --json' ]]
             touch "$state/cluster"
             [[ -n "${CLUSTER_NEW_RESPONSE:-}" ]] && printf '%s' "$CLUSTER_NEW_RESPONSE" || cluster_json
             ;;
           cluster:node:attach)
-            [[ "$*" == 'cluster:node:attach 3 2 --json' && -e "$state/cluster" ]]
+            [[ "$*" == 'cluster:node:attach 3 2 --json' ]]
             touch "$state/attached"
             [[ -n "${CLUSTER_ATTACH_RESPONSE:-}" ]] && printf '%s' "$CLUSTER_ATTACH_RESPONSE" || cluster_json
             ;;
           cluster:router:set)
-            [[ "$*" == 'cluster:router:set 3 2 --json' && -e "$state/attached" ]]
+            [[ "$*" == 'cluster:router:set 3 2 --json' ]]
             touch "$state/router"
             [[ -n "${CLUSTER_ROUTER_RESPONSE:-}" ]] && printf '%s' "$CLUSTER_ROUTER_RESPONSE" || cluster_json
             ;;
           cluster:update)
-            [[ "$*" == 'cluster:update 3 --state=active --json' && -e "$state/router" ]]
+            [[ "$*" == 'cluster:update 3 --state=active --json' ]]
             touch "$state/active"
             [[ -n "${CLUSTER_UPDATE_RESPONSE:-}" ]] && printf '%s' "$CLUSTER_UPDATE_RESPONSE" || cluster_json
             ;;
           app:list)
-            [[ -e "$state/verified" ]] || { touch "$state/app-before-cluster"; exit 70; }
             legacy=$(cat "$state/legacy-app.json")
             if [[ -n "${TYPED_APP_RESPONSE:-}" ]]; then
               printf '{"apps":[%s,%s]}' "$legacy" "$TYPED_APP_RESPONSE"
@@ -216,7 +211,11 @@ function typed_sample_resource_fixture(): array
               printf '{"apps":[%s]}' "$legacy"
             fi
             ;;
-          app:new) [[ -e "$state/verified" ]]; touch "$state/app"; printf '{"id":1}' ;;
+          app:new)
+            [[ -e "$state/verified" ]] || touch "$state/app-before-cluster"
+            touch "$state/app"
+            printf '{"id":1}'
+            ;;
           instance:list)
             prefix=
             [[ "${TYPED_METADATA:-0}" == 1 ]] && prefix='"meta":{"page":1},'
@@ -232,7 +231,11 @@ function typed_sample_resource_fixture(): array
               printf '{%s"app_instances":[]}' "$prefix"
             fi
             ;;
-          instance:new) [[ -e "$state/verified" ]] || { touch "$state/instance-before-cluster"; exit 70; }; touch "$state/instance"; printf '{"id":4}' ;;
+          instance:new)
+            [[ -e "$state/verified" ]] || touch "$state/instance-before-cluster"
+            touch "$state/instance"
+            printf '{"id":4}'
+            ;;
           *) exit 70 ;;
         esac
         BASH);
@@ -243,6 +246,54 @@ function typed_sample_resource_fixture(): array
         'script' => "{$root}/converge.sh",
         'state' => $state,
         'legacy_records' => $legacyRecords,
+    ];
+}
+
+/**
+ * @param  array{script:string}  $fixture
+ * @param  array<string, string>  $environment
+ */
+function typed_sample_create_resources_process(array $fixture, array $environment = []): Process
+{
+    return new Process([
+        'bash',
+        $fixture['script'],
+        'create-resources',
+        'app-dev',
+        'app-prod',
+        str_repeat('a', 40),
+    ], env: $environment);
+}
+
+/** @param array<int, string> $commands
+ *  @return array<int, string>
+ */
+function typed_cluster_mutations(array $commands): array
+{
+    return array_values(array_filter(
+        $commands,
+        static fn (string $command): bool => in_array(
+            explode(' ', $command, 2)[0],
+            ['cluster:new', 'cluster:node:attach', 'cluster:router:set', 'cluster:update'],
+            true,
+        ),
+    ));
+}
+
+/** @return array<int, string> */
+function typed_cluster_creation_commands(): array
+{
+    return [
+        'node:list --json',
+        'instance:list --json',
+        'app:list --json',
+        'cluster:list --json',
+        'cluster:new e2e-development --json',
+        'cluster:node:attach 3 2 --json',
+        'cluster:router:set 3 2 --json',
+        'cluster:update 3 --state=active --json',
+        'node:list --json',
+        'cluster:list --json',
     ];
 }
 
@@ -1963,31 +2014,12 @@ describe('convergence guest scripts', function () {
     it('creates one typed development AppInstance with only authorized source inputs', function (): void {
         $fixture = typed_sample_resource_fixture();
         try {
-            $arguments = [
-                'bash',
-                $fixture['script'],
-                'create-resources',
-                'app-dev',
-                'app-prod',
-                str_repeat('a', 40),
-            ];
-
-            $first = new Process($arguments);
+            $first = typed_sample_create_resources_process($fixture);
             expect($first->run())->toBe(0, $first->getErrorOutput());
             $firstCommands = file("{$fixture['root']}/commands", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
 
             expect($firstCommands)->toBe([
-                'node:list --json',
-                'instance:list --json',
-                'node:list --json',
-                'cluster:list --json',
-                'cluster:new e2e-development --json',
-                'cluster:node:attach 3 2 --json',
-                'cluster:router:set 3 2 --json',
-                'cluster:update 3 --state=active --json',
-                'node:list --json',
-                'cluster:list --json',
-                'app:list --json',
+                ...typed_cluster_creation_commands(),
                 'app:new laravel-typed https://github.com/laravel/laravel.git --name=Laravel --root=public --json',
                 'instance:new 1 2 e2e-dev --json',
                 'instance:list --json',
@@ -2018,18 +2050,15 @@ describe('convergence guest scripts', function () {
                 'effective_root' => 'public',
             ]);
 
-            $second = new Process($arguments);
+            $second = typed_sample_create_resources_process($fixture);
             expect($second->run())->toBe(0, $second->getErrorOutput());
             $allCommands = file("{$fixture['root']}/commands", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
             expect($allCommands)->toBe([
                 ...$firstCommands,
                 'node:list --json',
                 'instance:list --json',
-                'node:list --json',
-                'cluster:list --json',
-                'node:list --json',
-                'cluster:list --json',
                 'app:list --json',
+                'cluster:list --json',
             ]);
             expect(array_filter($allCommands, fn (string $command): bool => str_starts_with($command, 'app:new ')))
                 ->toHaveCount(1)
@@ -2066,38 +2095,16 @@ describe('convergence guest scripts', function () {
             touch("{$fixture['root']}/{$stateFile}");
         }
 
-        $arguments = [
-            'bash',
-            $fixture['script'],
-            'create-resources',
-            'app-dev',
-            'app-prod',
-            str_repeat('a', 40),
-        ];
-        $mutations = static fn (array $commands): array => array_values(array_filter(
-            $commands,
-            static fn (string $command): bool => in_array(
-                explode(' ', $command, 2)[0],
-                [
-                    'cluster:new',
-                    'cluster:node:attach',
-                    'cluster:router:set',
-                    'cluster:update',
-                ],
-                true,
-            ),
-        ));
-
         try {
-            $first = new Process($arguments);
+            $first = typed_sample_create_resources_process($fixture);
             expect($first->run())->toBe(0, $first->getErrorOutput());
             $firstCommands = file("{$fixture['root']}/commands", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-            expect($mutations($firstCommands))->toBe($expectedMutations);
+            expect(typed_cluster_mutations($firstCommands))->toBe($expectedMutations);
 
-            $second = new Process($arguments);
+            $second = typed_sample_create_resources_process($fixture);
             expect($second->run())->toBe(0, $second->getErrorOutput());
             $allCommands = file("{$fixture['root']}/commands", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-            expect($mutations($allCommands))
+            expect(typed_cluster_mutations($allCommands))
                 ->toBe($expectedMutations)
                 ->and(file_exists("{$fixture['root']}/app-before-cluster"))
                 ->toBeFalse()
@@ -2129,48 +2136,28 @@ describe('convergence guest scripts', function () {
         ],
     ]);
 
-    it('stops on malformed Cluster mutation output and resumes from the completed mutation', function (
+    it('stops on invalid Cluster mutation output and resumes from the completed mutation', function (
         string $responseVariable,
         string $response,
         array $firstMutations,
         array $retryMutations,
     ): void {
         $fixture = typed_sample_resource_fixture();
-        $arguments = [
-            'bash',
-            $fixture['script'],
-            'create-resources',
-            'app-dev',
-            'app-prod',
-            str_repeat('a', 40),
-        ];
-        $mutations = static fn (array $commands): array => array_values(array_filter(
-            $commands,
-            static fn (string $command): bool => in_array(
-                explode(' ', $command, 2)[0],
-                [
-                    'cluster:new',
-                    'cluster:node:attach',
-                    'cluster:router:set',
-                    'cluster:update',
-                ],
-                true,
-            ),
-        ));
 
         try {
-            $first = new Process($arguments, env: [$responseVariable => $response]);
+            $first = typed_sample_create_resources_process($fixture, [$responseVariable => $response]);
             expect($first->run())->not->toBe(0);
             $firstCommands = file("{$fixture['root']}/commands", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-            expect($mutations($firstCommands))->toBe($firstMutations);
-            expect(implode("\n", $firstCommands))
-                ->not
-                ->toContain('app:list ', 'app:new ', 'instance:new ');
+            expect(typed_cluster_mutations($firstCommands))->toBe($firstMutations);
+            expect(implode("\n", $firstCommands))->not->toContain('app:new ');
+            expect(implode("\n", $firstCommands))->not->toContain('instance:new ');
+            expect(file_exists("{$fixture['root']}/app-before-cluster"))->toBeFalse();
+            expect(file_exists("{$fixture['root']}/instance-before-cluster"))->toBeFalse();
 
-            $retry = new Process($arguments);
+            $retry = typed_sample_create_resources_process($fixture);
             expect($retry->run())->toBe(0, $retry->getErrorOutput());
             $allCommands = file("{$fixture['root']}/commands", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-            expect($mutations(array_slice($allCommands, count($firstCommands))))->toBe($retryMutations);
+            expect(typed_cluster_mutations(array_slice($allCommands, count($firstCommands))))->toBe($retryMutations);
         } finally {
             new Illuminate\Filesystem\Filesystem()->deleteDirectory($fixture['root']);
         }
@@ -2220,7 +2207,7 @@ describe('convergence guest scripts', function () {
         ],
         'ambiguous Node attachment output' => [
             'CLUSTER_ATTACH_RESPONSE',
-            '{"name":"other"},{"id":3,"name":"e2e-development","tld":null,"state":"inactive","nodes":[{"id":2,"name":"app-dev","status":"active"}],"router":null}',
+            '[{"name":"other"},{"id":3,"name":"e2e-development","tld":null,"state":"inactive","nodes":[{"id":2,"name":"app-dev","status":"active"}],"router":null}]',
             [
                 'cluster:new e2e-development --json',
                 'cluster:node:attach 3 2 --json',
@@ -2229,6 +2216,39 @@ describe('convergence guest scripts', function () {
                 'cluster:router:set 3 2 --json',
                 'cluster:update 3 --state=active --json',
             ],
+        ],
+        'Node attachment phase' => [
+            'CLUSTER_ATTACH_RESPONSE',
+            '{"id":3,"name":"e2e-development","tld":null,"state":"inactive","nodes":[{"id":2,"name":"app-dev","status":"active"}],"router":{"id":2,"name":"app-dev","status":"active"}}',
+            [
+                'cluster:new e2e-development --json',
+                'cluster:node:attach 3 2 --json',
+            ],
+            [
+                'cluster:router:set 3 2 --json',
+                'cluster:update 3 --state=active --json',
+            ],
+        ],
+        'Router assignment phase' => [
+            'CLUSTER_ROUTER_RESPONSE',
+            '{"id":3,"name":"e2e-development","tld":null,"state":"inactive","nodes":[{"id":2,"name":"app-dev","status":"active"}],"router":null}',
+            [
+                'cluster:new e2e-development --json',
+                'cluster:node:attach 3 2 --json',
+                'cluster:router:set 3 2 --json',
+            ],
+            ['cluster:update 3 --state=active --json'],
+        ],
+        'Cluster activation phase' => [
+            'CLUSTER_UPDATE_RESPONSE',
+            '{"id":3,"name":"e2e-development","tld":null,"state":"inactive","nodes":[{"id":2,"name":"app-dev","status":"active"}],"router":{"id":2,"name":"app-dev","status":"active"}}',
+            [
+                'cluster:new e2e-development --json',
+                'cluster:node:attach 3 2 --json',
+                'cluster:router:set 3 2 --json',
+                'cluster:update 3 --state=active --json',
+            ],
+            [],
         ],
     ]);
 
@@ -2242,31 +2262,25 @@ describe('convergence guest scripts', function () {
         }
 
         try {
-            $process = new Process([
-                'bash',
-                $fixture['script'],
-                'create-resources',
-                'app-dev',
-                'app-prod',
-                str_repeat('a', 40),
-            ], env: $environment);
+            $process = typed_sample_create_resources_process($fixture, $environment);
 
             expect($process->run())->not->toBe(0);
             $commands = file("{$fixture['root']}/commands", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-            expect(implode("\n", $commands))
-                ->not
-                ->toContain(
-                    'cluster:new ',
-                    'cluster:node:attach ',
-                    'cluster:router:set ',
-                    'cluster:update ',
-                    'app:list ',
-                    'app:new ',
-                    'instance:new ',
-                );
+            $transcript = implode("\n", $commands);
+            expect(typed_cluster_mutations($commands))->toBe([]);
+            expect($transcript)->not->toContain('cluster:new ');
+            expect($transcript)->not->toContain('cluster:node:attach ');
+            expect($transcript)->not->toContain('cluster:router:set ');
+            expect($transcript)->not->toContain('cluster:update ');
+            expect($transcript)->not->toContain('app:new ');
+            expect($transcript)->not->toContain('instance:new ');
             expect(file_exists("{$fixture['root']}/app"))
                 ->toBeFalse()
                 ->and(file_exists("{$fixture['root']}/instance"))
+                ->toBeFalse()
+                ->and(file_exists("{$fixture['root']}/app-before-cluster"))
+                ->toBeFalse()
+                ->and(file_exists("{$fixture['root']}/instance-before-cluster"))
                 ->toBeFalse();
         } finally {
             new Illuminate\Filesystem\Filesystem()->deleteDirectory($fixture['root']);
@@ -2303,10 +2317,10 @@ describe('convergence guest scripts', function () {
                 'TYPED_NODE_RESPONSE' => '{"nodes":[{"id":2,"name":"app-dev","status":"inactive","cluster_id":null}]}',
             ],
         ],
-        'wrong selected Node' => [
+        'invalid selected Node Cluster identity' => [
             [],
             [
-                'TYPED_NODE_RESPONSE' => '{"nodes":[{"id":9,"name":"app-dev","status":"active","cluster_id":null}]}',
+                'TYPED_NODE_RESPONSE' => '{"nodes":[{"id":2,"name":"app-dev","status":"active","cluster_id":0},{"id":3,"name":"app-prod","status":"active","cluster_id":null}]}',
             ],
         ],
         'malformed Node response' => [[], ['TYPED_NODE_RESPONSE' => '{']],
@@ -2331,29 +2345,13 @@ describe('convergence guest scripts', function () {
         $finalClusterResponse = '{"clusters":[{"id":3,"name":"e2e-development","tld":null,"state":"active","nodes":[{"id":2,"name":"app-dev","status":"active"}],"router":null}]}';
 
         try {
-            $process = new Process([
-                'bash',
-                $fixture['script'],
-                'create-resources',
-                'app-dev',
-                'app-prod',
-                str_repeat('a', 40),
-            ], env: ['FINAL_CLUSTER_RESPONSE' => $finalClusterResponse]);
+            $process = typed_sample_create_resources_process($fixture, [
+                'FINAL_CLUSTER_RESPONSE' => $finalClusterResponse,
+            ]);
 
             expect($process->run())->not->toBe(0);
             $commands = file("{$fixture['root']}/commands", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-            expect($commands)->toBe([
-                'node:list --json',
-                'instance:list --json',
-                'node:list --json',
-                'cluster:list --json',
-                'cluster:new e2e-development --json',
-                'cluster:node:attach 3 2 --json',
-                'cluster:router:set 3 2 --json',
-                'cluster:update 3 --state=active --json',
-                'node:list --json',
-                'cluster:list --json',
-            ]);
+            expect($commands)->toBe(typed_cluster_creation_commands());
             expect(file_exists("{$fixture['root']}/app"))
                 ->toBeFalse()
                 ->and(file_exists("{$fixture['root']}/instance"))
@@ -2370,14 +2368,9 @@ describe('convergence guest scripts', function () {
         $fixture = typed_sample_resource_fixture();
 
         try {
-            $process = new Process([
-                'bash',
-                $fixture['script'],
-                'create-resources',
-                'app-dev',
-                'app-prod',
-                str_repeat('a', 40),
-            ], env: ['FINAL_NODE_RESPONSE' => $finalNodeResponse]);
+            $process = typed_sample_create_resources_process($fixture, [
+                'FINAL_NODE_RESPONSE' => $finalNodeResponse,
+            ]);
 
             expect($process->run())->not->toBe(0);
             $commands = file("{$fixture['root']}/commands", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
@@ -2392,32 +2385,11 @@ describe('convergence guest scripts', function () {
     })->with([
         'different Cluster membership' => [
             '{"nodes":[{"id":2,"name":"app-dev","status":"active","cluster_id":9}]}',
-            [
-                'node:list --json',
-                'instance:list --json',
-                'node:list --json',
-                'cluster:list --json',
-                'cluster:new e2e-development --json',
-                'cluster:node:attach 3 2 --json',
-                'cluster:router:set 3 2 --json',
-                'cluster:update 3 --state=active --json',
-                'node:list --json',
-                'cluster:list --json',
-            ],
+            typed_cluster_creation_commands(),
         ],
         'inactive selected Node' => [
             '{"nodes":[{"id":2,"name":"app-dev","status":"inactive","cluster_id":3}]}',
-            [
-                'node:list --json',
-                'instance:list --json',
-                'node:list --json',
-                'cluster:list --json',
-                'cluster:new e2e-development --json',
-                'cluster:node:attach 3 2 --json',
-                'cluster:router:set 3 2 --json',
-                'cluster:update 3 --state=active --json',
-                'node:list --json',
-            ],
+            array_slice(typed_cluster_creation_commands(), 0, -1),
         ],
     ]);
 
@@ -2477,32 +2449,25 @@ describe('convergence guest scripts', function () {
         };
 
         try {
-            $process = new Process([
-                'bash',
-                $fixture['script'],
-                'create-resources',
-                'app-dev',
-                'app-prod',
-                str_repeat('a', 40),
-            ], env: $environment);
+            $process = typed_sample_create_resources_process($fixture, $environment);
 
             expect($process->run())->not->toBe(0);
             expect(file("{$fixture['root']}/commands", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES))->toBe([
                 'node:list --json',
                 'instance:list --json',
-                'node:list --json',
-                'cluster:list --json',
-                'cluster:new e2e-development --json',
-                'cluster:node:attach 3 2 --json',
-                'cluster:router:set 3 2 --json',
-                'cluster:update 3 --state=active --json',
-                'node:list --json',
-                'cluster:list --json',
                 'app:list --json',
             ]);
             expect(file_exists("{$fixture['root']}/app"))
                 ->toBeFalse()
                 ->and(file_exists("{$fixture['root']}/instance"))
+                ->toBeFalse()
+                ->and(file_exists("{$fixture['root']}/cluster"))
+                ->toBeFalse()
+                ->and(file_exists("{$fixture['root']}/attached"))
+                ->toBeFalse()
+                ->and(file_exists("{$fixture['root']}/router"))
+                ->toBeFalse()
+                ->and(file_exists("{$fixture['root']}/active"))
                 ->toBeFalse()
                 ->and(file_exists($fixture['state']))
                 ->toBeFalse();
@@ -2551,14 +2516,7 @@ describe('convergence guest scripts', function () {
     it('selects a recognized typed array when unrelated top-level metadata is present', function (): void {
         $fixture = typed_sample_resource_fixture();
         try {
-            $process = new Process([
-                'bash',
-                $fixture['script'],
-                'create-resources',
-                'app-dev',
-                'app-prod',
-                str_repeat('a', 40),
-            ], env: ['TYPED_METADATA' => '1']);
+            $process = typed_sample_create_resources_process($fixture, ['TYPED_METADATA' => '1']);
 
             expect($process->run())->toBe(0, $process->getErrorOutput());
         } finally {
@@ -2569,20 +2527,13 @@ describe('convergence guest scripts', function () {
     it('fails before App mutation when the typed app-dev Node is not active', function (): void {
         $fixture = typed_sample_resource_fixture();
         try {
-            $process = new Process([
-                'bash',
-                $fixture['script'],
-                'create-resources',
-                'app-dev',
-                'app-prod',
-                str_repeat('a', 40),
-            ], env: ['NODE_STATUS' => 'provisioning']);
+            $process = typed_sample_create_resources_process($fixture, ['NODE_STATUS' => 'provisioning']);
 
             expect($process->run())->not->toBe(0);
             expect(file("{$fixture['root']}/commands", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES))->toBe([
                 'node:list --json',
                 'instance:list --json',
-                'node:list --json',
+                'app:list --json',
             ]);
         } finally {
             new Illuminate\Filesystem\Filesystem()->deleteDirectory($fixture['root']);

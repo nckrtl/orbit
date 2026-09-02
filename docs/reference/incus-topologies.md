@@ -347,22 +347,28 @@ Known prepared-state limits (first observed on 2026-08-30, NCK-58):
   `node:role:add --converge` for every app role. The legacy `instances` branch
   then runs `instance:php` for every Instance, with development Instances last
   because the app-dev runtime converger publishes the Gateway DNS records for
-  every active site. The typed `app_instances` branch first converges the
-  deterministic `e2e-development` Cluster before it reads or changes typed App
-  resources. It creates the Cluster with a null TLD when absent, attaches the
-  selected active app-dev Node, sets that Node as Router, and activates the
-  Cluster, in that order. It then re-reads `node:list` and `cluster:list`. The
-  final state must contain one matching active Cluster whose only member and
-  Router are the selected Node, and the Cluster ID must equal the Node's
-  `cluster_id`. Only then does the branch validate the persisted source-ready
-  `e2e-dev` item for the separate `laravel-typed` App. The App uses
+  every active site. The typed `app_instances` branch performs no Cluster or
+  runtime mutation during `reproject`; it validates the persisted source-ready
+  `e2e-dev` item for the separate `laravel-typed` App.
+- During `converge-sample-app.sh create-resources`, the typed
+  `app_instances` branch reads the Node, AppInstance, and App collections and
+  refuses conflicting sample identities before any write. It then reads the
+  current Cluster collection and converges the deterministic
+  `e2e-development` Cluster: create it with a null TLD when absent, attach the
+  selected active app-dev Node, set that Node as Router, and activate the
+  Cluster, in that order. After any Cluster mutation it re-reads `node:list`
+  and `cluster:list`; an already settled Cluster is accepted from the initial
+  reads without duplicate mutations or read-back calls. The accepted state
+  contains one matching active Cluster whose only member and Router are the
+  selected Node, and the Cluster ID equals the Node's `cluster_id`. Only then
+  may the branch create the typed App or AppInstance. The App uses
   `https://github.com/laravel/laravel.git`, an explicit `public` root, and the
   repository's remote default branch. A legacy `laravel` App may keep nullable
   `main_branch` and `root` values during this transition. Typed convergence
   does not change that App or its legacy Instance and Workspace records. This
-  branch is source-only. It never runs `instance:php`, creates a Workspace, or
-  prepares an app-prod site. It hydrates and verifies only the typed item's
-  recorded `checkout_path`.
+  AppInstance branch is source-only: it never runs `instance:php`, creates a
+  Workspace, or prepares an app-prod site. It hydrates and verifies only the
+  typed item's recorded `checkout_path`.
   The prepared-state allowlist tracks the Cluster, App, legacy Instance, typed
   item, Node, and legacy Workspace command closure used by these two
   deterministic branches. A change in either branch therefore invalidates the
