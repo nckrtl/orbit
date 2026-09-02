@@ -2,22 +2,20 @@
 # A UFW rule number is a position, not an identity. If anything below Orbit's
 # rule goes away between the plan and the delete, the planned number addresses
 # somebody else's rule. The escape must notice and delete nothing.
-source /var/lib/orbit-e2e/proof/lib.sh
+proof_root=${ORBIT_E2E_PROOF_ROOT:-/var/lib/orbit-e2e/proof}
+source "$proof_root/lib.sh"
 
 readonly TRANSIENT_RULE=transient-maintenance-rule
 readonly FOREIGN_RULE=PRODUCTION-DB-ACCESS
 readonly STUB=/usr/local/sbin/ufw
 readonly STUB_STATE=/var/tmp/orbit-proof-ufw-calls
 
+orb7_traps refuses-a-shifted-rule-number
+orb7_arm refuses-a-shifted-rule-number
+orb7_capture_path refuses-a-shifted-rule-number stub "$STUB"
+orb7_capture_path refuses-a-shifted-rule-number stub-state "$STUB_STATE"
+orb7_checkpoint refuses-a-shifted-rule-number post-record
 address=$(this_address)
-
-cleanup() {
-  sudo rm -f "$STUB" "$STUB_STATE"
-  delete_firewall_rule "$FOREIGN_RULE"
-  delete_firewall_rule "$TRANSIENT_RULE"
-  delete_firewall_rule "$EXPORTER_RULE_COMMENT"
-}
-trap cleanup EXIT
 
 rule_number() {
   grep "# $1\$" <<<"$(firewall_status_text)" | sed -E 's/^ *\[ *([0-9]+)\].*/\1/' | head -1 || true
@@ -25,13 +23,16 @@ rule_number() {
 
 # Orbit's rule must sit directly above the foreign one, so that the number
 # Orbit plans addresses the foreign rule once the rule above them both goes.
+orb7_record_ufw_rule refuses-a-shifted-rule-number "$FOREIGN_RULE"
 sudo ufw allow in on orbit proto tcp from 10.44.0.1 to "$address" port 5432 \
   comment "$FOREIGN_RULE" >/dev/null
 foreign_number=$(rule_number "$FOREIGN_RULE")
 [[ -n "$foreign_number" ]] || fail "the planted foreign rule has no number"
 
+orb7_record_ufw_rule refuses-a-shifted-rule-number "$EXPORTER_RULE_COMMENT"
 sudo ufw insert "$foreign_number" allow in on orbit proto tcp from 10.44.0.1 to "$address" \
   port 9100 comment "$EXPORTER_RULE_COMMENT" >/dev/null
+orb7_record_ufw_rule refuses-a-shifted-rule-number "$TRANSIENT_RULE"
 sudo ufw insert 1 allow in on orbit proto tcp from 10.44.0.1 to "$address" port 9999 \
   comment "$TRANSIENT_RULE" >/dev/null
 
@@ -64,6 +65,18 @@ exec "$REAL" "$@"
 STUBEOF
 sudo chmod 0755 "$STUB"
 echo 0 | sudo tee "$STUB_STATE" >/dev/null
+orb7_mark_active refuses-a-shifted-rule-number
+orb7_checkpoint refuses-a-shifted-rule-number post-mutation
+if [[ "${ORBIT_E2E_ORB7_MODE:-}" == timeout && "${ORBIT_E2E_ORB7_CASE:-}" == refuses-a-shifted-rule-number ]]; then
+  sudo test -x "$STUB" || fail "the timeout fixture did not install its fake ufw binary"
+  sudo test -s "$STUB_STATE" || fail "the timeout fixture did not install its call log"
+  numbered=$(orb7_ufw_numbered)
+  grep -q "# $FOREIGN_RULE\$" <<<"$numbered" || fail "the timeout fixture did not install its foreign rule"
+  grep -q "# $EXPORTER_RULE_COMMENT\$" <<<"$numbered" || fail "the timeout fixture did not install its exporter rule"
+  grep -q "# $TRANSIENT_RULE\$" <<<"$numbered" || fail "the timeout fixture did not install its transient rule"
+  printf 'installed\n' | sudo tee "$ORB7_TIMEOUT_WITNESS" >/dev/null
+fi
+orb7_timeout_checkpoint refuses-a-shifted-rule-number
 
 planned_number=$(sudo /usr/sbin/ufw status numbered 2>/dev/null \
   | grep "# $EXPORTER_RULE_COMMENT\$" | sed -E 's/^ *\[ *([0-9]+)\].*/\1/' | head -1 || true)
@@ -84,5 +97,8 @@ firewall_rule_exists "$EXPORTER_RULE_COMMENT" \
   || fail "Orbit's rule was removed even though its number no longer addressed it"
 [[ "$ESCAPE_OUTPUT" != *"Removed:"*"UFW rule commented $EXPORTER_RULE_COMMENT"* ]] \
   || fail "the escape reported a firewall removal that did not happen"
+
+orb7_restore_owned refuses-a-shifted-rule-number
+trap - EXIT INT TERM
 
 echo "refuses-a-shifted-rule-number: stale number refused, $FOREIGN_RULE and Orbit's rule both intact"

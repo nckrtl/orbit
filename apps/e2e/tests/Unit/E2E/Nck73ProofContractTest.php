@@ -54,7 +54,9 @@ it('keeps the local interface lookup separate from canonical Node JSON access', 
     expect($source)
         ->toContain(<<<'BASH'
             wireguard_address() {
-              ip -4 -o addr show dev orbit | awk '{ print $4 }' | cut -d/ -f1 | head -n 1
+              local addresses
+              addresses=$(ip -4 -o addr show dev orbit)
+              awk 'NR == 1 { split($4, address, "/"); print address[1] }' <<<"$addresses"
             }
             BASH)
         ->toContain('orbit metrics:status --json | json_get assignment.node_id | {')

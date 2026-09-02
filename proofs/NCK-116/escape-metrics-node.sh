@@ -1,17 +1,28 @@
 #!/usr/bin/env bash
 # The Metrics node removes its whole footprint with no Gateway, and leaves
 # every look-alike it cannot prove Orbit owns.
-source /var/lib/orbit-e2e/proof/lib.sh
+proof_root=${ORBIT_E2E_PROOF_ROOT:-/var/lib/orbit-e2e/proof}
+source "$proof_root/lib.sh"
 
 readonly DECOY_CONTAINER=orbit-metrics-prometheus-decoy
 readonly DECOY_VOLUME=orbit-metrics-prometheus-backup
 readonly DECOY_RULE=orbit:metrics-grafana-upstream-v2
 
+orb7_traps escape-metrics-node
+orb7_arm escape-metrics-node
+orb7_checkpoint escape-metrics-node post-record
 address=$(this_address)
+orb7_record_docker_resource escape-metrics-node container "$DECOY_CONTAINER"
 docker container create --name "$DECOY_CONTAINER" --label com.orbit.managed=other \
+  --label "com.orbit.e2e.cleanup=escape-metrics-node" \
   prom/prometheus:v3.5.0 >/dev/null
-docker volume create --label com.orbit.managed=other "$DECOY_VOLUME" >/dev/null
+orb7_record_docker_resource escape-metrics-node volume "$DECOY_VOLUME"
+docker volume create --label com.orbit.managed=other \
+  --label "com.orbit.e2e.cleanup=escape-metrics-node" "$DECOY_VOLUME" >/dev/null
+orb7_record_ufw_rule escape-metrics-node "$DECOY_RULE"
 sudo ufw allow in on orbit proto tcp to "$address" port 3001 comment "$DECOY_RULE" >/dev/null
+orb7_mark_active escape-metrics-node
+orb7_checkpoint escape-metrics-node post-mutation
 
 run_escape --force
 [[ "$ESCAPE_STATUS" -eq 0 ]] || fail "escape exited $ESCAPE_STATUS: $ESCAPE_OUTPUT"
@@ -46,8 +57,7 @@ assert_reports 'sudo apt-get purge --yes prometheus-node-exporter'
 assert_reports 'the metrics.orbit route, its certificate and its private DNS record'
 assert_reports 'Every Orbit-owned Metrics resource on this node is gone.'
 
-docker container rm --force --volumes "$DECOY_CONTAINER" >/dev/null
-docker volume rm "$DECOY_VOLUME" >/dev/null
-delete_firewall_rule "$DECOY_RULE"
+orb7_restore_owned escape-metrics-node
+trap - EXIT INT TERM
 
 echo "escape-metrics-node: the Metrics footprint is gone and three planted look-alikes are untouched"

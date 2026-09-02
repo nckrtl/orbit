@@ -29,11 +29,15 @@ json_get() {
 }
 
 wireguard_address() {
-  ip -4 -o addr show dev orbit | awk '{ print $4 }' | cut -d/ -f1 | head -n 1
+  local addresses
+  addresses=$(ip -4 -o addr show dev orbit)
+  awk 'NR == 1 { split($4, address, "/"); print address[1] }' <<<"$addresses"
 }
 
 ufw_has_comment() {
-  sudo ufw status | grep -Fq "# $1"
+  local status
+  status=$(sudo ufw status)
+  grep -F "# $1" <<<"$status" >/dev/null
 }
 
 assert_non_orbit_boundary() {

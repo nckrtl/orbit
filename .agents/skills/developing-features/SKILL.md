@@ -44,12 +44,16 @@ accepted ADR, or mixes product work with a harness change.
    explicit `none` rationale. Run focused checks, `composer docs-lint`, each
    changed project's `composer check`, and root `bin/test`.
 6. **Prove the exact commit.** For Incus proof, write
-   `proofs/<ISSUE>.json`, merge current `main`, release any discovery attempt,
-   and run `bin/e2e-topology prove <ISSUE>`. Diagnosis cannot become proof;
-   fix, commit, and prove again. Leave successful proof resources unchanged.
+   `proofs/<ISSUE>.json`, merge current `main`, and run
+   `bin/e2e-topology prove <ISSUE>` while discovery remains active. Every
+   action must exit `0`. On diagnosis, inspect the failed proof explicitly with
+   `shell --proof` or `exec --proof`, continue development on discovery, then
+   `release <ISSUE> --proof` before proving again. Leave a successful proof
+   unchanged through review and merge.
 7. **Open the pull request.** Push and use a short body with what changed, why,
-   and one proof line: `Proved with proofs/<ISSUE>.json at <sha>`,
-   `Harness: bin/e2e-live <sha> passed`, or `Automated tests only`.
+   and one proof line: `Proved with proofs/<ISSUE>.json at <sha>` or
+   `Automated tests only`. Do not start review until every declared proof
+   action has exited `0`.
 
 ## Corrections
 
@@ -67,8 +71,9 @@ For a dedicated harness issue:
 
 - implement with unit and feature tests;
 - run `apps/e2e` `composer check` and root `bin/test`;
-- prove with `bin/e2e-live <full sha>`; and
-- use `Harness: bin/e2e-live <sha> passed` in the PR.
+- run its declared focused or Incus proof; and
+- run `bin/e2e-live <full sha>` only when the issue contract explicitly changes
+  or requires the validation-clone lifecycle.
 
 ## Rules
 
@@ -76,7 +81,8 @@ For a dedicated harness issue:
 - Product feature branches never touch `apps/e2e` or `bin/e2e-*`.
 - Proof actions are read-only unless the proof plan sets `"mutates": true`.
 - A plan that removes a node declares the expected final node set.
-- One issue per worktree and topology; never reuse proof resources across issues.
+- One issue per worktree. Discovery and proof use separate topologies and never
+  reuse proof resources across issues.
 - Do not create a meaningless documentation diff when impact is `none`. Do not
   leave durable behavior, terminology, operational contracts, agent context, or
   reusable knowledge stale when impact is `required`.

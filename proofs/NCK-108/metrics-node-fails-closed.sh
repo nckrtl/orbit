@@ -1,25 +1,23 @@
 #!/usr/bin/env bash
 # The Metrics node is never degraded. With its own sshd down, a fleet mutation
 # must fail closed rather than skip the node that owns the projection.
-source /var/lib/orbit-e2e/proof/lib.sh
+proof_root=${ORBIT_E2E_PROOF_ROOT:-/var/lib/orbit-e2e/proof}
+source "$proof_root/lib.sh"
 
-restore_ssh() {
-  for unit in ssh.socket ssh.service; do
-    systemctl cat "$unit" >/dev/null 2>&1 && sudo systemctl start "$unit" || true
-  done
-}
-trap restore_ssh EXIT
-
+orb7_service_traps metrics-node-fails-closed
+orb7_service_record metrics-node-fails-closed ssh.socket ssh.service
+orb7_checkpoint metrics-node-fails-closed post-record
 for unit in ssh.socket ssh.service; do
   systemctl cat "$unit" >/dev/null 2>&1 && sudo systemctl stop "$unit" || true
 done
+orb7_checkpoint metrics-node-fails-closed post-mutation
 
 attempt=$(orbit metrics:exporter:disable gateway --json || true)
-echo "$attempt" | grep -q '"code":"metrics.exporter_configuration_inspection_failed"' \
+grep -q '"code":"metrics.exporter_configuration_inspection_failed"' <<<"$attempt" \
   || fail "fleet mutation did not fail closed on the Metrics node: $attempt"
 
-restore_ssh
-trap - EXIT
+orb7_restore_services metrics-node-fails-closed
+trap - EXIT INT TERM
 
 # The same mutation succeeds again once the Metrics node answers, which proves
 # the failure was the node and not the command.

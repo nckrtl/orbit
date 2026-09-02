@@ -37,6 +37,16 @@ it('reads complete worktree listings without early-exit SIGPIPE', function () us
     }
 });
 
+it('releases retained proof and discovery before removing a worktree', function () use ($read): void {
+    $script = $read('bin/worktree-remove');
+
+    expect($script)
+        ->toContain('if [[ -f "$worktree/.e2e/proof-attempt.json" ]]')
+        ->toContain('release "$linear_id" "--worktree=$worktree" --proof')
+        ->toContain('if [[ -f "$worktree/.e2e/attempt.json" ]]')
+        ->toContain('release "$linear_id" "--worktree=$worktree"');
+});
+
 it('keeps planning, plan review, and development independently invokable', function () use ($read, $root): void {
     $planner = $read('.agents/skills/planning-features/SKILL.md');
     $reviewer = $read('.agents/skills/reviewing-feature-plans/SKILL.md');
@@ -67,7 +77,8 @@ it('keeps planning, plan review, and development independently invokable', funct
 
     expect($developer)
         ->toContain('may be invoked directly')
-        ->toContain('One issue per worktree and topology')
+        ->toContain('One issue per worktree')
+        ->toContain('Discovery and proof use separate topologies')
         ->not->toContain('retained Builder')
         ->not->toContain('plan `PASS`');
 
@@ -82,9 +93,10 @@ it('keeps implementation guidance on Orbit code and proof', function () use ($re
         'bin/e2e-topology shell <ISSUE> <role>',
         'proofs/<ISSUE>.json',
         'bin/e2e-topology prove <ISSUE>',
-        'bin/e2e-live <full sha>',
+        'shell --proof',
+        'action must exit `0`',
         'Product feature branches never touch `apps/e2e` or `bin/e2e-*`.',
-        'One issue per worktree and topology',
+        'Discovery and proof use separate topologies',
     ] as $needle) {
         expect($skill)->toContain($needle);
     }
@@ -98,8 +110,8 @@ it('binds review and merge to one exact remote head', function () use ($read): v
         ->toContain('exact remote PR head')
         ->toContain('must not merge or rebase `main`')
         ->toContain('stop until the candidate is updated and pushed')
-        ->toContain('bin/e2e-topology prove <ISSUE>')
-        ->toContain('bin/e2e-live <sha>')
+        ->toContain('retained immutable proof')
+        ->toContain('validation-clone lifecycle')
         ->toContain('exactly `Approved.`')
         ->toContain('Collect every blocking')
         ->toContain('finding in one pass')

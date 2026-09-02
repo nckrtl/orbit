@@ -38,19 +38,24 @@ test "$instance_host" = "$slug.test"
 test "$workspace_host" = "preview.$slug.test"
 old_instance_host="$slug.$old_tld"
 old_workspace_host="preview.$slug.$old_tld"
-node_address=$(ip -4 -o addr show | awk '$4 ~ /^10\.44\./ {sub(/\/.*$/, "", $4); print $4; exit}')
+node_addresses=$(ip -4 -o addr show)
+node_address=$(awk '$4 ~ /^10\.44\./ {sub(/\/.*$/, "", $4); print $4; exit}' <<<"$node_addresses")
 test -n "$node_address"
 for host in "$instance_host" "$workspace_host"; do
-  gateway_address=$(dig +short "$host" @10.44.0.1 | awk 'NF {print; exit}')
-  system_address=$(getent ahostsv4 "$host" | awk 'NR==1 {print $1}')
+  gateway_addresses=$(dig +short "$host" @10.44.0.1)
+  gateway_address=$(awk 'NF {print; exit}' <<<"$gateway_addresses")
+  system_addresses=$(getent ahostsv4 "$host")
+  system_address=$(awk 'NR==1 {print $1}' <<<"$system_addresses")
   test "$gateway_address" = "$node_address"
   test "$system_address" = "$node_address"
   curl --fail --silent --show-error --cacert /etc/ssl/certs/ca-certificates.crt --resolve "$host:443:127.0.0.1" "https://$host/" >/dev/null
 done
 ! getent ahostsv4 "$old_instance_host" >/dev/null
 ! getent ahostsv4 "$old_workspace_host" >/dev/null
-test -z "$(dig +short "$old_instance_host" @10.44.0.1 | awk 'NF {print; exit}')"
-test -z "$(dig +short "$old_workspace_host" @10.44.0.1 | awk 'NF {print; exit}')"
+old_instance_addresses=$(dig +short "$old_instance_host" @10.44.0.1)
+old_workspace_addresses=$(dig +short "$old_workspace_host" @10.44.0.1)
+test -z "$(awk 'NF {print; exit}' <<<"$old_instance_addresses")"
+test -z "$(awk 'NF {print; exit}' <<<"$old_workspace_addresses")"
 active_caddy=$(sudo readlink -f /etc/caddy/Caddyfile)
 active_fragments=/etc/caddy/orbit-versions/"$(basename "$(dirname "$active_caddy")")"/fragments
 for host in "$instance_host" "$workspace_host"; do

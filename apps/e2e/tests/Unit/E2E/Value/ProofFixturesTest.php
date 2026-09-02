@@ -24,7 +24,9 @@ describe('ProofFixtures', function (): void {
             ->and(ProofFixtures::hostDirectory('NCK-82'))
             ->toBe('proofs/NCK-82')
             ->and(ProofFixtures::guestPath('check.sh'))
-            ->toBe('/var/lib/orbit-e2e/proof/check.sh');
+            ->toBe('/var/lib/orbit-e2e/proof/check.sh')
+            ->and(ProofFixtures::guestPath('NCK-73/recover.sh'))
+            ->toBe('/var/lib/orbit-e2e/proof/NCK-73/recover.sh');
     });
 
     it('rejects an inventory that a role did not observe, an unsorted or unsafe name, or a bad mode', function (
@@ -56,6 +58,6 @@ describe('ProofFixtures', function (): void {
             str_repeat('3', 64),
             array_fill_keys(TopologyProfile::ROLES, str_repeat('3', 64)),
         ),
-        'guest path' => fn () => ProofFixtures::guestPath('nested/check.sh'),
+        'guest path traversal' => fn () => ProofFixtures::guestPath('nested/../check.sh'),
     ]);
 });

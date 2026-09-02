@@ -69,9 +69,11 @@ final readonly class TopologyAcquirer
         $state = IssueState::forWorktree($request->issue, $request->worktree);
         $lock = $this->issueLock($request->issue);
         try {
-            if ($state->hasAttempt()) {
+            if ($state->hasAttempt(AttemptPurpose::Discovery)) {
                 throw new RuntimeException(
-                    "{$request->issue} already has attempt {$state->attemptId()->value}; release it first.",
+                    "{$request->issue} already has discovery attempt "
+                    .$state->attemptId(AttemptPurpose::Discovery)->value
+                    .'; release it first.',
                 );
             }
 
@@ -87,7 +89,7 @@ final readonly class TopologyAcquirer
         $state = IssueState::forWorktree($request->issue, $request->worktree);
         $lock = $this->issueLock($request->issue);
         try {
-            $topology = $this->mutableTopology($state);
+            $topology = $this->mutableTopology($state, AttemptPurpose::Discovery);
             $this->assertColdBaseMatchesMain($request->worktree);
             $this->networks->reconcile($topology->target->network());
             $this->guests->assertSourceMounted($topology->target);
@@ -117,7 +119,7 @@ final readonly class TopologyAcquirer
         $state = IssueState::forWorktree($request->issue, $request->worktree);
         $lock = $this->issueLock($request->issue);
         try {
-            $topology = $state->requireTopology();
+            $topology = $state->requireTopology(AttemptPurpose::Discovery);
             $this->networks->reconcile($topology->target->network());
             if ($topology->source->mounted) {
                 $this->guests->assertSourceMounted($topology->target);
@@ -148,11 +150,12 @@ final readonly class TopologyAcquirer
         string $role,
         array $argv,
         ?string $stdin = null,
+        AttemptPurpose $purpose = AttemptPurpose::Discovery,
     ): GuestCommandResult {
         $state = IssueState::forWorktree($request->issue, $request->worktree);
         $lock = $this->issueLock($request->issue);
         try {
-            $instance = $this->ownedInstance($this->mutableTopology($state), $role);
+            $instance = $this->ownedInstance($this->mutableTopology($state, $purpose), $role);
 
             return $this->host->exec($instance, GuestCommand::asOrbitUser($argv, stdin: $stdin));
         } finally {
@@ -161,11 +164,14 @@ final readonly class TopologyAcquirer
     }
 
     /** The exact VM of one role, revalidated against the record; `shell` attaches to it. */
-    public function instance(TopologyRequest $request, string $role): string
-    {
+    public function instance(
+        TopologyRequest $request,
+        string $role,
+        AttemptPurpose $purpose = AttemptPurpose::Discovery,
+    ): string {
         $state = IssueState::forWorktree($request->issue, $request->worktree);
 
-        return $this->ownedInstance($state->requireTopology(), $role);
+        return $this->ownedInstance($this->mutableTopology($state, $purpose), $role);
     }
 
     private function create(TopologyRequest $request, IssueState $state): FeatureTopology
@@ -297,19 +303,28 @@ final readonly class TopologyAcquirer
                 previous: $exception,
             );
         }
-        $state->forgetAttempt();
+        $state->forgetAttempt(AttemptPurpose::Discovery);
 
         throw new RuntimeException('Topology acquisition failed: '.$exception->getMessage(), previous: $exception);
     }
 
     /** A proved attempt stays as proved: nothing may change it before release. */
-    private function mutableTopology(IssueState $state): FeatureTopology
+    private function mutableTopology(IssueState $state, AttemptPurpose $purpose): FeatureTopology
     {
-        $topology = $state->requireTopology();
-        if ($state->isProved()) {
+        $topology = $state->requireTopology($purpose);
+        if ($purpose === AttemptPurpose::Proof && $state->isProved()) {
             throw new RuntimeException(
                 "{$state->issue} attempt {$topology->attempt->value} is proved; release it before changing it.",
             );
+        }
+        if ($purpose === AttemptPurpose::Proof) {
+            $proof = $state->proof();
+            if (
+                ($proof['status'] ?? null) !== 'diagnosis'
+                || ($proof['attempt_id'] ?? null) !== $topology->attempt->value
+            ) {
+                throw new RuntimeException('Only a retained failed proof can be inspected or debugged.');
+            }
         }
 
         return $topology;

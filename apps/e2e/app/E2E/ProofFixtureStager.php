@@ -28,6 +28,9 @@ use Throwable;
  */
 final readonly class ProofFixtureStager
 {
+    /** The host guest-command helper rejects batches above this size. */
+    private const int MAX_BATCH_REQUESTS = 128;
+
     /**
      * Replace the guest fixture directory. A promoted generation can carry another
      * issue's fixtures, and the inventory check demands this issue's files only.
@@ -36,8 +39,8 @@ final readonly class ProofFixtureStager
 
     /** The guest prints the installed inventory in the exact host layout. */
     private const string INVENTORY_SCRIPT =
-        'cd -- "$1" && test -z "$(find . -mindepth 1 ! -type f)" '
-            .'&& find . -mindepth 1 -maxdepth 1 -type f -printf \'%P\\n\' | LC_ALL=C sort | while IFS= read -r f; do '
+        'cd -- "$1" && test -z "$(find . -mindepth 1 ! -type f ! -type d)" '
+            .'&& find . -mindepth 1 -type f -printf \'%P\\n\' | LC_ALL=C sort | while IFS= read -r f; do '
             .'printf \'%s\\t%s\\t%s\\n\' "$f" "$(stat -c %a -- "$f")" "$(sha256sum -- "$f" | cut -c1-64)"; done';
 
     public function __construct(
@@ -48,32 +51,62 @@ final readonly class ProofFixtureStager
     /**
      * Read the fixture inventory of the candidate commit without touching a guest.
      *
+     * @param list<string> $additionalIssues
      * @return array<string, array{mode:string, sha256:string, content:string}>
      */
-    public function inventory(GitRepository $repository, string $candidateSha, string $issue): array
-    {
-        $files = [];
-        foreach ($repository->directoryBlobs($candidateSha, ProofFixtures::hostDirectory($issue)) as $name => $blob) {
-            if (! ProofFixtures::isFixtureName($name)) {
-                throw new RuntimeException("Proof fixture [{$name}] has an invalid file name.");
+    public function inventory(
+        GitRepository $repository,
+        string $candidateSha,
+        string $issue,
+        array $additionalIssues = [],
+    ): array {
+        if (
+            in_array($issue, $additionalIssues, true)
+            || count($additionalIssues) !== count(array_unique($additionalIssues))
+        ) {
+            throw new RuntimeException('The additional proof fixture issue list is invalid.');
+        }
+        /** @return array<string, array{mode:string, sha256:string, content:string}> */
+        $issueInventory = static function (string $fixtureIssue) use ($repository, $candidateSha): array {
+            TopologyTarget::assertIssue($fixtureIssue);
+            $issueFiles = [];
+            foreach ($repository->directoryBlobs(
+                $candidateSha,
+                ProofFixtures::hostDirectory($fixtureIssue),
+            ) as $name => $blob) {
+                if (! ProofFixtures::isFixtureName($name)) {
+                    throw new RuntimeException("Proof fixture [{$name}] has an invalid file name.");
+                }
+                $issueFiles[$name] = [
+                    'mode' => $blob['mode'] === '100755' ? '755' : '644',
+                    'sha256' => hash('sha256', $blob['content']),
+                    'content' => $blob['content'],
+                ];
             }
-            $files[$name] = [
-                'mode' => $blob['mode'] === '100755' ? '755' : '644',
-                'sha256' => hash('sha256', $blob['content']),
-                'content' => $blob['content'],
-            ];
+
+            return $issueFiles;
+        };
+
+        $files = $issueInventory($issue);
+        foreach ($additionalIssues as $additionalIssue) {
+            TopologyTarget::assertIssue($additionalIssue);
+            foreach ($issueInventory($additionalIssue) as $name => $file) {
+                $files["{$additionalIssue}/{$name}"] = $file;
+            }
         }
         ksort($files, SORT_STRING);
 
         return $files;
     }
 
+    /** @param list<string> $additionalIssues */
     public function stage(
         TopologyTarget $target,
         GitRepository $repository,
         string $candidateSha,
+        array $additionalIssues = [],
     ): ProofFixtures {
-        $inventory = $this->inventory($repository, $candidateSha, $target->issue);
+        $inventory = $this->inventory($repository, $candidateSha, $target->issue, $additionalIssues);
         $files = array_map(
             static fn (array $file): array => ['mode' => $file['mode'], 'sha256' => $file['sha256']],
             $inventory,
@@ -120,11 +153,12 @@ final readonly class ProofFixtureStager
 
             $pushes = [];
             foreach ($instances as $role => $instance) {
-                foreach (array_keys($inventory) as $name) {
-                    $pushes["fixture-push.{$role}.{$name}"] = [
+                foreach (array_keys($inventory) as $index => $name) {
+                    $stagedName = hash('sha256', $name);
+                    $pushes["fixture-push.{$role}.{$index}"] = [
                         'instance' => $instance,
                         'source' => "{$temporaryDirectory}/{$name}",
-                        'destination' => "{$prefix}/{$name}",
+                        'destination' => "{$prefix}/{$stagedName}",
                     ];
                 }
             }
@@ -147,10 +181,42 @@ final readonly class ProofFixtureStager
             }
             $this->assertBatchSuccessful($this->incus->execAll($installs), 'Proof fixture directory failed.');
 
+            $directories = [];
+            foreach (array_keys($inventory) as $name) {
+                $directory = dirname($name);
+                if ($directory !== '.') {
+                    $directories[$directory] = true;
+                }
+            }
+            if ($directories !== []) {
+                $parents = [];
+                foreach ($instances as $role => $instance) {
+                    foreach (array_keys($directories) as $directory) {
+                        $parents["fixture-parent.{$role}.{$directory}"] = [
+                            'instance' => $instance,
+                            'command' => new GuestCommand([
+                                'install',
+                                '-d',
+                                '-o',
+                                'root',
+                                '-g',
+                                'root',
+                                '-m',
+                                '0755',
+                                ProofFixtures::GUEST_DIRECTORY.'/'.$directory,
+                            ]),
+                        ];
+                    }
+                }
+                $this->assertBatchSuccessful($this->incus->execAll($parents), 'Proof fixture parent directory failed.');
+            }
+
             $installs = [];
             foreach ($instances as $role => $instance) {
-                foreach ($inventory as $name => $file) {
-                    $installs["fixture-install.{$role}.{$name}"] = [
+                foreach (array_keys($inventory) as $index => $name) {
+                    $file = $inventory[$name];
+                    $stagedName = hash('sha256', $name);
+                    $installs["fixture-install.{$role}.{$index}"] = [
                         'instance' => $instance,
                         'command' => new GuestCommand([
                             'install',
@@ -160,14 +226,19 @@ final readonly class ProofFixtureStager
                             'root',
                             '-m',
                             '0'.$file['mode'],
-                            "{$prefix}/{$name}",
+                            "{$prefix}/{$stagedName}",
                             ProofFixtures::guestPath($name),
                         ]),
                     ];
                 }
             }
             if ($installs !== []) {
-                $this->assertBatchSuccessful($this->incus->execAll($installs), 'Proof fixture installation failed.');
+                foreach (array_chunk($installs, self::MAX_BATCH_REQUESTS, true) as $batch) {
+                    $this->assertBatchSuccessful(
+                        $this->incus->execAll($batch),
+                        'Proof fixture installation failed.',
+                    );
+                }
             }
 
             $roles = $this->verify($instances, $files);
@@ -263,6 +334,10 @@ final readonly class ProofFixtureStager
     {
         foreach ($inventory as $name => $file) {
             $path = "{$directory}/{$name}";
+            $parent = dirname($path);
+            if (! is_dir($parent) && ! mkdir($parent, 0700, true)) {
+                throw new RuntimeException('Could not stage the candidate proof fixtures.');
+            }
             if (file_put_contents($path, $file['content'], LOCK_EX) === false || ! chmod($path, 0600)) {
                 throw new RuntimeException('Could not stage the candidate proof fixtures.');
             }
@@ -282,9 +357,16 @@ final readonly class ProofFixtureStager
     private function removeTemporaryDirectory(string $directory): void
     {
         try {
-            foreach (scandir($directory) ?: [] as $entry) {
-                if ($entry !== '.' && $entry !== '..') {
-                    unlink("{$directory}/{$entry}");
+            $entries = new \RecursiveIteratorIterator(
+                new \RecursiveDirectoryIterator($directory, \FilesystemIterator::SKIP_DOTS),
+                \RecursiveIteratorIterator::CHILD_FIRST,
+            );
+            foreach ($entries as $entry) {
+                /** @var \SplFileInfo $entry */
+                if ($entry->isDir()) {
+                    rmdir($entry->getPathname());
+                } else {
+                    unlink($entry->getPathname());
                 }
             }
             rmdir($directory);

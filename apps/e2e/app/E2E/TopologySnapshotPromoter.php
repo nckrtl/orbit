@@ -67,6 +67,7 @@ final readonly class TopologySnapshotPromoter
     {
         $state = IssueState::forWorktree($request->issue, $request->worktree);
         $topology = $this->provedTopology($state, $plan);
+        $this->assertProofEvidence($state, $plan);
         $candidate = $this->provedCandidate($state, $topology);
         $promoted = $this->manifests->promoted() ?? throw new RuntimeException(
             'There is no promoted topology snapshot generation to replace; build the topology snapshot first.',
@@ -108,7 +109,7 @@ final readonly class TopologySnapshotPromoter
                             'The promoted topology snapshot generation changed before promotion.',
                         );
                     }
-                    $state->requireTopology();
+                    $state->requireTopology(AttemptPurpose::Proof);
                     $this->replaceTopologySnapshot($topology, $generation);
                 } finally {
                     $issueLock->release();
@@ -121,7 +122,14 @@ final readonly class TopologySnapshotPromoter
             $this->lock->release();
         }
 
-        $release = $this->releaser->release($request);
+        $release = $this->releaser->release($request, AttemptPurpose::Proof);
+        $released = $release['released'];
+        $networksReaped = $release['networks_reaped'];
+        if ($state->hasAttempt(AttemptPurpose::Discovery)) {
+            $discovery = $this->releaser->release($request, AttemptPurpose::Discovery);
+            $released = [...$released, ...$discovery['released']];
+            $networksReaped = [...$networksReaped, ...$discovery['networks_reaped']];
+        }
 
         return [
             'state' => 'promoted',
@@ -130,15 +138,26 @@ final readonly class TopologySnapshotPromoter
             'generation_id' => $generation->id,
             'main_sha' => $generation->mainSha,
             'previous_generation_id' => $generation->previousGenerationId,
-            'released' => $release['released'],
-            'networks_reaped' => $release['networks_reaped'],
+            'released' => $released,
+            'networks_reaped' => array_values(array_unique($networksReaped)),
         ];
     }
 
-    /** The live attempt must be a proved proof, and its plan must not mutate the topology. */
+    /** The proof must be proved and its plan must not mutate the topology. */
     private function provedTopology(IssueState $state, ProofPlan $plan): FeatureTopology
     {
-        $topology = $state->requireTopology();
+        if (! $state->hasAttempt()) {
+            throw new RuntimeException("{$state->issue} has no active attempt.");
+        }
+        if (! $state->hasAttempt(AttemptPurpose::Proof)) {
+            $attempt = $state->hasAttempt(AttemptPurpose::Discovery)
+                ? ' attempt '.$state->attemptId(AttemptPurpose::Discovery)->value
+                : '';
+            throw new RuntimeException(
+                "{$state->issue}{$attempt} is not proved; only a proved topology can be promoted.",
+            );
+        }
+        $topology = $state->requireTopology(AttemptPurpose::Proof);
         if ($topology->purpose !== AttemptPurpose::Proof || ! $state->isProved()) {
             throw new RuntimeException(
                 "{$state->issue} attempt {$topology->attempt->value} is not proved; only a proved topology can be promoted.",
@@ -151,6 +170,26 @@ final readonly class TopologySnapshotPromoter
         }
 
         return $topology;
+    }
+
+    /** Promotion accepts only the exact complete zero-exit action sequence the current plan declares. */
+    private function assertProofEvidence(IssueState $state, ProofPlan $plan): void
+    {
+        $proof = $state->proof() ?? [];
+        if (($proof['plan_sha256'] ?? null) !== $plan->fingerprint()) {
+            throw new RuntimeException('The recorded proof plan does not match the promotion plan.');
+        }
+        $expected = array_map(
+            static fn (array $action): array => [
+                'id' => $action['id'],
+                'node' => $action['node'],
+                'exit_code' => 0,
+            ],
+            [...$plan->setup, ...$plan->acceptance],
+        );
+        if (($proof['actions'] ?? null) !== $expected) {
+            throw new RuntimeException('The proof result does not contain complete zero-exit action evidence.');
+        }
     }
 
     /** The proved candidate must be exactly what `main` holds in the primary checkout. */

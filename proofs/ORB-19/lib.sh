@@ -19,7 +19,7 @@ json_get() {
 }
 
 wireguard_address() {
-  ip -4 -o addr show dev orbit | awk '{ print $4 }' | cut -d/ -f1 | head -n 1
+  ip -4 -o addr show dev orbit | awk '!found { sub(/\/.*/, "", $4); print $4; found = 1 }'
 }
 
 node_id() {
@@ -53,13 +53,16 @@ grafana_curl() {
 }
 
 ufw_has_comment() {
-  sudo ufw status numbered | grep -qF "# $1"
+  local status
+  status=$(sudo ufw status numbered)
+  grep -qF "# $1" <<<"$status"
 }
 
 remove_ufw_comment() {
-  local comment number
+  local comment number status
   comment=$1
-  number=$(sudo ufw status numbered | sed -n "/# $comment/ s/^\[[[:space:]]*\([0-9][0-9]*\)\].*/\1/p" | head -n 1)
+  status=$(sudo ufw status numbered)
+  number=$(sed -n "/# $comment/ { s/^\[[[:space:]]*\([0-9][0-9]*\)\].*/\1/p; q; }" <<<"$status")
   [[ -n "$number" ]] || fail "UFW rule [$comment] is absent before drift"
   sudo ufw --force delete "$number" >/dev/null
 }

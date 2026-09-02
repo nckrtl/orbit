@@ -84,16 +84,6 @@ function promotableFixture(bool $mainHoldsCandidate = true, AttemptPurpose $purp
             ],
         ]),
     ));
-    if ($purpose === AttemptPurpose::Proof) {
-        $state->writeProof([
-            'status' => 'proved',
-            'issue' => 'NCK-123',
-            'attempt_id' => $target->requireAttempt()->value,
-            'candidate_sha' => $candidate,
-            'actions' => [],
-            'recorded_at' => '2026-08-30T00:00:00Z',
-        ]);
-    }
     $planPath = $worktree.'/proofs/NCK-123.json';
     mkdir(dirname($planPath), 0700, true);
     file_put_contents($planPath, json_encode([
@@ -105,6 +95,18 @@ function promotableFixture(bool $mainHoldsCandidate = true, AttemptPurpose $purp
             'timeout_seconds' => 60,
         ]],
     ], JSON_THROW_ON_ERROR));
+    $plan = ProofPlan::fromFile($planPath);
+    if ($purpose === AttemptPurpose::Proof) {
+        $state->writeProof([
+            'status' => 'proved',
+            'issue' => 'NCK-123',
+            'attempt_id' => $target->requireAttempt()->value,
+            'candidate_sha' => $candidate,
+            'plan_sha256' => $plan->fingerprint(),
+            'actions' => [['id' => 'doctor', 'node' => 'app-dev', 'exit_code' => 0]],
+            'recorded_at' => '2026-08-30T00:00:00Z',
+        ]);
+    }
 
     return [
         'root' => $root,
@@ -114,7 +116,7 @@ function promotableFixture(bool $mainHoldsCandidate = true, AttemptPurpose $purp
         'request' => new TopologyRequest('NCK-123', $worktree),
         'target' => $target,
         'candidate' => $candidate,
-        'plan' => ProofPlan::fromFile($planPath),
+        'plan' => $plan,
     ];
 }
 
@@ -148,11 +150,11 @@ function promoterFor(
 }
 
 /**
- * A stateful Incus fake: the topology snapshot instances, the proved attempt's instances,
- * and both networks, mutated by every command promote and release issue.
+ * A stateful Incus fake: the topology snapshot, proof, and optional discovery
+ * resources, mutated by every command that promotion and release issue.
  *
  * @param list<string> $events
- * @mago-expect lint:cyclomatic-complexity,halstead,kan-defect The fake maps one complete promotion process boundary.
+ * @mago-expect lint:cyclomatic-complexity,excessive-parameter-list,halstead,kan-defect The fake maps one complete promotion process boundary.
  */
 function fakePromotionHost(
     TopologyTarget $target,
@@ -160,6 +162,7 @@ function fakePromotionHost(
     ?string $failAt = null,
     ?array &$guestEvents = null,
     bool $failAssignments = false,
+    ?TopologyTarget $discoveryTarget = null,
 ): void {
     $topologySnapshot = TopologyTarget::topologySnapshot();
     $instances = [];
@@ -183,6 +186,20 @@ function fakePromotionHost(
             'network' => $target->network(),
         ];
         $snapshots[$target->instance($role)] = [];
+        if ($discoveryTarget !== null) {
+            $instances[$discoveryTarget->instance($role)] = [
+                'status' => 'Running',
+                'config' => [
+                    'user.orbit.e2e.owner' => 'orbit-e2e',
+                    'user.orbit.e2e.issue' => $discoveryTarget->issue,
+                    'user.orbit.e2e.attempt' => $discoveryTarget->requireAttempt()->value,
+                    'user.orbit.e2e.operation' => str_repeat('d', 32),
+                    'user.orbit.e2e.generation' => 'old',
+                ],
+                'network' => $discoveryTarget->network(),
+            ];
+            $snapshots[$discoveryTarget->instance($role)] = [];
+        }
     }
     $networks = [
         $topologySnapshot->network() => ['config' => [
@@ -196,6 +213,14 @@ function fakePromotionHost(
             'ipv4.address' => '10.232.2.1/24',
         ]],
     ];
+    if ($discoveryTarget !== null) {
+        $networks[$discoveryTarget->network()] = ['config' => [
+            'user.orbit.e2e.owner' => 'orbit-e2e',
+            'user.orbit.e2e.issue' => $discoveryTarget->issue,
+            'user.orbit.e2e.attempt' => $discoveryTarget->requireAttempt()->value,
+            'ipv4.address' => '10.232.3.1/24',
+        ]];
+    }
     $realProcess = new ProcessFactory;
     $vm = static function (string $name, array $instance) use ($target): array {
         $role = str_ends_with($name, '-gateway')
@@ -407,13 +432,33 @@ describe('TopologySnapshotPromoter', function (): void {
     });
 
     /** @mago-expect lint:kan-defect The promotion test asserts the complete ordered command chain. */
-    it('replaces the topology snapshot with the proved topology, promotes the manifest, and releases the attempt', function (): void {
+    it('promotes the proved topology and releases both proof and discovery', function (): void {
         $fixture = promotableFixture();
         $target = $fixture['target'];
+        $discoveryTarget = TopologyTarget::feature('NCK-123', new AttemptId(str_repeat('d', 32)));
+        $state = IssueState::forWorktree('NCK-123', $fixture['worktree']);
+        $proofTopology = $state->requireTopology(AttemptPurpose::Proof);
+        $state->writeAttempt(
+            $discoveryTarget->requireAttempt(),
+            AttemptPurpose::Discovery,
+            new OperationId(str_repeat('d', 32)),
+        );
+        $state->writeTopology(new FeatureTopology(
+            $discoveryTarget,
+            AttemptPurpose::Discovery,
+            $proofTopology->generation,
+            $discoveryTarget->network(),
+            array_combine(
+                TopologyProfile::ROLES,
+                array_map($discoveryTarget->instance(...), TopologyProfile::ROLES),
+            ),
+            $proofTopology->source,
+            $proofTopology->verification,
+        ));
         $topologySnapshot = TopologyTarget::topologySnapshot();
         $events = [];
         $guestEvents = [];
-        fakePromotionHost($target, $events, null, $guestEvents);
+        fakePromotionHost($target, $events, null, $guestEvents, discoveryTarget: $discoveryTarget);
         $old = $fixture['manifests']->promoted();
 
         $result = promoterFor($fixture['root'], $fixture['paths'], $fixture['manifests'])
@@ -471,6 +516,13 @@ describe('TopologySnapshotPromoter', function (): void {
             $expected[] = 'delete:'.$target->instance($role);
         }
         $expected[] = 'network-delete:'.$target->network();
+        foreach (TopologyProfile::ROLES as $role) {
+            $expected[] = 'stop:'.$discoveryTarget->instance($role);
+        }
+        foreach (array_reverse(TopologyProfile::ROLES) as $role) {
+            $expected[] = 'delete:'.$discoveryTarget->instance($role);
+        }
+        $expected[] = 'network-delete:'.$discoveryTarget->network();
         $removals = array_values(array_filter(
             $guestEvents,
             static fn (array $event): bool => in_array('rm', $event, true),
@@ -541,6 +593,41 @@ describe('TopologySnapshotPromoter', function (): void {
             ->toBeTrue();
         Process::assertDidntRun(fn (PendingProcess $process): bool => ($process->command[0] ?? null) === 'incus');
     });
+
+    it('refuses proof evidence recorded for a different plan without touching Incus', function (): void {
+        $fixture = promotableFixture();
+        $state = IssueState::forWorktree('NCK-123', $fixture['worktree']);
+        $proof = $state->proof();
+        assert($proof !== null);
+        $proof['plan_sha256'] = str_repeat('f', 64);
+        $state->writeProof($proof);
+        $events = [];
+        fakePromotionHost($fixture['target'], $events);
+
+        expect(fn () => promoterFor($fixture['root'], $fixture['paths'], $fixture['manifests'])
+            ->promote($fixture['request'], $fixture['plan']))
+            ->toThrow(RuntimeException::class, 'proof plan does not match');
+        expect($events)->toBe([]);
+    });
+
+    it('refuses incomplete or nonzero proof actions without touching Incus', function (array $actions): void {
+        $fixture = promotableFixture();
+        $state = IssueState::forWorktree('NCK-123', $fixture['worktree']);
+        $proof = $state->proof();
+        assert($proof !== null);
+        $proof['actions'] = $actions;
+        $state->writeProof($proof);
+        $events = [];
+        fakePromotionHost($fixture['target'], $events);
+
+        expect(fn () => promoterFor($fixture['root'], $fixture['paths'], $fixture['manifests'])
+            ->promote($fixture['request'], $fixture['plan']))
+            ->toThrow(RuntimeException::class, 'complete zero-exit action evidence');
+        expect($events)->toBe([]);
+    })->with([
+        'missing action' => [[]],
+        'nonzero action' => [[['id' => 'doctor', 'node' => 'app-dev', 'exit_code' => 124]]],
+    ]);
 
     it('refuses a candidate that main does not hold without touching Incus', function (): void {
         $fixture = promotableFixture(mainHoldsCandidate: false);

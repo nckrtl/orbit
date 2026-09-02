@@ -68,6 +68,29 @@ final readonly class GuestCommand
     }
 
     /**
+     * Run one proof action with a catchable guest deadline and bounded cleanup grace.
+     *
+     * @param list<string> $argv
+     */
+    public static function asProofAction(array $argv, int $deadline): self
+    {
+        if ($argv === [] || ! self::isProgramArgument($argv[0])) {
+            throw new InvalidArgumentException(
+                'The proof action must start with a program; the first argument cannot carry `=` or start with `-`.',
+            );
+        }
+
+        return new self([
+            ...self::ORBIT_USER_PREFIX,
+            'timeout',
+            '--signal=TERM',
+            '--kill-after=5s',
+            "{$deadline}s",
+            ...$argv,
+        ], $deadline + 7);
+    }
+
+    /**
      * Link the checkout's CLI entrypoint onto the guest `PATH` as root. The guest
      * `PATH` of the orbit user never loads a profile, so a symlink under
      * `/usr/local/bin` is the one placement both a mounted and a bundled checkout share.
