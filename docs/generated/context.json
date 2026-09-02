@@ -300,6 +300,27 @@
             ]
         },
         {
+            "path": "docs/decisions/0016-reconcile-app-identity-and-source-default-updates.md",
+            "title": "ADR 0016: Reconcile App identity and source-default updates",
+            "kind": "decision",
+            "components": [],
+            "concepts": [
+                "App",
+                "AppInstance",
+                "Cluster",
+                "Gateway",
+                "Ingress",
+                "Node",
+                "Route",
+                "Router"
+            ],
+            "governing_adrs": [
+                "0009",
+                "0011",
+                "0016"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
