@@ -12,6 +12,7 @@ use App\E2E\Value\AttemptId;
 use App\E2E\Value\AttemptPurpose;
 use App\E2E\Value\FeatureTopology;
 use App\E2E\Value\LaravelRelease;
+use App\E2E\Value\ObservedPhpInputs;
 use App\E2E\Value\OperationId;
 use App\E2E\Value\ProofEquivalenceReport;
 use App\E2E\Value\ProofEquivalenceResult;
@@ -36,7 +37,7 @@ beforeEach(function (): void {
 });
 
 /** @return array{root:string,main:string,proved:string,plan:ProofPlan,state:IssueState,evaluator:ProofEquivalenceEvaluator} */
-function proofEquivalenceFixture(): array
+function proofEquivalenceFixture(bool $observedInputs = false): array
 {
     $root = temporaryPath('orbit-equivalence-', 6);
     foreach (['apps/cli/app', 'docs/reference', 'proofs/ORB-99'] as $directory) {
@@ -47,7 +48,7 @@ function proofEquivalenceFixture(): array
     file_put_contents($root.'/docs/reference/note.md', "before\n");
     file_put_contents($root.'/proofs/ORB-99/check.sh', "#!/bin/sh\nexit 0\n");
     chmod($root.'/proofs/ORB-99/check.sh', 0755);
-    file_put_contents($root.'/proofs/ORB-99.json', json_encode([
+    $planValue = [
         'setup' => [],
         'acceptance' => [[
             'id' => 'check',
@@ -55,7 +56,11 @@ function proofEquivalenceFixture(): array
             'argv' => ['bash', '/var/lib/orbit-e2e/proof/check.sh'],
             'timeout_seconds' => 30,
         ]],
-    ], JSON_THROW_ON_ERROR));
+    ];
+    if ($observedInputs) {
+        $planValue['observed_inputs'] = true;
+    }
+    file_put_contents($root.'/proofs/ORB-99.json', json_encode($planValue, JSON_THROW_ON_ERROR));
     equivalenceGit($root, ['init', '--quiet', '-b', 'codex/orb-99-equivalence']);
     equivalenceGit($root, ['config', 'user.email', 'orbit@example.test']);
     equivalenceGit($root, ['config', 'user.name', 'Orbit']);
@@ -70,6 +75,29 @@ function proofEquivalenceFixture(): array
     $plan = ProofPlan::fromFile($root.'/proofs/ORB-99.json');
     $policy = new StaticProofInputPolicy;
     $builder = new ProofInputManifestBuilder($policy);
+    $observed = null;
+    if ($observedInputs) {
+        $surface = static fn (string $role, string $type): array => [
+            'role' => $role,
+            'process_type' => $type,
+            'processes' => [[
+                'id' => str_repeat($role === 'gateway' ? ($type === 'fpm' ? '3' : '2') : '1', 32),
+                'started_at' => '2026-09-03T10:00:00.000001Z',
+                'finished_at' => '2026-09-03T10:00:00.000002Z',
+            ]],
+            'paths' => ['apps/cli/app/feature.php'],
+        ];
+        $observed = new ObservedPhpInputs(
+            [
+                ['role' => 'app-dev', 'php_version' => '8.5.9', 'pcov_version' => '1.0.12'],
+                ['role' => 'gateway', 'php_version' => '8.5.9', 'pcov_version' => '1.0.12'],
+            ],
+            [
+                'setup' => [$surface('app-dev', 'cli'), $surface('gateway', 'cli'), $surface('gateway', 'fpm')],
+                'acceptance' => [$surface('app-dev', 'cli'), $surface('gateway', 'cli'), $surface('gateway', 'fpm')],
+            ],
+        );
+    }
     $manifest = $builder->build(
         new GitRepository($root),
         $proved,
@@ -77,6 +105,7 @@ function proofEquivalenceFixture(): array
         'ORB-99',
         'proofs/ORB-99.json',
         $plan,
+        $observed,
     );
     $attempt = new AttemptId(str_repeat('a', 32));
     $target = TopologyTarget::feature('ORB-99', $attempt);
@@ -179,6 +208,58 @@ function evaluateProof(array $fixture, ?ProofPlan $plan = null): ProofEquivalenc
 }
 
 describe('ProofEquivalenceEvaluator', function (): void {
+    it('routes unobserved current-main PHP drift through candidate convergence', function (): void {
+        $fixture = proofEquivalenceFixture(observedInputs: true);
+        $branch = equivalenceGit($fixture['root'], ['branch', '--show-current']);
+        equivalenceGit($fixture['root'], ['switch', '--quiet', '--detach', $fixture['main']]);
+        file_put_contents($fixture['root'].'/apps/cli/app/runtime.php', "<?php\n// unrelated main change\n");
+        equivalenceGit($fixture['root'], ['commit', '--quiet', '-am', 'unrelated main runtime']);
+        $advancedMain = equivalenceGit($fixture['root'], ['rev-parse', 'HEAD']);
+        equivalenceGit($fixture['root'], ['update-ref', 'refs/remotes/origin/main', $advancedMain]);
+        equivalenceGit($fixture['root'], ['switch', '--quiet', $branch]);
+        equivalenceGit($fixture['root'], ['merge', '--quiet', '--no-edit', $advancedMain]);
+
+        $report = evaluateProof($fixture);
+
+        expect($report->result)
+            ->toBe(ProofEquivalenceResult::Equivalent)
+            ->and($report->promotionPath)
+            ->toBe('candidate-convergence')
+            ->and($report->nextAction)
+            ->toBe('run-candidate-convergence')
+            ->and($report->changedPaths[0]['classification'])
+            ->toBe('unrelated-runtime');
+    });
+
+    it('marks observed current-main PHP drift stale', function (): void {
+        $fixture = proofEquivalenceFixture(observedInputs: true);
+        file_put_contents($fixture['root'].'/apps/cli/app/feature.php', "<?php\n// observed change\n");
+        equivalenceGit($fixture['root'], ['commit', '--quiet', '-am', 'observed runtime changed']);
+
+        expect(evaluateProof($fixture)->result)->toBe(ProofEquivalenceResult::Stale);
+    });
+
+    it('marks a feature override of an unobserved current-main PHP change stale', function (): void {
+        $fixture = proofEquivalenceFixture(observedInputs: true);
+        $branch = equivalenceGit($fixture['root'], ['branch', '--show-current']);
+        equivalenceGit($fixture['root'], ['switch', '--quiet', '--detach', $fixture['main']]);
+        file_put_contents($fixture['root'].'/apps/cli/app/runtime.php', "<?php\n// main change\n");
+        equivalenceGit($fixture['root'], ['commit', '--quiet', '-am', 'main runtime']);
+        $advancedMain = equivalenceGit($fixture['root'], ['rev-parse', 'HEAD']);
+        equivalenceGit($fixture['root'], ['update-ref', 'refs/remotes/origin/main', $advancedMain]);
+        equivalenceGit($fixture['root'], ['switch', '--quiet', $branch]);
+        equivalenceGit($fixture['root'], ['merge', '--quiet', '--no-edit', $advancedMain]);
+        file_put_contents($fixture['root'].'/apps/cli/app/runtime.php', "<?php\n// feature override\n");
+        equivalenceGit($fixture['root'], ['commit', '--quiet', '-am', 'override main runtime']);
+
+        $report = evaluateProof($fixture);
+
+        expect($report->result)
+            ->toBe(ProofEquivalenceResult::Stale)
+            ->and($report->changedPaths[0]['classification'])
+            ->toBe('runtime');
+    });
+
     it('reports exact for the proved head and a different commit with the same tree', function (): void {
         $fixture = proofEquivalenceFixture();
 

@@ -14,6 +14,7 @@ use App\E2E\IncusNetworkLifecycle;
 use App\E2E\LegacyIncusRevalidator;
 use App\E2E\LegacyRetirement;
 use App\E2E\LegacyRetirementHost;
+use App\E2E\ObservedPhpInputCollector;
 use App\E2E\OrphanNetworkSweep;
 use App\E2E\PreparedStateFingerprint;
 use App\E2E\ProofEquivalenceEvaluator;
@@ -75,6 +76,7 @@ final class AppServiceProvider extends ServiceProvider
         $this->app->singleton(SecretRedactor::class);
         $this->app->singleton(StaticProofInputPolicy::class);
         $this->app->singleton(ProofInputManifestBuilder::class);
+        $this->app->singleton(ObservedPhpInputCollector::class);
         $this->app->bind(OperationLock::class);
         $this->app->singleton(LegacyRetirementHost::class, fn (): LegacyRetirementHost => new LegacyRetirementHost(
             new LegacyIncusRevalidator,
@@ -177,6 +179,7 @@ final class AppServiceProvider extends ServiceProvider
                 $app->make(OperationId::class),
                 $app->make(TopologySnapshotIdentity::class),
                 $app->make(ProofInputManifestBuilder::class),
+                $app->make(ObservedPhpInputCollector::class),
                 $repositoryRoot,
             ),
         );

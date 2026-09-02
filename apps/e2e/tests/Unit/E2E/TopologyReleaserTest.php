@@ -200,6 +200,40 @@ describe('TopologyReleaser', function () {
             ->toBe('diagnosis');
     });
 
+    it('releases candidate convergence without releasing proof or discovery', function (): void {
+        $worktree = temporaryPath('orbit-release-worktree-', 4);
+        mkdir($worktree, 0700);
+        $paths = new StatePaths(temporaryPath('orbit-release-host-', 4));
+        $discovery = new AttemptId(str_repeat('a', 32));
+        $proof = new AttemptId(str_repeat('b', 32));
+        $candidate = new AttemptId(str_repeat('c', 32));
+        $target = TopologyTarget::feature('ORB-7', $candidate);
+        $state = IssueState::forWorktree('ORB-7', $worktree);
+        $state->writeAttempt($discovery, AttemptPurpose::Discovery, new OperationId(str_repeat('d', 32)));
+        $state->writeAttempt($proof, AttemptPurpose::Proof, new OperationId(str_repeat('e', 32)));
+        $state->writeAttempt($candidate, AttemptPurpose::CandidateConvergence, new OperationId(str_repeat('f', 32)));
+        $commands = [];
+        fakeReleaseHost(
+            $target,
+            ['user.orbit.e2e.issue' => 'ORB-7', 'user.orbit.e2e.attempt' => $candidate->value],
+            $commands,
+        );
+
+        $result = releaserForTest($paths)->release(
+            new TopologyRequest('ORB-7', $worktree),
+            AttemptPurpose::CandidateConvergence,
+        );
+
+        expect($result['purpose'])
+            ->toBe('candidate-convergence')
+            ->and($state->hasAttempt(AttemptPurpose::CandidateConvergence))
+            ->toBeFalse()
+            ->and($state->hasAttempt(AttemptPurpose::Proof))
+            ->toBeTrue()
+            ->and($state->hasAttempt(AttemptPurpose::Discovery))
+            ->toBeTrue();
+    });
+
     it('removes the successful proof commit pin when that proof is released', function (): void {
         $worktree = temporaryPath('orbit-release-worktree-', 4);
         mkdir($worktree, 0700);

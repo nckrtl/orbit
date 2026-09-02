@@ -36,6 +36,9 @@ final readonly class ProofPlan
     /** Optional: repository files or directories read outside the default runtime policy. */
     private const string INPUTS = 'inputs';
 
+    /** Optional: collect complete file-level PHP observations during proof actions. */
+    private const string OBSERVED_INPUTS = 'observed_inputs';
+
     private const array ACTION_KEYS = ['id', 'node', 'argv', 'timeout_seconds'];
 
     /**
@@ -51,6 +54,7 @@ final readonly class ProofPlan
         public TopologyEndState $endsWith,
         public array $fixtureIssues,
         public array $inputs,
+        public bool $observedInputs,
     ) {}
 
     public static function fromFile(string $path): self
@@ -110,6 +114,14 @@ final readonly class ProofPlan
             $inputs = self::inputs($plan[self::INPUTS]);
             unset($plan[self::INPUTS]);
         }
+        $observedInputs = false;
+        if (array_key_exists(self::OBSERVED_INPUTS, $plan)) {
+            if (! is_bool($plan[self::OBSERVED_INPUTS])) {
+                throw new InvalidArgumentException('The proof plan key observed_inputs must be a boolean.');
+            }
+            $observedInputs = $plan[self::OBSERVED_INPUTS];
+            unset($plan[self::OBSERVED_INPUTS]);
+        }
         // Removing a node changes the topology the proof ran on, whatever the plan says.
         $mutates = $mutates || $endsWith->declaresAbsence();
         $keys = array_keys($plan);
@@ -119,7 +131,7 @@ final readonly class ProofPlan
         if ($keys !== $expected) {
             throw new InvalidArgumentException(
                 'The proof plan must have exactly the keys setup and acceptance, '
-                .'plus optional mutates, ends_with, fixture_issues, and inputs.',
+                .'plus optional mutates, ends_with, fixture_issues, inputs, and observed_inputs.',
             );
         }
         $sections = [];
@@ -139,7 +151,7 @@ final readonly class ProofPlan
         $setup = self::actions('setup', $sections['setup'], $ids);
         $acceptance = self::actions('acceptance', $sections['acceptance'], $ids);
 
-        return new self($setup, $acceptance, $mutates, $endsWith, $fixtureIssues, $inputs);
+        return new self($setup, $acceptance, $mutates, $endsWith, $fixtureIssues, $inputs, $observedInputs);
     }
 
     /**
@@ -248,6 +260,9 @@ final readonly class ProofPlan
         }
         if ($this->inputs !== []) {
             $plan['inputs'] = $this->inputs;
+        }
+        if ($this->observedInputs) {
+            $plan['observed_inputs'] = true;
         }
 
         return $plan;

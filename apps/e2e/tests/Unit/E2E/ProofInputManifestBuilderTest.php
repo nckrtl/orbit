@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\E2E\Git\GitRepository;
 use App\E2E\ProofInputManifestBuilder;
 use App\E2E\StaticProofInputPolicy;
+use App\E2E\Value\ObservedPhpInputs;
 use App\E2E\Value\ProofPlan;
 use Illuminate\Container\Container;
 use Illuminate\Process\Factory as ProcessFactory;
@@ -80,6 +81,51 @@ function proofManifestBuilder(): ProofInputManifestBuilder
 }
 
 describe('ProofInputManifestBuilder', function (): void {
+    it('replaces broad ordinary PHP source with feature and complete observed inputs', function (): void {
+        $fixture = proofManifestRepository();
+        $plan = ProofPlan::fromArray([
+            ...$fixture['plan']->toArray(),
+            'observed_inputs' => true,
+        ]);
+        $surface = static fn (string $role, string $type): array => [
+            'role' => $role,
+            'process_type' => $type,
+            'processes' => [[
+                'id' => str_repeat($role === 'gateway' ? ($type === 'fpm' ? '3' : '2') : '1', 32),
+                'started_at' => '2026-09-03T10:00:00.000001Z',
+                'finished_at' => '2026-09-03T10:00:00.000002Z',
+            ]],
+            'paths' => ['apps/cli/app/base.php'],
+        ];
+        $observed = new ObservedPhpInputs(
+            [
+                ['role' => 'app-dev', 'php_version' => '8.5.9', 'pcov_version' => '1.0.12'],
+                ['role' => 'gateway', 'php_version' => '8.5.9', 'pcov_version' => '1.0.12'],
+            ],
+            [
+                'setup' => [$surface('app-dev', 'cli'), $surface('gateway', 'cli'), $surface('gateway', 'fpm')],
+                'acceptance' => [$surface('app-dev', 'cli'), $surface('gateway', 'cli'), $surface('gateway', 'fpm')],
+            ],
+        );
+
+        $manifest = proofManifestBuilder()->build(
+            new GitRepository($fixture['root']),
+            $fixture['proved'],
+            $fixture['main'],
+            'ORB-99',
+            'proofs/ORB-99.json',
+            $plan,
+            $observed,
+        );
+
+        expect(array_column($manifest->staticInputs, 'path'))
+            ->not
+            ->toContain('apps/cli/app/base.php')
+            ->toContain('apps/cli/app/feature.php')
+            ->and($manifest->inputPaths())
+            ->toHaveKey('apps/cli/app/base.php');
+    });
+
     it('records runtime, proof-contract, fixture, mode, and feature-path inputs canonically', function (): void {
         $fixture = proofManifestRepository();
         $manifest = proofManifestBuilder()->build(

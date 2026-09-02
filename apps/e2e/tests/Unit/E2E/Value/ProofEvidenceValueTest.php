@@ -10,7 +10,7 @@ use App\E2E\Value\ProofPromotionRecord;
 describe('proof reuse evidence', function (): void {
     it('round-trips canonical immutable manifests and refuses fingerprint tampering', function (): void {
         $manifest = new ProofInputManifest(
-            1,
+            2,
             str_repeat('a', 40),
             str_repeat('b', 40),
             ['apps/cli/app/Feature.php'],
@@ -23,7 +23,15 @@ describe('proof reuse evidence', function (): void {
             'proofs/ORB-99.json',
             [],
             [],
-            ['static_classification' => true, 'proof_contract' => true, 'checkout_literals' => true],
+            null,
+            [
+                'static_classification' => true,
+                'proof_contract' => true,
+                'checkout_literals' => true,
+                'observed_processes' => true,
+                'observed_paths' => true,
+                'pcov_cleanup' => true,
+            ],
         );
 
         expect(ProofInputManifest::fromArray($manifest->toArray())->toArray())->toBe($manifest->toArray());
@@ -70,6 +78,30 @@ describe('proof reuse evidence', function (): void {
                 '2026-09-02T10:00:00Z',
             ))
             ->toThrow(InvalidArgumentException::class, 'decision is invalid');
+    });
+
+    it('binds unrelated runtime equivalence to candidate convergence', function (): void {
+        $report = new ProofEquivalenceReport(
+            str_repeat('a', 40),
+            str_repeat('b', 40),
+            str_repeat('c', 40),
+            str_repeat('d', 64),
+            str_repeat('e', 64),
+            ProofEquivalenceResult::Equivalent,
+            [[
+                'path' => 'apps/cli/app/Unrelated.php',
+                'previous_path' => null,
+                'change' => 'content-changed',
+                'classification' => 'unrelated-runtime',
+            ]],
+            'candidate-convergence',
+            'run-candidate-convergence',
+            [],
+            '2026-09-02T10:00:00Z',
+        );
+
+        expect(ProofEquivalenceReport::fromArray($report->toArray())->promotionPath)
+            ->toBe('candidate-convergence');
     });
 
     it('records proved, accepted, merged, and runtime lineage for retained promotion', function (): void {

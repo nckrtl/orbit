@@ -6,6 +6,7 @@ use App\E2E\HostCapacity;
 use App\E2E\IncusHost;
 use App\E2E\IncusNetworkLifecycle;
 use App\E2E\IssueState;
+use App\E2E\ObservedPhpInputCollector;
 use App\E2E\ProofFixtureStager;
 use App\E2E\ProofInputManifestBuilder;
 use App\E2E\State\AtomicJsonStore;
@@ -124,6 +125,7 @@ function topologyProofRunnerWithLegacyGeneration(
         $operation,
         TopologySnapshotIdentity::primary(),
         new ProofInputManifestBuilder(new StaticProofInputPolicy),
+        new ObservedPhpInputCollector($host),
         $repositoryRoot,
         fn () => attemptId(),
     );

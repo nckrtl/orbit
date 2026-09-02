@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Console\Commands\Topology\AcquireCommand;
+use App\Console\Commands\Topology\CandidateCommand;
 use App\Console\Commands\Topology\EquivalenceCommand;
 use App\Console\Commands\Topology\ExecCommand;
 use App\Console\Commands\Topology\ProveCommand;
@@ -42,6 +43,7 @@ describe('topology commands', function () {
             new VerifyCommand()->getName(),
             new ProveCommand()->getName(),
             new EquivalenceCommand()->getName(),
+            new CandidateCommand()->getName(),
             new StatusCommand()->getName(),
             new ReleaseCommand()->getName(),
         ])->toBe([
@@ -52,6 +54,7 @@ describe('topology commands', function () {
             'topology:verify',
             'topology:prove',
             'topology:equivalence',
+            'topology:candidate',
             'topology:status',
             'topology:release',
         ]);
@@ -75,6 +78,8 @@ describe('topology commands', function () {
             ->and($arguments(new ProveCommand))
             ->toBe(['issue'])
             ->and($arguments(new EquivalenceCommand))
+            ->toBe(['issue'])
+            ->and($arguments(new CandidateCommand))
             ->toBe(['issue'])
             ->and($arguments(new StatusCommand))
             ->toBe(['issue'])
@@ -115,6 +120,12 @@ describe('topology commands', function () {
                     ->getDefinition()
                     ->hasOption('proof'),
             )
+            ->toBeTrue()
+            ->and(
+                new ReleaseCommand()
+                    ->getDefinition()
+                    ->hasOption('candidate'),
+            )
             ->toBeTrue();
 
         foreach ([
@@ -124,6 +135,7 @@ describe('topology commands', function () {
             new VerifyCommand,
             new ProveCommand,
             new EquivalenceCommand,
+            new CandidateCommand,
             new StatusCommand,
             new ReleaseCommand,
         ] as $command) {
@@ -233,6 +245,35 @@ describe('topology commands', function () {
                 'proof_attempt_id' => $proof->value,
                 'proved' => false,
             ]);
+    });
+
+    it('reports candidate convergence beside retained proof and discovery', function (): void {
+        ['worktree' => $worktree] = commandPrimaryFixture('ORB-7');
+        $state = IssueState::forWorktree('ORB-7', $worktree);
+        $discovery = new AttemptId(str_repeat('a', 32));
+        $proof = new AttemptId(str_repeat('b', 32));
+        $candidate = new AttemptId(str_repeat('c', 32));
+        $state->writeAttempt($discovery, AttemptPurpose::Discovery, new OperationId(str_repeat('d', 32)));
+        $state->writeAttempt($proof, AttemptPurpose::Proof, new OperationId(str_repeat('e', 32)));
+        $state->writeAttempt($candidate, AttemptPurpose::CandidateConvergence, new OperationId(str_repeat('f', 32)));
+
+        $this
+            ->artisan('topology:status', ['issue' => 'ORB-7'])
+            ->expectsOutput('discovery+proof+candidate-convergence '.$candidate->value)
+            ->assertSuccessful();
+    });
+
+    it('refuses selecting proof and candidate release together', function (): void {
+        commandPrimaryFixture();
+
+        $this
+            ->artisan('topology:release', [
+                'issue' => 'NCK-12',
+                '--proof' => true,
+                '--candidate' => true,
+            ])
+            ->expectsOutputToContain('Select only one of --proof or --candidate.')
+            ->assertFailed();
     });
 
     it('refuses exec and sync on a proved attempt before touching Incus', function () {

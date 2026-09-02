@@ -48,7 +48,11 @@ final readonly class TopologyReleaser
             }
             $purpose ??= $state->hasAttempt(AttemptPurpose::Discovery)
                 ? AttemptPurpose::Discovery
-                : AttemptPurpose::Proof;
+                : (
+                    $state->hasAttempt(AttemptPurpose::Proof)
+                        ? AttemptPurpose::Proof
+                        : AttemptPurpose::CandidateConvergence
+                );
             $attempt = $state->attemptId($purpose);
             $target = TopologyTarget::feature($request->issue, $attempt);
             [$released, $absent] = $this->deleteResources($target);

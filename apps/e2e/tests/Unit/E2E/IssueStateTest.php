@@ -148,6 +148,35 @@ describe('IssueState', function () {
             ->toBe('diagnosis');
     });
 
+    it('keeps candidate convergence independent from retained proof and discovery', function (): void {
+        $worktree = temporaryPath('orbit-issue-state-', 4);
+        mkdir($worktree, 0700);
+        $state = IssueState::forWorktree('ORB-7', $worktree);
+        $discovery = new AttemptId(str_repeat('a', 32));
+        $proof = new AttemptId(str_repeat('b', 32));
+        $candidate = new AttemptId(str_repeat('c', 32));
+        $state->writeAttempt($discovery, AttemptPurpose::Discovery, new OperationId(str_repeat('d', 32)));
+        $state->writeAttempt($proof, AttemptPurpose::Proof, new OperationId(str_repeat('e', 32)));
+        $state->writeAttempt($candidate, AttemptPurpose::CandidateConvergence, new OperationId(str_repeat('f', 32)));
+        $state->writeTopology(issueStateTopology('ORB-7', $candidate, AttemptPurpose::CandidateConvergence));
+
+        expect($state->attemptId(AttemptPurpose::CandidateConvergence)->value)
+            ->toBe($candidate->value)
+            ->and($state->requireTopology(AttemptPurpose::CandidateConvergence)->purpose)
+            ->toBe(AttemptPurpose::CandidateConvergence)
+            ->and(fn () => $state->attempt())
+            ->toThrow(RuntimeException::class, 'ORB-7 has multiple attempts; select one.');
+
+        $state->forgetAttempt(AttemptPurpose::CandidateConvergence);
+
+        expect($state->hasAttempt(AttemptPurpose::CandidateConvergence))
+            ->toBeFalse()
+            ->and($state->hasAttempt(AttemptPurpose::Proof))
+            ->toBeTrue()
+            ->and($state->hasAttempt(AttemptPurpose::Discovery))
+            ->toBeTrue();
+    });
+
     it('rejects a lease or record that names another issue or attempt', function () {
         $worktree = temporaryPath('orbit-issue-state-', 4);
         mkdir($worktree, 0700);

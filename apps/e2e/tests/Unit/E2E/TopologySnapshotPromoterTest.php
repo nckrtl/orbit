@@ -102,7 +102,7 @@ function promotableFixture(bool $mainHoldsCandidate = true, AttemptPurpose $purp
     $plan = ProofPlan::fromFile($planPath);
     if ($purpose === AttemptPurpose::Proof) {
         $manifest = new ProofInputManifest(
-            1,
+            2,
             $candidate,
             $candidate,
             [],
@@ -115,7 +115,15 @@ function promotableFixture(bool $mainHoldsCandidate = true, AttemptPurpose $purp
             'proofs/NCK-123.json',
             [],
             [],
-            ['static_classification' => true, 'proof_contract' => true, 'checkout_literals' => true],
+            null,
+            [
+                'static_classification' => true,
+                'proof_contract' => true,
+                'checkout_literals' => true,
+                'observed_processes' => true,
+                'observed_paths' => true,
+                'pcov_cleanup' => true,
+            ],
         );
         $state->writeProofInputManifest($manifest->fingerprint(), $manifest->toArray());
         $state->writeProof([

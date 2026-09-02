@@ -83,6 +83,11 @@ final readonly class ProofEquivalenceReport
             ProofInputClassification::ProofContract->value,
         ]) !== [];
         $hasIndeterminate = in_array(ProofInputClassification::Indeterminate->value, $classifications, true);
+        $hasUnrelatedRuntime = in_array(
+            ProofInputClassification::UnrelatedRuntime->value,
+            $classifications,
+            true,
+        );
         $decisionValid = match ($result) {
             ProofEquivalenceResult::Exact => $changedPaths === [] && $errors === [],
             ProofEquivalenceResult::Equivalent => $changedPaths !== []
@@ -92,16 +97,25 @@ final readonly class ProofEquivalenceReport
             ProofEquivalenceResult::Stale => $hasMaterial && $errors === [],
             ProofEquivalenceResult::Indeterminate => $errors !== [] || $hasIndeterminate,
         };
-        $expectedNextAction = match ($result) {
-            ProofEquivalenceResult::Exact, ProofEquivalenceResult::Equivalent => 'review-exact-head',
-            ProofEquivalenceResult::Stale => 'release-proof-and-run-complete-reproof',
-            ProofEquivalenceResult::Indeterminate => 'resolve-equivalence-failure-and-run-complete-reproof',
+        $expectedNextAction = match (true) {
+            $result === ProofEquivalenceResult::Equivalent && $hasUnrelatedRuntime => 'run-candidate-convergence',
+            in_array($result, [ProofEquivalenceResult::Exact, ProofEquivalenceResult::Equivalent], true)
+                => 'review-exact-head',
+            $result === ProofEquivalenceResult::Stale => 'release-proof-and-run-complete-reproof',
+            $result === ProofEquivalenceResult::Indeterminate => 'resolve-equivalence-failure-and-run-complete-reproof',
+            default => throw new \LogicException('The proof equivalence result is unsupported.'),
         };
+        $expectedPromotionPath = $result === ProofEquivalenceResult::Equivalent && $hasUnrelatedRuntime
+            ? 'candidate-convergence'
+            : (
+                in_array($result, [ProofEquivalenceResult::Exact, ProofEquivalenceResult::Equivalent], true)
+                    ? 'retained-proof'
+                    : null
+            );
         if (
             $promotionPath !== null
-            && $promotionPath !== 'retained-proof'
-            || in_array($result, [ProofEquivalenceResult::Exact, ProofEquivalenceResult::Equivalent], true)
-                !== ($promotionPath !== null)
+            && ! in_array($promotionPath, ['retained-proof', 'candidate-convergence'], true)
+            || $promotionPath !== $expectedPromotionPath
             || $nextAction !== $expectedNextAction
             || preg_match('/\A\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\z/D', $recordedAt) !== 1
             || $orderedChanges !== $sortedChanges
