@@ -49,7 +49,11 @@ accepted ADR, or mixes product work with a harness change.
    action must exit `0`. On diagnosis, inspect the failed proof explicitly with
    `shell --proof` or `exec --proof`, continue development on discovery, then
    `release <ISSUE> --proof` before proving again. Leave a successful proof
-   unchanged through review and merge.
+   unchanged through review and merge. If a later committed correction changes
+   only documentation, `apps/docs`, or instructions, rerun its applicable
+   checks and run `bin/e2e-topology equivalence <ISSUE>`. Retain the proof only
+   for `exact` or `equivalent`; `stale` or `indeterminate` requires release and
+   a complete fresh proof.
 7. **Open the pull request.** Push and use a short body with what changed, why,
    and one proof line: `Proved with proofs/<ISSUE>.json at <sha>` or
    `Automated tests only`. Do not start review until every declared proof

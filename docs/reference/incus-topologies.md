@@ -5,8 +5,10 @@ Incus provides disposable development and proof topologies for issues marked
 [ADR 0005](../decisions/0005-rolling-incus-development-topology.md) (prepared
 topology snapshot, refresh, exact cleanup) and
 [ADR 0006](../decisions/0006-topology-led-feature-development.md) (separate
-discovery, fresh proof, immutable proved attempts). Automated-only work stays
-independent of Incus.
+discovery, fresh proof, immutable proved attempts), and
+[ADR 0015](../decisions/0015-retain-incus-proof-by-recorded-input-equivalence.md)
+(recorded-input equivalence for later candidate heads). Automated-only work
+stays independent of Incus.
 
 A profile is registered only when the repository provides and verifies all of
 these exact-ID operations:
@@ -29,12 +31,14 @@ The harness keeps no state outside the repository checkouts:
 - `<worktree>/.e2e/` (gitignored) holds that issue's discovery in
   `attempt.json` and `topology.json`, its separate proof in
   `proof-attempt.json` and `proof-topology.json`, `proof.json` (the last proof
-  result), and `log` (one line per harness command). They die with the
-  worktree.
+  result), immutable manifests under `proof-inputs/`, immutable reports under
+  `equivalence/`, the latest `equivalence.json` pointer, and `log` (one line per
+  harness command). They die with the worktree.
 - `<primary checkout>/.e2e/` (gitignored) holds the state of the one persistent
   topology snapshot (see [Topology snapshot](#topology-snapshot)):
   `topology-snapshot/promoted.json`,
   the recorded generations under `topology-snapshot/generations/`, a
+  retained-proof lineage record under `topology-snapshot/promotions/`, a
   `topology-snapshot/corrupt.json` marker while recovery is required, and the
   host locks under `locks/`.
 - Capacity is read from `incus list`: the harness-owned VMs that exist and the
@@ -114,6 +118,7 @@ refuse a stale promoted topology snapshot.
 | `bin/e2e-topology sync ISSUE` | Re-verify the mounted source identity of the discovery attempt |
 | `bin/e2e-topology verify ISSUE` | Verify discovery |
 | `bin/e2e-topology prove ISSUE --plan=PATH` | Prove the worktree HEAD (clean tree) on a fresh proof attempt while discovery remains active; the plan defaults to `proofs/ISSUE.json` (about 33 s) |
+| `bin/e2e-topology equivalence ISSUE --plan=PATH` | Compare the clean worktree HEAD with an immutable retained proof; write `exact`, `equivalent`, `stale`, or `indeterminate` evidence (the plan defaults to `proofs/ISSUE.json`) |
 | `bin/e2e-topology status ISSUE` | Report discovery and proof together from `<worktree>/.e2e/` without touching infrastructure |
 | `bin/e2e-topology release ISSUE [--proof]` | Release discovery by default, or explicitly the proof, verify absence, and sweep orphaned harness networks (`networks_reaped`) |
 | `bin/e2e-topology-snapshot status` | Show the promoted topology snapshot generation |
@@ -195,12 +200,20 @@ directory stages an empty inventory.
 
 `prove --json` prints a compact result: `status` (`proved` or `diagnosis`),
 `issue`, `attempt_id`, `candidate_sha`, `plan_sha256` (the normalized complete
-plan fingerprint), `actions` (one `{"id","node","exit_code"}` per action that
-ran), and `recorded_at`. A plan that declared the topology it
+plan fingerprint), `manifest_sha256` (for `proved` results), `actions` (one
+`{"id","node","exit_code"}` per action that ran), and `recorded_at`. A plan
+that declared the topology it
 ends with adds `ends_with` and `skipped_probes`. A `diagnosis` adds `error` (the
 failed phase and message) and, when a plan action failed, `failed_action`:
 `{"id","node","exit_code","stdout_tail","stderr_tail"}` (each tail keeps the
 final 4096 bytes). The same object is written to `<worktree>/.e2e/proof.json`.
+A proved result's manifest is stored immutably as
+`<worktree>/.e2e/proof-inputs/<manifest_sha256>.json`. It records the policy
+version, proved and included-main SHAs, feature runtime paths, every static
+runtime and proof-contract blob with its Git mode, and completed safety checks.
+The harness also pins the proved commit under `refs/orbit/e2e-proof/` until the
+proof is released, so an equivalent rebase cannot make its Git evidence
+unreachable.
 The proved topology stays immutable through review and merge. Promotion makes
 it the new topology snapshot generation, then releases both proof and retained
 discovery.
@@ -210,9 +223,16 @@ The proof plan file has this shape:
 ```json
 {
   "setup": [{"id": "text", "node": "gateway", "argv": [], "timeout_seconds": 60}],
-  "acceptance": [{"id": "text", "node": "app-dev", "argv": [], "timeout_seconds": 60}]
+  "acceptance": [{"id": "text", "node": "app-dev", "argv": [], "timeout_seconds": 60}],
+  "inputs": ["path/to/additional-input"]
 }
 ```
+
+`inputs` is optional. It declares repository files or directories that proof
+actions read outside the static runtime policy and active fixture directories.
+The normalized list is part of the plan fingerprint. A literal
+`/home/orbit/orbit/...` action argument must resolve to a static runtime path or
+a declared input; otherwise `prove` fails before it creates an attempt.
 
 Every setup and acceptance action must exit `0`. Every nonzero exit makes the
 proof a diagnosis and stops later actions. This includes timeout exits `124`
@@ -275,6 +295,39 @@ investigation. Discovery remains active and stays the default development
 target. Use `shell --proof` or `exec --proof` for explicit unprivileged
 debugging of the failed proof, then `release --proof` before the next proof.
 A proved attempt rejects all proof-targeted shell and command execution.
+
+### Retaining proof after a correction
+
+The phase-one policy treats CLI, Gateway, SDK, harness, E2E entrypoints, the
+active plan, active and referenced fixtures, and declared `inputs` as proof
+inputs. Maintained documentation, `apps/docs`, agent instructions, READMEs,
+tests, and non-executing tooling configuration are non-runtime. A new path
+without an explicit classification is indeterminate.
+
+After committing a later candidate, run:
+
+```bash
+bin/e2e-topology equivalence ISSUE --json
+```
+
+The command requires a clean head containing current `origin/main`, verifies
+the retained proof, plan, immutable manifest, topology identity, and static
+inventory, then compares the complete Git trees. Its immutable report names
+the proved SHA, accepted SHA, included-main SHA, every add, delete, rename,
+content, mode, executable-bit, or type change, each path classification, and
+the required next action:
+
+- `exact`: the SHA or full Git tree is unchanged; review the exact current head.
+- `equivalent`: every change is non-runtime; retain the proof and review the
+  exact current head.
+- `stale`: a runtime or proof-contract input changed; release the proof and run
+  a complete fresh proof.
+- `indeterminate`: a classification, identity, current-main, manifest, plan, or
+  completeness gate failed; resolve it and run a complete fresh proof.
+
+PCOV observations and candidate-only convergence are not enabled in this
+phase. Any runtime drift, including unrelated runtime changes from `main`,
+requires complete reproof.
 
 ## Prepared-state limits
 
@@ -344,14 +397,17 @@ sweep and legacy retirement protect the current snapshot and its bounded
 pre-rename identity.
 
 After a merge, `bin/e2e-topology-snapshot promote ISSUE` makes the reviewer's
-proved topology the new generation instead of rebuilding it:
+retained proved topology the new generation instead of rebuilding it:
 
 1. It refuses, without touching Incus, when the issue has no `proved` proof,
-   when the recorded normalized plan fingerprint differs from the current
-   plan, when any declared action is missing or has a nonzero exit, when the
-   plan (`--plan`, default `proofs/ISSUE.json`) carries `"mutates": true`, when
-   `main` in the primary checkout does not hold the proved candidate (same
-   commit, or same tree), or when the candidate changes the cold base.
+   when the recorded normalized plan or immutable input manifest is missing,
+   incomplete, or mismatched, when any declared action is missing or has a
+   nonzero exit, or when the plan (`--plan`, default `proofs/ISSUE.json`)
+   carries `"mutates": true`. The exact path accepts the proved SHA or an
+   identical tree. A different accepted tree additionally requires an
+   `equivalent` report bound to that exact accepted head. The primary `main`
+   tree must equal the accepted tree, and the proved, accepted, and merged
+   prepared-runtime fingerprints must match. Cold-base changes are refused.
 2. Under the topology snapshot refresh, generation, and issue locks it stops
    the three proved VMs and copies each one (`incus copy --instance-only`) to
    `<current-instance>-next` in the topology snapshot. It uses
@@ -360,10 +416,12 @@ proved topology the new generation instead of rebuilding it:
    instances are untouched until here. A failure deletes the copies and
    leaves the proved topology stopped.
 3. It deletes each old topology snapshot instance and renames its copy into
-   place. It then writes the manifest (`main_sha` = the proved candidate, the
-   fingerprint of that commit with the Laravel pin the proof converged with,
-   and the old generation as `previous_generation_id`) and forgets the
-   manifests of the replaced instances' snapshots.
+   place. It then writes the generation manifest (`main_sha` = the merged SHA,
+   the matching runtime fingerprint with the Laravel pin the proof converged
+   with, and the old generation as `previous_generation_id`), records immutable
+   promotion lineage with the proved, accepted, and merged SHAs plus manifest,
+   equivalence, and runtime fingerprints, and forgets the manifests of the
+   replaced instances' snapshots.
 4. It releases the proved topology and retained discovery, then prints the
    generation and all released resources.
 

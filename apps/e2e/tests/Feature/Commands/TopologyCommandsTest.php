@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Console\Commands\Topology\AcquireCommand;
+use App\Console\Commands\Topology\EquivalenceCommand;
 use App\Console\Commands\Topology\ExecCommand;
 use App\Console\Commands\Topology\ProveCommand;
 use App\Console\Commands\Topology\ReleaseCommand;
@@ -40,6 +41,7 @@ describe('topology commands', function () {
             new SyncCommand()->getName(),
             new VerifyCommand()->getName(),
             new ProveCommand()->getName(),
+            new EquivalenceCommand()->getName(),
             new StatusCommand()->getName(),
             new ReleaseCommand()->getName(),
         ])->toBe([
@@ -49,6 +51,7 @@ describe('topology commands', function () {
             'topology:sync',
             'topology:verify',
             'topology:prove',
+            'topology:equivalence',
             'topology:status',
             'topology:release',
         ]);
@@ -70,6 +73,8 @@ describe('topology commands', function () {
             ->and($arguments(new VerifyCommand))
             ->toBe(['issue'])
             ->and($arguments(new ProveCommand))
+            ->toBe(['issue'])
+            ->and($arguments(new EquivalenceCommand))
             ->toBe(['issue'])
             ->and($arguments(new StatusCommand))
             ->toBe(['issue'])
@@ -118,6 +123,7 @@ describe('topology commands', function () {
             new SyncCommand,
             new VerifyCommand,
             new ProveCommand,
+            new EquivalenceCommand,
             new StatusCommand,
             new ReleaseCommand,
         ] as $command) {

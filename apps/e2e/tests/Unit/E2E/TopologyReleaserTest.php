@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\E2E\Git\GitRepository;
 use App\E2E\IncusHost;
 use App\E2E\IncusNetworkLifecycle;
 use App\E2E\IssueState;
@@ -36,6 +37,14 @@ function fakeReleaseHost(TopologyTarget $target, array $metadata, array &$comman
         $command = $process->command;
         assert(is_array($command));
         $commands[] = implode(' ', array_slice($command, 3));
+        if (($command[0] ?? null) === 'git') {
+            $gitCommand = ['git', '-C', $process->path ?? getcwd(), ...array_slice($command, 1)];
+            $output = [];
+            $exitCode = 0;
+            exec(implode(' ', array_map(escapeshellarg(...), $gitCommand)).' 2>&1', $output, $exitCode);
+
+            return Process::result(implode("\n", $output), exitCode: $exitCode);
+        }
         if (($command[0] ?? null) === 'python3') {
             return Process::result('{"changed":true}');
         }
@@ -189,6 +198,53 @@ describe('TopologyReleaser', function () {
             ->toBeFalse()
             ->and($state->proof()['status'] ?? null)
             ->toBe('diagnosis');
+    });
+
+    it('removes the successful proof commit pin when that proof is released', function (): void {
+        $worktree = temporaryPath('orbit-release-worktree-', 4);
+        mkdir($worktree, 0700);
+        file_put_contents($worktree.'/.gitignore', "/.e2e/\n");
+        Process::run(['git', '-C', $worktree, 'init', '--quiet', '-b', 'codex/orb-99-release'])->throw();
+        Process::run(['git', '-C', $worktree, 'config', 'user.email', 'orbit@example.test'])->throw();
+        Process::run(['git', '-C', $worktree, 'config', 'user.name', 'Orbit'])->throw();
+        Process::run(['git', '-C', $worktree, 'add', '.'])->throw();
+        Process::run(['git', '-C', $worktree, 'commit', '--quiet', '-m', 'proved'])->throw();
+        $repository = new GitRepository($worktree);
+        $proved = $repository->commit();
+        $attempt = new AttemptId(str_repeat('a', 32));
+        $target = TopologyTarget::feature('ORB-99', $attempt);
+        $state = IssueState::forWorktree('ORB-99', $worktree);
+        $state->writeAttempt($attempt, AttemptPurpose::Proof, new OperationId(str_repeat('c', 32)));
+        $state->writeProof([
+            'status' => 'proved',
+            'attempt_id' => $attempt->value,
+            'manifest_sha256' => str_repeat('d', 64),
+        ]);
+        $repository->pinProof('ORB-99', $attempt, $proved);
+        $commands = [];
+        fakeReleaseHost(
+            $target,
+            ['user.orbit.e2e.issue' => 'ORB-99', 'user.orbit.e2e.attempt' => $attempt->value],
+            $commands,
+        );
+
+        releaserForTest(new StatePaths(temporaryPath('orbit-release-host-', 4)))
+            ->release(
+                new TopologyRequest('ORB-99', $worktree),
+                AttemptPurpose::Proof,
+            );
+        $output = [];
+        $exitCode = 0;
+        exec(implode(' ', array_map(escapeshellarg(...), [
+            'git',
+            '-C',
+            $worktree,
+            'show-ref',
+            '--verify',
+            'refs/orbit/e2e-proof/orb-99/'.$attempt->value,
+        ])).' 2>/dev/null', $output, $exitCode);
+
+        expect($exitCode)->not->toBe(0);
     });
 
     it('refuses a VM that another attempt owns and names an absent attempt', function () {

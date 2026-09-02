@@ -335,6 +335,7 @@
             "kind": "reference",
             "components": [
                 "apps/cli",
+                "apps/docs",
                 "apps/e2e"
             ],
             "concepts": [
@@ -346,7 +347,8 @@
             ],
             "governing_adrs": [
                 "0005",
-                "0006"
+                "0006",
+                "0015"
             ]
         },
         {

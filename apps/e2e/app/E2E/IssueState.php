@@ -21,7 +21,7 @@ use RuntimeException;
  * harness command. Legacy single proof leases remain readable and are migrated
  * when discovery is acquired.
  *
- * @mago-expect lint:cyclomatic-complexity,too-many-methods One state boundary owns every file under `.e2e/`.
+ * @mago-expect lint:cyclomatic-complexity,kan-defect,too-many-methods One state boundary owns every file under `.e2e/`.
  */
 final readonly class IssueState
 {
@@ -34,6 +34,8 @@ final readonly class IssueState
     public const string PROOF_TOPOLOGY = 'proof-topology.json';
 
     public const string PROOF = 'proof.json';
+
+    public const string EQUIVALENCE = 'equivalence.json';
 
     private AtomicJsonStore $store;
 
@@ -170,6 +172,47 @@ final readonly class IssueState
         $this->store->write(self::PROOF, $result);
     }
 
+    /** @return array<array-key, mixed>|null */
+    public function proofInputManifest(string $fingerprint): ?array
+    {
+        $this->assertFingerprint($fingerprint);
+
+        return $this->store->read('proof-inputs/'.$fingerprint.'.json');
+    }
+
+    /** @param array<array-key, mixed> $manifest */
+    public function writeProofInputManifest(string $fingerprint, array $manifest): void
+    {
+        $this->writeImmutable('proof-inputs/'.$fingerprint.'.json', $manifest);
+    }
+
+    /** @return array<array-key, mixed>|null */
+    public function equivalence(): ?array
+    {
+        $pointer = $this->store->read(self::EQUIVALENCE);
+        if ($pointer === null) {
+            return null;
+        }
+        if (array_keys($pointer) !== ['fingerprint'] || ! is_string($pointer['fingerprint'])) {
+            throw new RuntimeException('The equivalence report pointer is invalid.');
+        }
+        $this->assertFingerprint($pointer['fingerprint']);
+
+        return (
+            $this->store->read('equivalence/'.$pointer['fingerprint'].'.json') ?? throw new RuntimeException(
+                'The equivalence report is missing.',
+            )
+        );
+    }
+
+    /** @param array<array-key, mixed> $report */
+    public function writeEquivalence(string $fingerprint, array $report): void
+    {
+        $this->assertFingerprint($fingerprint);
+        $this->writeImmutable('equivalence/'.$fingerprint.'.json', $report);
+        $this->store->write(self::EQUIVALENCE, ['fingerprint' => $fingerprint]);
+    }
+
     /** A proved attempt stays alive for review; `exec` and `sync` must not change it. */
     public function isProved(): bool
     {
@@ -272,5 +315,24 @@ final readonly class IssueState
         }
         $this->store->delete(self::TOPOLOGY);
         $this->store->delete(self::ATTEMPT);
+    }
+
+    private function assertFingerprint(string $fingerprint): void
+    {
+        if (preg_match('/\A[0-9a-f]{64}\z/D', $fingerprint) !== 1) {
+            throw new RuntimeException('The evidence fingerprint is invalid.');
+        }
+    }
+
+    /** @param array<array-key, mixed> $value */
+    private function writeImmutable(string $path, array $value): void
+    {
+        $existing = $this->store->read($path);
+        if ($existing !== null && $existing !== $value) {
+            throw new RuntimeException('Immutable proof evidence cannot be replaced.');
+        }
+        if ($existing === null) {
+            $this->store->write($path, $value);
+        }
     }
 }
