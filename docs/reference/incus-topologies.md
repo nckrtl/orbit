@@ -13,8 +13,10 @@ these exact-ID operations:
 
 - create a disposable discovery attempt for one Linear issue;
 - open a shell, synchronize, verify, and execute against that attempt;
-- prove the worktree's HEAD commit on a fresh proof attempt;
-- release the attempt's instances, network, and devices; and
+- prove the worktree's HEAD commit on a separate fresh proof attempt while
+  discovery remains available;
+- inspect or release a retained failed proof independently;
+- release the selected attempt's instances, network, and devices; and
 - verify that release completed.
 
 Cleanup removes only the attempt's recorded inventory. There is no reaper: a
@@ -24,10 +26,11 @@ topology lives until `release`, and `bin/worktree-remove` releases it.
 
 The harness keeps no state outside the repository checkouts:
 
-- `<worktree>/.e2e/` (gitignored) holds that issue's attempt: `attempt.json`
-  (the lease: attempt id, purpose, operation), `topology.json` (the attempt
-  record), `proof.json` (the last proof result), and `log` (one line per
-  harness command). It dies with the worktree.
+- `<worktree>/.e2e/` (gitignored) holds that issue's discovery in
+  `attempt.json` and `topology.json`, its separate proof in
+  `proof-attempt.json` and `proof-topology.json`, `proof.json` (the last proof
+  result), and `log` (one line per harness command). They die with the
+  worktree.
 - `<primary checkout>/.e2e/` (gitignored) holds the state of the topology
   snapshot that checkout owns (see [Topology snapshot
   identity](#topology-snapshot-identity)): `topology-snapshot/promoted.json`,
@@ -77,10 +80,10 @@ discovery and proof lifecycle passed live acceptance on 2026-08-30 (ADR 0006).
 | Checkout roles | `gateway`, `app-dev` (guest path `/home/orbit/orbit`) |
 | Prepared image | Base image `orbit-base-ubuntu-26.04-runtime`; coordinated snapshots `main-<generation-id>` on `orbit-e2e-topology-snapshot-{gateway,app-dev,app-prod}` (the validation clone: `orbit-e2e-live-topology-snapshot-*`) |
 | Addresses | Incus `.10/.11/.12` on `oe-<issue-hash>`; WireGuard `10.44.0.1/.2/.3` |
-| Attempt purpose | `discovery` or `proof`; one active attempt per issue |
+| Attempt purpose | At most one `discovery` and one separate `proof` per issue |
 | Proof status | `proved` or `diagnosis` |
-| State | `<worktree>/.e2e/attempt.json`, `topology.json`, `proof.json`, `log` |
-| Lifetime | Until `bin/e2e-topology release ISSUE` or `bin/worktree-remove` |
+| State | Discovery: `attempt.json`, `topology.json`; proof: `proof-attempt.json`, `proof-topology.json`; result: `proof.json`; commands: `log` |
+| Lifetime | Discovery lasts through development and proof; a failed proof lasts through inspection; promotion or `bin/worktree-remove` releases both |
 
 Issue IDs match `[A-Z][A-Z0-9]{1,9}-[1-9][0-9]{0,8}`.
 
@@ -95,8 +98,9 @@ topologies.
 
 ## Command surface
 
-Every command takes the issue only; the attempt is whatever
-`<worktree>/.e2e/` names. The worktree is found at
+Every command takes the issue only. Development commands target discovery by
+default; `--proof` explicitly selects the retained proof where supported. The
+worktree is found at
 `<primary>/.worktrees/<issue-lowercase>-*` (exactly one) or given with
 `--worktree=PATH`. Every command accepts `--json`. `acquire` and `prove`
 refuse a stale promoted topology snapshot.
@@ -104,28 +108,28 @@ refuse a stale promoted topology snapshot.
 | Command | Purpose |
 | --- | --- |
 | `bin/e2e-topology acquire ISSUE WORKTREE` | Create a discovery attempt on the mounted worktree (about 21 to 23 s) |
-| `bin/e2e-topology shell ISSUE ROLE` | Interactive login shell as `orbit` on one role, in `/home/orbit/orbit` on the checkout roles, with the `exec` environment |
-| `bin/e2e-topology exec ISSUE ROLE --argv=JSON` | Run one argv vector as the orbit user on one role; `--argv-file=PATH` takes a file holding `{"argv":[...],"stdin":null}` instead (see [Guest commands](#guest-commands)) |
+| `bin/e2e-topology shell ISSUE ROLE [--proof]` | Interactive login shell as `orbit` on discovery, or explicitly on a retained failed proof, with the `exec` environment |
+| `bin/e2e-topology exec ISSUE ROLE --argv=JSON [--proof]` | Run one argv vector as the orbit user on discovery, or explicitly on a retained failed proof; `--argv-file=PATH` takes a file holding `{"argv":[...],"stdin":null}` instead (see [Guest commands](#guest-commands)) |
 | `bin/e2e-topology sync ISSUE` | Re-verify the mounted source identity of the discovery attempt |
-| `bin/e2e-topology verify ISSUE` | Verify the live attempt |
-| `bin/e2e-topology prove ISSUE --plan=PATH` | Prove the worktree HEAD (clean tree) on a fresh proof attempt; the plan defaults to `proofs/ISSUE.json` (about 33 s) |
-| `bin/e2e-topology status ISSUE` | Report the live attempt from `<worktree>/.e2e/` without touching infrastructure |
-| `bin/e2e-topology release ISSUE` | Release the live attempt, verify absence, and sweep orphaned harness networks (`networks_reaped`) |
+| `bin/e2e-topology verify ISSUE` | Verify discovery |
+| `bin/e2e-topology prove ISSUE --plan=PATH` | Prove the worktree HEAD (clean tree) on a fresh proof attempt while discovery remains active; the plan defaults to `proofs/ISSUE.json` (about 33 s) |
+| `bin/e2e-topology status ISSUE` | Report discovery and proof together from `<worktree>/.e2e/` without touching infrastructure |
+| `bin/e2e-topology release ISSUE [--proof]` | Release discovery by default, or explicitly the proof, verify absence, and sweep orphaned harness networks (`networks_reaped`) |
 | `bin/e2e-topology-snapshot status` | Show the promoted topology snapshot generation |
 | `bin/e2e-topology-snapshot fingerprint --main-sha=SHA` | Compute the prepared-state fingerprint |
-| `bin/e2e-topology-snapshot promote ISSUE` | Make the issue's proved topology the topology snapshot generation, then release it (see [Topology snapshot](#topology-snapshot)) |
+| `bin/e2e-topology-snapshot promote ISSUE` | Make the issue's proved topology the topology snapshot generation, then release proof and discovery (see [Topology snapshot](#topology-snapshot)) |
 | `bin/e2e-topology-snapshot refresh --main-sha=SHA` | Fallback: refresh the topology snapshot in place when the fingerprint changed |
 | `bin/e2e-topology-snapshot restore` | Restore the promoted generation and leave it stopped |
 | `bin/e2e-topology-snapshot rebuild --main-sha=SHA` | Recover stale state only when every exact configured topology snapshot VM, `-next` VM, and network is absent (see [Stale manifests and rebuild](#stale-manifests-and-rebuild)) |
 | `bin/e2e-topology-snapshot recover-legacy --main-sha=SHA` | Prove ownership of present schema-4/5 topology snapshot resources, retain recovery evidence, and cold-build a verified replacement |
 | `bin/e2e-live SHA` | Run the feature flow once against a topology snapshot built from the exact candidate in the validation clone (see [Live acceptance suites](#live-acceptance-suites)) |
 
-`bin/worktree-remove ISSUE slug` releases the issue's live topology first when
-`<worktree>/.e2e/attempt.json` exists, then removes the worktree.
+`bin/worktree-remove ISSUE slug` releases a retained proof first and discovery
+second, then removes the worktree.
 
 ### Guest commands
 
-`exec` runs one exact argument vector on one role of a discovery attempt and
+`exec` runs one exact argument vector on one role of discovery by default and
 prints `{"state":"executed","exit_code":N,"stdout":...,"stderr":...}`
 with `--json`. The exit code of the process is the exit code of the guest
 command (`0` maps to success). The vector comes from exactly one source:
@@ -152,8 +156,10 @@ bin/e2e-topology exec NCK-82 app-dev \
 Wrap a pipeline in `["sh","-c","..."]` and root work in `["sudo","..."]`.
 `shell ISSUE ROLE` opens the same environment interactively (`runuser -u
 orbit -- env -C /home/orbit/orbit ... bash -l` through `incus exec`).
-`exec`, `sync`, `verify`, and `release` on an issue with no attempt fail with
-`ISSUE has no active attempt.`; `exec` and `sync` refuse a proved attempt.
+`exec`, `sync`, `verify`, and `release` on an issue with no selected attempt
+fail closed. `exec --proof` and `shell --proof` accept only a retained
+`diagnosis` proof and still run as the `orbit` user. They refuse an immutable
+proved topology. `sync` and `verify` continue to target discovery.
 
 ### Proof fixtures
 
@@ -188,13 +194,16 @@ directory stages an empty inventory.
 ### Proof output
 
 `prove --json` prints a compact result: `status` (`proved` or `diagnosis`),
-`issue`, `attempt_id`, `candidate_sha`, `actions` (one `{"id","node","exit_code"}`
-per action that ran), and `recorded_at`. A plan that declared the topology it
+`issue`, `attempt_id`, `candidate_sha`, `plan_sha256` (the normalized complete
+plan fingerprint), `actions` (one `{"id","node","exit_code"}` per action that
+ran), and `recorded_at`. A plan that declared the topology it
 ends with adds `ends_with` and `skipped_probes`. A `diagnosis` adds `error` (the
 failed phase and message) and, when a plan action failed, `failed_action`:
 `{"id","node","exit_code","stdout_tail","stderr_tail"}` (each tail keeps the
 final 4096 bytes). The same object is written to `<worktree>/.e2e/proof.json`.
-The proved topology stays alive until `release`.
+The proved topology stays immutable through review and merge. Promotion makes
+it the new topology snapshot generation, then releases both proof and retained
+discovery.
 
 The proof plan file has this shape:
 
@@ -262,7 +271,10 @@ from Git (the tree must be clean), verifies clean guest checkout identity,
 converges, runs the declared setup and acceptance checks, and records the
 result. A failure before the VMs hold the candidate rolls the attempt back;
 any later failure records a `diagnosis` and keeps the topology alive for
-investigation. A proved attempt rejects `sync` and `exec`.
+investigation. Discovery remains active and stays the default development
+target. Use `shell --proof` or `exec --proof` for explicit unprivileged
+debugging of the failed proof, then `release --proof` before the next proof.
+A proved attempt rejects all proof-targeted shell and command execution.
 
 ## Prepared-state limits
 
@@ -346,11 +358,12 @@ checkout's.
 After a merge, `bin/e2e-topology-snapshot promote ISSUE` makes the reviewer's
 proved topology the new generation instead of rebuilding it:
 
-1. It refuses, without touching Incus, when the issue's attempt is not a
-   `proved` proof, when the plan (`--plan`, default `proofs/ISSUE.json`)
-   carries `"mutates": true`, when `main` in the primary checkout does not
-   hold the proved candidate (same commit, or same tree), or when the
-   candidate changes the cold base.
+1. It refuses, without touching Incus, when the issue has no `proved` proof,
+   when the recorded normalized plan fingerprint differs from the current
+   plan, when any declared action is missing or has a nonzero exit, when the
+   plan (`--plan`, default `proofs/ISSUE.json`) carries `"mutates": true`, when
+   `main` in the primary checkout does not hold the proved candidate (same
+   commit, or same tree), or when the candidate changes the cold base.
 2. Under the topology snapshot refresh, generation, and issue locks it stops
    the three proved VMs and copies each one (`incus copy --instance-only`) to
    `<current-instance>-next` in the checkout's own topology snapshot. It uses
@@ -363,8 +376,8 @@ proved topology the new generation instead of rebuilding it:
    fingerprint of that commit with the Laravel pin the proof converged with,
    and the old generation as `previous_generation_id`) and forgets the
    manifests of the replaced instances' snapshots.
-4. It releases the proved topology (`bin/e2e-topology release`) and prints the
-   generation and the released resources.
+4. It releases the proved topology and retained discovery, then prints the
+   generation and all released resources.
 
 The replaced instances take every earlier snapshot with them: after a
 promotion only the promoted generation exists on the host. A promotion touches
@@ -489,8 +502,13 @@ workflow safe.
 
 `composer test:live-incus` in `apps/e2e` runs the lifecycle suite under
 `tests/Live` against real Incus resources. It skips unless
-`ORBIT_LIVE_INCUS=1`; the test lists its own `ORBIT_LIVE_*` inputs. Contracts
-the inputs do not spell out:
+`ORBIT_LIVE_INCUS=1`; the test lists its own `ORBIT_LIVE_*` inputs.
+
+These suites are targeted lifecycle regression tools. They are not a universal
+merge gate for every harness issue. Run them only when the issue contract
+explicitly changes or requires the validation-clone lifecycle.
+
+Contracts the inputs do not spell out:
 
 - The suite reads the attempt state under `<ORBIT_LIVE_FEATURE_WORKTREE>/.e2e/`.
 - `ORBIT_LIVE_MAIN_WORKTREE` is the repository the suite runs from, and
@@ -508,8 +526,8 @@ the inputs do not spell out:
 
 ### `bin/e2e-live`
 
-`bin/e2e-live <candidate-sha>` is the proof of a harness issue: one run of the
-feature flow against a topology snapshot built from the candidate.
+`bin/e2e-live <candidate-sha>` runs one targeted feature-flow regression
+against a topology snapshot built from the candidate.
 
 For ORB-94, focused automated fixtures are the complete evidence for the typed
 `app_instances` path, including empty-to-active creation, idempotence,
@@ -557,9 +575,10 @@ The wrapper:
   snapshot inventory did not change;
 - exports every `ORBIT_LIVE_*` input, with `proofs/ACC-1.json` as the
   harness plan, and runs the legacy recovery and lifecycle suites: acquire,
-  sync, exec, release, prove, release, prove again, promote the proved topology
-  into the clone's topology snapshot, acquire from the promoted generation,
-  exec, release; and
+  sync, exec, prove while discovery remains active, release only that proof,
+  prove again, promote the proved topology into the clone's topology snapshot
+  and release both retained topologies, acquire from the promoted generation,
+  exec, and release; and
 - prints one summary line for the pull request body:
   `lifecycle: passed, <assertions> assertions, <seconds> s`.
 

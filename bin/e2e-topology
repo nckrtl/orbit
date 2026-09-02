@@ -8,13 +8,13 @@ if [[ $# -lt 1 ]]; then
 usage: bin/e2e-topology <action> ISSUE [...]
 
   acquire ISSUE WORKTREE          fresh discovery topology on the mounted worktree
-  shell   ISSUE ROLE              interactive shell as orbit on one role
-  exec    ISSUE ROLE --argv=JSON  run one argv vector as orbit on one role
+  shell   ISSUE ROLE [--proof]    interactive shell as orbit on discovery or a failed proof
+  exec    ISSUE ROLE --argv=JSON  run one argv vector as orbit on discovery; --proof selects a failed proof
   sync    ISSUE                   re-verify the mounted source identity
   verify  ISSUE                   verify the live topology
   prove   ISSUE [--plan=PATH]     prove the worktree HEAD (default proofs/ISSUE.json)
-  status  ISSUE                   report the live attempt from <worktree>/.e2e/
-  release ISSUE                   release the live topology and sweep orphan networks
+  status  ISSUE                   report discovery and proof from <worktree>/.e2e/
+  release ISSUE [--proof]         release discovery or the selected proof and sweep orphan networks
 
 Every action except acquire finds the worktree at <primary>/.worktrees/<issue>-*
 or takes --worktree=PATH. State lives in <worktree>/.e2e/.

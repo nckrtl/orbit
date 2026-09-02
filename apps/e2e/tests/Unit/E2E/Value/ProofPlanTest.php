@@ -91,6 +91,17 @@ describe('ProofPlan', function (): void {
             ]);
     });
 
+    it('fingerprints the complete normalized proof contract', function (): void {
+        $plan = ProofPlan::fromArray(proofPlanFixture());
+        $changed = proofPlanFixture();
+        $changed['acceptance'][0]['timeout_seconds'] = 61;
+
+        expect($plan->fingerprint())
+            ->toMatch('/\A[0-9a-f]{64}\z/D')
+            ->toBe(ProofPlan::fromArray(proofPlanFixture())->fingerprint())
+            ->not->toBe(ProofPlan::fromArray($changed)->fingerprint());
+    });
+
     it('rejects a missing or unreadable file', function (): void {
         expect(fn () => ProofPlan::fromFile(temporaryPath('orbit-proof-plan-missing-')))
             ->toThrow(InvalidArgumentException::class, 'The proof plan file cannot be read.');

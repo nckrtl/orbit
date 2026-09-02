@@ -14,13 +14,16 @@ use App\E2E\Value\TopologySnapshotGeneration;
 use App\E2E\Value\TopologyTarget;
 use App\E2E\Value\VerificationReport;
 
-function issueStateTopology(string $issue, AttemptId $attempt): FeatureTopology
-{
+function issueStateTopology(
+    string $issue,
+    AttemptId $attempt,
+    AttemptPurpose $purpose = AttemptPurpose::Discovery,
+): FeatureTopology {
     $target = TopologyTarget::feature($issue, $attempt);
 
     return new FeatureTopology(
         $target,
-        AttemptPurpose::Discovery,
+        $purpose,
         new TopologySnapshotGeneration(
             'g-'.str_repeat('a', 12),
             str_repeat('b', 40),
@@ -109,6 +112,40 @@ describe('IssueState', function () {
             ->toBe('proved')
             ->and($state->isProved())
             ->toBeFalse();
+    });
+
+    it('keeps discovery and proof attempts independently', function () {
+        $worktree = temporaryPath('orbit-issue-state-', 4);
+        mkdir($worktree, 0700);
+        $state = IssueState::forWorktree('ORB-7', $worktree);
+        $discovery = new AttemptId(str_repeat('a', 32));
+        $proof = new AttemptId(str_repeat('b', 32));
+
+        $state->writeAttempt($discovery, AttemptPurpose::Discovery, new OperationId(str_repeat('c', 32)));
+        $state->writeTopology(issueStateTopology('ORB-7', $discovery));
+        $state->writeAttempt($proof, AttemptPurpose::Proof, new OperationId(str_repeat('d', 32)));
+        $state->writeTopology(issueStateTopology('ORB-7', $proof, AttemptPurpose::Proof));
+        $state->writeProof(['status' => 'diagnosis', 'attempt_id' => $proof->value]);
+
+        expect($state->attemptId(AttemptPurpose::Discovery)->value)
+            ->toBe($discovery->value)
+            ->and($state->attemptId(AttemptPurpose::Proof)->value)
+            ->toBe($proof->value)
+            ->and($state->requireTopology(AttemptPurpose::Discovery)->purpose)
+            ->toBe(AttemptPurpose::Discovery)
+            ->and($state->requireTopology(AttemptPurpose::Proof)->purpose)
+            ->toBe(AttemptPurpose::Proof);
+
+        $state->forgetAttempt(AttemptPurpose::Proof);
+
+        expect($state->hasAttempt(AttemptPurpose::Discovery))
+            ->toBeTrue()
+            ->and($state->hasAttempt(AttemptPurpose::Proof))
+            ->toBeFalse()
+            ->and($state->requireTopology(AttemptPurpose::Discovery)->attempt->value)
+            ->toBe($discovery->value)
+            ->and($state->proof()['status'] ?? null)
+            ->toBe('diagnosis');
     });
 
     it('rejects a lease or record that names another issue or attempt', function () {

@@ -14,6 +14,7 @@ use App\E2E\TopologyProofRunner;
 use App\E2E\TopologySnapshotManifestStore;
 use App\E2E\TopologyVerifier;
 use App\E2E\Value\AttemptId;
+use App\E2E\Value\AttemptPurpose;
 use App\E2E\Value\GuestCommand;
 use App\E2E\Value\LaravelRelease;
 use App\E2E\Value\OperationId;
@@ -206,6 +207,45 @@ it('refuses proof from a schema 4 generation before creating an attempt', functi
         )
             ->toThrow(RuntimeException::class, 'legacy; refresh it before proof')
             ->and(IssueState::forWorktree('ORB-4', $fixture['worktree'])->hasAttempt())
+            ->toBeFalse();
+    } finally {
+        removeLegacyProofWorktree($fixture);
+    }
+});
+
+it('allows proof preparation while discovery remains active', function () {
+    $fixture = legacyProofWorktree();
+
+    try {
+        $paths = new StatePaths(temporaryPath('orbit-legacy-proof-state-', 4));
+        $manifests = new TopologySnapshotManifestStore(
+            new AtomicJsonStore($paths),
+            $paths,
+            new IncusHost(pool: 'orbit-e2e'),
+        );
+        $manifests->promote(legacyProofGeneration());
+        $state = IssueState::forWorktree('ORB-4', $fixture['worktree']);
+        $discovery = new AttemptId(str_repeat('c', 32));
+        $state->writeAttempt($discovery, AttemptPurpose::Discovery, new OperationId(str_repeat('d', 32)));
+        $plan = ProofPlan::fromArray([
+            'setup' => [],
+            'acceptance' => [[
+                'id' => 'legacy-refusal',
+                'node' => 'gateway',
+                'argv' => ['true'],
+                'timeout_seconds' => 30,
+            ]],
+        ]);
+
+        expect(fn () => topologyProofRunnerWithLegacyGeneration(
+            $fixture['sourceRoot'],
+            $paths,
+            $manifests,
+        )->prove(new TopologyRequest('ORB-4', $fixture['worktree']), $plan))
+            ->toThrow(RuntimeException::class, 'legacy; refresh it before proof')
+            ->and($state->attemptId(AttemptPurpose::Discovery)->value)
+            ->toBe($discovery->value)
+            ->and($state->hasAttempt(AttemptPurpose::Proof))
             ->toBeFalse();
     } finally {
         removeLegacyProofWorktree($fixture);

@@ -240,6 +240,15 @@ final readonly class ProofPlan
         return $plan;
     }
 
+    /** Bind promotion to the exact normalized actions and topology declaration that were proved. */
+    public function fingerprint(): string
+    {
+        return hash('sha256', json_encode(
+            $this->toArray(),
+            JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE,
+        ));
+    }
+
     /** @return list<string> */
     private static function fixtureIssues(mixed $declared): array
     {

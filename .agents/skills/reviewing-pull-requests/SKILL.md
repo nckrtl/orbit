@@ -21,10 +21,12 @@ edit code.
    documentation-impact classification, relevant documentation context, and any
    supplied Feature plan. Product feature diffs do not touch `apps/e2e` or
    `bin/e2e-*`.
-4. **Re-prove.** For `Proof: incus`, release any non-proof attempt and run
-   `bin/e2e-topology prove <ISSUE>`. Require `proved` for the exact remote head.
-   For a harness issue run `bin/e2e-live <sha>`. For automated-only changes,
-   require green CI and relevant local checks.
+4. **Inspect proof.** For `Proof: incus`, require the retained immutable proof
+   to name the exact remote head, current proof-plan fingerprint, complete
+   declared action sequence, and exit `0` for every action. Discovery may
+   remain active and is not proof evidence. Run `bin/e2e-live <sha>` only when
+   the issue contract explicitly requires the validation-clone lifecycle. For
+   automated-only changes, require green CI and relevant local checks.
 5. **Review the code.** Check correctness, acceptance coverage, regressions,
    repository conventions, documentation reconciliation, and proof
    completeness. Require `composer docs-lint` when documentation is required.

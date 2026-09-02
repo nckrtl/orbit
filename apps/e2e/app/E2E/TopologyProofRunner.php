@@ -31,12 +31,12 @@ use Throwable;
 /**
  * Prove the worktree's HEAD commit on a fresh topology.
  *
- * The worktree must be clean and hold no live attempt. The runner mints an
- * attempt, clones the promoted generation, transfers exactly the candidate
- * commit, stages `proofs/<ISSUE>/` fixtures, converges, runs the plan's setup
- * and acceptance actions in order, and verifies. A failure before the VMs
- * hold the candidate rolls the attempt back; every later failure records a
- * `diagnosis` and keeps the topology alive until `release`.
+ * The worktree must be clean and hold no proof attempt. Its discovery topology
+ * may remain active. The runner mints a separate attempt, clones the promoted
+ * generation, transfers exactly the candidate commit, stages fixtures,
+ * converges, runs every action in order, and verifies. A failure before the
+ * VMs hold the candidate rolls the proof back; every later failure records a
+ * `diagnosis` and keeps the proof topology alive for explicit inspection.
  *
  * @mago-expect lint:excessive-parameter-list The proof dependencies are explicit trust boundaries.
  * @mago-expect lint:cyclomatic-complexity,kan-defect,too-many-methods The proof keeps its exact ordered operations together.
@@ -76,9 +76,11 @@ final readonly class TopologyProofRunner
             throw new RuntimeException('The issue topology is locked by another harness command.');
         }
         try {
-            if ($state->hasAttempt()) {
+            if ($state->hasAttempt(AttemptPurpose::Proof)) {
                 throw new RuntimeException(
-                    "{$request->issue} already has attempt {$state->attemptId()->value}; release it before proof.",
+                    "{$request->issue} already has proof attempt "
+                    .$state->attemptId(AttemptPurpose::Proof)->value
+                    .'; release it before another proof.',
                 );
             }
 
@@ -167,6 +169,7 @@ final readonly class TopologyProofRunner
             ProofResult::now(),
             $plan->endsWith,
             TopologyVerifier::skippedProbes($plan->endsWith),
+            $plan->fingerprint(),
         );
         $this->record($state, $target, $generation, $source, $verification);
         $state->writeProof($result->toArray());
@@ -302,7 +305,7 @@ final readonly class TopologyProofRunner
                 previous: $exception,
             );
         }
-        $state->forgetAttempt();
+        $state->forgetAttempt(AttemptPurpose::Proof);
 
         throw new RuntimeException('Proof topology creation failed: '.$exception->getMessage(), previous: $exception);
     }
