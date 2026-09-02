@@ -206,15 +206,15 @@ final readonly class ObservedPhpInputCollector
     private function probe(TopologyTarget $target): void
     {
         $results = $this->guests->execAll([
-            'app-dev:cli' => [
+            'app-dev-cli' => [
                 'instance' => $target->instance('app-dev'),
                 'command' => new GuestCommand([self::SCRIPT, 'probe-cli']),
             ],
-            'gateway:cli' => [
+            'gateway-cli' => [
                 'instance' => $target->instance('gateway'),
                 'command' => new GuestCommand([self::SCRIPT, 'probe-cli']),
             ],
-            'gateway:fpm' => [
+            'gateway-fpm' => [
                 'instance' => $target->instance('gateway'),
                 'command' => new GuestCommand([self::SCRIPT, 'probe-fpm']),
             ],

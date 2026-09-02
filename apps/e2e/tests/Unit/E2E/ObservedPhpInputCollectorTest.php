@@ -61,6 +61,41 @@ function observedTransport(array $roleRecords): GuestTransport
     };
 }
 
+it('uses Incus-safe batch labels for every process-surface probe', function (): void {
+    $transport = new class implements GuestTransport {
+        public function exec(string $instance, GuestCommand $command): GuestCommandResult
+        {
+            return new GuestCommandResult('', '', 0);
+        }
+
+        public function execAll(array $commands): array
+        {
+            $results = [];
+            foreach ($commands as $label => $request) {
+                if (preg_match('/\A[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}\z/', (string) $label) !== 1) {
+                    throw new RuntimeException('unsafe batch label');
+                }
+                $results[$label] = new GuestCommandResult('', '', 0);
+            }
+
+            return $results;
+        }
+
+        public function pushFile(string $instance, string $source, string $destination): void {}
+
+        public function pushFiles(array $files): void {}
+    };
+
+    (new ObservedPhpInputCollector($transport))->begin(
+        TopologyTarget::feature('ORB-9', new AttemptId(str_repeat('a', 32))),
+        'setup',
+        'ORB-9',
+        new AttemptId(str_repeat('a', 32)),
+    );
+
+    expect(true)->toBeTrue();
+});
+
 it('unions concurrent CLI and FPM process paths by role without overwriting evidence', function (): void {
     $first = str_repeat('1', 32);
     $second = str_repeat('2', 32);
