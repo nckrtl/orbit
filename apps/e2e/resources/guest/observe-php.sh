@@ -57,9 +57,12 @@ install_sury() {
   package_source="${source_uri%/} $os_codename/main $architecture Packages"
   for package in "${packages[@]}"; do
     package_version=$(dpkg-query -W -f='${Version}' -- "$package")
-    apt-cache madison "$package" | awk -F' \\| ' \
+    if apt-cache madison "$package" | awk -F' \\| ' \
       -v version="$package_version" -v source="$package_source" \
-      '$2 == version && $3 == source { found = 1 } END { exit !found }'
+      '$2 == version && $3 == source { found = 1 } END { exit !found }'; then
+      continue
+    fi
+    [[ "$package_version" =~ \+0~[0-9]{8}\.[0-9]+\+ubuntu[0-9]+\.[0-9]+~[0-9]+\.gbp[0-9a-f]+$ ]]
   done
   [[ -x /usr/bin/php8.5 && -x /usr/sbin/php-fpm8.5 ]]
 

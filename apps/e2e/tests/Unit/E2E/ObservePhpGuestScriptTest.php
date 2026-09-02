@@ -28,6 +28,7 @@ it('uses only pinned Sury PHP and packaged PCOV', function (): void {
             'package_version=$(dpkg-query',
             'apt-cache madison "$package"',
             "'$2 == version && $3 == source { found = 1 } END { exit !found }'",
+            '[[ "$package_version" =~ \\+0~[0-9]{8}\\.[0-9]+\\+ubuntu',
         )
         ->not->toContain('make install', './configure', 'docker build', 'static-php-cli');
 });
