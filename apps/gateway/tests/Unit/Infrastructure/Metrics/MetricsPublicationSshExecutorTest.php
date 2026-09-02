@@ -13,6 +13,48 @@ use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
 
+it('uses the configured Metrics node user for every SSH connection', function (string $user): void {
+    $ssh = new MetricsPublicationCapturingSshExecutor([
+        metricsPublicationResult(stdout: "Status: active\n"),
+        metricsPublicationResult(),
+        metricsPublicationResult(stdout: metricsPublicationFirewallStatus()),
+    ]);
+
+    metricsPublicationSshExecutor($ssh)->converge(
+        metricsPublicationNode('metrics', '10.44.0.3', $user),
+        '10.44.0.1',
+    );
+
+    expect(array_map(
+        static fn (SshConnection $connection): string => $connection->user,
+        $ssh->connections,
+    ))->toBe([$user, $user, $user]);
+})->with([
+    'non-orbit user' => 'deployer',
+    'orbit user' => 'orbit',
+]);
+
+it('does not fall back when the configured Metrics node user cannot authenticate', function (string $user): void {
+    $ssh = new MetricsPublicationCapturingSshExecutor([
+        metricsPublicationResult(exitCode: 255),
+    ]);
+
+    expect(fn () => metricsPublicationSshExecutor($ssh)->converge(
+        metricsPublicationNode('metrics', '10.44.0.3', $user),
+        '10.44.0.1',
+    ))
+        ->toThrow(ResourceOperationException::class, 'could not be inspected')
+        ->and(array_map(
+            static fn (SshConnection $connection): string => $connection->user,
+            $ssh->connections,
+        ))
+        ->each->toBe($user);
+})->with([
+    'invalid user' => 'invalid user',
+    'missing user' => '',
+    'unusable user' => 'nck121-noauth',
+]);
+
 it('publishes and verifies the exact Gateway-only Grafana firewall rule', function (): void {
     $ssh = new MetricsPublicationCapturingSshExecutor([
         metricsPublicationResult(stdout: "Status: active\n"),
@@ -151,11 +193,12 @@ function metricsPublicationSshExecutor(
     );
 }
 
-function metricsPublicationNode(string $name, string $address): Node
+function metricsPublicationNode(string $name, string $address, string $user = 'orbit'): Node
 {
     return new Node([
         'name' => $name,
         'wireguard_ip' => $address,
+        'user' => $user,
     ]);
 }
 
@@ -175,6 +218,9 @@ function metricsPublicationFirewallStatus(): string
 
 final class MetricsPublicationCapturingSshExecutor implements SshExecutor
 {
+    /** @var list<SshConnection> */
+    public array $connections = [];
+
     /** @var list<RemoteCommand> */
     public array $commands = [];
 
@@ -185,6 +231,7 @@ final class MetricsPublicationCapturingSshExecutor implements SshExecutor
 
     public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
     {
+        $this->connections[] = $connection;
         $this->commands[] = $command;
 
         return array_shift($this->results) ?? metricsPublicationResult();
