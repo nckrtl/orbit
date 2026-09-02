@@ -46,6 +46,11 @@ case "$mode" in
   remove)
     id -u -- "$user" >/dev/null 2>&1 || fail "$user is missing before fixture cleanup"
     sudo rm -f -- "/etc/sudoers.d/$user"
+    for _ in {1..30}; do
+      pgrep -u "$user" >/dev/null || break
+      sleep 1
+    done
+    ! pgrep -u "$user" >/dev/null || fail "$user still owns a process before fixture cleanup"
     sudo userdel --remove -- "$user"
     ! id -u -- "$user" >/dev/null 2>&1 || fail "$user remains after fixture cleanup"
     echo "user-fixture: removed $user from $(hostname) after evidence"
