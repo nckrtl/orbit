@@ -1,5 +1,9 @@
 {
     "setup": [],
+    "inputs": [
+        "apps/e2e/phpunit.xml",
+        "apps/e2e/tests"
+    ],
     "acceptance": [
         {
             "id": "recorded-input-equivalence-contract",
