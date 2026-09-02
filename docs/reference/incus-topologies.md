@@ -211,6 +211,9 @@ A proved result's manifest is stored immutably as
 `<worktree>/.e2e/proof-inputs/<manifest_sha256>.json`. It records the policy
 version, proved and included-main SHAs, feature runtime paths, every static
 runtime and proof-contract blob with its Git mode, and completed safety checks.
+The harness also pins the proved commit under `refs/orbit/e2e-proof/` until the
+proof is released, so an equivalent rebase cannot make its Git evidence
+unreachable.
 The proved topology stays immutable through review and merge. Promotion makes
 it the new topology snapshot generation, then releases both proof and retained
 discovery.
