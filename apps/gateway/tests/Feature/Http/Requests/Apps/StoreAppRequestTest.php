@@ -18,6 +18,7 @@ beforeEach(function (): void {
     ]);
     $this->markAsGateway($operator);
     $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.2']);
+    $this->fakeRepositoryBranches();
 });
 
 it('accepts supported repository origins', function (string $repositoryUrl): void {
@@ -25,6 +26,8 @@ it('accepts supported repository origins', function (string $repositoryUrl): voi
         ->postJson('/api/v1/apps', [
             'slug' => 'acme',
             'repository_url' => $repositoryUrl,
+            'main_branch' => 'main',
+            'root' => 'public',
         ])
         ->assertCreated()
         ->assertJsonPath('data.repository_url', $repositoryUrl);

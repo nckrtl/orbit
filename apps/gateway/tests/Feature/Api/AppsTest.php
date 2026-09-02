@@ -18,16 +18,19 @@ beforeEach(function (): void {
     ]);
     $this->operator = $this->markAsGateway($this->operator);
     $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.2']);
+    $this->fakeRepositoryBranches();
 });
 
 describe('app creation', function (): void {
-    it('creates an app with a default name and treats its slug and repository as immutable identity', function (): void {
+    it('creates an app with a default name and returns it unchanged for an exact retry', function (): void {
         $requestId = (string) Str::uuid();
         $first = $this
             ->withHeader('X-Orbit-Request-Id', $requestId)
             ->postJson('/api/v1/apps', [
                 'slug' => 'acme',
                 'repository_url' => 'git@github.com:acme/site.git',
+                'main_branch' => 'main',
+                'root' => 'public',
             ]);
 
         $first
@@ -40,17 +43,17 @@ describe('app creation', function (): void {
         $second = $this
             ->withHeader('X-Orbit-Request-Id', (string) Str::uuid())
             ->postJson('/api/v1/apps', [
-                'name' => 'Acme website',
                 'slug' => 'acme',
                 'repository_url' => 'git@github.com:acme/site.git',
-                'defaults' => ['php_version' => '8.5'],
+                'main_branch' => 'main',
+                'root' => 'public',
             ]);
 
         $second
             ->assertOk()
             ->assertJsonPath('data.id', $first->json('data.id'))
-            ->assertJsonPath('data.name', 'Acme website')
-            ->assertJsonPath('data.defaults.php_version', '8.5');
+            ->assertJsonPath('data.name', 'acme')
+            ->assertJsonPath('data.defaults', null);
 
         expect(OrbitApp::query()->count())
             ->toBe(1)
@@ -70,15 +73,19 @@ describe('app creation', function (): void {
             'name' => 'Acme',
             'slug' => 'acme',
             'repository_url' => 'git@github.com:acme/site.git',
+            'main_branch' => 'main',
+            'root' => 'public',
         ]);
 
         $this
             ->postJson('/api/v1/apps', [
                 'slug' => 'acme',
                 'repository_url' => 'https://github.com/acme/other.git',
+                'main_branch' => 'main',
+                'root' => 'public',
             ])
             ->assertConflict()
-            ->assertJsonPath('error.code', 'app.repository_change_unsupported');
+            ->assertJsonPath('error.code', 'app.identity_conflict');
 
         expect($app->refresh()->repository_url)->toBe('git@github.com:acme/site.git');
     });
@@ -96,6 +103,8 @@ describe('app defaults projection', function (): void {
                 'name' => 'Acme',
                 'slug' => 'acme',
                 'repository_url' => 'https://github.com/acme/site.git',
+                'main_branch' => 'main',
+                'root' => 'public',
                 'defaults' => $defaults,
             ])
             ->assertCreated()
@@ -155,6 +164,8 @@ describe('app defaults diagnostics', function (): void {
             ->postJson('/api/v1/apps', [
                 'slug' => 'acme',
                 'repository_url' => 'https://github.com/acme/site.git',
+                'main_branch' => 'main',
+                'root' => 'public',
                 'defaults' => $defaults,
             ])
             ->assertCreated();
@@ -179,6 +190,8 @@ describe('app defaults diagnostics', function (): void {
             'name' => 'Acme',
             'slug' => 'acme',
             'repository_url' => 'https://github.com/acme/site.git',
+            'main_branch' => 'main',
+            'root' => 'public',
             'defaults' => ['php_version' => '8.5'],
         ]);
 
@@ -187,13 +200,15 @@ describe('app defaults diagnostics', function (): void {
             ->postJson('/api/v1/apps', [
                 'slug' => 'acme',
                 'repository_url' => 'https://github.com/acme/other.git',
+                'main_branch' => 'main',
+                'root' => 'public',
                 'defaults' => [
                     'nested' => ['api_token' => $errorSecret],
                     'diagnostic' => "request token={$errorSecret} branch=main",
                 ],
             ])
             ->assertConflict()
-            ->assertJsonPath('error.code', 'app.repository_change_unsupported');
+            ->assertJsonPath('error.code', 'app.identity_conflict');
         $activity = Activity::query()->where('request_id', $requestId)->sole();
         $properties = $activity->properties?->toArray() ?? [];
         $activityResponse = $this

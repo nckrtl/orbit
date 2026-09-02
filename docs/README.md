@@ -20,7 +20,8 @@ Choose a page based on what you want to learn:
 - [Product areas](domains/README.md) groups feature documentation as it grows.
 - [Decisions](decisions/README.md) keeps the history behind important design
   choices.
-- [Reference](reference/) contains detailed operational information.
+- [Reference](reference/) contains detailed operational information, including
+  [App creation and source defaults](reference/apps.md).
 - [Solutions](solutions/README.md) collects useful fixes and lessons from past
   work.
 

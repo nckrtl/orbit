@@ -126,7 +126,10 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'activity:list' => [[], ['limit' => '25', 'request-id' => null, 'json' => false]],
         'activity:show' => [['activity'], ['json' => false]],
         'app:list' => [[], ['json' => false]],
-        'app:new' => [['slug', 'repository'], ['name' => null, 'json' => false]],
+        'app:new' => [
+            ['slug', 'repository'],
+            ['name' => null, 'main-branch' => null, 'root' => 'public', 'json' => false],
+        ],
         'app:remove' => [['app'], ['json' => false]],
         'app:show' => [['app'], ['json' => false]],
         'cluster:list' => [[], ['json' => false]],

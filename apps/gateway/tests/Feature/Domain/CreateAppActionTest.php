@@ -12,6 +12,8 @@ it('rejects an unsafe repository origin before app persistence', function (): vo
         name: 'Acme',
         slug: 'acme',
         repositoryUrl: "ssh://git:{$sentinel}@example.test/acme/site.git",
+        mainBranch: 'main',
+        root: 'public',
         defaults: null,
     );
 

@@ -13,12 +13,18 @@ use Spatie\LaravelData\Mappers\SnakeCaseMapper;
 #[MapOutputName(SnakeCaseMapper::class)]
 final class AppData extends Data
 {
-    /** @param array<array-key, mixed>|null $defaults */
+    /**
+     * @param array<array-key, mixed>|null $defaults
+     *
+     * @mago-expect lint:excessive-parameter-list The response exposes the complete bounded App contract.
+     */
     public function __construct(
         public int $id,
         public string $name,
         public string $slug,
         public string $repositoryUrl,
+        public ?string $mainBranch,
+        public ?string $root,
         public ?array $defaults,
     ) {}
 
@@ -29,6 +35,8 @@ final class AppData extends Data
             name: $app->name,
             slug: $app->slug,
             repositoryUrl: $app->repository_url,
+            mainBranch: $app->main_branch,
+            root: $app->root,
             defaults: self::publicDefaults($app->defaults),
         );
     }

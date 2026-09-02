@@ -44,6 +44,7 @@ describe('app:new', function (): void {
                 'slug' => 'orbit',
                 'repository' => 'git@github.com:nckrtl/orbit.git',
                 '--name' => 'Orbit',
+                '--main-branch' => 'stable',
                 '--json' => true,
             ])
             ->expectsOutput(app_json())
@@ -60,6 +61,8 @@ describe('app:new', function (): void {
                 'name' => 'Orbit',
                 'slug' => 'orbit',
                 'repository_url' => 'git@github.com:nckrtl/orbit.git',
+                'main_branch' => 'stable',
+                'root' => 'public',
             ]);
     });
 
@@ -74,6 +77,23 @@ describe('app:new', function (): void {
             ->expectsOutput('App [orbit] created.')
             ->expectsOutput('Request ID: '.app_request_id())
             ->assertExitCode(0);
+    });
+
+    it('transports a custom relative root', function (): void {
+        $mockClient = MockClient::global([
+            CreateAppRequest::class => app_mock_response(201),
+        ]);
+
+        $this
+            ->artisan('app:new', [
+                'slug' => 'orbit',
+                'repository' => 'git@github.com:nckrtl/orbit.git',
+                '--root' => 'web/public',
+            ])
+            ->assertExitCode(0);
+
+        expect($mockClient->getLastRequest()?->body()->all()['root'] ?? null)
+            ->toBe('web/public');
     });
 
     it('rejects an unbounded or control-bearing slug without disclosure or gateway IO', function (string $slug): void {
@@ -122,6 +142,7 @@ describe('app:new', function (): void {
             ->toBe([
                 'slug' => 'Orbit App',
                 'repository_url' => 'nckrtl/orbit',
+                'root' => 'public',
             ]);
     });
 });
@@ -204,6 +225,7 @@ describe('app:new repository boundary', function (): void {
             ->toBe([
                 'slug' => 'orbit',
                 'repository_url' => $repository,
+                'root' => 'public',
             ]);
     })->with([
         'unrecognized reference' => 'not-a-repository',
@@ -242,8 +264,8 @@ describe('app:list', function (): void {
         $this
             ->artisan('app:list')
             ->expectsTable(
-                ['ID', 'Name', 'Slug', 'Repository'],
-                [[3, 'Orbit', 'orbit', 'git@github.com:nckrtl/orbit.git']],
+                ['ID', 'Name', 'Slug', 'Repository', 'Main branch', 'Root'],
+                [[3, 'Orbit', 'orbit', 'git@github.com:nckrtl/orbit.git', 'main', 'public']],
             )
             ->expectsOutput('Request ID: '.app_request_id())
             ->assertExitCode(0);
@@ -350,7 +372,28 @@ describe('app:show', function (): void {
             ->artisan('app:show', ['app' => '3'])
             ->expectsOutput('Orbit [orbit] (#3)')
             ->expectsOutput('Repository: git@github.com:nckrtl/orbit.git')
+            ->expectsOutput('Main branch: main')
+            ->expectsOutput('Root: public')
             ->expectsOutput('Request ID: '.app_request_id())
+            ->assertExitCode(0);
+    });
+
+    it('returns legacy null source defaults unchanged', function (): void {
+        $payload = [...app_payload(), 'main_branch' => null, 'root' => null];
+        MockClient::global([
+            ShowAppRequest::class => MockResponse::make([
+                'data' => $payload,
+                'meta' => ['request_id' => app_request_id()],
+            ]),
+        ]);
+        $expected = json_encode([
+            ...$payload,
+            'request_id' => app_request_id(),
+        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+
+        $this
+            ->artisan('app:show', ['app' => '3', '--json' => true])
+            ->expectsOutput($expected)
             ->assertExitCode(0);
     });
 });
@@ -404,6 +447,8 @@ function app_payload(): array
         'name' => 'Orbit',
         'slug' => 'orbit',
         'repository_url' => 'git@github.com:nckrtl/orbit.git',
+        'main_branch' => 'main',
+        'root' => 'public',
         'defaults' => ['php_version' => '8.5'],
     ];
 }
