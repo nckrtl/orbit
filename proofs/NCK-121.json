@@ -255,6 +255,18 @@
             "timeout_seconds": 60
         },
         {
+            "id": "isolate-invalid-host-state-disable",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/success-disable.sh", "invalid-isolation"],
+            "timeout_seconds": 900
+        },
+        {
+            "id": "isolate-invalid-host-state-reactivate",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/reactivate.sh"],
+            "timeout_seconds": 900
+        },
+        {
             "id": "snapshot-missing-identity",
             "node": "gateway",
             "argv": ["bash", "/var/lib/orbit-e2e/proof/database-fixture.sh", "snapshot-corrupt", "missing", ""],
