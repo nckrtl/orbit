@@ -169,7 +169,11 @@ function metrics_publication_manager(
 
 function metrics_publication_manager_node(string $name, string $address): Node
 {
-    return new Node(['name' => $name, 'wireguard_ip' => $address]);
+    return new Node([
+        'name' => $name,
+        'wireguard_ip' => $address,
+        'user' => 'orbit',
+    ]);
 }
 
 function metrics_publication_manager_result(string $stdout = ''): CommandResult
