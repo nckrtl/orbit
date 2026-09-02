@@ -2313,7 +2313,7 @@ describe('convergence guest scripts', function () {
         'inactive selected Node' => [
             [],
             [
-                'TYPED_NODE_RESPONSE' => '{"nodes":[{"id":2,"name":"app-dev","status":"inactive","cluster_id":null}]}',
+                'TYPED_NODE_RESPONSE' => '{"nodes":[{"id":2,"name":"app-dev","status":"inactive","cluster_id":null},{"id":3,"name":"app-prod","status":"active","cluster_id":null}]}',
             ],
         ],
         'invalid selected Node Cluster identity' => [
@@ -2326,13 +2326,13 @@ describe('convergence guest scripts', function () {
         'ambiguous Node response' => [
             [],
             [
-                'TYPED_NODE_RESPONSE' => '{"nodes":[{"id":2,"name":"app-dev","status":"active","cluster_id":null},{"id":2,"name":"app-dev","status":"active","cluster_id":null}]}',
+                'TYPED_NODE_RESPONSE' => '{"nodes":[{"id":2,"name":"app-dev","status":"active","cluster_id":null},{"id":2,"name":"app-dev","status":"active","cluster_id":null},{"id":3,"name":"app-prod","status":"active","cluster_id":null}]}',
             ],
         ],
         'Node attached to another Cluster' => [
             [],
             [
-                'TYPED_NODE_RESPONSE' => '{"nodes":[{"id":2,"name":"app-dev","status":"active","cluster_id":9}]}',
+                'TYPED_NODE_RESPONSE' => '{"nodes":[{"id":2,"name":"app-dev","status":"active","cluster_id":9},{"id":3,"name":"app-prod","status":"active","cluster_id":null}]}',
             ],
         ],
         'active Cluster without a Router' => [['cluster', 'attached', 'active'], []],
