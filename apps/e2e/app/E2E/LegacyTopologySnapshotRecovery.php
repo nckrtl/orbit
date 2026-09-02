@@ -107,7 +107,7 @@ final readonly class LegacyTopologySnapshotRecovery
         }
 
         return new LegacyTopologySnapshotInventory(
-            [...$this->host->scope(), 'topology_snapshot_namespace' => $this->identity->namespace],
+            $this->host->scope(),
             $promoted->toArray(),
             array_map(static fn ($generation): array => $generation->toArray(), $recorded),
             $serializedInstances,

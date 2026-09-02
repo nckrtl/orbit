@@ -11,7 +11,7 @@ usage: bin/e2e-topology <action> ISSUE [...]
   shell   ISSUE ROLE [--proof]    interactive shell as orbit on discovery or a failed proof
   exec    ISSUE ROLE --argv=JSON  run one argv vector as orbit on discovery; --proof selects a failed proof
   sync    ISSUE                   re-verify the mounted source identity
-  verify  ISSUE                   verify the live topology
+  verify  ISSUE                   verify the discovery topology
   prove   ISSUE [--plan=PATH]     prove the worktree HEAD (default proofs/ISSUE.json)
   status  ISSUE                   report discovery and proof from <worktree>/.e2e/
   release ISSUE [--proof]         release discovery or the selected proof and sweep orphan networks

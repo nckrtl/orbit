@@ -111,21 +111,29 @@ it('binds review and merge to one exact remote head', function () use ($read): v
         ->toContain('must not merge or rebase `main`')
         ->toContain('stop until the candidate is updated and pushed')
         ->toContain('retained immutable proof')
-        ->toContain('validation-clone lifecycle')
-        ->toContain('exactly `Approved.`')
-        ->toContain('Collect every blocking')
-        ->toContain('finding in one pass')
-        ->toContain('Do not merge, promote, release a proved topology')
+        ->toContain('repository-owner-approved behavior')
+        ->toContain('issue-specific proof')
+        ->not->toContain('validation-clone lifecycle')
+        ->not->toContain('bin/e2e-live')->toContain('exactly `Approved.`')->toContain(
+            'Collect every blocking',
+        )->toContain('finding in one pass')->toContain('Do not merge, promote, release a proved topology')
         ->not->toContain('fresh reviewer');
 
     expect($merge)
         ->toContain('deterministic closeout')
         ->toContain('gh pr merge <n> --merge --match-head-commit <sha>')
         ->toContain('bin/e2e-topology-snapshot promote <ISSUE>')
+        ->toContain('Do not substitute a refresh')
+        ->not
         ->toContain('bin/e2e-topology-snapshot refresh')
         ->toContain('bin/worktree-remove <ISSUE> <slug>')
         ->toContain('verify GitHub, `origin/main`')
         ->toContain('topology snapshot identity, and cleanup state directly');
+
+    expect($read('.agents/skills/developing-features/SKILL.md'))
+        ->toContain('repository-owner-approved behavior')
+        ->toContain('issue-specific proof')
+        ->not->toContain('bin/e2e-live');
 });
 
 it('keeps issue creation current, atomic, and proof feasible', function () use ($read): void {

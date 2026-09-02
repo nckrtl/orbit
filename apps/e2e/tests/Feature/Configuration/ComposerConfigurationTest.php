@@ -22,6 +22,12 @@ describe('Composer configuration', function (): void {
             ->toBe('vendor/bin/mago analyze app --reporting-format=medium --minimum-report-level=error');
         expect($composer['scripts']['lint'])
             ->toBe('vendor/bin/mago lint app tests --reporting-format=medium --minimum-report-level=error');
+        expect($composer['scripts'])
+            ->not
+            ->toHaveKey('test:live-incus')
+            ->and($composer['scripts']['test'])
+            ->toBe('vendor/bin/pest --parallel --no-tia --compact');
+        expect(file_get_contents(base_path('../../bin/test')))->not->toContain('incus-live');
 
         foreach (['.env.example', 'config/app.php', 'phpunit.xml', 'tests/Pest.php'] as $file) {
             expect(file_get_contents(base_path($file)))

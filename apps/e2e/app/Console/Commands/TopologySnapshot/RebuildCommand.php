@@ -16,7 +16,7 @@ final class RebuildCommand extends E2ECommand
         {--main-sha=}
         {--json}';
     #[\Override]
-    protected $description = 'Tear this checkout\'s topology snapshot down and build it again from the base image';
+    protected $description = 'Tear the topology snapshot down and build it again from the base image';
 
     public function handle(TopologySnapshotRebuilder $rebuilder, TopologySnapshotRefresher $refresher): int
     {

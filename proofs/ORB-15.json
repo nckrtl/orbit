@@ -2,13 +2,10 @@
     "setup": [],
     "acceptance": [
         {
-            "id": "node-list-json",
+            "id": "verified-topology-node-inventory",
             "node": "app-dev",
             "argv": ["orbit", "node:list", "--json"],
             "timeout_seconds": 60
         }
-    ],
-    "ends_with": {
-        "nodes": ["gateway", "app-dev"]
-    }
+    ]
 }

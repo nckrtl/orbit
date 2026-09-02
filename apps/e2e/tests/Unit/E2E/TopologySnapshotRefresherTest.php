@@ -755,7 +755,7 @@ function removeRefreshFixture(array $fixture): void
 }
 
 /** @mago-expect lint:cyclomatic-complexity,halstead Test cases share one contract fixture and remain independently asserted. */
-/** The host holds this checkout's topology snapshot VMs, but no snapshot the manifest names. */
+/** The host holds the topology snapshot VMs, but no snapshot the manifest names. */
 function staleManifestProcess(PendingProcess $process, ProcessFactory $real, array &$mutations): ProcessResult
 {
     $command = $process->command;

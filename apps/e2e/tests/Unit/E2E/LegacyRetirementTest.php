@@ -306,12 +306,8 @@ describe('legacy retirement', function () {
         'canonical topology snapshot VM' => ['instances', 'orbit-e2e-topology-snapshot-gateway'],
         'canonical ORBIT feature VM' => ['instances', 'orbit-e2e-orbit-123456789-aaaaaaaa-gateway'],
         'canonical ORBIT feature snapshot' => ['snapshots', 'orbit-e2e-orbit-123456789-aaaaaaaa-gateway/ready'],
-        'compact live topology snapshot network' => ['networks', 'oe-l-topo-snap'],
-        'canonical live topology snapshot VM' => ['instances', 'orbit-e2e-live-topology-snapshot-gateway'],
         'retired topology snapshot network' => ['networks', 'oe-standby'],
         'retired topology snapshot VM' => ['instances', 'orbit-e2e-standby-gateway'],
-        'retired live topology snapshot network' => ['networks', 'oe-live-standby'],
-        'retired live topology snapshot VM' => ['instances', 'orbit-e2e-live-standby-gateway'],
     ]);
 
     it('keeps similar-looking foreign identities eligible when classified as legacy', function (
@@ -331,6 +327,10 @@ describe('legacy retirement', function () {
         'foreign compact network' => ['networks', 'oe-a1b2c3d4e5f'],
         'foreign VM prefix' => ['instances', 'orbit-e2e-orbitx-0-1'],
         'foreign topology snapshot spelling' => ['networks', 'oe-topo-snap-extra'],
+        'removed live topology snapshot network' => ['networks', 'oe-l-topo-snap'],
+        'removed live topology snapshot VM' => ['instances', 'orbit-e2e-live-topology-snapshot-gateway'],
+        'removed live standby network' => ['networks', 'oe-live-standby'],
+        'removed live standby VM' => ['instances', 'orbit-e2e-live-standby-gateway'],
     ]);
 
     it('rejects symbolic-link parents for every protected JSON input and provider observation', function () {

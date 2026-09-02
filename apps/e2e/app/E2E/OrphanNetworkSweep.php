@@ -16,7 +16,7 @@ use RuntimeException;
  *
  * A network is an orphan when its name carries a harness prefix (`oe-` for the
  * current harness, `orbit-e2e-` for the legacy one), Incus reports no user, and
- * it is not a topology snapshot network of any checkout. The sweep holds the host creation lock, so an
+ * it is not a current or retired topology snapshot network. The sweep holds the host creation lock, so an
  * acquisition between network creation and its first VM is never swept.
  */
 final readonly class OrphanNetworkSweep
@@ -24,17 +24,16 @@ final readonly class OrphanNetworkSweep
     public const array HARNESS_PREFIXES = ['oe-', 'orbit-e2e-'];
 
     /**
-     * The topology snapshot network of every checkout that may own one. A topology snapshot network
-     * is never an orphan, whichever checkout built it.
+     * The current and retired topology snapshot networks are never orphans.
      *
      * @return list<string>
      */
     public static function topologySnapshotNetworks(): array
     {
-        return array_map(
-            static fn (TopologySnapshotIdentity $topologySnapshot): string => $topologySnapshot->network(),
-            [...TopologySnapshotIdentity::known(), ...TopologySnapshotIdentity::retiredKnown()],
-        );
+        return [
+            TopologySnapshotIdentity::primary()->network(),
+            TopologySnapshotIdentity::retired()->network(),
+        ];
     }
 
     /** The lock every topology creation holds from network creation until its VMs exist. */

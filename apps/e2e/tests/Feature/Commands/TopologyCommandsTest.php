@@ -184,7 +184,7 @@ describe('topology commands', function () {
             ->toBe(['state' => 'absent', 'issue' => 'NCK-12', 'worktree' => $worktree, 'proof' => null]);
     });
 
-    it('reports the live attempt and its proof from the worktree state', function () {
+    it('reports the active proof attempt and its result from the worktree state', function () {
         ['worktree' => $worktree] = commandPrimaryFixture();
         $state = IssueState::forWorktree('NCK-12', $worktree);
         $state->writeAttempt(attemptId(), AttemptPurpose::Proof, new OperationId(str_repeat('b', 32)));

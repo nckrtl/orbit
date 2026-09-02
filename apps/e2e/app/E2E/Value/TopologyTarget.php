@@ -24,7 +24,7 @@ final readonly class TopologyTarget
         return new self($issue, $attempt);
     }
 
-    /** The topology snapshot of one checkout; the identity says which physical set of VMs that is. */
+    /** The current or retired physical topology snapshot. */
     public static function topologySnapshot(?TopologySnapshotIdentity $identity = null): self
     {
         return new self('topology-snapshot', null, $identity ?? TopologySnapshotIdentity::primary());

@@ -27,7 +27,7 @@ use Throwable;
  * Promote one issue's proved topology to the topology snapshot generation.
  *
  * The three proved VMs are stopped and copied (without snapshots) next to the
- * topology snapshot instances, re-attached to this checkout's topology snapshot network with its fixed topology snapshot
+ * topology snapshot instances, re-attached to the persistent topology snapshot network with its fixed topology snapshot
  * addresses, stripped of their attempt metadata, and snapshotted as
  * `main-<generation>`. Only then is each old topology snapshot instance deleted and its
  * copy renamed into place; the manifest is promoted and the proved topology

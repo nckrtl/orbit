@@ -19,11 +19,12 @@ gates are satisfied.
 2. **Merge the bound head.** Run
    `gh pr merge <n> --merge --match-head-commit <sha>` and verify the merge
    commit on `origin/main`. A concurrent push must make the command fail closed.
-3. **Promote or refresh.** For Incus proof, run
-   `bin/e2e-topology-snapshot promote <ISSUE>`. If promotion is invalid because
-   the proof plan mutates state or `main` differs, run
-   `bin/e2e-topology-snapshot refresh` instead. For a harness change, refresh
-   the primary topology snapshot with the merge SHA.
+3. **Promote the proof.** For Incus proof, run
+   `bin/e2e-topology-snapshot promote <ISSUE>`. Do not substitute a refresh when
+   the proof plan mutates state, `main` differs, or another promotion precondition
+   fails. Stop closeout until the exact candidate has a promotable retained proof.
+   Follow any extra closeout step in a harness issue's repository-owner-approved,
+   issue-specific proof contract.
 4. **Clean repository resources.** Run
    `bin/worktree-remove <ISSUE> <slug>`, then verify topology, worktree, and local
    branch cleanup.

@@ -89,7 +89,7 @@ describe('TopologySnapshotAvailability', function () {
         Facade::setFacadeApplication($container);
     });
 
-    it('passes when every promoted snapshot is on this checkout\'s topology snapshot VMs', function () {
+    it('passes when every promoted snapshot is on the persistent topology snapshot VMs', function () {
         $identity = TopologySnapshotIdentity::primary();
         fakeAvailabilityHost($identity->instances(), $identity->instances());
 
@@ -122,22 +122,14 @@ describe('TopologySnapshotAvailability', function () {
 
         expect($failure)
             ->toContain('aaaaaaaaaaaa-bbbbbbbbbbbb')
-            ->toContain('promoted from another checkout')
+            ->toContain('was rebuilt or replaced')
             ->toContain(StaleTopologySnapshotManifest::RECOVERY_COMMAND)
+            ->not->toContain('checkout')
             ->not->toContain('corrupt state');
     });
 
-    it('is stale when this checkout\'s topology snapshot VMs are gone entirely', function () {
-        $identity = TopologySnapshotIdentity::live();
-        fakeAvailabilityHost(TopologySnapshotIdentity::primary()->instances(), []);
-
-        expect(fn () => new TopologySnapshotAvailability(new IncusHost(pool: 'orbit-e2e'), $identity)
-            ->assertAvailable(availabilityGeneration()))
-            ->toThrow(StaleTopologySnapshotManifest::class, 'orbit-e2e-live-topology-snapshot-gateway does not exist');
-    });
-
-    it('reads the topology snapshot of its own identity, never the other checkout\'s', function () {
-        $identity = TopologySnapshotIdentity::live();
+    it('reads the sole current topology snapshot identity', function () {
+        $identity = TopologySnapshotIdentity::primary();
         fakeAvailabilityHost($identity->instances(), $identity->instances());
 
         new TopologySnapshotAvailability(new IncusHost(pool: 'orbit-e2e'), $identity)
@@ -147,12 +139,6 @@ describe('TopologySnapshotAvailability', function () {
             fn (PendingProcess $process): bool => (
                 is_array($process->command)
                 && ($process->command[3] ?? null) === 'snapshot'
-                && ($process->command[5] ?? null) === 'local:orbit-e2e-live-topology-snapshot-gateway'
-            ),
-        );
-        Process::assertDidntRun(
-            fn (PendingProcess $process): bool => (
-                is_array($process->command)
                 && ($process->command[5] ?? null) === 'local:orbit-e2e-topology-snapshot-gateway'
             ),
         );

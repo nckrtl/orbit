@@ -23,6 +23,7 @@ use App\E2E\Value\LaravelRelease;
 use App\E2E\Value\TopologySnapshotGeneration;
 use App\E2E\Value\TopologySnapshotIdentity;
 use Illuminate\Process\PendingProcess;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Process;
 
 function promotedGenerationFixture(): TopologySnapshotGeneration
@@ -92,7 +93,7 @@ describe('topology snapshot commands', function () {
         expect($description)->toBe('Permit initial construction from the generic base image');
     });
 
-    it('refuses promote for an issue with no live attempt before touching Incus', function () {
+    it('refuses promote for an issue with no retained proof attempt before touching Incus', function () {
         $worktree = temporaryPath('orbit-topology-snapshot-promote-', 8);
         mkdir($worktree.'/proofs', 0700, true);
         file_put_contents($worktree.'/proofs/NCK-123.json', json_encode([
@@ -199,24 +200,20 @@ describe('topology snapshot commands', function () {
         }
     });
 
-    it('resolves the rebuilder for the topology snapshot this checkout owns', function () {
+    it('resolves the rebuilder for the persistent topology snapshot', function () {
         expect(app(TopologySnapshotRebuilder::class))
             ->toBeInstanceOf(TopologySnapshotRebuilder::class)
             ->and(app(TopologySnapshotIdentity::class))
             ->toEqual(TopologySnapshotIdentity::primary());
     });
 
-    it('names the topology snapshot namespace the harness runs under', function () {
-        config()->set('e2e.topology_snapshot.namespace', 'live');
+    it('always resolves the repository persistent topology snapshot', function () {
         app()->forgetInstance(TopologySnapshotIdentity::class);
 
         expect(app(TopologySnapshotIdentity::class))
-            ->toEqual(TopologySnapshotIdentity::live())
+            ->toEqual(TopologySnapshotIdentity::primary())
             ->and(app(TopologySnapshotIdentity::class)->instance('gateway'))
-            ->toBe('orbit-e2e-live-topology-snapshot-gateway');
-
-        config()->set('e2e.topology_snapshot.namespace', '');
-        app()->forgetInstance(TopologySnapshotIdentity::class);
+            ->toBe('orbit-e2e-topology-snapshot-gateway');
     });
 
     it('refuses a rebuild without the exact main SHA before touching Incus', function () {
@@ -390,10 +387,11 @@ describe('topology snapshot commands', function () {
         });
         app()->instance(IncusHost::class, new IncusHost);
 
-        $this
-            ->artisan('topology-snapshot:status', ['--json' => true])
-            ->expectsOutputToContain('"state":"promoted"')
-            ->assertSuccessful();
+        expect(Artisan::call('topology-snapshot:status', ['--json' => true]))
+            ->toBe(0)
+            ->and(Artisan::output())
+            ->toContain('"state":"promoted"')
+            ->not->toContain('topology_snapshot_namespace');
 
         expect($instanceInventories)
             ->toBe(2)

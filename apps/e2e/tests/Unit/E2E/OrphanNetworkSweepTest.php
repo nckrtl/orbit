@@ -93,8 +93,8 @@ describe('orphan network filter', function () {
         expect(OrphanNetworkSweep::orphans(['oe-topo-snap' => sweepNetwork('oe-topo-snap')]))->toBe([]);
     });
 
-    it('never selects any known checkout\'s topology snapshot network even when it has no users', function () {
-        foreach (TopologySnapshotIdentity::known() as $identity) {
+    it('never selects the current or retired topology snapshot network even when it has no users', function () {
+        foreach ([TopologySnapshotIdentity::primary(), TopologySnapshotIdentity::retired()] as $identity) {
             $network = $identity->network();
 
             expect(OrphanNetworkSweep::orphans([$network => sweepNetwork($network)]))->toBe([]);
@@ -108,7 +108,7 @@ describe('orphan network filter', function () {
             'oe-orphan' => sweepNetwork('oe-orphan'),
         ];
 
-        expect(OrphanNetworkSweep::orphans($networks))->toBe(['oe-orphan']);
+        expect(OrphanNetworkSweep::orphans($networks))->toBe(['oe-live-standby', 'oe-orphan']);
     });
 
     it('never selects an explicitly protected network', function () {

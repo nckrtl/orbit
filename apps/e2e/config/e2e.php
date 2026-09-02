@@ -3,12 +3,6 @@
 declare(strict_types=1);
 
 return [
-    // Which physical topology snapshot this checkout owns. The repository's primary
-    // checkout owns the unnamespaced topology snapshot; the validation clone that
-    // bin/e2e-live drives sets `live` so a promotion there never touches it.
-    'topology_snapshot' => [
-        'namespace' => env('ORBIT_E2E_TOPOLOGY_SNAPSHOT_NAMESPACE', ''),
-    ],
     'incus' => [
         'remote' => env('ORBIT_E2E_INCUS_REMOTE', 'local'),
         'project' => env('ORBIT_E2E_INCUS_PROJECT', 'default'),

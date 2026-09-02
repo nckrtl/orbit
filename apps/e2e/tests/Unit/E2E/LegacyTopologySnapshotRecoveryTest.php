@@ -54,7 +54,7 @@ final class LegacyRecoveryHost
 
     public string $networkOwner = 'orbit-e2e';
 
-    public string $networkAddress = '10.232.200.1/24';
+    public string $networkAddress = '10.232.1.1/24';
 
     /** @var list<string> */
     public array $networkUsers = [];
@@ -95,7 +95,7 @@ function legacyRecoveryGeneration(int $schema = TopologySnapshotGeneration::SCHE
 /** @return array<string, string> */
 function legacyRecoveryMacs(?TopologySnapshotIdentity $identity = null): array
 {
-    $target = TopologyTarget::topologySnapshot($identity ?? TopologySnapshotIdentity::live());
+    $target = TopologyTarget::topologySnapshot($identity ?? TopologySnapshotIdentity::primary());
     $macs = [];
     foreach (TopologyProfile::ROLES as $role) {
         $macs[$role] = $target->mac($role);
@@ -109,7 +109,7 @@ function fakeLegacyRecoveryHost(
     LegacyRecoveryHost $state,
     ?TopologySnapshotIdentity $identity = null,
 ): void {
-    $identity ??= TopologySnapshotIdentity::live();
+    $identity ??= TopologySnapshotIdentity::primary();
     $macs = legacyRecoveryMacs($identity);
     /** @mago-expect lint:cyclomatic-complexity One process fake keeps the mutable host inventory coherent. */
     Process::fake(function (PendingProcess $process) use ($state, $identity, $macs): ProcessResult {
@@ -126,7 +126,7 @@ function fakeLegacyRecoveryHost(
                         'user.orbit.e2e.operation' => str_repeat('a', 32),
                         'ipv4.address' => $state->networkAddress,
                         'ipv4.nat' => 'true',
-                        'ipv4.dhcp.ranges' => '10.232.200.10-10.232.200.12',
+                        'ipv4.dhcp.ranges' => '10.232.1.10-10.232.1.12',
                         'ipv6.address' => 'none',
                         'raw.dnsmasq' => 'port=0',
                     ],
@@ -204,7 +204,7 @@ function legacyRecoveryService(
     ?TopologySnapshotIdentity $identity = null,
     string $stateDirectory = 'topology-snapshot',
 ): array {
-    $identity ??= TopologySnapshotIdentity::live();
+    $identity ??= TopologySnapshotIdentity::primary();
     $hostState = new LegacyRecoveryHost;
     $hostState->instances = $identity->instances();
     foreach ($identity->instances() as $name) {
@@ -243,7 +243,7 @@ function legacyRecoveryRefresher(
 ): TopologySnapshotRefresher {
     $root = dirname(__DIR__, 4);
     $git = new GitRepository($root);
-    $identity = TopologySnapshotIdentity::live();
+    $identity = TopologySnapshotIdentity::primary();
     $synchronizer = new WorktreeSynchronizer($host, $root, $operation);
     $converger = new TopologyConverger($host);
     $verifier = new TopologyVerifier($host, 1, 10_000);
@@ -293,17 +293,17 @@ it('authorizes exact schema 4 and 5 topology snapshot resources without mutation
     $inventory = $recovery->authorize();
 
     expect($inventory->resourceNames())->toBe([
-        'oe-l-topo-snap',
-        'orbit-e2e-live-topology-snapshot-app-dev',
-        'orbit-e2e-live-topology-snapshot-app-prod',
-        'orbit-e2e-live-topology-snapshot-gateway',
+        'oe-topo-snap',
+        'orbit-e2e-topology-snapshot-app-dev',
+        'orbit-e2e-topology-snapshot-app-prod',
+        'orbit-e2e-topology-snapshot-gateway',
     ]);
     expect($inventory->toArray()['scope'])->toBe([
         'remote' => 'local',
         'project' => 'default',
         'pool' => 'orbit-e2e',
-        'topology_snapshot_namespace' => 'live',
     ]);
+    expect($inventory->toArray()['schema'])->toBe(2);
     expect($inventory->sha256())->toMatch('/\A[a-f0-9]{64}\z/');
     expect($store->read('topology-snapshot/recovery.json'))->toBeNull();
 })->with([
@@ -311,18 +311,33 @@ it('authorizes exact schema 4 and 5 topology snapshot resources without mutation
     'schema 5' => TopologySnapshotGeneration::SCHEMA,
 ]);
 
+it('reads retained schema 1 evidence only for the former unnamespaced snapshot', function (): void {
+    [$recovery] = legacyRecoveryService();
+    $value = $recovery->authorize()->toArray();
+    $value['schema'] = 1;
+    $value['scope']['topology_snapshot_namespace'] = '';
+
+    expect(LegacyTopologySnapshotInventory::fromArray($value)->toArray())
+        ->toBe($value);
+
+    $value['scope']['topology_snapshot_namespace'] = 'live';
+
+    expect(fn () => LegacyTopologySnapshotInventory::fromArray($value))
+        ->toThrow(InvalidArgumentException::class, 'The legacy topology snapshot inventory is invalid.');
+});
+
 it('authorizes the retired physical identity and its isolated manifest for migration', function (): void {
     [$recovery, $store] = legacyRecoveryService(
-        identity: TopologySnapshotIdentity::retiredForNamespace('live'),
+        identity: TopologySnapshotIdentity::retired(),
         stateDirectory: 'standby',
     );
 
     expect($recovery->authorize()->resourceNames())
         ->toBe([
-            'oe-live-standby',
-            'orbit-e2e-live-standby-app-dev',
-            'orbit-e2e-live-standby-app-prod',
-            'orbit-e2e-live-standby-gateway',
+            'oe-standby',
+            'orbit-e2e-standby-app-dev',
+            'orbit-e2e-standby-app-prod',
+            'orbit-e2e-standby-gateway',
         ])
         ->and($store->read('standby/promoted.json'))
         ->not
@@ -333,13 +348,13 @@ it('authorizes the retired physical identity and its isolated manifest for migra
 
 it('refuses foreign instance ownership without writing recovery evidence', function (): void {
     [$recovery, $store, $host] = legacyRecoveryService();
-    $host->metadata['orbit-e2e-live-topology-snapshot-gateway'] = [
+    $host->metadata['orbit-e2e-topology-snapshot-gateway'] = [
         'user.orbit.e2e.owner' => 'foreign',
         'user.orbit.e2e.operation' => str_repeat('a', 32),
     ];
 
     expect(fn () => $recovery->authorize())
-        ->toThrow(RuntimeException::class, 'orbit-e2e-live-topology-snapshot-gateway ownership does not match');
+        ->toThrow(RuntimeException::class, 'orbit-e2e-topology-snapshot-gateway ownership does not match');
     expect($store->read('topology-snapshot/recovery.json'))->toBeNull();
 });
 
@@ -350,12 +365,12 @@ it('authorizes project-less network users in the default Incus project', functio
         $host->networkUsers,
     );
 
-    expect($recovery->authorize()->resourceNames())->toContain('oe-l-topo-snap');
+    expect($recovery->authorize()->resourceNames())->toContain('oe-topo-snap');
 });
 
 it('authorizes an exact promotion copy with complete attempt identity', function (): void {
     [$recovery, , $host] = legacyRecoveryService();
-    $copy = 'orbit-e2e-live-topology-snapshot-gateway-next';
+    $copy = 'orbit-e2e-topology-snapshot-gateway-next';
     $host->instances[] = $copy;
     $host->metadata[$copy] = [
         'user.orbit.e2e.owner' => 'orbit-e2e',
@@ -381,25 +396,25 @@ it('fails closed on incomplete or ambiguous ownership evidence', function (Closu
 })->with([
     'missing operation identity' => [
         function (LegacyRecoveryHost $host): void {
-            $host->metadata['orbit-e2e-live-topology-snapshot-gateway'] = ['user.orbit.e2e.owner' => 'orbit-e2e'];
+            $host->metadata['orbit-e2e-topology-snapshot-gateway'] = ['user.orbit.e2e.owner' => 'orbit-e2e'];
         },
         'operation identity is incomplete',
     ],
     'wrong network attachment' => [
         function (LegacyRecoveryHost $host): void {
-            $host->networks['orbit-e2e-live-topology-snapshot-gateway'] = 'oe-topo-snap';
+            $host->networks['orbit-e2e-topology-snapshot-gateway'] = 'oe-other';
         },
         'network identity does not match',
     ],
     'wrong deterministic MAC' => [
         function (LegacyRecoveryHost $host): void {
-            $host->macs['orbit-e2e-live-topology-snapshot-gateway'] = '00:16:3e:00:00:00';
+            $host->macs['orbit-e2e-topology-snapshot-gateway'] = '00:16:3e:00:00:00';
         },
         'MAC identity does not match',
     ],
     'unexpected host disk' => [
         function (LegacyRecoveryHost $host): void {
-            $host->disks['orbit-e2e-live-topology-snapshot-gateway'] = [
+            $host->disks['orbit-e2e-topology-snapshot-gateway'] = [
                 'source' => ['source' => '/tmp/foreign', 'path' => '/mnt/foreign'],
             ];
         },
@@ -407,7 +422,7 @@ it('fails closed on incomplete or ambiguous ownership evidence', function (Closu
     ],
     'feature-owned base VM' => [
         function (LegacyRecoveryHost $host): void {
-            $host->metadata['orbit-e2e-live-topology-snapshot-gateway'] = [
+            $host->metadata['orbit-e2e-topology-snapshot-gateway'] = [
                 'user.orbit.e2e.owner' => 'orbit-e2e',
                 'user.orbit.e2e.operation' => str_repeat('a', 32),
                 'user.orbit.e2e.issue' => 'ORB-92',
@@ -417,7 +432,7 @@ it('fails closed on incomplete or ambiguous ownership evidence', function (Closu
     ],
     'unexpected instance metadata' => [
         function (LegacyRecoveryHost $host): void {
-            $host->metadata['orbit-e2e-live-topology-snapshot-gateway'] = [
+            $host->metadata['orbit-e2e-topology-snapshot-gateway'] = [
                 'user.orbit.e2e.owner' => 'orbit-e2e',
                 'user.orbit.e2e.operation' => str_repeat('a', 32),
                 'user.orbit.e2e.attempt' => str_repeat('b', 32),
@@ -427,7 +442,7 @@ it('fails closed on incomplete or ambiguous ownership evidence', function (Closu
     ],
     'missing promoted snapshot' => [
         function (LegacyRecoveryHost $host): void {
-            $host->snapshots['orbit-e2e-live-topology-snapshot-gateway'] = [];
+            $host->snapshots['orbit-e2e-topology-snapshot-gateway'] = [];
         },
         'does not contain promoted snapshot',
     ],
@@ -435,7 +450,7 @@ it('fails closed on incomplete or ambiguous ownership evidence', function (Closu
         function (LegacyRecoveryHost $host): void {
             $host->networkOwner = 'foreign';
         },
-        'network oe-l-topo-snap ownership does not match',
+        'network oe-topo-snap ownership does not match',
     ],
     'wrong network subnet' => [
         function (LegacyRecoveryHost $host): void {
@@ -457,7 +472,7 @@ it('fails closed on incomplete or ambiguous ownership evidence', function (Closu
     ],
     'duplicate exact instance' => [
         function (LegacyRecoveryHost $host): void {
-            $host->instances[] = 'orbit-e2e-live-topology-snapshot-gateway';
+            $host->instances[] = 'orbit-e2e-topology-snapshot-gateway';
         },
         'appears more than once in inventory',
     ],
@@ -509,7 +524,7 @@ it('round trips a network-only authorization through retained JSON and a fresh r
         new TopologySnapshotManifestStore($store, $paths, new IncusHost(project: 'default', pool: 'orbit-e2e')),
         $store,
         new OperationId(str_repeat('c', 32)),
-        TopologySnapshotIdentity::live(),
+        TopologySnapshotIdentity::primary(),
     );
 
     expect($written['inventory']['instances'] ?? null)
@@ -540,7 +555,7 @@ it('archives a completed network-only record before the next recovery starts', f
         new TopologySnapshotManifestStore($store, $paths, new IncusHost(project: 'default', pool: 'orbit-e2e')),
         $store,
         new OperationId(str_repeat('c', 32)),
-        TopologySnapshotIdentity::live(),
+        TopologySnapshotIdentity::primary(),
     );
 
     $next->start(str_repeat('d', 40), $next->authorize());
@@ -562,7 +577,7 @@ it('rejects non-empty lists and mixed map shapes in retained inventory', functio
         ->toThrow(\InvalidArgumentException::class, 'The legacy topology snapshot inventory is invalid.');
 })->with([
     'non-empty instance list' => [function (array &$value): void {
-        $value['instances'] = [['name' => 'orbit-e2e-live-topology-snapshot-gateway']];
+        $value['instances'] = [['name' => 'orbit-e2e-topology-snapshot-gateway']];
     }],
     'non-empty snapshot list' => [function (array &$value): void {
         $value['snapshots'] = [['name' => 'main-legacy-generation']];
@@ -591,7 +606,7 @@ it('archives completed evidence before starting a separately authorized recovery
         new TopologySnapshotManifestStore($store, $paths, new IncusHost(project: 'default', pool: 'orbit-e2e')),
         $store,
         new OperationId(str_repeat('c', 32)),
-        TopologySnapshotIdentity::live(),
+        TopologySnapshotIdentity::primary(),
     );
 
     $nextInventory = $next->authorize();
@@ -635,7 +650,7 @@ it('keeps one refresh lock through teardown and the construction boundary', func
             throw new RuntimeException('Interrupted after verified teardown.');
         },
     );
-    $identity = TopologySnapshotIdentity::live();
+    $identity = TopologySnapshotIdentity::primary();
     $hostState = new LegacyRecoveryHost;
     $hostState->instances = $identity->instances();
     foreach ($identity->instances() as $name) {
@@ -685,7 +700,7 @@ it('resumes retained evidence only for the same SHA and inventory digest', funct
         new TopologySnapshotManifestStore($store, $paths, new IncusHost(project: 'default', pool: 'orbit-e2e')),
         $store,
         new OperationId(str_repeat('c', 32)),
-        TopologySnapshotIdentity::live(),
+        TopologySnapshotIdentity::primary(),
     );
 
     expect(fn () => $resumed->resume(str_repeat('d', 40)))
@@ -711,7 +726,7 @@ it('retains the exact interrupted construction operation across retries', functi
         new TopologySnapshotManifestStore($store, $paths, new IncusHost(project: 'default', pool: 'orbit-e2e')),
         $store,
         new OperationId(str_repeat('c', 32)),
-        TopologySnapshotIdentity::live(),
+        TopologySnapshotIdentity::primary(),
     );
 
     $interrupted = $firstRetry->interruptedConstructionOperation();
@@ -725,7 +740,7 @@ it('retains the exact interrupted construction operation across retries', functi
         new TopologySnapshotManifestStore($store, $paths, new IncusHost(project: 'default', pool: 'orbit-e2e')),
         $store,
         new OperationId(str_repeat('d', 32)),
-        TopologySnapshotIdentity::live(),
+        TopologySnapshotIdentity::primary(),
     );
 
     expect($interrupted?->value)->toBe(str_repeat('a', 32));
