@@ -53,10 +53,13 @@ install_sury() {
   DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install \
     --yes --no-install-recommends --no-remove -- "${packages[@]}"
 
-  local package package_version
+  local package package_version package_source
+  package_source="${source_uri%/} $os_codename/main $architecture Packages"
   for package in "${packages[@]}"; do
     package_version=$(dpkg-query -W -f='${Version}' -- "$package")
-    [[ "$package_version" == *+deb.sury.org+* ]]
+    apt-cache madison "$package" | awk -F' \\| ' \
+      -v version="$package_version" -v source="$package_source" \
+      '$2 == version && $3 == source { found = 1 } END { exit !found }'
   done
   [[ -x /usr/bin/php8.5 && -x /usr/sbin/php-fpm8.5 ]]
 
