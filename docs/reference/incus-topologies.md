@@ -260,9 +260,14 @@ Known prepared-state limits (first observed on 2026-08-30, NCK-58):
   then runs `instance:php` for every Instance, with development Instances last
   because the app-dev runtime converger publishes the Gateway DNS records for
   every active site. The typed `app_instances` branch validates the persisted
-  source-ready `e2e-dev` item instead. This branch is source-only. It
-  never runs `instance:php`, creates a Workspace, or prepares an app-prod site.
-  It hydrates and verifies only the typed item's recorded `checkout_path`.
+  source-ready `e2e-dev` item for the separate `laravel-typed` App instead. The
+  App uses `https://github.com/laravel/laravel.git`, an explicit `public` root,
+  and the repository's remote default branch. A legacy `laravel` App may keep
+  nullable `main_branch` and `root` values during this transition. Typed
+  convergence does not change that App or its legacy Instance and Workspace
+  records. This branch is source-only. It never runs `instance:php`, creates a
+  Workspace, or prepares an app-prod site. It hydrates and verifies only the
+  typed item's recorded `checkout_path`.
   The prepared-state allowlist tracks the App, legacy Instance, typed item, Node,
   and legacy Workspace command closure used by these two deterministic
   branches. A change in either branch therefore invalidates the promoted
@@ -470,6 +475,11 @@ therefore proves only unchanged legacy `instances` integration. It does not
 prove typed live behavior. After ORB-94 is `Done` on `origin/main`, ORB-76 owns
 the first exact-head live proof of typed empty-to-active `e2e-dev` creation and
 cannot close without that result.
+
+ORB-96 keeps the same evidence boundary. Focused fixtures prove that the
+separate `laravel-typed` sample coexists with unchanged nullable-source legacy
+records. Its exact-head `bin/e2e-live` run proves unchanged legacy `instances`
+integration on current-main product code and does not claim typed output.
 
 The wrapper:
 

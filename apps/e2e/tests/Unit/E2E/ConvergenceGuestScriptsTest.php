@@ -106,11 +106,25 @@ function sample_hydration_fixture(bool $commitPresent = true): array
     ];
 }
 
-/** @return array{root:string,script:string,state:string} */
+/** @return array{root:string,script:string,state:string,legacy_records:array<string,string>} */
 function typed_sample_resource_fixture(): array
 {
     $root = temporaryPath('orbit-typed-sample-resources-', 5);
     mkdir($root, 0o700, true);
+    $legacyRecords = [
+        'app' => "{$root}/legacy-app.json",
+        'instance' => "{$root}/legacy-instance.json",
+        'workspace' => "{$root}/legacy-workspace.json",
+    ];
+    file_put_contents(
+        $legacyRecords['app'],
+        '{"id":7,"slug":"laravel","name":"Laravel","repository_url":"https://github.com/laravel/laravel.git","main_branch":null,"root":null}',
+    );
+    file_put_contents(
+        $legacyRecords['instance'],
+        '{"id":8,"app_id":7,"node_id":2,"name":"legacy-dev","environment":"development","hostname":"laravel.beast"}',
+    );
+    file_put_contents($legacyRecords['workspace'], '{"id":9,"instance_id":8,"name":"legacy","branch":"legacy"}');
     $state = "{$root}/sample-app-state.json";
     $source = file_get_contents(dirname(__DIR__, 3).'/resources/guest/converge-sample-app.sh');
     $script = str_replace(
@@ -129,16 +143,27 @@ function typed_sample_resource_fixture(): array
         printf '%s\n' "$*" >>"$state/commands"
         case "$1" in
           node:list) printf '{"nodes":[{"id":2,"name":"app-dev","status":"%s"},{"id":3,"name":"app-prod","status":"active"}]}' "${NODE_STATUS:-active}" ;;
-          app:list) [[ -e "$state/app" ]] && printf '{"apps":[{"id":1,"slug":"laravel","name":"Laravel","repository_url":"https://github.com/laravel/laravel.git","main_branch":"main","root":"public"}]}' || printf '{"apps":[]}' ;;
+          app:list)
+            legacy=$(cat "$state/legacy-app.json")
+            if [[ -n "${TYPED_APP_RESPONSE:-}" ]]; then
+              printf '{"apps":[%s,%s]}' "$legacy" "$TYPED_APP_RESPONSE"
+            elif [[ -e "$state/app" ]]; then
+              printf '{"apps":[%s,{"id":1,"slug":"laravel-typed","name":"Laravel","repository_url":"https://github.com/laravel/laravel.git","main_branch":"main","root":"public"}]}' "$legacy"
+            else
+              printf '{"apps":[%s]}' "$legacy"
+            fi
+            ;;
           app:new) touch "$state/app"; printf '{"id":1}' ;;
           instance:list)
             prefix=
             [[ "${TYPED_METADATA:-0}" == 1 ]] && prefix='"meta":{"page":1},'
-            if [[ -e "$state/instance" ]]; then
+            if [[ ! -e "$state/instance" && -n "${INITIAL_TYPED_RESPONSE:-}" ]]; then
+              printf '%s' "$INITIAL_TYPED_RESPONSE"
+            elif [[ -e "$state/instance" ]]; then
               if [[ -n "${TYPED_RESPONSE:-}" ]]; then
                 printf '%s' "$TYPED_RESPONSE"
               else
-                printf '{%s"app_instances":[{"id":4,"app_id":1,"node_id":2,"name":"e2e-dev","status":"active","checkout_path":"%s/laravel/e2e-dev","selected_branch":"e2e-dev","starting_commit":"%s","effective_root":"public"}]}' "$prefix" "$state" "$(printf a%.0s {1..40})"
+                printf '{%s"app_instances":[{"id":4,"app_id":1,"node_id":2,"name":"e2e-dev","status":"active","checkout_path":"%s/laravel-typed/e2e-dev","selected_branch":"e2e-dev","starting_commit":"%s","effective_root":"public"}]}' "$prefix" "$state" "$(printf a%.0s {1..40})"
               fi
             else
               printf '{%s"app_instances":[]}' "$prefix"
@@ -150,7 +175,12 @@ function typed_sample_resource_fixture(): array
         BASH);
     chmod("{$root}/orbit", 0o700);
 
-    return ['root' => $root, 'script' => "{$root}/converge.sh", 'state' => $state];
+    return [
+        'root' => $root,
+        'script' => "{$root}/converge.sh",
+        'state' => $state,
+        'legacy_records' => $legacyRecords,
+    ];
 }
 
 /** @return array{environment: array<string, string>} */
@@ -1364,7 +1394,7 @@ describe('convergence guest scripts', function () {
 
     it('probes the validated typed development checkout without legacy paths', function (): void {
         $root = temporaryPath('orbit-typed-source-probes-', 5);
-        $checkout = "{$root}/laravel/e2e-dev";
+        $checkout = "{$root}/laravel-typed/e2e-dev";
         mkdir("{$root}/bin", 0o700, true);
         mkdir($checkout, 0o700, true);
         file_put_contents("{$checkout}/artisan", "#!/usr/bin/env php\n");
@@ -1887,7 +1917,7 @@ describe('convergence guest scripts', function () {
                 'node:list --json',
                 'instance:list --json',
                 'app:list --json',
-                'app:new laravel https://github.com/laravel/laravel.git --name=Laravel --root=public --json',
+                'app:new laravel-typed https://github.com/laravel/laravel.git --name=Laravel --root=public --json',
                 'instance:new 1 2 e2e-dev --json',
                 'instance:list --json',
             ]);
@@ -1913,7 +1943,7 @@ describe('convergence guest scripts', function () {
                 'app_id' => 1,
                 'node_id' => 2,
                 'name' => 'e2e-dev',
-                'checkout_path' => "{$fixture['root']}/laravel/e2e-dev",
+                'checkout_path' => "{$fixture['root']}/laravel-typed/e2e-dev",
                 'effective_root' => 'public',
             ]);
 
@@ -1948,10 +1978,92 @@ describe('convergence guest scripts', function () {
         }
     });
 
+    it('preserves nullable-source legacy records during typed convergence', function (): void {
+        $fixture = typed_sample_resource_fixture();
+        $before = array_map(
+            static fn (string $path): string => (string) file_get_contents($path),
+            $fixture['legacy_records'],
+        );
+
+        try {
+            $process = new Process([
+                'bash',
+                $fixture['script'],
+                'create-resources',
+                'app-dev',
+                'app-prod',
+                str_repeat('a', 40),
+            ]);
+
+            expect($process->run())->toBe(0, $process->getErrorOutput());
+            expect(array_map(
+                static fn (string $path): string => (string) file_get_contents($path),
+                $fixture['legacy_records'],
+            ))->toBe($before);
+        } finally {
+            new Illuminate\Filesystem\Filesystem()->deleteDirectory($fixture['root']);
+        }
+    });
+
+    it('rejects typed sample conflicts before mutation', function (string $conflict): void {
+        $fixture = typed_sample_resource_fixture();
+        $environment = match ($conflict) {
+            'App' => [
+                'TYPED_APP_RESPONSE' => json_encode([
+                    'id' => 1,
+                    'slug' => 'laravel-typed',
+                    'name' => 'Laravel',
+                    'repository_url' => 'https://example.invalid/wrong.git',
+                    'main_branch' => 'main',
+                    'root' => 'public',
+                ], JSON_THROW_ON_ERROR),
+            ],
+            'AppInstance' => ['INITIAL_TYPED_RESPONSE' => json_encode([
+                'app_instances' => [[
+                    'id' => 4,
+                    'app_id' => 99,
+                    'node_id' => 2,
+                    'name' => 'e2e-dev',
+                    'status' => 'active',
+                    'checkout_path' => "{$fixture['root']}/other/e2e-dev",
+                    'selected_branch' => 'main',
+                    'starting_commit' => str_repeat('a', 40),
+                    'effective_root' => 'public',
+                ]],
+            ], JSON_THROW_ON_ERROR)],
+        };
+
+        try {
+            $process = new Process([
+                'bash',
+                $fixture['script'],
+                'create-resources',
+                'app-dev',
+                'app-prod',
+                str_repeat('a', 40),
+            ], env: $environment);
+
+            expect($process->run())->not->toBe(0);
+            expect(file("{$fixture['root']}/commands", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES))->toBe([
+                'node:list --json',
+                'instance:list --json',
+                'app:list --json',
+            ]);
+            expect(file_exists("{$fixture['root']}/app"))
+                ->toBeFalse()
+                ->and(file_exists("{$fixture['root']}/instance"))
+                ->toBeFalse()
+                ->and(file_exists($fixture['state']))
+                ->toBeFalse();
+        } finally {
+            new Illuminate\Filesystem\Filesystem()->deleteDirectory($fixture['root']);
+        }
+    })->with(['App conflict' => ['App'], 'AppInstance conflict' => ['AppInstance']]);
+
     it('rejects a non-canonical checkout path during later typed validation', function (): void {
         $fixture = typed_sample_resource_fixture();
         try {
-            $checkout = 'relative/laravel/e2e-dev';
+            $checkout = 'relative/laravel-typed/e2e-dev';
             touch("{$fixture['root']}/instance");
             file_put_contents($fixture['state'], json_encode([
                 'shape' => 'app_instances',
@@ -2086,7 +2198,11 @@ describe('convergence guest scripts', function () {
                 'app-dev',
                 'app-prod',
                 str_repeat('a', 40),
-            ], env: ['TYPED_RESPONSE' => str_replace('{checkout}', $fixture['root'].'/laravel/e2e-dev', $response)]);
+            ], env: ['TYPED_RESPONSE' => str_replace(
+                '{checkout}',
+                $fixture['root'].'/laravel-typed/e2e-dev',
+                $response,
+            )]);
 
             expect($process->run())->not->toBe(0);
             $commands = file("{$fixture['root']}/commands", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
@@ -2176,7 +2292,7 @@ describe('convergence guest scripts', function () {
     it('re-projects typed source state without a per-AppInstance runtime mutation', function (): void {
         $root = temporaryPath('orbit-typed-reproject-', 5);
         mkdir($root, 0o700, true);
-        $checkout = "{$root}/laravel/e2e-dev";
+        $checkout = "{$root}/laravel-typed/e2e-dev";
         $state = "{$root}/sample-app-state.json";
         file_put_contents($state, json_encode([
             'shape' => 'app_instances',
@@ -2200,7 +2316,7 @@ describe('convergence guest scripts', function () {
             case "$1" in
               node:list) printf '{"nodes":[{"id":2,"name":"app-dev","roles":["app-dev"]},{"id":3,"name":"app-prod","roles":["app-prod"]}]}' ;;
               node:role:add) printf '{"node_id":%s,"role":"%s","assignment":{"status":"active"}}' "$2" "$3" ;;
-              instance:list) printf '{"app_instances":[{"id":4,"app_id":1,"node_id":2,"name":"e2e-dev","status":"active","checkout_path":"%s/laravel/e2e-dev","selected_branch":"e2e-dev","starting_commit":"%s","effective_root":"public"}]}' "$state" "$(printf a%.0s {1..40})" ;;
+              instance:list) printf '{"app_instances":[{"id":4,"app_id":1,"node_id":2,"name":"e2e-dev","status":"active","checkout_path":"%s/laravel-typed/e2e-dev","selected_branch":"e2e-dev","starting_commit":"%s","effective_root":"public"}]}' "$state" "$(printf a%.0s {1..40})" ;;
               instance:php) exit 99 ;;
               *) exit 70 ;;
             esac

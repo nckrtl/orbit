@@ -337,7 +337,7 @@ describe('TopologyVerifier typed application state', function () {
     it('selects typed source probes and omits legacy Workspace and app-prod site probes', function (): void {
         setUpTopologyVerifierProcessFacade();
         $sha = str_repeat('a', 40);
-        $checkout = '/srv/orbit/apps/laravel/e2e-dev';
+        $checkout = '/srv/orbit/apps/laravel-typed/e2e-dev';
         $batches = [];
         $argv = [];
 
