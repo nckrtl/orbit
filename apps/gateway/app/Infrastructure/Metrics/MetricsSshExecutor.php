@@ -863,7 +863,7 @@ final readonly class MetricsSshExecutor implements MetricsRuntimeHost, MetricsCr
 
         return new SshConnection(
             host: $address,
-            user: 'orbit',
+            user: $node->user,
             port: 22,
             identityFile: $this->keys->privateKeyPath(),
             knownHostsFile: $this->knownHosts->path(),

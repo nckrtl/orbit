@@ -15,6 +15,48 @@ use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
 
+it('uses the configured node user for every SSH connection', function (string $user): void {
+    $ssh = new MetricsExporterCapturingSsh([
+        metricsExporterResult(exitCode: 1),
+        metricsExporterResult(stdout: "Status: active\n"),
+        metricsExporterResult(exitCode: 3, stdout: "inactive\n"),
+    ]);
+
+    metricsExporterExecutor($ssh)->snapshot(
+        metricsExporterNode('app-prod', '10.44.0.4', $user),
+        metricsExporterNode('metrics', '10.44.0.3'),
+    );
+
+    expect(array_map(
+        static fn (SshConnection $connection): string => $connection->user,
+        $ssh->connections,
+    ))->toBe([$user, $user, $user]);
+})->with([
+    'non-orbit user' => 'deployer',
+    'orbit user' => 'orbit',
+]);
+
+it('does not fall back when the configured node user cannot authenticate', function (string $user): void {
+    $ssh = new MetricsExporterCapturingSsh([
+        metricsExporterResult(exitCode: 255),
+    ]);
+
+    expect(fn () => metricsExporterExecutor($ssh)->snapshot(
+        metricsExporterNode('app-prod', '10.44.0.4', $user),
+        metricsExporterNode('metrics', '10.44.0.3'),
+    ))
+        ->toThrow(ResourceOperationException::class, 'could not be inspected')
+        ->and(array_map(
+            static fn (SshConnection $connection): string => $connection->user,
+            $ssh->connections,
+        ))
+        ->toBe([$user]);
+})->with([
+    'invalid user' => 'invalid user',
+    'missing user' => '',
+    'unusable user' => 'nck121-noauth',
+]);
+
 it('converges protected exporter configuration and exact Metrics-owned firewall access', function (): void {
     $ssh = new MetricsExporterCapturingSsh([
         metricsExporterResult(exitCode: 1),
@@ -465,11 +507,12 @@ function metricsExporterExecutor(SshExecutor $ssh): MetricsExporterSshExecutor
     );
 }
 
-function metricsExporterNode(string $name, string $address): Node
+function metricsExporterNode(string $name, string $address, string $user = 'orbit'): Node
 {
     return new Node([
         'name' => $name,
         'wireguard_ip' => $address,
+        'user' => $user,
     ]);
 }
 
@@ -514,6 +557,9 @@ function metricsExporterCommand(array $commands, array $arguments): ?RemoteComma
 
 final class MetricsExporterCapturingSsh implements SshExecutor
 {
+    /** @var list<SshConnection> */
+    public array $connections = [];
+
     /** @var list<RemoteCommand> */
     public array $commands = [];
 
@@ -524,6 +570,7 @@ final class MetricsExporterCapturingSsh implements SshExecutor
 
     public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
     {
+        $this->connections[] = $connection;
         $this->commands[] = $command;
 
         return array_shift($this->results) ?? metricsExporterResult();
