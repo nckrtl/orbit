@@ -13,6 +13,7 @@ usage: bin/e2e-topology <action> ISSUE [...]
   sync    ISSUE                   re-verify the mounted source identity
   verify  ISSUE                   verify the discovery topology
   prove   ISSUE [--plan=PATH]     prove the worktree HEAD (default proofs/ISSUE.json)
+  equivalence ISSUE [--plan=PATH] compare HEAD with the immutable inputs of its retained proof
   status  ISSUE                   report discovery and proof from <worktree>/.e2e/
   release ISSUE [--proof]         release discovery or the selected proof and sweep orphan networks
 
@@ -26,7 +27,7 @@ action=$1
 shift
 
 case "$action" in
-    acquire|shell|exec|sync|verify|prove|status|release)
+    acquire|shell|exec|sync|verify|prove|equivalence|status|release)
         exec php "$root/apps/e2e/artisan" "topology:$action" "$@"
         ;;
     *)

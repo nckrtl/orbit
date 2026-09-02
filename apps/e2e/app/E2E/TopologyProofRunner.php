@@ -12,6 +12,7 @@ use App\E2E\Value\AttemptPurpose;
 use App\E2E\Value\FeatureTopology;
 use App\E2E\Value\GuestCommand;
 use App\E2E\Value\OperationId;
+use App\E2E\Value\ProofInputManifest;
 use App\E2E\Value\ProofPlan;
 use App\E2E\Value\ProofResult;
 use App\E2E\Value\ProofStatus;
@@ -55,20 +56,36 @@ final readonly class TopologyProofRunner
         private StatePaths $hostPaths,
         private OperationId $operation,
         private TopologySnapshotIdentity $topologySnapshotIdentity,
+        private ProofInputManifestBuilder $proofInputs,
         private string $repositoryRoot = '',
         /** @var (Closure(): AttemptId)|null Mints the attempt identity; injectable so tests pin resource names. */
         private ?Closure $attempts = null,
     ) {}
 
-    public function prove(TopologyRequest $request, ProofPlan $plan): ProofResult
+    public function prove(TopologyRequest $request, ProofPlan $plan, string $planPath): ProofResult
     {
         $repository = new GitRepository($request->worktree);
         $this->assertRepositoryIdentity($request, $repository);
         if ($repository->dirtyOverlay() !== null) {
             throw new InvalidArgumentException('The worktree must be clean: commit or stash before proof.');
         }
+        $generation = $this->topologySnapshot->promoted() ?? throw new RuntimeException(
+            'No promoted topology snapshot generation is available.',
+        );
+        if ($generation->isLegacy()) {
+            throw new RuntimeException('The promoted topology snapshot generation is legacy; refresh it before proof.');
+        }
         $candidateSha = $repository->commit();
         $candidateTree = $repository->tree($candidateSha);
+        $includedMainSha = $repository->commit('origin/main');
+        $manifest = $this->proofInputs->build(
+            $repository,
+            $candidateSha,
+            $includedMainSha,
+            $request->issue,
+            $planPath,
+            $plan,
+        );
 
         $state = IssueState::forWorktree($request->issue, $request->worktree);
         $lock = new OperationLock($this->hostPaths);
@@ -84,7 +101,7 @@ final readonly class TopologyProofRunner
                 );
             }
 
-            return $this->proveLocked($request, $state, $repository, $candidateSha, $candidateTree, $plan);
+            return $this->proveLocked($request, $state, $repository, $candidateSha, $candidateTree, $plan, $manifest);
         } finally {
             $lock->release();
         }
@@ -97,6 +114,7 @@ final readonly class TopologyProofRunner
         string $candidateSha,
         string $candidateTree,
         ProofPlan $plan,
+        ProofInputManifest $manifest,
     ): ProofResult {
         $generation = $this->topologySnapshot->promoted() ?? throw new RuntimeException(
             'No promoted topology snapshot generation is available.',
@@ -170,8 +188,22 @@ final readonly class TopologyProofRunner
             $plan->endsWith,
             TopologyVerifier::skippedProbes($plan->endsWith),
             $plan->fingerprint(),
+            $status === ProofStatus::Proved ? $manifest->fingerprint() : null,
         );
         $this->record($state, $target, $generation, $source, $verification);
+        if ($status === ProofStatus::Proved) {
+            $repository->pinProof($request->issue, $target->requireAttempt(), $candidateSha);
+            try {
+                $state->writeProofInputManifest($manifest->fingerprint(), $manifest->toArray());
+                $state->writeProof($result->toArray());
+            } catch (Throwable $exception) {
+                $repository->unpinProof($request->issue, $target->requireAttempt());
+
+                throw $exception;
+            }
+
+            return $result;
+        }
         $state->writeProof($result->toArray());
 
         return $result;

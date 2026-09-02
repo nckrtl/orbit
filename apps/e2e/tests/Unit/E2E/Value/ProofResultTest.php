@@ -69,6 +69,7 @@ describe('ProofResult', function () {
                 null,
                 '2026-08-30T10:00:00Z',
                 planSha256: str_repeat('c', 64),
+                manifestSha256: str_repeat('d', 64),
             ),
         )
             ->toThrow(InvalidArgumentException::class, 'cannot carry a failure')
@@ -82,6 +83,7 @@ describe('ProofResult', function () {
                     'x',
                     '2026-08-30T10:00:00Z',
                     planSha256: str_repeat('c', 64),
+                    manifestSha256: str_repeat('d', 64),
                 ),
             )
             ->toThrow(InvalidArgumentException::class, 'cannot carry a failure');
@@ -101,6 +103,7 @@ describe('ProofResult declared end state', function (): void {
             TopologyEndState::fromArray(['nodes' => ['gateway', 'app-dev']]),
             ['vm.app-prod.running', 'role.app-prod'],
             str_repeat('c', 64),
+            str_repeat('d', 64),
         );
 
         expect($result->toArray()['ends_with'] ?? null)
@@ -114,6 +117,7 @@ describe('ProofResult declared end state', function (): void {
                 'attempt_id',
                 'candidate_sha',
                 'plan_sha256',
+                'manifest_sha256',
                 'actions',
                 'recorded_at',
                 'ends_with',
@@ -132,6 +136,7 @@ describe('ProofResult declared end state', function (): void {
             '2026-08-30T10:00:00Z',
             $endState,
             planSha256: str_repeat('c', 64),
+            manifestSha256: str_repeat('d', 64),
         );
 
         expect($result->toArray())
@@ -156,6 +161,7 @@ describe('ProofResult declared end state', function (): void {
             $endState,
             ['role.app-prod'],
             str_repeat('c', 64),
+            str_repeat('d', 64),
         ))
             ->toThrow(InvalidArgumentException::class, 'A proof without a declared absence cannot skip probes.');
     })->with([

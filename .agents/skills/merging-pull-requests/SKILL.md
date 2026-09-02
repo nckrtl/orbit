@@ -14,15 +14,21 @@ gates are satisfied.
 1. **Verify the candidate.** Record the exact current head SHA. Require target
    `main`, green CI for that SHA, an independent `Approved.` review bound to that
    SHA, no actionable comments, and no later commit. For `Proof: incus`, require
-   an active proved topology whose candidate equals `main` plus that exact head.
-   If `main` moved, stop until current-head proof exists.
+   an active immutable proved topology plus a valid current proof-input
+   manifest. The exact head must either be the proved candidate (or have its
+   exact tree) or carry an `exact`/`equivalent` retained-proof report. If `main`
+   moved, stop until the exact head has a new current-main equivalence decision
+   or complete proof.
 2. **Merge the bound head.** Run
    `gh pr merge <n> --merge --match-head-commit <sha>` and verify the merge
    commit on `origin/main`. A concurrent push must make the command fail closed.
 3. **Promote the proof.** For Incus proof, run
    `bin/e2e-topology-snapshot promote <ISSUE>`. Do not substitute a refresh when
    the proof plan mutates state, `main` differs, or another promotion precondition
-   fails. Stop closeout until the exact candidate has a promotable retained proof.
+   fails. Promotion requires the merge tree to equal the exact accepted head
+   and records proved, accepted, and merged lineage plus the retained runtime
+   fingerprint. Stop closeout until the exact candidate has a promotable
+   retained proof.
    Follow any extra closeout step in a harness issue's repository-owner-approved,
    issue-specific proof contract.
 4. **Clean repository resources.** Run

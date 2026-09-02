@@ -14,12 +14,16 @@ use App\E2E\State\StatePaths;
 use App\E2E\TopologyReleaser;
 use App\E2E\TopologySnapshotManifestStore;
 use App\E2E\TopologySnapshotPromoter;
+use App\E2E\TopologySnapshotPromotionStore;
 use App\E2E\TopologyVerifier;
 use App\E2E\Value\AttemptId;
 use App\E2E\Value\AttemptPurpose;
 use App\E2E\Value\FeatureTopology;
 use App\E2E\Value\OperationId;
+use App\E2E\Value\ProofEquivalenceReport;
+use App\E2E\Value\ProofEquivalenceResult;
 use App\E2E\Value\ProofFixtures;
+use App\E2E\Value\ProofInputManifest;
 use App\E2E\Value\ProofPlan;
 use App\E2E\Value\SourceState;
 use App\E2E\Value\TopologyProfile;
@@ -97,12 +101,30 @@ function promotableFixture(bool $mainHoldsCandidate = true, AttemptPurpose $purp
     ], JSON_THROW_ON_ERROR));
     $plan = ProofPlan::fromFile($planPath);
     if ($purpose === AttemptPurpose::Proof) {
+        $manifest = new ProofInputManifest(
+            1,
+            $candidate,
+            $candidate,
+            [],
+            [[
+                'path' => 'proofs/NCK-123.json',
+                'classification' => 'proof-contract',
+                'mode' => '100644',
+                'blob' => str_repeat('d', 40),
+            ]],
+            'proofs/NCK-123.json',
+            [],
+            [],
+            ['static_classification' => true, 'proof_contract' => true, 'checkout_literals' => true],
+        );
+        $state->writeProofInputManifest($manifest->fingerprint(), $manifest->toArray());
         $state->writeProof([
             'status' => 'proved',
             'issue' => 'NCK-123',
             'attempt_id' => $target->requireAttempt()->value,
             'candidate_sha' => $candidate,
             'plan_sha256' => $plan->fingerprint(),
+            'manifest_sha256' => $manifest->fingerprint(),
             'actions' => [['id' => 'doctor', 'node' => 'app-dev', 'exit_code' => 0]],
             'recorded_at' => '2026-08-30T00:00:00Z',
         ]);
@@ -146,6 +168,7 @@ function promoterFor(
         new GitRepository($root),
         $operation,
         TopologySnapshotIdentity::primary(),
+        new TopologySnapshotPromotionStore(new AtomicJsonStore($paths)),
     );
 }
 
@@ -394,7 +417,7 @@ function fakePromotionHost(
     });
 }
 
-/** @mago-expect lint:kan-defect The promotion test asserts the complete ordered command chain. */
+/** @mago-expect lint:cyclomatic-complexity,kan-defect The promotion test asserts the complete ordered command chain. */
 describe('TopologySnapshotPromoter', function (): void {
     it('refuses a candidate with a missing required assignment before any mutation', function (): void {
         $fixture = promotableFixture();
@@ -532,6 +555,61 @@ describe('TopologySnapshotPromoter', function (): void {
         expect($events)->toBe($expected);
     });
 
+    it('promotes retained proof for a different accepted SHA with equivalent recorded inputs', function (): void {
+        $fixture = promotableFixture();
+        $state = IssueState::forWorktree('NCK-123', $fixture['worktree']);
+        $proof = $state->proof();
+        assert($proof !== null && is_string($proof['manifest_sha256'] ?? null));
+        mkdir($fixture['worktree'].'/docs', 0700, true);
+        file_put_contents($fixture['worktree'].'/docs/correction.md', "correction\n");
+        Process::run(['git', '-C', $fixture['worktree'], 'add', 'docs/correction.md'])->throw();
+        Process::run(['git', '-C', $fixture['worktree'], 'commit', '--quiet', '-m', 'docs correction'])->throw();
+        $accepted = new GitRepository($fixture['worktree'])->commit();
+        Process::run(['git', '-C', $fixture['root'], 'branch', '-f', 'main', $accepted])->throw();
+        $equivalence = new ProofEquivalenceReport(
+            $fixture['candidate'],
+            $accepted,
+            $fixture['candidate'],
+            $fixture['plan']->fingerprint(),
+            $proof['manifest_sha256'],
+            ProofEquivalenceResult::Equivalent,
+            [[
+                'path' => 'docs/correction.md',
+                'previous_path' => null,
+                'change' => 'added',
+                'classification' => 'non-runtime',
+            ]],
+            'retained-proof',
+            'review-exact-head',
+            [],
+            '2026-09-02T10:00:00Z',
+        );
+        $state->writeEquivalence($equivalence->fingerprint(), $equivalence->toArray());
+        $events = [];
+        fakePromotionHost($fixture['target'], $events);
+
+        $result = promoterFor($fixture['root'], $fixture['paths'], $fixture['manifests'])
+            ->promote($fixture['request'], $fixture['plan']);
+        $lineage = new TopologySnapshotPromotionStore(new AtomicJsonStore($fixture['paths']))
+            ->find($result['generation_id']);
+
+        expect($result)
+            ->toMatchArray([
+                'promotion_path' => 'retained-proof',
+                'proved_sha' => $fixture['candidate'],
+                'accepted_sha' => $accepted,
+                'merged_sha' => $accepted,
+                'equivalence_sha256' => $equivalence->fingerprint(),
+            ])
+            ->and($lineage)
+            ->toMatchArray([
+                'proved_sha' => $fixture['candidate'],
+                'accepted_sha' => $accepted,
+                'merged_sha' => $accepted,
+                'runtime_fingerprint' => $result['runtime_fingerprint'],
+            ]);
+    });
+
     it('discards the copies and keeps the topology snapshot when the snapshot fails before the swap', function (): void {
         $fixture = promotableFixture();
         $events = [];
@@ -629,6 +707,60 @@ describe('TopologySnapshotPromoter', function (): void {
         'nonzero action' => [[['id' => 'doctor', 'node' => 'app-dev', 'exit_code' => 124]]],
     ]);
 
+    it('refuses non-equivalent or wrong-head reports without touching Incus', function (string $case): void {
+        $fixture = promotableFixture();
+        mkdir($fixture['worktree'].'/docs', 0700, true);
+        file_put_contents($fixture['worktree'].'/docs/correction.md', "correction\n");
+        Process::run(['git', '-C', $fixture['worktree'], 'add', 'docs/correction.md'])->throw();
+        Process::run(['git', '-C', $fixture['worktree'], 'commit', '--quiet', '-m', 'docs correction'])->throw();
+        $accepted = new GitRepository($fixture['worktree'])->commit();
+        Process::run(['git', '-C', $fixture['root'], 'branch', '-f', 'main', $accepted])->throw();
+        $state = IssueState::forWorktree('NCK-123', $fixture['worktree']);
+        $proof = $state->proof();
+        assert($proof !== null && is_string($proof['manifest_sha256'] ?? null));
+        $result = match ($case) {
+            'stale' => ProofEquivalenceResult::Stale,
+            'indeterminate' => ProofEquivalenceResult::Indeterminate,
+            default => ProofEquivalenceResult::Equivalent,
+        };
+        $classification = match ($case) {
+            'stale' => 'runtime',
+            'indeterminate' => 'indeterminate',
+            default => 'non-runtime',
+        };
+        $report = new ProofEquivalenceReport(
+            $fixture['candidate'],
+            $case === 'wrong-head' ? str_repeat('e', 40) : $accepted,
+            $fixture['candidate'],
+            $fixture['plan']->fingerprint(),
+            $proof['manifest_sha256'],
+            $result,
+            [[
+                'path' => 'docs/correction.md',
+                'previous_path' => null,
+                'change' => 'added',
+                'classification' => $classification,
+            ]],
+            $result === ProofEquivalenceResult::Equivalent ? 'retained-proof' : null,
+            match ($result) {
+                ProofEquivalenceResult::Equivalent => 'review-exact-head',
+                ProofEquivalenceResult::Stale => 'release-proof-and-run-complete-reproof',
+                default => 'resolve-equivalence-failure-and-run-complete-reproof',
+            },
+            $result === ProofEquivalenceResult::Indeterminate ? ['Unknown input.'] : [],
+            '2026-09-02T10:00:00Z',
+        );
+        $state->writeEquivalence($report->fingerprint(), $report->toArray());
+        $events = [];
+        fakePromotionHost($fixture['target'], $events);
+
+        expect(fn () => promoterFor($fixture['root'], $fixture['paths'], $fixture['manifests'])
+            ->promote($fixture['request'], $fixture['plan']))
+            ->toThrow(RuntimeException::class, 'does not authorize retained-proof promotion')
+            ->and($events)
+            ->toBe([]);
+    })->with(['stale', 'indeterminate', 'wrong-head']);
+
     it('refuses a candidate that main does not hold without touching Incus', function (): void {
         $fixture = promotableFixture(mainHoldsCandidate: false);
         $events = [];
@@ -636,7 +768,7 @@ describe('TopologySnapshotPromoter', function (): void {
 
         expect(fn () => promoterFor($fixture['root'], $fixture['paths'], $fixture['manifests'])
             ->promote($fixture['request'], $fixture['plan']))
-            ->toThrow(RuntimeException::class, 'does not hold the proved candidate');
+            ->toThrow(RuntimeException::class, 'does not hold the accepted candidate');
         Process::assertDidntRun(fn (PendingProcess $process): bool => ($process->command[0] ?? null) === 'incus');
     });
 });
