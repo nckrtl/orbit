@@ -191,7 +191,7 @@ begin_phase() {
 ; priority=99
 pcov.enabled=1
 pcov.directory=/home/orbit/orbit
-pcov.exclude=~(?:^|/)(?:vendor|tests?)(?:/|$)~
+pcov.exclude="~(?:^|/)(?:vendor|tests?)(?:/|$)~"
 auto_prepend_file=$collector
 INI
   chmod 0644 "$observation_ini"
@@ -212,7 +212,7 @@ probe_cli() {
 probe_fpm() {
   curl --fail --silent --show-error --max-time 30 \
     --cacert /home/orbit/.orbit/ca/root.pem \
-    --resolve gateway.orbit:443:127.0.0.1 https://gateway.orbit/up >/dev/null
+    --resolve gateway.orbit:443:10.44.0.1 https://gateway.orbit/up >/dev/null
 }
 
 collect_phase() {

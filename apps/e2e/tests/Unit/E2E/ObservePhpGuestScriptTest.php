@@ -80,6 +80,8 @@ it('enables observation after the disabled default and disables FPM before clean
             '; priority=99',
             'pcov.enabled=0',
             'pcov.enabled=1',
+            'pcov.exclude="~(?:^|/)(?:vendor|tests?)(?:/|$)~"',
+            '--resolve gateway.orbit:443:10.44.0.1',
             'phpdismod -v "$version" -s fpm orbit-e2e-observe pcov',
             '!filter_var(ini_get("pcov.enabled"), FILTER_VALIDATE_BOOL)',
             '^pcov support => Enabled$',
