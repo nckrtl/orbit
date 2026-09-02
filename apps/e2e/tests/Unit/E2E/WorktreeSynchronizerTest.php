@@ -435,6 +435,7 @@ function synchronizerRequiredGuestScriptNames(): array
         'converge-gateway.sh',
         'converge-sample-app.sh',
         'hydrate-orbit.sh',
+        'observe-php.sh',
         'prepare-node.sh',
         'receive-source.sh',
         'retarget-vpn.sh',

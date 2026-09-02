@@ -325,6 +325,7 @@ describe('PreparedStateFingerprint', function (): void {
         file_put_contents($this->path.'/apps/e2e/resources/guest/converge-gateway.sh', "converge-v1\n");
         file_put_contents($this->path.'/apps/e2e/app/E2E/TopologyVerifier.php', "verifier-v1\n");
         file_put_contents($this->path.'/apps/e2e/resources/guest/verify-topology.sh', "verify-v1\n");
+        file_put_contents($this->path.'/apps/e2e/resources/guest/observe-php.sh', "observe-v1\n");
         file_put_contents($this->path.'/apps/cli/app/Commands/Gateway/GatewayStatusCommand.php', "status-v1\n");
         file_put_contents($this->path.'/apps/e2e/resources/guest/receive-source.sh', "transport-v1\n");
         writePreparedManifest($this->path, array_replace(preparedManifest(), [
@@ -346,6 +347,7 @@ describe('PreparedStateFingerprint', function (): void {
         )->forCommit();
 
         file_put_contents($this->path.'/apps/e2e/resources/guest/verify-topology.sh', "verify-v2\n");
+        file_put_contents($this->path.'/apps/e2e/resources/guest/observe-php.sh', "observe-v2\n");
         fingerprintGit($this->path, ['add', '.']);
         fingerprintGit($this->path, ['commit', '--quiet', '-m', 'verify']);
         $verify = new PreparedStateFingerprint(
