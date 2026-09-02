@@ -6,6 +6,5 @@
 
 <!-- One of:
 Proved with `proofs/<ISSUE>.json` at `<sha>`.
-Harness: `bin/e2e-live <sha>` passed.
 Automated tests only.
 -->

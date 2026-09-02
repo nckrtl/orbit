@@ -20,7 +20,7 @@ final class ExecCommand extends E2ECommand
             .self::WORKTREE_OPTION
             .' {--argv=} {--argv-file=} {--proof : Run against the retained failed proof topology} {--json}';
     #[\Override]
-    protected $description = 'Execute an exact argv vector, as the orbit runtime user, on one role of the live topology';
+    protected $description = 'Execute an exact argv vector, as the orbit runtime user, on one discovery or failed-proof role';
 
     public function handle(TopologyAcquirer $acquirer): int
     {

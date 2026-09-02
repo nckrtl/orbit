@@ -18,7 +18,7 @@ use InvalidArgumentException;
 use RuntimeException;
 
 /**
- * Rebuild this checkout's topology snapshot from the base image after its resources and
+ * Rebuild the topology snapshot from the base image after its resources and
  * its manifest disagree.
  *
  * Ordinary rebuild only repairs stale state after exact resource inventory
@@ -260,10 +260,9 @@ final readonly class TopologySnapshotRebuilder
 
     private function assertAuthorizedScope(LegacyTopologySnapshotInventory $authorization): void
     {
-        $expected = [
-            ...$this->host->scope(),
-            'topology_snapshot_namespace' => $this->identity->namespace,
-        ];
+        $expected = $authorization->schema === 1
+            ? [...$this->host->scope(), 'topology_snapshot_namespace' => '']
+            : $this->host->scope();
         if ($authorization->scope !== $expected) {
             throw new RuntimeException('The legacy topology snapshot recovery scope does not match this harness.');
         }

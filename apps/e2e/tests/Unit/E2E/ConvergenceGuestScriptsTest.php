@@ -2363,6 +2363,64 @@ describe('convergence guest scripts', function () {
         }
     });
 
+    it('rejects a contradictory final Node read-back before typed resource work', function (
+        string $finalNodeResponse,
+        array $expectedCommands,
+    ): void {
+        $fixture = typed_sample_resource_fixture();
+
+        try {
+            $process = new Process([
+                'bash',
+                $fixture['script'],
+                'create-resources',
+                'app-dev',
+                'app-prod',
+                str_repeat('a', 40),
+            ], env: ['FINAL_NODE_RESPONSE' => $finalNodeResponse]);
+
+            expect($process->run())->not->toBe(0);
+            $commands = file("{$fixture['root']}/commands", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+            expect($commands)->toBe($expectedCommands);
+            expect(file_exists("{$fixture['root']}/app"))
+                ->toBeFalse()
+                ->and(file_exists("{$fixture['root']}/instance"))
+                ->toBeFalse();
+        } finally {
+            new Illuminate\Filesystem\Filesystem()->deleteDirectory($fixture['root']);
+        }
+    })->with([
+        'different Cluster membership' => [
+            '{"nodes":[{"id":2,"name":"app-dev","status":"active","cluster_id":9}]}',
+            [
+                'node:list --json',
+                'instance:list --json',
+                'node:list --json',
+                'cluster:list --json',
+                'cluster:new e2e-development --json',
+                'cluster:node:attach 3 2 --json',
+                'cluster:router:set 3 2 --json',
+                'cluster:update 3 --state=active --json',
+                'node:list --json',
+                'cluster:list --json',
+            ],
+        ],
+        'inactive selected Node' => [
+            '{"nodes":[{"id":2,"name":"app-dev","status":"inactive","cluster_id":3}]}',
+            [
+                'node:list --json',
+                'instance:list --json',
+                'node:list --json',
+                'cluster:list --json',
+                'cluster:new e2e-development --json',
+                'cluster:node:attach 3 2 --json',
+                'cluster:router:set 3 2 --json',
+                'cluster:update 3 --state=active --json',
+                'node:list --json',
+            ],
+        ],
+    ]);
+
     it('preserves nullable-source legacy records during typed convergence', function (): void {
         $fixture = typed_sample_resource_fixture();
         $before = array_map(

@@ -8,7 +8,7 @@ namespace App\E2E\Value;
 final readonly class LegacyTopologySnapshotInventory
 {
     /**
-     * @param array{remote:string,project:string,pool:string,topology_snapshot_namespace:string} $scope
+     * @param array{remote:string,project:string,pool:string}|array{remote:string,project:string,pool:string,topology_snapshot_namespace:string} $scope
      * @param array<string, mixed> $promotedManifest
      * @param list<array<string, mixed>> $recordedManifests
      * @param array<string, array<string, mixed>> $instances
@@ -23,7 +23,10 @@ final readonly class LegacyTopologySnapshotInventory
         public array $instances,
         public array $snapshots,
         public ?array $network,
-    ) {}
+        public int $schema = 2,
+    ) {
+        self::validateScope($scope, $schema);
+    }
 
     /** @return list<string> */
     public function resourceNames(): array
@@ -41,7 +44,7 @@ final readonly class LegacyTopologySnapshotInventory
     public function toArray(): array
     {
         return [
-            'schema' => 1,
+            'schema' => $this->schema,
             'scope' => $this->scope,
             'promoted_manifest' => $this->promotedManifest,
             'recorded_manifests' => $this->recordedManifests,
@@ -69,10 +72,8 @@ final readonly class LegacyTopologySnapshotInventory
                 'snapshots',
                 'network',
             ]
-            || ($value['schema'] ?? null) !== 1
+            || ! in_array($value['schema'] ?? null, [1, 2], true)
             || ! is_array($value['scope'])
-            || array_keys($value['scope']) !== ['remote', 'project', 'pool', 'topology_snapshot_namespace']
-            || ! array_all($value['scope'], static fn (mixed $item): bool => is_string($item))
             || ! is_array($value['promoted_manifest'])
             || array_is_list($value['promoted_manifest'])
             || ! is_array($value['recorded_manifests'])
@@ -89,7 +90,7 @@ final readonly class LegacyTopologySnapshotInventory
             throw new \InvalidArgumentException('The legacy topology snapshot inventory is invalid.');
         }
 
-        /** @var array{remote:string,project:string,pool:string,topology_snapshot_namespace:string} $scope */
+        /** @var array{remote:string,project:string,pool:string}|array{remote:string,project:string,pool:string,topology_snapshot_namespace:string} $scope */
         $scope = $value['scope'];
         /** @var array<string, mixed> $promotedManifest */
         $promotedManifest = $value['promoted_manifest'];
@@ -102,7 +103,32 @@ final readonly class LegacyTopologySnapshotInventory
         /** @var array<string, mixed>|null $network */
         $network = $value['network'];
 
-        return new self($scope, $promotedManifest, $recordedManifests, $instances, $snapshots, $network);
+        return new self(
+            $scope,
+            $promotedManifest,
+            $recordedManifests,
+            $instances,
+            $snapshots,
+            $network,
+            $value['schema'],
+        );
+    }
+
+    /** @param array<array-key, mixed> $scope */
+    private static function validateScope(array $scope, int $schema): void
+    {
+        $keys = $schema === 1
+            ? ['remote', 'project', 'pool', 'topology_snapshot_namespace']
+            : ['remote', 'project', 'pool'];
+        if (
+            ! in_array($schema, [1, 2], true)
+            || array_keys($scope) !== $keys
+            || ! array_all($scope, static fn (mixed $item): bool => is_string($item))
+            || $schema === 1
+            && $scope['topology_snapshot_namespace'] !== ''
+        ) {
+            throw new \InvalidArgumentException('The legacy topology snapshot inventory is invalid.');
+        }
     }
 
     /** @param array<array-key, mixed> $value */

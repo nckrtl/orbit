@@ -43,7 +43,6 @@ final class StatusCommand extends Command
             }
             $payload = [
                 'state' => $generation === null ? 'missing' : 'promoted',
-                'topology_snapshot_namespace' => $identity->namespace,
                 'stopped' => $stopped,
                 'generation' => $generation?->toArray(),
             ];
@@ -61,7 +60,6 @@ final class StatusCommand extends Command
                 $this->option('json')
                     ? json_encode([
                         'state' => 'stale',
-                        'topology_snapshot_namespace' => $identity->namespace,
                         'stopped' => false,
                         'generation' => null,
                         'error' => $exception->getMessage(),

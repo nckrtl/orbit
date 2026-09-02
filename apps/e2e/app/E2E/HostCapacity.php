@@ -12,9 +12,8 @@ use RuntimeException;
  * Host capacity comes from Incus itself: the harness VMs that exist now and
  * the deterministic `10.232.<slot>.0/24` subnets in use. There is no ledger.
  *
- * Every topology snapshot a checkout may own counts, not just this checkout's: the VMs
- * of the primary topology snapshot and of the validation clone's topology snapshot are both
- * harness VMs, and both hold a network slot no feature topology may take.
+ * The persistent topology snapshot and every disposable discovery or proof
+ * topology count against the same host budget.
  */
 final readonly class HostCapacity
 {
@@ -22,9 +21,9 @@ final readonly class HostCapacity
         private IncusHost $host,
         private int $maxVms,
     ) {
-        if ($maxVms < ((count(TopologySnapshotIdentity::known()) + 1) * count(TopologyProfile::ROLES))) {
+        if ($maxVms < (3 * count(TopologyProfile::ROLES))) {
             throw new RuntimeException(
-                'Incus host capacity cannot fit every topology snapshot and one feature topology.',
+                'Incus host capacity cannot fit the topology snapshot, discovery, and proof.',
             );
         }
     }
@@ -54,9 +53,7 @@ final readonly class HostCapacity
     private function occupiedNetworkSlots(): array
     {
         $occupied = [];
-        foreach (TopologySnapshotIdentity::known() as $topologySnapshot) {
-            $occupied[$topologySnapshot->slot] = true;
-        }
+        $occupied[TopologySnapshotIdentity::primary()->slot] = true;
         foreach ($this->host->networks() as $network) {
             $address = $network->config['ipv4.address'] ?? null;
             if ($address === null) {

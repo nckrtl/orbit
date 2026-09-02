@@ -171,6 +171,34 @@ describe('ProofPlan', function (): void {
         'empty' => [[]],
     ]);
 
+    it('normalizes declared extra proof inputs into the plan fingerprint', function (): void {
+        $plan = ProofPlan::fromFile(proofPlanFile(
+            proofPlanFixture()
+            + [
+                'inputs' => ['docs/reference/', 'proofs/shared/input.txt'],
+            ],
+        ));
+
+        expect($plan->inputs)
+            ->toBe(['docs/reference', 'proofs/shared/input.txt'])
+            ->and($plan->toArray()['inputs'] ?? null)
+            ->toBe(['docs/reference', 'proofs/shared/input.txt'])
+            ->and($plan->fingerprint())
+            ->not->toBe(ProofPlan::fromArray(proofPlanFixture())->fingerprint());
+    });
+
+    it('rejects unsafe, empty, or duplicate extra proof inputs', function (array $inputs): void {
+        expect(fn () => ProofPlan::fromFile(proofPlanFile(proofPlanFixture() + ['inputs' => $inputs])))
+            ->toThrow(InvalidArgumentException::class, 'The proof input list is invalid.');
+    })->with([
+        'empty' => [[]],
+        'absolute' => [['/docs/reference']],
+        'parent component' => [['docs/../reference']],
+        'dot component' => [['docs/./reference']],
+        'duplicate after normalization' => [['docs/reference', 'docs/reference/']],
+        'unsupported character' => [['docs/reference name']],
+    ]);
+
     it('classifies the NCK-73 lifecycle proof as mutating', function (): void {
         expect(nck73ProofPlan()->mutates)->toBeTrue();
     });
@@ -200,7 +228,7 @@ describe('ProofPlan', function (): void {
             ->toThrow(
                 InvalidArgumentException::class,
                 'The proof plan must have exactly the keys setup and acceptance, '
-                .'plus optional mutates, ends_with, and fixture_issues.',
+                .'plus optional mutates, ends_with, fixture_issues, and inputs.',
             );
     })->with([
         'missing setup' => [function (array $plan): array {

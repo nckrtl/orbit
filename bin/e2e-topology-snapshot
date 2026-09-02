@@ -17,9 +17,8 @@ usage: bin/e2e-topology-snapshot <action> [options]
   recover-legacy --main-sha=SHA disaster recovery: prove ownership of present legacy resources,
                                 retain evidence, and build the topology snapshot again
 
-The topology snapshot this checkout owns comes from ORBIT_E2E_TOPOLOGY_SNAPSHOT_NAMESPACE: empty
-(the repository's own topology snapshot) or `live` (the validation clone bin/e2e-live
-drives). Two checkouts never share one physical topology snapshot.
+Orbit keeps one persistent topology snapshot. Discovery and proof topologies are
+disposable copies of it, and successful retained proof is promoted into it.
 USAGE
     exit 64
 fi

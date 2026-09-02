@@ -7,8 +7,10 @@ use App\E2E\IncusHost;
 use App\E2E\IncusNetworkLifecycle;
 use App\E2E\IssueState;
 use App\E2E\ProofFixtureStager;
+use App\E2E\ProofInputManifestBuilder;
 use App\E2E\State\AtomicJsonStore;
 use App\E2E\State\StatePaths;
+use App\E2E\StaticProofInputPolicy;
 use App\E2E\TopologyConverger;
 use App\E2E\TopologyProofRunner;
 use App\E2E\TopologySnapshotManifestStore;
@@ -121,6 +123,7 @@ function topologyProofRunnerWithLegacyGeneration(
         $paths,
         $operation,
         TopologySnapshotIdentity::primary(),
+        new ProofInputManifestBuilder(new StaticProofInputPolicy),
         $repositoryRoot,
         fn () => attemptId(),
     );
@@ -203,7 +206,7 @@ it('refuses proof from a schema 4 generation before creating an attempt', functi
                 $fixture['sourceRoot'],
                 $paths,
                 $manifests,
-            )->prove($request, $plan),
+            )->prove($request, $plan, 'proofs/NCK-103.json'),
         )
             ->toThrow(RuntimeException::class, 'legacy; refresh it before proof')
             ->and(IssueState::forWorktree('ORB-4', $fixture['worktree'])->hasAttempt())
@@ -241,7 +244,7 @@ it('allows proof preparation while discovery remains active', function () {
             $fixture['sourceRoot'],
             $paths,
             $manifests,
-        )->prove(new TopologyRequest('ORB-4', $fixture['worktree']), $plan))
+        )->prove(new TopologyRequest('ORB-4', $fixture['worktree']), $plan, 'proofs/NCK-103.json'))
             ->toThrow(RuntimeException::class, 'legacy; refresh it before proof')
             ->and($state->attemptId(AttemptPurpose::Discovery)->value)
             ->toBe($discovery->value)

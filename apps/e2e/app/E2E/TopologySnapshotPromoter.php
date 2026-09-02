@@ -12,8 +12,13 @@ use App\E2E\Value\FeatureTopology;
 use App\E2E\Value\GuestCommand;
 use App\E2E\Value\IncusInstance;
 use App\E2E\Value\OperationId;
+use App\E2E\Value\ProofEquivalenceReport;
+use App\E2E\Value\ProofEquivalenceResult;
 use App\E2E\Value\ProofFixtures;
+use App\E2E\Value\ProofInputManifest;
 use App\E2E\Value\ProofPlan;
+use App\E2E\Value\ProofPromotionRecord;
+use App\E2E\Value\ProofResult;
 use App\E2E\Value\TopologyProfile;
 use App\E2E\Value\TopologyRequest;
 use App\E2E\Value\TopologySnapshotGeneration;
@@ -27,7 +32,7 @@ use Throwable;
  * Promote one issue's proved topology to the topology snapshot generation.
  *
  * The three proved VMs are stopped and copied (without snapshots) next to the
- * topology snapshot instances, re-attached to this checkout's topology snapshot network with its fixed topology snapshot
+ * topology snapshot instances, re-attached to the persistent topology snapshot network with its fixed topology snapshot
  * addresses, stripped of their attempt metadata, and snapshotted as
  * `main-<generation>`. Only then is each old topology snapshot instance deleted and its
  * copy renamed into place; the manifest is promoted and the proved topology
@@ -60,22 +65,23 @@ final readonly class TopologySnapshotPromoter
         private GitRepository $primary,
         private OperationId $operation,
         private TopologySnapshotIdentity $identity,
+        private TopologySnapshotPromotionStore $promotions,
     ) {}
 
-    /** @return array{state:string,issue:string,attempt_id:string,generation_id:string,main_sha:string,previous_generation_id:?string,released:list<string>,networks_reaped:list<string>} */
+    /** @return array{state:string,promotion_path:string,issue:string,attempt_id:string,generation_id:string,main_sha:string,proved_sha:string,accepted_sha:string,merged_sha:string,runtime_fingerprint:string,manifest_sha256:string,equivalence_sha256:?string,previous_generation_id:?string,released:list<string>,networks_reaped:list<string>} */
     public function promote(TopologyRequest $request, ProofPlan $plan): array
     {
         $state = IssueState::forWorktree($request->issue, $request->worktree);
         $topology = $this->provedTopology($state, $plan);
-        $this->assertProofEvidence($state, $plan);
-        $candidate = $this->provedCandidate($state, $topology);
+        $manifest = $this->assertProofEvidence($state, $plan);
+        $candidate = $this->promotionCandidate($request, $state, $topology, $manifest, $plan);
         $promoted = $this->manifests->promoted() ?? throw new RuntimeException(
             'There is no promoted topology snapshot generation to replace; build the topology snapshot first.',
         );
         if ($promoted->isLegacy() || $topology->generation->isLegacy()) {
             throw new RuntimeException('A legacy topology snapshot generation cannot be promoted. Refresh it first.');
         }
-        $generation = $this->nextGeneration($candidate, $topology, $promoted);
+        $generation = $this->nextGeneration($candidate['merged_sha'], $topology, $promoted);
         $verification = $this->verifier->verify(
             $topology->target,
             VerificationMode::Proof,
@@ -98,6 +104,8 @@ final readonly class TopologySnapshotPromoter
                 $topology,
                 $promoted,
                 $generation,
+                $candidate,
+                $manifest,
             ): void {
                 $issueLock = new OperationLock($this->hostPaths);
                 if (! $issueLock->acquire('topology-'.$request->issue, $this->operation)) {
@@ -117,6 +125,17 @@ final readonly class TopologySnapshotPromoter
                 $this->manifests->record($generation);
                 $this->manifests->promote($generation);
                 $this->forgetReplacedGenerations($generation);
+                $this->promotions->record(new ProofPromotionRecord(
+                    $request->issue,
+                    $generation->id,
+                    $candidate['proved_sha'],
+                    $candidate['accepted_sha'],
+                    $candidate['merged_sha'],
+                    $generation->preparedFingerprint,
+                    $manifest->fingerprint(),
+                    $candidate['equivalence']?->fingerprint(),
+                    ProofResult::now(),
+                ));
             });
         } finally {
             $this->lock->release();
@@ -133,10 +152,17 @@ final readonly class TopologySnapshotPromoter
 
         return [
             'state' => 'promoted',
+            'promotion_path' => 'retained-proof',
             'issue' => $request->issue,
             'attempt_id' => $topology->attempt->value,
             'generation_id' => $generation->id,
             'main_sha' => $generation->mainSha,
+            'proved_sha' => $candidate['proved_sha'],
+            'accepted_sha' => $candidate['accepted_sha'],
+            'merged_sha' => $candidate['merged_sha'],
+            'runtime_fingerprint' => $generation->preparedFingerprint,
+            'manifest_sha256' => $manifest->fingerprint(),
+            'equivalence_sha256' => $candidate['equivalence']?->fingerprint(),
             'previous_generation_id' => $generation->previousGenerationId,
             'released' => $released,
             'networks_reaped' => array_values(array_unique($networksReaped)),
@@ -173,7 +199,7 @@ final readonly class TopologySnapshotPromoter
     }
 
     /** Promotion accepts only the exact complete zero-exit action sequence the current plan declares. */
-    private function assertProofEvidence(IssueState $state, ProofPlan $plan): void
+    private function assertProofEvidence(IssueState $state, ProofPlan $plan): ProofInputManifest
     {
         $proof = $state->proof() ?? [];
         if (($proof['plan_sha256'] ?? null) !== $plan->fingerprint()) {
@@ -190,11 +216,44 @@ final readonly class TopologySnapshotPromoter
         if (($proof['actions'] ?? null) !== $expected) {
             throw new RuntimeException('The proof result does not contain complete zero-exit action evidence.');
         }
+        $fingerprint = $proof['manifest_sha256'] ?? null;
+        if (! is_string($fingerprint) || preg_match('/\A[0-9a-f]{64}\z/D', $fingerprint) !== 1) {
+            throw new RuntimeException('The proof result has no proof-input manifest fingerprint.');
+        }
+        $raw = $state->proofInputManifest($fingerprint);
+        if ($raw === null) {
+            throw new RuntimeException('The proof-input manifest is missing.');
+        }
+        try {
+            $manifest = ProofInputManifest::fromArray($raw);
+        } catch (\Throwable $exception) {
+            throw new RuntimeException($exception->getMessage(), previous: $exception);
+        }
+        if ($manifest->fingerprint() !== $fingerprint) {
+            throw new RuntimeException('The proof-input manifest does not match the proof result.');
+        }
+        if (
+            $manifest->policyVersion !== StaticProofInputPolicy::VERSION
+            || in_array(false, $manifest->completeness, true)
+        ) {
+            throw new RuntimeException('The proof-input manifest is not complete under the current policy.');
+        }
+
+        return $manifest;
     }
 
-    /** The proved candidate must be exactly what `main` holds in the primary checkout. */
-    private function provedCandidate(IssueState $state, FeatureTopology $topology): string
-    {
+    /**
+     * Resolve the proved, reviewed, and merged identities for the retained-proof path.
+     *
+     * @return array{proved_sha:string,accepted_sha:string,merged_sha:string,equivalence:?ProofEquivalenceReport}
+     */
+    private function promotionCandidate(
+        TopologyRequest $request,
+        IssueState $state,
+        FeatureTopology $topology,
+        ProofInputManifest $manifest,
+        ProofPlan $plan,
+    ): array {
         $proof = $state->proof() ?? [];
         $candidate = $proof['candidate_sha'] ?? null;
         if (! is_string($candidate) || preg_match('/\A[a-f0-9]{40}\z/D', $candidate) !== 1) {
@@ -203,14 +262,56 @@ final readonly class TopologySnapshotPromoter
         if ($topology->source->hostSha !== $candidate || $topology->source->guestSha !== $candidate) {
             throw new RuntimeException('The proved topology does not hold the proof candidate.');
         }
+        if ($manifest->provedSha !== $candidate) {
+            throw new RuntimeException('The proof-input manifest names a different proved candidate.');
+        }
+        $acceptedRepository = new GitRepository($request->worktree);
+        $accepted = $acceptedRepository->commit();
         $main = $this->primary->commit('main');
-        if ($main !== $candidate && $this->primary->tree($main) !== $this->primary->tree($candidate)) {
+        if ($this->primary->tree($main) !== $acceptedRepository->tree($accepted)) {
             throw new RuntimeException(
-                "main is at {$main}, which does not hold the proved candidate {$candidate}; merge it first.",
+                "main is at {$main}, which does not hold the accepted candidate {$accepted}; merge it first.",
             );
         }
+        $equivalence = null;
+        if (
+            $accepted !== $candidate
+            && $acceptedRepository->tree($accepted) !== $acceptedRepository->tree($candidate)
+        ) {
+            $raw = $state->equivalence();
+            if ($raw === null) {
+                throw new RuntimeException('The accepted candidate has no retained-proof equivalence report.');
+            }
+            try {
+                $equivalence = ProofEquivalenceReport::fromArray($raw);
+            } catch (\Throwable $exception) {
+                throw new RuntimeException($exception->getMessage(), previous: $exception);
+            }
+            if (
+                $equivalence->provedSha !== $candidate
+                || $equivalence->acceptedSha !== $accepted
+                || $equivalence->planSha256 !== $plan->fingerprint()
+                || $equivalence->manifestSha256 !== $manifest->fingerprint()
+                || $equivalence->result !== ProofEquivalenceResult::Equivalent
+                || $equivalence->promotionPath !== 'retained-proof'
+                || $equivalence->errors !== []
+            ) {
+                throw new RuntimeException('The equivalence report does not authorize retained-proof promotion.');
+            }
+        }
+        $provedFingerprint = $this->fingerprints->forCommit($candidate)->value;
+        $acceptedFingerprint = $this->fingerprints->forCommit($accepted)->value;
+        $mergedFingerprint = $this->fingerprints->forCommit($main)->value;
+        if ($provedFingerprint !== $acceptedFingerprint || $acceptedFingerprint !== $mergedFingerprint) {
+            throw new RuntimeException('The proved, accepted, and merged runtime fingerprints differ.');
+        }
 
-        return $candidate;
+        return [
+            'proved_sha' => $candidate,
+            'accepted_sha' => $accepted,
+            'merged_sha' => $main,
+            'equivalence' => $equivalence,
+        ];
     }
 
     /**

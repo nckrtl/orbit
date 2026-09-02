@@ -25,7 +25,7 @@ final class ShellCommand extends E2ECommand
             .self::WORKTREE_OPTION
             .' {--proof : Open the retained failed proof topology} {--json}';
     #[\Override]
-    protected $description = 'Open an interactive shell as orbit on one role of the live topology';
+    protected $description = 'Open an interactive shell as orbit on one discovery or failed-proof role';
 
     public function handle(TopologyAcquirer $acquirer, IncusHost $host): int
     {

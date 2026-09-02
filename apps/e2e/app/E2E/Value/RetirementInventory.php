@@ -83,11 +83,11 @@ final readonly class RetirementInventory
         return hash('sha256', json_encode($this->toArray(), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
     }
 
-    /** The topology snapshot network or VMs of any checkout that owns one; never a retirement target. */
+    /** The current or retired topology snapshot network and VMs are never retirement targets. */
     private static function isTopologySnapshotResource(string $identity): bool
     {
         return array_any(
-            [...TopologySnapshotIdentity::known(), ...TopologySnapshotIdentity::retiredKnown()],
+            [TopologySnapshotIdentity::primary(), TopologySnapshotIdentity::retired()],
             fn ($topologySnapshot) => $identity === $topologySnapshot->network()
             || str_starts_with($identity, rtrim($topologySnapshot->instancePrefix(), '-')),
         );

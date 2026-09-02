@@ -7,7 +7,7 @@ namespace App\E2E;
 use RuntimeException;
 
 /**
- * The promoted manifest of this checkout names topology snapshot resources that are not
+ * The promoted manifest names topology snapshot resources that are not
  * on the host any more. The topology snapshot is not corrupt and nothing needs repairing
  * by hand: the manifest is simply behind the host, and one named command
  * rebuilds it.

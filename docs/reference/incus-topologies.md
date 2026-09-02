@@ -5,8 +5,10 @@ Incus provides disposable development and proof topologies for issues marked
 [ADR 0005](../decisions/0005-rolling-incus-development-topology.md) (prepared
 topology snapshot, refresh, exact cleanup) and
 [ADR 0006](../decisions/0006-topology-led-feature-development.md) (separate
-discovery, fresh proof, immutable proved attempts). Automated-only work stays
-independent of Incus.
+discovery, fresh proof, immutable proved attempts), and
+[ADR 0015](../decisions/0015-retain-incus-proof-by-recorded-input-equivalence.md)
+(recorded-input equivalence for later candidate heads). Automated-only work
+stays independent of Incus.
 
 A profile is registered only when the repository provides and verifies all of
 these exact-ID operations:
@@ -29,12 +31,14 @@ The harness keeps no state outside the repository checkouts:
 - `<worktree>/.e2e/` (gitignored) holds that issue's discovery in
   `attempt.json` and `topology.json`, its separate proof in
   `proof-attempt.json` and `proof-topology.json`, `proof.json` (the last proof
-  result), and `log` (one line per harness command). They die with the
-  worktree.
-- `<primary checkout>/.e2e/` (gitignored) holds the state of the topology
-  snapshot that checkout owns (see [Topology snapshot
-  identity](#topology-snapshot-identity)): `topology-snapshot/promoted.json`,
+  result), immutable manifests under `proof-inputs/`, immutable reports under
+  `equivalence/`, the latest `equivalence.json` pointer, and `log` (one line per
+  harness command). They die with the worktree.
+- `<primary checkout>/.e2e/` (gitignored) holds the state of the one persistent
+  topology snapshot (see [Topology snapshot](#topology-snapshot)):
+  `topology-snapshot/promoted.json`,
   the recorded generations under `topology-snapshot/generations/`, a
+  retained-proof lineage record under `topology-snapshot/promotions/`, a
   `topology-snapshot/corrupt.json` marker while recovery is required, and the
   host locks under `locks/`.
 - Capacity is read from `incus list`: the harness-owned VMs that exist and the
@@ -53,7 +57,7 @@ Every Incus network in the `default` project whose name starts with `oe-`
 such network may outlive the topology that used it: every
 `bin/e2e-topology release` ends with an orphan sweep that deletes each harness
 network with an empty `used_by`, except a current topology snapshot network
-(`oe-topo-snap`, `oe-l-topo-snap`) or its retired pre-rename identity. The
+(`oe-topo-snap`) or its retired pre-rename identity (`oe-standby`). The
 sweep holds the host creation lock, so an acquisition between network creation
 and its first VM is never swept. The sweep never touches a network outside
 those prefixes, a network with users, or another Incus project. Each deleted
@@ -69,8 +73,8 @@ topology snapshot generation.
 
 ### `gateway_app-dev_app-prod`
 
-Registered on 2026-08-29 after live acceptance (ADR 0005). The attempt-scoped
-discovery and proof lifecycle passed live acceptance on 2026-08-30 (ADR 0006).
+Registered on 2026-08-29 under ADR 0005. ADR 0006 added the attempt-scoped,
+separate discovery and proof lifecycle.
 
 | Field | Value |
 | --- | --- |
@@ -78,7 +82,7 @@ discovery and proof lifecycle passed live acceptance on 2026-08-30 (ADR 0006).
 | Ordered roles | `gateway`, `app-dev`, `app-prod` |
 | Required assignments | `gateway`: `gateway`, `vpn`; `app-dev`: `app-dev`, `metrics`; `app-prod`: `app-prod` |
 | Checkout roles | `gateway`, `app-dev` (guest path `/home/orbit/orbit`) |
-| Prepared image | Base image `orbit-base-ubuntu-26.04-runtime`; coordinated snapshots `main-<generation-id>` on `orbit-e2e-topology-snapshot-{gateway,app-dev,app-prod}` (the validation clone: `orbit-e2e-live-topology-snapshot-*`) |
+| Prepared image | Base image `orbit-base-ubuntu-26.04-runtime`; coordinated snapshots `main-<generation-id>` on `orbit-e2e-topology-snapshot-{gateway,app-dev,app-prod}` |
 | Addresses | Incus `.10/.11/.12` on `oe-<issue-hash>`; WireGuard `10.44.0.1/.2/.3` |
 | Attempt purpose | At most one `discovery` and one separate `proof` per issue |
 | Proof status | `proved` or `diagnosis` |
@@ -90,11 +94,12 @@ Issue IDs match `[A-Z][A-Z0-9]{1,9}-[1-9][0-9]{0,8}`.
 ## Host budget
 
 Each VM is 1 vCPU and 2 GiB (`e2e.incus.cpu`, `e2e.incus.memory`). The harness
-refuses to acquire past `e2e.incus.max_vms`, which defaults to 24: six VMs
-across both topology snapshots plus six feature topologies. Raise it for one
-run with `ORBIT_E2E_INCUS_MAX_VMS`. Network slots are not the constraint —
-the topology snapshots hold slots 1 and 200, leaving 198 for feature
-topologies.
+refuses to acquire past `e2e.incus.max_vms`, which defaults to 24. The minimum
+is nine VMs: three for the persistent snapshot, three for discovery, and three
+for proof. At the default, three snapshot VMs and seven disposable topologies
+fit. Raise the limit for one run with `ORBIT_E2E_INCUS_MAX_VMS`. Network slots
+are not the constraint: the topology snapshot holds slot 1, leaving slots 2
+through 200 for disposable topologies.
 
 ## Command surface
 
@@ -113,16 +118,16 @@ refuse a stale promoted topology snapshot.
 | `bin/e2e-topology sync ISSUE` | Re-verify the mounted source identity of the discovery attempt |
 | `bin/e2e-topology verify ISSUE` | Verify discovery |
 | `bin/e2e-topology prove ISSUE --plan=PATH` | Prove the worktree HEAD (clean tree) on a fresh proof attempt while discovery remains active; the plan defaults to `proofs/ISSUE.json` (about 33 s) |
+| `bin/e2e-topology equivalence ISSUE --plan=PATH` | Compare the clean worktree HEAD with an immutable retained proof; write `exact`, `equivalent`, `stale`, or `indeterminate` evidence (the plan defaults to `proofs/ISSUE.json`) |
 | `bin/e2e-topology status ISSUE` | Report discovery and proof together from `<worktree>/.e2e/` without touching infrastructure |
 | `bin/e2e-topology release ISSUE [--proof]` | Release discovery by default, or explicitly the proof, verify absence, and sweep orphaned harness networks (`networks_reaped`) |
 | `bin/e2e-topology-snapshot status` | Show the promoted topology snapshot generation |
 | `bin/e2e-topology-snapshot fingerprint --main-sha=SHA` | Compute the prepared-state fingerprint |
 | `bin/e2e-topology-snapshot promote ISSUE` | Make the issue's proved topology the topology snapshot generation, then release proof and discovery (see [Topology snapshot](#topology-snapshot)) |
-| `bin/e2e-topology-snapshot refresh --main-sha=SHA` | Fallback: refresh the topology snapshot in place when the fingerprint changed |
+| `bin/e2e-topology-snapshot refresh --main-sha=SHA` | Maintenance: refresh the topology snapshot in place when no promotable proof exists |
 | `bin/e2e-topology-snapshot restore` | Restore the promoted generation and leave it stopped |
 | `bin/e2e-topology-snapshot rebuild --main-sha=SHA` | Recover stale state only when every exact configured topology snapshot VM, `-next` VM, and network is absent (see [Stale manifests and rebuild](#stale-manifests-and-rebuild)) |
 | `bin/e2e-topology-snapshot recover-legacy --main-sha=SHA` | Prove ownership of present schema-4/5 topology snapshot resources, retain recovery evidence, and cold-build a verified replacement |
-| `bin/e2e-live SHA` | Run the feature flow once against a topology snapshot built from the exact candidate in the validation clone (see [Live acceptance suites](#live-acceptance-suites)) |
 
 `bin/worktree-remove ISSUE slug` releases a retained proof first and discovery
 second, then removes the worktree.
@@ -195,12 +200,20 @@ directory stages an empty inventory.
 
 `prove --json` prints a compact result: `status` (`proved` or `diagnosis`),
 `issue`, `attempt_id`, `candidate_sha`, `plan_sha256` (the normalized complete
-plan fingerprint), `actions` (one `{"id","node","exit_code"}` per action that
-ran), and `recorded_at`. A plan that declared the topology it
+plan fingerprint), `manifest_sha256` (for `proved` results), `actions` (one
+`{"id","node","exit_code"}` per action that ran), and `recorded_at`. A plan
+that declared the topology it
 ends with adds `ends_with` and `skipped_probes`. A `diagnosis` adds `error` (the
 failed phase and message) and, when a plan action failed, `failed_action`:
 `{"id","node","exit_code","stdout_tail","stderr_tail"}` (each tail keeps the
 final 4096 bytes). The same object is written to `<worktree>/.e2e/proof.json`.
+A proved result's manifest is stored immutably as
+`<worktree>/.e2e/proof-inputs/<manifest_sha256>.json`. It records the policy
+version, proved and included-main SHAs, feature runtime paths, every static
+runtime and proof-contract blob with its Git mode, and completed safety checks.
+The harness also pins the proved commit under `refs/orbit/e2e-proof/` until the
+proof is released, so an equivalent rebase cannot make its Git evidence
+unreachable.
 The proved topology stays immutable through review and merge. Promotion makes
 it the new topology snapshot generation, then releases both proof and retained
 discovery.
@@ -210,9 +223,16 @@ The proof plan file has this shape:
 ```json
 {
   "setup": [{"id": "text", "node": "gateway", "argv": [], "timeout_seconds": 60}],
-  "acceptance": [{"id": "text", "node": "app-dev", "argv": [], "timeout_seconds": 60}]
+  "acceptance": [{"id": "text", "node": "app-dev", "argv": [], "timeout_seconds": 60}],
+  "inputs": ["path/to/additional-input"]
 }
 ```
+
+`inputs` is optional. It declares repository files or directories that proof
+actions read outside the static runtime policy and active fixture directories.
+The normalized list is part of the plan fingerprint. A literal
+`/home/orbit/orbit/...` action argument must resolve to a static runtime path or
+a declared input; otherwise `prove` fails before it creates an attempt.
 
 Every setup and acceptance action must exit `0`. Every nonzero exit makes the
 proof a diagnosis and stops later actions. This includes timeout exits `124`
@@ -276,6 +296,39 @@ target. Use `shell --proof` or `exec --proof` for explicit unprivileged
 debugging of the failed proof, then `release --proof` before the next proof.
 A proved attempt rejects all proof-targeted shell and command execution.
 
+### Retaining proof after a correction
+
+The phase-one policy treats CLI, Gateway, SDK, harness, E2E entrypoints, the
+active plan, active and referenced fixtures, and declared `inputs` as proof
+inputs. Maintained documentation, `apps/docs`, agent instructions, READMEs,
+tests, and non-executing tooling configuration are non-runtime. A new path
+without an explicit classification is indeterminate.
+
+After committing a later candidate, run:
+
+```bash
+bin/e2e-topology equivalence ISSUE --json
+```
+
+The command requires a clean head containing current `origin/main`, verifies
+the retained proof, plan, immutable manifest, topology identity, and static
+inventory, then compares the complete Git trees. Its immutable report names
+the proved SHA, accepted SHA, included-main SHA, every add, delete, rename,
+content, mode, executable-bit, or type change, each path classification, and
+the required next action:
+
+- `exact`: the SHA or full Git tree is unchanged; review the exact current head.
+- `equivalent`: every change is non-runtime; retain the proof and review the
+  exact current head.
+- `stale`: a runtime or proof-contract input changed; release the proof and run
+  a complete fresh proof.
+- `indeterminate`: a classification, identity, current-main, manifest, plan, or
+  completeness gate failed; resolve it and run a complete fresh proof.
+
+PCOV observations and candidate-only convergence are not enabled in this
+phase. Any runtime drift, including unrelated runtime changes from `main`,
+requires complete reproof.
+
 ## Prepared-state limits
 
 Proof plans call fixtures through the staged guest path described under
@@ -330,72 +383,65 @@ and `prove` clones the promoted snapshot `main-<generation>`.
 
 ### Topology snapshot identity
 
-Every checkout that acts as a primary owns its own topology snapshot.
-`ORBIT_E2E_TOPOLOGY_SNAPSHOT_NAMESPACE` names which one, and the namespace
-derives every physical name:
+Orbit has one persistent topology snapshot:
 
-| Namespace | Owner | Network | Instances | Network slot |
-| --- | --- | --- | --- | --- |
-| _(empty, default)_ | the repository's primary checkout | `oe-topo-snap` | `orbit-e2e-topology-snapshot-<role>` | 1 (`10.232.1.0/24`) |
-| `live` | the validation clone `bin/e2e-live` drives | `oe-l-topo-snap` | `orbit-e2e-live-topology-snapshot-<role>` | 200 (`10.232.200.0/24`) |
+| Owner | Network | Instances | Network slot |
+| --- | --- | --- | --- |
+| Primary checkout | `oe-topo-snap` | `orbit-e2e-topology-snapshot-<role>` | 1 (`10.232.1.0/24`) |
 
 Linux limits bridge interface names to 15 characters. The bridge names use
 `topo-snap` for that reason. VM, command, state, configuration, and public
 documentation names use the full `topology-snapshot` term.
 
-Decided on 2026-08-30 for NCK-102, after a `bin/e2e-live` run promoted from the
-validation clone into the shared topology snapshot: the clone deleted the
-snapshots the primary's manifest named, and recovery needed `incus delete` of
-three instances and the network by hand. The alternative — writing the
-promoted generation into every checkout that tracks the same topology
-snapshot — was rejected: it makes one checkout write another's state, and it
-keeps `bin/e2e-live` serialized behind every other session's topology.
-Separate topology snapshots make the clone's promotion invisible to the
-primary, so `bin/e2e-live` only has to refuse an `ACC-*` collision of its own.
+Discovery and proof are separate disposable copies of this snapshot. They can
+remain active together. The successful proof stays unchanged through review
+and merge. Promotion then replaces the persistent snapshot with that retained
+proof and releases both disposable topologies.
 
-The namespace is an allowlist, not free text. Each topology snapshot needs a
-distinct `10.232.<slot>.0/24` subnet. `HostCapacity` reserves the slot of every
-known topology snapshot, hands feature topologies only the rest, and counts
-the VMs of both topology snapshots against `ORBIT_E2E_INCUS_MAX_VMS`. Two
-topology snapshots plus one feature topology is nine VMs, so the limit may not
-go below nine. The orphan network sweep and legacy retirement protect the
-network and instance names of every topology snapshot, not just this
-checkout's.
+`HostCapacity` reserves slot 1, gives disposable topologies slots 2 through
+200, and counts every VM against `ORBIT_E2E_INCUS_MAX_VMS`. The orphan network
+sweep and legacy retirement protect the current snapshot and its bounded
+pre-rename identity.
 
 After a merge, `bin/e2e-topology-snapshot promote ISSUE` makes the reviewer's
-proved topology the new generation instead of rebuilding it:
+retained proved topology the new generation instead of rebuilding it:
 
 1. It refuses, without touching Incus, when the issue has no `proved` proof,
-   when the recorded normalized plan fingerprint differs from the current
-   plan, when any declared action is missing or has a nonzero exit, when the
-   plan (`--plan`, default `proofs/ISSUE.json`) carries `"mutates": true`, when
-   `main` in the primary checkout does not hold the proved candidate (same
-   commit, or same tree), or when the candidate changes the cold base.
+   when the recorded normalized plan or immutable input manifest is missing,
+   incomplete, or mismatched, when any declared action is missing or has a
+   nonzero exit, or when the plan (`--plan`, default `proofs/ISSUE.json`)
+   carries `"mutates": true`. The exact path accepts the proved SHA or an
+   identical tree. A different accepted tree additionally requires an
+   `equivalent` report bound to that exact accepted head. The primary `main`
+   tree must equal the accepted tree, and the proved, accepted, and merged
+   prepared-runtime fingerprints must match. Cold-base changes are refused.
 2. Under the topology snapshot refresh, generation, and issue locks it stops
    the three proved VMs and copies each one (`incus copy --instance-only`) to
-   `<current-instance>-next` in the checkout's own topology snapshot. It uses
+   `<current-instance>-next` in the topology snapshot. It uses
    the fixed network, address, and MAC, removes the attempt metadata, and
    snapshots the copies as `main-<generation>`. The old topology snapshot
    instances are untouched until here. A failure deletes the copies and
    leaves the proved topology stopped.
 3. It deletes each old topology snapshot instance and renames its copy into
-   place. It then writes the manifest (`main_sha` = the proved candidate, the
-   fingerprint of that commit with the Laravel pin the proof converged with,
-   and the old generation as `previous_generation_id`) and forgets the
-   manifests of the replaced instances' snapshots.
+   place. It then writes the generation manifest (`main_sha` = the merged SHA,
+   the matching runtime fingerprint with the Laravel pin the proof converged
+   with, and the old generation as `previous_generation_id`), records immutable
+   promotion lineage with the proved, accepted, and merged SHAs plus manifest,
+   equivalence, and runtime fingerprints, and forgets the manifests of the
+   replaced instances' snapshots.
 4. It releases the proved topology and retained discovery, then prints the
    generation and all released resources.
 
 The replaced instances take every earlier snapshot with them: after a
-promotion only the promoted generation exists on the host. A promotion touches
-only the topology snapshot of its own namespace. Another checkout's topology
-snapshot is never affected. A manifest of the same namespace that named an
-earlier snapshot is stale, and `bin/e2e-topology-snapshot rebuild` recovers it.
+promotion only the promoted generation exists on the host. A manifest that
+names an earlier snapshot is stale, and `bin/e2e-topology-snapshot rebuild`
+recovers it.
 
-`bin/e2e-topology-snapshot refresh --main-sha=SHA` is the fallback when no proved
-topology exists: it restores the promoted snapshots, converges (including
-product re-projection), and re-snapshots in about two minutes, and restores
-the previous snapshot when the refreshed topology snapshot fails verification.
+`bin/e2e-topology-snapshot refresh --main-sha=SHA` is a maintenance command when
+no proved topology exists. It restores the promoted snapshots, converges
+(including product re-projection), and re-snapshots in about two minutes. It
+restores the previous snapshot when verification fails. Merge closeout does not
+substitute refresh for a missing or invalid retained proof.
 
 Guests are reachable from the Gateway only over WireGuard after role
 provisioning; the harness repairs cloned WireGuard endpoints through root
@@ -413,9 +459,9 @@ Incus resources.
 ### Stale manifests and rebuild
 
 A manifest that names snapshots or VMs the host does not hold is stale, not
-corrupt. The topology snapshot was rebuilt or promoted from another checkout
-that owns the same namespace. `status` reports `state: stale` with a `recovery`
-command, and `refresh` refuses before it mutates anything. Both name
+corrupt. The topology snapshot was rebuilt or replaced. `status` reports
+`state: stale` with a `recovery` command, and `refresh` refuses before it
+mutates anything. Both name
 `bin/e2e-topology-snapshot rebuild --main-sha=<sha>`. Neither writes
 `topology-snapshot/corrupt.json`, and no manual `incus delete` is needed.
 
@@ -441,7 +487,7 @@ bin/e2e-topology-snapshot recover-legacy --main-sha=<full-main-sha>
 Recovery accepts only a readable, unbound schema-4 or schema-5 promoted
 manifest. It takes one complete inventory from the configured Incus remote,
 project, and storage pool. It authorizes only the configured topology snapshot
-namespace and these exact identities:
+identity and these exact resources:
 
 - each configured base VM or its exact `-next` promotion copy;
 - Orbit owner and valid operation metadata;
@@ -505,98 +551,21 @@ Do not run `incus delete`, remove a manifest, or edit retained recovery evidence
 by hand. Those actions discard the authority or retry evidence that makes this
 workflow safe.
 
-## Live acceptance suites
+## Harness changes
 
-`composer test:live-incus` in `apps/e2e` runs the lifecycle suite under
-`tests/Live` against real Incus resources. It skips unless
-`ORBIT_LIVE_INCUS=1`; the test lists its own `ORBIT_LIVE_*` inputs.
+Product feature issues do not change `apps/e2e` or `bin/e2e-*`. A harness
+change needs its own issue. Before implementation, the repository owner and the
+implementer must agree on the requested behavior and the issue-specific proof.
 
-These suites are targeted lifecycle regression tools. They are not a universal
-merge gate for every harness issue. Run them only when the issue contract
-explicitly changes or requires the validation-clone lifecycle.
+Use the normal discovery and separate proof topology when they can prove the
+change. If the change affects acquire, release, proof, promotion, or recovery,
+the issue contract must name the additional focused lifecycle checks. The
+successful proof must still be immutable and promotable before closeout. Orbit
+does not create a validation clone, a second persistent snapshot, or a generic
+nested lifecycle run.
 
-Contracts the inputs do not spell out:
-
-- The suite reads the attempt state under `<ORBIT_LIVE_FEATURE_WORKTREE>/.e2e/`.
-- `ORBIT_LIVE_MAIN_WORKTREE` is the repository the suite runs from, and
-  `ORBIT_LIVE_FEATURE_WORKTREE` is a linked worktree of it that is checked
-  out on a branch whose name starts with the lowercase issue key (for
-  `ORBIT_LIVE_ISSUE=ACC-1`, `acc-1-...`); a detached `HEAD` fails with
-  `The Git command failed.` and any other branch with
-  `The worktree branch does not match the issue.`
-- The lifecycle suite runs the proof plan's first acceptance action as its
-  discovery command and requires that action to print JSON on stdout (for
-  example `orbit node:list --json`). Use a small harness plan for the suite
-  rather than a feature's proof plan.
-- `bin/e2e-topology prove --json` returns the compact result that is also
-  written to `<worktree>/.e2e/proof.json`.
-
-### `bin/e2e-live`
-
-`bin/e2e-live <candidate-sha>` runs one targeted feature-flow regression
-against a topology snapshot built from the candidate.
-
-For ORB-94, focused automated fixtures are the complete evidence for the typed
-`app_instances` path, including empty-to-active creation, idempotence,
-fail-closed shape validation, source-only re-projection, hydration, and probe
-selection. The ORB-94 `bin/e2e-live` run uses current-main product code and
-therefore proves only unchanged legacy `instances` integration. It does not
-prove typed live behavior. After ORB-94 is `Done` on `origin/main`, ORB-76 owns
-the first exact-head live proof of typed empty-to-active `e2e-dev` creation and
-cannot close without that result.
-
-ORB-96 keeps the same evidence boundary. Focused fixtures prove that the
-separate `laravel-typed` sample coexists with unchanged nullable-source legacy
-records. Its exact-head `bin/e2e-live` run proves unchanged legacy `instances`
-integration on current-main product code and does not claim typed output.
-
-ORB-98 keeps the same evidence boundary. Focused fixtures are the complete
-evidence for deterministic Cluster convergence in the typed `app_instances`
-branch, including retry, idempotence, final read-back, and refusal paths. Its
-exact-head `bin/e2e-live` run receives the legacy `instances` shape from
-current-main product code, so it does not execute this typed branch. The live
-run proves unchanged legacy integration only.
-
-The wrapper:
-
-- owns the validation clone at `ORBIT_E2E_VALIDATE_ROOT` (default
-  `$HOME/orbit-validate`), cloning it from the calling repository when
-  absent, and refuses a dirty clone; the clone is its own primary checkout,
-  so its topology snapshot generation lives in `<clone>/.e2e/topology-snapshot/promoted.json`
-  (copy the primary's file there once);
-- exports `ORBIT_E2E_TOPOLOGY_SNAPSHOT_NAMESPACE=live`, so the clone owns the `live`
-  topology snapshot and the promote step never touches the primary's;
-- refuses while another acceptance (`ACC-*`) topology is live on the Incus host
-  (`ORBIT_E2E_INCUS_PROJECT`, `ORBIT_E2E_INCUS_REMOTE`) and holds
-  `<clone>/.e2e/locks/live.lock` so only one run drives the clone; a feature
-  topology of another issue shares nothing with the run and is no conflict;
-- fetches the candidate from the calling repository and runs
-  `git checkout -B main <sha>` there, resets the linked worktree
-  `.worktrees/acc-1` (branch `acc-1-live`) to the candidate, drops the
-  `apps/gateway/.env` a guest wrote into that mounted worktree (it names guest
-  paths, and `bin/bootstrap` would try to create them on the host), and runs
-  `bin/bootstrap` in both;
-- releases a stale `ACC-1` attempt, migrates an exact retired topology snapshot
-  through one `recover-legacy` operation, and immediately proves at the SHA
-  recorded in the recovery journal that the old resources are absent and the
-  new stopped topology snapshot exists;
-- builds the clone's topology snapshot when its manifest and exact resources
-  are absent. If an interrupted recovery left the manifest missing while exact
-  resources remain, it verifies ordinary rebuild's refusal without mutation
-  and resumes `recover-legacy` at the same candidate. Otherwise it proves that
-  refusal against the promoted topology snapshot and starts `recover-legacy`;
-  both routes verify the retained journal and prove that the primary topology
-  snapshot inventory did not change;
-- exports every `ORBIT_LIVE_*` input, with `proofs/ACC-1.json` as the
-  harness plan, and runs the legacy recovery and lifecycle suites: acquire,
-  sync, exec, prove while discovery remains active, release only that proof,
-  prove again, promote the proved topology into the clone's topology snapshot
-  and release both retained topologies, acquire from the promoted generation,
-  exec, and release; and
-- prints one summary line for the pull request body:
-  `lifecycle: passed, <assertions> assertions, <seconds> s`.
-
-The clone's topology snapshot is its own. After a run, the primary's
-`bin/e2e-topology-snapshot status` and `bin/e2e-topology acquire` keep working
-with no manual file copy. The run takes about four minutes on a warm clone, plus
-the one-time cold build of the clone's topology snapshot.
+For ORB-98, focused fixtures are the complete evidence for deterministic
+Cluster convergence in the typed `app_instances` branch, including retries,
+idempotence, final Node and Cluster read-back, and refusal paths. Current-main
+product output uses the legacy `instances` shape, so a topology proof does not
+execute the typed branch and must not be presented as evidence for it.

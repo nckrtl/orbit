@@ -15,7 +15,7 @@ use stdClass;
  * The plan is validated once at construction and never carries stdin: a proof
  * must not hold secrets, and the record stores the plan verbatim.
  */
-/** @mago-expect lint:cyclomatic-complexity,kan-defect Every plan rule is checked fail-closed in one place. */
+/** @mago-expect lint:cyclomatic-complexity,kan-defect,excessive-parameter-list Every plan rule and input is checked fail-closed in one place. */
 final readonly class ProofPlan
 {
     public const int MAX_TIMEOUT_SECONDS = 900;
@@ -33,12 +33,16 @@ final readonly class ProofPlan
     /** Optional: additional issue fixture directories staged from the same candidate. */
     private const string FIXTURE_ISSUES = 'fixture_issues';
 
+    /** Optional: repository files or directories read outside the default runtime policy. */
+    private const string INPUTS = 'inputs';
+
     private const array ACTION_KEYS = ['id', 'node', 'argv', 'timeout_seconds'];
 
     /**
      * @param list<array{id:string,node:string,argv:list<string>,timeout_seconds:int}> $setup
      * @param list<array{id:string,node:string,argv:list<string>,timeout_seconds:int}> $acceptance
      * @param list<string> $fixtureIssues
+     * @param list<string> $inputs
      */
     private function __construct(
         public array $setup,
@@ -46,6 +50,7 @@ final readonly class ProofPlan
         public bool $mutates,
         public TopologyEndState $endsWith,
         public array $fixtureIssues,
+        public array $inputs,
     ) {}
 
     public static function fromFile(string $path): self
@@ -100,6 +105,11 @@ final readonly class ProofPlan
             $fixtureIssues = self::fixtureIssues($plan[self::FIXTURE_ISSUES]);
             unset($plan[self::FIXTURE_ISSUES]);
         }
+        $inputs = [];
+        if (array_key_exists(self::INPUTS, $plan)) {
+            $inputs = self::inputs($plan[self::INPUTS]);
+            unset($plan[self::INPUTS]);
+        }
         // Removing a node changes the topology the proof ran on, whatever the plan says.
         $mutates = $mutates || $endsWith->declaresAbsence();
         $keys = array_keys($plan);
@@ -109,7 +119,7 @@ final readonly class ProofPlan
         if ($keys !== $expected) {
             throw new InvalidArgumentException(
                 'The proof plan must have exactly the keys setup and acceptance, '
-                .'plus optional mutates, ends_with, and fixture_issues.',
+                .'plus optional mutates, ends_with, fixture_issues, and inputs.',
             );
         }
         $sections = [];
@@ -129,7 +139,7 @@ final readonly class ProofPlan
         $setup = self::actions('setup', $sections['setup'], $ids);
         $acceptance = self::actions('acceptance', $sections['acceptance'], $ids);
 
-        return new self($setup, $acceptance, $mutates, $endsWith, $fixtureIssues);
+        return new self($setup, $acceptance, $mutates, $endsWith, $fixtureIssues, $inputs);
     }
 
     /**
@@ -236,6 +246,9 @@ final readonly class ProofPlan
         if ($this->fixtureIssues !== []) {
             $plan['fixture_issues'] = $this->fixtureIssues;
         }
+        if ($this->inputs !== []) {
+            $plan['inputs'] = $this->inputs;
+        }
 
         return $plan;
     }
@@ -269,5 +282,42 @@ final readonly class ProofPlan
         }
 
         return $issues;
+    }
+
+    /** @return list<string> */
+    private static function inputs(mixed $declared): array
+    {
+        if (! is_array($declared) || ! array_is_list($declared) || $declared === []) {
+            throw new InvalidArgumentException('The proof input list is invalid.');
+        }
+        $inputs = [];
+        foreach ($declared as $input) {
+            if (
+                ! is_string($input)
+                || $input === ''
+                || str_starts_with($input, '/')
+                || str_contains($input, "\0")
+                || str_contains($input, '\\')
+                || preg_match('/[\r\n]/', $input) === 1
+            ) {
+                throw new InvalidArgumentException('The proof input list is invalid.');
+            }
+            $normalized = rtrim($input, '/');
+            $parts = explode('/', $normalized);
+            if (
+                $normalized === ''
+                || in_array('', $parts, true)
+                || in_array('.', $parts, true)
+                || in_array('..', $parts, true)
+                || preg_match('/[^A-Za-z0-9_@.+,=:\/-]/', $normalized) === 1
+                || in_array($normalized, $inputs, true)
+            ) {
+                throw new InvalidArgumentException('The proof input list is invalid.');
+            }
+            $inputs[] = $normalized;
+        }
+        sort($inputs, SORT_STRING);
+
+        return $inputs;
     }
 }

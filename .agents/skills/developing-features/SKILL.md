@@ -49,7 +49,11 @@ accepted ADR, or mixes product work with a harness change.
    action must exit `0`. On diagnosis, inspect the failed proof explicitly with
    `shell --proof` or `exec --proof`, continue development on discovery, then
    `release <ISSUE> --proof` before proving again. Leave a successful proof
-   unchanged through review and merge.
+   unchanged through review and merge. If a later committed correction changes
+   only documentation, `apps/docs`, or instructions, rerun its applicable
+   checks and run `bin/e2e-topology equivalence <ISSUE>`. Retain the proof only
+   for `exact` or `equivalent`; `stale` or `indeterminate` requires release and
+   a complete fresh proof.
 7. **Open the pull request.** Push and use a short body with what changed, why,
    and one proof line: `Proved with proofs/<ISSUE>.json at <sha>` or
    `Automated tests only`. Do not start review until every declared proof
@@ -69,11 +73,11 @@ Harness code is everything under `apps/e2e` and `bin/e2e-*`, except
 
 For a dedicated harness issue:
 
+- require repository-owner-approved behavior and issue-specific proof before implementation;
 - implement with unit and feature tests;
 - run `apps/e2e` `composer check` and root `bin/test`;
 - run its declared focused or Incus proof; and
-- run `bin/e2e-live <full sha>` only when the issue contract explicitly changes
-  or requires the validation-clone lifecycle.
+- follow any additional lifecycle checks stated in that issue's approved proof contract.
 
 ## Rules
 

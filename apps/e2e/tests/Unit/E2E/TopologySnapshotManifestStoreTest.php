@@ -191,7 +191,7 @@ describe('TopologySnapshotManifestStore', function () {
             ->toBe(['g1']);
     });
 
-    it('never prunes the generation a live topology attempt pins', function () {
+    it('never prunes the generation a disposable topology attempt pins', function () {
         $paths = new StatePaths(temporaryPath('orbit-topology-snapshot-', 4));
         $json = new AtomicJsonStore($paths);
         $store = new TopologySnapshotManifestStore($json, $paths, new IncusHost);
@@ -260,7 +260,7 @@ describe('TopologySnapshotManifestStore', function () {
     })->with(['topology-snapshot/generations']);
 });
 
-/** Fake one live harness VM whose metadata pins the given generation. */
+/** Fake one active harness VM whose metadata pins the given generation. */
 function pinnedTopologyState(TopologySnapshotGeneration $generation, string $issue = 'NCK-123'): void
 {
     $target = featureTarget($issue);

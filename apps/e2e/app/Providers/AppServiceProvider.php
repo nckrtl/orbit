@@ -16,11 +16,14 @@ use App\E2E\LegacyRetirement;
 use App\E2E\LegacyRetirementHost;
 use App\E2E\OrphanNetworkSweep;
 use App\E2E\PreparedStateFingerprint;
+use App\E2E\ProofEquivalenceEvaluator;
 use App\E2E\ProofFixtureStager;
+use App\E2E\ProofInputManifestBuilder;
 use App\E2E\State\AtomicJsonStore;
 use App\E2E\State\OperationLock;
 use App\E2E\State\SecretRedactor;
 use App\E2E\State\StatePaths;
+use App\E2E\StaticProofInputPolicy;
 use App\E2E\TopologyAcquirer;
 use App\E2E\TopologyConverger;
 use App\E2E\TopologyProofRunner;
@@ -29,6 +32,7 @@ use App\E2E\TopologySnapshotAvailability;
 use App\E2E\TopologySnapshotBuilder;
 use App\E2E\TopologySnapshotManifestStore;
 use App\E2E\TopologySnapshotPromoter;
+use App\E2E\TopologySnapshotPromotionStore;
 use App\E2E\TopologySnapshotRebuilder;
 use App\E2E\TopologySnapshotRefresher;
 use App\E2E\TopologyVerifier;
@@ -51,14 +55,10 @@ final class AppServiceProvider extends ServiceProvider
 
             return new OperationId($value);
         });
-        // Which physical topology snapshot this checkout owns. Two checkouts on one host
-        // must not share topology snapshot VMs: a promotion from one would leave the
-        // other's manifest naming snapshots that no longer exist.
-        $this->app->singleton(TopologySnapshotIdentity::class, function (Application $app): TopologySnapshotIdentity {
-            $namespace = $app->make(Repository::class)->get('e2e.topology_snapshot.namespace');
-
-            return TopologySnapshotIdentity::forNamespace(is_string($namespace) ? $namespace : '');
-        });
+        $this->app->singleton(
+            TopologySnapshotIdentity::class,
+            static fn (): TopologySnapshotIdentity => TopologySnapshotIdentity::primary(),
+        );
         $repositoryRoot = dirname(__DIR__, 4);
         $this->app->singleton(GitRepository::class, fn (): GitRepository => new GitRepository($repositoryRoot));
         // Host-wide state (topology snapshot generation, locks) lives in the primary checkout's `.e2e/`.
@@ -67,11 +67,14 @@ final class AppServiceProvider extends ServiceProvider
             fn (): StatePaths => StatePaths::forPrimary(self::primaryCheckout($repositoryRoot)),
         );
         $this->app->singleton(AtomicJsonStore::class);
+        $this->app->singleton(TopologySnapshotPromotionStore::class);
         $this->app->singleton(
             WorktreeLocator::class,
             fn (): WorktreeLocator => new WorktreeLocator(self::primaryCheckout($repositoryRoot)),
         );
         $this->app->singleton(SecretRedactor::class);
+        $this->app->singleton(StaticProofInputPolicy::class);
+        $this->app->singleton(ProofInputManifestBuilder::class);
         $this->app->bind(OperationLock::class);
         $this->app->singleton(LegacyRetirementHost::class, fn (): LegacyRetirementHost => new LegacyRetirementHost(
             new LegacyIncusRevalidator,
@@ -173,9 +176,17 @@ final class AppServiceProvider extends ServiceProvider
                 $app->make(StatePaths::class),
                 $app->make(OperationId::class),
                 $app->make(TopologySnapshotIdentity::class),
+                $app->make(ProofInputManifestBuilder::class),
                 $repositoryRoot,
             ),
         );
+        $this->app->singleton(ProofEquivalenceEvaluator::class, fn (Application $app): ProofEquivalenceEvaluator => new ProofEquivalenceEvaluator(
+            $app->make(StaticProofInputPolicy::class),
+            $app->make(ProofInputManifestBuilder::class),
+            $app->make(StatePaths::class),
+            $app->make(OperationId::class),
+            $repositoryRoot,
+        ));
         $this->app->singleton(OrphanNetworkSweep::class, fn (Application $app): OrphanNetworkSweep => new OrphanNetworkSweep(
             $app->make(IncusHost::class),
             $app->make(IncusNetworkLifecycle::class),
@@ -213,6 +224,7 @@ final class AppServiceProvider extends ServiceProvider
             new GitRepository(self::primaryCheckout($repositoryRoot)),
             $app->make(OperationId::class),
             $app->make(TopologySnapshotIdentity::class),
+            $app->make(TopologySnapshotPromotionStore::class),
         ));
         $this->app->singleton(TopologySnapshotRefresher::class, fn (Application $app): TopologySnapshotRefresher => new TopologySnapshotRefresher(
             $app->make(IncusHost::class),

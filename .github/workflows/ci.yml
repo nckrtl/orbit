@@ -78,7 +78,7 @@ jobs:
         run: composer docs:lint
 
       - name: Run full tests in parallel
-        run: vendor/bin/pest --parallel --processes=2 --no-tia --compact --exclude-group=incus-live
+        run: vendor/bin/pest --parallel --processes=2 --no-tia --compact
 
       - name: Check Rector
         run: vendor/bin/rector process --dry-run

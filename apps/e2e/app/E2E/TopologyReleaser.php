@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\E2E;
 
+use App\E2E\Git\GitRepository;
 use App\E2E\State\OperationLock;
 use App\E2E\State\StatePaths;
 use App\E2E\Value\AttemptPurpose;
@@ -51,6 +52,15 @@ final readonly class TopologyReleaser
             $attempt = $state->attemptId($purpose);
             $target = TopologyTarget::feature($request->issue, $attempt);
             [$released, $absent] = $this->deleteResources($target);
+            $proof = $state->proof() ?? [];
+            if (
+                $purpose === AttemptPurpose::Proof
+                && ($proof['status'] ?? null) === 'proved'
+                && ($proof['attempt_id'] ?? null) === $attempt->value
+                && is_string($proof['manifest_sha256'] ?? null)
+            ) {
+                new GitRepository($request->worktree)->unpinProof($request->issue, $attempt);
+            }
             $state->forgetAttempt($purpose);
 
             return [
