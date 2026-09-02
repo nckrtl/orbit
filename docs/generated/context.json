@@ -281,6 +281,25 @@
             ]
         },
         {
+            "path": "docs/decisions/0015-retain-incus-proof-by-recorded-input-equivalence.md",
+            "title": "ADR 0015: Retain Incus proof by recorded-input equivalence",
+            "kind": "decision",
+            "components": [
+                "apps/docs"
+            ],
+            "concepts": [
+                "App",
+                "Gateway",
+                "Node",
+                "Proof topology"
+            ],
+            "governing_adrs": [
+                "0002",
+                "0006",
+                "0015"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
