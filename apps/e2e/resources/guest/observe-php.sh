@@ -15,9 +15,20 @@ collector=$root/collector.php
 active=$root/active.json
 observation_ini=/etc/php/$version/mods-available/orbit-e2e-observe.ini
 disabled_ini=/etc/php/$version/mods-available/orbit-e2e-pcov-disabled.ini
+fpm_drop_in=/etc/systemd/system/php$version-fpm.service.d/orbit-e2e-sury.conf
 
 safe_identity() {
   [[ "$1" =~ ^[A-Z][A-Z0-9]*-[1-9][0-9]*$ && "$2" =~ ^[0-9a-f]{32}$ ]]
+}
+
+is_sury_package() {
+  local package=$1 package_version=$2 package_source=$3
+  if apt-cache madison "$package" | awk -F' \\| ' \
+    -v version="$package_version" -v source="$package_source" \
+    '$2 == version && $3 == source { found = 1 } END { exit !found }'; then
+    return 0
+  fi
+  [[ "$package_version" =~ \+0~[0-9]{8}\.[0-9]+\+ubuntu[0-9]+\.[0-9]+~[0-9]+\.gbp[0-9a-f]+$ ]]
 }
 
 install_sury() {
@@ -50,19 +61,21 @@ install_sury() {
   apt-get -o DPkg::Lock::Timeout=300 update
   local -a packages=(php8.5-cli php8.5-fpm php8.5-common php8.5-curl php8.5-mbstring php8.5-sqlite3 php8.5-xml)
   [[ "$mode" == runtime ]] || packages+=(php8.5-pcov)
-  DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install \
-    --yes --no-install-recommends --no-remove --no-upgrade -- "${packages[@]}"
-
-  local package package_version package_source
+  local package package_version package_source needs_upgrade=0
   package_source="${source_uri%/} $os_codename/main $architecture Packages"
   for package in "${packages[@]}"; do
-    package_version=$(dpkg-query -W -f='${Version}' -- "$package")
-    if apt-cache madison "$package" | awk -F' \\| ' \
-      -v version="$package_version" -v source="$package_source" \
-      '$2 == version && $3 == source { found = 1 } END { exit !found }'; then
-      continue
+    if package_version=$(dpkg-query -W -f='${Version}' -- "$package" 2>/dev/null); then
+      is_sury_package "$package" "$package_version" "$package_source" || needs_upgrade=1
     fi
-    [[ "$package_version" =~ \+0~[0-9]{8}\.[0-9]+\+ubuntu[0-9]+\.[0-9]+~[0-9]+\.gbp[0-9a-f]+$ ]]
+  done
+  local -a install_options=(--yes --no-install-recommends --no-remove)
+  [[ "$needs_upgrade" -eq 1 ]] || install_options+=(--no-upgrade)
+  DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install \
+    "${install_options[@]}" -- "${packages[@]}"
+
+  for package in "${packages[@]}"; do
+    package_version=$(dpkg-query -W -f='${Version}' -- "$package")
+    is_sury_package "$package" "$package_version" "$package_source"
   done
   [[ -x /usr/bin/php8.5 && -x /usr/sbin/php-fpm8.5 ]]
 
@@ -75,6 +88,13 @@ install_sury() {
   fi
   [[ "$(runuser -u orbit -- env PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin sh -c 'command -v php')" == /usr/bin/php ]]
   [[ "$(readlink -f /usr/bin/php)" == /usr/bin/php8.5 ]]
+
+  install -d -o root -g root -m 0755 "$(dirname "$fpm_drop_in")"
+  if [[ ! -f "$fpm_drop_in" ]] || ! printf '[Service]\nReadWritePaths=/etc\n' | cmp -s - "$fpm_drop_in"; then
+    printf '[Service]\nReadWritePaths=/etc\n' > "$fpm_drop_in"
+    chmod 0644 "$fpm_drop_in"
+    systemctl daemon-reload
+  fi
 
   if [[ "$mode" == runtime ]]; then
     systemctl enable --now "php$version-fpm"

@@ -24,13 +24,25 @@ it('uses only pinned Sury PHP and packaged PCOV', function (): void {
             'php8.5-cli',
             'php8.5-fpm',
             'php8.5-pcov',
-            '--no-remove --no-upgrade',
+            'install_options+=(--no-upgrade)',
             'package_version=$(dpkg-query',
             'apt-cache madison "$package"',
             "'$2 == version && $3 == source { found = 1 } END { exit !found }'",
             '[[ "$package_version" =~ \\+0~[0-9]{8}\\.[0-9]+\\+ubuntu',
         )
         ->not->toContain('make install', './configure', 'docker build', 'static-php-cli');
+});
+
+it('keeps Sury FPM compatible with Orbit privileged convergence', function (): void {
+    $script = observePhpScript();
+
+    expect($script)
+        ->toContain(
+            'orbit-e2e-sury.conf',
+            "[Service]\\nReadWritePaths=/etc\\n",
+            'systemctl daemon-reload',
+        )
+        ->not->toContain('ProtectSystem=false');
 });
 
 it('removes only the known base-image PHP collision and verifies the packaged interpreter', function (): void {
