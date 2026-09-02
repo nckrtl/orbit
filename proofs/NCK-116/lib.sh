@@ -21,7 +21,7 @@ orb7_arm() {
   local action="$1"
   local record="$ORB7_CLEANUP_ROOT/$action"
   sudo test ! -e "$record" || fail "cleanup record already exists: $record"
-  sudo install -d -o root -g root -m 0700 -- "$record/paths" "$record/rules"
+  sudo install -d -o root -g root -m 0700 -- "$record/paths"
   orb7_ufw_shapes | sort | sudo tee "$record/ufw.before" >/dev/null
   sudo touch "$record/paths.tsv" "$record/rules.tsv"
   sudo chown root:root "$record/paths.tsv" "$record/rules.tsv"
@@ -35,25 +35,34 @@ orb7_capture_path() {
   local path="$3"
   local record="$ORB7_CLEANUP_ROOT/$action"
   if sudo test -e "$path" || sudo test -L "$path"; then
+    sudo tar --acls --xattrs --numeric-owner -C / \
+      -cpf "$record/paths/$label.tar.pending" "${path#/}"
+    sudo mv -- "$record/paths/$label.tar.pending" "$record/paths/$label.tar"
     printf '%s\t%s\t1\n' "$label" "$path" | sudo tee -a "$record/paths.tsv" >/dev/null
-    sudo tar --acls --xattrs --numeric-owner -C / -cpf "$record/paths/$label.tar" "${path#/}"
   else
     printf '%s\t%s\t0\n' "$label" "$path" | sudo tee -a "$record/paths.tsv" >/dev/null
   fi
 }
 
-orb7_record_container() {
+orb7_record_docker_resource() {
   local action="$1"
   local kind="$2"
   local name="$3"
-  local id="$4"
-  printf '%s\t%s\t%s\n' "$kind" "$name" "$id" \
+  [[ "$kind" =~ ^(container|volume)$ ]] || fail "unknown Docker resource kind: $kind"
+  if [[ "$kind" == container ]]; then
+    ! docker container inspect "$name" >/dev/null 2>&1 || fail "container already exists: $name"
+  else
+    ! docker volume inspect "$name" >/dev/null 2>&1 || fail "volume already exists: $name"
+  fi
+  printf '%s\t%s\n' "$kind" "$name" \
     | sudo tee -a "$ORB7_CLEANUP_ROOT/$action/docker.tsv" >/dev/null
 }
 
 orb7_capture_addresses() {
   local action="$1"
-  sudo ip -4 -o addr show dev orbit | sudo tee "$ORB7_CLEANUP_ROOT/$action/addresses.before" >/dev/null
+  local record="$ORB7_CLEANUP_ROOT/$action"
+  sudo ip -4 -o addr show dev orbit | sudo tee "$record/addresses.before.pending" >/dev/null
+  sudo mv -- "$record/addresses.before.pending" "$record/addresses.before"
 }
 
 orb7_restore_addresses() {
@@ -67,24 +76,14 @@ orb7_restore_addresses() {
   done < <(sudo cat "$record/addresses.before")
 }
 
-orb7_record_ufw_delta() {
+orb7_record_ufw_rule() {
   local action="$1"
-  local label="$2"
+  local comment="$2"
   local record="$ORB7_CLEANUP_ROOT/$action"
-  local expected current delta
-  expected=$(mktemp)
-  current=$(mktemp)
-  delta=$(mktemp)
-  {
-    sudo cat "$record/ufw.before"
-    sudo cat "$record/rules.tsv"
-  } | sort >"$expected"
-  orb7_ufw_shapes | sort >"$current"
-  comm -13 "$expected" "$current" >"$delta"
-  [[ "$(wc -l <"$delta")" -eq 1 ]] || fail "UFW mutation did not create one exact owned delta"
-  sudo install -o root -g root -m 0600 -- "$delta" "$record/rules/$label.shape"
-  sudo tee -a "$record/rules.tsv" <"$delta" >/dev/null
-  rm -f -- "$expected" "$current" "$delta"
+  local matching
+  matching=$(grep "# $comment\$" <<<"$(orb7_ufw_numbered)" || true)
+  [[ -z "$matching" ]] || fail "UFW cleanup identity already exists: $comment"
+  printf '%s\n' "$comment" | sudo tee -a "$record/rules.tsv" >/dev/null
 }
 
 orb7_mark_active() {
@@ -120,35 +119,39 @@ orb7_restore_owned() {
   sudo test -e "$record" || return 0
   sudo mkdir "$record/restoring" 2>/dev/null || return 0
 
-  local kind name id current_id
+  local kind name owner
   if sudo test -f "$record/docker.tsv"; then
-    while IFS=$'\t' read -r kind name id; do
+    while IFS=$'\t' read -r kind name; do
       if [[ "$kind" == container ]]; then
-        current_id=$(docker container inspect --format '{{.Id}}' "$name" 2>/dev/null || true)
-        [[ -z "$current_id" || "$current_id" == "$id" ]] || return 1
-        [[ -z "$current_id" ]] || docker container rm --force --volumes "$name" >/dev/null
+        if docker container inspect "$name" >/dev/null 2>&1; then
+          owner=$(docker container inspect \
+            --format '{{ index .Config.Labels "com.orbit.e2e.cleanup" }}' "$name")
+          [[ "$owner" == "$action" ]] || return 1
+          docker container rm --force --volumes "$name" >/dev/null
+        fi
       else
-        current_id=$(docker volume inspect --format '{{.Name}}' "$name" 2>/dev/null || true)
-        [[ -z "$current_id" || "$current_id" == "$id" ]] || return 1
-        [[ -z "$current_id" ]] || docker volume rm "$name" >/dev/null
+        if docker volume inspect "$name" >/dev/null 2>&1; then
+          owner=$(docker volume inspect \
+            --format '{{ index .Labels "com.orbit.e2e.cleanup" }}' "$name")
+          [[ "$owner" == "$action" ]] || return 1
+          docker volume rm "$name" >/dev/null
+        fi
       fi
     done < <(tac < <(sudo cat "$record/docker.tsv"))
   fi
 
-  local shape numbered matching number reread
+  local comment numbered matching number reread
   if sudo test -f "$record/rules.tsv"; then
-    while IFS= read -r shape; do
+    while IFS= read -r comment; do
       numbered=$(orb7_ufw_numbered)
-      matching=$(awk -v shape="$shape" '
-        { normalized=$0; sub(/^ *\[ *[0-9]+\] +/, "", normalized); if (normalized == shape) print $0 }
-      ' <<<"$numbered")
+      matching=$(grep "# $comment\$" <<<"$numbered" || true)
       [[ "$(grep -c . <<<"$matching")" -le 1 ]] || return 1
       [[ -n "$matching" ]] || continue
       number=$(sed -E 's/^ *\[ *([0-9]+)\].*/\1/' <<<"$matching")
       reread=$(orb7_ufw_numbered | sed -n -E "s/^ *\\[ *$number\\] +//p")
-      [[ "$reread" == "$shape" ]] || return 1
+      [[ "$reread" == *"# $comment" ]] || return 1
       sudo /usr/sbin/ufw --force delete "$number" >/dev/null
-    done < <(sudo cat "$record/rules.tsv")
+    done < <(tac < <(sudo cat "$record/rules.tsv"))
   fi
 
   if sudo test -f "$record/addresses.before"; then

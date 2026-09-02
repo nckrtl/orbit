@@ -24,9 +24,9 @@ printf 'scrape_configs: []\n' | sudo install -m 0644 /dev/stdin "$FOREIGN_FILE"
 # A rule that kept the Orbit comment but not the Orbit shape. The Gateway
 # refuses this as ownership drift, so the escape must refuse it too.
 address=$(this_address)
+orb7_record_ufw_rule refuses-without-proof "$EXPORTER_RULE_COMMENT"
 sudo ufw allow in on orbit proto tcp to "$address" port 9100 \
   comment orbit:metrics-node-exporter >/dev/null
-orb7_record_ufw_delta refuses-without-proof drifted-exporter
 orb7_mark_active refuses-without-proof
 orb7_checkpoint refuses-without-proof post-mutation
 

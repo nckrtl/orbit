@@ -20,12 +20,12 @@ address="${saved%%/*}"
 # A genuine exporter rule, and a rule that keeps an Orbit comment but carries
 # the wrong port. With the address gone the first must still be removed and
 # the second must still be refused.
+orb7_record_ufw_rule escape-without-wireguard-address "$EXPORTER_RULE_COMMENT"
 sudo ufw allow in on orbit proto tcp from 10.44.0.1 to "$address" port 9100 \
   comment "$EXPORTER_RULE_COMMENT" >/dev/null
-orb7_record_ufw_delta escape-without-wireguard-address exporter
+orb7_record_ufw_rule escape-without-wireguard-address "$DECOY_RULE"
 sudo ufw allow in on orbit proto tcp from 10.44.0.1 to "$address" port 3001 \
   comment "$DECOY_RULE" >/dev/null
-orb7_record_ufw_delta escape-without-wireguard-address decoy
 
 sudo ip addr flush dev orbit
 [[ -z "$(sudo ip -4 -o addr show dev orbit)" ]] || fail "the orbit interface still has an IPv4 address"

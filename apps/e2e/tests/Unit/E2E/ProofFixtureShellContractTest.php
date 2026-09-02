@@ -76,29 +76,21 @@ it('keeps early-exit proof pipeline producers truthful under pipefail', function
     expect($unexpected)->toBe([]);
 });
 
-it('records the first owned firewall delta when no earlier rule shape exists', function () {
+it('records an owned firewall identity when no existing rule uses its comment', function () {
     $fixture = dirname(__DIR__, 5).'/proofs/NCK-116/lib.sh';
     $script = <<<'BASH'
         source "$1"
 
+        manifest=$(mktemp)
+        trap 'rm -f -- "$manifest"' EXIT
+
         sudo() {
           case "$1" in
             /usr/sbin/ufw)
-              printf 'Status: active\n\n[ 1] BASELINE\n[ 2] DECOY\n'
-              ;;
-            cat)
-              if [[ "$2" == */ufw.before ]]; then
-                printf 'BASELINE\n'
-              fi
-              ;;
-            install)
-              return 0
+              printf 'Status: active\n\n[ 1] BASELINE\n'
               ;;
             tee)
-              cat >/dev/null
-              ;;
-            test)
-              return 1
+              cat >"$manifest"
               ;;
             *)
               return 1
@@ -106,7 +98,8 @@ it('records the first owned firewall delta when no earlier rule shape exists', f
           esac
         }
 
-        orb7_record_ufw_delta escape-metrics-node decoy
+        orb7_record_ufw_rule escape-metrics-node orbit:test-rule
+        [[ "$(cat "$manifest")" == orbit:test-rule ]]
         BASH;
 
     $result = new Process(['bash', '-c', $script, 'orb7-firewall-delta', $fixture]);
@@ -115,36 +108,21 @@ it('records the first owned firewall delta when no earlier rule shape exists', f
     expect($result->isSuccessful())->toBeTrue($result->getErrorOutput());
 });
 
-it('records consecutive owned firewall deltas without globbing the root record', function () {
+it('records consecutive owned firewall identities without globbing the root record', function () {
     $fixture = dirname(__DIR__, 5).'/proofs/NCK-116/lib.sh';
     $script = <<<'BASH'
         source "$1"
 
         manifest=$(mktemp)
         trap 'rm -f -- "$manifest"' EXIT
-        ufw_state=first
 
         sudo() {
           case "$1" in
             /usr/sbin/ufw)
-              printf 'Status: active\n\n[ 1] BASELINE\n[ 2] FIRST\n'
-              [[ "$ufw_state" == second ]] && printf '[ 3] SECOND\n'
-              ;;
-            cat)
-              if [[ "$2" == */ufw.before ]]; then
-                printf 'BASELINE\n'
-              elif [[ "$2" == */rules.tsv ]]; then
-                cat "$manifest"
-              fi
-              ;;
-            install)
-              return 0
+              printf 'Status: active\n\n[ 1] BASELINE\n'
               ;;
             tee)
               cat >>"$manifest"
-              ;;
-            test)
-              return 1
               ;;
             *)
               return 1
@@ -152,10 +130,9 @@ it('records consecutive owned firewall deltas without globbing the root record',
           esac
         }
 
-        orb7_record_ufw_delta escape-without-wireguard-address first
-        ufw_state=second
-        orb7_record_ufw_delta escape-without-wireguard-address second
-        [[ "$(cat "$manifest")" == $'FIRST\nSECOND' ]]
+        orb7_record_ufw_rule escape-without-wireguard-address orbit:first
+        orb7_record_ufw_rule escape-without-wireguard-address orbit:second
+        [[ "$(cat "$manifest")" == $'orbit:first\norbit:second' ]]
         BASH;
 
     $result = new Process(['bash', '-c', $script, 'orb7-firewall-deltas', $fixture]);
@@ -164,7 +141,7 @@ it('records consecutive owned firewall deltas without globbing the root record',
     expect($result->isSuccessful())->toBeTrue($result->getErrorOutput());
 });
 
-it('restores firewall deltas from the root-owned shape manifest', function () {
+it('restores firewall rules from the root-owned comment manifest', function () {
     $fixture = dirname(__DIR__, 5).'/proofs/NCK-116/lib.sh';
     $script = <<<'BASH'
         source "$1"
@@ -172,13 +149,13 @@ it('restores firewall deltas from the root-owned shape manifest', function () {
         manifest=$(mktemp)
         deleted=$(mktemp)
         trap 'rm -f -- "$manifest" "$deleted"' EXIT
-        printf 'OWNED\n' >"$manifest"
+        printf 'orbit:owned\n' >"$manifest"
 
         sudo() {
           case "$1" in
             /usr/sbin/ufw)
               if [[ "$2" == status ]]; then
-                printf 'Status: active\n\n[ 1] BASELINE\n[ 2] OWNED\n'
+                printf 'Status: active\n\n[ 1] BASELINE\n[ 2] ALLOW IN Anywhere # orbit:owned\n'
               elif [[ "$2" == --force && "$3" == delete ]]; then
                 printf '%s\n' "$4" >"$deleted"
               fi
@@ -220,6 +197,128 @@ it('restores firewall deltas from the root-owned shape manifest', function () {
     $result->run();
 
     expect($result->isSuccessful())->toBeTrue($result->getErrorOutput());
+});
+
+it('publishes an NCK-116 path baseline only after its archive is complete', function () {
+    $library = (string) file_get_contents(dirname(__DIR__, 5).'/proofs/NCK-116/lib.sh');
+    $capture = strpos($library, 'sudo tar --acls --xattrs --numeric-owner');
+    $commit = strpos($library, 'sudo mv -- "$record/paths/$label.tar.pending" "$record/paths/$label.tar"');
+    $publish = strpos($library, 'printf \'%s\\t%s\\t1\\n\' "$label" "$path"');
+
+    expect($capture)
+        ->not->toBeFalse()->and($commit)
+        ->not->toBeFalse()->and($publish)
+        ->not->toBeFalse()->and($capture)->toBeLessThan($commit)->and($commit)->toBeLessThan($publish);
+});
+
+it('publishes NCK-116 addresses only after the complete snapshot is staged', function () {
+    $library = (string) file_get_contents(dirname(__DIR__, 5).'/proofs/NCK-116/lib.sh');
+
+    expect($library)
+        ->toContain('sudo tee "$record/addresses.before.pending"')
+        ->toContain('sudo mv -- "$record/addresses.before.pending" "$record/addresses.before"');
+});
+
+it('records every NCK-116 firewall cleanup identity before creating its rule', function (
+    string $relativePath,
+    string $record,
+    string $mutation,
+) {
+    $fixture = (string) file_get_contents(dirname(__DIR__, 5).'/proofs/NCK-116/'.$relativePath);
+    $recordPosition = strpos($fixture, $record);
+    $mutationPosition = strpos($fixture, $mutation);
+
+    expect($recordPosition)
+        ->not->toBeFalse()->and($mutationPosition)
+        ->not->toBeFalse()->and($recordPosition)->toBeLessThan($mutationPosition);
+})->with([
+    'exporter decoy' => [
+        'escape-exporter-node.sh',
+        'orb7_record_ufw_rule escape-exporter-node "$DECOY_RULE"',
+        'sudo ufw allow in on orbit proto tcp to "$address" port 9101',
+    ],
+    'metrics decoy' => [
+        'escape-metrics-node.sh',
+        'orb7_record_ufw_rule escape-metrics-node "$DECOY_RULE"',
+        'sudo ufw allow in on orbit proto tcp to "$address" port 3001',
+    ],
+    'missing address exporter' => [
+        'escape-without-wireguard-address.sh',
+        'orb7_record_ufw_rule escape-without-wireguard-address "$EXPORTER_RULE_COMMENT"',
+        'sudo ufw allow in on orbit proto tcp from 10.44.0.1 to "$address" port 9100',
+    ],
+    'missing address decoy' => [
+        'escape-without-wireguard-address.sh',
+        'orb7_record_ufw_rule escape-without-wireguard-address "$DECOY_RULE"',
+        'sudo ufw allow in on orbit proto tcp from 10.44.0.1 to "$address" port 3001',
+    ],
+    'unowned exporter' => [
+        'refuses-without-proof.sh',
+        'orb7_record_ufw_rule refuses-without-proof "$EXPORTER_RULE_COMMENT"',
+        'sudo ufw allow in on orbit proto tcp to "$address" port 9100',
+    ],
+    'shifted foreign rule' => [
+        'refuses-a-shifted-rule-number.sh',
+        'orb7_record_ufw_rule refuses-a-shifted-rule-number "$FOREIGN_RULE"',
+        'sudo ufw allow in on orbit proto tcp from 10.44.0.1 to "$address" port 5432',
+    ],
+    'shifted exporter rule' => [
+        'refuses-a-shifted-rule-number.sh',
+        'orb7_record_ufw_rule refuses-a-shifted-rule-number "$EXPORTER_RULE_COMMENT"',
+        'sudo ufw insert "$foreign_number" allow in on orbit proto tcp from 10.44.0.1',
+    ],
+    'shifted transient rule' => [
+        'refuses-a-shifted-rule-number.sh',
+        'orb7_record_ufw_rule refuses-a-shifted-rule-number "$TRANSIENT_RULE"',
+        'sudo ufw insert 1 allow in on orbit proto tcp from 10.44.0.1',
+    ],
+    'timeout foreign rule' => [
+        'seed-orb-7-timeout.sh',
+        'orb7_record_ufw_rule "$ORB7_TIMEOUT_SEED_ACTION" ORB7-FOREIGN-KEEP',
+        'sudo ufw allow in on orbit proto tcp from 10.44.0.1 to "$address" port 5433',
+    ],
+    'timeout look-alike rule' => [
+        'seed-orb-7-timeout.sh',
+        'orb7_record_ufw_rule "$ORB7_TIMEOUT_SEED_ACTION" orbit:metrics-node-exporter-v2',
+        'sudo ufw allow in on orbit proto tcp from 10.44.0.1 to "$address" port 9101',
+    ],
+]);
+
+it('records proof-owned Docker resources before creating them', function () {
+    $repositoryRoot = dirname(__DIR__, 5);
+    $fixture = (string) file_get_contents($repositoryRoot.'/proofs/NCK-116/escape-metrics-node.sh');
+    $library = (string) file_get_contents($repositoryRoot.'/proofs/NCK-116/lib.sh');
+    $containerRecord = strpos(
+        $fixture,
+        'orb7_record_docker_resource escape-metrics-node container "$DECOY_CONTAINER"',
+    );
+    $containerCreate = strpos($fixture, 'docker container create --name "$DECOY_CONTAINER"');
+    $volumeRecord = strpos(
+        $fixture,
+        'orb7_record_docker_resource escape-metrics-node volume "$DECOY_VOLUME"',
+    );
+    $volumeCreate = strpos($fixture, 'docker volume create');
+
+    expect($containerRecord)
+        ->not->toBeFalse()->and($containerCreate)
+        ->not->toBeFalse()->and($volumeRecord)
+        ->not->toBeFalse()->and($volumeCreate)
+        ->not->toBeFalse()->and($containerRecord)->toBeLessThan($containerCreate)->and($volumeRecord)->toBeLessThan(
+            $volumeCreate,
+        )->and($fixture)->toContain('--label "com.orbit.e2e.cleanup=escape-metrics-node"')->and($library)->toContain(
+            'com.orbit.e2e.cleanup',
+        )->toContain('[[ "$owner" == "$action" ]]');
+});
+
+it('checks recorded NCK-116 firewall comments before and after signal cleanup', function () {
+    $driver = (string) file_get_contents(
+        dirname(__DIR__, 5).'/proofs/NCK-116/orb-7-signal-driver.sh',
+    );
+
+    expect($driver)
+        ->toContain('while IFS= read -r comment; do')
+        ->toContain('firewall_rule_exists "$comment"')
+        ->not->toContain('grep -Fxq "$shape"');
 });
 
 it('maps ORB-7 proof to authorized cleanup and timeout boundaries', function () {
@@ -485,6 +584,34 @@ it('requires positive pre-signal evidence in the NCK-116 timeout proof', functio
         ->not->toContain('sudo /usr/sbin/ufw insert "$exporter_number"')->and($baselineRestored)
         ->not->toBeFalse()->and($baselineRecordReleased)
         ->not->toBeFalse()->and($baselineRestored)->toBeLessThan($baselineRecordReleased);
+});
+
+it('publishes the timeout baseline before deleting its exporter rule', function () {
+    $seed = (string) file_get_contents(
+        dirname(__DIR__, 5).'/proofs/NCK-116/seed-orb-7-timeout.sh',
+    );
+    $publish = strpos(
+        $seed,
+        'sudo mv -- "$baseline_pending" "$ORB7_TIMEOUT_BASELINE_RECORD"',
+    );
+    $mutation = strpos($seed, 'sudo /usr/sbin/ufw --force delete "$exporter_number"');
+
+    expect($seed)
+        ->toContain('baseline_pending="$ORB7_TIMEOUT_BASELINE_RECORD.pending"')
+        ->toContain('sudo rm -rf -- "$baseline_pending"')
+        ->and($publish)
+        ->not->toBeFalse()->and($mutation)
+        ->not->toBeFalse()->and($publish)->toBeLessThan($mutation);
+});
+
+it('keeps timeout seed state only after a zero exit', function () {
+    $seed = (string) file_get_contents(
+        dirname(__DIR__, 5).'/proofs/NCK-116/seed-orb-7-timeout.sh',
+    );
+
+    expect($seed)
+        ->toContain('if [[ "$status" -ne 0 ]]; then')
+        ->not->toContain('committed=');
 });
 
 it('passes the exact NCK-116 action name through the TERM trap', function () {

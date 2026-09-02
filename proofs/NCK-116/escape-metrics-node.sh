@@ -12,13 +12,15 @@ orb7_traps escape-metrics-node
 orb7_arm escape-metrics-node
 orb7_checkpoint escape-metrics-node post-record
 address=$(this_address)
+orb7_record_docker_resource escape-metrics-node container "$DECOY_CONTAINER"
 docker container create --name "$DECOY_CONTAINER" --label com.orbit.managed=other \
+  --label "com.orbit.e2e.cleanup=escape-metrics-node" \
   prom/prometheus:v3.5.0 >/dev/null
-orb7_record_container escape-metrics-node container "$DECOY_CONTAINER" "$(docker inspect --format '{{.Id}}' "$DECOY_CONTAINER")"
-docker volume create --label com.orbit.managed=other "$DECOY_VOLUME" >/dev/null
-orb7_record_container escape-metrics-node volume "$DECOY_VOLUME" "$DECOY_VOLUME"
+orb7_record_docker_resource escape-metrics-node volume "$DECOY_VOLUME"
+docker volume create --label com.orbit.managed=other \
+  --label "com.orbit.e2e.cleanup=escape-metrics-node" "$DECOY_VOLUME" >/dev/null
+orb7_record_ufw_rule escape-metrics-node "$DECOY_RULE"
 sudo ufw allow in on orbit proto tcp to "$address" port 3001 comment "$DECOY_RULE" >/dev/null
-orb7_record_ufw_delta escape-metrics-node decoy
 orb7_mark_active escape-metrics-node
 orb7_checkpoint escape-metrics-node post-mutation
 

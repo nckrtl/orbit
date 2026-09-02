@@ -23,18 +23,18 @@ rule_number() {
 
 # Orbit's rule must sit directly above the foreign one, so that the number
 # Orbit plans addresses the foreign rule once the rule above them both goes.
+orb7_record_ufw_rule refuses-a-shifted-rule-number "$FOREIGN_RULE"
 sudo ufw allow in on orbit proto tcp from 10.44.0.1 to "$address" port 5432 \
   comment "$FOREIGN_RULE" >/dev/null
-orb7_record_ufw_delta refuses-a-shifted-rule-number foreign
 foreign_number=$(rule_number "$FOREIGN_RULE")
 [[ -n "$foreign_number" ]] || fail "the planted foreign rule has no number"
 
+orb7_record_ufw_rule refuses-a-shifted-rule-number "$EXPORTER_RULE_COMMENT"
 sudo ufw insert "$foreign_number" allow in on orbit proto tcp from 10.44.0.1 to "$address" \
   port 9100 comment "$EXPORTER_RULE_COMMENT" >/dev/null
-orb7_record_ufw_delta refuses-a-shifted-rule-number exporter
+orb7_record_ufw_rule refuses-a-shifted-rule-number "$TRANSIENT_RULE"
 sudo ufw insert 1 allow in on orbit proto tcp from 10.44.0.1 to "$address" port 9999 \
   comment "$TRANSIENT_RULE" >/dev/null
-orb7_record_ufw_delta refuses-a-shifted-rule-number transient
 
 [[ "$(rule_number "$FOREIGN_RULE")" -eq "$(( $(rule_number "$EXPORTER_RULE_COMMENT") + 1 ))" ]] \
   || fail "the foreign rule is not directly below Orbit's; the shift would prove nothing"

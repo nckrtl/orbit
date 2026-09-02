@@ -64,10 +64,10 @@ assert_rule_baseline() {
 }
 
 assert_owned_rules_present() {
-  local shape
+  local comment
   [[ -s "$snapshot/rules.tsv" ]] || fail "$action did not record an owned UFW mutation"
-  while IFS= read -r shape; do
-    grep -Fxq "$shape" <<<"$(orb7_ufw_shapes)" || fail "$action did not retain its recorded UFW mutation"
+  while IFS= read -r comment; do
+    firewall_rule_exists "$comment" || fail "$action did not retain its recorded UFW mutation"
   done <"$snapshot/rules.tsv"
 }
 

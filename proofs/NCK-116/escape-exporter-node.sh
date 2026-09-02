@@ -10,8 +10,8 @@ orb7_traps escape-exporter-node
 orb7_arm escape-exporter-node
 orb7_checkpoint escape-exporter-node post-record
 address=$(this_address)
+orb7_record_ufw_rule escape-exporter-node "$DECOY_RULE"
 sudo ufw allow in on orbit proto tcp to "$address" port 9101 comment "$DECOY_RULE" >/dev/null
-orb7_record_ufw_delta escape-exporter-node decoy
 orb7_mark_active escape-exporter-node
 orb7_checkpoint escape-exporter-node post-mutation
 
