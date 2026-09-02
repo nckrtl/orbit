@@ -537,7 +537,7 @@ function vpn_dns_probe_run(int $blockedTries): array
         'https.gateway-internal',
         'readiness',
         str_repeat('a', 40),
-        'orbit-e2e-standby-app-dev',
+        'orbit-e2e-topology-snapshot-app-dev',
     ], env: ['PATH' => "{$root}/bin:".getenv('PATH')]);
 
     try {
@@ -673,7 +673,7 @@ function verifierWireguardProcess(string $root, array $peers): Process
         'wireguard.reachability',
         'readiness',
         str_repeat('a', 40),
-        'orbit-e2e-standby-gateway',
+        'orbit-e2e-topology-snapshot-gateway',
         ...$peers,
     ], env: ['PATH' => "{$root}/bin:".getenv('PATH')]);
 }
@@ -922,7 +922,7 @@ describe('convergence guest scripts', function () {
             $process = new Process(['bash', $script, ...$args]);
             expect($process->run())->not->toBe(0)->and(trim($process->getOutput()))->toBe('');
         }
-        $instance = 'orbit-e2e-standby-gateway';
+        $instance = 'orbit-e2e-topology-snapshot-gateway';
         // Only the two fleet probes take a declared topology, and only in the shape they take.
         foreach ([
             ['vm.gateway.running', 'readiness', $sha, $instance, 'gateway,app-dev'],
@@ -950,7 +950,7 @@ describe('convergence guest scripts', function () {
             'vm.gateway.running',
             'readiness',
             $sha,
-            'orbit-e2e-standby-gateway',
+            'orbit-e2e-topology-snapshot-gateway',
         ], env: ['PATH' => "{$root}/bin:".getenv('PATH')]);
         $evidence = json_decode($process->mustRun()->getOutput(), true, 16, JSON_THROW_ON_ERROR);
         expect($evidence)
@@ -960,7 +960,7 @@ describe('convergence guest scripts', function () {
                 'identity' => $sha,
                 'expected' => 'running|degraded',
                 'observed' => 'running',
-                'evidence_ref' => 'incus://orbit-e2e-standby-gateway/vm.gateway.running',
+                'evidence_ref' => 'incus://orbit-e2e-topology-snapshot-gateway/vm.gateway.running',
             ])
             ->and($evidence['checked_at'] ?? null)
             ->toMatch('/\A\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\z/D');
@@ -977,7 +977,7 @@ describe('convergence guest scripts', function () {
             'vm.gateway.running',
             'readiness',
             str_repeat('a', 40),
-            'orbit-e2e-standby-gateway',
+            'orbit-e2e-topology-snapshot-gateway',
         ], env: ['PATH' => "{$root}/bin:".getenv('PATH')]);
         try {
             $evidence = json_decode($process->mustRun()->getOutput(), true, 16, JSON_THROW_ON_ERROR);
@@ -1031,7 +1031,7 @@ describe('convergence guest scripts', function () {
                 'source.manifest',
                 'proof',
                 $sha,
-                'orbit-e2e-standby-gateway',
+                'orbit-e2e-topology-snapshot-gateway',
                 $treeHash,
                 base64_encode($manifest),
             ];
@@ -1073,7 +1073,7 @@ describe('convergence guest scripts', function () {
             'vm.gateway.running',
             'readiness',
             $sha,
-            'orbit-e2e-standby-gateway',
+            'orbit-e2e-topology-snapshot-gateway',
         ], env: [
             'PATH' => "{$root}/bin:".getenv('PATH'),
             'SYSTEM_STATE' => 'degraded',
@@ -1086,7 +1086,7 @@ describe('convergence guest scripts', function () {
             'vm.gateway.running',
             'readiness',
             $sha,
-            'orbit-e2e-standby-gateway',
+            'orbit-e2e-topology-snapshot-gateway',
         ], env: [
             'PATH' => "{$root}/bin:".getenv('PATH'),
             'SYSTEM_STATE' => 'starting',
@@ -1115,7 +1115,7 @@ describe('convergence guest scripts', function () {
             'vm.gateway.running',
             'readiness',
             str_repeat('a', 40),
-            'orbit-e2e-standby-gateway',
+            'orbit-e2e-topology-snapshot-gateway',
         ], env: ['PATH' => "{$root}/bin:".getenv('PATH')]);
         expect($process->run())->not->toBe(0)->and(trim($process->getOutput()))->toBe('');
     });
@@ -1207,7 +1207,7 @@ describe('convergence guest scripts', function () {
                 'metrics.publication',
                 'proof',
                 str_repeat('a', 40),
-                'orbit-e2e-standby-gateway',
+                'orbit-e2e-topology-snapshot-gateway',
                 $assignments,
             ];
             $process = new Process($command, env: $fixture['environment']);
@@ -1220,7 +1220,7 @@ describe('convergence guest scripts', function () {
                     'passed' => true,
                     'identity' => str_repeat('a', 40),
                     'expected' => 'metrics.orbit:current-product-publication',
-                    'evidence_ref' => 'incus://orbit-e2e-standby-gateway/metrics.publication',
+                    'evidence_ref' => 'incus://orbit-e2e-topology-snapshot-gateway/metrics.publication',
                 ])
                 ->and($evidence['observed'])
                 ->toContain(
@@ -1284,7 +1284,7 @@ describe('convergence guest scripts', function () {
                 'metrics.publication',
                 'proof',
                 str_repeat('a', 40),
-                'orbit-e2e-standby-gateway',
+                'orbit-e2e-topology-snapshot-gateway',
                 $assignments,
             ];
             $process = new Process($command, env: $fixture['environment']);
@@ -1350,7 +1350,7 @@ describe('convergence guest scripts', function () {
                 'role.assignments',
                 'proof',
                 str_repeat('a', 40),
-                'orbit-e2e-standby-gateway',
+                'orbit-e2e-topology-snapshot-gateway',
                 base64_encode(json_encode(\App\E2E\Value\TopologyProfile::ASSIGNMENTS, JSON_THROW_ON_ERROR)),
             ];
             $environment = ['PATH' => "{$root}/bin:".getenv('PATH')];
@@ -1368,7 +1368,7 @@ describe('convergence guest scripts', function () {
                     'identity' => str_repeat('a', 40),
                     'expected' => 'gateway:gateway+vpn,app-dev:app-dev+metrics,app-prod:app-prod:active',
                     'observed' => 'gateway:gateway+vpn,app-dev:app-dev+metrics,app-prod:app-prod:active',
-                    'evidence_ref' => 'incus://orbit-e2e-standby-gateway/role.assignments',
+                    'evidence_ref' => 'incus://orbit-e2e-topology-snapshot-gateway/role.assignments',
                 ]);
 
             $pdo->exec("UPDATE node_roles SET status = 'failed' WHERE role = 'app-dev'");

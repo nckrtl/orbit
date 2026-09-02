@@ -12,11 +12,11 @@ declare(strict_types=1);
 
 use App\E2E\Git\GitRepository;
 use App\E2E\PreparedStateFingerprint;
-use App\E2E\StandbyManifestStore;
 use App\E2E\State\AtomicJsonStore;
 use App\E2E\State\StatePaths;
+use App\E2E\TopologySnapshotManifestStore;
 use App\E2E\Value\LaravelRelease;
-use App\E2E\Value\StandbyGeneration;
+use App\E2E\Value\TopologySnapshotGeneration;
 use App\E2E\Value\TopologyTarget;
 use Illuminate\Process\Factory as ProcessFactory;
 use Illuminate\Support\Facades\Process;
@@ -28,7 +28,7 @@ function promoteDiscoveryGeneration(string $repositoryRoot, StatePaths $paths): 
     $prepared = topologyFinalPreparedFingerprint($repositoryRoot);
     $mainSha = new GitRepository($repositoryRoot)->commit();
     $structural = new PreparedStateFingerprint(new GitRepository($repositoryRoot))->forCommit($mainSha);
-    new StandbyManifestStore($store, $paths, new \App\E2E\IncusHost)->promote(new StandbyGeneration(
+    new TopologySnapshotManifestStore($store, $paths, new \App\E2E\IncusHost)->promote(new TopologySnapshotGeneration(
         substr($mainSha, 0, 12).'-'.substr($prepared->value, 0, 12),
         $mainSha,
         ['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod'],
@@ -119,11 +119,11 @@ function hydrateFixtureVendor(string $worktree): void
     }
 }
 
-function standbyVmInventoryJson(): string
+function topologySnapshotVmInventoryJson(): string
 {
     $roles = \App\E2E\Value\TopologyProfile::ROLES;
     $instances = array_merge(
-        array_map(static fn (string $role): string => TopologyTarget::standby()->instance($role), $roles),
+        array_map(static fn (string $role): string => TopologyTarget::topologySnapshot()->instance($role), $roles),
         array_map(static fn (string $role): string => featureTarget('NCK-123')->instance($role), $roles),
     );
 
@@ -136,21 +136,24 @@ function standbyVmInventoryJson(): string
             'config' => ['user.orbit.e2e.owner' => 'orbit-e2e'],
             'devices' => [
                 'root' => ['pool' => 'default'],
-                'eth0' => ['network' => TopologyTarget::standby()->network()],
+                'eth0' => ['network' => TopologyTarget::topologySnapshot()->network()],
             ],
         ],
         $instances,
     ), JSON_THROW_ON_ERROR);
 }
 
-function standbySnapshotInventoryJson(string $instance, bool $include = true, string $owner = 'orbit-e2e'): string
-{
-    $role = str_replace('orbit-e2e-standby-', '', $instance);
+function topologySnapshotSnapshotInventoryJson(
+    string $instance,
+    bool $include = true,
+    string $owner = 'orbit-e2e',
+): string {
+    $role = str_replace('orbit-e2e-topology-snapshot-', '', $instance);
     $snapshot = match ($role) {
         'gateway' => 'main-gateway',
         'app-dev' => 'main-app-dev',
         'app-prod' => 'main-app-prod',
-        default => throw new RuntimeException('Unexpected standby fixture instance.'),
+        default => throw new RuntimeException('Unexpected topology snapshot fixture instance.'),
     };
 
     return json_encode(
@@ -283,7 +286,7 @@ function pinnedWorktreeInventoryResult(
 
             return Process::result(json_encode(array_merge(
                 array_values(array_filter(
-                    json_decode(standbyVmInventoryJson(), true, 16, JSON_THROW_ON_ERROR),
+                    json_decode(topologySnapshotVmInventoryJson(), true, 16, JSON_THROW_ON_ERROR),
                     static fn (array $vm): bool => ! str_contains((string) $vm['name'], 'nck-123'),
                 )),
                 $featureInstances,
@@ -300,7 +303,7 @@ function pinnedWorktreeInventoryResult(
     if (($command[3] ?? null) === 'snapshot' && ($command[4] ?? null) === 'list') {
         $instance = preg_replace('/\A[^:]+:/', '', (string) ($command[5] ?? ''));
 
-        return Process::result(standbySnapshotInventoryJson($instance));
+        return Process::result(topologySnapshotSnapshotInventoryJson($instance));
     }
 
     return null;

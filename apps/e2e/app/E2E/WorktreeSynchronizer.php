@@ -234,12 +234,12 @@ final readonly class WorktreeSynchronizer
      * read; the scripts are taken from the candidate commit itself. Each checkout
      * ends detached at the candidate with a clean status, proved by the guest
      * before hydration. The candidate must be a full SHA that a repository
-     * reference still reaches, and the standby baseline is never a target.
+     * reference still reaches, and the topology snapshot baseline is never a target.
      */
     public function syncCommit(TopologyTarget $target, string $repository, string $candidateSha): CandidateSync
     {
-        if ($target->isStandby()) {
-            throw new InvalidArgumentException('A proof candidate cannot be synced into a standby topology.');
+        if ($target->isTopologySnapshot()) {
+            throw new InvalidArgumentException('A proof candidate cannot be synced into the topology snapshot.');
         }
         $git = new GitRepository($repository);
         $this->validateRepositoryIdentity($git);
@@ -487,9 +487,9 @@ final readonly class WorktreeSynchronizer
     {
         $this->validateRepositoryIdentity($repository);
 
-        if ($target->isStandby()) {
+        if ($target->isTopologySnapshot()) {
             if ($repository->dirtyOverlay() !== null) {
-                throw new InvalidArgumentException('The standby source worktree must be clean.');
+                throw new InvalidArgumentException('The topology snapshot source worktree must be clean.');
             }
 
             return;

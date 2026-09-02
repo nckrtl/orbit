@@ -1384,13 +1384,13 @@ describe('WorktreeSynchronizer', function () {
         }
     });
 
-    it('accepts the primary checkout for standby validation', function () {
+    it('accepts the primary checkout for topology snapshot validation', function () {
         $root = createSynchronizerPrimaryFixture('NCK-130');
         $sha = trim(synchronizerGit($root, ['rev-parse', 'HEAD'])[0]);
         $guest = new WorktreeSynchronizerGuestFake($sha);
         try {
             $state = new WorktreeSynchronizer($guest, $root, new OperationId(str_repeat('a', 32)))->sync(
-                TopologyTarget::standby(),
+                TopologyTarget::topologySnapshot(),
                 $root,
             );
             expect($state->hostSha)->toBe($sha)->and($guest->execs)->not->toBeEmpty();
@@ -1971,7 +1971,7 @@ describe('WorktreeSynchronizer::syncCommit', function () {
         }
     });
 
-    it('refuses to sync a candidate into the standby topology before any guest interaction', function () {
+    it('refuses to sync a candidate into the topology snapshot before any guest interaction', function () {
         $fixture = createSynchronizerCandidateFixture('NCK-158');
         ['root' => $root, 'worktree' => $worktree, 'candidate' => $candidate] = $fixture;
         try {
@@ -1979,11 +1979,11 @@ describe('WorktreeSynchronizer::syncCommit', function () {
 
             expect(
                 fn () => new WorktreeSynchronizer($guest, $root, new OperationId(str_repeat('a', 32)))
-                    ->syncCommit(TopologyTarget::standby(), $worktree, $candidate),
+                    ->syncCommit(TopologyTarget::topologySnapshot(), $worktree, $candidate),
             )
                 ->toThrow(
                     InvalidArgumentException::class,
-                    'A proof candidate cannot be synced into a standby topology.',
+                    'A proof candidate cannot be synced into the topology snapshot.',
                 )
                 ->and($guest->execs)
                 ->toBe([])

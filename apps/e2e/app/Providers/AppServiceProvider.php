@@ -17,12 +17,6 @@ use App\E2E\LegacyRetirementHost;
 use App\E2E\OrphanNetworkSweep;
 use App\E2E\PreparedStateFingerprint;
 use App\E2E\ProofFixtureStager;
-use App\E2E\StandbyAvailability;
-use App\E2E\StandbyBuilder;
-use App\E2E\StandbyManifestStore;
-use App\E2E\StandbyPromoter;
-use App\E2E\StandbyRebuilder;
-use App\E2E\StandbyRefresher;
 use App\E2E\State\AtomicJsonStore;
 use App\E2E\State\OperationLock;
 use App\E2E\State\SecretRedactor;
@@ -31,9 +25,15 @@ use App\E2E\TopologyAcquirer;
 use App\E2E\TopologyConverger;
 use App\E2E\TopologyProofRunner;
 use App\E2E\TopologyReleaser;
+use App\E2E\TopologySnapshotAvailability;
+use App\E2E\TopologySnapshotBuilder;
+use App\E2E\TopologySnapshotManifestStore;
+use App\E2E\TopologySnapshotPromoter;
+use App\E2E\TopologySnapshotRebuilder;
+use App\E2E\TopologySnapshotRefresher;
 use App\E2E\TopologyVerifier;
 use App\E2E\Value\OperationId;
-use App\E2E\Value\StandbyIdentity;
+use App\E2E\Value\TopologySnapshotIdentity;
 use App\E2E\WorktreeLocator;
 use App\E2E\WorktreeSynchronizer;
 use Illuminate\Contracts\Config\Repository;
@@ -51,17 +51,17 @@ final class AppServiceProvider extends ServiceProvider
 
             return new OperationId($value);
         });
-        // Which physical standby this checkout owns. Two checkouts on one host
-        // must not share standby VMs: a promotion from one would leave the
+        // Which physical topology snapshot this checkout owns. Two checkouts on one host
+        // must not share topology snapshot VMs: a promotion from one would leave the
         // other's manifest naming snapshots that no longer exist.
-        $this->app->singleton(StandbyIdentity::class, function (Application $app): StandbyIdentity {
-            $namespace = $app->make(Repository::class)->get('e2e.standby.namespace');
+        $this->app->singleton(TopologySnapshotIdentity::class, function (Application $app): TopologySnapshotIdentity {
+            $namespace = $app->make(Repository::class)->get('e2e.topology_snapshot.namespace');
 
-            return StandbyIdentity::forNamespace(is_string($namespace) ? $namespace : '');
+            return TopologySnapshotIdentity::forNamespace(is_string($namespace) ? $namespace : '');
         });
         $repositoryRoot = dirname(__DIR__, 4);
         $this->app->singleton(GitRepository::class, fn (): GitRepository => new GitRepository($repositoryRoot));
-        // Host-wide state (standby generation, locks) lives in the primary checkout's `.e2e/`.
+        // Host-wide state (topology snapshot generation, locks) lives in the primary checkout's `.e2e/`.
         $this->app->singleton(
             StatePaths::class,
             fn (): StatePaths => StatePaths::forPrimary(self::primaryCheckout($repositoryRoot)),
@@ -139,7 +139,7 @@ final class AppServiceProvider extends ServiceProvider
             $app->make(IncusHost::class),
             (int) $app->make(Repository::class)->get('e2e.incus.max_vms', 24),
         ));
-        $this->app->singleton(StandbyManifestStore::class, fn (Application $app): StandbyManifestStore => new StandbyManifestStore(
+        $this->app->singleton(TopologySnapshotManifestStore::class, fn (Application $app): TopologySnapshotManifestStore => new TopologySnapshotManifestStore(
             $app->make(AtomicJsonStore::class),
             $app->make(StatePaths::class),
             $app->make(IncusHost::class),
@@ -149,14 +149,14 @@ final class AppServiceProvider extends ServiceProvider
             host: $app->make(IncusHost::class),
             networks: $app->make(IncusNetworkLifecycle::class),
             fingerprints: $app->make(PreparedStateFingerprint::class),
-            standby: $app->make(StandbyManifestStore::class),
+            topologySnapshot: $app->make(TopologySnapshotManifestStore::class),
             synchronizer: $app->make(WorktreeSynchronizer::class),
             verifier: $app->make(TopologyVerifier::class),
             guests: $app->make(DiscoveryGuestPreparer::class),
             capacity: $app->make(HostCapacity::class),
             hostPaths: $app->make(StatePaths::class),
             operation: $app->make(OperationId::class),
-            standbyIdentity: $app->make(StandbyIdentity::class),
+            topologySnapshotIdentity: $app->make(TopologySnapshotIdentity::class),
             repositoryRoot: $repositoryRoot,
         ));
         $this->app->singleton(
@@ -164,7 +164,7 @@ final class AppServiceProvider extends ServiceProvider
             fn (Application $app): TopologyProofRunner => new TopologyProofRunner(
                 $app->make(IncusHost::class),
                 $app->make(IncusNetworkLifecycle::class),
-                $app->make(StandbyManifestStore::class),
+                $app->make(TopologySnapshotManifestStore::class),
                 $app->make(WorktreeSynchronizer::class),
                 $app->make(TopologyConverger::class),
                 $app->make(TopologyVerifier::class),
@@ -172,7 +172,7 @@ final class AppServiceProvider extends ServiceProvider
                 $app->make(HostCapacity::class),
                 $app->make(StatePaths::class),
                 $app->make(OperationId::class),
-                $app->make(StandbyIdentity::class),
+                $app->make(TopologySnapshotIdentity::class),
                 $repositoryRoot,
             ),
         );
@@ -190,36 +190,36 @@ final class AppServiceProvider extends ServiceProvider
             $app->make(OrphanNetworkSweep::class),
         ));
 
-        $this->app->singleton(StandbyBuilder::class, fn (Application $app): StandbyBuilder => new StandbyBuilder(
+        $this->app->singleton(TopologySnapshotBuilder::class, fn (Application $app): TopologySnapshotBuilder => new TopologySnapshotBuilder(
             $app->make(IncusHost::class),
             $app->make(IncusNetworkLifecycle::class),
             $app->make(WorktreeSynchronizer::class),
             $app->make(TopologyConverger::class),
             $app->make(TopologyVerifier::class),
-            $app->make(StandbyManifestStore::class),
+            $app->make(TopologySnapshotManifestStore::class),
             $app->make(AtomicJsonStore::class),
             $repositoryRoot,
-            $app->make(StandbyIdentity::class),
+            $app->make(TopologySnapshotIdentity::class),
         ));
-        $this->app->singleton(StandbyPromoter::class, fn (Application $app): StandbyPromoter => new StandbyPromoter(
+        $this->app->singleton(TopologySnapshotPromoter::class, fn (Application $app): TopologySnapshotPromoter => new TopologySnapshotPromoter(
             $app->make(IncusHost::class),
             $app->make(PreparedStateFingerprint::class),
             $app->make(TopologyVerifier::class),
-            $app->make(StandbyManifestStore::class),
+            $app->make(TopologySnapshotManifestStore::class),
             $app->make(TopologyReleaser::class),
             $app->make(OperationLock::class),
             new OperationLock($app->make(StatePaths::class)),
             $app->make(StatePaths::class),
             new GitRepository(self::primaryCheckout($repositoryRoot)),
             $app->make(OperationId::class),
-            $app->make(StandbyIdentity::class),
+            $app->make(TopologySnapshotIdentity::class),
         ));
-        $this->app->singleton(StandbyRefresher::class, fn (Application $app): StandbyRefresher => new StandbyRefresher(
+        $this->app->singleton(TopologySnapshotRefresher::class, fn (Application $app): TopologySnapshotRefresher => new TopologySnapshotRefresher(
             $app->make(IncusHost::class),
             $app->make(IncusNetworkLifecycle::class),
             $app->make(PreparedStateFingerprint::class),
-            $app->make(StandbyManifestStore::class),
-            $app->make(StandbyBuilder::class),
+            $app->make(TopologySnapshotManifestStore::class),
+            $app->make(TopologySnapshotBuilder::class),
             $app->make(WorktreeSynchronizer::class),
             $app->make(TopologyConverger::class),
             $app->make(TopologyVerifier::class),
@@ -230,22 +230,21 @@ final class AppServiceProvider extends ServiceProvider
             $app->make(GitRepository::class),
             $repositoryRoot,
             $app->make(OperationId::class),
-            $app->make(StandbyIdentity::class),
-            $app->make(StandbyAvailability::class),
+            $app->make(TopologySnapshotIdentity::class),
+            $app->make(TopologySnapshotAvailability::class),
         ));
-        $this->app->singleton(StandbyAvailability::class, fn (Application $app): StandbyAvailability => new StandbyAvailability(
+        $this->app->singleton(TopologySnapshotAvailability::class, fn (Application $app): TopologySnapshotAvailability => new TopologySnapshotAvailability(
             $app->make(IncusHost::class),
-            $app->make(StandbyIdentity::class),
+            $app->make(TopologySnapshotIdentity::class),
         ));
-        $this->app->singleton(StandbyRebuilder::class, fn (Application $app): StandbyRebuilder => new StandbyRebuilder(
+        $this->app->singleton(TopologySnapshotRebuilder::class, fn (Application $app): TopologySnapshotRebuilder => new TopologySnapshotRebuilder(
             $app->make(IncusHost::class),
             $app->make(IncusNetworkLifecycle::class),
-            $app->make(StandbyManifestStore::class),
-            $app->make(AtomicJsonStore::class),
+            $app->make(TopologySnapshotManifestStore::class),
             $app->make(StatePaths::class),
             $app->make(OperationLock::class),
             $app->make(OperationId::class),
-            $app->make(StandbyIdentity::class),
+            $app->make(TopologySnapshotIdentity::class),
         ));
     }
 

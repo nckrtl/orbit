@@ -12,7 +12,11 @@ log_config() {
     "$1"
 }
 
-metrics_address() { hostname -I | tr -s ' ' '\n' | grep '^10\.44\.' | head -1; }
+metrics_address() {
+  local addresses
+  addresses=$(hostname -I | tr -s ' ' '\n')
+  awk '/^10\.44\./ { print; exit }' <<<"$addresses"
+}
 
 grafana_password() {
   orbit metrics:credentials --json | php -r 'echo json_decode(stream_get_contents(STDIN), true)["password"] ?? "";'

@@ -24,23 +24,28 @@ final readonly class ProofPlan
 
     private const array SECTIONS = ['setup', 'acceptance'];
 
-    /** Optional: a plan that mutates the topology cannot become the standby. */
+    /** Optional: a plan that mutates the topology cannot become the topology snapshot. */
     private const string MUTATES = 'mutates';
 
     /** Optional: the topology the plan ends with; a node it leaves out is proved absent. */
     private const string ENDS_WITH = 'ends_with';
+
+    /** Optional: additional issue fixture directories staged from the same candidate. */
+    private const string FIXTURE_ISSUES = 'fixture_issues';
 
     private const array ACTION_KEYS = ['id', 'node', 'argv', 'timeout_seconds'];
 
     /**
      * @param list<array{id:string,node:string,argv:list<string>,timeout_seconds:int}> $setup
      * @param list<array{id:string,node:string,argv:list<string>,timeout_seconds:int}> $acceptance
+     * @param list<string> $fixtureIssues
      */
     private function __construct(
         public array $setup,
         public array $acceptance,
         public bool $mutates,
         public TopologyEndState $endsWith,
+        public array $fixtureIssues,
     ) {}
 
     public static function fromFile(string $path): self
@@ -90,6 +95,11 @@ final readonly class ProofPlan
             $endsWith = TopologyEndState::fromArray($plan[self::ENDS_WITH]);
             unset($plan[self::ENDS_WITH]);
         }
+        $fixtureIssues = [];
+        if (array_key_exists(self::FIXTURE_ISSUES, $plan)) {
+            $fixtureIssues = self::fixtureIssues($plan[self::FIXTURE_ISSUES]);
+            unset($plan[self::FIXTURE_ISSUES]);
+        }
         // Removing a node changes the topology the proof ran on, whatever the plan says.
         $mutates = $mutates || $endsWith->declaresAbsence();
         $keys = array_keys($plan);
@@ -99,7 +109,7 @@ final readonly class ProofPlan
         if ($keys !== $expected) {
             throw new InvalidArgumentException(
                 'The proof plan must have exactly the keys setup and acceptance, '
-                .'plus an optional mutates and ends_with.',
+                .'plus optional mutates, ends_with, and fixture_issues.',
             );
         }
         $sections = [];
@@ -119,7 +129,7 @@ final readonly class ProofPlan
         $setup = self::actions('setup', $sections['setup'], $ids);
         $acceptance = self::actions('acceptance', $sections['acceptance'], $ids);
 
-        return new self($setup, $acceptance, $mutates, $endsWith);
+        return new self($setup, $acceptance, $mutates, $endsWith, $fixtureIssues);
     }
 
     /**
@@ -213,7 +223,7 @@ final readonly class ProofPlan
         return $actual === $keys;
     }
 
-    /** @return array{setup:list<array{id:string,node:string,argv:list<string>,timeout_seconds:int}>,acceptance:list<array{id:string,node:string,argv:list<string>,timeout_seconds:int}>,mutates?:true,ends_with?:array{nodes:list<string>}} */
+    /** @return array<string, mixed> */
     public function toArray(): array
     {
         $plan = ['setup' => $this->setup, 'acceptance' => $this->acceptance];
@@ -223,7 +233,41 @@ final readonly class ProofPlan
         if ($this->endsWith->declaresAbsence()) {
             $plan['ends_with'] = $this->endsWith->toArray();
         }
+        if ($this->fixtureIssues !== []) {
+            $plan['fixture_issues'] = $this->fixtureIssues;
+        }
 
         return $plan;
+    }
+
+    /** Bind promotion to the exact normalized actions and topology declaration that were proved. */
+    public function fingerprint(): string
+    {
+        return hash('sha256', json_encode(
+            $this->toArray(),
+            JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE,
+        ));
+    }
+
+    /** @return list<string> */
+    private static function fixtureIssues(mixed $declared): array
+    {
+        if (! is_array($declared) || ! array_is_list($declared) || $declared === []) {
+            throw new InvalidArgumentException('The proof fixture issue list is invalid.');
+        }
+        $issues = [];
+        foreach ($declared as $issue) {
+            if (! is_string($issue) || in_array($issue, $issues, true)) {
+                throw new InvalidArgumentException('The proof fixture issue list is invalid.');
+            }
+            try {
+                TopologyTarget::assertIssue($issue);
+            } catch (InvalidArgumentException) {
+                throw new InvalidArgumentException('The proof fixture issue list is invalid.');
+            }
+            $issues[] = $issue;
+        }
+
+        return $issues;
     }
 }

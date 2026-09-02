@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 use App\E2E\Value\AttemptId;
-use App\E2E\Value\StandbyIdentity;
+use App\E2E\Value\TopologySnapshotIdentity;
 use App\E2E\Value\TopologyTarget;
 
 describe('TopologyTarget', function () {
@@ -32,14 +32,14 @@ describe('TopologyTarget', function () {
         'lowercase prefix' => ['nck-123'],
         'no number' => ['NCK-'],
         'leading zero' => ['NCK-0'],
-        'standby' => ['standby'],
+        'topology-snapshot' => ['topology-snapshot'],
     ]);
 
     it('uses compact deterministic network names within the managed bridge limit', function () {
         $attempt = new AttemptId(str_repeat('a', 32));
 
-        expect(TopologyTarget::standby()->network())
-            ->toBe('oe-standby')
+        expect(TopologyTarget::topologySnapshot()->network())
+            ->toBe('oe-topo-snap')
             ->and(TopologyTarget::feature('NCK-123', $attempt)->network())
             ->toBe('oe-0799eee4eaf4')
             ->and(TopologyTarget::feature('ORBIT-123456789', $attempt)->network())
@@ -53,8 +53,8 @@ describe('TopologyTarget', function () {
 
         expect(TopologyTarget::feature('NCK-123', $attempt)->instance('app-dev'))
             ->toBe('orbit-e2e-nck-123-aaaaaaaa-app-dev')
-            ->and(TopologyTarget::standby()->instance('gateway'))
-            ->toBe('orbit-e2e-standby-gateway')
+            ->and(TopologyTarget::topologySnapshot()->instance('gateway'))
+            ->toBe('orbit-e2e-topology-snapshot-gateway')
             ->and(strlen(TopologyTarget::feature('ORBIT-123456789', $attempt)->instance('app-prod')))
             ->toBeLessThanOrEqual(63);
     });
@@ -74,11 +74,11 @@ describe('TopologyTarget', function () {
 
         expect(TopologyTarget::feature('NCK-123', $attempt)->attempt)
             ->toEqual($attempt)
-            ->and(TopologyTarget::feature('NCK-123', $attempt)->isStandby())
+            ->and(TopologyTarget::feature('NCK-123', $attempt)->isTopologySnapshot())
             ->toBeFalse()
-            ->and(TopologyTarget::standby()->attempt)
+            ->and(TopologyTarget::topologySnapshot()->attempt)
             ->toBeNull()
-            ->and(TopologyTarget::standby()->isStandby())
+            ->and(TopologyTarget::topologySnapshot()->isTopologySnapshot())
             ->toBeTrue();
     });
 
@@ -87,8 +87,8 @@ describe('TopologyTarget', function () {
 
         expect($target->mac('gateway'))
             ->toBe('00:16:3e:'.implode(':', str_split(substr(sha1($target->network().':gateway'), 0, 6), 2)))
-            ->and(TopologyTarget::standby()->mac('app-prod'))
-            ->toBe('00:16:3e:'.implode(':', str_split(substr(sha1('oe-standby:app-prod'), 0, 6), 2)));
+            ->and(TopologyTarget::topologySnapshot()->mac('app-prod'))
+            ->toBe('00:16:3e:'.implode(':', str_split(substr(sha1('oe-topo-snap:app-prod'), 0, 6), 2)));
     });
 
     it('matches the issue as one delimited branch token', function (string $branch, bool $matches) {
@@ -101,30 +101,30 @@ describe('TopologyTarget', function () {
         'unrelated issue' => ['feature/NCK-124-build-topology', false],
     ]);
 
-    it('resolves the live standby target to the live standby identity resources', function () {
-        $live = TopologyTarget::standby(StandbyIdentity::live());
+    it('resolves the live topology snapshot target to the live topology snapshot identity resources', function () {
+        $live = TopologyTarget::topologySnapshot(TopologySnapshotIdentity::live());
 
         expect($live->network())
-            ->toBe('oe-live-standby')
+            ->toBe('oe-l-topo-snap')
             ->and($live->instance('gateway'))
-            ->toBe('orbit-e2e-live-standby-gateway')
+            ->toBe('orbit-e2e-live-topology-snapshot-gateway')
             ->and($live->mac('gateway'))
-            ->toBe('00:16:3e:'.implode(':', str_split(substr(sha1('oe-live-standby:gateway'), 0, 6), 2)));
+            ->toBe('00:16:3e:'.implode(':', str_split(substr(sha1('oe-l-topo-snap:gateway'), 0, 6), 2)));
     });
 
-    it('keeps the standby target unchanged when no identity is given', function () {
-        expect(TopologyTarget::standby()->network())
-            ->toBe('oe-standby')
-            ->and(TopologyTarget::standby()->requireStandbyIdentity())
-            ->toEqual(StandbyIdentity::primary());
+    it('keeps the topology snapshot target unchanged when no identity is given', function () {
+        expect(TopologyTarget::topologySnapshot()->network())
+            ->toBe('oe-topo-snap')
+            ->and(TopologyTarget::topologySnapshot()->requireTopologySnapshotIdentity())
+            ->toEqual(TopologySnapshotIdentity::primary());
     });
 
-    it('carries the standby identity of a standby target only', function () {
+    it('carries the topology snapshot identity of a topology snapshot target only', function () {
         $attempt = new AttemptId(str_repeat('a', 32));
 
-        expect(TopologyTarget::standby(StandbyIdentity::live())->requireStandbyIdentity())
-            ->toEqual(StandbyIdentity::live())
-            ->and(fn () => TopologyTarget::feature('NCK-123', $attempt)->requireStandbyIdentity())
+        expect(TopologyTarget::topologySnapshot(TopologySnapshotIdentity::live())->requireTopologySnapshotIdentity())
+            ->toEqual(TopologySnapshotIdentity::live())
+            ->and(fn () => TopologyTarget::feature('NCK-123', $attempt)->requireTopologySnapshotIdentity())
             ->toThrow(InvalidArgumentException::class);
     });
 });

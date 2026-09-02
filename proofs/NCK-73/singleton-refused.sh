@@ -3,10 +3,10 @@
 source /var/lib/orbit-e2e/proof/lib.sh
 
 cli=$(orbit metrics:enable app-prod --json || true)
-echo "$cli" | grep -q '"code":"metrics.assignment_exists"' || fail "CLI accepted a second enable: $cli"
+grep -q '"code":"metrics.assignment_exists"' <<<"$cli" || fail "CLI accepted a second enable: $cli"
 
 gateway=$(orbit node:role:add app-prod metrics --json || true)
-echo "$gateway" | grep -q '"code":"validation.failed"' || fail "Gateway accepted a second metrics claim: $gateway"
+grep -q '"code":"validation.failed"' <<<"$gateway" || fail "Gateway accepted a second metrics claim: $gateway"
 
 roles=$(orbit node:list --json | php -r '
   foreach (json_decode(stream_get_contents(STDIN), true)["nodes"] as $node) { if ($node["name"] === "app-prod") { echo implode(",", $node["roles"]); } }

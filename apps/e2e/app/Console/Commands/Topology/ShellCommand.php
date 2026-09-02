@@ -7,6 +7,7 @@ namespace App\Console\Commands\Topology;
 use App\Console\Commands\E2ECommand;
 use App\E2E\IncusHost;
 use App\E2E\TopologyAcquirer;
+use App\E2E\Value\AttemptPurpose;
 use App\E2E\Value\GuestCommand;
 use App\E2E\Value\MountPath;
 use App\E2E\Value\TopologyProfile;
@@ -19,7 +20,10 @@ use Throwable;
 final class ShellCommand extends E2ECommand
 {
     #[\Override]
-    protected $signature = 'topology:shell {issue} {role} '.self::WORKTREE_OPTION.' {--json}';
+    protected $signature =
+        'topology:shell {issue} {role} '
+            .self::WORKTREE_OPTION
+            .' {--proof : Open the retained failed proof topology} {--json}';
     #[\Override]
     protected $description = 'Open an interactive shell as orbit on one role of the live topology';
 
@@ -28,7 +32,8 @@ final class ShellCommand extends E2ECommand
         try {
             $request = $this->request();
             $role = (string) $this->argument('role');
-            $instance = $acquirer->instance($request, $role);
+            $purpose = $this->option('proof') ? AttemptPurpose::Proof : AttemptPurpose::Discovery;
+            $instance = $acquirer->instance($request, $role, $purpose);
             $this->log($request, "role={$role} instance={$instance}");
             $directory = in_array($role, TopologyProfile::CHECKOUT_ROLES, true)
                 ? MountPath::GUEST_SOURCE

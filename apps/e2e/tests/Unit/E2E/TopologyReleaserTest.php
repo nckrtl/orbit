@@ -156,6 +156,41 @@ describe('TopologyReleaser', function () {
             ]);
     });
 
+    it('releases a failed proof without releasing the discovery attempt', function () {
+        $worktree = temporaryPath('orbit-release-worktree-', 4);
+        mkdir($worktree, 0700);
+        $paths = new StatePaths(temporaryPath('orbit-release-host-', 4));
+        $discovery = new AttemptId(str_repeat('a', 32));
+        $proof = new AttemptId(str_repeat('b', 32));
+        $proofTarget = TopologyTarget::feature('ORB-7', $proof);
+        $state = IssueState::forWorktree('ORB-7', $worktree);
+        $state->writeAttempt($discovery, AttemptPurpose::Discovery, new OperationId(str_repeat('c', 32)));
+        $state->writeAttempt($proof, AttemptPurpose::Proof, new OperationId(str_repeat('d', 32)));
+        $state->writeProof(['status' => 'diagnosis', 'attempt_id' => $proof->value]);
+        $commands = [];
+        fakeReleaseHost(
+            $proofTarget,
+            ['user.orbit.e2e.issue' => 'ORB-7', 'user.orbit.e2e.attempt' => $proof->value],
+            $commands,
+        );
+
+        $result = releaserForTest($paths)->release(
+            new TopologyRequest('ORB-7', $worktree),
+            AttemptPurpose::Proof,
+        );
+
+        expect($result['purpose'])
+            ->toBe('proof')
+            ->and($state->hasAttempt(AttemptPurpose::Discovery))
+            ->toBeTrue()
+            ->and($state->attemptId(AttemptPurpose::Discovery)->value)
+            ->toBe($discovery->value)
+            ->and($state->hasAttempt(AttemptPurpose::Proof))
+            ->toBeFalse()
+            ->and($state->proof()['status'] ?? null)
+            ->toBe('diagnosis');
+    });
+
     it('refuses a VM that another attempt owns and names an absent attempt', function () {
         $worktree = temporaryPath('orbit-release-worktree-', 4);
         mkdir($worktree, 0700);
