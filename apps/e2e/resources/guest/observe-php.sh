@@ -153,7 +153,9 @@ $write = static function (string $path, array $value): void {
 };
 $write($directory.'/'.$id.'.start.json', $base);
 register_shutdown_function(static function () use ($base, $directory, $write): void {
+    pcov\stop();
     $coverage = pcov\collect();
+    pcov\clear();
     $files = array_keys($coverage);
     sort($files, SORT_STRING);
     $finished = microtime(true);
@@ -164,6 +166,7 @@ register_shutdown_function(static function () use ($base, $directory, $write): v
         'files' => array_values(array_unique($files)),
     ]);
 });
+pcov\start();
 PHP
   chmod 0644 "$collector"
   printf '; priority=98\npcov.enabled=0\n' > "$disabled_ini"
@@ -191,7 +194,7 @@ begin_phase() {
 ; priority=99
 pcov.enabled=1
 pcov.directory=/home/orbit/orbit
-pcov.exclude="~(?:^|/)(?:vendor|tests?)(?:/|$)~"
+pcov.exclude="~(?:^|/)(?:vendor|tests?|storage/framework|bootstrap/cache)(?:/|$)~"
 auto_prepend_file=$collector
 INI
   chmod 0644 "$observation_ini"

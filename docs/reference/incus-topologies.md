@@ -259,8 +259,10 @@ an atomic shutdown result, so completed FPM requests persist and concurrent
 CLI/FPM processes cannot overwrite each other. Phase aggregation requires
 paired records, matching attempt/phase/role identities, PHP 8.5 plus a PCOV
 version, and tracked paths below `/home/orbit/orbit`. Guest paths are stored as
-repository-relative paths. Missing, stale, malformed, untracked, empty-surface,
-or failed aggregation evidence makes the proof a diagnosis.
+repository-relative paths. Composer dependencies, test code, and generated
+Laravel storage/bootstrap caches are outside the repository-input graph.
+Missing, stale, malformed, untracked, empty-surface, or failed aggregation
+evidence makes the proof a diagnosis.
 
 Before general topology verification, the harness removes the temporary
 auto-prepend module, disables PCOV for FPM, restores the packaged CLI module to
