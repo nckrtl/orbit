@@ -316,14 +316,14 @@
             "kind": "reference",
             "components": [
                 "apps/cli",
-                "apps/e2e",
-                "apps/gateway"
+                "apps/e2e"
             ],
             "concepts": [
                 "App",
                 "Doctor",
                 "Gateway",
-                "Node"
+                "Node",
+                "Proof topology"
             ],
             "governing_adrs": [
                 "0005",

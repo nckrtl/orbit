@@ -42,7 +42,7 @@ final class RebuildHost
 
 function rebuildIdentity(): TopologySnapshotIdentity
 {
-    return TopologySnapshotIdentity::live();
+    return TopologySnapshotIdentity::primary();
 }
 
 function rebuildGeneration(string $id): TopologySnapshotGeneration
@@ -145,8 +145,8 @@ function rebuildNetworkInventoryJson(RebuildHost $state): string
             'type' => 'bridge',
             'managed' => true,
             'config' => $state->networkOwned
-                ? ['user.orbit.e2e.owner' => 'orbit-e2e', 'ipv4.address' => '10.232.200.1/24']
-                : ['ipv4.address' => '10.232.200.1/24'],
+                ? ['user.orbit.e2e.owner' => 'orbit-e2e', 'ipv4.address' => '10.232.1.1/24']
+                : ['ipv4.address' => '10.232.1.1/24'],
             'used_by' => [],
         ],
         $state->networks,
@@ -203,13 +203,13 @@ function rebuildAuthorization(
             'name' => $state->networks[0],
             'metadata' => $state->networkOwned ? ['user.orbit.e2e.owner' => 'orbit-e2e'] : [],
             'config' => $state->networkOwned
-                ? ['user.orbit.e2e.owner' => 'orbit-e2e', 'ipv4.address' => '10.232.200.1/24']
-                : ['ipv4.address' => '10.232.200.1/24'],
+                ? ['user.orbit.e2e.owner' => 'orbit-e2e', 'ipv4.address' => '10.232.1.1/24']
+                : ['ipv4.address' => '10.232.1.1/24'],
             'used_by' => [],
         ];
 
     return new LegacyTopologySnapshotInventory(
-        ['remote' => 'local', 'project' => 'default', 'pool' => 'orbit-e2e', 'topology_snapshot_namespace' => 'live'],
+        ['remote' => 'local', 'project' => 'default', 'pool' => 'orbit-e2e'],
         $generation->toArray(),
         array_map(static fn (TopologySnapshotGeneration $item): array => $item->toArray(), $recorded),
         $instances,
@@ -248,19 +248,19 @@ describe('TopologySnapshotRebuilder', function () {
         expect($state->deleted)->toBe([]);
     })->with([
         'base VM without a manifest' => [
-            ['orbit-e2e-live-topology-snapshot-gateway'],
+            ['orbit-e2e-topology-snapshot-gateway'],
             [],
-            'orbit-e2e-live-topology-snapshot-gateway',
+            'orbit-e2e-topology-snapshot-gateway',
         ],
         'promotion copy without a manifest' => [
-            ['orbit-e2e-live-topology-snapshot-app-dev-next'],
+            ['orbit-e2e-topology-snapshot-app-dev-next'],
             [],
-            'orbit-e2e-live-topology-snapshot-app-dev-next',
+            'orbit-e2e-topology-snapshot-app-dev-next',
         ],
         'named network without a manifest' => [
             [],
-            ['oe-l-topo-snap'],
-            'oe-l-topo-snap',
+            ['oe-topo-snap'],
+            'oe-topo-snap',
         ],
     ]);
 
@@ -287,13 +287,13 @@ describe('TopologySnapshotRebuilder', function () {
 
         expect($teardown['instances_deleted'])
             ->toBe([
-                'orbit-e2e-live-topology-snapshot-app-dev',
-                'orbit-e2e-live-topology-snapshot-app-prod',
-                'orbit-e2e-live-topology-snapshot-gateway',
-                'orbit-e2e-live-topology-snapshot-gateway-next',
+                'orbit-e2e-topology-snapshot-app-dev',
+                'orbit-e2e-topology-snapshot-app-prod',
+                'orbit-e2e-topology-snapshot-gateway',
+                'orbit-e2e-topology-snapshot-gateway-next',
             ])
             ->and($teardown['networks_deleted'])
-            ->toBe(['oe-l-topo-snap'])
+            ->toBe(['oe-topo-snap'])
             ->and($state->instances)
             ->toBe([])
             ->and($state->networks)
@@ -416,13 +416,11 @@ describe('TopologySnapshotRebuilder', function () {
             static function (string $_phase): void {},
         ))
             ->toThrow(RuntimeException::class, 'ownership does not match');
-        expect($state->networks)->toBe(['oe-l-topo-snap']);
+        expect($state->networks)->toBe(['oe-topo-snap']);
     });
 
-    it('touches nothing when this checkout\'s topology snapshot is already gone', function () {
+    it('touches nothing when the topology snapshot is already gone', function () {
         $state = new RebuildHost;
-        $state->instances = TopologySnapshotIdentity::primary()->instances();
-        $state->networks = [TopologySnapshotIdentity::primary()->network()];
         fakeRebuildHost($state);
 
         $paths = new StatePaths(temporaryPath('orbit-rebuild-', 4));
@@ -437,7 +435,7 @@ describe('TopologySnapshotRebuilder', function () {
             ->and($state->deleted)
             ->toBe([])
             ->and($state->instances)
-            ->toBe(TopologySnapshotIdentity::primary()->instances());
+            ->toBe([]);
     });
 
     it('resumes authorized teardown after every exact legacy resource is already absent', function () {
@@ -447,8 +445,8 @@ describe('TopologySnapshotRebuilder', function () {
         $store = new AtomicJsonStore($paths);
         $manifests = new TopologySnapshotManifestStore($store, $paths, new IncusHost(pool: 'orbit-e2e'));
         $authorizedState = new RebuildHost;
-        $authorizedState->instances = TopologySnapshotIdentity::live()->instances();
-        $authorizedState->networks = [TopologySnapshotIdentity::live()->network()];
+        $authorizedState->instances = TopologySnapshotIdentity::primary()->instances();
+        $authorizedState->networks = [TopologySnapshotIdentity::primary()->network()];
         $phases = [];
 
         $teardown = rebuilderFor($paths, $store, $manifests)->recover(

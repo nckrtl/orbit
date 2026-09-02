@@ -101,15 +101,15 @@ describe('TopologyTarget', function () {
         'unrelated issue' => ['feature/NCK-124-build-topology', false],
     ]);
 
-    it('resolves the live topology snapshot target to the live topology snapshot identity resources', function () {
-        $live = TopologyTarget::topologySnapshot(TopologySnapshotIdentity::live());
+    it('resolves the retired topology snapshot target to the retired identity resources', function () {
+        $retired = TopologyTarget::topologySnapshot(TopologySnapshotIdentity::retired());
 
-        expect($live->network())
-            ->toBe('oe-l-topo-snap')
-            ->and($live->instance('gateway'))
-            ->toBe('orbit-e2e-live-topology-snapshot-gateway')
-            ->and($live->mac('gateway'))
-            ->toBe('00:16:3e:'.implode(':', str_split(substr(sha1('oe-l-topo-snap:gateway'), 0, 6), 2)));
+        expect($retired->network())
+            ->toBe('oe-standby')
+            ->and($retired->instance('gateway'))
+            ->toBe('orbit-e2e-standby-gateway')
+            ->and($retired->mac('gateway'))
+            ->toBe('00:16:3e:'.implode(':', str_split(substr(sha1('oe-standby:gateway'), 0, 6), 2)));
     });
 
     it('keeps the topology snapshot target unchanged when no identity is given', function () {
@@ -122,8 +122,8 @@ describe('TopologyTarget', function () {
     it('carries the topology snapshot identity of a topology snapshot target only', function () {
         $attempt = new AttemptId(str_repeat('a', 32));
 
-        expect(TopologyTarget::topologySnapshot(TopologySnapshotIdentity::live())->requireTopologySnapshotIdentity())
-            ->toEqual(TopologySnapshotIdentity::live())
+        expect(TopologyTarget::topologySnapshot(TopologySnapshotIdentity::retired())->requireTopologySnapshotIdentity())
+            ->toEqual(TopologySnapshotIdentity::retired())
             ->and(fn () => TopologyTarget::feature('NCK-123', $attempt)->requireTopologySnapshotIdentity())
             ->toThrow(InvalidArgumentException::class);
     });

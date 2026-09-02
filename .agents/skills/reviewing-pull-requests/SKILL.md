@@ -20,12 +20,13 @@ edit code.
 3. **Read.** Read the issue, exact diff, relevant ADRs, nearest `AGENTS.md`,
    documentation-impact classification, relevant documentation context, and any
    supplied Feature plan. Product feature diffs do not touch `apps/e2e` or
-   `bin/e2e-*`.
+   `bin/e2e-*`. A harness diff requires a dedicated issue with
+   repository-owner-approved behavior and issue-specific proof.
 4. **Inspect proof.** For `Proof: incus`, require the retained immutable proof
    to name the exact remote head, current proof-plan fingerprint, complete
    declared action sequence, and exit `0` for every action. Discovery may
-   remain active and is not proof evidence. Run `bin/e2e-live <sha>` only when
-   the issue contract explicitly requires the validation-clone lifecycle. For
+   remain active and is not proof evidence. Inspect a harness issue's additional
+   issue-specific proof exactly as its approved contract defines it. For
    automated-only changes, require green CI and relevant local checks.
 5. **Review the code.** Check correctness, acceptance coverage, regressions,
    repository conventions, documentation reconciliation, and proof

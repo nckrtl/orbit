@@ -51,14 +51,10 @@ final class AppServiceProvider extends ServiceProvider
 
             return new OperationId($value);
         });
-        // Which physical topology snapshot this checkout owns. Two checkouts on one host
-        // must not share topology snapshot VMs: a promotion from one would leave the
-        // other's manifest naming snapshots that no longer exist.
-        $this->app->singleton(TopologySnapshotIdentity::class, function (Application $app): TopologySnapshotIdentity {
-            $namespace = $app->make(Repository::class)->get('e2e.topology_snapshot.namespace');
-
-            return TopologySnapshotIdentity::forNamespace(is_string($namespace) ? $namespace : '');
-        });
+        $this->app->singleton(
+            TopologySnapshotIdentity::class,
+            static fn (): TopologySnapshotIdentity => TopologySnapshotIdentity::primary(),
+        );
         $repositoryRoot = dirname(__DIR__, 4);
         $this->app->singleton(GitRepository::class, fn (): GitRepository => new GitRepository($repositoryRoot));
         // Host-wide state (topology snapshot generation, locks) lives in the primary checkout's `.e2e/`.

@@ -69,11 +69,11 @@ Harness code is everything under `apps/e2e` and `bin/e2e-*`, except
 
 For a dedicated harness issue:
 
+- require repository-owner-approved behavior and issue-specific proof before implementation;
 - implement with unit and feature tests;
 - run `apps/e2e` `composer check` and root `bin/test`;
 - run its declared focused or Incus proof; and
-- run `bin/e2e-live <full sha>` only when the issue contract explicitly changes
-  or requires the validation-clone lifecycle.
+- follow any additional lifecycle checks stated in that issue's approved proof contract.
 
 ## Rules
 

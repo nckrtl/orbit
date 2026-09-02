@@ -35,7 +35,8 @@ invoke any one directly; no private orchestration order is implied.
 - Issue contracts use observable acceptance criteria and name the smallest
   affected components. New requirements become separate Linear work.
 - Product feature branches never modify the harness under `apps/e2e` or
-  `bin/e2e-*`. Harness changes are dedicated `apps/e2e` issues.
+  `bin/e2e-*`. Harness changes require a dedicated issue with
+  repository-owner-approved behavior and issue-specific proof.
 - `Proof: incus` uses the repository's disposable topology and proof commands.
   Automated-only changes use project checks and CI.
 - Proof plans live in `proofs/<ISSUE>.json`; optional fixtures live in

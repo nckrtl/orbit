@@ -66,45 +66,37 @@ describe('HostCapacity', function () {
         expect(new HostCapacity(new IncusHost, 9)->reserveSlot())->toBe(3);
     });
 
-    it('never hands out the network slot of a topology snapshot another checkout owns', function () {
+    it('never hands out the persistent topology snapshot network slot', function () {
         fakeCapacityHost([], []);
 
-        $slots = [];
-        foreach (TopologySnapshotIdentity::known() as $topologySnapshot) {
-            $slots[] = $topologySnapshot->slot;
-        }
-
-        expect($slots)
-            ->toContain(1, 200)
+        expect(TopologySnapshotIdentity::primary()->slot)
+            ->toBe(1)
             ->and(new HostCapacity(new IncusHost, 9)->reserveSlot())
             ->toBe(2)
             ->and(array_map(
                 static fn (int $slot): string => '10.232.'.$slot.'.1/24',
-                range(2, 199),
+                range(2, 200),
             ))
-            ->toHaveCount(198);
+            ->toHaveCount(199);
 
-        // Every slot but the topology snapshot slots is free: the scan stops before 200.
         fakeCapacityHost([], array_map(
             static fn (int $slot): string => '10.232.'.$slot.'.1/24',
-            range(2, 199),
+            range(2, 200),
         ));
 
         expect(fn () => new HostCapacity(new IncusHost, 9)->reserveSlot())
             ->toThrow(RuntimeException::class, 'network slots are exhausted');
     });
 
-    it('counts the VMs of every topology snapshot against the budget', function () {
+    it('admits proof beside the persistent snapshot and discovery at the minimum budget', function () {
         fakeCapacityHost([
             ...TopologySnapshotIdentity::primary()->instances(),
-            ...TopologySnapshotIdentity::live()->instances(),
             'orbit-e2e-nck-1-aaaaaaaa-gateway',
-        ], ['10.232.1.1/24', '10.232.200.1/24']);
+            'orbit-e2e-nck-1-aaaaaaaa-app-dev',
+            'orbit-e2e-nck-1-aaaaaaaa-app-prod',
+        ], ['10.232.1.1/24', '10.232.2.1/24']);
 
-        expect(fn () => new HostCapacity(new IncusHost, 9)->reserveSlot())
-            ->toThrow(RuntimeException::class, 'capacity is exhausted: 7 harness VMs exist and the limit is 9')
-            ->and(new HostCapacity(new IncusHost, 12)->reserveSlot())
-            ->toBe(2);
+        expect(new HostCapacity(new IncusHost, 9)->reserveSlot())->toBe(3);
     });
 
     it('refuses one more topology when the VM budget is reached', function () {
@@ -128,7 +120,7 @@ describe('HostCapacity', function () {
             ->toThrow(RuntimeException::class, 'cannot fit');
     });
 
-    it('ships a default budget of six feature topologies beside both topology snapshots', function () {
+    it('ships a default budget of seven feature topologies beside the persistent snapshot', function () {
         // Read the shipped literal rather than the resolved value: an operator who
         // exported ORBIT_E2E_INCUS_MAX_VMS for one run must still be able to run the suite.
         $source = (string) file_get_contents(dirname(__DIR__, 3).'/config/e2e.php');
@@ -136,10 +128,9 @@ describe('HostCapacity', function () {
         expect($source)->toMatch("/'max_vms'\s*=>\s*\(int\)\s*env\(\s*'ORBIT_E2E_INCUS_MAX_VMS'\s*,\s*24\s*\)/");
     });
 
-    it('admits one more topology at the shipped budget when two topology snapshots are present', function () {
+    it('admits one more topology at the shipped budget when discovery and proof are present', function () {
         fakeCapacityHost([
             ...array_map(static fn (int $i): string => "orbit-e2e-topology-snapshot-role{$i}", range(1, 3)),
-            ...array_map(static fn (int $i): string => "orbit-e2e-live-topology-snapshot-role{$i}", range(1, 3)),
             ...array_map(static fn (int $i): string => "orbit-e2e-nck-1-aaaaaaaa-role{$i}", range(1, 3)),
             ...array_map(static fn (int $i): string => "orbit-e2e-nck-2-bbbbbbbb-role{$i}", range(1, 3)),
         ], ['10.232.1.1/24']);

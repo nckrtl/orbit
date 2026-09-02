@@ -17,7 +17,7 @@ final class RecoverLegacyCommand extends E2ECommand
         {--main-sha=}
         {--json}';
     #[\Override]
-    protected $description = 'Recover exact legacy resources for this checkout\'s named topology snapshot';
+    protected $description = 'Recover exact legacy resources for the persistent topology snapshot';
 
     public function handle(
         TopologySnapshotRefresher $refresher,

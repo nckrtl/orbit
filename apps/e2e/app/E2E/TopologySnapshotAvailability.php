@@ -11,11 +11,11 @@ use App\E2E\Value\TopologyTarget;
 use Throwable;
 
 /**
- * Prove that the promoted generation of this checkout still exists on the host
+ * Prove that the promoted generation still exists on the host
  * before anything mutates it.
  *
  * A manifest that names a snapshot or a VM the host does not have is stale, not
- * corrupt: the topology snapshot was rebuilt, or promoted from another checkout. The
+ * corrupt: the topology snapshot was rebuilt or replaced. The
  * failure names the command that recovers it, so the caller never reaches for
  * `incus delete`.
  */
@@ -63,9 +63,7 @@ final readonly class TopologySnapshotAvailability
             rtrim($exception->getMessage(), ' ')
             .' The promoted generation '
             .$generation->id
-            .' is stale: the topology snapshot '
-            .($this->identity->isPrimary() ? '' : "'{$this->identity->namespace}' ")
-            .'was rebuilt or promoted from another checkout, so this manifest names resources the host no longer has.'
+            .' is stale: the topology snapshot was rebuilt or replaced, so this manifest names resources the host no longer has.'
             .' Run `'
             .StaleTopologySnapshotManifest::RECOVERY_COMMAND
             .'` with the SHA main holds to rebuild it from the'

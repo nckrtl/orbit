@@ -34,7 +34,7 @@ final readonly class TopologySnapshotRecoveryResolver
     public function resolve(): TopologySnapshotRecoveryContext
     {
         $current = $this->identity;
-        $retired = TopologySnapshotIdentity::retiredForNamespace($current->namespace);
+        $retired = TopologySnapshotIdentity::retired();
         try {
             $retiredRecovery = $this->state->read('standby/recovery.json');
         } catch (InvalidArgumentException|RuntimeException $exception) {

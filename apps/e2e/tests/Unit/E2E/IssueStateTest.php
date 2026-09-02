@@ -88,7 +88,7 @@ describe('IssueState', function () {
             ->toEqualCanonicalizing(['attempt.json', 'topology.json', 'proof.json', 'log']);
     });
 
-    it('treats an attempt as proved only when the proof names the live attempt', function () {
+    it('treats an attempt as proved only when the result names the active proof attempt', function () {
         $worktree = temporaryPath('orbit-issue-state-', 4);
         mkdir($worktree, 0700);
         $state = IssueState::forWorktree('NCK-12', $worktree);
