@@ -86,7 +86,7 @@ it('uses Incus-safe batch labels for every process-surface probe', function (): 
         public function pushFiles(array $files): void {}
     };
 
-    (new ObservedPhpInputCollector($transport))->begin(
+    new ObservedPhpInputCollector($transport)->begin(
         TopologyTarget::feature('ORB-9', new AttemptId(str_repeat('a', 32))),
         'setup',
         'ORB-9',
