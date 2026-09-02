@@ -246,10 +246,18 @@ it('maps ORB-7 proof to authorized cleanup and timeout boundaries', function () 
         ->toContain('/var/lib/orbit-e2e/proof/NCK-108')
         ->and($actions->get('nck-104-local-path-cleanup')['argv'] ?? null)
         ->toContain('/var/lib/orbit-e2e/proof/nck-104-cleanup-matrix.sh')
-        ->and($actions->get('real-firewall-fixture-times-out')['expected_exit_code'] ?? null)
-        ->toBe(124)
-        ->and($actions->get('hung-cleanup-is-force-killed')['expected_exit_code'] ?? null)
-        ->toBe(137)
+        ->and($actions->get('firewall-timeout-cleanup')['argv'] ?? null)
+        ->toBe(['bash', '/var/lib/orbit-e2e/proof/firewall-timeout-cleanup-matrix.sh'])
+        ->and($actions->get('hung-cleanup-is-force-killed')['argv'] ?? null)
+        ->toBe(['bash', '/var/lib/orbit-e2e/proof/hung-cleanup-matrix.sh'])
+        ->and(collect($plan['acceptance'])
+            ->contains(
+                fn (array $action): bool => array_key_exists(
+                    'expected_exit_code',
+                    $action,
+                ),
+            ))
+        ->toBeFalse()
         ->and(json_encode($plan, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))
         ->toContain('/var/lib/orbit-e2e/proof/actual-fixture-cleanup-matrix.sh')
         ->not->toContain('nck-116-cleaned-node-precondition')
@@ -264,11 +272,22 @@ it('maps ORB-7 proof to authorized cleanup and timeout boundaries', function () 
         ->pluck('id')
         ->all();
 
-    expect($nck116ActionIds)->toBe([
-        'firewall-timeout-seed',
-        'real-firewall-fixture-times-out',
-        'firewall-timeout-restoration-inspected',
-    ]);
+    expect($nck116ActionIds)->toBe([]);
+});
+
+it('inspects intentional timeout exits inside zero-exit proof actions', function (): void {
+    $repositoryRoot = dirname(__DIR__, 5);
+    $firewall = (string) file_get_contents($repositoryRoot.'/proofs/ORB-7/firewall-timeout-cleanup-matrix.sh');
+    $hung = (string) file_get_contents($repositoryRoot.'/proofs/ORB-7/hung-cleanup-matrix.sh');
+
+    expect($firewall)
+        ->toContain('timeout --signal=TERM --kill-after=5s 30s')
+        ->toContain('[[ "$status" -eq 124 ]]')
+        ->toContain('inspect-orb-7-timeout.sh')
+        ->and($hung)
+        ->toContain('timeout --signal=TERM --kill-after=5s 2s')
+        ->toContain('[[ "$status" -eq 137 ]]')
+        ->toContain('inspect-hung-cleanup.sh');
 });
 
 it('keeps only the owned ORB-7 proof plan at the top level', function () {

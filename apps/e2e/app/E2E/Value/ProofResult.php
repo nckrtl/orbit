@@ -18,7 +18,7 @@ final readonly class ProofResult
     public const int TAIL_LIMIT = 4_096;
 
     /**
-     * @param list<array{id:string,node:string,expected_exit_code?:int,exit_code:int,stdout:string,stderr:string}> $actions
+     * @param list<array{id:string,node:string,exit_code:int,stdout:string,stderr:string}> $actions
      * @param ?TopologyEndState $endsWith The topology the plan declared it ends with; null means the whole profile.
      * @param list<string> $skippedProbes The standard probes the declaration did not run, for the record.
      */
@@ -39,18 +39,9 @@ final readonly class ProofResult
         }
         foreach ($actions as $action) {
             if (
-                ! in_array(
-                    array_keys($action),
-                    [
-                        ['id', 'node', 'exit_code', 'stdout', 'stderr'],
-                        ['id', 'node', 'expected_exit_code', 'exit_code', 'stdout', 'stderr'],
-                    ],
-                    true,
-                )
+                array_keys($action) !== ['id', 'node', 'exit_code', 'stdout', 'stderr']
                 || ! is_string($action['id'])
                 || ! in_array($action['node'], TopologyProfile::ROLES, true)
-                || ! is_int($action['expected_exit_code'] ?? 0)
-                || ! in_array($action['expected_exit_code'] ?? 0, [0, 124, 137], true)
                 || ! is_int($action['exit_code'])
                 || ! is_string($action['stdout'])
                 || ! is_string($action['stderr'])
@@ -82,17 +73,15 @@ final readonly class ProofResult
      * The action that ended the proof, with the tail of each stream; null when
      * no declared action failed.
      *
-     * @return ?array{id:string,node:string,expected_exit_code:int,exit_code:int,stdout_tail:string,stderr_tail:string}
+     * @return ?array{id:string,node:string,exit_code:int,stdout_tail:string,stderr_tail:string}
      */
     public function failedAction(): ?array
     {
         foreach (array_reverse($this->actions) as $action) {
-            $expectedExitCode = $action['expected_exit_code'] ?? 0;
-            if ($action['exit_code'] !== $expectedExitCode) {
+            if ($action['exit_code'] !== 0) {
                 return [
                     'id' => $action['id'],
                     'node' => $action['node'],
-                    'expected_exit_code' => $expectedExitCode,
                     'exit_code' => $action['exit_code'],
                     'stdout_tail' => self::tail($action['stdout']),
                     'stderr_tail' => self::tail($action['stderr']),
@@ -125,7 +114,6 @@ final readonly class ProofResult
                 static fn (array $action): array => [
                     'id' => $action['id'],
                     'node' => $action['node'],
-                    'expected_exit_code' => $action['expected_exit_code'] ?? 0,
                     'exit_code' => $action['exit_code'],
                 ],
                 $this->actions,

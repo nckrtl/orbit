@@ -125,12 +125,11 @@ function topologyProofRunnerWithLegacyGeneration(
     );
 }
 
-/** @return array{id:string,node:string,expected_exit_code:int,exit_code:int,stdout:string,stderr:string} */
+/** @return array{id:string,node:string,exit_code:int,stdout:string,stderr:string} */
 function runProofAction(
     int $exitCode,
     int &$transportTimeout,
     array &$transportArgv,
-    int $expectedExitCode = 0,
 ): array {
     $attempt = new AttemptId(str_repeat('a', 32));
     $target = TopologyTarget::feature('ORB-7', $attempt);
@@ -164,21 +163,17 @@ function runProofAction(
     $actions = [];
     $method = new ReflectionMethod(TopologyProofRunner::class, 'runActions');
 
-    try {
-        $method->invokeArgs($runner, [
-            $target,
-            'acceptance',
-            [[
-                'id' => 'proof-action',
-                'node' => 'app-dev',
-                'argv' => ['bash', '/var/lib/orbit-e2e/proof/action.sh'],
-                'timeout_seconds' => 30,
-                'expected_exit_code' => $expectedExitCode,
-            ]],
-            &$actions,
-        ]);
-    } catch (RuntimeException) {
-    }
+    $method->invokeArgs($runner, [
+        $target,
+        'acceptance',
+        [[
+            'id' => 'proof-action',
+            'node' => 'app-dev',
+            'argv' => ['bash', '/var/lib/orbit-e2e/proof/action.sh'],
+            'timeout_seconds' => 30,
+        ]],
+        &$actions,
+    ]);
 
     return $actions[0];
 }
@@ -237,42 +232,20 @@ it('gives proof actions a catchable deadline and bounded transport headroom', fu
         ->toBe(37);
 });
 
-it('records a proof action that exits after its term deadline', function () {
+it('fails a proof action that exits after its term deadline', function () {
     $transportTimeout = 0;
     $transportArgv = [];
 
-    $action = runProofAction(124, $transportTimeout, $transportArgv, 124);
-
-    expect($action)
-        ->toBe([
-            'id' => 'proof-action',
-            'node' => 'app-dev',
-            'expected_exit_code' => 124,
-            'exit_code' => 124,
-            'stdout' => "action output\n",
-            'stderr' => "action error\n",
-        ])
-        ->and($transportTimeout)
-        ->toBe(37);
+    expect(fn () => runProofAction(124, $transportTimeout, $transportArgv))
+        ->toThrow(RuntimeException::class, 'Proof acceptance action [proof-action] failed with exit code 124.');
 });
 
-it('records a proof action force-killed after its cleanup grace', function () {
+it('fails a proof action force-killed after its cleanup grace', function () {
     $transportTimeout = 0;
     $transportArgv = [];
 
-    $action = runProofAction(137, $transportTimeout, $transportArgv, 137);
-
-    expect($action)
-        ->toBe([
-            'id' => 'proof-action',
-            'node' => 'app-dev',
-            'expected_exit_code' => 137,
-            'exit_code' => 137,
-            'stdout' => "action output\n",
-            'stderr' => "action error\n",
-        ])
-        ->and($transportTimeout)
-        ->toBe(37);
+    expect(fn () => runProofAction(137, $transportTimeout, $transportArgv))
+        ->toThrow(RuntimeException::class, 'Proof acceptance action [proof-action] failed with exit code 137.');
 });
 
 it('keeps ordinary orbit-user commands unchanged', function () {

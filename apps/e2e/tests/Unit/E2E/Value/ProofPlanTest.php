@@ -59,7 +59,6 @@ describe('ProofPlan', function (): void {
                     'node' => 'app-dev',
                     'argv' => ['orbit', 'workspace:create', 'example'],
                     'timeout_seconds' => 120,
-                    'expected_exit_code' => 0,
                 ],
             ])
             ->and($plan->acceptance)
@@ -69,7 +68,6 @@ describe('ProofPlan', function (): void {
                     'node' => 'app-dev',
                     'argv' => ['orbit', 'workspace:show', 'example', '--json'],
                     'timeout_seconds' => 60,
-                    'expected_exit_code' => 0,
                 ],
             ])
             ->and($plan->toArray())
@@ -127,48 +125,17 @@ describe('ProofPlan', function (): void {
             ->toBe(proofPlanFixture());
     });
 
-    it('defaults action exits to zero and permits exact timeout exits', function (): void {
-        $plain = ProofPlan::fromFile(proofPlanFile(proofPlanFixture()));
-        $term = ProofPlan::fromFile(mutatedProofPlanFile(function (array $plan): array {
+    it('rejects expected exit overrides because every proof action must exit zero', function (): void {
+        expect(fn () => ProofPlan::fromFile(mutatedProofPlanFile(function (array $plan): array {
             $plan['acceptance'][0]['expected_exit_code'] = 124;
-
-            return $plan;
-        }));
-        $kill = ProofPlan::fromFile(mutatedProofPlanFile(function (array $plan): array {
-            $plan['acceptance'][0]['expected_exit_code'] = 137;
-
-            return $plan;
-        }));
-
-        expect($plain->acceptance[0]['expected_exit_code'])
-            ->toBe(0)
-            ->and($plain->toArray())
-            ->toBe(proofPlanFixture())
-            ->and($term->acceptance[0]['expected_exit_code'])
-            ->toBe(124)
-            ->and($term->toArray()['acceptance'][0]['expected_exit_code'] ?? null)
-            ->toBe(124)
-            ->and($kill->acceptance[0]['expected_exit_code'])
-            ->toBe(137);
-    });
-
-    it('rejects any expected exit except zero and the two timeout results', function (mixed $exitCode): void {
-        expect(fn () => ProofPlan::fromFile(mutatedProofPlanFile(function (array $plan) use ($exitCode): array {
-            $plan['acceptance'][0]['expected_exit_code'] = $exitCode;
 
             return $plan;
         })))
             ->toThrow(
                 InvalidArgumentException::class,
-                'Proof action [show-workspace] must expect exit code 0, 124, or 137.',
+                'Proof action [acceptance#0] must have exactly the keys id, node, argv, and timeout_seconds.',
             );
-    })->with([
-        'ordinary failure' => [1],
-        'signal exit' => [143],
-        'string' => ['124'],
-        'list' => [[124]],
-        'null' => [null],
-    ]);
+    });
 
     it('declares unique additional candidate fixture issues', function (): void {
         $plan = ProofPlan::fromFile(proofPlanFile(
@@ -209,7 +176,6 @@ describe('ProofPlan', function (): void {
                 'gateway=desired/active/role_default',
             ],
             'timeout_seconds' => 120,
-            'expected_exit_code' => 0,
         ]]);
     });
 
@@ -286,8 +252,7 @@ describe('ProofPlan', function (): void {
         expect(fn () => ProofPlan::fromFile(mutatedProofPlanFile($mutate)))
             ->toThrow(
                 InvalidArgumentException::class,
-                'Proof action [acceptance#0] must have exactly the keys id, node, argv, and timeout_seconds, '
-                .'plus an optional expected_exit_code.',
+                'Proof action [acceptance#0] must have exactly the keys id, node, argv, and timeout_seconds.',
             );
     })->with([
         'missing timeout' => [function (array $plan): array {
