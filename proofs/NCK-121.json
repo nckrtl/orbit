@@ -48,7 +48,7 @@
             "id": "non-orbit-enable-converge-inspect",
             "node": "app-dev",
             "argv": ["bash", "/var/lib/orbit-e2e/proof/success-enable.sh", "non-orbit"],
-            "timeout_seconds": 1200
+            "timeout_seconds": 900
         },
         {
             "id": "non-orbit-active-metrics-boundaries",
@@ -156,7 +156,7 @@
             "id": "orbit-enable-converge-inspect",
             "node": "app-dev",
             "argv": ["bash", "/var/lib/orbit-e2e/proof/success-enable.sh", "orbit"],
-            "timeout_seconds": 1200
+            "timeout_seconds": 900
         },
         {
             "id": "orbit-active-metrics-boundaries",
