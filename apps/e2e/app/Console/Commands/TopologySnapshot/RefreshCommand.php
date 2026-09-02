@@ -2,23 +2,23 @@
 
 declare(strict_types=1);
 
-namespace App\Console\Commands\Standby;
+namespace App\Console\Commands\TopologySnapshot;
 
 use App\Console\Commands\E2ECommand;
-use App\E2E\StandbyRefresher;
+use App\E2E\TopologySnapshotRefresher;
 use Throwable;
 
 final class RefreshCommand extends E2ECommand
 {
     #[\Override]
-    protected $signature = 'standby:refresh
+    protected $signature = 'topology-snapshot:refresh
         {--main-sha=}
         {--allow-cold : Permit initial construction from the generic base image}
         {--json}';
     #[\Override]
-    protected $description = 'Refresh and promote the standby generation';
+    protected $description = 'Refresh and promote the topology snapshot generation';
 
-    public function handle(StandbyRefresher $refresher): int
+    public function handle(TopologySnapshotRefresher $refresher): int
     {
         try {
             $sha = $this->option('main-sha');

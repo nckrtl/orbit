@@ -16,10 +16,10 @@ use App\E2E\Value\ProofPlan;
 use App\E2E\Value\ProofResult;
 use App\E2E\Value\ProofStatus;
 use App\E2E\Value\SourceState;
-use App\E2E\Value\StandbyGeneration;
-use App\E2E\Value\StandbyIdentity;
 use App\E2E\Value\TopologyProfile;
 use App\E2E\Value\TopologyRequest;
+use App\E2E\Value\TopologySnapshotGeneration;
+use App\E2E\Value\TopologySnapshotIdentity;
 use App\E2E\Value\TopologyTarget;
 use App\E2E\Value\VerificationMode;
 use App\E2E\Value\VerificationReport;
@@ -46,7 +46,7 @@ final readonly class TopologyProofRunner
     public function __construct(
         private IncusHost $host,
         private IncusNetworkLifecycle $networks,
-        private StandbyManifestStore $standby,
+        private TopologySnapshotManifestStore $topologySnapshot,
         private WorktreeSynchronizer $synchronizer,
         private TopologyConverger $converger,
         private TopologyVerifier $verifier,
@@ -54,7 +54,7 @@ final readonly class TopologyProofRunner
         private HostCapacity $capacity,
         private StatePaths $hostPaths,
         private OperationId $operation,
-        private StandbyIdentity $standbyIdentity,
+        private TopologySnapshotIdentity $topologySnapshotIdentity,
         private string $repositoryRoot = '',
         /** @var (Closure(): AttemptId)|null Mints the attempt identity; injectable so tests pin resource names. */
         private ?Closure $attempts = null,
@@ -96,15 +96,15 @@ final readonly class TopologyProofRunner
         string $candidateTree,
         ProofPlan $plan,
     ): ProofResult {
-        $generation = $this->standby->promoted() ?? throw new RuntimeException(
-            'No promoted standby generation is available.',
+        $generation = $this->topologySnapshot->promoted() ?? throw new RuntimeException(
+            'No promoted topology snapshot generation is available.',
         );
         if ($generation->isLegacy()) {
-            throw new RuntimeException('The promoted standby generation is legacy; refresh it before proof.');
+            throw new RuntimeException('The promoted topology snapshot generation is legacy; refresh it before proof.');
         }
-        $standbyTarget = TopologyTarget::standby($this->standbyIdentity);
+        $topologySnapshotTarget = TopologyTarget::topologySnapshot($this->topologySnapshotIdentity);
         $this->host->assertOwnedSnapshots(array_combine(
-            array_map($standbyTarget->instance(...), TopologyProfile::ROLES),
+            array_map($topologySnapshotTarget->instance(...), TopologyProfile::ROLES),
             $generation->snapshots,
         ));
 
@@ -175,7 +175,7 @@ final readonly class TopologyProofRunner
     }
 
     /** Network and clones, under the host creation lock; nothing of the candidate is on them yet. */
-    private function createTopology(TopologyTarget $target, StandbyGeneration $generation): void
+    private function createTopology(TopologyTarget $target, TopologySnapshotGeneration $generation): void
     {
         $metadata = [
             'user.orbit.e2e.issue' => $target->issue,
@@ -192,7 +192,7 @@ final readonly class TopologyProofRunner
             $copies = [];
             foreach (TopologyProfile::ROLES as $role) {
                 $copies[$role] = [
-                    'source' => TopologyTarget::standby($this->standbyIdentity)->instance($role),
+                    'source' => TopologyTarget::topologySnapshot($this->topologySnapshotIdentity)->instance($role),
                     'snapshot' => $generation->snapshots[$role],
                     'target' => $target->instance($role),
                     'metadata' => [...$metadata, 'user.orbit.e2e.generation' => $generation->id],
@@ -255,7 +255,7 @@ final readonly class TopologyProofRunner
     private function record(
         IssueState $state,
         TopologyTarget $target,
-        StandbyGeneration $generation,
+        TopologySnapshotGeneration $generation,
         SourceState $source,
         VerificationReport $verification,
     ): void {
@@ -338,15 +338,20 @@ final readonly class TopologyProofRunner
     /**
      * @param array<string, array{source:string,snapshot:string,target:string,metadata:array<string, string>,network?:string,role?:string,topology?:string,slot?:int}> $copies
      */
-    private function copyPinnedSnapshots(StandbyGeneration $generation, array $copies): void
+    private function copyPinnedSnapshots(TopologySnapshotGeneration $generation, array $copies): void
     {
         $lock = new OperationLock($this->hostPaths);
-        if (! $lock->acquire('standby-generation', $this->operation, exclusive: false, timeoutSeconds: 3600)) {
-            throw new RuntimeException('The promoted standby generation is locked.');
+        if (! $lock->acquire(
+            'standby-generation',
+            $this->operation,
+            exclusive: false,
+            timeoutSeconds: 3600,
+        )) {
+            throw new RuntimeException('The promoted topology snapshot generation is locked.');
         }
         try {
-            if ($this->standby->promoted()?->toArray() !== $generation->toArray()) {
-                throw new RuntimeException('The promoted standby generation changed before snapshot copy.');
+            if ($this->topologySnapshot->promoted()?->toArray() !== $generation->toArray()) {
+                throw new RuntimeException('The promoted topology snapshot generation changed before snapshot copy.');
             }
             $this->host->copySnapshots($copies);
         } finally {

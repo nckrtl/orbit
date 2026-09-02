@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 use App\E2E\HostCapacity;
 use App\E2E\IncusHost;
-use App\E2E\Value\StandbyIdentity;
+use App\E2E\Value\TopologySnapshotIdentity;
 use Illuminate\Container\Container;
 use Illuminate\Process\Factory as ProcessFactory;
 use Illuminate\Process\PendingProcess;
@@ -52,7 +52,11 @@ describe('HostCapacity', function () {
     });
 
     it('counts harness VMs from the Incus inventory and hands out the lowest free network slot', function () {
-        fakeCapacityHost(['orbit-e2e-standby-gateway', 'orbit-e2e-standby-app-dev', 'orbit-e2e-standby-app-prod'], [
+        fakeCapacityHost([
+            'orbit-e2e-topology-snapshot-gateway',
+            'orbit-e2e-topology-snapshot-app-dev',
+            'orbit-e2e-topology-snapshot-app-prod',
+        ], [
             '10.232.1.1/24',
             '10.232.2.1/24',
             '10.232.4.1/24',
@@ -62,12 +66,12 @@ describe('HostCapacity', function () {
         expect(new HostCapacity(new IncusHost, 9)->reserveSlot())->toBe(3);
     });
 
-    it('never hands out the network slot of a standby another checkout owns', function () {
+    it('never hands out the network slot of a topology snapshot another checkout owns', function () {
         fakeCapacityHost([], []);
 
         $slots = [];
-        foreach (StandbyIdentity::known() as $standby) {
-            $slots[] = $standby->slot;
+        foreach (TopologySnapshotIdentity::known() as $topologySnapshot) {
+            $slots[] = $topologySnapshot->slot;
         }
 
         expect($slots)
@@ -80,7 +84,7 @@ describe('HostCapacity', function () {
             ))
             ->toHaveCount(198);
 
-        // Every slot but the standby slots is free: the scan stops before 200.
+        // Every slot but the topology snapshot slots is free: the scan stops before 200.
         fakeCapacityHost([], array_map(
             static fn (int $slot): string => '10.232.'.$slot.'.1/24',
             range(2, 199),
@@ -90,10 +94,10 @@ describe('HostCapacity', function () {
             ->toThrow(RuntimeException::class, 'network slots are exhausted');
     });
 
-    it('counts the VMs of every standby against the budget', function () {
+    it('counts the VMs of every topology snapshot against the budget', function () {
         fakeCapacityHost([
-            ...StandbyIdentity::primary()->instances(),
-            ...StandbyIdentity::live()->instances(),
+            ...TopologySnapshotIdentity::primary()->instances(),
+            ...TopologySnapshotIdentity::live()->instances(),
             'orbit-e2e-nck-1-aaaaaaaa-gateway',
         ], ['10.232.1.1/24', '10.232.200.1/24']);
 
@@ -105,9 +109,9 @@ describe('HostCapacity', function () {
 
     it('refuses one more topology when the VM budget is reached', function () {
         fakeCapacityHost([
-            'orbit-e2e-standby-gateway',
-            'orbit-e2e-standby-app-dev',
-            'orbit-e2e-standby-app-prod',
+            'orbit-e2e-topology-snapshot-gateway',
+            'orbit-e2e-topology-snapshot-app-dev',
+            'orbit-e2e-topology-snapshot-app-prod',
             'orbit-e2e-nck-1-aaaaaaaa-gateway',
             'orbit-e2e-nck-1-aaaaaaaa-app-dev',
             'orbit-e2e-nck-1-aaaaaaaa-app-prod',
@@ -124,7 +128,7 @@ describe('HostCapacity', function () {
             ->toThrow(RuntimeException::class, 'cannot fit');
     });
 
-    it('ships a default budget of six feature topologies beside both standbys', function () {
+    it('ships a default budget of six feature topologies beside both topology snapshots', function () {
         // Read the shipped literal rather than the resolved value: an operator who
         // exported ORBIT_E2E_INCUS_MAX_VMS for one run must still be able to run the suite.
         $source = (string) file_get_contents(dirname(__DIR__, 3).'/config/e2e.php');
@@ -132,10 +136,10 @@ describe('HostCapacity', function () {
         expect($source)->toMatch("/'max_vms'\s*=>\s*\(int\)\s*env\(\s*'ORBIT_E2E_INCUS_MAX_VMS'\s*,\s*24\s*\)/");
     });
 
-    it('admits one more topology at the shipped budget when two standbys are present', function () {
+    it('admits one more topology at the shipped budget when two topology snapshots are present', function () {
         fakeCapacityHost([
-            ...array_map(static fn (int $i): string => "orbit-e2e-standby-role{$i}", range(1, 3)),
-            ...array_map(static fn (int $i): string => "orbit-e2e-live-standby-role{$i}", range(1, 3)),
+            ...array_map(static fn (int $i): string => "orbit-e2e-topology-snapshot-role{$i}", range(1, 3)),
+            ...array_map(static fn (int $i): string => "orbit-e2e-live-topology-snapshot-role{$i}", range(1, 3)),
             ...array_map(static fn (int $i): string => "orbit-e2e-nck-1-aaaaaaaa-role{$i}", range(1, 3)),
             ...array_map(static fn (int $i): string => "orbit-e2e-nck-2-bbbbbbbb-role{$i}", range(1, 3)),
         ], ['10.232.1.1/24']);

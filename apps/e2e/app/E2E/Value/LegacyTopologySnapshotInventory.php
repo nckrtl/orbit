@@ -5,10 +5,10 @@ declare(strict_types=1);
 namespace App\E2E\Value;
 
 /** @mago-expect lint:cyclomatic-complexity The retained record validates every nested inventory section. */
-final readonly class LegacyStandbyInventory
+final readonly class LegacyTopologySnapshotInventory
 {
     /**
-     * @param array{remote:string,project:string,pool:string,standby_namespace:string} $scope
+     * @param array{remote:string,project:string,pool:string,topology_snapshot_namespace:string} $scope
      * @param array<string, mixed> $promotedManifest
      * @param list<array<string, mixed>> $recordedManifests
      * @param array<string, array<string, mixed>> $instances
@@ -71,7 +71,7 @@ final readonly class LegacyStandbyInventory
             ]
             || ($value['schema'] ?? null) !== 1
             || ! is_array($value['scope'])
-            || array_keys($value['scope']) !== ['remote', 'project', 'pool', 'standby_namespace']
+            || array_keys($value['scope']) !== ['remote', 'project', 'pool', 'topology_snapshot_namespace']
             || ! array_all($value['scope'], static fn (mixed $item): bool => is_string($item))
             || ! is_array($value['promoted_manifest'])
             || array_is_list($value['promoted_manifest'])
@@ -86,10 +86,10 @@ final readonly class LegacyStandbyInventory
             && (! is_array($value['network'])
             || array_is_list($value['network']))
         ) {
-            throw new \InvalidArgumentException('The legacy standby inventory is invalid.');
+            throw new \InvalidArgumentException('The legacy topology snapshot inventory is invalid.');
         }
 
-        /** @var array{remote:string,project:string,pool:string,standby_namespace:string} $scope */
+        /** @var array{remote:string,project:string,pool:string,topology_snapshot_namespace:string} $scope */
         $scope = $value['scope'];
         /** @var array<string, mixed> $promotedManifest */
         $promotedManifest = $value['promoted_manifest'];

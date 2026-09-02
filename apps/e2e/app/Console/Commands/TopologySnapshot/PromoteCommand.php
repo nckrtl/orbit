@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace App\Console\Commands\Standby;
+namespace App\Console\Commands\TopologySnapshot;
 
 use App\Console\Commands\E2ECommand;
-use App\E2E\StandbyPromoter;
+use App\E2E\TopologySnapshotPromoter;
 use App\E2E\Value\ProofPlan;
 use App\E2E\Value\TopologyRequest;
 use Throwable;
@@ -14,13 +14,13 @@ final class PromoteCommand extends E2ECommand
 {
     #[\Override]
     protected $signature =
-        'standby:promote {issue} '
+        'topology-snapshot:promote {issue} '
             .self::WORKTREE_OPTION
             .' {--plan= : The proof plan of the proved attempt; defaults to proofs/<ISSUE>.json in the worktree} {--json}';
     #[\Override]
-    protected $description = 'Promote the proved topology of the issue to the standby generation and release it';
+    protected $description = 'Promote the proved topology of the issue to the topology snapshot generation and release it';
 
-    public function handle(StandbyPromoter $promoter): int
+    public function handle(TopologySnapshotPromoter $promoter): int
     {
         try {
             $request = $this->request();

@@ -2,32 +2,32 @@
 
 declare(strict_types=1);
 
-use App\Console\Commands\Standby\FingerprintCommand;
-use App\Console\Commands\Standby\PromoteCommand;
-use App\Console\Commands\Standby\RebuildCommand;
-use App\Console\Commands\Standby\RecoverLegacyCommand;
-use App\Console\Commands\Standby\RefreshCommand;
-use App\Console\Commands\Standby\RestoreCommand;
-use App\Console\Commands\Standby\StatusCommand;
+use App\Console\Commands\TopologySnapshot\FingerprintCommand;
+use App\Console\Commands\TopologySnapshot\PromoteCommand;
+use App\Console\Commands\TopologySnapshot\RebuildCommand;
+use App\Console\Commands\TopologySnapshot\RecoverLegacyCommand;
+use App\Console\Commands\TopologySnapshot\RefreshCommand;
+use App\Console\Commands\TopologySnapshot\RestoreCommand;
+use App\Console\Commands\TopologySnapshot\StatusCommand;
 use App\E2E\Git\GitRepository;
 use App\E2E\IncusHost;
 use App\E2E\LaravelReleaseResolver;
 use App\E2E\PreparedStateFingerprint;
-use App\E2E\StandbyManifestStore;
-use App\E2E\StandbyRebuilder;
-use App\E2E\StandbyRefresher;
 use App\E2E\State\AtomicJsonStore;
 use App\E2E\State\OperationLock;
 use App\E2E\State\StatePaths;
+use App\E2E\TopologySnapshotManifestStore;
+use App\E2E\TopologySnapshotRebuilder;
+use App\E2E\TopologySnapshotRefresher;
 use App\E2E\Value\LaravelRelease;
-use App\E2E\Value\StandbyGeneration;
-use App\E2E\Value\StandbyIdentity;
+use App\E2E\Value\TopologySnapshotGeneration;
+use App\E2E\Value\TopologySnapshotIdentity;
 use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Facades\Process;
 
-function promotedGenerationFixture(): StandbyGeneration
+function promotedGenerationFixture(): TopologySnapshotGeneration
 {
-    return new StandbyGeneration(
+    return new TopologySnapshotGeneration(
         'g-'.str_repeat('a', 12),
         str_repeat('b', 40),
         ['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod'],
@@ -44,23 +44,23 @@ function promotedGenerationFixture(): StandbyGeneration
     );
 }
 
-function bindPromotedStandby(StandbyGeneration $generation): void
+function bindPromotedTopologySnapshot(TopologySnapshotGeneration $generation): void
 {
-    $paths = new StatePaths(temporaryPath('orbit-standby-command-', 8));
+    $paths = new StatePaths(temporaryPath('orbit-topology-snapshot-command-', 8));
     $store = new AtomicJsonStore($paths);
-    $manifests = new StandbyManifestStore($store, $paths, new IncusHost);
+    $manifests = new TopologySnapshotManifestStore($store, $paths, new IncusHost);
     $manifests->promote($generation);
-    app()->instance(StandbyManifestStore::class, $manifests);
+    app()->instance(TopologySnapshotManifestStore::class, $manifests);
 }
 
-/** @mago-expect lint:cyclomatic-complexity The command contract stays grouped by its public standby surface. */
-describe('standby commands', function () {
+/** @mago-expect lint:cyclomatic-complexity The command contract stays grouped by its public topology snapshot surface. */
+describe('topology snapshot commands', function () {
     it('resolves a separate stateful lock for each lifecycle owner', function () {
         expect(app(OperationLock::class))->not->toBe(app(OperationLock::class));
     });
 
     it('resolves the production refresher with separate refresh and generation locks', function () {
-        expect(app(StandbyRefresher::class))->toBeInstanceOf(StandbyRefresher::class);
+        expect(app(TopologySnapshotRefresher::class))->toBeInstanceOf(TopologySnapshotRefresher::class);
     });
 
     it('registers one thin command for each wrapper action', function () {
@@ -73,17 +73,17 @@ describe('standby commands', function () {
             new RebuildCommand()->getName(),
             new RecoverLegacyCommand()->getName(),
         ])->toBe([
-            'standby:status',
-            'standby:fingerprint',
-            'standby:promote',
-            'standby:refresh',
-            'standby:restore',
-            'standby:rebuild',
-            'standby:recover-legacy',
+            'topology-snapshot:status',
+            'topology-snapshot:fingerprint',
+            'topology-snapshot:promote',
+            'topology-snapshot:refresh',
+            'topology-snapshot:restore',
+            'topology-snapshot:rebuild',
+            'topology-snapshot:recover-legacy',
         ]);
     });
 
-    it('limits cold permission to initial standby construction', function () {
+    it('limits cold permission to initial topology snapshot construction', function () {
         $description = new RefreshCommand()
             ->getDefinition()
             ->getOption('allow-cold')
@@ -93,7 +93,7 @@ describe('standby commands', function () {
     });
 
     it('refuses promote for an issue with no live attempt before touching Incus', function () {
-        $worktree = temporaryPath('orbit-standby-promote-', 8);
+        $worktree = temporaryPath('orbit-topology-snapshot-promote-', 8);
         mkdir($worktree.'/proofs', 0700, true);
         file_put_contents($worktree.'/proofs/NCK-123.json', json_encode([
             'setup' => [],
@@ -107,7 +107,7 @@ describe('standby commands', function () {
         Process::fake();
 
         $this
-            ->artisan('standby:promote', ['issue' => 'NCK-123', '--worktree' => $worktree, '--json' => true])
+            ->artisan('topology-snapshot:promote', ['issue' => 'NCK-123', '--worktree' => $worktree, '--json' => true])
             ->expectsOutputToContain('NCK-123 has no active attempt.')
             ->assertFailed();
         Process::assertNothingRan();
@@ -115,13 +115,13 @@ describe('standby commands', function () {
 
     it('rejects refresh without an exact main SHA', function () {
         $this
-            ->artisan('standby:refresh', ['--json' => true])
+            ->artisan('topology-snapshot:refresh', ['--json' => true])
             ->expectsOutputToContain('exact main SHA')
             ->assertFailed();
     });
 
     it('keeps the promoted Laravel pin when merged main is a structural no-op', function () {
-        $repository = standbyCommandFingerprintRepository(false);
+        $repository = topologySnapshotCommandFingerprintRepository(false);
 
         try {
             $fingerprints = new PreparedStateFingerprint(
@@ -131,7 +131,7 @@ describe('standby commands', function () {
             $release = new LaravelRelease('v13.10.1', str_repeat('a', 40));
             $promotedFingerprint = $fingerprints->forCommit($repository['old'], $release);
             $structuralFingerprint = $fingerprints->forCommit($repository['old']);
-            bindPromotedStandby(new StandbyGeneration(
+            bindPromotedTopologySnapshot(new TopologySnapshotGeneration(
                 'g-'.str_repeat('a', 12),
                 $repository['old'],
                 ['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod'],
@@ -151,16 +151,16 @@ describe('standby commands', function () {
             $expected = $fingerprints->forCommit($repository['new'], $release)->value;
 
             $this
-                ->artisan('standby:fingerprint', ['--main-sha' => $repository['new']])
+                ->artisan('topology-snapshot:fingerprint', ['--main-sha' => $repository['new']])
                 ->expectsOutput($expected)
                 ->assertSuccessful();
         } finally {
-            removeStandbyCommandFingerprintRepository($repository['path']);
+            removeTopologySnapshotCommandFingerprintRepository($repository['path']);
         }
     });
 
     it('resolves the latest Laravel pin only after merged main changes prepared structure', function () {
-        $repository = standbyCommandFingerprintRepository(true);
+        $repository = topologySnapshotCommandFingerprintRepository(true);
 
         try {
             $fingerprints = new PreparedStateFingerprint(
@@ -170,7 +170,7 @@ describe('standby commands', function () {
             $promotedRelease = new LaravelRelease('v13.10.1', str_repeat('a', 40));
             $promotedFingerprint = $fingerprints->forCommit($repository['old'], $promotedRelease);
             $structuralFingerprint = $fingerprints->forCommit($repository['old']);
-            bindPromotedStandby(new StandbyGeneration(
+            bindPromotedTopologySnapshot(new TopologySnapshotGeneration(
                 'g-'.str_repeat('a', 12),
                 $repository['old'],
                 ['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod'],
@@ -191,46 +191,46 @@ describe('standby commands', function () {
             $expected = $fingerprints->forCommit($repository['new'], $latestRelease)->value;
 
             $this
-                ->artisan('standby:fingerprint', ['--main-sha' => $repository['new']])
+                ->artisan('topology-snapshot:fingerprint', ['--main-sha' => $repository['new']])
                 ->expectsOutput($expected)
                 ->assertSuccessful();
         } finally {
-            removeStandbyCommandFingerprintRepository($repository['path']);
+            removeTopologySnapshotCommandFingerprintRepository($repository['path']);
         }
     });
 
-    it('resolves the rebuilder for the standby this checkout owns', function () {
-        expect(app(StandbyRebuilder::class))
-            ->toBeInstanceOf(StandbyRebuilder::class)
-            ->and(app(StandbyIdentity::class))
-            ->toEqual(StandbyIdentity::primary());
+    it('resolves the rebuilder for the topology snapshot this checkout owns', function () {
+        expect(app(TopologySnapshotRebuilder::class))
+            ->toBeInstanceOf(TopologySnapshotRebuilder::class)
+            ->and(app(TopologySnapshotIdentity::class))
+            ->toEqual(TopologySnapshotIdentity::primary());
     });
 
-    it('names the standby namespace the harness runs under', function () {
-        config()->set('e2e.standby.namespace', 'live');
-        app()->forgetInstance(StandbyIdentity::class);
+    it('names the topology snapshot namespace the harness runs under', function () {
+        config()->set('e2e.topology_snapshot.namespace', 'live');
+        app()->forgetInstance(TopologySnapshotIdentity::class);
 
-        expect(app(StandbyIdentity::class))
-            ->toEqual(StandbyIdentity::live())
-            ->and(app(StandbyIdentity::class)->instance('gateway'))
-            ->toBe('orbit-e2e-live-standby-gateway');
+        expect(app(TopologySnapshotIdentity::class))
+            ->toEqual(TopologySnapshotIdentity::live())
+            ->and(app(TopologySnapshotIdentity::class)->instance('gateway'))
+            ->toBe('orbit-e2e-live-topology-snapshot-gateway');
 
-        config()->set('e2e.standby.namespace', '');
-        app()->forgetInstance(StandbyIdentity::class);
+        config()->set('e2e.topology_snapshot.namespace', '');
+        app()->forgetInstance(TopologySnapshotIdentity::class);
     });
 
     it('refuses a rebuild without the exact main SHA before touching Incus', function () {
         Process::fake();
 
         $this
-            ->artisan('standby:rebuild', ['--main-sha' => 'main'])
+            ->artisan('topology-snapshot:rebuild', ['--main-sha' => 'main'])
             ->expectsOutputToContain('The exact main SHA is required.')
             ->assertFailed();
 
         Process::assertNothingRan();
     });
 
-    it('refuses ordinary rebuild before mutation when an exact standby VM exists', function () {
+    it('refuses ordinary rebuild before mutation when an exact topology snapshot VM exists', function () {
         app()->instance(StatePaths::class, new StatePaths(temporaryPath('orbit-rebuild-command-', 8)));
         Process::fake(function (PendingProcess $process) {
             $command = $process->command;
@@ -241,7 +241,7 @@ describe('standby commands', function () {
             }
 
             return Process::result(json_encode([[
-                'name' => 'orbit-e2e-standby-gateway',
+                'name' => 'orbit-e2e-topology-snapshot-gateway',
                 'type' => 'virtual-machine',
                 'status' => 'Stopped',
                 'status_code' => 102,
@@ -251,9 +251,10 @@ describe('standby commands', function () {
         });
 
         $this
-            ->artisan('standby:rebuild', ['--main-sha' => str_repeat('a', 40), '--json' => true])
+            ->artisan('topology-snapshot:rebuild', ['--main-sha' => str_repeat('a', 40), '--json' => true])
             ->expectsOutputToContain(
-                'Standby resources are present: orbit-e2e-standby-gateway. '.'Use bin/e2e-standby recover-legacy',
+                'Topology snapshot resources are present: orbit-e2e-topology-snapshot-gateway. '
+                .'Use bin/e2e-topology-snapshot recover-legacy',
             )
             ->assertFailed();
 
@@ -273,10 +274,10 @@ describe('standby commands', function () {
         Process::fake();
 
         $this
-            ->artisan('standby:recover-legacy', ['--main-sha' => 'main', '--json' => true])
+            ->artisan('topology-snapshot:recover-legacy', ['--main-sha' => 'main', '--json' => true])
             ->expectsOutputToContain(
                 '"error":"The exact main SHA is required.","recovery_evidence":null,'
-                .'"recovery_phase":null,"next_action":"bin/e2e-standby recover-legacy --main-sha=<sha>"',
+                .'"recovery_phase":null,"next_action":"bin/e2e-topology-snapshot recover-legacy --main-sha=<sha>"',
             )
             ->assertFailed();
 
@@ -284,7 +285,7 @@ describe('standby commands', function () {
     });
 
     it('reports a stale manifest as recoverable instead of corrupt', function () {
-        bindPromotedStandby(promotedGenerationFixture());
+        bindPromotedTopologySnapshot(promotedGenerationFixture());
         Process::fake(function (PendingProcess $process) {
             $command = $process->command;
             assert(is_array($command));
@@ -293,29 +294,29 @@ describe('standby commands', function () {
                 return Process::result('[]');
             }
 
-            return Process::result(standbyCommandInstanceInventory());
+            return Process::result(topologySnapshotCommandInstanceInventory());
         });
         app()->instance(IncusHost::class, new IncusHost);
 
         $this
-            ->artisan('standby:status', ['--json' => true])
+            ->artisan('topology-snapshot:status', ['--json' => true])
             ->expectsOutputToContain('"state":"stale"')
             ->assertFailed();
         $this
-            ->artisan('standby:status', ['--json' => true])
-            ->expectsOutputToContain('"recovery":"bin/e2e-standby rebuild --main-sha=<sha>"')
+            ->artisan('topology-snapshot:status', ['--json' => true])
+            ->expectsOutputToContain('"recovery":"bin/e2e-topology-snapshot rebuild --main-sha=<sha>"')
             ->assertFailed();
     });
 
     it('fails status when a promoted snapshot is missing', function () {
-        bindPromotedStandby(promotedGenerationFixture());
+        bindPromotedTopologySnapshot(promotedGenerationFixture());
         Process::fake(function (PendingProcess $process) {
             $command = $process->command;
             assert(is_array($command));
 
             if (in_array('snapshot', $command, true) && in_array('list', $command, true)) {
                 $instance = preg_replace('/\A[^:]+:/', '', (string) ($command[5] ?? ''));
-                $role = str_replace('orbit-e2e-standby-', '', $instance);
+                $role = str_replace('orbit-e2e-topology-snapshot-', '', $instance);
 
                 return Process::result(json_encode(
                     $role === 'app-prod'
@@ -328,25 +329,25 @@ describe('standby commands', function () {
                 ));
             }
 
-            return Process::result(standbyCommandInstanceInventory());
+            return Process::result(topologySnapshotCommandInstanceInventory());
         });
         app()->instance(IncusHost::class, new IncusHost);
 
         $this
-            ->artisan('standby:status', ['--json' => true])
+            ->artisan('topology-snapshot:status', ['--json' => true])
             ->expectsOutputToContain('snapshots do not exist')
             ->assertFailed();
     });
 
     it('fails status when a promoted snapshot is not Orbit-owned', function () {
-        bindPromotedStandby(promotedGenerationFixture());
+        bindPromotedTopologySnapshot(promotedGenerationFixture());
         Process::fake(function (PendingProcess $process) {
             $command = $process->command;
             assert(is_array($command));
 
             if (in_array('snapshot', $command, true) && in_array('list', $command, true)) {
                 $instance = preg_replace('/\A[^:]+:/', '', (string) ($command[5] ?? ''));
-                $role = str_replace('orbit-e2e-standby-', '', $instance);
+                $role = str_replace('orbit-e2e-topology-snapshot-', '', $instance);
 
                 return Process::result(json_encode([[
                     'name' => 'main-'.$role,
@@ -354,18 +355,18 @@ describe('standby commands', function () {
                 ]], JSON_THROW_ON_ERROR));
             }
 
-            return Process::result(standbyCommandInstanceInventory());
+            return Process::result(topologySnapshotCommandInstanceInventory());
         });
         app()->instance(IncusHost::class, new IncusHost);
 
         $this
-            ->artisan('standby:status', ['--json' => true])
+            ->artisan('topology-snapshot:status', ['--json' => true])
             ->expectsOutputToContain('ownership metadata does not match')
             ->assertFailed();
     });
 
-    it('reads standby instances and promoted snapshots in batches', function () {
-        bindPromotedStandby(promotedGenerationFixture());
+    it('reads topology snapshot instances and promoted snapshots in batches', function () {
+        bindPromotedTopologySnapshot(promotedGenerationFixture());
         $instanceInventories = 0;
         $snapshotInventories = 0;
         Process::fake(function (PendingProcess $process) use (&$instanceInventories, &$snapshotInventories) {
@@ -375,7 +376,7 @@ describe('standby commands', function () {
             if (($command[3] ?? null) === 'snapshot' && ($command[4] ?? null) === 'list') {
                 $snapshotInventories++;
                 $instance = preg_replace('/\A[^:]+:/', '', (string) ($command[5] ?? ''));
-                $role = str_replace('orbit-e2e-standby-', '', $instance);
+                $role = str_replace('orbit-e2e-topology-snapshot-', '', $instance);
 
                 return Process::result(json_encode([[
                     'name' => 'main-'.$role,
@@ -385,12 +386,12 @@ describe('standby commands', function () {
 
             $instanceInventories++;
 
-            return Process::result(standbyCommandInstanceInventory());
+            return Process::result(topologySnapshotCommandInstanceInventory());
         });
         app()->instance(IncusHost::class, new IncusHost);
 
         $this
-            ->artisan('standby:status', ['--json' => true])
+            ->artisan('topology-snapshot:status', ['--json' => true])
             ->expectsOutputToContain('"state":"promoted"')
             ->assertSuccessful();
 
@@ -402,9 +403,9 @@ describe('standby commands', function () {
 });
 
 /** @return array{path: string, old: string, new: string} */
-function standbyCommandFingerprintRepository(bool $changePreparedInput): array
+function topologySnapshotCommandFingerprintRepository(bool $changePreparedInput): array
 {
-    $path = temporaryPath('orbit-standby-fingerprint-', 6);
+    $path = temporaryPath('orbit-topology-snapshot-fingerprint-', 6);
     mkdir($path.'/contracts', 0700, true);
     mkdir($path.'/resources', 0700, true);
     file_put_contents($path.'/contracts/prepared.php', "prepared-v1\n");
@@ -432,27 +433,27 @@ function standbyCommandFingerprintRepository(bool $changePreparedInput): array
         )
             ."\n",
     );
-    standbyCommandGit($path, ['init', '--quiet']);
-    standbyCommandGit($path, ['config', 'user.email', 'orbit@example.test']);
-    standbyCommandGit($path, ['config', 'user.name', 'Orbit']);
-    standbyCommandGit($path, ['add', '.']);
-    standbyCommandGit($path, ['commit', '--quiet', '-m', 'old']);
-    $old = standbyCommandGit($path, ['rev-parse', 'HEAD']);
+    topologySnapshotCommandGit($path, ['init', '--quiet']);
+    topologySnapshotCommandGit($path, ['config', 'user.email', 'orbit@example.test']);
+    topologySnapshotCommandGit($path, ['config', 'user.name', 'Orbit']);
+    topologySnapshotCommandGit($path, ['add', '.']);
+    topologySnapshotCommandGit($path, ['commit', '--quiet', '-m', 'old']);
+    $old = topologySnapshotCommandGit($path, ['rev-parse', 'HEAD']);
     file_put_contents(
         $path.'/contracts/prepared.php',
         $changePreparedInput ? "prepared-v2\n" : "prepared-v1\n",
     );
     file_put_contents($path.'/unrelated.txt', "new merged source\n");
-    standbyCommandGit($path, ['add', '.']);
-    standbyCommandGit($path, ['commit', '--quiet', '-m', 'new']);
-    $new = standbyCommandGit($path, ['rev-parse', 'HEAD']);
-    standbyCommandGit($path, ['tag', 'v13.11.0', $new]);
+    topologySnapshotCommandGit($path, ['add', '.']);
+    topologySnapshotCommandGit($path, ['commit', '--quiet', '-m', 'new']);
+    $new = topologySnapshotCommandGit($path, ['rev-parse', 'HEAD']);
+    topologySnapshotCommandGit($path, ['tag', 'v13.11.0', $new]);
 
     return ['path' => $path, 'old' => $old, 'new' => $new];
 }
 
 /** @param list<string> $arguments */
-function standbyCommandGit(string $path, array $arguments): string
+function topologySnapshotCommandGit(string $path, array $arguments): string
 {
     $command = array_map(escapeshellarg(...), ['git', '-C', $path, ...$arguments]);
     $output = [];
@@ -460,13 +461,13 @@ function standbyCommandGit(string $path, array $arguments): string
     exec(implode(' ', $command), $output, $exitCode);
 
     if ($exitCode !== 0) {
-        throw new RuntimeException('Standby command Git fixture failed.');
+        throw new RuntimeException('TopologySnapshot command Git fixture failed.');
     }
 
     return trim(implode("\n", $output));
 }
 
-function removeStandbyCommandFingerprintRepository(string $path): void
+function removeTopologySnapshotCommandFingerprintRepository(string $path): void
 {
     $iterator = new RecursiveIteratorIterator(
         new RecursiveDirectoryIterator($path, FilesystemIterator::SKIP_DOTS),
@@ -480,11 +481,11 @@ function removeStandbyCommandFingerprintRepository(string $path): void
     rmdir($path);
 }
 
-function standbyCommandInstanceInventory(): string
+function topologySnapshotCommandInstanceInventory(): string
 {
     return json_encode(array_map(
         static fn (string $role): array => [
-            'name' => 'orbit-e2e-standby-'.$role,
+            'name' => 'orbit-e2e-topology-snapshot-'.$role,
             'type' => 'virtual-machine',
             'status' => 'Stopped',
             'status_code' => 102,

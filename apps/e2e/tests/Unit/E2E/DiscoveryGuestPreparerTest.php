@@ -136,7 +136,7 @@ describe('mount.source', function () {
         expect(fn () => new DiscoveryGuestPreparer(new IncusHost)->placeGatewayEnvironment(preparerTarget()))
             ->toThrow(
                 RuntimeException::class,
-                'the promoted standby generation must be refreshed so it preserves /var/lib/orbit-e2e/gateway.env.',
+                'the promoted topology snapshot generation must be refreshed so it preserves /var/lib/orbit-e2e/gateway.env.',
             )
             ->and($execs)
             ->toHaveCount(1);

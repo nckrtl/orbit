@@ -6,24 +6,25 @@ use App\E2E\Git\GitRepository;
 use App\E2E\IncusHost;
 use App\E2E\IncusNetworkLifecycle;
 use App\E2E\LaravelReleaseResolver;
-use App\E2E\LegacyStandbyRecovery;
+use App\E2E\LegacyTopologySnapshotRecovery;
 use App\E2E\PreparedStateFingerprint;
-use App\E2E\StandbyAvailability;
-use App\E2E\StandbyBuilder;
-use App\E2E\StandbyManifestStore;
-use App\E2E\StandbyRebuilder;
-use App\E2E\StandbyRefresher;
 use App\E2E\State\AtomicJsonStore;
 use App\E2E\State\OperationLock;
 use App\E2E\State\StatePaths;
 use App\E2E\TopologyConverger;
+use App\E2E\TopologySnapshotAvailability;
+use App\E2E\TopologySnapshotBuilder;
+use App\E2E\TopologySnapshotManifestStore;
+use App\E2E\TopologySnapshotRebuilder;
+use App\E2E\TopologySnapshotRefresher;
 use App\E2E\TopologyVerifier;
 use App\E2E\Value\LaravelRelease;
-use App\E2E\Value\LegacyStandbyInventory;
+use App\E2E\Value\LegacyTopologySnapshotInventory;
 use App\E2E\Value\OperationId;
-use App\E2E\Value\StandbyGeneration;
-use App\E2E\Value\StandbyIdentity;
 use App\E2E\Value\TopologyProfile;
+use App\E2E\Value\TopologySnapshotGeneration;
+use App\E2E\Value\TopologySnapshotIdentity;
+use App\E2E\Value\TopologyTarget;
 use App\E2E\WorktreeSynchronizer;
 use Illuminate\Container\Container;
 use Illuminate\Contracts\Process\ProcessResult;
@@ -62,9 +63,9 @@ final class LegacyRecoveryHost
     public array $snapshots = [];
 }
 
-function legacyRecoveryGeneration(int $schema = StandbyGeneration::SCHEMA): StandbyGeneration
+function legacyRecoveryGeneration(int $schema = TopologySnapshotGeneration::SCHEMA): TopologySnapshotGeneration
 {
-    $generation = new StandbyGeneration(
+    $generation = new TopologySnapshotGeneration(
         'legacy-generation',
         str_repeat('b', 40),
         array_fill_keys(TopologyProfile::ROLES, 'main-legacy-generation'),
@@ -79,33 +80,37 @@ function legacyRecoveryGeneration(int $schema = StandbyGeneration::SCHEMA): Stan
         TopologyProfile::ROLES,
         TopologyProfile::CHECKOUT_ROLES,
     );
-    if ($schema === StandbyGeneration::SCHEMA) {
+    if ($schema === TopologySnapshotGeneration::SCHEMA) {
         return $generation;
     }
 
     $legacy = $generation->toArray();
-    $legacy['schema'] = StandbyGeneration::LEGACY_SCHEMA;
+    $legacy['schema'] = TopologySnapshotGeneration::LEGACY_SCHEMA;
     $legacy['prepared_schema'] = 1;
     unset($legacy['topology']['assignments']);
 
-    return StandbyGeneration::fromArray($legacy);
+    return TopologySnapshotGeneration::fromArray($legacy);
 }
 
 /** @return array<string, string> */
-function legacyRecoveryMacs(): array
+function legacyRecoveryMacs(?TopologySnapshotIdentity $identity = null): array
 {
-    return [
-        'gateway' => '00:16:3e:2b:82:94',
-        'app-dev' => '00:16:3e:58:c5:18',
-        'app-prod' => '00:16:3e:88:56:0d',
-    ];
+    $target = TopologyTarget::topologySnapshot($identity ?? TopologySnapshotIdentity::live());
+    $macs = [];
+    foreach (TopologyProfile::ROLES as $role) {
+        $macs[$role] = $target->mac($role);
+    }
+
+    return $macs;
 }
 
 /** @mago-expect lint:cyclomatic-complexity The fake models each exact Incus inventory and mutation command. */
-function fakeLegacyRecoveryHost(LegacyRecoveryHost $state): void
-{
-    $identity = StandbyIdentity::live();
-    $macs = legacyRecoveryMacs();
+function fakeLegacyRecoveryHost(
+    LegacyRecoveryHost $state,
+    ?TopologySnapshotIdentity $identity = null,
+): void {
+    $identity ??= TopologySnapshotIdentity::live();
+    $macs = legacyRecoveryMacs($identity);
     /** @mago-expect lint:cyclomatic-complexity One process fake keeps the mutable host inventory coherent. */
     Process::fake(function (PendingProcess $process) use ($state, $identity, $macs): ProcessResult {
         $command = $process->command;
@@ -193,27 +198,30 @@ function fakeLegacyRecoveryHost(LegacyRecoveryHost $state): void
     });
 }
 
-/** @return array{0:LegacyStandbyRecovery,1:AtomicJsonStore,2:LegacyRecoveryHost,3:StatePaths} */
-function legacyRecoveryService(int $schema = StandbyGeneration::SCHEMA): array
-{
-    $identity = StandbyIdentity::live();
+/** @return array{0:LegacyTopologySnapshotRecovery,1:AtomicJsonStore,2:LegacyRecoveryHost,3:StatePaths} */
+function legacyRecoveryService(
+    int $schema = TopologySnapshotGeneration::SCHEMA,
+    ?TopologySnapshotIdentity $identity = null,
+    string $stateDirectory = 'topology-snapshot',
+): array {
+    $identity ??= TopologySnapshotIdentity::live();
     $hostState = new LegacyRecoveryHost;
     $hostState->instances = $identity->instances();
     foreach ($identity->instances() as $name) {
         $hostState->snapshots[$name] = ['main-legacy-generation'];
         $hostState->networkUsers[] = "/1.0/instances/{$name}?project=default";
     }
-    fakeLegacyRecoveryHost($hostState);
+    fakeLegacyRecoveryHost($hostState, $identity);
     $paths = new StatePaths(temporaryPath('orbit-legacy-recovery-', 4));
     $store = new AtomicJsonStore($paths);
     $host = new IncusHost(project: 'default', pool: 'orbit-e2e');
-    $manifests = new StandbyManifestStore($store, $paths, $host);
+    $manifests = new TopologySnapshotManifestStore($store, $paths, $host, $stateDirectory);
     $generation = legacyRecoveryGeneration($schema);
     $manifests->promote($generation);
     $manifests->record($generation);
 
     return [
-        new LegacyStandbyRecovery(
+        new LegacyTopologySnapshotRecovery(
             $host,
             $manifests,
             $store,
@@ -230,22 +238,22 @@ function legacyRecoveryRefresher(
     IncusHost $host,
     StatePaths $paths,
     AtomicJsonStore $state,
-    StandbyManifestStore $manifests,
+    TopologySnapshotManifestStore $manifests,
     OperationId $operation,
-): StandbyRefresher {
+): TopologySnapshotRefresher {
     $root = dirname(__DIR__, 4);
     $git = new GitRepository($root);
-    $identity = StandbyIdentity::live();
+    $identity = TopologySnapshotIdentity::live();
     $synchronizer = new WorktreeSynchronizer($host, $root, $operation);
     $converger = new TopologyConverger($host);
     $verifier = new TopologyVerifier($host, 1, 10_000);
 
-    return new StandbyRefresher(
+    return new TopologySnapshotRefresher(
         $host,
         new IncusNetworkLifecycle($host),
         new PreparedStateFingerprint($git),
         $manifests,
-        new StandbyBuilder(
+        new TopologySnapshotBuilder(
             $host,
             new IncusNetworkLifecycle($host),
             $synchronizer,
@@ -267,7 +275,7 @@ function legacyRecoveryRefresher(
         $root,
         $operation,
         $identity,
-        new StandbyAvailability($host, $identity),
+        new TopologySnapshotAvailability($host, $identity),
         0,
     );
 }
@@ -279,40 +287,60 @@ beforeEach(function (): void {
     Facade::setFacadeApplication($container);
 });
 
-it('authorizes exact schema 4 and 5 standby resources without mutation', function (int $schema): void {
+it('authorizes exact schema 4 and 5 topology snapshot resources without mutation', function (int $schema): void {
     [$recovery, $store] = legacyRecoveryService($schema);
 
     $inventory = $recovery->authorize();
 
     expect($inventory->resourceNames())->toBe([
-        'oe-live-standby',
-        'orbit-e2e-live-standby-app-dev',
-        'orbit-e2e-live-standby-app-prod',
-        'orbit-e2e-live-standby-gateway',
+        'oe-l-topo-snap',
+        'orbit-e2e-live-topology-snapshot-app-dev',
+        'orbit-e2e-live-topology-snapshot-app-prod',
+        'orbit-e2e-live-topology-snapshot-gateway',
     ]);
     expect($inventory->toArray()['scope'])->toBe([
         'remote' => 'local',
         'project' => 'default',
         'pool' => 'orbit-e2e',
-        'standby_namespace' => 'live',
+        'topology_snapshot_namespace' => 'live',
     ]);
     expect($inventory->sha256())->toMatch('/\A[a-f0-9]{64}\z/');
-    expect($store->read('standby/recovery.json'))->toBeNull();
+    expect($store->read('topology-snapshot/recovery.json'))->toBeNull();
 })->with([
-    'schema 4' => StandbyGeneration::LEGACY_SCHEMA,
-    'schema 5' => StandbyGeneration::SCHEMA,
+    'schema 4' => TopologySnapshotGeneration::LEGACY_SCHEMA,
+    'schema 5' => TopologySnapshotGeneration::SCHEMA,
 ]);
+
+it('authorizes the retired physical identity and its isolated manifest for migration', function (): void {
+    [$recovery, $store] = legacyRecoveryService(
+        identity: TopologySnapshotIdentity::retiredForNamespace('live'),
+        stateDirectory: 'standby',
+    );
+
+    expect($recovery->authorize()->resourceNames())
+        ->toBe([
+            'oe-live-standby',
+            'orbit-e2e-live-standby-app-dev',
+            'orbit-e2e-live-standby-app-prod',
+            'orbit-e2e-live-standby-gateway',
+        ])
+        ->and($store->read('standby/promoted.json'))
+        ->not
+        ->toBeNull()
+        ->and($store->read('topology-snapshot/promoted.json'))
+        ->toBeNull();
+});
 
 it('refuses foreign instance ownership without writing recovery evidence', function (): void {
     [$recovery, $store, $host] = legacyRecoveryService();
-    $host->metadata['orbit-e2e-live-standby-gateway'] = [
+    $host->metadata['orbit-e2e-live-topology-snapshot-gateway'] = [
         'user.orbit.e2e.owner' => 'foreign',
         'user.orbit.e2e.operation' => str_repeat('a', 32),
     ];
 
     expect(fn () => $recovery->authorize())
-        ->toThrow(RuntimeException::class, 'orbit-e2e-live-standby-gateway ownership does not match');
-    expect($store->read('standby/recovery.json'))->toBeNull();
+        ->toThrow(RuntimeException::class, 'orbit-e2e-live-topology-snapshot-gateway ownership does not match');
+    expect($store->read('topology-snapshot/recovery.json'))->toBeNull();
 });
 
 it('authorizes project-less network users in the default Incus project', function (): void {
@@ -322,12 +350,12 @@ it('authorizes project-less network users in the default Incus project', functio
         $host->networkUsers,
     );
 
-    expect($recovery->authorize()->resourceNames())->toContain('oe-live-standby');
+    expect($recovery->authorize()->resourceNames())->toContain('oe-l-topo-snap');
 });
 
 it('authorizes an exact promotion copy with complete attempt identity', function (): void {
     [$recovery, , $host] = legacyRecoveryService();
-    $copy = 'orbit-e2e-live-standby-gateway-next';
+    $copy = 'orbit-e2e-live-topology-snapshot-gateway-next';
     $host->instances[] = $copy;
     $host->metadata[$copy] = [
         'user.orbit.e2e.owner' => 'orbit-e2e',
@@ -344,34 +372,34 @@ it('authorizes an exact promotion copy with complete attempt identity', function
 
 it('fails closed on incomplete or ambiguous ownership evidence', function (Closure $mutate, string $error): void {
     [$recovery, $store, $host] = legacyRecoveryService();
-    $promoted = $store->read('standby/promoted.json');
+    $promoted = $store->read('topology-snapshot/promoted.json');
     $mutate($host);
 
     expect(fn () => $recovery->authorize())->toThrow(RuntimeException::class, $error);
-    expect($store->read('standby/recovery.json'))->toBeNull();
-    expect($store->read('standby/promoted.json'))->toBe($promoted);
+    expect($store->read('topology-snapshot/recovery.json'))->toBeNull();
+    expect($store->read('topology-snapshot/promoted.json'))->toBe($promoted);
 })->with([
     'missing operation identity' => [
         function (LegacyRecoveryHost $host): void {
-            $host->metadata['orbit-e2e-live-standby-gateway'] = ['user.orbit.e2e.owner' => 'orbit-e2e'];
+            $host->metadata['orbit-e2e-live-topology-snapshot-gateway'] = ['user.orbit.e2e.owner' => 'orbit-e2e'];
         },
         'operation identity is incomplete',
     ],
     'wrong network attachment' => [
         function (LegacyRecoveryHost $host): void {
-            $host->networks['orbit-e2e-live-standby-gateway'] = 'oe-standby';
+            $host->networks['orbit-e2e-live-topology-snapshot-gateway'] = 'oe-topo-snap';
         },
         'network identity does not match',
     ],
     'wrong deterministic MAC' => [
         function (LegacyRecoveryHost $host): void {
-            $host->macs['orbit-e2e-live-standby-gateway'] = '00:16:3e:00:00:00';
+            $host->macs['orbit-e2e-live-topology-snapshot-gateway'] = '00:16:3e:00:00:00';
         },
         'MAC identity does not match',
     ],
     'unexpected host disk' => [
         function (LegacyRecoveryHost $host): void {
-            $host->disks['orbit-e2e-live-standby-gateway'] = [
+            $host->disks['orbit-e2e-live-topology-snapshot-gateway'] = [
                 'source' => ['source' => '/tmp/foreign', 'path' => '/mnt/foreign'],
             ];
         },
@@ -379,7 +407,7 @@ it('fails closed on incomplete or ambiguous ownership evidence', function (Closu
     ],
     'feature-owned base VM' => [
         function (LegacyRecoveryHost $host): void {
-            $host->metadata['orbit-e2e-live-standby-gateway'] = [
+            $host->metadata['orbit-e2e-live-topology-snapshot-gateway'] = [
                 'user.orbit.e2e.owner' => 'orbit-e2e',
                 'user.orbit.e2e.operation' => str_repeat('a', 32),
                 'user.orbit.e2e.issue' => 'ORB-92',
@@ -389,7 +417,7 @@ it('fails closed on incomplete or ambiguous ownership evidence', function (Closu
     ],
     'unexpected instance metadata' => [
         function (LegacyRecoveryHost $host): void {
-            $host->metadata['orbit-e2e-live-standby-gateway'] = [
+            $host->metadata['orbit-e2e-live-topology-snapshot-gateway'] = [
                 'user.orbit.e2e.owner' => 'orbit-e2e',
                 'user.orbit.e2e.operation' => str_repeat('a', 32),
                 'user.orbit.e2e.attempt' => str_repeat('b', 32),
@@ -399,7 +427,7 @@ it('fails closed on incomplete or ambiguous ownership evidence', function (Closu
     ],
     'missing promoted snapshot' => [
         function (LegacyRecoveryHost $host): void {
-            $host->snapshots['orbit-e2e-live-standby-gateway'] = [];
+            $host->snapshots['orbit-e2e-live-topology-snapshot-gateway'] = [];
         },
         'does not contain promoted snapshot',
     ],
@@ -407,7 +435,7 @@ it('fails closed on incomplete or ambiguous ownership evidence', function (Closu
         function (LegacyRecoveryHost $host): void {
             $host->networkOwner = 'foreign';
         },
-        'network oe-live-standby ownership does not match',
+        'network oe-l-topo-snap ownership does not match',
     ],
     'wrong network subnet' => [
         function (LegacyRecoveryHost $host): void {
@@ -429,7 +457,7 @@ it('fails closed on incomplete or ambiguous ownership evidence', function (Closu
     ],
     'duplicate exact instance' => [
         function (LegacyRecoveryHost $host): void {
-            $host->instances[] = 'orbit-e2e-live-standby-gateway';
+            $host->instances[] = 'orbit-e2e-live-topology-snapshot-gateway';
         },
         'appears more than once in inventory',
     ],
@@ -443,7 +471,7 @@ it('retains hash-bound authorization and ordered mutation evidence', function ()
     $recovery->record('instances_pending', ['instances' => $inventory->resourceNames()]);
     $recovery->record('instances_verified', ['instances_deleted' => $inventory->resourceNames()]);
 
-    expect($store->read('standby/recovery.json'))->toBe([
+    expect($store->read('topology-snapshot/recovery.json'))->toBe([
         'schema' => 1,
         'operation_id' => str_repeat('a', 32),
         'main_sha' => str_repeat('b', 40),
@@ -459,7 +487,7 @@ it('retains hash-bound authorization and ordered mutation evidence', function ()
             ],
         ],
     ]);
-    expect($store->read('standby/promoted.json'))->toBe($inventory->promotedManifest);
+    expect($store->read('topology-snapshot/promoted.json'))->toBe($inventory->promotedManifest);
 });
 
 it('round trips a network-only authorization through retained JSON and a fresh recovery process', function (): void {
@@ -471,24 +499,24 @@ it('round trips a network-only authorization through retained JSON and a fresh r
 
     $recovery->start($mainSha, $inventory);
     $written = json_decode(
-        (string) file_get_contents($paths->path('standby/recovery.json')),
+        (string) file_get_contents($paths->path('topology-snapshot/recovery.json')),
         true,
         512,
         JSON_THROW_ON_ERROR,
     );
-    $fresh = new LegacyStandbyRecovery(
+    $fresh = new LegacyTopologySnapshotRecovery(
         new IncusHost(project: 'default', pool: 'orbit-e2e'),
-        new StandbyManifestStore($store, $paths, new IncusHost(project: 'default', pool: 'orbit-e2e')),
+        new TopologySnapshotManifestStore($store, $paths, new IncusHost(project: 'default', pool: 'orbit-e2e')),
         $store,
         new OperationId(str_repeat('c', 32)),
-        StandbyIdentity::live(),
+        TopologySnapshotIdentity::live(),
     );
 
     expect($written['inventory']['instances'] ?? null)
         ->toBe([])
         ->and($written['inventory']['snapshots'] ?? null)
         ->toBe([])
-        ->and(LegacyStandbyInventory::fromArray($written['inventory'])->toArray())
+        ->and(LegacyTopologySnapshotInventory::fromArray($written['inventory'])->toArray())
         ->toBe($inventory->toArray())
         ->and($fresh->resume($mainSha)?->toArray())
         ->toBe($inventory->toArray());
@@ -504,22 +532,22 @@ it('archives a completed network-only record before the next recovery starts', f
     $recovery->record('construction_verified', [
         'generation_id' => 'network-only-replacement',
         'main_sha' => $mainSha,
-        'next_action' => 'bin/e2e-standby status',
+        'next_action' => 'bin/e2e-topology-snapshot status',
     ]);
-    $completed = $store->read('standby/recovery.json');
-    $next = new LegacyStandbyRecovery(
+    $completed = $store->read('topology-snapshot/recovery.json');
+    $next = new LegacyTopologySnapshotRecovery(
         new IncusHost(project: 'default', pool: 'orbit-e2e'),
-        new StandbyManifestStore($store, $paths, new IncusHost(project: 'default', pool: 'orbit-e2e')),
+        new TopologySnapshotManifestStore($store, $paths, new IncusHost(project: 'default', pool: 'orbit-e2e')),
         $store,
         new OperationId(str_repeat('c', 32)),
-        StandbyIdentity::live(),
+        TopologySnapshotIdentity::live(),
     );
 
     $next->start(str_repeat('d', 40), $next->authorize());
 
-    expect($store->read('standby/recoveries/'.str_repeat('a', 32).'.json'))
+    expect($store->read('topology-snapshot/recoveries/'.str_repeat('a', 32).'.json'))
         ->toBe($completed)
-        ->and($store->read('standby/recovery.json'))
+        ->and($store->read('topology-snapshot/recovery.json'))
         ->operation_id->toBe(str_repeat('c', 32))
         ->main_sha->toBe(str_repeat('d', 40))
         ->phase->toBe('authorized');
@@ -530,11 +558,11 @@ it('rejects non-empty lists and mixed map shapes in retained inventory', functio
     $value = $recovery->authorize()->toArray();
     $mutate($value);
 
-    expect(fn () => LegacyStandbyInventory::fromArray($value))
-        ->toThrow(\InvalidArgumentException::class, 'The legacy standby inventory is invalid.');
+    expect(fn () => LegacyTopologySnapshotInventory::fromArray($value))
+        ->toThrow(\InvalidArgumentException::class, 'The legacy topology snapshot inventory is invalid.');
 })->with([
     'non-empty instance list' => [function (array &$value): void {
-        $value['instances'] = [['name' => 'orbit-e2e-live-standby-gateway']];
+        $value['instances'] = [['name' => 'orbit-e2e-live-topology-snapshot-gateway']];
     }],
     'non-empty snapshot list' => [function (array &$value): void {
         $value['snapshots'] = [['name' => 'main-legacy-generation']];
@@ -555,22 +583,22 @@ it('archives completed evidence before starting a separately authorized recovery
     $recovery->record('construction_verified', [
         'generation_id' => 'legacy-generation',
         'main_sha' => $mainSha,
-        'next_action' => 'bin/e2e-standby status',
+        'next_action' => 'bin/e2e-topology-snapshot status',
     ]);
-    $completed = $store->read('standby/recovery.json');
-    $next = new LegacyStandbyRecovery(
+    $completed = $store->read('topology-snapshot/recovery.json');
+    $next = new LegacyTopologySnapshotRecovery(
         new IncusHost(project: 'default', pool: 'orbit-e2e'),
-        new StandbyManifestStore($store, $paths, new IncusHost(project: 'default', pool: 'orbit-e2e')),
+        new TopologySnapshotManifestStore($store, $paths, new IncusHost(project: 'default', pool: 'orbit-e2e')),
         $store,
         new OperationId(str_repeat('c', 32)),
-        StandbyIdentity::live(),
+        TopologySnapshotIdentity::live(),
     );
 
     $nextInventory = $next->authorize();
     $next->start(str_repeat('d', 40), $nextInventory);
 
-    expect($store->read('standby/recoveries/'.str_repeat('a', 32).'.json'))->toBe($completed);
-    expect($store->read('standby/recovery.json'))
+    expect($store->read('topology-snapshot/recoveries/'.str_repeat('a', 32).'.json'))->toBe($completed);
+    expect($store->read('topology-snapshot/recovery.json'))
         ->operation_id->toBe(str_repeat('c', 32))
         ->main_sha->toBe(str_repeat('d', 40))
         ->phase->toBe('authorized');
@@ -607,7 +635,7 @@ it('keeps one refresh lock through teardown and the construction boundary', func
             throw new RuntimeException('Interrupted after verified teardown.');
         },
     );
-    $identity = StandbyIdentity::live();
+    $identity = TopologySnapshotIdentity::live();
     $hostState = new LegacyRecoveryHost;
     $hostState->instances = $identity->instances();
     foreach ($identity->instances() as $name) {
@@ -616,16 +644,15 @@ it('keeps one refresh lock through teardown and the construction boundary', func
     }
     fakeLegacyRecoveryHost($hostState);
     $host = new IncusHost(project: 'default', pool: 'orbit-e2e');
-    $manifests = new StandbyManifestStore($store, $paths, $host);
+    $manifests = new TopologySnapshotManifestStore($store, $paths, $host);
     $generation = legacyRecoveryGeneration();
     $manifests->promote($generation);
     $manifests->record($generation);
-    $recovery = new LegacyStandbyRecovery($host, $manifests, $store, $operation, $identity);
-    $rebuilder = new StandbyRebuilder(
+    $recovery = new LegacyTopologySnapshotRecovery($host, $manifests, $store, $operation, $identity);
+    $rebuilder = new TopologySnapshotRebuilder(
         $host,
         new IncusNetworkLifecycle($host),
         $manifests,
-        $store,
         $paths,
         new OperationLock($paths),
         $operation,
@@ -640,7 +667,11 @@ it('keeps one refresh lock through teardown and the construction boundary', func
     expect($result->error)->toContain('Interrupted after verified teardown.');
     expect($blocked)->toBeTrue();
     $after = new OperationLock($paths);
-    expect($after->acquire('standby-refresh', new OperationId(str_repeat('d', 32)), timeoutSeconds: 0))->toBeTrue();
+    expect($after->acquire(
+        'standby-refresh',
+        new OperationId(str_repeat('d', 32)),
+        timeoutSeconds: 0,
+    ))->toBeTrue();
     $after->release();
 });
 
@@ -649,12 +680,12 @@ it('resumes retained evidence only for the same SHA and inventory digest', funct
     $inventory = $recovery->authorize();
     $recovery->start(str_repeat('b', 40), $inventory);
     $recovery->record('manifests_verified', ['promoted_manifest_retained' => $inventory->promotedManifest]);
-    $resumed = new LegacyStandbyRecovery(
+    $resumed = new LegacyTopologySnapshotRecovery(
         new IncusHost(project: 'default', pool: 'orbit-e2e'),
-        new StandbyManifestStore($store, $paths, new IncusHost(project: 'default', pool: 'orbit-e2e')),
+        new TopologySnapshotManifestStore($store, $paths, new IncusHost(project: 'default', pool: 'orbit-e2e')),
         $store,
         new OperationId(str_repeat('c', 32)),
-        StandbyIdentity::live(),
+        TopologySnapshotIdentity::live(),
     );
 
     expect(fn () => $resumed->resume(str_repeat('d', 40)))
@@ -662,8 +693,8 @@ it('resumes retained evidence only for the same SHA and inventory digest', funct
     $authorization = $resumed->resume(str_repeat('b', 40));
 
     expect($authorization?->sha256())->toBe($inventory->sha256());
-    expect($store->read('standby/recovery.json')['operation_id'] ?? null)->toBe(str_repeat('c', 32));
-    expect($store->read('standby/recovery.json')['phase'] ?? null)->toBe('resumed');
+    expect($store->read('topology-snapshot/recovery.json')['operation_id'] ?? null)->toBe(str_repeat('c', 32));
+    expect($store->read('topology-snapshot/recovery.json')['phase'] ?? null)->toBe('resumed');
 });
 
 it('retains the exact interrupted construction operation across retries', function (): void {
@@ -673,28 +704,28 @@ it('retains the exact interrupted construction operation across retries', functi
     $recovery->start($mainSha, $inventory);
     $recovery->record('construction_pending', [
         'operation_id' => str_repeat('a', 32),
-        'next_action' => "bin/e2e-standby recover-legacy --main-sha={$mainSha}",
+        'next_action' => "bin/e2e-topology-snapshot recover-legacy --main-sha={$mainSha}",
     ]);
-    $firstRetry = new LegacyStandbyRecovery(
+    $firstRetry = new LegacyTopologySnapshotRecovery(
         new IncusHost(project: 'default', pool: 'orbit-e2e'),
-        new StandbyManifestStore($store, $paths, new IncusHost(project: 'default', pool: 'orbit-e2e')),
+        new TopologySnapshotManifestStore($store, $paths, new IncusHost(project: 'default', pool: 'orbit-e2e')),
         $store,
         new OperationId(str_repeat('c', 32)),
-        StandbyIdentity::live(),
+        TopologySnapshotIdentity::live(),
     );
 
     $interrupted = $firstRetry->interruptedConstructionOperation();
     $firstRetry->resume($mainSha);
     $firstRetry->record('construction_cleanup_pending', [
         'operation_id' => $interrupted?->value,
-        'next_action' => "bin/e2e-standby recover-legacy --main-sha={$mainSha}",
+        'next_action' => "bin/e2e-topology-snapshot recover-legacy --main-sha={$mainSha}",
     ]);
-    $secondRetry = new LegacyStandbyRecovery(
+    $secondRetry = new LegacyTopologySnapshotRecovery(
         new IncusHost(project: 'default', pool: 'orbit-e2e'),
-        new StandbyManifestStore($store, $paths, new IncusHost(project: 'default', pool: 'orbit-e2e')),
+        new TopologySnapshotManifestStore($store, $paths, new IncusHost(project: 'default', pool: 'orbit-e2e')),
         $store,
         new OperationId(str_repeat('d', 32)),
-        StandbyIdentity::live(),
+        TopologySnapshotIdentity::live(),
     );
 
     expect($interrupted?->value)->toBe(str_repeat('a', 32));

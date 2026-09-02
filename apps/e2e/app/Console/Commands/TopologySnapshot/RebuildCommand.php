@@ -2,30 +2,30 @@
 
 declare(strict_types=1);
 
-namespace App\Console\Commands\Standby;
+namespace App\Console\Commands\TopologySnapshot;
 
 use App\Console\Commands\E2ECommand;
-use App\E2E\StandbyRebuilder;
-use App\E2E\StandbyRefresher;
+use App\E2E\TopologySnapshotRebuilder;
+use App\E2E\TopologySnapshotRefresher;
 use Throwable;
 
 final class RebuildCommand extends E2ECommand
 {
     #[\Override]
-    protected $signature = 'standby:rebuild
+    protected $signature = 'topology-snapshot:rebuild
         {--main-sha=}
         {--json}';
     #[\Override]
-    protected $description = 'Tear this checkout\'s standby down and build it again from the base image';
+    protected $description = 'Tear this checkout\'s topology snapshot down and build it again from the base image';
 
-    public function handle(StandbyRebuilder $rebuilder, StandbyRefresher $refresher): int
+    public function handle(TopologySnapshotRebuilder $rebuilder, TopologySnapshotRefresher $refresher): int
     {
         try {
             $sha = $this->option('main-sha');
             if (! is_string($sha) || preg_match('/\A[a-f0-9]{40}\z/D', $sha) !== 1) {
                 throw new \InvalidArgumentException('The exact main SHA is required.');
             }
-            // Teardown first: a cold build refuses while standby resources, a
+            // Teardown first: a cold build refuses while topology snapshot resources, a
             // promoted generation, or the corrupt marker still exist.
             $teardown = $rebuilder->teardown();
             $refresh = $refresher->request($sha, allowCold: true);
