@@ -246,9 +246,9 @@ to `/opt/orbit/php/8.5/bin/php`; any other collision is refused. Bare `orbit`,
 the absolute CLI entrypoint, `runuser`, `sudo`, and proof fixture scripts then
 resolve the same packaged runtime. Already-installed Sury packages are not
 opportunistically upgraded; a role still using Ubuntu PHP is moved to Sury.
-The Sury FPM unit protects `/etc` by default, so the Incus-only unit drop-in
-allows writes below `/etc` for Orbit's existing privileged convergence
-commands. A custom or static PHP build is not used.
+The Sury FPM unit protects system paths by default, so the Incus-only unit
+drop-in restores the package-service behavior that Orbit's existing privileged
+convergence commands require. A custom or static PHP build is not used.
 
 The harness installs packaged `php8.5-pcov` only in the disposable proof roles,
 keeps collection disabled outside the instrumented phases, and enables it

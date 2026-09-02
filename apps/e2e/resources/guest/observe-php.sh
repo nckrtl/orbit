@@ -90,14 +90,15 @@ install_sury() {
   [[ "$(readlink -f /usr/bin/php)" == /usr/bin/php8.5 ]]
 
   install -d -o root -g root -m 0755 "$(dirname "$fpm_drop_in")"
-  if [[ ! -f "$fpm_drop_in" ]] || ! printf '[Service]\nReadWritePaths=/etc\n' | cmp -s - "$fpm_drop_in"; then
-    printf '[Service]\nReadWritePaths=/etc\n' > "$fpm_drop_in"
+  if [[ ! -f "$fpm_drop_in" ]] || ! printf '[Service]\nProtectSystem=false\n' | cmp -s - "$fpm_drop_in"; then
+    printf '[Service]\nProtectSystem=false\n' > "$fpm_drop_in"
     chmod 0644 "$fpm_drop_in"
     systemctl daemon-reload
   fi
 
   if [[ "$mode" == runtime ]]; then
-    systemctl enable --now "php$version-fpm"
+    systemctl enable "php$version-fpm"
+    systemctl restart "php$version-fpm"
     return
   fi
 

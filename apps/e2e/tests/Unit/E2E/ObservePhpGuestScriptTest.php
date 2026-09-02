@@ -39,10 +39,9 @@ it('keeps Sury FPM compatible with Orbit privileged convergence', function (): v
     expect($script)
         ->toContain(
             'orbit-e2e-sury.conf',
-            "[Service]\\nReadWritePaths=/etc\\n",
+            "[Service]\\nProtectSystem=false\\n",
             'systemctl daemon-reload',
-        )
-        ->not->toContain('ProtectSystem=false');
+        );
 });
 
 it('removes only the known base-image PHP collision and verifies the packaged interpreter', function (): void {
