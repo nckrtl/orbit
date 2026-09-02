@@ -112,7 +112,13 @@ wireguard_address() {
 gateway_address() {
   orbit node:list --json | php -r '
     $nodes = json_decode(stream_get_contents(STDIN), true)["nodes"] ?? [];
-    foreach ($nodes as $node) { if (in_array("gateway", $node["roles"] ?? [], true)) { echo $node["wireguard_address"]; exit(0); } }
+    foreach ($nodes as $node) {
+      if (!in_array("gateway", $node["roles"] ?? [], true)) { continue; }
+      $address = $node["wireguard_ip"] ?? null;
+      if (!is_string($address) || filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) { exit(1); }
+      echo $address;
+      exit(0);
+    }
     exit(1);
   '
 }
@@ -122,7 +128,13 @@ metrics_address() {
     read -r id
     orbit node:list --json | php -r '
       $id = (int) $argv[1];
-      foreach (json_decode(stream_get_contents(STDIN), true)["nodes"] ?? [] as $node) { if ((int) $node["id"] === $id) { echo $node["wireguard_address"]; exit(0); } }
+      foreach (json_decode(stream_get_contents(STDIN), true)["nodes"] ?? [] as $node) {
+        if ((int) $node["id"] !== $id) { continue; }
+        $address = $node["wireguard_ip"] ?? null;
+        if (!is_string($address) || filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) { exit(1); }
+        echo $address;
+        exit(0);
+      }
       exit(1);
     ' -- "$id"
   }

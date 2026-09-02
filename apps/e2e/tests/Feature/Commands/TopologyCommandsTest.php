@@ -225,7 +225,7 @@ function commandTopologyFixture(string $issue, AttemptId $attempt): \App\E2E\Val
     return new \App\E2E\Value\FeatureTopology(
         $target,
         AttemptPurpose::Proof,
-        new \App\E2E\Value\StandbyGeneration(
+        new \App\E2E\Value\TopologySnapshotGeneration(
             'g-'.str_repeat('a', 12),
             str_repeat('b', 40),
             ['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod'],

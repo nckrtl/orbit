@@ -17,6 +17,41 @@ use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
 
 describe(MetricsSshExecutor::class, function (): void {
+    it('uses the configured node user for every SSH connection', function (string $user): void {
+        $ssh = new MetricsCapturingSshExecutor([metricsCommandResult()]);
+
+        $verified = metricsSshExecutor($ssh)->verify(metricsSshNode($user), 'credential');
+
+        expect($verified)
+            ->toBeTrue()
+            ->and(array_map(
+                static fn (SshConnection $connection): string => $connection->user,
+                $ssh->connections,
+            ))
+            ->toBe([$user]);
+    })->with([
+        'non-orbit user' => 'deployer',
+        'orbit user' => 'orbit',
+    ]);
+
+    it('does not fall back when the configured node user cannot authenticate', function (string $user): void {
+        $ssh = new MetricsCapturingSshExecutor([metricsCommandResult(exitCode: 255)]);
+
+        $verified = metricsSshExecutor($ssh)->verify(metricsSshNode($user), 'credential');
+
+        expect($verified)
+            ->toBeFalse()
+            ->and(array_map(
+                static fn (SshConnection $connection): string => $connection->user,
+                $ssh->connections,
+            ))
+            ->toBe([$user]);
+    })->with([
+        'invalid user' => 'invalid user',
+        'missing user' => '',
+        'unusable user' => 'nck121-noauth',
+    ]);
+
     it('transports active and pending Grafana credentials only through protected input', function (): void {
         $ssh = new MetricsCapturingSshExecutor([
             metricsCommandResult(),
@@ -522,11 +557,12 @@ function metricsSshExecutor(MetricsCapturingSshExecutor $ssh): MetricsSshExecuto
     );
 }
 
-function metricsSshNode(): Node
+function metricsSshNode(string $user = 'orbit'): Node
 {
     $node = new Node([
         'name' => 'metrics-ssh',
         'wireguard_ip' => '10.44.0.3',
+        'user' => $user,
     ]);
     $node->id = 3;
 
@@ -560,6 +596,9 @@ function expectMetricsDockerCommandsUsePrivilegedBoundary(MetricsCapturingSshExe
 
 final class MetricsCapturingSshExecutor implements SshExecutor
 {
+    /** @var list<SshConnection> */
+    public array $connections = [];
+
     /** @var list<RemoteCommand> */
     public array $commands = [];
 
@@ -570,6 +609,7 @@ final class MetricsCapturingSshExecutor implements SshExecutor
 
     public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
     {
+        $this->connections[] = $connection;
         $this->commands[] = $command;
 
         return array_shift($this->results) ?? metricsCommandResult();

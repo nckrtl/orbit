@@ -93,7 +93,7 @@ function topologyVerifierInventory(PendingProcess $process): ?ProcessResult
 
     if (in_array('network', $command, true)) {
         return Process::result(json_encode([[
-            'name' => 'oe-standby',
+            'name' => 'oe-topo-snap',
             'config' => [
                 'user.orbit.e2e.owner' => 'orbit-e2e',
                 'ipv4.address' => '10.232.1.1/24',
@@ -112,8 +112,8 @@ function topologyVerifierInventory(PendingProcess $process): ?ProcessResult
         ];
 
     return Process::result(json_encode(array_map(static function (string $role): array {
-        $name = 'orbit-e2e-standby-'.$role;
-        $mac = implode(':', str_split(substr(sha1('oe-standby:'.$role), 0, 6), 2));
+        $name = 'orbit-e2e-topology-snapshot-'.$role;
+        $mac = implode(':', str_split(substr(sha1('oe-topo-snap:'.$role), 0, 6), 2));
 
         $ipv4 = ['gateway' => '10.232.1.10', 'app-dev' => '10.232.1.11', 'app-prod' => '10.232.1.12'][$role];
 
@@ -126,7 +126,7 @@ function topologyVerifierInventory(PendingProcess $process): ?ProcessResult
             'devices' => [
                 'root' => ['pool' => 'orbit-e2e'],
                 'eth0' => [
-                    'network' => 'oe-standby',
+                    'network' => 'oe-topo-snap',
                     'ipv4.address' => $ipv4,
                     'hwaddr' => '00:16:3e:'.$mac,
                 ],
@@ -166,7 +166,7 @@ function assertTopologyVerifierRequest(array $request, array $probeRoles, string
         expect($request)->toBe([
             'label' => 'sample-app-state',
             'project' => 'default',
-            'instance' => 'local:orbit-e2e-standby-app-dev',
+            'instance' => 'local:orbit-e2e-topology-snapshot-app-dev',
             'argv' => ['/usr/local/bin/converge-sample-app.sh', 'inspect-state'],
             'timeout' => 30,
             'stdin' => null,
@@ -182,7 +182,7 @@ function assertTopologyVerifierRequest(array $request, array $probeRoles, string
         $probe,
         'readiness',
         $sha,
-        'orbit-e2e-standby-'.$role,
+        'orbit-e2e-topology-snapshot-'.$role,
     ];
     if ($probe === 'wireguard.reachability') {
         $arguments[] = 'app-dev';
@@ -197,7 +197,7 @@ function assertTopologyVerifierRequest(array $request, array $probeRoles, string
     expect($request)->toBe([
         'label' => $probe,
         'project' => 'default',
-        'instance' => 'local:orbit-e2e-standby-'.$role,
+        'instance' => 'local:orbit-e2e-topology-snapshot-'.$role,
         'argv' => $arguments,
         'timeout' => 30,
         'stdin' => null,
@@ -233,7 +233,7 @@ describe('TopologyVerifier mounted source', function () {
             return Process::result(json_encode($results, JSON_THROW_ON_ERROR));
         });
 
-        $target = TopologyTarget::standby();
+        $target = TopologyTarget::topologySnapshot();
         new TopologyVerifier(
             new IncusHost(pool: 'orbit-e2e'),
             readinessTimeoutSeconds: 60,
@@ -307,7 +307,7 @@ describe('TopologyVerifier', function () {
             readinessTimeoutSeconds: 60,
             readinessPollIntervalMicroseconds: 0,
         )->verify(
-            TopologyTarget::standby(),
+            TopologyTarget::topologySnapshot(),
             VerificationMode::Readiness,
             new SourceState($sha, $sha),
         );
@@ -322,7 +322,7 @@ describe('TopologyVerifier', function () {
                 'checked_at' => '2026-08-29T12:34:56+00:00',
                 'expected' => 'healthy',
                 'observed' => 'healthy',
-                'evidence_ref' => 'incus://orbit-e2e-standby-gateway/service.vpn',
+                'evidence_ref' => 'incus://orbit-e2e-topology-snapshot-gateway/service.vpn',
             ])
             ->and($batches)
             ->toBe([['sample-app-state'], array_keys($probeRoles)])
@@ -337,7 +337,7 @@ describe('TopologyVerifier typed application state', function () {
     it('selects typed source probes and omits legacy Workspace and app-prod site probes', function (): void {
         setUpTopologyVerifierProcessFacade();
         $sha = str_repeat('a', 40);
-        $checkout = '/srv/orbit/apps/laravel/e2e-dev';
+        $checkout = '/srv/orbit/apps/laravel-typed/e2e-dev';
         $batches = [];
         $argv = [];
 
@@ -393,7 +393,7 @@ describe('TopologyVerifier typed application state', function () {
             readinessTimeoutSeconds: 60,
             readinessPollIntervalMicroseconds: 0,
         )->verify(
-            TopologyTarget::standby(),
+            TopologyTarget::topologySnapshot(),
             VerificationMode::Readiness,
             new SourceState($sha, $sha),
         );
@@ -422,7 +422,7 @@ describe('TopologyVerifier failures and retries', function () {
         $sha = str_repeat('a', 40);
 
         expect(fn () => new TopologyVerifier(new IncusHost(pool: 'orbit-e2e'))->verify(
-            TopologyTarget::standby(),
+            TopologyTarget::topologySnapshot(),
             VerificationMode::Proof,
             new SourceState($sha, $sha),
         ))
@@ -450,7 +450,7 @@ describe('TopologyVerifier failures and retries', function () {
             readinessTimeoutSeconds: 60,
             readinessPollIntervalMicroseconds: 1_000,
         )->verify(
-            TopologyTarget::standby(),
+            TopologyTarget::topologySnapshot(),
             VerificationMode::Readiness,
             new SourceState(str_repeat('a', 40), str_repeat('a', 40)),
         ))
@@ -522,7 +522,7 @@ describe('TopologyVerifier failures and retries', function () {
             readinessTimeoutSeconds: 60,
             readinessPollIntervalMicroseconds: 0,
         )->verify(
-            TopologyTarget::standby(),
+            TopologyTarget::topologySnapshot(),
             VerificationMode::Readiness,
             new SourceState($sha, $sha),
         );
@@ -595,7 +595,7 @@ function runTopologyVerifierWithEndState(?TopologyEndState $endState, array $fai
         new IncusHost(pool: 'orbit-e2e'),
         readinessTimeoutSeconds: 60,
         readinessPollIntervalMicroseconds: 0,
-    )->verify(TopologyTarget::standby(), VerificationMode::Proof, new SourceState($sha, $sha), $endState);
+    )->verify(TopologyTarget::topologySnapshot(), VerificationMode::Proof, new SourceState($sha, $sha), $endState);
 
     return ['report' => $report, 'argv' => $argv, 'batches' => $batches];
 }
@@ -637,7 +637,7 @@ describe('TopologyVerifier declared end state', function (): void {
         $run = runTopologyVerifierWithEndState(TopologyEndState::fromArray(['nodes' => ['gateway', 'app-dev']]));
         $sha = str_repeat('a', 40);
         $script = '/usr/local/bin/verify-topology.sh';
-        $gateway = TopologyTarget::standby()->instance('gateway');
+        $gateway = TopologyTarget::topologySnapshot()->instance('gateway');
 
         expect($run['report']->passed)
             ->toBeTrue()
@@ -683,7 +683,7 @@ describe('TopologyVerifier declared end state', function (): void {
         $run = runTopologyVerifierWithEndState(null);
         $sha = str_repeat('a', 40);
         $script = '/usr/local/bin/verify-topology.sh';
-        $gateway = TopologyTarget::standby()->instance('gateway');
+        $gateway = TopologyTarget::topologySnapshot()->instance('gateway');
 
         expect($run['argv']['role.assignments'] ?? null)
             ->toBe([
@@ -713,7 +713,7 @@ describe('TopologyVerifier declared end state', function (): void {
                 'metrics.publication',
                 'proof',
                 $sha,
-                TopologyTarget::standby()->instance('gateway'),
+                TopologyTarget::topologySnapshot()->instance('gateway'),
                 base64_encode(json_encode([
                     'gateway' => ['gateway', 'vpn'],
                     'app-prod' => ['app-prod'],

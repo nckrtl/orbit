@@ -24,7 +24,7 @@ final readonly class ProofPlan
 
     private const array SECTIONS = ['setup', 'acceptance'];
 
-    /** Optional: a plan that mutates the topology cannot become the standby. */
+    /** Optional: a plan that mutates the topology cannot become the topology snapshot. */
     private const string MUTATES = 'mutates';
 
     /** Optional: the topology the plan ends with; a node it leaves out is proved absent. */

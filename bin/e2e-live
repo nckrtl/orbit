@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One end-to-end run of the feature flow against a standby built from one exact
+# One end-to-end run of the feature flow against a topology snapshot built from one exact
 # candidate commit in a validation clone. See docs/reference/incus-topologies.md.
 set -euo pipefail
 
@@ -7,16 +7,16 @@ usage() {
     cat <<'EOF'
 usage: bin/e2e-live <candidate-sha>
 
-Runs apps/e2e/tests/Live/TopologyLedLifecycleAcceptanceTest.php (issue ACC-1)
-against real Incus resources from a validation clone: acquire, exec, release,
-prove with proofs/ACC-1.json, promote the proved topology into the clone's
-standby, acquire from that generation, release, and prove once more with
-proofs/ACC-1-ends-with.json, whose declared end state the topology does not
-have, so the run proves a declaration is checked and never taken.
+Runs apps/e2e/tests/Live/LegacyTopologySnapshotRecoveryAcceptanceTest.php and
+TopologyLedLifecycleAcceptanceTest.php (issue ACC-1) against real Incus
+resources from a validation clone. It first proves that ordinary rebuild
+refuses present resources, runs recover-legacy, and verifies its retained
+evidence. It then runs acquire, exec, release, proof, promotion, and the
+remaining topology lifecycle with proofs/ACC-1.json.
 
-The clone owns its own standby (ORBIT_E2E_STANDBY_NAMESPACE=live:
-orbit-e2e-live-standby-<role> on oe-live-standby), so the promote step never
-touches the standby of the repository's primary checkout and a run needs no
+The clone owns its own topology snapshot (ORBIT_E2E_TOPOLOGY_SNAPSHOT_NAMESPACE=live:
+orbit-e2e-live-topology-snapshot-<role> on oe-l-topo-snap), so the promote step never
+touches the topology snapshot of the repository's primary checkout and a run needs no
 manual file copy afterwards.
 
 The wrapper owns the validation clone, which is its own primary checkout:
@@ -27,8 +27,9 @@ The wrapper owns the validation clone, which is its own primary checkout:
 
 It fetches the candidate, checks the clone out on `main` at the candidate,
 resets the linked worktree .worktrees/acc-1 (branch acc-1-live), bootstraps
-both, refreshes the clone's standby to the candidate (rebuilding it from the
-base image when the clone has no promoted generation), exports every
+both, refreshes the clone's topology snapshot to the candidate (rebuilding it from the
+base image when no resources exist, or resuming retained legacy recovery when
+exact resources remain without a promoted generation), exports every
 ORBIT_LIVE_* input, and runs the suite. It refuses only while another
 acceptance (ACC-*) topology is live on the Incus host: feature topologies of
 other issues share nothing with this run. It releases a stale ACC-1 attempt,
@@ -80,8 +81,8 @@ fi
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 validate=${ORBIT_E2E_VALIDATE_ROOT:-$HOME/orbit-validate}
 # The clone is a second primary checkout on this host: it owns the `live`
-# standby, never the standby of the repository this wrapper runs from.
-export ORBIT_E2E_STANDBY_NAMESPACE=live
+# topology snapshot, never the topology snapshot of the repository this wrapper runs from.
+export ORBIT_E2E_TOPOLOGY_SNAPSHOT_NAMESPACE=live
 incus_project=${ORBIT_E2E_INCUS_PROJECT:-default}
 incus_remote=${ORBIT_E2E_INCUS_REMOTE:-local}
 export PYTHONDONTWRITEBYTECODE=1
@@ -91,7 +92,7 @@ issue=ACC-1
 feature_worktree=$validate/.worktrees/acc-1
 plan=proofs/ACC-1.json
 
-# One live run at a time: two runs would race on the clone, the standby, and ACC-1.
+# One live run at a time: two runs would race on the clone, the topology snapshot, and ACC-1.
 # The lock comes before every other prerequisite so a held lock always exits 75.
 command -v flock >/dev/null 2>&1 || fail 'flock is required'
 mkdir -p "$lock_directory"
@@ -107,7 +108,7 @@ if [[ -e "$validate" && "$(cd "$validate" && pwd -P)" == "$(cd "$root" && pwd -P
     fail 'the validation clone must not be this repository'
 fi
 
-# The clone has its own standby, so another issue's topology is no conflict.
+# The clone has its own topology snapshot, so another issue's topology is no conflict.
 # Only another acceptance topology collides: it would race this run's own issue.
 live_issues=$(incus --project "$incus_project" list "$incus_remote:" --format json \
     | jq -r --arg issue "$issue" '[.[] | select(.config["user.orbit.e2e.owner"] == "orbit-e2e")
@@ -140,35 +141,224 @@ else
     git -C "$validate" worktree add --quiet -B acc-1-live "$feature_worktree" "$candidate"
 fi
 
-# The guests mount the feature worktree, and converging writes
-# apps/gateway/.env there with guest paths (ORBIT_HOME=/home/orbit/.orbit).
-# On the host that file makes bin/bootstrap create a guest directory, so every
-# run after the first fails before it starts. The host bootstrap and the next
-# convergence each write what they need, so the guest copy just goes.
 gateway_env=$feature_worktree/apps/gateway/.env
-if [[ -f "$gateway_env" ]] && grep -q '^ORBIT_HOME=/home/orbit/' "$gateway_env"; then
-    log "removing the guest-written apps/gateway/.env from $feature_worktree"
-    rm -f "$gateway_env"
-fi
-
-bootstrap_targets=("$validate" "$feature_worktree")
-bootstrap_logs=$(mktemp -d)
-bootstrap_pids=()
-for target in "${bootstrap_targets[@]}"; do
-    log "bootstrapping $target"
-    "$target/bin/bootstrap" >"$bootstrap_logs/$(basename "$target").log" 2>&1 &
-    bootstrap_pids+=("$!")
-done
-for index in "${!bootstrap_targets[@]}"; do
-    if ! wait "${bootstrap_pids[$index]}"; then
-        cat "$bootstrap_logs/$(basename "${bootstrap_targets[$index]}").log" >&2
-        fail "bootstrap failed for ${bootstrap_targets[$index]}"
+remove_guest_gateway_env() {
+    # The guests mount the feature worktree, and convergence writes guest paths
+    # there. Host bootstrap and the next convergence each write what they need.
+    if [[ -f "$gateway_env" ]] && grep -q '^ORBIT_HOME=/home/orbit/' "$gateway_env"; then
+        log "removing the guest-written apps/gateway/.env from $feature_worktree"
+        rm -f "$gateway_env"
     fi
-done
-rm -rf "$bootstrap_logs"
+}
+
+bootstrap_validation() {
+    local bootstrap_logs
+    local index
+    local target
+    local -a bootstrap_pids=()
+    local -a bootstrap_targets=("$validate" "$feature_worktree")
+
+    bootstrap_logs=$(mktemp -d)
+    for target in "${bootstrap_targets[@]}"; do
+        log "bootstrapping $target"
+        "$target/bin/bootstrap" >"$bootstrap_logs/$(basename "$target").log" 2>&1 &
+        bootstrap_pids+=("$!")
+    done
+    for index in "${!bootstrap_targets[@]}"; do
+        if ! wait "${bootstrap_pids[$index]}"; then
+            cat "$bootstrap_logs/$(basename "${bootstrap_targets[$index]}").log" >&2
+            fail "bootstrap failed for ${bootstrap_targets[$index]}"
+        fi
+    done
+    rm -rf "$bootstrap_logs"
+}
+
+checkout_validation_sha() {
+    local sha=$1
+
+    remove_guest_gateway_env
+    git -C "$validate" fetch --quiet --no-tags "$root" "$sha"
+    git -C "$validate" checkout --quiet -B main "$sha"
+    git -C "$feature_worktree" checkout --quiet -B acc-1-live "$sha"
+    bootstrap_validation
+}
+
+remove_guest_gateway_env
+bootstrap_validation
 
 harness() {
     "$validate/bin/e2e-$1" "${@:2}" --json
+}
+
+primary_inventory() {
+    {
+        incus --project "$incus_project" list "$incus_remote:" --format json
+        incus --project "$incus_project" network list "$incus_remote:" --format json
+    } | jq -S -s '
+        def stable_config:
+            with_entries(select(.key | startswith("volatile.") | not));
+        {
+            instances: (
+                .[0]
+                | map(select(.name | startswith("orbit-e2e-topology-snapshot-")))
+                | map({
+                    name,
+                    type,
+                    status,
+                    project,
+                    config: ((.config // {}) | stable_config),
+                    devices: (.expanded_devices // .devices // {})
+                })
+                | sort_by(.name)
+            ),
+            networks: (
+                .[1]
+                | map(select(.name == "oe-topo-snap"))
+                | map({
+                    name,
+                    type,
+                    managed,
+                    config: ((.config // {}) | stable_config)
+                })
+                | sort_by(.name)
+            )
+        }'
+}
+
+assert_rebuild_refusal() {
+    local refusal=$1
+    local before_refusal=$2
+    local after_refusal
+    local resource
+
+    for resource in \
+        orbit-e2e-live-topology-snapshot-gateway \
+        orbit-e2e-live-topology-snapshot-app-dev \
+        orbit-e2e-live-topology-snapshot-app-prod \
+        oe-l-topo-snap; do
+        jq -e --arg resource "$resource" '.error | contains($resource)' <<<"$refusal" >/dev/null \
+            || fail "ordinary rebuild did not name $resource"
+    done
+    jq -e '.error | contains("recover-legacy")' <<<"$refusal" >/dev/null \
+        || fail 'ordinary rebuild did not name the supported legacy recovery command'
+    after_refusal=$(harness topology-snapshot status 2>/dev/null || true)
+    if [[ "$(jq -S . <<<"$after_refusal")" != "$(jq -S . <<<"$before_refusal")" ]]; then
+        fail 'ordinary rebuild changed the live topology snapshot before refusing'
+    fi
+}
+
+prepare_network_only() {
+    local instances
+    local networks
+    local resource
+
+    instances=$(incus --project "$incus_project" list "$incus_remote:" --format json) \
+        || fail 'unable to inventory the live topology snapshot before network-only recovery'
+    jq -e '[.[] | select(
+        .name == "orbit-e2e-live-topology-snapshot-gateway-next"
+        or .name == "orbit-e2e-live-topology-snapshot-app-dev-next"
+        or .name == "orbit-e2e-live-topology-snapshot-app-prod-next"
+    )] | length == 0' <<<"$instances" >/dev/null \
+        || fail 'a promotion copy blocks the network-only proof setup'
+    for resource in \
+        orbit-e2e-live-topology-snapshot-gateway \
+        orbit-e2e-live-topology-snapshot-app-dev \
+        orbit-e2e-live-topology-snapshot-app-prod; do
+        jq -e --arg resource "$resource" '
+            [.[] | select(.name == $resource)]
+            | length == 1
+                and .[0].config["user.orbit.e2e.owner"] == "orbit-e2e"
+                and (.[0].config["user.orbit.e2e.issue"] // "") == ""
+        ' <<<"$instances" >/dev/null \
+            || fail "the network-only proof cannot remove unowned or ambiguous instance $resource"
+        incus --project "$incus_project" delete "$incus_remote:$resource" --force \
+            || fail "unable to remove exact proof instance $resource"
+    done
+
+    instances=$(incus --project "$incus_project" list "$incus_remote:" --format json) \
+        || fail 'unable to verify the network-only instance boundary'
+    jq -e '[.[] | select(.name | startswith("orbit-e2e-live-topology-snapshot-"))] | length == 0' \
+        <<<"$instances" >/dev/null \
+        || fail 'an exact live topology snapshot instance remains after network-only proof setup'
+    networks=$(incus --project "$incus_project" network list "$incus_remote:" --format json) \
+        || fail 'unable to verify the network-only network boundary'
+    jq -e '[.[] | select(.name == "oe-l-topo-snap")]
+        | length == 1
+            and .[0].config["user.orbit.e2e.owner"] == "orbit-e2e"
+            and (.[0].used_by // []) == []' <<<"$networks" >/dev/null \
+        || fail 'the exact owned live topology snapshot network is not retained without users'
+}
+
+retired_topology_snapshot_present() {
+    local retired_instances
+    local retired_networks
+    local retired_recovery=$validate/.e2e/standby/recovery.json
+    local retired_state=0
+
+    if [[ -e "$validate/.e2e/standby/promoted.json" \
+        || -e "$validate/.e2e/standby/corrupt.json" ]] \
+        || compgen -G "$validate/.e2e/standby/generations/*.json" >/dev/null; then
+        retired_state=1
+    fi
+    if [[ -L "$retired_recovery" ]]; then
+        retired_state=1
+    elif [[ -e "$retired_recovery" ]] \
+        && { [[ ! -f "$retired_recovery" ]] \
+            || ! jq -e '.phase == "construction_verified"' "$retired_recovery" >/dev/null 2>&1; }; then
+        retired_state=1
+    fi
+    retired_instances=$(incus --project "$incus_project" list "$incus_remote:" --format json \
+        | jq '[.[] | select(.name | startswith("orbit-e2e-live-standby-"))] | length') \
+        || fail 'unable to count retired live topology snapshot instances'
+    retired_networks=$(incus --project "$incus_project" network list "$incus_remote:" --format json \
+        | jq '[.[] | select(.name == "oe-live-standby")] | length') \
+        || fail 'unable to count the retired live topology snapshot network'
+
+    [[ "$retired_state" == 1 || "$retired_instances" != 0 || "$retired_networks" != 0 ]]
+}
+
+recovery_record_has_retired_identity() {
+    [[ -f "$recovery_record" ]] || return 1
+
+    jq -e '
+        [(.inventory.instances // {} | keys[]), (.inventory.network.name // empty)] as $resources
+        | ($resources | length) > 0
+            and all($resources[];
+                . == "orbit-e2e-live-standby-gateway"
+                or . == "orbit-e2e-live-standby-app-dev"
+                or . == "orbit-e2e-live-standby-app-prod"
+                or . == "orbit-e2e-live-standby-gateway-next"
+                or . == "orbit-e2e-live-standby-app-dev-next"
+                or . == "orbit-e2e-live-standby-app-prod-next"
+                or . == "oe-live-standby"
+            )
+    ' "$recovery_record" >/dev/null
+}
+
+migrate_retired_topology_snapshot() {
+    local retired_migration_sha
+
+    if retired_topology_snapshot_present; then
+        log "migrating the retired live topology snapshot at $candidate (cold build, several minutes)"
+        migration=$(harness topology-snapshot recover-legacy "--main-sha=$candidate") || {
+            printf '%s\n' "$migration" >&2
+            fail "retired live topology snapshot migration at $candidate failed"
+        }
+    fi
+
+    if recovery_record_has_retired_identity; then
+        retired_migration_sha=$(jq -er '.main_sha | strings' "$recovery_record") \
+            || fail 'the retired topology snapshot migration SHA is invalid'
+        if [[ ! "$retired_migration_sha" =~ ^[0-9a-f]{40}$ ]]; then
+            fail 'the retired topology snapshot migration SHA is invalid'
+        fi
+        log 'inspecting the retired-to-current topology snapshot migration'
+        (cd "$validate/apps/e2e" \
+            && ORBIT_LIVE_RETIRED_MIGRATION_SHA="$retired_migration_sha" \
+                vendor/bin/pest --no-tia --compact --colors=never \
+            --group=incus-live-retired-migration tests/Live/LegacyTopologySnapshotRecoveryAcceptanceTest.php) \
+            || fail 'the retired topology snapshot migration was not proven'
+    fi
 }
 
 # A stale attempt of the suite's own issue blocks its first assertion.
@@ -178,28 +368,6 @@ if [[ -n "$stale" ]]; then
     harness topology release "$issue" "--worktree=$feature_worktree" >/dev/null
 fi
 
-# The clone is its own primary: its <clone>/.e2e/standby/promoted.json names its own standby generation.
-standby_state=missing
-if standby_status=$(harness standby status); then
-    standby_state=$(jq -r '.state // "missing"' <<<"$standby_status")
-fi
-if [[ "$standby_state" == promoted ]]; then
-    log "refreshing the live standby to $candidate"
-    refresh=$(harness standby refresh "--main-sha=$candidate") || {
-        printf '%s\n' "$refresh" >&2
-        fail "standby refresh to $candidate failed"
-    }
-else
-    # No usable generation: build the clone's own standby from the base image.
-    # This is the first run after the clone stopped sharing the primary's standby.
-    log "the clone's live standby is $standby_state; rebuilding it at $candidate (cold build, several minutes)"
-    refresh=$(harness standby rebuild "--main-sha=$candidate") || {
-        printf '%s\n' "$refresh" >&2
-        fail "standby rebuild to $candidate failed"
-    }
-fi
-log "standby: $(jq -r '.state' <<<"$refresh") ($(jq -r '.generation_id' <<<"$refresh"))"
-
 export ORBIT_LIVE_INCUS=1
 export ORBIT_LIVE_PROFILE=$profile
 export ORBIT_LIVE_ISSUE=$issue
@@ -208,11 +376,132 @@ export ORBIT_LIVE_FEATURE_WORKTREE=$feature_worktree
 export ORBIT_LIVE_CANDIDATE_SHA=$candidate
 export ORBIT_LIVE_PROOF_PLAN=$validate/$plan
 
+recovery_record=$validate/.e2e/topology-snapshot/recovery.json
+if [[ -f "$recovery_record" ]]; then
+    retained_phase=$(jq -er '.phase | strings' "$recovery_record") \
+        || fail 'the retained legacy recovery phase is invalid'
+    if [[ "$retained_phase" != construction_verified ]]; then
+        retained_sha=$(jq -er '.main_sha | strings' "$recovery_record") \
+            || fail 'the retained legacy recovery SHA is invalid'
+        if [[ ! "$retained_sha" =~ ^[0-9a-f]{40}$ ]]; then
+            fail 'the retained legacy recovery SHA is invalid'
+        fi
+        if [[ "$retained_sha" != "$candidate" ]]; then
+            log "checking out retained legacy recovery SHA $retained_sha"
+            checkout_validation_sha "$retained_sha"
+        fi
+        log "resuming retained legacy recovery at its recorded SHA $retained_sha"
+        retained_refresh=$(harness topology-snapshot recover-legacy "--main-sha=$retained_sha") || {
+            printf '%s\n' "$retained_refresh" >&2
+            fail "retained legacy topology snapshot recovery at $retained_sha failed"
+        }
+        if [[ "$retained_sha" != "$candidate" ]]; then
+            log "restoring candidate SHA $candidate after retained recovery"
+            checkout_validation_sha "$candidate"
+        fi
+    fi
+fi
+
+migrate_retired_topology_snapshot
+
+# The clone is its own primary: its <clone>/.e2e/topology-snapshot/promoted.json names
+# only its live topology snapshot generation. Create one when this is a fresh clone, then
+# exercise the explicit schema-4/5 recovery on every proof run.
+primary_before=$(primary_inventory) || fail 'unable to inventory the primary topology snapshot before live recovery'
+set +e
+topology_snapshot_status=$(harness topology-snapshot status)
+topology_snapshot_status_code=$?
+set -e
+topology_snapshot_state=$(jq -r '.state // "invalid"' <<<"$topology_snapshot_status") \
+    || fail 'topology snapshot status did not return JSON'
+if [[ "$topology_snapshot_state" == missing && $topology_snapshot_status_code -eq 0 ]]; then
+    log "building the clone's missing live topology snapshot at $candidate (cold build, several minutes)"
+    set +e
+    initial=$(harness topology-snapshot rebuild "--main-sha=$candidate")
+    initial_status=$?
+    set -e
+    if ((initial_status != 0)); then
+        if ! jq -e '.error | contains("recover-legacy")' <<<"$initial" >/dev/null; then
+            printf '%s\n' "$initial" >&2
+            fail "initial topology snapshot build at $candidate failed"
+        fi
+        assert_rebuild_refusal "$initial" "$topology_snapshot_status"
+        log "resuming legacy topology snapshot recovery at $candidate (cold build, several minutes)"
+        refresh=$(harness topology-snapshot recover-legacy "--main-sha=$candidate") || {
+            printf '%s\n' "$refresh" >&2
+            fail "legacy topology snapshot recovery at $candidate failed"
+        }
+    fi
+    topology_snapshot_status=$(harness topology-snapshot status) || fail 'the initial live topology snapshot is unavailable'
+    topology_snapshot_state=$(jq -r '.state' <<<"$topology_snapshot_status")
+elif [[ "$topology_snapshot_state" != promoted && "$topology_snapshot_state" != stale ]]; then
+    printf '%s\n' "$topology_snapshot_status" >&2
+    fail "the live topology snapshot state $topology_snapshot_state cannot enter legacy recovery"
+fi
+
+topology_snapshot_schema=$(jq -r '.generation.schema // 5' <<<"$topology_snapshot_status")
+if [[ "$topology_snapshot_schema" != 4 && "$topology_snapshot_schema" != 5 ]]; then
+    fail "the live topology snapshot manifest schema $topology_snapshot_schema is not eligible for legacy recovery"
+fi
+
+live_instance_count=$(incus --project "$incus_project" list "$incus_remote:" --format json \
+    | jq '[.[] | select(.name | startswith("orbit-e2e-live-topology-snapshot-"))] | length') \
+    || fail 'unable to count exact live topology snapshot instances'
+live_network_count=$(incus --project "$incus_project" network list "$incus_remote:" --format json \
+    | jq '[.[] | select(.name == "oe-l-topo-snap")] | length') \
+    || fail 'unable to count the exact live topology snapshot network'
+if [[ "$live_instance_count" == 0 && "$live_network_count" == 1 ]]; then
+    log "normalizing a retained network-only live topology snapshot at $candidate (cold build, several minutes)"
+    refresh=$(harness topology-snapshot recover-legacy "--main-sha=$candidate") || {
+        printf '%s\n' "$refresh" >&2
+        fail "retained network-only topology snapshot recovery at $candidate failed"
+    }
+    topology_snapshot_status=$(harness topology-snapshot status) || fail 'the normalized live topology snapshot is unavailable'
+fi
+
+log 'proving ordinary rebuild refuses the present live topology snapshot before mutation'
+if refusal=$(harness topology-snapshot rebuild "--main-sha=$candidate"); then
+    printf '%s\n' "$refusal" >&2
+    fail 'ordinary rebuild accepted present live topology snapshot resources'
+fi
+assert_rebuild_refusal "$refusal" "$topology_snapshot_status"
+
+log 'retaining the network while removing exact proof VMs'
+prepare_network_only
+log 'writing a network-only retained recovery record'
+(cd "$validate/apps/e2e" && vendor/bin/pest --no-tia --compact --colors=never \
+    --group=incus-live-network-record tests/Live/LegacyTopologySnapshotRecoveryAcceptanceTest.php) \
+    || fail 'the network-only retained recovery record was not written'
+jq -e '.phase == "authorized"
+    and (.inventory.instances | type == "array" and length == 0)
+    and (.inventory.snapshots | type == "array" and length == 0)' \
+    "$validate/.e2e/topology-snapshot/recovery.json" >/dev/null \
+    || fail 'the retained network-only recovery record is not exact'
+
+log "resuming the network-only recovery in a fresh process at $candidate (cold build, several minutes)"
+refresh=$(harness topology-snapshot recover-legacy "--main-sha=$candidate") || {
+    printf '%s\n' "$refresh" >&2
+    fail "network-only legacy topology snapshot recovery at $candidate failed"
+}
+jq -e '.phase == "construction_verified"
+    and (.inventory.instances | type == "array" and length == 0)
+    and (.inventory.snapshots | type == "array" and length == 0)
+    and any(.history[]; .phase == "resumed")' \
+    "$validate/.e2e/topology-snapshot/recovery.json" >/dev/null \
+    || fail 'the fresh process did not resume and complete the network-only recovery'
+log "topology-snapshot: $(jq -r '.state' <<<"$refresh") ($(jq -r '.generation_id' <<<"$refresh"))"
+primary_after=$(primary_inventory) || fail 'unable to inventory the primary topology snapshot after live recovery'
+if [[ "$(jq -S . <<<"$primary_after")" != "$(jq -S . <<<"$primary_before")" ]]; then
+    fail 'legacy recovery changed the primary topology snapshot inventory'
+fi
+
+remove_guest_gateway_env
 log 'running the lifecycle suite'
 started=$SECONDS
 output=$(mktemp -t orbit-e2e-live.XXXXXX.log)
 set +e
 (cd "$validate/apps/e2e" && vendor/bin/pest --no-tia --compact --colors=never --group=incus-live \
+    tests/Live/LegacyTopologySnapshotRecoveryAcceptanceTest.php \
     tests/Live/TopologyLedLifecycleAcceptanceTest.php) 2>&1 | tee "$output" >&2
 status=${PIPESTATUS[0]}
 set -e

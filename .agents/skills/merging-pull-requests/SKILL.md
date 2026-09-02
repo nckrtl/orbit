@@ -20,12 +20,13 @@ gates are satisfied.
    `gh pr merge <n> --merge --match-head-commit <sha>` and verify the merge
    commit on `origin/main`. A concurrent push must make the command fail closed.
 3. **Promote or refresh.** For Incus proof, run
-   `bin/e2e-standby promote <ISSUE>`. If promotion is invalid because the proof
-   plan mutates state or `main` differs, run `bin/e2e-standby refresh` instead.
-   For a harness change, refresh the primary standby with the merge SHA.
+   `bin/e2e-topology-snapshot promote <ISSUE>`. If promotion is invalid because
+   the proof plan mutates state or `main` differs, run
+   `bin/e2e-topology-snapshot refresh` instead. For a harness change, refresh
+   the primary topology snapshot with the merge SHA.
 4. **Clean repository resources.** Run
    `bin/worktree-remove <ISSUE> <slug>`, then verify topology, worktree, and local
    branch cleanup.
 
-Run each mutation as a bounded command and fail closed. Do not report success
-from exit status alone; verify GitHub, `origin/main`, standby identity, and cleanup state directly.
+Run each mutation as a bounded command and fail closed. Do not report success from
+exit status alone; verify GitHub, `origin/main`, topology snapshot identity, and cleanup state directly.

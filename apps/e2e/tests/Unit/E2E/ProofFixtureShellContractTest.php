@@ -489,7 +489,7 @@ it('passes the exact NCK-116 action name through the TERM trap', function () {
     expect($result->getExitCode())->toBe(143, $result->getErrorOutput());
 });
 
-it('preserves the historical NCK-73 proof semantics', function () {
+it('preserves the current NCK-73 proof semantics', function () {
     $repositoryRoot = dirname(__DIR__, 5);
     $plan = json_decode(
         (string) file_get_contents($repositoryRoot.'/proofs/NCK-73.json'),
@@ -516,9 +516,8 @@ it('preserves the historical NCK-73 proof semantics', function () {
         ->and($plan['acceptance'][0]['argv'])
         ->toContain('app-prod=desired/active/role_default')
         ->and($library)
-        ->not
         ->toContain('$node["wireguard_ip"]')
-        ->toContain('$node["wireguard_address"]');
+        ->not->toContain('$node["wireguard_address"]');
 });
 
 it('labels representative evidence and invokes the actual NCK-104 helper boundary', function () {

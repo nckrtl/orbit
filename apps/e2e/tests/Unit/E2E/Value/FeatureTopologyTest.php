@@ -9,8 +9,8 @@ use App\E2E\Value\IncusInstance;
 use App\E2E\Value\LaravelRelease;
 use App\E2E\Value\MountPath;
 use App\E2E\Value\SourceState;
-use App\E2E\Value\StandbyGeneration;
 use App\E2E\Value\TopologyProfile;
+use App\E2E\Value\TopologySnapshotGeneration;
 use App\E2E\Value\TopologyTarget;
 use App\E2E\Value\VerificationReport;
 
@@ -27,7 +27,7 @@ function mountedTopologyFixture(bool $mounted = true, ?array $mounts = null): Fe
     return new FeatureTopology(
         $target,
         AttemptPurpose::Discovery,
-        new StandbyGeneration(
+        new TopologySnapshotGeneration(
             'g1',
             str_repeat('a', 40),
             ['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod'],

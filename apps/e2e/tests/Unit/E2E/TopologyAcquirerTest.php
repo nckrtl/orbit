@@ -9,17 +9,17 @@ use App\E2E\IncusHost;
 use App\E2E\IncusNetworkLifecycle;
 use App\E2E\IssueState;
 use App\E2E\PreparedStateFingerprint;
-use App\E2E\StandbyManifestStore;
 use App\E2E\State\AtomicJsonStore;
 use App\E2E\State\StatePaths;
 use App\E2E\TopologyAcquirer;
+use App\E2E\TopologySnapshotManifestStore;
 use App\E2E\TopologyVerifier;
 use App\E2E\Value\LaravelRelease;
 use App\E2E\Value\OperationId;
-use App\E2E\Value\StandbyGeneration;
-use App\E2E\Value\StandbyIdentity;
 use App\E2E\Value\TopologyProfile;
 use App\E2E\Value\TopologyRequest;
+use App\E2E\Value\TopologySnapshotGeneration;
+use App\E2E\Value\TopologySnapshotIdentity;
 use App\E2E\WorktreeSynchronizer;
 use Illuminate\Container\Container;
 use Illuminate\Process\Factory as ProcessFactory;
@@ -70,9 +70,9 @@ function removeLegacyAcquisitionWorktree(array $fixture): void
     ]);
 }
 
-function legacyAcquisitionGeneration(): StandbyGeneration
+function legacyAcquisitionGeneration(): TopologySnapshotGeneration
 {
-    return new StandbyGeneration(
+    return new TopologySnapshotGeneration(
         'legacy-generation',
         str_repeat('a', 40),
         [
@@ -91,14 +91,14 @@ function legacyAcquisitionGeneration(): StandbyGeneration
         TopologyProfile::ROLES,
         TopologyProfile::CHECKOUT_ROLES,
         topologyAssignments: null,
-        manifestSchema: StandbyGeneration::LEGACY_SCHEMA,
+        manifestSchema: TopologySnapshotGeneration::LEGACY_SCHEMA,
     );
 }
 
 function topologyAcquirerWithLegacyGeneration(
     string $repositoryRoot,
     StatePaths $paths,
-    StandbyManifestStore $manifests,
+    TopologySnapshotManifestStore $manifests,
 ): TopologyAcquirer {
     $host = new IncusHost(pool: 'orbit-e2e');
     $operation = new OperationId(str_repeat('f', 32));
@@ -114,7 +114,7 @@ function topologyAcquirerWithLegacyGeneration(
         new HostCapacity($host, 24),
         $paths,
         $operation,
-        StandbyIdentity::primary(),
+        TopologySnapshotIdentity::primary(),
         $repositoryRoot,
         fn () => attemptId(),
     );
@@ -126,7 +126,7 @@ it('refuses acquisition from a schema 4 generation before creating an attempt', 
     try {
         $paths = new StatePaths(temporaryPath('orbit-legacy-acquisition-state-', 4));
         $state = new AtomicJsonStore($paths);
-        $manifests = new StandbyManifestStore($state, $paths, new IncusHost(pool: 'orbit-e2e'));
+        $manifests = new TopologySnapshotManifestStore($state, $paths, new IncusHost(pool: 'orbit-e2e'));
         $manifests->promote(legacyAcquisitionGeneration());
         $request = new TopologyRequest('ORB-4', $fixture['worktree']);
 

@@ -83,13 +83,13 @@ final readonly class RetirementInventory
         return hash('sha256', json_encode($this->toArray(), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
     }
 
-    /** The standby network or VMs of any checkout that owns one; never a retirement target. */
-    private static function isStandbyResource(string $identity): bool
+    /** The topology snapshot network or VMs of any checkout that owns one; never a retirement target. */
+    private static function isTopologySnapshotResource(string $identity): bool
     {
         return array_any(
-            StandbyIdentity::known(),
-            fn ($standby) => $identity === $standby->network()
-            || str_starts_with($identity, rtrim($standby->instancePrefix(), '-')),
+            [...TopologySnapshotIdentity::known(), ...TopologySnapshotIdentity::retiredKnown()],
+            fn ($topologySnapshot) => $identity === $topologySnapshot->network()
+            || str_starts_with($identity, rtrim($topologySnapshot->instancePrefix(), '-')),
         );
     }
 
@@ -103,7 +103,7 @@ final readonly class RetirementInventory
         }
         if (
             in_array($kind, ['pools', 'base_images', 'new_namespace', 'evidence'], true)
-            || self::isStandbyResource($identity)
+            || self::isTopologySnapshotResource($identity)
             || preg_match('/\Aoe-[a-f0-9]{12}\z/i', $identity) === 1
             || preg_match(
                 '/\Aorbit-e2e-[a-z][a-z0-9]{1,9}-[1-9][0-9]{0,8}(?:-[0-9a-f]{8})?-(?:gateway|app-dev|app-prod)(?:\/|\z)/i',

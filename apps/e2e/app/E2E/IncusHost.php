@@ -167,6 +167,7 @@ final class IncusHost implements GuestTransport
                     $name,
                     $this->metadata($resource),
                     $this->configuration($resource),
+                    $this->usedBy($resource),
                 );
             }
         }
@@ -1395,7 +1396,7 @@ final class IncusHost implements GuestTransport
 
     /**
      * Delete one orphaned harness network. The name must carry a harness prefix,
-     * must not be the standby network, and must still have no users at deletion
+     * must not be the topology snapshot network, and must still have no users at deletion
      * time; legacy harness networks carry no ownership metadata, so the prefix
      * is the ownership rule here.
      */

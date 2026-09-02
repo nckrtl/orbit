@@ -109,11 +109,11 @@ it('binds review and merge to one exact remote head', function () use ($read): v
     expect($merge)
         ->toContain('deterministic closeout')
         ->toContain('gh pr merge <n> --merge --match-head-commit <sha>')
-        ->toContain('bin/e2e-standby promote <ISSUE>')
-        ->toContain('bin/e2e-standby refresh')
+        ->toContain('bin/e2e-topology-snapshot promote <ISSUE>')
+        ->toContain('bin/e2e-topology-snapshot refresh')
         ->toContain('bin/worktree-remove <ISSUE> <slug>')
         ->toContain('verify GitHub, `origin/main`')
-        ->toContain('standby identity, and cleanup state directly');
+        ->toContain('topology snapshot identity, and cleanup state directly');
 });
 
 it('keeps issue creation current, atomic, and proof feasible', function () use ($read): void {

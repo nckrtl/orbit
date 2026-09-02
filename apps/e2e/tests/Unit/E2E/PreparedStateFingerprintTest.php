@@ -239,7 +239,7 @@ describe('PreparedStateFingerprint', function (): void {
                 'packages/php-sdk/src/Requests/Instances/CreateInstanceRequest.php',
                 'packages/php-sdk/src/Requests/Nodes/ShowNodeRequest.php',
                 'packages/php-sdk/src/Requests/Workspaces/CreateWorkspaceRequest.php',
-                // The standby carries a converged Metrics role, so anything that decides the
+                // The topology snapshot carries a converged Metrics role, so anything that decides the
                 // bytes on those guests is prepared state: renderers, the values they render
                 // from, and the stores those values live in.
                 'apps/gateway/app/Infrastructure/Metrics/PrometheusConfigRenderer.php',
@@ -260,8 +260,8 @@ describe('PreparedStateFingerprint', function (): void {
                 'apps/gateway/app/Domain/Metrics/MetricsGatewayResolver.php',
             )
             ->not->toContain(
-                'apps/e2e/app/E2E/StandbyBuilder.php',
-                'apps/e2e/app/E2E/StandbyRefresher.php',
+                'apps/e2e/app/E2E/TopologySnapshotBuilder.php',
+                'apps/e2e/app/E2E/TopologySnapshotRefresher.php',
                 'apps/e2e/app/E2E/TopologyAcquirer.php',
                 'apps/e2e/app/E2E/TopologyVerifier.php',
                 'apps/e2e/resources/guest/verify-topology.sh',

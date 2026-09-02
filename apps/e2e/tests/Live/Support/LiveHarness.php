@@ -157,7 +157,7 @@ final class LiveHarness
     }
 
     /**
-     * Move the main checkout and its `main` branch together: the standby
+     * Move the main checkout and its `main` branch together: the topology snapshot
      * refresher keys off HEAD while the acquirer fingerprints the `main` ref.
      */
     public static function checkoutMain(string $worktree, string $sha): void
