@@ -3,6 +3,11 @@ source /var/lib/orbit-e2e/proof/lib.sh
 
 mode=${1-}
 
+start_gateway() {
+  sudo systemctl reset-failed php8.5-fpm
+  sudo systemctl start php8.5-fpm
+}
+
 set_all_users() {
   local user=$1
 
@@ -28,7 +33,7 @@ snapshot_and_corrupt() {
   [[ ! -e "$snapshot" ]] || fail "snapshot already exists for $label"
 
   sudo systemctl stop php8.5-fpm
-  trap 'sudo systemctl start php8.5-fpm' EXIT
+  trap start_gateway EXIT
   php -r '$pdo = new PDO("sqlite:".$argv[1]); $pdo->exec("pragma wal_checkpoint(truncate)");' -- "$NCK121_DB"
   cp --preserve=mode,timestamps -- "$NCK121_DB" "$snapshot"
   php -r '
@@ -48,7 +53,7 @@ snapshot_and_corrupt() {
     }
     $pdo->commit();
   ' -- "$NCK121_DB" "$user"
-  sudo systemctl start php8.5-fpm
+  start_gateway
   trap - EXIT
 
   echo "database-fixture: snapshotted $label and corrupted active Metrics identity to [$user]"
@@ -63,12 +68,12 @@ restore_snapshot() {
   [[ -f "$snapshot" ]] || fail "snapshot is missing for $label"
 
   sudo systemctl stop php8.5-fpm
-  trap 'sudo systemctl start php8.5-fpm' EXIT
+  trap start_gateway EXIT
   rm -f -- "${NCK121_DB}-wal" "${NCK121_DB}-shm" "$candidate"
   cp --preserve=mode,timestamps -- "$snapshot" "$candidate"
   mv -f -- "$candidate" "$NCK121_DB"
   cmp -s -- "$snapshot" "$NCK121_DB" || fail "database snapshot restore differs for $label"
-  sudo systemctl start php8.5-fpm
+  start_gateway
   trap - EXIT
   rm -f -- "$snapshot"
 
