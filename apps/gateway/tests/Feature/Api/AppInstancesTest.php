@@ -129,7 +129,8 @@ it('creates an active AppInstance with immutable placement and inherited root', 
         ->assertJsonPath('data.checkout_path', '/srv/orbit/apps/acme/dev')
         ->assertJsonPath('data.root', null)
         ->assertJsonPath('data.effective_root', 'public')
-        ->assertJsonPath('data.branch', 'dev')
+        ->assertJsonPath('data.selected_branch', 'dev')
+        ->assertJsonMissingPath('data.branch')
         ->assertJsonPath('data.starting_commit', str_repeat('a', 40))
         ->assertJsonPath('data.status', 'active');
 

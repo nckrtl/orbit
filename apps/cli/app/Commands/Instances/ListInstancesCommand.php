@@ -52,7 +52,7 @@ final class ListInstancesCommand extends GatewayCommand
                 $instance->name,
                 $instance->environment,
                 $instance->effectiveRoot ?? '-',
-                $instance->branch ?? '-',
+                $instance->selectedBranch ?? '-',
                 $instance->status,
             ];
         }

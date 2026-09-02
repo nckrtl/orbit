@@ -23,7 +23,7 @@ final class AppInstanceData extends Data
         public string $checkoutPath,
         public ?string $root,
         public ?string $effectiveRoot,
-        public ?string $branch,
+        public ?string $selectedBranch,
         public ?string $startingCommit,
         public string $status,
     ) {}
@@ -42,7 +42,7 @@ final class AppInstanceData extends Data
             checkoutPath: $appInstance->checkout_path,
             root: $appInstance->root,
             effectiveRoot: $appInstance->effectiveRoot(),
-            branch: $appInstance->branch,
+            selectedBranch: $appInstance->branch,
             startingCommit: $appInstance->starting_commit,
             status: $appInstance->status->value,
         );

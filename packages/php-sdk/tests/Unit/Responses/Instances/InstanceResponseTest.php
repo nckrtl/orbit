@@ -16,7 +16,7 @@ describe(AppInstanceResponse::class, function (): void {
             'checkout_path' => '/home/orbit/apps/orbit-docs',
             'root' => null,
             'effective_root' => 'public',
-            'branch' => 'main',
+            'selected_branch' => 'main',
             'starting_commit' => 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
             'status' => 'active',
         ], '0198e15c-bf97-7c23-8f1f-61b8fe67a844');
@@ -31,7 +31,7 @@ describe(AppInstanceResponse::class, function (): void {
             'checkout_path' => '/home/orbit/apps/orbit-docs',
             'root' => null,
             'effective_root' => 'public',
-            'branch' => 'main',
+            'selected_branch' => 'main',
             'starting_commit' => 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
             'status' => 'active',
             'request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844',

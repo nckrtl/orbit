@@ -150,7 +150,7 @@ function instance_gateway_data(): array
         'checkout_path' => '/home/orbit/apps/orbit-docs',
         'root' => null,
         'effective_root' => 'public',
-        'branch' => 'main',
+        'selected_branch' => 'main',
         'starting_commit' => 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
         'status' => 'active',
     ];

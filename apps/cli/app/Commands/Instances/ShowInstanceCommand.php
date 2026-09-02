@@ -56,7 +56,7 @@ final class ShowInstanceCommand extends GatewayCommand
         $this->line("Checkout: {$instance->checkoutPath}");
         $this->line('Root override: '.($instance->root ?? '-'));
         $this->line('Effective root: '.($instance->effectiveRoot ?? '-'));
-        $this->line('Branch: '.($instance->branch ?? '-'));
+        $this->line('Branch: '.($instance->selectedBranch ?? '-'));
         $this->line('Starting commit: '.($instance->startingCommit ?? '-'));
 
         $this->line("Request ID: {$instance->requestId}");

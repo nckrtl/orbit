@@ -232,7 +232,7 @@ function instance_payload(): array
         'checkout_path' => '/home/orbit/apps/orbit-docs/dev',
         'root' => null,
         'effective_root' => 'public',
-        'branch' => 'dev',
+        'selected_branch' => 'dev',
         'starting_commit' => str_repeat('a', times: 40),
         'status' => 'active',
     ];
