@@ -95,6 +95,8 @@ it('migrates the retired topology snapshot before handling the current identity'
     $source = file_get_contents($wrapper);
     $migration = strpos($source, 'migrate_retired_topology_snapshot');
     $currentStatus = strpos($source, 'topology_snapshot_status=$(harness topology-snapshot status)');
+    preg_match('/retired_topology_snapshot_present\(\) \{(?<body>.*?)\n\}/s', $source, $matches);
+    $presenceCheck = $matches['body'] ?? '';
 
     expect($source)
         ->toContain(
@@ -107,7 +109,12 @@ it('migrates the retired topology snapshot before handling the current identity'
         )
         ->and($migration)
         ->toBeInt()
-        ->toBeLessThan($currentStatus);
+        ->toBeLessThan($currentStatus)
+        ->and($presenceCheck)
+        ->toContain(
+            '.e2e/standby/recovery.json',
+            'construction_verified',
+        );
 });
 
 it('inspects a retired migration at the SHA retained by its recovery evidence', function () use ($wrapper): void {

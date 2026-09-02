@@ -24,7 +24,7 @@ beforeEach(function (): void {
     Process::fake(['*' => Process::result('[]')]);
 });
 
-/** @return array{TopologySnapshotRecoveryResolver, AtomicJsonStore} */
+/** @return array{TopologySnapshotRecoveryResolver, AtomicJsonStore, StatePaths} */
 function recoveryResolverFixture(): array
 {
     $paths = new StatePaths(temporaryPath('orbit-recovery-resolver-', 6));
@@ -42,6 +42,7 @@ function recoveryResolverFixture(): array
             TopologySnapshotIdentity::primary(),
         ),
         $state,
+        $paths,
     ];
 }
 
@@ -127,6 +128,33 @@ describe('TopologySnapshotRecoveryResolver', function (): void {
     it('refuses a pre-rename recovery journal that must be completed with its original code', function (): void {
         [$resolver, $state] = recoveryResolverFixture();
         $state->write('standby/recovery.json', ['phase' => 'authorized']);
+
+        expect(fn () => $resolver->resolve())
+            ->toThrow(RuntimeException::class, 'pre-rename recovery journal');
+    });
+
+    it('accepts completed pre-rename recovery evidence for retired migration', function (): void {
+        [$resolver, $state] = recoveryResolverFixture();
+        $state->write('standby/recovery.json', ['phase' => 'construction_verified']);
+        $state->write('standby/promoted.json', ['schema' => 5]);
+
+        expect($resolver->resolve()->source)->toBe('retired');
+    });
+
+    it('refuses malformed pre-rename recovery evidence', function (): void {
+        [$resolver, , $paths] = recoveryResolverFixture();
+        file_put_contents($paths->ensureParent('standby/recovery.json'), '{');
+
+        expect(fn () => $resolver->resolve())
+            ->toThrow(RuntimeException::class, 'pre-rename recovery journal');
+    });
+
+    it('refuses a symbolic link as pre-rename recovery evidence', function (): void {
+        [$resolver, $state, $paths] = recoveryResolverFixture();
+        $target = temporaryFile('orbit-retired-recovery-');
+        file_put_contents($target, json_encode(['phase' => 'construction_verified']));
+        $state->write('standby/promoted.json', ['schema' => 5]);
+        symlink($target, $paths->root().'/standby/recovery.json');
 
         expect(fn () => $resolver->resolve())
             ->toThrow(RuntimeException::class, 'pre-rename recovery journal');

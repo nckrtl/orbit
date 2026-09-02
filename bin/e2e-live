@@ -292,12 +292,19 @@ prepare_network_only() {
 retired_topology_snapshot_present() {
     local retired_instances
     local retired_networks
+    local retired_recovery=$validate/.e2e/standby/recovery.json
     local retired_state=0
 
     if [[ -e "$validate/.e2e/standby/promoted.json" \
-        || -e "$validate/.e2e/standby/corrupt.json" \
-        || -e "$validate/.e2e/standby/recovery.json" ]] \
+        || -e "$validate/.e2e/standby/corrupt.json" ]] \
         || compgen -G "$validate/.e2e/standby/generations/*.json" >/dev/null; then
+        retired_state=1
+    fi
+    if [[ -L "$retired_recovery" ]]; then
+        retired_state=1
+    elif [[ -e "$retired_recovery" ]] \
+        && { [[ ! -f "$retired_recovery" ]] \
+            || ! jq -e '.phase == "construction_verified"' "$retired_recovery" >/dev/null 2>&1; }; then
         retired_state=1
     fi
     retired_instances=$(incus --project "$incus_project" list "$incus_remote:" --format json \

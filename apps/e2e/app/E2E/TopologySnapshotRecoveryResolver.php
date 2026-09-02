@@ -11,6 +11,7 @@ use App\E2E\Value\OperationId;
 use App\E2E\Value\TopologyProfile;
 use App\E2E\Value\TopologySnapshotIdentity;
 use App\E2E\Value\TopologySnapshotRecoveryContext;
+use InvalidArgumentException;
 use RuntimeException;
 
 /**
@@ -34,10 +35,17 @@ final readonly class TopologySnapshotRecoveryResolver
     {
         $current = $this->identity;
         $retired = TopologySnapshotIdentity::retiredForNamespace($current->namespace);
-        $retiredRecovery = $this->paths->path('standby/recovery.json');
-        if (file_exists($retiredRecovery) || is_link($retiredRecovery)) {
+        try {
+            $retiredRecovery = $this->state->read('standby/recovery.json');
+        } catch (InvalidArgumentException|RuntimeException $exception) {
             throw new RuntimeException(
-                'A pre-rename recovery journal exists; preserve it and complete that recovery with its original code before migration.',
+                'An invalid pre-rename recovery journal exists; preserve it and inspect it before migration.',
+                previous: $exception,
+            );
+        }
+        if ($retiredRecovery !== null && ($retiredRecovery['phase'] ?? null) !== 'construction_verified') {
+            throw new RuntimeException(
+                'An incomplete pre-rename recovery journal exists; preserve it and complete that recovery with its original code before migration.',
             );
         }
         $retained = $this->state->read('topology-snapshot/recovery.json');

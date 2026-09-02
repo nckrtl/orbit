@@ -424,8 +424,10 @@ The same command migrates the retired pre-rename identity. If only
 `.e2e/standby/` state or the old `*-standby-*` Incus resources exist, the
 resolver validates and removes that exact identity, then cold-builds the
 current topology snapshot. It refuses when current and retired identities
-coexist. It also refuses a retired `.e2e/standby/recovery.json` journal because
-the original code must complete that in-progress transaction first.
+coexist. It also refuses an incomplete or invalid retired
+`.e2e/standby/recovery.json` journal because the original code must complete an
+in-progress transaction first. A completed journal remains as migration
+evidence and does not block the migration.
 
 Before mutation, recovery writes the canonical inventory and its SHA-256 digest
 to `<primary>/.e2e/topology-snapshot/recovery.json`. It retains the promoted and
