@@ -7,21 +7,21 @@ use App\E2E\IncusHost;
 use App\E2E\IncusNetworkLifecycle;
 use App\E2E\LaravelReleaseResolver;
 use App\E2E\PreparedStateFingerprint;
-use App\E2E\StandbyAvailability;
-use App\E2E\StandbyBuilder;
-use App\E2E\StandbyManifestStore;
-use App\E2E\StandbyRefresher;
 use App\E2E\State\AtomicJsonStore;
 use App\E2E\State\OperationLock;
 use App\E2E\State\StatePaths;
 use App\E2E\TopologyConverger;
+use App\E2E\TopologySnapshotAvailability;
+use App\E2E\TopologySnapshotBuilder;
+use App\E2E\TopologySnapshotManifestStore;
+use App\E2E\TopologySnapshotRefresher;
 use App\E2E\TopologyVerifier;
 use App\E2E\Value\LaravelRelease;
 use App\E2E\Value\OperationId;
 use App\E2E\Value\RefreshResult;
-use App\E2E\Value\StandbyGeneration;
-use App\E2E\Value\StandbyIdentity;
 use App\E2E\Value\TopologyProfile;
+use App\E2E\Value\TopologySnapshotGeneration;
+use App\E2E\Value\TopologySnapshotIdentity;
 use App\E2E\Value\TopologyTarget;
 use App\E2E\WorktreeSynchronizer;
 use Illuminate\Container\Container;
@@ -32,15 +32,15 @@ use Illuminate\Support\Facades\Facade;
 use Illuminate\Support\Facades\Process;
 
 /** @mago-expect lint:excessive-parameter-list Explicit fixture dependencies keep this test boundary configurable. */
-function standbyRefresherForPowerTests(
+function topologySnapshotRefresherForPowerTests(
     IncusHost $host,
     ?AtomicJsonStore $state = null,
-    ?StandbyManifestStore $manifests = null,
+    ?TopologySnapshotManifestStore $manifests = null,
     ?StatePaths $paths = null,
     ?string $repositoryRoot = null,
     ?OperationId $operation = null,
     int $refreshLockTimeoutSeconds = 3600,
-): StandbyRefresher {
+): TopologySnapshotRefresher {
     $root = $repositoryRoot ?? dirname(__DIR__, 4);
     $operation ??= new OperationId(str_repeat('a', 32));
     $git = new GitRepository($root);
@@ -49,14 +49,14 @@ function standbyRefresherForPowerTests(
     $verifier = new TopologyVerifier($host, 1, 10_000);
     $paths ??= new StatePaths(temporaryPath('orbit-refresh-', 4));
     $state ??= new AtomicJsonStore($paths);
-    $manifests ??= new StandbyManifestStore($state, $paths, new IncusHost);
+    $manifests ??= new TopologySnapshotManifestStore($state, $paths, new IncusHost);
 
-    return new StandbyRefresher(
+    return new TopologySnapshotRefresher(
         $host,
         new IncusNetworkLifecycle($host),
         new PreparedStateFingerprint($git),
         $manifests,
-        new StandbyBuilder(
+        new TopologySnapshotBuilder(
             $host,
             new IncusNetworkLifecycle($host),
             $synchronizer,
@@ -65,7 +65,7 @@ function standbyRefresherForPowerTests(
             $manifests,
             $state,
             $root,
-            StandbyIdentity::primary(),
+            TopologySnapshotIdentity::primary(),
         ),
         $synchronizer,
         $converger,
@@ -77,29 +77,29 @@ function standbyRefresherForPowerTests(
         $git,
         $root,
         $operation,
-        StandbyIdentity::primary(),
-        new StandbyAvailability($host, StandbyIdentity::primary()),
+        TopologySnapshotIdentity::primary(),
+        new TopologySnapshotAvailability($host, TopologySnapshotIdentity::primary()),
         $refreshLockTimeoutSeconds,
     );
 }
 
 it('uses the injected operation ID for refresh results', function () {
     $operation = new OperationId(str_repeat('e', 32));
-    $result = standbyRefresherForPowerTests(new IncusHost, operation: $operation)
+    $result = topologySnapshotRefresherForPowerTests(new IncusHost, operation: $operation)
         ->request(str_repeat('b', 40));
 
     expect($result->operationId)->toBe($operation->value);
 });
 
 it('waits for the generation mutation lock for the shared pin window', function () {
-    $reflection = new ReflectionClass(StandbyRefresher::class);
+    $reflection = new ReflectionClass(TopologySnapshotRefresher::class);
 
     expect($reflection->getConstant('GENERATION_MUTATION_LOCK_TIMEOUT_SECONDS'))->toBe(3600);
 });
 
-function standbyRestoreGeneration(): \App\E2E\Value\StandbyGeneration
+function topologySnapshotRestoreGeneration(): \App\E2E\Value\TopologySnapshotGeneration
 {
-    return new \App\E2E\Value\StandbyGeneration(
+    return new \App\E2E\Value\TopologySnapshotGeneration(
         'g-'.str_repeat('a', 12),
         str_repeat('b', 40),
         ['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod'],
@@ -116,7 +116,7 @@ function standbyRestoreGeneration(): \App\E2E\Value\StandbyGeneration
     );
 }
 
-function fakeStandbyRestoreProcesses(?int $failRestore = null, bool $failFinalProof = false): void
+function fakeTopologySnapshotRestoreProcesses(?int $failRestore = null, bool $failFinalProof = false): void
 {
     $restores = 0;
     $realProcess = new ProcessFactory;
@@ -146,7 +146,7 @@ function fakeStandbyRestoreProcesses(?int $failRestore = null, bool $failFinalPr
         }
         if (in_array('list', $command, true) && in_array('snapshot', $command, true)) {
             $instance = preg_replace('/\A[^:]+:/', '', $command[5] ?? '');
-            $role = str_replace('orbit-e2e-standby-', '', $instance);
+            $role = str_replace('orbit-e2e-topology-snapshot-', '', $instance);
 
             return Process::result(json_encode([[
                 'name' => 'main-'.$role,
@@ -160,16 +160,16 @@ function fakeStandbyRestoreProcesses(?int $failRestore = null, bool $failFinalPr
             }
             $name = preg_replace('/\A[^:]+:/', '', $command[4] ?? '');
             $names = $name === ''
-                ? array_map(TopologyTarget::standby()->instance(...), TopologyProfile::ROLES)
+                ? array_map(TopologyTarget::topologySnapshot()->instance(...), TopologyProfile::ROLES)
                 : [$name];
 
             return Process::result(json_encode(array_map(static function (string $instance): array {
-                $role = str_replace('orbit-e2e-standby-', '', $instance);
+                $role = str_replace('orbit-e2e-topology-snapshot-', '', $instance);
                 $address = match ($role) {
                     'gateway' => '10',
                     'app-dev' => '11',
                     'app-prod' => '12',
-                    default => throw new RuntimeException('Unknown standby role.'),
+                    default => throw new RuntimeException('Unknown topology snapshot role.'),
                 };
 
                 return [
@@ -181,8 +181,8 @@ function fakeStandbyRestoreProcesses(?int $failRestore = null, bool $failFinalPr
                     'devices' => [
                         'root' => ['pool' => 'orbit-e2e'],
                         'eth0' => [
-                            'network' => 'oe-standby',
-                            'hwaddr' => '00:16:3e:77:ee:5a',
+                            'network' => 'oe-topo-snap',
+                            'hwaddr' => '00:16:3e:a2:a9:9b',
                             'ipv4.address' => '10.232.1.'.$address,
                         ],
                     ],
@@ -194,15 +194,15 @@ function fakeStandbyRestoreProcesses(?int $failRestore = null, bool $failFinalPr
     });
 }
 
-function standbyRestoreFixture(bool $corrupt = true): array
+function topologySnapshotRestoreFixture(bool $corrupt = true): array
 {
     $paths = new StatePaths(temporaryPath('orbit-refresher-', 4));
     $state = new AtomicJsonStore($paths);
-    $manifests = new StandbyManifestStore($state, $paths, new IncusHost);
+    $manifests = new TopologySnapshotManifestStore($state, $paths, new IncusHost);
     if ($corrupt) {
-        $state->write('standby/corrupt.json', ['schema' => 1, 'message' => 'restore required']);
+        $state->write('topology-snapshot/corrupt.json', ['schema' => 1, 'message' => 'restore required']);
     }
-    $manifests->promote(standbyRestoreGeneration());
+    $manifests->promote(topologySnapshotRestoreGeneration());
 
     return [$paths, $state, $manifests];
 }
@@ -241,7 +241,7 @@ function candidateSnapshotVm(array $command): ProcessResult
 {
     $name = preg_replace('/\A[^:]+:/', '', $command[4] ?? '');
     $names = $name === ''
-        ? array_map(TopologyTarget::standby()->instance(...), TopologyProfile::ROLES)
+        ? array_map(TopologyTarget::topologySnapshot()->instance(...), TopologyProfile::ROLES)
         : [$name];
 
     return Process::result(json_encode(array_map(static fn (string $instance): array => [
@@ -297,7 +297,7 @@ function candidateSnapshotDelete(array $command, object $state): ProcessResult
 {
     $instance = preg_replace('/\A[^:]+:/', '', $command[5] ?? '');
     $state->deleted[] = $instance;
-    if ($instance === 'orbit-e2e-standby-gateway' && ! $state->gatewayDeleteFailed) {
+    if ($instance === 'orbit-e2e-topology-snapshot-gateway' && ! $state->gatewayDeleteFailed) {
         $state->gatewayDeleteFailed = true;
 
         return Process::result(errorOutput: 'controlled cleanup failure', exitCode: 1);
@@ -312,7 +312,7 @@ function refreshProcessState(StatePaths $paths, bool $failReadiness = false): ob
 {
     $staleSnapshots = [];
     foreach (TopologyProfile::ROLES as $role) {
-        $staleSnapshots[TopologyTarget::standby()->instance($role)] = 'main-stale-'.$role;
+        $staleSnapshots[TopologyTarget::topologySnapshot()->instance($role)] = 'main-stale-'.$role;
     }
 
     return (object) [
@@ -391,7 +391,7 @@ function refreshProcess(
 
     if (($command[3] ?? null) === 'network' && ($command[4] ?? null) === 'list') {
         return Process::result(json_encode([[
-            'name' => 'oe-standby',
+            'name' => 'oe-topo-snap',
             'config' => [
                 'user.orbit.e2e.owner' => 'orbit-e2e',
                 'ipv4.address' => '10.232.1.1/24',
@@ -404,7 +404,7 @@ function refreshProcess(
 
     if (($command[3] ?? null) === 'snapshot' && ($command[4] ?? null) === 'list') {
         $instance = preg_replace('/\A[^:]+:/', '', $command[5] ?? '');
-        $role = str_replace('orbit-e2e-standby-', '', $instance);
+        $role = str_replace('orbit-e2e-topology-snapshot-', '', $instance);
 
         $snapshots = [[
             'name' => $state->snapshots[$instance] ?? 'main-old-'.$role,
@@ -430,17 +430,17 @@ function refreshProcess(
     if (($command[3] ?? null) === 'list') {
         $name = preg_replace('/\A[^:]+:/', '', $command[4] ?? '');
         $names = $name === ''
-            ? array_map(TopologyTarget::standby()->instance(...), TopologyProfile::ROLES)
+            ? array_map(TopologyTarget::topologySnapshot()->instance(...), TopologyProfile::ROLES)
             : [$name];
 
         return Process::result(json_encode(array_map(static function (string $instance) use ($state): array {
             $running = $state->running[$instance] ?? false;
-            $role = str_replace('orbit-e2e-standby-', '', $instance);
+            $role = str_replace('orbit-e2e-topology-snapshot-', '', $instance);
             $mac = match ($role) {
-                'gateway' => '00:16:3e:77:ee:5a',
-                'app-dev' => '00:16:3e:71:18:e5',
-                'app-prod' => '00:16:3e:a3:2d:6c',
-                default => throw new RuntimeException('Unknown standby role.'),
+                'gateway' => '00:16:3e:a2:a9:9b',
+                'app-dev' => '00:16:3e:0c:79:70',
+                'app-prod' => '00:16:3e:46:25:2d',
+                default => throw new RuntimeException('Unknown topology snapshot role.'),
             };
 
             return [
@@ -452,7 +452,7 @@ function refreshProcess(
                 'devices' => [
                     'root' => ['pool' => 'orbit-e2e'],
                     'eth0' => [
-                        'network' => 'oe-standby',
+                        'network' => 'oe-topo-snap',
                         'hwaddr' => $mac,
                         'ipv4.address' => '10.232.1.'.match ($role) {
                             'gateway' => '10',
@@ -621,7 +621,7 @@ function refreshGuestProcess(array $guestArguments, string $target, object $stat
  * A detached worktree whose second commit changes the prepared state, a promoted
  * old generation, one recorded rollback generation, and one stale manifest.
  *
- * @return array{sourceRoot: string, worktree: string, branch: string, processes: ProcessFactory, oldSha: string, newSha: string, paths: StatePaths, state: AtomicJsonStore, manifests: StandbyManifestStore}
+ * @return array{sourceRoot: string, worktree: string, branch: string, processes: ProcessFactory, oldSha: string, newSha: string, paths: StatePaths, state: AtomicJsonStore, manifests: TopologySnapshotManifestStore}
  */
 function refreshFixture(): array
 {
@@ -653,12 +653,12 @@ function refreshFixture(): array
     $newSha = $git->commit('HEAD');
     $paths = new StatePaths(temporaryPath('orbit-refresh-fixture-state-', 4));
     $state = new AtomicJsonStore($paths);
-    $manifests = new StandbyManifestStore($state, $paths, new IncusHost);
+    $manifests = new TopologySnapshotManifestStore($state, $paths, new IncusHost);
     $generation = static fn (
         string $id,
         string $snapshotPrefix,
         ?string $previous = null,
-    ): StandbyGeneration => new StandbyGeneration(
+    ): TopologySnapshotGeneration => new TopologySnapshotGeneration(
         $id,
         $oldSha,
         [
@@ -695,16 +695,16 @@ function refreshFixture(): array
     ];
 }
 
-/** @param array{manifests: StandbyManifestStore} $fixture */
-function promoteLegacyRefreshGeneration(array $fixture): StandbyGeneration
+/** @param array{manifests: TopologySnapshotManifestStore} $fixture */
+function promoteLegacyRefreshGeneration(array $fixture): TopologySnapshotGeneration
 {
     $current = $fixture['manifests']->promoted();
     expect($current)->not->toBeNull();
     $legacy = $current->toArray();
-    $legacy['schema'] = StandbyGeneration::LEGACY_SCHEMA;
+    $legacy['schema'] = TopologySnapshotGeneration::LEGACY_SCHEMA;
     $legacy['prepared_schema'] = 1;
     unset($legacy['topology']['assignments']);
-    $generation = StandbyGeneration::fromArray($legacy);
+    $generation = TopologySnapshotGeneration::fromArray($legacy);
     $fixture['manifests']->promote($generation);
 
     return $generation;
@@ -755,7 +755,7 @@ function removeRefreshFixture(array $fixture): void
 }
 
 /** @mago-expect lint:cyclomatic-complexity,halstead Test cases share one contract fixture and remain independently asserted. */
-/** The host holds this checkout's standby VMs, but no snapshot the manifest names. */
+/** The host holds this checkout's topology snapshot VMs, but no snapshot the manifest names. */
 function staleManifestProcess(PendingProcess $process, ProcessFactory $real, array &$mutations): ProcessResult
 {
     $command = $process->command;
@@ -785,7 +785,7 @@ function staleManifestProcess(PendingProcess $process, ProcessFactory $real, arr
                 'config' => ['user.orbit.e2e.owner' => 'orbit-e2e'],
                 'devices' => ['root' => ['pool' => 'orbit-e2e']],
             ], array_map(
-                TopologyTarget::standby()->instance(...),
+                TopologyTarget::topologySnapshot()->instance(...),
                 TopologyProfile::ROLES,
             )),
             JSON_THROW_ON_ERROR,
@@ -796,7 +796,7 @@ function staleManifestProcess(PendingProcess $process, ProcessFactory $real, arr
     return Process::result();
 }
 
-describe('StandbyRefresher contracts', function () {
+describe('TopologySnapshotRefresher contracts', function () {
     beforeEach(function () {
         $container = new Container;
         $container->instance(ProcessFactory::class, new ProcessFactory);
@@ -804,17 +804,17 @@ describe('StandbyRefresher contracts', function () {
         Facade::setFacadeApplication($container);
     });
 
-    it('returns terminal failure when the standby refresh lock is held', function () {
+    it('returns terminal failure when the pre-rename refresh lock is held', function () {
         $paths = new StatePaths(temporaryPath('orbit-refresh-lock-', 4));
         $state = new AtomicJsonStore($paths);
-        $manifests = new StandbyManifestStore($state, $paths, new IncusHost);
+        $manifests = new TopologySnapshotManifestStore($state, $paths, new IncusHost);
         $root = dirname(__DIR__, 4);
         $host = new IncusHost(pool: 'orbit-e2e');
         $git = new GitRepository($root);
         $synchronizer = new WorktreeSynchronizer($host, $root, new OperationId(str_repeat('a', 32)));
         $converger = new TopologyConverger($host);
         $verifier = new TopologyVerifier($host, 1, 0);
-        $builder = new StandbyBuilder(
+        $builder = new TopologySnapshotBuilder(
             $host,
             new IncusNetworkLifecycle($host),
             $synchronizer,
@@ -823,14 +823,14 @@ describe('StandbyRefresher contracts', function () {
             $manifests,
             $state,
             $root,
-            StandbyIdentity::primary(),
+            TopologySnapshotIdentity::primary(),
         );
         $requestLock = new OperationLock($paths);
         $holder = new OperationLock($paths);
         $holder->acquire('standby-refresh', new OperationId(str_repeat('a', 32)), timeoutSeconds: 0);
 
         try {
-            $refresher = new StandbyRefresher(
+            $refresher = new TopologySnapshotRefresher(
                 $host,
                 new IncusNetworkLifecycle($host),
                 new PreparedStateFingerprint($git),
@@ -846,8 +846,8 @@ describe('StandbyRefresher contracts', function () {
                 $git,
                 $root,
                 new OperationId(str_repeat('a', 32)),
-                StandbyIdentity::primary(),
-                new StandbyAvailability($host, StandbyIdentity::primary()),
+                TopologySnapshotIdentity::primary(),
+                new TopologySnapshotAvailability($host, TopologySnapshotIdentity::primary()),
                 0,
             );
             $result = $refresher->request(str_repeat('b', 40));
@@ -855,7 +855,7 @@ describe('StandbyRefresher contracts', function () {
             expect($result->state)
                 ->toBe('failed')
                 ->and($result->error)
-                ->toBe('Unable to acquire the standby refresh lock.');
+                ->toBe('Unable to acquire the topology snapshot refresh lock.');
         } finally {
             $holder->release();
         }
@@ -938,7 +938,7 @@ describe('StandbyRefresher contracts', function () {
             $paths = new StatePaths(
                 temporaryPath('orbit-refresh-cold-permission-state-', 4),
             );
-            $result = standbyRefresherForPowerTests(
+            $result = topologySnapshotRefresherForPowerTests(
                 new IncusHost(pool: 'orbit-e2e'),
                 paths: $paths,
                 repositoryRoot: $worktree,
@@ -947,7 +947,7 @@ describe('StandbyRefresher contracts', function () {
             expect($result->state)
                 ->toBe('failed')
                 ->and($result->error)
-                ->toBe('Cold standby construction requires explicit permission.')
+                ->toBe('Cold topology snapshot construction requires explicit permission.')
                 ->and($externalCommands)
                 ->toBeEmpty();
         } finally {
@@ -968,7 +968,7 @@ describe('StandbyRefresher contracts', function () {
                 $fixture['oldSha'],
             ));
 
-            $result = standbyRefresherForPowerTests(
+            $result = topologySnapshotRefresherForPowerTests(
                 new IncusHost(pool: 'orbit-e2e'),
                 $fixture['state'],
                 $fixture['manifests'],
@@ -979,18 +979,18 @@ describe('StandbyRefresher contracts', function () {
 
             expect($result->state)->toBe('promoted');
             expect($processState->events)->toBe([
-                'restore:orbit-e2e-standby-gateway/main-old-gateway',
-                'restore:orbit-e2e-standby-app-dev/main-old-app-dev',
-                'restore:orbit-e2e-standby-app-prod/main-old-app-prod',
-                'start:local:orbit-e2e-standby-gateway',
-                'start:local:orbit-e2e-standby-app-dev',
-                'start:local:orbit-e2e-standby-app-prod',
-                'agent:local:orbit-e2e-standby-gateway',
-                'agent:local:orbit-e2e-standby-app-dev',
-                'agent:local:orbit-e2e-standby-app-prod',
-                'ipv4:local:orbit-e2e-standby-gateway',
-                'ipv4:local:orbit-e2e-standby-app-dev',
-                'ipv4:local:orbit-e2e-standby-app-prod',
+                'restore:orbit-e2e-topology-snapshot-gateway/main-old-gateway',
+                'restore:orbit-e2e-topology-snapshot-app-dev/main-old-app-dev',
+                'restore:orbit-e2e-topology-snapshot-app-prod/main-old-app-prod',
+                'start:local:orbit-e2e-topology-snapshot-gateway',
+                'start:local:orbit-e2e-topology-snapshot-app-dev',
+                'start:local:orbit-e2e-topology-snapshot-app-prod',
+                'agent:local:orbit-e2e-topology-snapshot-gateway',
+                'agent:local:orbit-e2e-topology-snapshot-app-dev',
+                'agent:local:orbit-e2e-topology-snapshot-app-prod',
+                'ipv4:local:orbit-e2e-topology-snapshot-gateway',
+                'ipv4:local:orbit-e2e-topology-snapshot-app-dev',
+                'ipv4:local:orbit-e2e-topology-snapshot-app-prod',
                 'convergence',
                 'readiness',
                 'proof',
@@ -1002,7 +1002,7 @@ describe('StandbyRefresher contracts', function () {
                 ->toBe('old-generation')
                 ->and($processState->pruneLockResults)
                 ->toBe([false, false, false, true, true, true])
-                ->and($fixture['state']->read('standby/generations/stale-generation.json'))
+                ->and($fixture['state']->read('topology-snapshot/generations/stale-generation.json'))
                 ->toBeNull();
         } finally {
             removeRefreshFixture($fixture);
@@ -1032,7 +1032,7 @@ describe('StandbyRefresher contracts', function () {
                 $fixture['oldSha'],
             ));
 
-            $result = standbyRefresherForPowerTests(
+            $result = topologySnapshotRefresherForPowerTests(
                 new IncusHost(pool: 'orbit-e2e'),
                 $fixture['state'],
                 $fixture['manifests'],
@@ -1081,7 +1081,7 @@ describe('StandbyRefresher contracts', function () {
                 $fixture['oldSha'],
             ));
 
-            $result = standbyRefresherForPowerTests(
+            $result = topologySnapshotRefresherForPowerTests(
                 new IncusHost(pool: 'orbit-e2e'),
                 $fixture['state'],
                 $fixture['manifests'],
@@ -1092,21 +1092,21 @@ describe('StandbyRefresher contracts', function () {
             expect($result->state)
                 ->toBe('failed')
                 ->and($result->error)
-                ->toBe('Standby verification failed.')
+                ->toBe('Topology snapshot verification failed.')
                 ->and($result->generationId)
                 ->toBe('old-generation')
                 ->and($fixture['manifests']->promoted()?->toArray())
                 ->toBe($legacy->toArray())
                 ->and($fixture['manifests']->promoted()?->isLegacy())
                 ->toBeTrue()
-                ->and($fixture['state']->read('standby/corrupt.json'))
+                ->and($fixture['state']->read('topology-snapshot/corrupt.json'))
                 ->toBeNull();
         } finally {
             removeRefreshFixture($fixture);
         }
     });
 
-    it('restores the promoted snapshot when the refreshed standby fails verification', function () {
+    it('restores the promoted snapshot when the refreshed topology snapshot fails verification', function () {
         $fixture = refreshFixture();
 
         try {
@@ -1118,7 +1118,7 @@ describe('StandbyRefresher contracts', function () {
                 $fixture['oldSha'],
             ));
 
-            $result = standbyRefresherForPowerTests(
+            $result = topologySnapshotRefresherForPowerTests(
                 new IncusHost(pool: 'orbit-e2e'),
                 $fixture['state'],
                 $fixture['manifests'],
@@ -1130,16 +1130,16 @@ describe('StandbyRefresher contracts', function () {
             expect($result->state)
                 ->toBe('failed')
                 ->and($result->error)
-                ->toBe('Standby verification failed.')
+                ->toBe('Topology snapshot verification failed.')
                 ->and($result->generationId)
                 ->toBe('old-generation')
                 ->and($readiness)
                 ->toBeInt()
                 ->and(array_slice($processState->events, $readiness + 1))
                 ->toBe([
-                    'restore:orbit-e2e-standby-gateway/main-old-gateway',
-                    'restore:orbit-e2e-standby-app-dev/main-old-app-dev',
-                    'restore:orbit-e2e-standby-app-prod/main-old-app-prod',
+                    'restore:orbit-e2e-topology-snapshot-gateway/main-old-gateway',
+                    'restore:orbit-e2e-topology-snapshot-app-dev/main-old-app-dev',
+                    'restore:orbit-e2e-topology-snapshot-app-prod/main-old-app-prod',
                 ])
                 ->and($processState->events)
                 ->not
@@ -1148,7 +1148,7 @@ describe('StandbyRefresher contracts', function () {
                 ->toBe([])
                 ->and($fixture['manifests']->promoted()?->id)
                 ->toBe('old-generation')
-                ->and($fixture['state']->read('standby/corrupt.json'))
+                ->and($fixture['state']->read('topology-snapshot/corrupt.json'))
                 ->toBeNull();
         } finally {
             removeRefreshFixture($fixture);
@@ -1194,8 +1194,8 @@ describe('StandbyRefresher contracts', function () {
             $structural = new PreparedStateFingerprint($git)->forCommit($mainSha);
             $paths = new StatePaths(temporaryPath('orbit-refresh-stopped-', 4));
             $state = new AtomicJsonStore($paths);
-            $manifests = new StandbyManifestStore($state, $paths, new IncusHost);
-            $manifests->promote(new \App\E2E\Value\StandbyGeneration(
+            $manifests = new TopologySnapshotManifestStore($state, $paths, new IncusHost);
+            $manifests->promote(new \App\E2E\Value\TopologySnapshotGeneration(
                 'stopped-test',
                 $mainSha,
                 ['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod'],
@@ -1210,9 +1210,9 @@ describe('StandbyRefresher contracts', function () {
                 $structural->manifest['topology']['roles'],
                 $structural->manifest['topology']['checkout_roles'],
             ));
-            fakeStandbyRestoreProcesses();
+            fakeTopologySnapshotRestoreProcesses();
 
-            $result = standbyRefresherForPowerTests(
+            $result = topologySnapshotRefresherForPowerTests(
                 new IncusHost(pool: 'orbit-e2e'),
                 $state,
                 $manifests,
@@ -1260,7 +1260,7 @@ describe('StandbyRefresher contracts', function () {
         }
     });
 
-    it('requires cold recovery before mutating a promoted standby', function () {
+    it('requires cold recovery before mutating a promoted topology snapshot', function () {
         $sourceRoot = dirname(__DIR__, 4);
         $worktree = temporaryPath('orbit-refresh-cold-', 4);
         $branch = 'cold-test-'.bin2hex(random_bytes(6));
@@ -1319,8 +1319,8 @@ describe('StandbyRefresher contracts', function () {
             $newSha = $git->commit('HEAD');
             $paths = new StatePaths(temporaryPath('orbit-refresh-cold-state-', 4));
             $state = new AtomicJsonStore($paths);
-            $manifests = new StandbyManifestStore($state, $paths, new IncusHost);
-            $generation = new \App\E2E\Value\StandbyGeneration(
+            $manifests = new TopologySnapshotManifestStore($state, $paths, new IncusHost);
+            $generation = new \App\E2E\Value\TopologySnapshotGeneration(
                 'old-generation',
                 $oldSha,
                 ['gateway' => 'main-old-gateway', 'app-dev' => 'main-old-app-dev', 'app-prod' => 'main-old-app-prod'],
@@ -1336,7 +1336,7 @@ describe('StandbyRefresher contracts', function () {
                 $oldStructuralFingerprint->manifest['topology']['checkout_roles'],
             );
             $manifests->promote($generation);
-            $refresher = standbyRefresherForPowerTests(
+            $refresher = topologySnapshotRefresherForPowerTests(
                 new IncusHost(pool: 'orbit-e2e'),
                 $state,
                 $manifests,
@@ -1347,7 +1347,7 @@ describe('StandbyRefresher contracts', function () {
             expect($result->state)
                 ->toBe('failed')
                 ->and($result->error)
-                ->toBe('Cold base changed; recovery-required cold standby rebuild.')
+                ->toBe('Cold base changed; recovery-required cold topology snapshot rebuild.')
                 ->and($manifests->promoted()->toArray())
                 ->toEqual($generation->toArray());
             Process::assertDidntRun(
@@ -1367,7 +1367,7 @@ describe('StandbyRefresher contracts', function () {
         $processState = candidateSnapshotProcessState();
         Process::fake(fn (PendingProcess $process): ProcessResult => candidateSnapshotProcess($process, $processState));
 
-        $refresher = standbyRefresherForPowerTests(new IncusHost(pool: 'orbit-e2e'));
+        $refresher = topologySnapshotRefresherForPowerTests(new IncusHost(pool: 'orbit-e2e'));
         $snapshot = new ReflectionMethod($refresher, 'snapshot');
         $mainSha = str_repeat('a', 40);
         $fingerprint = str_repeat('b', 64);
@@ -1405,7 +1405,7 @@ describe('StandbyRefresher contracts', function () {
             ->and($failure->getMessage())
             ->toContain('candidate create failed', 'controlled cleanup failure')
             ->and($processState->deleted)
-            ->toContain('orbit-e2e-standby-gateway', 'orbit-e2e-standby-app-dev');
+            ->toContain('orbit-e2e-topology-snapshot-gateway', 'orbit-e2e-topology-snapshot-app-dev');
 
         $generation = $snapshot->invoke(
             $refresher,
@@ -1422,9 +1422,9 @@ describe('StandbyRefresher contracts', function () {
             ->toBe(str_repeat('a', 12).'-'.str_repeat('b', 12))
             ->and(array_keys($processState->existingSnapshots))
             ->toEqual([
-                'orbit-e2e-standby-gateway',
-                'orbit-e2e-standby-app-dev',
-                'orbit-e2e-standby-app-prod',
+                'orbit-e2e-topology-snapshot-gateway',
+                'orbit-e2e-topology-snapshot-app-dev',
+                'orbit-e2e-topology-snapshot-app-prod',
             ]);
     });
 
@@ -1467,7 +1467,7 @@ describe('StandbyRefresher contracts', function () {
 
             throw new RuntimeException('Unexpected Incus command: '.implode(' ', $command));
         });
-        $refresher = standbyRefresherForPowerTests(new IncusHost(pool: 'orbit-e2e'));
+        $refresher = topologySnapshotRefresherForPowerTests(new IncusHost(pool: 'orbit-e2e'));
         $snapshot = new ReflectionMethod($refresher, 'snapshot');
         $manifest = [
             'schema' => 2,
@@ -1497,9 +1497,9 @@ describe('StandbyRefresher contracts', function () {
     it('clears the corrupt marker only after an exact restore succeeds', function () {
         $paths = new StatePaths(temporaryPath('orbit-refresher-', 4));
         $state = new AtomicJsonStore($paths);
-        $manifests = new StandbyManifestStore($state, $paths, new IncusHost);
-        $state->write('standby/corrupt.json', ['schema' => 1, 'message' => 'restore required']);
-        $generation = new \App\E2E\Value\StandbyGeneration(
+        $manifests = new TopologySnapshotManifestStore($state, $paths, new IncusHost);
+        $state->write('topology-snapshot/corrupt.json', ['schema' => 1, 'message' => 'restore required']);
+        $generation = new \App\E2E\Value\TopologySnapshotGeneration(
             'g-'.str_repeat('a', 12),
             str_repeat('b', 40),
             ['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod'],
@@ -1521,7 +1521,7 @@ describe('StandbyRefresher contracts', function () {
             assert(is_array($command), 'Incus uses argument arrays.');
             if (in_array('list', $command, true) && in_array('snapshot', $command, true)) {
                 $instance = preg_replace('/\A[^:]+:/', '', $command[5] ?? '');
-                $role = str_replace('orbit-e2e-standby-', '', $instance);
+                $role = str_replace('orbit-e2e-topology-snapshot-', '', $instance);
 
                 return Process::result(json_encode([[
                     'name' => 'main-'.$role,
@@ -1532,7 +1532,7 @@ describe('StandbyRefresher contracts', function () {
             if (in_array('list', $command, true)) {
                 $name = preg_replace('/\A[^:]+:/', '', $command[4] ?? '');
                 $names = $name === ''
-                    ? array_map(TopologyTarget::standby()->instance(...), TopologyProfile::ROLES)
+                    ? array_map(TopologyTarget::topologySnapshot()->instance(...), TopologyProfile::ROLES)
                     : [$name];
 
                 return Process::result(json_encode(array_map(static fn (string $instance): array => [
@@ -1548,7 +1548,7 @@ describe('StandbyRefresher contracts', function () {
             return Process::result();
         });
 
-        $refresher = standbyRefresherForPowerTests(
+        $refresher = topologySnapshotRefresherForPowerTests(
             new IncusHost(pool: 'orbit-e2e'),
             $state,
             $manifests,
@@ -1556,33 +1556,33 @@ describe('StandbyRefresher contracts', function () {
         );
         $refresher->restore();
 
-        expect($state->read('standby/corrupt.json'))->toBeNull();
+        expect($state->read('topology-snapshot/corrupt.json'))->toBeNull();
     });
 
     it('restores every snapshot, proves stopped state, and clears the corrupt marker', function () {
-        [$paths, $state, $manifests] = standbyRestoreFixture();
-        fakeStandbyRestoreProcesses();
-        $refresher = standbyRefresherForPowerTests(
+        [$paths, $state, $manifests] = topologySnapshotRestoreFixture();
+        fakeTopologySnapshotRestoreProcesses();
+        $refresher = topologySnapshotRefresherForPowerTests(
             new IncusHost(pool: 'orbit-e2e'),
             $state,
             $manifests,
             $paths,
         );
-        expect($refresher->restore())->toEqual(standbyRestoreGeneration());
+        expect($refresher->restore())->toEqual(topologySnapshotRestoreGeneration());
         Process::assertRanTimes(
             fn (PendingProcess $p): bool => is_array($p->command) && in_array('restore', $p->command, true),
             3,
         );
-        expect($state->read('standby/corrupt.json'))->toBeNull();
+        expect($state->read('topology-snapshot/corrupt.json'))->toBeNull();
     });
 
     /** @mago-expect lint:cyclomatic-complexity Restore scenario asserts the complete ordered cleanup contract. */
     it('deletes unpromoted candidate snapshots before restoring the promoted generation', function () {
-        [$paths, $state, $manifests] = standbyRestoreFixture();
-        $generation = standbyRestoreGeneration();
+        [$paths, $state, $manifests] = topologySnapshotRestoreFixture();
+        $generation = topologySnapshotRestoreGeneration();
         $manifests->record($generation);
         $orphans = array_fill_keys(array_map(
-            TopologyTarget::standby()->instance(...),
+            TopologyTarget::topologySnapshot()->instance(...),
             TopologyProfile::ROLES,
         ), true);
         $events = [];
@@ -1596,7 +1596,7 @@ describe('StandbyRefresher contracts', function () {
             if (($command[3] ?? null) === 'list') {
                 $name = preg_replace('/\A[^:]+:/', '', (string) ($command[4] ?? ''));
                 $names = $name === ''
-                    ? array_map(TopologyTarget::standby()->instance(...), TopologyProfile::ROLES)
+                    ? array_map(TopologyTarget::topologySnapshot()->instance(...), TopologyProfile::ROLES)
                     : [$name];
 
                 return Process::result(json_encode(array_map(static fn (string $instance): array => [
@@ -1610,7 +1610,7 @@ describe('StandbyRefresher contracts', function () {
             }
             if (($command[3] ?? null) === 'snapshot' && ($command[4] ?? null) === 'list') {
                 $instance = preg_replace('/\A[^:]+:/', '', (string) ($command[5] ?? ''));
-                $role = str_replace('orbit-e2e-standby-', '', $instance);
+                $role = str_replace('orbit-e2e-topology-snapshot-', '', $instance);
                 $snapshots = [[
                     'name' => $generation->snapshots[$role],
                     'created_at' => '2026-01-01T00:00:00Z',
@@ -1651,7 +1651,7 @@ describe('StandbyRefresher contracts', function () {
         };
         Process::fake($processFake);
 
-        $restored = standbyRefresherForPowerTests(
+        $restored = topologySnapshotRefresherForPowerTests(
             new IncusHost(pool: 'orbit-e2e'),
             $state,
             $manifests,
@@ -1669,7 +1669,7 @@ describe('StandbyRefresher contracts', function () {
     });
 
     it('retains the corrupt marker and restores nothing when preflight fails', function () {
-        [$paths, $state, $manifests] = standbyRestoreFixture();
+        [$paths, $state, $manifests] = topologySnapshotRestoreFixture();
         Process::fake(fn (PendingProcess $p) => Process::result(
             in_array('snapshot', (array) $p->command, true)
                 ? '[]'
@@ -1682,7 +1682,7 @@ describe('StandbyRefresher contracts', function () {
                     'devices' => ['root' => ['pool' => 'orbit-e2e']],
                 ]]),
         ));
-        $refresher = standbyRefresherForPowerTests(
+        $refresher = topologySnapshotRefresherForPowerTests(
             new IncusHost(pool: 'orbit-e2e'),
             $state,
             $manifests,
@@ -1692,46 +1692,46 @@ describe('StandbyRefresher contracts', function () {
         Process::assertDidntRun(
             fn (PendingProcess $p): bool => is_array($p->command) && in_array('restore', $p->command, true),
         );
-        expect($state->read('standby/corrupt.json'))->not->toBeNull();
+        expect($state->read('topology-snapshot/corrupt.json'))->not->toBeNull();
     });
 
     it('retains the corrupt marker when a restore mutation fails', function () {
-        [$paths, $state, $manifests] = standbyRestoreFixture();
-        fakeStandbyRestoreProcesses(2);
-        $refresher = standbyRefresherForPowerTests(
+        [$paths, $state, $manifests] = topologySnapshotRestoreFixture();
+        fakeTopologySnapshotRestoreProcesses(2);
+        $refresher = topologySnapshotRefresherForPowerTests(
             new IncusHost(pool: 'orbit-e2e'),
             $state,
             $manifests,
             $paths,
         );
         expect(fn () => $refresher->restore())->toThrow(RuntimeException::class);
-        expect($state->read('standby/corrupt.json'))->not->toBeNull();
+        expect($state->read('topology-snapshot/corrupt.json'))->not->toBeNull();
     });
 
     it('retains the corrupt marker when final stopped-state proof fails', function () {
-        [$paths, $state, $manifests] = standbyRestoreFixture();
-        fakeStandbyRestoreProcesses(null, true);
-        $refresher = standbyRefresherForPowerTests(
+        [$paths, $state, $manifests] = topologySnapshotRestoreFixture();
+        fakeTopologySnapshotRestoreProcesses(null, true);
+        $refresher = topologySnapshotRefresherForPowerTests(
             new IncusHost(pool: 'orbit-e2e'),
             $state,
             $manifests,
             $paths,
         );
         expect(fn () => $refresher->restore())->toThrow(RuntimeException::class);
-        expect($state->read('standby/corrupt.json'))->not->toBeNull();
+        expect($state->read('topology-snapshot/corrupt.json'))->not->toBeNull();
     });
 
     it('succeeds and leaves the marker absent when already absent', function () {
-        [$paths, $state, $manifests] = standbyRestoreFixture(false);
-        fakeStandbyRestoreProcesses();
-        $refresher = standbyRefresherForPowerTests(
+        [$paths, $state, $manifests] = topologySnapshotRestoreFixture(false);
+        fakeTopologySnapshotRestoreProcesses();
+        $refresher = topologySnapshotRefresherForPowerTests(
             new IncusHost(pool: 'orbit-e2e'),
             $state,
             $manifests,
             $paths,
         );
         $refresher->restore();
-        expect($state->read('standby/corrupt.json'))->toBeNull();
+        expect($state->read('topology-snapshot/corrupt.json'))->toBeNull();
     });
     it('names a recovery command, and marks nothing corrupt, when the manifest is stale', function () {
         $fixture = refreshFixture();
@@ -1747,7 +1747,7 @@ describe('StandbyRefresher contracts', function () {
                 ),
             );
 
-            $result = standbyRefresherForPowerTests(
+            $result = topologySnapshotRefresherForPowerTests(
                 new IncusHost(pool: 'orbit-e2e'),
                 $fixture['state'],
                 $fixture['manifests'],
@@ -1758,12 +1758,12 @@ describe('StandbyRefresher contracts', function () {
             expect($result->state)
                 ->toBe('failed')
                 ->and($result->error)
-                ->toContain('bin/e2e-standby rebuild')
+                ->toContain('bin/e2e-topology-snapshot rebuild')
                 ->and($result->error)
-                ->toContain('orbit-e2e-standby-gateway')
+                ->toContain('orbit-e2e-topology-snapshot-gateway')
                 ->and($result->error)
                 ->toContain('old-generation is stale')
-                ->and($fixture['state']->read('standby/corrupt.json'))
+                ->and($fixture['state']->read('topology-snapshot/corrupt.json'))
                 ->toBeNull()
                 ->and($fixture['manifests']->promoted()?->id)
                 ->toBe('old-generation')

@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
-namespace App\Console\Commands\Standby;
+namespace App\Console\Commands\TopologySnapshot;
 
 use App\E2E\IncusHost;
-use App\E2E\StaleStandbyManifest;
-use App\E2E\StandbyAvailability;
-use App\E2E\StandbyManifestStore;
-use App\E2E\Value\StandbyIdentity;
+use App\E2E\StaleTopologySnapshotManifest;
+use App\E2E\TopologySnapshotAvailability;
+use App\E2E\TopologySnapshotManifestStore;
 use App\E2E\Value\TopologyProfile;
+use App\E2E\Value\TopologySnapshotIdentity;
 use App\E2E\Value\TopologyTarget;
 use Illuminate\Console\Command;
 use Throwable;
@@ -17,19 +17,19 @@ use Throwable;
 final class StatusCommand extends Command
 {
     #[\Override]
-    protected $signature = 'standby:status {--json}';
+    protected $signature = 'topology-snapshot:status {--json}';
     #[\Override]
-    protected $description = 'Show the promoted standby generation';
+    protected $description = 'Show the promoted topology snapshot generation';
 
     public function handle(
-        StandbyManifestStore $manifests,
+        TopologySnapshotManifestStore $manifests,
         IncusHost $host,
-        StandbyAvailability $availability,
-        StandbyIdentity $identity,
+        TopologySnapshotAvailability $availability,
+        TopologySnapshotIdentity $identity,
     ): int {
         try {
             $generation = $manifests->promoted();
-            $target = TopologyTarget::standby($identity);
+            $target = TopologyTarget::topologySnapshot($identity);
             $instanceNames = array_map($target->instance(...), TopologyProfile::ROLES);
             if ($generation !== null) {
                 $availability->assertAvailable($generation);
@@ -39,11 +39,11 @@ final class StatusCommand extends Command
                 count($instances) === count($instanceNames)
                 && array_all($instances, static fn ($instance): bool => $instance->isStopped());
             if ($generation !== null && ! $stopped) {
-                throw new \RuntimeException('The promoted standby topology is not stopped.');
+                throw new \RuntimeException('The promoted topology snapshot is not stopped.');
             }
             $payload = [
                 'state' => $generation === null ? 'missing' : 'promoted',
-                'standby_namespace' => $identity->namespace,
+                'topology_snapshot_namespace' => $identity->namespace,
                 'stopped' => $stopped,
                 'generation' => $generation?->toArray(),
             ];
@@ -54,18 +54,18 @@ final class StatusCommand extends Command
             );
 
             return self::SUCCESS;
-        } catch (StaleStandbyManifest $exception) {
+        } catch (StaleTopologySnapshotManifest $exception) {
             // The manifest is behind the host, not corrupt: report the state a
             // named command recovers from instead of a bare failure.
             $this->line(
                 $this->option('json')
                     ? json_encode([
                         'state' => 'stale',
-                        'standby_namespace' => $identity->namespace,
+                        'topology_snapshot_namespace' => $identity->namespace,
                         'stopped' => false,
                         'generation' => null,
                         'error' => $exception->getMessage(),
-                        'recovery' => StaleStandbyManifest::RECOVERY_COMMAND,
+                        'recovery' => StaleTopologySnapshotManifest::RECOVERY_COMMAND,
                     ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES) : $exception->getMessage(),
             );
 

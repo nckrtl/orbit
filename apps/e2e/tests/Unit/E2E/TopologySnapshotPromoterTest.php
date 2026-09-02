@@ -8,12 +8,12 @@ use App\E2E\IncusNetworkLifecycle;
 use App\E2E\IssueState;
 use App\E2E\OrphanNetworkSweep;
 use App\E2E\PreparedStateFingerprint;
-use App\E2E\StandbyManifestStore;
-use App\E2E\StandbyPromoter;
 use App\E2E\State\AtomicJsonStore;
 use App\E2E\State\OperationLock;
 use App\E2E\State\StatePaths;
 use App\E2E\TopologyReleaser;
+use App\E2E\TopologySnapshotManifestStore;
+use App\E2E\TopologySnapshotPromoter;
 use App\E2E\TopologyVerifier;
 use App\E2E\Value\AttemptId;
 use App\E2E\Value\AttemptPurpose;
@@ -22,9 +22,9 @@ use App\E2E\Value\OperationId;
 use App\E2E\Value\ProofFixtures;
 use App\E2E\Value\ProofPlan;
 use App\E2E\Value\SourceState;
-use App\E2E\Value\StandbyIdentity;
 use App\E2E\Value\TopologyProfile;
 use App\E2E\Value\TopologyRequest;
+use App\E2E\Value\TopologySnapshotIdentity;
 use App\E2E\Value\TopologyTarget;
 use App\E2E\Value\VerificationReport;
 use Illuminate\Container\Container;
@@ -47,7 +47,7 @@ beforeEach(function (): void {
  * A fixture repository whose `main` holds the proved candidate, a worktree
  * with a proved proof attempt under `.e2e/`, and a promoted old generation.
  *
- * @return array{root: string, worktree: string, paths: StatePaths, manifests: StandbyManifestStore, request: TopologyRequest, target: TopologyTarget, candidate: string, plan: ProofPlan}
+ * @return array{root: string, worktree: string, paths: StatePaths, manifests: TopologySnapshotManifestStore, request: TopologyRequest, target: TopologyTarget, candidate: string, plan: ProofPlan}
  */
 function promotableFixture(bool $mainHoldsCandidate = true, AttemptPurpose $purpose = AttemptPurpose::Proof): array
 {
@@ -59,7 +59,7 @@ function promotableFixture(bool $mainHoldsCandidate = true, AttemptPurpose $purp
     }
     $paths = new StatePaths(temporaryPath('orbit-promote-state-', 4));
     promoteDiscoveryGeneration($root, $paths);
-    $manifests = new StandbyManifestStore(new AtomicJsonStore($paths), $paths, new IncusHost);
+    $manifests = new TopologySnapshotManifestStore(new AtomicJsonStore($paths), $paths, new IncusHost);
     $promoted = $manifests->promoted();
     assert($promoted !== null);
 
@@ -118,12 +118,15 @@ function promotableFixture(bool $mainHoldsCandidate = true, AttemptPurpose $purp
     ];
 }
 
-function promoterFor(string $root, StatePaths $paths, StandbyManifestStore $manifests): StandbyPromoter
-{
+function promoterFor(
+    string $root,
+    StatePaths $paths,
+    TopologySnapshotManifestStore $manifests,
+): TopologySnapshotPromoter {
     $host = new IncusHost(pool: 'default');
     $operation = new OperationId(str_repeat('c', 32));
 
-    return new StandbyPromoter(
+    return new TopologySnapshotPromoter(
         $host,
         new PreparedStateFingerprint(new GitRepository($root)),
         new TopologyVerifier($host, readinessTimeoutSeconds: 1, readinessPollIntervalMicroseconds: 0),
@@ -140,12 +143,12 @@ function promoterFor(string $root, StatePaths $paths, StandbyManifestStore $mani
         $paths,
         new GitRepository($root),
         $operation,
-        StandbyIdentity::primary(),
+        TopologySnapshotIdentity::primary(),
     );
 }
 
 /**
- * A stateful Incus fake: the standby instances, the proved attempt's instances,
+ * A stateful Incus fake: the topology snapshot instances, the proved attempt's instances,
  * and both networks, mutated by every command promote and release issue.
  *
  * @param list<string> $events
@@ -158,16 +161,16 @@ function fakePromotionHost(
     ?array &$guestEvents = null,
     bool $failAssignments = false,
 ): void {
-    $standby = TopologyTarget::standby();
+    $topologySnapshot = TopologyTarget::topologySnapshot();
     $instances = [];
     $snapshots = [];
     foreach (TopologyProfile::ROLES as $role) {
-        $instances[$standby->instance($role)] = [
+        $instances[$topologySnapshot->instance($role)] = [
             'status' => 'Stopped',
             'config' => ['user.orbit.e2e.owner' => 'orbit-e2e', 'user.orbit.e2e.operation' => 'old-op'],
-            'network' => $standby->network(),
+            'network' => $topologySnapshot->network(),
         ];
-        $snapshots[$standby->instance($role)] = ['main-'.$role];
+        $snapshots[$topologySnapshot->instance($role)] = ['main-'.$role];
         $instances[$target->instance($role)] = [
             'status' => 'Running',
             'config' => [
@@ -182,7 +185,10 @@ function fakePromotionHost(
         $snapshots[$target->instance($role)] = [];
     }
     $networks = [
-        $standby->network() => ['config' => ['user.orbit.e2e.owner' => 'orbit-e2e', 'ipv4.address' => '10.232.1.1/24']],
+        $topologySnapshot->network() => ['config' => [
+            'user.orbit.e2e.owner' => 'orbit-e2e',
+            'ipv4.address' => '10.232.1.1/24',
+        ]],
         $target->network() => ['config' => [
             'user.orbit.e2e.owner' => 'orbit-e2e',
             'user.orbit.e2e.issue' => $target->issue,
@@ -364,7 +370,7 @@ function fakePromotionHost(
 }
 
 /** @mago-expect lint:kan-defect The promotion test asserts the complete ordered command chain. */
-describe('StandbyPromoter', function (): void {
+describe('TopologySnapshotPromoter', function (): void {
     it('refuses a candidate with a missing required assignment before any mutation', function (): void {
         $fixture = promotableFixture();
         $events = [];
@@ -389,7 +395,7 @@ describe('StandbyPromoter', function (): void {
         $legacy['schema'] = 4;
         $legacy['prepared_schema'] = 1;
         unset($legacy['topology']['assignments']);
-        $fixture['manifests']->promote(\App\E2E\Value\StandbyGeneration::fromArray($legacy));
+        $fixture['manifests']->promote(\App\E2E\Value\TopologySnapshotGeneration::fromArray($legacy));
         $events = [];
         fakePromotionHost($fixture['target'], $events);
 
@@ -401,10 +407,10 @@ describe('StandbyPromoter', function (): void {
     });
 
     /** @mago-expect lint:kan-defect The promotion test asserts the complete ordered command chain. */
-    it('replaces the standby with the proved topology, promotes the manifest, and releases the attempt', function (): void {
+    it('replaces the topology snapshot with the proved topology, promotes the manifest, and releases the attempt', function (): void {
         $fixture = promotableFixture();
         $target = $fixture['target'];
-        $standby = TopologyTarget::standby();
+        $topologySnapshot = TopologyTarget::topologySnapshot();
         $events = [];
         $guestEvents = [];
         fakePromotionHost($target, $events, null, $guestEvents);
@@ -447,19 +453,19 @@ describe('StandbyPromoter', function (): void {
             $expected[] = 'stop:'.$target->instance($role);
         }
         foreach (TopologyProfile::ROLES as $role) {
-            $expected[] = 'copy:'.$target->instance($role).'>'.$standby->instance($role).'-next instance-only';
+            $expected[] = 'copy:'.$target->instance($role).'>'.$topologySnapshot->instance($role).'-next instance-only';
         }
         foreach (TopologyProfile::ROLES as $role) {
             foreach (['issue', 'attempt', 'generation'] as $key) {
-                $expected[] = 'unset:'.$standby->instance($role)."-next/user.orbit.e2e.{$key}";
+                $expected[] = 'unset:'.$topologySnapshot->instance($role)."-next/user.orbit.e2e.{$key}";
             }
         }
         foreach (TopologyProfile::ROLES as $role) {
-            $expected[] = 'snapshot:'.$standby->instance($role)."-next/main-{$expectedId}";
+            $expected[] = 'snapshot:'.$topologySnapshot->instance($role)."-next/main-{$expectedId}";
         }
         foreach (TopologyProfile::ROLES as $role) {
-            $expected[] = 'delete:'.$standby->instance($role);
-            $expected[] = 'rename:'.$standby->instance($role).'-next>'.$standby->instance($role);
+            $expected[] = 'delete:'.$topologySnapshot->instance($role);
+            $expected[] = 'rename:'.$topologySnapshot->instance($role).'-next>'.$topologySnapshot->instance($role);
         }
         foreach (array_reverse(TopologyProfile::ROLES) as $role) {
             $expected[] = 'delete:'.$target->instance($role);
@@ -474,7 +480,7 @@ describe('StandbyPromoter', function (): void {
         expect($events)->toBe($expected);
     });
 
-    it('discards the copies and keeps the standby when the snapshot fails before the swap', function (): void {
+    it('discards the copies and keeps the topology snapshot when the snapshot fails before the swap', function (): void {
         $fixture = promotableFixture();
         $events = [];
         fakePromotionHost($fixture['target'], $events, failAt: 'snapshot');
@@ -482,7 +488,7 @@ describe('StandbyPromoter', function (): void {
 
         expect(fn () => promoterFor($fixture['root'], $fixture['paths'], $fixture['manifests'])
             ->promote($fixture['request'], $fixture['plan']))
-            ->toThrow(RuntimeException::class, 'Standby promotion failed before the swap');
+            ->toThrow(RuntimeException::class, 'Topology snapshot promotion failed before the swap');
 
         $deleted = array_values(array_filter($events, static fn (string $event): bool => str_starts_with(
             $event,
@@ -490,12 +496,14 @@ describe('StandbyPromoter', function (): void {
         )));
         expect($deleted)
             ->toBe(array_map(
-                static fn (string $role): string => 'delete:'.TopologyTarget::standby()->instance($role).'-next',
+                static fn (string $role): string => (
+                    'delete:'.TopologyTarget::topologySnapshot()->instance($role).'-next'
+                ),
                 TopologyProfile::ROLES,
             ))
             ->and($events)
             ->not
-            ->toContain('delete:'.TopologyTarget::standby()->instance('gateway'))
+            ->toContain('delete:'.TopologyTarget::topologySnapshot()->instance('gateway'))
             ->and($fixture['manifests']->promoted()?->toArray())
             ->toBe($old?->toArray())
             ->and(IssueState::forWorktree('NCK-123', $fixture['worktree'])->hasAttempt())

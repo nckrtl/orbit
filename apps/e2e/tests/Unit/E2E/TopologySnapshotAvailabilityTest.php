@@ -3,21 +3,21 @@
 declare(strict_types=1);
 
 use App\E2E\IncusHost;
-use App\E2E\StaleStandbyManifest;
-use App\E2E\StandbyAvailability;
+use App\E2E\StaleTopologySnapshotManifest;
+use App\E2E\TopologySnapshotAvailability;
 use App\E2E\Value\LaravelRelease;
-use App\E2E\Value\StandbyGeneration;
-use App\E2E\Value\StandbyIdentity;
 use App\E2E\Value\TopologyProfile;
+use App\E2E\Value\TopologySnapshotGeneration;
+use App\E2E\Value\TopologySnapshotIdentity;
 use Illuminate\Container\Container;
 use Illuminate\Process\Factory as ProcessFactory;
 use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Facades\Facade;
 use Illuminate\Support\Facades\Process;
 
-function availabilityGeneration(): StandbyGeneration
+function availabilityGeneration(): TopologySnapshotGeneration
 {
-    return new StandbyGeneration(
+    return new TopologySnapshotGeneration(
         'aaaaaaaaaaaa-bbbbbbbbbbbb',
         str_repeat('b', 40),
         array_fill_keys(TopologyProfile::ROLES, 'main-aaaaaaaaaaaa-bbbbbbbbbbbb'),
@@ -81,7 +81,7 @@ function fakeAvailabilityHost(
     });
 }
 
-describe('StandbyAvailability', function () {
+describe('TopologySnapshotAvailability', function () {
     beforeEach(function () {
         $container = new Container;
         $container->instance(ProcessFactory::class, new ProcessFactory);
@@ -89,84 +89,84 @@ describe('StandbyAvailability', function () {
         Facade::setFacadeApplication($container);
     });
 
-    it('passes when every promoted snapshot is on this checkout\'s standby VMs', function () {
-        $identity = StandbyIdentity::primary();
+    it('passes when every promoted snapshot is on this checkout\'s topology snapshot VMs', function () {
+        $identity = TopologySnapshotIdentity::primary();
         fakeAvailabilityHost($identity->instances(), $identity->instances());
 
-        expect(fn () => new StandbyAvailability(new IncusHost(pool: 'orbit-e2e'), $identity)
+        expect(fn () => new TopologySnapshotAvailability(new IncusHost(pool: 'orbit-e2e'), $identity)
             ->assertAvailable(availabilityGeneration()))
             ->not
             ->toThrow(Throwable::class);
     });
 
     it('names the recovery command when the manifest names snapshots the host lost', function () {
-        $identity = StandbyIdentity::primary();
+        $identity = TopologySnapshotIdentity::primary();
         fakeAvailabilityHost($identity->instances(), [$identity->instance('gateway')]);
 
-        expect(fn () => new StandbyAvailability(new IncusHost(pool: 'orbit-e2e'), $identity)
+        expect(fn () => new TopologySnapshotAvailability(new IncusHost(pool: 'orbit-e2e'), $identity)
             ->assertAvailable(availabilityGeneration()))
-            ->toThrow(StaleStandbyManifest::class, 'bin/e2e-standby rebuild');
+            ->toThrow(StaleTopologySnapshotManifest::class, 'bin/e2e-topology-snapshot rebuild');
     });
 
     it('reports the stale manifest as recoverable rather than corrupt', function () {
-        $identity = StandbyIdentity::primary();
+        $identity = TopologySnapshotIdentity::primary();
         fakeAvailabilityHost($identity->instances(), []);
 
         $failure = null;
         try {
-            new StandbyAvailability(new IncusHost(pool: 'orbit-e2e'), $identity)
+            new TopologySnapshotAvailability(new IncusHost(pool: 'orbit-e2e'), $identity)
                 ->assertAvailable(availabilityGeneration());
-        } catch (StaleStandbyManifest $exception) {
+        } catch (StaleTopologySnapshotManifest $exception) {
             $failure = $exception->getMessage();
         }
 
         expect($failure)
             ->toContain('aaaaaaaaaaaa-bbbbbbbbbbbb')
             ->toContain('promoted from another checkout')
-            ->toContain(StaleStandbyManifest::RECOVERY_COMMAND)
+            ->toContain(StaleTopologySnapshotManifest::RECOVERY_COMMAND)
             ->not->toContain('corrupt state');
     });
 
-    it('is stale when this checkout\'s standby VMs are gone entirely', function () {
-        $identity = StandbyIdentity::live();
-        fakeAvailabilityHost(StandbyIdentity::primary()->instances(), []);
+    it('is stale when this checkout\'s topology snapshot VMs are gone entirely', function () {
+        $identity = TopologySnapshotIdentity::live();
+        fakeAvailabilityHost(TopologySnapshotIdentity::primary()->instances(), []);
 
-        expect(fn () => new StandbyAvailability(new IncusHost(pool: 'orbit-e2e'), $identity)
+        expect(fn () => new TopologySnapshotAvailability(new IncusHost(pool: 'orbit-e2e'), $identity)
             ->assertAvailable(availabilityGeneration()))
-            ->toThrow(StaleStandbyManifest::class, 'orbit-e2e-live-standby-gateway does not exist');
+            ->toThrow(StaleTopologySnapshotManifest::class, 'orbit-e2e-live-topology-snapshot-gateway does not exist');
     });
 
-    it('reads the standby of its own identity, never the other checkout\'s', function () {
-        $identity = StandbyIdentity::live();
+    it('reads the topology snapshot of its own identity, never the other checkout\'s', function () {
+        $identity = TopologySnapshotIdentity::live();
         fakeAvailabilityHost($identity->instances(), $identity->instances());
 
-        new StandbyAvailability(new IncusHost(pool: 'orbit-e2e'), $identity)
+        new TopologySnapshotAvailability(new IncusHost(pool: 'orbit-e2e'), $identity)
             ->assertAvailable(availabilityGeneration());
 
         Process::assertRan(
             fn (PendingProcess $process): bool => (
                 is_array($process->command)
                 && ($process->command[3] ?? null) === 'snapshot'
-                && ($process->command[5] ?? null) === 'local:orbit-e2e-live-standby-gateway'
+                && ($process->command[5] ?? null) === 'local:orbit-e2e-live-topology-snapshot-gateway'
             ),
         );
         Process::assertDidntRun(
             fn (PendingProcess $process): bool => (
                 is_array($process->command)
-                && ($process->command[5] ?? null) === 'local:orbit-e2e-standby-gateway'
+                && ($process->command[5] ?? null) === 'local:orbit-e2e-topology-snapshot-gateway'
             ),
         );
     });
 
     it('lets an ownership failure through unchanged, because that is not a stale manifest', function () {
-        $identity = StandbyIdentity::primary();
+        $identity = TopologySnapshotIdentity::primary();
         fakeAvailabilityHost($identity->instances(), $identity->instances(), owner: 'someone-else');
 
-        expect(fn () => new StandbyAvailability(new IncusHost(pool: 'orbit-e2e'), $identity)
+        expect(fn () => new TopologySnapshotAvailability(new IncusHost(pool: 'orbit-e2e'), $identity)
             ->assertAvailable(availabilityGeneration()))
             ->toThrow(RuntimeException::class, 'ownership metadata does not match')
-            ->and(fn () => new StandbyAvailability(new IncusHost(pool: 'orbit-e2e'), $identity)
+            ->and(fn () => new TopologySnapshotAvailability(new IncusHost(pool: 'orbit-e2e'), $identity)
                 ->assertAvailable(availabilityGeneration()))
-            ->not->toThrow(StaleStandbyManifest::class);
+            ->not->toThrow(StaleTopologySnapshotManifest::class);
     });
 });

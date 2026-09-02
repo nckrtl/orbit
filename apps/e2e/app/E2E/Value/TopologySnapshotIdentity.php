@@ -7,24 +7,26 @@ namespace App\E2E\Value;
 use InvalidArgumentException;
 
 /**
- * Which physical standby a checkout owns.
+ * Which physical topology snapshot a checkout owns.
  *
  * A checkout is a primary: it builds, refreshes, and promotes one set of
- * standby VMs and records the promoted generation in its own `.e2e/standby/`.
+ * topology snapshot VMs and records the promoted generation in its own `.e2e/topology-snapshot/`.
  * Two primaries on one host must not share those VMs, or a promotion from one
  * leaves the other's manifest naming snapshots that no longer exist. The
  * namespace makes the physical resources distinct: the repository's primary
- * checkout owns the unnamespaced standby, and the validation clone that
+ * checkout owns the unnamespaced topology snapshot, and the validation clone that
  * `bin/e2e-live` drives owns the `live` one.
  *
- * The namespace is an allowlist, not free text: every standby needs its own
+ * The namespace is an allowlist, not free text: every topology snapshot needs its own
  * deterministic `10.232.<slot>.0/24` subnet, and a feature topology must never
- * be handed a slot a standby holds.
+ * be handed a slot a topology snapshot holds.
+ *
+ * @mago-expect lint:too-many-methods One identity boundary derives current and retired resource names.
  */
-final readonly class StandbyIdentity
+final readonly class TopologySnapshotIdentity
 {
     /**
-     * Every standby namespace this host supports, with the network slot it owns.
+     * Every topology snapshot namespace this host supports, with the network slot it owns.
      *
      * @var array<string, int>
      */
@@ -33,15 +35,16 @@ final readonly class StandbyIdentity
     private function __construct(
         public string $namespace,
         public int $slot,
+        private bool $retired = false,
     ) {}
 
-    /** The standby of the repository's own primary checkout. */
+    /** The topology snapshot of the repository's own primary checkout. */
     public static function primary(): self
     {
         return new self('', self::SLOTS['']);
     }
 
-    /** The standby of the validation clone `bin/e2e-live` drives. */
+    /** The topology snapshot of the validation clone `bin/e2e-live` drives. */
     public static function live(): self
     {
         return new self('live', self::SLOTS['live']);
@@ -52,7 +55,7 @@ final readonly class StandbyIdentity
         $namespace = $namespace === null ? '' : trim($namespace);
         if (! array_key_exists($namespace, self::SLOTS)) {
             throw new InvalidArgumentException(
-                'The standby namespace is unknown; use one of: '
+                'The topology snapshot namespace is unknown; use one of: '
                 .implode(', ', array_map(
                     static fn (string $known): string => $known === '' ? '(empty)' : $known,
                     array_keys(self::SLOTS),
@@ -64,16 +67,30 @@ final readonly class StandbyIdentity
         return new self($namespace, (int) self::SLOTS[$namespace]);
     }
 
+    /** Resolve the physical identity used before the topology snapshot rename. */
+    public static function retiredForNamespace(?string $namespace): self
+    {
+        $current = self::forNamespace($namespace);
+
+        return new self($current->namespace, $current->slot, retired: true);
+    }
+
     /**
-     * Every standby the host may hold, whichever checkout owns it. Capacity,
+     * Every topology snapshot the host may hold, whichever checkout owns it. Capacity,
      * the orphan network sweep, and legacy retirement all read this: resources
-     * of a standby another checkout owns are never free to take or delete.
+     * of a topology snapshot another checkout owns are never free to take or delete.
      *
      * @return list<self>
      */
     public static function known(): array
     {
         return array_map(self::forNamespace(...), array_keys(self::SLOTS));
+    }
+
+    /** @return list<self> */
+    public static function retiredKnown(): array
+    {
+        return array_map(self::retiredForNamespace(...), array_keys(self::SLOTS));
     }
 
     public function isPrimary(): bool
@@ -83,12 +100,22 @@ final readonly class StandbyIdentity
 
     public function network(): string
     {
-        return $this->namespace === '' ? 'oe-standby' : 'oe-'.$this->namespace.'-standby';
+        if ($this->retired) {
+            return $this->namespace === '' ? 'oe-standby' : 'oe-'.$this->namespace.'-standby';
+        }
+
+        return $this->namespace === '' ? 'oe-topo-snap' : 'oe-l-topo-snap';
     }
 
     public function instancePrefix(): string
     {
-        return $this->namespace === '' ? 'orbit-e2e-standby-' : 'orbit-e2e-'.$this->namespace.'-standby-';
+        if ($this->retired) {
+            return $this->namespace === '' ? 'orbit-e2e-standby-' : 'orbit-e2e-'.$this->namespace.'-standby-';
+        }
+
+        return $this->namespace === ''
+            ? 'orbit-e2e-topology-snapshot-'
+            : 'orbit-e2e-'.$this->namespace.'-topology-snapshot-';
     }
 
     public function instance(string $role): string

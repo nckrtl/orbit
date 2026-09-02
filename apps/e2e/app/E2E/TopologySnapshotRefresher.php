@@ -12,16 +12,16 @@ use App\E2E\Value\LaravelRelease;
 use App\E2E\Value\OperationId;
 use App\E2E\Value\PreparedFingerprint;
 use App\E2E\Value\RefreshResult;
-use App\E2E\Value\StandbyGeneration;
-use App\E2E\Value\StandbyIdentity;
 use App\E2E\Value\TopologyProfile;
+use App\E2E\Value\TopologySnapshotGeneration;
+use App\E2E\Value\TopologySnapshotIdentity;
 use App\E2E\Value\TopologyTarget;
 use App\E2E\Value\VerificationMode;
 use RuntimeException;
 use Throwable;
 
 /** @mago-expect lint:excessive-parameter-list,cyclomatic-complexity,kan-defect,too-many-methods Explicit workflow dependencies preserve the promotion boundary. */
-final readonly class StandbyRefresher
+final readonly class TopologySnapshotRefresher
 {
     private const int GENERATION_MUTATION_LOCK_TIMEOUT_SECONDS = 3600;
 
@@ -29,8 +29,8 @@ final readonly class StandbyRefresher
         private IncusHost $host,
         private IncusNetworkLifecycle $networks,
         private PreparedStateFingerprint $fingerprints,
-        private StandbyManifestStore $manifests,
-        private StandbyBuilder $builder,
+        private TopologySnapshotManifestStore $manifests,
+        private TopologySnapshotBuilder $builder,
         private WorktreeSynchronizer $synchronizer,
         private TopologyConverger $converger,
         private TopologyVerifier $verifier,
@@ -41,8 +41,8 @@ final readonly class StandbyRefresher
         private GitRepository $git,
         private string $mainWorktree,
         private OperationId $operation,
-        private StandbyIdentity $identity,
-        private StandbyAvailability $availability,
+        private TopologySnapshotIdentity $identity,
+        private TopologySnapshotAvailability $availability,
         private int $refreshLockTimeoutSeconds = 3600,
     ) {}
 
@@ -60,7 +60,7 @@ final readonly class StandbyRefresher
             return new RefreshResult(
                 'failed',
                 $this->operation->value,
-                error: 'Unable to acquire the standby refresh lock.',
+                error: 'Unable to acquire the topology snapshot refresh lock.',
             );
         }
 
@@ -77,8 +77,8 @@ final readonly class StandbyRefresher
 
     public function recoverLegacy(
         string $mainSha,
-        LegacyStandbyRecovery $recovery,
-        StandbyRebuilder $rebuilder,
+        LegacyTopologySnapshotRecovery $recovery,
+        TopologySnapshotRebuilder $rebuilder,
     ): RefreshResult {
         if (preg_match('/\A[a-f0-9]{40}\z/D', $mainSha) !== 1) {
             throw new RuntimeException('The legacy recovery SHA is invalid.');
@@ -91,7 +91,7 @@ final readonly class StandbyRefresher
             return new RefreshResult(
                 'failed',
                 $this->operation->value,
-                error: 'Unable to acquire the standby refresh lock.',
+                error: 'Unable to acquire the topology snapshot refresh lock.',
             );
         }
 
@@ -111,10 +111,12 @@ final readonly class StandbyRefresher
                 } elseif ($interruptedConstruction !== null) {
                     $recovery->record('construction_cleanup_pending', [
                         'operation_id' => $interruptedConstruction->value,
-                        'next_action' => "bin/e2e-standby recover-legacy --main-sha={$mainSha}",
+                        'next_action' => "bin/e2e-topology-snapshot recover-legacy --main-sha={$mainSha}",
                     ]);
                     if (! $this->builder->cleanupCold($interruptedConstruction)) {
-                        throw new RuntimeException('Interrupted legacy standby construction could not be cleaned up.');
+                        throw new RuntimeException(
+                            'Interrupted legacy topology snapshot construction could not be cleaned up.',
+                        );
                     }
                     $recovery->record('construction_cleanup_verified', [
                         'operation_id' => $interruptedConstruction->value,
@@ -131,13 +133,13 @@ final readonly class StandbyRefresher
             );
             $recovery->record('construction_pending', [
                 'operation_id' => $this->operation->value,
-                'next_action' => "bin/e2e-standby recover-legacy --main-sha={$mainSha}",
+                'next_action' => "bin/e2e-topology-snapshot recover-legacy --main-sha={$mainSha}",
             ]);
             $result = $this->refresh($mainSha, allowCold: true, operation: $this->operation);
             if (! $result->successful()) {
                 $recovery->record('failed', [
                     'error' => $result->error,
-                    'next_action' => "bin/e2e-standby recover-legacy --main-sha={$mainSha}",
+                    'next_action' => "bin/e2e-topology-snapshot recover-legacy --main-sha={$mainSha}",
                 ]);
 
                 return $result;
@@ -145,7 +147,7 @@ final readonly class StandbyRefresher
 
             $generation = $this->manifests->promoted();
             if ($generation === null || $generation->id !== $result->generationId) {
-                throw new RuntimeException('The recovered standby generation identity does not match.');
+                throw new RuntimeException('The recovered topology snapshot generation identity does not match.');
             }
             $this->assertGenerationAvailable($generation);
             $this->assertStopped();
@@ -154,14 +156,14 @@ final readonly class StandbyRefresher
                 TopologyProfile::ROLES,
             );
             if ($this->host->instances($copyNames) !== []) {
-                throw new RuntimeException('A promotion copy remains after legacy standby recovery.');
+                throw new RuntimeException('A promotion copy remains after legacy topology snapshot recovery.');
             }
             $recovery->record('construction_verified', [
                 'generation_id' => $generation->id,
                 'main_sha' => $generation->mainSha,
                 'instances' => $this->identity->instances(),
                 'network' => $this->identity->network(),
-                'next_action' => 'bin/e2e-standby status',
+                'next_action' => 'bin/e2e-topology-snapshot status',
             ]);
 
             return $result;
@@ -171,7 +173,7 @@ final readonly class StandbyRefresher
                 try {
                     $recovery->record('failed', [
                         'error' => $error,
-                        'next_action' => "bin/e2e-standby recover-legacy --main-sha={$mainSha}",
+                        'next_action' => "bin/e2e-topology-snapshot recover-legacy --main-sha={$mainSha}",
                     ]);
                 } catch (Throwable $evidenceException) {
                     $error .= ' The recovery evidence write also failed: '.$evidenceException->getMessage();
@@ -184,20 +186,20 @@ final readonly class StandbyRefresher
         }
     }
 
-    public function restore(): StandbyGeneration
+    public function restore(): TopologySnapshotGeneration
     {
         if (! $this->lock->acquire(
             'standby-refresh',
             $this->operation,
             timeoutSeconds: $this->refreshLockTimeoutSeconds,
         )) {
-            throw new RuntimeException('Unable to acquire the standby refresh lock.');
+            throw new RuntimeException('Unable to acquire the topology snapshot refresh lock.');
         }
 
         try {
             $generation = $this->manifests->promoted();
             if ($generation === null) {
-                throw new RuntimeException('There is no promoted standby generation.');
+                throw new RuntimeException('There is no promoted topology snapshot generation.');
             }
             $this->availability->assertAvailable($generation);
 
@@ -207,7 +209,7 @@ final readonly class StandbyRefresher
                 $this->restoreSnapshots($generation);
                 $this->assertStopped();
             });
-            $this->state->delete('standby/corrupt.json');
+            $this->state->delete('topology-snapshot/corrupt.json');
 
             return $generation;
         } finally {
@@ -230,7 +232,7 @@ final readonly class StandbyRefresher
         try {
             $promoted = $this->manifests->promoted();
             if ($promoted === null && ! $allowCold) {
-                throw new RuntimeException('Cold standby construction requires explicit permission.');
+                throw new RuntimeException('Cold topology snapshot construction requires explicit permission.');
             }
             $structural = $this->fingerprints->forCommit($mainSha);
             $desired = $structural;
@@ -245,11 +247,11 @@ final readonly class StandbyRefresher
                 $desiredCold = [$desired->manifest['cold_epoch'], $desired->manifest['base_image_alias']];
                 $promotedCold = [$promoted->coldEpoch, $promoted->baseImageAlias];
                 if ($desiredCold !== $promotedCold) {
-                    throw new RuntimeException('Cold base changed; recovery-required cold standby rebuild.');
+                    throw new RuntimeException('Cold base changed; recovery-required cold topology snapshot rebuild.');
                 }
             }
             if ($promoted !== null && ! $promotedStructural instanceof PreparedFingerprint) {
-                throw new RuntimeException('The promoted standby fingerprint is unavailable.');
+                throw new RuntimeException('The promoted topology snapshot fingerprint is unavailable.');
             }
             if (
                 ! is_string($desired->manifest['base_image_alias'] ?? null)
@@ -265,8 +267,14 @@ final readonly class StandbyRefresher
                 && $promotedStructural->value === $structural->value
                 && $promoted->preparedFingerprint === $desired->value
             ) {
-                if (! $this->generationLock->acquire('standby-generation', $operation, timeoutSeconds: 3600)) {
-                    throw new RuntimeException('Unable to acquire the standby generation lock for standby probe.');
+                if (! $this->generationLock->acquire(
+                    'standby-generation',
+                    $operation,
+                    timeoutSeconds: 3600,
+                )) {
+                    throw new RuntimeException(
+                        'Unable to acquire the topology snapshot generation lock for topology snapshot probe.',
+                    );
                 }
                 try {
                     $this->assertGenerationAvailable($promoted);
@@ -283,7 +291,7 @@ final readonly class StandbyRefresher
                     ? $promoted->laravel
                     : $this->laravel->resolve('>=13.0.0');
             $desired = $this->fingerprints->withLaravel($structural, $release);
-            $target = TopologyTarget::standby($this->identity);
+            $target = TopologyTarget::topologySnapshot($this->identity);
 
             if ($promoted === null) {
                 $mutated = true;
@@ -301,11 +309,13 @@ final readonly class StandbyRefresher
                     $operation,
                     timeoutSeconds: self::GENERATION_MUTATION_LOCK_TIMEOUT_SECONDS,
                 )) {
-                    throw new RuntimeException('Unable to acquire the standby generation lock for standby mutation.');
+                    throw new RuntimeException(
+                        'Unable to acquire the topology snapshot generation lock for topology snapshot mutation.',
+                    );
                 }
                 $generationMutationLockHeld = true;
                 // A manifest that names resources the host lost is stale, not corrupt:
-                // refuse with the recovery command before anything mutates the standby.
+                // refuse with the recovery command before anything mutates the topology snapshot.
                 $this->availability->assertAvailable($promoted);
                 $mutated = true;
                 $this->assertStopped();
@@ -318,7 +328,7 @@ final readonly class StandbyRefresher
                     $this->mainWorktree,
                 ));
                 if ($source->dirty || $source->hostSha !== $mainSha || $source->guestSha !== $mainSha) {
-                    throw new RuntimeException('Standby source is not clean merged main.');
+                    throw new RuntimeException('Topology snapshot source is not clean merged main.');
                 }
                 $this->measure($timings, 'converge', fn () => $this->converger->converge($target, $source, $release));
             }
@@ -331,7 +341,7 @@ final readonly class StandbyRefresher
                 requiredAssignments: $requiredAssignments,
             ));
             if (! $verification->passed) {
-                throw new RuntimeException('Standby verification failed.');
+                throw new RuntimeException('Topology snapshot verification failed.');
             }
             $proof = $this->measure(
                 $timings,
@@ -344,7 +354,7 @@ final readonly class StandbyRefresher
                 ),
             );
             if (! $proof->passed) {
-                throw new RuntimeException('Standby proof verification failed.');
+                throw new RuntimeException('Topology snapshot proof verification failed.');
             }
             $this->measure($timings, 'stop', fn () => $this->stopAndProve());
             $generation = $this->measure($timings, 'snapshot', fn () => $this->snapshot(
@@ -359,12 +369,12 @@ final readonly class StandbyRefresher
             $this->generationLock->release();
             $generationMutationLockHeld = false;
             if (! $this->generationLock->acquire('standby-generation', $operation, timeoutSeconds: 3600)) {
-                throw new RuntimeException('Unable to acquire the standby generation lock for promotion.');
+                throw new RuntimeException('Unable to acquire the topology snapshot generation lock for promotion.');
             }
             try {
                 $current = $this->manifests->promoted();
                 if ($promoted?->toArray() !== $current?->toArray()) {
-                    throw new RuntimeException('The promoted standby generation changed during refresh.');
+                    throw new RuntimeException('The promoted topology snapshot generation changed during refresh.');
                 }
                 $this->manifests->record($generation);
                 $this->manifests->promote($generation);
@@ -382,7 +392,7 @@ final readonly class StandbyRefresher
             $recovered = ! $mutated || $this->rollback($promoted);
             $error = $exception->getMessage();
             if (! $recovered) {
-                $error .= ' The previous snapshot could not be restored; the standby is marked corrupt.';
+                $error .= ' The previous snapshot could not be restored; the topology snapshot is marked corrupt.';
             }
 
             return new RefreshResult('failed', $operation->value, $promoted?->id, $error);
@@ -440,9 +450,9 @@ final readonly class StandbyRefresher
         }
     }
 
-    private function restoreSnapshots(StandbyGeneration $generation): void
+    private function restoreSnapshots(TopologySnapshotGeneration $generation): void
     {
-        $target = TopologyTarget::standby($this->identity);
+        $target = TopologyTarget::topologySnapshot($this->identity);
         $snapshots = [];
         foreach (TopologyProfile::ROLES as $role) {
             $snapshots[$target->instance($role)] = $generation->snapshots[$role];
@@ -450,14 +460,14 @@ final readonly class StandbyRefresher
         $this->host->restoreAll($snapshots);
     }
 
-    private function assertGenerationAvailable(StandbyGeneration $generation): void
+    private function assertGenerationAvailable(TopologySnapshotGeneration $generation): void
     {
         $this->availability->assertAvailable($generation);
     }
 
     private function startAll(): void
     {
-        $target = TopologyTarget::standby($this->identity);
+        $target = TopologyTarget::topologySnapshot($this->identity);
         $instances = array_map($target->instance(...), TopologyProfile::ROLES);
         $this->host->startAll($instances);
         $this->host->waitForRestoredHostStates($instances);
@@ -465,7 +475,7 @@ final readonly class StandbyRefresher
 
     private function stopAll(): void
     {
-        $target = TopologyTarget::standby($this->identity);
+        $target = TopologyTarget::topologySnapshot($this->identity);
         $instances = array_map($target->instance(...), TopologyProfile::ROLES);
         $this->host->stopAll($instances);
     }
@@ -478,12 +488,12 @@ final readonly class StandbyRefresher
 
     private function assertStopped(): void
     {
-        $target = TopologyTarget::standby($this->identity);
+        $target = TopologyTarget::topologySnapshot($this->identity);
         $instances = array_map($target->instance(...), TopologyProfile::ROLES);
         for ($attempt = 0; $attempt < 20; $attempt++) {
             $observed = $this->host->instances($instances);
             if (count($observed) !== count($instances)) {
-                throw new RuntimeException('A standby VM is missing while checking its power state.');
+                throw new RuntimeException('A topology snapshot VM is missing while checking its power state.');
             }
             if (array_all($observed, static fn (IncusInstance $instance): bool => $instance->isStopped())) {
                 return;
@@ -491,7 +501,7 @@ final readonly class StandbyRefresher
             usleep(100_000);
         }
 
-        throw new RuntimeException('The standby VMs did not stop within the bounded wait.');
+        throw new RuntimeException('The topology snapshot VMs did not stop within the bounded wait.');
     }
 
     private function snapshot(
@@ -502,11 +512,11 @@ final readonly class StandbyRefresher
         ?string $previousGenerationId,
         string $structuralFingerprint,
         array $manifest,
-    ): StandbyGeneration {
+    ): TopologySnapshotGeneration {
         $id = substr($mainSha, 0, 12).'-'.substr($fingerprint, 0, 12);
         $snapshot = 'main-'.$id;
         $snapshots = [];
-        $target = TopologyTarget::standby($this->identity);
+        $target = TopologyTarget::topologySnapshot($this->identity);
         $stale = $this->deleteCandidateSnapshots($target, $snapshot);
         if ($stale !== []) {
             throw new RuntimeException(
@@ -562,7 +572,7 @@ final readonly class StandbyRefresher
         /** @var array<string, list<string>> $assignments */
         $assignments = $manifest['topology']['assignments'];
 
-        return new StandbyGeneration(
+        return new TopologySnapshotGeneration(
             $id,
             $mainSha,
             $snapshots,
@@ -608,8 +618,8 @@ final readonly class StandbyRefresher
         ));
     }
 
-    /** Restore the promoted snapshot after a failed mutation; a failed restore marks the standby corrupt. */
-    private function rollback(?StandbyGeneration $generation): bool
+    /** Restore the promoted snapshot after a failed mutation; a failed restore marks the topology snapshot corrupt. */
+    private function rollback(?TopologySnapshotGeneration $generation): bool
     {
         if ($generation === null) {
             return $this->builder->cleanupCold($this->operation);
@@ -634,7 +644,9 @@ final readonly class StandbyRefresher
     private function withGenerationMutationLock(OperationId $operation, callable $mutation): mixed
     {
         if (! $this->generationLock->acquire('standby-generation', $operation, timeoutSeconds: 3600)) {
-            throw new RuntimeException('Unable to acquire the standby generation lock for standby mutation.');
+            throw new RuntimeException(
+                'Unable to acquire the topology snapshot generation lock for topology snapshot mutation.',
+            );
         }
 
         try {
@@ -644,7 +656,7 @@ final readonly class StandbyRefresher
         }
     }
 
-    private function deleteUnpromotedSnapshots(StandbyGeneration $promoted): void
+    private function deleteUnpromotedSnapshots(TopologySnapshotGeneration $promoted): void
     {
         foreach ($this->manifests->prunable($promoted) as $generation) {
             $this->host->deleteSnapshotsIfExist($this->snapshotMap($generation));
@@ -658,7 +670,10 @@ final readonly class StandbyRefresher
             }
         }
 
-        $instances = array_map(TopologyTarget::standby($this->identity)->instance(...), TopologyProfile::ROLES);
+        $instances = array_map(
+            TopologyTarget::topologySnapshot($this->identity)->instance(...),
+            TopologyProfile::ROLES,
+        );
         $inventory = $this->host->ownedSnapshotNames($instances);
         $deletions = [];
         foreach ($inventory as $instance => $snapshots) {
@@ -694,10 +709,10 @@ final readonly class StandbyRefresher
     }
 
     /** @return array<string, string> */
-    private function snapshotMap(StandbyGeneration $generation): array
+    private function snapshotMap(TopologySnapshotGeneration $generation): array
     {
         $snapshots = [];
-        $target = TopologyTarget::standby($this->identity);
+        $target = TopologyTarget::topologySnapshot($this->identity);
         foreach (TopologyProfile::ROLES as $role) {
             $snapshots[$target->instance($role)] = $generation->snapshots[$role];
         }
@@ -705,13 +720,13 @@ final readonly class StandbyRefresher
         return $snapshots;
     }
 
-    private function prune(StandbyGeneration $current): void
+    private function prune(TopologySnapshotGeneration $current): void
     {
         try {
             foreach ($this->manifests->prunable($current) as $generation) {
                 $snapshots = [];
                 foreach (TopologyProfile::ROLES as $role) {
-                    $snapshots[TopologyTarget::standby($this->identity)->instance($role)] =
+                    $snapshots[TopologyTarget::topologySnapshot($this->identity)->instance($role)] =
                         $generation->snapshots[$role];
                 }
                 $this->host->deleteSnapshotsIfExist($snapshots);
@@ -724,7 +739,7 @@ final readonly class StandbyRefresher
 
     private function markCorrupt(Throwable $exception): void
     {
-        $this->state->write('standby/corrupt.json', [
+        $this->state->write('topology-snapshot/corrupt.json', [
             'schema' => 2,
             'operation_id' => $this->operation->value,
             'message' => $exception->getMessage(),

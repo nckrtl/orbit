@@ -38,4 +38,4 @@ edit code.
 
 - A new commit invalidates approval and exact-commit proof.
 - Do not drip known findings across rounds.
-- Do not merge, promote, release a proved topology, or modify the standby.
+- Do not merge, promote, release a proved topology, or modify the topology snapshot.

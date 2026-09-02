@@ -59,7 +59,7 @@ it('describes the validation clone, suites, and inputs with --help', function ()
         ->and($result->output())
         ->toContain(
             'ORBIT_E2E_VALIDATE_ROOT',
-            'LegacyStandbyRecoveryAcceptanceTest',
+            'LegacyTopologySnapshotRecoveryAcceptanceTest',
             'TopologyLedLifecycleAcceptanceTest',
             'recover-legacy',
             'proofs/ACC-1.json',
@@ -68,25 +68,61 @@ it('describes the validation clone, suites, and inputs with --help', function ()
         ->not->toContain('--rolling');
 });
 
-it('compares only stable primary standby identity fields', function () use ($wrapper): void {
+it('compares only stable primary topology snapshot identity fields', function () use ($wrapper): void {
     $source = file_get_contents($wrapper);
 
     expect($source)
         ->toContain('with_entries(select(.key | startswith("volatile.") | not))')
         ->toContain('devices: (.expanded_devices // .devices // {})')
         ->toContain('managed,')
-        ->not->toContain("jq -s '[.[][] | select(.name == \"oe-standby\"");
+        ->not->toContain("jq -s '[.[][] | select(.name == \"oe-topo-snap\"");
 });
 
-it('routes a missing standby with present resources into resumable legacy recovery', function () use ($wrapper): void {
+it('routes a missing topology snapshot with present resources into resumable legacy recovery', function () use (
+    $wrapper,
+): void {
     $source = file_get_contents($wrapper);
-    preg_match('/if \\[\\[ "\\$standby_state" == missing.*?then(?<branch>.*?)elif/s', $source, $matches);
+    preg_match('/if \\[\\[ "\\$topology_snapshot_state" == missing.*?then(?<branch>.*?)elif/s', $source, $matches);
     $missingBranch = $matches['branch'] ?? '';
 
     expect($missingBranch)
-        ->toContain('standby rebuild')
+        ->toContain('topology-snapshot rebuild')
         ->toContain('assert_rebuild_refusal')
-        ->toContain('standby recover-legacy');
+        ->toContain('topology-snapshot recover-legacy');
+});
+
+it('migrates the retired topology snapshot before handling the current identity', function () use ($wrapper): void {
+    $source = file_get_contents($wrapper);
+    $migration = strpos($source, 'migrate_retired_topology_snapshot');
+    $currentStatus = strpos($source, 'topology_snapshot_status=$(harness topology-snapshot status)');
+
+    expect($source)
+        ->toContain(
+            'orbit-e2e-live-standby-gateway',
+            'orbit-e2e-live-standby-app-dev',
+            'orbit-e2e-live-standby-app-prod',
+            'oe-live-standby',
+            'topology-snapshot recover-legacy',
+            '--group=incus-live-retired-migration',
+        )
+        ->and($migration)
+        ->toBeInt()
+        ->toBeLessThan($currentStatus);
+});
+
+it('inspects a retired migration at the SHA retained by its recovery evidence', function () use ($wrapper): void {
+    $source = file_get_contents($wrapper);
+    $acceptance = file_get_contents(
+        dirname(__DIR__, 2).'/Live/LegacyTopologySnapshotRecoveryAcceptanceTest.php',
+    );
+
+    expect($source)
+        ->toContain(
+            'retired_migration_sha=$(jq -er \'.main_sha | strings\' "$recovery_record")',
+            'ORBIT_LIVE_RETIRED_MIGRATION_SHA="$retired_migration_sha"',
+        )
+        ->and($acceptance)
+        ->toContain("'ORBIT_LIVE_RETIRED_MIGRATION_SHA'");
 });
 
 it('registers the network-only retained-record resume and archive proof', function () use ($wrapper): void {
@@ -98,7 +134,7 @@ it('registers the network-only retained-record resume and archive proof', functi
             '--group=incus-live-network-record',
             'live_instance_count',
             'live_network_count',
-            'normalizing a retained network-only live standby',
+            'normalizing a retained network-only live topology snapshot',
             'resuming retained legacy recovery at its recorded SHA',
             'retained_sha=$(jq -er',
             'checkout_validation_sha "$retained_sha"',
@@ -106,7 +142,7 @@ it('registers the network-only retained-record resume and archive proof', functi
             '.inventory.instances | type == "array" and length == 0',
             '.inventory.snapshots | type == "array" and length == 0',
             'any(.history[]; .phase == "resumed")',
-            'tests/Live/LegacyStandbyRecoveryAcceptanceTest.php',
+            'tests/Live/LegacyTopologySnapshotRecoveryAcceptanceTest.php',
         )
         ->and(substr_count($source, 'remove_guest_gateway_env'))
         ->toBe(4);

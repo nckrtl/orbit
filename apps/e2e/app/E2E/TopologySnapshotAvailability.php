@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\E2E;
 
-use App\E2E\Value\StandbyGeneration;
-use App\E2E\Value\StandbyIdentity;
 use App\E2E\Value\TopologyProfile;
+use App\E2E\Value\TopologySnapshotGeneration;
+use App\E2E\Value\TopologySnapshotIdentity;
 use App\E2E\Value\TopologyTarget;
 use Throwable;
 
@@ -15,19 +15,19 @@ use Throwable;
  * before anything mutates it.
  *
  * A manifest that names a snapshot or a VM the host does not have is stale, not
- * corrupt: the standby was rebuilt, or promoted from another checkout. The
+ * corrupt: the topology snapshot was rebuilt, or promoted from another checkout. The
  * failure names the command that recovers it, so the caller never reaches for
  * `incus delete`.
  */
-final readonly class StandbyAvailability
+final readonly class TopologySnapshotAvailability
 {
     public function __construct(
         private IncusHost $host,
-        private StandbyIdentity $identity,
+        private TopologySnapshotIdentity $identity,
     ) {}
 
-    /** @throws StaleStandbyManifest when the manifest names resources the host does not hold. */
-    public function assertAvailable(StandbyGeneration $generation): void
+    /** @throws StaleTopologySnapshotManifest when the manifest names resources the host does not hold. */
+    public function assertAvailable(TopologySnapshotGeneration $generation): void
     {
         try {
             $this->host->assertOwnedSnapshots($this->snapshots($generation));
@@ -38,14 +38,17 @@ final readonly class StandbyAvailability
                 throw $exception;
             }
 
-            throw new StaleStandbyManifest($this->recoveryMessage($generation, $exception), previous: $exception);
+            throw new StaleTopologySnapshotManifest(
+                $this->recoveryMessage($generation, $exception),
+                previous: $exception,
+            );
         }
     }
 
     /** @return array<string, string> */
-    private function snapshots(StandbyGeneration $generation): array
+    private function snapshots(TopologySnapshotGeneration $generation): array
     {
-        $target = TopologyTarget::standby($this->identity);
+        $target = TopologyTarget::topologySnapshot($this->identity);
         $snapshots = [];
         foreach (TopologyProfile::ROLES as $role) {
             $snapshots[$target->instance($role)] = $generation->snapshots[$role];
@@ -54,19 +57,19 @@ final readonly class StandbyAvailability
         return $snapshots;
     }
 
-    private function recoveryMessage(StandbyGeneration $generation, Throwable $exception): string
+    private function recoveryMessage(TopologySnapshotGeneration $generation, Throwable $exception): string
     {
         return (
             rtrim($exception->getMessage(), ' ')
             .' The promoted generation '
             .$generation->id
-            .' is stale: the standby '
+            .' is stale: the topology snapshot '
             .($this->identity->isPrimary() ? '' : "'{$this->identity->namespace}' ")
             .'was rebuilt or promoted from another checkout, so this manifest names resources the host no longer has.'
             .' Run `'
-            .StaleStandbyManifest::RECOVERY_COMMAND
+            .StaleTopologySnapshotManifest::RECOVERY_COMMAND
             .'` with the SHA main holds to rebuild it from the'
-            .' base image; the standby is not corrupt and needs no manual incus delete.'
+            .' base image; the topology snapshot is not corrupt and needs no manual incus delete.'
         );
     }
 }

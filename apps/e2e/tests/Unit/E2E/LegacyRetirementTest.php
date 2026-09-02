@@ -40,7 +40,7 @@ function legacyFixture(): array
                 'project' => 'default',
             ],
             [
-                'name' => 'orbit-e2e-standby-gateway',
+                'name' => 'orbit-e2e-topology-snapshot-gateway',
                 'status' => 'STOPPED',
                 'metadata' => ['owner' => 'orbit-e2e'],
                 'dependencies' => [],
@@ -301,13 +301,17 @@ describe('legacy retirement', function () {
         ]))
             ->toThrow(InvalidArgumentException::class, 'protected resource');
     })->with([
-        'compact standby network' => ['networks', 'oe-standby'],
+        'compact topology snapshot network' => ['networks', 'oe-topo-snap'],
         'compact feature network' => ['networks', 'oe-a1b2c3d4e5f6'],
-        'canonical standby VM' => ['instances', 'orbit-e2e-standby-gateway'],
+        'canonical topology snapshot VM' => ['instances', 'orbit-e2e-topology-snapshot-gateway'],
         'canonical ORBIT feature VM' => ['instances', 'orbit-e2e-orbit-123456789-aaaaaaaa-gateway'],
         'canonical ORBIT feature snapshot' => ['snapshots', 'orbit-e2e-orbit-123456789-aaaaaaaa-gateway/ready'],
-        'compact live standby network' => ['networks', 'oe-live-standby'],
-        'canonical live standby VM' => ['instances', 'orbit-e2e-live-standby-gateway'],
+        'compact live topology snapshot network' => ['networks', 'oe-l-topo-snap'],
+        'canonical live topology snapshot VM' => ['instances', 'orbit-e2e-live-topology-snapshot-gateway'],
+        'retired topology snapshot network' => ['networks', 'oe-standby'],
+        'retired topology snapshot VM' => ['instances', 'orbit-e2e-standby-gateway'],
+        'retired live topology snapshot network' => ['networks', 'oe-live-standby'],
+        'retired live topology snapshot VM' => ['instances', 'orbit-e2e-live-standby-gateway'],
     ]);
 
     it('keeps similar-looking foreign identities eligible when classified as legacy', function (
@@ -326,7 +330,7 @@ describe('legacy retirement', function () {
     })->with([
         'foreign compact network' => ['networks', 'oe-a1b2c3d4e5f'],
         'foreign VM prefix' => ['instances', 'orbit-e2e-orbitx-0-1'],
-        'foreign standby spelling' => ['networks', 'oe-standby-extra'],
+        'foreign topology snapshot spelling' => ['networks', 'oe-topo-snap-extra'],
     ]);
 
     it('rejects symbolic-link parents for every protected JSON input and provider observation', function () {
@@ -362,8 +366,8 @@ describe('legacy retirement', function () {
             $target = &$value['targets'][1];
             $target['observed']['classification'] = $forgery === 'preserve' ? 'preserve' : 'legacy';
             if ($forgery === 'protected') {
-                $target['observed']['name'] = 'orbit-e2e-standby-forged';
-                $target['identity'] = 'orbit-e2e-standby-forged';
+                $target['observed']['name'] = 'orbit-e2e-topology-snapshot-forged';
+                $target['identity'] = 'orbit-e2e-topology-snapshot-forged';
             }
             unset($target['observed']['sha256']);
             $target['observed']['sha256'] = hash('sha256', json_encode(
@@ -510,7 +514,7 @@ describe('legacy retirement', function () {
         expect(array_column($inventory->candidates['instances'], 'name'))
             ->toBe(['orbit-e2e-dev-42', 'orbit-template-api'])
             ->and(array_column($inventory->preserved['instances'], 'name'))
-            ->toBe(['database', 'orbit-e2e-standby-gateway'])
+            ->toBe(['database', 'orbit-e2e-topology-snapshot-gateway'])
             ->and($inventory->preserved['pools'][0]['identity'])
             ->toBe('pool-uuid-1')
             ->and($operations)

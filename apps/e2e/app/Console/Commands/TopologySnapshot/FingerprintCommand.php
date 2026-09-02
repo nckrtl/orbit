@@ -2,24 +2,24 @@
 
 declare(strict_types=1);
 
-namespace App\Console\Commands\Standby;
+namespace App\Console\Commands\TopologySnapshot;
 
 use App\E2E\LaravelReleaseResolver;
 use App\E2E\PreparedStateFingerprint;
-use App\E2E\StandbyManifestStore;
+use App\E2E\TopologySnapshotManifestStore;
 use Illuminate\Console\Command;
 use Throwable;
 
 final class FingerprintCommand extends Command
 {
     #[\Override]
-    protected $signature = 'standby:fingerprint {--main-sha=HEAD} {--json}';
+    protected $signature = 'topology-snapshot:fingerprint {--main-sha=HEAD} {--json}';
     #[\Override]
-    protected $description = 'Compute the desired prepared standby fingerprint';
+    protected $description = 'Compute the desired prepared topology snapshot fingerprint';
 
     public function handle(
         PreparedStateFingerprint $fingerprints,
-        StandbyManifestStore $standby,
+        TopologySnapshotManifestStore $topologySnapshot,
         LaravelReleaseResolver $laravel,
     ): int {
         try {
@@ -27,7 +27,7 @@ final class FingerprintCommand extends Command
             if (! is_string($commit)) {
                 throw new \InvalidArgumentException('The main SHA is invalid.');
             }
-            $promoted = $standby->promoted();
+            $promoted = $topologySnapshot->promoted();
             $structural = $fingerprints->forCommit($commit);
             $release = $promoted?->laravel;
             if ($promoted !== null) {

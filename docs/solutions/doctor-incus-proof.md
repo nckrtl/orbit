@@ -25,12 +25,12 @@ Three separate causes, found by comparing each issue with the live files:
   matches the writer.
 - `*.php_fpm_projection_mismatch` on both app nodes and
   `instance.caddy_projection_mismatch` on app-prod: harness state, not
-  product state. The rolling standby refresh restores old snapshots and skips
-  provisioning, so pool files written by an older renderer survive a renderer
-  change. The app-prod internal-TLS fixture also replaced the product-managed
-  `/etc/caddy/Caddyfile` symlink with a wrapper, which broke Doctor's fragment
-  lookup and made the product's own Caddy publish fail validation (fixed in
-  the fixture by NCK-84).
+  product state. The rolling topology snapshot refresh restores old snapshots
+  and skips provisioning, so pool files written by an older renderer survive a
+  renderer change. The app-prod internal-TLS fixture also replaced the
+  product-managed `/etc/caddy/Caddyfile` symlink with a wrapper, which broke
+  Doctor's fragment lookup and made the product's own Caddy publish fail
+  validation (fixed in the fixture by NCK-84).
 
 ## Solution
 
@@ -61,8 +61,8 @@ Three separate causes, found by comparing each issue with the live files:
 
 ## Limits
 
-- The re-projection setup is a no-op once the promoted standby is rebuilt
-  cold. Until the harness re-projects on refresh, keep it.
+- The re-projection setup is a no-op once the promoted topology snapshot is
+  rebuilt cold. Until the harness re-projects on refresh, keep it.
 - Denying one sudo command works because the sudoers drop-in sorts last and
   the last match wins. Denying `bash` instead would also break the instance
   and workspace inspectors.

@@ -14,32 +14,32 @@ use App\E2E\Value\IncusInstance;
 use App\E2E\Value\OperationId;
 use App\E2E\Value\ProofFixtures;
 use App\E2E\Value\ProofPlan;
-use App\E2E\Value\StandbyGeneration;
-use App\E2E\Value\StandbyIdentity;
 use App\E2E\Value\TopologyProfile;
 use App\E2E\Value\TopologyRequest;
+use App\E2E\Value\TopologySnapshotGeneration;
+use App\E2E\Value\TopologySnapshotIdentity;
 use App\E2E\Value\TopologyTarget;
 use App\E2E\Value\VerificationMode;
 use RuntimeException;
 use Throwable;
 
 /**
- * Promote one issue's proved topology to the standby generation.
+ * Promote one issue's proved topology to the topology snapshot generation.
  *
  * The three proved VMs are stopped and copied (without snapshots) next to the
- * standby instances, re-attached to this checkout's standby network with its fixed standby
+ * topology snapshot instances, re-attached to this checkout's topology snapshot network with its fixed topology snapshot
  * addresses, stripped of their attempt metadata, and snapshotted as
- * `main-<generation>`. Only then is each old standby instance deleted and its
+ * `main-<generation>`. Only then is each old topology snapshot instance deleted and its
  * copy renamed into place; the manifest is promoted and the proved topology
- * is released. A failure before the swap leaves the standby untouched and the
+ * is released. A failure before the swap leaves the topology snapshot untouched and the
  * proved topology stopped.
  *
  * @mago-expect lint:excessive-parameter-list The promotion dependencies are explicit trust boundaries.
  * @mago-expect lint:cyclomatic-complexity,kan-defect,too-many-methods The promotion keeps its exact ordered operations together.
  */
-final readonly class StandbyPromoter
+final readonly class TopologySnapshotPromoter
 {
-    /** The metadata a proved clone carries that a standby instance must not. */
+    /** The metadata a proved clone carries that a topology snapshot instance must not. */
     private const array ATTEMPT_METADATA = [
         'user.orbit.e2e.issue',
         'user.orbit.e2e.attempt',
@@ -52,14 +52,14 @@ final readonly class StandbyPromoter
         private IncusHost $host,
         private PreparedStateFingerprint $fingerprints,
         private TopologyVerifier $verifier,
-        private StandbyManifestStore $manifests,
+        private TopologySnapshotManifestStore $manifests,
         private TopologyReleaser $releaser,
         private OperationLock $lock,
         private OperationLock $generationLock,
         private StatePaths $hostPaths,
         private GitRepository $primary,
         private OperationId $operation,
-        private StandbyIdentity $identity,
+        private TopologySnapshotIdentity $identity,
     ) {}
 
     /** @return array{state:string,issue:string,attempt_id:string,generation_id:string,main_sha:string,previous_generation_id:?string,released:list<string>,networks_reaped:list<string>} */
@@ -69,10 +69,10 @@ final readonly class StandbyPromoter
         $topology = $this->provedTopology($state, $plan);
         $candidate = $this->provedCandidate($state, $topology);
         $promoted = $this->manifests->promoted() ?? throw new RuntimeException(
-            'There is no promoted standby generation to replace; build the standby first.',
+            'There is no promoted topology snapshot generation to replace; build the topology snapshot first.',
         );
         if ($promoted->isLegacy() || $topology->generation->isLegacy()) {
-            throw new RuntimeException('A legacy standby generation cannot be promoted. Refresh it first.');
+            throw new RuntimeException('A legacy topology snapshot generation cannot be promoted. Refresh it first.');
         }
         $generation = $this->nextGeneration($candidate, $topology, $promoted);
         $verification = $this->verifier->verify(
@@ -88,7 +88,7 @@ final readonly class StandbyPromoter
         }
 
         if (! $this->lock->acquire('standby-refresh', $this->operation, timeoutSeconds: 3600)) {
-            throw new RuntimeException('Unable to acquire the standby refresh lock.');
+            throw new RuntimeException('Unable to acquire the topology snapshot refresh lock.');
         }
         try {
             $this->withLock($this->generationLock, 'standby-generation', function () use (
@@ -104,10 +104,12 @@ final readonly class StandbyPromoter
                 }
                 try {
                     if ($this->manifests->promoted()?->toArray() !== $promoted->toArray()) {
-                        throw new RuntimeException('The promoted standby generation changed before promotion.');
+                        throw new RuntimeException(
+                            'The promoted topology snapshot generation changed before promotion.',
+                        );
                     }
                     $state->requireTopology();
-                    $this->replaceStandby($topology, $generation);
+                    $this->replaceTopologySnapshot($topology, $generation);
                 } finally {
                     $issueLock->release();
                 }
@@ -144,7 +146,7 @@ final readonly class StandbyPromoter
         }
         if ($plan->mutates) {
             throw new RuntimeException(
-                'The proof plan declares mutates: true; a topology the plan changed cannot become the standby.',
+                'The proof plan declares mutates: true; a topology the plan changed cannot become the topology snapshot.',
             );
         }
 
@@ -179,8 +181,8 @@ final readonly class StandbyPromoter
     private function nextGeneration(
         string $candidate,
         FeatureTopology $topology,
-        StandbyGeneration $promoted,
-    ): StandbyGeneration {
+        TopologySnapshotGeneration $promoted,
+    ): TopologySnapshotGeneration {
         $structural = $this->fingerprints->forCommit($candidate);
         $laravel = $topology->generation->laravel;
         $desired = $this->fingerprints->withLaravel($structural, $laravel);
@@ -189,7 +191,7 @@ final readonly class StandbyPromoter
             ($manifest['cold_epoch'] ?? null) !== $promoted->coldEpoch
             || ($manifest['base_image_alias'] ?? null) !== $promoted->baseImageAlias
         ) {
-            throw new RuntimeException('Cold base changed; recovery-required cold standby rebuild.');
+            throw new RuntimeException('Cold base changed; recovery-required cold topology snapshot rebuild.');
         }
         if (
             ! is_int($manifest['schema'] ?? null)
@@ -213,7 +215,7 @@ final readonly class StandbyPromoter
         /** @var array<string, list<string>> $assignments */
         $assignments = $manifest['topology']['assignments'];
 
-        return new StandbyGeneration(
+        return new TopologySnapshotGeneration(
             $id,
             $candidate,
             array_fill_keys(TopologyProfile::ROLES, 'main-'.$id),
@@ -259,13 +261,13 @@ final readonly class StandbyPromoter
         }
     }
 
-    /** Copy, re-attach, snapshot; only then swap each standby instance for its copy. */
-    private function replaceStandby(FeatureTopology $topology, StandbyGeneration $generation): void
+    /** Copy, re-attach, snapshot; only then swap each topology snapshot instance for its copy. */
+    private function replaceTopologySnapshot(FeatureTopology $topology, TopologySnapshotGeneration $generation): void
     {
-        $standby = TopologyTarget::standby($this->identity);
+        $topologySnapshot = TopologyTarget::topologySnapshot($this->identity);
         $proved = array_map($topology->target->instance(...), TopologyProfile::ROLES);
-        $standbyNames = array_map($standby->instance(...), TopologyProfile::ROLES);
-        $copyNames = array_map(static fn (string $name): string => $name.self::COPY_SUFFIX, $standbyNames);
+        $topologySnapshotNames = array_map($topologySnapshot->instance(...), TopologyProfile::ROLES);
+        $copyNames = array_map(static fn (string $name): string => $name.self::COPY_SUFFIX, $topologySnapshotNames);
 
         $leftover = array_keys($this->host->instances($copyNames));
         if ($leftover !== []) {
@@ -277,7 +279,7 @@ final readonly class StandbyPromoter
         $this->clearProofFixtures($proved);
         $this->host->stopAll($proved);
         $this->assertStopped($proved, 'proved');
-        $this->assertStopped($standbyNames, 'standby');
+        $this->assertStopped($topologySnapshotNames, 'topology-snapshot');
 
         $copies = [];
         foreach (TopologyProfile::ROLES as $index => $role) {
@@ -285,9 +287,9 @@ final readonly class StandbyPromoter
                 'source' => $proved[$index],
                 'target' => $copyNames[$index],
                 'metadata' => ['user.orbit.e2e.operation' => $this->operation->value],
-                'network' => $standby->network(),
+                'network' => $topologySnapshot->network(),
                 'role' => $role,
-                'topology' => $standby->network(),
+                'topology' => $topologySnapshot->network(),
                 'slot' => $this->identity->slot,
             ];
         }
@@ -304,24 +306,24 @@ final readonly class StandbyPromoter
             $this->discardCopies($copyNames);
 
             throw new RuntimeException(
-                'Standby promotion failed before the swap: '.$exception->getMessage(),
+                'Topology snapshot promotion failed before the swap: '.$exception->getMessage(),
                 previous: $exception,
             );
         }
 
         foreach (TopologyProfile::ROLES as $index => $role) {
             try {
-                $this->host->deleteInstances([$standbyNames[$index]]);
-                $this->host->renameInstance($copyNames[$index], $standbyNames[$index]);
+                $this->host->deleteInstances([$topologySnapshotNames[$index]]);
+                $this->host->renameInstance($copyNames[$index], $topologySnapshotNames[$index]);
             } catch (Throwable $exception) {
                 throw new RuntimeException(
-                    "Standby promotion failed while swapping {$role}: {$exception->getMessage()} "
-                    ."Rename {$copyNames[$index]} to {$standbyNames[$index]} by hand, then run bin/e2e-standby refresh.",
+                    "Topology snapshot promotion failed while swapping {$role}: {$exception->getMessage()} "
+                    ."Rename {$copyNames[$index]} to {$topologySnapshotNames[$index]} by hand, then run bin/e2e-topology-snapshot refresh.",
                     previous: $exception,
                 );
             }
         }
-        $this->host->assertOwnedSnapshots(array_combine($standbyNames, array_values($generation->snapshots)));
+        $this->host->assertOwnedSnapshots(array_combine($topologySnapshotNames, array_values($generation->snapshots)));
     }
 
     /** @param list<string> $copyNames */
@@ -372,7 +374,7 @@ final readonly class StandbyPromoter
     }
 
     /** The replaced instances took every earlier snapshot with them; their manifests go too. */
-    private function forgetReplacedGenerations(StandbyGeneration $current): void
+    private function forgetReplacedGenerations(TopologySnapshotGeneration $current): void
     {
         foreach ($this->manifests->recorded() as $generation) {
             if ($generation->id !== $current->id) {
@@ -384,7 +386,7 @@ final readonly class StandbyPromoter
     private function withLock(OperationLock $lock, string $name, callable $mutation): void
     {
         if (! $lock->acquire($name, $this->operation, timeoutSeconds: 3600)) {
-            throw new RuntimeException("Unable to acquire the {$name} lock for standby promotion.");
+            throw new RuntimeException("Unable to acquire the {$name} lock for topology snapshot promotion.");
         }
         try {
             $mutation();

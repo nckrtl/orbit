@@ -5,8 +5,8 @@ declare(strict_types=1);
 use App\E2E\Value\AttemptId;
 use App\E2E\Value\FeatureTopology;
 use App\E2E\Value\ProofPlan;
-use App\E2E\Value\StandbyIdentity;
 use App\E2E\Value\TopologyProfile;
+use App\E2E\Value\TopologySnapshotIdentity;
 use App\E2E\Value\TopologyTarget;
 use PHPUnit\Framework\Assert;
 use Tests\Live\Support\LiveHarness;
@@ -20,7 +20,7 @@ uses(TestCase::class);
  * wrappers: a mounted discovery attempt is used and released, the worktree
  * HEAD is proved on a fresh attempt, the proved topology refuses mutation and
  * stays alive until release, the same commit proves again, that proved
- * topology is promoted to the standby generation, a discovery attempt clones
+ * topology is promoted to the topology snapshot generation, a discovery attempt clones
  * the promoted generation, and a plan declaring an end state it did not bring
  * about is refused. Every phase asserts the state under `<worktree>/.e2e/`,
  * and cleanup only ever names the exact attempt.
@@ -76,10 +76,10 @@ it('proves the simple flow through public wrappers', function (): void {
     $primaryFailure = null;
 
     try {
-        $initialStandby = LiveHarness::jsonWrapper('standby', 'status');
-        Assert::assertSame('promoted', $initialStandby['state'] ?? null);
-        Assert::assertTrue($initialStandby['stopped'] ?? false);
-        Assert::assertIsArray($initialStandby['generation'] ?? null);
+        $initialTopologySnapshot = LiveHarness::jsonWrapper('topology-snapshot', 'status');
+        Assert::assertSame('promoted', $initialTopologySnapshot['state'] ?? null);
+        Assert::assertTrue($initialTopologySnapshot['stopped'] ?? false);
+        Assert::assertIsArray($initialTopologySnapshot['generation'] ?? null);
         $initialInventory = LiveHarness::inventoryFingerprint();
         Assert::assertSame(
             'absent',
@@ -246,11 +246,11 @@ it('proves the simple flow through public wrappers', function (): void {
         Assert::assertNotContains($secondProofAttempt, [$discoveryAttempt, $proofAttempt]);
         $secondProof = TopologyTarget::feature($issue, new AttemptId($secondProofAttempt));
         LiveHarness::assertIncusAbsent(lifecycleResourceNames($proof));
-        // Phase: promote the proved topology to the standby generation; promote releases it.
+        // Phase: promote the proved topology to the topology snapshot generation; promote releases it.
         $promote = LiveHarness::jsonPhase(
             'promote proved topology',
             fn (): array => LiveHarness::jsonWrapper(
-                'standby',
+                'topology-snapshot',
                 'promote',
                 $issue,
                 $worktreeOption,
@@ -263,19 +263,19 @@ it('proves the simple flow through public wrappers', function (): void {
             $promote,
             $secondProof,
             $candidateSha,
-            $initialStandby,
+            $initialTopologySnapshot,
             $stateRoot,
             $worktreeOption,
         );
         Assert::assertSame($reproved, LiveHarness::jsonFile("{$stateRoot}/proof.json"));
-        $promotedStandby = LiveHarness::jsonWrapper('standby', 'status');
-        Assert::assertSame('promoted', $promotedStandby['state'] ?? null);
-        Assert::assertTrue($promotedStandby['stopped'] ?? false);
-        Assert::assertSame($generationId, $promotedStandby['generation']['id'] ?? null);
-        Assert::assertSame($candidateSha, $promotedStandby['generation']['main_sha'] ?? null);
+        $promotedTopologySnapshot = LiveHarness::jsonWrapper('topology-snapshot', 'status');
+        Assert::assertSame('promoted', $promotedTopologySnapshot['state'] ?? null);
+        Assert::assertTrue($promotedTopologySnapshot['stopped'] ?? false);
+        Assert::assertSame($generationId, $promotedTopologySnapshot['generation']['id'] ?? null);
+        Assert::assertSame($candidateSha, $promotedTopologySnapshot['generation']['main_sha'] ?? null);
         Assert::assertSame(
-            $initialStandby['generation']['laravel_pin'] ?? null,
-            $promotedStandby['generation']['laravel_pin'] ?? null,
+            $initialTopologySnapshot['generation']['laravel_pin'] ?? null,
+            $promotedTopologySnapshot['generation']['laravel_pin'] ?? null,
         );
 
         // Phase: a discovery attempt clones the promoted generation and runs the same command.
@@ -337,11 +337,11 @@ it('proves the simple flow through public wrappers', function (): void {
         $releasedAttempts[] = $declaredAttempt;
         lifecycleAssertRelease($declaredRelease, $declaredTopology, $stateRoot, $worktreeOption);
 
-        // Phase: only the standby changed, and only by promotion.
+        // Phase: only the topology snapshot changed, and only by promotion.
         LiveHarness::voidPhase(
             'verify host',
             function () use (
-                $promotedStandby,
+                $promotedTopologySnapshot,
                 $initialInventory,
                 $issue,
                 $stateRoot,
@@ -351,7 +351,7 @@ it('proves the simple flow through public wrappers', function (): void {
                 $mainWorktree,
                 $initialMainSha,
             ): void {
-                Assert::assertSame($promotedStandby, LiveHarness::jsonWrapper('standby', 'status'));
+                Assert::assertSame($promotedTopologySnapshot, LiveHarness::jsonWrapper('topology-snapshot', 'status'));
                 Assert::assertSame(
                     [],
                     lifecycleUnexpectedInventoryChanges(
@@ -360,12 +360,12 @@ it('proves the simple flow through public wrappers', function (): void {
                         $issue,
                     ),
                 );
-                $standby = lifecycleStandbyTarget();
+                $topologySnapshot = lifecycleTopologySnapshotTarget();
                 foreach (TopologyProfile::ROLES as $role) {
-                    $instance = LiveHarness::incusResource('instance', $standby->instance($role));
+                    $instance = LiveHarness::incusResource('instance', $topologySnapshot->instance($role));
                     Assert::assertSame('STOPPED', strtoupper((string) ($instance['status'] ?? '')));
                     Assert::assertSame(
-                        $standby->network(),
+                        $topologySnapshot->network(),
                         $instance['expanded_devices']['eth0']['network'] ?? null,
                     );
                     Assert::assertArrayNotHasKey('user.orbit.e2e.issue', $instance['config'] ?? []);
@@ -585,8 +585,8 @@ function lifecycleAssertRelease(array $release, TopologyTarget $target, string $
     Assert::assertEqualsCanonicalizing($expected, $release['released'] ?? null);
     Assert::assertSame([], $release['already_absent'] ?? null);
     Assert::assertIsArray($release['networks_reaped'] ?? null);
-    foreach (StandbyIdentity::known() as $standby) {
-        Assert::assertNotContains($standby->network(), $release['networks_reaped']);
+    foreach (TopologySnapshotIdentity::known() as $topologySnapshot) {
+        Assert::assertNotContains($topologySnapshot->network(), $release['networks_reaped']);
     }
     Assert::assertFileDoesNotExist("{$stateRoot}/attempt.json");
     Assert::assertFileDoesNotExist("{$stateRoot}/topology.json");
@@ -598,18 +598,18 @@ function lifecycleAssertRelease(array $release, TopologyTarget $target, string $
 }
 
 /**
- * The promotion verdict: the proved attempt became the standby generation of
+ * The promotion verdict: the proved attempt became the topology snapshot generation of
  * the candidate and was released, and nothing of it remains on the host.
  *
  * @param array<array-key, mixed> $promote
- * @param array<array-key, mixed> $initialStandby
+ * @param array<array-key, mixed> $initialTopologySnapshot
  * @mago-expect lint:excessive-parameter-list The promotion verdict names every input it checks.
  */
 function lifecycleAssertPromotion(
     array $promote,
     TopologyTarget $target,
     string $candidateSha,
-    array $initialStandby,
+    array $initialTopologySnapshot,
     string $stateRoot,
     string $worktreeOption,
 ): string {
@@ -621,9 +621,11 @@ function lifecycleAssertPromotion(
     Assert::assertIsString($generationId);
     Assert::assertMatchesRegularExpression('/\A[a-f0-9]{12}-[a-f0-9]{12}\z/D', $generationId);
     Assert::assertStringStartsWith(substr($candidateSha, 0, 12), $generationId);
-    $initialId = $initialStandby['generation']['id'] ?? null;
+    $initialId = $initialTopologySnapshot['generation']['id'] ?? null;
     Assert::assertSame(
-        $generationId === $initialId ? $initialStandby['generation']['previous_generation_id'] ?? null : $initialId,
+        $generationId === $initialId
+            ? $initialTopologySnapshot['generation']['previous_generation_id'] ?? null
+            : $initialId,
         $promote['previous_generation_id'] ?? null,
     );
     $expected = [];
@@ -633,8 +635,8 @@ function lifecycleAssertPromotion(
     $expected[] = 'deleted:'.$target->network();
     Assert::assertEqualsCanonicalizing($expected, $promote['released'] ?? null);
     Assert::assertIsArray($promote['networks_reaped'] ?? null);
-    foreach (StandbyIdentity::known() as $standby) {
-        Assert::assertNotContains($standby->network(), $promote['networks_reaped']);
+    foreach (TopologySnapshotIdentity::known() as $topologySnapshot) {
+        Assert::assertNotContains($topologySnapshot->network(), $promote['networks_reaped']);
     }
     Assert::assertFileDoesNotExist("{$stateRoot}/attempt.json");
     Assert::assertFileDoesNotExist("{$stateRoot}/topology.json");
@@ -647,18 +649,18 @@ function lifecycleAssertPromotion(
     return $generationId;
 }
 
-/** The standby this checkout owns; the validation clone owns its own, not the primary's. */
-function lifecycleStandbyTarget(): TopologyTarget
+/** The topology snapshot this checkout owns; the validation clone owns its own, not the primary's. */
+function lifecycleTopologySnapshotTarget(): TopologyTarget
 {
-    return TopologyTarget::standby(app(StandbyIdentity::class));
+    return TopologyTarget::topologySnapshot(app(TopologySnapshotIdentity::class));
 }
 
 /**
  * Every inventory entry that changed and is this run's to account for.
  *
  * The run must leave the host exactly as it found it, except for its own
- * standby instances, which promotion replaces. Resources of another issue and
- * of a standby another checkout owns change while other sessions work; they
+ * topology snapshot instances, which promotion replaces. Resources of another issue and
+ * of a topology snapshot another checkout owns change while other sessions work; they
  * are not this run's evidence, so they are named and skipped rather than
  * failing the suite.
  *
@@ -668,12 +670,16 @@ function lifecycleStandbyTarget(): TopologyTarget
  */
 function lifecycleUnexpectedInventoryChanges(array $before, array $after, string $issue): array
 {
-    $mine = app(StandbyIdentity::class);
+    $mine = app(TopologySnapshotIdentity::class);
     $replaced = $mine->instances();
-    $foreignStandby = [];
-    foreach (StandbyIdentity::known() as $standby) {
-        if ($standby->namespace !== $mine->namespace) {
-            $foreignStandby = [...$foreignStandby, $standby->network(), ...$standby->instances()];
+    $foreignTopologySnapshot = [];
+    foreach (TopologySnapshotIdentity::known() as $topologySnapshot) {
+        if ($topologySnapshot->namespace !== $mine->namespace) {
+            $foreignTopologySnapshot = [
+                ...$foreignTopologySnapshot,
+                $topologySnapshot->network(),
+                ...$topologySnapshot->instances(),
+            ];
         }
     }
 
@@ -682,7 +688,7 @@ function lifecycleUnexpectedInventoryChanges(array $before, array $after, string
         foreach (array_keys($before[$kind] + $after[$kind]) as $name) {
             $was = $before[$kind][$name] ?? null;
             $now = $after[$kind][$name] ?? null;
-            if ($was === $now || in_array($name, $replaced, true) || in_array($name, $foreignStandby, true)) {
+            if ($was === $now || in_array($name, $replaced, true) || in_array($name, $foreignTopologySnapshot, true)) {
                 continue;
             }
             $owner = ($now ?? $was)['config']['user.orbit.e2e.issue'] ?? null;

@@ -8,21 +8,21 @@ use App\E2E\State\AtomicJsonStore;
 use App\E2E\Value\AttemptId;
 use App\E2E\Value\IncusInstance;
 use App\E2E\Value\IncusNetwork;
-use App\E2E\Value\LegacyStandbyInventory;
+use App\E2E\Value\LegacyTopologySnapshotInventory;
 use App\E2E\Value\OperationId;
-use App\E2E\Value\StandbyGeneration;
-use App\E2E\Value\StandbyIdentity;
 use App\E2E\Value\TopologyProfile;
+use App\E2E\Value\TopologySnapshotGeneration;
+use App\E2E\Value\TopologySnapshotIdentity;
 use App\E2E\Value\TopologyTarget;
 use InvalidArgumentException;
 use RuntimeException;
 
 /**
- * Prove exact ownership and retain evidence for the bounded schema-4/5 standby recovery.
+ * Prove exact ownership and retain evidence for the bounded schema-4/5 topology snapshot recovery.
  *
  * @mago-expect lint:cyclomatic-complexity,kan-defect,too-many-methods Exact authorization and evidence validation stay at one transaction boundary.
  */
-final readonly class LegacyStandbyRecovery
+final readonly class LegacyTopologySnapshotRecovery
 {
     private const array PHASES = [
         'instances_pending',
@@ -40,34 +40,34 @@ final readonly class LegacyStandbyRecovery
 
     public function __construct(
         private IncusHost $host,
-        private StandbyManifestStore $manifests,
+        private TopologySnapshotManifestStore $manifests,
         private AtomicJsonStore $state,
         private OperationId $operation,
-        private StandbyIdentity $identity,
+        private TopologySnapshotIdentity $identity,
     ) {}
 
-    public function authorize(): LegacyStandbyInventory
+    public function authorize(): LegacyTopologySnapshotInventory
     {
         $promoted = $this->manifests->promoted();
         if ($promoted === null) {
             throw new RuntimeException(
-                'Legacy standby recovery requires a readable unbound schema-4/5 promoted manifest. '
+                'Legacy topology snapshot recovery requires a readable unbound schema-4/5 promoted manifest. '
                 .'Preserve the named resources and restore the matching manifest before retrying.',
             );
         }
         if (! in_array(
             $promoted->manifestSchema,
-            [StandbyGeneration::LEGACY_SCHEMA, StandbyGeneration::SCHEMA],
+            [TopologySnapshotGeneration::LEGACY_SCHEMA, TopologySnapshotGeneration::SCHEMA],
             true,
         )) {
             throw new RuntimeException(
-                'Legacy standby recovery requires a readable unbound schema-4/5 promoted manifest. '
+                'Legacy topology snapshot recovery requires a readable unbound schema-4/5 promoted manifest. '
                 .'Preserve the named resources and use the recovery procedure for that manifest schema.',
             );
         }
 
         $recorded = $this->manifests->recorded();
-        $target = TopologyTarget::standby($this->identity);
+        $target = TopologyTarget::topologySnapshot($this->identity);
         $roles = [];
         foreach (TopologyProfile::ROLES as $role) {
             $roles[$target->instance($role)] = ['role' => $role, 'copy' => false];
@@ -101,11 +101,13 @@ final readonly class LegacyStandbyRecovery
             $this->assertNetwork($network, array_keys($instances));
         }
         if ($instances === [] && $network === null) {
-            throw new RuntimeException('No exact configured standby resources are present for legacy recovery.');
+            throw new RuntimeException(
+                'No exact configured topology snapshot resources are present for legacy recovery.',
+            );
         }
 
-        return new LegacyStandbyInventory(
-            [...$this->host->scope(), 'standby_namespace' => $this->identity->namespace],
+        return new LegacyTopologySnapshotInventory(
+            [...$this->host->scope(), 'topology_snapshot_namespace' => $this->identity->namespace],
             $promoted->toArray(),
             array_map(static fn ($generation): array => $generation->toArray(), $recorded),
             $serializedInstances,
@@ -114,17 +116,17 @@ final readonly class LegacyStandbyRecovery
         );
     }
 
-    public function start(string $mainSha, LegacyStandbyInventory $inventory): void
+    public function start(string $mainSha, LegacyTopologySnapshotInventory $inventory): void
     {
         if (preg_match('/\A[a-f0-9]{40}\z/D', $mainSha) !== 1) {
             throw new RuntimeException('The legacy recovery SHA is invalid.');
         }
-        $existing = $this->state->read('standby/recovery.json');
+        $existing = $this->state->read('topology-snapshot/recovery.json');
         if ($existing !== null) {
             $this->archiveCompleted($existing);
         }
 
-        $this->state->write('standby/recovery.json', [
+        $this->state->write('topology-snapshot/recovery.json', [
             'schema' => 1,
             'operation_id' => $this->operation->value,
             'main_sha' => $mainSha,
@@ -140,12 +142,12 @@ final readonly class LegacyStandbyRecovery
 
     public function completed(): bool
     {
-        return ($this->state->read('standby/recovery.json')['phase'] ?? null) === 'construction_verified';
+        return ($this->state->read('topology-snapshot/recovery.json')['phase'] ?? null) === 'construction_verified';
     }
 
     public function interruptedConstructionOperation(): ?OperationId
     {
-        $record = $this->state->read('standby/recovery.json');
+        $record = $this->state->read('topology-snapshot/recovery.json');
         if ($record === null || ($record['phase'] ?? null) === 'construction_verified') {
             return null;
         }
@@ -182,7 +184,7 @@ final readonly class LegacyStandbyRecovery
     /** @return array{instances:bool,network:bool,manifests:bool} */
     public function resumableBoundaries(): array
     {
-        $record = $this->state->read('standby/recovery.json');
+        $record = $this->state->read('topology-snapshot/recovery.json');
         $history = $record['history'] ?? [];
         if (! is_array($history) || ! array_is_list($history)) {
             throw new RuntimeException('The retained legacy recovery record is invalid.');
@@ -202,9 +204,9 @@ final readonly class LegacyStandbyRecovery
         ];
     }
 
-    public function resume(string $mainSha): ?LegacyStandbyInventory
+    public function resume(string $mainSha): ?LegacyTopologySnapshotInventory
     {
-        $record = $this->state->read('standby/recovery.json');
+        $record = $this->state->read('topology-snapshot/recovery.json');
         if ($record === null) {
             return null;
         }
@@ -219,7 +221,7 @@ final readonly class LegacyStandbyRecovery
             throw new RuntimeException('The retained legacy recovery record is invalid.');
         }
         try {
-            $inventory = LegacyStandbyInventory::fromArray($inventoryValue);
+            $inventory = LegacyTopologySnapshotInventory::fromArray($inventoryValue);
         } catch (InvalidArgumentException $exception) {
             throw new RuntimeException('The retained legacy recovery record is invalid.', previous: $exception);
         }
@@ -227,7 +229,9 @@ final readonly class LegacyStandbyRecovery
             throw new RuntimeException('The retained legacy recovery inventory digest does not match.');
         }
         if (($record['phase'] ?? null) === 'construction_verified') {
-            throw new RuntimeException('Legacy standby recovery is already complete; run bin/e2e-standby status.');
+            throw new RuntimeException(
+                'Legacy topology snapshot recovery is already complete; run bin/e2e-topology-snapshot status.',
+            );
         }
         $history = $record['history'] ?? null;
         $previousOperation = $record['operation_id'] ?? null;
@@ -250,7 +254,7 @@ final readonly class LegacyStandbyRecovery
             ],
         ];
         $record['history'] = $history;
-        $this->state->write('standby/recovery.json', $record);
+        $this->state->write('topology-snapshot/recovery.json', $record);
 
         return $inventory;
     }
@@ -261,7 +265,7 @@ final readonly class LegacyStandbyRecovery
         if (! in_array($phase, self::PHASES, true)) {
             throw new RuntimeException('The legacy recovery evidence phase is invalid.');
         }
-        $record = $this->state->read('standby/recovery.json');
+        $record = $this->state->read('topology-snapshot/recovery.json');
         if (
             $record === null
             || ($record['schema'] ?? null) !== 1
@@ -273,13 +277,13 @@ final readonly class LegacyStandbyRecovery
         }
         $record['phase'] = $phase;
         $record['history'][] = ['phase' => $phase, 'evidence' => $evidence];
-        $this->state->write('standby/recovery.json', $record);
+        $this->state->write('topology-snapshot/recovery.json', $record);
     }
 
     /** @return array<array-key, mixed>|null */
     public function retained(): ?array
     {
-        return $this->state->read('standby/recovery.json');
+        return $this->state->read('topology-snapshot/recovery.json');
     }
 
     /** @param array<array-key, mixed> $record */
@@ -287,7 +291,7 @@ final readonly class LegacyStandbyRecovery
     {
         if (($record['phase'] ?? null) !== 'construction_verified') {
             throw new RuntimeException(
-                'A retained legacy standby recovery record already exists; follow its recorded next action.',
+                'A retained legacy topology snapshot recovery record already exists; follow its recorded next action.',
             );
         }
         $operation = $record['operation_id'] ?? null;
@@ -302,7 +306,7 @@ final readonly class LegacyStandbyRecovery
             throw new RuntimeException('The completed legacy recovery record is invalid.');
         }
         try {
-            $inventory = LegacyStandbyInventory::fromArray($inventoryValue);
+            $inventory = LegacyTopologySnapshotInventory::fromArray($inventoryValue);
         } catch (InvalidArgumentException $exception) {
             throw new RuntimeException('The completed legacy recovery record is invalid.', previous: $exception);
         }
@@ -310,7 +314,7 @@ final readonly class LegacyStandbyRecovery
             throw new RuntimeException('The completed legacy recovery inventory digest does not match.');
         }
 
-        $archive = "standby/recoveries/{$operation}.json";
+        $archive = "topology-snapshot/recoveries/{$operation}.json";
         $retained = $this->state->read($archive);
         if ($retained !== null && $retained !== $record) {
             throw new RuntimeException('The completed legacy recovery archive conflicts with retained evidence.');
@@ -321,7 +325,7 @@ final readonly class LegacyStandbyRecovery
         if ($this->state->read($archive) !== $record) {
             throw new RuntimeException('The completed legacy recovery evidence could not be archived.');
         }
-        $this->state->delete('standby/recovery.json');
+        $this->state->delete('topology-snapshot/recovery.json');
     }
 
     private function assertInstance(IncusInstance $instance, string $role, bool $copy): void
@@ -333,7 +337,7 @@ final readonly class LegacyStandbyRecovery
         if ($instance->network !== $this->identity->network()) {
             throw new RuntimeException("Incus instance {$instance->name} network identity does not match.");
         }
-        $expectedMac = TopologyTarget::standby($this->identity)->mac($role);
+        $expectedMac = TopologyTarget::topologySnapshot($this->identity)->mac($role);
         if ($instance->mac !== $expectedMac) {
             throw new RuntimeException("Incus instance {$instance->name} MAC identity does not match.");
         }
@@ -382,7 +386,7 @@ final readonly class LegacyStandbyRecovery
         try {
             return new OperationId(is_string($operation) ? $operation : '');
         } catch (InvalidArgumentException) {
-            throw new RuntimeException("Standby resource {$resource} operation identity is incomplete.");
+            throw new RuntimeException("Topology snapshot resource {$resource} operation identity is incomplete.");
         }
     }
 

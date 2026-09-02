@@ -9,8 +9,8 @@ use App\E2E\Value\FeatureTopology;
 use App\E2E\Value\LaravelRelease;
 use App\E2E\Value\OperationId;
 use App\E2E\Value\SourceState;
-use App\E2E\Value\StandbyGeneration;
 use App\E2E\Value\TopologyProfile;
+use App\E2E\Value\TopologySnapshotGeneration;
 use App\E2E\Value\TopologyTarget;
 use App\E2E\Value\VerificationReport;
 
@@ -21,7 +21,7 @@ function issueStateTopology(string $issue, AttemptId $attempt): FeatureTopology
     return new FeatureTopology(
         $target,
         AttemptPurpose::Discovery,
-        new StandbyGeneration(
+        new TopologySnapshotGeneration(
             'g-'.str_repeat('a', 12),
             str_repeat('b', 40),
             ['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod'],

@@ -15,9 +15,9 @@ required serial rollout, recorded pre-state, careful restoration, and broad
 coordination because proof state could outlive one change.
 
 ADR 0005 introduced cheap issue-specific Incus topologies created from a
-prepared standby generation. Disposable resources remove the shared-state
-constraints, but exploratory changes must not contaminate evidence for the
-exact candidate commit.
+prepared topology snapshot generation. Disposable resources remove the
+shared-state constraints, but exploratory changes must not contaminate evidence
+for the exact candidate commit.
 
 ## Decision
 
@@ -40,7 +40,7 @@ resources and verify their exact absence before starting proof.
 
 A proof attempt:
 
-1. creates a fresh topology from the prepared standby generation;
+1. creates a fresh topology from the prepared topology snapshot generation;
 2. synchronizes the exact candidate commit from Git;
 3. verifies clean guest checkout identity at that commit;
 4. runs repository convergence;
@@ -73,8 +73,8 @@ Cleanup revalidates ownership and removes only the exact resources recorded for
 the attempt. It never deletes by prefix, glob, age, broad query, or unresolved
 variable. Every resource records its Orbit owner, issue, attempt, and operation.
 
-The prepared standby generation may be refreshed only after disposable proof
-resources are released and their absence is verified.
+The prepared topology snapshot generation may be refreshed only after
+disposable proof resources are released and their absence is verified.
 
 ### Preserve production separation
 

@@ -10,21 +10,21 @@ use App\E2E\Value\LaravelRelease;
 use App\E2E\Value\OperationId;
 use App\E2E\Value\PreparedFingerprint;
 use App\E2E\Value\SourceState;
-use App\E2E\Value\StandbyIdentity;
 use App\E2E\Value\TopologyProfile;
+use App\E2E\Value\TopologySnapshotIdentity;
 use App\E2E\Value\TopologyTarget;
 use RuntimeException;
 use Throwable;
 
 /**
- * Build the standby topology from the generic base image when no promoted
- * generation exists. The standby names are fixed, so cleanup after a failed
- * build needs no intent record: every standby resource stamped with this
+ * Build the topology snapshot from the generic base image when no promoted
+ * generation exists. The topology snapshot names are fixed, so cleanup after a failed
+ * build needs no intent record: every topology snapshot resource stamped with this
  * operation is deleted.
  *
  * @mago-expect lint:excessive-parameter-list,cyclomatic-complexity,kan-defect Cold construction keeps its exact resource transaction at one boundary.
  */
-final readonly class StandbyBuilder
+final readonly class TopologySnapshotBuilder
 {
     public function __construct(
         private IncusHost $host,
@@ -32,10 +32,10 @@ final readonly class StandbyBuilder
         private WorktreeSynchronizer $synchronizer,
         private TopologyConverger $converger,
         private TopologyVerifier $verifier,
-        private StandbyManifestStore $manifests,
+        private TopologySnapshotManifestStore $manifests,
         private AtomicJsonStore $state,
         private string $mainWorktree,
-        private StandbyIdentity $identity,
+        private TopologySnapshotIdentity $identity,
     ) {}
 
     public function build(
@@ -47,15 +47,17 @@ final readonly class StandbyBuilder
         OperationId $operation,
     ): SourceState {
         if (! $allowCold) {
-            throw new RuntimeException('Cold standby construction requires explicit permission.');
+            throw new RuntimeException('Cold topology snapshot construction requires explicit permission.');
         }
-        if ($this->state->read('standby/corrupt.json') !== null) {
+        if ($this->state->read('topology-snapshot/corrupt.json') !== null) {
             throw new RuntimeException(
-                'Cold standby construction is blocked until explicit recovery clears corrupt state.',
+                'Cold topology snapshot construction is blocked until explicit recovery clears corrupt state.',
             );
         }
         if ($this->manifests->promoted() !== null) {
-            throw new RuntimeException('Cold standby construction is refused while a promoted generation exists.');
+            throw new RuntimeException(
+                'Cold topology snapshot construction is refused while a promoted generation exists.',
+            );
         }
 
         $alias = $fingerprint->manifest['base_image_alias'] ?? null;
@@ -63,16 +65,16 @@ final readonly class StandbyBuilder
             throw new RuntimeException('The prepared fingerprint has no base image alias.');
         }
 
-        $target = TopologyTarget::standby($this->identity);
+        $target = TopologyTarget::topologySnapshot($this->identity);
         if ($this->host->imageFingerprint($alias) !== $baseImageFingerprint) {
             throw new RuntimeException('The base image alias fingerprint changed before cold construction.');
         }
         if ($this->host->network($target->network()) !== null) {
-            throw new RuntimeException('The standby network already exists without a promoted generation.');
+            throw new RuntimeException('The topology snapshot network already exists without a promoted generation.');
         }
         $instanceNames = array_map($target->instance(...), TopologyProfile::ROLES);
         if ($this->host->instances($instanceNames) !== []) {
-            throw new RuntimeException('A standby VM already exists without a promoted generation.');
+            throw new RuntimeException('A topology snapshot VM already exists without a promoted generation.');
         }
 
         try {
@@ -96,7 +98,7 @@ final readonly class StandbyBuilder
 
             $source = $this->synchronizer->sync($target, $this->mainWorktree);
             if ($source->hostSha !== $mainSha || $source->guestSha !== $mainSha || $source->dirty) {
-                throw new RuntimeException('Cold standby source is not clean merged main.');
+                throw new RuntimeException('Cold topology snapshot source is not clean merged main.');
             }
 
             $this->converger->converge($target, $source, $laravel);
@@ -105,7 +107,7 @@ final readonly class StandbyBuilder
         } catch (Throwable $exception) {
             if (! $this->cleanupCold($operation)) {
                 throw new RuntimeException(
-                    'Cold standby cleanup failed; explicit recovery is required.',
+                    'Cold topology snapshot cleanup failed; explicit recovery is required.',
                     previous: $exception,
                 );
             }
@@ -115,12 +117,12 @@ final readonly class StandbyBuilder
     }
 
     /**
-     * Delete every standby resource this operation created and prove absence.
-     * A resource of another operation blocks the cleanup and marks the standby corrupt.
+     * Delete every topology snapshot resource this operation created and prove absence.
+     * A resource of another operation blocks the cleanup and marks the topology snapshot corrupt.
      */
     public function cleanupCold(OperationId $operation): bool
     {
-        $target = TopologyTarget::standby($this->identity);
+        $target = TopologyTarget::topologySnapshot($this->identity);
         $instanceNames = array_map($target->instance(...), TopologyProfile::ROLES);
         try {
             $instances = $this->host->instances($instanceNames);
@@ -155,14 +157,14 @@ final readonly class StandbyBuilder
             if ($this->host->network($target->network()) !== null) {
                 throw new RuntimeException('A cold-build network persisted after deletion.');
             }
-            $corrupt = $this->state->read('standby/corrupt.json');
+            $corrupt = $this->state->read('topology-snapshot/corrupt.json');
             if (is_array($corrupt) && ($corrupt['operation_id'] ?? null) === $operation->value) {
-                $this->state->delete('standby/corrupt.json');
+                $this->state->delete('topology-snapshot/corrupt.json');
             }
 
             return true;
         } catch (Throwable $exception) {
-            $this->state->write('standby/corrupt.json', [
+            $this->state->write('topology-snapshot/corrupt.json', [
                 'schema' => 2,
                 'operation_id' => $operation->value,
                 'message' => $exception->getMessage(),
@@ -176,10 +178,10 @@ final readonly class StandbyBuilder
     private function assertOperationResource(array $metadata, OperationId $operation, string $resource): void
     {
         if (($metadata['user.orbit.e2e.owner'] ?? null) !== 'orbit-e2e') {
-            throw new RuntimeException("Standby resource {$resource} ownership identity does not match.");
+            throw new RuntimeException("Topology snapshot resource {$resource} ownership identity does not match.");
         }
         if (($metadata['user.orbit.e2e.operation'] ?? null) !== $operation->value) {
-            throw new RuntimeException("Standby resource {$resource} belongs to another operation.");
+            throw new RuntimeException("Topology snapshot resource {$resource} belongs to another operation.");
         }
     }
 }

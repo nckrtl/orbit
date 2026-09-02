@@ -32,7 +32,7 @@ final readonly class StatePaths
         $this->root = rtrim($resolved, '/');
     }
 
-    /** The primary checkout keeps the promoted standby generation and the host locks under `.e2e/`. */
+    /** The primary checkout keeps the promoted topology snapshot generation and the host locks under `.e2e/`. */
     public static function forPrimary(string $repositoryRoot): self
     {
         return new self(rtrim($repositoryRoot, '/').'/.e2e');

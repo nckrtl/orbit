@@ -3,18 +3,18 @@
 declare(strict_types=1);
 
 use App\E2E\IncusHost;
-use App\E2E\StandbyManifestStore;
 use App\E2E\State\AtomicJsonStore;
 use App\E2E\State\StatePaths;
+use App\E2E\TopologySnapshotManifestStore;
 use App\E2E\Value\LaravelRelease;
-use App\E2E\Value\StandbyGeneration;
 use App\E2E\Value\TopologyProfile;
+use App\E2E\Value\TopologySnapshotGeneration;
 use Illuminate\Container\Container;
 use Illuminate\Process\Factory as ProcessFactory;
 use Illuminate\Support\Facades\Facade;
 use Illuminate\Support\Facades\Process;
 
-describe('StandbyManifestStore', function () {
+describe('TopologySnapshotManifestStore', function () {
     beforeEach(function () {
         $container = new Container;
         $container->instance(ProcessFactory::class, new ProcessFactory);
@@ -23,9 +23,9 @@ describe('StandbyManifestStore', function () {
     });
 
     it('round-trips a typed generation with exact ordered snapshots', function () {
-        $paths = new StatePaths(temporaryPath('orbit-standby-', 4));
-        $store = new StandbyManifestStore($json = new AtomicJsonStore($paths), $paths, new IncusHost);
-        $generation = new StandbyGeneration(
+        $paths = new StatePaths(temporaryPath('orbit-topology-snapshot-', 4));
+        $store = new TopologySnapshotManifestStore($json = new AtomicJsonStore($paths), $paths, new IncusHost);
+        $generation = new TopologySnapshotGeneration(
             'g1',
             str_repeat('a', 40),
             [
@@ -57,7 +57,7 @@ describe('StandbyManifestStore', function () {
             ->toEqual($generation)
             ->and($store->recorded())
             ->toEqual([$generation])
-            ->and(new AtomicJsonStore($paths)->read('standby/promoted.json'))
+            ->and(new AtomicJsonStore($paths)->read('topology-snapshot/promoted.json'))
             ->toMatchArray([
                 'schema' => 5,
                 'prepared_fingerprint' => str_repeat('b', 64),
@@ -78,13 +78,13 @@ describe('StandbyManifestStore', function () {
                 ],
                 'previous_generation_id' => null,
             ])
-            ->and(file_exists($paths->path('standby/promoted-fingerprint.json')))
+            ->and(file_exists($paths->path('topology-snapshot/promoted-fingerprint.json')))
             ->toBeFalse();
     });
 
     it('rejects missing roles and persisted schema drift', function () {
         expect(
-            fn () => new StandbyGeneration(
+            fn () => new TopologySnapshotGeneration(
                 'g1',
                 str_repeat('a', 40),
                 ['gateway' => 'main-gateway'],
@@ -102,10 +102,10 @@ describe('StandbyManifestStore', function () {
         )
             ->toThrow(InvalidArgumentException::class);
 
-        $paths = new StatePaths(temporaryPath('orbit-standby-', 4));
-        new AtomicJsonStore($paths)->write('standby/promoted.json', ['schema' => 99]);
+        $paths = new StatePaths(temporaryPath('orbit-topology-snapshot-', 4));
+        new AtomicJsonStore($paths)->write('topology-snapshot/promoted.json', ['schema' => 99]);
         expect(
-            fn () => new StandbyManifestStore(
+            fn () => new TopologySnapshotManifestStore(
                 $json = new AtomicJsonStore($paths),
                 $paths,
                 new IncusHost,
@@ -115,16 +115,16 @@ describe('StandbyManifestStore', function () {
     });
 
     it('reads schema 4 generations as assignment-less legacy records', function () {
-        $paths = new StatePaths(temporaryPath('orbit-standby-', 4));
+        $paths = new StatePaths(temporaryPath('orbit-topology-snapshot-', 4));
         $json = new AtomicJsonStore($paths);
-        $generation = standbyPruneGeneration('legacy1');
+        $generation = topologySnapshotPruneGeneration('legacy1');
         $legacy = $generation->toArray();
         $legacy['schema'] = 4;
         $legacy['prepared_schema'] = 1;
         unset($legacy['topology']['assignments']);
-        $json->write('standby/promoted.json', $legacy);
+        $json->write('topology-snapshot/promoted.json', $legacy);
 
-        $loaded = new StandbyManifestStore($json, $paths, new IncusHost)->promoted();
+        $loaded = new TopologySnapshotManifestStore($json, $paths, new IncusHost)->promoted();
 
         expect($loaded?->isLegacy())
             ->toBeTrue()
@@ -134,31 +134,71 @@ describe('StandbyManifestStore', function () {
             ->toBe($legacy);
     });
 
-    it('retains current, previous, and topology-pinned generations when pruning', function () {
-        $paths = new StatePaths(temporaryPath('orbit-standby-', 4));
+    it('isolates retired manifests from the current topology snapshot state', function () {
+        $paths = new StatePaths(temporaryPath('orbit-topology-snapshot-', 4));
         $json = new AtomicJsonStore($paths);
-        $store = new StandbyManifestStore($json, $paths, new IncusHost);
-        $old = standbyPruneGeneration('g1');
-        $pinned = standbyPruneGeneration('g2');
-        $previous = standbyPruneGeneration('g3');
-        $current = standbyPruneGeneration('g4', 'g3');
+        $generation = topologySnapshotPruneGeneration('retired1');
+        $json->write('standby/promoted.json', $generation->toArray());
+
+        $current = new TopologySnapshotManifestStore($json, $paths, new IncusHost);
+        $retired = new TopologySnapshotManifestStore($json, $paths, new IncusHost, stateDirectory: 'standby');
+
+        expect($current->promoted())
+            ->toBeNull()
+            ->and($retired->promoted())
+            ->toEqual($generation);
+    });
+
+    it('forgets only the selected identity manifests after explicit recovery', function () {
+        $paths = new StatePaths(temporaryPath('orbit-topology-snapshot-', 4));
+        $json = new AtomicJsonStore($paths);
+        $currentGeneration = topologySnapshotPruneGeneration('current1');
+        $retiredGeneration = topologySnapshotPruneGeneration('retired1');
+        $current = new TopologySnapshotManifestStore($json, $paths, new IncusHost);
+        $retired = new TopologySnapshotManifestStore($json, $paths, new IncusHost, stateDirectory: 'standby');
+        $current->record($currentGeneration);
+        $current->promote($currentGeneration);
+        $retired->record($retiredGeneration);
+        $retired->promote($retiredGeneration);
+        $json->write('standby/corrupt.json', ['message' => 'retired']);
+
+        $retired->forgetAll();
+
+        expect($retired->promoted())
+            ->toBeNull()
+            ->and($retired->recorded())
+            ->toBe([])
+            ->and($json->read('standby/corrupt.json'))
+            ->toBeNull()
+            ->and($current->promoted())
+            ->toEqual($currentGeneration);
+    });
+
+    it('retains current, previous, and topology-pinned generations when pruning', function () {
+        $paths = new StatePaths(temporaryPath('orbit-topology-snapshot-', 4));
+        $json = new AtomicJsonStore($paths);
+        $store = new TopologySnapshotManifestStore($json, $paths, new IncusHost);
+        $old = topologySnapshotPruneGeneration('g1');
+        $pinned = topologySnapshotPruneGeneration('g2');
+        $previous = topologySnapshotPruneGeneration('g3');
+        $current = topologySnapshotPruneGeneration('g4', 'g3');
         foreach ([$old, $pinned, $previous, $current] as $item) {
-            $json->write("standby/generations/{$item->id}.json", $item->toArray());
+            $json->write("topology-snapshot/generations/{$item->id}.json", $item->toArray());
         }
         pinnedTopologyState($pinned);
 
-        expect(array_map(fn (StandbyGeneration $item): string => $item->id, $store->prunable($current)))
+        expect(array_map(fn (TopologySnapshotGeneration $item): string => $item->id, $store->prunable($current)))
             ->toBe(['g1']);
     });
 
     it('never prunes the generation a live topology attempt pins', function () {
-        $paths = new StatePaths(temporaryPath('orbit-standby-', 4));
+        $paths = new StatePaths(temporaryPath('orbit-topology-snapshot-', 4));
         $json = new AtomicJsonStore($paths);
-        $store = new StandbyManifestStore($json, $paths, new IncusHost);
-        $pinned = standbyPruneGeneration('g1');
-        $current = standbyPruneGeneration('g2');
+        $store = new TopologySnapshotManifestStore($json, $paths, new IncusHost);
+        $pinned = topologySnapshotPruneGeneration('g1');
+        $current = topologySnapshotPruneGeneration('g2');
         foreach ([$pinned, $current] as $item) {
-            $json->write("standby/generations/{$item->id}.json", $item->toArray());
+            $json->write("topology-snapshot/generations/{$item->id}.json", $item->toArray());
         }
         pinnedTopologyState($pinned);
 
@@ -166,10 +206,10 @@ describe('StandbyManifestStore', function () {
     });
 
     it('fails closed when a manifest collection cannot be inspected', function (string $collection) {
-        $paths = new StatePaths(temporaryPath('orbit-standby-', 4));
+        $paths = new StatePaths(temporaryPath('orbit-topology-snapshot-', 4));
         $json = new AtomicJsonStore($paths);
-        $store = new StandbyManifestStore($json, $paths, new IncusHost);
-        $current = new StandbyGeneration(
+        $store = new TopologySnapshotManifestStore($json, $paths, new IncusHost);
+        $current = new TopologySnapshotGeneration(
             'g1',
             str_repeat('a', 40),
             ['gateway' => 'main-g1', 'app-dev' => 'main-g1', 'app-prod' => 'main-g1'],
@@ -189,12 +229,12 @@ describe('StandbyManifestStore', function () {
 
         expect(fn () => $store->prunable($current))
             ->toThrow(RuntimeException::class, 'manifest collection cannot be inspected');
-    })->with(['standby/generations']);
+    })->with(['topology-snapshot/generations']);
 
     it('fails closed when a manifest collection is a broken symbolic link', function (string $collection) {
-        $paths = new StatePaths(temporaryPath('orbit-standby-', 4));
-        $store = new StandbyManifestStore($json = new AtomicJsonStore($paths), $paths, new IncusHost);
-        $current = new StandbyGeneration(
+        $paths = new StatePaths(temporaryPath('orbit-topology-snapshot-', 4));
+        $store = new TopologySnapshotManifestStore($json = new AtomicJsonStore($paths), $paths, new IncusHost);
+        $current = new TopologySnapshotGeneration(
             'g1',
             str_repeat('a', 40),
             ['gateway' => 'main-g1', 'app-dev' => 'main-g1', 'app-prod' => 'main-g1'],
@@ -217,11 +257,11 @@ describe('StandbyManifestStore', function () {
 
         expect(fn () => $store->prunable($current))
             ->toThrow(InvalidArgumentException::class, 'cannot be a symbolic link');
-    })->with(['standby/generations']);
+    })->with(['topology-snapshot/generations']);
 });
 
 /** Fake one live harness VM whose metadata pins the given generation. */
-function pinnedTopologyState(StandbyGeneration $generation, string $issue = 'NCK-123'): void
+function pinnedTopologyState(TopologySnapshotGeneration $generation, string $issue = 'NCK-123'): void
 {
     $target = featureTarget($issue);
     Process::fake([
@@ -240,9 +280,9 @@ function pinnedTopologyState(StandbyGeneration $generation, string $issue = 'NCK
     ]);
 }
 
-function standbyPruneGeneration(string $id, ?string $previous = null): StandbyGeneration
+function topologySnapshotPruneGeneration(string $id, ?string $previous = null): TopologySnapshotGeneration
 {
-    return new StandbyGeneration(
+    return new TopologySnapshotGeneration(
         $id,
         str_repeat(substr($id, offset: -1), 40),
         ['gateway' => "main-{$id}", 'app-dev' => "main-{$id}", 'app-prod' => "main-{$id}"],

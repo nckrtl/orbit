@@ -4,16 +4,16 @@ declare(strict_types=1);
 
 use App\E2E\IncusHost;
 use App\E2E\IncusNetworkLifecycle;
-use App\E2E\StandbyBuilder;
-use App\E2E\StandbyManifestStore;
 use App\E2E\State\AtomicJsonStore;
 use App\E2E\State\StatePaths;
 use App\E2E\TopologyConverger;
+use App\E2E\TopologySnapshotBuilder;
+use App\E2E\TopologySnapshotManifestStore;
 use App\E2E\TopologyVerifier;
 use App\E2E\Value\LaravelRelease;
 use App\E2E\Value\OperationId;
 use App\E2E\Value\PreparedFingerprint;
-use App\E2E\Value\StandbyIdentity;
+use App\E2E\Value\TopologySnapshotIdentity;
 use App\E2E\Value\TopologyTarget;
 use App\E2E\WorktreeSynchronizer;
 use Illuminate\Container\Container;
@@ -23,36 +23,36 @@ use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Facades\Facade;
 use Illuminate\Support\Facades\Process;
 
-function standby_dnsmasq(): string
+function topology_snapshot_dnsmasq(): string
 {
     return 'port=0';
 }
 
-function cold_cleanup_builder(IncusHost $host, AtomicJsonStore $state, StatePaths $paths): StandbyBuilder
+function cold_cleanup_builder(IncusHost $host, AtomicJsonStore $state, StatePaths $paths): TopologySnapshotBuilder
 {
     /** @mago-expect analysis:possibly-invalid-argument Test helpers resolve only known class names. */
     $uninitialized = fn (string $class): object => new ReflectionClass($class)->newInstanceWithoutConstructor();
 
-    return new StandbyBuilder(
+    return new TopologySnapshotBuilder(
         $host,
         new IncusNetworkLifecycle($host),
         $uninitialized(WorktreeSynchronizer::class),
         $uninitialized(TopologyConverger::class),
         $uninitialized(TopologyVerifier::class),
-        new StandbyManifestStore($state, $paths, $host),
+        new TopologySnapshotManifestStore($state, $paths, $host),
         $state,
         __DIR__,
-        StandbyIdentity::primary(),
+        TopologySnapshotIdentity::primary(),
     );
 }
 
-function standby_incus_command(string ...$arguments): array
+function topology_snapshot_incus_command(string ...$arguments): array
 {
     return ['incus', '--project', 'default', ...$arguments];
 }
 
 /** @param list<string> $command */
-function standby_builder_is_global_ipv4_probe(array $command): bool
+function topology_snapshot_builder_is_global_ipv4_probe(array $command): bool
 {
     return (
         ($command[3] ?? null) === 'exec'
@@ -62,7 +62,7 @@ function standby_builder_is_global_ipv4_probe(array $command): bool
 }
 
 /** @param list<string> $command */
-function standby_firewall_result(array $command): ?ProcessResult
+function topology_snapshot_firewall_result(array $command): ?ProcessResult
 {
     if (
         ($command[0] ?? null) === 'python3'
@@ -82,23 +82,23 @@ function standby_firewall_result(array $command): ?ProcessResult
  * @mago-expect lint:cyclomatic-complexity Cold failure scenarios share one isolated process boundary.
  * @mago-expect lint:kan-defect Exact Incus command fixtures must remain fail closed.
  */
-/** A cold build of the standby a named namespace owns. */
+/** A cold build of the topology snapshot a named namespace owns. */
 function namespaced_builder(
-    StandbyIdentity $identity,
+    TopologySnapshotIdentity $identity,
     IncusHost $host,
     AtomicJsonStore $state,
     StatePaths $paths,
-): StandbyBuilder {
+): TopologySnapshotBuilder {
     /** @mago-expect analysis:possibly-invalid-argument Test helpers resolve only known class names. */
     $uninitialized = fn (string $class): object => new ReflectionClass($class)->newInstanceWithoutConstructor();
 
-    return new StandbyBuilder(
+    return new TopologySnapshotBuilder(
         $host,
         new IncusNetworkLifecycle($host),
         $uninitialized(WorktreeSynchronizer::class),
         $uninitialized(TopologyConverger::class),
         $uninitialized(TopologyVerifier::class),
-        new StandbyManifestStore($state, $paths, $host),
+        new TopologySnapshotManifestStore($state, $paths, $host),
         $state,
         __DIR__,
         $identity,
@@ -111,11 +111,11 @@ function namespaced_builder(
  *
  * @param list<string> $recorded
  */
-function coldSlotProcess(PendingProcess $process, array &$recorded, StandbyIdentity $identity): ProcessResult
+function coldSlotProcess(PendingProcess $process, array &$recorded, TopologySnapshotIdentity $identity): ProcessResult
 {
     $command = $process->command;
     assert(is_array($command), 'Incus uses argument arrays.');
-    if (($firewall = standby_firewall_result($command)) !== null) {
+    if (($firewall = topology_snapshot_firewall_result($command)) !== null) {
         return $firewall;
     }
     $recorded[] = implode(' ', $command);
@@ -139,7 +139,7 @@ function coldSlotProcess(PendingProcess $process, array &$recorded, StandbyIdent
     return Process::result();
 }
 
-describe('StandbyBuilder', function () {
+describe('TopologySnapshotBuilder', function () {
     beforeEach(function () {
         $container = new Container;
         $container->instance(ProcessFactory::class, new ProcessFactory);
@@ -148,19 +148,19 @@ describe('StandbyBuilder', function () {
         Facade::setFacadeApplication($container);
     });
 
-    it('uses only the canonical fixed standby resource identities', function () {
-        $target = TopologyTarget::standby();
+    it('uses only the canonical fixed topology snapshot resource identities', function () {
+        $target = TopologyTarget::topologySnapshot();
 
-        expect($target->isStandby())
+        expect($target->isTopologySnapshot())
             ->toBeTrue()
             ->and($target->network())
-            ->toBe('oe-standby')
+            ->toBe('oe-topo-snap')
             ->and($target->instance('gateway'))
-            ->toBe('orbit-e2e-standby-gateway')
+            ->toBe('orbit-e2e-topology-snapshot-gateway')
             ->and($target->instance('app-dev'))
-            ->toBe('orbit-e2e-standby-app-dev')
+            ->toBe('orbit-e2e-topology-snapshot-app-dev')
             ->and($target->instance('app-prod'))
-            ->toBe('orbit-e2e-standby-app-prod');
+            ->toBe('orbit-e2e-topology-snapshot-app-prod');
     });
 
     it('requires explicit cold-build permission before touching Incus', function () {
@@ -169,8 +169,8 @@ describe('StandbyBuilder', function () {
         $paths = new StatePaths(temporaryPath('orbit-builder-', 4));
         $state = new AtomicJsonStore($paths);
         $host = $uninitialized(IncusHost::class);
-        $manifests = new StandbyManifestStore($state, $paths, $host);
-        $builder = new StandbyBuilder(
+        $manifests = new TopologySnapshotManifestStore($state, $paths, $host);
+        $builder = new TopologySnapshotBuilder(
             $host,
             $uninitialized(IncusNetworkLifecycle::class),
             $uninitialized(WorktreeSynchronizer::class),
@@ -179,7 +179,7 @@ describe('StandbyBuilder', function () {
             $manifests,
             $state,
             __DIR__,
-            StandbyIdentity::primary(),
+            TopologySnapshotIdentity::primary(),
         );
 
         expect(fn () => $builder->build(
@@ -205,7 +205,7 @@ describe('StandbyBuilder', function () {
         Process::fake(function (PendingProcess $process) use (&$started, &$initialized, &$events, &$ipv4Probes) {
             $command = $process->command;
             assert(is_array($command), 'Incus uses argument arrays.');
-            if (($firewall = standby_firewall_result($command)) !== null) {
+            if (($firewall = topology_snapshot_firewall_result($command)) !== null) {
                 return $firewall;
             }
             if (in_array('image', $command, true)) {
@@ -224,14 +224,14 @@ describe('StandbyBuilder', function () {
                     '',
                     array_values(array_filter(
                         $command,
-                        fn (mixed $value): bool => is_string($value) && str_contains($value, 'standby-'),
+                        fn (mixed $value): bool => is_string($value) && str_contains($value, 'topology-snapshot-'),
                     ))[0],
                 );
 
                 return Process::result();
             }
             if (in_array('list', $command, true)) {
-                if ($command === standby_incus_command('list', 'local:', '--format=json')) {
+                if ($command === topology_snapshot_incus_command('list', 'local:', '--format=json')) {
                     return Process::result(json_encode(array_map(
                         static fn (string $name): array => [
                             'name' => $name,
@@ -242,7 +242,7 @@ describe('StandbyBuilder', function () {
                                 'user.orbit.e2e.owner' => 'orbit-e2e',
                                 'user.orbit.e2e.operation' => str_repeat('a', 32),
                             ],
-                            'devices' => ['root' => ['pool' => 'orbit-e2e'], 'eth0' => ['network' => 'oe-standby']],
+                            'devices' => ['root' => ['pool' => 'orbit-e2e'], 'eth0' => ['network' => 'oe-topo-snap']],
                         ],
                         $initialized,
                     ), JSON_THROW_ON_ERROR));
@@ -260,14 +260,14 @@ describe('StandbyBuilder', function () {
                                 'user.orbit.e2e.owner' => 'orbit-e2e',
                                 'user.orbit.e2e.operation' => str_repeat('a', 32),
                             ],
-                            'devices' => ['root' => ['pool' => 'orbit-e2e'], 'eth0' => ['network' => 'oe-standby']],
+                            'devices' => ['root' => ['pool' => 'orbit-e2e'], 'eth0' => ['network' => 'oe-topo-snap']],
                         ]], JSON_THROW_ON_ERROR) : '[]',
                 );
             }
             if (in_array('start', $command, true)) {
                 $instance = array_values(array_filter(
                     $command,
-                    fn (mixed $value): bool => is_string($value) && str_contains($value, 'standby-'),
+                    fn (mixed $value): bool => is_string($value) && str_contains($value, 'topology-snapshot-'),
                 ))[0];
                 $events[] = 'start:'.$instance;
                 $started[] = $instance;
@@ -279,7 +279,7 @@ describe('StandbyBuilder', function () {
 
                 return Process::result();
             }
-            if (standby_builder_is_global_ipv4_probe($command)) {
+            if (topology_snapshot_builder_is_global_ipv4_probe($command)) {
                 $instance = (string) ($command[4] ?? '');
                 $ipv4Probes[$instance] = ($ipv4Probes[$instance] ?? 0) + 1;
                 $phase = $ipv4Probes[$instance] === 1 ? 'pre-reset-ipv4' : 'post-reset-ipv4';
@@ -309,32 +309,32 @@ describe('StandbyBuilder', function () {
 
         expect($started)
             ->toBe([
-                'local:orbit-e2e-standby-gateway',
-                'local:orbit-e2e-standby-app-dev',
-                'local:orbit-e2e-standby-app-prod',
+                'local:orbit-e2e-topology-snapshot-gateway',
+                'local:orbit-e2e-topology-snapshot-app-dev',
+                'local:orbit-e2e-topology-snapshot-app-prod',
             ])
             ->and($events)
             ->toBe([
-                'start:local:orbit-e2e-standby-gateway',
-                'start:local:orbit-e2e-standby-app-dev',
-                'start:local:orbit-e2e-standby-app-prod',
-                'wait:local:orbit-e2e-standby-gateway',
-                'wait:local:orbit-e2e-standby-app-dev',
-                'wait:local:orbit-e2e-standby-app-prod',
-                'pre-reset-ipv4:local:orbit-e2e-standby-gateway',
-                'pre-reset-ipv4:local:orbit-e2e-standby-app-dev',
-                'pre-reset-ipv4:local:orbit-e2e-standby-app-prod',
-                'reset:local:orbit-e2e-standby-gateway',
-                'reset:local:orbit-e2e-standby-app-dev',
-                'reset:local:orbit-e2e-standby-app-prod',
-                'post-reset-ipv4:local:orbit-e2e-standby-gateway',
-                'post-reset-ipv4:local:orbit-e2e-standby-app-dev',
-                'post-reset-ipv4:local:orbit-e2e-standby-app-prod',
+                'start:local:orbit-e2e-topology-snapshot-gateway',
+                'start:local:orbit-e2e-topology-snapshot-app-dev',
+                'start:local:orbit-e2e-topology-snapshot-app-prod',
+                'wait:local:orbit-e2e-topology-snapshot-gateway',
+                'wait:local:orbit-e2e-topology-snapshot-app-dev',
+                'wait:local:orbit-e2e-topology-snapshot-app-prod',
+                'pre-reset-ipv4:local:orbit-e2e-topology-snapshot-gateway',
+                'pre-reset-ipv4:local:orbit-e2e-topology-snapshot-app-dev',
+                'pre-reset-ipv4:local:orbit-e2e-topology-snapshot-app-prod',
+                'reset:local:orbit-e2e-topology-snapshot-gateway',
+                'reset:local:orbit-e2e-topology-snapshot-app-dev',
+                'reset:local:orbit-e2e-topology-snapshot-app-prod',
+                'post-reset-ipv4:local:orbit-e2e-topology-snapshot-gateway',
+                'post-reset-ipv4:local:orbit-e2e-topology-snapshot-app-dev',
+                'post-reset-ipv4:local:orbit-e2e-topology-snapshot-app-prod',
             ]);
     });
 
-    it('creates the standby network and addresses on the slot its identity owns', function () {
-        $identity = StandbyIdentity::live();
+    it('creates the topology snapshot network and addresses on the slot its identity owns', function () {
+        $identity = TopologySnapshotIdentity::live();
         $paths = new StatePaths(temporaryPath('orbit-builder-', 4));
         $state = new AtomicJsonStore($paths);
         $recorded = [];
@@ -364,12 +364,12 @@ describe('StandbyBuilder', function () {
         expect($created)
             ->toHaveCount(1)
             ->and($created[0])
-            ->toContain('local:oe-live-standby')
+            ->toContain('local:oe-l-topo-snap')
             ->toContain('ipv4.address=10.232.200.1/24')
             ->toContain('ipv4.dhcp.ranges=10.232.200.10-10.232.200.12')
             ->and($initialized[0] ?? '')
-            ->toContain('local:orbit-e2e-live-standby-gateway')
-            ->toContain('eth0,network=oe-live-standby')
+            ->toContain('local:orbit-e2e-live-topology-snapshot-gateway')
+            ->toContain('eth0,network=oe-l-topo-snap')
             ->toContain('eth0,ipv4.address=10.232.200.10');
     });
 
@@ -378,30 +378,32 @@ describe('StandbyBuilder', function () {
         $state = new AtomicJsonStore($paths);
         $existing = [];
         $instances = [
-            'orbit-e2e-standby-gateway',
-            'orbit-e2e-standby-app-dev',
-            'orbit-e2e-standby-app-prod',
+            'orbit-e2e-topology-snapshot-gateway',
+            'orbit-e2e-topology-snapshot-app-dev',
+            'orbit-e2e-topology-snapshot-app-prod',
         ];
         $networkExists = false;
         $deleted = [];
         Process::fake(function (PendingProcess $process) use (&$existing, &$networkExists, &$deleted, $instances) {
             $command = $process->command;
             assert(is_array($command), 'Incus uses argument arrays.');
-            if (($firewall = standby_firewall_result($command)) !== null) {
+            if (($firewall = topology_snapshot_firewall_result($command)) !== null) {
                 return $firewall;
             }
-            if ($command === standby_incus_command('image', 'list', 'local:', 'orbit-base', '--format=json')) {
+            if (
+                $command === topology_snapshot_incus_command('image', 'list', 'local:', 'orbit-base', '--format=json')
+            ) {
                 return Process::result(json_encode([[
                     'type' => 'virtual-machine',
                     'fingerprint' => str_repeat('f', 64),
                     'aliases' => [['name' => 'orbit-base']],
                 ]], JSON_THROW_ON_ERROR));
             }
-            if ($command === standby_incus_command('network', 'list', 'local:', '--format=json')) {
+            if ($command === topology_snapshot_incus_command('network', 'list', 'local:', '--format=json')) {
                 return Process::result(json_encode(
                     $networkExists
                         ? [[
-                            'name' => 'oe-standby',
+                            'name' => 'oe-topo-snap',
                             'config' => [
                                 'user.orbit.e2e.owner' => 'orbit-e2e',
                                 'user.orbit.e2e.operation' => str_repeat('d', 32),
@@ -411,15 +413,15 @@ describe('StandbyBuilder', function () {
                 ));
             }
             if (
-                $command === standby_incus_command(
+                $command === topology_snapshot_incus_command(
                     'network',
                     'create',
-                    'local:oe-standby',
+                    'local:oe-topo-snap',
                     'ipv4.address=10.232.1.1/24',
                     'ipv4.nat=true',
                     'ipv4.dhcp.ranges=10.232.1.10-10.232.1.12',
                     'ipv6.address=none',
-                    'raw.dnsmasq='.standby_dnsmasq(),
+                    'raw.dnsmasq='.topology_snapshot_dnsmasq(),
                     'user.orbit.e2e.operation=dddddddddddddddddddddddddddddddd',
                     'user.orbit.e2e.owner=orbit-e2e',
                 )
@@ -428,7 +430,7 @@ describe('StandbyBuilder', function () {
 
                 return Process::result();
             }
-            if ($command === standby_incus_command('list', 'local:', '--format=json')) {
+            if ($command === topology_snapshot_incus_command('list', 'local:', '--format=json')) {
                 return Process::result(json_encode(array_map(
                     static fn (string $name): array => [
                         'name' => $name,
@@ -439,14 +441,14 @@ describe('StandbyBuilder', function () {
                             'user.orbit.e2e.owner' => 'orbit-e2e',
                             'user.orbit.e2e.operation' => str_repeat('d', 32),
                         ],
-                        'devices' => ['root' => ['pool' => 'orbit-e2e'], 'eth0' => ['network' => 'oe-standby']],
+                        'devices' => ['root' => ['pool' => 'orbit-e2e'], 'eth0' => ['network' => 'oe-topo-snap']],
                     ],
                     $existing,
                 ), JSON_THROW_ON_ERROR));
             }
             $instanceListCommands = array_fill_keys(array_map(
                 fn (string $name): string => json_encode(
-                    standby_incus_command('list', "local:{$name}", '--format=json'),
+                    topology_snapshot_incus_command('list', "local:{$name}", '--format=json'),
                     JSON_THROW_ON_ERROR,
                 ),
                 $instances,
@@ -467,17 +469,17 @@ describe('StandbyBuilder', function () {
                             ],
                             'devices' => [
                                 'root' => ['pool' => 'orbit-e2e'],
-                                'eth0' => ['network' => 'oe-standby'],
+                                'eth0' => ['network' => 'oe-topo-snap'],
                             ],
                         ]] : [],
                     JSON_THROW_ON_ERROR,
                 ));
             }
             if (
-                $command === standby_incus_command(
+                $command === topology_snapshot_incus_command(
                     'init',
                     'local:orbit-base',
-                    'local:orbit-e2e-standby-gateway',
+                    'local:orbit-e2e-topology-snapshot-gateway',
                     '--vm',
                     '--storage',
                     'orbit-e2e',
@@ -490,29 +492,29 @@ describe('StandbyBuilder', function () {
                     '--device',
                     'root,size=16GiB',
                     '--device',
-                    'eth0,network=oe-standby',
+                    'eth0,network=oe-topo-snap',
                     '--device',
                     'eth0,ipv4.address=10.232.1.10',
                     '--device',
-                    'eth0,hwaddr=00:16:3e:77:ee:5a',
+                    'eth0,hwaddr=00:16:3e:a2:a9:9b',
                     '--config',
                     'user.orbit.e2e.owner=orbit-e2e',
                     '--config',
                     'user.orbit.e2e.operation=dddddddddddddddddddddddddddddddd',
                 )
             ) {
-                $existing[] = 'orbit-e2e-standby-gateway';
+                $existing[] = 'orbit-e2e-topology-snapshot-gateway';
 
                 return Process::result('', 'creation response lost', 1);
             }
-            if ($command === standby_incus_command('network', 'delete', 'local:oe-standby')) {
+            if ($command === topology_snapshot_incus_command('network', 'delete', 'local:oe-topo-snap')) {
                 $networkExists = false;
-                $deleted[] = 'oe-standby';
+                $deleted[] = 'oe-topo-snap';
 
                 return Process::result();
             } else {
                 foreach ($instances as $instance) {
-                    if ($command === standby_incus_command('delete', "local:{$instance}")) {
+                    if ($command === topology_snapshot_incus_command('delete', "local:{$instance}")) {
                         $deleted[] = $instance;
                         $existing = array_values(array_diff($existing, [$instance]));
 
@@ -536,8 +538,8 @@ describe('StandbyBuilder', function () {
             ->toThrow(RuntimeException::class, 'Incus VM initialization batch failed');
 
         expect($deleted)
-            ->toBe(['orbit-e2e-standby-gateway', 'oe-standby'])
-            ->and($state->read('standby/corrupt.json'))
+            ->toBe(['orbit-e2e-topology-snapshot-gateway', 'oe-topo-snap'])
+            ->and($state->read('topology-snapshot/corrupt.json'))
             ->toBeNull();
     });
 
@@ -547,33 +549,35 @@ describe('StandbyBuilder', function () {
         $evidence = str_repeat('9', 32);
         $observed = [];
         $instances = [
-            'orbit-e2e-standby-gateway',
-            'orbit-e2e-standby-app-dev',
-            'orbit-e2e-standby-app-prod',
+            'orbit-e2e-topology-snapshot-gateway',
+            'orbit-e2e-topology-snapshot-app-dev',
+            'orbit-e2e-topology-snapshot-app-prod',
         ];
         Process::fake(function (PendingProcess $process) use (&$observed, $instances) {
             $command = $process->command;
             assert(is_array($command), 'Incus uses argument arrays.');
-            if (($firewall = standby_firewall_result($command)) !== null) {
+            if (($firewall = topology_snapshot_firewall_result($command)) !== null) {
                 return $firewall;
             }
-            if ($command === standby_incus_command('image', 'list', 'local:', 'orbit-base', '--format=json')) {
+            if (
+                $command === topology_snapshot_incus_command('image', 'list', 'local:', 'orbit-base', '--format=json')
+            ) {
                 return Process::result(json_encode([[
                     'type' => 'virtual-machine',
                     'fingerprint' => str_repeat('f', 64),
                     'aliases' => [['name' => 'orbit-base']],
                 ]], JSON_THROW_ON_ERROR));
             }
-            if ($command === standby_incus_command('network', 'list', 'local:', '--format=json')) {
+            if ($command === topology_snapshot_incus_command('network', 'list', 'local:', '--format=json')) {
                 $observed[] = 'network';
 
                 return Process::result('[]');
             }
-            if ($command === standby_incus_command('list', 'local:', '--format=json')) {
+            if ($command === topology_snapshot_incus_command('list', 'local:', '--format=json')) {
                 $observed[] = 'inventory';
 
                 return Process::result(json_encode([[
-                    'name' => 'orbit-e2e-standby-app-prod',
+                    'name' => 'orbit-e2e-topology-snapshot-app-prod',
                     'type' => 'virtual-machine',
                     'status' => 'Stopped',
                     'status_code' => 102,
@@ -581,12 +585,12 @@ describe('StandbyBuilder', function () {
                         'user.orbit.e2e.owner' => 'orbit-e2e',
                         'user.orbit.e2e.operation' => str_repeat('e', 32),
                     ],
-                    'devices' => ['root' => ['pool' => 'orbit-e2e'], 'eth0' => ['network' => 'oe-standby']],
+                    'devices' => ['root' => ['pool' => 'orbit-e2e'], 'eth0' => ['network' => 'oe-topo-snap']],
                 ]], JSON_THROW_ON_ERROR));
             }
             $instanceListCommands = array_fill_keys(array_map(
                 fn (string $name): string => json_encode(
-                    standby_incus_command('list', "local:{$name}", '--format=json'),
+                    topology_snapshot_incus_command('list', "local:{$name}", '--format=json'),
                     JSON_THROW_ON_ERROR,
                 ),
                 $instances,
@@ -594,7 +598,7 @@ describe('StandbyBuilder', function () {
             if (isset($instanceListCommands[json_encode($command, JSON_THROW_ON_ERROR)])) {
                 $name = preg_replace('/\A[^:]+:/', '', $command[4]);
                 $observed[] = $name;
-                if ($name !== 'orbit-e2e-standby-app-prod') {
+                if ($name !== 'orbit-e2e-topology-snapshot-app-prod') {
                     return Process::result('[]');
                 }
 
@@ -607,7 +611,7 @@ describe('StandbyBuilder', function () {
                         'user.orbit.e2e.owner' => 'orbit-e2e',
                         'user.orbit.e2e.operation' => str_repeat('e', 32),
                     ],
-                    'devices' => ['root' => ['pool' => 'orbit-e2e'], 'eth0' => ['network' => 'oe-standby']],
+                    'devices' => ['root' => ['pool' => 'orbit-e2e'], 'eth0' => ['network' => 'oe-topo-snap']],
                 ]], JSON_THROW_ON_ERROR));
             }
 
@@ -636,50 +640,50 @@ describe('StandbyBuilder', function () {
                 && in_array(
                     $process->command,
                     [
-                        standby_incus_command(
+                        topology_snapshot_incus_command(
                             'network',
                             'create',
-                            'local:oe-standby',
+                            'local:oe-topo-snap',
                             'ipv4.address=10.232.1.1/24',
                             'ipv4.nat=true',
                             'ipv4.dhcp.ranges=10.232.1.10-10.232.1.12',
                             'ipv6.address=none',
-                            'raw.dnsmasq='.standby_dnsmasq(),
+                            'raw.dnsmasq='.topology_snapshot_dnsmasq(),
                             'user.orbit.e2e.owner=orbit-e2e',
                         ),
-                        standby_incus_command(
+                        topology_snapshot_incus_command(
                             'init',
                             'local:orbit-base',
-                            'local:orbit-e2e-standby-gateway',
+                            'local:orbit-e2e-topology-snapshot-gateway',
                             '--vm',
                             '--storage',
                             'orbit-e2e',
                             '--network',
-                            'oe-standby',
+                            'oe-topo-snap',
                             '--config',
                             'user.orbit.e2e.owner=orbit-e2e',
                         ),
-                        standby_incus_command(
+                        topology_snapshot_incus_command(
                             'init',
                             'local:orbit-base',
-                            'local:orbit-e2e-standby-app-dev',
+                            'local:orbit-e2e-topology-snapshot-app-dev',
                             '--vm',
                             '--storage',
                             'orbit-e2e',
                             '--network',
-                            'oe-standby',
+                            'oe-topo-snap',
                             '--config',
                             'user.orbit.e2e.owner=orbit-e2e',
                         ),
-                        standby_incus_command(
+                        topology_snapshot_incus_command(
                             'init',
                             'local:orbit-base',
-                            'local:orbit-e2e-standby-app-prod',
+                            'local:orbit-e2e-topology-snapshot-app-prod',
                             '--vm',
                             '--storage',
                             'orbit-e2e',
                             '--network',
-                            'oe-standby',
+                            'oe-topo-snap',
                             '--config',
                             'user.orbit.e2e.owner=orbit-e2e',
                         ),

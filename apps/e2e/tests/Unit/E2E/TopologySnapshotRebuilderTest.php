@@ -4,17 +4,17 @@ declare(strict_types=1);
 
 use App\E2E\IncusHost;
 use App\E2E\IncusNetworkLifecycle;
-use App\E2E\StandbyManifestStore;
-use App\E2E\StandbyRebuilder;
 use App\E2E\State\AtomicJsonStore;
 use App\E2E\State\OperationLock;
 use App\E2E\State\StatePaths;
+use App\E2E\TopologySnapshotManifestStore;
+use App\E2E\TopologySnapshotRebuilder;
 use App\E2E\Value\LaravelRelease;
-use App\E2E\Value\LegacyStandbyInventory;
+use App\E2E\Value\LegacyTopologySnapshotInventory;
 use App\E2E\Value\OperationId;
-use App\E2E\Value\StandbyGeneration;
-use App\E2E\Value\StandbyIdentity;
 use App\E2E\Value\TopologyProfile;
+use App\E2E\Value\TopologySnapshotGeneration;
+use App\E2E\Value\TopologySnapshotIdentity;
 use Illuminate\Container\Container;
 use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Process\Factory as ProcessFactory;
@@ -22,7 +22,7 @@ use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Facades\Facade;
 use Illuminate\Support\Facades\Process;
 
-/** The host as the recovery finds it: standby VMs and a network without a usable generation. */
+/** The host as the recovery finds it: topology snapshot VMs and a network without a usable generation. */
 final class RebuildHost
 {
     /** @var list<string> */
@@ -40,14 +40,14 @@ final class RebuildHost
     public bool $networkOwned = true;
 }
 
-function rebuildIdentity(): StandbyIdentity
+function rebuildIdentity(): TopologySnapshotIdentity
 {
-    return StandbyIdentity::live();
+    return TopologySnapshotIdentity::live();
 }
 
-function rebuildGeneration(string $id): StandbyGeneration
+function rebuildGeneration(string $id): TopologySnapshotGeneration
 {
-    return new StandbyGeneration(
+    return new TopologySnapshotGeneration(
         $id,
         str_repeat('b', 40),
         array_fill_keys(TopologyProfile::ROLES, 'main-'.$id),
@@ -64,14 +64,14 @@ function rebuildGeneration(string $id): StandbyGeneration
     );
 }
 
-function legacyRebuildGeneration(string $id): StandbyGeneration
+function legacyRebuildGeneration(string $id): TopologySnapshotGeneration
 {
     $legacy = rebuildGeneration($id)->toArray();
-    $legacy['schema'] = StandbyGeneration::LEGACY_SCHEMA;
+    $legacy['schema'] = TopologySnapshotGeneration::LEGACY_SCHEMA;
     $legacy['prepared_schema'] = 1;
     unset($legacy['topology']['assignments']);
 
-    return StandbyGeneration::fromArray($legacy);
+    return TopologySnapshotGeneration::fromArray($legacy);
 }
 
 /** @mago-expect lint:cyclomatic-complexity The fake preserves one coherent Incus resource inventory. */
@@ -154,15 +154,17 @@ function rebuildNetworkInventoryJson(RebuildHost $state): string
 }
 
 /** The recovery boundary under test; the cold build that follows it is the refresher's own. */
-function rebuilderFor(StatePaths $paths, AtomicJsonStore $store, StandbyManifestStore $manifests): StandbyRebuilder
-{
+function rebuilderFor(
+    StatePaths $paths,
+    AtomicJsonStore $store,
+    TopologySnapshotManifestStore $manifests,
+): TopologySnapshotRebuilder {
     $host = new IncusHost(pool: 'orbit-e2e');
 
-    return new StandbyRebuilder(
+    return new TopologySnapshotRebuilder(
         $host,
         new IncusNetworkLifecycle($host),
         $manifests,
-        $store,
         $paths,
         new OperationLock($paths),
         new OperationId(str_repeat('a', 32)),
@@ -170,12 +172,12 @@ function rebuilderFor(StatePaths $paths, AtomicJsonStore $store, StandbyManifest
     );
 }
 
-/** @param list<StandbyGeneration> $recorded */
+/** @param list<TopologySnapshotGeneration> $recorded */
 function rebuildAuthorization(
     RebuildHost $state,
-    ?StandbyGeneration $generation = null,
+    ?TopologySnapshotGeneration $generation = null,
     array $recorded = [],
-): LegacyStandbyInventory {
+): LegacyTopologySnapshotInventory {
     $generation ??= rebuildGeneration('old-generation');
     $recorded = $recorded === [] ? [$generation] : $recorded;
     $instances = [];
@@ -206,17 +208,17 @@ function rebuildAuthorization(
             'used_by' => [],
         ];
 
-    return new LegacyStandbyInventory(
-        ['remote' => 'local', 'project' => 'default', 'pool' => 'orbit-e2e', 'standby_namespace' => 'live'],
+    return new LegacyTopologySnapshotInventory(
+        ['remote' => 'local', 'project' => 'default', 'pool' => 'orbit-e2e', 'topology_snapshot_namespace' => 'live'],
         $generation->toArray(),
-        array_map(static fn (StandbyGeneration $item): array => $item->toArray(), $recorded),
+        array_map(static fn (TopologySnapshotGeneration $item): array => $item->toArray(), $recorded),
         $instances,
         array_fill_keys($state->instances, []),
         $network,
     );
 }
 
-describe('StandbyRebuilder', function () {
+describe('TopologySnapshotRebuilder', function () {
     beforeEach(function () {
         $container = new Container;
         $container->instance(ProcessFactory::class, new ProcessFactory);
@@ -236,33 +238,33 @@ describe('StandbyRebuilder', function () {
 
         $paths = new StatePaths(temporaryPath('orbit-rebuild-present-', 4));
         $store = new AtomicJsonStore($paths);
-        $manifests = new StandbyManifestStore($store, $paths, new IncusHost(pool: 'orbit-e2e'));
+        $manifests = new TopologySnapshotManifestStore($store, $paths, new IncusHost(pool: 'orbit-e2e'));
 
         expect(fn () => rebuilderFor($paths, $store, $manifests)->teardown())
             ->toThrow(
                 RuntimeException::class,
-                "Standby resources are present: {$resource}. Use bin/e2e-standby recover-legacy --main-sha=<sha>.",
+                "Topology snapshot resources are present: {$resource}. Use bin/e2e-topology-snapshot recover-legacy --main-sha=<sha>.",
             );
         expect($state->deleted)->toBe([]);
     })->with([
         'base VM without a manifest' => [
-            ['orbit-e2e-live-standby-gateway'],
+            ['orbit-e2e-live-topology-snapshot-gateway'],
             [],
-            'orbit-e2e-live-standby-gateway',
+            'orbit-e2e-live-topology-snapshot-gateway',
         ],
         'promotion copy without a manifest' => [
-            ['orbit-e2e-live-standby-app-dev-next'],
+            ['orbit-e2e-live-topology-snapshot-app-dev-next'],
             [],
-            'orbit-e2e-live-standby-app-dev-next',
+            'orbit-e2e-live-topology-snapshot-app-dev-next',
         ],
         'named network without a manifest' => [
             [],
-            ['oe-live-standby'],
-            'oe-live-standby',
+            ['oe-l-topo-snap'],
+            'oe-l-topo-snap',
         ],
     ]);
 
-    it('deletes the standby VMs, the promotion leftovers, and the network itself', function () {
+    it('deletes the topology snapshot VMs, the promotion leftovers, and the network itself', function () {
         $identity = rebuildIdentity();
         $state = new RebuildHost;
         $state->instances = [...$identity->instances(), $identity->instance('gateway').'-next'];
@@ -271,10 +273,10 @@ describe('StandbyRebuilder', function () {
 
         $paths = new StatePaths(temporaryPath('orbit-rebuild-', 4));
         $store = new AtomicJsonStore($paths);
-        $manifests = new StandbyManifestStore($store, $paths, new IncusHost(pool: 'orbit-e2e'));
+        $manifests = new TopologySnapshotManifestStore($store, $paths, new IncusHost(pool: 'orbit-e2e'));
         $manifests->promote(rebuildGeneration('old-generation'));
         $manifests->record(rebuildGeneration('old-generation'));
-        $store->write('standby/corrupt.json', ['schema' => 2, 'message' => 'stranded']);
+        $store->write('topology-snapshot/corrupt.json', ['schema' => 2, 'message' => 'stranded']);
         $phases = [];
         $teardown = rebuilderFor($paths, $store, $manifests)->recover(
             rebuildAuthorization($state),
@@ -285,13 +287,13 @@ describe('StandbyRebuilder', function () {
 
         expect($teardown['instances_deleted'])
             ->toBe([
-                'orbit-e2e-live-standby-app-dev',
-                'orbit-e2e-live-standby-app-prod',
-                'orbit-e2e-live-standby-gateway',
-                'orbit-e2e-live-standby-gateway-next',
+                'orbit-e2e-live-topology-snapshot-app-dev',
+                'orbit-e2e-live-topology-snapshot-app-prod',
+                'orbit-e2e-live-topology-snapshot-gateway',
+                'orbit-e2e-live-topology-snapshot-gateway-next',
             ])
             ->and($teardown['networks_deleted'])
-            ->toBe(['oe-live-standby'])
+            ->toBe(['oe-l-topo-snap'])
             ->and($state->instances)
             ->toBe([])
             ->and($state->networks)
@@ -323,7 +325,7 @@ describe('StandbyRebuilder', function () {
 
         $paths = new StatePaths(temporaryPath('orbit-rebuild-copy-', 4));
         $store = new AtomicJsonStore($paths);
-        $manifests = new StandbyManifestStore($store, $paths, new IncusHost(pool: 'orbit-e2e'));
+        $manifests = new TopologySnapshotManifestStore($store, $paths, new IncusHost(pool: 'orbit-e2e'));
         $generation = rebuildGeneration('old-generation');
         $manifests->promote($generation);
         $manifests->record($generation);
@@ -348,13 +350,13 @@ describe('StandbyRebuilder', function () {
 
         $paths = new StatePaths(temporaryPath('orbit-rebuild-', 4));
         $store = new AtomicJsonStore($paths);
-        $manifests = new StandbyManifestStore($store, $paths, new IncusHost(pool: 'orbit-e2e'));
+        $manifests = new TopologySnapshotManifestStore($store, $paths, new IncusHost(pool: 'orbit-e2e'));
         $old = rebuildGeneration('old-generation');
         $older = rebuildGeneration('older-generation');
         $manifests->promote($old);
         $manifests->record($old);
         $manifests->record($older);
-        $store->write('standby/corrupt.json', ['schema' => 2, 'message' => 'stranded']);
+        $store->write('topology-snapshot/corrupt.json', ['schema' => 2, 'message' => 'stranded']);
         $teardown = rebuilderFor($paths, $store, $manifests)->recover(
             rebuildAuthorization($state, $old, [$old, $older]),
             static function (string $_phase): void {},
@@ -364,7 +366,7 @@ describe('StandbyRebuilder', function () {
             ->toBeNull()
             ->and($manifests->recorded())
             ->toBe([])
-            ->and($store->read('standby/corrupt.json'))
+            ->and($store->read('topology-snapshot/corrupt.json'))
             ->toBeNull()
             ->and($teardown['instances_deleted'])
             ->toEqualCanonicalizing($identity->instances());
@@ -379,7 +381,7 @@ describe('StandbyRebuilder', function () {
 
         $paths = new StatePaths(temporaryPath('orbit-rebuild-legacy-', 4));
         $store = new AtomicJsonStore($paths);
-        $manifests = new StandbyManifestStore($store, $paths, new IncusHost(pool: 'orbit-e2e'));
+        $manifests = new TopologySnapshotManifestStore($store, $paths, new IncusHost(pool: 'orbit-e2e'));
         $legacy = legacyRebuildGeneration('legacy-generation');
         $manifests->promote($legacy);
         $manifests->record($legacy);
@@ -408,24 +410,24 @@ describe('StandbyRebuilder', function () {
 
         $paths = new StatePaths(temporaryPath('orbit-rebuild-', 4));
         $store = new AtomicJsonStore($paths);
-        $manifests = new StandbyManifestStore($store, $paths, new IncusHost(pool: 'orbit-e2e'));
+        $manifests = new TopologySnapshotManifestStore($store, $paths, new IncusHost(pool: 'orbit-e2e'));
         expect(fn () => rebuilderFor($paths, $store, $manifests)->recover(
             rebuildAuthorization($state),
             static function (string $_phase): void {},
         ))
             ->toThrow(RuntimeException::class, 'ownership does not match');
-        expect($state->networks)->toBe(['oe-live-standby']);
+        expect($state->networks)->toBe(['oe-l-topo-snap']);
     });
 
-    it('touches nothing when this checkout\'s standby is already gone', function () {
+    it('touches nothing when this checkout\'s topology snapshot is already gone', function () {
         $state = new RebuildHost;
-        $state->instances = StandbyIdentity::primary()->instances();
-        $state->networks = [StandbyIdentity::primary()->network()];
+        $state->instances = TopologySnapshotIdentity::primary()->instances();
+        $state->networks = [TopologySnapshotIdentity::primary()->network()];
         fakeRebuildHost($state);
 
         $paths = new StatePaths(temporaryPath('orbit-rebuild-', 4));
         $store = new AtomicJsonStore($paths);
-        $manifests = new StandbyManifestStore($store, $paths, new IncusHost(pool: 'orbit-e2e'));
+        $manifests = new TopologySnapshotManifestStore($store, $paths, new IncusHost(pool: 'orbit-e2e'));
         $teardown = rebuilderFor($paths, $store, $manifests)->teardown();
 
         expect($teardown['instances_deleted'])
@@ -435,7 +437,7 @@ describe('StandbyRebuilder', function () {
             ->and($state->deleted)
             ->toBe([])
             ->and($state->instances)
-            ->toBe(StandbyIdentity::primary()->instances());
+            ->toBe(TopologySnapshotIdentity::primary()->instances());
     });
 
     it('resumes authorized teardown after every exact legacy resource is already absent', function () {
@@ -443,10 +445,10 @@ describe('StandbyRebuilder', function () {
         fakeRebuildHost($state);
         $paths = new StatePaths(temporaryPath('orbit-rebuild-resume-', 4));
         $store = new AtomicJsonStore($paths);
-        $manifests = new StandbyManifestStore($store, $paths, new IncusHost(pool: 'orbit-e2e'));
+        $manifests = new TopologySnapshotManifestStore($store, $paths, new IncusHost(pool: 'orbit-e2e'));
         $authorizedState = new RebuildHost;
-        $authorizedState->instances = StandbyIdentity::live()->instances();
-        $authorizedState->networks = [StandbyIdentity::live()->network()];
+        $authorizedState->instances = TopologySnapshotIdentity::live()->instances();
+        $authorizedState->networks = [TopologySnapshotIdentity::live()->network()];
         $phases = [];
 
         $teardown = rebuilderFor($paths, $store, $manifests)->recover(
@@ -479,7 +481,7 @@ describe('StandbyRebuilder', function () {
 
         $paths = new StatePaths(temporaryPath('orbit-rebuild-', 4));
         $store = new AtomicJsonStore($paths);
-        $manifests = new StandbyManifestStore($store, $paths, new IncusHost(pool: 'orbit-e2e'));
+        $manifests = new TopologySnapshotManifestStore($store, $paths, new IncusHost(pool: 'orbit-e2e'));
         expect(fn () => rebuilderFor($paths, $store, $manifests)->recover(
             rebuildAuthorization($state),
             static function (string $_phase): void {},
@@ -489,7 +491,7 @@ describe('StandbyRebuilder', function () {
             ->toBe([]);
     });
 
-    it('refuses while a feature topology still holds a standby name', function () {
+    it('refuses while a feature topology still holds a topology snapshot name', function () {
         $identity = rebuildIdentity();
         $state = new RebuildHost;
         $state->instances = $identity->instances();
@@ -501,7 +503,7 @@ describe('StandbyRebuilder', function () {
 
         $paths = new StatePaths(temporaryPath('orbit-rebuild-', 4));
         $store = new AtomicJsonStore($paths);
-        $manifests = new StandbyManifestStore($store, $paths, new IncusHost(pool: 'orbit-e2e'));
+        $manifests = new TopologySnapshotManifestStore($store, $paths, new IncusHost(pool: 'orbit-e2e'));
         expect(fn () => rebuilderFor($paths, $store, $manifests)->recover(
             rebuildAuthorization($state),
             static function (string $_phase): void {},
@@ -524,7 +526,7 @@ describe('StandbyRebuilder', function () {
 
         $paths = new StatePaths(temporaryPath('orbit-rebuild-changed-', 4));
         $store = new AtomicJsonStore($paths);
-        $manifests = new StandbyManifestStore($store, $paths, new IncusHost(pool: 'orbit-e2e'));
+        $manifests = new TopologySnapshotManifestStore($store, $paths, new IncusHost(pool: 'orbit-e2e'));
 
         expect(fn () => rebuilderFor($paths, $store, $manifests)->recover(
             $authorization,

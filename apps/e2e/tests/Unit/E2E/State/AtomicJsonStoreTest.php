@@ -63,12 +63,12 @@ describe('AtomicJsonStore', function () {
     it('deletes an existing state file and is idempotent when absent', function () {
         $paths = new StatePaths(temporaryPath('orbit-json-', 4));
         $store = new AtomicJsonStore($paths);
-        $store->write('standby/corrupt.json', ['reason' => 'recovery']);
+        $store->write('topology-snapshot/corrupt.json', ['reason' => 'recovery']);
 
-        $store->delete('standby/corrupt.json');
-        $store->delete('standby/corrupt.json');
+        $store->delete('topology-snapshot/corrupt.json');
+        $store->delete('topology-snapshot/corrupt.json');
 
-        expect(file_exists($paths->path('standby/corrupt.json')))->toBeFalse();
+        expect(file_exists($paths->path('topology-snapshot/corrupt.json')))->toBeFalse();
     });
 
     it('rejects unsafe existing deletion targets', function (string $target, callable $prepare, string $message): void {
@@ -79,14 +79,14 @@ describe('AtomicJsonStore', function () {
             ->toThrow($message);
     })->with([
         'directory' => [
-            'standby/corrupt.json',
+            'topology-snapshot/corrupt.json',
             function (string $path): void {
                 mkdir($path, 0700, true);
             },
             'unsafe',
         ],
         'symlink' => [
-            'standby/corrupt.json',
+            'topology-snapshot/corrupt.json',
             function (string $path): void {
                 mkdir(dirname($path), 0700, true);
                 symlink('/tmp', $path);

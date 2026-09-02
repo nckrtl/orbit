@@ -7,7 +7,7 @@ namespace App\E2E\Value;
 use InvalidArgumentException;
 
 /** @mago-expect lint:cyclomatic-complexity,excessive-parameter-list,kan-defect The promoted generation validates one atomic identity record. */
-final readonly class StandbyGeneration
+final readonly class TopologySnapshotGeneration
 {
     public const int SCHEMA = 5;
     public const int LEGACY_SCHEMA = 4;

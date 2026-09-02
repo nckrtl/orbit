@@ -17,6 +17,6 @@ describe('console bootstrap', function () {
         expect($exitCode)
             ->toBe(0)
             ->and(implode(PHP_EOL, $output))
-            ->toContain('standby:fingerprint', 'boost:update');
+            ->toContain('topology-snapshot:fingerprint', 'boost:update');
     });
 });
