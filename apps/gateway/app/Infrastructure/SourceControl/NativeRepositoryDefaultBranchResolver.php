@@ -7,9 +7,11 @@ namespace App\Infrastructure\SourceControl;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\SourceControl\RepositoryDefaultBranchResolver;
+use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
 use SensitiveParameter;
+use Throwable;
 
 final readonly class NativeRepositoryDefaultBranchResolver implements RepositoryDefaultBranchResolver
 {
@@ -19,7 +21,7 @@ final readonly class NativeRepositoryDefaultBranchResolver implements Repository
 
     public function resolve(#[SensitiveParameter] string $repository): string
     {
-        $result = $this->processes->run(new ProcessInvocation(
+        $result = $this->run(new ProcessInvocation(
             arguments: ['git', 'ls-remote', '--symref', '--exit-code', '--', $repository, 'HEAD'],
             timeout: 30.0,
         ));
@@ -47,7 +49,7 @@ final readonly class NativeRepositoryDefaultBranchResolver implements Repository
     {
         $branch = GitBranchName::validate($branch);
         $reference = "refs/heads/{$branch}";
-        $result = $this->processes->run(new ProcessInvocation(
+        $result = $this->run(new ProcessInvocation(
             arguments: ['git', 'ls-remote', '--exit-code', '--heads', '--', $repository, $reference],
             timeout: 30.0,
         ));
@@ -72,6 +74,15 @@ final readonly class NativeRepositoryDefaultBranchResolver implements Repository
             || preg_match('/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/Di', $fields[0]) !== 1
             || $fields[1] !== $reference
         ) {
+            throw $this->failure();
+        }
+    }
+
+    private function run(ProcessInvocation $invocation): CommandResult
+    {
+        try {
+            return $this->processes->run($invocation);
+        } catch (Throwable) {
             throw $this->failure();
         }
     }

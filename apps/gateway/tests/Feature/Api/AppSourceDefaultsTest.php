@@ -221,6 +221,18 @@ it('rejects invalid or incomplete source defaults without persistence', function
         'main_branch' => 'main',
         'root' => '../public',
     ]],
+    'leading dot segment' => [[
+        'slug' => 'acme',
+        'repository_url' => 'https://github.com/acme/site.git',
+        'main_branch' => 'main',
+        'root' => './public',
+    ]],
+    'nested dot segment' => [[
+        'slug' => 'acme',
+        'repository_url' => 'https://github.com/acme/site.git',
+        'main_branch' => 'main',
+        'root' => 'public/./assets',
+    ]],
     'empty root' => [[
         'slug' => 'acme',
         'repository_url' => 'https://github.com/acme/site.git',

@@ -31,6 +31,7 @@ final class RelativeWebRoot
             explode('/', $root),
             static fn (string $segment): bool => ! (
                 $segment === ''
+                || $segment === '.'
                 || $segment === '..'
                 || preg_match('/\A[A-Za-z0-9._-]+\z/D', $segment) !== 1
             ),

@@ -10,6 +10,8 @@ use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\SourceControl\NativeRepositoryDefaultBranchResolver;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
+use Symfony\Component\Process\Exception\ProcessTimedOutException;
+use Symfony\Component\Process\Process;
 
 beforeEach(function (): void {
     $this->repositoryDirectory = sys_get_temp_dir().'/orbit-branch-resolver-'.Str::uuid();
@@ -34,6 +36,7 @@ beforeEach(function (): void {
         ['git', '-C', $this->workingRepository, 'add', 'README.md'],
         ['git', '-C', $this->workingRepository, 'commit', '-m', 'Initial fixture'],
         ['git', '-C', $this->workingRepository, 'branch', 'stable'],
+        ['git', '-C', $this->workingRepository, 'branch', 'release/été+hotfix@2026'],
         ['git', 'clone', '--bare', '--', $this->workingRepository, $this->bareRepository],
     ] as $arguments) {
         expect($runner->run(new ProcessInvocation($arguments))->succeeded())->toBeTrue();
@@ -71,6 +74,23 @@ it('verifies a real explicit branch and rejects a missing one', function (): voi
         ->toThrow(ResourceOperationException::class, 'could not be determined or verified');
 });
 
+it('resolves and verifies a real branch using valid Git punctuation and Unicode', function (): void {
+    $branch = 'release/été+hotfix@2026';
+    $resolver = new NativeRepositoryDefaultBranchResolver(new NativeProcessRunner);
+
+    $resolver->verify($this->bareRepository, $branch);
+    $changed = new NativeProcessRunner()->run(new ProcessInvocation([
+        'git',
+        '-C',
+        $this->bareRepository,
+        'symbolic-ref',
+        'HEAD',
+        "refs/heads/{$branch}",
+    ]));
+
+    expect($changed->succeeded())->toBeTrue()->and($resolver->resolve($this->bareRepository))->toBe($branch);
+});
+
 it('maps malformed symbolic HEAD to the stable branch error', function (): void {
     $changed = new NativeProcessRunner()->run(new ProcessInvocation([
         'git',
@@ -94,6 +114,28 @@ it('maps an inaccessible repository to the stable branch error', function (): vo
         fn (): string => new NativeRepositoryDefaultBranchResolver(new NativeProcessRunner)
             ->resolve($missingRepository),
     )
+        ->toThrow(ResourceOperationException::class, 'could not be determined or verified');
+});
+
+it('maps thrown process timeouts from resolution and verification to the stable branch error', function (): void {
+    $process = new Process(['git', 'ls-remote']);
+    $process->setTimeout(30.0);
+    $timeout = new ProcessTimedOutException($process, ProcessTimedOutException::TYPE_GENERAL);
+    $processes = new class($timeout) implements ProcessRunner {
+        public function __construct(
+            private readonly ProcessTimedOutException $timeout,
+        ) {}
+
+        public function run(ProcessInvocation $invocation): CommandResult
+        {
+            throw $this->timeout;
+        }
+    };
+    $resolver = new NativeRepositoryDefaultBranchResolver($processes);
+
+    expect(fn (): string => $resolver->resolve('https://example.test/private-sentinel.git'))
+        ->toThrow(ResourceOperationException::class, 'could not be determined or verified')
+        ->and(fn () => $resolver->verify('https://example.test/private-sentinel.git', 'main'))
         ->toThrow(ResourceOperationException::class, 'could not be determined or verified');
 });
 
