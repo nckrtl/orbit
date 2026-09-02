@@ -7,23 +7,27 @@ namespace App\E2E;
 use App\E2E\State\AtomicJsonStore;
 use App\E2E\State\OperationLock;
 use App\E2E\State\StatePaths;
+use App\E2E\Value\AttemptId;
 use App\E2E\Value\IncusInstance;
+use App\E2E\Value\LegacyStandbyInventory;
 use App\E2E\Value\OperationId;
 use App\E2E\Value\StandbyIdentity;
 use App\E2E\Value\TopologyProfile;
+use App\E2E\Value\TopologyTarget;
+use Closure;
+use InvalidArgumentException;
 use RuntimeException;
 
 /**
  * Rebuild this checkout's standby from the base image after its resources and
  * its manifest disagree.
  *
- * The teardown is the recovery path that used to need `incus delete` by hand:
- * it removes the standby VMs, the copies a failed promotion left behind, the
- * standby network, and every manifest that named them. Only resources this
- * checkout's standby identity owns are touched, and only when Incus reports
- * them as harness-owned; anything else refuses the rebuild instead.
+ * Ordinary rebuild only repairs stale state after exact resource inventory
+ * proves that all configured VMs, promotion copies, and the network are absent.
+ * Legacy recovery supplies a separate, hash-bound authorization before this
+ * service removes any exact resource or manifest.
  *
- * @mago-expect lint:cyclomatic-complexity,excessive-parameter-list The recovery keeps its exact resource transaction at one boundary.
+ * @mago-expect lint:cyclomatic-complexity,excessive-parameter-list,kan-defect,too-many-methods The recovery keeps its exact resource transaction at one boundary.
  */
 final readonly class StandbyRebuilder
 {
@@ -42,11 +46,8 @@ final readonly class StandbyRebuilder
     ) {}
 
     /**
-     * Delete every resource of this standby identity and forget its manifests,
-     * so a cold build can construct the standby again.
-     *
-     * The refresh lock is held for the teardown only: the cold build that
-     * follows takes it again for itself.
+     * Forget stale manifests only after inventory proves every configured
+     * standby resource is absent, so a cold build can construct it again.
      *
      * @return array{instances_deleted:list<string>,networks_deleted:list<string>}
      */
@@ -57,6 +58,20 @@ final readonly class StandbyRebuilder
         }
 
         try {
+            $present = array_keys($this->host->instances($this->standbyInstanceNames()));
+            if ($this->host->network($this->identity->network()) !== null) {
+                $present[] = $this->identity->network();
+            }
+            if ($present !== []) {
+                sort($present, SORT_STRING);
+
+                throw new RuntimeException(
+                    'Standby resources are present: '
+                    .implode(', ', $present)
+                    .'. Use bin/e2e-standby recover-legacy --main-sha=<sha>.',
+                );
+            }
+
             $instancesDeleted = $this->deleteInstances();
             $networksDeleted = $this->deleteNetwork();
             $this->forgetManifests();
@@ -67,13 +82,70 @@ final readonly class StandbyRebuilder
         }
     }
 
+    /**
+     * @param Closure(string, array<string, mixed>):void $record
+     * @return array{instances_deleted:list<string>,networks_deleted:list<string>}
+     */
+    public function recover(
+        LegacyStandbyInventory $authorization,
+        Closure $record,
+        bool $instancesMayBeAbsent = false,
+        bool $networkMayBeAbsent = false,
+        bool $manifestsMayBeAbsent = false,
+    ): array {
+        $this->assertAuthorizedScope($authorization);
+        $this->assertInventoryUnchanged(
+            $authorization,
+            $instancesMayBeAbsent,
+            $networkMayBeAbsent,
+            $manifestsMayBeAbsent,
+        );
+        $authorizedInstances = array_keys($authorization->instances);
+        $present = $this->host->instances($this->standbyInstanceNames());
+        sort($authorizedInstances, SORT_STRING);
+        foreach ($present as $name => $instance) {
+            $this->assertHarnessOwned($instance, $name, allowPromotionCopy: true);
+        }
+
+        $record('instances_pending', ['instances' => $authorizedInstances]);
+        $instancesDeleted = $this->deleteInstances(allowPromotionCopy: true);
+        $record('instances_verified', ['instances_deleted' => $instancesDeleted]);
+
+        $authorizedNetwork = $authorization->network['name'] ?? null;
+        $network = $this->host->network($this->identity->network());
+        if ($network !== null && $authorizedNetwork !== $network->name) {
+            throw new RuntimeException('The exact standby network inventory changed after authorization.');
+        }
+        if ($network !== null && ($network->metadata['user.orbit.e2e.owner'] ?? null) !== 'orbit-e2e') {
+            throw new RuntimeException("Incus network {$network->name} ownership does not match.");
+        }
+        $record('network_pending', ['network' => $authorizedNetwork]);
+        $networksDeleted = $this->deleteNetwork();
+        $record('network_verified', ['networks_deleted' => $networksDeleted]);
+
+        $promoted = $this->manifests->promoted();
+        if ($promoted !== null && $promoted->toArray() !== $authorization->promotedManifest) {
+            throw new RuntimeException('The promoted standby manifest changed after authorization.');
+        }
+        foreach ($this->manifests->recorded() as $recorded) {
+            if (! in_array($recorded->toArray(), $authorization->recordedManifests, true)) {
+                throw new RuntimeException('A recorded standby manifest changed after authorization.');
+            }
+        }
+        $record('manifests_pending', ['promoted_manifest' => $authorization->promotedManifest]);
+        $this->forgetManifests();
+        $record('manifests_verified', ['promoted_manifest_retained' => $authorization->promotedManifest]);
+
+        return ['instances_deleted' => $instancesDeleted, 'networks_deleted' => $networksDeleted];
+    }
+
     /** @return list<string> */
-    private function deleteInstances(): array
+    private function deleteInstances(bool $allowPromotionCopy = false): array
     {
         $names = $this->standbyInstanceNames();
         $present = $this->host->instances($names);
         foreach ($present as $name => $instance) {
-            $this->assertHarnessOwned($instance, $name);
+            $this->assertHarnessOwned($instance, $name, $allowPromotionCopy);
         }
         if ($present === []) {
             return [];
@@ -148,8 +220,11 @@ final readonly class StandbyRebuilder
         return $names;
     }
 
-    private function assertHarnessOwned(IncusInstance $instance, string $name): void
-    {
+    private function assertHarnessOwned(
+        IncusInstance $instance,
+        string $name,
+        bool $allowPromotionCopy = false,
+    ): void {
         if (($instance->metadata['user.orbit.e2e.owner'] ?? null) !== 'orbit-e2e') {
             throw new RuntimeException(
                 "Incus instance {$name} is not harness-owned; the standby rebuild refuses to delete it.",
@@ -157,9 +232,163 @@ final readonly class StandbyRebuilder
         }
         $issue = $instance->metadata['user.orbit.e2e.issue'] ?? null;
         if (is_string($issue) && $issue !== '') {
+            if ($allowPromotionCopy && str_ends_with($name, self::COPY_SUFFIX)) {
+                $attempt = $instance->metadata['user.orbit.e2e.attempt'] ?? null;
+                $operation = $instance->metadata['user.orbit.e2e.operation'] ?? null;
+                try {
+                    TopologyTarget::assertIssue($issue);
+                    new AttemptId(is_string($attempt) ? $attempt : '');
+                    new OperationId(is_string($operation) ? $operation : '');
+                } catch (InvalidArgumentException) {
+                    throw new RuntimeException("Incus instance {$name} promotion identity is incomplete.");
+                }
+                $expected = [
+                    'user.orbit.e2e.owner' => 'orbit-e2e',
+                    'user.orbit.e2e.operation' => $operation,
+                    'user.orbit.e2e.issue' => $issue,
+                    'user.orbit.e2e.attempt' => $attempt,
+                ];
+                $metadata = $instance->metadata;
+                ksort($expected, SORT_STRING);
+                ksort($metadata, SORT_STRING);
+                if ($metadata !== $expected) {
+                    throw new RuntimeException("Incus instance {$name} promotion identity is incomplete.");
+                }
+
+                return;
+            }
+
             throw new RuntimeException(
                 "Incus instance {$name} belongs to issue {$issue}; release that topology before rebuilding the standby.",
             );
         }
+    }
+
+    private function assertAuthorizedScope(LegacyStandbyInventory $authorization): void
+    {
+        $expected = [
+            ...$this->host->scope(),
+            'standby_namespace' => $this->identity->namespace,
+        ];
+        if ($authorization->scope !== $expected) {
+            throw new RuntimeException('The legacy standby recovery scope does not match this harness.');
+        }
+    }
+
+    private function assertInventoryUnchanged(
+        LegacyStandbyInventory $authorization,
+        bool $instancesMayBeAbsent,
+        bool $networkMayBeAbsent,
+        bool $manifestsMayBeAbsent,
+    ): void {
+        $present = $this->host->instances($this->standbyInstanceNames());
+        $authorizedNames = array_keys($authorization->instances);
+        $presentNames = array_keys($present);
+        sort($authorizedNames, SORT_STRING);
+        sort($presentNames, SORT_STRING);
+        if (! $instancesMayBeAbsent && $presentNames !== $authorizedNames) {
+            throw new RuntimeException('The exact standby instance inventory changed after authorization.');
+        }
+        foreach ($present as $name => $instance) {
+            $this->assertHarnessOwned($instance, $name, allowPromotionCopy: true);
+            $authorized = $authorization->instances[$name] ?? null;
+            if (! is_array($authorized)) {
+                throw new RuntimeException('The exact standby instance inventory changed after authorization.');
+            }
+            $current = $this->instanceArray($instance);
+            unset($authorized['status'], $authorized['status_code'], $current['status'], $current['status_code']);
+            if ($current !== $authorized) {
+                throw new RuntimeException('The exact standby instance inventory changed after authorization.');
+            }
+        }
+        $snapshots = $present === [] ? [] : $this->host->ownedSnapshotNames(array_keys($present));
+        foreach ($snapshots as $name => $current) {
+            if (($authorization->snapshots[$name] ?? null) !== $current) {
+                throw new RuntimeException('The exact standby snapshot inventory changed after authorization.');
+            }
+        }
+
+        $network = $this->host->network($this->identity->network());
+        if ($network === null && $authorization->network !== null && ! $networkMayBeAbsent) {
+            throw new RuntimeException('The exact standby network inventory changed after authorization.');
+        }
+        if ($network !== null) {
+            if (($network->metadata['user.orbit.e2e.owner'] ?? null) !== 'orbit-e2e') {
+                throw new RuntimeException("Incus network {$network->name} ownership does not match.");
+            }
+            if ($authorization->network === null) {
+                throw new RuntimeException('The exact standby network inventory changed after authorization.');
+            }
+            $current = $this->networkArray($network);
+            $authorized = $authorization->network;
+            $currentUsers = $network->usedBy;
+            $authorizedUserInventory = $authorized['used_by'] ?? null;
+            if (! is_array($authorizedUserInventory)) {
+                throw new RuntimeException('The exact standby network inventory changed after authorization.');
+            }
+            $authorizedUsers = array_values(array_filter(
+                $authorizedUserInventory,
+                static fn (mixed $user): bool => (
+                    is_string($user)
+                    && in_array(basename((string) parse_url($user, PHP_URL_PATH)), array_keys($present), true)
+                ),
+            ));
+            unset($current['used_by'], $authorized['used_by']);
+            sort($currentUsers, SORT_STRING);
+            sort($authorizedUsers, SORT_STRING);
+            if ($current !== $authorized || $currentUsers !== $authorizedUsers) {
+                throw new RuntimeException('The exact standby network inventory changed after authorization.');
+            }
+        }
+
+        $promoted = $this->manifests->promoted();
+        if ($promoted === null && ! $manifestsMayBeAbsent) {
+            throw new RuntimeException('The promoted standby manifest changed after authorization.');
+        }
+        if ($promoted !== null && $promoted->toArray() !== $authorization->promotedManifest) {
+            throw new RuntimeException('The promoted standby manifest changed after authorization.');
+        }
+        $recordedManifests = array_map(
+            static fn ($generation): array => $generation->toArray(),
+            $this->manifests->recorded(),
+        );
+        if (! $manifestsMayBeAbsent && $recordedManifests !== $authorization->recordedManifests) {
+            throw new RuntimeException('A recorded standby manifest changed after authorization.');
+        }
+        foreach ($recordedManifests as $recorded) {
+            if (! in_array($recorded, $authorization->recordedManifests, true)) {
+                throw new RuntimeException('A recorded standby manifest changed after authorization.');
+            }
+        }
+    }
+
+    /** @return array<string, mixed> */
+    private function instanceArray(IncusInstance $instance): array
+    {
+        return [
+            'remote' => $instance->remote,
+            'project' => $instance->project,
+            'name' => $instance->name,
+            'pool' => $instance->pool,
+            'metadata' => $instance->metadata,
+            'status' => $instance->status,
+            'status_code' => $instance->statusCode,
+            'network' => $instance->network,
+            'mac' => $instance->mac,
+            'disks' => $instance->disks,
+        ];
+    }
+
+    /** @return array<string, mixed> */
+    private function networkArray(\App\E2E\Value\IncusNetwork $network): array
+    {
+        return [
+            'remote' => $network->remote,
+            'project' => $network->project,
+            'name' => $network->name,
+            'metadata' => $network->metadata,
+            'config' => $network->config,
+            'used_by' => $network->usedBy,
+        ];
     }
 }

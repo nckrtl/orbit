@@ -167,6 +167,7 @@ final class IncusHost implements GuestTransport
                     $name,
                     $this->metadata($resource),
                     $this->configuration($resource),
+                    $this->usedBy($resource),
                 );
             }
         }

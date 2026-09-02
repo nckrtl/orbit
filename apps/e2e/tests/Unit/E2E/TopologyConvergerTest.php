@@ -150,7 +150,7 @@ function task7_process_result(PendingProcess $process, array &$recorded, bool $t
             'app_id' => 1,
             'node_id' => 2,
             'name' => 'e2e-dev',
-            'checkout_path' => '/srv/orbit/apps/laravel/e2e-dev',
+            'checkout_path' => '/srv/orbit/apps/laravel-typed/e2e-dev',
             'effective_root' => 'public',
         ], JSON_THROW_ON_ERROR)
             ."\n");
@@ -327,7 +327,7 @@ describe('TopologyConverger', function () {
                 'hydrate',
                 str_repeat('b', 40),
                 'app-dev',
-                '/srv/orbit/apps/laravel/e2e-dev',
+                '/srv/orbit/apps/laravel-typed/e2e-dev',
             ])
             ->not->toContain(
                 ['/usr/local/bin/converge-sample-app.sh', 'internal-tls'],
