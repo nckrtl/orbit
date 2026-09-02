@@ -24,6 +24,7 @@ it('uses only pinned Sury PHP and packaged PCOV', function (): void {
             'php8.5-cli',
             'php8.5-fpm',
             'php8.5-pcov',
+            '--no-remove --no-upgrade',
             'package_version=$(dpkg-query',
             'apt-cache madison "$package"',
             "'$2 == version && $3 == source { found = 1 } END { exit !found }'",

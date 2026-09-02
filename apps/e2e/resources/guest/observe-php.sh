@@ -51,7 +51,7 @@ install_sury() {
   local -a packages=(php8.5-cli php8.5-fpm php8.5-common php8.5-curl php8.5-mbstring php8.5-sqlite3 php8.5-xml)
   [[ "$mode" == runtime ]] || packages+=(php8.5-pcov)
   DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install \
-    --yes --no-install-recommends --no-remove -- "${packages[@]}"
+    --yes --no-install-recommends --no-remove --no-upgrade -- "${packages[@]}"
 
   local package package_version package_source
   package_source="${source_uri%/} $os_codename/main $architecture Packages"
