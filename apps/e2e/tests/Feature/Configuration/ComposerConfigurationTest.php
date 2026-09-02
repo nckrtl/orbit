@@ -28,6 +28,8 @@ describe('Composer configuration', function (): void {
             ->and($composer['scripts']['test'])
             ->toBe('vendor/bin/pest --parallel --no-tia --compact');
         expect(file_get_contents(base_path('../../bin/test')))->not->toContain('incus-live');
+        expect(file_get_contents(base_path('../../.github/workflows/ci.yml')))->not->toContain('incus-live');
+        expect(file_get_contents(base_path('../../.github/pull_request_template.md')))->not->toContain('bin/e2e-live');
 
         foreach (['.env.example', 'config/app.php', 'phpunit.xml', 'tests/Pest.php'] as $file) {
             expect(file_get_contents(base_path($file)))
