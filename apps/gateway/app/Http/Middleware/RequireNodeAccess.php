@@ -18,6 +18,7 @@ use ReflectionClass;
 use ReflectionMethod;
 use Symfony\Component\HttpFoundation\Response;
 
+/** @mago-expect lint:cyclomatic-complexity Caller-local source scopes keep their fail-closed exceptions explicit. */
 final readonly class RequireNodeAccess
 {
     public function __construct(

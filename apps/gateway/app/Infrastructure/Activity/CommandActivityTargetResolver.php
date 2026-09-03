@@ -148,6 +148,12 @@ final readonly class CommandActivityTargetResolver
 
     private function subject(Request $request): ?Model
     {
+        $appInstanceSnapshot = $request->attributes->get('orbit.app_instance_snapshot');
+
+        if ($appInstanceSnapshot instanceof AppInstance) {
+            return $appInstanceSnapshot;
+        }
+
         if (in_array($request->route()?->getName(), ['firewall:allow', 'firewall:deny'], strict: true)) {
             return $this->createdFirewallRule($request);
         }

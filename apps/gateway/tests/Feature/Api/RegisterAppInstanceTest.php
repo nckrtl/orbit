@@ -8,9 +8,11 @@ use App\Domain\AppInstances\RegisteredWorktreeObservation;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Models\Activity;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Node;
+use Illuminate\Support\Str;
 
 beforeEach(function (): void {
     $this->caller = Node::query()->create([
@@ -77,7 +79,10 @@ beforeEach(function (): void {
 });
 
 it('registers the exact caller-local worktree without storing Cluster ownership', function (): void {
+    $requestId = (string) Str::uuid();
+
     $this
+        ->withHeader('X-Orbit-Request-Id', $requestId)
         ->postJson('/api/v1/instances/register', [
             'app' => 'example',
             'checkout_path' => '/home/orbit/.codex/worktrees/dfb5/example',
@@ -95,6 +100,7 @@ it('registers the exact caller-local worktree without storing Cluster ownership'
         ->assertJsonPath('data.status', 'active');
 
     $stored = AppInstance::query()->sole();
+    $activity = Activity::query()->where('request_id', $requestId)->sole();
 
     expect($stored->source_identity)
         ->toBe(str_repeat('b', 64))
@@ -105,6 +111,12 @@ it('registers the exact caller-local worktree without storing Cluster ownership'
             'checkout' => '/home/orbit/.codex/worktrees/dfb5/example',
             'root' => 'public',
         ]]);
+
+    expect($activity)
+        ->command->toBe('instance:register')
+        ->subject_type->toBe(AppInstance::class)
+        ->subject_id->toBe($stored->id)
+        ->target_node_id->toBe($this->caller->id);
 });
 
 it('re-verifies retries while preserving the initial branch and commit observations', function (): void {
@@ -232,13 +244,23 @@ it('unregisters only registered worktrees without touching external source', fun
         ])
         ->assertCreated()
         ->json('data.id');
+    $requestId = (string) Str::uuid();
 
     $this
+        ->withHeader('X-Orbit-Request-Id', $requestId)
         ->deleteJson("/api/v1/instances/{$registered}/registration")
         ->assertOk()
         ->assertJsonPath('data.source_kind', AppInstanceSourceKind::RegisteredWorktree->value);
 
-    expect(AppInstance::query()->count())->toBe(0);
+    $activity = Activity::query()->where('request_id', $requestId)->sole();
+
+    expect(AppInstance::query()->count())
+        ->toBe(0)
+        ->and($activity)
+        ->command->toBe('instance:unregister')
+        ->subject_type->toBe(AppInstance::class)
+        ->subject_id->toBe($registered)
+        ->target_node_id->toBe($this->caller->id);
 
     $managed = AppInstance::query()->create([
         'app_id' => $this->orbitApp->id,

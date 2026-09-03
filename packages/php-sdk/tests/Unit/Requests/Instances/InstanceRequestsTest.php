@@ -179,7 +179,8 @@ describe('AppInstance requests', function (): void {
             ->and($request?->resolveEndpoint())
             ->toBe('/api/v1/instances/7/registration')
             ->and($request)
-            ->not->toBeInstanceOf(HasBody::class)
+            ->not
+            ->toBeInstanceOf(HasBody::class)
             ->and($pendingRequest?->body())
             ->toBeNull()
             ->and($response)

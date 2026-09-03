@@ -62,6 +62,7 @@ final class AppInstancesController extends Controller
         $caller = $request->user();
         assert($caller instanceof Node, description: 'Authenticated peer must be a Node.');
         $result = $action->execute($caller, $request->payload());
+        request()->attributes->set('orbit.app_instance_snapshot', $result['appInstance']);
 
         return response()->json(
             [
