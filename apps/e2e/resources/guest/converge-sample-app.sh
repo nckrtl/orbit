@@ -37,14 +37,21 @@ case ${1-} in
     rm -f "$ca.new"
     "$orbit" gateway:add "https://$2" --name=e2e --ca="$ca" --use --json
     ;;
-  gateway-readiness)
+  instance-api-readiness)
     [[ "$(id -u)" -eq 0 ]] && exec sudo -u orbit -- env HOME=/home/orbit ORBIT_HOME=/home/orbit/.orbit DB_DATABASE=/home/orbit/.orbit/gateway.sqlite bash "$0" "$@"
     [[ $# -eq 1 ]] || exit 64
-    if ! status=$("$orbit" gateway:status --json 2>&1); then
-      printf 'gateway-readiness: gateway:status failed: %s\n' "$status" >&2
-      exit 1
+    if instances=$("$orbit" instance:list --json 2>&1); then
+      :
+    else
+      probe_exit=$?
+      printf 'instance-api-readiness: instance:list --json failed with exit code %d: %s\n' "$probe_exit" "$instances" >&2
+      exit "$probe_exit"
     fi
-    php -r '$v=json_decode(stream_get_contents(STDIN), true, 16, JSON_THROW_ON_ERROR); if(!is_array($v) || array_keys($v)!==["gateway","url","name","status","version","php_version","laravel_version","request_id"] || ($v["gateway"] ?? null)!=="e2e" || ($v["url"] ?? null)!=="https://10.44.0.1" || ($v["name"] ?? null)!=="orbit-gateway" || ($v["status"] ?? null)!=="ok" || !is_string($v["version"] ?? null) || $v["version"]==="" || !is_string($v["php_version"] ?? null) || $v["php_version"]==="" || !is_string($v["laravel_version"] ?? null) || $v["laravel_version"]==="" || !is_string($v["request_id"] ?? null) || preg_match("/\\A[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\\z/Di", $v["request_id"])!==1) exit(65);' <<<"$status"
+    if ! instance_shape=$(php -r '$v=json_decode(stream_get_contents(STDIN), false, 512, JSON_THROW_ON_ERROR); if(!is_object($v)) exit(65); $properties=get_object_vars($v); if(count($properties)!==2 || !array_key_exists("request_id", $properties) || !is_string($v->request_id) || preg_match("/\\A[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\\z/Di", $v->request_id)!==1) exit(65); $legacy=property_exists($v, "instances"); $typed=property_exists($v, "app_instances"); if($legacy===$typed) exit(65); $shape=$legacy ? "instances" : "app_instances"; if(!is_array($v->{$shape})) exit(65); foreach($v->{$shape} as $instance) if(!is_object($instance)) exit(65); echo $shape;' <<<"$instances"); then
+      printf 'instance-api-readiness: instance:list --json returned a malformed or unsupported response envelope\n' >&2
+      exit 65
+    fi
+    printf 'instance-api-readiness: instance:list --json validated %s envelope\n' "$instance_shape"
     ;;
   create-resources)
     [[ "$(id -u)" -eq 0 ]] && exec sudo -u orbit -- env HOME=/home/orbit ORBIT_HOME=/home/orbit/.orbit DB_DATABASE=/home/orbit/.orbit/gateway.sqlite bash "$0" "$@"

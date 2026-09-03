@@ -277,7 +277,7 @@ describe('TopologyConverger', function () {
             'converge.metrics',
             'reproject.product-state',
             'refresh.metrics-publication',
-            'await.gateway-readiness',
+            'await.instance-api-readiness',
             'hydrate.sample-apps',
             'normalize.permissions',
         ]);
@@ -334,7 +334,7 @@ describe('TopologyConverger', function () {
                 ['/usr/local/bin/converge-sample-app.sh', 'internal-tls'],
                 ['/usr/local/bin/converge-sample-app.sh', 'reproject'],
                 ['/usr/local/bin/converge-sample-app.sh', 'metrics-publication', 'app-dev'],
-                ['/usr/local/bin/converge-sample-app.sh', 'gateway-readiness'],
+                ['/usr/local/bin/converge-sample-app.sh', 'instance-api-readiness'],
                 ['/usr/local/bin/converge-sample-app.sh', 'hydrate', str_repeat('b', 40), 'app-dev'],
                 ['/usr/local/bin/converge-sample-app.sh', 'hydrate', str_repeat('b', 40), 'app-prod'],
                 ['/usr/local/bin/prepare-node.sh', 'permissions'],
@@ -461,7 +461,7 @@ describe('TopologyConverger', function () {
             );
     });
 
-    it('retries transient Gateway readiness before invoking each hydration exactly once', function (bool $typed): void {
+    it('retries transient instance API readiness before invoking each hydration exactly once', function (bool $typed): void {
         $recorded = [];
         $readinessAttempts = 0;
         Process::fake(function (PendingProcess $process) use (&$recorded, &$readinessAttempts, $typed): ProcessResult {
@@ -469,7 +469,7 @@ describe('TopologyConverger', function () {
             assert(is_array($command));
             if (
                 in_array('/usr/local/bin/converge-sample-app.sh', $command, true)
-                && in_array('gateway-readiness', $command, true)
+                && in_array('instance-api-readiness', $command, true)
             ) {
                 $readinessAttempts++;
                 if ($readinessAttempts === 1) {
@@ -482,7 +482,7 @@ describe('TopologyConverger', function () {
             return task7_process_result($process, $recorded, typed: $typed);
         });
 
-        new TopologyConverger(task7_host(), gatewayReadinessRetryDelayMicroseconds: 0)->converge(
+        new TopologyConverger(task7_host(), instanceApiReadinessRetryDelayMicroseconds: 0)->converge(
             featureTarget('NCK-123'),
             new SourceState(str_repeat('a', 40), str_repeat('a', 40), false),
             new LaravelRelease('v13.10.1', str_repeat('b', 40)),
@@ -508,7 +508,7 @@ describe('TopologyConverger', function () {
                 'internal-tls' => $typed ? null : 1,
                 'reproject' => 1,
                 'metrics-publication' => 1,
-                'gateway-readiness' => 2,
+                'instance-api-readiness' => 2,
                 'hydrate' => $typed ? 1 : 2,
             ],
             is_int(...),
@@ -525,24 +525,24 @@ describe('TopologyConverger', function () {
             ->values();
 
         expect($actions->search('hydrate', strict: true))
-            ->toBeGreaterThan($actions->search('gateway-readiness', strict: true));
+            ->toBeGreaterThan($actions->search('instance-api-readiness', strict: true));
     })->with([
         'legacy hydration' => false,
         'typed hydration' => true,
     ]);
 
-    it('fails persistent Gateway unavailability before hydration with bounded diagnostics', function (): void {
+    it('fails persistent instance API readiness before hydration with bounded diagnostics', function (int $exitCode): void {
         $recorded = [];
-        Process::fake(function (PendingProcess $process) use (&$recorded): ProcessResult {
+        Process::fake(function (PendingProcess $process) use (&$recorded, $exitCode): ProcessResult {
             $command = $process->command;
             assert(is_array($command));
             if (
                 in_array('/usr/local/bin/converge-sample-app.sh', $command, true)
-                && in_array('gateway-readiness', $command, true)
+                && in_array('instance-api-readiness', $command, true)
             ) {
                 $recorded[] = $command;
 
-                return Process::result('', 'Gateway unavailable.', 1);
+                return Process::result('', 'instance:list --json failed.', $exitCode);
             }
 
             return task7_process_result($process, $recorded);
@@ -550,7 +550,7 @@ describe('TopologyConverger', function () {
 
         expect(fn () => new TopologyConverger(
             task7_host(),
-            gatewayReadinessRetryDelayMicroseconds: 0,
+            instanceApiReadinessRetryDelayMicroseconds: 0,
         )->converge(
             featureTarget('NCK-123'),
             new SourceState(str_repeat('a', 40), str_repeat('a', 40), false),
@@ -558,14 +558,15 @@ describe('TopologyConverger', function () {
         ))
             ->toThrow(
                 RuntimeException::class,
-                'Guest convergence action converge-sample-app.sh gateway-readiness failed on '
-                .'orbit-e2e-nck-123-aaaaaaaa-app-dev after 5 attempts; attempt 5 exited with code 1.',
+                'Guest convergence readiness action converge-sample-app.sh instance-api-readiness failed '
+                .'on orbit-e2e-nck-123-aaaaaaaa-app-dev after 5 attempts; probe instance:list --json failed '
+                ."on attempt 5 with exit code {$exitCode}.",
             );
 
         expect(collect($recorded)->filter(
             fn (array $command): bool => (
                 in_array('/usr/local/bin/converge-sample-app.sh', $command, true)
-                && in_array('gateway-readiness', $command, true)
+                && in_array('instance-api-readiness', $command, true)
             ),
         ))
             ->toHaveCount(5)
@@ -576,7 +577,10 @@ describe('TopologyConverger', function () {
                 ),
             ))
             ->toHaveCount(0);
-    });
+    })->with([
+        'unavailable instance API' => 1,
+        'malformed instance envelope' => 65,
+    ]);
 
     it('does not retry a typed hydration failure after readiness succeeds', function (int $exitCode): void {
         $recorded = [];
@@ -597,7 +601,7 @@ describe('TopologyConverger', function () {
 
         expect(fn () => new TopologyConverger(
             task7_host(),
-            gatewayReadinessRetryDelayMicroseconds: 0,
+            instanceApiReadinessRetryDelayMicroseconds: 0,
         )->converge(
             featureTarget('NCK-123'),
             new SourceState(str_repeat('a', 40), str_repeat('a', 40), false),
