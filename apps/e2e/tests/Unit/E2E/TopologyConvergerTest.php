@@ -423,9 +423,9 @@ describe('TopologyConverger', function () {
         ))->toHaveCount(5);
     });
 
-    it('does not retry a typed hydration semantic failure', function (): void {
+    it('does not retry a typed hydration failure outside the readiness boundary', function (int $exitCode): void {
         $recorded = [];
-        Process::fake(function (PendingProcess $process) use (&$recorded): ProcessResult {
+        Process::fake(function (PendingProcess $process) use (&$recorded, $exitCode): ProcessResult {
             $command = $process->command;
             assert(is_array($command));
             if (
@@ -434,7 +434,7 @@ describe('TopologyConverger', function () {
             ) {
                 $recorded[] = $command;
 
-                return Process::result('', '', 65);
+                return Process::result('', '', $exitCode);
             }
 
             return task7_process_result($process, $recorded, typed: true);
@@ -451,7 +451,7 @@ describe('TopologyConverger', function () {
             ->toThrow(
                 RuntimeException::class,
                 'Guest convergence action converge-sample-app.sh hydrate failed on '
-                .'orbit-e2e-nck-123-aaaaaaaa-app-dev with exit code 65.',
+                ."orbit-e2e-nck-123-aaaaaaaa-app-dev with exit code {$exitCode}.",
             );
 
         expect(collect($recorded)->filter(
@@ -459,7 +459,10 @@ describe('TopologyConverger', function () {
                 in_array('/usr/local/bin/converge-sample-app.sh', $command, true) && in_array('hydrate', $command, true)
             ),
         ))->toHaveCount(1);
-    });
+    })->with([
+        'semantic typed state' => 65,
+        'remapped post-readiness command' => 1,
+    ]);
 
     it('fails before mutation when a required network is absent', function () {
         Process::fake(['*' => Process::result('[]')]);

@@ -6,7 +6,7 @@ use Illuminate\Filesystem\Filesystem;
 use Symfony\Component\Process\Process;
 
 /** @return array{root:string,checkout:string,script:string,state:string,environment:array<string,string>} */
-function typedHydrationReadinessFixture(string $response, int $exitCode): array
+function typedHydrationReadinessFixture(string $response, int $exitCode, int $gitResetExitCode = 1): array
 {
     $root = temporaryPath('orbit-typed-hydration-readiness-', 6);
     $checkout = "{$root}/checkout";
@@ -31,8 +31,22 @@ function typedHydrationReadinessFixture(string $response, int $exitCode): array
         BASH);
     file_put_contents("{$root}/bin/git", <<<'BASH'
         #!/usr/bin/env bash
+        set -euo pipefail
         touch "$TYPED_HYDRATION_GIT_CALLED"
-        exit 1
+        case "$*" in
+          *' remote get-url origin')
+            printf 'https://github.com/laravel/laravel.git\n'
+            ;;
+          *' cat-file -e '*)
+            ;;
+          *' reset --hard --quiet '*)
+            touch "$TYPED_HYDRATION_GIT_RESET_CALLED"
+            exit "$TYPED_HYDRATION_GIT_RESET_EXIT"
+            ;;
+          *)
+            exit 1
+            ;;
+        esac
         BASH);
     chmod("{$root}/orbit", 0o700);
     chmod("{$root}/bin/git", 0o700);
@@ -57,6 +71,8 @@ function typedHydrationReadinessFixture(string $response, int $exitCode): array
             'PATH' => "{$root}/bin:".getenv('PATH'),
             'TYPED_HYDRATION_EXIT' => (string) $exitCode,
             'TYPED_HYDRATION_GIT_CALLED' => "{$root}/git-called",
+            'TYPED_HYDRATION_GIT_RESET_CALLED' => "{$root}/git-reset-called",
+            'TYPED_HYDRATION_GIT_RESET_EXIT' => (string) $gitResetExitCode,
             'TYPED_HYDRATION_RESPONSE' => $response,
         ],
     ];
@@ -86,6 +102,39 @@ it('classifies only bounded gateway readiness envelopes as retryable', function 
         new Filesystem()->deleteDirectory($fixture['root']);
     }
 })->with(['gateway.unreachable', 'gateway.unavailable']);
+
+it('returns a non-retryable failure when a later hydration command exits 75', function (): void {
+    $response = json_encode([
+        'app_instances' => [[
+            'id' => 4,
+            'app_id' => 1,
+            'node_id' => 2,
+            'name' => 'e2e-dev',
+            'status' => 'active',
+            'checkout_path' => '__CHECKOUT__',
+            'selected_branch' => 'main',
+            'starting_commit' => str_repeat('a', 40),
+            'effective_root' => 'public',
+        ]],
+    ], JSON_THROW_ON_ERROR);
+    $fixture = typedHydrationReadinessFixture($response, 0, gitResetExitCode: 75);
+
+    try {
+        $process = new Process([
+            'bash',
+            $fixture['script'],
+            'hydrate',
+            str_repeat('b', 40),
+            'app-dev',
+            $fixture['checkout'],
+        ], env: $fixture['environment']);
+
+        expect($process->run())->toBe(1);
+        expect(file_exists("{$fixture['root']}/git-reset-called"))->toBeTrue();
+    } finally {
+        new Filesystem()->deleteDirectory($fixture['root']);
+    }
+});
 
 it('fails closed before checkout mutation for semantic typed state', function (string $response, int $exitCode): void {
     $fixture = typedHydrationReadinessFixture($response, $exitCode);

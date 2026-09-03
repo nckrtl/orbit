@@ -268,6 +268,10 @@ case ${1-} in
         exit 1
       fi
       php -r '$v=json_decode(file_get_contents($argv[1]), true, 16, JSON_THROW_ON_ERROR); $path=$v["checkout_path"] ?? null; if(array_keys($v)!==["shape","app_id","node_id","name","checkout_path","effective_root"] || $v["shape"]!=="app_instances" || !is_int($v["app_id"]) || !is_int($v["node_id"]) || $v["name"]!=="e2e-dev" || !is_string($path) || !str_starts_with($path, "/") || str_contains($path, "//") || preg_match("#(?:\\A|/)\\.\\.?(/|\\z)#D", $path)===1 || $path!==$argv[2] || $v["effective_root"]!=="public") exit(65); $r=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); if(!is_array($r) || array_key_exists("instances", $r) || !array_key_exists("app_instances", $r) || !is_array($r["app_instances"]) || !array_is_list($r["app_instances"])) exit(65); $m=array_values(array_filter($r["app_instances"], fn($x) => is_array($x) && ($x["name"] ?? null)==="e2e-dev")); if(count($m)!==1) exit(65); $x=$m[0]; if(($x["app_id"] ?? null)!==$v["app_id"] || ($x["node_id"] ?? null)!==$v["node_id"] || ($x["status"] ?? null)!=="active" || ($x["checkout_path"] ?? null)!==$path || !is_string($x["selected_branch"] ?? null) || $x["selected_branch"]==="" || !is_string($x["starting_commit"] ?? null) || preg_match("/\\A[0-9a-f]{40}\\z/D", $x["starting_commit"])!==1 || ($x["effective_root"] ?? null)!=="public") exit(65);' "$sample_state" "$4" <<<"$typed_instances"
+      # Exit 75 belongs only to the validated Gateway request above. Once that
+      # boundary passes, remap the same status from any later hydration command
+      # so the host never retries work that may already have mutated the checkout.
+      trap 'status=$?; trap - EXIT; if [[ "$status" -eq 75 ]]; then exit 1; fi; exit "$status"' EXIT
     fi
     case "$3" in
       app-dev)
