@@ -488,6 +488,19 @@
             "governing_adrs": []
         },
         {
+            "path": "docs/solutions/vpn-dnsmasq-uplink-resolvers.md",
+            "title": "VPN dnsmasq uplink resolvers",
+            "kind": "solution",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Node"
+            ],
+            "governing_adrs": []
+        },
+        {
             "path": "docs/tech-stack.md",
             "title": "Tech Stack",
             "kind": "product",
