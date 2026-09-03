@@ -31,9 +31,7 @@ final readonly class GatewayConfigRepository
         $config = $this->read();
         $config['gateways'][$profile->name] = $profile->toArray();
 
-        if ($config['active_gateway'] === null) {
-            $config['active_gateway'] = $profile->name;
-        }
+        $config['active_gateway'] ??= $profile->name;
 
         $this->write($config);
     }
