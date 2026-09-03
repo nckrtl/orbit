@@ -46,33 +46,96 @@ case ${1-} in
     initial_instances=$("$orbit" instance:list --json)
     instance_shape=$(php -r '$v=json_decode(stream_get_contents(STDIN), false, 512, JSON_THROW_ON_ERROR); if(!is_object($v)) exit(65); $legacy=property_exists($v, "instances"); $typed=property_exists($v, "app_instances"); if($legacy===$typed) exit(65); $key=$legacy ? "instances" : "app_instances"; $items=$v->{$key}; if(!is_array($items)) exit(65); $targets=[]; foreach($items as $item) { if(!is_object($item)) exit(65); $name=$item->name ?? null; if(in_array($name, ["e2e-dev", "e2e-prod"], true)) { if(isset($targets[$name])) exit(65); $targets[$name]=true; } } echo $key;' <<<"$initial_instances")
     if [[ "$instance_shape" == app_instances ]]; then
-      php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); $m=array_values(array_filter($v["nodes"], fn($x) => ($x["name"] ?? null)===$argv[1])); if(count($m)!==1 || ($m[0]["id"] ?? null)!==(int)$argv[2] || ($m[0]["status"] ?? null)!=="active") exit(65);' "$2" "$dev_id" <<<"$nodes"
-    fi
-    apps=$("$orbit" app:list --json)
-    if [[ "$instance_shape" == app_instances ]]; then
+      typed_cluster_name=e2e-development
+      typed_dev_name=$2
+      typed_node_cluster_id() {
+        php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); if(!is_array($v) || !array_key_exists("nodes", $v) || !is_array($v["nodes"]) || !array_is_list($v["nodes"])) exit(65); $m=[]; foreach($v["nodes"] as $x) { if(!is_array($x)) exit(65); if(($x["name"] ?? null)===$argv[1]) $m[]=$x; } if(count($m)!==1 || ($m[0]["id"] ?? null)!==(int)$argv[2] || ($m[0]["status"] ?? null)!=="active" || !array_key_exists("cluster_id", $m[0])) exit(65); $clusterId=$m[0]["cluster_id"]; if($clusterId!==null && (!is_int($clusterId) || $clusterId<1)) exit(65); echo $clusterId ?? "none";' "$typed_dev_name" "$dev_id"
+      }
+      typed_cluster_envelope() {
+        php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); if(!is_array($v) || array_is_list($v)) exit(65); echo json_encode(["clusters"=>[$v]], JSON_THROW_ON_ERROR);'
+      }
+      typed_cluster_state() {
+        php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); if(!is_array($v) || !array_key_exists("clusters", $v) || !is_array($v["clusters"]) || !array_is_list($v["clusters"])) exit(65); $matches=[]; foreach($v["clusters"] as $cluster) { if(!is_array($cluster) || !is_string($cluster["name"] ?? null)) exit(65); if($cluster["name"]===$argv[1]) $matches[]=$cluster; } if(count($matches)>1) exit(65); if($matches===[]) { if($argv[4]!=="none") exit(65); echo "0 create\n"; exit; } $cluster=$matches[0]; $id=$cluster["id"] ?? null; $state=$cluster["state"] ?? null; $nodes=$cluster["nodes"] ?? null; if(!is_int($id) || $id<1 || !array_key_exists("tld", $cluster) || $cluster["tld"]!==null || !in_array($state, ["inactive", "active"], true) || !is_array($nodes) || !array_is_list($nodes) || !array_key_exists("router", $cluster) || count($nodes)>1) exit(65); $hasNode=count($nodes)===1; if($hasNode && (!is_array($nodes[0]) || ($nodes[0]["id"] ?? null)!==(int)$argv[2] || ($nodes[0]["name"] ?? null)!==$argv[3] || ($nodes[0]["status"] ?? null)!=="active")) exit(65); $router=$cluster["router"]; $hasRouter=$router!==null; if($hasRouter && (!is_array($router) || ($router["id"] ?? null)!==(int)$argv[2] || ($router["name"] ?? null)!==$argv[3] || ($router["status"] ?? null)!=="active")) exit(65); $nodeClusterId=$argv[4]==="none" ? null : (int)$argv[4]; if(($hasNode && $nodeClusterId!==$id) || (!$hasNode && $nodeClusterId!==null)) exit(65); if($state==="inactive" && !$hasNode && !$hasRouter) $phase="attach"; elseif($state==="inactive" && $hasNode && !$hasRouter) $phase="router"; elseif($state==="inactive" && $hasNode && $hasRouter) $phase="activate"; elseif($state==="active" && $hasNode && $hasRouter) $phase="verified"; else exit(65); echo $id, " ", $phase, "\n";' "$typed_cluster_name" "$dev_id" "$typed_dev_name" "$1"
+      }
+      typed_app_instance_state() {
+        php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); if(!is_array($v) || array_key_exists("instances", $v) || !array_key_exists("app_instances", $v) || !is_array($v["app_instances"]) || !array_is_list($v["app_instances"])) exit(65); $m=array_values(array_filter($v["app_instances"], fn($x) => is_array($x) && ($x["name"] ?? null)===$argv[1])); if(count($m)!==1) exit(65); $x=$m[0]; $path=$x["checkout_path"] ?? null; $branch=$x["selected_branch"] ?? null; $commit=$x["starting_commit"] ?? null; if(($x["app_id"] ?? null)!==(int)$argv[2] || ($x["node_id"] ?? null)!==(int)$argv[3] || ($x["status"] ?? null)!=="active" || !is_string($path) || !str_starts_with($path, "/") || str_contains($path, "//") || preg_match("#(?:\\A|/)\\.\\.?(/|\\z)#D", $path)===1 || ($argv[4]!=="" && $path!==$argv[4]) || !is_string($branch) || $branch==="" || !is_string($commit) || preg_match("/\\A[0-9a-f]{40}\\z/D", $commit)!==1 || ($x["effective_root"] ?? null)!=="public") exit(65); echo json_encode(["shape"=>"app_instances", "app_id"=>(int)$argv[2], "node_id"=>(int)$argv[3], "name"=>$argv[1], "checkout_path"=>$path, "effective_root"=>"public"], JSON_THROW_ON_ERROR);' e2e-dev "$app_id" "$dev_id" "$previous_checkout"
+      }
+      node_cluster_id=$(typed_node_cluster_id <<<"$nodes")
+      clusters=$("$orbit" cluster:list --json)
+      cluster_state=$(typed_cluster_state "$node_cluster_id" <<<"$clusters")
+      read -r cluster_id cluster_phase <<<"$cluster_state"
+      cluster_mutated=0
+      if [[ "$cluster_phase" == create ]]; then
+        cluster_response=$("$orbit" cluster:new "$typed_cluster_name" --json)
+        cluster_response=$(typed_cluster_envelope <<<"$cluster_response")
+        cluster_state=$(typed_cluster_state none <<<"$cluster_response")
+        read -r cluster_id cluster_phase <<<"$cluster_state"
+        [[ "$cluster_phase" == attach ]]
+        cluster_mutated=1
+        cluster_phase=attach
+      fi
+      if [[ "$cluster_phase" == attach ]]; then
+        cluster_response=$("$orbit" cluster:node:attach "$cluster_id" "$dev_id" --json)
+        cluster_response=$(typed_cluster_envelope <<<"$cluster_response")
+        mutation_state=$(typed_cluster_state "$cluster_id" <<<"$cluster_response")
+        read -r mutation_cluster_id mutation_phase <<<"$mutation_state"
+        [[ "$mutation_cluster_id" == "$cluster_id" && "$mutation_phase" == router ]]
+        cluster_mutated=1
+        cluster_phase=router
+      fi
+      if [[ "$cluster_phase" == router ]]; then
+        cluster_response=$("$orbit" cluster:router:set "$cluster_id" "$dev_id" --json)
+        cluster_response=$(typed_cluster_envelope <<<"$cluster_response")
+        mutation_state=$(typed_cluster_state "$cluster_id" <<<"$cluster_response")
+        read -r mutation_cluster_id mutation_phase <<<"$mutation_state"
+        [[ "$mutation_cluster_id" == "$cluster_id" && "$mutation_phase" == activate ]]
+        cluster_mutated=1
+        cluster_phase=activate
+      fi
+      if [[ "$cluster_phase" == activate ]]; then
+        cluster_response=$("$orbit" cluster:update "$cluster_id" --state=active --json)
+        cluster_response=$(typed_cluster_envelope <<<"$cluster_response")
+        mutation_state=$(typed_cluster_state "$cluster_id" <<<"$cluster_response")
+        read -r mutation_cluster_id mutation_phase <<<"$mutation_state"
+        [[ "$mutation_cluster_id" == "$cluster_id" && "$mutation_phase" == verified ]]
+        cluster_mutated=1
+      fi
+      if [[ "$cluster_mutated" -eq 1 ]]; then
+        typed_nodes=$("$orbit" node:list --json)
+        node_cluster_id=$(typed_node_cluster_id <<<"$typed_nodes")
+        clusters=$("$orbit" cluster:list --json)
+        cluster_state=$(typed_cluster_state "$node_cluster_id" <<<"$clusters")
+        read -r verified_cluster_id cluster_phase <<<"$cluster_state"
+        [[ "$cluster_phase" == verified && "$verified_cluster_id" == "$cluster_id" ]]
+      fi
+      apps=$("$orbit" app:list --json)
       app_id=$(php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); $m=array_values(array_filter($v["apps"], fn($x) => ($x["slug"] ?? null)===$argv[1])); if(count($m)>1 || $m && (($m[0]["repository_url"] ?? null)!==$argv[2] || ($m[0]["name"] ?? null)!==$argv[3] || ($m[0]["root"] ?? null)!==$argv[4] || !is_string($m[0]["main_branch"] ?? null) || $m[0]["main_branch"]==="") || $m && !is_int($m[0]["id"] ?? null)) exit(65); echo $m[0]["id"] ?? "";' laravel-typed https://github.com/laravel/laravel.git Laravel public <<<"$apps")
       typed_target_count=$(php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); echo count(array_filter($v["app_instances"], fn($x) => ($x["name"] ?? null)===$argv[1]));' e2e-dev <<<"$initial_instances")
       [[ -n "$app_id" || "$typed_target_count" -eq 0 ]] || exit 65
-      if [[ -z "$app_id" ]]; then
-        app_id=$("$orbit" app:new laravel-typed https://github.com/laravel/laravel.git --name=Laravel --root=public --json | php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); if(!is_int($v["id"] ?? null)) exit(65); echo $v["id"];')
-      fi
       typed_instances=$initial_instances
       typed_count=$(php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); echo count($v["app_instances"]);' <<<"$typed_instances")
-      if [[ "$typed_count" -eq 0 ]]; then
-        "$orbit" instance:new "$app_id" "$dev_id" e2e-dev --json >/dev/null
-        typed_instances=$("$orbit" instance:list --json)
-      fi
       previous_checkout=
       if [[ -f "$sample_state" ]]; then
         previous_checkout=$(php -r '$v=json_decode(file_get_contents($argv[1]), true, 16, JSON_THROW_ON_ERROR); if(($v["shape"] ?? null)==="app_instances" && is_string($v["checkout_path"] ?? null)) echo $v["checkout_path"];' "$sample_state")
       fi
-      typed_state=$(php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); if(!is_array($v) || array_key_exists("instances", $v) || !array_key_exists("app_instances", $v) || !is_array($v["app_instances"]) || !array_is_list($v["app_instances"])) exit(65); $m=array_values(array_filter($v["app_instances"], fn($x) => is_array($x) && ($x["name"] ?? null)===$argv[1])); if(count($m)!==1) exit(65); $x=$m[0]; $path=$x["checkout_path"] ?? null; $branch=$x["selected_branch"] ?? null; $commit=$x["starting_commit"] ?? null; if(($x["app_id"] ?? null)!==(int)$argv[2] || ($x["node_id"] ?? null)!==(int)$argv[3] || ($x["status"] ?? null)!=="active" || !is_string($path) || !str_starts_with($path, "/") || str_contains($path, "//") || preg_match("#(?:\\A|/)\\.\\.?(/|\\z)#D", $path)===1 || ($argv[4]!=="" && $path!==$argv[4]) || !is_string($branch) || $branch==="" || !is_string($commit) || preg_match("/\\A[0-9a-f]{40}\\z/D", $commit)!==1 || ($x["effective_root"] ?? null)!=="public") exit(65); echo json_encode(["shape"=>"app_instances", "app_id"=>(int)$argv[2], "node_id"=>(int)$argv[3], "name"=>$argv[1], "checkout_path"=>$path, "effective_root"=>"public"], JSON_THROW_ON_ERROR);' e2e-dev "$app_id" "$dev_id" "$previous_checkout" <<<"$typed_instances")
+      if [[ "$typed_count" -gt 0 ]]; then
+        typed_state=$(typed_app_instance_state <<<"$typed_instances")
+      fi
+      if [[ -z "$app_id" ]]; then
+        app_id=$("$orbit" app:new laravel-typed https://github.com/laravel/laravel.git --name=Laravel --root=public --json | php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); if(!is_int($v["id"] ?? null)) exit(65); echo $v["id"];')
+      fi
+      if [[ "$typed_count" -eq 0 ]]; then
+        "$orbit" instance:new "$app_id" "$dev_id" e2e-dev --json >/dev/null
+        typed_instances=$("$orbit" instance:list --json)
+        typed_state=$(typed_app_instance_state <<<"$typed_instances")
+      fi
       state_tmp=$(mktemp "$sample_state.XXXXXX")
       printf '%s\n' "$typed_state" >"$state_tmp"
       mv -f "$state_tmp" "$sample_state"
       printf '%s\n' "$typed_state"
       exit 0
     fi
+    apps=$("$orbit" app:list --json)
     app_id=$(php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); $m=array_values(array_filter($v["apps"], fn($x) => ($x["slug"] ?? null)===$argv[1])); if(count($m)>1 || $m && (($m[0]["repository_url"] ?? null)!==$argv[2] || ($m[0]["name"] ?? null)!==$argv[3])) exit(65); echo $m[0]["id"] ?? "";' laravel https://github.com/laravel/laravel.git Laravel <<<"$apps")
     if [[ -z "$app_id" ]]; then
       app_id=$("$orbit" app:new laravel https://github.com/laravel/laravel.git --name=Laravel --json | php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); echo $v["id"];')

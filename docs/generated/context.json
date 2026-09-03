@@ -375,10 +375,13 @@
             ],
             "concepts": [
                 "App",
+                "AppInstance",
+                "Cluster",
                 "Doctor",
                 "Gateway",
                 "Node",
-                "Proof topology"
+                "Proof topology",
+                "Router"
             ],
             "governing_adrs": [
                 "0005",
