@@ -89,7 +89,6 @@ it('keeps planning, plan review, and development independently invokable', funct
         ->toContain('rather than against code that does not exist yet')
         ->toContain('where a component is one of the five Composer projects')
         ->toContain('`bin/e2e-*` counts as `apps/e2e`')
-        ->toContain('which are not harness code')
         ->toContain('returns to `Backlog` with a `Readiness` section through `creating-issues`')
         ->not->toContain('same reviewer')
         ->not->toContain('one correction')
@@ -180,6 +179,8 @@ it('keeps issue creation current, atomic, and proof feasible', function () use (
         )->toContain('composer issue:lint')->toContain(
             'return a conflicting or incomplete issue to `Backlog` and write the `Readiness` section',
         )->toContain('only the last is an action in `proofs/<ISSUE>.json`');
+
+    expect($skill)->toContain('which are not harness code');
 
     expect($read('.agents/skills/creating-issues/template.md'))
         ->toContain('## Scope')
