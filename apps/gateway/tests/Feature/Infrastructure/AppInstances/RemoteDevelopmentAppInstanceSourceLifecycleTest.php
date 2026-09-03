@@ -264,6 +264,35 @@ it('does not let discard remove a checkout with shared Git administration', func
         ->toBeTrue();
 });
 
+it('does not let removal waive the recorded starting commit ancestry', function (bool $discardSource): void {
+    $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
+    $this->source->prepare($instance, false);
+    $resolution = $this->source->resolve($instance);
+    orb76_run(['git', '-C', $instance->checkout_path, 'config', 'user.name', 'Orbit Test']);
+    orb76_run(['git', '-C', $instance->checkout_path, 'config', 'user.email', 'orbit@example.test']);
+    $tree = trim(orb76_run(['git', '-C', $instance->checkout_path, 'rev-parse', 'HEAD^{tree}'])->stdout);
+    $unrelatedCommit = trim(orb76_run([
+        'git',
+        '-C',
+        $instance->checkout_path,
+        'commit-tree',
+        $tree,
+        '-m',
+        'Unrelated source identity',
+    ])->stdout);
+    $instance->update([
+        'branch' => $resolution->branch,
+        'starting_commit' => $unrelatedCommit,
+        'status' => AppInstanceState::Active,
+    ]);
+
+    expect(fn () => $this->source->remove($instance, $discardSource))->toThrow(RuntimeConvergenceException::class);
+    expect(is_dir($instance->checkout_path))->toBeTrue();
+})->with([
+    'normal removal' => false,
+    'discard' => true,
+]);
+
 it('refuses grouping-directory ownership drift before deleting the checkout', function (): void {
     $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
     $this->source->prepare($instance, false);

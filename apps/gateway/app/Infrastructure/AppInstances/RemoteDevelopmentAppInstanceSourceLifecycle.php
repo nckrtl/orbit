@@ -191,6 +191,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceLifecycle implements Deve
                     guard_parent_chain "$checkout_parent" "$allowed_root"
                     inspect_prepared_repository
                     test "$(git -C "$checkout" symbolic-ref --short HEAD)" = "$branch"
+                    git -C "$checkout" merge-base --is-ancestor "$starting_commit" HEAD
 
                     if [ "$discard_source" != 1 ]; then
                         test -z "$(git -C "$checkout" status --porcelain --untracked-files=all)"
