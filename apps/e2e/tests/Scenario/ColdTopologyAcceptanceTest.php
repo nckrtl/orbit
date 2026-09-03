@@ -185,7 +185,7 @@ it('automatically releases the exact cold inventory after an injected constructi
     expect($constructionFailure)
         ->toBeInstanceOf(InvalidArgumentException::class)
         ->and($constructionFailure?->getMessage())
-        ->toContain('exact full SHA');
+        ->toBe('The Git command failed.');
     expect($host->instances(array_map($target->instance(...), $recipe->nodeKeys())))->toBe([]);
     expect($host->network($target->network()))->toBeNull();
     expect($manifests->promoted()?->toArray())->toBe($beforePromotion);
