@@ -35,7 +35,8 @@ gates are satisfied.
 4. **Clean repository resources.** Run
    `bin/worktree-remove <ISSUE> <slug>`, where `<ISSUE>` is the PR body's
    `Issue:` line and `<slug>` is the branch name after `<issue-lowercase>-`,
-   then verify topology, worktree, and local branch cleanup.
+   then verify topology, worktree, and local branch cleanup. Hand the merged
+   pull request body's reported documentation findings to `creating-issues`.
 
 Run each mutation as a bounded command and fail closed. Do not report success from
 exit status alone; verify GitHub, `origin/main`, topology snapshot identity, and cleanup state directly.

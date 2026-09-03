@@ -232,6 +232,7 @@ it('keeps decision records templated and linted', function () use ($read, $root)
         ->toContain('A finding outside the scope is recorded, never fixed in passing')
         ->toContain('## Reference')
         ->toContain('A non-zero exit means the index matched nothing')
+        ->toContain('The command is never run without a filter')
         ->toContain('names its owner')
         ->toContain('creates the issue from the merged pull request body')
         ->toContain('## Documentation audit');

@@ -42,6 +42,7 @@ Each ADR must contain `Status`, `Context`, `Decision`, and `Consequences`. ADRs 
 
 An ADR records one decision, why it won, and what it binds. It does not carry mechanism: command syntax, verification checklists, error text, field lists, and Doctor behavior belong in the implementing issue's acceptance criteria and, once shipped, in the `docs/reference` page named by the ADR's `Affects` section.
 
-Current contributor-governance decision:
+Current contributor-governance decisions:
 
 - [ADR 0010: Record decisions before implementation issues](0010-record-decisions-before-implementation-issues.md)
+- [ADR 0014: Maintain verified documentation context](0014-maintain-verified-documentation-context.md)

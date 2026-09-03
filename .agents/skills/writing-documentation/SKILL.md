@@ -36,4 +36,4 @@ A domain page under `domains/` exists only when a feature needs a guide that no 
 
 ## Verify
 
-Run `composer docs-lint` from the repository root and fix every finding. The prose rules, `orbit.docs_narrative`, and the link rules apply to every page. Run `composer docs-build` when a page was added or its title, components, or concepts changed, and commit `docs/generated/context.json`. A lint rule enforces a corpus-wide writing invariant and never a product fact; product facts are tested in the product.
+Run `composer docs-lint` from the repository root and fix every finding. The prose rules, `orbit.docs_narrative`, and the link rules apply to every page. Run `composer docs-build` when a page was added or its title, component mentions, concept mentions, or ADR links changed, and commit `docs/generated/context.json`. A lint rule enforces a corpus-wide writing invariant and never a product fact; product facts are tested in the product.
