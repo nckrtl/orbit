@@ -98,15 +98,38 @@ function typedHydrationReadinessFixture(
     file_put_contents("{$root}/bin/sleep", <<<'BASH'
         #!/usr/bin/env bash
         set -euo pipefail
-        [[ ! -e "$TYPED_HYDRATION_GIT_RESET_CALLED" ]] || {
-          touch "$TYPED_HYDRATION_MUTATED_DURING_PREFLIGHT"
-          exit 99
-        }
+        for mutation_log in \
+          "$TYPED_HYDRATION_GIT_RESET_CALLED" \
+          "$TYPED_HYDRATION_ARTISAN_CALLS" \
+          "$TYPED_HYDRATION_MUTATION_CALLS"
+        do
+          [[ ! -e "$mutation_log" ]] || {
+            touch "$TYPED_HYDRATION_MUTATED_DURING_PREFLIGHT"
+            exit 99
+          }
+        done
         printf '%s\n' "$*" >>"$TYPED_HYDRATION_SLEEP_CALLS"
+        BASH);
+    foreach (['chmod', 'cp', 'install', 'touch'] as $command) {
+        $wrapper = str_replace('__COMMAND__', $command, <<<'BASH'
+            #!/usr/bin/env bash
+            set -euo pipefail
+            printf '%s %s\n' '__COMMAND__' "$*" >>"$TYPED_HYDRATION_MUTATION_CALLS"
+            exec /usr/bin/__COMMAND__ "$@"
+            BASH);
+        file_put_contents("{$root}/bin/{$command}", $wrapper);
+        chmod("{$root}/bin/{$command}", 0o700);
+    }
+    file_put_contents("{$root}/bin/composer", <<<'BASH'
+        #!/usr/bin/env bash
+        set -euo pipefail
+        printf '%s\n' "composer $*" >>"$TYPED_HYDRATION_MUTATION_CALLS"
+        exit 99
         BASH);
     chmod("{$root}/orbit", 0o700);
     chmod("{$root}/bin/git", 0o700);
     chmod("{$root}/bin/sleep", 0o700);
+    chmod("{$root}/bin/composer", 0o700);
     $source = file_get_contents(dirname(__DIR__, 3).'/resources/guest/converge-sample-app.sh');
     $script = str_replace(
         [
@@ -133,6 +156,7 @@ function typedHydrationReadinessFixture(
             'TYPED_HYDRATION_GIT_RESET_CALLED' => "{$root}/git-reset-called",
             'TYPED_HYDRATION_GIT_RESET_EXIT' => (string) $gitResetExitCode,
             'TYPED_HYDRATION_MUTATED_DURING_PREFLIGHT' => "{$root}/mutated-during-preflight",
+            'TYPED_HYDRATION_MUTATION_CALLS' => "{$root}/mutation-calls",
             'TYPED_HYDRATION_RESPONSE' => $response,
             'TYPED_HYDRATION_SLEEP_CALLS' => "{$root}/sleep-calls",
             'TYPED_HYDRATION_TRANSIENT_EXIT' => (string) $transientExitCode,
@@ -142,7 +166,7 @@ function typedHydrationReadinessFixture(
     ];
 }
 
-it('retries a transient instance preflight before hydrating the typed checkout once', function (): void {
+it('hydrates once after readiness and six transient preflight failures within the 30 second bound', function (): void {
     $response = typedHydrationResponse([[
         'id' => 4,
         'app_id' => 1,
@@ -163,7 +187,7 @@ it('retries a transient instance preflight before hydrating the typed checkout o
         $response,
         0,
         [
-            'transient_failures' => 1,
+            'transient_failures' => 6,
             'transient_response' => $failure,
             'transient_exit_code' => 69,
         ],
@@ -194,11 +218,21 @@ it('retries a transient instance preflight before hydrating the typed checkout o
         expect(file("{$fixture['root']}/readiness-calls", FILE_IGNORE_NEW_LINES))
             ->toBe(['instance:list --json']);
         expect(file("{$fixture['root']}/orbit-calls", FILE_IGNORE_NEW_LINES))
-            ->toBe(['instance:list --json', 'instance:list --json']);
-        expect(file("{$fixture['root']}/git-reset-called", FILE_IGNORE_NEW_LINES))
-            ->toHaveCount(1);
+            ->toBe(array_fill(0, 7, 'instance:list --json'));
+        expect(file("{$fixture['root']}/sleep-calls", FILE_IGNORE_NEW_LINES))
+            ->toBe(array_fill(0, 6, '1'));
+        expect(file("{$fixture['root']}/git-called", FILE_IGNORE_NEW_LINES))->toBe([
+            '-C '.$fixture['checkout'].' remote get-url origin',
+            '-C '.$fixture['checkout'].' cat-file -e '.str_repeat('b', 40).'^{commit}',
+            '-C '.$fixture['checkout'].' reset --hard --quiet '.str_repeat('b', 40),
+            '-C '.$fixture['checkout'].' rev-parse HEAD',
+        ]);
         expect(file("{$fixture['root']}/artisan-calls", FILE_IGNORE_NEW_LINES))
             ->toBe(['migrate --force --no-interaction']);
+        expect(file("{$fixture['root']}/mutation-calls", FILE_IGNORE_NEW_LINES))->toBe([
+            'install -d -m 0775 '.$fixture['checkout'].'/storage '.$fixture['checkout'].'/bootstrap/cache',
+            'chmod -R ug+rwX '.$fixture['checkout'].'/storage '.$fixture['checkout'].'/bootstrap/cache',
+        ]);
         expect(file_exists("{$fixture['root']}/mutated-during-preflight"))->toBeFalse();
     } finally {
         new Filesystem()->deleteDirectory($fixture['root']);
@@ -219,11 +253,11 @@ it('preserves the final CLI failure after the bounded hydration preflight', func
         ], env: $fixture['environment']);
 
         expect($process->run())->toBe($exitCode);
-        expect(file("{$fixture['root']}/orbit-calls", FILE_IGNORE_NEW_LINES))->toHaveCount(5);
-        expect(file("{$fixture['root']}/sleep-calls", FILE_IGNORE_NEW_LINES))->toBe(['1', '1', '1', '1']);
+        expect(file("{$fixture['root']}/orbit-calls", FILE_IGNORE_NEW_LINES))->toHaveCount(30);
+        expect(file("{$fixture['root']}/sleep-calls", FILE_IGNORE_NEW_LINES))->toBe(array_fill(0, 29, '1'));
         expect($process->getErrorOutput())
             ->toContain(
-                "hydrate: instance:list --json failed after 5 attempts; final attempt 5 exited with code {$exitCode}",
+                "hydrate: instance:list --json failed after 30 attempts; final attempt 30 exited with code {$exitCode}",
                 'Gateway unavailable.',
             );
         expect(file_exists("{$fixture['root']}/git-called"))->toBeFalse();
@@ -250,10 +284,11 @@ it('retries malformed instance envelopes before a bounded validation failure', f
         ], env: $fixture['environment']);
 
         expect($process->run())->toBe(65);
-        expect(file("{$fixture['root']}/orbit-calls", FILE_IGNORE_NEW_LINES))->toHaveCount(5);
+        expect(file("{$fixture['root']}/orbit-calls", FILE_IGNORE_NEW_LINES))->toHaveCount(30);
+        expect(file("{$fixture['root']}/sleep-calls", FILE_IGNORE_NEW_LINES))->toBe(array_fill(0, 29, '1'));
         expect($process->getErrorOutput())
             ->toContain(
-                'hydrate: instance:list --json failed after 5 attempts; final attempt 5 validation failure',
+                'hydrate: instance:list --json failed after 30 attempts; final attempt 30 validation failure',
                 'malformed or unsupported response envelope',
             );
         expect(file_exists("{$fixture['root']}/git-called"))->toBeFalse();
