@@ -243,6 +243,7 @@ it('records route model binding failures as http 404', function (): void {
 });
 
 it('correlates unhandled failures without exposing exception text', function (): void {
+    $this->fakeRepositoryBranches();
     $requestId = (string) Str::uuid();
     $secret = (string) Str::uuid();
     $operator = Node::query()->create([
@@ -262,6 +263,8 @@ it('correlates unhandled failures without exposing exception text', function ():
         ->postJson('/api/v1/apps', [
             'slug' => 'acme',
             'repository_url' => 'https://github.com/acme/site.git',
+            'main_branch' => 'main',
+            'root' => 'public',
         ]);
 
     $response

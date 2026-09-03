@@ -25,6 +25,7 @@ describe('app requests', function (): void {
         $request = new CreateAppRequest(
             slug: 'orbit-docs',
             repositoryUrl: 'git@github.com:nckrtl/orbit-docs.git',
+            root: 'public',
         );
 
         $response = $connector->send($request)->dto();
@@ -37,6 +38,7 @@ describe('app requests', function (): void {
             ->toBe([
                 'slug' => 'orbit-docs',
                 'repository_url' => 'git@github.com:nckrtl/orbit-docs.git',
+                'root' => 'public',
             ])
             ->and($response)
             ->toBeInstanceOf(AppResponse::class)
@@ -48,7 +50,9 @@ describe('app requests', function (): void {
         $request = new CreateAppRequest(
             slug: 'orbit-docs',
             repositoryUrl: 'git@github.com:nckrtl/orbit-docs.git',
+            root: 'web/public',
             name: 'Orbit Docs',
+            mainBranch: 'stable',
             defaults: ['php_version' => '8.5'],
         );
 
@@ -56,6 +60,8 @@ describe('app requests', function (): void {
             'name' => 'Orbit Docs',
             'slug' => 'orbit-docs',
             'repository_url' => 'git@github.com:nckrtl/orbit-docs.git',
+            'main_branch' => 'stable',
+            'root' => 'web/public',
             'defaults' => ['php_version' => '8.5'],
         ]);
     });
@@ -148,6 +154,8 @@ function app_gateway_data(): array
         'name' => 'orbit-docs',
         'slug' => 'orbit-docs',
         'repository_url' => 'git@github.com:nckrtl/orbit-docs.git',
+        'main_branch' => 'main',
+        'root' => 'public',
         'defaults' => null,
     ];
 }

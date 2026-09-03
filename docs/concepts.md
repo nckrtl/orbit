@@ -11,8 +11,9 @@ These are the common terms you will see throughout the Orbit documentation.
 - **Node** — A machine connected to Orbit. A Node can run one or more roles.
   See
   [ADR 0012](decisions/0012-ubuntu-24-04-roleless-operator-clients.md).
-- **App** — An application managed by Orbit. It holds the settings shared by
-  its AppInstances. See
+- **App** — An application managed by Orbit. It holds the repository, main
+  branch, relative web root, and other settings shared by its AppInstances. See
+  [Apps](reference/apps.md) and
   [ADR 0009](decisions/0009-clustered-app-instance-routing.md).
 - **AppInstance** — One place on a Node where an App is developed or runs in
   production. See

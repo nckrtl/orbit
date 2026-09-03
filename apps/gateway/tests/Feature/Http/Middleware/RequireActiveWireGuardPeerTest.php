@@ -311,6 +311,7 @@ it('rejects mutating commands from an inactive registered peer', function (): vo
 });
 
 it('allows Gateway-scoped app creation from an active Gateway peer', function (): void {
+    $this->fakeRepositoryBranches();
     $operator = Node::query()->create([
         'name' => 'operator',
         'status' => LifecycleStatus::Active,
@@ -332,6 +333,8 @@ it('allows Gateway-scoped app creation from an active Gateway peer', function ()
         ->postJson('/api/v1/apps', [
             'slug' => 'acme',
             'repository_url' => 'https://github.com/acme/site.git',
+            'main_branch' => 'main',
+            'root' => 'public',
         ]);
 
     $response->assertCreated();
