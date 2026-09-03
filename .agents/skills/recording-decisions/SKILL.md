@@ -24,7 +24,7 @@ Stop when the request contains more than one independent decision, when the deci
 5. Write Decision bullets as `<actor> must`, `must not`, `may ... when`, or `owns`. One obligation per bullet. No adjective or adverb without evidence in Context.
 6. List at least one rejected alternative with a concrete reason, and at least one consequence that is a cost or limitation.
 7. Fill `Affects` with repository component names, linked ADR filenames, the mechanism target, and one verification the reader can run.
-8. Stay under 600 words. If the record exceeds the target, move mechanism out before adding prose.
+8. Let the decision set the length. A record grows by adding obligations, alternatives, and consequences, never by adding mechanism or narrative.
 
 ## Verify
 

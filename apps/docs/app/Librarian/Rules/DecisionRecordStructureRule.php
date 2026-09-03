@@ -8,8 +8,6 @@ use App\Documentation\DecisionRecordAffects;
 use App\Documentation\DecisionRecordFile;
 use App\Documentation\DecisionRecordTemplate;
 use HardImpact\Librarian\Docs\MarkdownSnapshot;
-use HardImpact\Librarian\Linting\Finding;
-use HardImpact\Librarian\Linting\FindingSeverity;
 use HardImpact\Librarian\Linting\GroupedRule;
 
 /**
@@ -27,7 +25,6 @@ final readonly class DecisionRecordStructureRule implements GroupedRule
     public function __construct(
         private MarkdownSnapshot $snapshot,
         private int $fromNumber,
-        private int $wordLimit,
         array $components,
     ) {
         $this->template = new DecisionRecordTemplate(self::RULE);
@@ -51,18 +48,6 @@ final readonly class DecisionRecordStructureRule implements GroupedRule
             }
 
             array_push($findings, ...$this->template->findings($record), ...$this->affects->findings($record));
-
-            $words = $record->wordCount();
-
-            if ($words > $this->wordLimit) {
-                $findings[] = new Finding(
-                    path: $record->docsPath(),
-                    line: null,
-                    severity: FindingSeverity::Warning,
-                    rule: self::RULE,
-                    message: "The record has {$words} words; the target is {$this->wordLimit}. Move mechanism to the Detail target.",
-                );
-            }
         }
 
         return $findings;

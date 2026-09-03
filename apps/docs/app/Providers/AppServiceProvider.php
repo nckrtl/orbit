@@ -38,7 +38,6 @@ final class AppServiceProvider extends ServiceProvider
         $this->app->singleton(DecisionRecordStructureRule::class, fn (): DecisionRecordStructureRule => new DecisionRecordStructureRule(
             $this->app->make(MarkdownSnapshot::class),
             $this->decisionRecordInteger('from_number'),
-            $this->decisionRecordInteger('word_limit'),
             $this->configuredComponents(),
         ));
 

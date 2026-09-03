@@ -67,7 +67,7 @@ function messages(array $findings): array
 it('accepts a record that follows the template', function (): void {
     writeRecord($this->root, '0019-register-worktrees.md', VALID_RECORD);
 
-    $rule = new DecisionRecordStructureRule($this->snapshot, 19, 600, ['apps/cli', 'apps/gateway']);
+    $rule = new DecisionRecordStructureRule($this->snapshot, 19, ['apps/cli', 'apps/gateway']);
 
     expect($rule->check())->toBe([]);
 });
@@ -76,7 +76,7 @@ it('exempts records numbered before the configured start', function (): void {
     writeRecord($this->root, '0018-legacy.md', "# ADR 0018: Legacy\n\n## Status\n\nAccepted.\n");
     writeRecord($this->root, 'README.md', "# Architecture decisions\n\nShould be ignored later.\n");
 
-    $structure = new DecisionRecordStructureRule($this->snapshot, 19, 600, ['apps/cli', 'apps/gateway']);
+    $structure = new DecisionRecordStructureRule($this->snapshot, 19, ['apps/cli', 'apps/gateway']);
     $language = new DecisionRecordLanguageRule($this->snapshot, 19, ['should', 'later']);
 
     expect($structure->check())->toBe([])->and($language->check())->toBe([]);
@@ -90,7 +90,7 @@ it('rejects a wrong section sequence', function (): void {
     );
     writeRecord($this->root, '0019-register-worktrees.md', $contents);
 
-    $findings = new DecisionRecordStructureRule($this->snapshot, 19, 600, ['apps/cli', 'apps/gateway'])->check();
+    $findings = new DecisionRecordStructureRule($this->snapshot, 19, ['apps/cli', 'apps/gateway'])->check();
 
     expect($findings)
         ->toHaveCount(1)
@@ -107,7 +107,7 @@ it('rejects a wrong section sequence', function (): void {
 it('rejects a title number that differs from the filename', function (): void {
     writeRecord($this->root, '0020-register-worktrees.md', VALID_RECORD);
 
-    $findings = new DecisionRecordStructureRule($this->snapshot, 19, 600, ['apps/cli', 'apps/gateway'])->check();
+    $findings = new DecisionRecordStructureRule($this->snapshot, 19, ['apps/cli', 'apps/gateway'])->check();
 
     expect(messages($findings))->toContain('The H1 number `0019` must match the filename number.');
 });
@@ -125,7 +125,7 @@ it('rejects an empty section, a malformed status, and missing affects fields', f
     writeRecord($this->root, '0019-register-worktrees.md', $contents);
 
     $messages = messages(
-        new DecisionRecordStructureRule($this->snapshot, 19, 600, ['apps/cli', 'apps/gateway'])->check(),
+        new DecisionRecordStructureRule($this->snapshot, 19, ['apps/cli', 'apps/gateway'])->check(),
     );
 
     expect($messages)
@@ -151,7 +151,7 @@ it('rejects unknown components and accepts none', function (): void {
         ),
     );
 
-    $findings = new DecisionRecordStructureRule($this->snapshot, 19, 600, ['apps/cli', 'apps/gateway'])->check();
+    $findings = new DecisionRecordStructureRule($this->snapshot, 19, ['apps/cli', 'apps/gateway'])->check();
 
     expect($findings)
         ->toHaveCount(1)
@@ -159,21 +159,6 @@ it('rejects unknown components and accepts none', function (): void {
         ->toBe('docs/decisions/0019-a.md')
         ->and($findings[0]->message)
         ->toBe('Unknown component `apps/web`. Use `none` or a comma-separated subset of: apps/cli, apps/gateway.');
-});
-
-it('warns when a record exceeds the word target', function (): void {
-    writeRecord($this->root, '0019-register-worktrees.md', VALID_RECORD);
-
-    $findings = new DecisionRecordStructureRule($this->snapshot, 19, 20, ['apps/cli', 'apps/gateway'])->check();
-
-    expect($findings)
-        ->toHaveCount(1)
-        ->and($findings[0]->severity)
-        ->toBe(FindingSeverity::Warning)
-        ->and($findings[0]->line)
-        ->toBeNull()
-        ->and($findings[0]->message)
-        ->toContain('the target is 20');
 });
 
 it('rejects blocked phrases outside headings and code', function (): void {

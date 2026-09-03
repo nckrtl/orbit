@@ -100,9 +100,4 @@ final readonly class DecisionRecordFile
 
         return $lines;
     }
-
-    public function wordCount(): int
-    {
-        return str_word_count(implode(' ', $this->proseLines()));
-    }
 }

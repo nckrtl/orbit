@@ -17,7 +17,6 @@ return [
     // exempt.
     'decision_records' => [
         'from_number' => 19,
-        'word_limit' => 600,
         'blocked_phrases' => [
             'appropriate',
             'reasonable',
