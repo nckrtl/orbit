@@ -12,6 +12,7 @@ baseline_apps=/tmp/orb76-baseline-apps.json
 baseline_clusters=/tmp/orb76-baseline-clusters.json
 baseline_instances=/tmp/orb76-baseline-app-instances.json
 baseline_nodes=/tmp/orb76-baseline-nodes.json
+baseline_apps_settings=/tmp/orb76-baseline-apps-settings.json
 baseline_apps_path=/tmp/orb76-baseline-apps-path
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
@@ -154,7 +155,8 @@ case "$criterion" in
     fail 'app-dev source fixture did not start'
     ;;
   setup-gateway)
-    rm -f -- "$baseline_apps" "$baseline_clusters" "$baseline_instances" "$baseline_nodes" "$baseline_apps_path"
+    rm -f -- "$baseline_apps" "$baseline_clusters" "$baseline_instances" "$baseline_nodes" \
+      "$baseline_apps_settings" "$baseline_apps_path"
     app_dev=$(node_id app-dev)
     orbit firewall:allow orb76-source --node="$app_dev" --from=10.44.0.1 --protocol=tcp --port=9443 --json >/dev/null
     curl --silent --show-error --insecure --fail "https://${app_dev_address}:9443/server.crt" -o /tmp/orb76-source.crt
@@ -170,8 +172,11 @@ case "$criterion" in
     orbit cluster:list --json | json_get clusters > "$baseline_clusters"
     orbit instance:list --json | json_get app_instances > "$baseline_instances"
     orbit node:list --json | json_get nodes > "$baseline_nodes"
-    orbit node:list --json | json_find nodes name app-dev settings | json_get apps.path > "$baseline_apps_path"
-    [[ "$(cat "$baseline_apps_path")" == /* ]] || fail 'baseline apps path is invalid'
+    orbit node:list --json | json_find nodes name app-dev settings > "$baseline_apps_settings"
+    if [[ "$(cat "$baseline_apps_settings")" != null ]]; then
+      cat "$baseline_apps_settings" | json_get apps.path > "$baseline_apps_path"
+      [[ "$(cat "$baseline_apps_path")" == /* ]] || fail 'baseline apps path is invalid'
+    fi
 
     orbit node:settings app-dev --setting="apps.path:$apps_root" --json >/dev/null
     legacy_app=$(app_id laravel)
@@ -298,15 +303,21 @@ case "$criterion" in
     orbit instance:remove "$dirty" --discard-source --json >/dev/null
     orbit instance:remove "$advanced" --discard-source --json >/dev/null
     orbit firewall:remove orb76-source --node="$app_dev" --json >/dev/null
-    orbit node:settings app-dev --setting="apps.path:$(cat "$baseline_apps_path")" --json >/dev/null
+    if [[ "$(cat "$baseline_apps_settings")" == null ]]; then
+      orbit node:settings app-dev --setting='apps.path:' --json >/dev/null
+    else
+      orbit node:settings app-dev --setting="apps.path:$(cat "$baseline_apps_path")" --json >/dev/null
+    fi
     orbit app:remove "$(app_id orb76)" --json >/dev/null
     sudo rm -f -- /usr/local/share/ca-certificates/orb76-source.crt /tmp/orb76-source.crt
     sudo update-ca-certificates >/dev/null
-    [[ -f "$baseline_apps" && -f "$baseline_instances" && -f "$baseline_nodes" ]] || fail 'baseline Gateway snapshot is missing'
+    [[ -f "$baseline_apps" && -f "$baseline_instances" && -f "$baseline_nodes" && -f "$baseline_apps_settings" ]] \
+      || fail 'baseline Gateway snapshot is missing'
     [[ "$(orbit app:list --json | json_get apps)" == "$(cat "$baseline_apps")" ]] || fail 'ORB-76 changed baseline Apps'
     [[ "$(orbit instance:list --json | json_get app_instances)" == "$(cat "$baseline_instances")" ]] || fail 'ORB-76 removal changed baseline AppInstances or left owned AppInstances listed'
     [[ "$(orbit node:list --json | json_get nodes)" == "$(cat "$baseline_nodes")" ]] || fail 'ORB-76 changed baseline Nodes'
-    rm -f -- "$baseline_apps" "$baseline_clusters" "$baseline_instances" "$baseline_nodes" "$baseline_apps_path"
+    rm -f -- "$baseline_apps" "$baseline_clusters" "$baseline_instances" "$baseline_nodes" \
+      "$baseline_apps_settings" "$baseline_apps_path"
     echo 'criterion 5 removal: safe clean, dirty, and unpublished removal passed'
     ;;
   06)
