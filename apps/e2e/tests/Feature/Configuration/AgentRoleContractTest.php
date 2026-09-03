@@ -17,6 +17,7 @@ it('initializes one current feature-plan artifact', function () use ($read): voi
         'Review verdict: PENDING',
         '## Acceptance map',
         '## Implementation order',
+        '## Deviations',
         '## Review findings',
     ] as $needle) {
         expect($script)->toContain($needle);
@@ -54,9 +55,20 @@ it('keeps planning, plan review, and development independently invokable', funct
 
     expect($planner)
         ->toContain('independently invokable planning task')
-        ->toContain('structure manually')
+        ->toContain('create the same headings by hand')
         ->toContain('Review verdict: PENDING')
-        ->toContain('one row per issue criterion')
+        ->toContain('one row per `Acceptance` item')
+        ->toContain('every attached ADR `Decision` bullet the change touches')
+        ->toContain('## Write the documentation')
+        ->toContain('run `auditing-documentation` in its default issue scope')
+        ->toContain('following `writing-documentation`')
+        ->toContain('the reference is the issue and its ADRs, not the code')
+        ->toContain('neither is a code boundary or a component')
+        ->toContain('or to the page from the Documentation section')
+        ->toContain('needs no label and is bounded by `Scope`')
+        ->toContain('whose message starts with `docs:`')
+        ->toContain('the issue is not `Todo`')
+        ->toContain('does not follow the `creating-issues` template')
         ->toContain('Do not create slice files')
         ->not->toContain('retained Builder')
         ->not->toContain('second non-`PASS`');
@@ -71,6 +83,13 @@ it('keeps planning, plan review, and development independently invokable', funct
         ->toContain('Collect every known blocking finding')
         ->toContain('smallest safe recommended')
         ->toContain('Never approve a')
+        ->toContain('every boundary is inside a component the issue is labeled with')
+        ->toContain('the diff under `docs/`')
+        ->toContain('pass `composer docs-lint`')
+        ->toContain('rather than against code that does not exist yet')
+        ->toContain('where a component is one of the five Composer projects')
+        ->toContain('`bin/e2e-*` counts as `apps/e2e`')
+        ->toContain('returns to `Backlog` with a `Readiness` section through `creating-issues`')
         ->not->toContain('same reviewer')
         ->not->toContain('one correction')
         ->not->toContain('second non-`PASS`');
@@ -79,6 +98,13 @@ it('keeps planning, plan review, and development independently invokable', funct
         ->toContain('may be invoked directly')
         ->toContain('One issue per worktree')
         ->toContain('Discovery and proof use separate topologies')
+        ->toContain('lists every `Acceptance` item in the issue\'s order')
+        ->toContain('When no plan exists, run `auditing-documentation`')
+        ->toContain('carry the audit\'s `Fixed` and `Reported` lists into the pull request body')
+        ->toContain('recorded under `## Deviations` in the plan and in the pull request body')
+        ->toContain('The body opens with `Issue: <ID>`')
+        ->toContain('every reported finding from either audit with its owner')
+        ->toContain('Include current `origin/main` before pushing')
         ->not->toContain('retained Builder')
         ->not->toContain('plan `PASS`');
 
@@ -95,7 +121,7 @@ it('keeps implementation guidance on Orbit code and proof', function () use ($re
         'bin/e2e-topology prove <ISSUE>',
         'shell --proof',
         'action must exit `0`',
-        'Product feature branches never touch `apps/e2e` or `bin/e2e-*`.',
+        'Product feature branches never touch harness code as defined above.',
         'Discovery and proof use separate topologies',
     ] as $needle) {
         expect($skill)->toContain($needle);
@@ -114,7 +140,9 @@ it('binds review and merge to one exact remote head', function () use ($read): v
         ->toContain('repository-owner-approved behavior')
         ->toContain('issue-specific proof')
         ->not->toContain('validation-clone lifecycle')
-        ->not->toContain('bin/e2e-live')->toContain('exactly `Approved.`')->toContain(
+        ->not->toContain('bin/e2e-live')->toContain('bin/e2e-topology status <ISSUE>')->toContain(
+            'the drift fixes and deviations the PR body lists',
+        )->toContain('exactly `Approved.`')->toContain(
             'Collect every blocking',
         )->toContain('finding in one pass')->toContain('Do not merge, promote, release a proved topology')
         ->not->toContain('fresh reviewer');
@@ -124,6 +152,7 @@ it('binds review and merge to one exact remote head', function () use ($read): v
         ->toContain('gh pr merge <n> --merge --match-head-commit <sha>')
         ->toContain('bin/e2e-topology-snapshot promote <ISSUE>')
         ->toContain('Do not substitute a refresh')
+        ->toContain('For every candidate, if `main` moved after approval')
         ->not
         ->toContain('bin/e2e-topology-snapshot refresh')
         ->toContain('bin/worktree-remove <ISSUE> <slug>')
@@ -141,13 +170,73 @@ it('keeps issue creation current, atomic, and proof feasible', function () use (
 
     expect($skill)
         ->not->toContain('Status: Todo')
-        ->not->toContain('Status: Backlog')->toContain('Set the Linear status field directly')->toContain(
-            'Remove `Readiness` before moving the issue to `Todo`',
-        )->toContain('Each acceptance criterion must have one available')->toContain('proof action')->toContain(
-            'split them into ordered issues',
-        )->toContain('component names are repository-owned')->toContain('`apps/e2e`')->toContain(
-            'dependency graph is explicit and acyclic',
-        )->toContain('compatibility bridge');
+        ->not->toContain('Status: Backlog')->toContain('never restates a Decision bullet from an ADR')->toContain(
+            'Delete the section before `Todo`',
+        )->toContain('one proof action that exists today')->toContain('Only a leaf issue is claimable')->toContain(
+            'they are separate children',
+        )->toContain('`apps/e2e`')->toContain('relation graph is explicit and acyclic')->toContain(
+            'compatibility bridge',
+        )->toContain('composer issue:lint')->toContain(
+            'return a conflicting or incomplete issue to `Backlog` and write the `Readiness` section',
+        )->toContain('only the last is an action in `proofs/<ISSUE>.json`');
+
+    expect($skill)->toContain('which are not harness code');
+
+    expect($read('.agents/skills/creating-issues/template.md'))
+        ->toContain('## Scope')
+        ->toContain('## Acceptance')
+        ->toContain('Proof:');
+});
+
+it('keeps decision records templated and linted', function () use ($read, $root): void {
+    $skill = $read('.agents/skills/recording-decisions/SKILL.md');
+    $template = $read('.agents/skills/recording-decisions/template.md');
+
+    expect($skill)
+        ->toContain('composer docs-lint')
+        ->toContain('orbit.adr_structure')
+        ->toContain('orbit.adr_language')
+        ->toContain('Accepted records are immutable')
+        ->toContain('commit `docs/generated/context.json` with the record');
+
+    foreach ([
+        '## Status',
+        '## Context',
+        '## Decision',
+        '## Rejected alternatives',
+        '## Consequences',
+        '## Affects',
+        '- Verify:',
+    ] as $needle) {
+        expect($template)->toContain($needle);
+    }
+
+    expect($read('AGENTS.md'))
+        ->toContain('`recording-decisions`')
+        ->toContain('`writing-documentation`')
+        ->toContain('`auditing-documentation`');
+
+    $writing = $read('.agents/skills/writing-documentation/SKILL.md');
+    $auditing = $read('.agents/skills/auditing-documentation/SKILL.md');
+
+    expect($writing)
+        ->toContain('## Authority')
+        ->toContain('| Kind | Lives in | Holds | Never holds |')
+        ->toContain('never a product fact')
+        ->toContain('composer docs-lint');
+
+    expect($auditing)
+        ->toContain('The default scope is one issue')
+        ->toContain('composer docs-context')
+        ->toContain('The whole corpus is the scope only when the caller asks for it')
+        ->toContain('A finding outside the scope is recorded, never fixed in passing')
+        ->toContain('## Reference')
+        ->toContain('a non-zero exit means the index matched nothing')
+        ->toContain('The command is never run without a filter')
+        ->toContain('names its owner')
+        ->toContain('creates the issue from the merged pull request body')
+        ->toContain('## Documentation audit');
+    expect(file_exists($root.'/docs/decisions/TEMPLATE.md'))->toBeFalse();
 });
 
 it('keeps repository guidance and agent manifests current', function () use ($read): void {
@@ -161,7 +250,7 @@ it('keeps repository guidance and agent manifests current', function () use ($re
     expect($agents)->not->toContain('reconciling-feature-blocks');
     expect($agents)->not->toContain('Builder');
     expect($agents)->not->toContain('after plan approval');
-    expect($agents)->toContain('Product feature branches never modify the harness');
+    expect($agents)->toContain('Product feature branches never modify the harness')->toContain('are not harness code');
     expect($agents)->toContain('A proved topology is immutable evidence');
     expect($agents)->toContain('Production release is separate from development proof');
 

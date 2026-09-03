@@ -21,7 +21,7 @@ An approved ADR does not intrinsically need a Linear issue or pull request. It
 may be committed directly to `main` only when:
 
 - the user approved the exact final text;
-- the commit contains only the approved ADR;
+- the commit contains only the approved ADR and the regenerated `docs/generated/context.json`;
 - local `main` matches the current remote base; and
 - no unrelated work is included, modified, stashed, reset, or discarded.
 
@@ -38,8 +38,11 @@ Use the next four-digit number and a short kebab-case name:
 0001-short-decision-name.md
 ```
 
-Each ADR must contain `Status`, `Context`, `Decision`, and `Consequences`.
+Each ADR must contain `Status`, `Context`, `Decision`, and `Consequences`. ADRs from 0020 onward follow the template beside the `recording-decisions` skill under `.agents/skills`, add `Rejected alternatives` and `Affects`, and pass the `orbit.adr_structure` and `orbit.adr_language` lint rules in `apps/docs`.
 
-Current contributor-governance decision:
+An ADR records one decision, why it won, and what it binds. It does not carry mechanism: command syntax, verification checklists, error text, field lists, and Doctor behavior belong in the implementing issue's acceptance criteria and, once shipped, in the `docs/reference` page named by the ADR's `Affects` section.
+
+Current contributor-governance decisions:
 
 - [ADR 0010: Record decisions before implementation issues](0010-record-decisions-before-implementation-issues.md)
+- [ADR 0014: Maintain verified documentation context](0014-maintain-verified-documentation-context.md)

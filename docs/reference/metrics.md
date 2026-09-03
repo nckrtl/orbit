@@ -225,7 +225,7 @@ configuration, the containers, the volumes, the firewall rules and the escape
 itself, and converges the role back to healthy. The escape does not need to be
 reversible in place.
 
-The role removal itself no longer requires a Gateway. Once a caller can reach
+The role removal itself does not require a Gateway. Once a caller can reach
 it, Orbit removes the Metrics node's runtime, exporters and Grafana upstream
 firewall rule, then reports `"publication": "uncleaned"`, and the CLI prints a
 warning. The `metrics.orbit` route, its certificate, and its DNS record stay on
