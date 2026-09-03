@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
+use App\Documentation\BlockedPhrases;
 use App\Documentation\DocumentationLintPolicy;
 use App\Documentation\DocumentationRepository;
 use App\Librarian\Rules\DecisionRecordLanguageRule;
@@ -41,27 +42,29 @@ final class AppServiceProvider extends ServiceProvider
             $this->configuredComponents(),
         ));
 
-        $this->app->singleton(DecisionRecordLanguageRule::class, function (): DecisionRecordLanguageRule {
+        $this->app->singleton(BlockedPhrases::class, function (): BlockedPhrases {
             $phrases = config('orbit-docs.decision_records.blocked_phrases', []);
             if (! is_array($phrases)) {
-                throw new LogicException('ADR blocked phrases must be configured as an array.');
+                throw new LogicException('Blocked phrases must be configured as an array.');
             }
 
             $blocked = [];
             foreach ($phrases as $phrase) {
                 if (! is_string($phrase)) {
-                    throw new LogicException('ADR blocked phrases must be strings.');
+                    throw new LogicException('Blocked phrases must be strings.');
                 }
 
                 $blocked[] = $phrase;
             }
 
-            return new DecisionRecordLanguageRule(
-                $this->app->make(MarkdownSnapshot::class),
-                $this->decisionRecordInteger('from_number'),
-                $blocked,
-            );
+            return new BlockedPhrases($blocked);
         });
+
+        $this->app->singleton(DecisionRecordLanguageRule::class, fn (): DecisionRecordLanguageRule => new DecisionRecordLanguageRule(
+            $this->app->make(MarkdownSnapshot::class),
+            $this->decisionRecordInteger('from_number'),
+            $this->app->make(BlockedPhrases::class),
+        ));
 
         $this->app->singleton(DocumentationRepository::class, function (): DocumentationRepository {
             $docsPath = config('librarian.path');

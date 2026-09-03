@@ -19,9 +19,9 @@ Read the current issue or written contract, governing ADRs, plan, named code
 boundaries, nearby tests, and available proof commands. Check that:
 
 - every acceptance criterion maps to a concrete boundary and focused proof;
-- issue components permit every planned change;
-- documentation boundaries match the issue's required-or-none classification
-  and the relevant repository context;
+- the issue's component labels permit every planned change;
+- documentation boundaries match the issue's `docs` label and the relevant
+  repository context;
 - exclusions prevent unrelated cleanup or product/harness mixing;
 - implementation order is coherent and does not rediscover product behavior;
 - existing behavior at risk has a named test, invariant, or proof;

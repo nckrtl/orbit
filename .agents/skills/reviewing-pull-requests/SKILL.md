@@ -22,7 +22,7 @@ edit code.
    supplied Feature plan. Product feature diffs do not touch `apps/e2e` or
    `bin/e2e-*`. A harness diff requires a dedicated issue with
    repository-owner-approved behavior and issue-specific proof.
-4. **Inspect proof.** For `Proof: incus`, verify the retained immutable proof,
+4. **Inspect proof.** For an issue labeled `proof:incus`, verify the retained immutable proof,
    current proof-plan fingerprint, proof-input manifest fingerprint and
    completeness, complete declared action sequence, and zero exit for every
    action. When the proof names an earlier SHA, require an immutable `exact` or

@@ -25,6 +25,14 @@ final readonly class DecisionRecordFile
         return new self($relativePath, (int) $matches[1], preg_split('/\R/', $contents) ?: []);
     }
 
+    /**
+     * A markdown draft that is not a numbered record, for the same line and heading helpers.
+     */
+    public static function draft(string $contents): self
+    {
+        return new self('', 0, preg_split('/\R/', $contents) ?: []);
+    }
+
     public function docsPath(): string
     {
         return "docs/{$this->relativePath}";

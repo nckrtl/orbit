@@ -30,7 +30,7 @@ accepted ADR, or mixes product work with a harness change.
 1. **Read the contract.** Read the issue, ADRs, nearest `AGENTS.md`, supplied
    plan, documentation-impact classification, relevant context from
    `composer docs-context`, and acceptance-to-proof mapping.
-2. **Acquire a topology when needed.** For `Proof: incus`, run
+2. **Acquire a topology when needed.** For an issue labeled `proof:incus`, run
    `bin/e2e-topology acquire <ISSUE> <worktree>`. The worktree is mounted on
    `gateway` and `app-dev`; `app-prod` runs no Orbit code.
 3. **Develop.** Use `bin/e2e-topology shell <ISSUE> <role>` or
@@ -40,8 +40,8 @@ accepted ADR, or mixes product work with a harness change.
    stop and report a dedicated harness issue. Do not modify harness from a
    product feature branch.
 5. **Codify.** Put required behavior in product code with tests. Reconcile
-   required documentation in the same pull request, or preserve the issue's
-   explicit `none` rationale. Run focused checks, `composer docs-lint`, each
+   required documentation in the same pull request when the issue carries the
+   `docs` label. Run focused checks, `composer docs-lint`, each
    changed project's `composer check`, and root `bin/test`.
 6. **Prove the exact commit.** For Incus proof, write
    `proofs/<ISSUE>.json`, merge current `main`, and run

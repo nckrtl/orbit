@@ -19,7 +19,7 @@ Stop when the request contains more than one independent decision, when the deci
 
 1. Copy `template.md` to `docs/decisions/NNNN-short-decision-name.md` using the next unused four-digit number.
 2. Fill the Y-statement under the H1 first. If it cannot be written in one sentence, the decision is not yet one decision.
-3. Keep every sentence that would let a future implementer choose differently if removed. Move every sentence that describes how the choice is carried out to the `Detail` target and link it. CLI syntax, verification checklists, error text, field lists, and Doctor behavior are mechanism.
+3. Keep every sentence that would let a future implementer choose differently if removed. Move every sentence that describes how the choice is carried out to the `Detail` target and link it. CLI syntax, verification checklists, error text, field lists, and Doctor behavior are mechanism. One-off mechanism becomes acceptance criteria in the implementing issue; a durable contract becomes a `docs/reference` page.
 4. Inherit by reference. Name what the record extends or supersedes in one clause with a link. Never restate rules from an earlier record.
 5. Write Decision bullets as `<actor> must`, `must not`, `may ... when`, or `owns`. One obligation per bullet. No adjective or adverb without evidence in Context.
 6. List at least one rejected alternative with a concrete reason, and at least one consequence that is a cost or limitation.

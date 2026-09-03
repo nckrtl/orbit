@@ -32,5 +32,5 @@ Proposed. Extends [ADR NNNN](NNNN-name.md). Supersedes [ADR NNNN](NNNN-name.md) 
 
 - Components: <apps/cli, apps/docs, apps/e2e, apps/gateway, packages/php-sdk, or none>
 - ADRs: extends [ADR NNNN](NNNN-name.md); supersedes [ADR NNNN](NNNN-name.md) for <clause>; or none
-- Detail: <docs/reference page or Linear issue carrying the mechanism, or none>
+- Detail: <docs/reference page for a durable contract, the implementing Linear issue for one-off mechanism, or none>
 - Verify: <test suite, lint rule, Doctor check, or proof command that shows conformance>

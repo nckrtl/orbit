@@ -38,7 +38,7 @@ invoke any one directly; no private orchestration order is implied.
 - Product feature branches never modify the harness under `apps/e2e` or
   `bin/e2e-*`. Harness changes require a dedicated issue with
   repository-owner-approved behavior and issue-specific proof.
-- `Proof: incus` uses the repository's disposable topology and proof commands.
+- The `proof:incus` label uses the repository's disposable topology and proof commands.
   Automated-only changes use project checks and CI.
 - Proof plans live in `proofs/<ISSUE>.json`; optional fixtures live in
   `proofs/<ISSUE>/`. Per-worktree harness state lives in `<worktree>/.e2e/`.

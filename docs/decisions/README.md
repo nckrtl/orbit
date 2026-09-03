@@ -40,7 +40,7 @@ Use the next four-digit number and a short kebab-case name:
 
 Each ADR must contain `Status`, `Context`, `Decision`, and `Consequences`. ADRs from 0019 onward follow the template beside the `recording-decisions` skill under `.agents/skills`, add `Rejected alternatives` and `Affects`, and pass the `orbit.adr_structure` and `orbit.adr_language` lint rules in `apps/docs`.
 
-An ADR records one decision, why it won, and what it binds. It does not carry mechanism: command syntax, verification checklists, error text, field lists, and Doctor behavior belong in a `docs/reference` page or the Linear issue, linked from the ADR's `Affects` section.
+An ADR records one decision, why it won, and what it binds. It does not carry mechanism: command syntax, verification checklists, error text, field lists, and Doctor behavior belong in a `docs/reference` page when durable or in the implementing issue's acceptance criteria when one-off, linked from the ADR's `Affects` section.
 
 Current contributor-governance decision:
 

@@ -1,7 +1,7 @@
 # Incus topology registry
 
-Incus provides disposable development and proof topologies for issues marked
-`Proof: incus`. The lifecycle is governed by
+Incus provides disposable development and proof topologies for issues carrying
+the `proof:incus` label. The lifecycle is governed by
 [ADR 0005](../decisions/0005-rolling-incus-development-topology.md) (prepared
 topology snapshot, refresh, exact cleanup) and
 [ADR 0006](../decisions/0006-topology-led-feature-development.md) (separate

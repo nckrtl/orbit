@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Documentation\BlockedPhrases;
 use App\Librarian\Rules\DecisionRecordLanguageRule;
 use App\Librarian\Rules\DecisionRecordStructureRule;
 use HardImpact\Librarian\Docs\DocsConfig;
@@ -77,7 +78,7 @@ it('exempts records numbered before the configured start', function (): void {
     writeRecord($this->root, 'README.md', "# Architecture decisions\n\nShould be ignored later.\n");
 
     $structure = new DecisionRecordStructureRule($this->snapshot, 19, ['apps/cli', 'apps/gateway']);
-    $language = new DecisionRecordLanguageRule($this->snapshot, 19, ['should', 'later']);
+    $language = new DecisionRecordLanguageRule($this->snapshot, 19, new BlockedPhrases(['should', 'later']));
 
     expect($structure->check())->toBe([])->and($language->check())->toBe([]);
 });
@@ -169,7 +170,11 @@ it('rejects blocked phrases outside headings and code', function (): void {
     );
     writeRecord($this->root, '0019-register-worktrees.md', $contents);
 
-    $findings = new DecisionRecordLanguageRule($this->snapshot, 19, ['should', 'later', 'etc.'])->check();
+    $findings = new DecisionRecordLanguageRule(
+        $this->snapshot,
+        19,
+        new BlockedPhrases(['should', 'later', 'etc.']),
+    )->check();
 
     expect($findings)
         ->toHaveCount(2)
@@ -194,7 +199,11 @@ it('matches blocked phrases as whole words only', function (): void {
     );
     writeRecord($this->root, '0019-register-worktrees.md', $contents);
 
-    $findings = new DecisionRecordLanguageRule($this->snapshot, 19, ['should', 'later', 'some'])->check();
+    $findings = new DecisionRecordLanguageRule(
+        $this->snapshot,
+        19,
+        new BlockedPhrases(['should', 'later', 'some']),
+    )->check();
 
     expect(messages($findings))->toBe([
         'Blocked phrase `some`. Name the actor, the condition, and the observable result instead.',
@@ -202,5 +211,5 @@ it('matches blocked phrases as whole words only', function (): void {
 });
 
 it('rejects a non-lowercase blocked phrase configuration', function (): void {
-    new DecisionRecordLanguageRule($this->snapshot, 19, ['Should']);
+    new DecisionRecordLanguageRule($this->snapshot, 19, new BlockedPhrases(['Should']));
 })->throws(LogicException::class);
