@@ -20,11 +20,11 @@ use RuntimeException;
  */
 final readonly class TopologyConverger
 {
-    private const int GATEWAY_READINESS_ATTEMPTS = 5;
+    private const int INSTANCE_API_READINESS_ATTEMPTS = 5;
 
     public function __construct(
         private IncusHost $host,
-        private int $gatewayReadinessRetryDelayMicroseconds = 1_000_000,
+        private int $instanceApiReadinessRetryDelayMicroseconds = 1_000_000,
     ) {}
 
     public function converge(TopologyTarget $target, SourceState $source, LaravelRelease $laravel): ConvergenceReport
@@ -137,8 +137,8 @@ final readonly class TopologyConverger
         $steps['reproject.product-state'] = true;
         $this->run($instances['app-dev'], 'converge-sample-app.sh', ['metrics-publication']);
         $steps['refresh.metrics-publication'] = true;
-        $this->awaitGatewayReadiness($instances['app-dev']);
-        $steps['await.gateway-readiness'] = true;
+        $this->awaitInstanceApiReadiness($instances['app-dev']);
+        $steps['await.instance-api-readiness'] = true;
 
         if ($typedCheckoutPath !== null) {
             $this->run($instances['app-dev'], 'converge-sample-app.sh', [
@@ -267,28 +267,30 @@ final readonly class TopologyConverger
         return $result;
     }
 
-    private function awaitGatewayReadiness(string $instance): void
+    private function awaitInstanceApiReadiness(string $instance): void
     {
-        for ($attempt = 1; $attempt <= self::GATEWAY_READINESS_ATTEMPTS; $attempt++) {
+        for ($attempt = 1; $attempt <= self::INSTANCE_API_READINESS_ATTEMPTS; $attempt++) {
             $result = $this->host->exec(
                 $instance,
-                new GuestCommand(['/usr/local/bin/converge-sample-app.sh', 'gateway-readiness'], 30),
+                new GuestCommand(['/usr/local/bin/converge-sample-app.sh', 'instance-api-readiness'], 30),
             );
 
             if ($result->successful()) {
                 return;
             }
 
-            if ($attempt === self::GATEWAY_READINESS_ATTEMPTS) {
+            if ($attempt === self::INSTANCE_API_READINESS_ATTEMPTS) {
                 throw new RuntimeException(
-                    "Guest convergence action converge-sample-app.sh gateway-readiness failed on {$instance} after "
-                    .self::GATEWAY_READINESS_ATTEMPTS
-                    ." attempts; attempt {$attempt} exited with code {$result->exitCode}.",
+                    'Guest convergence readiness action converge-sample-app.sh instance-api-readiness failed '
+                    ."on {$instance} after "
+                    .self::INSTANCE_API_READINESS_ATTEMPTS
+                    ." attempts; probe instance:list --json failed on attempt {$attempt} "
+                    ."with exit code {$result->exitCode}.",
                 );
             }
 
-            if ($this->gatewayReadinessRetryDelayMicroseconds > 0) {
-                usleep($this->gatewayReadinessRetryDelayMicroseconds);
+            if ($this->instanceApiReadinessRetryDelayMicroseconds > 0) {
+                usleep($this->instanceApiReadinessRetryDelayMicroseconds);
             }
         }
     }
