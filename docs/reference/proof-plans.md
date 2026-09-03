@@ -1,6 +1,6 @@
 # Proof plans
 
-This page is for the contributor or agent who writes `proofs/<ISSUE>.json` and reads its result. It states what the `apps/e2e` harness accepts, how it stages fixtures and prepares the runtime, what `prove` records, and what each equivalence outcome requires next. The commands that run a plan are on the [Incus topology registry](incus-topologies.md).
+This page is for the contributor or agent who writes `proofs/<ISSUE>.json` and reads its result. A plan runs on the proof topology the harness builds for its issue. It states what the `apps/e2e` harness accepts, how it stages fixtures and prepares the runtime, what `prove` records, and what each equivalence outcome requires next. The commands that run a plan are on the [Incus topology registry](incus-topologies.md).
 
 ## Plan file
 

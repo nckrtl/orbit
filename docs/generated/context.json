@@ -513,7 +513,8 @@
             "concepts": [
                 "App",
                 "Gateway",
-                "Node"
+                "Node",
+                "Proof topology"
             ],
             "governing_adrs": [
                 "0015"
@@ -530,7 +531,8 @@
                 "App",
                 "Doctor",
                 "Gateway",
-                "Node"
+                "Node",
+                "Proof topology"
             ],
             "governing_adrs": []
         },
