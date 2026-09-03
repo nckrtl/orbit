@@ -1,7 +1,7 @@
 # Incus topology registry
 
-Incus provides disposable development and proof topologies for issues marked
-`Proof: incus`. The lifecycle is governed by
+Incus provides disposable development and proof topologies for issues carrying
+the `proof:incus` label. The lifecycle is governed by
 [ADR 0005](../decisions/0005-rolling-incus-development-topology.md) (prepared
 topology snapshot, refresh, exact cleanup) and
 [ADR 0006](../decisions/0006-topology-led-feature-development.md) (separate
@@ -50,8 +50,8 @@ The harness keeps no state outside the repository checkouts:
 
 Migration note: before NCK-91 the harness kept journals, evidence, receipts,
 leases, and the capacity ledger under `~/.local/state/orbit/e2e`; that
-directory is no longer read or written. If that directory still contains the
-retired `standby/promoted.json`, copy it into `<primary>/.e2e/standby/` once.
+directory is not read or written. If that directory contains an earlier
+`standby/promoted.json`, copy it into `<primary>/.e2e/standby/` once.
 Then use `bin/e2e-topology-snapshot recover-legacy` to migrate it.
 
 ## Network ownership
@@ -61,7 +61,7 @@ Every Incus network in the `default` project whose name starts with `oe-`
 such network may outlive the topology that used it: every
 `bin/e2e-topology release` ends with an orphan sweep that deletes each harness
 network with an empty `used_by`, except a current topology snapshot network
-(`oe-topo-snap`) or its retired pre-rename identity (`oe-standby`). The
+(`oe-topo-snap`) or its earlier identity (`oe-standby`). The
 sweep holds the host creation lock, so an acquisition between network creation
 and its first VM is never swept. The sweep never touches a network outside
 those prefixes, a network with users, or another Incus project. Each deleted
@@ -233,7 +233,7 @@ plan references a fixture by that guest path on any node:
 ```
 
 A plan can declare `fixture_issues` when its acceptance actions must execute an
-affected historical fixture. The harness stages each declared directory under
+affected fixture from an earlier issue. The harness stages each declared directory under
 its issue namespace, such as
 `/var/lib/orbit-e2e/proof/NCK-116/refuses-a-shifted-rule-number.sh`. It still
 stages the plan owner's fixtures at `/var/lib/orbit-e2e/proof/`. The list is an
@@ -513,7 +513,7 @@ proof and releases both disposable topologies.
 `HostCapacity` reserves slot 1, gives disposable topologies slots 2 through
 200, and counts every VM against `ORBIT_E2E_INCUS_MAX_VMS`. The orphan network
 sweep and legacy retirement protect the current snapshot and its bounded
-pre-rename identity.
+earlier identity.
 
 After a merge, `bin/e2e-topology-snapshot promote ISSUE` makes the reviewer's
 retained proved topology the new generation instead of rebuilding it:
@@ -616,11 +616,11 @@ fails closed. Recovery does not adopt a resource from its name alone. It does
 not use a prefix, glob, age, or operator-supplied Incus name as deletion
 authority.
 
-The same command migrates the retired pre-rename identity. If only
+The same command migrates the earlier `oe-standby` identity. If only
 `.e2e/standby/` state or the old `*-standby-*` Incus resources exist, the
 resolver validates and removes that exact identity, then cold-builds the
-current topology snapshot. It refuses when current and retired identities
-coexist. It also refuses an incomplete or invalid retired
+current topology snapshot. It refuses when current and earlier identities
+coexist. It also refuses an incomplete or invalid earlier
 `.e2e/standby/recovery.json` journal because the original code must complete an
 in-progress transaction first. A completed journal remains as migration
 evidence and does not block the migration.
@@ -637,7 +637,7 @@ authorized record.
 
 One topology snapshot refresh lock remains held from inventory and authorization
 through teardown, cold construction, promotion, final verification, and the
-final journal write. Its physical lock key stays compatible with pre-rename
+final journal write. Its physical lock key stays compatible with earlier harness
 processes, so an old and a new harness process cannot mutate the same resources
 at the same time. A retry with the same SHA resumes
 only from retained inventory whose digest and observed exact state still agree.
