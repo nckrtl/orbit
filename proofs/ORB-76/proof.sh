@@ -8,6 +8,7 @@ apps_root=/home/orbit/orb76-apps
 next_apps_root=/home/orbit/orb76-apps-next
 app_dev_address=10.44.0.2
 origin="https://${app_dev_address}:9443/origin.git"
+baseline_instances=/tmp/orb76-baseline-app-instances.json
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
@@ -45,6 +46,17 @@ json_lacks() {
   php -r '$data=json_decode(stream_get_contents(STDIN), true); exit(is_array($data) && ! array_key_exists($argv[1], $data) ? 0 : 1);' -- "$1"
 }
 
+app_instance_count() {
+  php -r '
+    $data=json_decode(stream_get_contents(STDIN), true);
+    $count=0;
+    foreach ($data["app_instances"] ?? [] as $instance) {
+      if (is_array($instance) && (string) ($instance["app_id"] ?? "") === $argv[1]) { $count++; }
+    }
+    echo $count;
+  ' -- "$1"
+}
+
 instance_signature() {
   php -r '
     $data=json_decode(stream_get_contents(STDIN), true);
@@ -57,7 +69,22 @@ instance_signature() {
 
 node_id() { orbit node:list --json | json_find nodes name "$1" id; }
 app_id() { orbit app:list --json | json_find apps slug "$1" id; }
-instance_id() { orbit instance:list --json | json_find app_instances name "$1" id; }
+instance_id() {
+  local orbit_app
+  orbit_app=$(app_id orb76)
+  orbit instance:list --json | php -r '
+    $data=json_decode(stream_get_contents(STDIN), true);
+    foreach ($data["app_instances"] ?? [] as $instance) {
+      if (is_array($instance)
+        && ($instance["name"] ?? null) === $argv[1]
+        && (string) ($instance["app_id"] ?? "") === $argv[2]) {
+        echo $instance["id"];
+        exit(0);
+      }
+    }
+    exit(1);
+  ' -- "$1" "$orbit_app"
+}
 
 assert_instance() {
   local payload=$1 name=$2 expected_path=$3 expected_root=$4 expected_effective_root=$5
@@ -123,6 +150,7 @@ case "$criterion" in
     fail 'app-dev source fixture did not start'
     ;;
   setup-gateway)
+    rm -f -- "$baseline_instances"
     app_dev=$(node_id app-dev)
     orbit firewall:allow orb76-source --node="$app_dev" --from=10.44.0.1 --protocol=tcp --port=9443 --json >/dev/null
     curl --silent --show-error --insecure --fail "https://${app_dev_address}:9443/server.crt" -o /tmp/orb76-source.crt
@@ -134,7 +162,7 @@ case "$criterion" in
     app_dev=$(node_id app-dev)
     for _ in $(seq 1 30); do curl --silent --show-error --insecure --fail "$origin/HEAD" >/dev/null && break; sleep 1; done
     curl --silent --show-error --insecure --fail "$origin/HEAD" >/dev/null
-    [[ "$(orbit instance:list --json | json_get app_instances)" == '[]' ]] || fail 'AppInstance list did not start empty'
+    orbit instance:list --json | json_get app_instances > "$baseline_instances"
 
     orbit node:settings app-dev --setting="apps.path:$apps_root" --json >/dev/null
     legacy_app=$(app_id laravel)
@@ -181,7 +209,7 @@ case "$criterion" in
     assert_instance "$later" later "$next_apps_root/orb76/later" null public
     unchanged=$(orbit instance:show "$(echo "$standalone" | json_get id)" --json)
     [[ "$(echo "$unchanged" | json_get checkout_path)" == "$apps_root/orb76/e2e-dev" ]] || fail 'apps-root update moved existing source'
-    [[ "$(orbit instance:list --json | json_get app_instances | php -r '$v=json_decode(stream_get_contents(STDIN), true); echo count($v);')" == 5 ]] || fail 'AppInstance count is not five'
+    [[ "$(orbit instance:list --json | app_instance_count "$orbit_app")" == 5 ]] || fail 'ORB-76 AppInstance count is not five'
     echo 'criterion 1: standalone and optional-Cluster managed-clone creation passed'
     ;;
   02)
@@ -248,7 +276,8 @@ case "$criterion" in
     orbit instance:remove "$dirty" --discard-source --json >/dev/null
     orbit instance:remove "$advanced" --discard-source --json >/dev/null
     orbit firewall:remove orb76-source --node="$app_dev" --json >/dev/null
-    [[ "$(orbit instance:list --json | json_get app_instances)" == '[]' ]] || fail 'removed AppInstances remain listed'
+    [[ -f "$baseline_instances" ]] || fail 'baseline AppInstance snapshot is missing'
+    [[ "$(orbit instance:list --json | json_get app_instances)" == "$(cat "$baseline_instances")" ]] || fail 'ORB-76 removal changed baseline AppInstances or left owned AppInstances listed'
     echo 'criterion 5 removal: safe clean, dirty, and unpublished removal passed'
     ;;
   06)
