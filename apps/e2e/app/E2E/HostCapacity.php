@@ -28,11 +28,14 @@ final readonly class HostCapacity
         }
     }
 
-    /** Refuse when one more topology would exceed the VM budget; return its free network slot. */
-    public function reserveSlot(): int
+    /** Refuse when the requested recipe would exceed the VM budget; return its free network slot. */
+    public function reserveSlot(int $requiredVms = 3): int
     {
+        if ($requiredVms < 1 || $requiredVms > $this->maxVms) {
+            throw new RuntimeException('The requested topology VM count is outside host capacity.');
+        }
         $existing = count($this->host->harnessInstanceMetadata());
-        if (($existing + count(TopologyProfile::ROLES)) > $this->maxVms) {
+        if (($existing + $requiredVms) > $this->maxVms) {
             throw new RuntimeException(
                 "Incus host capacity is exhausted: {$existing} harness VMs exist and the limit is "
                 ."{$this->maxVms}. Raise ORBIT_E2E_INCUS_MAX_VMS, or release a topology.",

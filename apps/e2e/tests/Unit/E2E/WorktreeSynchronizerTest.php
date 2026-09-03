@@ -10,6 +10,7 @@ use App\E2E\Value\GuestCommand;
 use App\E2E\Value\GuestCommandResult;
 use App\E2E\Value\OperationId;
 use App\E2E\Value\SourceState;
+use App\E2E\Value\TopologyRecipe;
 use App\E2E\Value\TopologyTarget;
 use App\E2E\WorktreeSynchronizer;
 use Illuminate\Container\Container;
@@ -1789,6 +1790,35 @@ function candidateGuestFake(
 }
 
 describe('WorktreeSynchronizer::syncCommit', function () {
+    it('uses physical recipe Nodes for checkout transfer and guest script verification', function () {
+        $fixture = createSynchronizerCandidateFixture('SCN-1');
+        ['root' => $root, 'worktree' => $worktree, 'candidate' => $candidate] = $fixture;
+        try {
+            $target = TopologyTarget::disposableCold(
+                'SCN-1',
+                new \App\E2E\Value\AttemptId(str_repeat('a', 32)),
+                TopologyRecipe::coldAcceptance(),
+            );
+            $guest = candidateGuestFake($target, $worktree, $candidate, $fixture['candidateTree']);
+
+            new WorktreeSynchronizer($guest, $root, new OperationId(str_repeat('a', 32)))
+                ->syncCommit($target, $worktree, $candidate);
+
+            expect(array_column($guest->bundlePushes, 'instance'))
+                ->toBe([$target->instance('gateway'), $target->instance('operator')])
+                ->and($guest->execBatches[0])
+                ->toContain(
+                    'guest-sha.operator',
+                    'script-marker.operator',
+                    'script-marker.extra',
+                    'script-content.extra',
+                )
+                ->not->toContain('guest-sha.app-dev');
+        } finally {
+            destroySynchronizerRepositoryFixture($root, $worktree);
+        }
+    });
+
     it('transfers only the exact candidate commit and ignores later host worktree state', function () {
         $fixture = createSynchronizerCandidateFixture('NCK-150');
         ['root' => $root, 'worktree' => $worktree, 'candidate' => $candidate] = $fixture;

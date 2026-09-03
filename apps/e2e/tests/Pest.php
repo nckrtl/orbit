@@ -5,7 +5,7 @@ declare(strict_types=1);
 use Tests\Support\TemporaryPaths;
 use Tests\TestCase;
 
-uses(TestCase::class)->in('Feature');
+uses(TestCase::class)->in('Feature', 'Scenario');
 
 pest()
     ->tia()

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\E2E;
 
+use App\E2E\Value\IncusMetadata;
 use App\E2E\Value\IncusNetwork;
 use Illuminate\Support\Facades\Process;
 use JsonException;
@@ -22,18 +23,23 @@ final readonly class IncusNetworkLifecycle
     ) {}
 
     /** @param array<string, string> $metadata */
-    public function create(string $name, int $slot, array $metadata = []): IncusNetwork
+    public function create(string $name, int $slot, array $metadata = [], int $lastAddress = 12): IncusNetwork
     {
         $this->assertManagedNetworkName($name);
         $this->assertLocalRemote();
-        $this->validateMetadata($metadata);
+        if (! IncusMetadata::isValidAdditionalMap($metadata)) {
+            throw new RuntimeException('Invalid Incus network metadata.');
+        }
 
         if ($slot < 1 || $slot > 200) {
             throw new RuntimeException('Incus network slot is outside the supported range 1-200.');
         }
+        if ($lastAddress < 10 || $lastAddress > 254) {
+            throw new RuntimeException('Incus network DHCP range is outside the supported host positions 10-254.');
+        }
         $network = $this->host->createNetwork($name, [
             'ipv4.address' => "10.232.{$slot}.1/24",
-            ...$this->networkConfiguration($slot),
+            ...$this->networkConfiguration($slot, $lastAddress),
             ...$metadata,
         ]);
 
@@ -80,7 +86,8 @@ final readonly class IncusNetworkLifecycle
         }
         /** @var array<string, string> $configurationDrift */
         $configurationDrift = [];
-        foreach ($this->networkConfiguration($slot) as $key => $value) {
+        $lastAddress = $this->lastAddressFromRange($network->config['ipv4.dhcp.ranges'] ?? null, $slot);
+        foreach ($this->networkConfiguration($slot, $lastAddress) as $key => $value) {
             if (($network->config[$key] ?? null) !== $value) {
                 $configurationDrift[$key] = $value;
             }
@@ -111,16 +118,31 @@ final readonly class IncusNetworkLifecycle
     }
 
     /** @return array<string, string> */
-    private function networkConfiguration(int $slot): array
+    private function networkConfiguration(int $slot, int $lastAddress = 12): array
     {
         $prefix = "10.232.{$slot}";
 
         return [
             'ipv4.nat' => 'true',
-            'ipv4.dhcp.ranges' => "{$prefix}.10-{$prefix}.12",
+            'ipv4.dhcp.ranges' => "{$prefix}.10-{$prefix}.{$lastAddress}",
             'ipv6.address' => 'none',
             'raw.dnsmasq' => 'port=0',
         ];
+    }
+
+    private function lastAddressFromRange(?string $range, int $slot): int
+    {
+        $prefix = preg_quote("10.232.{$slot}", '/');
+        if ($range === null || preg_match("/\A{$prefix}\.10-{$prefix}\.([0-9]{1,3})\z/D", $range, $matches) !== 1) {
+            throw new RuntimeException('Incus network DHCP range is invalid.');
+        }
+
+        $lastAddress = (int) $matches[1];
+        if ($lastAddress < 10 || $lastAddress > 254) {
+            throw new RuntimeException('Incus network DHCP range is invalid.');
+        }
+
+        return $lastAddress;
     }
 
     public function delete(string $name): void
@@ -163,20 +185,6 @@ final readonly class IncusNetworkLifecycle
     {
         if (preg_match(self::MANAGED_NETWORK_PATTERN, $name) !== 1) {
             throw new RuntimeException('Incus network name is outside the managed interface prefix.');
-        }
-    }
-
-    /** @param array<string, string> $metadata */
-    private function validateMetadata(array $metadata): void
-    {
-        foreach ($metadata as $key => $value) {
-            if (
-                preg_match('/\Auser\.orbit\.e2e\.[a-z0-9.-]+\z/D', $key) !== 1
-                || $key === 'user.orbit.e2e.owner'
-                || str_contains($value, "\0")
-            ) {
-                throw new RuntimeException('Invalid Incus network metadata.');
-            }
         }
     }
 

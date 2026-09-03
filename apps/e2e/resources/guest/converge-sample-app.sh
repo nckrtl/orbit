@@ -188,26 +188,26 @@ case ${1-} in
     ;;
   metrics)
     [[ "$(id -u)" -eq 0 ]] && exec sudo -u orbit -- env HOME=/home/orbit ORBIT_HOME=/home/orbit/.orbit DB_DATABASE=/home/orbit/.orbit/gateway.sqlite bash "$0" "$@"
-    [[ $# -eq 1 ]] || exit 64
+    [[ $# -eq 2 && "$2" =~ ^[a-z][a-z0-9-]{0,22}$ ]] || exit 64
     status=$("$orbit" metrics:status --json)
-    read -r action node_id < <(php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); $a=$v["assignment"] ?? null; if ($a === null) { echo "enable -\n"; exit; } if (($a["node_name"] ?? null) !== "app-dev" || !is_int($a["node_id"] ?? null)) exit(65); $status=$a["status"] ?? null; if ($status === "active") { echo "noop ", $a["node_id"], "\n"; exit; } if ($status === "failed") { echo "recover ", $a["node_id"], "\n"; exit; } exit(65);' <<<"$status")
+    read -r action node_id < <(php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); $a=$v["assignment"] ?? null; if ($a === null) { echo "enable -\n"; exit; } if (($a["node_name"] ?? null) !== $argv[1] || !is_int($a["node_id"] ?? null)) exit(65); $status=$a["status"] ?? null; if ($status === "active") { echo "noop ", $a["node_id"], "\n"; exit; } if ($status === "failed") { echo "recover ", $a["node_id"], "\n"; exit; } exit(65);' "$2" <<<"$status")
     case "$action" in
-      enable) mutation=$("$orbit" metrics:enable app-dev --json) ;;
+      enable) mutation=$("$orbit" metrics:enable "$2" --json) ;;
       recover) mutation=$("$orbit" node:role:add "$node_id" metrics --converge --json) ;;
       noop) exit 0 ;;
       *) exit 65 ;;
     esac
-    php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); $status=$v["assignment"]["status"] ?? $v["status"] ?? null; if (!in_array($status, ["active", "enabled"], true)) exit(1);' <<<"$mutation"
+    php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); $assignment=$v["assignment"] ?? null; $status=is_array($assignment) ? ($assignment["status"] ?? null) : ($v["status"] ?? null); $node=is_array($assignment) ? ($assignment["node_name"] ?? null) : ($v["node_name"] ?? null); if (!in_array($status, ["active", "enabled"], true) || ($node !== null && $node !== $argv[1])) exit(1);' "$2" <<<"$mutation"
     ;;
   metrics-publication)
     [[ "$(id -u)" -eq 0 ]] && exec sudo -u orbit -- env HOME=/home/orbit ORBIT_HOME=/home/orbit/.orbit DB_DATABASE=/home/orbit/.orbit/gateway.sqlite bash "$0" "$@"
-    [[ $# -eq 1 ]] || exit 64
+    [[ $# -eq 2 && "$2" =~ ^[a-z][a-z0-9-]{0,22}$ ]] || exit 64
     status=$("$orbit" metrics:status --json)
-    read -r action node_id assignment_id < <(php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); $a=$v["assignment"] ?? null; if ($a === null) { echo "noop - -\n"; exit; } if (!is_array($a) || ($a["node_name"] ?? null) !== "app-dev" || !is_int($a["node_id"] ?? null) || !is_int($a["id"] ?? null) || ($a["status"] ?? null) !== "active") exit(65); echo "converge ", $a["node_id"], " ", $a["id"], "\n";' <<<"$status")
+    read -r action node_id assignment_id < <(php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); $a=$v["assignment"] ?? null; if ($a === null) { echo "noop - -\n"; exit; } if (!is_array($a) || ($a["node_name"] ?? null) !== $argv[1] || !is_int($a["node_id"] ?? null) || !is_int($a["id"] ?? null) || ($a["status"] ?? null) !== "active") exit(65); echo "converge ", $a["node_id"], " ", $a["id"], "\n";' "$2" <<<"$status")
     [[ "$action" == noop ]] && exit 0
     [[ "$action" == converge && "$node_id" =~ ^[1-9][0-9]*$ && "$assignment_id" =~ ^[1-9][0-9]*$ ]] || exit 65
     mutation=$("$orbit" node:role:add "$node_id" metrics --converge --json)
-    php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); if (($v["node_id"] ?? null) !== (int)$argv[1] || ($v["node_name"] ?? null) !== "app-dev" || ($v["role"] ?? null) !== "metrics" || ($v["assignment"]["id"] ?? null) !== (int)$argv[2] || ($v["assignment"]["role"] ?? null) !== "metrics" || ($v["assignment"]["status"] ?? null) !== "active") exit(1);' "$node_id" "$assignment_id" <<<"$mutation"
+    php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); if (($v["node_id"] ?? null) !== (int)$argv[1] || ($v["node_name"] ?? null) !== $argv[3] || ($v["role"] ?? null) !== "metrics" || ($v["assignment"]["id"] ?? null) !== (int)$argv[2] || ($v["assignment"]["role"] ?? null) !== "metrics" || ($v["assignment"]["status"] ?? null) !== "active") exit(1);' "$node_id" "$assignment_id" "$2" <<<"$mutation"
     ;;
   internal-tls)
     # Internal TLS for the sample production site lives inside the product's

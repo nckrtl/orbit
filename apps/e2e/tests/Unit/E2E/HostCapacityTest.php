@@ -137,4 +137,14 @@ describe('HostCapacity', function () {
 
         expect(new HostCapacity(new IncusHost, 24)->reserveSlot())->toBeGreaterThan(1);
     });
+
+    it('admits and refuses using the requested recipe VM count', function () {
+        fakeCapacityHost(array_map(static fn (int $i): string => "orbit-e2e-existing-{$i}", range(1, 5)), []);
+
+        expect(new HostCapacity(new IncusHost, 9)->reserveSlot(4))->toBe(2);
+        expect(fn () => new HostCapacity(new IncusHost, 9)->reserveSlot(5))
+            ->toThrow(RuntimeException::class, 'capacity is exhausted');
+        expect(fn () => new HostCapacity(new IncusHost, 9)->reserveSlot(0))
+            ->toThrow(RuntimeException::class, 'outside host capacity');
+    });
 });
