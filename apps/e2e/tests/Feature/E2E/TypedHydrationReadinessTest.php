@@ -5,13 +5,50 @@ declare(strict_types=1);
 use Illuminate\Filesystem\Filesystem;
 use Symfony\Component\Process\Process;
 
-/** @return array{root:string,checkout:string,script:string,state:string,environment:array<string,string>} */
-function typedHydrationReadinessFixture(string $response, int $exitCode, int $gitResetExitCode = 1): array
+/** @param list<array<string, mixed>> $instances */
+function typedHydrationResponse(array $instances): string
 {
+    return json_encode([
+        'app_instances' => $instances,
+        'request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844',
+    ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+}
+
+/**
+ * @param  array{git_reset_exit_code?:int,transient_failures?:int,transient_response?:string,transient_exit_code?:int}  $options
+ * @return array{root:string,checkout:string,script:string,state:string,environment:array<string,string>}
+ */
+function typedHydrationReadinessFixture(
+    string $response,
+    int $exitCode,
+    array $options = [],
+): array {
+    $gitResetExitCode = $options['git_reset_exit_code'] ?? 0;
+    $transientFailures = $options['transient_failures'] ?? 0;
+    $transientResponse = $options['transient_response'] ?? '';
+    $transientExitCode = $options['transient_exit_code'] ?? 1;
     $root = temporaryPath('orbit-typed-hydration-readiness-', 6);
     $checkout = "{$root}/checkout";
     mkdir("{$root}/bin", 0o700, true);
     mkdir("{$checkout}/.git", 0o700, true);
+    mkdir("{$checkout}/vendor", 0o700, true);
+    mkdir("{$checkout}/storage", 0o700, true);
+    mkdir("{$checkout}/bootstrap/cache", 0o700, true);
+    file_put_contents("{$checkout}/composer.lock", "locked dependencies\n");
+    file_put_contents("{$checkout}/vendor/autoload.php", "autoloaded\n");
+    file_put_contents(
+        "{$checkout}/vendor/.orbit-e2e-composer-lock",
+        hash_file('sha256', "{$checkout}/composer.lock"),
+    );
+    file_put_contents("{$checkout}/.env", "APP_KEY=base64:fixture\n");
+    file_put_contents("{$checkout}/artisan", <<<'PHP'
+        <?php
+        file_put_contents(
+            (string) getenv('TYPED_HYDRATION_ARTISAN_CALLS'),
+            implode(' ', array_slice($argv, 1)).PHP_EOL,
+            FILE_APPEND,
+        );
+        PHP);
     $response = str_replace('__CHECKOUT__', $checkout, $response);
     $state = "{$root}/sample-app-state.json";
     file_put_contents($state, json_encode([
@@ -26,13 +63,20 @@ function typedHydrationReadinessFixture(string $response, int $exitCode, int $gi
         #!/usr/bin/env bash
         set -euo pipefail
         [[ "$*" == 'instance:list --json' ]]
+        state=$(dirname "$0")
+        printf '%s\n' "$*" >>"$state/orbit-calls"
+        attempt=$(wc -l <"$state/orbit-calls")
+        if [[ "$attempt" -le "$TYPED_HYDRATION_TRANSIENT_FAILURES" ]]; then
+          printf '%s' "$TYPED_HYDRATION_TRANSIENT_RESPONSE"
+          exit "$TYPED_HYDRATION_TRANSIENT_EXIT"
+        fi
         printf '%s' "$TYPED_HYDRATION_RESPONSE"
         exit "$TYPED_HYDRATION_EXIT"
         BASH);
     file_put_contents("{$root}/bin/git", <<<'BASH'
         #!/usr/bin/env bash
         set -euo pipefail
-        touch "$TYPED_HYDRATION_GIT_CALLED"
+        printf '%s\n' "$*" >>"$TYPED_HYDRATION_GIT_CALLED"
         case "$*" in
           *' remote get-url origin')
             printf 'https://github.com/laravel/laravel.git\n'
@@ -40,16 +84,29 @@ function typedHydrationReadinessFixture(string $response, int $exitCode, int $gi
           *' cat-file -e '*)
             ;;
           *' reset --hard --quiet '*)
-            touch "$TYPED_HYDRATION_GIT_RESET_CALLED"
+            printf '%s\n' "$*" >>"$TYPED_HYDRATION_GIT_RESET_CALLED"
             exit "$TYPED_HYDRATION_GIT_RESET_EXIT"
+            ;;
+          *' rev-parse HEAD')
+            printf '%s\n' "$TYPED_HYDRATION_COMMIT"
             ;;
           *)
             exit 1
             ;;
         esac
         BASH);
+    file_put_contents("{$root}/bin/sleep", <<<'BASH'
+        #!/usr/bin/env bash
+        set -euo pipefail
+        [[ ! -e "$TYPED_HYDRATION_GIT_RESET_CALLED" ]] || {
+          touch "$TYPED_HYDRATION_MUTATED_DURING_PREFLIGHT"
+          exit 99
+        }
+        printf '%s\n' "$*" >>"$TYPED_HYDRATION_SLEEP_CALLS"
+        BASH);
     chmod("{$root}/orbit", 0o700);
     chmod("{$root}/bin/git", 0o700);
+    chmod("{$root}/bin/sleep", 0o700);
     $source = file_get_contents(dirname(__DIR__, 3).'/resources/guest/converge-sample-app.sh');
     $script = str_replace(
         [
@@ -69,22 +126,87 @@ function typedHydrationReadinessFixture(string $response, int $exitCode, int $gi
         'state' => $state,
         'environment' => [
             'PATH' => "{$root}/bin:".getenv('PATH'),
+            'TYPED_HYDRATION_ARTISAN_CALLS' => "{$root}/artisan-calls",
+            'TYPED_HYDRATION_COMMIT' => str_repeat('b', 40),
             'TYPED_HYDRATION_EXIT' => (string) $exitCode,
             'TYPED_HYDRATION_GIT_CALLED' => "{$root}/git-called",
             'TYPED_HYDRATION_GIT_RESET_CALLED' => "{$root}/git-reset-called",
             'TYPED_HYDRATION_GIT_RESET_EXIT' => (string) $gitResetExitCode,
+            'TYPED_HYDRATION_MUTATED_DURING_PREFLIGHT' => "{$root}/mutated-during-preflight",
             'TYPED_HYDRATION_RESPONSE' => $response,
+            'TYPED_HYDRATION_SLEEP_CALLS' => "{$root}/sleep-calls",
+            'TYPED_HYDRATION_TRANSIENT_EXIT' => (string) $transientExitCode,
+            'TYPED_HYDRATION_TRANSIENT_FAILURES' => (string) $transientFailures,
+            'TYPED_HYDRATION_TRANSIENT_RESPONSE' => $transientResponse,
         ],
     ];
 }
 
-it('classifies only bounded gateway readiness envelopes as retryable', function (string $code): void {
-    $response = json_encode(['error' => [
-        'code' => $code,
+it('retries a transient instance preflight before hydrating the typed checkout once', function (): void {
+    $response = typedHydrationResponse([[
+        'id' => 4,
+        'app_id' => 1,
+        'node_id' => 2,
+        'name' => 'e2e-dev',
+        'status' => 'active',
+        'checkout_path' => '__CHECKOUT__',
+        'selected_branch' => 'main',
+        'starting_commit' => str_repeat('a', 40),
+        'effective_root' => 'public',
+    ]]);
+    $failure = json_encode(['error' => [
+        'code' => 'gateway.unavailable',
         'message' => 'The gateway is temporarily unavailable.',
         'request_id' => null,
     ]], JSON_THROW_ON_ERROR);
-    $fixture = typedHydrationReadinessFixture($response, 1);
+    $fixture = typedHydrationReadinessFixture(
+        $response,
+        0,
+        [
+            'transient_failures' => 1,
+            'transient_response' => $failure,
+            'transient_exit_code' => 69,
+        ],
+    );
+
+    try {
+        $readinessEnvironment = [
+            ...$fixture['environment'],
+            'TYPED_HYDRATION_TRANSIENT_FAILURES' => '0',
+        ];
+        $readiness = new Process(
+            ['bash', $fixture['script'], 'instance-api-readiness'],
+            env: $readinessEnvironment,
+        );
+        expect($readiness->run())->toBe(0, $readiness->getErrorOutput());
+        rename("{$fixture['root']}/orbit-calls", "{$fixture['root']}/readiness-calls");
+
+        $process = new Process([
+            'bash',
+            $fixture['script'],
+            'hydrate',
+            str_repeat('b', 40),
+            'app-dev',
+            $fixture['checkout'],
+        ], env: $fixture['environment']);
+
+        expect($process->run())->toBe(0, $process->getErrorOutput());
+        expect(file("{$fixture['root']}/readiness-calls", FILE_IGNORE_NEW_LINES))
+            ->toBe(['instance:list --json']);
+        expect(file("{$fixture['root']}/orbit-calls", FILE_IGNORE_NEW_LINES))
+            ->toBe(['instance:list --json', 'instance:list --json']);
+        expect(file("{$fixture['root']}/git-reset-called", FILE_IGNORE_NEW_LINES))
+            ->toHaveCount(1);
+        expect(file("{$fixture['root']}/artisan-calls", FILE_IGNORE_NEW_LINES))
+            ->toBe(['migrate --force --no-interaction']);
+        expect(file_exists("{$fixture['root']}/mutated-during-preflight"))->toBeFalse();
+    } finally {
+        new Filesystem()->deleteDirectory($fixture['root']);
+    }
+});
+
+it('preserves the final CLI failure after the bounded hydration preflight', function (int $exitCode): void {
+    $fixture = typedHydrationReadinessFixture('Gateway unavailable.', $exitCode);
 
     try {
         $process = new Process([
@@ -96,28 +218,69 @@ it('classifies only bounded gateway readiness envelopes as retryable', function 
             $fixture['checkout'],
         ], env: $fixture['environment']);
 
-        expect($process->run())->toBe(75);
+        expect($process->run())->toBe($exitCode);
+        expect(file("{$fixture['root']}/orbit-calls", FILE_IGNORE_NEW_LINES))->toHaveCount(5);
+        expect(file("{$fixture['root']}/sleep-calls", FILE_IGNORE_NEW_LINES))->toBe(['1', '1', '1', '1']);
+        expect($process->getErrorOutput())
+            ->toContain(
+                "hydrate: instance:list --json failed after 5 attempts; final attempt 5 exited with code {$exitCode}",
+                'Gateway unavailable.',
+            );
         expect(file_exists("{$fixture['root']}/git-called"))->toBeFalse();
+        expect(file_exists("{$fixture['root']}/mutated-during-preflight"))->toBeFalse();
     } finally {
         new Filesystem()->deleteDirectory($fixture['root']);
     }
-})->with(['gateway.unreachable', 'gateway.unavailable']);
+})->with([
+    'service unavailable' => 69,
+    'temporary failure' => 75,
+]);
+
+it('retries malformed instance envelopes before a bounded validation failure', function (string $response): void {
+    $fixture = typedHydrationReadinessFixture($response, 0);
+
+    try {
+        $process = new Process([
+            'bash',
+            $fixture['script'],
+            'hydrate',
+            str_repeat('b', 40),
+            'app-dev',
+            $fixture['checkout'],
+        ], env: $fixture['environment']);
+
+        expect($process->run())->toBe(65);
+        expect(file("{$fixture['root']}/orbit-calls", FILE_IGNORE_NEW_LINES))->toHaveCount(5);
+        expect($process->getErrorOutput())
+            ->toContain(
+                'hydrate: instance:list --json failed after 5 attempts; final attempt 5 validation failure',
+                'malformed or unsupported response envelope',
+            );
+        expect(file_exists("{$fixture['root']}/git-called"))->toBeFalse();
+        expect(file_exists("{$fixture['root']}/mutated-during-preflight"))->toBeFalse();
+    } finally {
+        new Filesystem()->deleteDirectory($fixture['root']);
+    }
+})->with([
+    'malformed JSON' => 'not-json',
+    'unsupported shape' => '{"data":[]}',
+    'ambiguous shape' => '{"instances":[],"app_instances":[]}',
+    'non-list collection' => '{"app_instances":{"named":{}}}',
+]);
 
 it('returns a non-retryable failure when a later hydration command exits 75', function (): void {
-    $response = json_encode([
-        'app_instances' => [[
-            'id' => 4,
-            'app_id' => 1,
-            'node_id' => 2,
-            'name' => 'e2e-dev',
-            'status' => 'active',
-            'checkout_path' => '__CHECKOUT__',
-            'selected_branch' => 'main',
-            'starting_commit' => str_repeat('a', 40),
-            'effective_root' => 'public',
-        ]],
-    ], JSON_THROW_ON_ERROR);
-    $fixture = typedHydrationReadinessFixture($response, 0, gitResetExitCode: 75);
+    $response = typedHydrationResponse([[
+        'id' => 4,
+        'app_id' => 1,
+        'node_id' => 2,
+        'name' => 'e2e-dev',
+        'status' => 'active',
+        'checkout_path' => '__CHECKOUT__',
+        'selected_branch' => 'main',
+        'starting_commit' => str_repeat('a', 40),
+        'effective_root' => 'public',
+    ]]);
+    $fixture = typedHydrationReadinessFixture($response, 0, ['git_reset_exit_code' => 75]);
 
     try {
         $process = new Process([
@@ -130,13 +293,16 @@ it('returns a non-retryable failure when a later hydration command exits 75', fu
         ], env: $fixture['environment']);
 
         expect($process->run())->toBe(1);
-        expect(file_exists("{$fixture['root']}/git-reset-called"))->toBeTrue();
+        expect(file("{$fixture['root']}/orbit-calls", FILE_IGNORE_NEW_LINES))
+            ->toBe(['instance:list --json']);
+        expect(file("{$fixture['root']}/git-reset-called", FILE_IGNORE_NEW_LINES))->toHaveCount(1);
     } finally {
         new Filesystem()->deleteDirectory($fixture['root']);
     }
 });
 
-it('fails closed before checkout mutation for semantic typed state', function (string $response, int $exitCode): void {
+it('fails immediately before checkout mutation for semantic typed state', function (string $response): void {
+    $exitCode = 0;
     $fixture = typedHydrationReadinessFixture($response, $exitCode);
 
     try {
@@ -151,11 +317,13 @@ it('fails closed before checkout mutation for semantic typed state', function (s
 
         expect($process->run())->not->toBe(0)->not->toBe(75);
         expect(file_exists("{$fixture['root']}/git-called"))->toBeFalse();
+        expect(file("{$fixture['root']}/orbit-calls", FILE_IGNORE_NEW_LINES))
+            ->toBe(['instance:list --json']);
+        expect(file_exists("{$fixture['root']}/sleep-calls"))->toBeFalse();
     } finally {
         new Filesystem()->deleteDirectory($fixture['root']);
     }
 })->with([
-    'malformed typed response' => ['not-json', 0],
     'wrong checkout path' => [
         json_encode([
             'app_instances' => [[
@@ -170,7 +338,6 @@ it('fails closed before checkout mutation for semantic typed state', function (s
                 'effective_root' => 'public',
             ]],
         ], JSON_THROW_ON_ERROR),
-        0,
     ],
     'wrong app identity' => [
         json_encode([
@@ -186,7 +353,6 @@ it('fails closed before checkout mutation for semantic typed state', function (s
                 'effective_root' => 'public',
             ]],
         ], JSON_THROW_ON_ERROR),
-        0,
     ],
     'wrong node identity' => [
         json_encode([
@@ -202,7 +368,6 @@ it('fails closed before checkout mutation for semantic typed state', function (s
                 'effective_root' => 'public',
             ]],
         ], JSON_THROW_ON_ERROR),
-        0,
     ],
     'inactive assignment' => [
         json_encode([
@@ -218,25 +383,11 @@ it('fails closed before checkout mutation for semantic typed state', function (s
                 'effective_root' => 'public',
             ]],
         ], JSON_THROW_ON_ERROR),
-        0,
     ],
-    'non-readiness gateway error' => [
-        json_encode(['error' => [
-            'code' => 'gateway.invalid_response',
-            'message' => 'Gateway response is invalid.',
-            'request_id' => null,
-        ]], JSON_THROW_ON_ERROR),
-        1,
-    ],
-    'malformed readiness envelope' => [
+    'legacy envelope for typed hydration' => [
         json_encode([
-            'error' => [
-                'code' => 'gateway.unavailable',
-                'message' => 'The gateway is temporarily unavailable.',
-                'details' => ['retry_after' => 2],
-                'request_id' => null,
-            ],
+            'instances' => [],
+            'request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844',
         ], JSON_THROW_ON_ERROR),
-        1,
     ],
 ]);
