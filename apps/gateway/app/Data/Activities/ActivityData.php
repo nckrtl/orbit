@@ -7,6 +7,7 @@ namespace App\Data\Activities;
 use App\Infrastructure\Activity\CommandActivityInputSanitizer;
 use App\Models\Activity;
 use App\Models\App as OrbitApp;
+use App\Models\AppInstance;
 use App\Models\FirewallRule;
 use App\Models\Instance;
 use App\Models\Node;
@@ -116,6 +117,7 @@ final readonly class ActivityData
         return match ($subjectType) {
             Node::class => 'node',
             OrbitApp::class => 'app',
+            AppInstance::class => 'instance',
             Instance::class => 'instance',
             Workspace::class => 'workspace',
             OrbitProcess::class => 'process',

@@ -2,7 +2,9 @@
 
 Orbit stores shared source defaults on an App. It creates each development
 AppInstance as an independent clone on one manually selected app-dev Node. The
-selected Node determines the AppInstance Cluster.
+AppInstance stores no Cluster identity. The selected Node can be standalone or
+in an inactive, active TLD-less, or active TLD-bearing Cluster. Any later
+routing scope derives from the Node at routing time.
 
 This behavior implements the development source boundary from
 [ADR 0009](../decisions/0009-clustered-app-instance-routing.md). Production
@@ -33,14 +35,15 @@ missing values. ORB-76 does not add an update or backfill command.
 
 Select one active Node with an active app-dev role:
 
-    orbit instance:new --app=acme --name=feature-one --node=app-dev
+    orbit instance:new <app-id> <node-id> feature-one
 
 The Gateway derives and records this immutable checkout path:
 
     <node-apps-root>/acme/feature-one
 
-The clone has its own .git directory. It does not use a Workspace, Git
-worktree metadata, or shared worktree administration.
+The AppInstance has the immutable source kind `managed_clone`. Its clone has
+its own .git directory. It does not use a Workspace, Git worktree metadata, or
+shared worktree administration.
 
 Orbit fetches the App repository. It checks out origin/feature-one when that
 branch exists. Otherwise, it creates feature-one from the exact fetched
@@ -51,19 +54,18 @@ Creation moves through four durable states:
 
     reserved -> checkout_prepared -> source_resolved -> active
 
-An identical retry verifies the recorded App, Node, Cluster, root, path,
-repository, branch, and commit evidence. It then resumes the next incomplete
-transition. A conflicting retry fails without a second row or checkout.
+An identical retry verifies the recorded App, Node, source kind, root, path,
+repository, branch, and pre-activation commit evidence. It then resumes the
+next incomplete transition. Once active, the historical starting commit stays
+unchanged while normal development advances HEAD. A conflicting retry fails
+without a second row or checkout.
 
 ## Set the effective web root
 
 By default, an AppInstance inherits the App root. Use the root option to store
 a relative override:
 
-    orbit instance:new \
-      --app=acme \
-      --name=feature-one \
-      --node=app-dev \
+    orbit instance:new <app-id> <node-id> feature-one \
       --root=site/public
 
 The effective root is the AppInstance root when set and the App root otherwise.
@@ -99,3 +101,8 @@ The Node application role owns PHP and runtime prerequisites.
 This lifecycle does not change Caddy, certificates, DNS, hostnames, Routes,
 Routers, or runtime services. Those operations belong to later runtime and
 publication lifecycles.
+
+Caller-local Git worktrees are a separate, externally owned source kind. They
+are not adopted by `instance:new`; the later registration lifecycle governed
+by [ADR 0018](../decisions/0018-register-caller-local-development-worktrees.md)
+owns that behavior.

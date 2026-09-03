@@ -6,6 +6,7 @@ namespace App\Actions\Doctor;
 
 use App\Data\Doctor\DoctorFamilyReportData;
 use App\Data\Doctor\DoctorIssueData;
+use App\Domain\AppInstances\AppInstanceSourceKind;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Doctor\DoctorFamily;
 use App\Domain\Doctor\DoctorFamilyProbe;
@@ -59,6 +60,22 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
                     $instance->status->value,
                 );
             }
+
+            if ($instance->source_kind !== AppInstanceSourceKind::ManagedClone->value) {
+                $issues[] = new DoctorIssueData(
+                    InstanceDoctorIssueCode::SourceKindMismatch,
+                    DoctorIssueKind::Drift,
+                    'instance',
+                    $instance->id,
+                    $instance->name,
+                    'Instance source ownership does not match managed intent.',
+                    AppInstanceSourceKind::ManagedClone->value,
+                    $instance->source_kind,
+                );
+
+                continue;
+            }
+
             try {
                 $observation = $this->inspector->inspect($instance);
                 foreach ([

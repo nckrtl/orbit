@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use App\Actions\Doctor\InstanceDoctorProbe;
 use App\Domain\AppInstances\AppInstanceState;
-use App\Domain\Clusters\ClusterState;
 use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Doctor\DoctorNodeContext;
 use App\Domain\Doctor\InstanceInspectionData;
@@ -13,7 +12,6 @@ use App\Domain\Doctor\NodeInspectionData;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\App;
 use App\Models\AppInstance;
-use App\Models\Cluster;
 use App\Models\Node;
 
 it('returns a healthy empty instance report and excludes other nodes', function (): void {
@@ -158,18 +156,43 @@ it('continues after a typed instance inspection failure', function (): void {
         ->toBeGreaterThan($failed->id);
 });
 
+it('exposes and refuses an unexpected AppInstance source kind without remote inspection', function (): void {
+    $node = instance_probe_node();
+    $instance = instance_probe_instance(instance_probe_app(), $node);
+    $instance->update(['source_kind' => 'registered_worktree']);
+    $calls = 0;
+
+    $report = new InstanceDoctorProbe(new class($calls) implements InstanceStateInspector {
+        public function __construct(
+            private int &$calls,
+        ) {}
+
+        public function inspect(AppInstance $appInstance): InstanceInspectionData
+        {
+            $this->calls++;
+
+            return new InstanceInspectionData(true, true, true, true);
+        }
+    })->inspect(instance_probe_context($node));
+
+    expect($report->issues)
+        ->toHaveCount(1)
+        ->and($report->issues[0]->code)
+        ->toBe('instance.source_kind_mismatch')
+        ->and($report->issues[0]->expected)
+        ->toBe('managed_clone')
+        ->and($report->issues[0]->observed)
+        ->toBe('registered_worktree')
+        ->and($calls)
+        ->toBe(0);
+});
+
 function instance_probe_node(): Node
 {
     static $number = 60;
     $number++;
 
-    $cluster = Cluster::query()->create([
-        'name' => "instance-probe-cluster-{$number}",
-        'state' => ClusterState::Active,
-    ]);
-
     return Node::query()->create([
-        'cluster_id' => $cluster->id,
         'name' => "instance-probe-node-{$number}",
         'status' => LifecycleStatus::Active,
         'platform' => 'linux',
@@ -204,7 +227,6 @@ function instance_probe_instance(
     return AppInstance::query()->create([
         'app_id' => $app->id,
         'node_id' => $node->id,
-        'cluster_id' => $node->cluster_id,
         'name' => "development-{$suffix}",
         'environment' => 'development',
         'checkout_path' => "/private/instance/{$app->slug}/development-{$suffix}",

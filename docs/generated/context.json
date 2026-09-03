@@ -347,9 +347,11 @@
                 "Cluster",
                 "Gateway",
                 "Ingress",
+                "Legacy Instance",
                 "Node",
                 "Route",
-                "Router"
+                "Router",
+                "Workspace"
             ],
             "governing_adrs": [
                 "0009",
@@ -368,6 +370,7 @@
                 "AppInstance",
                 "Cluster",
                 "Doctor",
+                "Effective web root",
                 "Gateway",
                 "Node",
                 "Route"
@@ -419,7 +422,8 @@
             ],
             "governing_adrs": [
                 "0009",
-                "0011"
+                "0011",
+                "0018"
             ]
         },
         {
@@ -461,9 +465,11 @@
                 "Cluster",
                 "Doctor",
                 "Gateway",
+                "Legacy Instance",
                 "Node",
                 "Proof topology",
-                "Router"
+                "Router",
+                "Workspace"
             ],
             "governing_adrs": [
                 "0005",

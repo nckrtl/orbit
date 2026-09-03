@@ -6,10 +6,10 @@ namespace App\Actions\AppInstances;
 
 use App\Data\AppInstances\CreateAppInstanceData;
 use App\Domain\AppDev\AppDevSourceOperationLock;
+use App\Domain\AppInstances\AppInstanceSourceKind;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\AppInstances\DevelopmentAppInstanceSourceLifecycle;
 use App\Domain\AppInstances\DevelopmentSourceResolution;
-use App\Domain\Clusters\ClusterState;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
@@ -47,13 +47,14 @@ final readonly class CreateAppInstanceAction
         $app = OrbitApp::query()->findOrFail($data->appId);
         $this->assertCompleteSourceDefaults($app);
         $requestedNode = Node::query()->findOrFail($data->nodeId);
+        $root = $data->root === null ? null : RelativeWebRoot::validate($data->root);
         $existing = AppInstance::query()
             ->where('app_id', $app->id)
             ->where('name', $data->name)
             ->first();
 
         if ($existing instanceof AppInstance) {
-            $this->assertRetryIdentity($existing, $requestedNode, $data);
+            $this->assertRetryIdentity($existing, $requestedNode, $root);
             $appInstance = $existing;
             $created = false;
         } else {
@@ -70,12 +71,11 @@ final readonly class CreateAppInstanceAction
                 $checkout,
                 'instance.path_taken',
             );
-            $root = $data->root === null ? null : RelativeWebRoot::validate($data->root);
             $appInstance = AppInstance::query()->create([
                 'app_id' => $app->id,
                 'node_id' => $requestedNode->id,
-                'cluster_id' => $requestedNode->cluster_id,
                 'name' => $data->name,
+                'source_kind' => AppInstanceSourceKind::ManagedClone,
                 'checkout_path' => $checkout->value,
                 'root' => $root,
                 'status' => AppInstanceState::Reserved,
@@ -85,20 +85,20 @@ final readonly class CreateAppInstanceAction
 
         $result = $this->sourceLock->synchronized(
             $appInstance->node_id,
-            fn (): AppInstance => $this->resume($appInstance),
+            fn (): AppInstance => $this->resume($appInstance, ! $created),
         );
 
         return ['appInstance' => $result, 'created' => $created];
     }
 
-    private function resume(AppInstance $appInstance): AppInstance
+    private function resume(AppInstance $appInstance, bool $allowPreparedSource): AppInstance
     {
         while (true) {
-            $appInstance->refresh()->loadMissing(['app', 'node', 'cluster']);
+            $appInstance->refresh()->loadMissing(['app', 'node']);
             $this->assertPersistedOwnership($appInstance);
 
             if ($appInstance->status === AppInstanceState::Reserved) {
-                $this->source->prepare($appInstance);
+                $this->source->prepare($appInstance, $allowPreparedSource);
                 $this->transition($appInstance, AppInstanceState::Reserved, [
                     'status' => AppInstanceState::CheckoutPrepared,
                 ]);
@@ -129,8 +129,8 @@ final readonly class CreateAppInstanceAction
                 return $appInstance->refresh();
             }
 
+            $this->assertStoredResolutionEvidence($appInstance);
             $this->source->inspectPrepared($appInstance);
-            $this->assertStoredResolution($appInstance, $this->source->inspectResolved($appInstance));
 
             return $appInstance->refresh();
         }
@@ -173,13 +173,6 @@ final readonly class CreateAppInstanceAction
             throw new ResourceOperationException('instance.node_inactive', 'The selected app-dev Node is not active.');
         }
 
-        if ($node->cluster_id === null || ! $node->cluster()->where('state', ClusterState::Active)->exists()) {
-            throw new ResourceOperationException(
-                'instance.cluster_inactive',
-                'The selected Node has no active Cluster.',
-            );
-        }
-
         if (! $node->roles()->where('role', RoleName::AppDev)->where('status', LifecycleStatus::Active)->exists()) {
             throw new ResourceOperationException(
                 'instance.node_not_app_dev',
@@ -191,15 +184,14 @@ final readonly class CreateAppInstanceAction
     private function assertRetryIdentity(
         AppInstance $appInstance,
         Node $requestedNode,
-        CreateAppInstanceData $data,
+        ?string $root,
     ): void {
         $recordedNode = Node::query()->findOrFail($appInstance->node_id);
 
         if (
             $requestedNode->id !== $recordedNode->id
-            || $recordedNode->cluster_id === null
-            || $appInstance->cluster_id !== $recordedNode->cluster_id
-            || $appInstance->root !== $data->root
+            || $appInstance->source_kind !== AppInstanceSourceKind::ManagedClone->value
+            || $appInstance->root !== $root
         ) {
             throw $this->conflict('instance.placement_conflict', 'AppInstance placement is immutable.');
         }
@@ -209,11 +201,8 @@ final readonly class CreateAppInstanceAction
 
     private function assertPersistedOwnership(AppInstance $appInstance): void
     {
-        if (
-            $appInstance->node->cluster_id !== $appInstance->cluster_id
-            || $appInstance->cluster->state !== ClusterState::Active
-        ) {
-            throw $this->conflict('instance.placement_conflict', 'AppInstance Cluster ownership is invalid.');
+        if ($appInstance->source_kind !== AppInstanceSourceKind::ManagedClone->value) {
+            throw $this->conflict('instance.source_kind_conflict', 'AppInstance source ownership is invalid.');
         }
     }
 
@@ -233,11 +222,23 @@ final readonly class CreateAppInstanceAction
         AppInstance $appInstance,
         DevelopmentSourceResolution $resolution,
     ): void {
+        $this->assertStoredResolutionEvidence($appInstance);
         $this->assertResolution($appInstance, $resolution);
 
         if (
             $appInstance->branch !== $resolution->branch
             || $appInstance->starting_commit !== $resolution->startingCommit
+        ) {
+            throw $this->conflict('instance.source_identity_changed', 'AppInstance source identity changed.');
+        }
+    }
+
+    private function assertStoredResolutionEvidence(AppInstance $appInstance): void
+    {
+        if (
+            $appInstance->branch !== $appInstance->name
+            || ! is_string($appInstance->starting_commit)
+            || preg_match('/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/D', $appInstance->starting_commit) !== 1
         ) {
             throw $this->conflict('instance.source_identity_changed', 'AppInstance source identity changed.');
         }

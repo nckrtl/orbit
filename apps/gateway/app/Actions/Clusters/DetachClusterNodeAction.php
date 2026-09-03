@@ -35,14 +35,6 @@ final readonly class DetachClusterNodeAction
                 );
             }
 
-            if ($lockedNode->appInstances()->exists()) {
-                throw new ResourceOperationException(
-                    errorCode: 'cluster.node_has_app_instances',
-                    message: "Node [{$lockedNode->name}] still owns AppInstances.",
-                    status: 409,
-                );
-            }
-
             if ($lockedNode->roles()->where('role', RoleName::Router)->exists()) {
                 throw new ResourceOperationException(
                     errorCode: 'cluster.router_detach_forbidden',

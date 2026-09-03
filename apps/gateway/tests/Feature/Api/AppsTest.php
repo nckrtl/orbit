@@ -51,7 +51,6 @@ describe('app creation', function (): void {
                 'repository_url' => 'git@github.com:acme/site.git',
                 'main_branch' => 'main',
                 'root' => 'public',
-                'defaults' => ['php_version' => '8.5'],
             ]);
 
         $second
@@ -306,7 +305,6 @@ describe('app lifecycle', function (): void {
         AppInstance::query()->create([
             'app_id' => $app->id,
             'node_id' => $node->id,
-            'cluster_id' => $cluster->id,
             'name' => 'dev',
             'checkout_path' => '/srv/orbit/apps/acme/dev',
             'branch' => 'dev',

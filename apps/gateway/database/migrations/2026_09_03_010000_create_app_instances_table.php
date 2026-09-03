@@ -9,18 +9,13 @@ use Illuminate\Support\Facades\Schema;
 return new class extends Migration {
     public function up(): void
     {
-        Schema::table('apps', static function (Blueprint $table): void {
-            $table->string('main_branch')->nullable();
-            $table->string('root')->nullable();
-        });
-
         Schema::create('app_instances', static function (Blueprint $table): void {
             $table->id();
             $table->foreignId('app_id')->constrained()->restrictOnDelete();
             $table->foreignId('node_id')->constrained()->restrictOnDelete();
-            $table->foreignId('cluster_id')->constrained()->restrictOnDelete();
             $table->string('name');
             $table->string('environment')->default('development');
+            $table->string('source_kind')->default('managed_clone');
             $table->text('checkout_path');
             $table->string('root')->nullable();
             $table->string('branch')->nullable();
@@ -39,9 +34,5 @@ return new class extends Migration {
     public function down(): void
     {
         Schema::dropIfExists('app_instances');
-
-        Schema::table('apps', static function (Blueprint $table): void {
-            $table->dropColumn(['main_branch', 'root']);
-        });
     }
 };

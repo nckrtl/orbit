@@ -74,6 +74,25 @@ it('verifies a real explicit branch and rejects a missing one', function (): voi
         ->toThrow(ResourceOperationException::class, 'could not be determined or verified');
 });
 
+it('resolves and verifies when the process directory has unavailable worktree metadata', function (): void {
+    $mountedWorktree = $this->repositoryDirectory.'/mounted-worktree';
+    $files = new Filesystem;
+    $files->makeDirectory($mountedWorktree, 0700, true);
+    $files->put($mountedWorktree.'/.git', "gitdir: /unavailable/host/worktree/metadata\n");
+    $originalDirectory = getcwd();
+
+    expect($originalDirectory)->toBeString()->and(chdir($mountedWorktree))->toBeTrue();
+
+    try {
+        $resolver = new NativeRepositoryDefaultBranchResolver(new NativeProcessRunner);
+
+        expect($resolver->resolve($this->bareRepository))->toBe('main');
+        $resolver->verify($this->bareRepository, 'stable');
+    } finally {
+        chdir($originalDirectory);
+    }
+});
+
 it('resolves and verifies a real branch using valid Git punctuation and Unicode', function (): void {
     $branch = 'release/été+hotfix@2026';
     $resolver = new NativeRepositoryDefaultBranchResolver(new NativeProcessRunner);
@@ -174,7 +193,7 @@ it('uses bounded argv-only Git calls and redacts timeout, error, and malformed o
     expect($processes->invocations)
         ->toHaveCount(1)
         ->and($processes->invocations[0]->arguments)
-        ->toBe(['git', 'ls-remote', '--symref', '--exit-code', '--', $repository, 'HEAD'])
+        ->toBe(['git', '-C', '/', 'ls-remote', '--symref', '--exit-code', '--', $repository, 'HEAD'])
         ->and($processes->invocations[0]->timeout)
         ->toBe(30.0);
 })->with([

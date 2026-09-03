@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Domain\AppInstances\AppInstanceSourceKind;
 use App\Domain\AppInstances\AppInstanceState;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -12,9 +13,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int $id
  * @property int $app_id
  * @property int $node_id
- * @property int $cluster_id
  * @property string $name
  * @property string $environment
+ * @property string $source_kind
  * @property string $checkout_path
  * @property string|null $root
  * @property string|null $branch
@@ -22,7 +23,6 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property AppInstanceState $status
  * @property-read App $app
  * @property-read Node $node
- * @property-read Cluster $cluster
  */
 final class AppInstance extends Model
 {
@@ -30,6 +30,7 @@ final class AppInstance extends Model
     #[\Override]
     protected $attributes = [
         'environment' => 'development',
+        'source_kind' => 'managed_clone',
         'status' => 'reserved',
     ];
 
@@ -38,9 +39,9 @@ final class AppInstance extends Model
     protected $fillable = [
         'app_id',
         'node_id',
-        'cluster_id',
         'name',
         'environment',
+        'source_kind',
         'checkout_path',
         'root',
         'branch',
@@ -60,12 +61,6 @@ final class AppInstance extends Model
         return $this->belongsTo(Node::class);
     }
 
-    /** @return BelongsTo<Cluster, $this> */
-    public function cluster(): BelongsTo
-    {
-        return $this->belongsTo(Cluster::class);
-    }
-
     public function effectiveRoot(): ?string
     {
         return $this->root ?? $this->app->root;
@@ -74,6 +69,8 @@ final class AppInstance extends Model
     /** @return array<string, class-string> */
     protected function casts(): array
     {
-        return ['status' => AppInstanceState::class];
+        return [
+            'status' => AppInstanceState::class,
+        ];
     }
 }

@@ -246,5 +246,4 @@ describe('Cluster lifecycle', function (): void {
             ->and($outside->refresh()->cluster_id)
             ->toBeNull();
     });
-
 });

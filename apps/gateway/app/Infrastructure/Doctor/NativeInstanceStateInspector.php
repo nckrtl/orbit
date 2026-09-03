@@ -124,7 +124,8 @@ final readonly class NativeInstanceStateInspector implements InstanceStateInspec
                 test -n "$branch"
                 test -n "$starting_commit"
                 test "$(git -C "$checkout" symbolic-ref --short HEAD)" = "$branch"
-                test "$(git -C "$checkout" rev-parse --verify HEAD^{commit})" = "$starting_commit"
+                test "$(git -C "$checkout" rev-parse --verify "$starting_commit^{commit}")" = "$starting_commit"
+                git -C "$checkout" merge-base --is-ancestor "$starting_commit" HEAD
             }
 
             emit checkout_exists

@@ -74,5 +74,4 @@ final readonly class CreateAppAction
             status: 409,
         );
     }
-
 }

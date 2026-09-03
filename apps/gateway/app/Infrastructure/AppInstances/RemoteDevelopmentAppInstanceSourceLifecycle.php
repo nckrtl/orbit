@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\AppInstances;
 
 use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\AppInstances\AppInstanceSourceKind;
 use App\Domain\AppInstances\DevelopmentAppInstanceSourceLifecycle;
 use App\Domain\AppInstances\DevelopmentSourceResolution;
 use App\Domain\Nodes\ManagedUserAccountResolver;
@@ -25,19 +26,20 @@ final readonly class RemoteDevelopmentAppInstanceSourceLifecycle implements Deve
         private CheckoutRemovalBoundary $removal,
     ) {}
 
-    public function prepare(AppInstance $appInstance): void
+    public function prepare(AppInstance $appInstance, bool $allowExisting): void
     {
         $context = $this->context($appInstance);
         $this->ssh->execute(
             $appInstance->node,
             new RemoteCommand(
-                arguments: $this->arguments($appInstance, $context),
+                arguments: [...$this->arguments($appInstance, $context), $allowExisting ? '1' : '0'],
                 input: self::preparedRepositoryGuard().<<<'BASH'
                     repository=$1
                     checkout=$2
                     allowed_root=$3
                     managed_user=$4
                     managed_group=$5
+                    allow_existing=$6
                     checkout_parent=$(dirname "$checkout")
 
                     guard_parent_chain "$checkout_parent" "$allowed_root"
@@ -45,6 +47,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceLifecycle implements Deve
                     create_directory "$checkout_parent"
 
                     if [ -e "$checkout" ] || [ -L "$checkout" ]; then
+                        test "$allow_existing" = 1
                         inspect_prepared_repository
                         exit 0
                     fi
@@ -265,6 +268,15 @@ final readonly class RemoteDevelopmentAppInstanceSourceLifecycle implements Deve
     private function context(AppInstance $appInstance): array
     {
         $appInstance->loadMissing(['app', 'node']);
+
+        if ($appInstance->source_kind !== AppInstanceSourceKind::ManagedClone->value) {
+            throw new RuntimeConvergenceException(
+                step: 'app-instance-source-kind',
+                errorCode: 'instance.source_kind_conflict',
+                message: "AppInstance [{$appInstance->name}] is not an Orbit-managed clone.",
+            );
+        }
+
         $account = $this->accounts->resolve($appInstance->node);
         $root = $this->removal->appInstanceRoot($appInstance, $account);
 
