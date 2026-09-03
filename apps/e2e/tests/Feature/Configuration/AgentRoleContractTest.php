@@ -12,7 +12,7 @@ it('initializes one current feature-plan artifact', function () use ($read): voi
 
     foreach ([
         'initialize_feature_plan',
-        'mkdir -p "$worktree/.orbit"',
+        'mkdir -p "$worktree/.loop/proof"',
         '# Feature plan',
         'Review verdict: PENDING',
         '## Acceptance map',
@@ -24,9 +24,14 @@ it('initializes one current feature-plan artifact', function () use ($read): voi
     }
 
     expect($script)
+        ->toContain('$worktree/.loop/plan.md')
+        ->not->toContain('$worktree/.or'.'bit/plan.md')
         ->not->toContain('Reconciliation verdict')
         ->not->toContain('## Reconciliation notes');
-    expect($ignore)->toContain('/.orbit/');
+    expect($ignore)
+        ->toContain('/.e2e/')
+        ->not->toContain('/.orbit/')
+        ->not->toContain('/.loop/');
 });
 
 it('reads complete worktree listings without early-exit SIGPIPE', function () use ($read): void {
@@ -55,7 +60,7 @@ it('keeps planning, plan review, and development independently invokable', funct
 
     expect($planner)
         ->toContain('independently invokable planning task')
-        ->toContain('create the same headings by hand')
+        ->toContain('create the same workspace by hand')
         ->toContain('Review verdict: PENDING')
         ->toContain('one row per `Acceptance` item')
         ->toContain('every attached ADR `Decision` bullet the change touches')
@@ -67,7 +72,7 @@ it('keeps planning, plan review, and development independently invokable', funct
         ->toContain('or to the page from the Documentation section')
         ->toContain('needs no label and is bounded by `Scope`')
         ->toContain('whose message starts with `docs:`')
-        ->toContain('the issue is not `Todo`')
+        ->toContain('other than exactly `Todo` or `In Progress`')
         ->toContain('does not follow the `creating-issues` template')
         ->toContain('Do not create slice files')
         ->not->toContain('retained Builder')
@@ -96,15 +101,16 @@ it('keeps planning, plan review, and development independently invokable', funct
 
     expect($developer)
         ->toContain('may be invoked directly')
+        ->toContain('other than exactly `Todo` or `In Progress`')
         ->toContain('One issue per worktree')
         ->toContain('Discovery and proof use separate topologies')
         ->toContain('lists every `Acceptance` item in the issue\'s order')
         ->toContain('When no plan exists, run `auditing-documentation`')
         ->toContain('carry the audit\'s `Fixed` and `Reported` lists into the pull request body')
         ->toContain('recorded under `## Deviations` in the plan and in the pull request body')
-        ->toContain('The body opens with `Issue: <ID>`')
+        ->toContain('The proposed body opens with `Issue: <ID>`')
         ->toContain('every reported finding from either audit with its owner')
-        ->toContain('Include current `origin/main` before pushing')
+        ->toContain('Include current `origin/main`')
         ->not->toContain('retained Builder')
         ->not->toContain('plan `PASS`');
 
@@ -117,7 +123,7 @@ it('keeps implementation guidance on Orbit code and proof', function () use ($re
     foreach ([
         'bin/e2e-topology acquire <ISSUE> <worktree>',
         'bin/e2e-topology shell <ISSUE> <role>',
-        'proofs/<ISSUE>.json',
+        '.loop/proof/<ISSUE>.json',
         'bin/e2e-topology prove <ISSUE>',
         'shell --proof',
         'action must exit `0`',
@@ -165,6 +171,101 @@ it('binds review and merge to one exact remote head', function () use ($read): v
         ->not->toContain('bin/e2e-live');
 });
 
+it('accepts Todo or In Progress for development', function () use ($read): void {
+    $skill = $read('.agents/skills/developing-features/SKILL.md');
+    $manifest = $read('.agents/skills/developing-features/agents/openai.yaml');
+
+    expect($skill)
+        ->toContain('other than exactly `Todo` or `In Progress`')
+        ->not->toContain('issue is not `Todo`');
+    expect($manifest)
+        ->toContain('eligible Todo or In Progress Orbit issue')
+        ->not->toContain('supplied Todo Orbit issue');
+});
+
+it('exposes orchestration-neutral lifecycle modes', function () use ($read): void {
+    $developer = $read('.agents/skills/developing-features/SKILL.md');
+    $reviewer = $read('.agents/skills/reviewing-pull-requests/SKILL.md');
+    $merger = $read('.agents/skills/merging-pull-requests/SKILL.md');
+    $developerManifest = $read('.agents/skills/developing-features/agents/openai.yaml');
+    $reviewerManifest = $read('.agents/skills/reviewing-pull-requests/agents/openai.yaml');
+    $mergerManifest = $read('.agents/skills/merging-pull-requests/agents/openai.yaml');
+
+    expect($developer)
+        ->toContain('execution mode is `publish` by default')
+        ->toContain('`handoff` when the caller supplies it')
+        ->toContain('must not invoke `gh`')
+        ->toContain('push the branch')
+        ->toContain('pushed head SHA, branch and base')
+        ->toContain('complete proposed body')
+        ->toContain('retained-proof binding');
+    expect($reviewer)
+        ->toContain('execution mode is `publish` by default')
+        ->toContain('`handoff` when the caller supplies it')
+        ->toContain('review and prove the same exact head')
+        ->toContain('must not invoke `gh`')
+        ->toContain('make no GitHub mutation')
+        ->toContain('complete formal-review payload');
+    expect($merger)
+        ->toContain('execution mode is `merge-and-closeout` by default')
+        ->toContain('`closeout-only` when the caller supplies it')
+        ->toContain('authoritative read-only GitHub state')
+        ->toContain('do not invoke `gh`')
+        ->toContain('or any merge')
+        ->toContain('only mutations are promotion and cleanup');
+
+    expect($developerManifest)
+        ->toContain('publish mode by default')
+        ->toContain('handoff mode')
+        ->toContain('Todo or In Progress')
+        ->toContain('complete pull-request body and evidence');
+    expect($reviewerManifest)
+        ->toContain('publish mode by default')
+        ->toContain('handoff mode')
+        ->toContain('complete formal-review payload')
+        ->toContain('no GitHub mutation');
+    expect($mergerManifest)
+        ->toContain('merge-and-closeout mode by default')
+        ->toContain('closeout-only mode')
+        ->toContain('exact second-approved removal head')
+        ->toContain('promotion, cleanup, and read-back');
+
+    foreach ([$developer, $reviewer, $merger, $developerManifest, $reviewerManifest, $mergerManifest] as $contract) {
+        expect($contract)
+            ->not->toContain('Anna')
+            ->not->toContain('Tom')
+            ->not->toContain('Herdr')
+            ->not->toContain('retained Builder');
+    }
+});
+
+it('binds removal head and closeout-only lifecycle', function () use ($read): void {
+    $developer = $read('.agents/skills/developing-features/SKILL.md');
+    $reviewer = $read('.agents/skills/reviewing-pull-requests/SKILL.md');
+    $merger = $read('.agents/skills/merging-pull-requests/SKILL.md');
+
+    expect($developer)
+        ->toContain('complete `.loop/` workspace')
+        ->toContain('pushes one commit that deletes `.loop/` and changes nothing else')
+        ->toContain('evaluates retained-proof equivalence')
+        ->toContain('fresh second approval of the removal head');
+    expect($reviewer)
+        ->toContain('sole parent to be the approved workspace head')
+        ->toContain('only deletions below `.loop/`')
+        ->toContain('retained proof to be `exact` or `equivalent`')
+        ->toContain('fresh review bound to the exact removal-head SHA');
+    expect($merger)
+        ->toContain('exact independently approved head')
+        ->toContain('still carries `.loop/`')
+        ->toContain('second independent `Approved.` review bound to the removal head')
+        ->toContain('exact second parent')
+        ->toContain('tree to equal the accepted head')
+        ->toContain('absence of `.loop/` from the merged tree')
+        ->toContain('bin/e2e-topology-snapshot promote <ISSUE>')
+        ->toContain('bin/worktree-remove <ISSUE> <slug>');
+    expect(substr_count($merger, 'Record the merge-command step as skipped exactly once.'))->toBe(1);
+});
+
 it('keeps issue creation current, atomic, and proof feasible', function () use ($read): void {
     $skill = $read('.agents/skills/creating-issues/SKILL.md');
 
@@ -178,7 +279,7 @@ it('keeps issue creation current, atomic, and proof feasible', function () use (
             'compatibility bridge',
         )->toContain('composer issue:lint')->toContain(
             'return a conflicting or incomplete issue to `Backlog` and write the `Readiness` section',
-        )->toContain('only the last is an action in `proofs/<ISSUE>.json`');
+        )->toContain('only the last is an action in `.loop/proof/<ISSUE>.json`');
 
     expect($skill)->toContain('which are not harness code');
 
@@ -255,14 +356,15 @@ it('keeps repository guidance and agent manifests current', function () use ($re
     expect($agents)->toContain('Production release is separate from development proof');
 
     expect($readme)
-        ->toContain('bin/worktree-create NCK-123 concise-feature-name')
+        ->toContain('bin/worktree-create ')
+        ->toContain(' concise-feature-name')
         ->toContain('independently invokable')
         ->toContain('optional task guides')
         ->toContain('contributors and coding')
         ->not->toContain('reconciliation');
 
     expect($developerManifest)
-        ->toContain('Todo Orbit issue')
+        ->toContain('Todo or In Progress Orbit issue')
         ->not->toContain('Ready Orbit issue');
 
     expect($decisions)

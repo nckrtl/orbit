@@ -9,12 +9,12 @@ use App\E2E\Value\OperationId;
 use App\E2E\Value\TopologyTarget;
 
 it('uses one inventory and parallel mutation batches before deleting the network', function (): void {
-    $target = featureTarget('NCK-123');
+    $target = featureTarget('TST-123');
     $operation = new OperationId(str_repeat('a', 32));
     $resources = [$target->network(), $target->instance('gateway'), $target->instance('app-dev')];
     $metadata = [
         'user.orbit.e2e.owner' => 'orbit-e2e',
-        'user.orbit.e2e.issue' => 'NCK-123',
+        'user.orbit.e2e.issue' => 'TST-123',
         'user.orbit.e2e.attempt' => $target->requireAttempt()->value,
         'user.orbit.e2e.operation' => $operation->value,
     ];
@@ -83,7 +83,7 @@ it('uses one inventory and parallel mutation batches before deleting the network
 });
 
 it('fails closed when the batch inventory is incomplete', function (): void {
-    $target = featureTarget('NCK-123');
+    $target = featureTarget('TST-123');
     $resources = [$target->network(), $target->instance('gateway')];
     $calls = 0;
     $rollback = new AcquisitionRollback(
@@ -97,7 +97,7 @@ it('fails closed when the batch inventory is incomplete', function (): void {
 });
 
 it('retains the network and every VM result when a VM batch mutation fails', function (string $failure): void {
-    $target = featureTarget('NCK-123');
+    $target = featureTarget('TST-123');
     $operation = new OperationId(str_repeat('a', 32));
     $resources = [$target->network(), $target->instance('gateway'), $target->instance('app-dev')];
     $metadata = [

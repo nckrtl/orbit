@@ -13,12 +13,11 @@ use InvalidArgumentException;
  */
 final readonly class ProofInputManifest
 {
-    public const int SCHEMA = 2;
+    public const int SCHEMA = 3;
 
     /**
      * @param list<string> $featureRuntimePaths
      * @param list<array{path:string,classification:string,mode:string,blob:string}> $staticInputs
-     * @param list<string> $fixtureIssues
      * @param list<string> $extraInputs
      * @param array{static_classification:bool,proof_contract:bool,checkout_literals:bool,observed_processes:bool,observed_paths:bool,pcov_cleanup:bool} $completeness
      */
@@ -29,7 +28,6 @@ final readonly class ProofInputManifest
         public array $featureRuntimePaths,
         public array $staticInputs,
         public string $proofPlanPath,
-        public array $fixtureIssues,
         public array $extraInputs,
         public ?ObservedPhpInputs $observedInputs,
         public array $completeness,
@@ -43,7 +41,6 @@ final readonly class ProofInputManifest
             throw new InvalidArgumentException('The proof-input manifest policy is invalid.');
         }
         $this->assertOrderedPaths($featureRuntimePaths, 'feature runtime');
-        $this->assertOrderedPaths($fixtureIssues, 'fixture issue', issueIds: true);
         $this->assertOrderedPaths($extraInputs, 'extra input');
         if (
             array_keys($completeness) !== [
@@ -124,9 +121,8 @@ final readonly class ProofInputManifest
             || ! is_array($value['feature_runtime_paths'])
             || ! is_array($value['static_inputs'])
             || ! is_array($value['proof_contract'])
-            || array_keys($value['proof_contract']) !== ['plan_path', 'fixture_issues', 'extra_inputs']
+            || array_keys($value['proof_contract']) !== ['plan_path', 'extra_inputs']
             || ! is_string($value['proof_contract']['plan_path'])
-            || ! is_array($value['proof_contract']['fixture_issues'])
             || ! is_array($value['proof_contract']['extra_inputs'])
             || ! is_array($value['completeness'])
             || $value['observed_inputs'] !== null
@@ -136,11 +132,6 @@ final readonly class ProofInputManifest
             || ! array_all($value['feature_runtime_paths'], static fn (mixed $item): bool => is_string($item))
             || ! array_is_list($value['static_inputs'])
             || ! array_all($value['static_inputs'], static fn (mixed $item): bool => is_array($item))
-            || ! array_is_list($value['proof_contract']['fixture_issues'])
-            || ! array_all(
-                $value['proof_contract']['fixture_issues'],
-                static fn (mixed $item): bool => is_string($item),
-            )
             || ! array_is_list($value['proof_contract']['extra_inputs'])
             || ! array_all(
                 $value['proof_contract']['extra_inputs'],
@@ -153,8 +144,6 @@ final readonly class ProofInputManifest
         $featureRuntimePaths = array_values($value['feature_runtime_paths']);
         /** @var list<array{path:string,classification:string,mode:string,blob:string}> $staticInputs */
         $staticInputs = array_values($value['static_inputs']);
-        /** @var list<string> $fixtureIssues */
-        $fixtureIssues = array_values($value['proof_contract']['fixture_issues']);
         /** @var list<string> $extraInputs */
         $extraInputs = array_values($value['proof_contract']['extra_inputs']);
         /** @var array{static_classification:bool,proof_contract:bool,checkout_literals:bool,observed_processes:bool,observed_paths:bool,pcov_cleanup:bool} $completeness */
@@ -169,7 +158,6 @@ final readonly class ProofInputManifest
             $featureRuntimePaths,
             $staticInputs,
             $value['proof_contract']['plan_path'],
-            $fixtureIssues,
             $extraInputs,
             $observedInputs,
             $completeness,
@@ -207,7 +195,6 @@ final readonly class ProofInputManifest
             'static_inputs' => $this->staticInputs,
             'proof_contract' => [
                 'plan_path' => $this->proofPlanPath,
-                'fixture_issues' => $this->fixtureIssues,
                 'extra_inputs' => $this->extraInputs,
             ],
             'observed_inputs' => $this->observedInputs?->toArray(),
@@ -216,18 +203,13 @@ final readonly class ProofInputManifest
     }
 
     /** @param list<mixed> $paths */
-    private function assertOrderedPaths(array $paths, string $label, bool $issueIds = false): void
+    private function assertOrderedPaths(array $paths, string $label): void
     {
         if (
             ! array_is_list($paths)
             || ! array_all(
                 $paths,
-                fn (mixed $path): bool => is_string($path)
-                && (
-                    $issueIds
-                        ? preg_match('/\A[A-Z][A-Z0-9]*-[1-9][0-9]*\z/D', $path) === 1
-                        : $this->safePath($path)
-                ),
+                fn (mixed $path): bool => is_string($path) && $this->safePath($path),
             )
         ) {
             throw new InvalidArgumentException("The proof-input manifest {$label} paths are invalid.");

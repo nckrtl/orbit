@@ -19,7 +19,7 @@ When pages disagree, the earlier page in this order is right and the later one i
 |---|---|---|---|
 | Core | `mission.md`, `architecture.md`, `tech-stack.md` | reader-first prose and links to the page that owns each detail | a fact another page owns |
 | Concept | `concepts.md` | one term, one self-sufficient definition | a definition that only works after following a link |
-| Reference | `reference/<topic>.md` | the contract: what a command or role does, its inputs, outputs, failure codes, and limits, as tables where a list of options exists | rationale, rejected alternatives, history, issue IDs outside a `proofs/<ID>/` fixture path, class names |
+| Reference | `reference/<topic>.md` | the contract: what a command or role does, its inputs, outputs, failure codes, and limits, as tables where a list of options exists | rationale, rejected alternatives, history, issue IDs outside a `.loop/proof/<ID>.json` plan path, class names |
 | Solution | `solutions/<slug>.md` | problem, cause, solution, limits, verification, for a lesson that recurs | the story of one issue or pull request |
 
 A domain page under `domains/` exists only when a feature needs a guide that no reference page can hold. A per-command page, a per-domain concept file, and a decisions ledger outside `docs/decisions` never exist.

@@ -16,7 +16,7 @@ use App\E2E\Value\VerificationReport;
 
 function mountedTopologyFixture(bool $mounted = true, ?array $mounts = null): FeatureTopology
 {
-    $target = TopologyTarget::feature('NCK-321', new AttemptId(str_repeat('a', 32)));
+    $target = TopologyTarget::feature('TST-321', new AttemptId(str_repeat('a', 32)));
     $mounts ??= $mounted
         ? [
             'gateway' => ['device' => 'orbit-source', 'source' => '/srv/wt', 'path' => '/home/orbit/orbit'],

@@ -67,7 +67,7 @@ function fakePreparerGuests(array $failures, array &$batches, array &$execs): vo
 
 function preparerTarget(): TopologyTarget
 {
-    return featureTarget('NCK-123');
+    return featureTarget('TST-123');
 }
 
 describe('mount.source', function () {

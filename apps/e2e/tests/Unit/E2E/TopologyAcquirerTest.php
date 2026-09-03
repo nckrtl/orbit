@@ -37,7 +37,7 @@ function legacyAcquisitionWorktree(): array
 {
     $sourceRoot = dirname(__DIR__, 5);
     $worktree = temporaryPath('orbit-legacy-acquisition-', 4);
-    $branch = 'orb-4-legacy-acquisition-'.bin2hex(random_bytes(6));
+    $branch = 'aux-4-legacy-acquisition-'.bin2hex(random_bytes(6));
     $processes = new ProcessFactory;
 
     expect(
@@ -128,7 +128,7 @@ it('refuses acquisition from a schema 4 generation before creating an attempt', 
         $state = new AtomicJsonStore($paths);
         $manifests = new TopologySnapshotManifestStore($state, $paths, new IncusHost(pool: 'orbit-e2e'));
         $manifests->promote(legacyAcquisitionGeneration());
-        $request = new TopologyRequest('ORB-4', $fixture['worktree']);
+        $request = new TopologyRequest('AUX-4', $fixture['worktree']);
 
         expect(
             fn () => topologyAcquirerWithLegacyGeneration(
@@ -138,7 +138,7 @@ it('refuses acquisition from a schema 4 generation before creating an attempt', 
             )->acquire($request),
         )
             ->toThrow(RuntimeException::class, 'legacy; refresh it before acquisition')
-            ->and(IssueState::forWorktree('ORB-4', $fixture['worktree'])->hasAttempt())
+            ->and(IssueState::forWorktree('AUX-4', $fixture['worktree'])->hasAttempt())
             ->toBeFalse();
     } finally {
         removeLegacyAcquisitionWorktree($fixture);

@@ -69,11 +69,11 @@ function incusGuestBatchCommands(): array
 {
     return [
         'first' => [
-            'instance' => 'orbit-e2e-nck-123-aaaaaaaa-gateway',
+            'instance' => 'orbit-e2e-tst-123-aaaaaaaa-gateway',
             'command' => new GuestCommand(['probe-one']),
         ],
         'second' => [
-            'instance' => 'orbit-e2e-nck-123-aaaaaaaa-gateway',
+            'instance' => 'orbit-e2e-tst-123-aaaaaaaa-gateway',
             'command' => new GuestCommand(['probe-two']),
         ],
     ];
@@ -95,7 +95,7 @@ function incusGuestHelperResult(PendingProcess $process, callable $result): Proc
 
 /** @mago-expect lint:excessive-parameter-list VM fixture fields stay explicit for exact inventory cases. */
 function vmJson(
-    string $name = 'orbit-e2e-nck-123-aaaaaaaa-gateway',
+    string $name = 'orbit-e2e-tst-123-aaaaaaaa-gateway',
     string $owner = 'orbit-e2e',
     string $type = 'virtual-machine',
     string $pool = 'orbit-e2e',
@@ -201,8 +201,8 @@ describe('IncusHost reads', function () {
                 $reads++;
 
                 return Process::result(json_encode([
-                    json_decode(vmJson('orbit-e2e-nck-123-aaaaaaaa-gateway'), true, 16, JSON_THROW_ON_ERROR)[0],
-                    json_decode(vmJson('orbit-e2e-nck-123-aaaaaaaa-app-dev'), true, 16, JSON_THROW_ON_ERROR)[0],
+                    json_decode(vmJson('orbit-e2e-tst-123-aaaaaaaa-gateway'), true, 16, JSON_THROW_ON_ERROR)[0],
+                    json_decode(vmJson('orbit-e2e-tst-123-aaaaaaaa-app-dev'), true, 16, JSON_THROW_ON_ERROR)[0],
                     json_decode(vmJson('orbit-e2e-other-gateway'), true, 16, JSON_THROW_ON_ERROR)[0],
                 ], JSON_THROW_ON_ERROR));
             }
@@ -211,12 +211,12 @@ describe('IncusHost reads', function () {
         });
 
         $instances = incusHost()->instances([
-            'orbit-e2e-nck-123-aaaaaaaa-gateway',
-            'orbit-e2e-nck-123-aaaaaaaa-app-dev',
+            'orbit-e2e-tst-123-aaaaaaaa-gateway',
+            'orbit-e2e-tst-123-aaaaaaaa-app-dev',
         ]);
 
         expect(array_keys($instances))
-            ->toBe(['orbit-e2e-nck-123-aaaaaaaa-gateway', 'orbit-e2e-nck-123-aaaaaaaa-app-dev'])
+            ->toBe(['orbit-e2e-tst-123-aaaaaaaa-gateway', 'orbit-e2e-tst-123-aaaaaaaa-app-dev'])
             ->and($reads)
             ->toBe(1);
     });
@@ -254,9 +254,9 @@ describe('IncusHost reads', function () {
                 $inventoryReads++;
 
                 return Process::result(json_encode([
-                    json_decode(vmJson('orbit-e2e-nck-123-aaaaaaaa-gateway'), true, 16, JSON_THROW_ON_ERROR)[0],
-                    json_decode(vmJson('orbit-e2e-nck-123-aaaaaaaa-app-dev'), true, 16, JSON_THROW_ON_ERROR)[0],
-                    json_decode(vmJson('orbit-e2e-nck-123-aaaaaaaa-app-prod'), true, 16, JSON_THROW_ON_ERROR)[0],
+                    json_decode(vmJson('orbit-e2e-tst-123-aaaaaaaa-gateway'), true, 16, JSON_THROW_ON_ERROR)[0],
+                    json_decode(vmJson('orbit-e2e-tst-123-aaaaaaaa-app-dev'), true, 16, JSON_THROW_ON_ERROR)[0],
+                    json_decode(vmJson('orbit-e2e-tst-123-aaaaaaaa-app-prod'), true, 16, JSON_THROW_ON_ERROR)[0],
                 ], JSON_THROW_ON_ERROR));
             }
 
@@ -277,9 +277,9 @@ describe('IncusHost reads', function () {
         });
 
         $addresses = incusHost()->globalIpv4All([
-            'gateway' => 'orbit-e2e-nck-123-aaaaaaaa-gateway',
-            'app-dev' => 'orbit-e2e-nck-123-aaaaaaaa-app-dev',
-            'app-prod' => 'orbit-e2e-nck-123-aaaaaaaa-app-prod',
+            'gateway' => 'orbit-e2e-tst-123-aaaaaaaa-gateway',
+            'app-dev' => 'orbit-e2e-tst-123-aaaaaaaa-app-dev',
+            'app-prod' => 'orbit-e2e-tst-123-aaaaaaaa-app-prod',
         ]);
 
         expect($addresses)
@@ -307,7 +307,7 @@ describe('IncusHost reads', function () {
             ]);
         });
 
-        expect(incusHost()->globalIpv4('orbit-e2e-nck-123-aaaaaaaa-gateway'))->toBe('192.0.2.44');
+        expect(incusHost()->globalIpv4('orbit-e2e-tst-123-aaaaaaaa-gateway'))->toBe('192.0.2.44');
     });
 
     it('fails when the IPv4 probe fails', function () {
@@ -322,7 +322,7 @@ describe('IncusHost reads', function () {
                 'exit_code' => 1,
             ]);
         });
-        expect(fn () => incusHost()->globalIpv4('orbit-e2e-nck-123-aaaaaaaa-gateway'))
+        expect(fn () => incusHost()->globalIpv4('orbit-e2e-tst-123-aaaaaaaa-gateway'))
             ->toThrow(RuntimeException::class, 'Failed to read global IPv4 address');
     });
 
@@ -338,7 +338,7 @@ describe('IncusHost reads', function () {
                 'exit_code' => 0,
             ]);
         });
-        expect(fn () => incusHost()->globalIpv4('orbit-e2e-nck-123-aaaaaaaa-gateway'))
+        expect(fn () => incusHost()->globalIpv4('orbit-e2e-tst-123-aaaaaaaa-gateway'))
             ->toThrow(RuntimeException::class, 'has no usable global IPv4 address');
     });
 
@@ -357,7 +357,7 @@ describe('IncusHost reads', function () {
             ]);
         });
 
-        expect(fn () => incusHost()->globalIpv4('orbit-e2e-nck-123-aaaaaaaa-gateway'))
+        expect(fn () => incusHost()->globalIpv4('orbit-e2e-tst-123-aaaaaaaa-gateway'))
             ->toThrow(RuntimeException::class, 'does not have exactly one usable global IPv4 address');
     });
 
@@ -371,7 +371,7 @@ describe('IncusHost reads', function () {
     it('assigns the legacy deterministic Incus MAC address', function () {
         Process::fake(function (PendingProcess $process) {
             return match ($process->command) {
-                incusCommand('list', incusTarget('orbit-e2e-nck-123-aaaaaaaa-gateway'), '--format=json')
+                incusCommand('list', incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'), '--format=json')
                     => Process::result(
                     vmJson(),
                 ),
@@ -379,7 +379,7 @@ describe('IncusHost reads', function () {
                     'config',
                     'device',
                     'override',
-                    incusTarget('orbit-e2e-nck-123-aaaaaaaa-gateway'),
+                    incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'),
                     'eth0',
                     'hwaddr=00:16:3e:5e:4b:52',
                 )
@@ -388,13 +388,13 @@ describe('IncusHost reads', function () {
             };
         });
 
-        incusHost()->setDeterministicMac('orbit-e2e-nck-123-aaaaaaaa-gateway', 'run', 'gateway');
+        incusHost()->setDeterministicMac('orbit-e2e-tst-123-aaaaaaaa-gateway', 'run', 'gateway');
 
         Process::assertRan(incusCommand(
             'config',
             'device',
             'override',
-            incusTarget('orbit-e2e-nck-123-aaaaaaaa-gateway'),
+            incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'),
             'eth0',
             'hwaddr=00:16:3e:5e:4b:52',
         ));
@@ -409,7 +409,7 @@ describe('IncusHost reads', function () {
 
                 return Process::result(json_encode(array_map(
                     static fn (string $role): array => json_decode(
-                        vmJson("orbit-e2e-nck-123-aaaaaaaa-{$role}"),
+                        vmJson("orbit-e2e-tst-123-aaaaaaaa-{$role}"),
                         true,
                         16,
                         JSON_THROW_ON_ERROR,
@@ -430,9 +430,9 @@ describe('IncusHost reads', function () {
         });
 
         incusHost()->configureCloneNetworks([
-            'gateway' => 'orbit-e2e-nck-123-aaaaaaaa-gateway',
-            'app-dev' => 'orbit-e2e-nck-123-aaaaaaaa-app-dev',
-            'app-prod' => 'orbit-e2e-nck-123-aaaaaaaa-app-prod',
+            'gateway' => 'orbit-e2e-tst-123-aaaaaaaa-gateway',
+            'app-dev' => 'orbit-e2e-tst-123-aaaaaaaa-app-dev',
+            'app-prod' => 'orbit-e2e-tst-123-aaaaaaaa-app-prod',
         ], 'oe-b32d6c83af72');
 
         expect($instanceReads)
@@ -446,7 +446,7 @@ describe('IncusHost reads', function () {
                 'config',
                 'device',
                 'override',
-                incusTarget('orbit-e2e-nck-123-aaaaaaaa-'.$role),
+                incusTarget('orbit-e2e-tst-123-aaaaaaaa-'.$role),
                 'eth0',
                 'network=oe-b32d6c83af72',
                 'ipv4.address='.match ($role) {
@@ -467,7 +467,7 @@ describe('IncusHost reads', function () {
             $mac = '00:16:3e:'.implode(':', str_split($hash, 2));
             $resources[] = json_decode(
                 vmJson(
-                    "orbit-e2e-nck-123-aaaaaaaa-{$role}",
+                    "orbit-e2e-tst-123-aaaaaaaa-{$role}",
                     network: $network,
                     mac: $mac,
                     ipv4: '10.232.30.'.(10 + $offset),
@@ -499,9 +499,9 @@ describe('IncusHost reads', function () {
         });
 
         incusHost()->assertTopologyNetworkIdentity([
-            'gateway' => 'orbit-e2e-nck-123-aaaaaaaa-gateway',
-            'app-dev' => 'orbit-e2e-nck-123-aaaaaaaa-app-dev',
-            'app-prod' => 'orbit-e2e-nck-123-aaaaaaaa-app-prod',
+            'gateway' => 'orbit-e2e-tst-123-aaaaaaaa-gateway',
+            'app-dev' => 'orbit-e2e-tst-123-aaaaaaaa-app-dev',
+            'app-prod' => 'orbit-e2e-tst-123-aaaaaaaa-app-prod',
         ], $network);
 
         expect($reads)->toBe(1);
@@ -524,14 +524,14 @@ describe('IncusHost reads', function () {
             }
 
             return Process::result(vmJson(
-                'orbit-e2e-nck-123-aaaaaaaa-gateway',
+                'orbit-e2e-tst-123-aaaaaaaa-gateway',
                 network: 'oe-b32d6c83af72',
                 mac: '00:16:3e:00:00:00',
             ));
         });
 
         expect(fn () => incusHost()->assertTopologyNetworkIdentity([
-            'gateway' => 'orbit-e2e-nck-123-aaaaaaaa-gateway',
+            'gateway' => 'orbit-e2e-tst-123-aaaaaaaa-gateway',
         ], 'oe-b32d6c83af72'))
             ->toThrow(RuntimeException::class, 'MAC identity does not match topology');
     });
@@ -558,7 +558,7 @@ describe('IncusHost reads', function () {
         });
 
         expect(fn () => incusHost()->assertTopologyNetworkIdentity([
-            'gateway' => 'orbit-e2e-nck-123-aaaaaaaa-gateway',
+            'gateway' => 'orbit-e2e-tst-123-aaaaaaaa-gateway',
         ], $network))
             ->toThrow(RuntimeException::class, 'IPv4 identity does not match topology');
     });
@@ -570,7 +570,7 @@ describe('IncusHost reads', function () {
         Process::fake(function (PendingProcess $process) use ($network, $mac) {
             return match ($process->command) {
                 incusCommand('list', incusTarget(), '--format=json') => Process::result(vmJson(
-                    'orbit-e2e-nck-123-aaaaaaaa-gateway',
+                    'orbit-e2e-tst-123-aaaaaaaa-gateway',
                     network: $network,
                     mac: $mac,
                 )),
@@ -583,7 +583,7 @@ describe('IncusHost reads', function () {
         });
 
         expect(fn () => incusHost()->assertTopologyNetworkIdentity([
-            'gateway' => 'orbit-e2e-nck-123-aaaaaaaa-gateway',
+            'gateway' => 'orbit-e2e-tst-123-aaaaaaaa-gateway',
         ], $network))
             ->toThrow(RuntimeException::class, 'network oe-b32d6c83af72 ownership metadata does not match');
     });
@@ -591,7 +591,7 @@ describe('IncusHost reads', function () {
     it('attaches a network only with the deterministic topology MAC', function () {
         Process::fake(function (PendingProcess $process) {
             return match ($process->command) {
-                incusCommand('list', incusTarget('orbit-e2e-nck-123-aaaaaaaa-gateway'), '--format=json')
+                incusCommand('list', incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'), '--format=json')
                     => Process::result(
                     vmJson(),
                 ),
@@ -607,7 +607,7 @@ describe('IncusHost reads', function () {
         });
 
         incusHost()->setNetwork(
-            'orbit-e2e-nck-123-aaaaaaaa-gateway',
+            'orbit-e2e-tst-123-aaaaaaaa-gateway',
             'oe-b32d6c83af72',
             'gateway',
         );
@@ -616,7 +616,7 @@ describe('IncusHost reads', function () {
             'config',
             'device',
             'override',
-            incusTarget('orbit-e2e-nck-123-aaaaaaaa-gateway'),
+            incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'),
             'eth0',
             'network=oe-b32d6c83af72',
             'ipv4.address=10.232.30.10',
@@ -628,7 +628,7 @@ describe('IncusHost reads', function () {
         $fingerprint = str_repeat('a', 64);
         Process::fake(function (PendingProcess $process) use ($fingerprint) {
             return match ($process->command) {
-                incusCommand('list', incusTarget('orbit-e2e-nck-123-aaaaaaaa-gateway'), '--format=json')
+                incusCommand('list', incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'), '--format=json')
                     => Process::result(
                     vmJson(),
                 ),
@@ -637,7 +637,7 @@ describe('IncusHost reads', function () {
                     vmJson('orbit-e2e-topology-snapshot-gateway'),
                 ),
                 incusCommand('network', 'list', incusTarget(), '--format=json') => Process::result(json_encode([
-                    ['name' => 'orbit-e2e-nck-123', 'config' => ['user.orbit.e2e.owner' => 'orbit-e2e']],
+                    ['name' => 'orbit-e2e-tst-123', 'config' => ['user.orbit.e2e.owner' => 'orbit-e2e']],
                 ], JSON_THROW_ON_ERROR)),
                 incusCommand('image', 'list', 'images:', 'ubuntu/26.04', '--format=json')
                     => Process::result(json_encode([[
@@ -650,7 +650,7 @@ describe('IncusHost reads', function () {
         });
 
         $host = incusHost();
-        $instance = $host->instance('orbit-e2e-nck-123-aaaaaaaa-gateway');
+        $instance = $host->instance('orbit-e2e-tst-123-aaaaaaaa-gateway');
 
         expect($instance)
             ->toBeInstanceOf(IncusInstance::class)
@@ -658,8 +658,8 @@ describe('IncusHost reads', function () {
             ->toBe('orbit-e2e')
             ->and($instance?->isStopped())
             ->toBeTrue()
-            ->and($host->network('orbit-e2e-nck-123')?->name)
-            ->toBe('orbit-e2e-nck-123')
+            ->and($host->network('orbit-e2e-tst-123')?->name)
+            ->toBe('orbit-e2e-tst-123')
             ->and($host->imageFingerprint('images:ubuntu/26.04'))
             ->toBe($fingerprint);
     });
@@ -667,22 +667,22 @@ describe('IncusHost reads', function () {
     it('returns null when an exact identity is absent', function () {
         Process::fake([
             '*' => Process::result(json_encode([
-                ['name' => 'orbit-e2e-nck-123-aaaaaaaa-app-dev', 'type' => 'virtual-machine'],
+                ['name' => 'orbit-e2e-tst-123-aaaaaaaa-app-dev', 'type' => 'virtual-machine'],
             ], JSON_THROW_ON_ERROR)),
         ]);
 
-        expect(incusHost()->instance('orbit-e2e-nck-123-aaaaaaaa-gateway'))->toBeNull();
+        expect(incusHost()->instance('orbit-e2e-tst-123-aaaaaaaa-gateway'))->toBeNull();
     });
 
     it('rejects malformed network configuration', function (array $configuration) {
         Process::fake([
             '*' => Process::result(json_encode([[
-                'name' => 'orbit-e2e-nck-123',
+                'name' => 'orbit-e2e-tst-123',
                 'config' => $configuration,
             ]], JSON_THROW_ON_ERROR)),
         ]);
 
-        expect(fn () => incusHost()->network('orbit-e2e-nck-123'))
+        expect(fn () => incusHost()->network('orbit-e2e-tst-123'))
             ->toThrow(RuntimeException::class, 'Incus returned invalid resource configuration.');
     })->with([
         'numeric key' => [['ipv4.nat']],
@@ -715,7 +715,7 @@ describe('IncusHost reads', function () {
             expect($process->command)->toBe(incusCommand(
                 'init',
                 'images:ubuntu/26.04',
-                incusTarget('orbit-e2e-nck-123-aaaaaaaa-gateway'),
+                incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'),
                 '--vm',
                 '--storage',
                 'orbit-e2e',
@@ -728,7 +728,7 @@ describe('IncusHost reads', function () {
                 '--device',
                 'root,size=16GiB',
                 '--network',
-                'orbit-e2e-nck-123',
+                'orbit-e2e-tst-123',
                 '--config',
                 'user.orbit.e2e.owner=orbit-e2e',
             ));
@@ -736,7 +736,7 @@ describe('IncusHost reads', function () {
             return Process::result();
         });
 
-        incusHost()->initVm('images:ubuntu/26.04', 'orbit-e2e-nck-123-aaaaaaaa-gateway', 'orbit-e2e-nck-123');
+        incusHost()->initVm('images:ubuntu/26.04', 'orbit-e2e-tst-123-aaaaaaaa-gateway', 'orbit-e2e-tst-123');
     });
 
     it('accepts validated creation metadata without allowing ownership override', function () {
@@ -747,14 +747,14 @@ describe('IncusHost reads', function () {
             return Process::result();
         });
 
-        incusHost()->initVm('images:ubuntu/26.04', 'orbit-e2e-nck-123-aaaaaaaa-gateway', 'orbit-e2e-nck-123', [
+        incusHost()->initVm('images:ubuntu/26.04', 'orbit-e2e-tst-123-aaaaaaaa-gateway', 'orbit-e2e-tst-123', [
             'user.orbit.e2e.operation' => 'op-1',
             'user.orbit.e2e.evidence' => 'ev-1',
         ]);
     });
 
     it('rejects creation metadata that overrides ownership', function () {
-        expect(fn () => incusHost()->initVm('orbit-base', 'orbit-e2e-nck-123-aaaaaaaa-gateway', 'orbit-e2e-nck-123', [
+        expect(fn () => incusHost()->initVm('orbit-base', 'orbit-e2e-tst-123-aaaaaaaa-gateway', 'orbit-e2e-tst-123', [
             'user.orbit.e2e.owner' => 'attacker',
         ]))->toThrow(RuntimeException::class, 'cannot override ownership metadata');
     });
@@ -762,7 +762,7 @@ describe('IncusHost reads', function () {
     it('rejects missing or contradictory VM power status', function () {
         Process::fake(['*' => Process::result(str_replace('"status_code":102', '"status_code":103', vmJson()))]);
 
-        expect(fn () => incusHost()->instance('orbit-e2e-nck-123-aaaaaaaa-gateway'))
+        expect(fn () => incusHost()->instance('orbit-e2e-tst-123-aaaaaaaa-gateway'))
             ->toThrow(InvalidArgumentException::class, 'power status');
 
         Process::fake(['*' => Process::result(str_replace(
@@ -771,24 +771,24 @@ describe('IncusHost reads', function () {
             vmJson(),
         ))]);
 
-        expect(fn () => incusHost()->instance('orbit-e2e-nck-123-aaaaaaaa-gateway'))
+        expect(fn () => incusHost()->instance('orbit-e2e-tst-123-aaaaaaaa-gateway'))
             ->toThrow(RuntimeException::class, 'no valid power status');
     });
 
     it('rejects malformed JSON and wrong instance types', function () {
         Process::fake(['*' => Process::result('{')]);
-        expect(fn () => incusHost()->instance('orbit-e2e-nck-123-aaaaaaaa-gateway'))
+        expect(fn () => incusHost()->instance('orbit-e2e-tst-123-aaaaaaaa-gateway'))
             ->toThrow(RuntimeException::class, 'malformed JSON');
 
         Process::fake(['*' => Process::result(vmJson(type: 'container'))]);
-        expect(fn () => incusHost()->instance('orbit-e2e-nck-123-aaaaaaaa-gateway'))
+        expect(fn () => incusHost()->instance('orbit-e2e-tst-123-aaaaaaaa-gateway'))
             ->toThrow(RuntimeException::class, 'not a virtual machine');
     });
 
     it('rejects an instance from a different storage pool', function () {
         Process::fake(['*' => Process::result(vmJson(pool: 'unrelated'))]);
 
-        expect(fn () => incusHost()->instance('orbit-e2e-nck-123-aaaaaaaa-gateway'))
+        expect(fn () => incusHost()->instance('orbit-e2e-tst-123-aaaaaaaa-gateway'))
             ->toThrow(RuntimeException::class, 'storage pool identity does not match');
     });
 });
@@ -834,8 +834,8 @@ describe('IncusHost mutations', function () {
             return Process::result();
         });
         $host = incusHost();
-        $host->instances(['orbit-e2e-nck-123-aaaaaaaa-gateway']);
-        expect(fn () => $host->resetClonedHostState('orbit-e2e-nck-123-aaaaaaaa-gateway'))
+        $host->instances(['orbit-e2e-tst-123-aaaaaaaa-gateway']);
+        expect(fn () => $host->resetClonedHostState('orbit-e2e-tst-123-aaaaaaaa-gateway'))
             ->toThrow(RuntimeException::class, 'ownership metadata');
         expect($reads)->toBe(2);
     });
@@ -848,7 +848,7 @@ describe('IncusHost mutations', function () {
                         str_replace(
                             ['"status":"Stopped"', '"status_code":102'],
                             ['"status":"Running"', '"status_code":103'],
-                            vmJson('orbit-e2e-nck-123-aaaaaaaa-gateway'),
+                            vmJson('orbit-e2e-tst-123-aaaaaaaa-gateway'),
                         ),
                         true,
                     )[0],
@@ -856,7 +856,7 @@ describe('IncusHost mutations', function () {
                         str_replace(
                             ['"status":"Stopped"', '"status_code":102'],
                             ['"status":"Running"', '"status_code":103'],
-                            vmJson('orbit-e2e-nck-123-aaaaaaaa-app-dev'),
+                            vmJson('orbit-e2e-tst-123-aaaaaaaa-app-dev'),
                         ),
                         true,
                     )[0],
@@ -868,9 +868,9 @@ describe('IncusHost mutations', function () {
 
             return Process::result();
         });
-        incusHost()->stopAll(['orbit-e2e-nck-123-aaaaaaaa-gateway', 'orbit-e2e-nck-123-aaaaaaaa-app-dev']);
-        Process::assertRan(incusCommand('stop', incusTarget('orbit-e2e-nck-123-aaaaaaaa-gateway'), '--force'));
-        Process::assertRan(incusCommand('stop', incusTarget('orbit-e2e-nck-123-aaaaaaaa-app-dev'), '--force'));
+        incusHost()->stopAll(['orbit-e2e-tst-123-aaaaaaaa-gateway', 'orbit-e2e-tst-123-aaaaaaaa-app-dev']);
+        Process::assertRan(incusCommand('stop', incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'), '--force'));
+        Process::assertRan(incusCommand('stop', incusTarget('orbit-e2e-tst-123-aaaaaaaa-app-dev'), '--force'));
     });
 
     it('initializes topology snapshot VMs in parallel with deterministic topology MAC addresses', function () {
@@ -936,7 +936,7 @@ describe('IncusHost mutations', function () {
 
             expect($process->command)->toBe(incusCommand(
                 'exec',
-                incusTarget('orbit-e2e-nck-123-aaaaaaaa-gateway'),
+                incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'),
                 '--',
                 'sh',
                 '-c',
@@ -946,11 +946,11 @@ describe('IncusHost mutations', function () {
             return Process::result();
         });
 
-        incusHost()->resetClonedHostState('orbit-e2e-nck-123-aaaaaaaa-gateway');
+        incusHost()->resetClonedHostState('orbit-e2e-tst-123-aaaaaaaa-gateway');
 
         Process::assertRan(incusCommand(
             'exec',
-            incusTarget('orbit-e2e-nck-123-aaaaaaaa-gateway'),
+            incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'),
             '--',
             'sh',
             '-c',
@@ -967,7 +967,7 @@ describe('IncusHost mutations', function () {
             return Process::result('', 'restart failed', 1);
         });
 
-        expect(fn () => incusHost()->resetClonedHostState('orbit-e2e-nck-123-aaaaaaaa-gateway'))
+        expect(fn () => incusHost()->resetClonedHostState('orbit-e2e-tst-123-aaaaaaaa-gateway'))
             ->toThrow(RuntimeException::class, 'Failed to reset cloned host state');
     });
 
@@ -979,7 +979,7 @@ describe('IncusHost mutations', function () {
     it('does not start an already running owned VM', function () {
         Process::fake(function (PendingProcess $process) {
             return match ($process->command) {
-                incusCommand('list', incusTarget('orbit-e2e-nck-123-aaaaaaaa-gateway'), '--format=json')
+                incusCommand('list', incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'), '--format=json')
                     => Process::result(
                     str_replace(
                         ['"status":"Stopped"', '"status_code":102'],
@@ -991,50 +991,50 @@ describe('IncusHost mutations', function () {
             };
         });
 
-        incusHost()->start('orbit-e2e-nck-123-aaaaaaaa-gateway');
+        incusHost()->start('orbit-e2e-tst-123-aaaaaaaa-gateway');
 
-        Process::assertNotRan(incusCommand('start', incusTarget('orbit-e2e-nck-123-aaaaaaaa-gateway')));
+        Process::assertNotRan(incusCommand('start', incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway')));
     });
 
     it('force-stops the exact owned VM when graceful stop fails', function () {
         Process::fake(function (PendingProcess $process) {
             return match ($process->command) {
-                incusCommand('list', incusTarget('orbit-e2e-nck-123-aaaaaaaa-gateway'), '--format=json')
+                incusCommand('list', incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'), '--format=json')
                     => Process::result(
                     vmJson(),
                 ),
-                incusCommand('stop', incusTarget('orbit-e2e-nck-123-aaaaaaaa-gateway')) => Process::result(
+                incusCommand('stop', incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway')) => Process::result(
                     '',
                     'graceful stop failed',
                     1,
                 ),
-                incusCommand('stop', incusTarget('orbit-e2e-nck-123-aaaaaaaa-gateway'), '--force') => Process::result(),
+                incusCommand('stop', incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'), '--force') => Process::result(),
                 default => Process::result('', 'Unexpected command.', 1),
             };
         });
 
-        incusHost()->stop('orbit-e2e-nck-123-aaaaaaaa-gateway');
+        incusHost()->stop('orbit-e2e-tst-123-aaaaaaaa-gateway');
 
         Process::assertRanInOrder([
-            incusCommand('list', incusTarget('orbit-e2e-nck-123-aaaaaaaa-gateway'), '--format=json'),
-            incusCommand('stop', incusTarget('orbit-e2e-nck-123-aaaaaaaa-gateway')),
-            incusCommand('stop', incusTarget('orbit-e2e-nck-123-aaaaaaaa-gateway'), '--force'),
+            incusCommand('list', incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'), '--format=json'),
+            incusCommand('stop', incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway')),
+            incusCommand('stop', incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'), '--force'),
         ]);
     });
 
     it('exposes the forced stop failure when graceful stop also fails', function () {
         Process::fake(function (PendingProcess $process) {
             return match ($process->command) {
-                incusCommand('list', incusTarget('orbit-e2e-nck-123-aaaaaaaa-gateway'), '--format=json')
+                incusCommand('list', incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'), '--format=json')
                     => Process::result(
                     vmJson(),
                 ),
-                incusCommand('stop', incusTarget('orbit-e2e-nck-123-aaaaaaaa-gateway')) => Process::result(
+                incusCommand('stop', incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway')) => Process::result(
                     '',
                     'graceful stop failed',
                     1,
                 ),
-                incusCommand('stop', incusTarget('orbit-e2e-nck-123-aaaaaaaa-gateway'), '--force') => Process::result(
+                incusCommand('stop', incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'), '--force') => Process::result(
                     '',
                     'forced stop failed',
                     1,
@@ -1043,7 +1043,7 @@ describe('IncusHost mutations', function () {
             };
         });
 
-        expect(fn () => incusHost()->stop('orbit-e2e-nck-123-aaaaaaaa-gateway'))
+        expect(fn () => incusHost()->stop('orbit-e2e-tst-123-aaaaaaaa-gateway'))
             ->toThrow(RuntimeException::class, 'forced stop failed');
     });
 
@@ -1057,7 +1057,7 @@ describe('IncusHost mutations', function () {
                     static fn (string $name): array => json_decode(
                         str_replace(
                             ['"status":"Stopped"', '"status_code":102'],
-                            $inventoryReads === 1 || $name === 'orbit-e2e-nck-123-aaaaaaaa-app-dev'
+                            $inventoryReads === 1 || $name === 'orbit-e2e-tst-123-aaaaaaaa-app-dev'
                                 ? ['"status":"Running"', '"status_code":103']
                                 : ['"status":"Stopped"', '"status_code":102'],
                             vmJson($name),
@@ -1066,36 +1066,36 @@ describe('IncusHost mutations', function () {
                         16,
                         JSON_THROW_ON_ERROR,
                     )[0],
-                    ['orbit-e2e-nck-123-aaaaaaaa-gateway', 'orbit-e2e-nck-123-aaaaaaaa-app-dev'],
+                    ['orbit-e2e-tst-123-aaaaaaaa-gateway', 'orbit-e2e-tst-123-aaaaaaaa-app-dev'],
                 ), JSON_THROW_ON_ERROR));
             }
 
             return match ($process->command) {
-                incusCommand('stop', incusTarget('orbit-e2e-nck-123-aaaaaaaa-gateway')) => Process::result(),
-                incusCommand('stop', incusTarget('orbit-e2e-nck-123-aaaaaaaa-app-dev')) => Process::result(
+                incusCommand('stop', incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway')) => Process::result(),
+                incusCommand('stop', incusTarget('orbit-e2e-tst-123-aaaaaaaa-app-dev')) => Process::result(
                     '',
                     'graceful stop failed',
                     1,
                 ),
-                incusCommand('stop', incusTarget('orbit-e2e-nck-123-aaaaaaaa-app-dev'), '--force') => Process::result(),
+                incusCommand('stop', incusTarget('orbit-e2e-tst-123-aaaaaaaa-app-dev'), '--force') => Process::result(),
                 default => Process::result('', 'Unexpected command.', 1),
             };
         });
 
         incusHost()->stopAll([
-            'orbit-e2e-nck-123-aaaaaaaa-gateway',
-            'orbit-e2e-nck-123-aaaaaaaa-app-dev',
+            'orbit-e2e-tst-123-aaaaaaaa-gateway',
+            'orbit-e2e-tst-123-aaaaaaaa-app-dev',
         ]);
 
         expect($inventoryReads)->toBe(2);
         Process::assertRan(incusCommand(
             'stop',
-            incusTarget('orbit-e2e-nck-123-aaaaaaaa-app-dev'),
+            incusTarget('orbit-e2e-tst-123-aaaaaaaa-app-dev'),
             '--force',
         ));
         Process::assertNotRan(incusCommand(
             'stop',
-            incusTarget('orbit-e2e-nck-123-aaaaaaaa-gateway'),
+            incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'),
             '--force',
         ));
     });
@@ -1107,7 +1107,7 @@ describe('IncusHost mutations', function () {
                 incusCommand('list', incusTarget(), '--format=json') => Process::result(
                     vmJson(),
                 ),
-                incusCommand('exec', incusTarget('orbit-e2e-nck-123-aaaaaaaa-gateway'), '--', '/bin/true') => ++$probes
+                incusCommand('exec', incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'), '--', '/bin/true') => ++$probes
                     === 1
                         ? Process::result('', 'agent not ready', 1)
                         : Process::result(),
@@ -1115,12 +1115,12 @@ describe('IncusHost mutations', function () {
             };
         });
 
-        incusHost()->waitForAgents(['orbit-e2e-nck-123-aaaaaaaa-gateway']);
+        incusHost()->waitForAgents(['orbit-e2e-tst-123-aaaaaaaa-gateway']);
 
         expect($probes)->toBe(2);
         Process::assertRan(incusCommand(
             'exec',
-            incusTarget('orbit-e2e-nck-123-aaaaaaaa-gateway'),
+            incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'),
             '--',
             '/bin/true',
         ));
@@ -1146,7 +1146,7 @@ describe('IncusHost mutations', function () {
             return Process::result();
         });
 
-        incusHost()->waitForAgents(['orbit-e2e-nck-123-aaaaaaaa-gateway']);
+        incusHost()->waitForAgents(['orbit-e2e-tst-123-aaaaaaaa-gateway']);
 
         expect($probes)->toBe(2);
     });
@@ -1168,7 +1168,7 @@ describe('IncusHost mutations', function () {
             pool: 'orbit-e2e',
             guestReadinessTimeoutSeconds: 1,
         )
-            ->waitForAgents(['orbit-e2e-nck-123-aaaaaaaa-gateway']))
+            ->waitForAgents(['orbit-e2e-tst-123-aaaaaaaa-gateway']))
             ->toThrow(RuntimeException::class, 'Timed out waiting for Incus guest agents')
             ->and($probes)
             ->toBe(1);
@@ -1180,11 +1180,11 @@ describe('IncusHost mutations', function () {
         Process::assertNothingRan();
     })->with([
         'empty' => [[]],
-        'duplicate' => [['orbit-e2e-nck-123-aaaaaaaa-gateway', 'orbit-e2e-nck-123-aaaaaaaa-gateway']],
+        'duplicate' => [['orbit-e2e-tst-123-aaaaaaaa-gateway', 'orbit-e2e-tst-123-aaaaaaaa-gateway']],
     ]);
 
     it('waits for IPv4 on the guest default-route interface', function () {
-        $instance = 'orbit-e2e-nck-123-aaaaaaaa-gateway';
+        $instance = 'orbit-e2e-tst-123-aaaaaaaa-gateway';
         Process::fake(function (PendingProcess $process) use ($instance) {
             return match ($process->command) {
                 incusCommand('list', incusTarget(), '--format=json') => Process::result(vmJson($instance)),
@@ -1201,7 +1201,7 @@ describe('IncusHost mutations', function () {
     });
 
     it('waits for restored guests on their default-route interfaces', function () {
-        $instance = 'orbit-e2e-nck-123-aaaaaaaa-gateway';
+        $instance = 'orbit-e2e-tst-123-aaaaaaaa-gateway';
         Process::fake(function (PendingProcess $process) use ($instance) {
             return match ($process->command) {
                 incusCommand('list', incusTarget(), '--format=json') => Process::result(vmJson($instance)),
@@ -1219,8 +1219,8 @@ describe('IncusHost mutations', function () {
     });
 
     it('waits for IPv4 then resets each cloned guest without a global role barrier', function () {
-        $gateway = 'orbit-e2e-nck-123-aaaaaaaa-gateway';
-        $appDev = 'orbit-e2e-nck-123-aaaaaaaa-app-dev';
+        $gateway = 'orbit-e2e-tst-123-aaaaaaaa-gateway';
+        $appDev = 'orbit-e2e-tst-123-aaaaaaaa-app-dev';
         $appDevAgentProbes = 0;
         $events = [];
         Process::fake(function (PendingProcess $process) use ($gateway, $appDev, &$appDevAgentProbes, &$events) {
@@ -1275,7 +1275,7 @@ describe('IncusHost mutations', function () {
     });
 
     it('retries an idempotent clone identity reset after a transient pool failure', function () {
-        $instance = 'orbit-e2e-nck-123-aaaaaaaa-gateway';
+        $instance = 'orbit-e2e-tst-123-aaaaaaaa-gateway';
         $resetAttempts = 0;
         Process::fake(function (PendingProcess $process) use ($instance, &$resetAttempts) {
             if ($process->command === incusCommand('list', incusTarget(), '--format=json')) {
@@ -1308,7 +1308,7 @@ describe('IncusHost mutations', function () {
     });
 
     it('waits for default-route IPv4 before resetting a cloned guest identity', function () {
-        $instance = 'orbit-e2e-nck-123-aaaaaaaa-gateway';
+        $instance = 'orbit-e2e-tst-123-aaaaaaaa-gateway';
         $ipv4Probes = 0;
         $resetAttempts = 0;
         Process::fake(function (PendingProcess $process) use ($instance, &$ipv4Probes, &$resetAttempts) {
@@ -1353,7 +1353,7 @@ describe('IncusHost mutations', function () {
             if (
                 $process->command === incusCommand(
                     'list',
-                    incusTarget('orbit-e2e-nck-123-aaaaaaaa-gateway'),
+                    incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'),
                     '--format=json',
                 )
             ) {
@@ -1365,7 +1365,7 @@ describe('IncusHost mutations', function () {
         });
 
         incusHost()->exec(
-            'orbit-e2e-nck-123-aaaaaaaa-gateway',
+            'orbit-e2e-tst-123-aaaaaaaa-gateway',
             new GuestCommand(['install', '/dev/stdin', '/tmp/config'], 60, $secret),
         );
 
@@ -1382,7 +1382,7 @@ describe('IncusHost mutations', function () {
     it('uses argument arrays with global scope, storage, and exact identities', function () {
         Process::fake(function (PendingProcess $process) {
             return match ($process->command) {
-                incusCommand('list', incusTarget('orbit-e2e-nck-123-aaaaaaaa-gateway'), '--format=json')
+                incusCommand('list', incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'), '--format=json')
                     => Process::result(
                     vmJson(),
                 ),
@@ -1413,23 +1413,23 @@ describe('IncusHost mutations', function () {
         $host = incusHost();
 
         $network = $host->createNetwork('oe-b32d6c83af72', ['ipv4.address' => '10.232.30.1/24']);
-        $instance = $host->initVm('orbit-base', 'orbit-e2e-nck-123-aaaaaaaa-gateway', 'oe-b32d6c83af72');
+        $instance = $host->initVm('orbit-base', 'orbit-e2e-tst-123-aaaaaaaa-gateway', 'oe-b32d6c83af72');
         $copy = $host->copySnapshot(
             'orbit-e2e-topology-snapshot-gateway',
             'main-g1',
-            'orbit-e2e-nck-123-aaaaaaaa-gateway',
+            'orbit-e2e-tst-123-aaaaaaaa-gateway',
             [
-                'user.orbit.e2e.issue' => 'NCK-123',
+                'user.orbit.e2e.issue' => 'TST-123',
                 'user.orbit.e2e.generation' => 'generation-1',
                 'user.orbit.e2e.operation' => 'operation-1',
             ],
         );
         $host->setNetwork(
-            'orbit-e2e-nck-123-aaaaaaaa-gateway',
+            'orbit-e2e-tst-123-aaaaaaaa-gateway',
             'oe-b32d6c83af72',
             'gateway',
         );
-        $host->setMetadata('orbit-e2e-nck-123-aaaaaaaa-gateway', ['user.orbit.e2e.issue' => 'NCK-123']);
+        $host->setMetadata('orbit-e2e-tst-123-aaaaaaaa-gateway', ['user.orbit.e2e.issue' => 'TST-123']);
 
         expect($network->name)
             ->toBe('oe-b32d6c83af72')
@@ -1438,7 +1438,7 @@ describe('IncusHost mutations', function () {
             ->and($instance->pool)
             ->toBe('orbit-e2e')
             ->and($copy->name)
-            ->toBe('orbit-e2e-nck-123-aaaaaaaa-gateway');
+            ->toBe('orbit-e2e-tst-123-aaaaaaaa-gateway');
 
         foreach ([
             incusCommand(
@@ -1451,7 +1451,7 @@ describe('IncusHost mutations', function () {
             incusCommand(
                 'init',
                 incusTarget('orbit-base'),
-                incusTarget('orbit-e2e-nck-123-aaaaaaaa-gateway'),
+                incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'),
                 '--vm',
                 '--storage',
                 'orbit-e2e',
@@ -1471,7 +1471,7 @@ describe('IncusHost mutations', function () {
             incusCommand(
                 'copy',
                 incusTarget('orbit-e2e-topology-snapshot-gateway/main-g1'),
-                incusTarget('orbit-e2e-nck-123-aaaaaaaa-gateway'),
+                incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'),
                 '--storage',
                 'orbit-e2e',
                 '--config',
@@ -1485,7 +1485,7 @@ describe('IncusHost mutations', function () {
                 '--config',
                 'user.orbit.e2e.owner=orbit-e2e',
                 '--config',
-                'user.orbit.e2e.issue=NCK-123',
+                'user.orbit.e2e.issue=TST-123',
                 '--config',
                 'user.orbit.e2e.generation=generation-1',
                 '--config',
@@ -1495,7 +1495,7 @@ describe('IncusHost mutations', function () {
                 'config',
                 'device',
                 'override',
-                incusTarget('orbit-e2e-nck-123-aaaaaaaa-gateway'),
+                incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'),
                 'eth0',
                 'network=oe-b32d6c83af72',
                 'ipv4.address=10.232.30.10',
@@ -1504,8 +1504,8 @@ describe('IncusHost mutations', function () {
             incusCommand(
                 'config',
                 'set',
-                incusTarget('orbit-e2e-nck-123-aaaaaaaa-gateway'),
-                'user.orbit.e2e.issue=NCK-123',
+                incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'),
+                'user.orbit.e2e.issue=TST-123',
             ),
         ] as $command) {
             Process::assertRan($command);
@@ -1516,7 +1516,7 @@ describe('IncusHost mutations', function () {
         expect(fn () => incusHost()->copySnapshot(
             'orbit-e2e-topology-snapshot-gateway',
             'main-g1',
-            'orbit-e2e-nck-123-aaaaaaaa-gateway',
+            'orbit-e2e-tst-123-aaaaaaaa-gateway',
             ['user.orbit.e2e.owner' => 'attacker'],
         ))
             ->toThrow(RuntimeException::class, 'cannot override ownership metadata');
@@ -1526,27 +1526,27 @@ describe('IncusHost mutations', function () {
         Process::fake(function (PendingProcess $process) use ($resource) {
             return match ($process->command) {
                 incusCommand('list', incusTarget($resource), '--format=json') => Process::result(
-                    $resource === 'orbit-e2e-nck-123-aaaaaaaa-gateway' ? vmJson() : '[]',
+                    $resource === 'orbit-e2e-tst-123-aaaaaaaa-gateway' ? vmJson() : '[]',
                 ),
                 incusCommand('network', 'list', incusTarget(), '--format=json') => Process::result(json_encode([
-                    ['name' => 'orbit-e2e-nck-123', 'config' => ['user.orbit.e2e.owner' => 'orbit-e2e']],
+                    ['name' => 'orbit-e2e-tst-123', 'config' => ['user.orbit.e2e.owner' => 'orbit-e2e']],
                 ], JSON_THROW_ON_ERROR)),
                 default => Process::result(),
             };
         });
 
-        incusHost()->setMetadata($resource, ['user.orbit.e2e.issue' => 'NCK-123']);
+        incusHost()->setMetadata($resource, ['user.orbit.e2e.issue' => 'TST-123']);
 
-        $command = $resource === 'orbit-e2e-nck-123-aaaaaaaa-gateway'
-            ? incusCommand('config', 'set', incusTarget($resource), 'user.orbit.e2e.issue=NCK-123')
-            : incusCommand('network', 'set', incusTarget($resource), 'user.orbit.e2e.issue=NCK-123');
+        $command = $resource === 'orbit-e2e-tst-123-aaaaaaaa-gateway'
+            ? incusCommand('config', 'set', incusTarget($resource), 'user.orbit.e2e.issue=TST-123')
+            : incusCommand('network', 'set', incusTarget($resource), 'user.orbit.e2e.issue=TST-123');
         Process::assertRan($command);
-    })->with(['orbit-e2e-nck-123-aaaaaaaa-gateway', 'orbit-e2e-nck-123']);
+    })->with(['orbit-e2e-tst-123-aaaaaaaa-gateway', 'orbit-e2e-tst-123']);
 
     it('does not set metadata when exact resource ownership does not match', function () {
         Process::fake(function (PendingProcess $process) {
             return match ($process->command) {
-                incusCommand('list', incusTarget('orbit-e2e-nck-123-aaaaaaaa-gateway'), '--format=json')
+                incusCommand('list', incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'), '--format=json')
                     => Process::result(
                     vmJson(owner: 'someone-else'),
                 ),
@@ -1555,28 +1555,28 @@ describe('IncusHost mutations', function () {
         });
 
         expect(fn () => incusHost()->setMetadata(
-            'orbit-e2e-nck-123-aaaaaaaa-gateway',
-            ['user.orbit.e2e.issue' => 'NCK-123'],
+            'orbit-e2e-tst-123-aaaaaaaa-gateway',
+            ['user.orbit.e2e.issue' => 'TST-123'],
         ))
             ->toThrow(RuntimeException::class, 'ownership metadata does not match');
 
         Process::assertDidntRun(incusCommand(
             'config',
             'set',
-            incusTarget('orbit-e2e-nck-123-aaaaaaaa-gateway'),
-            'user.orbit.e2e.issue=NCK-123',
+            incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'),
+            'user.orbit.e2e.issue=TST-123',
         ));
     });
 
     it('validates the exact owned network before attaching it', function () {
         Process::fake(function (PendingProcess $process) {
             return match ($process->command) {
-                incusCommand('list', incusTarget('orbit-e2e-nck-123-aaaaaaaa-gateway'), '--format=json')
+                incusCommand('list', incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'), '--format=json')
                     => Process::result(
                     vmJson(),
                 ),
                 incusCommand('network', 'list', incusTarget(), '--format=json') => Process::result(json_encode([
-                    ['name' => 'orbit-e2e-nck-123', 'config' => ['user.orbit.e2e.owner' => 'someone-else']],
+                    ['name' => 'orbit-e2e-tst-123', 'config' => ['user.orbit.e2e.owner' => 'someone-else']],
                 ], JSON_THROW_ON_ERROR)),
                 default => Process::result(),
             };
@@ -1584,12 +1584,12 @@ describe('IncusHost mutations', function () {
 
         expect(
             fn () => incusHost()->setNetwork(
-                'orbit-e2e-nck-123-aaaaaaaa-gateway',
-                'orbit-e2e-nck-123',
+                'orbit-e2e-tst-123-aaaaaaaa-gateway',
+                'orbit-e2e-tst-123',
                 'gateway',
             ),
         )
-            ->toThrow(RuntimeException::class, 'network orbit-e2e-nck-123 ownership metadata does not match');
+            ->toThrow(RuntimeException::class, 'network orbit-e2e-tst-123 ownership metadata does not match');
 
         Process::assertNotRan(
             fn (PendingProcess $process): bool => ($process->command[3] ?? null) === 'config',
@@ -1603,11 +1603,11 @@ describe('IncusHost mutations', function () {
                 ->push(Process::result()),
         ]);
 
-        incusHost()->deleteInstance('orbit-e2e-nck-123-aaaaaaaa-gateway');
+        incusHost()->deleteInstance('orbit-e2e-tst-123-aaaaaaaa-gateway');
 
         Process::assertRanInOrder([
-            incusCommand('list', incusTarget('orbit-e2e-nck-123-aaaaaaaa-gateway'), '--format=json'),
-            incusCommand('delete', incusTarget('orbit-e2e-nck-123-aaaaaaaa-gateway')),
+            incusCommand('list', incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'), '--format=json'),
+            incusCommand('delete', incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway')),
         ]);
     });
 
@@ -1621,8 +1621,8 @@ describe('IncusHost mutations', function () {
                 }
 
                 return Process::result(json_encode([
-                    json_decode(vmJson('orbit-e2e-nck-123-aaaaaaaa-gateway'), true, 16, JSON_THROW_ON_ERROR)[0],
-                    json_decode(vmJson('orbit-e2e-nck-123-aaaaaaaa-app-dev'), true, 16, JSON_THROW_ON_ERROR)[0],
+                    json_decode(vmJson('orbit-e2e-tst-123-aaaaaaaa-gateway'), true, 16, JSON_THROW_ON_ERROR)[0],
+                    json_decode(vmJson('orbit-e2e-tst-123-aaaaaaaa-app-dev'), true, 16, JSON_THROW_ON_ERROR)[0],
                 ], JSON_THROW_ON_ERROR));
             }
 
@@ -1630,12 +1630,12 @@ describe('IncusHost mutations', function () {
         });
 
         incusHost()->deleteInstances([
-            'orbit-e2e-nck-123-aaaaaaaa-gateway',
-            'orbit-e2e-nck-123-aaaaaaaa-app-dev',
+            'orbit-e2e-tst-123-aaaaaaaa-gateway',
+            'orbit-e2e-tst-123-aaaaaaaa-app-dev',
         ]);
 
         expect($inventoryReads)->toBe(2);
-        foreach (['orbit-e2e-nck-123-aaaaaaaa-gateway', 'orbit-e2e-nck-123-aaaaaaaa-app-dev'] as $instance) {
+        foreach (['orbit-e2e-tst-123-aaaaaaaa-gateway', 'orbit-e2e-tst-123-aaaaaaaa-app-dev'] as $instance) {
             Process::assertRan(incusCommand('delete', incusTarget($instance)));
         }
     });
@@ -1647,9 +1647,9 @@ describe('IncusHost mutations', function () {
             }
 
             return Process::result(json_encode([
-                json_decode(vmJson('orbit-e2e-nck-123-aaaaaaaa-gateway'), true, 16, JSON_THROW_ON_ERROR)[0],
+                json_decode(vmJson('orbit-e2e-tst-123-aaaaaaaa-gateway'), true, 16, JSON_THROW_ON_ERROR)[0],
                 json_decode(
-                    vmJson('orbit-e2e-nck-123-aaaaaaaa-app-dev', owner: 'someone-else'),
+                    vmJson('orbit-e2e-tst-123-aaaaaaaa-app-dev', owner: 'someone-else'),
                     true,
                     16,
                     JSON_THROW_ON_ERROR,
@@ -1658,8 +1658,8 @@ describe('IncusHost mutations', function () {
         });
 
         expect(fn () => incusHost()->deleteInstances([
-            'orbit-e2e-nck-123-aaaaaaaa-gateway',
-            'orbit-e2e-nck-123-aaaaaaaa-app-dev',
+            'orbit-e2e-tst-123-aaaaaaaa-gateway',
+            'orbit-e2e-tst-123-aaaaaaaa-app-dev',
         ]))
             ->toThrow(RuntimeException::class, 'ownership metadata does not match');
 
@@ -1677,8 +1677,8 @@ describe('IncusHost mutations', function () {
             return Process::result();
         });
 
-        expect(fn () => incusHost()->deleteInstances(['orbit-e2e-nck-123-aaaaaaaa-gateway']))
-            ->toThrow(RuntimeException::class, 'still exist after deletion: orbit-e2e-nck-123-aaaaaaaa-gateway');
+        expect(fn () => incusHost()->deleteInstances(['orbit-e2e-tst-123-aaaaaaaa-gateway']))
+            ->toThrow(RuntimeException::class, 'still exist after deletion: orbit-e2e-tst-123-aaaaaaaa-gateway');
     });
 
     it('validates ownership once before deleting a network', function () {
@@ -1688,22 +1688,22 @@ describe('IncusHost mutations', function () {
                 $listCalls++;
 
                 return Process::result(json_encode([[
-                    'name' => 'orbit-e2e-nck-123',
+                    'name' => 'orbit-e2e-tst-123',
                     'config' => ['user.orbit.e2e.owner' => 'orbit-e2e'],
                 ]], JSON_THROW_ON_ERROR));
             }
-            if ($process->command === incusCommand('network', 'delete', incusTarget('orbit-e2e-nck-123'))) {
+            if ($process->command === incusCommand('network', 'delete', incusTarget('orbit-e2e-tst-123'))) {
                 return Process::result();
             }
 
             return Process::result('', 'Unexpected command.', 1);
         });
 
-        incusHost()->deleteNetwork('orbit-e2e-nck-123');
+        incusHost()->deleteNetwork('orbit-e2e-tst-123');
 
         Process::assertRanInOrder([
             incusCommand('network', 'list', incusTarget(), '--format=json'),
-            incusCommand('network', 'delete', incusTarget('orbit-e2e-nck-123')),
+            incusCommand('network', 'delete', incusTarget('orbit-e2e-tst-123')),
         ]);
         expect($listCalls)->toBe(1);
     });
@@ -1712,9 +1712,9 @@ describe('IncusHost mutations', function () {
         Process::fake(function (PendingProcess $process) {
             return match ($process->command) {
                 incusCommand('network', 'list', incusTarget(), '--format=json') => Process::result(json_encode([
-                    ['name' => 'orbit-e2e-nck-123', 'config' => ['user.orbit.e2e.owner' => 'orbit-e2e']],
+                    ['name' => 'orbit-e2e-tst-123', 'config' => ['user.orbit.e2e.owner' => 'orbit-e2e']],
                 ], JSON_THROW_ON_ERROR)),
-                incusCommand('network', 'delete', incusTarget('orbit-e2e-nck-123')) => Process::result(
+                incusCommand('network', 'delete', incusTarget('orbit-e2e-tst-123')) => Process::result(
                     '',
                     'network is in use',
                     1,
@@ -1723,7 +1723,7 @@ describe('IncusHost mutations', function () {
             };
         });
 
-        expect(fn () => incusHost()->deleteNetwork('orbit-e2e-nck-123'))
+        expect(fn () => incusHost()->deleteNetwork('orbit-e2e-tst-123'))
             ->toThrow(RuntimeException::class, 'Incus command failed');
     });
 
@@ -1738,20 +1738,20 @@ describe('IncusHost mutations', function () {
                 ->push(Process::result()),
         ]);
 
-        incusHost()->{$operation}('orbit-e2e-nck-123-aaaaaaaa-gateway', 'main-g1');
+        incusHost()->{$operation}('orbit-e2e-tst-123-aaaaaaaa-gateway', 'main-g1');
 
         Process::assertRanInOrder([
-            incusCommand('list', incusTarget('orbit-e2e-nck-123-aaaaaaaa-gateway'), '--format=json'),
+            incusCommand('list', incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'), '--format=json'),
             incusCommand(
                 'snapshot',
                 'list',
-                incusTarget('orbit-e2e-nck-123-aaaaaaaa-gateway'),
+                incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'),
                 '--format=json',
             ),
             incusCommand(
                 'snapshot',
                 $operation === 'restore' ? 'restore' : 'delete',
-                incusTarget('orbit-e2e-nck-123-aaaaaaaa-gateway'),
+                incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'),
                 'main-g1',
             ),
         ]);
@@ -1788,7 +1788,7 @@ describe('IncusHost mutations', function () {
             'gateway' => [
                 'source' => 'orbit-e2e-topology-snapshot-gateway',
                 'snapshot' => 'main-g1',
-                'target' => 'orbit-e2e-nck-123-aaaaaaaa-gateway',
+                'target' => 'orbit-e2e-tst-123-aaaaaaaa-gateway',
                 'metadata' => ['user.orbit.e2e.operation' => 'op-1'],
                 'network' => 'oe-b32d6c83af72',
                 'role' => 'gateway',
@@ -1798,7 +1798,7 @@ describe('IncusHost mutations', function () {
             'app-dev' => [
                 'source' => 'orbit-e2e-topology-snapshot-app-dev',
                 'snapshot' => 'main-g1',
-                'target' => 'orbit-e2e-nck-123-aaaaaaaa-app-dev',
+                'target' => 'orbit-e2e-tst-123-aaaaaaaa-app-dev',
                 'metadata' => ['user.orbit.e2e.evidence' => 'ev-1'],
                 'network' => 'oe-b32d6c83af72',
                 'role' => 'app-dev',
@@ -1808,7 +1808,7 @@ describe('IncusHost mutations', function () {
             'app-prod' => [
                 'source' => 'orbit-e2e-topology-snapshot-app-prod',
                 'snapshot' => 'main-g1',
-                'target' => 'orbit-e2e-nck-123-aaaaaaaa-app-prod',
+                'target' => 'orbit-e2e-tst-123-aaaaaaaa-app-prod',
                 'metadata' => ['user.orbit.e2e.evidence' => 'ev-2'],
                 'network' => 'oe-b32d6c83af72',
                 'role' => 'app-prod',
@@ -1830,7 +1830,7 @@ describe('IncusHost mutations', function () {
         Process::assertRan(incusCommand(
             'copy',
             incusTarget('orbit-e2e-topology-snapshot-gateway').'/main-g1',
-            incusTarget('orbit-e2e-nck-123-aaaaaaaa-gateway'),
+            incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'),
             '--storage',
             'orbit-e2e',
             '--config',
@@ -1855,7 +1855,7 @@ describe('IncusHost mutations', function () {
         Process::assertRan(incusCommand(
             'copy',
             incusTarget('orbit-e2e-topology-snapshot-app-dev').'/main-g1',
-            incusTarget('orbit-e2e-nck-123-aaaaaaaa-app-dev'),
+            incusTarget('orbit-e2e-tst-123-aaaaaaaa-app-dev'),
             '--storage',
             'orbit-e2e',
             '--config',
@@ -1880,7 +1880,7 @@ describe('IncusHost mutations', function () {
         Process::assertRan(incusCommand(
             'copy',
             incusTarget('orbit-e2e-topology-snapshot-app-prod').'/main-g1',
-            incusTarget('orbit-e2e-nck-123-aaaaaaaa-app-prod'),
+            incusTarget('orbit-e2e-tst-123-aaaaaaaa-app-prod'),
             '--storage',
             'orbit-e2e',
             '--config',
@@ -1909,7 +1909,7 @@ describe('IncusHost mutations', function () {
             if ($process->command === incusCommand('list', incusTarget(), '--format=json')) {
                 return Process::result(json_encode(array_map(
                     static fn (string $role): array => json_decode(
-                        vmJson("orbit-e2e-nck-123-aaaaaaaa-{$role}", network: 'oe-b32d6c83af72'),
+                        vmJson("orbit-e2e-tst-123-aaaaaaaa-{$role}", network: 'oe-b32d6c83af72'),
                         true,
                         16,
                         JSON_THROW_ON_ERROR,
@@ -1923,7 +1923,7 @@ describe('IncusHost mutations', function () {
 
         $instances = incusHost()->copyInstances([
             'gateway' => [
-                'source' => 'orbit-e2e-nck-123-aaaaaaaa-gateway',
+                'source' => 'orbit-e2e-tst-123-aaaaaaaa-gateway',
                 'target' => 'orbit-e2e-topology-snapshot-gateway-next',
                 'metadata' => ['user.orbit.e2e.operation' => 'op-2'],
                 'network' => 'oe-topo-snap',
@@ -1936,7 +1936,7 @@ describe('IncusHost mutations', function () {
         expect(array_keys($instances))->toBe(['gateway']);
         Process::assertRan(incusCommand(
             'copy',
-            incusTarget('orbit-e2e-nck-123-aaaaaaaa-gateway'),
+            incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'),
             incusTarget('orbit-e2e-topology-snapshot-gateway-next'),
             '--instance-only',
             '--storage',
@@ -1967,7 +1967,7 @@ describe('IncusHost mutations', function () {
 
     it('refuses to copy a running instance', function () {
         Process::fake(fn (): ProcessResult => Process::result(json_encode([[
-            'name' => 'orbit-e2e-nck-123-aaaaaaaa-gateway',
+            'name' => 'orbit-e2e-tst-123-aaaaaaaa-gateway',
             'type' => 'virtual-machine',
             'status' => 'Running',
             'status_code' => 103,
@@ -1977,7 +1977,7 @@ describe('IncusHost mutations', function () {
 
         expect(fn () => incusHost()->copyInstances([
             'gateway' => [
-                'source' => 'orbit-e2e-nck-123-aaaaaaaa-gateway',
+                'source' => 'orbit-e2e-tst-123-aaaaaaaa-gateway',
                 'target' => 'orbit-e2e-topology-snapshot-gateway-next',
                 'metadata' => [],
                 'network' => 'oe-topo-snap',
@@ -2062,10 +2062,10 @@ describe('IncusHost mutations', function () {
     it('reads identity from expanded devices when local devices are empty', function () {
         Process::fake(function (PendingProcess $process) {
             expect($process->command)
-                ->toBe(incusCommand('list', incusTarget('orbit-e2e-nck-123-aaaaaaaa-gateway'), '--format=json'));
+                ->toBe(incusCommand('list', incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'), '--format=json'));
 
             return Process::result(json_encode([[
-                'name' => 'orbit-e2e-nck-123-aaaaaaaa-gateway',
+                'name' => 'orbit-e2e-tst-123-aaaaaaaa-gateway',
                 'type' => 'virtual-machine',
                 'status' => 'Stopped',
                 'status_code' => 102,
@@ -2078,7 +2078,7 @@ describe('IncusHost mutations', function () {
             ]], JSON_THROW_ON_ERROR));
         });
 
-        $instance = incusHost()->instance('orbit-e2e-nck-123-aaaaaaaa-gateway');
+        $instance = incusHost()->instance('orbit-e2e-tst-123-aaaaaaaa-gateway');
 
         expect($instance?->pool)
             ->toBe('orbit-e2e')
@@ -2095,12 +2095,12 @@ describe('IncusHost mutations', function () {
                 ->push('[]'),
         ]);
 
-        incusHost()->deleteSnapshotIfExists('orbit-e2e-nck-123-aaaaaaaa-gateway', 'main-g1');
+        incusHost()->deleteSnapshotIfExists('orbit-e2e-tst-123-aaaaaaaa-gateway', 'main-g1');
 
         Process::assertDidntRun(incusCommand(
             'snapshot',
             'delete',
-            incusTarget('orbit-e2e-nck-123-aaaaaaaa-gateway'),
+            incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'),
             'main-g1',
         ));
     });
@@ -2173,8 +2173,8 @@ describe('IncusHost mutations', function () {
         Process::fake(function (PendingProcess $process) use (&$snapshotReads) {
             if ($process->command === incusCommand('list', incusTarget(), '--format=json')) {
                 return Process::result(json_encode([
-                    json_decode(vmJson('orbit-e2e-nck-123-aaaaaaaa-gateway'), true, 16, JSON_THROW_ON_ERROR)[0],
-                    json_decode(vmJson('orbit-e2e-nck-123-aaaaaaaa-app-dev'), true, 16, JSON_THROW_ON_ERROR)[0],
+                    json_decode(vmJson('orbit-e2e-tst-123-aaaaaaaa-gateway'), true, 16, JSON_THROW_ON_ERROR)[0],
+                    json_decode(vmJson('orbit-e2e-tst-123-aaaaaaaa-app-dev'), true, 16, JSON_THROW_ON_ERROR)[0],
                 ], JSON_THROW_ON_ERROR));
             }
             if (array_slice($process->command, 3, 2) === ['snapshot', 'list']) {
@@ -2190,15 +2190,15 @@ describe('IncusHost mutations', function () {
         });
 
         incusHost()->deleteSnapshotsIfExist([
-            'orbit-e2e-nck-123-aaaaaaaa-gateway' => 'main-g1',
-            'orbit-e2e-nck-123-aaaaaaaa-app-dev' => 'main-g1',
+            'orbit-e2e-tst-123-aaaaaaaa-gateway' => 'main-g1',
+            'orbit-e2e-tst-123-aaaaaaaa-app-dev' => 'main-g1',
         ]);
 
         expect($snapshotReads)->toBe([
-            'orbit-e2e-nck-123-aaaaaaaa-gateway' => 2,
-            'orbit-e2e-nck-123-aaaaaaaa-app-dev' => 2,
+            'orbit-e2e-tst-123-aaaaaaaa-gateway' => 2,
+            'orbit-e2e-tst-123-aaaaaaaa-app-dev' => 2,
         ]);
-        foreach (['orbit-e2e-nck-123-aaaaaaaa-gateway', 'orbit-e2e-nck-123-aaaaaaaa-app-dev'] as $instance) {
+        foreach (['orbit-e2e-tst-123-aaaaaaaa-gateway', 'orbit-e2e-tst-123-aaaaaaaa-app-dev'] as $instance) {
             Process::assertRan(incusCommand('snapshot', 'delete', incusTarget($instance), 'main-g1'));
         }
     });
@@ -2208,17 +2208,17 @@ describe('IncusHost mutations', function () {
             '*' => Process::sequence()
                 ->push(vmJson())
                 ->push(json_encode([[
-                    'name' => 'orbit-e2e-nck-123-aaaaaaaa-gateway/main-g1',
+                    'name' => 'orbit-e2e-tst-123-aaaaaaaa-gateway/main-g1',
                     'config' => ['user.orbit.e2e.owner' => 'orbit-e2e'],
                 ]], JSON_THROW_ON_ERROR))
                 ->push(Process::result()),
         ]);
 
-        incusHost()->restore('orbit-e2e-nck-123-aaaaaaaa-gateway', 'main-g1');
+        incusHost()->restore('orbit-e2e-tst-123-aaaaaaaa-gateway', 'main-g1');
         Process::assertRan(incusCommand(
             'snapshot',
             'restore',
-            incusTarget('orbit-e2e-nck-123-aaaaaaaa-gateway'),
+            incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'),
             'main-g1',
         ));
     });
@@ -2233,12 +2233,12 @@ describe('IncusHost mutations', function () {
                 ]], JSON_THROW_ON_ERROR)),
         ]);
 
-        expect(fn () => incusHost()->restore('orbit-e2e-nck-123-aaaaaaaa-gateway', 'main-g1'))
+        expect(fn () => incusHost()->restore('orbit-e2e-tst-123-aaaaaaaa-gateway', 'main-g1'))
             ->toThrow(RuntimeException::class, 'snapshot identity changed');
         Process::assertDidntRun(incusCommand(
             'snapshot',
             'restore',
-            incusTarget('orbit-e2e-nck-123-aaaaaaaa-gateway'),
+            incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'),
             'main-g1',
         ));
     });
@@ -2246,17 +2246,17 @@ describe('IncusHost mutations', function () {
     it('rejects ownership mismatch without destructive mutation', function () {
         Process::fake(['*' => Process::result(vmJson(owner: 'someone-else'))]);
 
-        expect(fn () => incusHost()->deleteInstance('orbit-e2e-nck-123-aaaaaaaa-gateway'))
+        expect(fn () => incusHost()->deleteInstance('orbit-e2e-tst-123-aaaaaaaa-gateway'))
             ->toThrow(RuntimeException::class, 'ownership metadata does not match');
 
-        Process::assertDidntRun(incusCommand('delete', incusTarget('orbit-e2e-nck-123-aaaaaaaa-gateway')));
+        Process::assertDidntRun(incusCommand('delete', incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway')));
     });
 
     it('runs guest commands with their timeout and returns nonzero results', function () {
         Process::fake(function (PendingProcess $process) {
             return $process->command === incusCommand(
                 'list',
-                incusTarget('orbit-e2e-nck-123-aaaaaaaa-gateway'),
+                incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'),
                 '--format=json',
             )
                 ? Process::result(vmJson())
@@ -2264,7 +2264,7 @@ describe('IncusHost mutations', function () {
         });
 
         $result = incusHost()->exec(
-            'orbit-e2e-nck-123-aaaaaaaa-gateway',
+            'orbit-e2e-tst-123-aaaaaaaa-gateway',
             new GuestCommand(['sh', '-lc', 'exit 17'], 42),
         );
 
@@ -2280,7 +2280,7 @@ describe('IncusHost mutations', function () {
             fn (PendingProcess $process): bool => (
                 $process->command === incusCommand(
                     'exec',
-                    incusTarget('orbit-e2e-nck-123-aaaaaaaa-gateway'),
+                    incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'),
                     '--',
                     'sh',
                     '-lc',
@@ -2332,15 +2332,15 @@ describe('IncusHost mutations', function () {
 
         $results = incusHost()->execAll([
             'first' => [
-                'instance' => 'orbit-e2e-nck-123-aaaaaaaa-gateway',
+                'instance' => 'orbit-e2e-tst-123-aaaaaaaa-gateway',
                 'command' => new GuestCommand(['probe-one', 'literal;$(not-shell)'], 11, "payload\n"),
             ],
             'second' => [
-                'instance' => 'orbit-e2e-nck-123-aaaaaaaa-gateway',
+                'instance' => 'orbit-e2e-tst-123-aaaaaaaa-gateway',
                 'command' => new GuestCommand(['probe-two'], 17),
             ],
             'timeout' => [
-                'instance' => 'orbit-e2e-nck-123-aaaaaaaa-gateway',
+                'instance' => 'orbit-e2e-tst-123-aaaaaaaa-gateway',
                 'command' => new GuestCommand(['probe-timeout'], 5),
             ],
         ]);
@@ -2353,7 +2353,7 @@ describe('IncusHost mutations', function () {
                     [
                         'label' => 'first',
                         'project' => 'orbit',
-                        'instance' => 'lab:orbit-e2e-nck-123-aaaaaaaa-gateway',
+                        'instance' => 'lab:orbit-e2e-tst-123-aaaaaaaa-gateway',
                         'argv' => ['probe-one', 'literal;$(not-shell)'],
                         'timeout' => 11,
                         'stdin' => "payload\n",
@@ -2361,7 +2361,7 @@ describe('IncusHost mutations', function () {
                     [
                         'label' => 'second',
                         'project' => 'orbit',
-                        'instance' => 'lab:orbit-e2e-nck-123-aaaaaaaa-gateway',
+                        'instance' => 'lab:orbit-e2e-tst-123-aaaaaaaa-gateway',
                         'argv' => ['probe-two'],
                         'timeout' => 17,
                         'stdin' => null,
@@ -2369,7 +2369,7 @@ describe('IncusHost mutations', function () {
                     [
                         'label' => 'timeout',
                         'project' => 'orbit',
-                        'instance' => 'lab:orbit-e2e-nck-123-aaaaaaaa-gateway',
+                        'instance' => 'lab:orbit-e2e-tst-123-aaaaaaaa-gateway',
                         'argv' => ['probe-timeout'],
                         'timeout' => 5,
                         'stdin' => null,
@@ -2460,7 +2460,7 @@ describe('IncusHost mutations', function () {
             $requests[] = [
                 'label' => $label,
                 'project' => 'orbit',
-                'instance' => 'lab:orbit-e2e-nck-123-aaaaaaaa-gateway',
+                'instance' => 'lab:orbit-e2e-tst-123-aaaaaaaa-gateway',
                 'argv' => ['barrier', $label],
                 'timeout' => 3,
                 'stdin' => null,
@@ -2469,7 +2469,7 @@ describe('IncusHost mutations', function () {
         $requests[] = [
             'label' => 'failure',
             'project' => 'orbit',
-            'instance' => 'lab:orbit-e2e-nck-123-aaaaaaaa-gateway',
+            'instance' => 'lab:orbit-e2e-tst-123-aaaaaaaa-gateway',
             'argv' => ['failure'],
             'timeout' => 3,
             'stdin' => null,
@@ -2477,7 +2477,7 @@ describe('IncusHost mutations', function () {
         $requests[] = [
             'label' => 'timeout',
             'project' => 'orbit',
-            'instance' => 'lab:orbit-e2e-nck-123-aaaaaaaa-gateway',
+            'instance' => 'lab:orbit-e2e-tst-123-aaaaaaaa-gateway',
             'argv' => ['timeout'],
             'timeout' => 1,
             'stdin' => null,
@@ -2559,8 +2559,8 @@ describe('IncusHost mutations', function () {
                 $reads++;
 
                 return Process::result(json_encode([
-                    json_decode(vmJson('orbit-e2e-nck-123-aaaaaaaa-gateway'), true, 16, JSON_THROW_ON_ERROR)[0],
-                    json_decode(vmJson('orbit-e2e-nck-123-aaaaaaaa-app-dev'), true, 16, JSON_THROW_ON_ERROR)[0],
+                    json_decode(vmJson('orbit-e2e-tst-123-aaaaaaaa-gateway'), true, 16, JSON_THROW_ON_ERROR)[0],
+                    json_decode(vmJson('orbit-e2e-tst-123-aaaaaaaa-app-dev'), true, 16, JSON_THROW_ON_ERROR)[0],
                 ], JSON_THROW_ON_ERROR));
             }
 
@@ -2569,11 +2569,11 @@ describe('IncusHost mutations', function () {
         $host = incusHost();
         $commands = [
             'gateway' => [
-                'instance' => 'orbit-e2e-nck-123-aaaaaaaa-gateway',
+                'instance' => 'orbit-e2e-tst-123-aaaaaaaa-gateway',
                 'command' => new GuestCommand(['true']),
             ],
             'app-dev' => [
-                'instance' => 'orbit-e2e-nck-123-aaaaaaaa-app-dev',
+                'instance' => 'orbit-e2e-tst-123-aaaaaaaa-app-dev',
                 'command' => new GuestCommand(['true']),
             ],
         ];
@@ -2590,7 +2590,7 @@ describe('IncusHost mutations', function () {
             if (
                 $process->command === incusCommand(
                     'list',
-                    incusTarget('orbit-e2e-nck-123-aaaaaaaa-gateway'),
+                    incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'),
                     '--format=json',
                 )
             ) {
@@ -2603,15 +2603,15 @@ describe('IncusHost mutations', function () {
         });
         $host = incusHost();
 
-        $host->exec('orbit-e2e-nck-123-aaaaaaaa-gateway', new GuestCommand(['true']));
-        $host->exec('orbit-e2e-nck-123-aaaaaaaa-gateway', new GuestCommand(['true']));
+        $host->exec('orbit-e2e-tst-123-aaaaaaaa-gateway', new GuestCommand(['true']));
+        $host->exec('orbit-e2e-tst-123-aaaaaaaa-gateway', new GuestCommand(['true']));
 
         expect($reads)->toBe(1);
     });
 
     it('inventories every owned snapshot name for exact recovery cleanup', function () {
-        $gateway = 'orbit-e2e-nck-123-aaaaaaaa-gateway';
-        $appDev = 'orbit-e2e-nck-123-aaaaaaaa-app-dev';
+        $gateway = 'orbit-e2e-tst-123-aaaaaaaa-gateway';
+        $appDev = 'orbit-e2e-tst-123-aaaaaaaa-app-dev';
         Process::fake(function (PendingProcess $process) use ($gateway, $appDev) {
             if ($process->command === incusCommand('list', incusTarget(), '--format=json')) {
                 return Process::result(json_encode([
@@ -2660,8 +2660,8 @@ describe('IncusHost mutations', function () {
                 $instanceReads++;
 
                 return Process::result(json_encode([
-                    json_decode(vmJson('orbit-e2e-nck-123-aaaaaaaa-gateway'), true, 16, JSON_THROW_ON_ERROR)[0],
-                    json_decode(vmJson('orbit-e2e-nck-123-aaaaaaaa-app-dev'), true, 16, JSON_THROW_ON_ERROR)[0],
+                    json_decode(vmJson('orbit-e2e-tst-123-aaaaaaaa-gateway'), true, 16, JSON_THROW_ON_ERROR)[0],
+                    json_decode(vmJson('orbit-e2e-tst-123-aaaaaaaa-app-dev'), true, 16, JSON_THROW_ON_ERROR)[0],
                 ], JSON_THROW_ON_ERROR));
             }
 
@@ -2670,17 +2670,17 @@ describe('IncusHost mutations', function () {
 
         incusHost()->pushFiles([
             'gateway-bundle' => [
-                'instance' => 'orbit-e2e-nck-123-aaaaaaaa-gateway',
+                'instance' => 'orbit-e2e-tst-123-aaaaaaaa-gateway',
                 'source' => '/tmp/source.bundle',
                 'destination' => '/var/lib/orbit-e2e/source/source.bundle',
             ],
             'gateway-overlay' => [
-                'instance' => 'orbit-e2e-nck-123-aaaaaaaa-gateway',
+                'instance' => 'orbit-e2e-tst-123-aaaaaaaa-gateway',
                 'source' => '/tmp/overlay.tar',
                 'destination' => '/var/lib/orbit-e2e/source/overlay.tar',
             ],
             'app-dev-bundle' => [
-                'instance' => 'orbit-e2e-nck-123-aaaaaaaa-app-dev',
+                'instance' => 'orbit-e2e-tst-123-aaaaaaaa-app-dev',
                 'source' => '/tmp/source.bundle',
                 'destination' => '/var/lib/orbit-e2e/source/source.bundle',
             ],
@@ -2692,19 +2692,19 @@ describe('IncusHost mutations', function () {
                 'file',
                 'push',
                 '/tmp/source.bundle',
-                incusTarget('orbit-e2e-nck-123-aaaaaaaa-gateway').'/var/lib/orbit-e2e/source/source.bundle',
+                incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway').'/var/lib/orbit-e2e/source/source.bundle',
             ),
             incusCommand(
                 'file',
                 'push',
                 '/tmp/overlay.tar',
-                incusTarget('orbit-e2e-nck-123-aaaaaaaa-gateway').'/var/lib/orbit-e2e/source/overlay.tar',
+                incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway').'/var/lib/orbit-e2e/source/overlay.tar',
             ),
             incusCommand(
                 'file',
                 'push',
                 '/tmp/source.bundle',
-                incusTarget('orbit-e2e-nck-123-aaaaaaaa-app-dev').'/var/lib/orbit-e2e/source/source.bundle',
+                incusTarget('orbit-e2e-tst-123-aaaaaaaa-app-dev').'/var/lib/orbit-e2e/source/source.bundle',
             ),
         ] as $command) {
             Process::assertRan($command);
@@ -2722,13 +2722,13 @@ describe('IncusHost mutations', function () {
         'empty' => [[]],
         'missing destination' => [[
             'source' => [
-                'instance' => 'orbit-e2e-nck-123-aaaaaaaa-gateway',
+                'instance' => 'orbit-e2e-tst-123-aaaaaaaa-gateway',
                 'source' => '/tmp/source.bundle',
             ],
         ]],
         'relative destination' => [[
             'source' => [
-                'instance' => 'orbit-e2e-nck-123-aaaaaaaa-gateway',
+                'instance' => 'orbit-e2e-tst-123-aaaaaaaa-gateway',
                 'source' => '/tmp/source.bundle',
                 'destination' => 'relative/source.bundle',
             ],
@@ -2748,12 +2748,12 @@ describe('IncusHost mutations', function () {
 
         expect(fn () => incusHost()->pushFiles([
             'bundle' => [
-                'instance' => 'orbit-e2e-nck-123-aaaaaaaa-gateway',
+                'instance' => 'orbit-e2e-tst-123-aaaaaaaa-gateway',
                 'source' => '/tmp/source.bundle',
                 'destination' => '/var/lib/orbit-e2e/source/source.bundle',
             ],
             'overlay' => [
-                'instance' => 'orbit-e2e-nck-123-aaaaaaaa-gateway',
+                'instance' => 'orbit-e2e-tst-123-aaaaaaaa-gateway',
                 'source' => '/tmp/overlay.tar',
                 'destination' => '/var/lib/orbit-e2e/source/overlay.tar',
             ],
@@ -2768,9 +2768,9 @@ describe('IncusHost mutations', function () {
             }
 
             return Process::result(json_encode([
-                json_decode(vmJson('orbit-e2e-nck-123-aaaaaaaa-gateway'), true, 16, JSON_THROW_ON_ERROR)[0],
+                json_decode(vmJson('orbit-e2e-tst-123-aaaaaaaa-gateway'), true, 16, JSON_THROW_ON_ERROR)[0],
                 json_decode(
-                    vmJson('orbit-e2e-nck-123-aaaaaaaa-app-dev', owner: 'someone-else'),
+                    vmJson('orbit-e2e-tst-123-aaaaaaaa-app-dev', owner: 'someone-else'),
                     true,
                     16,
                     JSON_THROW_ON_ERROR,
@@ -2780,12 +2780,12 @@ describe('IncusHost mutations', function () {
 
         expect(fn () => incusHost()->pushFiles([
             'gateway' => [
-                'instance' => 'orbit-e2e-nck-123-aaaaaaaa-gateway',
+                'instance' => 'orbit-e2e-tst-123-aaaaaaaa-gateway',
                 'source' => '/tmp/source.bundle',
                 'destination' => '/var/lib/orbit-e2e/source/source.bundle',
             ],
             'app-dev' => [
-                'instance' => 'orbit-e2e-nck-123-aaaaaaaa-app-dev',
+                'instance' => 'orbit-e2e-tst-123-aaaaaaaa-app-dev',
                 'source' => '/tmp/source.bundle',
                 'destination' => '/var/lib/orbit-e2e/source/source.bundle',
             ],
@@ -2851,7 +2851,7 @@ describe('IncusHost failures', function () {
             'gateway' => [
                 'source' => 'orbit-e2e-topology-snapshot-gateway',
                 'snapshot' => 'main-g1',
-                'target' => 'orbit-e2e-nck-123-aaaaaaaa-gateway',
+                'target' => 'orbit-e2e-tst-123-aaaaaaaa-gateway',
                 'metadata' => ['user.orbit.e2e.operation' => 'op-1'],
                 'network' => 'oe-b32d6c83af72',
                 'role' => 'gateway',
@@ -2866,7 +2866,7 @@ describe('IncusHost failures', function () {
         Process::assertRan(incusCommand(
             'copy',
             incusTarget('orbit-e2e-topology-snapshot-gateway').'/main-g1',
-            incusTarget('orbit-e2e-nck-123-aaaaaaaa-gateway'),
+            incusTarget('orbit-e2e-tst-123-aaaaaaaa-gateway'),
             '--storage',
             'orbit-e2e',
             '--config',
@@ -2914,7 +2914,7 @@ describe('IncusHost failures', function () {
             'gateway' => [
                 'source' => 'orbit-e2e-topology-snapshot-gateway',
                 'snapshot' => 'main-g1',
-                'target' => 'orbit-e2e-nck-123-aaaaaaaa-gateway',
+                'target' => 'orbit-e2e-tst-123-aaaaaaaa-gateway',
                 'metadata' => [],
                 'mount' => $mount,
             ],
@@ -2954,34 +2954,34 @@ describe('IncusHost failures', function () {
     ]);
 
     it('reads every non-root disk device from the instance inventory', function () {
-        $resource = json_decode(vmJson('orbit-e2e-nck-123-aaaaaaaa-gateway'), true, 16, JSON_THROW_ON_ERROR)[0];
+        $resource = json_decode(vmJson('orbit-e2e-tst-123-aaaaaaaa-gateway'), true, 16, JSON_THROW_ON_ERROR)[0];
         $resource['devices']['orbit-source'] = [
             'type' => 'disk',
-            'source' => '/srv/worktrees/nck-123',
+            'source' => '/srv/worktrees/tst-123',
             'path' => '/home/orbit/orbit',
         ];
         $resource['devices']['eth1'] = ['type' => 'nic', 'network' => 'oe-other'];
         Process::fake(['*' => Process::result(json_encode([$resource], JSON_THROW_ON_ERROR))]);
 
-        $instance = incusHost()->instance('orbit-e2e-nck-123-aaaaaaaa-gateway');
-        $inventory = incusHost()->instances(['orbit-e2e-nck-123-aaaaaaaa-gateway']);
+        $instance = incusHost()->instance('orbit-e2e-tst-123-aaaaaaaa-gateway');
+        $inventory = incusHost()->instances(['orbit-e2e-tst-123-aaaaaaaa-gateway']);
 
         expect($instance?->disks)
-            ->toBe(['orbit-source' => ['source' => '/srv/worktrees/nck-123', 'path' => '/home/orbit/orbit']])
+            ->toBe(['orbit-source' => ['source' => '/srv/worktrees/tst-123', 'path' => '/home/orbit/orbit']])
             ->and($instance?->disk('orbit-source'))
-            ->toBe(['source' => '/srv/worktrees/nck-123', 'path' => '/home/orbit/orbit'])
+            ->toBe(['source' => '/srv/worktrees/tst-123', 'path' => '/home/orbit/orbit'])
             ->and($instance?->disk('missing'))
             ->toBeNull()
-            ->and($inventory['orbit-e2e-nck-123-aaaaaaaa-gateway']->disks)
+            ->and($inventory['orbit-e2e-tst-123-aaaaaaaa-gateway']->disks)
             ->toBe($instance?->disks);
     });
 
     it('rejects a disk device without an exact source and path', function () {
-        $resource = json_decode(vmJson('orbit-e2e-nck-123-aaaaaaaa-gateway'), true, 16, JSON_THROW_ON_ERROR)[0];
-        $resource['devices']['orbit-source'] = ['type' => 'disk', 'source' => '/srv/worktrees/nck-123'];
+        $resource = json_decode(vmJson('orbit-e2e-tst-123-aaaaaaaa-gateway'), true, 16, JSON_THROW_ON_ERROR)[0];
+        $resource['devices']['orbit-source'] = ['type' => 'disk', 'source' => '/srv/worktrees/tst-123'];
         Process::fake(['*' => Process::result(json_encode([$resource], JSON_THROW_ON_ERROR))]);
 
-        expect(fn () => incusHost()->instance('orbit-e2e-nck-123-aaaaaaaa-gateway'))
+        expect(fn () => incusHost()->instance('orbit-e2e-tst-123-aaaaaaaa-gateway'))
             ->toThrow(RuntimeException::class, 'disk device orbit-source identity is invalid');
     });
 });

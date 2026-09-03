@@ -40,14 +40,14 @@ beforeEach(function (): void {
 function proofEquivalenceFixture(bool $observedInputs = false): array
 {
     $root = temporaryPath('orbit-equivalence-', 6);
-    foreach (['apps/cli/app', 'docs/reference', 'proofs/ORB-99'] as $directory) {
+    foreach (['apps/cli/app', 'docs/reference', '.loop/proof'] as $directory) {
         mkdir($root.'/'.$directory, 0700, true);
     }
     file_put_contents($root.'/.gitignore', "/.e2e/\n");
     file_put_contents($root.'/apps/cli/app/runtime.php', "<?php\n");
     file_put_contents($root.'/docs/reference/note.md', "before\n");
-    file_put_contents($root.'/proofs/ORB-99/check.sh', "#!/bin/sh\nexit 0\n");
-    chmod($root.'/proofs/ORB-99/check.sh', 0755);
+    file_put_contents($root.'/.loop/proof/check.sh', "#!/bin/sh\nexit 0\n");
+    chmod($root.'/.loop/proof/check.sh', 0755);
     $planValue = [
         'setup' => [],
         'acceptance' => [[
@@ -60,8 +60,8 @@ function proofEquivalenceFixture(bool $observedInputs = false): array
     if ($observedInputs) {
         $planValue['observed_inputs'] = true;
     }
-    file_put_contents($root.'/proofs/ORB-99.json', json_encode($planValue, JSON_THROW_ON_ERROR));
-    equivalenceGit($root, ['init', '--quiet', '-b', 'codex/orb-99-equivalence']);
+    file_put_contents($root.'/.loop/proof/AUX-99.json', json_encode($planValue, JSON_THROW_ON_ERROR));
+    equivalenceGit($root, ['init', '--quiet', '-b', 'codex/aux-99-equivalence']);
     equivalenceGit($root, ['config', 'user.email', 'orbit@example.test']);
     equivalenceGit($root, ['config', 'user.name', 'Orbit']);
     equivalenceGit($root, ['add', '.']);
@@ -72,7 +72,7 @@ function proofEquivalenceFixture(bool $observedInputs = false): array
     equivalenceGit($root, ['add', '.']);
     equivalenceGit($root, ['commit', '--quiet', '-m', 'proved']);
     $proved = equivalenceGit($root, ['rev-parse', 'HEAD']);
-    $plan = ProofPlan::fromFile($root.'/proofs/ORB-99.json');
+    $plan = ProofPlan::fromFile($root.'/.loop/proof/AUX-99.json');
     $policy = new StaticProofInputPolicy;
     $builder = new ProofInputManifestBuilder($policy);
     $observed = null;
@@ -108,14 +108,14 @@ function proofEquivalenceFixture(bool $observedInputs = false): array
         new GitRepository($root),
         $proved,
         $main,
-        'ORB-99',
-        'proofs/ORB-99.json',
+        'AUX-99',
+        '.loop/proof/AUX-99.json',
         $plan,
         $observed,
     );
     $attempt = new AttemptId(str_repeat('a', 32));
-    $target = TopologyTarget::feature('ORB-99', $attempt);
-    $state = IssueState::forWorktree('ORB-99', $root);
+    $target = TopologyTarget::feature('AUX-99', $attempt);
+    $state = IssueState::forWorktree('AUX-99', $root);
     $state->writeAttempt($attempt, AttemptPurpose::Proof, new OperationId(str_repeat('b', 32)));
     $state->writeTopology(new FeatureTopology(
         $target,
@@ -137,7 +137,7 @@ function proofEquivalenceFixture(bool $observedInputs = false): array
     $state->writeProofInputManifest($manifest->fingerprint(), $manifest->toArray());
     $state->writeProof(
         new ProofResult(
-            'ORB-99',
+            'AUX-99',
             $attempt,
             ProofStatus::Proved,
             $proved,
@@ -148,7 +148,7 @@ function proofEquivalenceFixture(bool $observedInputs = false): array
             manifestSha256: $manifest->fingerprint(),
         )->toArray(),
     );
-    new GitRepository($root)->pinProof('ORB-99', $attempt, $proved);
+    new GitRepository($root)->pinProof('AUX-99', $attempt, $proved);
 
     return [
         'root' => $root,
@@ -207,9 +207,9 @@ function equivalenceGit(string $root, array $arguments): string
 function evaluateProof(array $fixture, ?ProofPlan $plan = null): ProofEquivalenceReport
 {
     return $fixture['evaluator']->evaluate(
-        new TopologyRequest('ORB-99', $fixture['root']),
+        new TopologyRequest('AUX-99', $fixture['root']),
         $plan ?? $fixture['plan'],
-        'proofs/ORB-99.json',
+        '.loop/proof/AUX-99.json',
     );
 }
 
@@ -346,7 +346,7 @@ describe('ProofEquivalenceEvaluator', function (): void {
             ->toBe('release-proof-and-run-complete-reproof');
     })->with([
         'runtime' => 'apps/cli/app/runtime.php',
-        'proof contract' => 'proofs/ORB-99/check.sh',
+        'proof contract' => '.loop/proof/check.sh',
     ]);
 
     it('is indeterminate for unknown paths and current-main drift', function (Closure $mutate): void {

@@ -49,10 +49,10 @@ it('accepts an identifier inside backticks, a heading, or a fenced block', funct
     file_put_contents($this->root.'/reference/apps.md', <<<'MARKDOWN'
         # Proof NCK-73
 
-        The plan `proofs/NCK-73.json` re-enables the exporter.
+        The plan `.loop/proof/NCK-73.json` re-enables the exporter.
 
         ```text
-        bash proofs/ORB-7/matrix.sh
+        bash .loop/proof/matrix.sh
         ```
 
         Orbit records the branch it selected.

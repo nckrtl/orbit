@@ -50,19 +50,19 @@ describe('IssueState', function () {
     it('keeps the attempt, topology, proof, and log under <worktree>/.e2e/', function () {
         $worktree = temporaryPath('orbit-issue-state-', 4);
         mkdir($worktree, 0700);
-        $state = IssueState::forWorktree('NCK-12', $worktree);
+        $state = IssueState::forWorktree('TST-12', $worktree);
         $attempt = new AttemptId(str_repeat('a', 32));
         $operation = new OperationId(str_repeat('b', 32));
 
         expect($state->hasAttempt())
             ->toBeFalse()
             ->and(fn () => $state->attempt())
-            ->toThrow(RuntimeException::class, 'NCK-12 has no active attempt.')
+            ->toThrow(RuntimeException::class, 'TST-12 has no active attempt.')
             ->and($state->topology())
             ->toBeNull();
 
         $state->writeAttempt($attempt, AttemptPurpose::Discovery, $operation);
-        $state->writeTopology(issueStateTopology('NCK-12', $attempt));
+        $state->writeTopology(issueStateTopology('TST-12', $attempt));
         $state->writeProof(['status' => 'diagnosis', 'attempt_id' => $attempt->value]);
         $state->log("acquire attempt={$attempt->value}\nsecond line");
 
@@ -91,7 +91,7 @@ describe('IssueState', function () {
     it('treats an attempt as proved only when the result names the active proof attempt', function () {
         $worktree = temporaryPath('orbit-issue-state-', 4);
         mkdir($worktree, 0700);
-        $state = IssueState::forWorktree('NCK-12', $worktree);
+        $state = IssueState::forWorktree('TST-12', $worktree);
         $attempt = new AttemptId(str_repeat('a', 32));
         $state->writeProof(['status' => 'proved', 'attempt_id' => str_repeat('f', 32)]);
         $state->writeAttempt($attempt, AttemptPurpose::Proof, new OperationId(str_repeat('b', 32)));
@@ -117,14 +117,14 @@ describe('IssueState', function () {
     it('keeps discovery and proof attempts independently', function () {
         $worktree = temporaryPath('orbit-issue-state-', 4);
         mkdir($worktree, 0700);
-        $state = IssueState::forWorktree('ORB-7', $worktree);
+        $state = IssueState::forWorktree('AUX-7', $worktree);
         $discovery = new AttemptId(str_repeat('a', 32));
         $proof = new AttemptId(str_repeat('b', 32));
 
         $state->writeAttempt($discovery, AttemptPurpose::Discovery, new OperationId(str_repeat('c', 32)));
-        $state->writeTopology(issueStateTopology('ORB-7', $discovery));
+        $state->writeTopology(issueStateTopology('AUX-7', $discovery));
         $state->writeAttempt($proof, AttemptPurpose::Proof, new OperationId(str_repeat('d', 32)));
-        $state->writeTopology(issueStateTopology('ORB-7', $proof, AttemptPurpose::Proof));
+        $state->writeTopology(issueStateTopology('AUX-7', $proof, AttemptPurpose::Proof));
         $state->writeProof(['status' => 'diagnosis', 'attempt_id' => $proof->value]);
 
         expect($state->attemptId(AttemptPurpose::Discovery)->value)
@@ -151,21 +151,21 @@ describe('IssueState', function () {
     it('keeps candidate convergence independent from retained proof and discovery', function (): void {
         $worktree = temporaryPath('orbit-issue-state-', 4);
         mkdir($worktree, 0700);
-        $state = IssueState::forWorktree('ORB-7', $worktree);
+        $state = IssueState::forWorktree('AUX-7', $worktree);
         $discovery = new AttemptId(str_repeat('a', 32));
         $proof = new AttemptId(str_repeat('b', 32));
         $candidate = new AttemptId(str_repeat('c', 32));
         $state->writeAttempt($discovery, AttemptPurpose::Discovery, new OperationId(str_repeat('d', 32)));
         $state->writeAttempt($proof, AttemptPurpose::Proof, new OperationId(str_repeat('e', 32)));
         $state->writeAttempt($candidate, AttemptPurpose::CandidateConvergence, new OperationId(str_repeat('f', 32)));
-        $state->writeTopology(issueStateTopology('ORB-7', $candidate, AttemptPurpose::CandidateConvergence));
+        $state->writeTopology(issueStateTopology('AUX-7', $candidate, AttemptPurpose::CandidateConvergence));
 
         expect($state->attemptId(AttemptPurpose::CandidateConvergence)->value)
             ->toBe($candidate->value)
             ->and($state->requireTopology(AttemptPurpose::CandidateConvergence)->purpose)
             ->toBe(AttemptPurpose::CandidateConvergence)
             ->and(fn () => $state->attempt())
-            ->toThrow(RuntimeException::class, 'ORB-7 has multiple attempts; select one.');
+            ->toThrow(RuntimeException::class, 'AUX-7 has multiple attempts; select one.');
 
         $state->forgetAttempt(AttemptPurpose::CandidateConvergence);
 
@@ -181,16 +181,16 @@ describe('IssueState', function () {
         $worktree = temporaryPath('orbit-issue-state-', 4);
         mkdir($worktree, 0700);
         $attempt = new AttemptId(str_repeat('a', 32));
-        IssueState::forWorktree('NCK-12', $worktree)
+        IssueState::forWorktree('TST-12', $worktree)
             ->writeAttempt($attempt, AttemptPurpose::Discovery, new OperationId(str_repeat('b', 32)));
-        IssueState::forWorktree('NCK-12', $worktree)
-            ->writeTopology(issueStateTopology('NCK-12', new AttemptId(str_repeat('c', 32))));
+        IssueState::forWorktree('TST-12', $worktree)
+            ->writeTopology(issueStateTopology('TST-12', new AttemptId(str_repeat('c', 32))));
 
-        expect(fn () => IssueState::forWorktree('NCK-13', $worktree)->attempt())
+        expect(fn () => IssueState::forWorktree('TST-13', $worktree)->attempt())
             ->toThrow(RuntimeException::class, 'lease is invalid')
-            ->and(fn () => IssueState::forWorktree('NCK-13', $worktree)->topology())
+            ->and(fn () => IssueState::forWorktree('TST-13', $worktree)->topology())
             ->toThrow(RuntimeException::class, 'another issue')
-            ->and(fn () => IssueState::forWorktree('NCK-12', $worktree)->requireTopology())
+            ->and(fn () => IssueState::forWorktree('TST-12', $worktree)->requireTopology())
             ->toThrow(RuntimeException::class, 'name different attempts');
     });
 });

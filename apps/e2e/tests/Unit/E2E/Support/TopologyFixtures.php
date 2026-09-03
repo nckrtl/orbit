@@ -93,7 +93,7 @@ function preparedTopologyRepository(): string
     hydrateFixtureVendor($root);
 
     foreach ([
-        ['git', 'init', '-q', '-b', 'feature/NCK-123', $root],
+        ['git', 'init', '-q', '-b', 'feature/TST-123', $root],
         ['git', '-C', $root, 'config', 'user.email', 'developer@example.com'],
         ['git', '-C', $root, 'config', 'user.name', 'Orbit Developer'],
         ['git', '-C', $root, 'add', '.'],
@@ -124,7 +124,7 @@ function topologySnapshotVmInventoryJson(): string
     $roles = \App\E2E\Value\TopologyProfile::ROLES;
     $instances = array_merge(
         array_map(static fn (string $role): string => TopologyTarget::topologySnapshot()->instance($role), $roles),
-        array_map(static fn (string $role): string => featureTarget('NCK-123')->instance($role), $roles),
+        array_map(static fn (string $role): string => featureTarget('TST-123')->instance($role), $roles),
     );
 
     return json_encode(array_map(
@@ -229,7 +229,7 @@ function pinnedFeatureWorktree(string $repositoryRoot, string $suffix): string
     $worktree = temporaryPath('orbit-worktree-'.$suffix.'-');
     $sourcePath = $worktree.'/feature-source-'.$suffix.'.txt';
     foreach ([
-        ['git', '-C', $repositoryRoot, 'worktree', 'add', '-q', '-b', 'feature/NCK-123-'.$suffix, $worktree, 'HEAD'],
+        ['git', '-C', $repositoryRoot, 'worktree', 'add', '-q', '-b', 'feature/TST-123-'.$suffix, $worktree, 'HEAD'],
         ['git', '-C', $worktree, 'config', 'user.email', 'developer@example.com'],
         ['git', '-C', $worktree, 'config', 'user.name', 'Orbit Developer'],
     ] as $index => $command) {
@@ -298,7 +298,7 @@ function pinnedWorktreeInventoryResult(
             return Process::result(json_encode(array_merge(
                 array_values(array_filter(
                     json_decode(topologySnapshotVmInventoryJson(), true, 16, JSON_THROW_ON_ERROR),
-                    static fn (array $vm): bool => ! str_contains((string) $vm['name'], 'nck-123'),
+                    static fn (array $vm): bool => ! str_contains((string) $vm['name'], 'tst-123'),
                 )),
                 $featureInstances,
             ), JSON_THROW_ON_ERROR));

@@ -240,7 +240,7 @@ final readonly class TopologyProofRunner
             $phase = 'identity';
             $this->synchronizer->probeCheckoutIdentity($target, $candidateSha, $candidateTree);
             $phase = 'fixtures';
-            $this->fixtures->stage($target, $repository, $candidateSha, $plan->fixtureIssues);
+            $this->fixtures->stage($target, $repository, $candidateSha);
             $phase = 'sury-runtime';
             $this->observedPhpInputs->normalizeRuntime($target);
             $phase = 'converge';

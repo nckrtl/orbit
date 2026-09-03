@@ -380,7 +380,7 @@ it('authorizes an exact promotion copy with complete attempt identity', function
     $host->metadata[$copy] = [
         'user.orbit.e2e.owner' => 'orbit-e2e',
         'user.orbit.e2e.operation' => str_repeat('a', 32),
-        'user.orbit.e2e.issue' => 'ORB-92',
+        'user.orbit.e2e.issue' => 'AUX-92',
         'user.orbit.e2e.attempt' => str_repeat('b', 32),
     ];
     $host->networkUsers[] = "/1.0/instances/{$copy}?project=default";
@@ -430,10 +430,10 @@ it('fails closed on incomplete or ambiguous ownership evidence', function (Closu
             $host->metadata['orbit-e2e-topology-snapshot-gateway'] = [
                 'user.orbit.e2e.owner' => 'orbit-e2e',
                 'user.orbit.e2e.operation' => str_repeat('a', 32),
-                'user.orbit.e2e.issue' => 'ORB-92',
+                'user.orbit.e2e.issue' => 'AUX-92',
             ];
         },
-        'belongs to feature issue ORB-92',
+        'belongs to feature issue AUX-92',
     ],
     'unexpected instance metadata' => [
         function (LegacyRecoveryHost $host): void {

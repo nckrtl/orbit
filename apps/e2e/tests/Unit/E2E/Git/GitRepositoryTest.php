@@ -45,30 +45,29 @@ describe('GitRepository', function (): void {
     });
 
     it('reads the regular files directly under one directory with their modes', function (): void {
-        mkdir($this->path.'/proofs/NCK-82', 0700, true);
-        file_put_contents($this->path.'/proofs/NCK-82/check.sh', "#!/bin/sh\n");
-        chmod($this->path.'/proofs/NCK-82/check.sh', 0755);
-        file_put_contents($this->path.'/proofs/NCK-82/plan.json', "{}\n");
-        file_put_contents($this->path.'/proofs/other.json', "{}\n");
+        mkdir($this->path.'/.loop/proof', 0700, true);
+        file_put_contents($this->path.'/.loop/proof/check.sh', "#!/bin/sh\n");
+        chmod($this->path.'/.loop/proof/check.sh', 0755);
+        file_put_contents($this->path.'/.loop/proof/TST-82.json', "{}\n");
         git($this->path, ['add', '.']);
         git($this->path, ['commit', '--quiet', '-m', 'fixture']);
         $repository = new GitRepository($this->path);
         $commit = $repository->commit();
 
-        expect($repository->directoryBlobs($commit, 'proofs/NCK-82'))
+        expect($repository->directoryBlobs($commit, '.loop/proof'))
             ->toBe([
+                'TST-82.json' => ['mode' => '100644', 'content' => "{}\n"],
                 'check.sh' => ['mode' => '100755', 'content' => "#!/bin/sh\n"],
-                'plan.json' => ['mode' => '100644', 'content' => "{}\n"],
             ])
-            ->and($repository->directoryBlobs($commit, 'proofs/NCK-58'))
+            ->and($repository->directoryBlobs($commit, '.loop/missing'))
             ->toBe([]);
 
-        mkdir($this->path.'/proofs/NCK-82/nested', 0700);
-        file_put_contents($this->path.'/proofs/NCK-82/nested/deep.txt', "deep\n");
+        mkdir($this->path.'/.loop/proof/nested', 0700);
+        file_put_contents($this->path.'/.loop/proof/nested/deep.txt', "deep\n");
         git($this->path, ['add', '.']);
         git($this->path, ['commit', '--quiet', '-m', 'nested']);
 
-        expect(fn (): array => $repository->directoryBlobs($repository->commit(), 'proofs/NCK-82'))
+        expect(fn (): array => $repository->directoryBlobs($repository->commit(), '.loop/proof'))
             ->toThrow(InvalidArgumentException::class, 'is not a regular file')
             ->and(fn (): array => $repository->directoryBlobs($commit, '../outside'))
             ->toThrow(InvalidArgumentException::class);
@@ -208,7 +207,7 @@ describe('GitRepository', function (): void {
         $proved = $repository->commit();
         $originalBranch = $repository->branch();
         $attempt = new \App\E2E\Value\AttemptId(str_repeat('a', 32));
-        $repository->pinProof('ORB-99', $attempt, $proved);
+        $repository->pinProof('AUX-99', $attempt, $proved);
 
         git($this->path, ['switch', '--orphan', 'replacement']);
         file_put_contents($this->path.'/replacement.txt', "replacement\n");
@@ -217,7 +216,7 @@ describe('GitRepository', function (): void {
         git($this->path, ['branch', '-D', $originalBranch]);
 
         expect($repository->tree($proved))->toMatch('/\A[0-9a-f]{40}\z/');
-        $repository->unpinProof('ORB-99', $attempt);
+        $repository->unpinProof('AUX-99', $attempt);
 
         expect(fn (): string => $repository->tree($proved))
             ->toThrow(InvalidArgumentException::class, 'not reachable');

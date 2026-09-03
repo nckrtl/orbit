@@ -261,7 +261,7 @@ describe('TopologySnapshotManifestStore', function () {
 });
 
 /** Fake one active harness VM whose metadata pins the given generation. */
-function pinnedTopologyState(TopologySnapshotGeneration $generation, string $issue = 'NCK-123'): void
+function pinnedTopologyState(TopologySnapshotGeneration $generation, string $issue = 'TST-123'): void
 {
     $target = featureTarget($issue);
     Process::fake([

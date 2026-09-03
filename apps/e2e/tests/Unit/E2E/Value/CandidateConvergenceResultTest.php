@@ -11,7 +11,7 @@ function candidateConvergenceResult(): CandidateConvergenceResult
 {
     return new CandidateConvergenceResult(
         'converged',
-        'ORB-9',
+        'AUX-9',
         new AttemptId(str_repeat('a', 32)),
         str_repeat('b', 40),
         str_repeat('c', 40),

@@ -32,9 +32,9 @@ describe('TopologyTarget', function () {
         expect(fn () => TopologyTarget::feature($issue, AttemptId::generate()))
             ->toThrow(InvalidArgumentException::class);
     })->with([
-        'lowercase prefix' => ['nck-123'],
-        'no number' => ['NCK-'],
-        'leading zero' => ['NCK-0'],
+        'lowercase prefix' => ['tst-123'],
+        'no number' => ['TST-'],
+        'leading zero' => ['TST-0'],
         'topology-snapshot' => ['topology-snapshot'],
     ]);
 
@@ -43,8 +43,8 @@ describe('TopologyTarget', function () {
 
         expect(TopologyTarget::topologySnapshot()->network())
             ->toBe('oe-topo-snap')
-            ->and(TopologyTarget::feature('NCK-123', $attempt)->network())
-            ->toBe('oe-0799eee4eaf4')
+            ->and(TopologyTarget::feature('TST-123', $attempt)->network())
+            ->toBe('oe-50fa1830b7de')
             ->and(TopologyTarget::feature('ORBIT-123456789', $attempt)->network())
             ->toBe('oe-83bc72a8f494')
             ->and(strlen(TopologyTarget::feature('ORBIT-123456789', $attempt)->network()))
@@ -81,8 +81,8 @@ describe('TopologyTarget', function () {
         ]);
         $maximumTarget = TopologyTarget::disposableCold('ORBITABCDE-123456789', $attempt, $maximumRecipe);
 
-        expect(TopologyTarget::feature('NCK-123', $attempt)->instance('app-dev'))
-            ->toBe('orbit-e2e-nck-123-aaaaaaaa-app-dev')
+        expect(TopologyTarget::feature('TST-123', $attempt)->instance('app-dev'))
+            ->toBe('orbit-e2e-tst-123-aaaaaaaa-app-dev')
             ->and(TopologyTarget::topologySnapshot()->instance('gateway'))
             ->toBe('orbit-e2e-topology-snapshot-gateway')
             ->and(strlen(TopologyTarget::feature('ORBIT-123456789', $attempt)->instance('app-prod')))
@@ -92,8 +92,8 @@ describe('TopologyTarget', function () {
     });
 
     it('never shares resource identities between two attempts of one issue', function () {
-        $first = TopologyTarget::feature('NCK-123', new AttemptId(str_repeat('a', 32)));
-        $second = TopologyTarget::feature('NCK-123', new AttemptId(str_repeat('b', 32)));
+        $first = TopologyTarget::feature('TST-123', new AttemptId(str_repeat('a', 32)));
+        $second = TopologyTarget::feature('TST-123', new AttemptId(str_repeat('b', 32)));
 
         expect($first->network())
             ->not->toBe($second->network())->and($first->instance('gateway'))
@@ -103,26 +103,26 @@ describe('TopologyTarget', function () {
 
     it('derives disposable identities from physical Nodes instead of assigned roles', function () {
         $target = TopologyTarget::disposableCold(
-            'ORB-106',
+            'AUX-106',
             new AttemptId(str_repeat('a', 32)),
             TopologyRecipe::coldAcceptance(),
         );
 
-        expect($target->network())->toBe('oe-534fc0ba2be4');
-        expect($target->instance('operator'))->toBe('orbit-e2e-orb-106-aaaaaaaa-operator');
-        expect($target->instance('app-dev'))->toBe('orbit-e2e-orb-106-aaaaaaaa-operator');
-        expect($target->instance('extra'))->toBe('orbit-e2e-orb-106-aaaaaaaa-extra');
-        expect($target->mac('operator'))->toBe('00:16:3e:9a:fc:2f');
-        expect($target->mac('app-dev'))->toBe('00:16:3e:9a:fc:2f');
+        expect($target->network())->toBe('oe-a004e3f9e8dd');
+        expect($target->instance('operator'))->toBe('orbit-e2e-aux-106-aaaaaaaa-operator');
+        expect($target->instance('app-dev'))->toBe('orbit-e2e-aux-106-aaaaaaaa-operator');
+        expect($target->instance('extra'))->toBe('orbit-e2e-aux-106-aaaaaaaa-extra');
+        expect($target->mac('operator'))->toBe('00:16:3e:77:1f:b1');
+        expect($target->mac('app-dev'))->toBe('00:16:3e:77:1f:b1');
         expect(TopologyTarget::ipv4For(2, $target->recipe->node('extra')->address))->toBe('10.232.2.13');
     });
 
     it('carries the attempt identity of a feature target only', function () {
         $attempt = new AttemptId(str_repeat('a', 32));
 
-        expect(TopologyTarget::feature('NCK-123', $attempt)->attempt)
+        expect(TopologyTarget::feature('TST-123', $attempt)->attempt)
             ->toEqual($attempt)
-            ->and(TopologyTarget::feature('NCK-123', $attempt)->isTopologySnapshot())
+            ->and(TopologyTarget::feature('TST-123', $attempt)->isTopologySnapshot())
             ->toBeFalse()
             ->and(TopologyTarget::topologySnapshot()->attempt)
             ->toBeNull()
@@ -131,7 +131,7 @@ describe('TopologyTarget', function () {
     });
 
     it('uses the proven deterministic topology and role MAC formula', function () {
-        $target = TopologyTarget::feature('NCK-123', new AttemptId(str_repeat('a', 32)));
+        $target = TopologyTarget::feature('TST-123', new AttemptId(str_repeat('a', 32)));
 
         expect($target->mac('gateway'))
             ->toBe('00:16:3e:'.implode(':', str_split(substr(sha1($target->network().':gateway'), 0, 6), 2)))
@@ -140,13 +140,13 @@ describe('TopologyTarget', function () {
     });
 
     it('matches the issue as one delimited branch token', function (string $branch, bool $matches) {
-        expect(TopologyTarget::feature('NCK-123', AttemptId::generate())->matchesBranch($branch))->toBe($matches);
+        expect(TopologyTarget::feature('TST-123', AttemptId::generate())->matchesBranch($branch))->toBe($matches);
     })->with([
-        'prefixed feature branch' => ['feature/NCK-123-build-topology', true],
-        'lowercase worktree branch' => ['codex/nck-123', true],
-        'larger issue number' => ['feature/NCK-1234-build-topology', false],
-        'issue-like suffix' => ['feature/NCK-123A-build-topology', false],
-        'unrelated issue' => ['feature/NCK-124-build-topology', false],
+        'prefixed feature branch' => ['feature/TST-123-build-topology', true],
+        'lowercase worktree branch' => ['codex/tst-123', true],
+        'larger issue number' => ['feature/TST-1234-build-topology', false],
+        'issue-like suffix' => ['feature/TST-123A-build-topology', false],
+        'unrelated issue' => ['feature/TST-124-build-topology', false],
     ]);
 
     it('resolves the retired topology snapshot target to the retired identity resources', function () {
@@ -177,7 +177,7 @@ describe('TopologyTarget', function () {
 
         expect(TopologyTarget::topologySnapshot(TopologySnapshotIdentity::retired())->requireTopologySnapshotIdentity())
             ->toEqual(TopologySnapshotIdentity::retired())
-            ->and(fn () => TopologyTarget::feature('NCK-123', $attempt)->requireTopologySnapshotIdentity())
+            ->and(fn () => TopologyTarget::feature('TST-123', $attempt)->requireTopologySnapshotIdentity())
             ->toThrow(InvalidArgumentException::class);
     });
 });

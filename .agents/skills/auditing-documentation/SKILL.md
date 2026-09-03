@@ -25,7 +25,7 @@ The reference for a page is the code and tests on the current branch. Inside the
 - **Decisions:** every statement that follows from an ADR matches the accepted record, and no Decision bullet is restated outside a `concepts.md` entry.
 - **Authority:** the page agrees with every page above it in the authority order.
 - **Ownership:** each mechanism is stated on exactly one page. A second copy is drift even when both copies agree today.
-- **Currency:** no change narration, no issue IDs in body text except as part of a `proofs/<ID>/` fixture path, no "check the code" caveats.
+- **Currency:** no change narration, no issue IDs in body text except as part of a `.loop/proof/<ID>.json` plan path, no "check the code" caveats.
 - **Coverage:** every command, field, failure code, and limit the scope's shipped code exposes is on a page a reader can find from `docs/README.md`.
 
 ## Fix or report

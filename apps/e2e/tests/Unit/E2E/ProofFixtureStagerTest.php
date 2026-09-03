@@ -111,10 +111,9 @@ final class ProofFixtureGuestFake implements GuestTransport
 
 /**
  * @param array<string, array{string, int}> $files
- * @param array<string, array<string, array{string, int}>> $additionalIssues
  * @return array{repository:GitRepository, commit:string}
  */
-function proofFixtureRepository(string $issue, array $files, array $additionalIssues = []): array
+function proofFixtureRepository(string $issue, array $files): array
 {
     $path = temporaryPath('orbit-proof-fixture-git-', 6);
     mkdir($path, 0700, true);
@@ -126,21 +125,12 @@ function proofFixtureRepository(string $issue, array $files, array $additionalIs
         proofFixtureGit($path, $arguments);
     }
     file_put_contents($path.'/README.md', "fixture\n");
-    if ($files !== []) {
-        $directory = $path.'/proofs/'.$issue;
-        mkdir($directory, 0700, true);
-        foreach ($files as $name => [$content, $mode]) {
-            file_put_contents($directory.'/'.$name, $content);
-            chmod($directory.'/'.$name, $mode);
-        }
-    }
-    foreach ($additionalIssues as $additionalIssue => $additionalFiles) {
-        $directory = $path.'/proofs/'.$additionalIssue;
-        mkdir($directory, 0700, true);
-        foreach ($additionalFiles as $name => [$content, $mode]) {
-            file_put_contents($directory.'/'.$name, $content);
-            chmod($directory.'/'.$name, $mode);
-        }
+    $directory = $path.'/.loop/proof';
+    mkdir($directory, 0700, true);
+    file_put_contents($directory.'/'.$issue.'.json', "{\"setup\":[],\"acceptance\":[]}\n");
+    foreach ($files as $name => [$content, $mode]) {
+        file_put_contents($directory.'/'.$name, $content);
+        chmod($directory.'/'.$name, $mode);
     }
     proofFixtureGit($path, ['add', '.']);
     proofFixtureGit($path, ['commit', '--quiet', '-m', 'fixtures']);
@@ -168,19 +158,19 @@ describe('ProofFixtureStager', function (): void {
     });
 
     it('stages the candidate fixtures root-owned on every role and records the digest each role observed', function (): void {
-        ['repository' => $repository, 'commit' => $commit] = proofFixtureRepository('NCK-82', [
-            'plan.json' => ["{}\n", 0644],
+        ['repository' => $repository, 'commit' => $commit] = proofFixtureRepository('TST-82', [
             'check.sh' => ["#!/bin/sh\nexit 0\n", 0755],
+            'input.txt' => ["fixture\n", 0644],
         ]);
         $guest = new ProofFixtureGuestFake;
-        $target = featureTarget('NCK-82', 'b');
+        $target = featureTarget('TST-82', 'b');
         $operation = new OperationId(str_repeat('a', 32));
 
         $fixtures = new ProofFixtureStager($guest, $operation)->stage($target, $repository, $commit);
 
         $files = [
             'check.sh' => ['mode' => '755', 'sha256' => hash('sha256', "#!/bin/sh\nexit 0\n")],
-            'plan.json' => ['mode' => '644', 'sha256' => hash('sha256', "{}\n")],
+            'input.txt' => ['mode' => '644', 'sha256' => hash('sha256', "fixture\n")],
         ];
         $digest = hash('sha256', ProofFixtures::inventoryText($files));
         expect($fixtures->toArray())
@@ -214,11 +204,11 @@ describe('ProofFixtureStager', function (): void {
         foreach (range(1, 43) as $index) {
             $files[sprintf('fixture-%02d.sh', $index)] = ["#!/bin/sh\nexit 0\n", 0644];
         }
-        ['repository' => $repository, 'commit' => $commit] = proofFixtureRepository('ORB-7', $files);
+        ['repository' => $repository, 'commit' => $commit] = proofFixtureRepository('AUX-7', $files);
         $guest = new ProofFixtureGuestFake(maxBatchSize: 128);
 
         new ProofFixtureStager($guest, new OperationId(str_repeat('d', 32)))->stage(
-            featureTarget('ORB-7', 'b'),
+            featureTarget('AUX-7', 'b'),
             $repository,
             $commit,
         );
@@ -228,29 +218,29 @@ describe('ProofFixtureStager', function (): void {
     });
 
     it('empties the guest fixture directory on every role before it installs', function (): void {
-        ['repository' => $repository, 'commit' => $commit] = proofFixtureRepository('NCK-100', [
+        ['repository' => $repository, 'commit' => $commit] = proofFixtureRepository('TST-100', [
             'check.sh' => ["#!/bin/sh\nexit 0\n", 0755],
         ]);
         $guest = new ProofFixtureGuestFake;
-        $guest->installed['orbit-e2e-nck-100-bbbbbbbb-gateway'] = ['marker' => ['mode' => '644', 'content' => "x\n"]];
-        $target = featureTarget('NCK-100', 'b');
+        $guest->installed['orbit-e2e-tst-100-bbbbbbbb-gateway'] = ['marker' => ['mode' => '644', 'content' => "x\n"]];
+        $target = featureTarget('TST-100', 'b');
 
         new ProofFixtureStager($guest, new OperationId(str_repeat('c', 32)))->stage($target, $repository, $commit);
 
         expect($guest->reset)
             ->toHaveCount(3)
-            ->and($guest->installed['orbit-e2e-nck-100-bbbbbbbb-gateway'])
+            ->and($guest->installed['orbit-e2e-tst-100-bbbbbbbb-gateway'])
             ->toHaveKeys(['check.sh'])
-            ->and($guest->installed['orbit-e2e-nck-100-bbbbbbbb-gateway'])
+            ->and($guest->installed['orbit-e2e-tst-100-bbbbbbbb-gateway'])
             ->not->toHaveKey('marker');
     });
 
     it('stages an empty inventory without pushing files when the issue has no fixture directory', function (): void {
-        ['repository' => $repository, 'commit' => $commit] = proofFixtureRepository('NCK-82', []);
+        ['repository' => $repository, 'commit' => $commit] = proofFixtureRepository('TST-82', []);
         $guest = new ProofFixtureGuestFake;
 
         $fixtures = new ProofFixtureStager($guest, new OperationId(str_repeat('a', 32)))
-            ->stage(featureTarget('NCK-82', 'b'), $repository, $commit);
+            ->stage(featureTarget('TST-82', 'b'), $repository, $commit);
 
         expect($fixtures->files)
             ->toBe([])
@@ -262,48 +252,44 @@ describe('ProofFixtureStager', function (): void {
             ->toBe(['fixture-prepare', 'fixture-directory', 'fixture-verify', 'fixture-cleanup']);
     });
 
-    it('reads only the fixtures of the named issue at the exact commit', function (): void {
-        ['repository' => $repository, 'commit' => $commit] = proofFixtureRepository('NCK-82', [
+    it('reads only current-workspace fixtures at the exact commit and excludes the plan', function (): void {
+        ['repository' => $repository, 'commit' => $commit] = proofFixtureRepository('TST-82', [
             'check.sh' => ["#!/bin/sh\n", 0755],
         ]);
+        file_put_contents($repository->root().'/.loop/proof/later.txt', "later\n");
+        proofFixtureGit($repository->root(), ['add', '.']);
+        proofFixtureGit($repository->root(), ['commit', '--quiet', '-m', 'later fixture']);
         $stager = new ProofFixtureStager(new ProofFixtureGuestFake, new OperationId(str_repeat('a', 32)));
 
-        expect(array_keys($stager->inventory($repository, $commit, 'NCK-82')))
-            ->toBe(['check.sh'])
-            ->and($stager->inventory($repository, $commit, 'NCK-58'))
-            ->toBe([]);
+        expect(array_keys($stager->inventory($repository, $commit, 'TST-82')))
+            ->toBe(['check.sh']);
     });
 
-    it('stages declared additional issue fixtures from the candidate under namespaced paths', function (): void {
-        ['repository' => $repository, 'commit' => $commit] = proofFixtureRepository(
-            'ORB-7',
-            [
-                'driver.sh' => ["#!/bin/sh\n", 0755],
-            ],
-            [
-                'NCK-73' => ['recover.sh' => ["#!/bin/sh\nexit 0\n", 0755]],
-                'NCK-116' => ['lib.sh' => ["#!/bin/sh\n", 0644]],
-            ],
-        );
+    it('stages only flat fixtures carried by the active workspace', function (): void {
+        ['repository' => $repository, 'commit' => $commit] = proofFixtureRepository('AUX-7', [
+            'driver.sh' => ["#!/bin/sh\n", 0755],
+            'recover.sh' => ["#!/bin/sh\nexit 0\n", 0755],
+            'support.txt' => ["support\n", 0644],
+        ]);
         $guest = new ProofFixtureGuestFake;
-        $target = featureTarget('ORB-7', 'b');
+        $target = featureTarget('AUX-7', 'b');
 
         $fixtures = new ProofFixtureStager($guest, new OperationId(str_repeat('a', 32)))
-            ->stage($target, $repository, $commit, ['NCK-73', 'NCK-116']);
+            ->stage($target, $repository, $commit);
 
         expect(array_keys($fixtures->files))
-            ->toBe(['NCK-116/lib.sh', 'NCK-73/recover.sh', 'driver.sh'])
+            ->toBe(['driver.sh', 'recover.sh', 'support.txt'])
             ->and(array_keys($guest->installed[$target->instance('app-prod')]))
-            ->toBe(['NCK-116/lib.sh', 'NCK-73/recover.sh', 'driver.sh'])
+            ->toBe(['driver.sh', 'recover.sh', 'support.txt'])
             ->and(array_column($guest->pushes, 'label'))
             ->each->toMatch('/\A[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}\z/D');
     });
 
     it('fails closed and cleans the staging directory when a role reports another inventory', function (): void {
-        ['repository' => $repository, 'commit' => $commit] = proofFixtureRepository('NCK-82', [
+        ['repository' => $repository, 'commit' => $commit] = proofFixtureRepository('TST-82', [
             'check.sh' => ["#!/bin/sh\n", 0755],
         ]);
-        $target = featureTarget('NCK-82', 'b');
+        $target = featureTarget('TST-82', 'b');
         $guest = new ProofFixtureGuestFake([
             $target->instance('app-prod') => "check.sh\t644\t".str_repeat('0', 64)."\n",
         ]);
@@ -323,10 +309,10 @@ describe('ProofFixtureStager', function (): void {
     });
 
     it('fails closed when a guest install refuses', function (): void {
-        ['repository' => $repository, 'commit' => $commit] = proofFixtureRepository('NCK-82', [
+        ['repository' => $repository, 'commit' => $commit] = proofFixtureRepository('TST-82', [
             'check.sh' => ["#!/bin/sh\n", 0755],
         ]);
-        $target = featureTarget('NCK-82', 'b');
+        $target = featureTarget('TST-82', 'b');
         $guest = new ProofFixtureGuestFake(failingLabel: 'fixture-install.app-dev.0');
 
         expect(
@@ -343,12 +329,12 @@ describe('ProofFixtureStager', function (): void {
     });
 
     it('refuses a fixture whose name is not shell-safe', function (): void {
-        ['repository' => $repository, 'commit' => $commit] = proofFixtureRepository('NCK-82', [
+        ['repository' => $repository, 'commit' => $commit] = proofFixtureRepository('TST-82', [
             'Check File.sh' => ["#!/bin/sh\n", 0755],
         ]);
         $stager = new ProofFixtureStager(new ProofFixtureGuestFake, new OperationId(str_repeat('a', 32)));
 
-        expect(fn () => $stager->inventory($repository, $commit, 'NCK-82'))
+        expect(fn () => $stager->inventory($repository, $commit, 'TST-82'))
             ->toThrow(RuntimeException::class, 'Proof fixture [Check File.sh] has an invalid file name.');
     });
 });

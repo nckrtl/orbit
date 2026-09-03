@@ -31,7 +31,7 @@ function task7_host(): IncusHost
 function task7_vm(string $name, string $owner = 'orbit-e2e'): string
 {
     $role = str_ends_with($name, '-gateway') ? 'gateway' : (str_ends_with($name, '-app-dev') ? 'app-dev' : 'app-prod');
-    $network = 'oe-0799eee4eaf4';
+    $network = 'oe-50fa1830b7de';
     $hash = substr(sha1("{$network}:{$role}"), 0, 6);
     $mac = '00:16:3e:'.implode(':', str_split($hash, 2));
     $ipv4 = ['gateway' => '10.232.2.10', 'app-dev' => '10.232.2.11', 'app-prod' => '10.232.2.12'][$role];
@@ -185,7 +185,7 @@ function task7_process_result(
     }
 
     if (array_slice($command, -4) === ['network', 'list', 'lab:', '--format=json']) {
-        $network = $target?->network() ?? 'oe-0799eee4eaf4';
+        $network = $target?->network() ?? 'oe-50fa1830b7de';
 
         return Process::result(json_encode([[
             'name' => $network,
@@ -196,7 +196,7 @@ function task7_process_result(
     if (($command[count($command) - 1] ?? null) === '--format=json') {
         if (in_array('network', $command, true)) {
             return Process::result(json_encode([[
-                'name' => 'oe-0799eee4eaf4',
+                'name' => 'oe-50fa1830b7de',
                 'config' => ['user.orbit.e2e.owner' => 'orbit-e2e', 'ipv4.address' => '10.232.2.1/24'],
             ]], JSON_THROW_ON_ERROR));
         }
@@ -216,7 +216,7 @@ function task7_process_result(
             return Process::result(json_encode(
                 array_map(
                     static fn (string $role): array => json_decode(
-                        task7_vm('orbit-e2e-nck-123-aaaaaaaa-'.$role),
+                        task7_vm('orbit-e2e-tst-123-aaaaaaaa-'.$role),
                         true,
                         16,
                         JSON_THROW_ON_ERROR,
@@ -257,7 +257,7 @@ describe('TopologyConverger', function () {
 
         $sha = str_repeat('a', 40);
         $report = new TopologyConverger(task7_host())->converge(
-            featureTarget('NCK-123'),
+            featureTarget('TST-123'),
             new SourceState($sha, $sha, false),
             new LaravelRelease('v13.10.1', str_repeat('b', 40)),
         );
@@ -295,9 +295,9 @@ describe('TopologyConverger', function () {
             ->toHaveCount(27)
             ->and(array_column(array_slice($guestCommands, 3, 3), 4))
             ->toBe([
-                'lab:orbit-e2e-nck-123-aaaaaaaa-gateway',
-                'lab:orbit-e2e-nck-123-aaaaaaaa-gateway',
-                'lab:orbit-e2e-nck-123-aaaaaaaa-gateway',
+                'lab:orbit-e2e-tst-123-aaaaaaaa-gateway',
+                'lab:orbit-e2e-tst-123-aaaaaaaa-gateway',
+                'lab:orbit-e2e-tst-123-aaaaaaaa-gateway',
             ]);
 
         expect(array_map(fn (array $command): array => array_slice($command, 6), array_slice($guestCommands, 0, 27)))
@@ -361,7 +361,7 @@ describe('TopologyConverger', function () {
 
     it('converges logical roles through physical cold recipe Nodes and normalizes every Node', function () {
         $target = TopologyTarget::disposableCold(
-            'ORB-106',
+            'AUX-106',
             attemptId(),
             TopologyRecipe::coldAcceptance(),
         );
@@ -436,7 +436,7 @@ describe('TopologyConverger', function () {
         });
 
         new TopologyConverger(task7_host())->converge(
-            featureTarget('NCK-123'),
+            featureTarget('TST-123'),
             new SourceState(str_repeat('a', 40), str_repeat('a', 40), false),
             new LaravelRelease('v13.10.1', str_repeat('b', 40)),
         );
@@ -483,7 +483,7 @@ describe('TopologyConverger', function () {
         });
 
         new TopologyConverger(task7_host(), instanceApiReadinessRetryDelayMicroseconds: 0)->converge(
-            featureTarget('NCK-123'),
+            featureTarget('TST-123'),
             new SourceState(str_repeat('a', 40), str_repeat('a', 40), false),
             new LaravelRelease('v13.10.1', str_repeat('b', 40)),
         );
@@ -559,14 +559,14 @@ describe('TopologyConverger', function () {
             task7_host(),
             instanceApiReadinessRetryDelayMicroseconds: 0,
         )->converge(
-            featureTarget('NCK-123'),
+            featureTarget('TST-123'),
             new SourceState(str_repeat('a', 40), str_repeat('a', 40), false),
             new LaravelRelease('v13.10.1', str_repeat('b', 40)),
         ))
             ->toThrow(
                 RuntimeException::class,
                 'Guest convergence readiness action converge-sample-app.sh instance-api-readiness failed '
-                .'on orbit-e2e-nck-123-aaaaaaaa-app-dev after 30 attempts; probe instance:list --json failed '
+                .'on orbit-e2e-tst-123-aaaaaaaa-app-dev after 30 attempts; probe instance:list --json failed '
                 ."on attempt 30 with exit code {$exitCode}.",
             );
 
@@ -610,14 +610,14 @@ describe('TopologyConverger', function () {
             task7_host(),
             instanceApiReadinessRetryDelayMicroseconds: 0,
         )->converge(
-            featureTarget('NCK-123'),
+            featureTarget('TST-123'),
             new SourceState(str_repeat('a', 40), str_repeat('a', 40), false),
             new LaravelRelease('v13.10.1', str_repeat('b', 40)),
         ))
             ->toThrow(
                 RuntimeException::class,
                 'Guest convergence script converge-sample-app.sh failed on '
-                ."orbit-e2e-nck-123-aaaaaaaa-app-dev with exit code {$exitCode}.",
+                ."orbit-e2e-tst-123-aaaaaaaa-app-dev with exit code {$exitCode}.",
             );
 
         expect(collect($recorded)->filter(
@@ -636,11 +636,11 @@ describe('TopologyConverger', function () {
         Process::fake(['*' => Process::result('[]')]);
 
         expect(fn () => new TopologyConverger(task7_host())->converge(
-            featureTarget('NCK-123'),
+            featureTarget('TST-123'),
             new SourceState(str_repeat('a', 40), str_repeat('a', 40), false),
             new LaravelRelease('v13.10.1', str_repeat('b', 40)),
         ))
-            ->toThrow(RuntimeException::class, 'network oe-0799eee4eaf4 does not exist');
+            ->toThrow(RuntimeException::class, 'network oe-50fa1830b7de does not exist');
 
         Process::assertDidntRun(
             fn (PendingProcess $process): bool => (
@@ -658,7 +658,7 @@ describe('TopologyConverger', function () {
 
             if (array_slice($command, -4) === ['network', 'list', 'lab:', '--format=json']) {
                 return Process::result(json_encode([[
-                    'name' => 'oe-0799eee4eaf4',
+                    'name' => 'oe-50fa1830b7de',
                     'config' => [
                         'user.orbit.e2e.owner' => $foreignResource === 'network' ? 'foreign' : 'orbit-e2e',
                         'ipv4.address' => '10.232.2.1/24',
@@ -671,7 +671,7 @@ describe('TopologyConverger', function () {
                 return Process::result(json_encode(array_map(
                     static fn (string $role): array => json_decode(
                         task7_vm(
-                            "orbit-e2e-nck-123-aaaaaaaa-{$role}",
+                            "orbit-e2e-tst-123-aaaaaaaa-{$role}",
                             $foreignResource === $role ? 'foreign' : 'orbit-e2e',
                         ),
                         true,
@@ -688,7 +688,7 @@ describe('TopologyConverger', function () {
         });
 
         expect(fn () => new TopologyConverger(task7_host())->converge(
-            featureTarget('NCK-123'),
+            featureTarget('TST-123'),
             new SourceState(str_repeat('a', 40), str_repeat('a', 40), false),
             new LaravelRelease('v13.10.1', str_repeat('b', 40)),
         ))

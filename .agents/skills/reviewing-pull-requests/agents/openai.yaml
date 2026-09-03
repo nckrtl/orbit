@@ -1,4 +1,4 @@
 interface:
   display_name: "Reviewing Pull Requests"
-  short_description: "Independently review an Orbit pull request"
-  default_prompt: "Use $reviewing-pull-requests to review this Orbit pull request against its Linear issue and candidate commit."
+  short_description: "Review and publish or hand off an exact-head verdict"
+  default_prompt: "Use $reviewing-pull-requests in publish mode by default, or handoff mode when the caller supplies it, to review and prove one exact Orbit candidate head and produce the complete formal-review payload; handoff mode makes no GitHub mutation."

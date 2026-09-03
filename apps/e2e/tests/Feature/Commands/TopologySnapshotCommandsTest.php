@@ -95,8 +95,8 @@ describe('topology snapshot commands', function () {
 
     it('refuses promote for an issue with no retained proof attempt before touching Incus', function () {
         $worktree = temporaryPath('orbit-topology-snapshot-promote-', 8);
-        mkdir($worktree.'/proofs', 0700, true);
-        file_put_contents($worktree.'/proofs/NCK-123.json', json_encode([
+        mkdir($worktree.'/.loop/proof', 0700, true);
+        file_put_contents($worktree.'/.loop/proof/TST-123.json', json_encode([
             'setup' => [],
             'acceptance' => [[
                 'id' => 'doctor',
@@ -108,8 +108,8 @@ describe('topology snapshot commands', function () {
         Process::fake();
 
         $this
-            ->artisan('topology-snapshot:promote', ['issue' => 'NCK-123', '--worktree' => $worktree, '--json' => true])
-            ->expectsOutputToContain('NCK-123 has no active attempt.')
+            ->artisan('topology-snapshot:promote', ['issue' => 'TST-123', '--worktree' => $worktree, '--json' => true])
+            ->expectsOutputToContain('TST-123 has no active attempt.')
             ->assertFailed();
         Process::assertNothingRan();
     });

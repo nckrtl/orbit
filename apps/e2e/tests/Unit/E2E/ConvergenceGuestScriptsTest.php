@@ -1546,7 +1546,7 @@ describe('convergence guest scripts', function () {
                     $probe,
                     'proof',
                     str_repeat('a', 40),
-                    'orbit-e2e-orb-94-app-dev',
+                    'orbit-e2e-aux-94-app-dev',
                     $checkout,
                 ], env: $environment);
                 $evidence = json_decode($process->mustRun()->getOutput(), true, 16, JSON_THROW_ON_ERROR);

@@ -10,9 +10,9 @@ usage() {
 initialize_feature_plan() {
     local worktree="$1"
     local linear_id="$2"
-    local plan="$worktree/.orbit/plan.md"
+    local plan="$worktree/.loop/plan.md"
 
-    mkdir -p "$worktree/.orbit"
+    mkdir -p "$worktree/.loop/proof"
 
     if [[ -e "$plan" ]]; then
         return

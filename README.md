@@ -51,8 +51,9 @@ bin/worktree-create NCK-123 concise-feature-name
 ```
 
 The command creates `.worktrees/nck-123-concise-feature-name` on branch
-`nck-123-concise-feature-name`, initializes a gitignored `.orbit/plan.md`, and
-bootstraps all projects.
+`nck-123-concise-feature-name`, initializes a tracked `.loop/plan.md` beside
+`.loop/proof/`, and bootstraps all projects. The issue branch carries that
+workspace through its first review and removes it alone before merge.
 
 Repository-owned skills under `.agents/skills/` are independently invokable
 helpers for decision records, issue creation, documentation writing and auditing, planning, implementation, review, and merge

@@ -17,7 +17,7 @@ use Throwable;
 /**
  * Stage the proof-only fixtures of one issue on every role of a proof attempt.
  *
- * The files come from `proofs/<issue>/` at the exact candidate
+ * The files come from `.loop/proof/` at the exact candidate
  * commit, never from the host working tree, and land root-owned and read-only
  * for the orbit user at `/var/lib/orbit-e2e/proof/<name>` on every role,
  * including roles without a checkout. Each role then reports the installed
@@ -31,10 +31,7 @@ final readonly class ProofFixtureStager
     /** The host guest-command helper rejects batches above this size. */
     private const int MAX_BATCH_REQUESTS = 128;
 
-    /**
-     * Replace the guest fixture directory. A promoted generation can carry another
-     * issue's fixtures, and the inventory check demands this issue's files only.
-     */
+    /** Replace the guest fixture directory so the inventory carries only this issue's files. */
     private const string DIRECTORY_SCRIPT = 'set -eu; rm -rf -- "$1"; install -d -o root -g root -m 0755 "$1"';
 
     /** The guest prints the installed inventory in the exact host layout. */
@@ -51,62 +48,40 @@ final readonly class ProofFixtureStager
     /**
      * Read the fixture inventory of the candidate commit without touching a guest.
      *
-     * @param list<string> $additionalIssues
      * @return array<string, array{mode:string, sha256:string, content:string}>
      */
     public function inventory(
         GitRepository $repository,
         string $candidateSha,
         string $issue,
-        array $additionalIssues = [],
     ): array {
-        if (
-            in_array($issue, $additionalIssues, true)
-            || count($additionalIssues) !== count(array_unique($additionalIssues))
-        ) {
-            throw new RuntimeException('The additional proof fixture issue list is invalid.');
-        }
-        /** @return array<string, array{mode:string, sha256:string, content:string}> */
-        $issueInventory = static function (string $fixtureIssue) use ($repository, $candidateSha): array {
-            TopologyTarget::assertIssue($fixtureIssue);
-            $issueFiles = [];
-            foreach ($repository->directoryBlobs(
-                $candidateSha,
-                ProofFixtures::hostDirectory($fixtureIssue),
-            ) as $name => $blob) {
-                if (! ProofFixtures::isFixtureName($name)) {
-                    throw new RuntimeException("Proof fixture [{$name}] has an invalid file name.");
-                }
-                $issueFiles[$name] = [
-                    'mode' => $blob['mode'] === '100755' ? '755' : '644',
-                    'sha256' => hash('sha256', $blob['content']),
-                    'content' => $blob['content'],
-                ];
+        TopologyTarget::assertIssue($issue);
+        $planName = $issue.'.json';
+        $files = [];
+        foreach ($repository->directoryBlobs($candidateSha, ProofFixtures::hostDirectory()) as $name => $blob) {
+            if ($name === $planName) {
+                continue;
             }
-
-            return $issueFiles;
-        };
-
-        $files = $issueInventory($issue);
-        foreach ($additionalIssues as $additionalIssue) {
-            TopologyTarget::assertIssue($additionalIssue);
-            foreach ($issueInventory($additionalIssue) as $name => $file) {
-                $files["{$additionalIssue}/{$name}"] = $file;
+            if (! ProofFixtures::isFixtureName($name)) {
+                throw new RuntimeException("Proof fixture [{$name}] has an invalid file name.");
             }
+            $files[$name] = [
+                'mode' => $blob['mode'] === '100755' ? '755' : '644',
+                'sha256' => hash('sha256', $blob['content']),
+                'content' => $blob['content'],
+            ];
         }
         ksort($files, SORT_STRING);
 
         return $files;
     }
 
-    /** @param list<string> $additionalIssues */
     public function stage(
         TopologyTarget $target,
         GitRepository $repository,
         string $candidateSha,
-        array $additionalIssues = [],
     ): ProofFixtures {
-        $inventory = $this->inventory($repository, $candidateSha, $target->issue, $additionalIssues);
+        $inventory = $this->inventory($repository, $candidateSha, $target->issue);
         $files = array_map(
             static fn (array $file): array => ['mode' => $file['mode'], 'sha256' => $file['sha256']],
             $inventory,
@@ -180,36 +155,6 @@ final readonly class ProofFixtureStager
                 ];
             }
             $this->assertBatchSuccessful($this->incus->execAll($installs), 'Proof fixture directory failed.');
-
-            $directories = [];
-            foreach (array_keys($inventory) as $name) {
-                $directory = dirname($name);
-                if ($directory !== '.') {
-                    $directories[$directory] = true;
-                }
-            }
-            if ($directories !== []) {
-                $parents = [];
-                foreach ($instances as $role => $instance) {
-                    foreach (array_keys($directories) as $directory) {
-                        $parents["fixture-parent.{$role}.{$directory}"] = [
-                            'instance' => $instance,
-                            'command' => new GuestCommand([
-                                'install',
-                                '-d',
-                                '-o',
-                                'root',
-                                '-g',
-                                'root',
-                                '-m',
-                                '0755',
-                                ProofFixtures::GUEST_DIRECTORY.'/'.$directory,
-                            ]),
-                        ];
-                    }
-                }
-                $this->assertBatchSuccessful($this->incus->execAll($parents), 'Proof fixture parent directory failed.');
-            }
 
             $installs = [];
             foreach ($instances as $role => $instance) {

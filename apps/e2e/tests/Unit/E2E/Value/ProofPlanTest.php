@@ -43,11 +43,6 @@ function mutatedProofPlanFile(Closure $mutate): string
     return proofPlanFile($mutate(proofPlanFixture()));
 }
 
-function nck73ProofPlan(): ProofPlan
-{
-    return ProofPlan::fromFile(dirname(__DIR__, 6).'/proofs/NCK-73.json');
-}
-
 describe('ProofPlan', function (): void {
     it('opts into observed PHP inputs explicitly and fingerprints the choice', function (): void {
         $plain = ProofPlan::fromArray(proofPlanFixture());
@@ -162,41 +157,29 @@ describe('ProofPlan', function (): void {
             );
     });
 
-    it('declares unique additional candidate fixture issues', function (): void {
-        $plan = ProofPlan::fromFile(proofPlanFile(
-            proofPlanFixture()
-            + [
-                'fixture_issues' => ['NCK-73', 'NCK-104', 'NCK-108', 'NCK-116'],
-            ],
-        ));
-
-        expect($plan->fixtureIssues)
-            ->toBe(['NCK-73', 'NCK-104', 'NCK-108', 'NCK-116'])
-            ->and($plan->toArray()['fixture_issues'] ?? null)
-            ->toBe(['NCK-73', 'NCK-104', 'NCK-108', 'NCK-116']);
+    it('rejects declarations that name another issue fixture workspace', function (): void {
+        expect(fn () => ProofPlan::fromFile(proofPlanFile(
+            proofPlanFixture() + ['fixture_issues' => ['TST-73']],
+        )))
+            ->toThrow(
+                InvalidArgumentException::class,
+                'The proof plan must have exactly the keys setup and acceptance, '
+                .'plus optional mutates, ends_with, inputs, and observed_inputs.',
+            );
     });
-
-    it('rejects duplicate or invalid additional fixture issues', function (array $issues): void {
-        expect(fn () => ProofPlan::fromFile(proofPlanFile(proofPlanFixture() + ['fixture_issues' => $issues])))
-            ->toThrow(InvalidArgumentException::class, 'The proof fixture issue list is invalid.');
-    })->with([
-        'duplicate' => [['NCK-73', 'NCK-73']],
-        'lowercase' => [['nck-73']],
-        'empty' => [[]],
-    ]);
 
     it('normalizes declared extra proof inputs into the plan fingerprint', function (): void {
         $plan = ProofPlan::fromFile(proofPlanFile(
             proofPlanFixture()
             + [
-                'inputs' => ['docs/reference/', 'proofs/shared/input.txt'],
+                'inputs' => ['config/shared/input.txt', 'docs/reference/'],
             ],
         ));
 
         expect($plan->inputs)
-            ->toBe(['docs/reference', 'proofs/shared/input.txt'])
+            ->toBe(['config/shared/input.txt', 'docs/reference'])
             ->and($plan->toArray()['inputs'] ?? null)
-            ->toBe(['docs/reference', 'proofs/shared/input.txt'])
+            ->toBe(['config/shared/input.txt', 'docs/reference'])
             ->and($plan->fingerprint())
             ->not->toBe(ProofPlan::fromArray(proofPlanFixture())->fingerprint());
     });
@@ -213,25 +196,6 @@ describe('ProofPlan', function (): void {
         'unsupported character' => [['docs/reference name']],
     ]);
 
-    it('classifies the NCK-73 lifecycle proof as mutating', function (): void {
-        expect(nck73ProofPlan()->mutates)->toBeTrue();
-    });
-
-    it('asserts the prepared Metrics baseline before NCK-73 acceptance', function (): void {
-        expect(nck73ProofPlan()->setup)->toBe([[
-            'id' => 'metrics-baseline-active',
-            'node' => 'app-dev',
-            'argv' => [
-                'bash',
-                '/var/lib/orbit-e2e/proof/status-active.sh',
-                'app-dev=desired/active/metrics_node',
-                'app-prod=desired/active/role_default',
-                'gateway=desired/active/role_default',
-            ],
-            'timeout_seconds' => 120,
-        ]]);
-    });
-
     it('rejects a mutates flag that is not a boolean', function (mixed $value): void {
         expect(fn () => ProofPlan::fromFile(proofPlanFile(proofPlanFixture() + ['mutates' => $value])))
             ->toThrow(InvalidArgumentException::class, 'The proof plan key mutates must be a boolean.');
@@ -242,7 +206,7 @@ describe('ProofPlan', function (): void {
             ->toThrow(
                 InvalidArgumentException::class,
                 'The proof plan must have exactly the keys setup and acceptance, '
-                .'plus optional mutates, ends_with, fixture_issues, inputs, and observed_inputs.',
+                .'plus optional mutates, ends_with, inputs, and observed_inputs.',
             );
     })->with([
         'missing setup' => [function (array $plan): array {
