@@ -16,7 +16,7 @@ return [
     // avoid the blocked phrases. Earlier accepted records are immutable and
     // exempt. `orbit:issue-lint` applies the same phrases to an issue draft.
     'decision_records' => [
-        'from_number' => 19,
+        'from_number' => 20,
         'blocked_phrases' => [
             'appropriate',
             'reasonable',
