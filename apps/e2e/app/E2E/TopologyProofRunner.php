@@ -269,6 +269,7 @@ final readonly class TopologyProofRunner
                         $observedPhase,
                         $request->issue,
                         $target->requireAttempt(),
+                        $runtimes,
                         $entries,
                     );
                 }

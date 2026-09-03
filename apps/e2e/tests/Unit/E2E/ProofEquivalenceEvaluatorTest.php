@@ -87,11 +87,17 @@ function proofEquivalenceFixture(bool $observedInputs = false): array
             ]],
             'paths' => ['apps/cli/app/feature.php'],
         ];
+        $packages = array_fill_keys(ObservedPhpInputs::PACKAGES, '8.5.10-sury');
+        $packages['php8.5-pcov'] = '1.0.12-sury';
+        $runtime = static fn (string $role): array => [
+            'role' => $role,
+            'php_version' => '8.5.10',
+            'fpm_version' => '8.5.10',
+            'pcov_version' => '1.0.12',
+            'package_versions' => $packages,
+        ];
         $observed = new ObservedPhpInputs(
-            [
-                ['role' => 'app-dev', 'php_version' => '8.5.9', 'pcov_version' => '1.0.12'],
-                ['role' => 'gateway', 'php_version' => '8.5.9', 'pcov_version' => '1.0.12'],
-            ],
+            [$runtime('app-dev'), $runtime('gateway')],
             [
                 'setup' => [$surface('app-dev', 'cli'), $surface('gateway', 'cli'), $surface('gateway', 'fpm')],
                 'acceptance' => [$surface('app-dev', 'cli'), $surface('gateway', 'cli'), $surface('gateway', 'fpm')],

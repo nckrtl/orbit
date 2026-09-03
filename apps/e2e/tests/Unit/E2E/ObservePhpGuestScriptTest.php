@@ -24,6 +24,7 @@ it('uses only pinned Sury PHP and packaged PCOV', function (): void {
             'php8.5-cli',
             'php8.5-fpm',
             'php8.5-pcov',
+            'if [[ "$mode" == pcov && "$needs_upgrade" -eq 0 ]]',
             'install_options+=(--no-upgrade)',
             'package_version=$(dpkg-query',
             'apt-cache madison "$package"',
@@ -31,6 +32,20 @@ it('uses only pinned Sury PHP and packaged PCOV', function (): void {
             '[[ "$package_version" =~ \\+0~[0-9]{8}\\.[0-9]+\\+ubuntu',
         )
         ->not->toContain('make install', './configure', 'docker build', 'static-php-cli');
+});
+
+it('upgrades normal runtime packages and reports exact CLI, FPM, PCOV, and package versions', function (): void {
+    $script = observePhpScript();
+
+    expect($script)
+        ->toContain(
+            'runtime-info) [[ $# -eq 2 ]]; runtime_info "$2"',
+            "run(['/usr/bin/php8.5', '-r', 'echo PHP_VERSION;'])",
+            "run(['/usr/sbin/php-fpm8.5', '-i'])",
+            "run(['dpkg-query', '-W', '-f=\${Version}', '--', package])",
+            "'package_versions': package_versions",
+        )
+        ->not->toContain('[[ "$needs_upgrade" -eq 1 ]] || install_options+=(--no-upgrade)');
 });
 
 it('keeps Sury FPM compatible with Orbit privileged convergence', function (): void {
@@ -64,6 +79,7 @@ it('separates phases, preserves concurrent results, and fails incomplete aggrega
             "fopen(\$path, 'x')",
             "'.start.json'",
             "'.result.json'",
+            "'schema' => 2",
             'pcov\\start();',
             'pcov\\stop();',
             'pcov\\clear();',

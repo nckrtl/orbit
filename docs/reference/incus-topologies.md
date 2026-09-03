@@ -244,8 +244,11 @@ that proof only. Before normal convergence, the disposable `gateway` and
 harness removes `/usr/local/bin/php` only when it is the known base-image link
 to `/opt/orbit/php/8.5/bin/php`; any other collision is refused. Bare `orbit`,
 the absolute CLI entrypoint, `runuser`, `sudo`, and proof fixture scripts then
-resolve the same packaged runtime. Already-installed Sury packages are not
-opportunistically upgraded; a role still using Ubuntu PHP is moved to Sury.
+resolve the same packaged runtime. Runtime preparation upgrades stale Sury or
+Ubuntu packages to the current Sury candidate on both roles, then requires the
+CLI and FPM runtime versions and every installed PHP package version to match
+exactly across those roles. PCOV preparation preserves that converged PHP
+package set and requires the packaged PCOV build to match as well.
 The Sury FPM unit protects system paths by default, so the Incus-only unit
 drop-in restores the package-service behavior that Orbit's existing privileged
 convergence commands require. A custom or static PHP build is not used.
@@ -261,6 +264,8 @@ paired records, matching attempt/phase/role identities, PHP 8.5 plus a PCOV
 version, and tracked paths below `/home/orbit/orbit`. Guest paths are stored as
 repository-relative paths. Composer dependencies, test code, and generated
 Laravel storage/bootstrap caches are outside the repository-input graph.
+The manifest records the exact CLI, FPM, PCOV, and Debian package inventory for
+each role; differing inventories are incomplete evidence.
 Missing, stale, malformed, untracked, empty-surface, or failed aggregation
 evidence makes the proof a diagnosis.
 

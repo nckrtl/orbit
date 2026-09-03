@@ -69,7 +69,9 @@ install_sury() {
     fi
   done
   local -a install_options=(--yes --no-install-recommends --no-remove)
-  [[ "$needs_upgrade" -eq 1 ]] || install_options+=(--no-upgrade)
+  if [[ "$mode" == pcov && "$needs_upgrade" -eq 0 ]]; then
+    install_options+=(--no-upgrade)
+  fi
   DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install \
     "${install_options[@]}" -- "${packages[@]}"
 
@@ -125,7 +127,7 @@ $directory = '/var/lib/orbit-e2e/pcov/'.$context['phase'];
 $started = microtime(true);
 $startedAt = gmdate('Y-m-d\\TH:i:s.', (int) $started).sprintf('%06d', (int) (($started - floor($started)) * 1000000)).'Z';
 $base = [
-    'schema' => 1,
+    'schema' => 2,
     'id' => $id,
     'attempt' => $context['attempt'],
     'issue' => $context['issue'],
@@ -177,6 +179,42 @@ PHP
   systemctl enable --now "php$version-fpm"
   systemctl restart "php$version-fpm"
   /usr/bin/php8.5 -r 'exit(extension_loaded("pcov") && !filter_var(ini_get("pcov.enabled"), FILTER_VALIDATE_BOOL) ? 0 : 1);'
+}
+
+runtime_info() {
+  local mode=$1
+  [[ "$mode" == runtime || "$mode" == pcov ]]
+  local -a packages=(php8.5-cli php8.5-fpm php8.5-common php8.5-curl php8.5-mbstring php8.5-sqlite3 php8.5-xml)
+  [[ "$mode" == runtime ]] || packages+=(php8.5-pcov)
+  python3 - "$mode" "${packages[@]}" <<'PY'
+import json, re, subprocess, sys
+
+mode, *packages = sys.argv[1:]
+
+def run(argv):
+    return subprocess.run(argv, check=True, capture_output=True, text=True).stdout.strip()
+
+php_version = run(['/usr/bin/php8.5', '-r', 'echo PHP_VERSION;'])
+fpm_output = run(['/usr/sbin/php-fpm8.5', '-i'])
+fpm_match = re.search(r'^PHP Version => ([^\r\n]+)$', fpm_output, re.MULTILINE)
+if fpm_match is None:
+    raise SystemExit('Sury PHP-FPM runtime version is unavailable')
+pcov_version = None
+if mode == 'pcov':
+    pcov_version = run(['/usr/bin/php8.5', '-r', 'echo phpversion("pcov");'])
+    if not pcov_version:
+        raise SystemExit('packaged PCOV runtime version is unavailable')
+package_versions = {
+    package: run(['dpkg-query', '-W', '-f=${Version}', '--', package])
+    for package in packages
+}
+print(json.dumps({
+    'php_version': php_version,
+    'fpm_version': fpm_match.group(1),
+    'pcov_version': pcov_version,
+    'package_versions': package_versions,
+}, separators=(',', ':')))
+PY
 }
 
 begin_phase() {
@@ -237,7 +275,7 @@ for path in sorted(directory.iterdir()):
         value = json.loads(path.read_text())
     except Exception as error:
         raise SystemExit(f'malformed PCOV process output: {error}')
-    if value.get('id') != match.group(1) or value.get('schema') != 1:
+    if value.get('id') != match.group(1) or value.get('schema') != 2:
         raise SystemExit('malformed PCOV process output identity')
     target = starts if match.group(2) == 'start' else results
     if match.group(1) in target:
@@ -292,6 +330,7 @@ cleanup() {
 
 case ${1-} in
   prepare) [[ $# -eq 2 ]]; install_sury "$2" ;;
+  runtime-info) [[ $# -eq 2 ]]; runtime_info "$2" ;;
   begin) [[ $# -eq 5 ]]; begin_phase "$2" "$3" "$4" "$5" ;;
   probe-cli) [[ $# -eq 1 ]]; probe_cli ;;
   probe-fpm) [[ $# -eq 1 ]]; probe_fpm ;;

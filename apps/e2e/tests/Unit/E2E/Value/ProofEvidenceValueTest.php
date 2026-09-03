@@ -2,12 +2,55 @@
 
 declare(strict_types=1);
 
+use App\E2E\Value\ObservedPhpInputs;
 use App\E2E\Value\ProofEquivalenceReport;
 use App\E2E\Value\ProofEquivalenceResult;
 use App\E2E\Value\ProofInputManifest;
 use App\E2E\Value\ProofPromotionRecord;
 
 describe('proof reuse evidence', function (): void {
+    it('requires identical CLI, FPM, PCOV, and package runtime evidence across roles', function (): void {
+        $packages = array_fill_keys(ObservedPhpInputs::PACKAGES, '8.5.10-sury');
+        $packages['php8.5-pcov'] = '1.0.12-sury';
+        $runtime = static fn (string $role): array => [
+            'role' => $role,
+            'php_version' => '8.5.10',
+            'fpm_version' => '8.5.10',
+            'pcov_version' => '1.0.12',
+            'package_versions' => $packages,
+        ];
+        $surface = static fn (string $role, string $type, string $id): array => [
+            'role' => $role,
+            'process_type' => $type,
+            'processes' => [[
+                'id' => str_repeat($id, 32),
+                'started_at' => '2026-09-03T10:00:00.000001Z',
+                'finished_at' => '2026-09-03T10:00:00.000002Z',
+            ]],
+            'paths' => ['apps/cli/orbit'],
+        ];
+        $surfaces = [
+            $surface('app-dev', 'cli', '1'),
+            $surface('gateway', 'cli', '2'),
+            $surface('gateway', 'fpm', '3'),
+        ];
+        $observed = new ObservedPhpInputs(
+            [$runtime('app-dev'), $runtime('gateway')],
+            ['setup' => $surfaces, 'acceptance' => $surfaces],
+        );
+
+        expect(ObservedPhpInputs::fromArray($observed->toArray())->toArray())->toBe($observed->toArray());
+
+        $different = $runtime('gateway');
+        $different['package_versions']['php8.5-pcov'] = '1.0.13-sury';
+
+        expect(fn () => new ObservedPhpInputs(
+            [$runtime('app-dev'), $different],
+            ['setup' => $surfaces, 'acceptance' => $surfaces],
+        ))
+            ->toThrow(InvalidArgumentException::class, 'not identical');
+    });
+
     it('round-trips canonical immutable manifests and refuses fingerprint tampering', function (): void {
         $manifest = new ProofInputManifest(
             2,

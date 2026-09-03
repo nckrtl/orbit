@@ -15,11 +15,21 @@ use RuntimeException;
 /**
  * Orchestrate fail-closed PCOV collection on the disposable checkout roles.
  *
- * @mago-expect lint:cyclomatic-complexity,kan-defect The collector keeps all external process evidence fail-closed.
+ * @mago-expect lint:cyclomatic-complexity,kan-defect,too-many-methods The collector keeps all external process evidence fail-closed.
  */
 final readonly class ObservedPhpInputCollector
 {
     private const array ROLES = ['app-dev', 'gateway'];
+
+    private const array RUNTIME_PACKAGES = [
+        'php8.5-cli',
+        'php8.5-fpm',
+        'php8.5-common',
+        'php8.5-curl',
+        'php8.5-mbstring',
+        'php8.5-sqlite3',
+        'php8.5-xml',
+    ];
 
     private const string SCRIPT = '/usr/local/bin/observe-php.sh';
 
@@ -37,9 +47,10 @@ final readonly class ObservedPhpInputCollector
             ];
         }
         $this->assertSuccessful($this->guests->execAll($commands), 'Sury PHP runtime preparation failed on');
+        $this->runtimeInventory($target, false);
     }
 
-    /** @return list<array{role:string,php_version:string,pcov_version:string}> */
+    /** @return list<array{role:string,php_version:string,fpm_version:string,pcov_version:string,package_versions:array<string,string>}> */
     public function prepare(TopologyTarget $target): array
     {
         $commands = [];
@@ -51,19 +62,45 @@ final readonly class ObservedPhpInputCollector
         }
         $this->assertSuccessful($this->guests->execAll($commands), 'Sury PHP and PCOV preparation failed on');
 
+        $inventory = $this->runtimeInventory($target, true);
+        $runtimes = [];
+        foreach ($inventory as $runtime) {
+            if (! is_string($runtime['pcov_version'])) {
+                throw new RuntimeException("Packaged PCOV runtime verification failed on {$runtime['role']}.");
+            }
+            $runtimes[] = [
+                'role' => $runtime['role'],
+                'php_version' => $runtime['php_version'],
+                'fpm_version' => $runtime['fpm_version'],
+                'pcov_version' => $runtime['pcov_version'],
+                'package_versions' => $runtime['package_versions'],
+            ];
+        }
+
+        return $runtimes;
+    }
+
+    /** @return list<array{role:string,php_version:string,fpm_version:string,pcov_version:?string,package_versions:array<string,string>}> */
+    private function runtimeInventory(TopologyTarget $target, bool $withPcov): array
+    {
         $probes = [];
         foreach (self::ROLES as $role) {
             $probes[$role] = [
                 'instance' => $target->instance($role),
                 'command' => new GuestCommand([
-                    '/usr/bin/php8.5',
-                    '-r',
-                    'echo json_encode([PHP_VERSION, phpversion("pcov")], JSON_THROW_ON_ERROR);',
+                    self::SCRIPT,
+                    'runtime-info',
+                    $withPcov ? 'pcov' : 'runtime',
                 ]),
             ];
         }
         $results = $this->guests->execAll($probes);
+        $packages = self::RUNTIME_PACKAGES;
+        if ($withPcov) {
+            $packages[] = 'php8.5-pcov';
+        }
         $runtimes = [];
+        $shared = null;
         foreach (self::ROLES as $role) {
             $result = $results[$role] ?? null;
             if (! $result instanceof GuestCommandResult || ! $result->successful()) {
@@ -76,13 +113,43 @@ final readonly class ObservedPhpInputCollector
             }
             if (
                 ! is_array($runtime)
-                || array_keys($runtime) !== [0, 1]
-                || ! is_string($runtime[0])
-                || ! is_string($runtime[1])
+                || array_keys($runtime) !== ['php_version', 'fpm_version', 'pcov_version', 'package_versions']
+                || ! is_string($runtime['php_version'])
+                || ! is_string($runtime['fpm_version'])
+                || $runtime['fpm_version'] !== $runtime['php_version']
+                || ($withPcov ? ! is_string($runtime['pcov_version']) : $runtime['pcov_version'] !== null)
+                || ! is_array($runtime['package_versions'])
+                || array_keys($runtime['package_versions']) !== $packages
+                || array_any(
+                    $runtime['package_versions'],
+                    static fn (mixed $version): bool => ! is_string($version)
+                    || $version === ''
+                    || str_contains($version, "\n"),
+                )
+                || count(array_unique(array_slice($runtime['package_versions'], 0, count(self::RUNTIME_PACKAGES))))
+                    !== 1
             ) {
                 throw new RuntimeException("Sury PHP runtime verification was malformed on {$role}.");
             }
-            $runtimes[] = ['role' => $role, 'php_version' => $runtime[0], 'pcov_version' => $runtime[1]];
+            /** @var string $phpVersion */
+            $phpVersion = $runtime['php_version'];
+            /** @var string $fpmVersion */
+            $fpmVersion = $runtime['fpm_version'];
+            /** @var ?string $pcovVersion */
+            $pcovVersion = $runtime['pcov_version'];
+            /** @var array<string, string> $packageVersions */
+            $packageVersions = $runtime['package_versions'];
+            $comparison = [
+                'php_version' => $phpVersion,
+                'fpm_version' => $fpmVersion,
+                'pcov_version' => $pcovVersion,
+                'package_versions' => $packageVersions,
+            ];
+            if ($shared !== null && $comparison !== $shared) {
+                throw new RuntimeException('Sury PHP and PCOV runtime inventories differ between app-dev and gateway.');
+            }
+            $shared = $comparison;
+            $runtimes[] = ['role' => $role, ...$comparison];
         }
 
         return $runtimes;
@@ -111,13 +178,16 @@ final readonly class ObservedPhpInputCollector
 
     /**
      * @param array<string, array{mode:string,type:string,object:string}> $entries
+     * @param list<array{role:string,php_version:string,fpm_version:string,pcov_version:string,package_versions:array<string,string>}> $runtimes
      * @return list<array{role:string,process_type:string,processes:list<array{id:string,started_at:string,finished_at:string}>,paths:list<string>}>
+     * @mago-expect lint:excessive-parameter-list Runtime evidence is checked against every collected process.
      */
     public function collect(
         TopologyTarget $target,
         string $phase,
         string $issue,
         AttemptId $attempt,
+        array $runtimes,
         array $entries,
     ): array {
         $this->assertPhase($phase);
@@ -136,6 +206,10 @@ final readonly class ObservedPhpInputCollector
             ];
         }
         $results = $this->guests->execAll($commands);
+        $runtimeByRole = [];
+        foreach ($runtimes as $runtime) {
+            $runtimeByRole[$runtime['role']] = $runtime;
+        }
         /** @var array<string, array{role:string,process_type:string,processes:list<array{id:string,started_at:string,finished_at:string}>,paths:array<string,true>}> $surfaces */
         $surfaces = [];
         foreach (self::ROLES as $role) {
@@ -144,7 +218,10 @@ final readonly class ObservedPhpInputCollector
                 $detail = $result instanceof GuestCommandResult ? trim($result->stderr) : 'missing result';
                 throw new RuntimeException("PCOV {$phase} output is incomplete on {$role}: {$detail}");
             }
-            foreach ($this->records($result->stdout, $phase, $role, $issue, $attempt, $entries) as $record) {
+            $runtime = $runtimeByRole[$role] ?? throw new RuntimeException(
+                "PCOV {$phase} runtime inventory is missing {$role}.",
+            );
+            foreach ($this->records($result->stdout, $phase, $role, $issue, $attempt, $runtime, $entries) as $record) {
                 $key = $record['role'].':'.$record['process_type'];
                 $surfaces[$key] ??= [
                     'role' => $record['role'],
@@ -224,6 +301,7 @@ final readonly class ObservedPhpInputCollector
 
     /**
      * @param array<string, array{mode:string,type:string,object:string}> $entries
+     * @param array{role:string,php_version:string,fpm_version:string,pcov_version:string,package_versions:array<string,string>} $runtime
      * @return list<array{role:string,process_type:string,id:string,started_at:string,finished_at:string,paths:list<string>}>
      * @mago-expect lint:excessive-parameter-list Every recorded identity is checked at the guest-output boundary.
      */
@@ -233,6 +311,7 @@ final readonly class ObservedPhpInputCollector
         string $role,
         string $issue,
         AttemptId $attempt,
+        array $runtime,
         array $entries,
     ): array {
         try {
@@ -272,6 +351,8 @@ final readonly class ObservedPhpInputCollector
                 || ($record['phase'] ?? null) !== $phase
                 || ($record['role'] ?? null) !== $role
                 || ! in_array($record['process_type'] ?? null, ['cli', 'fpm'], true)
+                || ($record['php_version'] ?? null) !== $runtime['php_version']
+                || ($record['pcov_version'] ?? null) !== $runtime['pcov_version']
                 || ! is_string($record['id'] ?? null)
                 || preg_match('/\A[0-9a-f]{32}\z/D', $record['id']) !== 1
                 || ! is_string($record['started_at'] ?? null)
