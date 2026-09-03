@@ -85,7 +85,7 @@ Interactive disable asks for confirmation. Non-interactive disable requires `--f
 
 After a disable without `--purge-data`, the Metrics node runs neither container, `/etc/orbit/metrics` and the Grafana upstream firewall rule are gone, every exporter drop-in and exporter firewall rule is gone, and the Gateway has removed the `metrics.orbit` route, its certificate, and its DNS record. The volumes `orbit-metrics-prometheus-data` and `orbit-metrics-grafana-data`, the stored Grafana password settings, Docker, the installed packages, and every exporter preference stay, and a later `orbit metrics:enable` reuses them.
 
-With `--purge-data`, the Gateway also deletes both volumes and the active and pending password settings, and nothing else. When a volume of either name lacks the Orbit ownership labels, the Gateway answers `metrics.volume_ownership_drift` (HTTP 409) and deletes neither volume nor password.
+With `--purge-data`, the Gateway also deletes both volumes and the active and pending password settings, and nothing else. When a volume of either name lacks the Orbit ownership labels, the Gateway deletes neither volume nor password, leaves the assignment failed at step `remove:baseline`, and answers `node_role.remove_failed` (HTTP 502).
 
 `DELETE /api/v1/metrics` and `orbit metrics:disable` report the Gateway-side outcome in `publication`:
 
