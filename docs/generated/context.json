@@ -10,6 +10,7 @@
                 "apps/gateway"
             ],
             "concepts": [
+                "App",
                 "Cluster",
                 "Gateway"
             ],
@@ -349,6 +350,19 @@
                 "Gateway"
             ],
             "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/apps.md",
+            "title": "Apps",
+            "kind": "reference",
+            "components": [],
+            "concepts": [
+                "App",
+                "Gateway"
+            ],
+            "governing_adrs": [
+                "0016"
+            ]
         },
         {
             "path": "docs/reference/incus-topologies.md",
