@@ -48,6 +48,7 @@ final readonly class NativeGatewayVpnConverger implements GatewayVpnConverger
         private UfwStoredRuleParser $storedFirewallParser = new UfwStoredRuleParser,
         private SystemdVpnOrderingDropIn $vpnOrdering = new SystemdVpnOrderingDropIn,
         private RetiredDnsmasqSnippets $stockDnsSnippets = new RetiredDnsmasqSnippets,
+        private UplinkDnsResolvers $uplinkResolvers = new UplinkDnsResolvers,
     ) {}
 
     public function converge(Node $gateway, BootstrapGatewayData $data): void
@@ -223,8 +224,10 @@ final readonly class NativeGatewayVpnConverger implements GatewayVpnConverger
             'domain-needed',
             'bogus-priv',
             'no-resolv',
-            'server=1.1.1.1',
-            'server=8.8.8.8',
+            ...array_map(
+                static fn (string $server): string => "server={$server}",
+                $this->uplinkResolvers->nameservers(),
+            ),
             "local=/{$data->domain}/",
             "host-record={$data->name}.{$data->domain},{$data->wireguardIp}",
             '',
