@@ -11,7 +11,7 @@
         "bootstrap": "bin/bootstrap",
         "docs-build": "@php apps/docs/artisan orbit:docs-index",
         "docs-context": "@php apps/docs/artisan orbit:docs-context",
-        "docs-lint": "@php apps/docs/artisan orbit:docs-lint --format=agent",
+        "docs-lint": "@php apps/docs/artisan orbit:docs-lint --format=agent --strict",
         "test": "bin/test"
     },
     "config": {
