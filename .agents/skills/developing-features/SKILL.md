@@ -5,88 +5,39 @@ description: Use when implementing one Orbit issue from a worktree.
 
 # Developing Features
 
-Implement one current Linear issue or equivalent written contract in its
-worktree and open a pull request. Own code, tests, integration, proof, commits,
-and the pull request.
+Implement one Linear issue in its worktree and open a pull request whose body proves every `Acceptance` item. Own code, tests, integration, proof, commits, and the pull request. Never review or approve your own work.
 
-This task may be invoked directly. A supplied `.orbit/plan.md` is implementation
-guidance, not a required lifecycle gate. Never review or approve your own pull
-request.
+This task may be invoked directly. A supplied `.orbit/plan.md` is the implementation map, not a lifecycle gate.
 
 ## Inputs
 
-Require:
+- The issue: outcome, `Scope`, `Acceptance` checklist, labels, attached ADRs, and relations.
+- A bootstrapped worktree on a branch from `main`.
+- The plan when one exists, with its acceptance map and `Must preserve` list.
 
-- a bounded issue with observable criteria;
-- a bootstrapped worktree on a branch from `main`;
-- applicable ADRs and repository guidance; and
-- any supplied Feature plan or review findings.
-
-Stop if the contract requires guessing product behavior, conflicts with an
-accepted ADR, or mixes product work with a harness change.
+Stop if an `Acceptance` item requires guessing product behavior, a change would cross an `Out` bullet or an attached ADR `Decision` bullet, a boundary needs a component the issue is not labeled with, or product work would touch the harness.
 
 ## Steps
 
-1. **Read the contract.** Read the issue, ADRs, nearest `AGENTS.md`, supplied
-   plan, documentation-impact classification, relevant context from
-   `composer docs-context`, and acceptance-to-proof mapping.
-2. **Acquire a topology when needed.** For an issue labeled `proof:incus`, run
-   `bin/e2e-topology acquire <ISSUE> <worktree>`. The worktree is mounted on
-   `gateway` and `app-dev`; `app-prod` runs no Orbit code.
-3. **Develop.** Use `bin/e2e-topology shell <ISSUE> <role>` or
-   `bin/e2e-topology exec <ISSUE> <role> --argv='[...]'`. Iterate until the
-   requested behavior is correct.
-4. **Report harness gaps.** If `apps/e2e` or `bin/e2e-*` prevents product work,
-   stop and report a dedicated harness issue. Do not modify harness from a
-   product feature branch.
-5. **Codify.** Put required behavior in product code with tests. Reconcile
-   required documentation in the same pull request when the issue carries the
-   `docs` label. Run focused checks, `composer docs-lint`, each
-   changed project's `composer check`, and root `bin/test`.
-6. **Prove the exact commit.** For Incus proof, write
-   `proofs/<ISSUE>.json`, merge current `main`, and run
-   `bin/e2e-topology prove <ISSUE>` while discovery remains active. Every
-   action must exit `0`. On diagnosis, inspect the failed proof explicitly with
-   `shell --proof` or `exec --proof`, continue development on discovery, then
-   `release <ISSUE> --proof` before proving again. Leave a successful proof
-   unchanged through review and merge. If a later committed correction changes
-   only documentation, `apps/docs`, or instructions, rerun its applicable
-   checks and run `bin/e2e-topology equivalence <ISSUE>`. Retain the proof only
-   for `exact` or `equivalent`; `stale` or `indeterminate` requires release and
-   a complete fresh proof.
-7. **Open the pull request.** Push and use a short body with what changed, why,
-   and one proof line: `Proved with proofs/<ISSUE>.json at <sha>` or
-   `Automated tests only`. Do not start review until every declared proof
-   action has exited `0`.
+1. **Read the contract.** Issue, attached ADRs, nearest `AGENTS.md`, the plan, and `composer docs-context` for the labeled components.
+2. **Acquire a topology when needed.** With the `proof:incus` label, run `bin/e2e-topology acquire <ISSUE> <worktree>`. The worktree is mounted on `gateway` and `app-dev`; `app-prod` runs no Orbit code.
+3. **Develop.** Work the acceptance map in order. Use `bin/e2e-topology shell <ISSUE> <role>` or `bin/e2e-topology exec <ISSUE> <role> --argv='[...]'` for discovery.
+4. **Report harness gaps.** If `apps/e2e` or `bin/e2e-*` prevents product work, stop and report a dedicated harness issue.
+5. **Codify.** Put behavior in product code with a test per `Acceptance` item where the proof action is a test. With the `docs` label, reconcile the named pages in the same pull request; without it, change no maintained documentation. Run focused checks, `composer docs:lint`, each changed project's `composer check`, and root `bin/test`.
+6. **Prove the exact commit.** For Incus proof, write `proofs/<ISSUE>.json` with one action per `Acceptance` item whose proof names Incus, merge current `main`, and run `bin/e2e-topology prove <ISSUE>` while discovery remains active. Every action must exit `0`. On diagnosis, inspect with `shell --proof` or `exec --proof`, continue on discovery, then `release <ISSUE> --proof` before proving again. Leave a successful proof unchanged through review and merge. If a later commit changes only documentation, `apps/docs`, or instructions, rerun its checks and `bin/e2e-topology equivalence <ISSUE>`; retain the proof only for `exact` or `equivalent`.
+7. **Open the pull request.** Push. The body lists every `Acceptance` item in the issue's order, each followed by its evidence: the test, the command output, or the proof action name. End with one proof line: `Proved with proofs/<ISSUE>.json at <sha>` or `Automated tests only`. Do not request review until every declared proof action has exited `0`.
 
 ## Corrections
 
-Apply concrete defects against the issue, ADRs, repository invariants, tests, or
-proof. A genuinely new requirement becomes separate Linear work. After a valid
-correction, rerun affected checks, create a new commit, and repeat exact-commit
-proof where required.
+Apply findings that cite an `Acceptance` item, ADR bullet, invariant, test, or repository rule. A new requirement is separate Linear work. After a correction, rerun the affected checks, commit, and repeat exact-commit proof where required.
 
 ## Harness issues
 
-Harness code is everything under `apps/e2e` and `bin/e2e-*`, except
-`apps/e2e/tests/Feature/**` and `apps/e2e/tests/Unit/**`.
-
-For a dedicated harness issue:
-
-- require repository-owner-approved behavior and issue-specific proof before implementation;
-- implement with unit and feature tests;
-- run `apps/e2e` `composer check` and root `bin/test`;
-- run its declared focused or Incus proof; and
-- follow any additional lifecycle checks stated in that issue's approved proof contract.
+Harness code is everything under `apps/e2e` and `bin/e2e-*`, except `apps/e2e/tests/Feature/**` and `apps/e2e/tests/Unit/**`. A dedicated harness issue carries the `apps/e2e` label, repository-owner-approved behavior, and issue-specific proof; implement it with unit and feature tests, run `apps/e2e` `composer check`, root `bin/test`, and its declared proof.
 
 ## Rules
 
-- Do not run concurrent writers in one worktree.
+- One issue per worktree, and one writer per worktree.
 - Product feature branches never touch `apps/e2e` or `bin/e2e-*`.
-- Proof actions are read-only unless the proof plan sets `"mutates": true`.
-- A plan that removes a node declares the expected final node set.
-- One issue per worktree. Discovery and proof use separate topologies and never
-  reuse proof resources across issues.
-- Do not create a meaningless documentation diff when impact is `none`. Do not
-  leave durable behavior, terminology, operational contracts, agent context, or
-  reusable knowledge stale when impact is `required`.
+- Proof actions are read-only unless the proof plan sets `"mutates": true`. A plan that removes a node declares the expected final node set.
+- Discovery and proof use separate topologies and never share resources across issues.

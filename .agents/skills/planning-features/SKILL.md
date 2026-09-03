@@ -5,57 +5,37 @@ description: Use when preparing or correcting an Orbit Feature plan.
 
 # Planning Features
 
-Prepare a concise implementation plan for one Orbit issue. Do not change product
-code, tests, proof files, Git history, Linear, or GitHub.
+Turn one Linear issue into `.orbit/plan.md`, the implementation map the plan reviewer checks and the implementer follows. Do not change product code, tests, proof files, Git history, Linear, or GitHub.
 
-This is an independently invokable planning task. It does not assume who will
-implement the plan or what orchestration lifecycle surrounds it.
+This is an independently invokable planning task. It does not assume who implements the plan or what lifecycle surrounds it.
 
 ## Inputs
 
-- The current Linear issue or equivalent written contract.
-- A checkout or worktree at the intended base.
-- Applicable ADRs, nearby code, tests, and available proof commands.
-- `.orbit/plan.md`. `bin/worktree-create` initializes it; create the same
-  structure manually when using another checkout workflow.
+- The issue: outcome paragraph, `Scope` In and Out bullets, `Acceptance` checklist, and its labels, attachments, and relations.
+- Every ADR attached to the issue, read for its `Decision` bullets and `Affects` block.
+- A checkout or worktree at the intended base, nearby code, tests, and the proof commands the issue's `Proof:` actions name.
+- `.orbit/plan.md` as `bin/worktree-create` scaffolds it; create the same headings by hand in another checkout workflow.
 
-Stop when the outcome, component boundary, acceptance criteria, dependency, or
-proof feasibility is incomplete enough to require guessing. Do not turn the
-Feature plan into a second issue contract.
+Stop when an `Acceptance` item has no proof action the current machinery can run, an `In` bullet needs a component the issue is not labeled with, an attached ADR contradicts the issue, or the issue has sub-issues. Report the gap; do not plan around it.
 
 ## Write the plan
 
-Complete `.orbit/plan.md` without copying the issue into it:
+Fill every section of `.orbit/plan.md` without copying the issue into it:
 
-- **Outcome:** observable result in one sentence.
-- **Code boundaries:** likely files/components and explicit exclusions.
-- **Documentation boundaries:** relevant context selected from the issue and
-  expected code boundaries; name the required documentation changes when the
-  issue carries the `docs` label, otherwise state that none are planned.
-- **Acceptance map:** one row per issue criterion, mapped to the relevant code
-  boundary and focused proof.
-- **Implementation order:** smallest coherent ordered changes.
-- **Must preserve:** existing contracts, tests, and invariants protecting
-  adjacent behavior.
-- **Open questions:** unresolved facts that prevent safe implementation.
+- **Outcome:** the issue's outcome in one sentence.
+- **Code boundaries:** for each `In` bullet, the files or directories that change. For each `Out` bullet, the exclusion that keeps it unchanged.
+- **Documentation:** with the `docs` label, the pages under `docs/` that change and what they gain. Without it, `none`.
+- **Acceptance map:** one row per `Acceptance` item, in the issue's order, mapped to its code boundary and the exact focused proof: a test file, a command, or an Incus proof action.
+- **Implementation order:** the smallest coherent ordered changes.
+- **Must preserve:** every attached ADR `Decision` bullet the change touches, plus the existing tests and invariants that protect adjacent behavior.
+- **Open questions:** facts the implementer cannot verify from the repository. A product decision is not an open question; it is a stop.
 
-Set `Review verdict: PENDING` and clear stale review findings.
-Do not create slice files, mandatory per-increment commits, or an
-agent-per-increment plan.
-
-The plan is an implementation map, not an exhaustive migration specification,
-command transcript, tracker history, or orchestration ledger. If it must absorb
-multiple independently shippable designs, report that the issue needs splitting
-or contract repair.
+Set `Review verdict: PENDING` and clear stale findings. Do not create slice files, mandatory per-increment commits, or an agent-per-increment plan. If the plan would absorb more than one independently shippable design, report that the issue needs splitting.
 
 ## Corrections
 
-When supplied independent review findings, change only plan content required by
-that evidence. Do not widen product intent, weaken proof, or absorb a genuinely
-new requirement.
+When given review findings, change only what the findings cite. Do not widen the outcome, weaken a proof, or absorb a new requirement; a new requirement is separate Linear work.
 
-## Verification
+## Verify
 
-The plan is complete when every criterion maps to a boundary and proof action,
-documentation impact is mapped, order is explicit, exclusions prevent unrelated
-cleanup, and no open question requires guessing product behavior.
+The plan is complete when every `Acceptance` item has a row, every row names a boundary and a runnable proof, every `Out` bullet has an exclusion, documentation matches the `docs` label, `Must preserve` names the touched ADR bullets, and no open question hides a product decision.

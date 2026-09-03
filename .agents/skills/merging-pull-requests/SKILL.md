@@ -13,7 +13,7 @@ gates are satisfied.
 
 1. **Verify the candidate.** Record the exact current head SHA. Require target
    `main`, green CI for that SHA, an independent `Approved.` review bound to that
-   SHA, no actionable comments, and no later commit. For `Proof: incus`, require
+   SHA, no actionable comments, and no later commit. With the `proof:incus` label, require
    an active immutable proved topology plus a valid current proof-input
    manifest. The exact head must either be the proved candidate (or have its
    exact tree) or carry an `exact`/`equivalent` retained-proof report. If `main`

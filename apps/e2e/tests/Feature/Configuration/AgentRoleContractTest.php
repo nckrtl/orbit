@@ -54,9 +54,10 @@ it('keeps planning, plan review, and development independently invokable', funct
 
     expect($planner)
         ->toContain('independently invokable planning task')
-        ->toContain('structure manually')
+        ->toContain('create the same headings by hand')
         ->toContain('Review verdict: PENDING')
-        ->toContain('one row per issue criterion')
+        ->toContain('one row per `Acceptance` item')
+        ->toContain('every attached ADR `Decision` bullet the change touches')
         ->toContain('Do not create slice files')
         ->not->toContain('retained Builder')
         ->not->toContain('second non-`PASS`');
@@ -71,6 +72,7 @@ it('keeps planning, plan review, and development independently invokable', funct
         ->toContain('Collect every known blocking finding')
         ->toContain('smallest safe recommended')
         ->toContain('Never approve a')
+        ->toContain('every boundary is inside a component the issue is labeled with')
         ->not->toContain('same reviewer')
         ->not->toContain('one correction')
         ->not->toContain('second non-`PASS`');
@@ -79,6 +81,7 @@ it('keeps planning, plan review, and development independently invokable', funct
         ->toContain('may be invoked directly')
         ->toContain('One issue per worktree')
         ->toContain('Discovery and proof use separate topologies')
+        ->toContain('lists every `Acceptance` item in the issue\'s order')
         ->not->toContain('retained Builder')
         ->not->toContain('plan `PASS`');
 
@@ -141,13 +144,44 @@ it('keeps issue creation current, atomic, and proof feasible', function () use (
 
     expect($skill)
         ->not->toContain('Status: Todo')
-        ->not->toContain('Status: Backlog')->toContain('Set the Linear status field directly')->toContain(
-            'Remove `Readiness` before moving the issue to `Todo`',
-        )->toContain('Each acceptance criterion must have one available')->toContain('proof action')->toContain(
-            'split them into ordered issues',
-        )->toContain('component names are repository-owned')->toContain('`apps/e2e`')->toContain(
-            'dependency graph is explicit and acyclic',
-        )->toContain('compatibility bridge');
+        ->not->toContain('Status: Backlog')->toContain('never restates a Decision bullet from an ADR')->toContain(
+            'Delete the section before `Todo`',
+        )->toContain('one proof action that exists today')->toContain('Only a leaf issue is claimable')->toContain(
+            'they are separate children',
+        )->toContain('`apps/e2e`')->toContain('relation graph is explicit and acyclic')->toContain(
+            'compatibility bridge',
+        )->toContain('composer issue:lint');
+
+    expect($read('.agents/skills/creating-issues/template.md'))
+        ->toContain('## Scope')
+        ->toContain('## Acceptance')
+        ->toContain('Proof:');
+});
+
+it('keeps decision records templated and linted', function () use ($read, $root): void {
+    $skill = $read('.agents/skills/recording-decisions/SKILL.md');
+    $template = $read('.agents/skills/recording-decisions/template.md');
+
+    expect($skill)
+        ->toContain('composer docs:lint')
+        ->toContain('orbit.adr_structure')
+        ->toContain('orbit.adr_language')
+        ->toContain('Accepted records are immutable');
+
+    foreach ([
+        '## Status',
+        '## Context',
+        '## Decision',
+        '## Rejected alternatives',
+        '## Consequences',
+        '## Affects',
+        '- Verify:',
+    ] as $needle) {
+        expect($template)->toContain($needle);
+    }
+
+    expect($read('AGENTS.md'))->toContain('`recording-decisions`');
+    expect(file_exists($root.'/docs/decisions/TEMPLATE.md'))->toBeFalse();
 });
 
 it('keeps repository guidance and agent manifests current', function () use ($read): void {

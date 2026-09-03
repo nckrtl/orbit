@@ -5,45 +5,30 @@ description: Use when independently reviewing an Orbit Feature plan.
 
 # Reviewing Feature Plans
 
-Independently review one `.orbit/plan.md`. This role reports plan quality only.
-It never edits planning content, product code, tests, proof, Git history, Linear,
-or GitHub; it may update only `Review verdict` and `## Review findings` in the
-plan as its structured review output.
+Independently review one `.orbit/plan.md` before any code exists. This role reports plan quality only. It never edits planning content, product code, tests, proof, Git history, Linear, or GitHub; it may update only `Review verdict` and `## Review findings` in the plan. Never approve a plan you authored, and never decide lifecycle transitions.
 
-This task is independently invokable and does not decide lifecycle transitions
-or start other roles.
+## Inputs
 
-## Review
+Read the same sources the planner had: the issue with its labels, attachments, and relations; every attached ADR's `Decision` bullets and `Affects` block; the plan; the named code boundaries; nearby tests; and the proof commands.
 
-Read the current issue or written contract, governing ADRs, plan, named code
-boundaries, nearby tests, and available proof commands. Check that:
+## Check
 
-- every acceptance criterion maps to a concrete boundary and focused proof;
-- the issue's component labels permit every planned change;
-- documentation boundaries match the issue's `docs` label and the relevant
-  repository context;
-- exclusions prevent unrelated cleanup or product/harness mixing;
-- implementation order is coherent and does not rediscover product behavior;
-- existing behavior at risk has a named test, invariant, or proof;
-- open questions identify facts rather than hide product decisions;
-- independently shippable work is not bundled without an atomicity reason; and
-- the plan does not invent requirements or contradict the issue or ADRs.
+- **Coverage:** every `Acceptance` item has one row, in order, with a concrete boundary and a proof that exists and can run today.
+- **Labels:** every boundary is inside a component the issue is labeled with. A boundary in an unlabeled component is a finding, not a silent expansion.
+- **Exclusions:** every `Out` bullet has an exclusion, and no boundary or order step crosses one.
+- **Documentation:** the section matches the `docs` label and names real pages.
+- **ADRs:** `Must preserve` names every attached ADR `Decision` bullet the boundaries touch, and no step contradicts one.
+- **Order:** the steps are coherent and rediscover no product behavior the issue or an ADR already states.
+- **Risk:** every existing behavior the boundaries put at risk has a named test, invariant, or proof.
+- **Honesty:** open questions are facts, not product decisions; the plan invents no requirement and drops none.
+- **Atomicity:** independently shippable work is not bundled without a stated shared invariant.
 
-Collect every known blocking finding before returning a verdict.
+Collect every known blocking finding in one pass. Each finding cites an `Acceptance` item, `Scope` bullet, label, ADR bullet, or repository rule.
 
 ## Verdict
 
 - `PASS`: no blocking findings; leave findings empty.
-- `FIX`: list every concrete in-scope plan correction.
-- `BLOCK`: state the exact incompatibility, missing contract, component/proof
-  conflict, or product decision. Include the smallest safe recommended
-  resolution, evidence, and apparent decision boundary.
+- `FIX`: every concrete in-scope plan correction, each with its citation.
+- `BLOCK`: the exact incompatibility, missing contract, label or proof conflict, or product decision, with evidence, the smallest safe recommended resolution, and the apparent decision boundary.
 
-Do not silently expand scope or present a recommendation as approved authority.
-A genuinely new requirement belongs in separate Linear work. Never approve a
-plan you authored.
-
-## Verification
-
-The verdict is complete when all findings are included, each cites a contract or
-repository boundary, and the recommendation is no broader than necessary.
+Do not expand scope or present a recommendation as authority. A new requirement is separate Linear work.
