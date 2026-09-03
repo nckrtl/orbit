@@ -31,7 +31,7 @@ Apps that existed before this source contract can return null for the main
 branch and root. Existing legacy Instance and Workspace records continue to
 use those Apps. New AppInstance creation fails with
 app.source_defaults_incomplete until a later conversion lifecycle supplies the
-missing values. ORB-76 does not add an update or backfill command.
+missing values. Orbit has no command that updates or backfills them.
 
 ## Create a development AppInstance
 

@@ -9,6 +9,7 @@ use App\Documentation\DocumentationLintPolicy;
 use App\Documentation\DocumentationRepository;
 use App\Librarian\Rules\DecisionRecordLanguageRule;
 use App\Librarian\Rules\DecisionRecordStructureRule;
+use App\Librarian\Rules\DocumentationIssueReferenceRule;
 use App\Librarian\Rules\DocumentationNarrativeRule;
 use HardImpact\Librarian\Docs\MarkdownSnapshot;
 use Illuminate\Support\ServiceProvider;
@@ -45,6 +46,11 @@ final class AppServiceProvider extends ServiceProvider
             $this->app->make(MarkdownSnapshot::class),
             $this->decisionRecordInteger('from_number'),
             $this->app->make(BlockedPhrases::class),
+        ));
+
+        $this->app->singleton(DocumentationIssueReferenceRule::class, fn (): DocumentationIssueReferenceRule => new DocumentationIssueReferenceRule(
+            $this->app->make(MarkdownSnapshot::class),
+            $this->stringList('orbit-docs.issue_key_prefixes'),
         ));
 
         $this->app->singleton(DocumentationRepository::class, function (): DocumentationRepository {
