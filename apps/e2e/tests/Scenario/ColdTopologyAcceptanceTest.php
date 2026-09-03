@@ -7,16 +7,61 @@ use App\E2E\IncusHost;
 use App\E2E\LaravelReleaseResolver;
 use App\E2E\PreparedStateFingerprint;
 use App\E2E\State\AtomicJsonStore;
+use App\E2E\State\OperationLock;
 use App\E2E\State\StatePaths;
+use App\E2E\TopologySnapshotAvailability;
 use App\E2E\TopologySnapshotManifestStore;
 use App\E2E\TopologyVerifier;
 use App\E2E\Value\AttemptId;
 use App\E2E\Value\ColdTopologyPlan;
 use App\E2E\Value\OperationId;
 use App\E2E\Value\TopologyRecipe;
+use App\E2E\Value\TopologySnapshotIdentity;
 use App\E2E\Value\TopologyTarget;
 use App\E2E\Value\VerificationMode;
 use App\Exceptions\E2E\ColdTopologyCleanupException;
+
+/**
+ * Observe the promoted topology only while its generation is stable. The cold
+ * lane does not hold this lock while it runs, so an independent feature flow
+ * remains free to promote a newer generation.
+ *
+ * @return array<string, mixed>|null
+ */
+function stablePromotedTopology(
+    StatePaths $paths,
+    TopologySnapshotManifestStore $manifests,
+    IncusHost $host,
+    OperationId $operation,
+): ?array {
+    $lock = new OperationLock($paths);
+    if (! $lock->acquire('standby-generation', $operation, exclusive: false, timeoutSeconds: 3600)) {
+        throw new RuntimeException('Unable to observe the promoted topology snapshot generation.');
+    }
+
+    try {
+        $generation = $manifests->promoted();
+        if ($generation !== null) {
+            new TopologySnapshotAvailability($host, TopologySnapshotIdentity::primary())
+                ->assertAvailable($generation);
+        }
+
+        return $generation?->toArray();
+    } finally {
+        $lock->release();
+    }
+}
+
+/** @param array<string, mixed>|null $before @param array<string, mixed>|null $after */
+function assertPromotionWasNotMutatedInPlace(?array $before, ?array $after): void
+{
+    if ($before !== null && $after === null) {
+        throw new RuntimeException('The promoted topology snapshot disappeared during the cold scenario.');
+    }
+    if (($before['id'] ?? null) === ($after['id'] ?? null) && $before !== $after) {
+        throw new RuntimeException('The promoted topology snapshot generation changed in place.');
+    }
+}
 
 /** @mago-expect lint:cyclomatic-complexity Cleanup must preserve any primary scenario failure beside cleanup refusal. */
 it('constructs and releases the four-Node cold acceptance topology', function () {
@@ -57,7 +102,8 @@ it('constructs and releases the four-Node cold acceptance topology', function ()
     $recipe = TopologyRecipe::coldAcceptance($image);
     $attempt = AttemptId::generate();
     $target = TopologyTarget::disposableCold('SCN-1', $attempt, $recipe);
-    $beforePromotion = $manifests->promoted()?->toArray();
+    $paths = $this->app->make(StatePaths::class);
+    $observedPromotion = stablePromotedTopology($paths, $manifests, $host, $operation);
     $source = null;
     $cleanup = null;
     $primaryFailure = null;
@@ -98,7 +144,9 @@ it('constructs and releases the four-Node cold acceptance topology', function ()
             ->toBe($attempt->value);
         expect($instances[$target->instance('extra')]->metadata['user.orbit.e2e.attempt'] ?? null)
             ->toBe($attempt->value);
-        expect($manifests->promoted()?->toArray())->toBe($beforePromotion);
+        $currentPromotion = stablePromotedTopology($paths, $manifests, $host, $operation);
+        assertPromotionWasNotMutatedInPlace($observedPromotion, $currentPromotion);
+        $observedPromotion = $currentPromotion;
     } catch (Throwable $failure) {
         $primaryFailure = $failure;
     } finally {
@@ -118,7 +166,8 @@ it('constructs and releases the four-Node cold acceptance topology', function ()
     expect($cleanup->refused)->toBe([]);
     expect($host->instances(array_map($target->instance(...), $recipe->nodeKeys())))->toBe([]);
     expect($host->network($target->network()))->toBeNull();
-    expect($manifests->promoted()?->toArray())->toBe($beforePromotion);
+    $currentPromotion = stablePromotedTopology($paths, $manifests, $host, $operation);
+    assertPromotionWasNotMutatedInPlace($observedPromotion, $currentPromotion);
 });
 
 it('automatically releases the exact cold inventory after an injected construction failure', function () {
@@ -159,7 +208,8 @@ it('automatically releases the exact cold inventory after an injected constructi
     $recipe = TopologyRecipe::coldAcceptance($image);
     $attempt = AttemptId::generate();
     $target = TopologyTarget::disposableCold('SCN-2', $attempt, $recipe);
-    $beforePromotion = $manifests->promoted()?->toArray();
+    $paths = $this->app->make(StatePaths::class);
+    $observedPromotion = stablePromotedTopology($paths, $manifests, $host, $operation);
     $injectedSha = str_repeat('0', 40);
     $constructionFailure = null;
     $cleanup = null;
@@ -208,5 +258,6 @@ it('automatically releases the exact cold inventory after an injected constructi
     expect($cleanup->refused)->toBe([]);
     expect($host->instances(array_map($target->instance(...), $recipe->nodeKeys())))->toBe([]);
     expect($host->network($target->network()))->toBeNull();
-    expect($manifests->promoted()?->toArray())->toBe($beforePromotion);
+    $currentPromotion = stablePromotedTopology($paths, $manifests, $host, $operation);
+    assertPromotionWasNotMutatedInPlace($observedPromotion, $currentPromotion);
 });

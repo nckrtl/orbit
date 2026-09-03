@@ -63,7 +63,9 @@ it('prints cold scenario usage and exits 64 for unsupported arguments', function
     'too many arguments' => [['cold', str_repeat('a', 40), 'extra']],
 ]);
 
-it('runs the cold flow with the current HEAD by default or as an explicit assertion', function (bool $explicit) use ($wrapper) {
+it('runs the cold flow with the current HEAD by default or as an explicit assertion', function (bool $explicit) use (
+    $wrapper,
+) {
     $fixture = scenarioWrapperFixture();
     $arguments = [$wrapper, 'cold'];
     if ($explicit) {
