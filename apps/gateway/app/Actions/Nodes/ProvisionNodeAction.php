@@ -32,6 +32,7 @@ use App\Infrastructure\Ssh\SshHostKeyScanException;
 use App\Models\Cluster;
 use App\Models\Node;
 use Illuminate\Database\QueryException;
+use Illuminate\Support\Facades\DB;
 use Throwable;
 
 /** @mago-expect lint:cyclomatic-complexity,kan-defect,too-many-methods Node provisioning keeps its ordered identity, role, and recovery gates together. */
@@ -256,7 +257,10 @@ final readonly class ProvisionNodeAction
         ]);
 
         try {
-            $node->save();
+            DB::transaction(function () use ($node, $tld, $clusterId): void {
+                $this->tldScope->assertNodeTldAvailable($node, $tld, $clusterId);
+                $node->save();
+            });
         } catch (QueryException $exception) {
             throw new ResourceOperationException(
                 errorCode: 'cluster.lan_ip_conflict',
