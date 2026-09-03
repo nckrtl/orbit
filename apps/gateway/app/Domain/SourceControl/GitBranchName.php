@@ -19,13 +19,29 @@ final class GitBranchName
 
     public static function isValid(string $branch): bool
     {
-        return (
-            $branch !== ''
-            && strlen($branch) <= 255
-            && preg_match(
-                '/\A(?!-)(?!.*(?:\.\.|@\{|[ ~^:?*\\\\]))(?!.*(?:\A|\/)\.)(?!.*\.lock(?:\/|\z))(?!.*\/\/)(?!.*[\/.]\z)[A-Za-z0-9._\/-]+\z/D',
-                $branch,
-            ) === 1
+        if ($branch === '' || strlen($branch) > 255 || $branch === 'HEAD' || str_starts_with($branch, '-')) {
+            return false;
+        }
+
+        if (str_contains($branch, '..') || str_contains($branch, '@{') || str_ends_with($branch, '.')) {
+            return false;
+        }
+
+        if (preg_match('//u', $branch) !== 1) {
+            return false;
+        }
+
+        if (preg_match('/[\x00-\x20\x7F~^:?*\[\\\\]/', $branch) === 1) {
+            return false;
+        }
+
+        return array_all(
+            explode('/', $branch),
+            static fn (string $component): bool => (
+                $component !== ''
+                && ! str_starts_with($component, '.')
+                && ! str_ends_with($component, '.lock')
+            ),
         );
     }
 }

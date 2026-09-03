@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App\E2E;
 
+use App\E2E\Git\GitRepository;
 use App\E2E\State\OperationLock;
 use App\E2E\State\StatePaths;
+use App\E2E\Value\AttemptPurpose;
 use App\E2E\Value\OperationId;
 use App\E2E\Value\TopologyProfile;
 use App\E2E\Value\TopologyRequest;
@@ -13,7 +15,7 @@ use App\E2E\Value\TopologyTarget;
 use RuntimeException;
 
 /**
- * Release the live attempt of one issue and prove its resources are gone.
+ * Release one selected attempt of an issue and prove its resources are gone.
  *
  * Every Incus resource is checked against the attempt (owner, issue, attempt)
  * before deletion. The worktree's attempt lease and record are dropped; the
@@ -32,8 +34,8 @@ final readonly class TopologyReleaser
         private ?OrphanNetworkSweep $sweep = null,
     ) {}
 
-    /** @return array{state:string,issue:string,attempt_id:string,released:list<string>,already_absent:list<string>,networks_reaped:list<string>} */
-    public function release(TopologyRequest $request): array
+    /** @return array{state:string,issue:string,purpose:string,attempt_id:string,released:list<string>,already_absent:list<string>,networks_reaped:list<string>} */
+    public function release(TopologyRequest $request, ?AttemptPurpose $purpose = null): array
     {
         $state = IssueState::forWorktree($request->issue, $request->worktree);
         $lock = new OperationLock($this->hostPaths);
@@ -41,14 +43,34 @@ final readonly class TopologyReleaser
             throw new RuntimeException('The issue topology is locked by another harness command.');
         }
         try {
-            $attempt = $state->attemptId();
+            if (! $state->hasAttempt()) {
+                throw new RuntimeException("{$request->issue} has no active attempt.");
+            }
+            $purpose ??= $state->hasAttempt(AttemptPurpose::Discovery)
+                ? AttemptPurpose::Discovery
+                : (
+                    $state->hasAttempt(AttemptPurpose::Proof)
+                        ? AttemptPurpose::Proof
+                        : AttemptPurpose::CandidateConvergence
+                );
+            $attempt = $state->attemptId($purpose);
             $target = TopologyTarget::feature($request->issue, $attempt);
             [$released, $absent] = $this->deleteResources($target);
-            $state->forgetAttempt();
+            $proof = $state->proof() ?? [];
+            if (
+                $purpose === AttemptPurpose::Proof
+                && ($proof['status'] ?? null) === 'proved'
+                && ($proof['attempt_id'] ?? null) === $attempt->value
+                && is_string($proof['manifest_sha256'] ?? null)
+            ) {
+                new GitRepository($request->worktree)->unpinProof($request->issue, $attempt);
+            }
+            $state->forgetAttempt($purpose);
 
             return [
                 'state' => 'released',
                 'issue' => $request->issue,
+                'purpose' => $purpose->value,
                 'attempt_id' => $attempt->value,
                 'released' => $released,
                 'already_absent' => $absent,

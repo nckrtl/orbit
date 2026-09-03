@@ -38,7 +38,7 @@ trap cleanup EXIT
 for project in "${projects[@]}"; do
     (
         cd "$repository_root/$project"
-        vendor/bin/pest --parallel --processes="$suite_processes" --no-tia --compact --exclude-group=incus-live
+        vendor/bin/pest --parallel --processes="$suite_processes" --no-tia --compact
     ) >"$log_directory/${project//\//-}.log" 2>&1 &
     pids+=("$!")
 done

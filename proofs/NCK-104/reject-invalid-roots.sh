@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Closed keys, JSON lists, protected catalog, symlinks, overlap, grammar, and managed checkouts fail without persisting.
-source /var/lib/orbit-e2e/proof/lib.sh
+proof_root=${ORBIT_E2E_PROOF_ROOT:-/var/lib/orbit-e2e/proof}
+source "$proof_root/lib.sh"
 
 before=$(sql_node_settings app-dev)
 gateway_checkout=/home/orbit/orbit/apps/gateway

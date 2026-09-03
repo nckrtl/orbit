@@ -6,6 +6,7 @@ namespace App\Console\Commands\Topology;
 
 use App\Console\Commands\E2ECommand;
 use App\E2E\TopologyAcquirer;
+use App\E2E\Value\AttemptPurpose;
 use InvalidArgumentException;
 use JsonException;
 use Throwable;
@@ -14,9 +15,12 @@ use Throwable;
 final class ExecCommand extends E2ECommand
 {
     #[\Override]
-    protected $signature = 'topology:exec {issue} {role} '.self::WORKTREE_OPTION.' {--argv=} {--argv-file=} {--json}';
+    protected $signature =
+        'topology:exec {issue} {role} '
+            .self::WORKTREE_OPTION
+            .' {--argv=} {--argv-file=} {--proof : Run against the retained failed proof topology} {--json}';
     #[\Override]
-    protected $description = 'Execute an exact argv vector, as the orbit runtime user, on one role of the live topology';
+    protected $description = 'Execute an exact argv vector, as the orbit runtime user, on one discovery or failed-proof role';
 
     public function handle(TopologyAcquirer $acquirer): int
     {
@@ -24,7 +28,8 @@ final class ExecCommand extends E2ECommand
             [$argv, $stdin] = $this->commandInput();
             $request = $this->request();
             $role = (string) $this->argument('role');
-            $result = $acquirer->execute($request, $role, $argv, $stdin);
+            $purpose = $this->option('proof') ? AttemptPurpose::Proof : AttemptPurpose::Discovery;
+            $result = $acquirer->execute($request, $role, $argv, $stdin, $purpose);
             $this->log($request, "role={$role} exit={$result->exitCode} argv=".json_encode($argv, JSON_THROW_ON_ERROR));
             $payload = [
                 'state' => 'executed',

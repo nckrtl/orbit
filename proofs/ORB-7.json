@@ -1,0 +1,18 @@
+{
+    "setup": [],
+    "acceptance": [
+        {"id": "pipefail-assertions-remain-truthful", "node": "app-dev", "argv": ["bash", "/var/lib/orbit-e2e/proof/pipefail-assertions.sh"], "timeout_seconds": 60},
+        {"id": "representative-shared-cleanup-primitives", "node": "app-dev", "argv": ["bash", "/var/lib/orbit-e2e/proof/representative-cleanup-matrix.sh"], "timeout_seconds": 120},
+        {"id": "nck-73-actual-cleanup", "node": "app-dev", "argv": ["bash", "/var/lib/orbit-e2e/proof/actual-fixture-cleanup-matrix.sh", "/var/lib/orbit-e2e/proof/NCK-73", "recover:120"], "timeout_seconds": 900},
+        {"id": "nck-108-actual-cleanup", "node": "app-dev", "argv": ["bash", "/var/lib/orbit-e2e/proof/actual-fixture-cleanup-matrix.sh", "/var/lib/orbit-e2e/proof/NCK-108", "metrics-node-fails-closed:120"], "timeout_seconds": 900},
+        {"id": "nck-104-local-path-cleanup", "node": "gateway", "argv": ["bash", "/var/lib/orbit-e2e/proof/nck-104-cleanup-matrix.sh", "local-path"], "timeout_seconds": 900},
+        {"id": "nck-104-local-database-cleanup", "node": "gateway", "argv": ["bash", "/var/lib/orbit-e2e/proof/nck-104-cleanup-matrix.sh", "local-database"], "timeout_seconds": 900},
+        {"id": "nck-104-remote-path-cleanup", "node": "gateway", "argv": ["bash", "/var/lib/orbit-e2e/proof/nck-104-cleanup-matrix.sh", "remote-path"], "timeout_seconds": 900},
+        {"id": "nck-104-remote-database-cleanup", "node": "gateway", "argv": ["bash", "/var/lib/orbit-e2e/proof/nck-104-cleanup-matrix.sh", "remote-database"], "timeout_seconds": 900},
+        {"id": "nck-104-custom-hook-cleanup", "node": "gateway", "argv": ["bash", "/var/lib/orbit-e2e/proof/nck-104-cleanup-matrix.sh", "custom-hook"], "timeout_seconds": 900},
+        {"id": "firewall-timeout-cleanup", "node": "app-prod", "argv": ["bash", "/var/lib/orbit-e2e/proof/firewall-timeout-cleanup-matrix.sh"], "timeout_seconds": 120},
+        {"id": "hung-cleanup-is-force-killed", "node": "app-dev", "argv": ["bash", "/var/lib/orbit-e2e/proof/hung-cleanup-matrix.sh"], "timeout_seconds": 60}
+    ],
+    "mutates": true,
+    "fixture_issues": ["NCK-73", "NCK-104", "NCK-108", "NCK-116"]
+}

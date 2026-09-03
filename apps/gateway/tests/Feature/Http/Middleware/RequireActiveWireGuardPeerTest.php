@@ -311,6 +311,7 @@ it('rejects mutating commands from an inactive registered peer', function (): vo
 });
 
 it('allows Gateway-scoped app creation from an active Gateway peer', function (): void {
+    $this->fakeRepositoryBranches();
     $operator = Node::query()->create([
         'name' => 'operator',
         'status' => LifecycleStatus::Active,

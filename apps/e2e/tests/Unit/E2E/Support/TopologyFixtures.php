@@ -12,11 +12,11 @@ declare(strict_types=1);
 
 use App\E2E\Git\GitRepository;
 use App\E2E\PreparedStateFingerprint;
-use App\E2E\StandbyManifestStore;
 use App\E2E\State\AtomicJsonStore;
 use App\E2E\State\StatePaths;
+use App\E2E\TopologySnapshotManifestStore;
 use App\E2E\Value\LaravelRelease;
-use App\E2E\Value\StandbyGeneration;
+use App\E2E\Value\TopologySnapshotGeneration;
 use App\E2E\Value\TopologyTarget;
 use Illuminate\Process\Factory as ProcessFactory;
 use Illuminate\Support\Facades\Process;
@@ -28,7 +28,7 @@ function promoteDiscoveryGeneration(string $repositoryRoot, StatePaths $paths): 
     $prepared = topologyFinalPreparedFingerprint($repositoryRoot);
     $mainSha = new GitRepository($repositoryRoot)->commit();
     $structural = new PreparedStateFingerprint(new GitRepository($repositoryRoot))->forCommit($mainSha);
-    new StandbyManifestStore($store, $paths, new \App\E2E\IncusHost)->promote(new StandbyGeneration(
+    new TopologySnapshotManifestStore($store, $paths, new \App\E2E\IncusHost)->promote(new TopologySnapshotGeneration(
         substr($mainSha, 0, 12).'-'.substr($prepared->value, 0, 12),
         $mainSha,
         ['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod'],
@@ -89,7 +89,7 @@ function preparedTopologyRepository(): string
         chmod($guestTarget.'/'.basename($script), 0755);
     }
     // Vendor trees and the gateway environment stay out of the tree, as in Orbit itself.
-    file_put_contents($root.'/.gitignore', "/vendor/\nvendor/\n.env\n");
+    file_put_contents($root.'/.gitignore', "/vendor/\nvendor/\n.env\n.e2e/\n");
     hydrateFixtureVendor($root);
 
     foreach ([
@@ -119,11 +119,11 @@ function hydrateFixtureVendor(string $worktree): void
     }
 }
 
-function standbyVmInventoryJson(): string
+function topologySnapshotVmInventoryJson(): string
 {
     $roles = \App\E2E\Value\TopologyProfile::ROLES;
     $instances = array_merge(
-        array_map(static fn (string $role): string => TopologyTarget::standby()->instance($role), $roles),
+        array_map(static fn (string $role): string => TopologyTarget::topologySnapshot()->instance($role), $roles),
         array_map(static fn (string $role): string => featureTarget('NCK-123')->instance($role), $roles),
     );
 
@@ -136,21 +136,24 @@ function standbyVmInventoryJson(): string
             'config' => ['user.orbit.e2e.owner' => 'orbit-e2e'],
             'devices' => [
                 'root' => ['pool' => 'default'],
-                'eth0' => ['network' => TopologyTarget::standby()->network()],
+                'eth0' => ['network' => TopologyTarget::topologySnapshot()->network()],
             ],
         ],
         $instances,
     ), JSON_THROW_ON_ERROR);
 }
 
-function standbySnapshotInventoryJson(string $instance, bool $include = true, string $owner = 'orbit-e2e'): string
-{
-    $role = str_replace('orbit-e2e-standby-', '', $instance);
+function topologySnapshotSnapshotInventoryJson(
+    string $instance,
+    bool $include = true,
+    string $owner = 'orbit-e2e',
+): string {
+    $role = str_replace('orbit-e2e-topology-snapshot-', '', $instance);
     $snapshot = match ($role) {
         'gateway' => 'main-gateway',
         'app-dev' => 'main-app-dev',
         'app-prod' => 'main-app-prod',
-        default => throw new RuntimeException('Unexpected standby fixture instance.'),
+        default => throw new RuntimeException('Unexpected topology snapshot fixture instance.'),
     };
 
     return json_encode(
@@ -252,6 +255,7 @@ function pinnedFeatureWorktree(string $repositoryRoot, string $suffix): string
 function pinnedWorktreeInventoryResult(
     array $command,
     TopologyTarget $target,
+    ?string $operationId = null,
 ): ?\Illuminate\Contracts\Process\ProcessResult {
     if (($firewall = topologyFirewallResult($command)) !== null) {
         return $firewall;
@@ -271,7 +275,13 @@ function pinnedWorktreeInventoryResult(
                 static fn (string $role): array => json_decode(
                     topologyVmJson(
                         $target->instance($role),
-                        ['user.orbit.e2e.owner' => 'orbit-e2e'],
+                        [
+                            'user.orbit.e2e.owner' => 'orbit-e2e',
+                            'user.orbit.e2e.issue' => $target->issue,
+                            'user.orbit.e2e.attempt' => $target->requireAttempt()->value,
+                            'user.orbit.e2e.operation' => $operationId ?? str_repeat('f', 32),
+                            'user.orbit.e2e.generation' => 'fixture-generation',
+                        ],
                         $target->network(),
                     ),
                     true,
@@ -283,7 +293,7 @@ function pinnedWorktreeInventoryResult(
 
             return Process::result(json_encode(array_merge(
                 array_values(array_filter(
-                    json_decode(standbyVmInventoryJson(), true, 16, JSON_THROW_ON_ERROR),
+                    json_decode(topologySnapshotVmInventoryJson(), true, 16, JSON_THROW_ON_ERROR),
                     static fn (array $vm): bool => ! str_contains((string) $vm['name'], 'nck-123'),
                 )),
                 $featureInstances,
@@ -300,7 +310,7 @@ function pinnedWorktreeInventoryResult(
     if (($command[3] ?? null) === 'snapshot' && ($command[4] ?? null) === 'list') {
         $instance = preg_replace('/\A[^:]+:/', '', (string) ($command[5] ?? ''));
 
-        return Process::result(standbySnapshotInventoryJson($instance));
+        return Process::result(topologySnapshotSnapshotInventoryJson($instance));
     }
 
     return null;
@@ -414,15 +424,23 @@ function pinnedWorktreeBatchResult(
 /**
  * @param list<array<array-key, mixed>> $events
  * @param null|Closure(list<string>): void $observe
+ * @param null|Closure(list<string>): (?\Illuminate\Contracts\Process\ProcessResult) $guestOverride
  */
-function fakePinnedWorktreeProcesses(TopologyTarget $target, array &$events, ?Closure $observe = null): void
-{
+function fakePinnedWorktreeProcesses(
+    TopologyTarget $target,
+    array &$events,
+    ?Closure $observe = null,
+    ?Closure $guestOverride = null,
+    ?string $operationId = null,
+): void {
     $realProcess = new ProcessFactory;
     Process::fake(function (\Illuminate\Process\PendingProcess $process) use (
         &$events,
         $realProcess,
         $target,
         $observe,
+        $guestOverride,
+        $operationId,
     ) {
         $command = $process->command;
         $observe?->__invoke($command);
@@ -432,11 +450,16 @@ function fakePinnedWorktreeProcesses(TopologyTarget $target, array &$events, ?Cl
                 ->input($process->input)
                 ->run($command);
         }
-        if (($batch = pinnedWorktreeBatchResult($process, $events)) !== null) {
+        if (($batch = pinnedWorktreeBatchResult($process, $events, $guestOverride)) !== null) {
             return $batch;
         }
         $events[] = $command;
 
-        return pinnedWorktreeInventoryResult($command, $target) ?? pinnedWorktreeGuestResult($command);
+        return (
+            pinnedWorktreeInventoryResult($command, $target, $operationId) ?? $guestOverride?->__invoke(array_slice(
+                $command,
+                6,
+            )) ?? pinnedWorktreeGuestResult($command)
+        );
     });
 }

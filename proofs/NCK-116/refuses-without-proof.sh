@@ -1,12 +1,18 @@
 #!/usr/bin/env bash
 # The escape refuses a drop-in and a configuration directory that carry no
 # Orbit ownership proof, and reports both instead of guessing.
-source /var/lib/orbit-e2e/proof/lib.sh
+proof_root=${ORBIT_E2E_PROOF_ROOT:-/var/lib/orbit-e2e/proof}
+source "$proof_root/lib.sh"
 
 readonly FOREIGN_DROPIN=/etc/systemd/system/prometheus-node-exporter.service.d/orbit.conf
 readonly FOREIGN_MARKER=/etc/orbit/metrics/.orbit-owner
 readonly FOREIGN_FILE=/etc/orbit/metrics/prometheus.yml
 
+orb7_traps refuses-without-proof
+orb7_arm refuses-without-proof
+orb7_capture_path refuses-without-proof foreign-dropin /etc/systemd/system/prometheus-node-exporter.service.d
+orb7_capture_path refuses-without-proof foreign-metrics /etc/orbit/metrics
+orb7_checkpoint refuses-without-proof post-record
 sudo test ! -e "$FOREIGN_DROPIN" || fail "this node still holds an Orbit drop-in; plant on a cleaned node"
 
 printf '# hand written by the platform team\n[Service]\nExecStart=\n' \
@@ -18,8 +24,11 @@ printf 'scrape_configs: []\n' | sudo install -m 0644 /dev/stdin "$FOREIGN_FILE"
 # A rule that kept the Orbit comment but not the Orbit shape. The Gateway
 # refuses this as ownership drift, so the escape must refuse it too.
 address=$(this_address)
+orb7_record_ufw_rule refuses-without-proof "$EXPORTER_RULE_COMMENT"
 sudo ufw allow in on orbit proto tcp to "$address" port 9100 \
   comment orbit:metrics-node-exporter >/dev/null
+orb7_mark_active refuses-without-proof
+orb7_checkpoint refuses-without-proof post-mutation
 
 run_escape --force
 [[ "$ESCAPE_STATUS" -eq 3 ]] || fail "escape exited $ESCAPE_STATUS, expected 3: $ESCAPE_OUTPUT"
@@ -39,8 +48,8 @@ firewall_rule_exists orbit:metrics-node-exporter \
 [[ "$(sudo cat "$FOREIGN_MARKER")" == 'someone-else' ]] || fail "the escape modified a foreign marker"
 [[ "$(sudo cat "$FOREIGN_FILE")" == 'scrape_configs: []' ]] || fail "the escape removed a foreign file"
 
-sudo rm -rf /etc/systemd/system/prometheus-node-exporter.service.d /etc/orbit/metrics
+orb7_restore_owned refuses-without-proof
+trap - EXIT INT TERM
 sudo systemctl daemon-reload
-delete_firewall_rule orbit:metrics-node-exporter
 
 echo "refuses-without-proof: both unprovable resources were reported and left byte-identical"

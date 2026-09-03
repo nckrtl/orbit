@@ -29,8 +29,9 @@ final class RelativeWebRoot
 
         return array_all(
             explode('/', $root),
-            fn ($segment) => ! (
+            static fn (string $segment): bool => ! (
                 $segment === ''
+                || $segment === '.'
                 || $segment === '..'
                 || preg_match('/\A[A-Za-z0-9._-]+\z/D', $segment) !== 1
             ),

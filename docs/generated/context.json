@@ -10,6 +10,7 @@
                 "apps/gateway"
             ],
             "concepts": [
+                "App",
                 "Cluster",
                 "Gateway"
             ],
@@ -43,7 +44,8 @@
                 "0006",
                 "0009",
                 "0011",
-                "0014"
+                "0014",
+                "0017"
             ]
         },
         {
@@ -72,7 +74,8 @@
                 "0009",
                 "0011",
                 "0012",
-                "0014"
+                "0014",
+                "0017"
             ]
         },
         {
@@ -159,7 +162,9 @@
             "components": [
                 "apps/e2e"
             ],
-            "concepts": [],
+            "concepts": [
+                "Proof topology"
+            ],
             "governing_adrs": [
                 "0002",
                 "0005",
@@ -292,6 +297,89 @@
             ]
         },
         {
+            "path": "docs/decisions/0015-retain-incus-proof-by-recorded-input-equivalence.md",
+            "title": "ADR 0015: Retain Incus proof by recorded-input equivalence",
+            "kind": "decision",
+            "components": [
+                "apps/docs"
+            ],
+            "concepts": [
+                "App",
+                "Gateway",
+                "Node",
+                "Proof topology"
+            ],
+            "governing_adrs": [
+                "0002",
+                "0006",
+                "0015"
+            ]
+        },
+        {
+            "path": "docs/decisions/0016-reconcile-app-identity-and-source-default-updates.md",
+            "title": "ADR 0016: Reconcile App identity and source-default updates",
+            "kind": "decision",
+            "components": [],
+            "concepts": [
+                "App",
+                "AppInstance",
+                "Cluster",
+                "Gateway",
+                "Ingress",
+                "Node",
+                "Route",
+                "Router"
+            ],
+            "governing_adrs": [
+                "0009",
+                "0011",
+                "0016"
+            ]
+        },
+        {
+            "path": "docs/decisions/0017-optional-cluster-placement-and-tld-precedence.md",
+            "title": "ADR 0017: Make Cluster placement optional",
+            "kind": "decision",
+            "components": [],
+            "concepts": [
+                "App",
+                "AppInstance",
+                "Cluster",
+                "Gateway",
+                "Ingress",
+                "Node",
+                "Route",
+                "Router"
+            ],
+            "governing_adrs": [
+                "0009",
+                "0011",
+                "0016",
+                "0017"
+            ]
+        },
+        {
+            "path": "docs/decisions/0018-register-caller-local-development-worktrees.md",
+            "title": "ADR 0018: Register caller-local development worktrees as AppInstances",
+            "kind": "decision",
+            "components": [],
+            "concepts": [
+                "App",
+                "AppInstance",
+                "Cluster",
+                "Doctor",
+                "Gateway",
+                "Node",
+                "Route"
+            ],
+            "governing_adrs": [
+                "0009",
+                "0016",
+                "0017",
+                "0018"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -346,25 +434,41 @@
             "governing_adrs": []
         },
         {
+            "path": "docs/reference/apps.md",
+            "title": "Apps",
+            "kind": "reference",
+            "components": [],
+            "concepts": [
+                "App",
+                "Gateway"
+            ],
+            "governing_adrs": [
+                "0016"
+            ]
+        },
+        {
             "path": "docs/reference/incus-topologies.md",
             "title": "Incus topology registry",
             "kind": "reference",
             "components": [
                 "apps/cli",
-                "apps/e2e",
-                "apps/gateway"
+                "apps/docs",
+                "apps/e2e"
             ],
             "concepts": [
                 "App",
+                "AppInstance",
+                "Cluster",
                 "Doctor",
                 "Gateway",
-                "Legacy Instance",
                 "Node",
-                "Workspace"
+                "Proof topology",
+                "Router"
             ],
             "governing_adrs": [
                 "0005",
-                "0006"
+                "0006",
+                "0015"
             ]
         },
         {
@@ -439,6 +543,19 @@
             "concepts": [
                 "App",
                 "Gateway"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/solutions/vpn-dnsmasq-uplink-resolvers.md",
+            "title": "VPN dnsmasq uplink resolvers",
+            "kind": "solution",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Node"
             ],
             "governing_adrs": []
         },

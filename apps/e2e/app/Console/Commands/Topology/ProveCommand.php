@@ -26,7 +26,12 @@ final class ProveCommand extends E2ECommand
     {
         try {
             $request = $this->request();
-            $result = $runner->prove($request, ProofPlan::fromFile($this->planPath($request)));
+            $planPath = $this->planPath($request);
+            $result = $runner->prove(
+                $request,
+                ProofPlan::fromFile($request->worktree.'/'.$planPath),
+                $planPath,
+            );
             $this->log($request, 'attempt='.$result->attempt->value.' '.$result->status->value);
             $this->outputJson($result->toArray(), $this->text($result));
 
@@ -48,7 +53,17 @@ final class ProveCommand extends E2ECommand
             $plan = 'proofs/'.$request->issue.'.json';
         }
 
-        return str_starts_with($plan, '/') ? $plan : $request->worktree.'/'.$plan;
+        if (
+            str_starts_with($plan, '/')
+            || str_contains($plan, "\0")
+            || str_contains($plan, '\\')
+            || in_array('..', explode('/', $plan), true)
+            || in_array('.', explode('/', $plan), true)
+        ) {
+            throw new \InvalidArgumentException('The proof plan must be a safe repository-relative path.');
+        }
+
+        return $plan;
     }
 
     private function text(ProofResult $result): string

@@ -8,7 +8,7 @@ use App\E2E\State\OperationLock;
 use App\E2E\State\StatePaths;
 use App\E2E\Value\IncusNetwork;
 use App\E2E\Value\OperationId;
-use App\E2E\Value\StandbyIdentity;
+use App\E2E\Value\TopologySnapshotIdentity;
 use RuntimeException;
 
 /**
@@ -16,7 +16,7 @@ use RuntimeException;
  *
  * A network is an orphan when its name carries a harness prefix (`oe-` for the
  * current harness, `orbit-e2e-` for the legacy one), Incus reports no user, and
- * it is not a standby network of any checkout. The sweep holds the host creation lock, so an
+ * it is not a current or retired topology snapshot network. The sweep holds the host creation lock, so an
  * acquisition between network creation and its first VM is never swept.
  */
 final readonly class OrphanNetworkSweep
@@ -24,14 +24,16 @@ final readonly class OrphanNetworkSweep
     public const array HARNESS_PREFIXES = ['oe-', 'orbit-e2e-'];
 
     /**
-     * The standby network of every checkout that may own one. A standby network
-     * is never an orphan, whichever checkout built it.
+     * The current and retired topology snapshot networks are never orphans.
      *
      * @return list<string>
      */
-    public static function standbyNetworks(): array
+    public static function topologySnapshotNetworks(): array
     {
-        return array_map(static fn (StandbyIdentity $standby): string => $standby->network(), StandbyIdentity::known());
+        return [
+            TopologySnapshotIdentity::primary()->network(),
+            TopologySnapshotIdentity::retired()->network(),
+        ];
     }
 
     /** The lock every topology creation holds from network creation until its VMs exist. */
@@ -63,7 +65,7 @@ final readonly class OrphanNetworkSweep
             $name = $network->name;
             if (
                 ! self::isHarnessNetworkName($name)
-                || in_array($name, self::standbyNetworks(), true)
+                || in_array($name, self::topologySnapshotNetworks(), true)
                 || $network->usedBy !== []
                 || in_array($name, $protected, true)
             ) {

@@ -4,17 +4,16 @@ declare(strict_types=1);
 
 namespace App\E2E;
 
-use App\E2E\Value\StandbyIdentity;
 use App\E2E\Value\TopologyProfile;
+use App\E2E\Value\TopologySnapshotIdentity;
 use RuntimeException;
 
 /**
  * Host capacity comes from Incus itself: the harness VMs that exist now and
  * the deterministic `10.232.<slot>.0/24` subnets in use. There is no ledger.
  *
- * Every standby a checkout may own counts, not just this checkout's: the VMs
- * of the primary standby and of the validation clone's standby are both
- * harness VMs, and both hold a network slot no feature topology may take.
+ * The persistent topology snapshot and every disposable discovery or proof
+ * topology count against the same host budget.
  */
 final readonly class HostCapacity
 {
@@ -22,8 +21,10 @@ final readonly class HostCapacity
         private IncusHost $host,
         private int $maxVms,
     ) {
-        if ($maxVms < ((count(StandbyIdentity::known()) + 1) * count(TopologyProfile::ROLES))) {
-            throw new RuntimeException('Incus host capacity cannot fit every standby and one feature topology.');
+        if ($maxVms < (3 * count(TopologyProfile::ROLES))) {
+            throw new RuntimeException(
+                'Incus host capacity cannot fit the topology snapshot, discovery, and proof.',
+            );
         }
     }
 
@@ -52,9 +53,7 @@ final readonly class HostCapacity
     private function occupiedNetworkSlots(): array
     {
         $occupied = [];
-        foreach (StandbyIdentity::known() as $standby) {
-            $occupied[$standby->slot] = true;
-        }
+        $occupied[TopologySnapshotIdentity::primary()->slot] = true;
         foreach ($this->host->networks() as $network) {
             $address = $network->config['ipv4.address'] ?? null;
             if ($address === null) {

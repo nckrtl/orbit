@@ -82,7 +82,8 @@ it('requires an active member Node for Router assignment', function (): void {
     expect($this->cluster->routerAssignment()->exists())->toBeFalse();
 });
 
-it('refuses to clear or detach an active Router until the Cluster is inactive', function (): void {
+it('refuses to clear or detach an active TLD-bearing Cluster Router until the Cluster is inactive', function (): void {
+    $this->cluster->update(['tld' => 'beast']);
     $this->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->first->id}")->assertOk();
     $this->patchJson("/api/v1/clusters/{$this->cluster->id}", ['state' => 'active'])->assertOk();
 
@@ -107,6 +108,23 @@ it('refuses to clear or detach an active Router until the Cluster is inactive', 
         ->assertJsonPath('data.router', null);
 
     expect($this->cluster->routerAssignment()->exists())->toBeFalse();
+});
+
+it('clears an optional Router while a TLD-less Cluster remains active', function (): void {
+    $this->putJson("/api/v1/clusters/{$this->cluster->id}/router/{$this->first->id}")->assertOk();
+    $this->patchJson("/api/v1/clusters/{$this->cluster->id}", ['state' => 'active'])->assertOk();
+
+    $this
+        ->deleteJson("/api/v1/clusters/{$this->cluster->id}/router", ['force' => true])
+        ->assertOk()
+        ->assertJsonPath('data.state', 'active')
+        ->assertJsonPath('data.tld', null)
+        ->assertJsonPath('data.router', null);
+
+    expect($this->cluster->refresh()->state->value)
+        ->toBe('active')
+        ->and($this->cluster->routerAssignment()->exists())
+        ->toBeFalse();
 });
 
 function cluster_router_api_node(string $name, string $wireguardIp, ?Cluster $cluster = null): Node

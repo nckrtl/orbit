@@ -331,6 +331,130 @@ describe('POST /api/v1/nodes', function (): void {
             ->assertJsonPath('error.code', 'node.tld_taken');
     });
 
+    it('rejects a non-member Node TLD owned by an active Cluster before convergence', function (): void {
+        $converger = new class implements NodeConverger {
+            public int $calls = 0;
+
+            public function converge(
+                Node $node,
+                NodeProvisioningIdentity $identity,
+                ?string $expectedSshHostFingerprint = null,
+                bool $rolelessOperator = false,
+            ): void {
+                $this->calls++;
+            }
+        };
+        app()->instance(NodeConverger::class, $converger);
+        $cluster = Cluster::query()->create([
+            'name' => 'development',
+            'tld' => 'beast',
+            'state' => 'active',
+        ]);
+
+        $this
+            ->postJson('/api/v1/nodes', [
+                'name' => 'outside',
+                'public_ssh_host' => '192.0.2.44',
+                'architecture' => 'x86_64',
+                'tld' => 'BEAST',
+                'host_key_fingerprint' => 'SHA256:'.str_repeat(string: 'A', times: 43),
+            ])
+            ->assertConflict()
+            ->assertJsonPath('error.code', 'node.tld_conflict');
+
+        expect(Node::query()->where('name', 'outside')->exists())
+            ->toBeFalse()
+            ->and($cluster->refresh()->tld)
+            ->toBe('beast')
+            ->and($converger->calls)
+            ->toBe(0);
+    });
+
+    it('allows a proposed member Node to share its active Cluster TLD', function (): void {
+        app()->instance(NodeConverger::class, new class implements NodeConverger {
+            public function converge(
+                Node $node,
+                NodeProvisioningIdentity $identity,
+                ?string $expectedSshHostFingerprint = null,
+                bool $rolelessOperator = false,
+            ): void {}
+        });
+        $cluster = Cluster::query()->create([
+            'name' => 'development',
+            'tld' => 'beast',
+            'state' => 'active',
+        ]);
+
+        $this
+            ->postJson('/api/v1/nodes', [
+                'name' => 'member',
+                'cluster_id' => $cluster->id,
+                'public_ssh_host' => '192.0.2.45',
+                'architecture' => 'x86_64',
+                'tld' => 'BEAST',
+                'host_key_fingerprint' => 'SHA256:'.str_repeat(string: 'A', times: 43),
+            ])
+            ->assertCreated()
+            ->assertJsonPath('data.cluster_id', $cluster->id)
+            ->assertJsonPath('data.tld', 'beast');
+
+        $member = Node::query()->where('name', 'member')->sole();
+
+        expect($member->cluster_id)
+            ->toBe($cluster->id)
+            ->and($member->tld)
+            ->toBe('beast');
+    });
+
+    it('preserves an existing non-member Node when an active Cluster owns its proposed TLD', function (): void {
+        $converger = new class implements NodeConverger {
+            public int $calls = 0;
+
+            public function converge(
+                Node $node,
+                NodeProvisioningIdentity $identity,
+                ?string $expectedSshHostFingerprint = null,
+                bool $rolelessOperator = false,
+            ): void {
+                $this->calls++;
+            }
+        };
+        app()->instance(NodeConverger::class, $converger);
+        Cluster::query()->create([
+            'name' => 'development',
+            'tld' => 'beast',
+            'state' => 'active',
+        ]);
+        $node = Node::query()->create([
+            'name' => 'outside',
+            'status' => LifecycleStatus::Active,
+            'platform' => 'linux',
+            'architecture' => 'x86_64',
+            'tld' => 'outside',
+            'public_ssh_host' => '192.0.2.46',
+            'wireguard_ip' => '10.44.0.46',
+            'ssh_host_fingerprint' => 'SHA256:pinned',
+        ]);
+
+        $this
+            ->postJson('/api/v1/nodes', [
+                'name' => 'outside',
+                'architecture' => 'x86_64',
+                'tld' => 'beast',
+            ])
+            ->assertConflict()
+            ->assertJsonPath('error.code', 'node.tld_conflict');
+
+        expect($node->refresh()->tld)
+            ->toBe('outside')
+            ->and($node->cluster_id)
+            ->toBeNull()
+            ->and($node->status)
+            ->toBe(LifecycleStatus::Active)
+            ->and($converger->calls)
+            ->toBe(0);
+    });
+
     it('rejects unsupported platforms and invalid architectures at the API boundary', function (): void {
         $fingerprint = 'SHA256:'.str_repeat(string: 'A', times: 43);
 

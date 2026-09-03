@@ -4,6 +4,168 @@ set -euo pipefail
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
+readonly ORB7_CLEANUP_ROOT=/var/lib/orbit-e2e/proof-cleanup
+readonly ORB7_PROOF_ROOT=${ORBIT_E2E_PROOF_ROOT:-/var/lib/orbit-e2e/proof}
+readonly ORB7_STATE_HELPER="$ORB7_PROOF_ROOT/orb-7-node-state.sh"
+ORB7_ACTIVE_CLEANUP_HOOK=
+readonly -a ORB7_SSH=(
+  ssh
+  -i /home/orbit/.orbit/ssh/id_ed25519
+  -p 22
+  -o BatchMode=yes
+  -o StrictHostKeyChecking=yes
+  -o UserKnownHostsFile=/home/orbit/.orbit/ssh/known_hosts
+  -o ConnectTimeout=10
+  -o ServerAliveInterval=5
+  -o ServerAliveCountMax=2
+)
+
+orb7_node_address() {
+  local name="$1"
+  orbit node:list --json | php -r '
+    $name=$argv[1];
+    foreach (json_decode(stream_get_contents(STDIN), true)["nodes"] ?? [] as $node) {
+      if (($node["name"] ?? null) === $name) { echo $node["wireguard_ip"]; exit(0); }
+    }
+    exit(1);
+  ' -- "$name"
+}
+
+orb7_remote_state() {
+  local role="$1"
+  shift
+  local address
+  address=$(orb7_node_address "$role")
+  "${ORB7_SSH[@]}" -- "orbit@$address" bash "$ORB7_STATE_HELPER" "$@"
+}
+
+orb7_arm_paths() {
+  local action="$1"
+  shift
+  bash "$ORB7_STATE_HELPER" arm-paths "$action" "$@"
+}
+
+orb7_arm_remote_paths() {
+  local role="$1"
+  local action="$2"
+  shift 2
+  orb7_remote_state "$role" arm-paths "$action" "$@"
+}
+
+orb7_arm_database() {
+  local action="$1"
+  bash "$ORB7_STATE_HELPER" arm-database "$action"
+}
+
+orb7_arm_remote_database() {
+  local action="$1"
+  orb7_remote_state gateway arm-database "$action"
+}
+
+orb7_restore_action() {
+  local action="$1"
+  shift
+  bash "$ORB7_STATE_HELPER" restore "$action"
+  local role
+  for role in "$@"; do
+    orb7_remote_state "$role" restore "$action"
+  done
+}
+
+orb7_discard_action() {
+  local action="$1"
+  shift
+  bash "$ORB7_STATE_HELPER" discard "$action"
+  local role
+  for role in "$@"; do
+    orb7_remote_state "$role" discard "$action"
+  done
+}
+
+orb7_cleanup_exit() {
+  local status="$1"
+  local action="$2"
+  shift 2
+  trap - EXIT INT TERM
+  local cleanup_status=0
+  if [[ -n "${ORB7_ACTIVE_CLEANUP_HOOK:-}" ]]; then
+    "$ORB7_ACTIVE_CLEANUP_HOOK" || cleanup_status=$?
+  fi
+  local restore_status=0
+  orb7_restore_action "$action" "$@" || restore_status=$?
+  if [[ "$cleanup_status" -eq 0 && "$restore_status" -ne 0 ]]; then
+    cleanup_status=$restore_status
+  fi
+  if [[ "$status" -eq 0 && "$cleanup_status" -ne 0 ]]; then
+    exit "$cleanup_status"
+  fi
+  exit "$status"
+}
+
+orb7_traps() {
+  local action="$1"
+  shift
+  ORB7_ACTIVE_ACTION="$action"
+  ORB7_ACTIVE_REMOTES=("$@")
+  ORB7_ACTIVE_CLEANUP_HOOK=
+  trap 'orb7_cleanup_exit "$?" "$ORB7_ACTIVE_ACTION" "${ORB7_ACTIVE_REMOTES[@]}"' EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+}
+
+orb7_set_cleanup_hook() {
+  local hook="$1"
+  declare -F "$hook" >/dev/null || fail "cleanup hook is not a function: $hook"
+  ORB7_ACTIVE_CLEANUP_HOOK="$hook"
+}
+
+orb7_clear_cleanup_hook() {
+  ORB7_ACTIVE_CLEANUP_HOOK=
+}
+
+orb7_mark_active() {
+  local action="$1"
+  shift
+  bash "$ORB7_STATE_HELPER" mark "$action" active
+  local role
+  for role in "$@"; do
+    orb7_remote_state "$role" mark "$action" active
+  done
+}
+
+orb7_checkpoint() {
+  local action="$1"
+  local window="$2"
+  if [[ "${ORBIT_E2E_ORB7_MODE:-}" == signal \
+    && "${ORBIT_E2E_ORB7_CASE:-}" == "$action" \
+    && "${ORBIT_E2E_ORB7_WINDOW:-}" == "$window" ]]; then
+    printf 'ready\n' | sudo tee "${ORBIT_E2E_ORB7_CHECKPOINT:?}" >/dev/null
+    if [[ "${ORBIT_E2E_ORB7_EVENT:-}" == EXIT ]]; then
+      until sudo test -f "${ORBIT_E2E_ORB7_CHECKPOINT:?}.continue"; do sleep 0.1; done
+      exit 0
+    fi
+    while true; do sleep 1; done
+  fi
+}
+
+orb7_complete() {
+  local action="$1"
+  shift
+  orb7_discard_action "$action" "$@"
+  trap - EXIT INT TERM
+}
+
+orb7_publish() {
+  local action="$1"
+  shift
+  bash "$ORB7_STATE_HELPER" mark "$action" published
+  local role
+  for role in "$@"; do
+    orb7_remote_state "$role" mark "$action" published
+  done
+  trap - EXIT INT TERM
+}
+
 # Extracts one JSON path (dot separated) from stdin with PHP; prints nothing when absent.
 json_get() {
   php -r '

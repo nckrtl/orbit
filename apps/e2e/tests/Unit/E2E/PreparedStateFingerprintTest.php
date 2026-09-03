@@ -209,6 +209,12 @@ describe('PreparedStateFingerprint', function (): void {
                 'apps/e2e/resources/guest/prepare-node.sh',
                 'apps/cli/app/Commands/Apps/CreateAppCommand.php',
                 'apps/cli/app/Commands/Apps/ListAppsCommand.php',
+                'apps/cli/app/Commands/Clusters/AttachClusterNodeCommand.php',
+                'apps/cli/app/Commands/Clusters/ClusterCommand.php',
+                'apps/cli/app/Commands/Clusters/CreateClusterCommand.php',
+                'apps/cli/app/Commands/Clusters/ListClustersCommand.php',
+                'apps/cli/app/Commands/Clusters/SetClusterRouterCommand.php',
+                'apps/cli/app/Commands/Clusters/UpdateClusterCommand.php',
                 'apps/cli/app/Commands/Instances/CreateInstanceCommand.php',
                 'apps/cli/app/Commands/Instances/ListInstancesCommand.php',
                 'apps/cli/app/Commands/Nodes/ShowNodeCommand.php',
@@ -216,10 +222,27 @@ describe('PreparedStateFingerprint', function (): void {
                 'apps/cli/app/Commands/Workspaces/ListWorkspacesCommand.php',
                 'apps/gateway/app/Actions/Apps/CreateAppAction.php',
                 'apps/gateway/app/Actions/Apps/ListAppsAction.php',
+                'apps/gateway/app/Actions/Clusters/AttachClusterNodeAction.php',
+                'apps/gateway/app/Actions/Clusters/CreateClusterAction.php',
+                'apps/gateway/app/Actions/Clusters/ListClustersAction.php',
+                'apps/gateway/app/Actions/Clusters/SetClusterRouterAction.php',
+                'apps/gateway/app/Actions/Clusters/UpdateClusterAction.php',
                 'apps/gateway/app/Actions/Instances/CreateInstanceAction.php',
                 'apps/gateway/app/Actions/Instances/ListInstancesAction.php',
                 'apps/gateway/app/Actions/Workspaces/CreateWorkspaceAction.php',
                 'apps/gateway/app/Actions/Workspaces/ListWorkspacesAction.php',
+                'apps/gateway/app/Data/Clusters/ClusterData.php',
+                'apps/gateway/app/Data/Clusters/ClusterNodeData.php',
+                'apps/gateway/app/Data/Clusters/CreateClusterData.php',
+                'apps/gateway/app/Data/Clusters/UpdateClusterData.php',
+                'apps/gateway/app/Domain/Clusters/ClusterState.php',
+                'apps/gateway/app/Domain/Clusters/ClusterTld.php',
+                'apps/gateway/app/Http/Controllers/Api/ClustersController.php',
+                'apps/gateway/app/Http/Requests/Clusters/StoreClusterRequest.php',
+                'apps/gateway/app/Http/Requests/Clusters/UpdateClusterRequest.php',
+                'apps/gateway/app/Models/Cluster.php',
+                'apps/gateway/database/migrations/2026_08_31_165346_add_clusters_and_node_network_identity.php',
+                'apps/gateway/database/migrations/2026_09_01_120814_add_cluster_ingress_role.php',
                 'apps/gateway/app/Console/Commands/ProvisionNodeCommand.php',
                 'apps/gateway/app/Actions/Nodes/ProvisionNodeAction.php',
                 'apps/gateway/app/Data/Nodes/ProvisionNodeData.php',
@@ -236,10 +259,18 @@ describe('PreparedStateFingerprint', function (): void {
                 'packages/php-sdk/src/Requests/Instances/UpdateInstancePhpRequest.php',
                 'packages/php-sdk/src/Requests/Nodes/AddNodeRoleRequest.php',
                 'packages/php-sdk/src/Requests/Apps/CreateAppRequest.php',
+                'packages/php-sdk/src/Requests/Clusters/AttachClusterNodeRequest.php',
+                'packages/php-sdk/src/Requests/Clusters/CreateClusterRequest.php',
+                'packages/php-sdk/src/Requests/Clusters/ListClustersRequest.php',
+                'packages/php-sdk/src/Requests/Clusters/SetClusterRouterRequest.php',
+                'packages/php-sdk/src/Requests/Clusters/UpdateClusterRequest.php',
                 'packages/php-sdk/src/Requests/Instances/CreateInstanceRequest.php',
                 'packages/php-sdk/src/Requests/Nodes/ShowNodeRequest.php',
                 'packages/php-sdk/src/Requests/Workspaces/CreateWorkspaceRequest.php',
-                // The standby carries a converged Metrics role, so anything that decides the
+                'packages/php-sdk/src/Responses/Clusters/ClusterNodeResponse.php',
+                'packages/php-sdk/src/Responses/Clusters/ClusterResponse.php',
+                'packages/php-sdk/src/Responses/Clusters/ClustersResponse.php',
+                // The topology snapshot carries a converged Metrics role, so anything that decides the
                 // bytes on those guests is prepared state: renderers, the values they render
                 // from, and the stores those values live in.
                 'apps/gateway/app/Infrastructure/Metrics/PrometheusConfigRenderer.php',
@@ -260,8 +291,8 @@ describe('PreparedStateFingerprint', function (): void {
                 'apps/gateway/app/Domain/Metrics/MetricsGatewayResolver.php',
             )
             ->not->toContain(
-                'apps/e2e/app/E2E/StandbyBuilder.php',
-                'apps/e2e/app/E2E/StandbyRefresher.php',
+                'apps/e2e/app/E2E/TopologySnapshotBuilder.php',
+                'apps/e2e/app/E2E/TopologySnapshotRefresher.php',
                 'apps/e2e/app/E2E/TopologyAcquirer.php',
                 'apps/e2e/app/E2E/TopologyVerifier.php',
                 'apps/e2e/resources/guest/verify-topology.sh',
@@ -325,6 +356,7 @@ describe('PreparedStateFingerprint', function (): void {
         file_put_contents($this->path.'/apps/e2e/resources/guest/converge-gateway.sh', "converge-v1\n");
         file_put_contents($this->path.'/apps/e2e/app/E2E/TopologyVerifier.php', "verifier-v1\n");
         file_put_contents($this->path.'/apps/e2e/resources/guest/verify-topology.sh', "verify-v1\n");
+        file_put_contents($this->path.'/apps/e2e/resources/guest/observe-php.sh', "observe-v1\n");
         file_put_contents($this->path.'/apps/cli/app/Commands/Gateway/GatewayStatusCommand.php', "status-v1\n");
         file_put_contents($this->path.'/apps/e2e/resources/guest/receive-source.sh', "transport-v1\n");
         writePreparedManifest($this->path, array_replace(preparedManifest(), [
@@ -346,6 +378,7 @@ describe('PreparedStateFingerprint', function (): void {
         )->forCommit();
 
         file_put_contents($this->path.'/apps/e2e/resources/guest/verify-topology.sh', "verify-v2\n");
+        file_put_contents($this->path.'/apps/e2e/resources/guest/observe-php.sh', "observe-v2\n");
         fingerprintGit($this->path, ['add', '.']);
         fingerprintGit($this->path, ['commit', '--quiet', '-m', 'verify']);
         $verify = new PreparedStateFingerprint(

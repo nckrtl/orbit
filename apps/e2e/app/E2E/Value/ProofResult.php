@@ -13,6 +13,7 @@ use InvalidArgumentException;
  *
  * @mago-expect lint:cyclomatic-complexity,excessive-parameter-list The result validates every field at construction.
  */
+/** @mago-expect lint:kan-defect The proof evidence schema validates every recorded trust boundary. */
 final readonly class ProofResult
 {
     public const int TAIL_LIMIT = 4_096;
@@ -32,10 +33,21 @@ final readonly class ProofResult
         public string $recordedAt,
         public ?TopologyEndState $endsWith = null,
         public array $skippedProbes = [],
+        public string $planSha256 = '',
+        public ?string $manifestSha256 = null,
     ) {
         TopologyTarget::assertIssue($issue);
         if (preg_match('/\A[0-9a-f]{40}\z/D', $candidateSha) !== 1) {
             throw new InvalidArgumentException('The proof candidate SHA is invalid.');
+        }
+        if (preg_match('/\A[0-9a-f]{64}\z/D', $planSha256) !== 1) {
+            throw new InvalidArgumentException('The proof plan fingerprint is invalid.');
+        }
+        if ($manifestSha256 !== null && preg_match('/\A[0-9a-f]{64}\z/D', $manifestSha256) !== 1) {
+            throw new InvalidArgumentException('The proof-input manifest fingerprint is invalid.');
+        }
+        if ($status === ProofStatus::Proved && $manifestSha256 === null) {
+            throw new InvalidArgumentException('A proved result requires a proof-input manifest.');
         }
         foreach ($actions as $action) {
             if (
@@ -110,6 +122,12 @@ final readonly class ProofResult
             'issue' => $this->issue,
             'attempt_id' => $this->attempt->value,
             'candidate_sha' => $this->candidateSha,
+            'plan_sha256' => $this->planSha256,
+        ];
+        if ($this->manifestSha256 !== null) {
+            $payload['manifest_sha256'] = $this->manifestSha256;
+        }
+        $payload += [
             'actions' => array_map(
                 static fn (array $action): array => [
                     'id' => $action['id'],

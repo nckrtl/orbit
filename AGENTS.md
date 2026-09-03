@@ -24,7 +24,8 @@ invoke any one directly; no private orchestration order is implied.
 - `planning-features` — prepare or correct a concise Feature plan.
 - `reviewing-feature-plans` — independently review a Feature plan.
 - `developing-features` — implement and prove one issue.
-- `reviewing-pull-requests` — independently review and re-prove one pushed head.
+- `reviewing-pull-requests` — independently review one pushed head and inspect
+  its exact retained proof.
 - `merging-pull-requests` — deterministic merge, promotion, and cleanup steps.
 
 ## Repository rules
@@ -34,13 +35,21 @@ invoke any one directly; no private orchestration order is implied.
 - Issue contracts use observable acceptance criteria and name the smallest
   affected components. New requirements become separate Linear work.
 - Product feature branches never modify the harness under `apps/e2e` or
-  `bin/e2e-*`. Harness changes are dedicated `apps/e2e` issues.
+  `bin/e2e-*`. Harness changes require a dedicated issue with
+  repository-owner-approved behavior and issue-specific proof.
 - `Proof: incus` uses the repository's disposable topology and proof commands.
   Automated-only changes use project checks and CI.
 - Proof plans live in `proofs/<ISSUE>.json`; optional fixtures live in
   `proofs/<ISSUE>/`. Per-worktree harness state lives in `<worktree>/.e2e/`.
+- Discovery remains the default development target while a separate fresh
+  proof topology runs. Retain a failed proof for explicit unprivileged
+  debugging and release it independently before the next proof.
 - A proved topology is immutable evidence for one exact commit and issue. Never
   reuse proof resources across issues.
+- Every proof action must exit `0`. Promotion requires the exact proved commit,
+  exact proof plan, and complete zero-exit action evidence.
+- Promotion releases both the successful proof topology and retained discovery
+  topology after replacing the promoted topology snapshot.
 - Production release is separate from development proof and never reuses a
   disposable proof topology.
 

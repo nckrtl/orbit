@@ -168,6 +168,61 @@ describe('GitRepository', function (): void {
             ->toThrow(InvalidArgumentException::class);
     });
 
+    it('reports every material tree change including modes, types, and exact renames', function (): void {
+        foreach (['changed.txt', 'mode.txt', 'both.sh', 'deleted.txt', 'renamed-old.txt', 'type.txt'] as $file) {
+            file_put_contents($this->path.'/'.$file, "before {$file}\n");
+        }
+        git($this->path, ['add', '.']);
+        git($this->path, ['commit', '--quiet', '-m', 'before']);
+        $before = git($this->path, ['rev-parse', 'HEAD']);
+
+        file_put_contents($this->path.'/added.txt', "added\n");
+        file_put_contents($this->path.'/changed.txt', "after\n");
+        chmod($this->path.'/mode.txt', 0755);
+        file_put_contents($this->path.'/both.sh', "after\n");
+        chmod($this->path.'/both.sh', 0755);
+        unlink($this->path.'/deleted.txt');
+        rename($this->path.'/renamed-old.txt', $this->path.'/renamed-new.txt');
+        unlink($this->path.'/type.txt');
+        symlink('changed.txt', $this->path.'/type.txt');
+        git($this->path, ['add', '-A']);
+        git($this->path, ['commit', '--quiet', '-m', 'after']);
+        $after = git($this->path, ['rev-parse', 'HEAD']);
+
+        expect(new GitRepository($this->path)->changes($before, $after))->toBe([
+            ['path' => 'added.txt', 'previous_path' => null, 'change' => 'added'],
+            ['path' => 'both.sh', 'previous_path' => null, 'change' => 'content-and-mode-changed'],
+            ['path' => 'changed.txt', 'previous_path' => null, 'change' => 'content-changed'],
+            ['path' => 'deleted.txt', 'previous_path' => null, 'change' => 'deleted'],
+            ['path' => 'mode.txt', 'previous_path' => null, 'change' => 'mode-changed'],
+            ['path' => 'renamed-new.txt', 'previous_path' => 'renamed-old.txt', 'change' => 'renamed'],
+            ['path' => 'type.txt', 'previous_path' => null, 'change' => 'type-changed'],
+        ]);
+    });
+
+    it('pins a proved commit across branch replacement until proof release', function (): void {
+        file_put_contents($this->path.'/proved.txt', "proved\n");
+        git($this->path, ['add', '.']);
+        git($this->path, ['commit', '--quiet', '-m', 'proved']);
+        $repository = new GitRepository($this->path);
+        $proved = $repository->commit();
+        $originalBranch = $repository->branch();
+        $attempt = new \App\E2E\Value\AttemptId(str_repeat('a', 32));
+        $repository->pinProof('ORB-99', $attempt, $proved);
+
+        git($this->path, ['switch', '--orphan', 'replacement']);
+        file_put_contents($this->path.'/replacement.txt', "replacement\n");
+        git($this->path, ['add', '.']);
+        git($this->path, ['commit', '--quiet', '-m', 'replacement']);
+        git($this->path, ['branch', '-D', $originalBranch]);
+
+        expect($repository->tree($proved))->toMatch('/\A[0-9a-f]{40}\z/');
+        $repository->unpinProof('ORB-99', $attempt);
+
+        expect(fn (): string => $repository->tree($proved))
+            ->toThrow(InvalidArgumentException::class, 'not reachable');
+    });
+
     it('rejects symlinks, submodules, and unreachable commits', function (): void {
         file_put_contents($this->path.'/target.txt', "target\n");
         symlink('target.txt', $this->path.'/link.txt');

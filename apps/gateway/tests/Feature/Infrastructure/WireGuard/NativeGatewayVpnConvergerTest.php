@@ -12,6 +12,7 @@ use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\WireGuard\NativeGatewayVpnConverger;
 use App\Infrastructure\WireGuard\RetiredDnsmasqSnippets;
+use App\Infrastructure\WireGuard\UplinkDnsResolvers;
 use App\Models\Node;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Collection;
@@ -57,10 +58,8 @@ function assert_gateway_generated_files(GatewayVpnFakeProcessRunner $processes, 
         ->toBe("net.ipv4.ip_forward=1\n");
     expect($processes->observedProjectionLock)->toBeTrue();
     expect(file_get_contents($orbitHome.'/generated/dnsmasq/orbit-vpn.conf'))
-        ->toBe(
-            "# Managed by Orbit.\ninterface=orbit\nbind-dynamic\ndomain-needed\nbogus-priv\nno-resolv\nserver=1.1.1.1\nserver=8.8.8.8\nlocal=/orbit/\nhost-record=gateway.orbit,10.44.0.1\n",
-        )
-        ->not->toContain('bind-interfaces');
+        ->toBe(gateway_orbit_vpn_dnsmasq_conf())
+        ->not->toContain('bind-interfaces', 'server=127.0.0.53');
 }
 
 /** @param list<list<string>> $arguments */
@@ -484,7 +483,13 @@ it('limits private DNS to the WireGuard and explicit private interfaces', functi
             ->map(static fn (ProcessInvocation $call): array => $call->arguments);
 
         expect(file_get_contents($orbitHome.'/generated/dnsmasq/orbit-vpn.conf'))
-            ->toContain("interface=orbit\n", "interface=eth3\n")
+            ->toContain(
+                "interface=orbit\n",
+                "interface=eth3\n",
+                'bind-dynamic',
+                'local=/orbit/',
+                'host-record=gateway.orbit,10.44.0.1',
+            )
             ->not
             ->toContain('interface=lo', 'listen-address=0.0.0.0')
             ->and($arguments->contains([
@@ -594,6 +599,54 @@ it('fails closed before mutating UFW when the VPN comment identifies a broader r
             );
 
         expect($ufwMutations)->toBeEmpty();
+    } finally {
+        new Filesystem()->deleteDirectory($orbitHome);
+    }
+});
+
+it('writes mesh dnsmasq upstreams from visible uplink resolvers', function (): void {
+    [$converger, , $orbitHome] = gateway_vpn_converger();
+    $node = Node::query()->create([
+        'name' => 'gateway',
+        'public_ssh_host' => '85.9.218.89',
+        'wireguard_ip' => '10.44.0.1',
+    ]);
+
+    try {
+        gateway_write_host_file(
+            $orbitHome,
+            'run/systemd/resolve/resolv.conf',
+            "nameserver 192.0.2.53\nnameserver 192.0.2.54\n",
+        );
+        $converger->converge($node, gateway_bootstrap_data());
+
+        expect(file_get_contents($orbitHome.'/generated/dnsmasq/orbit-vpn.conf'))
+            ->toBe(gateway_orbit_vpn_dnsmasq_conf(['192.0.2.53', '192.0.2.54']))
+            ->not->toContain('server=1.1.1.1', 'server=8.8.8.8', 'server=127.0.0.53', 'bind-interfaces');
+    } finally {
+        new Filesystem()->deleteDirectory($orbitHome);
+    }
+});
+
+it('keeps the documented recursive fallback when only a stub resolver is visible', function (): void {
+    [$converger, , $orbitHome] = gateway_vpn_converger();
+    $node = Node::query()->create([
+        'name' => 'gateway',
+        'public_ssh_host' => '85.9.218.89',
+        'wireguard_ip' => '10.44.0.1',
+    ]);
+
+    try {
+        gateway_write_host_file(
+            $orbitHome,
+            'run/systemd/resolve/resolv.conf',
+            "nameserver 127.0.0.53\noptions edns0 trust-ad\n",
+        );
+        $converger->converge($node, gateway_bootstrap_data());
+
+        expect(file_get_contents($orbitHome.'/generated/dnsmasq/orbit-vpn.conf'))
+            ->toBe(gateway_orbit_vpn_dnsmasq_conf())
+            ->not->toContain('server=127.0.0.53');
     } finally {
         new Filesystem()->deleteDirectory($orbitHome);
     }
@@ -838,6 +891,24 @@ function gateway_dnsmasq_restart_failure(string $script): array
     }
 }
 
+/** @param list<string> $servers */
+function gateway_orbit_vpn_dnsmasq_conf(array $servers = UplinkDnsResolvers::FALLBACK): string
+{
+    $upstream = implode("\n", array_map(
+        static fn (string $server): string => "server={$server}",
+        $servers,
+    ));
+
+    return "# Managed by Orbit.\ninterface=orbit\nbind-dynamic\ndomain-needed\nbogus-priv\nno-resolv\n{$upstream}\nlocal=/orbit/\nhost-record=gateway.orbit,10.44.0.1\n";
+}
+
+function gateway_write_host_file(string $orbitHome, string $relative, string $contents): void
+{
+    $path = $orbitHome.'/host/'.$relative;
+    new Filesystem()->ensureDirectoryExists(dirname($path));
+    file_put_contents($path, $contents);
+}
+
 function gateway_vpn_converger(
     bool $failValidation = false,
     bool $failForwarding = false,
@@ -853,6 +924,7 @@ function gateway_vpn_converger(
 ): array {
     $orbitHome = sys_get_temp_dir().'/orbit-gateway-vpn-'.Str::uuid();
     mkdir(directory: $orbitHome.'/wireguard', permissions: 0o700, recursive: true);
+    mkdir(directory: $orbitHome.'/host', permissions: 0o700, recursive: true);
     file_put_contents(filename: $orbitHome.'/wireguard/private.key', data: 'SERVER_PRIVATE');
     file_put_contents(filename: $orbitHome.'/wireguard/public.key', data: 'SERVER_PUBLIC');
     $processes = new GatewayVpnFakeProcessRunner(
@@ -877,6 +949,7 @@ function gateway_vpn_converger(
             processes: $processes,
             firewallParser: new UfwStatusParser,
             orbitHome: $orbitHome,
+            uplinkResolvers: new UplinkDnsResolvers($orbitHome.'/host'),
         ),
         $processes,
         $orbitHome,

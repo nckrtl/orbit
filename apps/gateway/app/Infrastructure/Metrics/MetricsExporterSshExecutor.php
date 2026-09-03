@@ -624,7 +624,7 @@ final readonly class MetricsExporterSshExecutor implements MetricsExporterRuntim
     {
         return new SshConnection(
             host: $this->address($node),
-            user: 'orbit',
+            user: $node->user,
             port: 22,
             identityFile: $this->keys->privateKeyPath(),
             knownHostsFile: $this->knownHosts->path(),

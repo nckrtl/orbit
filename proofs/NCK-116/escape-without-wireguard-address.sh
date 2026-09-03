@@ -3,35 +3,39 @@
 # case this escape exists for. The destination address is then the one field
 # that cannot be checked either way, so the escape proves every other field,
 # says so, and still cleans up.
-source /var/lib/orbit-e2e/proof/lib.sh
+proof_root=${ORBIT_E2E_PROOF_ROOT:-/var/lib/orbit-e2e/proof}
+source "$proof_root/lib.sh"
 
 readonly DECOY_RULE=orbit:metrics-grafana-upstream
 
-saved=$(sudo ip -4 -o addr show dev orbit | awk '{print $4}' | head -1)
+orb7_traps escape-without-wireguard-address
+orb7_arm escape-without-wireguard-address
+orb7_capture_addresses escape-without-wireguard-address
+orb7_checkpoint escape-without-wireguard-address post-record
+addresses=$(sudo ip -4 -o addr show dev orbit)
+saved=$(awk 'NR == 1 {print $4}' <<<"$addresses")
 [[ -n "$saved" ]] || fail "the orbit interface has no IPv4 address to remove"
 address="${saved%%/*}"
-
-# Restore first, whatever happens below: every later action needs this node
-# reachable over WireGuard.
-restore() { sudo ip addr add "$saved" dev orbit 2>/dev/null || true; }
-trap restore EXIT
 
 # A genuine exporter rule, and a rule that keeps an Orbit comment but carries
 # the wrong port. With the address gone the first must still be removed and
 # the second must still be refused.
+orb7_record_ufw_rule escape-without-wireguard-address "$EXPORTER_RULE_COMMENT"
 sudo ufw allow in on orbit proto tcp from 10.44.0.1 to "$address" port 9100 \
   comment "$EXPORTER_RULE_COMMENT" >/dev/null
+orb7_record_ufw_rule escape-without-wireguard-address "$DECOY_RULE"
 sudo ufw allow in on orbit proto tcp from 10.44.0.1 to "$address" port 3001 \
   comment "$DECOY_RULE" >/dev/null
 
 sudo ip addr flush dev orbit
 [[ -z "$(sudo ip -4 -o addr show dev orbit)" ]] || fail "the orbit interface still has an IPv4 address"
+orb7_mark_active escape-without-wireguard-address
+orb7_checkpoint escape-without-wireguard-address post-mutation
 
 run_escape --force
 escape_status="$ESCAPE_STATUS"
 escape_output="$ESCAPE_OUTPUT"
-restore
-trap - EXIT
+orb7_restore_addresses escape-without-wireguard-address
 
 ESCAPE_STATUS="$escape_status"
 ESCAPE_OUTPUT="$escape_output"
@@ -54,7 +58,9 @@ assert_reports "UFW rule commented $EXPORTER_RULE_COMMENT"
 firewall_rule_exists "$DECOY_RULE" || fail "the escape removed a rule whose port does not match Orbit's"
 assert_reports 'are not the rule Orbit writes'
 
-sudo ip -4 -o addr show dev orbit | grep -q "$address" || fail "the orbit address was not restored"
-delete_firewall_rule "$DECOY_RULE"
+restored_addresses=$(sudo ip -4 -o addr show dev orbit)
+grep -q "$address" <<<"$restored_addresses" || fail "the orbit address was not restored"
+orb7_restore_owned escape-without-wireguard-address
+trap - EXIT INT TERM
 
 echo "escape-without-wireguard-address: genuine rule removed, wrong-port rule refused, downgrade reported"

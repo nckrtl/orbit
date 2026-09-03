@@ -14,7 +14,7 @@ final readonly class TopologyTarget
     private function __construct(
         public string $issue,
         public ?AttemptId $attempt,
-        private ?StandbyIdentity $standby = null,
+        private ?TopologySnapshotIdentity $topologySnapshot = null,
     ) {}
 
     public static function feature(string $issue, AttemptId $attempt): self
@@ -24,10 +24,10 @@ final readonly class TopologyTarget
         return new self($issue, $attempt);
     }
 
-    /** The standby of one checkout; the identity says which physical set of VMs that is. */
-    public static function standby(?StandbyIdentity $identity = null): self
+    /** The current or retired physical topology snapshot. */
+    public static function topologySnapshot(?TopologySnapshotIdentity $identity = null): self
     {
-        return new self('standby', null, $identity ?? StandbyIdentity::primary());
+        return new self('topology-snapshot', null, $identity ?? TopologySnapshotIdentity::primary());
     }
 
     public static function assertIssue(string $issue): void
@@ -52,20 +52,24 @@ final readonly class TopologyTarget
         return '10.232.'.$slot.'.'.(10 + $roleIndex);
     }
 
-    public function isStandby(): bool
+    public function isTopologySnapshot(): bool
     {
-        return $this->standby !== null;
+        return $this->topologySnapshot !== null;
     }
 
-    /** The standby identity of a standby target; a feature target has none. */
-    public function requireStandbyIdentity(): StandbyIdentity
+    /** The topology snapshot identity of a topology snapshot target; a feature target has none. */
+    public function requireTopologySnapshotIdentity(): TopologySnapshotIdentity
     {
-        return $this->standby ?? throw new InvalidArgumentException('The feature target has no standby identity.');
+        return (
+            $this->topologySnapshot ?? throw new InvalidArgumentException(
+                'The feature target has no topology snapshot identity.',
+            )
+        );
     }
 
     public function matchesBranch(string $branch): bool
     {
-        if ($this->standby !== null) {
+        if ($this->topologySnapshot !== null) {
             return false;
         }
 
@@ -86,8 +90,8 @@ final readonly class TopologyTarget
 
     public function network(): string
     {
-        if ($this->standby !== null) {
-            return $this->standby->network();
+        if ($this->topologySnapshot !== null) {
+            return $this->topologySnapshot->network();
         }
 
         return 'oe-'.substr(hash('sha256', $this->issue.':'.$this->requireAttempt()->value), 0, 12);
@@ -97,8 +101,8 @@ final readonly class TopologyTarget
     {
         $this->validateRole($role);
 
-        if ($this->standby !== null) {
-            return $this->standby->instance($role);
+        if ($this->topologySnapshot !== null) {
+            return $this->topologySnapshot->instance($role);
         }
 
         return 'orbit-e2e-'.strtolower($this->issue).'-'.$this->requireAttempt()->short().'-'.$role;
@@ -125,7 +129,7 @@ final readonly class TopologyTarget
         return '00:16:3e:'.implode(':', str_split($hash, 2));
     }
 
-    /** The attempt identity of a feature target; standby has none. */
+    /** The attempt identity of a feature target; topology snapshot has none. */
     public function requireAttempt(): AttemptId
     {
         return $this->attempt ?? throw new InvalidArgumentException('The feature target has no attempt identity.');

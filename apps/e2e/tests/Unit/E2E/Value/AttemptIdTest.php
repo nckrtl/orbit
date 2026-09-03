@@ -39,7 +39,11 @@ describe('attempt lifecycle enums', function (): void {
             ->and(AttemptPurpose::Proof->value)
             ->toBe('proof')
             ->and(AttemptPurpose::cases())
-            ->toBe([AttemptPurpose::Discovery, AttemptPurpose::Proof]);
+            ->toBe([
+                AttemptPurpose::Discovery,
+                AttemptPurpose::Proof,
+                AttemptPurpose::CandidateConvergence,
+            ]);
     });
 
     it('names the two proof statuses', function (): void {

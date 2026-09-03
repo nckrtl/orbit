@@ -7,6 +7,7 @@ namespace App\Actions\Nodes;
 use App\Data\Nodes\ProvisionNodeData;
 use App\Domain\AppDev\AppDevTldConverger;
 use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\Clusters\ActiveTldScopeGuard;
 use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Nodes\LinuxUserName;
 use App\Domain\Nodes\ManagedUserAccountResolver;
@@ -31,6 +32,7 @@ use App\Infrastructure\Ssh\SshHostKeyScanException;
 use App\Models\Cluster;
 use App\Models\Node;
 use Illuminate\Database\QueryException;
+use Illuminate\Support\Facades\DB;
 use Throwable;
 
 /** @mago-expect lint:cyclomatic-complexity,kan-defect,too-many-methods Node provisioning keeps its ordered identity, role, and recovery gates together. */
@@ -49,6 +51,7 @@ final readonly class ProvisionNodeAction
         private ConfiguredStoragePathValidator $storagePaths,
         private UpdateNodeSettingsAction $nodeSettings,
         private ManagedUserAccountResolver $accounts,
+        private ActiveTldScopeGuard $tldScope,
     ) {}
 
     public function execute(ProvisionNodeData $data): Node
@@ -169,7 +172,7 @@ final readonly class ProvisionNodeAction
         $platform = $this->platform($node, $data);
         $architecture = $this->architecture($node, $data);
         $previousTld = $node->exists && is_string($node->tld) ? $node->tld : null;
-        $tld = $this->tld($node, $data);
+        $tld = $this->tld($node, $data, $clusterId);
         $convergeChangedAppDevTld = $node->exists && $previousTld !== $tld && $this->hasActiveAppDevRole($node);
 
         if (
@@ -263,7 +266,10 @@ final readonly class ProvisionNodeAction
         ]);
 
         try {
-            $node->save();
+            DB::transaction(function () use ($node, $tld, $clusterId): void {
+                $this->tldScope->assertNodeTldAvailable($node, $tld, $clusterId);
+                $node->save();
+            });
         } catch (QueryException $exception) {
             throw new ResourceOperationException(
                 errorCode: 'cluster.lan_ip_conflict',
@@ -399,7 +405,7 @@ final readonly class ProvisionNodeAction
         }
     }
 
-    private function tld(Node $node, ProvisionNodeData $data): ?string
+    private function tld(Node $node, ProvisionNodeData $data, ?int $clusterId): ?string
     {
         $requested = $data->tld ?? (is_string($node->tld) ? $node->tld : null);
 
@@ -435,6 +441,8 @@ final readonly class ProvisionNodeAction
                 status: 409,
             );
         }
+
+        $this->tldScope->assertNodeTldAvailable($node, $tld, $clusterId);
 
         return $tld;
     }

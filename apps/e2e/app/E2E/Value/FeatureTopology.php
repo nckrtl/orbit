@@ -25,14 +25,14 @@ final readonly class FeatureTopology
     public function __construct(
         public TopologyTarget $target,
         public AttemptPurpose $purpose,
-        public StandbyGeneration $generation,
+        public TopologySnapshotGeneration $generation,
         public string $network,
         public array $instances,
         public SourceState $source,
         public VerificationReport $verification,
         public array $mounts = [],
     ) {
-        if ($target->isStandby() || $target->attempt === null) {
+        if ($target->isTopologySnapshot() || $target->attempt === null) {
             throw new InvalidArgumentException('A feature topology requires an attempt-scoped target.');
         }
 
@@ -163,7 +163,7 @@ final readonly class FeatureTopology
         return new self(
             TopologyTarget::feature($value['issue'], new AttemptId($value['attempt_id'])),
             $purpose,
-            StandbyGeneration::fromArray($value['generation']),
+            TopologySnapshotGeneration::fromArray($value['generation']),
             $value['network'],
             $value['instances'],
             SourceState::fromArray($value['source']),

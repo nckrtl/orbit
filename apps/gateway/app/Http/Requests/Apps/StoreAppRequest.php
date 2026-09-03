@@ -51,16 +51,12 @@ final class StoreAppRequest extends FormRequest
 
             $repository = $this->string('repository_url')->toString();
 
-            if ($repository === '' || GitRepositoryOrigin::isValid($repository)) {
-                $this->validateSourceDefaults($validator);
-
-                return;
+            if ($repository !== '' && ! GitRepositoryOrigin::isValid($repository)) {
+                $validator->errors()->add(
+                    'repository_url',
+                    'The repository URL must be a valid HTTPS or SSH Git origin.',
+                );
             }
-
-            $validator->errors()->add(
-                'repository_url',
-                'The repository URL must be a valid HTTPS or SSH Git origin.',
-            );
 
             $this->validateSourceDefaults($validator);
         }];
