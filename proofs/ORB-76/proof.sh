@@ -178,6 +178,11 @@ case "$criterion" in
     standalone=$(orbit instance:new "$orbit_app" "$app_dev" e2e-dev --json)
     assert_instance "$standalone" e2e-dev "$apps_root/orb76/e2e-dev" null public
 
+    baseline_cluster_id=$(orbit node:list --json | json_find nodes name app-dev cluster_id)
+    [[ "$(orbit cluster:show "$baseline_cluster_id" --json | json_get name)" == e2e-development ]] || fail 'unexpected baseline Cluster'
+    orbit cluster:router:clear "$baseline_cluster_id" --force --json >/dev/null
+    orbit cluster:node:detach "$baseline_cluster_id" "$app_dev" --force --json >/dev/null
+
     cluster=$(orbit cluster:new orb76-dev --json)
     cluster_id=$(echo "$cluster" | json_get id)
     orbit cluster:node:attach "$cluster_id" "$app_dev" --json >/dev/null
@@ -199,6 +204,13 @@ case "$criterion" in
     orbit cluster:node:detach "$cluster_id" "$app_dev" --force --json >/dev/null
     after=$(orbit instance:show "$(echo "$tld" | json_get id)" --json)
     [[ "$(echo "$after" | instance_signature)" == "$before" ]] || fail 'Cluster changes altered AppInstance source identity'
+    orbit cluster:remove "$cluster_id" --force --json >/dev/null
+    orbit cluster:node:attach "$baseline_cluster_id" "$app_dev" --json >/dev/null
+    orbit cluster:router:set "$baseline_cluster_id" "$app_dev" --json >/dev/null
+    baseline_cluster=$(orbit cluster:show "$baseline_cluster_id" --json)
+    [[ "$(echo "$baseline_cluster" | json_get state)" == active ]] || fail 'baseline Cluster state changed'
+    [[ "$(echo "$baseline_cluster" | json_get tld)" == null ]] || fail 'baseline Cluster TLD changed'
+    [[ "$(echo "$baseline_cluster" | json_get router.id)" == "$app_dev" ]] || fail 'baseline Cluster Router was not restored'
 
     retry=$(orbit instance:new "$orbit_app" "$app_dev" tld-member --root=web --json)
     [[ "$(echo "$retry" | json_get id)" == "$(echo "$tld" | json_get id)" ]] || fail 'retry created a second AppInstance'
