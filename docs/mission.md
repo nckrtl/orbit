@@ -29,8 +29,8 @@ managed Nodes.
 
 ## Built for humans and agents
 
-Humans and coding agents use the same commands. Human output should be easy to
-read, while structured output gives automation reliable data to work with.
+Humans and coding agents use the same commands. Human output is easy to
+read, and structured output gives automation reliable data to work with.
 Orbit keeps a history of changes so you can understand what happened when
 something goes wrong.
 

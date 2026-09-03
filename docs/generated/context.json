@@ -10,9 +10,9 @@
                 "apps/gateway"
             ],
             "concepts": [
-                "App",
                 "Cluster",
-                "Gateway"
+                "Gateway",
+                "Node"
             ],
             "governing_adrs": []
         },
@@ -68,8 +68,6 @@
                 "0004",
                 "0009",
                 "0011",
-                "0012",
-                "0014",
                 "0017"
             ]
         },
@@ -455,23 +453,17 @@
             "kind": "reference",
             "components": [
                 "apps/cli",
-                "apps/docs",
                 "apps/e2e"
             ],
             "concepts": [
                 "App",
-                "AppInstance",
-                "Cluster",
                 "Doctor",
                 "Gateway",
-                "Node",
-                "Proof topology",
-                "Router"
+                "Proof topology"
             ],
             "governing_adrs": [
                 "0005",
-                "0006",
-                "0015"
+                "0006"
             ]
         },
         {
@@ -513,6 +505,40 @@
             "governing_adrs": []
         },
         {
+            "path": "docs/reference/proof-plans.md",
+            "title": "Proof plans",
+            "kind": "reference",
+            "components": [
+                "apps/e2e"
+            ],
+            "concepts": [
+                "App",
+                "Gateway",
+                "Node",
+                "Proof topology"
+            ],
+            "governing_adrs": [
+                "0015"
+            ]
+        },
+        {
+            "path": "docs/reference/topology-snapshot.md",
+            "title": "Topology snapshot",
+            "kind": "reference",
+            "components": [
+                "apps/e2e"
+            ],
+            "concepts": [
+                "App",
+                "AppInstance",
+                "Doctor",
+                "Gateway",
+                "Node",
+                "Proof topology"
+            ],
+            "governing_adrs": []
+        },
+        {
             "path": "docs/solutions/README.md",
             "title": "Solutions",
             "kind": "solution",
@@ -524,14 +550,13 @@
             "path": "docs/solutions/doctor-incus-proof.md",
             "title": "Prove the verify-only Doctor on an Incus topology",
             "kind": "solution",
-            "components": [
-                "apps/gateway"
-            ],
+            "components": [],
             "concepts": [
                 "App",
                 "Doctor",
                 "Gateway",
-                "Node"
+                "Node",
+                "Proof topology"
             ],
             "governing_adrs": []
         },
@@ -572,6 +597,7 @@
                 "packages/php-sdk"
             ],
             "concepts": [
+                "App",
                 "Gateway"
             ],
             "governing_adrs": []
