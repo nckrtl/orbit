@@ -24,7 +24,7 @@ final class BuildDocumentationContextIndexCommand extends Command
                 return self::SUCCESS;
             }
 
-            $this->error('Documentation context index is stale. Run `composer context:build` from apps/docs.');
+            $this->error('Documentation context index is stale. Run `composer docs-build` from apps/docs.');
 
             return self::FAILURE;
         }

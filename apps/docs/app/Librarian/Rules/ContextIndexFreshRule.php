@@ -34,7 +34,7 @@ final readonly class ContextIndexFreshRule implements GroupedRule
                 line: null,
                 severity: FindingSeverity::Error,
                 rule: self::RULE,
-                message: 'Documentation context index is stale. Run `composer context:build` from apps/docs.',
+                message: 'Documentation context index is stale. Run `composer docs-build` from the repository root.',
             ),
         ];
     }

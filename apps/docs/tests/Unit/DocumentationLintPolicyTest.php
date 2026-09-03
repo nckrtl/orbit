@@ -33,7 +33,12 @@ it('ignores only the configured Librarian findings', function (): void {
 });
 
 it('drops legacy prose findings only for decision records below the configured start', function (): void {
-    $policy = new DocumentationLintPolicy([], ['librarian.document_complexity'], 20);
+    $policy = new DocumentationLintPolicy(
+        [],
+        ['librarian.document_complexity'],
+        20,
+        ['librarian.section_opener_prose'],
+    );
     $finding = static fn (string $path, string $rule): Finding => new Finding(
         path: $path,
         line: 1,
@@ -47,6 +52,8 @@ it('drops legacy prose findings only for decision records below the configured s
         $finding('docs/decisions/0020-new.md', 'librarian.document_complexity'),
         $finding('docs/reference/apps.md', 'librarian.document_complexity'),
         $finding('docs/decisions/0009-old.md', 'librarian.links'),
+        $finding('docs/decisions/0020-new.md', 'librarian.section_opener_prose'),
+        $finding('docs/reference/apps.md', 'librarian.section_opener_prose'),
     ]));
 
     expect(array_map(
@@ -56,5 +63,6 @@ it('drops legacy prose findings only for decision records below the configured s
         'docs/decisions/0020-new.md librarian.document_complexity',
         'docs/reference/apps.md librarian.document_complexity',
         'docs/decisions/0009-old.md librarian.links',
+        'docs/reference/apps.md librarian.section_opener_prose',
     ]);
 });

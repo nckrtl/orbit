@@ -24,6 +24,14 @@ return [
         'librarian.table_prose_complexity',
     ],
 
+    // Prose rules that never apply to a decision record: the ADR template opens
+    // its sections with bullets and summarises the decision in one sentence.
+    'decision_ignored_rules' => [
+        'librarian.section_opener_prose',
+        'librarian.bullet_complexity',
+        'librarian.document_complexity',
+    ],
+
     // Change narration is rejected in every maintained page outside
     // docs/decisions. A page states current behavior; history lives in ADRs.
     'narrative_phrases' => [

@@ -11,7 +11,7 @@ Accepted ADRs own decisions and their reasons. Code and tests own behavior. A pa
 
 ## Authority
 
-When pages disagree, the earlier page in this order is right and the later one is drift: `mission.md`, `architecture.md`, `concepts.md`, `tech-stack.md`, pages under `reference/`, pages under `solutions/`. An accepted ADR outranks every page for the decision it records, and no page restates a Decision bullet; it links the ADR.
+When pages disagree, the earlier page in this order is right and the later one is drift: `mission.md`, `architecture.md`, `concepts.md`, `tech-stack.md`, pages under `domains/`, pages under `reference/`, pages under `solutions/`, then `README.md`, which only routes. An accepted ADR outranks every page for the decision it records, and no page restates a Decision bullet; it links the ADR. The one exception is a `concepts.md` entry, which may state the obligation that defines its term, with the ADR link.
 
 ## Page kinds
 
@@ -19,7 +19,7 @@ When pages disagree, the earlier page in this order is right and the later one i
 |---|---|---|---|
 | Core | `mission.md`, `architecture.md`, `tech-stack.md` | reader-first prose and links to the page that owns each detail | a fact another page owns |
 | Concept | `concepts.md` | one term, one self-sufficient definition | a definition that only works after following a link |
-| Reference | `reference/<topic>.md` | the contract: what a command or role does, its inputs, outputs, failure codes, and limits, as tables where a list of options exists | rationale, rejected alternatives, history, issue IDs, class names |
+| Reference | `reference/<topic>.md` | the contract: what a command or role does, its inputs, outputs, failure codes, and limits, as tables where a list of options exists | rationale, rejected alternatives, history, issue IDs outside a `proofs/<ID>/` fixture path, class names |
 | Solution | `solutions/<slug>.md` | problem, cause, solution, limits, verification, for a lesson that recurs | the story of one issue or pull request |
 
 A domain page under `domains/` exists only when a feature needs a guide that no reference page can hold. A per-command page, a per-domain concept file, and a decisions ledger outside `docs/decisions` never exist.

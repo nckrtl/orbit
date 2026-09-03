@@ -23,9 +23,9 @@ invoke any one directly; no private orchestration order is implied.
 - `recording-decisions` — draft, lint, and accept one architecture decision record.
 - `writing-documentation` — write or change one maintained page under `docs/`.
 - `auditing-documentation` — find and fix documentation drift for one issue, or for the whole corpus on request.
-- `creating-issues` — refine a request into a current, verifiable Linear contract.
-- `planning-features` — audit and write the issue's documentation, then prepare or correct a concise Feature plan.
-- `reviewing-feature-plans` — independently review a Feature plan.
+- `creating-issues` — refine a request into a current, verifiable Linear contract, or return a blocked issue to `Backlog`.
+- `planning-features` — audit and write the issue's documentation, then prepare or correct the plan for one issue.
+- `reviewing-feature-plans` — independently review one issue's plan and documentation commits.
 - `developing-features` — implement and prove one issue.
 - `reviewing-pull-requests` — independently review one pushed head and inspect
   its exact retained proof.
@@ -72,7 +72,8 @@ invoke any one directly; no private orchestration order is implied.
   paragraphs, and concrete examples. Keep delivery rules and internal workflow
   language in contributor guidance or ADRs.
 - Do not add a document when the change has no durable project learning.
-- Every issue states documentation impact with the `docs` label. Preflight,
-  or the implementer when no plan exists, audits and writes the issue's
-  documentation; the pull request that changes behavior carries the pages that
-  describe it and lists every documentation change.
+- Every issue states documentation impact with the `docs` label. The planner
+  (`planning-features`, the preflight step), or the implementer when no plan
+  exists, audits and writes the issue's documentation; the pull request that
+  changes behavior carries the pages that describe it and lists every
+  documentation change.

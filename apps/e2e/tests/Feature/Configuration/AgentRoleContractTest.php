@@ -17,6 +17,7 @@ it('initializes one current feature-plan artifact', function () use ($read): voi
         'Review verdict: PENDING',
         '## Acceptance map',
         '## Implementation order',
+        '## Deviations',
         '## Review findings',
     ] as $needle) {
         expect($script)->toContain($needle);
@@ -61,6 +62,10 @@ it('keeps planning, plan review, and development independently invokable', funct
         ->toContain('## Write the documentation')
         ->toContain('run `auditing-documentation` in its default issue scope')
         ->toContain('following `writing-documentation`')
+        ->toContain('the reference is the issue and its ADRs, not the code')
+        ->toContain('whose message starts with `docs:`')
+        ->toContain('the issue is not `Todo`')
+        ->toContain('does not follow the `creating-issues` template')
         ->toContain('Do not create slice files')
         ->not->toContain('retained Builder')
         ->not->toContain('second non-`PASS`');
@@ -78,6 +83,8 @@ it('keeps planning, plan review, and development independently invokable', funct
         ->toContain('every boundary is inside a component the issue is labeled with')
         ->toContain('the diff under `docs/`')
         ->toContain('pass `composer docs-lint`')
+        ->toContain('rather than against code that does not exist yet')
+        ->toContain('returns to `Backlog` with a `Readiness` section through `creating-issues`')
         ->not->toContain('same reviewer')
         ->not->toContain('one correction')
         ->not->toContain('second non-`PASS`');
@@ -89,6 +96,9 @@ it('keeps planning, plan review, and development independently invokable', funct
         ->toContain('lists every `Acceptance` item in the issue\'s order')
         ->toContain('When no plan exists, run `auditing-documentation`')
         ->toContain('carry the audit\'s `Fixed` and `Reported` lists into the pull request body')
+        ->toContain('recorded under `## Deviations` in the plan and in the pull request body')
+        ->toContain('The body opens with `Issue: <ID>`')
+        ->toContain('Include current `origin/main` before pushing')
         ->not->toContain('retained Builder')
         ->not->toContain('plan `PASS`');
 
@@ -124,7 +134,9 @@ it('binds review and merge to one exact remote head', function () use ($read): v
         ->toContain('repository-owner-approved behavior')
         ->toContain('issue-specific proof')
         ->not->toContain('validation-clone lifecycle')
-        ->not->toContain('bin/e2e-live')->toContain('exactly `Approved.`')->toContain(
+        ->not->toContain('bin/e2e-live')->toContain('bin/e2e-topology status <ISSUE>')->toContain(
+            'the drift fixes and deviations the PR body lists',
+        )->toContain('exactly `Approved.`')->toContain(
             'Collect every blocking',
         )->toContain('finding in one pass')->toContain('Do not merge, promote, release a proved topology')
         ->not->toContain('fresh reviewer');
@@ -134,6 +146,7 @@ it('binds review and merge to one exact remote head', function () use ($read): v
         ->toContain('gh pr merge <n> --merge --match-head-commit <sha>')
         ->toContain('bin/e2e-topology-snapshot promote <ISSUE>')
         ->toContain('Do not substitute a refresh')
+        ->toContain('For every candidate, if `main` moved after approval')
         ->not
         ->toContain('bin/e2e-topology-snapshot refresh')
         ->toContain('bin/worktree-remove <ISSUE> <slug>')
@@ -157,7 +170,9 @@ it('keeps issue creation current, atomic, and proof feasible', function () use (
             'they are separate children',
         )->toContain('`apps/e2e`')->toContain('relation graph is explicit and acyclic')->toContain(
             'compatibility bridge',
-        )->toContain('composer issue:lint');
+        )->toContain('composer issue:lint')->toContain(
+            'return the issue to `Backlog` and write the `Readiness` section',
+        )->toContain('only the last is an action in `proofs/<ISSUE>.json`');
 
     expect($read('.agents/skills/creating-issues/template.md'))
         ->toContain('## Scope')
@@ -206,6 +221,9 @@ it('keeps decision records templated and linted', function () use ($read, $root)
         ->toContain('composer docs-context')
         ->toContain('The whole corpus is the scope only when the caller asks for it')
         ->toContain('A finding outside the scope is recorded, never fixed in passing')
+        ->toContain('## Reference')
+        ->toContain('A non-zero exit means the index matched nothing')
+        ->toContain('names its owner')
         ->toContain('## Documentation audit');
     expect(file_exists($root.'/docs/decisions/TEMPLATE.md'))->toBeFalse();
 });

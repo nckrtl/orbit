@@ -1,6 +1,6 @@
 ---
 name: creating-issues
-description: Use when refining an Orbit request into a Linear issue.
+description: Use when refining an Orbit request into a Linear issue, or returning an issue to Backlog.
 ---
 
 # Creating Issues
@@ -24,7 +24,7 @@ Copy `template.md` beside this skill into the description. Everything else is a 
 | Fact | Where it lives |
 |---|---|
 | Type | exactly one of the `Feature`, `Improvement`, or `Bug` labels |
-| Components | one label per affected component: `apps/cli`, `apps/docs`, `apps/e2e`, `apps/gateway`, `packages/php-sdk` |
+| Components | one label per affected component: `apps/cli`, `apps/docs`, `apps/e2e`, `apps/gateway`, `packages/php-sdk`; none when only pages under `docs/` change |
 | Real-machine proof | the `proof:incus` label |
 | Documentation impact | the `docs` label when maintained documentation under `docs/` changes |
 | Governing ADRs | one link attachment per ADR, using its canonical `docs/decisions/` URL on `origin/main` |
@@ -33,18 +33,18 @@ Copy `template.md` beside this skill into the description. Everything else is a 
 | Grouping | a parent issue with sub-issues |
 | Maturity | the `Backlog` or `Todo` status |
 
-The description never mirrors status, relations, labels, or ADR lists.
+The description never mirrors status, relations, labels, or ADR lists. The outcome may link an ADR only when the same ADR is an attachment.
 
 ## Write the issue
 
 1. Title the task as an imperative sentence a reader can scan. No domain prefix or sequence number; the parent and relations carry those.
 2. Write the outcome as the result a user or operator observes. Link the governing ADR when the outcome follows from one.
 3. Write `Scope` as the smallest set of surfaces that change and the adjacent behavior that does not. An `In` bullet names what changes; it never describes how, and it never repeats a criterion.
-4. Write `Acceptance` as a checklist. Each item is one observable behavior with one proof action that exists today. A sentence that fits both Scope and Acceptance is written once, as a criterion.
+4. Write `Acceptance` as a checklist. Each item is one observable behavior with one proof action that exists today. `Proof:` names a test file or suite, a command, or an Incus proof action; only the last is an action in `proofs/<ISSUE>.json`. A sentence that fits both Scope and Acceptance is written once, as a criterion. Write every bullet on one line, never hard-wrapped, and put quoted output in backticks.
 5. Use the `proof:incus` label when a criterion depends on a real OS, service manager, privilege boundary, network, certificate, filesystem ownership, or multi-node behavior. Omit it for automated-only work.
 6. Use the `docs` label when durable behavior, terminology, architecture synthesis, an operational or public contract, or agent context changes. Without the label, the outcome changes no documented behavior; the audit can still fix drift it finds in the issue's scope, listed in the plan or the pull request body.
 7. Name `apps/e2e` only on a dedicated harness issue. Product issues never include harness changes.
-8. Keep `Readiness` only in `Backlog`. State the exact missing product decision, ADR, dependency, proof path, or component boundary. Delete the section before `Todo`.
+8. Keep `Readiness` only in `Backlog`. State the exact missing product decision, ADR, dependency, proof path, component boundary, or acceptance. Delete the section before `Todo`.
 
 ## Parents and children
 
@@ -65,6 +65,8 @@ Use `Backlog` while the contract is incomplete. Use `Todo` only when every gover
 
 A `Todo` issue may be `blocked by` unfinished work; the relation carries that fact. When the prerequisite becomes `Done`, re-read current `origin/main` and revalidate before it is claimed.
 
+An existing issue in an earlier description shape is rewritten to `template.md` with this skill before it is planned. When a plan review returns `BLOCK` or a planner or implementer reports a stop, return the issue to `Backlog` and write the `Readiness` section that names the gap; the issue comes back to `Todo` only through the rules above.
+
 ## Complete-set feasibility
 
 When a request needs several issues, refine the whole set against current `main` before saving any of them. Verify that product behavior is decided, including ownership, migration, compatibility, failure, rollback, and removal; that every criterion has one proof action the current machinery can run without mixing product and harness changes; that the relation graph is explicit and acyclic; and that relations encode real prerequisites, not staffing, shared files, or merge-conflict avoidance.
@@ -73,7 +75,7 @@ When a product contract and its verifier would otherwise require mutually blocki
 
 ## Production reports
 
-Create a `Bug` for a post-release defect. The outcome states expected and observed behavior with the deployed commit and environment. Attach the evidence as a link. Let the assignee turn it into a task.
+Create a `Bug` for a post-release defect in the same shape. The outcome states expected and observed behavior with the deployed commit and environment, `Scope` names the surface, and each `Acceptance` item is the expected behavior with the reproduction as its proof. Attach the evidence as a link. Save it as `Backlog` with a `Readiness` section when the cause or the fix boundary is still unknown.
 
 ## Verify
 

@@ -17,9 +17,9 @@ Stop when the request contains more than one independent decision, when the deci
 
 ## Write the record
 
-1. Copy `template.md` to `docs/decisions/NNNN-short-decision-name.md` using the next unused four-digit number.
+1. Copy `template.md` to `docs/decisions/NNNN-short-decision-name.md` using the number one higher than the highest existing record; gaps in the sequence stay empty.
 2. Fill the Y-statement under the H1 first. If it cannot be written in one sentence, the decision is not yet one decision.
-3. Keep every sentence that would let a future implementer choose differently if removed. Move every sentence that describes how the choice is carried out to the `Detail` target and link it. CLI syntax, verification checklists, error text, field lists, and Doctor behavior are mechanism. One-off mechanism becomes acceptance criteria in the implementing issue; a durable contract becomes a `docs/reference` page.
+3. Keep every sentence that would let a future implementer choose differently if removed. Move every sentence that describes how the choice is carried out to the `Detail` target and link it. CLI syntax, verification checklists, error text, field lists, and Doctor behavior are mechanism. Mechanism becomes acceptance criteria in the implementing issue and, once it ships, the `docs/reference` page that describes the command, field, failure code, or limit; the `Detail` line names that page even before it exists.
 4. Inherit by reference. Name what the record extends or supersedes in one clause with a link. Never restate rules from an earlier record.
 5. Write Decision bullets as `<actor> must`, `must not`, `may ... when`, or `owns`. One obligation per bullet. No adjective or adverb without evidence in Context.
 6. List at least one rejected alternative with a concrete reason, and at least one consequence that is a cost or limitation.
@@ -35,3 +35,4 @@ Run `composer docs-lint` from the repository root. The rules `orbit.adr_structur
 - Present the draft as `Proposed`. Revise until the user approves the exact final text, then set `Accepted on YYYY-MM-DD` in the same sentence position.
 - Accepted records are immutable. A later change is a new record that names the one it changes.
 - Commit and pull request rules are in `docs/decisions/README.md` and ADR 0010.
+- After acceptance, list every open Linear issue whose attachments or `Scope` name a record this one extends, amends, or supersedes, and hand them to `creating-issues` for revalidation, as ADR 0010 requires.
