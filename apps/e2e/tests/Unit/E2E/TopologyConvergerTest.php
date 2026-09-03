@@ -224,6 +224,7 @@ describe('TopologyConverger', function () {
             'converge.metrics',
             'reproject.product-state',
             'refresh.metrics-publication',
+            'await.gateway-readiness',
             'hydrate.sample-apps',
             'normalize.permissions',
         ]);
@@ -238,7 +239,7 @@ describe('TopologyConverger', function () {
             ->all();
 
         expect($guestCommands)
-            ->toHaveCount(26)
+            ->toHaveCount(27)
             ->and(array_column(array_slice($guestCommands, 3, 3), 4))
             ->toBe([
                 'lab:orbit-e2e-nck-123-aaaaaaaa-gateway',
@@ -246,7 +247,7 @@ describe('TopologyConverger', function () {
                 'lab:orbit-e2e-nck-123-aaaaaaaa-gateway',
             ]);
 
-        expect(array_map(fn (array $command): array => array_slice($command, 6), array_slice($guestCommands, 0, 26)))
+        expect(array_map(fn (array $command): array => array_slice($command, 6), array_slice($guestCommands, 0, 27)))
             ->toBe([
                 ['/usr/local/bin/prepare-node.sh', 'align-identity'],
                 ['/usr/local/bin/prepare-node.sh', 'align-identity'],
@@ -280,6 +281,7 @@ describe('TopologyConverger', function () {
                 ['/usr/local/bin/converge-sample-app.sh', 'internal-tls'],
                 ['/usr/local/bin/converge-sample-app.sh', 'reproject'],
                 ['/usr/local/bin/converge-sample-app.sh', 'metrics-publication'],
+                ['/usr/local/bin/converge-sample-app.sh', 'gateway-readiness'],
                 ['/usr/local/bin/converge-sample-app.sh', 'hydrate', str_repeat('b', 40), 'app-dev'],
                 ['/usr/local/bin/converge-sample-app.sh', 'hydrate', str_repeat('b', 40), 'app-prod'],
                 ['/usr/local/bin/prepare-node.sh', 'permissions'],
@@ -336,25 +338,25 @@ describe('TopologyConverger', function () {
             );
     });
 
-    it('retries one transient typed hydration outage without repeating earlier mutations', function (): void {
+    it('retries transient Gateway readiness before invoking each hydration exactly once', function (bool $typed): void {
         $recorded = [];
-        $hydrateAttempts = 0;
-        Process::fake(function (PendingProcess $process) use (&$recorded, &$hydrateAttempts): ProcessResult {
+        $readinessAttempts = 0;
+        Process::fake(function (PendingProcess $process) use (&$recorded, &$readinessAttempts, $typed): ProcessResult {
             $command = $process->command;
             assert(is_array($command));
             if (
                 in_array('/usr/local/bin/converge-sample-app.sh', $command, true)
-                && in_array('hydrate', $command, true)
+                && in_array('gateway-readiness', $command, true)
             ) {
-                $hydrateAttempts++;
-                if ($hydrateAttempts === 1) {
+                $readinessAttempts++;
+                if ($readinessAttempts === 1) {
                     $recorded[] = $command;
 
-                    return Process::result('', '', 75);
+                    return Process::result('', 'Gateway unavailable.', 1);
                 }
             }
 
-            return task7_process_result($process, $recorded, typed: true);
+            return task7_process_result($process, $recorded, typed: $typed);
         });
 
         new TopologyConverger(task7_host(), gatewayReadinessRetryDelayMicroseconds: 0)->converge(
@@ -374,32 +376,53 @@ describe('TopologyConverger', function () {
             ->countBy()
             ->all();
 
-        expect($sampleActions)->toMatchArray([
-            'grant-operator' => 1,
-            'configure-cli' => 1,
-            'create-resources' => 1,
-            'metrics' => 1,
-            'reproject' => 1,
-            'metrics-publication' => 1,
-            'hydrate' => 2,
-        ]);
-    });
+        expect($sampleActions)->toMatchArray(array_filter(
+            [
+                'grant-operator' => 1,
+                'configure-cli' => 1,
+                'create-resources' => 1,
+                'metrics' => 1,
+                'internal-tls' => $typed ? null : 1,
+                'reproject' => 1,
+                'metrics-publication' => 1,
+                'gateway-readiness' => 2,
+                'hydrate' => $typed ? 1 : 2,
+            ],
+            is_int(...),
+        ));
 
-    it('fails a persistent typed hydration outage at the bounded action', function (): void {
+        $actions = collect($recorded)
+            ->filter(fn (array $command): bool => in_array('/usr/local/bin/converge-sample-app.sh', $command, true))
+            ->map(function (array $command): string {
+                $script = array_search('/usr/local/bin/converge-sample-app.sh', $command, true);
+                assert(is_int($script));
+
+                return $command[$script + 1];
+            })
+            ->values();
+
+        expect($actions->search('hydrate', strict: true))
+            ->toBeGreaterThan($actions->search('gateway-readiness', strict: true));
+    })->with([
+        'legacy hydration' => false,
+        'typed hydration' => true,
+    ]);
+
+    it('fails persistent Gateway unavailability before hydration with bounded diagnostics', function (): void {
         $recorded = [];
         Process::fake(function (PendingProcess $process) use (&$recorded): ProcessResult {
             $command = $process->command;
             assert(is_array($command));
             if (
                 in_array('/usr/local/bin/converge-sample-app.sh', $command, true)
-                && in_array('hydrate', $command, true)
+                && in_array('gateway-readiness', $command, true)
             ) {
                 $recorded[] = $command;
 
-                return Process::result('', '', 75);
+                return Process::result('', 'Gateway unavailable.', 1);
             }
 
-            return task7_process_result($process, $recorded, typed: true);
+            return task7_process_result($process, $recorded);
         });
 
         expect(fn () => new TopologyConverger(
@@ -412,18 +435,27 @@ describe('TopologyConverger', function () {
         ))
             ->toThrow(
                 RuntimeException::class,
-                'Guest convergence action converge-sample-app.sh hydrate failed on '
-                .'orbit-e2e-nck-123-aaaaaaaa-app-dev after 5 attempts with exit code 75.',
+                'Guest convergence action converge-sample-app.sh gateway-readiness failed on '
+                .'orbit-e2e-nck-123-aaaaaaaa-app-dev after 5 attempts; attempt 5 exited with code 1.',
             );
 
         expect(collect($recorded)->filter(
             fn (array $command): bool => (
-                in_array('/usr/local/bin/converge-sample-app.sh', $command, true) && in_array('hydrate', $command, true)
+                in_array('/usr/local/bin/converge-sample-app.sh', $command, true)
+                && in_array('gateway-readiness', $command, true)
             ),
-        ))->toHaveCount(5);
+        ))
+            ->toHaveCount(5)
+            ->and(collect($recorded)->filter(
+                fn (array $command): bool => (
+                    in_array('/usr/local/bin/converge-sample-app.sh', $command, true)
+                    && in_array('hydrate', $command, true)
+                ),
+            ))
+            ->toHaveCount(0);
     });
 
-    it('does not retry a typed hydration failure outside the readiness boundary', function (int $exitCode): void {
+    it('does not retry a typed hydration failure after readiness succeeds', function (int $exitCode): void {
         $recorded = [];
         Process::fake(function (PendingProcess $process) use (&$recorded, $exitCode): ProcessResult {
             $command = $process->command;
@@ -450,7 +482,7 @@ describe('TopologyConverger', function () {
         ))
             ->toThrow(
                 RuntimeException::class,
-                'Guest convergence action converge-sample-app.sh hydrate failed on '
+                'Guest convergence script converge-sample-app.sh failed on '
                 ."orbit-e2e-nck-123-aaaaaaaa-app-dev with exit code {$exitCode}.",
             );
 

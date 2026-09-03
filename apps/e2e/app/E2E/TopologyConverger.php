@@ -22,8 +22,6 @@ final readonly class TopologyConverger
 {
     private const int GATEWAY_READINESS_ATTEMPTS = 5;
 
-    private const int TRANSIENT_GATEWAY_EXIT_CODE = 75;
-
     public function __construct(
         private IncusHost $host,
         private int $gatewayReadinessRetryDelayMicroseconds = 1_000_000,
@@ -139,9 +137,11 @@ final readonly class TopologyConverger
         $steps['reproject.product-state'] = true;
         $this->run($instances['app-dev'], 'converge-sample-app.sh', ['metrics-publication']);
         $steps['refresh.metrics-publication'] = true;
+        $this->awaitGatewayReadiness($instances['app-dev']);
+        $steps['await.gateway-readiness'] = true;
 
         if ($typedCheckoutPath !== null) {
-            $this->runTypedHydration($instances['app-dev'], [
+            $this->run($instances['app-dev'], 'converge-sample-app.sh', [
                 'hydrate',
                 $laravel->commit,
                 'app-dev',
@@ -267,37 +267,23 @@ final readonly class TopologyConverger
         return $result;
     }
 
-    /**
-     * The typed hydrate action validates Gateway state before touching the checkout.
-     * Exit 75 is reserved by the guest script for a valid transient Gateway failure
-     * at that boundary, so retrying cannot repeat a successful mutation.
-     *
-     * @param list<string> $arguments
-     */
-    private function runTypedHydration(string $instance, array $arguments): void
+    private function awaitGatewayReadiness(string $instance): void
     {
         for ($attempt = 1; $attempt <= self::GATEWAY_READINESS_ATTEMPTS; $attempt++) {
             $result = $this->host->exec(
                 $instance,
-                new GuestCommand(['/usr/local/bin/converge-sample-app.sh', ...$arguments], 900),
+                new GuestCommand(['/usr/local/bin/converge-sample-app.sh', 'gateway-readiness'], 30),
             );
 
             if ($result->successful()) {
                 return;
             }
 
-            if ($result->exitCode !== self::TRANSIENT_GATEWAY_EXIT_CODE) {
-                throw new RuntimeException(
-                    "Guest convergence action converge-sample-app.sh hydrate failed on {$instance} "
-                    ."with exit code {$result->exitCode}.",
-                );
-            }
-
             if ($attempt === self::GATEWAY_READINESS_ATTEMPTS) {
                 throw new RuntimeException(
-                    "Guest convergence action converge-sample-app.sh hydrate failed on {$instance} after "
+                    "Guest convergence action converge-sample-app.sh gateway-readiness failed on {$instance} after "
                     .self::GATEWAY_READINESS_ATTEMPTS
-                    ." attempts with exit code {$result->exitCode}.",
+                    ." attempts; attempt {$attempt} exited with code {$result->exitCode}.",
                 );
             }
 
