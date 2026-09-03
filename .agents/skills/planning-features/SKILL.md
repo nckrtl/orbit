@@ -23,20 +23,20 @@ Stop, and report the gap instead of planning around it, when:
 - an attached ADR's Status is not `Accepted on`, or an attached ADR contradicts the issue;
 - an `Acceptance` item has no proof action the current machinery can run;
 - an `In` bullet needs a component the issue is not labeled with;
-- the `docs` label disagrees with the outcome: the outcome changes documented behavior without the label, or the label is present and no page needs to change; report it for relabeling; or
+- the outcome changes documented behavior and the issue has no `docs` label; report it for relabeling; or
 - a page cannot be written without guessing product behavior.
 
 ## Write the documentation
 
-Before the acceptance map, run `auditing-documentation` in its default issue scope and fix the drift it finds. Then, when the issue carries the `docs` label, write or update the pages that describe the issue's outcome by following `writing-documentation`, stating the behavior the `Acceptance` items deliver in the present tense. For these pages the reference is the issue and its ADRs, not the code; the code follows. Run `composer docs-lint` and `composer docs-build` from the repository root, then commit every change under `docs/`, including `docs/generated/context.json`, as one commit on the feature branch whose message starts with `docs:`. The plan itself stays uncommitted; `.orbit/` is ignored. The implementer starts from these pages and corrects them only where implementation deviates.
+Before the acceptance map, run `auditing-documentation` in its default issue scope and fix the drift it finds. Then, when the issue carries the `docs` label, write or update the pages that describe the issue's outcome by following `writing-documentation`, stating the behavior the `Acceptance` items deliver in the present tense. For these pages the reference is the issue and its ADRs, not the code; the code follows. Run `composer docs-lint` and `composer docs-build` from the repository root, then commit every change under `docs/`, including `docs/generated/context.json`, as one commit on the feature branch whose message starts with `docs:`. The plan itself stays uncommitted; `.orbit/` is ignored. A blocked issue keeps its `docs:` commits on the branch, and the next planning pass starts from them. The implementer starts from these pages and corrects them only where implementation deviates.
 
 ## Write the plan
 
 Fill every section of `.orbit/plan.md` without copying the issue into it:
 
 - **Outcome:** the issue's outcome in one sentence.
-- **Code boundaries:** for each `In` bullet, the files or directories that change. For each `Out` bullet, the exclusion that keeps it unchanged.
-- **Documentation:** the pages under `docs/` this task changed and what each now states, plus every audit finding it reported instead of fixing, each with its owner. When the label is absent and no drift was found, `none: <why the outcome changes no documented behavior>`. When the label is present and the pages already state the outcome, say so.
+- **Code boundaries:** for each `In` bullet, the files or directories that change. For each `Out` bullet, the exclusion that keeps it unchanged. Pages under `docs/` belong to the Documentation section and `proofs/<ISSUE>.json` to the acceptance map; neither is a code boundary or a component.
+- **Documentation:** the pages under `docs/` this task changed and what each now states, plus every audit finding it reported instead of fixing, each with its owner. When the label is absent and no drift was found, `none: <why the outcome changes no documented behavior>`. When the label is present and the pages already state the outcome, say so; that is not a stop, and the label is corrected through `creating-issues` afterwards.
 - **Acceptance map:** one row per `Acceptance` item, in the issue's order, mapped to its code boundary and the exact focused proof: a test file, a command, or an Incus proof action.
 - **Implementation order:** the smallest coherent ordered changes.
 - **Must preserve:** every attached ADR `Decision` bullet the change touches, plus the existing tests and invariants that protect adjacent behavior.

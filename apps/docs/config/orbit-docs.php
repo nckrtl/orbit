@@ -16,10 +16,7 @@ return [
     'legacy_decision_rules' => [
         'librarian.requirement_smell',
         'librarian.sentence_case_heading',
-        'librarian.document_complexity',
-        'librarian.bullet_complexity',
         'librarian.long_section_structure',
-        'librarian.section_opener_prose',
         'librarian.compound_noun_stack',
         'librarian.table_prose_complexity',
     ],

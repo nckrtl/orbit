@@ -65,7 +65,7 @@ Use `Backlog` while the contract is incomplete. Use `Todo` only when every gover
 
 A `Todo` issue may be `blocked by` unfinished work; the relation carries that fact. When the prerequisite becomes `Done`, re-read current `origin/main` and revalidate before it is claimed.
 
-An existing issue in an earlier description shape is rewritten to `template.md` with this skill before it is planned. When a plan review returns `BLOCK` or a planner or implementer reports a stop, return the issue to `Backlog` and write the `Readiness` section that names the gap; the issue comes back to `Todo` only through the rules above.
+An existing issue in an earlier description shape is rewritten to `template.md` with this skill before it is planned. When a plan review returns `BLOCK`, a planner or implementer reports a stop, or `recording-decisions` hands over an accepted ADR that intersects the issue, revalidate the contract against current `origin/main`: return a conflicting or incomplete issue to `Backlog` and write the `Readiness` section that names the gap, and cancel obsolete work only with the repository owner's explicit authority. The issue comes back to `Todo` only through the rules above.
 
 ## Complete-set feasibility
 

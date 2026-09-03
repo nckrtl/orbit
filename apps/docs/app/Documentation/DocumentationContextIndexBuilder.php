@@ -56,7 +56,7 @@ final readonly class DocumentationContextIndexBuilder
         $stored = $this->repository->storedIndex();
         if ($stored === null) {
             throw new RuntimeException(
-                'Documentation context index is missing. Run `composer docs-build` from apps/docs.',
+                'Documentation context index is missing. Run `composer docs-build` from the repository root.',
             );
         }
 

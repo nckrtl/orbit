@@ -35,4 +35,4 @@ Run `composer docs-lint` from the repository root. The rules `orbit.adr_structur
 - Present the draft as `Proposed`. Revise until the user approves the exact final text, then set `Accepted on YYYY-MM-DD` in the same sentence position.
 - Accepted records are immutable. A later change is a new record that names the one it changes.
 - Commit and pull request rules are in `docs/decisions/README.md` and ADR 0010.
-- After acceptance, list every open Linear issue whose attachments or `Scope` name a record this one extends, amends, or supersedes, and hand them to `creating-issues` for revalidation, as ADR 0010 requires.
+- After the record reaches `origin/main`, inspect every open Linear issue whose outcome or `Scope` intersects the decision and hand each one to `creating-issues` for revalidation, as ADR 0010 requires: a conflicting contract returns to `Backlog` with a `Readiness` section, and obsolete work is cancelled only with the repository owner's explicit authority.
