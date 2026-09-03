@@ -194,6 +194,7 @@ function task7_process_result(PendingProcess $process, array &$recorded, bool $t
     return Process::result();
 }
 
+/** @mago-expect lint:cyclomatic-complexity The fixture preserves one complete ordered convergence contract. */
 describe('TopologyConverger', function () {
     it('validates and converges an existing ready topology in the required order', function () {
         $recorded = [];
@@ -334,6 +335,134 @@ describe('TopologyConverger', function () {
                 ['/usr/local/bin/converge-sample-app.sh', 'hydrate', str_repeat('b', 40), 'app-prod'],
             );
     });
+
+    it('retries one transient typed hydration outage without repeating earlier mutations', function (): void {
+        $recorded = [];
+        $hydrateAttempts = 0;
+        Process::fake(function (PendingProcess $process) use (&$recorded, &$hydrateAttempts): ProcessResult {
+            $command = $process->command;
+            assert(is_array($command));
+            if (
+                in_array('/usr/local/bin/converge-sample-app.sh', $command, true)
+                && in_array('hydrate', $command, true)
+            ) {
+                $hydrateAttempts++;
+                if ($hydrateAttempts === 1) {
+                    $recorded[] = $command;
+
+                    return Process::result('', '', 75);
+                }
+            }
+
+            return task7_process_result($process, $recorded, typed: true);
+        });
+
+        new TopologyConverger(task7_host(), gatewayReadinessRetryDelayMicroseconds: 0)->converge(
+            featureTarget('NCK-123'),
+            new SourceState(str_repeat('a', 40), str_repeat('a', 40), false),
+            new LaravelRelease('v13.10.1', str_repeat('b', 40)),
+        );
+
+        $sampleActions = collect($recorded)
+            ->filter(fn (array $command): bool => in_array('/usr/local/bin/converge-sample-app.sh', $command, true))
+            ->map(function (array $command): string {
+                $script = array_search('/usr/local/bin/converge-sample-app.sh', $command, true);
+                assert(is_int($script));
+
+                return $command[$script + 1];
+            })
+            ->countBy()
+            ->all();
+
+        expect($sampleActions)->toMatchArray([
+            'grant-operator' => 1,
+            'configure-cli' => 1,
+            'create-resources' => 1,
+            'metrics' => 1,
+            'reproject' => 1,
+            'metrics-publication' => 1,
+            'hydrate' => 2,
+        ]);
+    });
+
+    it('fails a persistent typed hydration outage at the bounded action', function (): void {
+        $recorded = [];
+        Process::fake(function (PendingProcess $process) use (&$recorded): ProcessResult {
+            $command = $process->command;
+            assert(is_array($command));
+            if (
+                in_array('/usr/local/bin/converge-sample-app.sh', $command, true)
+                && in_array('hydrate', $command, true)
+            ) {
+                $recorded[] = $command;
+
+                return Process::result('', '', 75);
+            }
+
+            return task7_process_result($process, $recorded, typed: true);
+        });
+
+        expect(fn () => new TopologyConverger(
+            task7_host(),
+            gatewayReadinessRetryDelayMicroseconds: 0,
+        )->converge(
+            featureTarget('NCK-123'),
+            new SourceState(str_repeat('a', 40), str_repeat('a', 40), false),
+            new LaravelRelease('v13.10.1', str_repeat('b', 40)),
+        ))
+            ->toThrow(
+                RuntimeException::class,
+                'Guest convergence action converge-sample-app.sh hydrate failed on '
+                .'orbit-e2e-nck-123-aaaaaaaa-app-dev after 5 attempts with exit code 75.',
+            );
+
+        expect(collect($recorded)->filter(
+            fn (array $command): bool => (
+                in_array('/usr/local/bin/converge-sample-app.sh', $command, true) && in_array('hydrate', $command, true)
+            ),
+        ))->toHaveCount(5);
+    });
+
+    it('does not retry a typed hydration failure outside the readiness boundary', function (int $exitCode): void {
+        $recorded = [];
+        Process::fake(function (PendingProcess $process) use (&$recorded, $exitCode): ProcessResult {
+            $command = $process->command;
+            assert(is_array($command));
+            if (
+                in_array('/usr/local/bin/converge-sample-app.sh', $command, true)
+                && in_array('hydrate', $command, true)
+            ) {
+                $recorded[] = $command;
+
+                return Process::result('', '', $exitCode);
+            }
+
+            return task7_process_result($process, $recorded, typed: true);
+        });
+
+        expect(fn () => new TopologyConverger(
+            task7_host(),
+            gatewayReadinessRetryDelayMicroseconds: 0,
+        )->converge(
+            featureTarget('NCK-123'),
+            new SourceState(str_repeat('a', 40), str_repeat('a', 40), false),
+            new LaravelRelease('v13.10.1', str_repeat('b', 40)),
+        ))
+            ->toThrow(
+                RuntimeException::class,
+                'Guest convergence action converge-sample-app.sh hydrate failed on '
+                ."orbit-e2e-nck-123-aaaaaaaa-app-dev with exit code {$exitCode}.",
+            );
+
+        expect(collect($recorded)->filter(
+            fn (array $command): bool => (
+                in_array('/usr/local/bin/converge-sample-app.sh', $command, true) && in_array('hydrate', $command, true)
+            ),
+        ))->toHaveCount(1);
+    })->with([
+        'semantic typed state' => 65,
+        'remapped post-readiness command' => 1,
+    ]);
 
     it('fails before mutation when a required network is absent', function () {
         Process::fake(['*' => Process::result('[]')]);
