@@ -97,9 +97,15 @@ Issue IDs match `[A-Z][A-Z0-9]{1,9}-[1-9][0-9]{0,8}`.
 
 ## On-demand cold scenario
 
-`bin/e2e-scenarios cold CANDIDATE_SHA` runs the first disposable cold-lane
-acceptance flow. It requires a clean checkout whose `HEAD` is exactly the full
-lowercase candidate SHA. It starts from the unchanged
+`bin/e2e-scenarios` supports these cold-lane invocations:
+
+| Command | Candidate commit |
+| --- | --- |
+| `bin/e2e-scenarios cold` | Resolves the current checkout's `HEAD`. |
+| `bin/e2e-scenarios cold CANDIDATE_SHA` | Requires the full lowercase SHA to equal the current checkout's `HEAD`. |
+
+Both forms require a clean checkout and run the first disposable cold-lane
+acceptance flow. The flow starts from the unchanged
 `orbit-base-ubuntu-26.04-runtime` image alias, synchronizes that exact commit,
 converges the registered product roles, verifies the complete inventory, and
 then unconditionally releases the attempt.

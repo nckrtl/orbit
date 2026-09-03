@@ -3,18 +3,19 @@ set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 
-if [[ $# -ne 2 || "$1" != cold ]]; then
+if [[ $# -lt 1 || $# -gt 2 || "$1" != cold ]]; then
     cat >&2 <<'USAGE'
-usage: bin/e2e-scenarios cold CANDIDATE_SHA
+usage: bin/e2e-scenarios cold [CANDIDATE_SHA]
 
-Runs the explicitly requested cold Incus acceptance flow. The candidate must
-be this clean checkout's HEAD. This command is not part of feature development,
-proof, review, merge, promotion, or CI.
+Runs the explicitly requested cold Incus acceptance flow. The candidate
+defaults to this clean checkout's HEAD. When supplied, it must equal HEAD. This
+command is not part of feature development, proof, review, merge, promotion,
+or CI.
 USAGE
     exit 64
 fi
 
-candidate=$2
+candidate=${2:-$(git -C "$root" rev-parse --verify HEAD^{commit})}
 if [[ ! "$candidate" =~ ^[0-9a-f]{40}$ ]]; then
     printf 'e2e-scenarios: candidate SHA must be 40 lowercase hexadecimal characters\n' >&2
     exit 64

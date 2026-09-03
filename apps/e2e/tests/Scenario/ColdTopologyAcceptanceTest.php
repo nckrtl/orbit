@@ -31,7 +31,7 @@ it('constructs and releases the four-Node cold acceptance topology', function ()
         || ! is_string($primary)
         || ! str_starts_with($primary, '/')
     ) {
-        throw new RuntimeException('Run this flow through bin/e2e-scenarios cold CANDIDATE_SHA.');
+        throw new RuntimeException('Run this flow through bin/e2e-scenarios cold [CANDIDATE_SHA].');
     }
 
     $this->app->instance(StatePaths::class, StatePaths::forPrimary($primary));
@@ -133,7 +133,7 @@ it('automatically releases the exact cold inventory after an injected constructi
         || ! is_string($primary)
         || ! str_starts_with($primary, '/')
     ) {
-        throw new RuntimeException('Run this flow through bin/e2e-scenarios cold CANDIDATE_SHA.');
+        throw new RuntimeException('Run this flow through bin/e2e-scenarios cold [CANDIDATE_SHA].');
     }
 
     $this->app->instance(StatePaths::class, StatePaths::forPrimary($primary));
