@@ -388,8 +388,12 @@
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
-            "components": [],
-            "concepts": [],
+            "components": [
+                "apps/docs"
+            ],
+            "concepts": [
+                "Doctor"
+            ],
             "governing_adrs": [
                 "0001",
                 "0010"

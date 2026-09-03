@@ -20,6 +20,7 @@ SDK, and Incus E2E harness.
 The skills under `.agents/skills/` are standalone task guides. A contributor may
 invoke any one directly; no private orchestration order is implied.
 
+- `recording-decisions` — draft, lint, and accept one architecture decision record.
 - `creating-issues` — refine a request into a current, verifiable Linear contract.
 - `planning-features` — prepare or correct a concise Feature plan.
 - `reviewing-feature-plans` — independently review a Feature plan.
