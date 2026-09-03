@@ -28,15 +28,19 @@ Review verdict: PENDING
 
 ## Code boundaries
 
-In scope:
+In:
 -
 
-Out of scope:
+Out:
 -
+
+## Documentation
+
+none
 
 ## Acceptance map
 
-| Criterion | Code boundary | Focused proof |
+| Criterion | Boundary | Focused proof |
 | --- | --- | --- |
 | | | |
 
@@ -49,6 +53,10 @@ Out of scope:
 -
 
 ## Open questions
+
+-
+
+## Deviations
 
 -
 

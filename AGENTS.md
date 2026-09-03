@@ -20,9 +20,12 @@ SDK, and Incus E2E harness.
 The skills under `.agents/skills/` are standalone task guides. A contributor may
 invoke any one directly; no private orchestration order is implied.
 
-- `creating-issues` — refine a request into a current, verifiable Linear contract.
-- `planning-features` — prepare or correct a concise Feature plan.
-- `reviewing-feature-plans` — independently review a Feature plan.
+- `recording-decisions` — draft, lint, and accept one architecture decision record.
+- `writing-documentation` — write or change one maintained page under `docs/`.
+- `auditing-documentation` — find and fix documentation drift for one issue, or for the whole corpus on request.
+- `creating-issues` — refine a request into a current, verifiable Linear contract, or return a blocked issue to `Backlog`.
+- `planning-features` — audit and write the issue's documentation, then prepare or correct the plan for one issue.
+- `reviewing-feature-plans` — independently review one issue's plan and documentation commits.
 - `developing-features` — implement and prove one issue.
 - `reviewing-pull-requests` — independently review one pushed head and inspect
   its exact retained proof.
@@ -35,9 +38,10 @@ invoke any one directly; no private orchestration order is implied.
 - Issue contracts use observable acceptance criteria and name the smallest
   affected components. New requirements become separate Linear work.
 - Product feature branches never modify the harness under `apps/e2e` or
-  `bin/e2e-*`. Harness changes require a dedicated issue with
+  `bin/e2e-*`; the tests under `apps/e2e/tests/Feature/**` and
+  `apps/e2e/tests/Unit/**` are not harness code. Harness changes require a dedicated issue with
   repository-owner-approved behavior and issue-specific proof.
-- `Proof: incus` uses the repository's disposable topology and proof commands.
+- The `proof:incus` label uses the repository's disposable topology and proof commands.
   Automated-only changes use project checks and CI.
 - Proof plans live in `proofs/<ISSUE>.json`; optional fixtures live in
   `proofs/<ISSUE>/`. Per-worktree harness state lives in `<worktree>/.e2e/`.
@@ -69,6 +73,8 @@ invoke any one directly; no private orchestration order is implied.
   paragraphs, and concrete examples. Keep delivery rules and internal workflow
   language in contributor guidance or ADRs.
 - Do not add a document when the change has no durable project learning.
-- Every implementation contract classifies documentation impact as `required`
-  or `none` with a rationale. Reconcile required documentation in the same pull
-  request as the behavior it describes.
+- Every issue states documentation impact with the `docs` label. The planner
+  (`planning-features`, the preflight step), or the implementer when no plan
+  exists, audits and writes the issue's documentation; the pull request that
+  changes behavior carries the pages that describe it and lists every
+  documentation change.

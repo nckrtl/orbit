@@ -1678,14 +1678,22 @@ describe('convergence guest scripts', function () {
                 ['bash', $fixture['script'], 'hydrate', str_repeat('b', 40), 'app-dev'],
                 env: $fixture['environment'],
             );
+            $result = $process->run();
+            $gitCommands = file("{$fixture['root']}/git-commands", FILE_IGNORE_NEW_LINES) ?: [];
 
-            expect($process->run())
+            expect($result)
                 ->toBe(0)
-                ->and(file("{$fixture['root']}/git-commands", FILE_IGNORE_NEW_LINES))
+                ->and($gitCommands)
                 ->not
                 ->toContain('-C '.$fixture['checkout'].' fetch --quiet origin '.str_repeat('b', 40))
                 ->and(file_exists("{$fixture['root']}/composer-commands"))
                 ->toBeFalse();
+            expect(array_values(array_filter(
+                $gitCommands,
+                fn (string $command): bool => str_contains($command, ' reset --hard --quiet '),
+            )))->toBe([
+                '-C '.$fixture['checkout'].' reset --hard --quiet '.str_repeat('b', 40),
+            ]);
         } finally {
             new Illuminate\Filesystem\Filesystem()->deleteDirectory($fixture['root']);
         }
@@ -1915,6 +1923,12 @@ describe('convergence guest scripts', function () {
             expect($process->run())->toBe(0, $process->getErrorOutput());
             expect(file("{$fixture['root']}/orbit-commands", FILE_IGNORE_NEW_LINES))->toBe([
                 'instance:list --json',
+            ]);
+            expect(array_values(array_filter(
+                file("{$fixture['root']}/git-commands", FILE_IGNORE_NEW_LINES) ?: [],
+                fn (string $command): bool => str_contains($command, ' reset --hard --quiet '),
+            )))->toBe([
+                '-C '.$fixture['checkout'].' reset --hard --quiet '.str_repeat('b', 40),
             ]);
         } finally {
             new Illuminate\Filesystem\Filesystem()->deleteDirectory($fixture['root']);
