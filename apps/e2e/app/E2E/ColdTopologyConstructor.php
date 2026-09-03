@@ -11,7 +11,6 @@ use App\E2E\Value\ColdTopologyPlan;
 use App\E2E\Value\IncusInstance;
 use App\E2E\Value\OperationId;
 use App\E2E\Value\SourceState;
-use App\E2E\Value\TopologyPersistence;
 use App\E2E\Value\TopologyTarget;
 use App\Exceptions\E2E\ColdTopologyCleanupException;
 use RuntimeException;
@@ -40,11 +39,11 @@ final readonly class ColdTopologyConstructor
 
         try {
             $this->createResources($plan);
-            $instances = array_map($plan->target->instance(...), $plan->recipe->nodeKeys());
+            $instances = array_map($plan->target->instance(...), $plan->target->recipe->nodeKeys());
             $this->host->startAll($instances);
             $this->host->prepareClonedHostStates($instances);
 
-            if ($plan->persistence === TopologyPersistence::Disposable) {
+            if ($plan->isDisposable()) {
                 $candidate = $this->synchronizer->syncCommit(
                     $plan->target,
                     $plan->sourceWorktree,
@@ -137,7 +136,7 @@ final readonly class ColdTopologyConstructor
         if ($this->host->network($plan->target->network()) !== null) {
             throw new RuntimeException('The cold topology network already exists.');
         }
-        $instanceNames = array_map($plan->target->instance(...), $plan->recipe->nodeKeys());
+        $instanceNames = array_map($plan->target->instance(...), $plan->target->recipe->nodeKeys());
         if ($this->host->instances($instanceNames) !== []) {
             throw new RuntimeException('A cold topology VM already exists.');
         }
@@ -151,16 +150,16 @@ final readonly class ColdTopologyConstructor
         }
 
         try {
-            $slot = $plan->persistence === TopologyPersistence::Disposable
-                ? $this->capacity->reserveSlot(count($plan->recipe->nodes))
+            $slot = $plan->isDisposable()
+                ? $this->capacity->reserveSlot(count($plan->target->recipe->nodes))
                 : $plan->fixedSlot ?? throw new RuntimeException('Persistent cold topology slot is absent.');
             $lastAddress = max(array_map(
                 static fn (\App\E2E\Value\TopologyNode $node): int => $node->address,
-                $plan->recipe->nodes,
+                $plan->target->recipe->nodes,
             ));
             $this->networks->create($plan->target->network(), $slot, $plan->metadata, $lastAddress);
             $vms = [];
-            foreach ($plan->recipe->nodes as $node) {
+            foreach ($plan->target->recipe->nodes as $node) {
                 $vms[$node->key] = [
                     'image' => $node->image,
                     'name' => $plan->target->instance($node->key),

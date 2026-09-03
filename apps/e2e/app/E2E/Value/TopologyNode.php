@@ -42,7 +42,7 @@ final readonly class TopologyNode
 
     public static function assertKey(string $key): void
     {
-        if (preg_match('/\A[a-z][a-z0-9-]{0,23}\z/D', $key) !== 1) {
+        if (preg_match('/\A[a-z][a-z0-9-]{0,22}\z/D', $key) !== 1) {
             throw new InvalidArgumentException('The topology Node key is invalid.');
         }
     }

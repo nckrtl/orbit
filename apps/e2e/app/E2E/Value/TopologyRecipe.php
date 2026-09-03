@@ -38,6 +38,15 @@ final readonly class TopologyRecipe
             $nodesByKey[$node->key] = $node;
             $addresses[$node->address] = true;
         }
+        foreach ($nodes as $node) {
+            foreach ($node->roles as $role) {
+                if (isset($nodesByKey[$role]) && $role !== $node->key) {
+                    throw new InvalidArgumentException(
+                        "Topology recipe Node key [{$role}] collides with a role assigned to another Node.",
+                    );
+                }
+            }
+        }
         $this->nodesByKey = $nodesByKey;
     }
 
@@ -110,29 +119,6 @@ final readonly class TopologyRecipe
     public function hasNode(string $key): bool
     {
         return isset($this->nodesByKey[$key]);
-    }
-
-    public function hasSameDefinition(self $recipe): bool
-    {
-        if ($this->id !== $recipe->id || count($this->nodes) !== count($recipe->nodes)) {
-            return false;
-        }
-
-        foreach ($this->nodes as $index => $node) {
-            $candidate = $recipe->nodes[$index];
-            if (
-                $node->key !== $candidate->key
-                || $node->image !== $candidate->image
-                || $node->purpose !== $candidate->purpose
-                || $node->address !== $candidate->address
-                || $node->checkout !== $candidate->checkout
-                || $node->roles !== $candidate->roles
-            ) {
-                return false;
-            }
-        }
-
-        return true;
     }
 
     public function node(string $key): TopologyNode

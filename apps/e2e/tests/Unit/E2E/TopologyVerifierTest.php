@@ -7,6 +7,7 @@ use App\E2E\TopologyVerifier;
 use App\E2E\Value\SourceState;
 use App\E2E\Value\TopologyEndState;
 use App\E2E\Value\TopologyProfile;
+use App\E2E\Value\TopologyRecipe;
 use App\E2E\Value\TopologyTarget;
 use App\E2E\Value\VerificationMode;
 use App\E2E\Value\VerificationReport;
@@ -84,25 +85,62 @@ function isGlobalIpv4TopologyVerifierProbe(array $argv): bool
     ];
 }
 
-function topologyVerifierInventory(PendingProcess $process): ?ProcessResult
-{
+function topologyVerifierInventory(
+    PendingProcess $process,
+    ?TopologyTarget $topologyTarget = null,
+    bool $invalidExtraMac = false,
+): ?ProcessResult {
     $command = $process->command;
     if (! is_array($command) || ($command[array_key_last($command)] ?? null) !== '--format=json') {
         return null;
     }
 
     if (in_array('network', $command, true)) {
+        $network = $topologyTarget?->network() ?? 'oe-topo-snap';
+
         return Process::result(json_encode([[
-            'name' => 'oe-topo-snap',
+            'name' => $network,
             'config' => [
                 'user.orbit.e2e.owner' => 'orbit-e2e',
-                'ipv4.address' => '10.232.1.1/24',
+                'ipv4.address' => '10.232.'.($topologyTarget === null ? '1' : '2').'.1/24',
             ],
         ]], JSON_THROW_ON_ERROR));
     }
 
-    $target = $command[array_key_last($command) - 1];
-    $name = str_contains($target, ':') ? substr($target, strpos($target, ':') + 1) : $target;
+    $selector = $command[array_key_last($command) - 1];
+    $name = str_contains($selector, ':') ? substr($selector, strpos($selector, ':') + 1) : $selector;
+    if ($topologyTarget !== null) {
+        $nodes = array_values(array_filter(
+            $topologyTarget->recipe->nodeKeys(),
+            fn (string $node): bool => $name === '' || $topologyTarget->instance($node) === $name,
+        ));
+
+        return Process::result(json_encode(array_map(
+            static function (string $node) use ($topologyTarget, $invalidExtraMac): array {
+                $instance = $topologyTarget->instance($node);
+
+                return [
+                    'name' => $instance,
+                    'type' => 'virtual-machine',
+                    'status' => 'Running',
+                    'status_code' => 103,
+                    'config' => ['user.orbit.e2e.owner' => 'orbit-e2e'],
+                    'devices' => [
+                        'root' => ['pool' => 'orbit-e2e'],
+                        'eth0' => [
+                            'network' => $topologyTarget->network(),
+                            'ipv4.address' => TopologyTarget::ipv4For(2, $topologyTarget->recipe->node($node)->address),
+                            'hwaddr' => $invalidExtraMac && $node === 'extra'
+                                ? '00:16:3e:00:00:00'
+                                : $topologyTarget->mac($node),
+                        ],
+                    ],
+                ];
+            },
+            $nodes,
+        ), JSON_THROW_ON_ERROR));
+    }
+
     $roles = $name === ''
         ? ['gateway', 'app-dev', 'app-prod']
         : [
@@ -548,15 +586,19 @@ describe('TopologyVerifier failures and retries', function () {
  * @param list<string> $failing
  * @return array{report:VerificationReport,argv:array<string, list<string>>,batches:list<list<string>>}
  */
-function runTopologyVerifierWithEndState(?TopologyEndState $endState, array $failing = []): array
-{
+function runTopologyVerifierWithEndState(
+    ?TopologyEndState $endState,
+    array $failing = [],
+    ?TopologyTarget $target = null,
+): array {
     setUpTopologyVerifierProcessFacade();
     $sha = str_repeat('a', 40);
     $argv = [];
     $batches = [];
 
-    Process::fake(function (PendingProcess $process) use ($sha, $failing, &$argv, &$batches) {
-        $inventory = topologyVerifierInventory($process);
+    $target ??= TopologyTarget::topologySnapshot();
+    Process::fake(function (PendingProcess $process) use ($sha, $failing, &$argv, &$batches, $target) {
+        $inventory = topologyVerifierInventory($process, $target->isTopologySnapshot() ? null : $target);
         if ($inventory instanceof ProcessResult) {
             return $inventory;
         }
@@ -569,7 +611,7 @@ function runTopologyVerifierWithEndState(?TopologyEndState $endState, array $fai
                     'label' => $request['label'],
                     'stdout' =>
                         '2: enp5s0    inet 192.0.2.'
-                            .['gateway' => 1, 'app-dev' => 2, 'app-prod' => 3][$request['label']]
+                            .$target->recipe->node($request['label'])->address
                             .'/24 scope global',
                     'stderr' => '',
                     'exit_code' => 0,
@@ -595,12 +637,70 @@ function runTopologyVerifierWithEndState(?TopologyEndState $endState, array $fai
         new IncusHost(pool: 'orbit-e2e'),
         readinessTimeoutSeconds: 60,
         readinessPollIntervalMicroseconds: 0,
-    )->verify(TopologyTarget::topologySnapshot(), VerificationMode::Proof, new SourceState($sha, $sha), $endState);
+    )->verify($target, VerificationMode::Proof, new SourceState($sha, $sha), $endState);
 
     return ['report' => $report, 'argv' => $argv, 'batches' => $batches];
 }
 
 describe('TopologyVerifier declared end state', function (): void {
+    it('uses the complete cold recipe assignment map and physical peer names', function (): void {
+        $target = TopologyTarget::disposableCold(
+            'ORB-106',
+            new \App\E2E\Value\AttemptId(str_repeat('a', 32)),
+            TopologyRecipe::coldAcceptance(),
+        );
+        $run = runTopologyVerifierWithEndState(null, target: $target);
+        $gateway = $target->instance('gateway');
+        $sha = str_repeat('a', 40);
+
+        expect($run['report']->passed)
+            ->toBeTrue()
+            ->and($run['argv']['role.assignments'] ?? null)
+            ->toBe([
+                '/usr/local/bin/verify-topology.sh',
+                'role.assignments',
+                'proof',
+                $sha,
+                $gateway,
+                base64_encode(json_encode(TopologyRecipe::coldAcceptance()->assignments(), JSON_THROW_ON_ERROR)),
+            ])
+            ->and($run['argv']['wireguard.reachability'] ?? null)
+            ->toBe([
+                '/usr/local/bin/verify-topology.sh',
+                'wireguard.reachability',
+                'proof',
+                $sha,
+                $gateway,
+                'operator',
+                'app-prod',
+            ]);
+    });
+
+    it('rejects invalid network identity on the roleless cold recipe Node', function (): void {
+        setUpTopologyVerifierProcessFacade();
+        $target = TopologyTarget::disposableCold(
+            'ORB-106',
+            new \App\E2E\Value\AttemptId(str_repeat('a', 32)),
+            TopologyRecipe::coldAcceptance(),
+        );
+        Process::fake(function (PendingProcess $process) use ($target) {
+            return (
+                topologyVerifierInventory($process, $target, invalidExtraMac: true) ?? Process::result(
+                    '',
+                    'Unexpected command.',
+                    2,
+                )
+            );
+        });
+
+        expect(fn () => new TopologyVerifier(new IncusHost(pool: 'orbit-e2e'))->verify(
+            $target,
+            VerificationMode::Proof,
+            new SourceState(str_repeat('a', 40), str_repeat('a', 40)),
+        ))
+            ->toThrow(RuntimeException::class, 'MAC identity does not match topology');
+    });
+
     it('runs every probe when the plan declares nothing', function (): void {
         expect(TopologyVerifier::probesFor(TopologyEndState::complete()))
             ->toBe(topologyVerifierProbeRoles())

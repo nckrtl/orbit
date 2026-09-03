@@ -6,6 +6,7 @@ use App\E2E\IncusHost;
 use App\E2E\TopologyConverger;
 use App\E2E\Value\LaravelRelease;
 use App\E2E\Value\SourceState;
+use App\E2E\Value\TopologyRecipe;
 use App\E2E\Value\TopologyTarget;
 use Illuminate\Container\Container;
 use Illuminate\Contracts\Process\ProcessResult;
@@ -48,6 +49,25 @@ function task7_vm(string $name, string $owner = 'orbit-e2e'): string
     ]], JSON_THROW_ON_ERROR);
 }
 
+function task7_recipe_vm(TopologyTarget $target, string $node, string $owner = 'orbit-e2e'): string
+{
+    return json_encode([[
+        'name' => $target->instance($node),
+        'type' => 'virtual-machine',
+        'status' => 'Stopped',
+        'status_code' => 102,
+        'config' => ['user.orbit.e2e.owner' => $owner],
+        'devices' => [
+            'root' => ['pool' => 'orbit-e2e'],
+            'eth0' => [
+                'network' => $target->network(),
+                'ipv4.address' => TopologyTarget::ipv4For(2, $target->recipe->node($node)->address),
+                'hwaddr' => $target->mac($node),
+            ],
+        ],
+    ]], JSON_THROW_ON_ERROR);
+}
+
 function task7_gateway_public_key(): string
 {
     return 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOJgN5jVtcfw7oASD2F6If4O5mQ/HZBqbrw4QC9PcHEO';
@@ -79,8 +99,12 @@ function task7_ipv4(array $command): ?string
 
 /** @param list<list<string>> $recorded */
 /** @mago-expect lint:cyclomatic-complexity The process fake models all ordered convergence responses in one test boundary. */
-function task7_process_result(PendingProcess $process, array &$recorded, bool $typed = false): ProcessResult
-{
+function task7_process_result(
+    PendingProcess $process,
+    array &$recorded,
+    bool $typed = false,
+    ?TopologyTarget $target = null,
+): ProcessResult {
     $command = $process->command;
     assert(is_array($command));
     if (str_ends_with((string) ($command[1] ?? ''), '/resources/host/exec-all.py')) {
@@ -90,7 +114,7 @@ function task7_process_result(PendingProcess $process, array &$recorded, bool $t
             $argv = $request['argv'];
             $recorded[] = ['incus', '--project', 'orbit', 'exec', $request['instance'], '--', ...$argv];
             if ($argv === ['uname', '-m']) {
-                $architecture = str_contains($request['instance'], 'app-dev') ? 'x86_64' : 'aarch64';
+                $architecture = $request['label'] === 'app-dev' ? 'x86_64' : 'aarch64';
                 $results[] = [
                     'label' => $request['label'],
                     'stdout' => $architecture."\n",
@@ -100,9 +124,13 @@ function task7_process_result(PendingProcess $process, array &$recorded, bool $t
                 continue;
             }
             if (task7_is_global_ipv4_probe($argv)) {
-                $address = str_contains($request['instance'], 'gateway')
-                    ? '192.0.2.10'
-                    : (str_contains($request['instance'], 'app-dev') ? '192.0.2.11' : '192.0.2.12');
+                $address = $target === null
+                    ? (
+                        str_contains($request['instance'], 'gateway')
+                            ? '192.0.2.10'
+                            : (str_contains($request['instance'], 'app-dev') ? '192.0.2.11' : '192.0.2.12')
+                    )
+                    : '192.0.2.'.$target->recipe->node($request['label'])->address;
                 $results[] = [
                     'label' => $request['label'],
                     'stdout' => "2: enp5s0    inet {$address}/24 scope global enp5s0\n",
@@ -114,7 +142,7 @@ function task7_process_result(PendingProcess $process, array &$recorded, bool $t
             $nested = new PendingProcess(app(ProcessFactory::class));
             $nested->command = $argv;
             $nestedRecorded = [];
-            $result = task7_process_result($nested, $nestedRecorded, $typed);
+            $result = task7_process_result($nested, $nestedRecorded, $typed, $target);
             $results[] = [
                 'label' => $request['label'],
                 'stdout' => $result->output(),
@@ -157,8 +185,10 @@ function task7_process_result(PendingProcess $process, array &$recorded, bool $t
     }
 
     if (array_slice($command, -4) === ['network', 'list', 'lab:', '--format=json']) {
+        $network = $target?->network() ?? 'oe-0799eee4eaf4';
+
         return Process::result(json_encode([[
-            'name' => 'oe-0799eee4eaf4',
+            'name' => $network,
             'config' => ['user.orbit.e2e.owner' => 'orbit-e2e', 'ipv4.address' => '10.232.2.1/24'],
         ]], JSON_THROW_ON_ERROR));
     }
@@ -171,6 +201,18 @@ function task7_process_result(PendingProcess $process, array &$recorded, bool $t
             ]], JSON_THROW_ON_ERROR));
         }
         if (($command[count($command) - 2] ?? null) === 'lab:') {
+            if ($target !== null) {
+                return Process::result(json_encode(array_map(
+                    static fn (string $node): array => json_decode(
+                        task7_recipe_vm($target, $node),
+                        true,
+                        16,
+                        JSON_THROW_ON_ERROR,
+                    )[0],
+                    $target->recipe->nodeKeys(),
+                ), JSON_THROW_ON_ERROR));
+            }
+
             return Process::result(json_encode(
                 array_map(
                     static fn (string $role): array => json_decode(
@@ -184,10 +226,21 @@ function task7_process_result(PendingProcess $process, array &$recorded, bool $t
                 JSON_THROW_ON_ERROR,
             ));
         }
-        $target = $command[count($command) - 2];
+        $selector = $command[count($command) - 2];
+
+        if ($target !== null) {
+            $instance = str_contains($selector, ':') ? substr($selector, strpos($selector, ':') + 1) : $selector;
+            $node = array_find(
+                $target->recipe->nodeKeys(),
+                fn (string $node): bool => $target->instance($node) === $instance,
+            );
+            if (is_string($node)) {
+                return Process::result(task7_recipe_vm($target, $node));
+            }
+        }
 
         return Process::result(task7_vm(
-            str_contains($target, ':') ? substr($target, strpos($target, ':') + 1) : $target,
+            str_contains($selector, ':') ? substr($selector, strpos($selector, ':') + 1) : $selector,
         ));
     }
 
@@ -275,10 +328,10 @@ describe('TopologyConverger', function () {
                     'app-prod',
                     str_repeat('b', 40),
                 ],
-                ['/usr/local/bin/converge-sample-app.sh', 'metrics'],
+                ['/usr/local/bin/converge-sample-app.sh', 'metrics', 'app-dev'],
                 ['/usr/local/bin/converge-sample-app.sh', 'internal-tls'],
                 ['/usr/local/bin/converge-sample-app.sh', 'reproject'],
-                ['/usr/local/bin/converge-sample-app.sh', 'metrics-publication'],
+                ['/usr/local/bin/converge-sample-app.sh', 'metrics-publication', 'app-dev'],
                 ['/usr/local/bin/converge-sample-app.sh', 'hydrate', str_repeat('b', 40), 'app-dev'],
                 ['/usr/local/bin/converge-sample-app.sh', 'hydrate', str_repeat('b', 40), 'app-prod'],
                 ['/usr/local/bin/prepare-node.sh', 'permissions'],
@@ -301,6 +354,76 @@ describe('TopologyConverger', function () {
                 is_array($process->command) && in_array('start', $process->command, true)
             ),
         );
+    });
+
+    it('converges logical roles through physical cold recipe Nodes and normalizes every Node', function () {
+        $target = TopologyTarget::disposableCold(
+            'ORB-106',
+            attemptId(),
+            TopologyRecipe::coldAcceptance(),
+        );
+        $recorded = [];
+        Process::fake(function (PendingProcess $process) use (&$recorded, $target): ProcessResult {
+            return task7_process_result($process, $recorded, target: $target);
+        });
+
+        new TopologyConverger(task7_host())->converge(
+            $target,
+            new SourceState(str_repeat('a', 40), str_repeat('a', 40), false),
+            new LaravelRelease('v13.10.1', str_repeat('b', 40)),
+        );
+
+        $guestCommands = collect($recorded)->filter(
+            fn (array $command): bool => in_array('exec', $command, true),
+        );
+        $identityInstances = $guestCommands
+            ->filter(
+                fn (array $command): bool => (
+                    array_slice($command, 6) === [
+                        '/usr/local/bin/prepare-node.sh',
+                        'align-identity',
+                    ]
+                ),
+            )
+            ->pluck(4)
+            ->values()
+            ->all();
+        $permissionInstances = $guestCommands
+            ->filter(
+                fn (array $command): bool => (
+                    array_slice($command, 6) === [
+                        '/usr/local/bin/prepare-node.sh',
+                        'permissions',
+                    ]
+                ),
+            )
+            ->pluck(4)
+            ->values()
+            ->all();
+        $arguments = $guestCommands->map(fn (array $command): array => array_slice($command, 6))->all();
+        $expectedInstances = array_map(
+            fn (string $node): string => 'lab:'.$target->instance($node),
+            $target->recipe->nodeKeys(),
+        );
+
+        expect($identityInstances)
+            ->toBe($expectedInstances)
+            ->and($permissionInstances)
+            ->toBe($expectedInstances)
+            ->and($arguments)
+            ->toContain(
+                ['/usr/local/bin/converge-app-dev.sh', 'operator', '192.0.2.11', 'x86_64'],
+                ['/usr/local/bin/converge-sample-app.sh', 'grant-operator', 'operator', 'gateway'],
+                [
+                    '/usr/local/bin/converge-sample-app.sh',
+                    'create-resources',
+                    'operator',
+                    'app-prod',
+                    str_repeat('b', 40),
+                ],
+                ['/usr/local/bin/converge-sample-app.sh', 'metrics', 'operator'],
+                ['/usr/local/bin/converge-sample-app.sh', 'metrics-publication', 'operator'],
+            );
     });
 
     it('hydrates only the validated typed development checkout', function (): void {

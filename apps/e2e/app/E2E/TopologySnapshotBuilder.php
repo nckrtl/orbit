@@ -10,8 +10,6 @@ use App\E2E\Value\LaravelRelease;
 use App\E2E\Value\OperationId;
 use App\E2E\Value\PreparedFingerprint;
 use App\E2E\Value\SourceState;
-use App\E2E\Value\TopologyPersistence;
-use App\E2E\Value\TopologyProfile;
 use App\E2E\Value\TopologyRecipe;
 use App\E2E\Value\TopologySnapshotIdentity;
 use App\E2E\Value\TopologyTarget;
@@ -30,7 +28,6 @@ use Throwable;
 final readonly class TopologySnapshotBuilder
 {
     public function __construct(
-        private IncusHost $host,
         private ColdTopologyConstructor $constructor,
         private TopologySnapshotManifestStore $manifests,
         private AtomicJsonStore $state,
@@ -67,28 +64,16 @@ final readonly class TopologySnapshotBuilder
 
         $recipe = TopologyRecipe::registered($alias);
         $target = TopologyTarget::topologySnapshot($this->identity, $recipe);
-        if ($this->host->imageFingerprint($alias) !== $baseImageFingerprint) {
-            throw new RuntimeException('The base image alias fingerprint changed before cold construction.');
-        }
-        if ($this->host->network($target->network()) !== null) {
-            throw new RuntimeException('The topology snapshot network already exists without a promoted generation.');
-        }
-        $instanceNames = array_map($target->instance(...), TopologyProfile::ROLES);
-        if ($this->host->instances($instanceNames) !== []) {
-            throw new RuntimeException('A topology snapshot VM already exists without a promoted generation.');
-        }
 
         try {
             return $this->constructor->construct(new ColdTopologyPlan(
                 $target,
-                $recipe,
                 $this->mainWorktree,
                 $mainSha,
                 [$alias => $baseImageFingerprint],
                 $laravel,
                 $operation,
                 ['user.orbit.e2e.operation' => $operation->value],
-                TopologyPersistence::PersistentSnapshot,
                 $this->identity->slot,
             ));
         } catch (ColdTopologyCleanupException $exception) {

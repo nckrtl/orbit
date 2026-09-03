@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use App\E2E\Value\AttemptId;
+use App\E2E\Value\TopologyNode;
+use App\E2E\Value\TopologyNodePurpose;
 use App\E2E\Value\TopologyRecipe;
 use App\E2E\Value\TopologySnapshotIdentity;
 use App\E2E\Value\TopologyTarget;
@@ -51,13 +53,42 @@ describe('TopologyTarget', function () {
 
     it('keeps instance names readable and inside the Incus name limit', function () {
         $attempt = new AttemptId(str_repeat('a', 32));
+        $maximumRecipe = new TopologyRecipe('maximum-name', [
+            new TopologyNode(
+                'a'.str_repeat('b', 22),
+                TopologyRecipe::BASE_IMAGE,
+                TopologyNodePurpose::Gateway,
+                10,
+                true,
+                ['gateway', 'vpn'],
+            ),
+            new TopologyNode(
+                'operator',
+                TopologyRecipe::BASE_IMAGE,
+                TopologyNodePurpose::Operator,
+                11,
+                true,
+                ['app-dev'],
+            ),
+            new TopologyNode(
+                'workload',
+                TopologyRecipe::BASE_IMAGE,
+                TopologyNodePurpose::Workload,
+                12,
+                false,
+                ['app-prod'],
+            ),
+        ]);
+        $maximumTarget = TopologyTarget::disposableCold('ORBITABCDE-123456789', $attempt, $maximumRecipe);
 
         expect(TopologyTarget::feature('NCK-123', $attempt)->instance('app-dev'))
             ->toBe('orbit-e2e-nck-123-aaaaaaaa-app-dev')
             ->and(TopologyTarget::topologySnapshot()->instance('gateway'))
             ->toBe('orbit-e2e-topology-snapshot-gateway')
             ->and(strlen(TopologyTarget::feature('ORBIT-123456789', $attempt)->instance('app-prod')))
-            ->toBeLessThanOrEqual(63);
+            ->toBeLessThanOrEqual(63)
+            ->and(strlen($maximumTarget->instance('gateway')))
+            ->toBe(63);
     });
 
     it('never shares resource identities between two attempts of one issue', function () {
@@ -134,6 +165,11 @@ describe('TopologyTarget', function () {
             ->toBe('oe-topo-snap')
             ->and(TopologyTarget::topologySnapshot()->requireTopologySnapshotIdentity())
             ->toEqual(TopologySnapshotIdentity::primary());
+    });
+
+    it('rejects a variable physical recipe for the fixed topology snapshot identity', function () {
+        expect(fn () => TopologyTarget::topologySnapshot(recipe: TopologyRecipe::coldAcceptance()))
+            ->toThrow(InvalidArgumentException::class, 'registered physical Node keys');
     });
 
     it('carries the topology snapshot identity of a topology snapshot target only', function () {

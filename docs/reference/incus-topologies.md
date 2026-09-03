@@ -106,7 +106,9 @@ then unconditionally releases the attempt.
 
 This command is explicitly invoked by a person or later scenario scheduler. It
 is not part of `bin/test`, feature acquire, feature proof, review, merge,
-topology-snapshot promotion, or CI. The cold flow does not install PCOV. General
+topology-snapshot promotion, or CI. The cold flow performs no pre-construction
+PCOV instrumentation and runs no PCOV collection. Normal product provisioning
+may install the packaged PCOV extension as part of the app-dev runtime. General
 scenario selection, result aggregation, snapshot-lane scenarios, worker
 scheduling, and nightly or pull-request triggers are separate work.
 

@@ -214,7 +214,6 @@ final class AppServiceProvider extends ServiceProvider
         ));
 
         $this->app->singleton(TopologySnapshotBuilder::class, fn (Application $app): TopologySnapshotBuilder => new TopologySnapshotBuilder(
-            $app->make(IncusHost::class),
             $app->make(ColdTopologyConstructor::class),
             $app->make(TopologySnapshotManifestStore::class),
             $app->make(AtomicJsonStore::class),

@@ -256,7 +256,6 @@ function legacyRecoveryRefresher(
         new PreparedStateFingerprint($git),
         $manifests,
         new TopologySnapshotBuilder(
-            $host,
             new ColdTopologyConstructor(
                 $host,
                 new IncusNetworkLifecycle($host),

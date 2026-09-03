@@ -37,10 +37,15 @@ final readonly class TopologyTarget
         ?TopologySnapshotIdentity $identity = null,
         ?TopologyRecipe $recipe = null,
     ): self {
+        $recipe ??= TopologyRecipe::registered();
+        if ($recipe->nodeKeys() !== TopologyProfile::ROLES) {
+            throw new InvalidArgumentException('The topology snapshot requires the registered physical Node keys.');
+        }
+
         return new self(
             'topology-snapshot',
             null,
-            $recipe ?? TopologyRecipe::registered(),
+            $recipe,
             $identity ?? TopologySnapshotIdentity::primary(),
         );
     }

@@ -78,6 +78,7 @@ it('rejects unsafe Node values before recipe construction', function (
         ->toThrow(InvalidArgumentException::class);
 })->with([
     'invalid key' => ['../extra', TopologyRecipe::BASE_IMAGE, 13, []],
+    '24-character key' => ['a'.str_repeat('b', 23), TopologyRecipe::BASE_IMAGE, 13, []],
     'unsafe image' => ['extra', 'images:ubuntu/26.04', 13, []],
     'invalid address' => ['extra', TopologyRecipe::BASE_IMAGE, 255, []],
     'duplicate role' => ['extra', TopologyRecipe::BASE_IMAGE, 13, ['app-prod', 'app-prod']],
@@ -91,4 +92,21 @@ it('refuses an ambiguous singleton role lookup', function () {
 
     expect(fn () => $recipe->nodeForRole('app-prod'))
         ->toThrow(InvalidArgumentException::class, 'exactly one physical Node');
+});
+
+it('rejects a Node key that collides with a role assigned to another Node', function () {
+    expect(
+        fn () => new TopologyRecipe('colliding', [
+            new TopologyNode('app-dev', TopologyRecipe::BASE_IMAGE, TopologyNodePurpose::Extension, 10, false, []),
+            new TopologyNode(
+                'operator',
+                TopologyRecipe::BASE_IMAGE,
+                TopologyNodePurpose::Operator,
+                11,
+                true,
+                ['app-dev'],
+            ),
+        ]),
+    )
+        ->toThrow(InvalidArgumentException::class, 'collides with a role assigned to another Node');
 });

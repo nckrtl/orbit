@@ -16,21 +16,20 @@ final readonly class ColdTopologyPlan
      */
     public function __construct(
         public TopologyTarget $target,
-        public TopologyRecipe $recipe,
         public string $sourceWorktree,
         public string $sourceSha,
         public array $imageFingerprints,
         public LaravelRelease $laravel,
         public OperationId $operation,
         public array $metadata,
-        public TopologyPersistence $persistence,
         public ?int $fixedSlot = null,
     ) {
-        if (! $target->recipe->hasSameDefinition($recipe)) {
-            throw new InvalidArgumentException('The cold topology target and recipe inventories differ.');
-        }
+        $requiredNodes = [];
         foreach (TopologyProfile::ROLES as $role) {
-            $recipe->nodeForRole($role);
+            $requiredNodes[] = $target->recipe->nodeForRole($role)->key;
+        }
+        if (count($requiredNodes) !== count(array_unique($requiredNodes))) {
+            throw new InvalidArgumentException('Each required topology role must resolve to a distinct physical Node.');
         }
         if ($sourceWorktree === '' || ! str_starts_with($sourceWorktree, '/')) {
             throw new InvalidArgumentException('The cold topology source worktree must be absolute.');
@@ -40,7 +39,7 @@ final readonly class ColdTopologyPlan
         }
         $images = array_values(array_unique(array_map(
             static fn (TopologyNode $node): string => $node->image,
-            $recipe->nodes,
+            $target->recipe->nodes,
         )));
         sort($images, SORT_STRING);
         $fingerprintImages = array_keys($imageFingerprints);
@@ -53,19 +52,19 @@ final readonly class ColdTopologyPlan
                 throw new InvalidArgumentException('A cold topology image fingerprint is invalid.');
             }
         }
-        foreach ($metadata as $key => $value) {
-            if (! is_string($key) || ! is_string($value) || str_contains($value, "\0")) {
-                throw new InvalidArgumentException('Cold topology ownership metadata is invalid.');
-            }
+        if (! IncusMetadata::isValidAdditionalMap($metadata)) {
+            throw new InvalidArgumentException('Cold topology ownership metadata is invalid.');
         }
         if (($metadata['user.orbit.e2e.operation'] ?? null) !== $operation->value) {
             throw new InvalidArgumentException('Cold topology metadata must name its exact operation.');
         }
-        if ($persistence === TopologyPersistence::PersistentSnapshot && ($fixedSlot ?? 0) < 1) {
+        if ($fixedSlot !== null && $fixedSlot < 1) {
             throw new InvalidArgumentException('Persistent cold topology construction requires a fixed slot.');
         }
-        if ($persistence === TopologyPersistence::Disposable && $fixedSlot !== null) {
-            throw new InvalidArgumentException('Disposable cold topology construction obtains a capacity slot.');
-        }
+    }
+
+    public function isDisposable(): bool
+    {
+        return $this->fixedSlot === null;
     }
 }

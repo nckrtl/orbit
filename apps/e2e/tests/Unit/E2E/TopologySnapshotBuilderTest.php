@@ -35,7 +35,6 @@ function cold_cleanup_builder(IncusHost $host, AtomicJsonStore $state, StatePath
     $uninitialized = fn (string $class): object => new ReflectionClass($class)->newInstanceWithoutConstructor();
 
     return new TopologySnapshotBuilder(
-        $host,
         new ColdTopologyConstructor(
             $host,
             new IncusNetworkLifecycle($host),
@@ -119,7 +118,6 @@ describe('TopologySnapshotBuilder', function () {
         $host = $uninitialized(IncusHost::class);
         $manifests = new TopologySnapshotManifestStore($state, $paths, $host);
         $builder = new TopologySnapshotBuilder(
-            $host,
             $uninitialized(ColdTopologyConstructor::class),
             $manifests,
             $state,

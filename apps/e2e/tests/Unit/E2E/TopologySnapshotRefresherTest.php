@@ -59,7 +59,6 @@ function topologySnapshotRefresherForPowerTests(
         new PreparedStateFingerprint($git),
         $manifests,
         new TopologySnapshotBuilder(
-            $host,
             new ColdTopologyConstructor(
                 $host,
                 new IncusNetworkLifecycle($host),
@@ -402,6 +401,7 @@ function refreshProcess(
                 'user.orbit.e2e.owner' => 'orbit-e2e',
                 'ipv4.address' => '10.232.1.1/24',
                 'ipv4.nat' => 'true',
+                'ipv4.dhcp.ranges' => '10.232.1.10-10.232.1.12',
                 'ipv6.address' => 'none',
                 'raw.dnsmasq' => 'port=0',
             ],
@@ -821,7 +821,6 @@ describe('TopologySnapshotRefresher contracts', function () {
         $converger = new TopologyConverger($host);
         $verifier = new TopologyVerifier($host, 1, 0);
         $builder = new TopologySnapshotBuilder(
-            $host,
             new ColdTopologyConstructor(
                 $host,
                 new IncusNetworkLifecycle($host),

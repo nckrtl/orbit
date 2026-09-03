@@ -30,15 +30,22 @@ final readonly class TopologyConverger
             TopologyProfile::ROLES,
             array_map($target->instance(...), TopologyProfile::ROLES),
         );
+        $nodes = array_combine(
+            $target->recipe->nodeKeys(),
+            array_map($target->instance(...), $target->recipe->nodeKeys()),
+        );
+        $gatewayNode = $target->recipe->nodeForRole('gateway')->key;
+        $appDevNode = $target->recipe->nodeForRole('app-dev')->key;
+        $appProdNode = $target->recipe->nodeForRole('app-prod')->key;
 
-        $this->host->assertTopologyNetworkIdentity($instances, $target->network(), $target);
-        $addresses = $this->host->globalIpv4All($instances);
+        $this->host->assertTopologyNetworkIdentity($nodes, $target->network(), $target);
+        $addresses = $this->host->globalIpv4All($nodes);
 
         $steps = ['validate.prerequisites' => true];
 
         $identityCommands = [];
-        foreach ($instances as $role => $instance) {
-            $identityCommands[$role] = [
+        foreach ($nodes as $node => $instance) {
+            $identityCommands[$node] = [
                 'instance' => $instance,
                 'script' => 'prepare-node.sh',
                 'arguments' => ['align-identity'],
@@ -49,7 +56,7 @@ final readonly class TopologyConverger
 
         $this->run($instances['gateway'], 'converge-gateway.sh', ['prerequisites']);
         $steps['prerequisites.gateway'] = true;
-        $this->run($instances['gateway'], 'converge-gateway.sh', ['bootstrap', $addresses['gateway']]);
+        $this->run($instances['gateway'], 'converge-gateway.sh', ['bootstrap', $addresses[$gatewayNode]]);
         $steps['bootstrap.gateway'] = true;
         $gatewayPublicKey = $this->gatewayPublicKey($instances['gateway']);
         $this->runAll([
@@ -69,12 +76,12 @@ final readonly class TopologyConverger
             'app-dev' => [
                 'instance' => $instances['app-dev'],
                 'script' => 'retarget-vpn.sh',
-                'arguments' => [$addresses['gateway']],
+                'arguments' => [$addresses[$gatewayNode]],
             ],
             'app-prod' => [
                 'instance' => $instances['app-prod'],
                 'script' => 'retarget-vpn.sh',
-                'arguments' => [$addresses['gateway']],
+                'arguments' => [$addresses[$gatewayNode]],
             ],
         ]);
         $steps['retarget.vpn'] = true;
@@ -89,14 +96,14 @@ final readonly class TopologyConverger
             'app-dev' => [
                 'instance' => $instances['gateway'],
                 'script' => 'converge-app-dev.sh',
-                'arguments' => ['app-dev', $addresses['app-dev'], $appDevArchitecture],
+                'arguments' => [$appDevNode, $addresses[$appDevNode], $appDevArchitecture],
             ],
         ]);
         $this->runAll([
             'app-prod' => [
                 'instance' => $instances['gateway'],
                 'script' => 'converge-app-prod-internal-tls.sh',
-                'arguments' => ['app-prod', $addresses['app-prod'], $appProdArchitecture],
+                'arguments' => [$appProdNode, $addresses[$appProdNode], $appProdArchitecture],
             ],
         ]);
         $steps['provision.app-dev'] = true;
@@ -106,8 +113,8 @@ final readonly class TopologyConverger
             'converge-sample-app.sh',
             [
                 'grant-operator',
-                'app-dev',
-                'gateway',
+                $appDevNode,
+                $gatewayNode,
             ],
         );
         $steps['authorize.app-dev-operator'] = true;
@@ -115,13 +122,13 @@ final readonly class TopologyConverger
         $steps['configure.app-dev-cli'] = true;
         $sampleResources = $this->run($instances['app-dev'], 'converge-sample-app.sh', [
             'create-resources',
-            'app-dev',
-            'app-prod',
+            $appDevNode,
+            $appProdNode,
             $laravel->commit,
         ]);
         $typedCheckoutPath = $this->typedCheckoutPath($sampleResources);
         $steps['create.sample-resources'] = true;
-        $this->run($instances['app-dev'], 'converge-sample-app.sh', ['metrics']);
+        $this->run($instances['app-dev'], 'converge-sample-app.sh', ['metrics', $appDevNode]);
         $steps['converge.metrics'] = true;
         // Rolling refreshes restore snapshots and skip provisioning, so the
         // product must re-render every projection from the checked-out code.
@@ -132,7 +139,7 @@ final readonly class TopologyConverger
         }
         $this->run($instances['app-dev'], 'converge-sample-app.sh', ['reproject']);
         $steps['reproject.product-state'] = true;
-        $this->run($instances['app-dev'], 'converge-sample-app.sh', ['metrics-publication']);
+        $this->run($instances['app-dev'], 'converge-sample-app.sh', ['metrics-publication', $appDevNode]);
         $steps['refresh.metrics-publication'] = true;
 
         if ($typedCheckoutPath !== null) {
@@ -160,8 +167,8 @@ final readonly class TopologyConverger
         $steps['hydrate.sample-apps'] = true;
 
         $permissionCommands = [];
-        foreach ($instances as $role => $instance) {
-            $permissionCommands[$role] = [
+        foreach ($nodes as $node => $instance) {
+            $permissionCommands[$node] = [
                 'instance' => $instance,
                 'script' => 'prepare-node.sh',
                 'arguments' => ['permissions'],

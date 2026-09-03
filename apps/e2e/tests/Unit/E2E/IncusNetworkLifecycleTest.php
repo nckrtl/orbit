@@ -345,12 +345,16 @@ describe('IncusNetworkLifecycle', function (): void {
                 return Process::result(json_encode([[
                     'name' => 'oe-nck-123',
                     'config' => $networkLists === 1
-                        ? ['user.orbit.e2e.owner' => 'orbit-e2e', 'ipv4.address' => '10.232.2.1/24']
+                        ? [
+                            'user.orbit.e2e.owner' => 'orbit-e2e',
+                            'ipv4.address' => '10.232.2.1/24',
+                            'ipv4.dhcp.ranges' => '10.232.2.10-10.232.2.13',
+                        ]
                         : [
                             'user.orbit.e2e.owner' => 'orbit-e2e',
                             'ipv4.address' => '10.232.2.1/24',
                             'ipv4.nat' => 'true',
-                            'ipv4.dhcp.ranges' => '10.232.2.10-10.232.2.12',
+                            'ipv4.dhcp.ranges' => '10.232.2.10-10.232.2.13',
                             'ipv6.address' => 'none',
                             'raw.dnsmasq' => lifecycleDnsmasq(),
                         ],
@@ -367,7 +371,6 @@ describe('IncusNetworkLifecycle', function (): void {
                     'set',
                     'local:oe-nck-123',
                     'ipv4.nat=true',
-                    'ipv4.dhcp.ranges=10.232.2.10-10.232.2.12',
                     'ipv6.address=none',
                     'raw.dnsmasq='.lifecycleDnsmasq(),
                 )
@@ -382,7 +385,7 @@ describe('IncusNetworkLifecycle', function (): void {
         expect($network->config)->toMatchArray([
             'ipv4.address' => '10.232.2.1/24',
             'ipv4.nat' => 'true',
-            'ipv4.dhcp.ranges' => '10.232.2.10-10.232.2.12',
+            'ipv4.dhcp.ranges' => '10.232.2.10-10.232.2.13',
             'ipv6.address' => 'none',
             'raw.dnsmasq' => lifecycleDnsmasq(),
         ]);
@@ -394,7 +397,6 @@ describe('IncusNetworkLifecycle', function (): void {
             'set',
             'local:oe-nck-123',
             'ipv4.nat=true',
-            'ipv4.dhcp.ranges=10.232.2.10-10.232.2.12',
             'ipv6.address=none',
             'raw.dnsmasq='.lifecycleDnsmasq(),
         ), 1);
