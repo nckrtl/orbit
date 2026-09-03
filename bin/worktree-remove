@@ -28,9 +28,14 @@ if git worktree list --porcelain | grep -Fx "worktree $worktree" >/dev/null; the
         exit 1
     fi
 
-    # A live topology dies with its worktree: release it first.
+    # Both issue topologies die with the worktree: release proof, then discovery.
+    if [[ -f "$worktree/.e2e/proof-attempt.json" ]]; then
+        printf 'Releasing the proof topology of %s\n' "$linear_id"
+        "$primary_root/bin/e2e-topology" release "$linear_id" "--worktree=$worktree" --proof
+    fi
+
     if [[ -f "$worktree/.e2e/attempt.json" ]]; then
-        printf 'Releasing the live topology of %s\n' "$linear_id"
+        printf 'Releasing the discovery topology of %s\n' "$linear_id"
         "$primary_root/bin/e2e-topology" release "$linear_id" "--worktree=$worktree"
     fi
 

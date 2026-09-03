@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+
+if [[ $# -lt 1 ]]; then
+    cat >&2 <<'USAGE'
+usage: bin/e2e-topology-snapshot <action> [options]
+
+  status                        show the promoted topology snapshot generation
+  fingerprint --main-sha=SHA    compute the prepared-state fingerprint
+  promote ISSUE                 make the issue's proved topology the topology snapshot generation, then release it
+  refresh --main-sha=SHA        fallback: refresh the topology snapshot in place when the fingerprint changed
+  restore                       restore the promoted generation and leave it stopped
+  rebuild --main-sha=SHA        recovery: when exact topology snapshot resources are absent, forget stale
+                                manifests and build the topology snapshot again from the base image
+  recover-legacy --main-sha=SHA disaster recovery: prove ownership of present legacy resources,
+                                retain evidence, and build the topology snapshot again
+
+Orbit keeps one persistent topology snapshot. Discovery and proof topologies are
+disposable copies of it, and successful retained proof is promoted into it.
+USAGE
+    exit 64
+fi
+
+action=$1
+shift
+
+case "$action" in
+    status|fingerprint|promote|refresh|restore|rebuild|recover-legacy)
+        exec php "$root/apps/e2e/artisan" "topology-snapshot:$action" "$@"
+        ;;
+    *)
+        echo "unknown topology snapshot action: $action" >&2
+        exit 64
+        ;;
+esac

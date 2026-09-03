@@ -49,6 +49,20 @@ function nck73ProofPlan(): ProofPlan
 }
 
 describe('ProofPlan', function (): void {
+    it('opts into observed PHP inputs explicitly and fingerprints the choice', function (): void {
+        $plain = ProofPlan::fromArray(proofPlanFixture());
+        $observed = ProofPlan::fromArray([...proofPlanFixture(), 'observed_inputs' => true]);
+
+        expect($plain->observedInputs)
+            ->toBeFalse()
+            ->and($observed->observedInputs)
+            ->toBeTrue()
+            ->and($observed->toArray()['observed_inputs'])
+            ->toBeTrue()
+            ->and($observed->fingerprint())
+            ->not->toBe($plain->fingerprint());
+    });
+
     it('reads the declared setup, acceptance, and post-deployment actions from a file', function (): void {
         $plan = ProofPlan::fromFile(proofPlanFile(proofPlanFixture()));
 
@@ -91,6 +105,17 @@ describe('ProofPlan', function (): void {
             ]);
     });
 
+    it('fingerprints the complete normalized proof contract', function (): void {
+        $plan = ProofPlan::fromArray(proofPlanFixture());
+        $changed = proofPlanFixture();
+        $changed['acceptance'][0]['timeout_seconds'] = 61;
+
+        expect($plan->fingerprint())
+            ->toMatch('/\A[0-9a-f]{64}\z/D')
+            ->toBe(ProofPlan::fromArray(proofPlanFixture())->fingerprint())
+            ->not->toBe(ProofPlan::fromArray($changed)->fingerprint());
+    });
+
     it('rejects a missing or unreadable file', function (): void {
         expect(fn () => ProofPlan::fromFile(temporaryPath('orbit-proof-plan-missing-')))
             ->toThrow(InvalidArgumentException::class, 'The proof plan file cannot be read.');
@@ -125,6 +150,69 @@ describe('ProofPlan', function (): void {
             ->toBe(proofPlanFixture());
     });
 
+    it('rejects expected exit overrides because every proof action must exit zero', function (): void {
+        expect(fn () => ProofPlan::fromFile(mutatedProofPlanFile(function (array $plan): array {
+            $plan['acceptance'][0]['expected_exit_code'] = 124;
+
+            return $plan;
+        })))
+            ->toThrow(
+                InvalidArgumentException::class,
+                'Proof action [acceptance#0] must have exactly the keys id, node, argv, and timeout_seconds.',
+            );
+    });
+
+    it('declares unique additional candidate fixture issues', function (): void {
+        $plan = ProofPlan::fromFile(proofPlanFile(
+            proofPlanFixture()
+            + [
+                'fixture_issues' => ['NCK-73', 'NCK-104', 'NCK-108', 'NCK-116'],
+            ],
+        ));
+
+        expect($plan->fixtureIssues)
+            ->toBe(['NCK-73', 'NCK-104', 'NCK-108', 'NCK-116'])
+            ->and($plan->toArray()['fixture_issues'] ?? null)
+            ->toBe(['NCK-73', 'NCK-104', 'NCK-108', 'NCK-116']);
+    });
+
+    it('rejects duplicate or invalid additional fixture issues', function (array $issues): void {
+        expect(fn () => ProofPlan::fromFile(proofPlanFile(proofPlanFixture() + ['fixture_issues' => $issues])))
+            ->toThrow(InvalidArgumentException::class, 'The proof fixture issue list is invalid.');
+    })->with([
+        'duplicate' => [['NCK-73', 'NCK-73']],
+        'lowercase' => [['nck-73']],
+        'empty' => [[]],
+    ]);
+
+    it('normalizes declared extra proof inputs into the plan fingerprint', function (): void {
+        $plan = ProofPlan::fromFile(proofPlanFile(
+            proofPlanFixture()
+            + [
+                'inputs' => ['docs/reference/', 'proofs/shared/input.txt'],
+            ],
+        ));
+
+        expect($plan->inputs)
+            ->toBe(['docs/reference', 'proofs/shared/input.txt'])
+            ->and($plan->toArray()['inputs'] ?? null)
+            ->toBe(['docs/reference', 'proofs/shared/input.txt'])
+            ->and($plan->fingerprint())
+            ->not->toBe(ProofPlan::fromArray(proofPlanFixture())->fingerprint());
+    });
+
+    it('rejects unsafe, empty, or duplicate extra proof inputs', function (array $inputs): void {
+        expect(fn () => ProofPlan::fromFile(proofPlanFile(proofPlanFixture() + ['inputs' => $inputs])))
+            ->toThrow(InvalidArgumentException::class, 'The proof input list is invalid.');
+    })->with([
+        'empty' => [[]],
+        'absolute' => [['/docs/reference']],
+        'parent component' => [['docs/../reference']],
+        'dot component' => [['docs/./reference']],
+        'duplicate after normalization' => [['docs/reference', 'docs/reference/']],
+        'unsupported character' => [['docs/reference name']],
+    ]);
+
     it('classifies the NCK-73 lifecycle proof as mutating', function (): void {
         expect(nck73ProofPlan()->mutates)->toBeTrue();
     });
@@ -154,7 +242,7 @@ describe('ProofPlan', function (): void {
             ->toThrow(
                 InvalidArgumentException::class,
                 'The proof plan must have exactly the keys setup and acceptance, '
-                .'plus an optional mutates and ends_with.',
+                .'plus optional mutates, ends_with, fixture_issues, inputs, and observed_inputs.',
             );
     })->with([
         'missing setup' => [function (array $plan): array {

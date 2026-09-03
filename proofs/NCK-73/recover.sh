@@ -1,11 +1,17 @@
 #!/usr/bin/env bash
 # A failed assignment (Docker stopped) is recovered by node:role:add app-dev metrics --converge.
-source /var/lib/orbit-e2e/proof/lib.sh
+proof_root=${ORBIT_E2E_PROOF_ROOT:-/var/lib/orbit-e2e/proof}
+source "$proof_root/lib.sh"
 
+orb7_service_traps recover
+orb7_service_record recover docker.socket docker.service
+orb7_checkpoint recover post-record
 sudo systemctl stop docker.socket docker.service
+orb7_checkpoint recover post-mutation
 attempt=$(orbit metrics:enable app-dev --json || true)
-sudo systemctl start docker.socket docker.service
-echo "$attempt" | grep -q '"code":"node_role.convergence_failed"' || fail "enable did not fail as expected: $attempt"
+orb7_restore_services recover
+trap - EXIT INT TERM
+grep -q '"code":"node_role.convergence_failed"' <<<"$attempt" || fail "enable did not fail as expected: $attempt"
 [[ "$(orbit metrics:status --json | json_get assignment.status)" == failed ]] || fail "assignment not failed"
 
 orbit node:role:add app-dev metrics --converge --json >/dev/null

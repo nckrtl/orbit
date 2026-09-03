@@ -1,0 +1,343 @@
+{
+    "setup": [
+        {
+            "id": "install-non-orbit-user-app-dev",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/user-fixture.sh", "install-authorized", "nck121-user"],
+            "timeout_seconds": 60
+        },
+        {
+            "id": "install-non-orbit-user-app-prod",
+            "node": "app-prod",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/user-fixture.sh", "install-authorized", "nck121-user"],
+            "timeout_seconds": 60
+        },
+        {
+            "id": "install-non-orbit-user-gateway",
+            "node": "gateway",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/user-fixture.sh", "install-authorized", "nck121-user"],
+            "timeout_seconds": 60
+        },
+        {
+            "id": "configure-non-orbit-node-identities",
+            "node": "gateway",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/database-fixture.sh", "set-all", "nck121-user"],
+            "timeout_seconds": 60
+        }
+    ],
+    "acceptance": [
+        {
+            "id": "start-non-orbit-auth-app-dev",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/auth-window.sh", "start", "non-orbit"],
+            "timeout_seconds": 30
+        },
+        {
+            "id": "start-non-orbit-auth-app-prod",
+            "node": "app-prod",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/auth-window.sh", "start", "non-orbit"],
+            "timeout_seconds": 30
+        },
+        {
+            "id": "start-non-orbit-auth-gateway",
+            "node": "gateway",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/auth-window.sh", "start", "non-orbit"],
+            "timeout_seconds": 30
+        },
+        {
+            "id": "non-orbit-enable-converge-inspect",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/success-enable.sh", "non-orbit"],
+            "timeout_seconds": 900
+        },
+        {
+            "id": "non-orbit-active-metrics-boundaries",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/active-state.sh", "metrics", "nck121-user"],
+            "timeout_seconds": 60
+        },
+        {
+            "id": "non-orbit-active-exporter-boundaries",
+            "node": "app-prod",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/active-state.sh", "exporter", "nck121-user"],
+            "timeout_seconds": 60
+        },
+        {
+            "id": "non-orbit-active-publication-boundaries",
+            "node": "gateway",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/active-state.sh", "gateway", "nck121-user"],
+            "timeout_seconds": 60
+        },
+        {
+            "id": "non-orbit-disable-cleanup",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/success-disable.sh", "non-orbit"],
+            "timeout_seconds": 900
+        },
+        {
+            "id": "non-orbit-clean-metrics-state",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/cleanup-state.sh", "metrics"],
+            "timeout_seconds": 60
+        },
+        {
+            "id": "non-orbit-clean-exporter-state",
+            "node": "app-prod",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/cleanup-state.sh", "exporter"],
+            "timeout_seconds": 60
+        },
+        {
+            "id": "non-orbit-clean-publication-state",
+            "node": "gateway",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/cleanup-state.sh", "gateway"],
+            "timeout_seconds": 60
+        },
+        {
+            "id": "non-orbit-auth-app-dev",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/auth-window.sh", "accepted", "non-orbit", "nck121-user"],
+            "timeout_seconds": 30
+        },
+        {
+            "id": "non-orbit-auth-app-prod",
+            "node": "app-prod",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/auth-window.sh", "accepted", "non-orbit", "nck121-user"],
+            "timeout_seconds": 30
+        },
+        {
+            "id": "non-orbit-auth-gateway",
+            "node": "gateway",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/auth-window.sh", "accepted", "non-orbit", "nck121-user"],
+            "timeout_seconds": 30
+        },
+        {
+            "id": "restore-orbit-node-identities",
+            "node": "gateway",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/database-fixture.sh", "set-all", "orbit"],
+            "timeout_seconds": 60
+        },
+        {
+            "id": "remove-non-orbit-user-app-dev",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/user-fixture.sh", "remove", "nck121-user"],
+            "timeout_seconds": 60
+        },
+        {
+            "id": "remove-non-orbit-user-app-prod",
+            "node": "app-prod",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/user-fixture.sh", "remove", "nck121-user"],
+            "timeout_seconds": 60
+        },
+        {
+            "id": "remove-non-orbit-user-gateway",
+            "node": "gateway",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/user-fixture.sh", "remove", "nck121-user"],
+            "timeout_seconds": 60
+        },
+        {
+            "id": "start-orbit-auth-app-dev",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/auth-window.sh", "start", "orbit"],
+            "timeout_seconds": 30
+        },
+        {
+            "id": "start-orbit-auth-app-prod",
+            "node": "app-prod",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/auth-window.sh", "start", "orbit"],
+            "timeout_seconds": 30
+        },
+        {
+            "id": "start-orbit-auth-gateway",
+            "node": "gateway",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/auth-window.sh", "start", "orbit"],
+            "timeout_seconds": 30
+        },
+        {
+            "id": "orbit-enable-converge-inspect",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/success-enable.sh", "orbit"],
+            "timeout_seconds": 900
+        },
+        {
+            "id": "orbit-active-metrics-boundaries",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/active-state.sh", "metrics", "orbit"],
+            "timeout_seconds": 60
+        },
+        {
+            "id": "orbit-active-exporter-boundaries",
+            "node": "app-prod",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/active-state.sh", "exporter", "orbit"],
+            "timeout_seconds": 60
+        },
+        {
+            "id": "orbit-active-publication-boundaries",
+            "node": "gateway",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/active-state.sh", "gateway", "orbit"],
+            "timeout_seconds": 60
+        },
+        {
+            "id": "orbit-disable-cleanup",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/success-disable.sh", "orbit"],
+            "timeout_seconds": 900
+        },
+        {
+            "id": "orbit-clean-metrics-state",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/cleanup-state.sh", "metrics"],
+            "timeout_seconds": 60
+        },
+        {
+            "id": "orbit-clean-exporter-state",
+            "node": "app-prod",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/cleanup-state.sh", "exporter"],
+            "timeout_seconds": 60
+        },
+        {
+            "id": "orbit-clean-publication-state",
+            "node": "gateway",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/cleanup-state.sh", "gateway"],
+            "timeout_seconds": 60
+        },
+        {
+            "id": "orbit-auth-app-dev",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/auth-window.sh", "accepted", "orbit", "orbit"],
+            "timeout_seconds": 30
+        },
+        {
+            "id": "orbit-auth-app-prod",
+            "node": "app-prod",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/auth-window.sh", "accepted", "orbit", "orbit"],
+            "timeout_seconds": 30
+        },
+        {
+            "id": "orbit-auth-gateway",
+            "node": "gateway",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/auth-window.sh", "accepted", "orbit", "orbit"],
+            "timeout_seconds": 30
+        },
+        {
+            "id": "reactivate-orbit-metrics",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/reactivate.sh"],
+            "timeout_seconds": 900
+        },
+        {
+            "id": "snapshot-invalid-identity",
+            "node": "gateway",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/database-fixture.sh", "snapshot-corrupt", "invalid", "invalid user"],
+            "timeout_seconds": 60
+        },
+        {
+            "id": "start-invalid-auth",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/auth-window.sh", "start", "invalid"],
+            "timeout_seconds": 30
+        },
+        {
+            "id": "invalid-identity-lifecycle-failure",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/failure-action.sh", "invalid"],
+            "timeout_seconds": 300
+        },
+        {
+            "id": "invalid-identity-no-authentication",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/auth-window.sh", "none", "invalid"],
+            "timeout_seconds": 30
+        },
+        {
+            "id": "restore-invalid-fixture",
+            "node": "gateway",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/database-fixture.sh", "restore", "invalid"],
+            "timeout_seconds": 60
+        },
+        {
+            "id": "isolate-invalid-host-state-disable",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/success-disable.sh", "invalid-isolation"],
+            "timeout_seconds": 900
+        },
+        {
+            "id": "isolate-invalid-host-state-reactivate",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/reactivate.sh"],
+            "timeout_seconds": 900
+        },
+        {
+            "id": "snapshot-missing-identity",
+            "node": "gateway",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/database-fixture.sh", "snapshot-corrupt", "missing", ""],
+            "timeout_seconds": 60
+        },
+        {
+            "id": "start-missing-auth",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/auth-window.sh", "start", "missing"],
+            "timeout_seconds": 30
+        },
+        {
+            "id": "missing-identity-structured-failure",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/failure-action.sh", "missing"],
+            "timeout_seconds": 300
+        },
+        {
+            "id": "missing-identity-no-authentication",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/auth-window.sh", "none", "missing"],
+            "timeout_seconds": 30
+        },
+        {
+            "id": "restore-missing-fixture",
+            "node": "gateway",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/database-fixture.sh", "restore", "missing"],
+            "timeout_seconds": 60
+        },
+        {
+            "id": "install-unusable-user",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/user-fixture.sh", "install-noauth", "nck121-noauth"],
+            "timeout_seconds": 60
+        },
+        {
+            "id": "snapshot-unusable-identity",
+            "node": "gateway",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/database-fixture.sh", "snapshot-corrupt", "unusable", "nck121-noauth"],
+            "timeout_seconds": 60
+        },
+        {
+            "id": "start-unusable-auth",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/auth-window.sh", "start", "unusable"],
+            "timeout_seconds": 30
+        },
+        {
+            "id": "unusable-identity-structured-failure",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/failure-action.sh", "unusable"],
+            "timeout_seconds": 300
+        },
+        {
+            "id": "unusable-identity-ssh-rejection",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/auth-window.sh", "rejected", "unusable", "nck121-noauth"],
+            "timeout_seconds": 30
+        },
+        {
+            "id": "restore-unusable-fixture",
+            "node": "gateway",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/database-fixture.sh", "restore", "unusable"],
+            "timeout_seconds": 60
+        },
+        {
+            "id": "remove-unusable-user",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/user-fixture.sh", "remove", "nck121-noauth"],
+            "timeout_seconds": 60
+        }
+    ],
+    "mutates": true
+}

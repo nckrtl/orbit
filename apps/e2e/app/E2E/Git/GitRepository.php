@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\E2E\Git;
 
+use App\E2E\Value\AttemptId;
+use App\E2E\Value\TopologyTarget;
 use Illuminate\Support\Facades\Process;
 use InvalidArgumentException;
 use RuntimeException;
@@ -127,6 +129,25 @@ final readonly class GitRepository
         } finally {
             $this->run(['update-ref', '-d', $ref, $commit]);
         }
+    }
+
+    /** Keep a successful proof candidate reachable across a later rebase. */
+    public function pinProof(string $issue, AttemptId $attempt, string $commit): void
+    {
+        TopologyTarget::assertIssue($issue);
+        $this->validateSha($commit);
+        if (! $this->hasCommit($commit)) {
+            throw new InvalidArgumentException('The proof candidate commit does not exist.');
+        }
+
+        $this->run(['update-ref', $this->proofReference($issue, $attempt), $commit, str_repeat('0', 40)]);
+    }
+
+    /** Remove the reachability pin when the corresponding proof is released. */
+    public function unpinProof(string $issue, AttemptId $attempt): void
+    {
+        TopologyTarget::assertIssue($issue);
+        $this->run(['update-ref', '-d', $this->proofReference($issue, $attempt)]);
     }
 
     public function dirtyOverlay(): ?\App\E2E\Value\DirtyOverlay
@@ -390,6 +411,89 @@ final readonly class GitRepository
     }
 
     /**
+     * Every tracked path in one exact commit, ordered by repository path.
+     *
+     * @return array<string, array{mode:string,type:string,object:string}>
+     */
+    public function entries(string $commit): array
+    {
+        $this->validateReachableCommit($commit);
+
+        return $this->treeEntries($commit);
+    }
+
+    /**
+     * Compare two exact trees without depending on their ancestry. Exact-blob
+     * renames are paired before the remaining additions and deletions.
+     *
+     * @return list<array{path:string,previous_path:?string,change:string}>
+     */
+    public function changes(string $fromCommit, string $toCommit): array
+    {
+        $from = $this->entries($fromCommit);
+        $to = $this->entries($toCommit);
+        $changes = [];
+        $deleted = [];
+        $added = [];
+
+        foreach ($from as $path => $entry) {
+            if (! array_key_exists($path, $to)) {
+                $deleted[$path] = $entry;
+
+                continue;
+            }
+            $next = $to[$path];
+            if ($entry === $next) {
+                continue;
+            }
+            $changes[] = [
+                'path' => $path,
+                'previous_path' => null,
+                'change' => $this->changedEntryKind($entry, $next),
+            ];
+        }
+        foreach ($to as $path => $entry) {
+            if (! array_key_exists($path, $from)) {
+                $added[$path] = $entry;
+            }
+        }
+
+        foreach ($deleted as $previousPath => $entry) {
+            $renamedPath = array_find_key($added, fn ($candidate) => $entry === $candidate);
+            if ($renamedPath === null) {
+                continue;
+            }
+            $changes[] = [
+                'path' => $renamedPath,
+                'previous_path' => $previousPath,
+                'change' => 'renamed',
+            ];
+            unset($deleted[$previousPath], $added[$renamedPath]);
+        }
+        foreach ($deleted as $path => $entry) {
+            $changes[] = ['path' => $path, 'previous_path' => null, 'change' => 'deleted'];
+        }
+        foreach ($added as $path => $entry) {
+            $changes[] = ['path' => $path, 'previous_path' => null, 'change' => 'added'];
+        }
+
+        usort(
+            $changes,
+            static fn (array $left, array $right): int => (
+                [
+                    $left['path'],
+                    $left['previous_path'] ?? '',
+                ] <=> [
+                    $right['path'],
+                    $right['previous_path'] ?? '',
+                ]
+            ),
+        );
+
+        return $changes;
+    }
+
+    /**
      * @param array<string, string> $selected
      * @return array<string, string>
      */
@@ -446,6 +550,7 @@ final readonly class GitRepository
             'refs/heads',
             'refs/remotes',
             'refs/tags',
+            'refs/orbit',
         ]));
 
         if ($references === '') {
@@ -495,6 +600,40 @@ final readonly class GitRepository
         ksort($entries, SORT_STRING);
 
         return $entries;
+    }
+
+    /**
+     * @param array{mode:string,type:string,object:string} $from
+     * @param array{mode:string,type:string,object:string} $to
+     */
+    private function changedEntryKind(array $from, array $to): string
+    {
+        if ($this->entryType($from) !== $this->entryType($to)) {
+            return 'type-changed';
+        }
+        if ($from['mode'] !== $to['mode'] && $from['object'] !== $to['object']) {
+            return 'content-and-mode-changed';
+        }
+        if ($from['mode'] !== $to['mode']) {
+            return 'mode-changed';
+        }
+
+        return 'content-changed';
+    }
+
+    /** @param array{mode:string,type:string,object:string} $entry */
+    private function entryType(array $entry): string
+    {
+        return match (true) {
+            $entry['mode'] === '120000' => 'symlink',
+            $entry['mode'] === '160000', $entry['type'] === 'commit' => 'gitlink',
+            default => $entry['type'],
+        };
+    }
+
+    private function proofReference(string $issue, AttemptId $attempt): string
+    {
+        return 'refs/orbit/e2e-proof/'.strtolower($issue).'/'.$attempt->value;
     }
 
     private function matches(string $pattern, string $path): bool

@@ -44,6 +44,7 @@ describe('app:new', function (): void {
                 'slug' => 'orbit',
                 'repository' => 'git@github.com:nckrtl/orbit.git',
                 '--name' => 'Orbit',
+                '--main-branch' => 'stable',
                 '--json' => true,
             ])
             ->expectsOutput(app_json())
@@ -60,6 +61,7 @@ describe('app:new', function (): void {
                 'name' => 'Orbit',
                 'slug' => 'orbit',
                 'repository_url' => 'git@github.com:nckrtl/orbit.git',
+                'main_branch' => 'stable',
                 'root' => 'public',
             ]);
     });
@@ -75,6 +77,23 @@ describe('app:new', function (): void {
             ->expectsOutput('App [orbit] created.')
             ->expectsOutput('Request ID: '.app_request_id())
             ->assertExitCode(0);
+    });
+
+    it('transports a custom relative root', function (): void {
+        $mockClient = MockClient::global([
+            CreateAppRequest::class => app_mock_response(201),
+        ]);
+
+        $this
+            ->artisan('app:new', [
+                'slug' => 'orbit',
+                'repository' => 'git@github.com:nckrtl/orbit.git',
+                '--root' => 'web/public',
+            ])
+            ->assertExitCode(0);
+
+        expect($mockClient->getLastRequest()?->body()->all()['root'] ?? null)
+            ->toBe('web/public');
     });
 
     it('rejects an unbounded or control-bearing slug without disclosure or gateway IO', function (string $slug): void {
@@ -356,6 +375,25 @@ describe('app:show', function (): void {
             ->expectsOutput('Main branch: main')
             ->expectsOutput('Root: public')
             ->expectsOutput('Request ID: '.app_request_id())
+            ->assertExitCode(0);
+    });
+
+    it('returns legacy null source defaults unchanged', function (): void {
+        $payload = [...app_payload(), 'main_branch' => null, 'root' => null];
+        MockClient::global([
+            ShowAppRequest::class => MockResponse::make([
+                'data' => $payload,
+                'meta' => ['request_id' => app_request_id()],
+            ]),
+        ]);
+        $expected = json_encode([
+            ...$payload,
+            'request_id' => app_request_id(),
+        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+
+        $this
+            ->artisan('app:show', ['app' => '3', '--json' => true])
+            ->expectsOutput($expected)
             ->assertExitCode(0);
     });
 });

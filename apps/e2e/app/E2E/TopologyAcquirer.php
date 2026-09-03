@@ -16,10 +16,10 @@ use App\E2E\Value\MountPath;
 use App\E2E\Value\OperationId;
 use App\E2E\Value\PreparedFingerprint;
 use App\E2E\Value\SourceState;
-use App\E2E\Value\StandbyGeneration;
-use App\E2E\Value\StandbyIdentity;
 use App\E2E\Value\TopologyProfile;
 use App\E2E\Value\TopologyRequest;
+use App\E2E\Value\TopologySnapshotGeneration;
+use App\E2E\Value\TopologySnapshotIdentity;
 use App\E2E\Value\TopologyTarget;
 use App\E2E\Value\VerificationMode;
 use Closure;
@@ -31,7 +31,7 @@ use Throwable;
  * Acquire, sync, verify, and exec on one issue's discovery topology.
  *
  * The attempt lives in `<worktree>/.e2e/`. The three VMs are cloned from the
- * promoted standby snapshot, the worktree is mounted on the checkout roles, and
+ * promoted topology snapshot, the worktree is mounted on the checkout roles, and
  * the topology stays alive until `release`.
  *
  * @mago-expect lint:excessive-parameter-list The lifecycle dependencies are explicit trust boundaries.
@@ -50,14 +50,14 @@ final readonly class TopologyAcquirer
         private IncusHost $host,
         private IncusNetworkLifecycle $networks,
         private PreparedStateFingerprint $fingerprints,
-        private StandbyManifestStore $standby,
+        private TopologySnapshotManifestStore $topologySnapshot,
         private WorktreeSynchronizer $synchronizer,
         private TopologyVerifier $verifier,
         private DiscoveryGuestPreparer $guests,
         private HostCapacity $capacity,
         private StatePaths $hostPaths,
         private OperationId $operation,
-        private StandbyIdentity $standbyIdentity,
+        private TopologySnapshotIdentity $topologySnapshotIdentity,
         private string $repositoryRoot = '',
         /** @var (Closure(): AttemptId)|null Mints the attempt identity; injectable so tests pin resource names. */
         private ?Closure $attempts = null,
@@ -69,9 +69,11 @@ final readonly class TopologyAcquirer
         $state = IssueState::forWorktree($request->issue, $request->worktree);
         $lock = $this->issueLock($request->issue);
         try {
-            if ($state->hasAttempt()) {
+            if ($state->hasAttempt(AttemptPurpose::Discovery)) {
                 throw new RuntimeException(
-                    "{$request->issue} already has attempt {$state->attemptId()->value}; release it first.",
+                    "{$request->issue} already has discovery attempt "
+                    .$state->attemptId(AttemptPurpose::Discovery)->value
+                    .'; release it first.',
                 );
             }
 
@@ -87,7 +89,7 @@ final readonly class TopologyAcquirer
         $state = IssueState::forWorktree($request->issue, $request->worktree);
         $lock = $this->issueLock($request->issue);
         try {
-            $topology = $this->mutableTopology($state);
+            $topology = $this->mutableTopology($state, AttemptPurpose::Discovery);
             $this->assertColdBaseMatchesMain($request->worktree);
             $this->networks->reconcile($topology->target->network());
             $this->guests->assertSourceMounted($topology->target);
@@ -117,7 +119,7 @@ final readonly class TopologyAcquirer
         $state = IssueState::forWorktree($request->issue, $request->worktree);
         $lock = $this->issueLock($request->issue);
         try {
-            $topology = $state->requireTopology();
+            $topology = $state->requireTopology(AttemptPurpose::Discovery);
             $this->networks->reconcile($topology->target->network());
             if ($topology->source->mounted) {
                 $this->guests->assertSourceMounted($topology->target);
@@ -148,11 +150,12 @@ final readonly class TopologyAcquirer
         string $role,
         array $argv,
         ?string $stdin = null,
+        AttemptPurpose $purpose = AttemptPurpose::Discovery,
     ): GuestCommandResult {
         $state = IssueState::forWorktree($request->issue, $request->worktree);
         $lock = $this->issueLock($request->issue);
         try {
-            $instance = $this->ownedInstance($this->mutableTopology($state), $role);
+            $instance = $this->ownedInstance($this->mutableTopology($state, $purpose), $role);
 
             return $this->host->exec($instance, GuestCommand::asOrbitUser($argv, stdin: $stdin));
         } finally {
@@ -161,11 +164,14 @@ final readonly class TopologyAcquirer
     }
 
     /** The exact VM of one role, revalidated against the record; `shell` attaches to it. */
-    public function instance(TopologyRequest $request, string $role): string
-    {
+    public function instance(
+        TopologyRequest $request,
+        string $role,
+        AttemptPurpose $purpose = AttemptPurpose::Discovery,
+    ): string {
         $state = IssueState::forWorktree($request->issue, $request->worktree);
 
-        return $this->ownedInstance($state->requireTopology(), $role);
+        return $this->ownedInstance($this->mutableTopology($state, $purpose), $role);
     }
 
     private function create(TopologyRequest $request, IssueState $state): FeatureTopology
@@ -240,7 +246,7 @@ final readonly class TopologyAcquirer
      */
     private function createResources(
         TopologyTarget $target,
-        StandbyGeneration $generation,
+        TopologySnapshotGeneration $generation,
         array $metadata,
         array $mounts,
     ): void {
@@ -254,7 +260,7 @@ final readonly class TopologyAcquirer
             $copies = [];
             foreach (TopologyProfile::ROLES as $role) {
                 $copies[$role] = [
-                    'source' => TopologyTarget::standby($this->standbyIdentity)->instance($role),
+                    'source' => TopologyTarget::topologySnapshot($this->topologySnapshotIdentity)->instance($role),
                     'snapshot' => $generation->snapshots[$role],
                     'target' => $target->instance($role),
                     'metadata' => [...$metadata, 'user.orbit.e2e.generation' => $generation->id],
@@ -297,19 +303,28 @@ final readonly class TopologyAcquirer
                 previous: $exception,
             );
         }
-        $state->forgetAttempt();
+        $state->forgetAttempt(AttemptPurpose::Discovery);
 
         throw new RuntimeException('Topology acquisition failed: '.$exception->getMessage(), previous: $exception);
     }
 
     /** A proved attempt stays as proved: nothing may change it before release. */
-    private function mutableTopology(IssueState $state): FeatureTopology
+    private function mutableTopology(IssueState $state, AttemptPurpose $purpose): FeatureTopology
     {
-        $topology = $state->requireTopology();
-        if ($state->isProved()) {
+        $topology = $state->requireTopology($purpose);
+        if ($purpose === AttemptPurpose::Proof && $state->isProved()) {
             throw new RuntimeException(
                 "{$state->issue} attempt {$topology->attempt->value} is proved; release it before changing it.",
             );
+        }
+        if ($purpose === AttemptPurpose::Proof) {
+            $proof = $state->proof();
+            if (
+                ($proof['status'] ?? null) !== 'diagnosis'
+                || ($proof['attempt_id'] ?? null) !== $topology->attempt->value
+            ) {
+                throw new RuntimeException('Only a retained failed proof can be inspected or debugged.');
+            }
         }
 
         return $topology;
@@ -349,17 +364,19 @@ final readonly class TopologyAcquirer
         );
     }
 
-    private function promotedGeneration(string $worktree): StandbyGeneration
+    private function promotedGeneration(string $worktree): TopologySnapshotGeneration
     {
-        $generation = $this->standby->promoted() ?? throw new RuntimeException(
-            'No promoted standby generation is available.',
+        $generation = $this->topologySnapshot->promoted() ?? throw new RuntimeException(
+            'No promoted topology snapshot generation is available.',
         );
         if ($generation->isLegacy()) {
-            throw new RuntimeException('The promoted standby generation is legacy; refresh it before acquisition.');
+            throw new RuntimeException(
+                'The promoted topology snapshot generation is legacy; refresh it before acquisition.',
+            );
         }
         $expectedId = substr($generation->mainSha, 0, 12).'-'.substr($generation->preparedFingerprint, 0, 12);
         if ($generation->id !== $expectedId) {
-            throw new RuntimeException('The promoted standby fingerprint is stale or corrupt.');
+            throw new RuntimeException('The promoted topology snapshot fingerprint is stale or corrupt.');
         }
         $structural = $this->fingerprints->forCommit('main');
         $main = $this->fingerprints->withLaravel($structural, $generation->laravel);
@@ -367,12 +384,12 @@ final readonly class TopologyAcquirer
             $structural->value !== $generation->structuralFingerprint
             || $generation->preparedFingerprint !== $main->value
         ) {
-            throw new RuntimeException('The promoted standby is stale; refresh it from main first.');
+            throw new RuntimeException('The promoted topology snapshot is stale; refresh it from main first.');
         }
         $this->assertColdBaseMatchesMain($worktree, $main);
-        $standbyTarget = TopologyTarget::standby($this->standbyIdentity);
+        $topologySnapshotTarget = TopologyTarget::topologySnapshot($this->topologySnapshotIdentity);
         $this->host->assertOwnedSnapshots(array_combine(
-            array_map($standbyTarget->instance(...), TopologyProfile::ROLES),
+            array_map($topologySnapshotTarget->instance(...), TopologyProfile::ROLES),
             $generation->snapshots,
         ));
 
@@ -385,15 +402,20 @@ final readonly class TopologyAcquirer
      *
      * @param array<string, array{source:string,snapshot:string,target:string,metadata:array<string, string>,network?:string,role?:string,topology?:string,slot?:int,mount?:array{device:string,source:string,path:string}}> $copies
      */
-    private function copyPinnedSnapshots(StandbyGeneration $generation, array $copies): void
+    private function copyPinnedSnapshots(TopologySnapshotGeneration $generation, array $copies): void
     {
         $lock = new OperationLock($this->hostPaths);
-        if (! $lock->acquire('standby-generation', $this->operation, exclusive: false, timeoutSeconds: 3600)) {
-            throw new RuntimeException('The promoted standby generation is locked.');
+        if (! $lock->acquire(
+            'standby-generation',
+            $this->operation,
+            exclusive: false,
+            timeoutSeconds: 3600,
+        )) {
+            throw new RuntimeException('The promoted topology snapshot generation is locked.');
         }
         try {
-            if ($this->standby->promoted()?->toArray() !== $generation->toArray()) {
-                throw new RuntimeException('The promoted standby generation changed before snapshot copy.');
+            if ($this->topologySnapshot->promoted()?->toArray() !== $generation->toArray()) {
+                throw new RuntimeException('The promoted topology snapshot generation changed before snapshot copy.');
             }
             $this->host->copySnapshots($copies);
         } finally {

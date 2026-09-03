@@ -435,6 +435,7 @@ function synchronizerRequiredGuestScriptNames(): array
         'converge-gateway.sh',
         'converge-sample-app.sh',
         'hydrate-orbit.sh',
+        'observe-php.sh',
         'prepare-node.sh',
         'receive-source.sh',
         'retarget-vpn.sh',
@@ -1182,7 +1183,7 @@ describe('WorktreeSynchronizer', function () {
                 featureTarget('NCK-126'),
                 $worktree,
             );
-            expect(synchronizerInstalledScripts($guest))->toHaveCount(27);
+            expect(synchronizerInstalledScripts($guest))->toHaveCount(30);
         } finally {
             destroySynchronizerRepositoryFixture($root, $worktree);
         }
@@ -1327,7 +1328,7 @@ describe('WorktreeSynchronizer', function () {
                 ),
             ));
             expect($scriptInstalls)
-                ->toHaveCount(27)
+                ->toHaveCount(30)
                 ->and(array_column($scriptInstalls, 'path'))
                 ->each
                 ->toStartWith('/usr/local/bin/')
@@ -1340,7 +1341,7 @@ describe('WorktreeSynchronizer', function () {
                         && ! str_ends_with($push['destination'], '/guest-scripts.sha256')
                     ),
                 ))
-                ->toHaveCount(27)
+                ->toHaveCount(30)
                 ->and(array_filter(
                     $guest->execs,
                     fn (array $exec): bool => ($exec['command']->command[0] ?? null) === 'rm',
@@ -1384,13 +1385,13 @@ describe('WorktreeSynchronizer', function () {
         }
     });
 
-    it('accepts the primary checkout for standby validation', function () {
+    it('accepts the primary checkout for topology snapshot validation', function () {
         $root = createSynchronizerPrimaryFixture('NCK-130');
         $sha = trim(synchronizerGit($root, ['rev-parse', 'HEAD'])[0]);
         $guest = new WorktreeSynchronizerGuestFake($sha);
         try {
             $state = new WorktreeSynchronizer($guest, $root, new OperationId(str_repeat('a', 32)))->sync(
-                TopologyTarget::standby(),
+                TopologyTarget::topologySnapshot(),
                 $root,
             );
             expect($state->hostSha)->toBe($sha)->and($guest->execs)->not->toBeEmpty();
@@ -1971,7 +1972,7 @@ describe('WorktreeSynchronizer::syncCommit', function () {
         }
     });
 
-    it('refuses to sync a candidate into the standby topology before any guest interaction', function () {
+    it('refuses to sync a candidate into the topology snapshot before any guest interaction', function () {
         $fixture = createSynchronizerCandidateFixture('NCK-158');
         ['root' => $root, 'worktree' => $worktree, 'candidate' => $candidate] = $fixture;
         try {
@@ -1979,11 +1980,11 @@ describe('WorktreeSynchronizer::syncCommit', function () {
 
             expect(
                 fn () => new WorktreeSynchronizer($guest, $root, new OperationId(str_repeat('a', 32)))
-                    ->syncCommit(TopologyTarget::standby(), $worktree, $candidate),
+                    ->syncCommit(TopologyTarget::topologySnapshot(), $worktree, $candidate),
             )
                 ->toThrow(
                     InvalidArgumentException::class,
-                    'A proof candidate cannot be synced into a standby topology.',
+                    'A proof candidate cannot be synced into the topology snapshot.',
                 )
                 ->and($guest->execs)
                 ->toBe([])

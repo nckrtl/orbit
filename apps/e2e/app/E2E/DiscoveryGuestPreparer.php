@@ -41,7 +41,7 @@ final readonly class DiscoveryGuestPreparer
     }
 
     /**
-     * The mount hides the snapshot checkout, so the gateway `.env` the standby
+     * The mount hides the snapshot checkout, so the gateway `.env` the topology snapshot
      * build preserved is placed into the mounted worktree when it is absent there.
      * It lands in the host worktree (gitignored) and is never overwritten.
      */
@@ -58,7 +58,7 @@ final readonly class DiscoveryGuestPreparer
         if (! $environment->successful()) {
             throw new RuntimeException(
                 'The gateway environment could not be placed into the mounted worktree; '
-                .'the promoted standby generation must be refreshed so it preserves '
+                .'the promoted topology snapshot generation must be refreshed so it preserves '
                 .WorktreeSynchronizer::GATEWAY_ENV_COPY
                 .'.',
             );

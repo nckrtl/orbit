@@ -14,18 +14,26 @@ gates are satisfied.
 1. **Verify the candidate.** Record the exact current head SHA. Require target
    `main`, green CI for that SHA, an independent `Approved.` review bound to that
    SHA, no actionable comments, and no later commit. For `Proof: incus`, require
-   an active proved topology whose candidate equals `main` plus that exact head.
-   If `main` moved, stop until current-head proof exists.
+   an active immutable proved topology plus a valid current proof-input
+   manifest. The exact head must either be the proved candidate (or have its
+   exact tree) or carry an `exact`/`equivalent` retained-proof report. If `main`
+   moved, stop until the exact head has a new current-main equivalence decision
+   or complete proof.
 2. **Merge the bound head.** Run
    `gh pr merge <n> --merge --match-head-commit <sha>` and verify the merge
    commit on `origin/main`. A concurrent push must make the command fail closed.
-3. **Promote or refresh.** For Incus proof, run
-   `bin/e2e-standby promote <ISSUE>`. If promotion is invalid because the proof
-   plan mutates state or `main` differs, run `bin/e2e-standby refresh` instead.
-   For a harness change, refresh the primary standby with the merge SHA.
+3. **Promote the proof.** For Incus proof, run
+   `bin/e2e-topology-snapshot promote <ISSUE>`. Do not substitute a refresh when
+   the proof plan mutates state, `main` differs, or another promotion precondition
+   fails. Promotion requires the merge tree to equal the exact accepted head
+   and records proved, accepted, and merged lineage plus the retained runtime
+   fingerprint. Stop closeout until the exact candidate has a promotable
+   retained proof.
+   Follow any extra closeout step in a harness issue's repository-owner-approved,
+   issue-specific proof contract.
 4. **Clean repository resources.** Run
    `bin/worktree-remove <ISSUE> <slug>`, then verify topology, worktree, and local
    branch cleanup.
 
-Run each mutation as a bounded command and fail closed. Do not report success
-from exit status alone; verify GitHub, `origin/main`, standby identity, and cleanup state directly.
+Run each mutation as a bounded command and fail closed. Do not report success from
+exit status alone; verify GitHub, `origin/main`, topology snapshot identity, and cleanup state directly.

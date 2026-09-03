@@ -20,7 +20,7 @@ final class ProofFixtureGuestFake implements GuestTransport
     /** @var list<list<string>> */
     public array $batches = [];
 
-    /** @var list<array{instance:string, source:string, destination:string, content:string}> */
+    /** @var list<array{label:string, instance:string, source:string, destination:string, content:string}> */
     public array $pushes = [];
 
     /** @var array<string, array<string, array{mode:string, content:string}>> */
@@ -33,6 +33,7 @@ final class ProofFixtureGuestFake implements GuestTransport
     public function __construct(
         public array $inventoryOverride = [],
         public ?string $failingLabel = null,
+        public int $maxBatchSize = PHP_INT_MAX,
     ) {}
 
     public function exec(string $instance, GuestCommand $command): GuestCommandResult
@@ -42,6 +43,9 @@ final class ProofFixtureGuestFake implements GuestTransport
 
     public function execAll(array $commands): array
     {
+        if (count($commands) > $this->maxBatchSize) {
+            throw new RuntimeException('Guest command batch exceeds its request limit.');
+        }
         $this->batches[] = array_keys($commands);
         $results = [];
         foreach ($commands as $label => $request) {
@@ -58,8 +62,12 @@ final class ProofFixtureGuestFake implements GuestTransport
 
     public function pushFiles(array $files): void
     {
-        foreach ($files as $file) {
-            $this->pushes[] = [...$file, 'content' => (string) file_get_contents($file['source'])];
+        foreach ($files as $label => $file) {
+            $this->pushes[] = [
+                'label' => $label,
+                ...$file,
+                'content' => (string) file_get_contents($file['source']),
+            ];
         }
     }
 
@@ -70,7 +78,7 @@ final class ProofFixtureGuestFake implements GuestTransport
             return new GuestCommandResult('', "refused\n", 1);
         }
         if ($argv[0] === 'install' && ($argv[1] ?? null) === '-o') {
-            $name = basename($argv[8]);
+            $name = str_replace(ProofFixtures::GUEST_DIRECTORY.'/', '', $argv[8]);
             $staged = array_values(array_filter(
                 $this->pushes,
                 static fn (array $push): bool => $push['instance'] === $instance && $push['destination'] === $argv[7],
@@ -101,8 +109,12 @@ final class ProofFixtureGuestFake implements GuestTransport
     }
 }
 
-/** @return array{repository:GitRepository, commit:string} */
-function proofFixtureRepository(string $issue, array $files): array
+/**
+ * @param array<string, array{string, int}> $files
+ * @param array<string, array<string, array{string, int}>> $additionalIssues
+ * @return array{repository:GitRepository, commit:string}
+ */
+function proofFixtureRepository(string $issue, array $files, array $additionalIssues = []): array
 {
     $path = temporaryPath('orbit-proof-fixture-git-', 6);
     mkdir($path, 0700, true);
@@ -118,6 +130,14 @@ function proofFixtureRepository(string $issue, array $files): array
         $directory = $path.'/proofs/'.$issue;
         mkdir($directory, 0700, true);
         foreach ($files as $name => [$content, $mode]) {
+            file_put_contents($directory.'/'.$name, $content);
+            chmod($directory.'/'.$name, $mode);
+        }
+    }
+    foreach ($additionalIssues as $additionalIssue => $additionalFiles) {
+        $directory = $path.'/proofs/'.$additionalIssue;
+        mkdir($directory, 0700, true);
+        foreach ($additionalFiles as $name => [$content, $mode]) {
             file_put_contents($directory.'/'.$name, $content);
             chmod($directory.'/'.$name, $mode);
         }
@@ -189,6 +209,24 @@ describe('ProofFixtureStager', function (): void {
             ->toBe([]);
     });
 
+    it('keeps each fixture installation batch within the guest transport request limit', function (): void {
+        $files = [];
+        foreach (range(1, 43) as $index) {
+            $files[sprintf('fixture-%02d.sh', $index)] = ["#!/bin/sh\nexit 0\n", 0644];
+        }
+        ['repository' => $repository, 'commit' => $commit] = proofFixtureRepository('ORB-7', $files);
+        $guest = new ProofFixtureGuestFake(maxBatchSize: 128);
+
+        new ProofFixtureStager($guest, new OperationId(str_repeat('d', 32)))->stage(
+            featureTarget('ORB-7', 'b'),
+            $repository,
+            $commit,
+        );
+
+        expect(max(array_map(count(...), $guest->batches)))
+            ->toBeLessThanOrEqual(128);
+    });
+
     it('empties the guest fixture directory on every role before it installs', function (): void {
         ['repository' => $repository, 'commit' => $commit] = proofFixtureRepository('NCK-100', [
             'check.sh' => ["#!/bin/sh\nexit 0\n", 0755],
@@ -236,6 +274,31 @@ describe('ProofFixtureStager', function (): void {
             ->toBe([]);
     });
 
+    it('stages declared additional issue fixtures from the candidate under namespaced paths', function (): void {
+        ['repository' => $repository, 'commit' => $commit] = proofFixtureRepository(
+            'ORB-7',
+            [
+                'driver.sh' => ["#!/bin/sh\n", 0755],
+            ],
+            [
+                'NCK-73' => ['recover.sh' => ["#!/bin/sh\nexit 0\n", 0755]],
+                'NCK-116' => ['lib.sh' => ["#!/bin/sh\n", 0644]],
+            ],
+        );
+        $guest = new ProofFixtureGuestFake;
+        $target = featureTarget('ORB-7', 'b');
+
+        $fixtures = new ProofFixtureStager($guest, new OperationId(str_repeat('a', 32)))
+            ->stage($target, $repository, $commit, ['NCK-73', 'NCK-116']);
+
+        expect(array_keys($fixtures->files))
+            ->toBe(['NCK-116/lib.sh', 'NCK-73/recover.sh', 'driver.sh'])
+            ->and(array_keys($guest->installed[$target->instance('app-prod')]))
+            ->toBe(['NCK-116/lib.sh', 'NCK-73/recover.sh', 'driver.sh'])
+            ->and(array_column($guest->pushes, 'label'))
+            ->each->toMatch('/\A[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}\z/D');
+    });
+
     it('fails closed and cleans the staging directory when a role reports another inventory', function (): void {
         ['repository' => $repository, 'commit' => $commit] = proofFixtureRepository('NCK-82', [
             'check.sh' => ["#!/bin/sh\n", 0755],
@@ -264,7 +327,7 @@ describe('ProofFixtureStager', function (): void {
             'check.sh' => ["#!/bin/sh\n", 0755],
         ]);
         $target = featureTarget('NCK-82', 'b');
-        $guest = new ProofFixtureGuestFake(failingLabel: 'fixture-install.app-dev.check.sh');
+        $guest = new ProofFixtureGuestFake(failingLabel: 'fixture-install.app-dev.0');
 
         expect(
             fn () => new ProofFixtureStager($guest, new OperationId(str_repeat('a', 32)))->stage(
@@ -275,7 +338,7 @@ describe('ProofFixtureStager', function (): void {
         )
             ->toThrow(
                 RuntimeException::class,
-                'Proof fixture installation failed. Failed operations: fixture-install.app-dev.check.sh.',
+                'Proof fixture installation failed. Failed operations: fixture-install.app-dev.0.',
             );
     });
 

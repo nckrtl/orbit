@@ -49,8 +49,8 @@ final class ListAppsCommand extends GatewayCommand
                 $app->name,
                 $app->slug,
                 $app->repositoryUrl,
-                $app->mainBranch ?? '-',
-                $app->root ?? '-',
+                $app->mainBranch ?? '—',
+                $app->root ?? '—',
             ];
         }
 

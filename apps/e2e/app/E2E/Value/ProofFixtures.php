@@ -41,7 +41,7 @@ final readonly class ProofFixtures
         }
         foreach ($files as $name => $file) {
             if (
-                ! self::isFixtureName((string) $name)
+                ! self::isFixturePath((string) $name)
                 || ! in_array($file['mode'], self::MODES, true)
                 || preg_match('/\A[0-9a-f]{64}\z/D', $file['sha256']) !== 1
             ) {
@@ -64,6 +64,26 @@ final readonly class ProofFixtures
         return preg_match('/\A[a-z0-9][a-z0-9._-]{0,127}\z/D', $name) === 1 && ! str_contains($name, '..');
     }
 
+    /** A fixture path is one safe name or one issue namespace plus one safe name. */
+    public static function isFixturePath(string $path): bool
+    {
+        $parts = explode('/', $path);
+        if (count($parts) === 1) {
+            return self::isFixtureName($parts[0]);
+        }
+
+        if (count($parts) !== 2 || ! self::isFixtureName($parts[1])) {
+            return false;
+        }
+        try {
+            TopologyTarget::assertIssue($parts[0]);
+        } catch (InvalidArgumentException) {
+            return false;
+        }
+
+        return true;
+    }
+
     /** The host directory of one issue's fixtures, relative to the repository root. */
     public static function hostDirectory(string $issue): string
     {
@@ -74,8 +94,8 @@ final readonly class ProofFixtures
 
     public static function guestPath(string $name): string
     {
-        if (! self::isFixtureName($name)) {
-            throw new InvalidArgumentException('The proof fixture name is invalid.');
+        if (! self::isFixturePath($name)) {
+            throw new InvalidArgumentException('The proof fixture path is invalid.');
         }
 
         return self::GUEST_DIRECTORY.'/'.$name;

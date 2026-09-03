@@ -15,7 +15,7 @@ use stdClass;
  * The plan is validated once at construction and never carries stdin: a proof
  * must not hold secrets, and the record stores the plan verbatim.
  */
-/** @mago-expect lint:cyclomatic-complexity,kan-defect Every plan rule is checked fail-closed in one place. */
+/** @mago-expect lint:cyclomatic-complexity,kan-defect,excessive-parameter-list Every plan rule and input is checked fail-closed in one place. */
 final readonly class ProofPlan
 {
     public const int MAX_TIMEOUT_SECONDS = 900;
@@ -24,23 +24,37 @@ final readonly class ProofPlan
 
     private const array SECTIONS = ['setup', 'acceptance'];
 
-    /** Optional: a plan that mutates the topology cannot become the standby. */
+    /** Optional: a plan that mutates the topology cannot become the topology snapshot. */
     private const string MUTATES = 'mutates';
 
     /** Optional: the topology the plan ends with; a node it leaves out is proved absent. */
     private const string ENDS_WITH = 'ends_with';
+
+    /** Optional: additional issue fixture directories staged from the same candidate. */
+    private const string FIXTURE_ISSUES = 'fixture_issues';
+
+    /** Optional: repository files or directories read outside the default runtime policy. */
+    private const string INPUTS = 'inputs';
+
+    /** Optional: collect complete file-level PHP observations during proof actions. */
+    private const string OBSERVED_INPUTS = 'observed_inputs';
 
     private const array ACTION_KEYS = ['id', 'node', 'argv', 'timeout_seconds'];
 
     /**
      * @param list<array{id:string,node:string,argv:list<string>,timeout_seconds:int}> $setup
      * @param list<array{id:string,node:string,argv:list<string>,timeout_seconds:int}> $acceptance
+     * @param list<string> $fixtureIssues
+     * @param list<string> $inputs
      */
     private function __construct(
         public array $setup,
         public array $acceptance,
         public bool $mutates,
         public TopologyEndState $endsWith,
+        public array $fixtureIssues,
+        public array $inputs,
+        public bool $observedInputs,
     ) {}
 
     public static function fromFile(string $path): self
@@ -90,6 +104,24 @@ final readonly class ProofPlan
             $endsWith = TopologyEndState::fromArray($plan[self::ENDS_WITH]);
             unset($plan[self::ENDS_WITH]);
         }
+        $fixtureIssues = [];
+        if (array_key_exists(self::FIXTURE_ISSUES, $plan)) {
+            $fixtureIssues = self::fixtureIssues($plan[self::FIXTURE_ISSUES]);
+            unset($plan[self::FIXTURE_ISSUES]);
+        }
+        $inputs = [];
+        if (array_key_exists(self::INPUTS, $plan)) {
+            $inputs = self::inputs($plan[self::INPUTS]);
+            unset($plan[self::INPUTS]);
+        }
+        $observedInputs = false;
+        if (array_key_exists(self::OBSERVED_INPUTS, $plan)) {
+            if (! is_bool($plan[self::OBSERVED_INPUTS])) {
+                throw new InvalidArgumentException('The proof plan key observed_inputs must be a boolean.');
+            }
+            $observedInputs = $plan[self::OBSERVED_INPUTS];
+            unset($plan[self::OBSERVED_INPUTS]);
+        }
         // Removing a node changes the topology the proof ran on, whatever the plan says.
         $mutates = $mutates || $endsWith->declaresAbsence();
         $keys = array_keys($plan);
@@ -99,7 +131,7 @@ final readonly class ProofPlan
         if ($keys !== $expected) {
             throw new InvalidArgumentException(
                 'The proof plan must have exactly the keys setup and acceptance, '
-                .'plus an optional mutates and ends_with.',
+                .'plus optional mutates, ends_with, fixture_issues, inputs, and observed_inputs.',
             );
         }
         $sections = [];
@@ -119,7 +151,7 @@ final readonly class ProofPlan
         $setup = self::actions('setup', $sections['setup'], $ids);
         $acceptance = self::actions('acceptance', $sections['acceptance'], $ids);
 
-        return new self($setup, $acceptance, $mutates, $endsWith);
+        return new self($setup, $acceptance, $mutates, $endsWith, $fixtureIssues, $inputs, $observedInputs);
     }
 
     /**
@@ -213,7 +245,7 @@ final readonly class ProofPlan
         return $actual === $keys;
     }
 
-    /** @return array{setup:list<array{id:string,node:string,argv:list<string>,timeout_seconds:int}>,acceptance:list<array{id:string,node:string,argv:list<string>,timeout_seconds:int}>,mutates?:true,ends_with?:array{nodes:list<string>}} */
+    /** @return array<string, mixed> */
     public function toArray(): array
     {
         $plan = ['setup' => $this->setup, 'acceptance' => $this->acceptance];
@@ -223,7 +255,84 @@ final readonly class ProofPlan
         if ($this->endsWith->declaresAbsence()) {
             $plan['ends_with'] = $this->endsWith->toArray();
         }
+        if ($this->fixtureIssues !== []) {
+            $plan['fixture_issues'] = $this->fixtureIssues;
+        }
+        if ($this->inputs !== []) {
+            $plan['inputs'] = $this->inputs;
+        }
+        if ($this->observedInputs) {
+            $plan['observed_inputs'] = true;
+        }
 
         return $plan;
+    }
+
+    /** Bind promotion to the exact normalized actions and topology declaration that were proved. */
+    public function fingerprint(): string
+    {
+        return hash('sha256', json_encode(
+            $this->toArray(),
+            JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE,
+        ));
+    }
+
+    /** @return list<string> */
+    private static function fixtureIssues(mixed $declared): array
+    {
+        if (! is_array($declared) || ! array_is_list($declared) || $declared === []) {
+            throw new InvalidArgumentException('The proof fixture issue list is invalid.');
+        }
+        $issues = [];
+        foreach ($declared as $issue) {
+            if (! is_string($issue) || in_array($issue, $issues, true)) {
+                throw new InvalidArgumentException('The proof fixture issue list is invalid.');
+            }
+            try {
+                TopologyTarget::assertIssue($issue);
+            } catch (InvalidArgumentException) {
+                throw new InvalidArgumentException('The proof fixture issue list is invalid.');
+            }
+            $issues[] = $issue;
+        }
+
+        return $issues;
+    }
+
+    /** @return list<string> */
+    private static function inputs(mixed $declared): array
+    {
+        if (! is_array($declared) || ! array_is_list($declared) || $declared === []) {
+            throw new InvalidArgumentException('The proof input list is invalid.');
+        }
+        $inputs = [];
+        foreach ($declared as $input) {
+            if (
+                ! is_string($input)
+                || $input === ''
+                || str_starts_with($input, '/')
+                || str_contains($input, "\0")
+                || str_contains($input, '\\')
+                || preg_match('/[\r\n]/', $input) === 1
+            ) {
+                throw new InvalidArgumentException('The proof input list is invalid.');
+            }
+            $normalized = rtrim($input, '/');
+            $parts = explode('/', $normalized);
+            if (
+                $normalized === ''
+                || in_array('', $parts, true)
+                || in_array('.', $parts, true)
+                || in_array('..', $parts, true)
+                || preg_match('/[^A-Za-z0-9_@.+,=:\/-]/', $normalized) === 1
+                || in_array($normalized, $inputs, true)
+            ) {
+                throw new InvalidArgumentException('The proof input list is invalid.');
+            }
+            $inputs[] = $normalized;
+        }
+        sort($inputs, SORT_STRING);
+
+        return $inputs;
     }
 }

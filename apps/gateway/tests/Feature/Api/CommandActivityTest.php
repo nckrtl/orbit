@@ -243,6 +243,7 @@ it('records route model binding failures as http 404', function (): void {
 });
 
 it('correlates unhandled failures without exposing exception text', function (): void {
+    $this->fakeRepositoryBranches();
     $requestId = (string) Str::uuid();
     $secret = (string) Str::uuid();
     $operator = Node::query()->create([

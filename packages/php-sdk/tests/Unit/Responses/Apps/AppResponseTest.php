@@ -31,6 +31,11 @@ describe(AppResponse::class, function (): void {
     it('normalizes invalid optional defaults to null', function (): void {
         $response = AppResponse::fromGatewayData(['defaults' => 'invalid'], 'request-id');
 
-        expect($response->defaults)->toBeNull();
+        expect($response->mainBranch)
+            ->toBeNull()
+            ->and($response->root)
+            ->toBeNull()
+            ->and($response->defaults)
+            ->toBeNull();
     });
 });

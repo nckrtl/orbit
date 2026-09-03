@@ -22,58 +22,57 @@ final readonly class CreateAppAction
     public function execute(CreateAppData $data): array
     {
         $repositoryUrl = GitRepositoryOrigin::validate($data->repositoryUrl);
+        $mainBranch = $data->mainBranch === null ? null : GitBranchName::validate($data->mainBranch);
         $root = RelativeWebRoot::validate($data->root);
-        $app = OrbitApp::query()->firstOrNew(['slug' => $data->slug]);
-        $created = ! $app->exists;
+        $app = OrbitApp::query()->where('slug', $data->slug)->first();
 
-        if ($app->exists && $app->repository_url !== $repositoryUrl) {
-            throw new ResourceOperationException(
-                errorCode: 'app.repository_change_unsupported',
-                message: "App [{$app->slug}] cannot change its repository.",
-                status: 409,
-            );
+        if ($app instanceof OrbitApp) {
+            $this->assertIdentityMatches($app, $data, $repositoryUrl, $mainBranch, $root);
+
+            return ['app' => $app, 'created' => false];
         }
 
-        if ($app->exists) {
-            $this->assertSourceIdentity($app, $data, $root);
+        if ($mainBranch === null) {
+            $mainBranch = GitBranchName::validate($this->branches->resolve($repositoryUrl));
+        } else {
+            $this->branches->verify($repositoryUrl, $mainBranch);
         }
 
-        $mainBranch = $app->exists
-            ? $app->main_branch
-            : GitBranchName::validate($data->mainBranch ?? $this->branches->resolve($repositoryUrl));
-
-        $app->fill([
+        $app = OrbitApp::query()->create([
+            'slug' => $data->slug,
             'name' => $data->name,
             'repository_url' => $repositoryUrl,
             'main_branch' => $mainBranch,
-            'root' => $app->exists ? $app->root : $root,
+            'root' => $root,
             'defaults' => $data->defaults,
-        ])->save();
+        ]);
 
-        return ['app' => $app->refresh(), 'created' => $created];
+        return ['app' => $app->refresh(), 'created' => true];
     }
 
-    private function assertSourceIdentity(OrbitApp $app, CreateAppData $data, string $root): void
-    {
-        if ($app->main_branch === null || $app->root === null) {
+    private function assertIdentityMatches(
+        OrbitApp $app,
+        CreateAppData $data,
+        string $repositoryUrl,
+        ?string $mainBranch,
+        string $root,
+    ): void {
+        if (
+            $app->name === $data->name
+            && $app->repository_url === $repositoryUrl
+            && ($mainBranch === null
+            || $app->main_branch === $mainBranch)
+            && $app->root === $root
+            && $app->defaults === $data->defaults
+        ) {
             return;
         }
 
-        if ($data->mainBranch !== null && $app->main_branch !== GitBranchName::validate($data->mainBranch)) {
-            throw $this->sourceChangeUnsupported($app);
-        }
-
-        if ($app->root !== $root) {
-            throw $this->sourceChangeUnsupported($app);
-        }
-    }
-
-    private function sourceChangeUnsupported(OrbitApp $app): ResourceOperationException
-    {
-        return new ResourceOperationException(
-            errorCode: 'app.source_defaults_change_unsupported',
-            message: "App [{$app->slug}] cannot change its source defaults.",
+        throw new ResourceOperationException(
+            errorCode: 'app.identity_conflict',
+            message: "App [{$app->slug}] already exists with different creation identity.",
             status: 409,
         );
     }
+
 }

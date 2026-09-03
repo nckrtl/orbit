@@ -20,8 +20,10 @@ Human or AI agent
   Managed Nodes
 ```
 
-Web traffic follows a separate path. It passes through the Router and, for
-public sites, the Ingress before reaching the Node that runs the application.
+Web traffic follows a separate path. Standalone traffic reaches its Node
+directly. Traffic for an active Cluster with a TLD passes through the Router
+and, for public sites, the Ingress before reaching the Node that runs the
+application.
 
 ## CLI
 
@@ -43,8 +45,9 @@ needed to apply those settings.
 
 ## Nodes and roles
 
-A Node is a machine connected to Orbit. A Node can have one or more roles. For
-example, an `app-dev` Node runs development applications, while a Router sends
+A Node is a machine connected to Orbit. It can remain standalone or belong to
+one optional Cluster, and it can have one or more roles. For example, an
+`app-dev` Node runs development applications, while a Router sends clustered
 traffic to the right application.
 
 The Gateway manages Nodes over SSH. After setup, WireGuard provides the private
@@ -53,13 +56,14 @@ by each Node's assigned roles.
 
 ## Applications and traffic
 
-Orbit groups related Nodes and applications in a Cluster. An App represents an
-application and owns its repository, default branch, relative web root, and
-shared settings. An AppInstance represents one place where that App is
-developed or runs in production. Each AppInstance belongs to the Cluster of
-its selected Node. A Route connects a hostname to an AppInstance.
+Orbit can group related Nodes in a Cluster, but a Cluster is not required. An
+App represents an application and owns its repository, default branch,
+relative web root, and shared settings. An AppInstance represents one place on
+a Node where that App is developed or runs in production. Cluster placement is
+derived from the Node rather than selected or stored on the AppInstance. A
+Route connects a hostname to an AppInstance.
 
-A development AppInstance uses one independent Git clone at
+A managed-clone development AppInstance uses one independent Git clone at
 *<apps-root>/<app-slug>/<instance-name>*. Orbit records this path before source
 work and never moves it when the Node apps root changes. Creation has four
 durable states:
@@ -78,12 +82,17 @@ change DNS, or create Routes. The Node app-dev role owns runtime prerequisites.
 Later issues own runtime and publication behavior. See
 [Applications](domains/applications.md).
 
-A Cluster has one Router for private traffic. Public traffic first reaches the
-Ingress, which accepts the connection and forwards it to the Router. Caddy on
-the Node then sends the request to the application. You can read more about
-this design in
+A Node keeps its own optional TLD when it joins a Cluster. Direct Node routing
+remains authoritative while the Cluster is inactive or has no TLD. When the
+Cluster is active and has a TLD, that TLD takes precedence over its members'
+Node TLDs and requires one active Router. A TLD-less active Cluster adds no
+Router hop. Public clustered traffic first reaches the Ingress, which forwards
+it to the Router; Caddy on the workload Node then sends the request to the
+application. You can read more about this design in
 [ADR 0009](decisions/0009-clustered-app-instance-routing.md) and
-[ADR 0011](decisions/0011-clustered-production-ingress-and-app-prod-placement.md).
+[ADR 0011](decisions/0011-clustered-production-ingress-and-app-prod-placement.md),
+as superseded and extended by
+[ADR 0017](decisions/0017-optional-cluster-placement-and-tld-precedence.md).
 
 Legacy Instance and Workspace records remain available during staged
 conversion. New instance commands use AppInstance. Route, runtime, and Ingress

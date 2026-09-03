@@ -9,17 +9,22 @@ use App\E2E\State\OperationLock;
 use App\E2E\State\StatePaths;
 use App\E2E\Value\AttemptId;
 use App\E2E\Value\AttemptPurpose;
+use App\E2E\Value\CandidateConvergenceResult;
 use App\E2E\Value\FeatureTopology;
 use App\E2E\Value\GuestCommand;
+use App\E2E\Value\ObservedPhpInputs;
 use App\E2E\Value\OperationId;
+use App\E2E\Value\ProofEquivalenceReport;
+use App\E2E\Value\ProofEquivalenceResult;
+use App\E2E\Value\ProofInputManifest;
 use App\E2E\Value\ProofPlan;
 use App\E2E\Value\ProofResult;
 use App\E2E\Value\ProofStatus;
 use App\E2E\Value\SourceState;
-use App\E2E\Value\StandbyGeneration;
-use App\E2E\Value\StandbyIdentity;
 use App\E2E\Value\TopologyProfile;
 use App\E2E\Value\TopologyRequest;
+use App\E2E\Value\TopologySnapshotGeneration;
+use App\E2E\Value\TopologySnapshotIdentity;
 use App\E2E\Value\TopologyTarget;
 use App\E2E\Value\VerificationMode;
 use App\E2E\Value\VerificationReport;
@@ -31,12 +36,12 @@ use Throwable;
 /**
  * Prove the worktree's HEAD commit on a fresh topology.
  *
- * The worktree must be clean and hold no live attempt. The runner mints an
- * attempt, clones the promoted generation, transfers exactly the candidate
- * commit, stages `proofs/<ISSUE>/` fixtures, converges, runs the plan's setup
- * and acceptance actions in order, and verifies. A failure before the VMs
- * hold the candidate rolls the attempt back; every later failure records a
- * `diagnosis` and keeps the topology alive until `release`.
+ * The worktree must be clean and hold no proof attempt. Its discovery topology
+ * may remain active. The runner mints a separate attempt, clones the promoted
+ * generation, transfers exactly the candidate commit, stages fixtures,
+ * converges, runs every action in order, and verifies. A failure before the
+ * VMs hold the candidate rolls the proof back; every later failure records a
+ * `diagnosis` and keeps the proof topology alive for explicit inspection.
  *
  * @mago-expect lint:excessive-parameter-list The proof dependencies are explicit trust boundaries.
  * @mago-expect lint:cyclomatic-complexity,kan-defect,too-many-methods The proof keeps its exact ordered operations together.
@@ -46,7 +51,7 @@ final readonly class TopologyProofRunner
     public function __construct(
         private IncusHost $host,
         private IncusNetworkLifecycle $networks,
-        private StandbyManifestStore $standby,
+        private TopologySnapshotManifestStore $topologySnapshot,
         private WorktreeSynchronizer $synchronizer,
         private TopologyConverger $converger,
         private TopologyVerifier $verifier,
@@ -54,21 +59,111 @@ final readonly class TopologyProofRunner
         private HostCapacity $capacity,
         private StatePaths $hostPaths,
         private OperationId $operation,
-        private StandbyIdentity $standbyIdentity,
+        private TopologySnapshotIdentity $topologySnapshotIdentity,
+        private ProofInputManifestBuilder $proofInputs,
+        private ObservedPhpInputCollector $observedPhpInputs,
         private string $repositoryRoot = '',
         /** @var (Closure(): AttemptId)|null Mints the attempt identity; injectable so tests pin resource names. */
         private ?Closure $attempts = null,
     ) {}
 
-    public function prove(TopologyRequest $request, ProofPlan $plan): ProofResult
+    /**
+     * Converge and generally verify the exact accepted candidate without rerunning feature actions.
+     *
+     * @return array<string, mixed>
+     */
+    public function convergeCandidate(TopologyRequest $request): array
+    {
+        $repository = new GitRepository($request->worktree);
+        $this->assertRepositoryIdentity($request, $repository);
+        if ($repository->dirtyOverlay() !== null) {
+            throw new InvalidArgumentException('The worktree must be clean before candidate convergence.');
+        }
+        $candidateSha = $repository->commit();
+        $candidateTree = $repository->tree($candidateSha);
+        $state = IssueState::forWorktree($request->issue, $request->worktree);
+        if (! $state->isProved()) {
+            throw new RuntimeException("{$request->issue} has no retained proof for candidate convergence.");
+        }
+        $rawReport = $state->equivalence() ?? throw new RuntimeException(
+            'Candidate convergence requires an equivalence report.',
+        );
+        $report = ProofEquivalenceReport::fromArray($rawReport);
+        $proof = $state->proof() ?? [];
+        $manifestFingerprint = $proof['manifest_sha256'] ?? null;
+        $rawManifest = is_string($manifestFingerprint)
+            ? $state->proofInputManifest($manifestFingerprint)
+            : null;
+        try {
+            $manifest = is_array($rawManifest) ? ProofInputManifest::fromArray($rawManifest) : null;
+        } catch (Throwable $exception) {
+            throw new RuntimeException(
+                'Candidate convergence requires a valid observed-input manifest.',
+                0,
+                $exception,
+            );
+        }
+        if (
+            $report->acceptedSha !== $candidateSha
+            || $report->result !== ProofEquivalenceResult::Equivalent
+            || $report->promotionPath !== 'candidate-convergence'
+            || $report->errors !== []
+            || ($proof['candidate_sha'] ?? null) !== $report->provedSha
+            || ($proof['plan_sha256'] ?? null) !== $report->planSha256
+            || $manifest === null
+            || $manifest->fingerprint() !== $report->manifestSha256
+            || $manifest->observedInputs === null
+            || $manifest->policyVersion !== StaticProofInputPolicy::VERSION
+            || in_array(false, $manifest->completeness, true)
+        ) {
+            throw new RuntimeException('The equivalence report does not authorize candidate convergence.');
+        }
+
+        $lock = new OperationLock($this->hostPaths);
+        if (! $lock->acquire('topology-'.$request->issue, $this->operation)) {
+            throw new RuntimeException('The issue topology is locked by another harness command.');
+        }
+        try {
+            if ($state->hasAttempt(AttemptPurpose::CandidateConvergence)) {
+                throw new RuntimeException('A candidate-convergence attempt already exists; release it first.');
+            }
+
+            return $this->convergeCandidateLocked(
+                $request,
+                $state,
+                $candidateSha,
+                $candidateTree,
+                $report,
+            );
+        } finally {
+            $lock->release();
+        }
+    }
+
+    public function prove(TopologyRequest $request, ProofPlan $plan, string $planPath): ProofResult
     {
         $repository = new GitRepository($request->worktree);
         $this->assertRepositoryIdentity($request, $repository);
         if ($repository->dirtyOverlay() !== null) {
             throw new InvalidArgumentException('The worktree must be clean: commit or stash before proof.');
         }
+        $generation = $this->topologySnapshot->promoted() ?? throw new RuntimeException(
+            'No promoted topology snapshot generation is available.',
+        );
+        if ($generation->isLegacy()) {
+            throw new RuntimeException('The promoted topology snapshot generation is legacy; refresh it before proof.');
+        }
         $candidateSha = $repository->commit();
         $candidateTree = $repository->tree($candidateSha);
+        $includedMainSha = $repository->commit('origin/main');
+        $this->proofInputs->validateContract(
+            $repository,
+            $candidateSha,
+            $includedMainSha,
+            $request->issue,
+            $planPath,
+            $plan,
+        );
 
         $state = IssueState::forWorktree($request->issue, $request->worktree);
         $lock = new OperationLock($this->hostPaths);
@@ -76,13 +171,24 @@ final readonly class TopologyProofRunner
             throw new RuntimeException('The issue topology is locked by another harness command.');
         }
         try {
-            if ($state->hasAttempt()) {
+            if ($state->hasAttempt(AttemptPurpose::Proof)) {
                 throw new RuntimeException(
-                    "{$request->issue} already has attempt {$state->attemptId()->value}; release it before proof.",
+                    "{$request->issue} already has proof attempt "
+                    .$state->attemptId(AttemptPurpose::Proof)->value
+                    .'; release it before another proof.',
                 );
             }
 
-            return $this->proveLocked($request, $state, $repository, $candidateSha, $candidateTree, $plan);
+            return $this->proveLocked(
+                $request,
+                $state,
+                $repository,
+                $candidateSha,
+                $candidateTree,
+                $includedMainSha,
+                $plan,
+                $planPath,
+            );
         } finally {
             $lock->release();
         }
@@ -94,17 +200,19 @@ final readonly class TopologyProofRunner
         GitRepository $repository,
         string $candidateSha,
         string $candidateTree,
+        string $includedMainSha,
         ProofPlan $plan,
+        string $planPath,
     ): ProofResult {
-        $generation = $this->standby->promoted() ?? throw new RuntimeException(
-            'No promoted standby generation is available.',
+        $generation = $this->topologySnapshot->promoted() ?? throw new RuntimeException(
+            'No promoted topology snapshot generation is available.',
         );
         if ($generation->isLegacy()) {
-            throw new RuntimeException('The promoted standby generation is legacy; refresh it before proof.');
+            throw new RuntimeException('The promoted topology snapshot generation is legacy; refresh it before proof.');
         }
-        $standbyTarget = TopologyTarget::standby($this->standbyIdentity);
+        $topologySnapshotTarget = TopologyTarget::topologySnapshot($this->topologySnapshotIdentity);
         $this->host->assertOwnedSnapshots(array_combine(
-            array_map($standbyTarget->instance(...), TopologyProfile::ROLES),
+            array_map($topologySnapshotTarget->instance(...), TopologyProfile::ROLES),
             $generation->snapshots,
         ));
 
@@ -113,7 +221,7 @@ final readonly class TopologyProofRunner
         try {
             $this->createTopology($target, $generation);
         } catch (Throwable $exception) {
-            $this->rollback($target, $state, $exception);
+            $this->rollback($target, $state, AttemptPurpose::Proof, $exception);
         }
 
         $source = $this->candidateSource($candidateSha);
@@ -121,6 +229,8 @@ final readonly class TopologyProofRunner
         $actions = [];
         $error = null;
         $verification = null;
+        $manifest = null;
+        $instrumented = false;
         $phase = 'sync.candidate';
         try {
             $sync = $this->synchronizer->syncCommit($target, $request->worktree, $candidateSha);
@@ -130,13 +240,59 @@ final readonly class TopologyProofRunner
             $phase = 'identity';
             $this->synchronizer->probeCheckoutIdentity($target, $candidateSha, $candidateTree);
             $phase = 'fixtures';
-            $this->fixtures->stage($target, $repository, $candidateSha);
+            $this->fixtures->stage($target, $repository, $candidateSha, $plan->fixtureIssues);
+            $phase = 'sury-runtime';
+            $this->observedPhpInputs->normalizeRuntime($target);
             $phase = 'converge';
             $this->converger->converge($target, $source, $generation->laravel);
-            $phase = 'setup';
-            $this->runActions($target, 'setup', $plan->setup, $actions);
-            $phase = 'acceptance';
-            $this->runActions($target, 'acceptance', $plan->acceptance, $actions);
+            $entries = $repository->entries($candidateSha);
+            $observed = null;
+            if ($plan->observedInputs) {
+                $phase = 'pcov.prepare';
+                $instrumented = true;
+                $runtimes = $this->observedPhpInputs->prepare($target);
+                $observedPhases = [];
+                foreach (ObservedPhpInputs::PHASES as $observedPhase) {
+                    $phase = "pcov.{$observedPhase}.begin";
+                    $this->observedPhpInputs->begin(
+                        $target,
+                        $observedPhase,
+                        $request->issue,
+                        $target->requireAttempt(),
+                    );
+                    $phase = $observedPhase;
+                    $declared = $observedPhase === 'setup' ? $plan->setup : $plan->acceptance;
+                    $this->runActions($target, $observedPhase, $declared, $actions);
+                    $phase = "pcov.{$observedPhase}.collect";
+                    $observedPhases[$observedPhase] = $this->observedPhpInputs->collect(
+                        $target,
+                        $observedPhase,
+                        $request->issue,
+                        $target->requireAttempt(),
+                        $runtimes,
+                        $entries,
+                    );
+                }
+                $phase = 'pcov.cleanup';
+                $this->observedPhpInputs->cleanup($target);
+                $instrumented = false;
+                $observed = new ObservedPhpInputs($runtimes, $observedPhases);
+            } else {
+                $phase = 'setup';
+                $this->runActions($target, 'setup', $plan->setup, $actions);
+                $phase = 'acceptance';
+                $this->runActions($target, 'acceptance', $plan->acceptance, $actions);
+            }
+            $phase = 'manifest';
+            $manifest = $this->proofInputs->build(
+                $repository,
+                $candidateSha,
+                $includedMainSha,
+                $request->issue,
+                $planPath,
+                $plan,
+                $observed,
+            );
             $phase = 'verify';
             $verification = $this->verifier->verify(
                 $target,
@@ -152,6 +308,16 @@ final readonly class TopologyProofRunner
             }
             $status = ProofStatus::Proved;
         } catch (Throwable $exception) {
+            if ($instrumented) {
+                try {
+                    $this->observedPhpInputs->cleanup($target);
+                } catch (Throwable $cleanup) {
+                    $exception = new RuntimeException(
+                        $exception->getMessage().'; PCOV cleanup also failed: '.$cleanup->getMessage(),
+                        previous: $exception,
+                    );
+                }
+            }
             $status = ProofStatus::Diagnosis;
             $error = "proof phase {$phase} failed: ".$exception->getMessage();
             $verification ??= $this->failedVerification($target, $phase, $exception);
@@ -167,15 +333,111 @@ final readonly class TopologyProofRunner
             ProofResult::now(),
             $plan->endsWith,
             TopologyVerifier::skippedProbes($plan->endsWith),
+            $plan->fingerprint(),
+            $status === ProofStatus::Proved && $manifest instanceof ProofInputManifest
+                ? $manifest->fingerprint()
+                : null,
         );
         $this->record($state, $target, $generation, $source, $verification);
+        if ($status === ProofStatus::Proved) {
+            if (! $manifest instanceof ProofInputManifest) {
+                throw new RuntimeException('The successful proof has no proof-input manifest.');
+            }
+            $repository->pinProof($request->issue, $target->requireAttempt(), $candidateSha);
+            try {
+                $state->writeProofInputManifest($manifest->fingerprint(), $manifest->toArray());
+                $state->writeProof($result->toArray());
+            } catch (Throwable $exception) {
+                $repository->unpinProof($request->issue, $target->requireAttempt());
+
+                throw $exception;
+            }
+
+            return $result;
+        }
         $state->writeProof($result->toArray());
 
         return $result;
     }
 
+    /** @return array<string, mixed> */
+    private function convergeCandidateLocked(
+        TopologyRequest $request,
+        IssueState $state,
+        string $candidateSha,
+        string $candidateTree,
+        ProofEquivalenceReport $equivalence,
+    ): array {
+        $generation = $this->topologySnapshot->promoted() ?? throw new RuntimeException(
+            'No promoted topology snapshot generation is available.',
+        );
+        if ($generation->isLegacy()) {
+            throw new RuntimeException('The promoted topology snapshot generation is legacy; refresh it first.');
+        }
+        $target = TopologyTarget::feature($request->issue, $this->mintAttempt());
+        $purpose = AttemptPurpose::CandidateConvergence;
+        $state->writeAttempt($target->requireAttempt(), $purpose, $this->operation);
+        try {
+            $this->createTopology($target, $generation);
+        } catch (Throwable $exception) {
+            $this->rollback($target, $state, $purpose, $exception);
+        }
+
+        $source = $this->candidateSource($candidateSha);
+        $verification = $this->pendingVerification($target);
+        $this->record($state, $target, $generation, $source, $verification, $purpose);
+        $phase = 'sync.candidate';
+        $convergence = null;
+        $error = null;
+        try {
+            $sync = $this->synchronizer->syncCommit($target, $request->worktree, $candidateSha);
+            if ($sync->candidateSha !== $candidateSha || $sync->candidateTree !== $candidateTree) {
+                throw new RuntimeException('The candidate sync changed the candidate identity.');
+            }
+            $phase = 'identity';
+            $this->synchronizer->probeCheckoutIdentity($target, $candidateSha, $candidateTree);
+            $phase = 'sury-runtime';
+            $this->observedPhpInputs->normalizeRuntime($target);
+            $phase = 'converge';
+            $convergence = $this->converger->converge($target, $source, $generation->laravel);
+            $phase = 'verify';
+            $verification = $this->verifier->verify(
+                $target,
+                VerificationMode::Proof,
+                $source,
+                requiredAssignments: $generation->topologyAssignments ?? throw new RuntimeException(
+                    'The pinned generation has no assignment declaration.',
+                ),
+            );
+            if (! $verification->passed) {
+                throw new RuntimeException('Candidate convergence verification failed.'.$verification->failedSummary());
+            }
+            $status = 'converged';
+        } catch (Throwable $exception) {
+            $status = 'diagnosis';
+            $error = "candidate-convergence phase {$phase} failed: ".$exception->getMessage();
+            $verification = $this->failedVerification($target, $phase, $exception);
+        }
+        $this->record($state, $target, $generation, $source, $verification, $purpose);
+        $result = new CandidateConvergenceResult(
+            $status,
+            $request->issue,
+            $target->requireAttempt(),
+            $candidateSha,
+            $candidateTree,
+            $equivalence->fingerprint(),
+            $convergence,
+            $verification,
+            $error,
+            ProofResult::now(),
+        );
+        $state->writeCandidateConvergence($result);
+
+        return $result->toArray();
+    }
+
     /** Network and clones, under the host creation lock; nothing of the candidate is on them yet. */
-    private function createTopology(TopologyTarget $target, StandbyGeneration $generation): void
+    private function createTopology(TopologyTarget $target, TopologySnapshotGeneration $generation): void
     {
         $metadata = [
             'user.orbit.e2e.issue' => $target->issue,
@@ -192,7 +454,7 @@ final readonly class TopologyProofRunner
             $copies = [];
             foreach (TopologyProfile::ROLES as $role) {
                 $copies[$role] = [
-                    'source' => TopologyTarget::standby($this->standbyIdentity)->instance($role),
+                    'source' => TopologyTarget::topologySnapshot($this->topologySnapshotIdentity)->instance($role),
                     'snapshot' => $generation->snapshots[$role],
                     'target' => $target->instance($role),
                     'metadata' => [...$metadata, 'user.orbit.e2e.generation' => $generation->id],
@@ -222,7 +484,7 @@ final readonly class TopologyProofRunner
             try {
                 $result = $this->host->exec(
                     $instance,
-                    GuestCommand::asOrbitUser($action['argv'], $action['timeout_seconds']),
+                    GuestCommand::asProofAction($action['argv'], $action['timeout_seconds']),
                 );
             } catch (Throwable $transport) {
                 $actions[] = [
@@ -255,9 +517,10 @@ final readonly class TopologyProofRunner
     private function record(
         IssueState $state,
         TopologyTarget $target,
-        StandbyGeneration $generation,
+        TopologySnapshotGeneration $generation,
         SourceState $source,
         VerificationReport $verification,
+        AttemptPurpose $purpose = AttemptPurpose::Proof,
     ): void {
         $instances = [];
         foreach (TopologyProfile::ROLES as $role) {
@@ -265,7 +528,7 @@ final readonly class TopologyProofRunner
         }
         $state->writeTopology(new FeatureTopology(
             $target,
-            AttemptPurpose::Proof,
+            $purpose,
             $generation,
             $target->network(),
             $instances,
@@ -280,8 +543,12 @@ final readonly class TopologyProofRunner
     }
 
     /** Roll every intended resource back and drop the lease; a refused cleanup keeps the lease for `release`. */
-    private function rollback(TopologyTarget $target, IssueState $state, Throwable $exception): never
-    {
+    private function rollback(
+        TopologyTarget $target,
+        IssueState $state,
+        AttemptPurpose $purpose,
+        Throwable $exception,
+    ): never {
         $resources = [$target->network(), ...array_map($target->instance(...), TopologyProfile::ROLES)];
         $rollback = AcquisitionRollback::forHost($this->host, $this->networks, $target);
         $refused = [];
@@ -302,7 +569,7 @@ final readonly class TopologyProofRunner
                 previous: $exception,
             );
         }
-        $state->forgetAttempt();
+        $state->forgetAttempt($purpose);
 
         throw new RuntimeException('Proof topology creation failed: '.$exception->getMessage(), previous: $exception);
     }
@@ -338,15 +605,20 @@ final readonly class TopologyProofRunner
     /**
      * @param array<string, array{source:string,snapshot:string,target:string,metadata:array<string, string>,network?:string,role?:string,topology?:string,slot?:int}> $copies
      */
-    private function copyPinnedSnapshots(StandbyGeneration $generation, array $copies): void
+    private function copyPinnedSnapshots(TopologySnapshotGeneration $generation, array $copies): void
     {
         $lock = new OperationLock($this->hostPaths);
-        if (! $lock->acquire('standby-generation', $this->operation, exclusive: false, timeoutSeconds: 3600)) {
-            throw new RuntimeException('The promoted standby generation is locked.');
+        if (! $lock->acquire(
+            'standby-generation',
+            $this->operation,
+            exclusive: false,
+            timeoutSeconds: 3600,
+        )) {
+            throw new RuntimeException('The promoted topology snapshot generation is locked.');
         }
         try {
-            if ($this->standby->promoted()?->toArray() !== $generation->toArray()) {
-                throw new RuntimeException('The promoted standby generation changed before snapshot copy.');
+            if ($this->topologySnapshot->promoted()?->toArray() !== $generation->toArray()) {
+                throw new RuntimeException('The promoted topology snapshot generation changed before snapshot copy.');
             }
             $this->host->copySnapshots($copies);
         } finally {

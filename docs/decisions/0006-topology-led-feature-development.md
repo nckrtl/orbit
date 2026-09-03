@@ -15,9 +15,9 @@ required serial rollout, recorded pre-state, careful restoration, and broad
 coordination because proof state could outlive one change.
 
 ADR 0005 introduced cheap issue-specific Incus topologies created from a
-prepared standby generation. Disposable resources remove the shared-state
-constraints, but exploratory changes must not contaminate evidence for the
-exact candidate commit.
+prepared topology snapshot generation. Disposable resources remove the
+shared-state constraints, but exploratory changes must not contaminate evidence
+for the exact candidate commit.
 
 ## Decision
 
@@ -31,16 +31,18 @@ Work requiring real-machine proof uses separate disposable attempts:
   from Git.
 
 Each attempt has its own ID, network, instances, devices, inventory, and state.
-Only one attempt is active for an issue at a time.
+An issue may have one discovery attempt and one proof attempt at the same time.
+Discovery remains the default target for development commands.
 
-Discovery output is diagnostic context, not proof evidence. Release discovery
-resources and verify their exact absence before starting proof.
+Discovery output is diagnostic context, not proof evidence. Keep discovery
+available while a fresh proof topology is created from the promoted topology
+snapshot. This lets development continue on discovery when proof fails.
 
 ### Prove one exact commit
 
 A proof attempt:
 
-1. creates a fresh topology from the prepared standby generation;
+1. creates a fresh topology from the prepared topology snapshot generation;
 2. synchronizes the exact candidate commit from Git;
 3. verifies clean guest checkout identity at that commit;
 4. runs repository convergence;
@@ -55,7 +57,13 @@ declared actions, observed result of each action, and a status of `proved` or
 A transport failure may be retried once before clean guest checkout identity is
 verified. Any later failure, or a second transport failure, changes the attempt
 to `diagnosis`. Diagnosis resources may be inspected but can never become
-proved; release them before another proof attempt.
+proved. `shell --proof` and `exec --proof` provide explicit unprivileged access
+to the retained failed proof while normal commands continue to target
+discovery. Release only the failed proof before another proof attempt.
+
+Every declared setup and acceptance action must exit `0`. A timeout or any
+other nonzero exit makes the result a diagnosis. Review starts only after the
+complete declared action sequence exits `0`.
 
 ### Keep successful proof immutable
 
@@ -65,7 +73,8 @@ Releasing it invalidates the proof.
 
 A new candidate commit makes prior proof stale automatically. Proof consumers
 must require an active proved topology whose recorded candidate equals the
-commit being evaluated and whose acceptance results are complete.
+commit being evaluated, whose recorded plan fingerprint matches the current
+plan, and whose complete action sequence contains only zero exits.
 
 ### Clean up by exact inventory
 
@@ -73,8 +82,9 @@ Cleanup revalidates ownership and removes only the exact resources recorded for
 the attempt. It never deletes by prefix, glob, age, broad query, or unresolved
 variable. Every resource records its Orbit owner, issue, attempt, and operation.
 
-The prepared standby generation may be refreshed only after disposable proof
-resources are released and their absence is verified.
+After promotion, the harness releases the successful proof and the retained
+discovery topology. Neither disposable topology may linger after it becomes
+the new topology snapshot generation.
 
 ### Preserve production separation
 
@@ -85,6 +95,8 @@ resources are never adopted as task-owned state.
 ## Consequences
 
 - Exploration remains fast and flexible without weakening proof.
+- Discovery remains available when proof fails, while the failed proof remains
+  separately available for direct comparison and diagnosis.
 - Proof demonstrates one exact commit on a physically fresh topology.
 - Stale proof is detected from candidate identity rather than a separate
   invalidation ledger.

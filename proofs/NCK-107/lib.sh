@@ -23,7 +23,9 @@ json_get() {
 }
 
 resolve_metrics() {
-  dig +time=3 +tries=2 +short metrics.orbit @"$GATEWAY_DNS" | awk 'NF { print; exit }'
+  local records
+  records=$(dig +time=3 +tries=2 +short metrics.orbit @"$GATEWAY_DNS")
+  awk 'NF { print; exit }' <<<"$records"
 }
 
 # curl against https://metrics.orbit through private DNS and the Orbit CA.
