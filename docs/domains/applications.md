@@ -56,7 +56,7 @@ Creation moves through four durable states:
 
 An identical retry verifies the recorded App, Node, source kind, root, path,
 repository, branch, and pre-activation commit evidence. It then resumes the
-next incomplete transition. Once active, the historical starting commit stays
+next incomplete transition. Once active, the recorded starting commit stays
 unchanged while normal development advances HEAD. A conflicting retry fails
 without a second row or checkout.
 

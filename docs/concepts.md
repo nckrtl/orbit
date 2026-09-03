@@ -28,10 +28,11 @@ These are the common terms you will see throughout the Orbit documentation.
 - **Effective web root** — The AppInstance root override when one is stored,
   or the App root otherwise. Both values are normalized relative paths.
 - **Legacy Instance** — The previous runnable application record. Orbit keeps
-  this record as transitional input for existing Workspace and Doctor behavior.
-  New development placements use AppInstance.
-- **Workspace** — A transitional Git worktree owned by a legacy Instance.
-  AppInstance creation does not use or change Workspace source.
+  this record as input for existing Workspace and Doctor behavior. New
+  development placements use AppInstance.
+- **Workspace** — A Git worktree owned by a legacy Instance. Orbit retains it
+  for existing Workspace operations. AppInstance creation does not use or
+  change Workspace source.
 - **Route** — A hostname that sends traffic to one or more AppInstances. See
   [ADR 0009](decisions/0009-clustered-app-instance-routing.md).
 - **Router** — The Node role that sends traffic for an active TLD-bearing
