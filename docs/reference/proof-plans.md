@@ -1,10 +1,10 @@
 # Proof plans
 
-This page is for the contributor or agent who writes `proofs/<ISSUE>.json` and reads its result. A plan runs on the proof topology the harness builds for its issue. It states what the `apps/e2e` harness accepts, how it stages fixtures and prepares the runtime, what `prove` records, and what each equivalence outcome requires next. The commands that run a plan are on the [Incus topology registry](incus-topologies.md).
+This page is for the contributor or agent who writes `.loop/proof/<ISSUE>.json` and reads its result. A plan runs on the proof topology the harness builds for its issue. It states what the `apps/e2e` harness accepts, how it stages fixtures and prepares the runtime, what `prove` records, and what each equivalence outcome requires next. [ADR 0022](../decisions/0022-track-the-issue-workspace-and-delete-it-before-merge.md) governs the tracked issue workspace, and the commands that run a plan are on the [Incus topology registry](incus-topologies.md).
 
 ## Plan file
 
-A plan is one JSON object at `proofs/<ISSUE>.json` in the worktree, or at the repository-relative path given with `--plan=PATH`. The harness refuses an absolute path, a `..` segment, and any key outside this table.
+A plan is one JSON object at `.loop/proof/<ISSUE>.json` in the worktree. A `--plan=PATH` value must select the active issue's plan under `.loop/proof/`; the harness refuses an absolute path, a `.` or `..` segment, a path outside that directory, a plan for another issue, and any key outside this table. A refusal caused by the selected plan names that plan.
 
 | Field | Type | Meaning | Default |
 | --- | --- | --- | --- |
@@ -12,7 +12,6 @@ A plan is one JSON object at `proofs/<ISSUE>.json` in the worktree, or at the re
 | `acceptance` | list of actions | One action per acceptance criterion, in order | Required; at least one |
 | `mutates` | boolean | The plan changes reusable node state, so `promote` refuses the proved topology | `false` |
 | `ends_with` | `{"nodes": [...]}` | The Nodes that remain registered when verification runs; a role left out is proved absent | Every role |
-| `fixture_issues` | list of issue IDs | Other issues whose `proofs/<ID>/` directories the harness also stages; no duplicates | None |
 | `inputs` | list of paths | Files or directories that actions read outside the runtime policy and the fixtures | None |
 | `observed_inputs` | boolean | Collect file-level PHP observations with PCOV during setup and acceptance | `false` |
 
@@ -33,7 +32,7 @@ A literal `/home/orbit/orbit/...` argument must resolve to a runtime path under 
 
 ## Fixtures
 
-Files under `proofs/<ISSUE>/` are proof-only fixtures beside the plan. The harness refuses a nested directory, a symlink, or a name outside `[a-z0-9][a-z0-9._-]{0,127}`. `prove` reads them from the exact candidate commit, never from the host working tree. It installs them root-owned, `0755` for an executable blob and `0644` otherwise, at `/var/lib/orbit-e2e/proof/<name>` on every role, including `app-prod`. A `fixture_issues` entry lands at `/var/lib/orbit-e2e/proof/<ID>/<name>` and must hold at least one file. A plan references a fixture by that guest path, for example `["/var/lib/orbit-e2e/proof/fixture-check.sh", "app-prod"]`.
+Files beside the plan under `.loop/proof/` are the active issue's proof-only fixtures. The harness refuses a nested directory, a symlink, a name outside `[a-z0-9][a-z0-9._-]{0,127}`, and every declaration that names another issue's fixtures. `prove` reads the fixtures from the exact candidate commit, never from the host working tree. It installs them root-owned, `0755` for an executable blob and `0644` otherwise, at `/var/lib/orbit-e2e/proof/<name>` on every role, including `app-prod`. A plan references a fixture by that guest path, for example `["/var/lib/orbit-e2e/proof/fixture-check.sh", "app-prod"]`.
 
 The harness empties the guest directory before staging. Every role prints `name<TAB>mode<TAB>sha256` per file, and the digest must equal the host digest. An issue without a fixture directory stages an empty inventory.
 
