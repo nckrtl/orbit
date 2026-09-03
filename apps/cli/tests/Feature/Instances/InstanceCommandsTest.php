@@ -4,12 +4,17 @@ declare(strict_types=1);
 
 use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
+use App\Services\Git\GitWorktreeLocation;
+use App\Services\Git\GitWorktreeLocator;
+use App\Services\Git\GitWorktreeLocatorException;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\AppInstances\CreateAppInstanceRequest;
 use Orbit\Sdk\Requests\AppInstances\ListAppInstancesRequest;
+use Orbit\Sdk\Requests\AppInstances\RegisterAppInstanceRequest;
 use Orbit\Sdk\Requests\AppInstances\RemoveAppInstanceRequest;
 use Orbit\Sdk\Requests\AppInstances\ShowAppInstanceRequest;
+use Orbit\Sdk\Requests\AppInstances\UnregisterAppInstanceRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
@@ -94,6 +99,79 @@ describe('instance:new', function (): void {
             ->expectsOutput('Instance [dev] is active.')
             ->expectsOutput('Request ID: '.instance_request_id())
             ->assertExitCode(0);
+    });
+});
+
+describe('instance:register', function (): void {
+    it('derives the name from the directory above the canonical Git top level', function (): void {
+        app()->instance(GitWorktreeLocator::class, instance_git_worktree_locator(
+            new GitWorktreeLocation(
+                topLevel: '/home/orbit/.codex/worktrees/dfb5/acme',
+                defaultName: 'dfb5',
+            ),
+        ));
+        $mockClient = MockClient::global([
+            RegisterAppInstanceRequest::class => instance_mock_response(201),
+        ]);
+
+        $this
+            ->artisan('instance:register', ['--app' => 'acme'])
+            ->expectsOutput('Instance [dev] registered from caller-local worktree.')
+            ->expectsOutput('Request ID: '.instance_request_id())
+            ->assertExitCode(0);
+
+        expect($mockClient->getLastRequest())
+            ->toBeInstanceOf(RegisterAppInstanceRequest::class)
+            ->and($mockClient->getLastRequest()?->body()->all())
+            ->toBe([
+                'app' => 'acme',
+                'checkout_path' => '/home/orbit/.codex/worktrees/dfb5/acme',
+                'name' => 'dfb5',
+            ]);
+    });
+
+    it('transports explicit name and root overrides', function (): void {
+        app()->instance(GitWorktreeLocator::class, instance_git_worktree_locator(
+            new GitWorktreeLocation(
+                topLevel: '/srv/worktrees/token/acme',
+                defaultName: 'token',
+            ),
+        ));
+        $mockClient = MockClient::global([
+            RegisterAppInstanceRequest::class => instance_mock_response(201),
+        ]);
+
+        $this
+            ->artisan('instance:register', [
+                '--app' => 'acme',
+                '--name' => 'preview',
+                '--root' => 'site/public',
+            ])
+            ->assertExitCode(0);
+
+        expect($mockClient->getLastRequest()?->body()->all())->toBe([
+            'app' => 'acme',
+            'checkout_path' => '/srv/worktrees/token/acme',
+            'name' => 'preview',
+            'root' => 'site/public',
+        ]);
+    });
+
+    it('fails before transport when the current directory is not in a Git checkout', function (): void {
+        app()->instance(GitWorktreeLocator::class, new class implements GitWorktreeLocator {
+            public function locate(): GitWorktreeLocation
+            {
+                throw new GitWorktreeLocatorException;
+            }
+        });
+        $mockClient = MockClient::global();
+
+        $this
+            ->artisan('instance:register', ['--app' => 'acme'])
+            ->expectsOutputToContain('Run this command inside a Git worktree.')
+            ->assertExitCode(1);
+
+        expect($mockClient->getLastPendingRequest())->toBeNull();
     });
 });
 
@@ -187,6 +265,23 @@ describe('instance:remove', function (): void {
     });
 });
 
+describe('instance:unregister', function (): void {
+    it('unregisters an externally owned worktree without source options', function (): void {
+        $mockClient = MockClient::global([
+            UnregisterAppInstanceRequest::class => instance_mock_response(),
+        ]);
+
+        $this
+            ->artisan('instance:unregister', ['instance' => '5'])
+            ->expectsOutput('Instance [dev] unregistered. External source was not changed.')
+            ->expectsOutput('Request ID: '.instance_request_id())
+            ->assertExitCode(0);
+
+        expect($mockClient->getLastRequest())
+            ->toBeInstanceOf(UnregisterAppInstanceRequest::class);
+    });
+});
+
 it('rejects invalid Instance IDs before making an API request', function (string $command, string $instanceId): void {
     $mockClient = MockClient::global();
 
@@ -199,6 +294,7 @@ it('rejects invalid Instance IDs before making an API request', function (string
 })->with([
     'show zero' => ['instance:show', '0'],
     'remove negative' => ['instance:remove', '-1'],
+    'unregister zero' => ['instance:unregister', '0'],
 ]);
 
 it('rejects invalid parent IDs before creating an AppInstance', function (
@@ -257,4 +353,18 @@ function instance_json(): string
 function instance_request_id(): string
 {
     return '0198e15d-16c4-7855-8eb2-182b53ad28ba';
+}
+
+function instance_git_worktree_locator(GitWorktreeLocation $location): GitWorktreeLocator
+{
+    return new class($location) implements GitWorktreeLocator {
+        public function __construct(
+            private readonly GitWorktreeLocation $location,
+        ) {}
+
+        public function locate(): GitWorktreeLocation
+        {
+            return $this->location;
+        }
+    };
 }

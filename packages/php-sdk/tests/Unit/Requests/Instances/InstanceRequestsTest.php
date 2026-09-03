@@ -5,10 +5,13 @@ declare(strict_types=1);
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\AppInstances\CreateAppInstanceRequest;
 use Orbit\Sdk\Requests\AppInstances\ListAppInstancesRequest;
+use Orbit\Sdk\Requests\AppInstances\RegisterAppInstanceRequest;
 use Orbit\Sdk\Requests\AppInstances\RemoveAppInstanceRequest;
 use Orbit\Sdk\Requests\AppInstances\ShowAppInstanceRequest;
+use Orbit\Sdk\Requests\AppInstances\UnregisterAppInstanceRequest;
 use Orbit\Sdk\Responses\AppInstances\AppInstanceResponse;
 use Orbit\Sdk\Responses\AppInstances\AppInstancesResponse;
+use Saloon\Contracts\Body\HasBody;
 use Saloon\Enums\Method;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
@@ -52,6 +55,48 @@ describe('AppInstance requests', function (): void {
             'node_id' => 4,
             'name' => 'main',
             'root' => 'site/public',
+        ]);
+    });
+
+    it('registers the caller-local checkout with optional identity overrides', function (): void {
+        $mockClient = new MockClient([
+            RegisterAppInstanceRequest::class => MockResponse::make(instance_envelope(), 201),
+        ]);
+        $connector = instance_gateway_connector($mockClient);
+        $register = new RegisterAppInstanceRequest(
+            app: 'acme',
+            checkoutPath: '/home/orbit/.codex/worktrees/dfb5/acme',
+            name: 'preview',
+            root: 'site/public',
+        );
+
+        $response = $connector->send($register)->dto();
+        $request = $mockClient->getLastRequest();
+
+        expect($request?->getMethod())
+            ->toBe(Method::POST)
+            ->and($request?->resolveEndpoint())
+            ->toBe('/api/v1/instances/register')
+            ->and($register->body()->all())
+            ->toBe([
+                'app' => 'acme',
+                'checkout_path' => '/home/orbit/.codex/worktrees/dfb5/acme',
+                'name' => 'preview',
+                'root' => 'site/public',
+            ])
+            ->and($response)
+            ->toBeInstanceOf(AppInstanceResponse::class);
+    });
+
+    it('omits nullable registered-worktree overrides', function (): void {
+        $register = new RegisterAppInstanceRequest(
+            app: 'acme',
+            checkoutPath: '/home/orbit/.codex/worktrees/dfb5/acme',
+        );
+
+        expect($register->body()->all())->toBe([
+            'app' => 'acme',
+            'checkout_path' => '/home/orbit/.codex/worktrees/dfb5/acme',
         ]);
     });
 
@@ -117,6 +162,28 @@ describe('AppInstance requests', function (): void {
             ->toBe(['discard_source' => true])
             ->and($response->id)
             ->toBe(7);
+    });
+
+    it('unregisters an AppInstance without a request body', function (): void {
+        $mockClient = new MockClient([
+            UnregisterAppInstanceRequest::class => MockResponse::make(instance_envelope()),
+        ]);
+        $connector = instance_gateway_connector($mockClient);
+
+        $response = $connector->send(new UnregisterAppInstanceRequest(7))->dto();
+        $request = $mockClient->getLastRequest();
+        $pendingRequest = $mockClient->getLastPendingRequest();
+
+        expect($request?->getMethod())
+            ->toBe(Method::DELETE)
+            ->and($request?->resolveEndpoint())
+            ->toBe('/api/v1/instances/7/registration')
+            ->and($request)
+            ->not->toBeInstanceOf(HasBody::class)
+            ->and($pendingRequest?->body())
+            ->toBeNull()
+            ->and($response)
+            ->toBeInstanceOf(AppInstanceResponse::class);
     });
 });
 

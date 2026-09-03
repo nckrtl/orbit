@@ -46,8 +46,10 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'gateway:use',
         'instance:list',
         'instance:new',
+        'instance:register',
         'instance:remove',
         'instance:show',
+        'instance:unregister',
         'metrics:credentials',
         'metrics:disable',
         'metrics:enable',
@@ -89,7 +91,7 @@ it('does not register hidden Orbit product commands', function (): void {
     $orbitCommands = collect(app(Kernel::class)->all())
         ->filter(static fn (Command $command): bool => str_starts_with($command::class, 'App\\Commands\\'));
 
-    expect($orbitCommands)->toHaveCount(63);
+    expect($orbitCommands)->toHaveCount(65);
     expect($orbitCommands->every(
         static fn (Command $command): bool => ! $command->isHidden(),
     ))->toBeTrue();
@@ -164,8 +166,13 @@ it('keeps the exact approved arguments options and defaults', function (): void 
             ['app', 'node', 'name'],
             ['root' => null, 'json' => false],
         ],
+        'instance:register' => [
+            [],
+            ['app' => null, 'name' => null, 'root' => null, 'json' => false],
+        ],
         'instance:remove' => [['instance'], ['discard-source' => false, 'json' => false]],
         'instance:show' => [['instance'], ['json' => false]],
+        'instance:unregister' => [['instance'], ['json' => false]],
         'metrics:credentials' => [[], ['reset' => false, 'json' => false]],
         'metrics:disable' => [[], ['force' => false, 'purge-data' => false, 'json' => false]],
         'metrics:enable' => [['node'], ['json' => false]],
@@ -379,8 +386,10 @@ it('renders one exact json failure envelope for every Orbit product command', fu
         ],
         'instance:list' => [[], ...$profileMissing],
         'instance:new' => [['app' => '1', 'node' => '1', 'name' => 'web'], ...$profileMissing],
+        'instance:register' => [['--app' => 'web'], ...$profileMissing],
         'instance:remove' => [['instance' => '1'], ...$profileMissing],
         'instance:show' => [['instance' => '1'], ...$profileMissing],
+        'instance:unregister' => [['instance' => '1'], ...$profileMissing],
         'metrics:credentials' => [[], ...$profileMissing],
         'metrics:disable' => [['--force' => true], ...$profileMissing],
         'metrics:enable' => [['node' => '1'], ...$profileMissing],

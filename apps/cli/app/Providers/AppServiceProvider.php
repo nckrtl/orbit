@@ -7,6 +7,8 @@ namespace App\Providers;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\Dns\LocalResolver;
 use App\Services\Dns\ResolvesLocalDns;
+use App\Services\Git\GitWorktreeLocator;
+use App\Services\Git\NativeGitWorktreeLocator;
 use Illuminate\Support\ServiceProvider;
 
 final class AppServiceProvider extends ServiceProvider
@@ -22,6 +24,7 @@ final class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->singleton(ResolvesLocalDns::class, LocalResolver::class);
+        $this->app->singleton(GitWorktreeLocator::class, NativeGitWorktreeLocator::class);
 
         $this->app->singleton(
             GatewayConfigRepository::class,
