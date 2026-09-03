@@ -56,7 +56,7 @@ by each Node's assigned roles.
 
 ## Applications and traffic
 
-Orbit can group related Nodes in a Cluster, but a Cluster is not required. An
+An
 App represents an application and its shared settings. An AppInstance belongs
 to that App and one Node, where it is developed or runs in production. A Route
 connects a hostname to an AppInstance.
@@ -72,12 +72,6 @@ application. You can read more about this design in
 [ADR 0011](decisions/0011-clustered-production-ingress-and-app-prod-placement.md),
 as superseded and extended by
 [ADR 0017](decisions/0017-optional-cluster-placement-and-tld-precedence.md).
-
-These application and routing features are still being built. Cluster
-activation and TLD ownership already enforce the control-plane rules above,
-but AppInstance, Route, DNS cutover, and Ingress work is not complete. Some APIs
-still use the older Instance and Workspace names. Check the code before using
-these newer features.
 
 ## Doctor
 

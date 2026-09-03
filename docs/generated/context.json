@@ -66,10 +66,7 @@
             ],
             "governing_adrs": [
                 "0004",
-                "0009",
                 "0011",
-                "0012",
-                "0014",
                 "0017"
             ]
         },
@@ -524,14 +521,11 @@
             "path": "docs/solutions/doctor-incus-proof.md",
             "title": "Prove the verify-only Doctor on an Incus topology",
             "kind": "solution",
-            "components": [
-                "apps/gateway"
-            ],
+            "components": [],
             "concepts": [
                 "App",
                 "Doctor",
-                "Gateway",
-                "Node"
+                "Gateway"
             ],
             "governing_adrs": []
         },
