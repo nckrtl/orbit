@@ -22,6 +22,7 @@ use App\Infrastructure\Activity\CommandActivityTargetResolver;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;
 use App\Models\Activity;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Process;
 use Closure;
@@ -402,6 +403,10 @@ final readonly class RecordCommandActivity
 
         if ($target !== null) {
             $updates = [...$updates, ...$target];
+
+            if (($target['subject_type'] ?? null) === AppInstance::class) {
+                $updates = $this->withAppInstanceSourceKind($activity, $request, $updates, $target);
+            }
         }
 
         $snapshot = $request->attributes->get('orbit.target_node_snapshot');
@@ -427,6 +432,40 @@ final readonly class RecordCommandActivity
                     'id' => $snapshot['id'],
                     'name' => $snapshot['name'],
                 ],
+            ],
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $updates
+     * @param array<string, mixed> $target
+     * @return array<string, mixed>
+     */
+    private function withAppInstanceSourceKind(
+        Activity $activity,
+        Request $request,
+        array $updates,
+        array $target,
+    ): array {
+        $bound = $request->route('instance');
+        $appInstance = $bound instanceof AppInstance
+            ? $bound
+            : AppInstance::query()->find($target['subject_id'] ?? null);
+
+        if (! $appInstance instanceof AppInstance) {
+            return $updates;
+        }
+
+        /** @var array<string, mixed> $properties */
+        $properties = is_array($updates['properties'] ?? null)
+            ? $updates['properties']
+            : $activity->properties?->toArray() ?? [];
+
+        return [
+            ...$updates,
+            'properties' => [
+                ...$properties,
+                'source_kind' => $appInstance->source_kind,
             ],
         ];
     }

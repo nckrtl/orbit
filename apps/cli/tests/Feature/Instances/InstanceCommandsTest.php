@@ -205,8 +205,8 @@ describe('instance:list', function (): void {
         $this
             ->artisan('instance:list')
             ->expectsTable(
-                ['ID', 'App', 'Node', 'Cluster', 'Name', 'Environment', 'Root', 'Branch', 'Status'],
-                [[5, 3, 2, 7, 'dev', 'development', 'public', 'dev', 'active']],
+                ['ID', 'App', 'Node', 'Name', 'Environment', 'Source', 'Root', 'Branch', 'Status'],
+                [[5, 3, 2, 'dev', 'development', 'managed_clone', 'public', 'dev', 'active']],
             )
             ->expectsOutput('Request ID: '.instance_request_id())
             ->assertExitCode(0);
@@ -231,7 +231,7 @@ describe('instance:show', function (): void {
             ->expectsOutput('dev (#5): active')
             ->expectsOutput('App: 3')
             ->expectsOutput('Node: 2')
-            ->expectsOutput('Cluster: 7')
+            ->expectsOutput('Source: managed_clone')
             ->expectsOutput('Checkout: /home/orbit/apps/orbit-docs/dev')
             ->expectsOutput('Root override: -')
             ->expectsOutput('Effective root: public')
@@ -322,7 +322,6 @@ function instance_payload(): array
         'id' => 5,
         'app_id' => 3,
         'node_id' => 2,
-        'cluster_id' => 7,
         'name' => 'dev',
         'environment' => 'development',
         'source_kind' => 'managed_clone',

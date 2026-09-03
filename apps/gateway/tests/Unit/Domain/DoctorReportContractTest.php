@@ -213,6 +213,7 @@ it('defines the exact stable issue-code catalog for every Doctor family', functi
         'app' => ['app.repository_origin_mismatch', 'app.inspection_failed', 'app.node_unreachable'],
         'instance' => [
             'instance.lifecycle_not_active',
+            'instance.source_kind_mismatch',
             'instance.checkout_missing',
             'instance.repository_not_independent',
             'instance.origin_mismatch',

@@ -199,7 +199,6 @@ describe(ProvisionNodeAction::class, function (): void {
         AppInstance::query()->create([
             'app_id' => $app->id,
             'node_id' => $existing->id,
-            'cluster_id' => $cluster->id,
             'name' => 'dev',
             'checkout_path' => '/srv/orbit/apps/acme/dev',
             'branch' => 'dev',

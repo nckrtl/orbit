@@ -51,7 +51,6 @@ it('refuses Node removal around an AppInstance for ordinary and forced offline p
     AppInstance::query()->create([
         'app_id' => $app->id,
         'node_id' => $target->id,
-        'cluster_id' => $cluster->id,
         'name' => 'dev',
         'checkout_path' => '/srv/orbit/apps/acme/dev',
         'branch' => 'dev',

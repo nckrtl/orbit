@@ -7,6 +7,7 @@ namespace App\Domain\Doctor;
 enum InstanceDoctorIssueCode: string implements DoctorIssueCode
 {
     case LifecycleNotActive = 'instance.lifecycle_not_active';
+    case SourceKindMismatch = 'instance.source_kind_mismatch';
     case CheckoutMissing = 'instance.checkout_missing';
     case RepositoryNotIndependent = 'instance.repository_not_independent';
     case OriginMismatch = 'instance.origin_mismatch';

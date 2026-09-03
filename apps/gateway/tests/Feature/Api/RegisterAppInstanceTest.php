@@ -89,7 +89,7 @@ it('registers the exact caller-local worktree without storing Cluster ownership'
         ])
         ->assertCreated()
         ->assertJsonPath('data.node_id', $this->caller->id)
-        ->assertJsonPath('data.cluster_id', null)
+        ->assertJsonMissingPath('data.cluster_id')
         ->assertJsonPath('data.name', 'dfb5')
         ->assertJsonPath('data.source_kind', AppInstanceSourceKind::RegisteredWorktree->value)
         ->assertJsonPath('data.checkout_path', '/home/orbit/.codex/worktrees/dfb5/example')

@@ -71,14 +71,14 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
 
             if ($instance->source_kind !== AppInstanceSourceKind::ManagedClone->value) {
                 $issues[] = new DoctorIssueData(
-                    InstanceDoctorIssueCode::RegisteredWorktreeUnavailable,
+                    InstanceDoctorIssueCode::SourceKindMismatch,
                     DoctorIssueKind::Drift,
                     'instance',
                     $instance->id,
                     $instance->name,
                     'Instance source ownership is not recognized.',
-                    'recognized',
-                    'unknown',
+                    'managed_clone or registered_worktree',
+                    $instance->source_kind,
                 );
 
                 continue;

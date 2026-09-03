@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Domain\AppInstances\AppInstanceState;
-use App\Domain\Clusters\ClusterState;
 use App\Domain\Doctor\AppInspectionData;
 use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Doctor\InstanceInspectionData;
@@ -35,7 +34,6 @@ use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\App;
 use App\Models\AppInstance;
-use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -479,17 +477,11 @@ function application_inspector_instance(App $app, Node $node, CertificateMode $m
 
 function application_app_instance(App $app, Node $node): AppInstance
 {
-    $cluster = Cluster::query()->create([
-        'name' => "doctor-cluster-{$node->id}",
-        'state' => ClusterState::Active,
-    ]);
-    $node->update(['cluster_id' => $cluster->id]);
     $app->update(['main_branch' => 'main', 'root' => 'public']);
 
     return AppInstance::query()->create([
         'app_id' => $app->id,
         'node_id' => $node->id,
-        'cluster_id' => $cluster->id,
         'name' => 'development',
         'checkout_path' => "/srv/users/nckrtl/apps/{$app->slug}/development",
         'branch' => 'development',

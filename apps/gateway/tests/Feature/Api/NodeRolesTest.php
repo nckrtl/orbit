@@ -516,7 +516,6 @@ it('does not let force offline or purge remove an app-dev role beneath an AppIns
     AppInstance::query()->create([
         'app_id' => $app->id,
         'node_id' => $this->node->id,
-        'cluster_id' => $cluster->id,
         'name' => 'dev',
         'checkout_path' => '/srv/orbit/apps/acme/dev',
         'branch' => 'dev',

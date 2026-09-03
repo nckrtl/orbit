@@ -172,6 +172,7 @@ it('rejects conflicting creation identity without mutation or remote access', fu
     'name' => [['name' => 'Renamed']],
     'defaults' => [['defaults' => ['php_version' => '8.4']]],
 ]);
+
 it('returns null source defaults truthfully for a legacy App', function (): void {
     $app = OrbitApp::query()->create([
         'name' => 'Legacy',
@@ -299,6 +300,7 @@ it('returns 422 without persistence when the remote default branch is malformed 
 
     expect(OrbitApp::query()->exists())->toBeFalse();
 });
+
 it('rejects unsupported and duplicate App source keys', function (string $body): void {
     $this
         ->withHeader('Content-Type', 'application/json')

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\AppInstances\AppInstanceState;
-use App\Domain\Clusters\ClusterState;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\Storage\CheckoutRemovalBoundary;
@@ -23,7 +22,6 @@ use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
-use App\Models\Cluster;
 use App\Models\Node;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
@@ -83,9 +81,7 @@ beforeEach(function (): void {
         new CheckoutRemovalBoundary(new ProtectedPathCatalog),
     );
 
-    $cluster = Cluster::query()->create(['name' => 'development', 'state' => ClusterState::Active]);
     $this->node = Node::query()->create([
-        'cluster_id' => $cluster->id,
         'name' => 'app-dev',
         'status' => LifecycleStatus::Active,
         'platform' => 'linux',
@@ -110,9 +106,9 @@ it('creates independent clones from an existing remote branch and the exact fetc
     $existing = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
     $fallback = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'feature');
 
-    $this->source->prepare($existing);
+    $this->source->prepare($existing, false);
     $existingResolution = $this->source->resolve($existing);
-    $this->source->prepare($fallback);
+    $this->source->prepare($fallback, false);
     $fallbackResolution = $this->source->resolve($fallback);
 
     expect($existingResolution->branch)
@@ -134,8 +130,8 @@ it('creates independent clones from an existing remote branch and the exact fetc
 it('makes preparation idempotent and uses only fixed source-control commands', function (): void {
     $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
 
-    $this->source->prepare($instance);
-    $this->source->prepare($instance);
+    $this->source->prepare($instance, false);
+    $this->source->prepare($instance, true);
     $this->source->inspectPrepared($instance);
     $resolution = $this->source->resolve($instance);
     $this->source->inspectResolved($instance);
@@ -157,9 +153,30 @@ it('makes preparation idempotent and uses only fixed source-control commands', f
     }
 });
 
+it('refuses matching pre-existing source for a fresh reservation and resumes it only after an interruption', function (): void {
+    $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
+    $this->files->makeDirectory(dirname($instance->checkout_path), 0o755, true);
+    orb76_run([
+        'git',
+        'clone',
+        '--no-checkout',
+        '--origin',
+        'origin',
+        '--',
+        $this->repository,
+        $instance->checkout_path,
+    ]);
+
+    expect(fn () => $this->source->prepare($instance, false))
+        ->toThrow(RuntimeConvergenceException::class);
+
+    $this->source->prepare($instance, true);
+    expect(is_dir($instance->checkout_path.'/.git'))->toBeTrue();
+});
+
 it('refuses dirty and unpublished source unless discard is explicit', function (string $mutation): void {
     $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
-    $this->source->prepare($instance);
+    $this->source->prepare($instance, false);
     $resolution = $this->source->resolve($instance);
     $instance->update([
         'branch' => $resolution->branch,
@@ -186,7 +203,7 @@ it('refuses dirty and unpublished source unless discard is explicit', function (
 
 it('does not let discard waive origin or symlink identity checks', function (string $mutation): void {
     $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
-    $this->source->prepare($instance);
+    $this->source->prepare($instance, false);
     $resolution = $this->source->resolve($instance);
     $instance->update([
         'branch' => $resolution->branch,
@@ -221,7 +238,7 @@ it('does not let discard waive origin or symlink identity checks', function (str
 
 it('does not let discard remove a checkout with shared Git administration', function (): void {
     $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
-    $this->source->prepare($instance);
+    $this->source->prepare($instance, false);
     $resolution = $this->source->resolve($instance);
     $instance->update([
         'branch' => $resolution->branch,
@@ -280,12 +297,12 @@ function orb76_source_instance(
         ->create([
             'app_id' => $app->id,
             'node_id' => $node->id,
-            'cluster_id' => $node->cluster_id,
             'name' => $name,
+            'source_kind' => 'managed_clone',
             'checkout_path' => "{$appsRoot}/{$app->slug}/{$name}",
             'status' => AppInstanceState::Reserved,
         ])
-        ->load(['app', 'node', 'cluster']);
+        ->load(['app', 'node']);
 }
 
 function orb76_create_remote_repository(string $sandbox, string $repository): void

@@ -22,7 +22,7 @@ final readonly class NativeRepositoryDefaultBranchResolver implements Repository
     public function resolve(#[SensitiveParameter] string $repository): string
     {
         $result = $this->run(new ProcessInvocation(
-            arguments: ['git', 'ls-remote', '--symref', '--exit-code', '--', $repository, 'HEAD'],
+            arguments: ['git', '-C', '/', 'ls-remote', '--symref', '--exit-code', '--', $repository, 'HEAD'],
             timeout: 30.0,
         ));
 
@@ -50,7 +50,7 @@ final readonly class NativeRepositoryDefaultBranchResolver implements Repository
         $branch = GitBranchName::validate($branch);
         $reference = "refs/heads/{$branch}";
         $result = $this->run(new ProcessInvocation(
-            arguments: ['git', 'ls-remote', '--exit-code', '--heads', '--', $repository, $reference],
+            arguments: ['git', '-C', '/', 'ls-remote', '--exit-code', '--heads', '--', $repository, $reference],
             timeout: 30.0,
         ));
 

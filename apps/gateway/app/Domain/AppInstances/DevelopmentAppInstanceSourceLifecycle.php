@@ -8,7 +8,7 @@ use App\Models\AppInstance;
 
 interface DevelopmentAppInstanceSourceLifecycle
 {
-    public function prepare(AppInstance $appInstance): void;
+    public function prepare(AppInstance $appInstance, bool $allowExisting): void;
 
     public function inspectPrepared(AppInstance $appInstance): void;
 

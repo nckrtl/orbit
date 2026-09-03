@@ -5,6 +5,12 @@
             "node": "app-dev",
             "argv": ["bash", "/var/lib/orbit-e2e/proof/proof.sh", "setup-app-dev"],
             "timeout_seconds": 60
+        },
+        {
+            "id": "trust-source-fixture-gateway",
+            "node": "gateway",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/proof.sh", "setup-gateway"],
+            "timeout_seconds": 120
         }
     ],
     "acceptance": [
@@ -33,9 +39,21 @@
             "timeout_seconds": 60
         },
         {
-            "id": "clean-and-discard-removal",
+            "id": "active-retry-and-removal-refusal",
             "node": "gateway",
             "argv": ["bash", "/var/lib/orbit-e2e/proof/proof.sh", "05"],
+            "timeout_seconds": 300
+        },
+        {
+            "id": "active-retry-preserves-source",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/proof.sh", "05-source-preserved"],
+            "timeout_seconds": 60
+        },
+        {
+            "id": "clean-and-discard-removal",
+            "node": "gateway",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/proof.sh", "05-remove"],
             "timeout_seconds": 300
         },
         {

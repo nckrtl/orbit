@@ -212,7 +212,6 @@ function instance_gateway_data(): array
         'id' => 7,
         'app_id' => 3,
         'node_id' => 4,
-        'cluster_id' => 2,
         'name' => 'main',
         'environment' => 'development',
         'source_kind' => 'managed_clone',

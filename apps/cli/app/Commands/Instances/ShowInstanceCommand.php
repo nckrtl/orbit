@@ -51,8 +51,8 @@ final class ShowInstanceCommand extends GatewayCommand
         $this->info("{$instance->name} (#{$instance->id}): {$instance->status}");
         $this->line("App: {$instance->appId}");
         $this->line("Node: {$instance->nodeId}");
-        $this->line("Cluster: {$instance->clusterId}");
         $this->line("Environment: {$instance->environment}");
+        $this->line("Source: {$instance->sourceKind}");
         $this->line("Checkout: {$instance->checkoutPath}");
         $this->line('Root override: '.($instance->root ?? '-'));
         $this->line('Effective root: '.($instance->effectiveRoot ?? '-'));
