@@ -5,6 +5,10 @@ declare(strict_types=1);
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\RepositoryDefaultBranchResolver;
+use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\Processes\ProcessInvocation;
+use App\Infrastructure\Processes\ProcessRunner;
+use App\Infrastructure\SourceControl\NativeRepositoryDefaultBranchResolver;
 use App\Models\App as OrbitApp;
 use App\Models\Node;
 
@@ -272,6 +276,30 @@ it('rejects an unavailable explicit or default branch with one stable error', fu
     'omitted main branch' => [null],
     'explicit main branch' => ['main'],
 ]);
+
+it('returns 422 without persistence when the remote default branch is malformed UTF-8', function (): void {
+    $processes = new class implements ProcessRunner {
+        public function run(ProcessInvocation $invocation): CommandResult
+        {
+            return new CommandResult(0, "ref: refs/heads/bad-\xC3\x28\tHEAD\n", '', 1, false);
+        }
+    };
+    app()->instance(
+        RepositoryDefaultBranchResolver::class,
+        new NativeRepositoryDefaultBranchResolver($processes),
+    );
+
+    $this
+        ->postJson('/api/v1/apps', [
+            'slug' => 'acme',
+            'repository_url' => 'https://github.com/acme/site.git',
+            'root' => 'public',
+        ])
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'app.default_branch_unavailable');
+
+    expect(OrbitApp::query()->exists())->toBeFalse();
+});
 
 it('rejects unsupported and duplicate App source keys', function (string $body): void {
     $this

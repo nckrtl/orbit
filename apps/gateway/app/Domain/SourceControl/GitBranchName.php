@@ -27,6 +27,10 @@ final class GitBranchName
             return false;
         }
 
+        if (preg_match('//u', $branch) !== 1) {
+            return false;
+        }
+
         if (preg_match('/[\x00-\x20\x7F~^:?*\[\\\\]/', $branch) === 1) {
             return false;
         }
