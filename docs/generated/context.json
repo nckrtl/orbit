@@ -421,7 +421,9 @@
             "components": [
                 "apps/e2e"
             ],
-            "concepts": [],
+            "concepts": [
+                "Workspace"
+            ],
             "governing_adrs": [
                 "0015",
                 "0022"
