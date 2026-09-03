@@ -217,6 +217,7 @@ it('defines the exact stable issue-code catalog for every Doctor family', functi
             'instance.repository_not_independent',
             'instance.origin_mismatch',
             'instance.source_identity_mismatch',
+            'instance.registered_worktree_unavailable',
             'instance.inspection_failed',
             'instance.node_unreachable',
         ],

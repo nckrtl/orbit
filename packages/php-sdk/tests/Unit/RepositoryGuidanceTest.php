@@ -193,22 +193,24 @@ describe('repository guidance bootstrap', function (): void {
         }
 
         expect($requestFileCount)
-            ->toBe(63)
+            ->toBe(65)
             ->and($requestClasses)
-            ->toHaveCount(61)
+            ->toHaveCount(63)
             ->toContain(Orbit\Sdk\Requests\AppInstances\CreateAppInstanceRequest::class)
             ->toContain(Orbit\Sdk\Requests\AppInstances\RemoveAppInstanceRequest::class)
+            ->toContain(Orbit\Sdk\Requests\AppInstances\RegisterAppInstanceRequest::class)
+            ->toContain(Orbit\Sdk\Requests\AppInstances\UnregisterAppInstanceRequest::class)
             ->toContain(Orbit\Sdk\Requests\Doctor\RunDoctorRequest::class)
             ->toContain(Orbit\Sdk\Requests\Clusters\ListClustersRequest::class)
             ->toContain(Orbit\Sdk\Requests\Clusters\ClearClusterRouterRequest::class);
     });
 
-    it('documents the 61-operation SDK surface, AppInstances, Clusters, Doctor, and node access', function (): void {
+    it('documents the 63-operation SDK surface, AppInstances, Clusters, Doctor, and node access', function (): void {
         $publicContract = repository_guidance_contents('.ai/rules/public-contract.md');
         $normalizedPublicContract = repository_guidance_normalized_contents('.ai/rules/public-contract.md');
 
         expect($publicContract)
-            ->toContain('The SDK models exactly 61 concrete public Gateway API operations:')
+            ->toContain('The SDK models exactly 63 concrete public Gateway API operations:')
             ->toContain(
                 '- Node: list, show, provision, settings update, remove, access add, access remove, role list, role add, and role remove.',
             )
@@ -216,7 +218,9 @@ describe('repository guidance bootstrap', function (): void {
                 '- Cluster: list, show, create, update, remove, Node attach, Node detach, Router set, and Router clear.',
             )
             ->toContain('- Doctor: run the complete typed Gateway report.')
-            ->toContain('- AppInstance: list, show, create, and remove through the concise Instance routes.')
+            ->toContain(
+                '- AppInstance: list, show, create, remove, register, and unregister through the concise Instance routes.',
+            )
             ->not->toContain('Docker Swarm, permissions, role add/remove')->toContain(
                 'Do not restore the retired Agent, generic executor, direct SSH execution,',
             )->toContain('Docker Swarm, Compose, image-building, stream, database,')

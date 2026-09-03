@@ -325,6 +325,7 @@ function instance_payload(): array
         'cluster_id' => 7,
         'name' => 'dev',
         'environment' => 'development',
+        'source_kind' => 'managed_clone',
         'checkout_path' => '/home/orbit/apps/orbit-docs/dev',
         'root' => null,
         'effective_root' => 'public',

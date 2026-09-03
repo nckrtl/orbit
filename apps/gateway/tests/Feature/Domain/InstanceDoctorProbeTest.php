@@ -3,7 +3,10 @@
 declare(strict_types=1);
 
 use App\Actions\Doctor\InstanceDoctorProbe;
+use App\Domain\AppInstances\AppInstanceSourceKind;
 use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\AppInstances\RegisteredWorktreeInspector;
+use App\Domain\AppInstances\RegisteredWorktreeObservation;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Doctor\DoctorNodeContext;
@@ -158,6 +161,95 @@ it('continues after a typed instance inspection failure', function (): void {
         ->toBeGreaterThan($failed->id);
 });
 
+it('verifies registered worktree identity while accepting later branch and HEAD movement', function (): void {
+    $node = instance_probe_node();
+    $app = instance_probe_app();
+    $instance = AppInstance::query()->create([
+        'app_id' => $app->id,
+        'node_id' => $node->id,
+        'name' => 'dfb5',
+        'environment' => 'development',
+        'source_kind' => AppInstanceSourceKind::RegisteredWorktree->value,
+        'checkout_path' => '/home/orbit/.codex/worktrees/dfb5/example',
+        'branch' => null,
+        'starting_commit' => str_repeat('a', 40),
+        'source_identity' => str_repeat('b', 64),
+        'status' => AppInstanceState::Active,
+    ]);
+    $managed = new class implements InstanceStateInspector {
+        public function inspect(AppInstance $appInstance): InstanceInspectionData
+        {
+            throw new DoctorInspectionException;
+        }
+    };
+    $registered = new class implements RegisteredWorktreeInspector {
+        public function inspect(
+            Node $node,
+            App $app,
+            string $checkoutPath,
+            string $effectiveRoot,
+        ): RegisteredWorktreeObservation {
+            return new RegisteredWorktreeObservation(
+                checkoutPath: $checkoutPath,
+                branch: 'later-branch',
+                startingCommit: str_repeat('c', 40),
+                sourceIdentity: str_repeat('b', 64),
+            );
+        }
+    };
+
+    $report = new InstanceDoctorProbe($managed, $registered)->inspect(instance_probe_context($node));
+
+    expect($report->checked)
+        ->toBe(1)
+        ->and($report->issues)
+        ->toBeEmpty()
+        ->and($instance->fresh()?->branch)
+        ->toBeNull()
+        ->and($instance->fresh()?->starting_commit)
+        ->toBe(str_repeat('a', 40));
+});
+
+it('reports registered worktree disappearance as bounded drift without deleting registration', function (): void {
+    $node = instance_probe_node();
+    $app = instance_probe_app();
+    $instance = AppInstance::query()->create([
+        'app_id' => $app->id,
+        'node_id' => $node->id,
+        'name' => 'dfb5',
+        'source_kind' => AppInstanceSourceKind::RegisteredWorktree->value,
+        'checkout_path' => '/home/orbit/.codex/worktrees/dfb5/example',
+        'source_identity' => str_repeat('b', 64),
+        'status' => AppInstanceState::Active,
+    ]);
+    $managed = new class implements InstanceStateInspector {
+        public function inspect(AppInstance $appInstance): InstanceInspectionData
+        {
+            throw new DoctorInspectionException;
+        }
+    };
+    $registered = new class implements RegisteredWorktreeInspector {
+        public function inspect(
+            Node $node,
+            App $app,
+            string $checkoutPath,
+            string $effectiveRoot,
+        ): RegisteredWorktreeObservation {
+            throw new DoctorInspectionException;
+        }
+    };
+
+    $report = new InstanceDoctorProbe($managed, $registered)->inspect(instance_probe_context($node));
+
+    expect($report->issues)
+        ->toHaveCount(1)
+        ->and($report->issues[0]->code)
+        ->toBe('instance.registered_worktree_unavailable')
+        ->and(json_encode($report))
+        ->not->toContain($instance->checkout_path)->and($instance->fresh())
+        ->not->toBeNull();
+});
+
 function instance_probe_node(): Node
 {
     static $number = 60;
@@ -204,7 +296,6 @@ function instance_probe_instance(
     return AppInstance::query()->create([
         'app_id' => $app->id,
         'node_id' => $node->id,
-        'cluster_id' => $node->cluster_id,
         'name' => "development-{$suffix}",
         'environment' => 'development',
         'checkout_path' => "/private/instance/{$app->slug}/development-{$suffix}",

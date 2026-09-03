@@ -6,33 +6,30 @@ namespace App\Actions\AppInstances;
 
 use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppInstances\AppInstanceSourceKind;
-use App\Domain\AppInstances\DevelopmentAppInstanceSourceLifecycle;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\AppInstance;
 
-final readonly class RemoveAppInstanceAction
+final readonly class UnregisterAppInstanceAction
 {
     public function __construct(
         private AppDevSourceOperationLock $sourceLock,
-        private DevelopmentAppInstanceSourceLifecycle $source,
     ) {}
 
-    public function execute(AppInstance $appInstance, bool $discardSource): AppInstance
+    public function execute(AppInstance $appInstance): AppInstance
     {
         return $this->sourceLock->synchronized(
             $appInstance->node_id,
-            function () use ($appInstance, $discardSource): AppInstance {
-                $snapshot = $appInstance->refresh()->load(['app', 'node', 'cluster']);
+            function () use ($appInstance): AppInstance {
+                $snapshot = $appInstance->refresh();
 
-                if ($snapshot->source_kind !== AppInstanceSourceKind::ManagedClone->value) {
+                if ($snapshot->source_kind !== AppInstanceSourceKind::RegisteredWorktree->value) {
                     throw new ResourceOperationException(
                         errorCode: 'instance.source_kind_conflict',
-                        message: "AppInstance [{$snapshot->name}] is a registered worktree; use instance:unregister.",
+                        message: "AppInstance [{$snapshot->name}] is an Orbit-managed clone; use instance:remove.",
                         status: 409,
                     );
                 }
 
-                $this->source->remove($snapshot, $discardSource);
                 $snapshot->delete();
 
                 return $snapshot;

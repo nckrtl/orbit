@@ -214,6 +214,7 @@ function instance_gateway_data(): array
         'cluster_id' => 2,
         'name' => 'main',
         'environment' => 'development',
+        'source_kind' => 'managed_clone',
         'checkout_path' => '/home/orbit/apps/orbit-docs',
         'root' => null,
         'effective_root' => 'public',

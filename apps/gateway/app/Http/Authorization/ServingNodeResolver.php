@@ -28,9 +28,11 @@ final readonly class ServingNodeResolver
     {
         return match ($scope) {
             ServingNode::Gateway => $this->gateway(),
+            ServingNode::Caller => $this->caller($request),
             ServingNode::Target => $this->target($request),
             ServingNode::AppOwning => $this->appOwning($request),
             ServingNode::InstanceOwning => $this->instanceOwning($request),
+            ServingNode::CallerInstanceOwning => $this->instanceOwning($request),
             ServingNode::WorkspaceOwning => $this->workspaceOwning($request),
             ServingNode::ProcessOwning => $this->processOwning($request),
             ServingNode::ToolOwning => $this->toolOwning($request),
@@ -38,6 +40,15 @@ final readonly class ServingNodeResolver
             ServingNode::RoleMutation => $this->roleMutation($request),
             ServingNode::Collection => [],
         };
+    }
+
+    /** @return list<Node> */
+    private function caller(Request $request): array
+    {
+        /** @mago-expect analysis:mixed-assignment The authenticated peer resolver returns a Node. */
+        $caller = $request->user();
+
+        return $caller instanceof Node ? [$caller] : [];
     }
 
     /** @return list<Node> */

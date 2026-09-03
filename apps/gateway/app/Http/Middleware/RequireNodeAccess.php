@@ -58,6 +58,10 @@ final readonly class RequireNodeAccess
             return $this->required($consumer, null);
         }
 
+        if ($scope === ServingNode::Caller) {
+            return $next($request);
+        }
+
         try {
             $servingNodes = $this->resolver->resolve($request, $scope);
         } catch (ActiveGatewayMissing) {
@@ -67,6 +71,13 @@ final readonly class RequireNodeAccess
         }
 
         if ($servingNodes === []) {
+            return $next($request);
+        }
+
+        if (
+            $scope === ServingNode::CallerInstanceOwning
+            && $servingNodes[0]->id === $consumer->id
+        ) {
             return $next($request);
         }
 

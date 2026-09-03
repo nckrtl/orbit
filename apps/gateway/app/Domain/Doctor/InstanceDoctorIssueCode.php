@@ -11,6 +11,7 @@ enum InstanceDoctorIssueCode: string implements DoctorIssueCode
     case RepositoryNotIndependent = 'instance.repository_not_independent';
     case OriginMismatch = 'instance.origin_mismatch';
     case SourceIdentityMismatch = 'instance.source_identity_mismatch';
+    case RegisteredWorktreeUnavailable = 'instance.registered_worktree_unavailable';
     case InspectionFailed = 'instance.inspection_failed';
     case NodeUnreachable = 'instance.node_unreachable';
 

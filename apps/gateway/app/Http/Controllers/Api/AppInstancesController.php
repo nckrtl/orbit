@@ -6,12 +6,15 @@ namespace App\Http\Controllers\Api;
 
 use App\Actions\AppInstances\CreateAppInstanceAction;
 use App\Actions\AppInstances\ListAppInstancesAction;
+use App\Actions\AppInstances\RegisterAppInstanceAction;
 use App\Actions\AppInstances\RemoveAppInstanceAction;
 use App\Actions\AppInstances\ShowAppInstanceAction;
+use App\Actions\AppInstances\UnregisterAppInstanceAction;
 use App\Data\AppInstances\AppInstanceData;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\AppInstances\RegisterAppInstanceRequest;
 use App\Http\Requests\AppInstances\RemoveAppInstanceRequest;
 use App\Http\Requests\AppInstances\StoreAppInstanceRequest;
 use App\Models\AppInstance;
@@ -52,6 +55,23 @@ final class AppInstancesController extends Controller
         );
     }
 
+    #[RequiresNodeAccess(ServingNode::Caller)]
+    public function register(RegisterAppInstanceRequest $request, RegisterAppInstanceAction $action): JsonResponse
+    {
+        /** @mago-expect analysis:mixed-assignment The authenticated peer resolver returns a Node. */
+        $caller = $request->user();
+        assert($caller instanceof Node, description: 'Authenticated peer must be a Node.');
+        $result = $action->execute($caller, $request->payload());
+
+        return response()->json(
+            [
+                'data' => AppInstanceData::fromModel($result['appInstance'])->toArray(),
+                'meta' => $this->meta($request),
+            ],
+            $result['created'] ? 201 : 200,
+        );
+    }
+
     #[RequiresNodeAccess(ServingNode::InstanceOwning)]
     public function show(Request $request, AppInstance $instance, ShowAppInstanceAction $action): JsonResponse
     {
@@ -69,6 +89,18 @@ final class AppInstancesController extends Controller
     ): JsonResponse {
         return response()->json([
             'data' => AppInstanceData::fromModel($action->execute($instance, $request->discardSource()))->toArray(),
+            'meta' => $this->meta($request),
+        ]);
+    }
+
+    #[RequiresNodeAccess(ServingNode::CallerInstanceOwning)]
+    public function unregister(
+        Request $request,
+        AppInstance $instance,
+        UnregisterAppInstanceAction $action,
+    ): JsonResponse {
+        return response()->json([
+            'data' => AppInstanceData::fromModel($action->execute($instance))->toArray(),
             'meta' => $this->meta($request),
         ]);
     }

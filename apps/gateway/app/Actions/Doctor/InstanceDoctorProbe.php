@@ -6,7 +6,9 @@ namespace App\Actions\Doctor;
 
 use App\Data\Doctor\DoctorFamilyReportData;
 use App\Data\Doctor\DoctorIssueData;
+use App\Domain\AppInstances\AppInstanceSourceKind;
 use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\AppInstances\RegisteredWorktreeInspector;
 use App\Domain\Doctor\DoctorFamily;
 use App\Domain\Doctor\DoctorFamilyProbe;
 use App\Domain\Doctor\DoctorInspectionException;
@@ -20,6 +22,7 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
 {
     public function __construct(
         private InstanceStateInspector $inspector,
+        private ?RegisteredWorktreeInspector $registeredWorktrees = null,
     ) {}
 
     public function family(): DoctorFamily
@@ -59,6 +62,28 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
                     $instance->status->value,
                 );
             }
+
+            if ($instance->source_kind === AppInstanceSourceKind::RegisteredWorktree->value) {
+                $this->inspectRegisteredWorktree($instance, $issues);
+
+                continue;
+            }
+
+            if ($instance->source_kind !== AppInstanceSourceKind::ManagedClone->value) {
+                $issues[] = new DoctorIssueData(
+                    InstanceDoctorIssueCode::RegisteredWorktreeUnavailable,
+                    DoctorIssueKind::Drift,
+                    'instance',
+                    $instance->id,
+                    $instance->name,
+                    'Instance source ownership is not recognized.',
+                    'recognized',
+                    'unknown',
+                );
+
+                continue;
+            }
+
             try {
                 $observation = $this->inspector->inspect($instance);
                 foreach ([
@@ -96,5 +121,55 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
         }
 
         return DoctorFamilyReportData::fromIssues(DoctorFamily::Instance, $rows->count(), $issues);
+    }
+
+    /** @param list<DoctorIssueData> $issues */
+    private function inspectRegisteredWorktree(AppInstance $instance, array &$issues): void
+    {
+        $instance->loadMissing(['app', 'node']);
+        $effectiveRoot = $instance->effectiveRoot();
+
+        try {
+            if (! is_string($effectiveRoot)) {
+                throw new DoctorInspectionException;
+            }
+
+            if (! $this->registeredWorktrees instanceof RegisteredWorktreeInspector) {
+                throw new DoctorInspectionException;
+            }
+
+            $observation = $this->registeredWorktrees->inspect(
+                $instance->node,
+                $instance->app,
+                $instance->checkout_path,
+                $effectiveRoot,
+            );
+        } catch (\Throwable) {
+            $issues[] = new DoctorIssueData(
+                InstanceDoctorIssueCode::RegisteredWorktreeUnavailable,
+                DoctorIssueKind::Drift,
+                'instance',
+                $instance->id,
+                $instance->name,
+                'Registered worktree source is unavailable or no longer verifiable.',
+                'verifiable',
+                'unavailable',
+            );
+
+            return;
+        }
+
+        if ($instance->source_identity !== $observation->sourceIdentity) {
+            $issues[] = new DoctorIssueData(
+                InstanceDoctorIssueCode::SourceIdentityMismatch,
+                DoctorIssueKind::Drift,
+                'instance',
+                $instance->id,
+                $instance->name,
+                'Registered worktree identity does not match its immutable registration.',
+                'matching',
+                'mismatch',
+            );
+        }
     }
 }

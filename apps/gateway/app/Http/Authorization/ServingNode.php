@@ -7,9 +7,11 @@ namespace App\Http\Authorization;
 enum ServingNode
 {
     case Gateway;
+    case Caller;
     case Target;
     case AppOwning;
     case InstanceOwning;
+    case CallerInstanceOwning;
     case WorkspaceOwning;
     case ProcessOwning;
     case ToolOwning;

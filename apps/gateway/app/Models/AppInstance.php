@@ -12,13 +12,15 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int $id
  * @property int $app_id
  * @property int $node_id
- * @property int $cluster_id
+ * @property int|null $cluster_id
  * @property string $name
  * @property string $environment
+ * @property string $source_kind
  * @property string $checkout_path
  * @property string|null $root
  * @property string|null $branch
  * @property string|null $starting_commit
+ * @property string|null $source_identity
  * @property AppInstanceState $status
  * @property-read App $app
  * @property-read Node $node
@@ -30,6 +32,7 @@ final class AppInstance extends Model
     #[\Override]
     protected $attributes = [
         'environment' => 'development',
+        'source_kind' => 'managed_clone',
         'status' => 'reserved',
     ];
 
@@ -41,10 +44,12 @@ final class AppInstance extends Model
         'cluster_id',
         'name',
         'environment',
+        'source_kind',
         'checkout_path',
         'root',
         'branch',
         'starting_commit',
+        'source_identity',
         'status',
     ];
 
