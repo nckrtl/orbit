@@ -383,6 +383,24 @@
             ]
         },
         {
+            "path": "docs/decisions/0019-run-disposable-incus-scenario-lanes.md",
+            "title": "ADR 0019: Run disposable Incus scenario lanes",
+            "kind": "decision",
+            "components": [],
+            "concepts": [
+                "App",
+                "Cluster",
+                "Gateway",
+                "Node"
+            ],
+            "governing_adrs": [
+                "0005",
+                "0006",
+                "0015",
+                "0019"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
