@@ -88,7 +88,8 @@ it('constructs and releases the four-Node cold acceptance topology', function ()
         expect($source->hostSha)->toBe($candidate);
         expect($source->guestSha)->toBe($candidate);
         expect($verification->passed)->toBeTrue();
-        expect(array_keys($instances))->toBe(array_map($target->instance(...), $recipe->nodeKeys()));
+        expect(array_keys($instances))
+            ->toEqualCanonicalizing(array_map($target->instance(...), $recipe->nodeKeys()));
         expect($instances[$target->instance('operator')]->metadata['user.orbit.e2e.attempt'] ?? null)
             ->toBe($attempt->value);
         expect($instances[$target->instance('extra')]->metadata['user.orbit.e2e.attempt'] ?? null)
