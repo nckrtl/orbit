@@ -322,6 +322,28 @@
             ]
         },
         {
+            "path": "docs/decisions/0017-optional-cluster-placement-and-tld-precedence.md",
+            "title": "ADR 0017: Make Cluster placement optional",
+            "kind": "decision",
+            "components": [],
+            "concepts": [
+                "App",
+                "AppInstance",
+                "Cluster",
+                "Gateway",
+                "Ingress",
+                "Node",
+                "Route",
+                "Router"
+            ],
+            "governing_adrs": [
+                "0009",
+                "0011",
+                "0016",
+                "0017"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
