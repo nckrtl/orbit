@@ -30,10 +30,12 @@ The harness keeps no state outside the repository checkouts:
 
 - `<worktree>/.e2e/` (gitignored) holds that issue's discovery in
   `attempt.json` and `topology.json`, its separate proof in
-  `proof-attempt.json` and `proof-topology.json`, `proof.json` (the last proof
-  result), immutable manifests under `proof-inputs/`, immutable reports under
-  `equivalence/`, the latest `equivalence.json` pointer, and `log` (one line per
-  harness command). They die with the worktree.
+  `proof-attempt.json` and `proof-topology.json`, and an optional unrelated-drift
+  topology in `candidate-attempt.json` and `candidate-topology.json`.
+  `proof.json` holds the last proof result, `candidate-convergence.json` holds
+  general convergence evidence, immutable manifests live under `proof-inputs/`,
+  immutable reports live under `equivalence/`, and `equivalence.json` points at
+  the latest report. They die with the worktree.
 - `<primary checkout>/.e2e/` (gitignored) holds the state of the one persistent
   topology snapshot (see [Topology snapshot](#topology-snapshot)):
   `topology-snapshot/promoted.json`,
@@ -84,7 +86,7 @@ separate discovery and proof lifecycle.
 | Checkout roles | `gateway`, `app-dev` (guest path `/home/orbit/orbit`) |
 | Prepared image | Base image `orbit-base-ubuntu-26.04-runtime`; coordinated snapshots `main-<generation-id>` on `orbit-e2e-topology-snapshot-{gateway,app-dev,app-prod}` |
 | Addresses | Incus `.10/.11/.12` on `oe-<issue-hash>`; WireGuard `10.44.0.1/.2/.3` |
-| Attempt purpose | At most one `discovery` and one separate `proof` per issue |
+| Attempt purpose | At most one each of `discovery`, `proof`, and `candidate-convergence` per issue |
 | Proof status | `proved` or `diagnosis` |
 | State | Discovery: `attempt.json`, `topology.json`; proof: `proof-attempt.json`, `proof-topology.json`; result: `proof.json`; commands: `log` |
 | Lifetime | Discovery lasts through development and proof; a failed proof lasts through inspection; promotion or `bin/worktree-remove` releases both |
@@ -119,8 +121,9 @@ refuse a stale promoted topology snapshot.
 | `bin/e2e-topology verify ISSUE` | Verify discovery |
 | `bin/e2e-topology prove ISSUE --plan=PATH` | Prove the worktree HEAD (clean tree) on a fresh proof attempt while discovery remains active; the plan defaults to `proofs/ISSUE.json` (about 33 s) |
 | `bin/e2e-topology equivalence ISSUE --plan=PATH` | Compare the clean worktree HEAD with an immutable retained proof; write `exact`, `equivalent`, `stale`, or `indeterminate` evidence (the plan defaults to `proofs/ISSUE.json`) |
-| `bin/e2e-topology status ISSUE` | Report discovery and proof together from `<worktree>/.e2e/` without touching infrastructure |
-| `bin/e2e-topology release ISSUE [--proof]` | Release discovery by default, or explicitly the proof, verify absence, and sweep orphaned harness networks (`networks_reaped`) |
+| `bin/e2e-topology candidate ISSUE` | On an authorized unrelated-runtime equivalence report, converge and generally verify the exact accepted candidate without feature fixtures or actions |
+| `bin/e2e-topology status ISSUE` | Report discovery, proof, and candidate-convergence state from `<worktree>/.e2e/` without touching infrastructure |
+| `bin/e2e-topology release ISSUE [--proof\|--candidate]` | Release discovery by default, or explicitly the retained proof or candidate topology, verify absence, and sweep orphaned harness networks (`networks_reaped`) |
 | `bin/e2e-topology-snapshot status` | Show the promoted topology snapshot generation |
 | `bin/e2e-topology-snapshot fingerprint --main-sha=SHA` | Compute the prepared-state fingerprint |
 | `bin/e2e-topology-snapshot promote ISSUE` | Make the issue's proved topology the topology snapshot generation, then release proof and discovery (see [Topology snapshot](#topology-snapshot)) |
@@ -224,15 +227,53 @@ The proof plan file has this shape:
 {
   "setup": [{"id": "text", "node": "gateway", "argv": [], "timeout_seconds": 60}],
   "acceptance": [{"id": "text", "node": "app-dev", "argv": [], "timeout_seconds": 60}],
-  "inputs": ["path/to/additional-input"]
+  "inputs": ["path/to/additional-input"],
+  "observed_inputs": true
 }
 ```
 
-`inputs` is optional. It declares repository files or directories that proof
+`inputs` and `observed_inputs` are optional. `inputs` declares repository files or directories that proof
 actions read outside the static runtime policy and active fixture directories.
 The normalized list is part of the plan fingerprint. A literal
 `/home/orbit/orbit/...` action argument must resolve to a static runtime path or
 a declared input; otherwise `prove` fails before it creates an attempt.
+
+`observed_inputs: true` enables fail-closed, file-level PCOV collection for
+that proof only. Before normal convergence, the disposable `gateway` and
+`app-dev` guests use `/usr/bin/php8.5` from the pinned Sury apt source. The
+harness removes `/usr/local/bin/php` only when it is the known base-image link
+to `/opt/orbit/php/8.5/bin/php`; any other collision is refused. Bare `orbit`,
+the absolute CLI entrypoint, `runuser`, `sudo`, and proof fixture scripts then
+resolve the same packaged runtime. Runtime preparation upgrades stale Sury or
+Ubuntu packages to the current Sury candidate on both roles, then requires the
+CLI and FPM runtime versions and every installed PHP package version to match
+exactly across those roles. PCOV preparation preserves that converged PHP
+package set and requires the packaged PCOV build to match as well.
+The Sury FPM unit protects system paths by default, so the Incus-only unit
+drop-in restores the package-service behavior that Orbit's existing privileged
+convergence commands require. A custom or static PHP build is not used.
+
+The harness installs packaged `php8.5-pcov` only in the disposable proof roles,
+keeps collection disabled outside the instrumented phases, and enables it
+separately for setup and acceptance. Required process surfaces are
+`app-dev:cli`, `gateway:cli`, and `gateway:fpm`; `app-prod` has no Orbit
+checkout or Orbit PHP process. Each process writes a unique start record and
+an atomic shutdown result, so completed FPM requests persist and concurrent
+CLI/FPM processes cannot overwrite each other. Phase aggregation requires
+paired records, matching attempt/phase/role identities, PHP 8.5 plus a PCOV
+version, and tracked paths below `/home/orbit/orbit`. Guest paths are stored as
+repository-relative paths. Composer dependencies, test code, and generated
+Laravel storage/bootstrap caches are outside the repository-input graph.
+The manifest records the exact CLI, FPM, PCOV, and Debian package inventory for
+each role; differing inventories are incomplete evidence.
+Missing, stale, malformed, untracked, empty-surface, or failed aggregation
+evidence makes the proof a diagnosis.
+
+Before general topology verification, the harness removes the temporary
+auto-prepend module, disables PCOV for FPM, restores the packaged CLI module to
+`pcov.enabled=0`, restarts FPM, and verifies that state. Cleanup failure also
+makes the proof a diagnosis. Product installation and production convergence
+do not read this proof-only configuration.
 
 Every setup and acceptance action must exit `0`. Every nonzero exit makes the
 proof a diagnosis and stops later actions. This includes timeout exits `124`
@@ -296,7 +337,7 @@ target. Use `shell --proof` or `exec --proof` for explicit unprivileged
 debugging of the failed proof, then `release --proof` before the next proof.
 A proved attempt rejects all proof-targeted shell and command execution.
 
-### Retaining proof after a correction
+### Retaining proof after a correction or unrelated runtime drift
 
 The phase-one policy treats CLI, Gateway, SDK, harness, E2E entrypoints, the
 active plan, active and referenced fixtures, and declared `inputs` as proof
@@ -318,16 +359,30 @@ content, mode, executable-bit, or type change, each path classification, and
 the required next action:
 
 - `exact`: the SHA or full Git tree is unchanged; review the exact current head.
-- `equivalent`: every change is non-runtime; retain the proof and review the
-  exact current head.
+- `equivalent`: every change is non-runtime, or an observed-input proof has
+  only unobserved ordinary-PHP drift from current `main`. Non-runtime changes
+  use `retained-proof`; unrelated runtime drift requires `candidate` first.
 - `stale`: a runtime or proof-contract input changed; release the proof and run
   a complete fresh proof.
 - `indeterminate`: a classification, identity, current-main, manifest, plan, or
   completeness gate failed; resolve it and run a complete fresh proof.
 
-PCOV observations and candidate-only convergence are not enabled in this
-phase. Any runtime drift, including unrelated runtime changes from `main`,
-requires complete reproof.
+For observed-input proofs, bootstrap, auto-discovery, Composer inputs,
+configuration, migrations, routes, scripts, harness files, plans, fixtures,
+declared inputs, feature runtime paths, and every observed PHP file remain
+mandatory. A change to any of them is stale. Ordinary PHP changed only by the
+new included `origin/main`, and absent from both feature runtime paths and the
+setup/acceptance observations, is classified `unrelated-runtime`.
+
+After such a report, run `bin/e2e-topology candidate ISSUE`. It copies the
+current shared snapshot into a fresh attempt, synchronizes the exact accepted
+head, proves checkout identity, runs full convergence, normalizes the proof CLI
+runtime to Sury, and performs general topology verification. It never stages
+feature fixtures or reruns setup or acceptance. A successful candidate
+topology stays immutable for review and is the topology promoted after merge;
+the retained proof supplies the unchanged feature evidence. Failed candidate
+convergence is diagnosis evidence and must be released with `--candidate`
+before retrying.
 
 ## Prepared-state limits
 

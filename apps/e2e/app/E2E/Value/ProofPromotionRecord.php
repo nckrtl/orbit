@@ -25,6 +25,7 @@ final readonly class ProofPromotionRecord
         public string $manifestSha256,
         public ?string $equivalenceSha256,
         public string $recordedAt,
+        public string $promotionPath = 'retained-proof',
     ) {
         TopologyTarget::assertIssue($issue);
         if (preg_match('/\A[A-Za-z0-9][A-Za-z0-9._-]{0,63}\z/D', $generationId) !== 1) {
@@ -46,6 +47,9 @@ final readonly class ProofPromotionRecord
         ) {
             throw new InvalidArgumentException('The proof promotion equivalence fingerprint is invalid.');
         }
+        if (! in_array($promotionPath, ['retained-proof', 'candidate-convergence'], true)) {
+            throw new InvalidArgumentException('The proof promotion path is invalid.');
+        }
         if (preg_match('/\A\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\z/D', $recordedAt) !== 1) {
             throw new InvalidArgumentException('The proof promotion time is invalid.');
         }
@@ -57,7 +61,7 @@ final readonly class ProofPromotionRecord
         return [
             'schema' => self::SCHEMA,
             'state' => 'promoted',
-            'promotion_path' => 'retained-proof',
+            'promotion_path' => $this->promotionPath,
             'issue' => $this->issue,
             'generation_id' => $this->generationId,
             'proved_sha' => $this->provedSha,

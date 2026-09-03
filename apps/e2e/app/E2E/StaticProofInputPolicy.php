@@ -13,7 +13,14 @@ use App\E2E\Value\ProofInputClassification;
  */
 final readonly class StaticProofInputPolicy
 {
-    public const int VERSION = 1;
+    public const int VERSION = 2;
+
+    /** Ordinary PHP source eligible for replacement by complete PCOV observations. */
+    private const array OBSERVABLE_PHP_DIRECTORIES = [
+        'apps/cli/app/',
+        'apps/gateway/app/',
+        'packages/php-sdk/src/',
+    ];
 
     /** Runtime directories whose complete tracked contents execute in the topology. */
     private const array RUNTIME_DIRECTORIES = [
@@ -128,6 +135,18 @@ final readonly class StaticProofInputPolicy
                 'packages/php-sdk',
             ],
             true,
+        );
+    }
+
+    public function isObservablePhpSource(string $path): bool
+    {
+        if (! str_ends_with($path, '.php')) {
+            return false;
+        }
+
+        return array_any(
+            self::OBSERVABLE_PHP_DIRECTORIES,
+            static fn (string $directory): bool => str_starts_with($path, $directory),
         );
     }
 

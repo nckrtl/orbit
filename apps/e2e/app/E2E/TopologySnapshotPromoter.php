@@ -8,6 +8,7 @@ use App\E2E\Git\GitRepository;
 use App\E2E\State\OperationLock;
 use App\E2E\State\StatePaths;
 use App\E2E\Value\AttemptPurpose;
+use App\E2E\Value\CandidateConvergenceResult;
 use App\E2E\Value\FeatureTopology;
 use App\E2E\Value\GuestCommand;
 use App\E2E\Value\IncusInstance;
@@ -75,17 +76,25 @@ final readonly class TopologySnapshotPromoter
         $topology = $this->provedTopology($state, $plan);
         $manifest = $this->assertProofEvidence($state, $plan);
         $candidate = $this->promotionCandidate($request, $state, $topology, $manifest, $plan);
+        $promotionTopology = $candidate['promotion_path'] === 'candidate-convergence'
+            ? $this->candidateTopology(
+                $state,
+                $candidate['accepted_sha'],
+                $candidate['accepted_tree'],
+                $candidate['equivalence'],
+            )
+            : $topology;
         $promoted = $this->manifests->promoted() ?? throw new RuntimeException(
             'There is no promoted topology snapshot generation to replace; build the topology snapshot first.',
         );
-        if ($promoted->isLegacy() || $topology->generation->isLegacy()) {
+        if ($promoted->isLegacy() || $promotionTopology->generation->isLegacy()) {
             throw new RuntimeException('A legacy topology snapshot generation cannot be promoted. Refresh it first.');
         }
-        $generation = $this->nextGeneration($candidate['merged_sha'], $topology, $promoted);
+        $generation = $this->nextGeneration($candidate['merged_sha'], $promotionTopology, $promoted);
         $verification = $this->verifier->verify(
-            $topology->target,
+            $promotionTopology->target,
             VerificationMode::Proof,
-            $topology->source,
+            $promotionTopology->source,
             requiredAssignments: $generation->topologyAssignments ?? throw new RuntimeException(
                 'The candidate generation has no assignment declaration.',
             ),
@@ -101,7 +110,7 @@ final readonly class TopologySnapshotPromoter
             $this->withLock($this->generationLock, 'standby-generation', function () use (
                 $request,
                 $state,
-                $topology,
+                $promotionTopology,
                 $promoted,
                 $generation,
                 $candidate,
@@ -117,8 +126,8 @@ final readonly class TopologySnapshotPromoter
                             'The promoted topology snapshot generation changed before promotion.',
                         );
                     }
-                    $state->requireTopology(AttemptPurpose::Proof);
-                    $this->replaceTopologySnapshot($topology, $generation);
+                    $state->requireTopology($promotionTopology->purpose);
+                    $this->replaceTopologySnapshot($promotionTopology, $generation);
                 } finally {
                     $issueLock->release();
                 }
@@ -135,13 +144,19 @@ final readonly class TopologySnapshotPromoter
                     $manifest->fingerprint(),
                     $candidate['equivalence']?->fingerprint(),
                     ProofResult::now(),
+                    $candidate['promotion_path'],
                 ));
             });
         } finally {
             $this->lock->release();
         }
 
-        $release = $this->releaser->release($request, AttemptPurpose::Proof);
+        $release = $this->releaser->release(
+            $request,
+            $candidate['promotion_path'] === 'candidate-convergence'
+                ? AttemptPurpose::CandidateConvergence
+                : AttemptPurpose::Proof,
+        );
         $released = $release['released'];
         $networksReaped = $release['networks_reaped'];
         if ($state->hasAttempt(AttemptPurpose::Discovery)) {
@@ -149,12 +164,17 @@ final readonly class TopologySnapshotPromoter
             $released = [...$released, ...$discovery['released']];
             $networksReaped = [...$networksReaped, ...$discovery['networks_reaped']];
         }
+        if ($state->hasAttempt(AttemptPurpose::Proof)) {
+            $proofRelease = $this->releaser->release($request, AttemptPurpose::Proof);
+            $released = [...$released, ...$proofRelease['released']];
+            $networksReaped = [...$networksReaped, ...$proofRelease['networks_reaped']];
+        }
 
         return [
             'state' => 'promoted',
-            'promotion_path' => 'retained-proof',
+            'promotion_path' => $candidate['promotion_path'],
             'issue' => $request->issue,
-            'attempt_id' => $topology->attempt->value,
+            'attempt_id' => $promotionTopology->attempt->value,
             'generation_id' => $generation->id,
             'main_sha' => $generation->mainSha,
             'proved_sha' => $candidate['proved_sha'],
@@ -234,6 +254,7 @@ final readonly class TopologySnapshotPromoter
         }
         if (
             $manifest->policyVersion !== StaticProofInputPolicy::VERSION
+            || $plan->observedInputs !== ($manifest->observedInputs !== null)
             || in_array(false, $manifest->completeness, true)
         ) {
             throw new RuntimeException('The proof-input manifest is not complete under the current policy.');
@@ -245,7 +266,7 @@ final readonly class TopologySnapshotPromoter
     /**
      * Resolve the proved, reviewed, and merged identities for the retained-proof path.
      *
-     * @return array{proved_sha:string,accepted_sha:string,merged_sha:string,equivalence:?ProofEquivalenceReport}
+     * @return array{proved_sha:string,accepted_sha:string,accepted_tree:string,merged_sha:string,promotion_path:string,equivalence:?ProofEquivalenceReport}
      */
     private function promotionCandidate(
         TopologyRequest $request,
@@ -293,25 +314,72 @@ final readonly class TopologySnapshotPromoter
                 || $equivalence->planSha256 !== $plan->fingerprint()
                 || $equivalence->manifestSha256 !== $manifest->fingerprint()
                 || $equivalence->result !== ProofEquivalenceResult::Equivalent
-                || $equivalence->promotionPath !== 'retained-proof'
+                || ! in_array($equivalence->promotionPath, ['retained-proof', 'candidate-convergence'], true)
                 || $equivalence->errors !== []
             ) {
                 throw new RuntimeException('The equivalence report does not authorize retained-proof promotion.');
             }
         }
-        $provedFingerprint = $this->fingerprints->forCommit($candidate)->value;
         $acceptedFingerprint = $this->fingerprints->forCommit($accepted)->value;
         $mergedFingerprint = $this->fingerprints->forCommit($main)->value;
-        if ($provedFingerprint !== $acceptedFingerprint || $acceptedFingerprint !== $mergedFingerprint) {
+        $promotionPath = $equivalence?->promotionPath ?? 'retained-proof';
+        if ($promotionPath === 'candidate-convergence' && $manifest->observedInputs === null) {
+            throw new RuntimeException('Candidate-convergence promotion requires complete observed-input evidence.');
+        }
+        if ($acceptedFingerprint !== $mergedFingerprint) {
+            throw new RuntimeException('The accepted and merged runtime fingerprints differ.');
+        }
+        if (
+            $promotionPath === 'retained-proof'
+            && $this->fingerprints->forCommit($candidate)->value !== $acceptedFingerprint
+        ) {
             throw new RuntimeException('The proved, accepted, and merged runtime fingerprints differ.');
         }
 
         return [
             'proved_sha' => $candidate,
             'accepted_sha' => $accepted,
+            'accepted_tree' => $acceptedRepository->tree($accepted),
             'merged_sha' => $main,
+            'promotion_path' => $promotionPath,
             'equivalence' => $equivalence,
         ];
+    }
+
+    private function candidateTopology(
+        IssueState $state,
+        string $acceptedSha,
+        string $acceptedTree,
+        ?ProofEquivalenceReport $equivalence,
+    ): FeatureTopology {
+        if ($equivalence === null || ! $state->hasAttempt(AttemptPurpose::CandidateConvergence)) {
+            throw new RuntimeException('Candidate-convergence promotion has no active candidate topology.');
+        }
+        $topology = $state->requireTopology(AttemptPurpose::CandidateConvergence);
+        $result = CandidateConvergenceResult::fromArray(
+            $state->candidateConvergence() ?? throw new RuntimeException(
+                'Candidate-convergence promotion has no convergence evidence.',
+            ),
+        );
+        if (
+            $topology->purpose !== AttemptPurpose::CandidateConvergence
+            || $topology->source->hostSha !== $acceptedSha
+            || $topology->source->guestSha !== $acceptedSha
+            || ! $topology->verification->passed
+            || $result->status !== 'converged'
+            || $result->attempt->value !== $topology->attempt->value
+            || $result->candidateSha !== $acceptedSha
+            || $result->candidateTree !== $acceptedTree
+            || $result->equivalenceSha256 !== $equivalence->fingerprint()
+            || $result->convergence?->converged !== true
+            || ! $result->verification->passed
+        ) {
+            throw new RuntimeException(
+                'Candidate-convergence evidence is incomplete or does not hold the accepted candidate.',
+            );
+        }
+
+        return $topology;
     }
 
     /**

@@ -7,6 +7,7 @@ namespace App\E2E\Value;
 enum ProofInputClassification: string
 {
     case Runtime = 'runtime';
+    case UnrelatedRuntime = 'unrelated-runtime';
     case ProofContract = 'proof-contract';
     case NonRuntime = 'non-runtime';
     case Indeterminate = 'indeterminate';

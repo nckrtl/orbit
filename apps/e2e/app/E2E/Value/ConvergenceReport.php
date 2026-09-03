@@ -33,4 +33,27 @@ final readonly class ConvergenceReport
     {
         return new self(true, $steps);
     }
+
+    /** @return array{converged:bool,steps:array<string,bool>} */
+    public function toArray(): array
+    {
+        return ['converged' => $this->converged, 'steps' => $this->steps];
+    }
+
+    /** @param array<array-key, mixed> $value */
+    public static function fromArray(array $value): self
+    {
+        if (
+            array_keys($value) !== ['converged', 'steps']
+            || ! is_bool($value['converged'] ?? null)
+            || ! is_array($value['steps'] ?? null)
+        ) {
+            throw new InvalidArgumentException('The convergence report schema is invalid.');
+        }
+
+        /** @var array<string, bool> $steps */
+        $steps = $value['steps'];
+
+        return new self($value['converged'], $steps);
+    }
 }

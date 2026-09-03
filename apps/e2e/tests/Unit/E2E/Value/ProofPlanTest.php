@@ -49,6 +49,20 @@ function nck73ProofPlan(): ProofPlan
 }
 
 describe('ProofPlan', function (): void {
+    it('opts into observed PHP inputs explicitly and fingerprints the choice', function (): void {
+        $plain = ProofPlan::fromArray(proofPlanFixture());
+        $observed = ProofPlan::fromArray([...proofPlanFixture(), 'observed_inputs' => true]);
+
+        expect($plain->observedInputs)
+            ->toBeFalse()
+            ->and($observed->observedInputs)
+            ->toBeTrue()
+            ->and($observed->toArray()['observed_inputs'])
+            ->toBeTrue()
+            ->and($observed->fingerprint())
+            ->not->toBe($plain->fingerprint());
+    });
+
     it('reads the declared setup, acceptance, and post-deployment actions from a file', function (): void {
         $plan = ProofPlan::fromFile(proofPlanFile(proofPlanFixture()));
 
@@ -228,7 +242,7 @@ describe('ProofPlan', function (): void {
             ->toThrow(
                 InvalidArgumentException::class,
                 'The proof plan must have exactly the keys setup and acceptance, '
-                .'plus optional mutates, ends_with, fixture_issues, and inputs.',
+                .'plus optional mutates, ends_with, fixture_issues, inputs, and observed_inputs.',
             );
     })->with([
         'missing setup' => [function (array $plan): array {

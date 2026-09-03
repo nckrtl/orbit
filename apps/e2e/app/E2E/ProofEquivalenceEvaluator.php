@@ -122,6 +122,7 @@ final readonly class ProofEquivalenceEvaluator
                     $request->issue,
                     $planPath,
                     $plan,
+                    $manifest->observedInputs,
                 );
                 if ($expected->toArray() !== $manifest->toArray()) {
                     $errors[] = 'The recorded proof-input inventory is incomplete.';
@@ -134,9 +135,29 @@ final readonly class ProofEquivalenceEvaluator
             $errors[] = 'The accepted candidate does not include current origin/main.';
         }
 
+        $provedEntries = [];
+        $acceptedEntries = [];
+        $provedMainEntries = [];
+        $acceptedMainEntries = [];
+        if ($manifest !== null) {
+            $provedEntries = $repository->entries($provedSha);
+            $acceptedEntries = $repository->entries($acceptedSha);
+            $provedMainEntries = $repository->entries($manifest->includedMainSha);
+            $acceptedMainEntries = $repository->entries($includedMainSha);
+        }
         $changedPaths = [];
         foreach ($repository->changes($provedSha, $acceptedSha) as $change) {
-            $classification = $this->changeClassification($change, $request->issue, $planPath, $plan);
+            $classification = $this->changeClassification(
+                $change,
+                $request->issue,
+                $planPath,
+                $plan,
+                $manifest,
+                $provedEntries,
+                $acceptedEntries,
+                $provedMainEntries,
+                $acceptedMainEntries,
+            );
             $changedPaths[] = [...$change, 'classification' => $classification->value];
             if ($classification === ProofInputClassification::Indeterminate) {
                 $errors[] = "Changed path [{$change['path']}] has no safe proof-input classification.";
@@ -152,13 +173,34 @@ final readonly class ProofEquivalenceEvaluator
             $manifestSha256,
             $result,
             $changedPaths,
-            in_array($result, [ProofEquivalenceResult::Exact, ProofEquivalenceResult::Equivalent], true)
-                ? 'retained-proof'
-                : null,
-            match ($result) {
-                ProofEquivalenceResult::Exact, ProofEquivalenceResult::Equivalent => 'review-exact-head',
-                ProofEquivalenceResult::Stale => 'release-proof-and-run-complete-reproof',
-                ProofEquivalenceResult::Indeterminate => 'resolve-equivalence-failure-and-run-complete-reproof',
+            $result === ProofEquivalenceResult::Equivalent
+            && array_any(
+                $changedPaths,
+                static fn (array $change): bool => (
+                    $change['classification'] === ProofInputClassification::UnrelatedRuntime->value
+                ),
+            )
+                ? 'candidate-convergence'
+                : (
+                    in_array($result, [ProofEquivalenceResult::Exact, ProofEquivalenceResult::Equivalent], true)
+                        ? 'retained-proof'
+                        : null
+                ),
+            match (true) {
+                $result === ProofEquivalenceResult::Equivalent
+                    && array_any(
+                        $changedPaths,
+                        static fn (array $change): bool => (
+                            $change['classification'] === ProofInputClassification::UnrelatedRuntime->value
+                        ),
+                    )
+                    => 'run-candidate-convergence',
+                in_array($result, [ProofEquivalenceResult::Exact, ProofEquivalenceResult::Equivalent], true)
+                    => 'review-exact-head',
+                $result === ProofEquivalenceResult::Stale => 'release-proof-and-run-complete-reproof',
+                $result === ProofEquivalenceResult::Indeterminate
+                    => 'resolve-equivalence-failure-and-run-complete-reproof',
+                default => throw new \LogicException('The proof equivalence result is unsupported.'),
             },
             $errors,
             gmdate('Y-m-d\TH:i:s\Z'),
@@ -176,7 +218,33 @@ final readonly class ProofEquivalenceEvaluator
         string $issue,
         string $planPath,
         ProofPlan $plan,
+        ?ProofInputManifest $manifest,
+        array $provedEntries,
+        array $acceptedEntries,
+        array $provedMainEntries,
+        array $acceptedMainEntries,
     ): ProofInputClassification {
+        $paths = array_filter([$change['path'], $change['previous_path']]);
+        if (
+            $manifest?->observedInputs !== null
+            && array_all($paths, $this->policy->isObservablePhpSource(...))
+        ) {
+            $recorded = $manifest->inputPaths();
+            if (array_any($paths, static fn (string $path): bool => isset($recorded[$path]))) {
+                return ProofInputClassification::Runtime;
+            }
+            if (array_all(
+                $paths,
+                static fn (string $path): bool => (
+                    ($acceptedEntries[$path] ?? null) === ($acceptedMainEntries[$path] ?? null)
+                    && ($provedEntries[$path] ?? null) === ($provedMainEntries[$path] ?? null)
+                ),
+            )) {
+                return ProofInputClassification::UnrelatedRuntime;
+            }
+
+            return ProofInputClassification::Runtime;
+        }
         $classifications = [$this->classifyPath($change['path'], $issue, $planPath, $plan)];
         if ($change['previous_path'] !== null) {
             $classifications[] = $this->classifyPath($change['previous_path'], $issue, $planPath, $plan);
@@ -185,6 +253,7 @@ final readonly class ProofEquivalenceEvaluator
             ProofInputClassification::Indeterminate,
             ProofInputClassification::ProofContract,
             ProofInputClassification::Runtime,
+            ProofInputClassification::UnrelatedRuntime,
             ProofInputClassification::NonRuntime,
         ] as $classification) {
             if (in_array($classification, $classifications, true)) {

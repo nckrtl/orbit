@@ -14,8 +14,9 @@ usage: bin/e2e-topology <action> ISSUE [...]
   verify  ISSUE                   verify the discovery topology
   prove   ISSUE [--plan=PATH]     prove the worktree HEAD (default proofs/ISSUE.json)
   equivalence ISSUE [--plan=PATH] compare HEAD with the immutable inputs of its retained proof
+  candidate ISSUE                converge and verify an equivalent accepted candidate
   status  ISSUE                   report discovery and proof from <worktree>/.e2e/
-  release ISSUE [--proof]         release discovery or the selected proof and sweep orphan networks
+  release ISSUE [--proof|--candidate] release discovery or the selected retained topology
 
 Every action except acquire finds the worktree at <primary>/.worktrees/<issue>-*
 or takes --worktree=PATH. State lives in <worktree>/.e2e/.
@@ -27,7 +28,7 @@ action=$1
 shift
 
 case "$action" in
-    acquire|shell|exec|sync|verify|prove|equivalence|status|release)
+    acquire|shell|exec|sync|verify|prove|equivalence|candidate|status|release)
         exec php "$root/apps/e2e/artisan" "topology:$action" "$@"
         ;;
     *)

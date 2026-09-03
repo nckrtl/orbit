@@ -45,4 +45,16 @@ describe('StaticProofInputPolicy', function (): void {
 
         expect($unknown)->toBe([]);
     });
+
+    it('limits observation replacement to ordinary tracked PHP source', function (string $path, bool $expected): void {
+        expect(new StaticProofInputPolicy()->isObservablePhpSource($path))->toBe($expected);
+    })->with([
+        ['apps/cli/app/Commands/DoctorCommand.php',                true],
+        ['apps/gateway/app/Http/Controllers/StatusController.php', true],
+        ['packages/php-sdk/src/Client.php',                        true],
+        ['apps/cli/bootstrap/app.php',                             false],
+        ['apps/gateway/routes/web.php',                            false],
+        ['apps/e2e/app/E2E/TopologyProofRunner.php',               false],
+        ['apps/cli/app/README.md',                                 false],
+    ]);
 });

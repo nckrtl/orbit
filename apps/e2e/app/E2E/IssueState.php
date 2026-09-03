@@ -8,6 +8,7 @@ use App\E2E\State\AtomicJsonStore;
 use App\E2E\State\StatePaths;
 use App\E2E\Value\AttemptId;
 use App\E2E\Value\AttemptPurpose;
+use App\E2E\Value\CandidateConvergenceResult;
 use App\E2E\Value\FeatureTopology;
 use App\E2E\Value\OperationId;
 use RuntimeException;
@@ -32,6 +33,12 @@ final readonly class IssueState
     public const string PROOF_ATTEMPT = 'proof-attempt.json';
 
     public const string PROOF_TOPOLOGY = 'proof-topology.json';
+
+    public const string CANDIDATE_ATTEMPT = 'candidate-attempt.json';
+
+    public const string CANDIDATE_TOPOLOGY = 'candidate-topology.json';
+
+    public const string CANDIDATE_CONVERGENCE = 'candidate-convergence.json';
 
     public const string PROOF = 'proof.json';
 
@@ -59,7 +66,11 @@ final readonly class IssueState
             return $this->rawAttempt($purpose) !== null;
         }
 
-        return $this->hasAttempt(AttemptPurpose::Discovery) || $this->hasAttempt(AttemptPurpose::Proof);
+        return (
+            $this->hasAttempt(AttemptPurpose::Discovery)
+            || $this->hasAttempt(AttemptPurpose::Proof)
+            || $this->hasAttempt(AttemptPurpose::CandidateConvergence)
+        );
     }
 
     /**
@@ -173,6 +184,19 @@ final readonly class IssueState
     }
 
     /** @return array<array-key, mixed>|null */
+    public function candidateConvergence(): ?array
+    {
+        $value = $this->store->read(self::CANDIDATE_CONVERGENCE);
+
+        return $value === null ? null : CandidateConvergenceResult::fromArray($value)->toArray();
+    }
+
+    public function writeCandidateConvergence(CandidateConvergenceResult $result): void
+    {
+        $this->store->write(self::CANDIDATE_CONVERGENCE, $result->toArray());
+    }
+
+    /** @return array<array-key, mixed>|null */
     public function proofInputManifest(string $fingerprint): ?array
     {
         $this->assertFingerprint($fingerprint);
@@ -251,6 +275,9 @@ final readonly class IssueState
     /** @return array<array-key, mixed>|null */
     private function rawAttempt(AttemptPurpose $purpose): ?array
     {
+        if ($purpose === AttemptPurpose::CandidateConvergence) {
+            return $this->store->read(self::CANDIDATE_ATTEMPT);
+        }
         if ($purpose === AttemptPurpose::Proof) {
             $proof = $this->store->read(self::PROOF_ATTEMPT);
             if ($proof !== null) {
@@ -267,20 +294,28 @@ final readonly class IssueState
     {
         $discovery = $this->hasAttempt(AttemptPurpose::Discovery);
         $proof = $this->hasAttempt(AttemptPurpose::Proof);
-        if (! $discovery && ! $proof) {
+        $candidate = $this->hasAttempt(AttemptPurpose::CandidateConvergence);
+        if (! $discovery && ! $proof && ! $candidate) {
             throw new RuntimeException("{$this->issue} has no active attempt.");
         }
-        if ($discovery && $proof) {
-            throw new RuntimeException("{$this->issue} has discovery and proof attempts; select one.");
+        if (count(array_filter([$discovery, $proof, $candidate])) > 1) {
+            throw new RuntimeException("{$this->issue} has multiple attempts; select one.");
         }
 
-        return $discovery ? AttemptPurpose::Discovery : AttemptPurpose::Proof;
+        return match (true) {
+            $discovery => AttemptPurpose::Discovery,
+            $proof => AttemptPurpose::Proof,
+            default => AttemptPurpose::CandidateConvergence,
+        };
     }
 
     private function attemptPath(AttemptPurpose $purpose): string
     {
         if ($purpose === AttemptPurpose::Discovery) {
             return self::ATTEMPT;
+        }
+        if ($purpose === AttemptPurpose::CandidateConvergence) {
+            return self::CANDIDATE_ATTEMPT;
         }
 
         return $this->store->read(self::PROOF_ATTEMPT) !== null
@@ -293,6 +328,9 @@ final readonly class IssueState
     {
         if ($purpose === AttemptPurpose::Discovery) {
             return self::TOPOLOGY;
+        }
+        if ($purpose === AttemptPurpose::CandidateConvergence) {
+            return self::CANDIDATE_TOPOLOGY;
         }
 
         return $this->attemptPath($purpose) === self::ATTEMPT ? self::TOPOLOGY : self::PROOF_TOPOLOGY;

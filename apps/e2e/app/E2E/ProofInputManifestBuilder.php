@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\E2E;
 
 use App\E2E\Git\GitRepository;
+use App\E2E\Value\ObservedPhpInputs;
 use App\E2E\Value\ProofInputClassification;
 use App\E2E\Value\ProofInputManifest;
 use App\E2E\Value\ProofPlan;
@@ -29,13 +30,19 @@ final readonly class ProofInputManifestBuilder
         string $issue,
         string $planPath,
         ProofPlan $plan,
+        ?ObservedPhpInputs $observedInputs = null,
+        bool $pcovCleanup = true,
     ): ProofInputManifest {
+        if ($plan->observedInputs !== ($observedInputs !== null)) {
+            throw new InvalidArgumentException('The observed PHP inputs do not match the proof plan.');
+        }
         TopologyTarget::assertIssue($issue);
         if (! $repository->isAncestor($includedMainSha, $provedSha)) {
             throw new InvalidArgumentException('The proof candidate does not include current origin/main.');
         }
         $entries = $repository->entries($provedSha);
         $contractPaths = $this->contractPaths($entries, $issue, $planPath, $plan);
+        $featureRuntimePaths = $this->featureRuntimePaths($repository, $includedMainSha, $provedSha);
         $unknown = [];
         foreach (array_keys($entries) as $path) {
             if (
@@ -67,6 +74,14 @@ final readonly class ProofInputManifestBuilder
             )) {
                 continue;
             }
+            if (
+                $plan->observedInputs
+                && ! isset($contractPaths[$path])
+                && $this->policy->isObservablePhpSource($path)
+                && ! in_array($path, $featureRuntimePaths, true)
+            ) {
+                continue;
+            }
             if ($entry['type'] !== 'blob') {
                 throw new InvalidArgumentException("Proof input [{$path}] is not a Git blob.");
             }
@@ -79,20 +94,6 @@ final readonly class ProofInputManifestBuilder
         }
         usort($inputs, static fn (array $left, array $right): int => $left['path'] <=> $right['path']);
 
-        $featureRuntimePaths = [];
-        foreach ($repository->changes($includedMainSha, $provedSha) as $change) {
-            $paths = [$change['path']];
-            if ($change['previous_path'] !== null) {
-                $paths[] = $change['previous_path'];
-            }
-            foreach ($paths as $path) {
-                if ($this->policy->classify($path) === ProofInputClassification::Runtime) {
-                    $featureRuntimePaths[$path] = true;
-                }
-            }
-        }
-        $featureRuntimePaths = array_keys($featureRuntimePaths);
-        sort($featureRuntimePaths, SORT_STRING);
         $fixtureIssues = $plan->fixtureIssues;
         sort($fixtureIssues, SORT_STRING);
 
@@ -105,12 +106,61 @@ final readonly class ProofInputManifestBuilder
             $planPath,
             $fixtureIssues,
             $plan->inputs,
+            $observedInputs,
             [
                 'static_classification' => true,
                 'proof_contract' => true,
                 'checkout_literals' => true,
+                'observed_processes' => $observedInputs !== null || ! $plan->observedInputs,
+                'observed_paths' => $observedInputs !== null || ! $plan->observedInputs,
+                'pcov_cleanup' => $pcovCleanup,
             ],
         );
+    }
+
+    public function validateContract(
+        GitRepository $repository,
+        string $provedSha,
+        string $includedMainSha,
+        string $issue,
+        string $planPath,
+        ProofPlan $plan,
+    ): void {
+        TopologyTarget::assertIssue($issue);
+        if (! $repository->isAncestor($includedMainSha, $provedSha)) {
+            throw new InvalidArgumentException('The proof candidate does not include current origin/main.');
+        }
+        $entries = $repository->entries($provedSha);
+        $contractPaths = $this->contractPaths($entries, $issue, $planPath, $plan);
+        foreach (array_keys($entries) as $path) {
+            if (
+                ! isset($contractPaths[$path])
+                && $this->policy->classify($path) === ProofInputClassification::Indeterminate
+            ) {
+                throw new InvalidArgumentException("Static proof input classification is incomplete: {$path}.");
+            }
+        }
+        $this->assertCheckoutLiterals($entries, $contractPaths, $plan);
+    }
+
+    /** @return list<string> */
+    private function featureRuntimePaths(
+        GitRepository $repository,
+        string $includedMainSha,
+        string $provedSha,
+    ): array {
+        $paths = [];
+        foreach ($repository->changes($includedMainSha, $provedSha) as $change) {
+            foreach (array_filter([$change['path'], $change['previous_path']]) as $path) {
+                if ($this->policy->classify($path) === ProofInputClassification::Runtime) {
+                    $paths[$path] = true;
+                }
+            }
+        }
+        $paths = array_keys($paths);
+        sort($paths, SORT_STRING);
+
+        return $paths;
     }
 
     /**

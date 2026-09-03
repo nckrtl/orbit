@@ -33,6 +33,31 @@ final class StatusCommand extends E2ECommand
             }
             $hasDiscovery = $state->hasAttempt(AttemptPurpose::Discovery);
             $hasProof = $state->hasAttempt(AttemptPurpose::Proof);
+            $hasCandidate = $state->hasAttempt(AttemptPurpose::CandidateConvergence);
+            if ($hasCandidate) {
+                $purposes = array_values(array_filter([
+                    $hasDiscovery ? 'discovery' : null,
+                    $hasProof ? 'proof' : null,
+                    'candidate-convergence',
+                ]));
+                $candidate = $state->attempt(AttemptPurpose::CandidateConvergence);
+                $this->outputJson(
+                    [
+                        'state' => implode('+', $purposes),
+                        'issue' => $request->issue,
+                        'worktree' => $request->worktree,
+                        'discovery_topology' => $state->topology(AttemptPurpose::Discovery)?->toArray(),
+                        'proof_topology' => $state->topology(AttemptPurpose::Proof)?->toArray(),
+                        'candidate_attempt_id' => $candidate['attempt_id'],
+                        'candidate_topology' => $state->topology(AttemptPurpose::CandidateConvergence)?->toArray(),
+                        'proof' => $state->proof(),
+                        'candidate_convergence' => $state->candidateConvergence(),
+                    ],
+                    implode('+', $purposes).' '.$candidate['attempt_id'],
+                );
+
+                return self::SUCCESS;
+            }
             if ($hasDiscovery && $hasProof) {
                 $discovery = $state->attempt(AttemptPurpose::Discovery);
                 $proofAttempt = $state->attempt(AttemptPurpose::Proof);

@@ -18,7 +18,10 @@ use App\E2E\TopologySnapshotPromotionStore;
 use App\E2E\TopologyVerifier;
 use App\E2E\Value\AttemptId;
 use App\E2E\Value\AttemptPurpose;
+use App\E2E\Value\CandidateConvergenceResult;
+use App\E2E\Value\ConvergenceReport;
 use App\E2E\Value\FeatureTopology;
+use App\E2E\Value\ObservedPhpInputs;
 use App\E2E\Value\OperationId;
 use App\E2E\Value\ProofEquivalenceReport;
 use App\E2E\Value\ProofEquivalenceResult;
@@ -53,8 +56,11 @@ beforeEach(function (): void {
  *
  * @return array{root: string, worktree: string, paths: StatePaths, manifests: TopologySnapshotManifestStore, request: TopologyRequest, target: TopologyTarget, candidate: string, plan: ProofPlan}
  */
-function promotableFixture(bool $mainHoldsCandidate = true, AttemptPurpose $purpose = AttemptPurpose::Proof): array
-{
+function promotableFixture(
+    bool $mainHoldsCandidate = true,
+    AttemptPurpose $purpose = AttemptPurpose::Proof,
+    bool $observedInputs = false,
+): array {
     $root = preparedTopologyRepository();
     $worktree = pinnedFeatureWorktree($root, 'promote');
     $candidate = new GitRepository($worktree)->commit();
@@ -90,7 +96,7 @@ function promotableFixture(bool $mainHoldsCandidate = true, AttemptPurpose $purp
     ));
     $planPath = $worktree.'/proofs/NCK-123.json';
     mkdir(dirname($planPath), 0700, true);
-    file_put_contents($planPath, json_encode([
+    $planValue = [
         'setup' => [],
         'acceptance' => [[
             'id' => 'doctor',
@@ -98,11 +104,15 @@ function promotableFixture(bool $mainHoldsCandidate = true, AttemptPurpose $purp
             'argv' => ['orbit', 'doctor'],
             'timeout_seconds' => 60,
         ]],
-    ], JSON_THROW_ON_ERROR));
+    ];
+    if ($observedInputs) {
+        $planValue['observed_inputs'] = true;
+    }
+    file_put_contents($planPath, json_encode($planValue, JSON_THROW_ON_ERROR));
     $plan = ProofPlan::fromFile($planPath);
     if ($purpose === AttemptPurpose::Proof) {
         $manifest = new ProofInputManifest(
-            1,
+            2,
             $candidate,
             $candidate,
             [],
@@ -115,7 +125,15 @@ function promotableFixture(bool $mainHoldsCandidate = true, AttemptPurpose $purp
             'proofs/NCK-123.json',
             [],
             [],
-            ['static_classification' => true, 'proof_contract' => true, 'checkout_literals' => true],
+            null,
+            [
+                'static_classification' => true,
+                'proof_contract' => true,
+                'checkout_literals' => true,
+                'observed_processes' => true,
+                'observed_paths' => true,
+                'pcov_cleanup' => true,
+            ],
         );
         $state->writeProofInputManifest($manifest->fingerprint(), $manifest->toArray());
         $state->writeProof([
@@ -172,6 +190,164 @@ function promoterFor(
     );
 }
 
+/** @return array{fixture:array,proof_target:TopologyTarget,candidate_target:TopologyTarget,discovery_target:TopologyTarget,equivalence:ProofEquivalenceReport} */
+function candidatePromotionFixture(): array
+{
+    $fixture = promotableFixture(observedInputs: true);
+    $state = IssueState::forWorktree('NCK-123', $fixture['worktree']);
+    $proof = $state->proof();
+    assert($proof !== null);
+    $proofTarget = $fixture['target'];
+
+    $path = $fixture['worktree'].'/apps/cli/app/Unrelated.php';
+    if (! is_dir(dirname($path))) {
+        mkdir(dirname($path), 0700, true);
+    }
+    file_put_contents($path, "<?php\n\nfinal class Unrelated {}\n");
+    Process::run(['git', '-C', $fixture['worktree'], 'add', 'apps/cli/app/Unrelated.php'])->throw();
+    Process::run(['git', '-C', $fixture['worktree'], 'commit', '--quiet', '-m', 'Unrelated runtime'])->throw();
+    $repository = new GitRepository($fixture['worktree']);
+    $accepted = $repository->commit();
+    Process::run(['git', '-C', $fixture['root'], 'branch', '-f', 'main', $accepted])->throw();
+
+    $packages = array_fill_keys(ObservedPhpInputs::PACKAGES, '8.5.10-sury');
+    $packages['php8.5-pcov'] = '1.0.12-sury';
+    $runtime = static fn (string $role): array => [
+        'role' => $role,
+        'php_version' => '8.5.10',
+        'fpm_version' => '8.5.10',
+        'pcov_version' => '1.0.12',
+        'package_versions' => $packages,
+    ];
+    $surface = static fn (string $role, string $type, string $id): array => [
+        'role' => $role,
+        'process_type' => $type,
+        'processes' => [[
+            'id' => str_repeat($id, 32),
+            'started_at' => '2026-09-03T00:00:00.000001Z',
+            'finished_at' => '2026-09-03T00:00:00.000002Z',
+        ]],
+        'paths' => ['apps/cli/orbit'],
+    ];
+    $surfaces = [
+        $surface('app-dev', 'cli', '1'),
+        $surface('gateway', 'cli', '2'),
+        $surface('gateway', 'fpm', '3'),
+    ];
+    $manifest = new ProofInputManifest(
+        2,
+        $fixture['candidate'],
+        $fixture['candidate'],
+        [],
+        [[
+            'path' => 'proofs/NCK-123.json',
+            'classification' => 'proof-contract',
+            'mode' => '100644',
+            'blob' => str_repeat('d', 40),
+        ]],
+        'proofs/NCK-123.json',
+        [],
+        [],
+        new ObservedPhpInputs(
+            [$runtime('app-dev'), $runtime('gateway')],
+            ['setup' => $surfaces, 'acceptance' => $surfaces],
+        ),
+        [
+            'static_classification' => true,
+            'proof_contract' => true,
+            'checkout_literals' => true,
+            'observed_processes' => true,
+            'observed_paths' => true,
+            'pcov_cleanup' => true,
+        ],
+    );
+    $state->writeProofInputManifest($manifest->fingerprint(), $manifest->toArray());
+    $proof['manifest_sha256'] = $manifest->fingerprint();
+    $state->writeProof($proof);
+
+    $equivalence = new ProofEquivalenceReport(
+        $fixture['candidate'],
+        $accepted,
+        $fixture['candidate'],
+        $fixture['plan']->fingerprint(),
+        $manifest->fingerprint(),
+        ProofEquivalenceResult::Equivalent,
+        [[
+            'path' => 'apps/cli/app/Unrelated.php',
+            'previous_path' => null,
+            'change' => 'added',
+            'classification' => 'unrelated-runtime',
+        ]],
+        'candidate-convergence',
+        'run-candidate-convergence',
+        [],
+        '2026-09-03T00:00:00Z',
+    );
+    $state->writeEquivalence($equivalence->fingerprint(), $equivalence->toArray());
+
+    $candidateTarget = TopologyTarget::feature('NCK-123', new AttemptId(str_repeat('c', 32)));
+    $proofTopology = $state->requireTopology(AttemptPurpose::Proof);
+    $verification = new VerificationReport(true, [
+        'candidate.verify' => [
+            'passed' => true,
+            'checked_at' => '2026-09-03T00:00:00Z',
+            'expected' => 'healthy',
+            'observed' => 'healthy',
+            'evidence_ref' => 'incus://'.$candidateTarget->instance('gateway').'/candidate.verify',
+        ],
+    ]);
+    $state->writeAttempt(
+        $candidateTarget->requireAttempt(),
+        AttemptPurpose::CandidateConvergence,
+        new OperationId(str_repeat('c', 32)),
+    );
+    $state->writeTopology(new FeatureTopology(
+        $candidateTarget,
+        AttemptPurpose::CandidateConvergence,
+        $proofTopology->generation,
+        $candidateTarget->network(),
+        array_combine(
+            TopologyProfile::ROLES,
+            array_map($candidateTarget->instance(...), TopologyProfile::ROLES),
+        ),
+        new SourceState($accepted, $accepted, operationId: str_repeat('c', 32)),
+        $verification,
+    ));
+    $state->writeCandidateConvergence(new CandidateConvergenceResult(
+        'converged',
+        'NCK-123',
+        $candidateTarget->requireAttempt(),
+        $accepted,
+        $repository->tree($accepted),
+        $equivalence->fingerprint(),
+        ConvergenceReport::successful(['gateway' => true, 'app-dev' => true, 'app-prod' => true]),
+        $verification,
+        null,
+        '2026-09-03T00:00:00Z',
+    ));
+
+    $discoveryTarget = TopologyTarget::feature('NCK-123', new AttemptId(str_repeat('d', 32)));
+    $state->writeAttempt(
+        $discoveryTarget->requireAttempt(),
+        AttemptPurpose::Discovery,
+        new OperationId(str_repeat('d', 32)),
+    );
+    $state->writeTopology(new FeatureTopology(
+        $discoveryTarget,
+        AttemptPurpose::Discovery,
+        $proofTopology->generation,
+        $discoveryTarget->network(),
+        array_combine(
+            TopologyProfile::ROLES,
+            array_map($discoveryTarget->instance(...), TopologyProfile::ROLES),
+        ),
+        $proofTopology->source,
+        $proofTopology->verification,
+    ));
+
+    return compact('fixture', 'proofTarget', 'candidateTarget', 'discoveryTarget', 'equivalence');
+}
+
 /**
  * A stateful Incus fake: the topology snapshot, proof, and optional discovery
  * resources, mutated by every command that promotion and release issue.
@@ -186,6 +362,7 @@ function fakePromotionHost(
     ?array &$guestEvents = null,
     bool $failAssignments = false,
     ?TopologyTarget $discoveryTarget = null,
+    ?TopologyTarget $retainedProofTarget = null,
 ): void {
     $topologySnapshot = TopologyTarget::topologySnapshot();
     $instances = [];
@@ -223,6 +400,20 @@ function fakePromotionHost(
             ];
             $snapshots[$discoveryTarget->instance($role)] = [];
         }
+        if ($retainedProofTarget !== null) {
+            $instances[$retainedProofTarget->instance($role)] = [
+                'status' => 'Running',
+                'config' => [
+                    'user.orbit.e2e.owner' => 'orbit-e2e',
+                    'user.orbit.e2e.issue' => $retainedProofTarget->issue,
+                    'user.orbit.e2e.attempt' => $retainedProofTarget->requireAttempt()->value,
+                    'user.orbit.e2e.operation' => str_repeat('b', 32),
+                    'user.orbit.e2e.generation' => 'old',
+                ],
+                'network' => $retainedProofTarget->network(),
+            ];
+            $snapshots[$retainedProofTarget->instance($role)] = [];
+        }
     }
     $networks = [
         $topologySnapshot->network() => ['config' => [
@@ -242,6 +433,14 @@ function fakePromotionHost(
             'user.orbit.e2e.issue' => $discoveryTarget->issue,
             'user.orbit.e2e.attempt' => $discoveryTarget->requireAttempt()->value,
             'ipv4.address' => '10.232.3.1/24',
+        ]];
+    }
+    if ($retainedProofTarget !== null) {
+        $networks[$retainedProofTarget->network()] = ['config' => [
+            'user.orbit.e2e.owner' => 'orbit-e2e',
+            'user.orbit.e2e.issue' => $retainedProofTarget->issue,
+            'user.orbit.e2e.attempt' => $retainedProofTarget->requireAttempt()->value,
+            'ipv4.address' => '10.232.4.1/24',
         ]];
     }
     $realProcess = new ProcessFactory;
@@ -608,6 +807,101 @@ describe('TopologySnapshotPromoter', function (): void {
                 'merged_sha' => $accepted,
                 'runtime_fingerprint' => $result['runtime_fingerprint'],
             ]);
+    });
+
+    it('promotes the verified candidate topology and releases candidate, retained proof, and discovery', function (): void {
+        $candidate = candidatePromotionFixture();
+        $fixture = $candidate['fixture'];
+        $events = [];
+        $guestEvents = [];
+        fakePromotionHost(
+            $candidate['candidateTarget'],
+            $events,
+            guestEvents: $guestEvents,
+            discoveryTarget: $candidate['discoveryTarget'],
+            retainedProofTarget: $candidate['proofTarget'],
+        );
+
+        $result = promoterFor($fixture['root'], $fixture['paths'], $fixture['manifests'])
+            ->promote($fixture['request'], $fixture['plan']);
+
+        $lineage = new TopologySnapshotPromotionStore(new AtomicJsonStore($fixture['paths']))
+            ->find($result['generation_id']);
+        $candidatePrefix = 'copy:'.$candidate['candidateTarget']->instance('gateway').'>';
+        $proofPrefix = 'copy:'.$candidate['proofTarget']->instance('gateway').'>';
+        $eventLog = implode("\n", $events);
+        $expectedReleased = [];
+        foreach ([$candidate['candidateTarget'], $candidate['discoveryTarget'], $candidate['proofTarget']] as $target) {
+            foreach (array_reverse(TopologyProfile::ROLES) as $role) {
+                $expectedReleased[] = 'deleted:'.$target->instance($role);
+            }
+            $expectedReleased[] = 'deleted:'.$target->network();
+        }
+
+        expect($result)
+            ->toMatchArray([
+                'promotion_path' => 'candidate-convergence',
+                'attempt_id' => $candidate['candidateTarget']->requireAttempt()->value,
+                'proved_sha' => $fixture['candidate'],
+                'accepted_sha' => new GitRepository($fixture['worktree'])->commit(),
+                'equivalence_sha256' => $candidate['equivalence']->fingerprint(),
+            ])
+            ->and($result['released'])
+            ->toContain(...$expectedReleased)
+            ->and($eventLog)
+            ->toContain($candidatePrefix)
+            ->not
+            ->toContain($proofPrefix)
+            ->and($lineage)
+            ->toMatchArray([
+                'promotion_path' => 'candidate-convergence',
+                'proved_sha' => $fixture['candidate'],
+                'accepted_sha' => $result['accepted_sha'],
+                'equivalence_sha256' => $candidate['equivalence']->fingerprint(),
+            ])
+            ->and(IssueState::forWorktree('NCK-123', $fixture['worktree'])->hasAttempt())
+            ->toBeFalse();
+    });
+
+    it('refuses candidate promotion without complete convergence evidence before any mutation', function (): void {
+        $candidate = candidatePromotionFixture();
+        $fixture = $candidate['fixture'];
+        $state = IssueState::forWorktree('NCK-123', $fixture['worktree']);
+        $topology = $state->requireTopology(AttemptPurpose::CandidateConvergence);
+        $failedVerification = new VerificationReport(false, [
+            'candidate.verify' => [
+                'passed' => false,
+                'checked_at' => '2026-09-03T00:00:00Z',
+                'expected' => 'healthy',
+                'observed' => 'failed',
+                'evidence_ref' => 'incus://'.$topology->target->instance('gateway').'/candidate.verify',
+            ],
+        ]);
+        $state->writeCandidateConvergence(new CandidateConvergenceResult(
+            'diagnosis',
+            'NCK-123',
+            $topology->attempt,
+            $topology->source->hostSha,
+            new GitRepository($fixture['worktree'])->tree($topology->source->hostSha),
+            $candidate['equivalence']->fingerprint(),
+            null,
+            $failedVerification,
+            'candidate convergence failed',
+            '2026-09-03T00:00:00Z',
+        ));
+        $events = [];
+        fakePromotionHost(
+            $candidate['candidateTarget'],
+            $events,
+            discoveryTarget: $candidate['discoveryTarget'],
+            retainedProofTarget: $candidate['proofTarget'],
+        );
+
+        expect(fn () => promoterFor($fixture['root'], $fixture['paths'], $fixture['manifests'])
+            ->promote($fixture['request'], $fixture['plan']))
+            ->toThrow(RuntimeException::class, 'Candidate-convergence evidence is incomplete')
+            ->and($events)
+            ->toBe([]);
     });
 
     it('discards the copies and keeps the topology snapshot when the snapshot fails before the swap', function (): void {

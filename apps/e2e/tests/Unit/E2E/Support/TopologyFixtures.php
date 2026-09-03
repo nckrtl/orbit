@@ -89,7 +89,7 @@ function preparedTopologyRepository(): string
         chmod($guestTarget.'/'.basename($script), 0755);
     }
     // Vendor trees and the gateway environment stay out of the tree, as in Orbit itself.
-    file_put_contents($root.'/.gitignore', "/vendor/\nvendor/\n.env\n");
+    file_put_contents($root.'/.gitignore', "/vendor/\nvendor/\n.env\n.e2e/\n");
     hydrateFixtureVendor($root);
 
     foreach ([
@@ -255,6 +255,7 @@ function pinnedFeatureWorktree(string $repositoryRoot, string $suffix): string
 function pinnedWorktreeInventoryResult(
     array $command,
     TopologyTarget $target,
+    ?string $operationId = null,
 ): ?\Illuminate\Contracts\Process\ProcessResult {
     if (($firewall = topologyFirewallResult($command)) !== null) {
         return $firewall;
@@ -274,7 +275,13 @@ function pinnedWorktreeInventoryResult(
                 static fn (string $role): array => json_decode(
                     topologyVmJson(
                         $target->instance($role),
-                        ['user.orbit.e2e.owner' => 'orbit-e2e'],
+                        [
+                            'user.orbit.e2e.owner' => 'orbit-e2e',
+                            'user.orbit.e2e.issue' => $target->issue,
+                            'user.orbit.e2e.attempt' => $target->requireAttempt()->value,
+                            'user.orbit.e2e.operation' => $operationId ?? str_repeat('f', 32),
+                            'user.orbit.e2e.generation' => 'fixture-generation',
+                        ],
                         $target->network(),
                     ),
                     true,
@@ -417,15 +424,23 @@ function pinnedWorktreeBatchResult(
 /**
  * @param list<array<array-key, mixed>> $events
  * @param null|Closure(list<string>): void $observe
+ * @param null|Closure(list<string>): (?\Illuminate\Contracts\Process\ProcessResult) $guestOverride
  */
-function fakePinnedWorktreeProcesses(TopologyTarget $target, array &$events, ?Closure $observe = null): void
-{
+function fakePinnedWorktreeProcesses(
+    TopologyTarget $target,
+    array &$events,
+    ?Closure $observe = null,
+    ?Closure $guestOverride = null,
+    ?string $operationId = null,
+): void {
     $realProcess = new ProcessFactory;
     Process::fake(function (\Illuminate\Process\PendingProcess $process) use (
         &$events,
         $realProcess,
         $target,
         $observe,
+        $guestOverride,
+        $operationId,
     ) {
         $command = $process->command;
         $observe?->__invoke($command);
@@ -435,11 +450,16 @@ function fakePinnedWorktreeProcesses(TopologyTarget $target, array &$events, ?Cl
                 ->input($process->input)
                 ->run($command);
         }
-        if (($batch = pinnedWorktreeBatchResult($process, $events)) !== null) {
+        if (($batch = pinnedWorktreeBatchResult($process, $events, $guestOverride)) !== null) {
             return $batch;
         }
         $events[] = $command;
 
-        return pinnedWorktreeInventoryResult($command, $target) ?? pinnedWorktreeGuestResult($command);
+        return (
+            pinnedWorktreeInventoryResult($command, $target, $operationId) ?? $guestOverride?->__invoke(array_slice(
+                $command,
+                6,
+            )) ?? pinnedWorktreeGuestResult($command)
+        );
     });
 }
