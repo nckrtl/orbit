@@ -452,23 +452,17 @@
             "kind": "reference",
             "components": [
                 "apps/cli",
-                "apps/docs",
                 "apps/e2e"
             ],
             "concepts": [
                 "App",
-                "AppInstance",
-                "Cluster",
                 "Doctor",
                 "Gateway",
-                "Node",
-                "Proof topology",
-                "Router"
+                "Proof topology"
             ],
             "governing_adrs": [
                 "0005",
-                "0006",
-                "0015"
+                "0006"
             ]
         },
         {
@@ -506,6 +500,37 @@
                 "App",
                 "Node",
                 "Route"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/proof-plans.md",
+            "title": "Proof plans",
+            "kind": "reference",
+            "components": [
+                "apps/e2e"
+            ],
+            "concepts": [
+                "App",
+                "Gateway",
+                "Node"
+            ],
+            "governing_adrs": [
+                "0015"
+            ]
+        },
+        {
+            "path": "docs/reference/topology-snapshot.md",
+            "title": "Topology snapshot",
+            "kind": "reference",
+            "components": [
+                "apps/e2e"
+            ],
+            "concepts": [
+                "App",
+                "Doctor",
+                "Gateway",
+                "Node"
             ],
             "governing_adrs": []
         },
