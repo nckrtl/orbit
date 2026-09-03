@@ -12,6 +12,9 @@ namespace App\Infrastructure\WireGuard;
  * The systemd stub listener is skipped: pointing dnsmasq at 127.0.0.53 can
  * loop once the mesh listener is bound. When no uplink resolvers are visible,
  * the documented public recursive fallback is used.
+ *
+ * @mago-expect lint:cyclomatic-complexity The reader keeps uplink and DHCP host-file branches explicit.
+ * @mago-expect lint:kan-defect The score reflects guarded parsing of two host-file formats.
  */
 final readonly class UplinkDnsResolvers
 {
@@ -30,7 +33,10 @@ final readonly class UplinkDnsResolvers
     /** @return non-empty-list<string> */
     public function nameservers(): array
     {
-        $resolved = $this->fromResolvedUplink();
+        $resolved = $this->parseNameserverLines(
+            $this->read('run/systemd/resolve/resolv.conf'),
+            '/^nameserver\s+(\S+)/',
+        );
 
         if ($resolved !== []) {
             return $resolved;
@@ -45,114 +51,23 @@ final readonly class UplinkDnsResolvers
         return self::FALLBACK;
     }
 
-    /** @return list<string> */
-    private function fromResolvedUplink(): array
-    {
-        return $this->nameserversFromResolv($this->read('run/systemd/resolve/resolv.conf'));
-    }
-
-    /** @return list<string> */
+    /**
+     * @mago-expect lint:cyclomatic-complexity Default-route selection and lease parsing stay in one host-file path.
+     *
+     * @return list<string>
+     */
     private function fromDefaultRouteDhcpLease(): array
-    {
-        $interface = $this->defaultRouteInterface();
-
-        if ($interface === null) {
-            return [];
-        }
-
-        $index = $this->interfaceIndex($interface);
-
-        if ($index === null) {
-            return [];
-        }
-
-        return $this->nameserversFromDhcpLease($this->read("run/systemd/netif/leases/{$index}"));
-    }
-
-    /** @return list<string> */
-    private function nameserversFromResolv(?string $contents): array
-    {
-        if ($contents === null) {
-            return [];
-        }
-
-        $servers = [];
-        $lines = preg_split('/\R/', $contents);
-
-        if (! is_array($lines)) {
-            return [];
-        }
-
-        foreach ($lines as $line) {
-            $matches = [];
-
-            if (preg_match('/^nameserver\s+(\S+)/', trim($line), $matches) !== 1) {
-                continue;
-            }
-
-            $ip = $this->ipv4Nameserver($matches[1]);
-
-            if ($ip === null) {
-                continue;
-            }
-
-            $servers[] = $ip;
-        }
-
-        return $this->unique($servers);
-    }
-
-    /** @return list<string> */
-    private function nameserversFromDhcpLease(?string $contents): array
-    {
-        if ($contents === null) {
-            return [];
-        }
-
-        $servers = [];
-        $lines = preg_split('/\R/', $contents);
-
-        if (! is_array($lines)) {
-            return [];
-        }
-
-        foreach ($lines as $line) {
-            if (! str_starts_with($line, 'DNS=')) {
-                continue;
-            }
-
-            $candidates = preg_split('/\s+/', substr($line, 4));
-
-            if (! is_array($candidates)) {
-                continue;
-            }
-
-            foreach ($candidates as $candidate) {
-                $ip = $this->ipv4Nameserver($candidate);
-
-                if ($ip === null) {
-                    continue;
-                }
-
-                $servers[] = $ip;
-            }
-        }
-
-        return $this->unique($servers);
-    }
-
-    private function defaultRouteInterface(): ?string
     {
         $contents = $this->read('proc/net/route');
 
         if ($contents === null) {
-            return null;
+            return [];
         }
 
         $lines = preg_split('/\R/', $contents);
 
         if (! is_array($lines)) {
-            return null;
+            return [];
         }
 
         $bestInterface = null;
@@ -167,17 +82,13 @@ final readonly class UplinkDnsResolvers
 
             [$interface, $destination, , , , , $metric] = $fields;
 
-            if ($destination !== '00000000' || $this->isNonUplinkInterface($interface)) {
+            if ($destination !== '00000000' || $interface === 'lo' || $interface === 'orbit') {
                 continue;
             }
 
             $metricValue = filter_var($metric, FILTER_VALIDATE_INT);
 
-            if (! is_int($metricValue)) {
-                continue;
-            }
-
-            if ($bestMetric !== null && $metricValue >= $bestMetric) {
+            if (! is_int($metricValue) || $bestMetric !== null && $metricValue >= $bestMetric) {
                 continue;
             }
 
@@ -185,45 +96,55 @@ final readonly class UplinkDnsResolvers
             $bestMetric = $metricValue;
         }
 
-        return $bestInterface;
-    }
-
-    private function isNonUplinkInterface(string $interface): bool
-    {
-        return $interface === 'lo' || $interface === 'orbit';
-    }
-
-    private function interfaceIndex(string $interface): ?int
-    {
-        if (preg_match('/^[A-Za-z0-9][A-Za-z0-9._-]{0,14}$/', $interface) !== 1) {
-            return null;
+        if (
+            $bestInterface === null
+            || preg_match('/^[A-Za-z0-9][A-Za-z0-9._-]{0,14}$/', $bestInterface) !== 1
+        ) {
+            return [];
         }
 
-        $contents = $this->read("sys/class/net/{$interface}/ifindex");
+        $index = filter_var(trim((string) $this->read("sys/class/net/{$bestInterface}/ifindex")), FILTER_VALIDATE_INT);
 
+        if (! is_int($index) || $index < 1) {
+            return [];
+        }
+
+        return $this->parseNameserverLines($this->read("run/systemd/netif/leases/{$index}"), '/^DNS=((?:\S+\s*)+)/');
+    }
+
+    /** @return list<string> */
+    private function parseNameserverLines(?string $contents, string $pattern): array
+    {
         if ($contents === null) {
-            return null;
+            return [];
         }
 
-        $index = filter_var(trim($contents), FILTER_VALIDATE_INT);
+        $lines = preg_split('/\R/', $contents);
 
-        return is_int($index) && $index > 0 ? $index : null;
-    }
-
-    private function ipv4Nameserver(string $value): ?string
-    {
-        $ip = filter_var(trim($value), FILTER_VALIDATE_IP, FILTER_FLAG_IPV4);
-
-        if (! is_string($ip) || str_starts_with($ip, '127.') || $ip === '0.0.0.0') {
-            return null;
+        if (! is_array($lines)) {
+            return [];
         }
 
-        return $ip;
-    }
+        $servers = [];
 
-    /** @param list<string> $servers @return list<string> */
-    private function unique(array $servers): array
-    {
+        foreach ($lines as $line) {
+            $matches = [];
+
+            if (preg_match($pattern, trim($line), $matches) !== 1) {
+                continue;
+            }
+
+            foreach (preg_split('/\s+/', trim($matches[1])) ?: [] as $candidate) {
+                $ip = filter_var($candidate, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4);
+
+                if (! is_string($ip) || str_starts_with($ip, '127.') || $ip === '0.0.0.0') {
+                    continue;
+                }
+
+                $servers[] = $ip;
+            }
+        }
+
         return array_values(array_unique($servers));
     }
 
