@@ -28,7 +28,10 @@ describe('Composer configuration', function (): void {
             ->and($composer['scripts']['test'])
             ->toBe('vendor/bin/pest --parallel --no-tia --compact');
         expect($composer['scripts']['test:scenario-cold'])
-            ->toBe('vendor/bin/pest --no-tia --compact tests/Scenario/ColdTopologyAcceptanceTest.php');
+            ->toBe([
+                'Composer\\Config::disableProcessTimeout',
+                'vendor/bin/pest --no-tia --compact tests/Scenario/ColdTopologyAcceptanceTest.php',
+            ]);
         expect(file_get_contents(base_path('phpunit.xml')))->not->toContain('<directory>tests/Scenario</directory>');
         expect(file_get_contents(base_path('../../bin/test')))->not->toContain('incus-live');
         expect(file_get_contents(base_path('../../.github/workflows/ci.yml')))->not->toContain('incus-live');
