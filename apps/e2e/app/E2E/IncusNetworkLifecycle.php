@@ -22,7 +22,7 @@ final readonly class IncusNetworkLifecycle
     ) {}
 
     /** @param array<string, string> $metadata */
-    public function create(string $name, int $slot, array $metadata = []): IncusNetwork
+    public function create(string $name, int $slot, array $metadata = [], int $lastAddress = 12): IncusNetwork
     {
         $this->assertManagedNetworkName($name);
         $this->assertLocalRemote();
@@ -31,9 +31,12 @@ final readonly class IncusNetworkLifecycle
         if ($slot < 1 || $slot > 200) {
             throw new RuntimeException('Incus network slot is outside the supported range 1-200.');
         }
+        if ($lastAddress < 10 || $lastAddress > 254) {
+            throw new RuntimeException('Incus network DHCP range is outside the supported host positions 10-254.');
+        }
         $network = $this->host->createNetwork($name, [
             'ipv4.address' => "10.232.{$slot}.1/24",
-            ...$this->networkConfiguration($slot),
+            ...$this->networkConfiguration($slot, $lastAddress),
             ...$metadata,
         ]);
 
@@ -111,13 +114,13 @@ final readonly class IncusNetworkLifecycle
     }
 
     /** @return array<string, string> */
-    private function networkConfiguration(int $slot): array
+    private function networkConfiguration(int $slot, int $lastAddress = 12): array
     {
         $prefix = "10.232.{$slot}";
 
         return [
             'ipv4.nat' => 'true',
-            'ipv4.dhcp.ranges' => "{$prefix}.10-{$prefix}.12",
+            'ipv4.dhcp.ranges' => "{$prefix}.10-{$prefix}.{$lastAddress}",
             'ipv6.address' => 'none',
             'raw.dnsmasq' => 'port=0',
         ];

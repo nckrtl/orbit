@@ -2,7 +2,9 @@
 
 declare(strict_types=1);
 
+use App\E2E\ColdTopologyConstructor;
 use App\E2E\Git\GitRepository;
+use App\E2E\HostCapacity;
 use App\E2E\IncusHost;
 use App\E2E\IncusNetworkLifecycle;
 use App\E2E\LaravelReleaseResolver;
@@ -58,10 +60,14 @@ function topologySnapshotRefresherForPowerTests(
         $manifests,
         new TopologySnapshotBuilder(
             $host,
-            new IncusNetworkLifecycle($host),
-            $synchronizer,
-            $converger,
-            $verifier,
+            new ColdTopologyConstructor(
+                $host,
+                new IncusNetworkLifecycle($host),
+                $synchronizer,
+                $converger,
+                new HostCapacity($host, 9),
+                $paths,
+            ),
             $manifests,
             $state,
             $root,
@@ -816,10 +822,14 @@ describe('TopologySnapshotRefresher contracts', function () {
         $verifier = new TopologyVerifier($host, 1, 0);
         $builder = new TopologySnapshotBuilder(
             $host,
-            new IncusNetworkLifecycle($host),
-            $synchronizer,
-            $converger,
-            $verifier,
+            new ColdTopologyConstructor(
+                $host,
+                new IncusNetworkLifecycle($host),
+                $synchronizer,
+                $converger,
+                new HostCapacity($host, 9),
+                $paths,
+            ),
             $manifests,
             $state,
             $root,

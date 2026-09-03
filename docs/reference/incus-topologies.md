@@ -7,8 +7,10 @@ topology snapshot, refresh, exact cleanup) and
 [ADR 0006](../decisions/0006-topology-led-feature-development.md) (separate
 discovery, fresh proof, immutable proved attempts), and
 [ADR 0015](../decisions/0015-retain-incus-proof-by-recorded-input-equivalence.md)
-(recorded-input equivalence for later candidate heads). Automated-only work
-stays independent of Incus.
+(recorded-input equivalence for later candidate heads), and
+[ADR 0019](../decisions/0019-run-disposable-incus-scenario-lanes.md)
+(disposable regression-scenario lanes). Automated-only work stays independent
+of Incus.
 
 A profile is registered only when the repository provides and verifies all of
 these exact-ID operations:
@@ -92,6 +94,51 @@ separate discovery and proof lifecycle.
 | Lifetime | Discovery lasts through development and proof; a failed proof lasts through inspection; promotion or `bin/worktree-remove` releases both |
 
 Issue IDs match `[A-Z][A-Z0-9]{1,9}-[1-9][0-9]{0,8}`.
+
+## On-demand cold scenario
+
+`bin/e2e-scenarios cold CANDIDATE_SHA` runs the first disposable cold-lane
+acceptance flow. It requires a clean checkout whose `HEAD` is exactly the full
+lowercase candidate SHA. It starts from the unchanged
+`orbit-base-ubuntu-26.04-runtime` image alias, synchronizes that exact commit,
+converges the registered product roles, verifies the complete inventory, and
+then unconditionally releases the attempt.
+
+This command is explicitly invoked by a person or later scenario scheduler. It
+is not part of `bin/test`, feature acquire, feature proof, review, merge,
+topology-snapshot promotion, or CI. The cold flow does not install PCOV. General
+scenario selection, result aggregation, snapshot-lane scenarios, worker
+scheduling, and nightly or pull-request triggers are separate work.
+
+The cold acceptance recipe separates physical Node identity from product role
+assignment:
+
+| Node key | Initial purpose | Address | Checkout | Expected roles |
+| --- | --- | --- | --- | --- |
+| `gateway` | Gateway | `.10` | yes | `gateway`, `vpn` |
+| `operator` | Operator | `.11` | yes | `app-dev`, `metrics` |
+| `app-prod` | Workload | `.12` | no | `app-prod` |
+| `extra` | Extension | `.13` | no | none |
+
+VM names, MAC addresses, and fixed IPv4 addresses derive from the attempt and
+physical Node key. Role-based product operations resolve through the recipe,
+so `app-dev` targets the `operator` VM while `extra` remains present and
+roleless. The canonical feature recipe still uses the existing physical keys
+`gateway`, `app-dev`, and `app-prod`, preserving every persistent
+topology-snapshot identity.
+
+Persistent topology-snapshot construction and this disposable flow call the
+same typed cold constructor. The persistent caller keeps its fixed slot,
+permission checks, manifest, corrupt-state, recovery, and promotion rules. The
+disposable caller receives an attempt-scoped network and VM inventory, reserves
+capacity for the recipe's actual four VMs, and writes no promoted manifest or
+topology-snapshot state.
+
+Construction failure triggers exact cleanup. Cleanup first validates the owner
+and operation metadata of every present recipe resource, then stops and deletes
+VMs in reverse recipe order, deletes the network, and verifies absence. A
+resource owned by another operation refuses the entire deletion instead of
+being adopted or removed.
 
 ## Host budget
 

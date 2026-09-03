@@ -140,6 +140,30 @@ describe('IncusNetworkLifecycle', function (): void {
         ]);
     });
 
+    it('extends the DHCP range through the recipe final address', function (): void {
+        Process::fake(function (PendingProcess $process) {
+            if ($process->command === lifecycleFirewallHelper()) {
+                return Process::result("{\"changed\":true}\n");
+            }
+
+            return Process::result();
+        });
+
+        new IncusNetworkLifecycle(lifecycleHost())->create('oe-nck-123', 2, lastAddress: 13);
+
+        Process::assertRan(lifecycleIncus(
+            'network',
+            'create',
+            'local:oe-nck-123',
+            'ipv4.address=10.232.2.1/24',
+            'ipv4.nat=true',
+            'ipv4.dhcp.ranges=10.232.2.10-10.232.2.13',
+            'ipv6.address=none',
+            'raw.dnsmasq='.lifecycleDnsmasq(),
+            'user.orbit.e2e.owner=orbit-e2e',
+        ));
+    });
+
     it('rolls back when the firewall helper returns invalid output', function (): void {
         $helperCalls = 0;
 

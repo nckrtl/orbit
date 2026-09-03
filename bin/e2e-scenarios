@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+
+if [[ $# -ne 2 || "$1" != cold ]]; then
+    cat >&2 <<'USAGE'
+usage: bin/e2e-scenarios cold CANDIDATE_SHA
+
+Runs the explicitly requested cold Incus acceptance flow. The candidate must
+be this clean checkout's HEAD. This command is not part of feature development,
+proof, review, merge, promotion, or CI.
+USAGE
+    exit 64
+fi
+
+candidate=$2
+if [[ ! "$candidate" =~ ^[0-9a-f]{40}$ ]]; then
+    printf 'e2e-scenarios: candidate SHA must be 40 lowercase hexadecimal characters\n' >&2
+    exit 64
+fi
+if [[ "$(git -C "$root" rev-parse --verify HEAD^{commit})" != "$candidate" ]]; then
+    printf 'e2e-scenarios: candidate must equal this checkout HEAD\n' >&2
+    exit 64
+fi
+if [[ -n "$(git -C "$root" status --porcelain --untracked-files=all -- . ':!.e2e')" ]]; then
+    printf 'e2e-scenarios: candidate checkout must be clean\n' >&2
+    exit 64
+fi
+
+common_git=$(git -C "$root" rev-parse --path-format=absolute --git-common-dir)
+export ORBIT_SCENARIO_CANDIDATE_SHA=$candidate
+export ORBIT_SCENARIO_REPOSITORY=$root
+export ORBIT_SCENARIO_PRIMARY_ROOT
+ORBIT_SCENARIO_PRIMARY_ROOT=$(cd "$common_git/.." && pwd)
+
+exec composer --working-dir="$root/apps/e2e" test:scenario-cold

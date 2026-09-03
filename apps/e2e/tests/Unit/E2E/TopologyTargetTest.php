@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\E2E\Value\AttemptId;
+use App\E2E\Value\TopologyRecipe;
 use App\E2E\Value\TopologySnapshotIdentity;
 use App\E2E\Value\TopologyTarget;
 
@@ -67,6 +68,22 @@ describe('TopologyTarget', function () {
             ->not->toBe($second->network())->and($first->instance('gateway'))
             ->not->toBe($second->instance('gateway'))->and($first->mac('gateway'))
             ->not->toBe($second->mac('gateway'));
+    });
+
+    it('derives disposable identities from physical Nodes instead of assigned roles', function () {
+        $target = TopologyTarget::disposableCold(
+            'ORB-106',
+            new AttemptId(str_repeat('a', 32)),
+            TopologyRecipe::coldAcceptance(),
+        );
+
+        expect($target->network())->toBe('oe-534fc0ba2be4');
+        expect($target->instance('operator'))->toBe('orbit-e2e-orb-106-aaaaaaaa-operator');
+        expect($target->instance('app-dev'))->toBe('orbit-e2e-orb-106-aaaaaaaa-operator');
+        expect($target->instance('extra'))->toBe('orbit-e2e-orb-106-aaaaaaaa-extra');
+        expect($target->mac('operator'))->toBe('00:16:3e:9a:fc:2f');
+        expect($target->mac('app-dev'))->toBe('00:16:3e:9a:fc:2f');
+        expect(TopologyTarget::ipv4For(2, $target->recipe->node('extra')->address))->toBe('10.232.2.13');
     });
 
     it('carries the attempt identity of a feature target only', function () {

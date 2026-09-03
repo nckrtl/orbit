@@ -31,7 +31,7 @@ final readonly class TopologyConverger
             array_map($target->instance(...), TopologyProfile::ROLES),
         );
 
-        $this->host->assertTopologyNetworkIdentity($instances, $target->network());
+        $this->host->assertTopologyNetworkIdentity($instances, $target->network(), $target);
         $addresses = $this->host->globalIpv4All($instances);
 
         $steps = ['validate.prerequisites' => true];

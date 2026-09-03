@@ -14,6 +14,7 @@ final readonly class TopologyTarget
     private function __construct(
         public string $issue,
         public ?AttemptId $attempt,
+        public TopologyRecipe $recipe,
         private ?TopologySnapshotIdentity $topologySnapshot = null,
     ) {}
 
@@ -21,13 +22,27 @@ final readonly class TopologyTarget
     {
         self::assertIssue($issue);
 
-        return new self($issue, $attempt);
+        return new self($issue, $attempt, TopologyRecipe::registered());
+    }
+
+    public static function disposableCold(string $issue, AttemptId $attempt, TopologyRecipe $recipe): self
+    {
+        self::assertIssue($issue);
+
+        return new self($issue, $attempt, $recipe);
     }
 
     /** The current or retired physical topology snapshot. */
-    public static function topologySnapshot(?TopologySnapshotIdentity $identity = null): self
-    {
-        return new self('topology-snapshot', null, $identity ?? TopologySnapshotIdentity::primary());
+    public static function topologySnapshot(
+        ?TopologySnapshotIdentity $identity = null,
+        ?TopologyRecipe $recipe = null,
+    ): self {
+        return new self(
+            'topology-snapshot',
+            null,
+            $recipe ?? TopologyRecipe::registered(),
+            $identity ?? TopologySnapshotIdentity::primary(),
+        );
     }
 
     public static function assertIssue(string $issue): void
@@ -37,19 +52,18 @@ final readonly class TopologyTarget
         }
     }
 
-    public static function ipv4For(int $slot, string $role): string
+    public static function ipv4For(int $slot, int|string $node): string
     {
         if ($slot < 1 || $slot > 200) {
             throw new InvalidArgumentException('The topology slot is invalid.');
         }
 
-        $roleIndex = array_search($role, TopologyProfile::ROLES, true);
-
-        if ($roleIndex === false) {
-            throw new InvalidArgumentException('The topology role is invalid.');
+        $address = is_int($node) ? $node : TopologyRecipe::registered()->resolveNode($node)->address;
+        if ($address < 10 || $address > 254) {
+            throw new InvalidArgumentException('The topology Node address position is invalid.');
         }
 
-        return '10.232.'.$slot.'.'.(10 + $roleIndex);
+        return '10.232.'.$slot.'.'.$address;
     }
 
     public function isTopologySnapshot(): bool
@@ -97,34 +111,32 @@ final readonly class TopologyTarget
         return 'oe-'.substr(hash('sha256', $this->issue.':'.$this->requireAttempt()->value), 0, 12);
     }
 
-    public function instance(string $role): string
+    public function instance(string $nodeOrRole): string
     {
-        $this->validateRole($role);
+        $node = $this->recipe->resolveNode($nodeOrRole);
 
         if ($this->topologySnapshot !== null) {
-            return $this->topologySnapshot->instance($role);
+            return $this->topologySnapshot->instance($node->key);
         }
 
-        return 'orbit-e2e-'.strtolower($this->issue).'-'.$this->requireAttempt()->short().'-'.$role;
+        return 'orbit-e2e-'.strtolower($this->issue).'-'.$this->requireAttempt()->short().'-'.$node->key;
     }
 
-    public function mac(string $role): string
+    public function mac(string $nodeOrRole): string
     {
-        $this->validateRole($role);
+        $node = $this->recipe->resolveNode($nodeOrRole);
 
-        return self::macFor($this->network(), $role);
+        return self::macFor($this->network(), $node->key);
     }
 
-    public static function macFor(string $topology, string $role): string
+    public static function macFor(string $topology, string $node): string
     {
-        if (
-            preg_match('/\A[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}\z/D', $topology) !== 1
-            || ! in_array($role, TopologyProfile::ROLES, true)
-        ) {
+        if (preg_match('/\A[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}\z/D', $topology) !== 1) {
             throw new InvalidArgumentException('The topology network identity is invalid.');
         }
+        TopologyNode::assertKey($node);
 
-        $hash = substr(sha1($topology.':'.$role), 0, 6);
+        $hash = substr(sha1($topology.':'.$node), 0, 6);
 
         return '00:16:3e:'.implode(':', str_split($hash, 2));
     }
@@ -133,12 +145,5 @@ final readonly class TopologyTarget
     public function requireAttempt(): AttemptId
     {
         return $this->attempt ?? throw new InvalidArgumentException('The feature target has no attempt identity.');
-    }
-
-    private function validateRole(string $role): void
-    {
-        if (! in_array($role, TopologyProfile::ROLES, true)) {
-            throw new InvalidArgumentException('The topology role is invalid.');
-        }
     }
 }

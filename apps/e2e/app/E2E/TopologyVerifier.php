@@ -111,7 +111,7 @@ final readonly class TopologyVerifier
         foreach (TopologyProfile::ROLES as $role) {
             $instances[$role] = $target->instance($role);
         }
-        $this->host->assertTopologyNetworkIdentity($instances, $target->network());
+        $this->host->assertTopologyNetworkIdentity($instances, $target->network(), $target);
         $typedCheckoutPath = $this->typedCheckoutPath($instances['app-dev']);
         if ($typedCheckoutPath !== null) {
             unset($probes['role.app-prod'], $probes['workspace.app-dev'], $probes['laravel.prod']);

@@ -10,6 +10,7 @@ use App\E2E\Value\GuestCommandResult;
 use App\E2E\Value\IncusInstance;
 use App\E2E\Value\IncusNetwork;
 use App\E2E\Value\MountPath;
+use App\E2E\Value\TopologyRecipe;
 use App\E2E\Value\TopologyTarget;
 use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Process\Pool;
@@ -336,7 +337,7 @@ final class IncusHost implements GuestTransport
         );
     }
 
-    /** @param array<string, array{image:string,name:string,network:string,role:string,topology:string,slot:int,metadata:array<string,string>}> $vms */
+    /** @param array<string, array{image:string,name:string,network:string,role:string,address?:int,topology:string,slot:int,metadata:array<string,string>}> $vms */
     public function initVms(array $vms): array
     {
         if ($vms === []) {
@@ -382,7 +383,7 @@ final class IncusHost implements GuestTransport
                 '--device',
                 'eth0,network='.$vm['network'],
                 '--device',
-                'eth0,ipv4.address='.TopologyTarget::ipv4For($vm['slot'], $vm['role']),
+                'eth0,ipv4.address='.TopologyTarget::ipv4For($vm['slot'], $vm['address'] ?? $vm['role']),
                 '--device',
                 'eth0,hwaddr='.$this->deterministicMac($vm['topology'], $vm['role']),
             ];
@@ -616,8 +617,12 @@ final class IncusHost implements GuestTransport
     }
 
     /** @param array<string, string> $instancesByRole */
-    public function assertTopologyNetworkIdentity(array $instancesByRole, string $network): void
-    {
+    public function assertTopologyNetworkIdentity(
+        array $instancesByRole,
+        string $network,
+        ?TopologyTarget $target = null,
+    ): void {
+        $recipe = $target?->recipe ?? TopologyRecipe::registered();
         $this->validateName($network, 'network');
         $this->validateUniqueInstances(array_values($instancesByRole), 'topology network validation');
         foreach (array_keys($instancesByRole) as $role) {
@@ -633,6 +638,7 @@ final class IncusHost implements GuestTransport
 
         $resources = $this->instanceInventory(array_values($instancesByRole), 'topology network validation');
         foreach ($instancesByRole as $role => $instance) {
+            $node = $recipe->resolveNode($role);
             $resource = $resources[$instance] ?? null;
             if ($resource === null) {
                 throw new RuntimeException("Incus instance {$instance} does not exist.");
@@ -643,10 +649,10 @@ final class IncusHost implements GuestTransport
             if (! is_array($eth0) || ($eth0['network'] ?? null) !== $network) {
                 throw new RuntimeException("Incus instance {$instance} network identity does not match topology.");
             }
-            if (($eth0['hwaddr'] ?? null) !== $this->deterministicMac($network, $role)) {
+            if (($eth0['hwaddr'] ?? null) !== $this->deterministicMac($network, $node->key)) {
                 throw new RuntimeException("Incus instance {$instance} MAC identity does not match topology.");
             }
-            if (($eth0['ipv4.address'] ?? null) !== TopologyTarget::ipv4For($slot, $role)) {
+            if (($eth0['ipv4.address'] ?? null) !== TopologyTarget::ipv4For($slot, $node->address)) {
                 throw new RuntimeException("Incus instance {$instance} IPv4 identity does not match topology.");
             }
         }
