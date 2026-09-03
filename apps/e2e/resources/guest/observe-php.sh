@@ -23,12 +23,9 @@ safe_identity() {
 
 is_sury_package() {
   local package=$1 package_version=$2 package_source=$3
-  if apt-cache madison "$package" | awk -F' \\| ' \
+  apt-cache madison "$package" | awk -F' [|] ' \
     -v version="$package_version" -v source="$package_source" \
-    '$2 == version && $3 == source { found = 1 } END { exit !found }'; then
-    return 0
-  fi
-  [[ "$package_version" =~ \+0~[0-9]{8}\.[0-9]+\+ubuntu[0-9]+\.[0-9]+~[0-9]+\.gbp[0-9a-f]+$ ]]
+    '$2 == version && $3 == source { found = 1 } END { exit !found }'
 }
 
 install_sury() {
@@ -57,6 +54,7 @@ install_sury() {
   if [[ ! -f "$source_file" ]] || ! printf '%s\n' "$expected_source" | cmp -s - "$source_file"; then
     printf '%s\n' "$expected_source" > "$source_file"
   fi
+  chmod 0644 "$source_file"
 
   apt-get -o DPkg::Lock::Timeout=300 update
   local -a packages=(php8.5-cli php8.5-fpm php8.5-common php8.5-curl php8.5-mbstring php8.5-sqlite3 php8.5-xml)
@@ -327,6 +325,10 @@ cleanup() {
   fi
   [[ ! -e "$observation_ini" && ! -e "$active" ]]
 }
+
+if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
+  return 0
+fi
 
 case ${1-} in
   prepare) [[ $# -eq 2 ]]; install_sury "$2" ;;

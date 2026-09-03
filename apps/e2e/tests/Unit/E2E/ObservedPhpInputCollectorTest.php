@@ -285,6 +285,47 @@ it('rejects a collected process that reports runtime drift', function (): void {
         ->toThrow(RuntimeException::class, 'invalid process output');
 });
 
+it('rejects zero coverage even when another process supplies the required surface', function (): void {
+    $collector = new ObservedPhpInputCollector(observedTransport([
+        'app-dev' => [
+            observedRecord('app-dev', 'cli', str_repeat('1', 32), []),
+            observedRecord(
+                'app-dev',
+                'cli',
+                str_repeat('2', 32),
+                ['/home/orbit/orbit/apps/cli/app/One.php'],
+            ),
+        ],
+        'gateway' => [
+            observedRecord(
+                'gateway',
+                'cli',
+                str_repeat('3', 32),
+                ['/home/orbit/orbit/apps/cli/app/One.php'],
+            ),
+            observedRecord(
+                'gateway',
+                'fpm',
+                str_repeat('4', 32),
+                ['/home/orbit/orbit/apps/gateway/app/Http.php'],
+            ),
+        ],
+    ]));
+
+    expect(fn () => $collector->collect(
+        TopologyTarget::feature('ORB-9', new AttemptId(str_repeat('a', 32))),
+        'setup',
+        'ORB-9',
+        new AttemptId(str_repeat('a', 32)),
+        observedCollectedRuntimes(),
+        [
+            'apps/cli/app/One.php' => ['mode' => '100644', 'type' => 'blob', 'object' => str_repeat('b', 40)],
+            'apps/gateway/app/Http.php' => ['mode' => '100644', 'type' => 'blob', 'object' => str_repeat('c', 40)],
+        ],
+    ))
+        ->toThrow(RuntimeException::class, 'aggregation returned zero coverage on app-dev');
+});
+
 it('fails closed for malformed, missing-surface, and untracked process output', function (
     array $records,
     string $message,

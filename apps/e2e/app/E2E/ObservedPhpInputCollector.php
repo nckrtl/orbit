@@ -377,7 +377,7 @@ final readonly class ObservedPhpInputCollector
             $paths = array_keys($paths);
             sort($paths, SORT_STRING);
             if ($paths === []) {
-                continue;
+                throw new RuntimeException("PCOV {$phase} aggregation returned zero coverage on {$role}.");
             }
             $normalized[] = [
                 'role' => $role,
