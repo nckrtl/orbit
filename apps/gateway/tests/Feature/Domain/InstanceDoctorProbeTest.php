@@ -3,21 +3,21 @@
 declare(strict_types=1);
 
 use App\Actions\Doctor\InstanceDoctorProbe;
+use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Doctor\DoctorNodeContext;
 use App\Domain\Doctor\InstanceInspectionData;
 use App\Domain\Doctor\InstanceStateInspector;
 use App\Domain\Doctor\NodeInspectionData;
-use App\Domain\Instances\CertificateMode;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\App;
-use App\Models\Instance;
+use App\Models\AppInstance;
 use App\Models\Node;
 
 it('returns a healthy empty instance report and excludes other nodes', function (): void {
     $node = instance_probe_node();
     $other = instance_probe_node();
-    instance_probe_instance(instance_probe_app(), $other, CertificateMode::OrbitCa);
+    instance_probe_instance(instance_probe_app(), $other);
     $calls = 0;
 
     $report = new InstanceDoctorProbe(new class($calls) implements InstanceStateInspector {
@@ -25,7 +25,7 @@ it('returns a healthy empty instance report and excludes other nodes', function 
             private int &$calls,
         ) {}
 
-        public function inspect(Instance $instance): InstanceInspectionData
+        public function inspect(AppInstance $appInstance): InstanceInspectionData
         {
             $this->calls++;
             throw new DoctorInspectionException;
@@ -35,10 +35,10 @@ it('returns a healthy empty instance report and excludes other nodes', function 
     expect($report->checked)->toBe(0)->and($report->issues)->toBeEmpty()->and($calls)->toBe(0);
 });
 
-it('checks healthy development and production instances in id order with nullable fields', function (): void {
+it('checks healthy AppInstances in id order', function (): void {
     $node = instance_probe_node();
-    $development = instance_probe_instance(instance_probe_app(), $node, CertificateMode::OrbitCa);
-    $production = instance_probe_instance(instance_probe_app(), $node, CertificateMode::Acme);
+    $first = instance_probe_instance(instance_probe_app(), $node);
+    $second = instance_probe_instance(instance_probe_app(), $node);
     $seen = [];
 
     $report = new InstanceDoctorProbe(new class($seen) implements InstanceStateInspector {
@@ -46,33 +46,25 @@ it('checks healthy development and production instances in id order with nullabl
             private array &$seen,
         ) {}
 
-        public function inspect(Instance $instance): InstanceInspectionData
+        public function inspect(AppInstance $appInstance): InstanceInspectionData
         {
-            $this->seen[] = $instance->id;
-            $appDevelopment = $instance->certificate_mode === CertificateMode::OrbitCa;
+            $this->seen[] = $appInstance->id;
 
-            return new InstanceInspectionData(
-                true,
-                true,
-                true,
-                true,
-                $appDevelopment ? true : null,
-                $appDevelopment ? true : null,
-            );
+            return new InstanceInspectionData(true, true, true, true);
         }
     })->inspect(instance_probe_context($node));
 
     expect($report->checked)
         ->toBe(2)
         ->and($seen)
-        ->toBe([$development->id, $production->id])
+        ->toBe([$first->id, $second->id])
         ->and($report->issues)
         ->toBeEmpty();
 });
 
 it('short-circuits instance inspection when the node is unreachable', function (): void {
     $node = instance_probe_node();
-    instance_probe_instance(instance_probe_app(), $node, CertificateMode::OrbitCa);
+    instance_probe_instance(instance_probe_app(), $node);
     $calls = 0;
 
     $report = new InstanceDoctorProbe(new class($calls) implements InstanceStateInspector {
@@ -80,7 +72,7 @@ it('short-circuits instance inspection when the node is unreachable', function (
             private int &$calls,
         ) {}
 
-        public function inspect(Instance $instance): InstanceInspectionData
+        public function inspect(AppInstance $appInstance): InstanceInspectionData
         {
             $this->calls++;
             throw new DoctorInspectionException;
@@ -102,14 +94,13 @@ it('reports lifecycle and every false instance field in stable order', function 
     $instance = instance_probe_instance(
         instance_probe_app(),
         $node,
-        CertificateMode::OrbitCa,
-        LifecycleStatus::Failed,
+        AppInstanceState::Reserved,
     );
 
     $report = new InstanceDoctorProbe(new class implements InstanceStateInspector {
-        public function inspect(Instance $instance): InstanceInspectionData
+        public function inspect(AppInstance $appInstance): InstanceInspectionData
         {
-            return new InstanceInspectionData(false, false, false, false, false, false);
+            return new InstanceInspectionData(false, false, false, false);
         }
     })->inspect(instance_probe_context($node));
 
@@ -119,37 +110,35 @@ it('reports lifecycle and every false instance field in stable order', function 
         ->toBe([
             'instance.lifecycle_not_active',
             'instance.checkout_missing',
-            'instance.document_root_missing',
-            'instance.caddy_projection_mismatch',
-            'instance.php_fpm_projection_mismatch',
-            'instance.certificate_projection_mismatch',
-            'instance.dns_projection_mismatch',
+            'instance.repository_not_independent',
+            'instance.origin_mismatch',
+            'instance.source_identity_mismatch',
         ])
         ->and(collect($report->issues)->pluck('resourceId')->unique()->all())
         ->toBe([$instance->id])
         ->and(collect($report->issues)->pluck('expected')->all())
-        ->toBe(['active', 'matching', 'matching', 'matching', 'matching', 'matching', 'matching'])
+        ->toBe(['active', 'matching', 'matching', 'matching', 'matching'])
         ->and(json_encode($report))
-        ->not->toContain($instance->checkout_path, $instance->error_code ?? 'private-error');
+        ->not->toContain($instance->checkout_path);
 });
 
 it('continues after a typed instance inspection failure', function (): void {
     $node = instance_probe_node();
-    $failed = instance_probe_instance(instance_probe_app(), $node, CertificateMode::OrbitCa);
-    $healthy = instance_probe_instance(instance_probe_app(), $node, CertificateMode::Acme);
+    $failed = instance_probe_instance(instance_probe_app(), $node);
+    $healthy = instance_probe_instance(instance_probe_app(), $node);
 
     $report = new InstanceDoctorProbe(new class($failed) implements InstanceStateInspector {
         public function __construct(
-            private Instance $failed,
+            private AppInstance $failed,
         ) {}
 
-        public function inspect(Instance $instance): InstanceInspectionData
+        public function inspect(AppInstance $appInstance): InstanceInspectionData
         {
-            if ($instance->is($this->failed)) {
+            if ($appInstance->is($this->failed)) {
                 throw new DoctorInspectionException;
             }
 
-            return new InstanceInspectionData(true, true, true, true, null, null);
+            return new InstanceInspectionData(true, true, true, true);
         }
     })->inspect(instance_probe_context($node));
 
@@ -165,6 +154,37 @@ it('continues after a typed instance inspection failure', function (): void {
         ->toBe('unverifiable')
         ->and($healthy->id)
         ->toBeGreaterThan($failed->id);
+});
+
+it('exposes and refuses an unexpected AppInstance source kind without remote inspection', function (): void {
+    $node = instance_probe_node();
+    $instance = instance_probe_instance(instance_probe_app(), $node);
+    $instance->update(['source_kind' => 'registered_worktree']);
+    $calls = 0;
+
+    $report = new InstanceDoctorProbe(new class($calls) implements InstanceStateInspector {
+        public function __construct(
+            private int &$calls,
+        ) {}
+
+        public function inspect(AppInstance $appInstance): InstanceInspectionData
+        {
+            $this->calls++;
+
+            return new InstanceInspectionData(true, true, true, true);
+        }
+    })->inspect(instance_probe_context($node));
+
+    expect($report->issues)
+        ->toHaveCount(1)
+        ->and($report->issues[0]->code)
+        ->toBe('instance.source_kind_mismatch')
+        ->and($report->issues[0]->expected)
+        ->toBe('managed_clone')
+        ->and($report->issues[0]->observed)
+        ->toBe('registered_worktree')
+        ->and($calls)
+        ->toBe(0);
 });
 
 function instance_probe_node(): Node
@@ -192,28 +212,27 @@ function instance_probe_app(): App
         'name' => "Instance App {$number}",
         'slug' => "instance-app-{$number}",
         'repository_url' => 'https://github.com/acme/private-instance.git',
+        'main_branch' => 'main',
+        'root' => 'public',
     ]);
 }
 
 function instance_probe_instance(
     App $app,
     Node $node,
-    CertificateMode $mode,
-    LifecycleStatus $status = LifecycleStatus::Active,
-): Instance {
-    $name = $mode === CertificateMode::Acme ? 'production' : 'development';
-    $suffix = $app->instances()->count() + 1;
+    AppInstanceState $status = AppInstanceState::Active,
+): AppInstance {
+    $suffix = $app->appInstances()->count() + 1;
 
-    return Instance::query()->create([
+    return AppInstance::query()->create([
         'app_id' => $app->id,
         'node_id' => $node->id,
-        'name' => "{$name}-{$suffix}",
-        'environment' => $name,
-        'checkout_path' => "/private/instance/{$app->id}/{$suffix}",
-        'hostname' => "instance-{$app->id}-{$node->id}-{$suffix}.test",
-        'certificate_mode' => $mode,
+        'name' => "development-{$suffix}",
+        'environment' => 'development',
+        'checkout_path' => "/private/instance/{$app->slug}/development-{$suffix}",
+        'branch' => "development-{$suffix}",
+        'starting_commit' => str_repeat((string) $suffix, 40),
         'status' => $status,
-        'error_code' => 'private-error',
     ]);
 }
 

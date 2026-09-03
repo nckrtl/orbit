@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Doctor\DoctorFamily;
 use App\Models\Activity;
 use App\Models\App as AppModel;
+use App\Models\AppInstance;
 use App\Models\Cluster;
 use App\Models\FirewallRule;
 use App\Models\Instance;
@@ -22,13 +23,13 @@ it('partitions every persisted model across doctor dispositions', function (): v
         Node::class => DoctorFamily::Node,
         NodeRole::class => DoctorFamily::Role,
         AppModel::class => DoctorFamily::App,
-        Instance::class => DoctorFamily::Instance,
+        AppInstance::class => DoctorFamily::Instance,
         Workspace::class => DoctorFamily::Workspace,
         Tool::class => DoctorFamily::Tool,
         Process::class => DoctorFamily::Process,
         FirewallRule::class => DoctorFamily::Firewall,
     ];
-    $ownerInputs = [ToolManagerRecord::class, Setting::class, Cluster::class];
+    $ownerInputs = [ToolManagerRecord::class, Setting::class, Cluster::class, Instance::class];
     $excluded = [NodeAccess::class, Activity::class];
     $modelsDirectory = new ReflectionClass(Node::class)->getFileName();
     if (! is_string($modelsDirectory)) {

@@ -6,6 +6,7 @@ use App\Actions\Nodes\ProvisionNodeAction;
 use App\Data\Nodes\ProvisionNodeData;
 use App\Domain\AppDev\AppDevTldConverger;
 use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Nodes\NodeConverger;
@@ -25,6 +26,7 @@ use App\Domain\Tools\ToolManagerName;
 use App\Domain\WireGuard\GatewayPeerProjectionManager;
 use App\Infrastructure\Processes\CommandResult;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -173,6 +175,68 @@ describe(ProvisionNodeAction::class, function (): void {
             ->toBe('invalid user')
             ->and($existing->status)
             ->toBe(LifecycleStatus::Failed);
+    });
+
+    it('refuses existing Node reprovisioning while it owns an AppInstance', function (): void {
+        $cluster = Cluster::query()->create(['name' => 'development', 'state' => ClusterState::Active]);
+        $existing = Node::query()->create([
+            'cluster_id' => $cluster->id,
+            'name' => 'app-dev-with-source',
+            'status' => LifecycleStatus::Active,
+            'platform' => 'linux',
+            'architecture' => 'x86_64',
+            'public_ssh_host' => '192.0.2.71',
+            'wireguard_ip' => '10.44.0.71',
+            'user' => 'orbit',
+        ]);
+        $app = App::query()->create([
+            'name' => 'Acme',
+            'slug' => 'acme',
+            'repository_url' => 'https://github.com/acme/site.git',
+            'main_branch' => 'main',
+            'root' => 'public',
+        ]);
+        AppInstance::query()->create([
+            'app_id' => $app->id,
+            'node_id' => $existing->id,
+            'name' => 'dev',
+            'checkout_path' => '/srv/orbit/apps/acme/dev',
+            'branch' => 'dev',
+            'starting_commit' => str_repeat('a', 40),
+            'status' => AppInstanceState::Active,
+        ]);
+        $converged = false;
+        app()->instance(NodeConverger::class, new class($converged) implements NodeConverger {
+            public function __construct(
+                private bool &$converged,
+            ) {}
+
+            public function converge(
+                Node $node,
+                NodeProvisioningIdentity $identity,
+                ?string $expectedSshHostFingerprint = null,
+                bool $rolelessOperator = false,
+            ): void {
+                $this->converged = true;
+            }
+        });
+
+        expect(fn () => app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
+            name: $existing->name,
+            publicSshHost: $existing->public_ssh_host,
+        )))
+            ->toThrow(
+                fn (ResourceOperationException $exception): bool => $exception->errorCode === 'node.has_app_instances',
+            );
+
+        expect($converged)
+            ->toBeFalse()
+            ->and($existing->refresh()->status)
+            ->toBe(LifecycleStatus::Active)
+            ->and($existing->cluster_id)
+            ->toBe($cluster->id)
+            ->and(AppInstance::query()->count())
+            ->toBe(1);
     });
 
     it('rejects provisioning contention before creating or changing a node', function (): void {

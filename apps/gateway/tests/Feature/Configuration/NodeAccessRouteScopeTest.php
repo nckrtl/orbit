@@ -71,7 +71,6 @@ it('declares node access scope on every active-peer API route', function (): voi
         'firewall:remove' => ServingNode::Target,
         'instance:list' => ServingNode::Collection,
         'instance:new' => ServingNode::InstanceOwning,
-        'instance:php' => ServingNode::InstanceOwning,
         'instance:remove' => ServingNode::InstanceOwning,
         'instance:show' => ServingNode::InstanceOwning,
         'metrics:credentials' => ServingNode::Gateway,

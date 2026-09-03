@@ -3,13 +3,13 @@
 declare(strict_types=1);
 
 use Orbit\Sdk\Responses\Activities\ActivityResponse;
+use Orbit\Sdk\Responses\AppInstances\AppInstanceResponse;
 use Orbit\Sdk\Responses\Apps\AppResponse;
 use Orbit\Sdk\Responses\Doctor\DoctorFamilyResponse;
 use Orbit\Sdk\Responses\Doctor\DoctorIssueResponse;
 use Orbit\Sdk\Responses\Doctor\DoctorNodeResponse;
 use Orbit\Sdk\Responses\Doctor\DoctorReportResponse;
 use Orbit\Sdk\Responses\Firewall\FirewallRuleResponse;
-use Orbit\Sdk\Responses\Instances\InstanceResponse;
 use Orbit\Sdk\Responses\Nodes\AddedNodeAccessResponse;
 use Orbit\Sdk\Responses\Nodes\NodeAccessNodeResponse;
 use Orbit\Sdk\Responses\Nodes\NodeAccessResponse;
@@ -30,7 +30,7 @@ it('rejects unsafe success error codes across every response surface', function 
     $responses = [
         ActivityResponse::fromGatewayData(['error_code' => $unsafeCode], $requestId),
         FirewallRuleResponse::fromGatewayData(['error_code' => $unsafeCode], $requestId),
-        InstanceResponse::fromGatewayData(['error_code' => $unsafeCode], $requestId),
+        AppInstanceResponse::fromGatewayData(['error_code' => $unsafeCode], $requestId),
         NodeResponse::fromGatewayData(['error_code' => $unsafeCode], $requestId),
         ProcessResponse::fromGatewayData(['error_code' => $unsafeCode], $requestId),
         WorkspaceResponse::fromGatewayData(['error_code' => $unsafeCode], $requestId),
@@ -131,7 +131,7 @@ it('marks every public gateway DTO factory ingress as sensitive', function (): v
         DoctorNodeResponse::class => ['fromGatewayData'],
         DoctorReportResponse::class => ['fromGatewayData'],
         FirewallRuleResponse::class => ['fromGatewayData'],
-        InstanceResponse::class => ['fromGatewayData'],
+        AppInstanceResponse::class => ['fromGatewayData'],
         AddedNodeAccessResponse::class => ['fromGatewayData'],
         NodeAccessNodeResponse::class => ['tryFromGatewayData'],
         NodeAccessResponse::class => ['fromGatewayData'],

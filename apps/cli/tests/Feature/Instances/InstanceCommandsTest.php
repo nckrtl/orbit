@@ -6,11 +6,10 @@ use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
-use Orbit\Sdk\Requests\Instances\CreateInstanceRequest;
-use Orbit\Sdk\Requests\Instances\ListInstancesRequest;
-use Orbit\Sdk\Requests\Instances\RemoveInstanceRequest;
-use Orbit\Sdk\Requests\Instances\ShowInstanceRequest;
-use Orbit\Sdk\Requests\Instances\UpdateInstancePhpRequest;
+use Orbit\Sdk\Requests\AppInstances\CreateAppInstanceRequest;
+use Orbit\Sdk\Requests\AppInstances\ListAppInstancesRequest;
+use Orbit\Sdk\Requests\AppInstances\RemoveAppInstanceRequest;
+use Orbit\Sdk\Requests\AppInstances\ShowAppInstanceRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
@@ -32,17 +31,17 @@ afterEach(function (): void {
 });
 
 describe('instance:new', function (): void {
-    it('documents the per-app node constraint and app-derived runtime identity', function (): void {
+    it('documents the development source-only contract', function (): void {
         $this
             ->artisan('help', ['command_name' => 'instance:new'])
-            ->expectsOutputToContain('Create the single instance of an app on a node.')
-            ->expectsOutputToContain('Metadata name; source path and hostname use the app slug')
+            ->expectsOutputToContain('Create a development AppInstance on an app-dev node.')
+            ->expectsOutputToContain('Development AppInstance and branch name')
             ->assertExitCode(0);
     });
 
-    it('creates an instance through the active gateway as JSON', function (): void {
+    it('creates an AppInstance with inherited root as JSON', function (): void {
         $mockClient = MockClient::global([
-            CreateInstanceRequest::class => instance_mock_response(201),
+            CreateAppInstanceRequest::class => instance_mock_response(201),
         ]);
 
         $this
@@ -50,9 +49,6 @@ describe('instance:new', function (): void {
                 'app' => '3',
                 'node' => '2',
                 'name' => 'dev',
-                '--environment' => 'development',
-                '--document-root' => 'public',
-                '--php' => '8.5',
                 '--json' => true,
             ])
             ->expectsOutput(instance_json())
@@ -63,51 +59,38 @@ describe('instance:new', function (): void {
         expect($mockClient->getLastPendingRequest()?->getUrl())
             ->toBe('https://10.44.0.1/api/v1/instances')
             ->and($request)
-            ->toBeInstanceOf(CreateInstanceRequest::class)
+            ->toBeInstanceOf(CreateAppInstanceRequest::class)
             ->and($request?->body()->all())
-            ->toBe([
-                'app_id' => 3,
-                'node_id' => 2,
-                'name' => 'dev',
-                'document_root' => 'public',
-                'php_version' => '8.5',
-                'environment' => 'development',
-            ]);
+            ->toBe(['app_id' => 3, 'node_id' => 2, 'name' => 'dev']);
     });
 
-    it('passes a production hostname while leaving the environment for the gateway to derive', function (): void {
+    it('transports an optional root override without execution controls', function (): void {
         $mockClient = MockClient::global([
-            CreateInstanceRequest::class => instance_mock_response(201),
+            CreateAppInstanceRequest::class => instance_mock_response(201),
         ]);
 
         $this
             ->artisan('instance:new', [
                 'app' => '3',
                 'node' => '2',
-                'name' => 'main',
-                '--hostname' => 'orbit.nckrtl.com',
+                'name' => 'dev',
+                '--root' => 'site/public',
             ])
             ->assertExitCode(0);
 
         expect($mockClient->getLastRequest()?->body()->all())->toBe([
             'app_id' => 3,
             'node_id' => 2,
-            'name' => 'main',
-            'document_root' => 'public',
-            'php_version' => '8.5',
-            'hostname' => 'orbit.nckrtl.com',
+            'name' => 'dev',
+            'root' => 'site/public',
         ]);
     });
 
-    it('reports the created instance for humans', function (): void {
-        MockClient::global([CreateInstanceRequest::class => instance_mock_response(201)]);
+    it('reports the created AppInstance for humans', function (): void {
+        MockClient::global([CreateAppInstanceRequest::class => instance_mock_response(201)]);
 
         $this
-            ->artisan('instance:new', [
-                'app' => '3',
-                'node' => '2',
-                'name' => 'dev',
-            ])
+            ->artisan('instance:new', ['app' => '3', 'node' => '2', 'name' => 'dev'])
             ->expectsOutput('Instance [dev] is active.')
             ->expectsOutput('Request ID: '.instance_request_id())
             ->assertExitCode(0);
@@ -115,15 +98,15 @@ describe('instance:new', function (): void {
 });
 
 describe('instance:list', function (): void {
-    it('lists instances as JSON', function (): void {
+    it('lists AppInstances as JSON', function (): void {
         MockClient::global([
-            ListInstancesRequest::class => MockResponse::make([
+            ListAppInstancesRequest::class => MockResponse::make([
                 'data' => [instance_payload()],
                 'meta' => ['request_id' => instance_request_id()],
             ]),
         ]);
         $expected = json_encode([
-            'instances' => [instance_payload()],
+            'app_instances' => [instance_payload()],
             'request_id' => instance_request_id(),
         ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
 
@@ -133,9 +116,9 @@ describe('instance:list', function (): void {
             ->assertExitCode(0);
     });
 
-    it('lists instances for humans', function (): void {
+    it('lists AppInstance source identity for humans', function (): void {
         MockClient::global([
-            ListInstancesRequest::class => MockResponse::make([
+            ListAppInstancesRequest::class => MockResponse::make([
                 'data' => [instance_payload()],
                 'meta' => ['request_id' => instance_request_id()],
             ]),
@@ -144,8 +127,8 @@ describe('instance:list', function (): void {
         $this
             ->artisan('instance:list')
             ->expectsTable(
-                ['ID', 'App', 'Node', 'Name', 'Environment', 'Status', 'PHP', 'Hostname'],
-                [[5, 3, 2, 'dev', 'development', 'active', '8.5', 'orbit-docs.beast']],
+                ['ID', 'App', 'Node', 'Name', 'Environment', 'Source', 'Root', 'Branch', 'Status'],
+                [[5, 3, 2, 'dev', 'development', 'managed_clone', 'public', 'dev', 'active']],
             )
             ->expectsOutput('Request ID: '.instance_request_id())
             ->assertExitCode(0);
@@ -153,134 +136,62 @@ describe('instance:list', function (): void {
 });
 
 describe('instance:show', function (): void {
-    it('shows an instance as JSON', function (): void {
-        $mockClient = MockClient::global([
-            ShowInstanceRequest::class => instance_mock_response(),
-        ]);
+    it('shows an AppInstance as JSON', function (): void {
+        MockClient::global([ShowAppInstanceRequest::class => instance_mock_response()]);
 
         $this
             ->artisan('instance:show', ['instance' => '5', '--json' => true])
             ->expectsOutput(instance_json())
             ->assertExitCode(0);
-
-        expect($mockClient->getLastPendingRequest()?->getUrl())
-            ->toBe('https://10.44.0.1/api/v1/instances/5');
     });
 
-    it('shows instance details for humans', function (): void {
-        MockClient::global([ShowInstanceRequest::class => instance_mock_response()]);
+    it('shows AppInstance source details for humans', function (): void {
+        MockClient::global([ShowAppInstanceRequest::class => instance_mock_response()]);
 
         $this
             ->artisan('instance:show', ['instance' => '5'])
             ->expectsOutput('dev (#5): active')
             ->expectsOutput('App: 3')
             ->expectsOutput('Node: 2')
-            ->expectsOutput('Environment: development')
-            ->expectsOutput('Checkout: /home/orbit/apps/orbit-docs')
-            ->expectsOutput('Document root: public')
-            ->expectsOutput('PHP: 8.5')
-            ->expectsOutput('Hostname: orbit-docs.beast')
-            ->expectsOutput('Certificate: internal')
-            ->doesntExpectOutputToContain('Failure:')
-            ->expectsOutput('Request ID: '.instance_request_id())
-            ->assertExitCode(0);
-    });
-
-    it('shows failure details when instance convergence failed', function (): void {
-        $payload = [
-            ...instance_payload(),
-            'status' => 'failed',
-            'failed_step' => 'php-fpm-pool',
-            'error_code' => 'runtime.php_failed',
-        ];
-
-        MockClient::global([
-            ShowInstanceRequest::class => MockResponse::make([
-                'data' => $payload,
-                'meta' => ['request_id' => instance_request_id()],
-            ]),
-        ]);
-
-        $this
-            ->artisan('instance:show', ['instance' => '5'])
-            ->expectsOutput('dev (#5): failed')
-            ->expectsOutput('Failure: php-fpm-pool / runtime.php_failed')
+            ->expectsOutput('Source: managed_clone')
+            ->expectsOutput('Checkout: /home/orbit/apps/orbit-docs/dev')
+            ->expectsOutput('Root override: -')
+            ->expectsOutput('Effective root: public')
+            ->expectsOutput('Branch: dev')
+            ->expectsOutput('Starting commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')
             ->assertExitCode(0);
     });
 });
 
 describe('instance:remove', function (): void {
-    it('removes an instance as JSON', function (): void {
-        $mockClient = MockClient::global([
-            RemoveInstanceRequest::class => instance_mock_response(),
-        ]);
+    it('removes an AppInstance without discard by default', function (): void {
+        $mockClient = MockClient::global([RemoveAppInstanceRequest::class => instance_mock_response()]);
 
         $this
             ->artisan('instance:remove', ['instance' => '5', '--json' => true])
             ->expectsOutput(instance_json())
             ->assertExitCode(0);
 
-        expect($mockClient->getLastPendingRequest()?->getUrl())
-            ->toBe('https://10.44.0.1/api/v1/instances/5');
+        expect($mockClient->getLastRequest()?->body()->all())->toBeEmpty();
     });
 
-    it('reports the removed instance for humans', function (): void {
-        MockClient::global([RemoveInstanceRequest::class => instance_mock_response()]);
+    it('transports explicit destructive source-discard intent', function (): void {
+        $mockClient = MockClient::global([RemoveAppInstanceRequest::class => instance_mock_response()]);
 
         $this
-            ->artisan('instance:remove', ['instance' => '5'])
+            ->artisan('instance:remove', ['instance' => '5', '--discard-source' => true])
             ->expectsOutput('Instance [dev] removed.')
-            ->expectsOutput('Request ID: '.instance_request_id())
             ->assertExitCode(0);
+
+        expect($mockClient->getLastRequest()?->body()->all())->toBe(['discard_source' => true]);
     });
 });
 
-describe('instance:php', function (): void {
-    it('updates the PHP version as JSON', function (): void {
-        $mockClient = MockClient::global([
-            UpdateInstancePhpRequest::class => instance_mock_response(status: 200, phpVersion: '8.4'),
-        ]);
-
-        $this
-            ->artisan('instance:php', [
-                'instance' => '5',
-                'version' => '8.4',
-                '--json' => true,
-            ])
-            ->expectsOutput(instance_json('8.4'))
-            ->assertExitCode(0);
-
-        $request = $mockClient->getLastRequest();
-
-        expect($mockClient->getLastPendingRequest()?->getUrl())
-            ->toBe('https://10.44.0.1/api/v1/instances/5/php')
-            ->and($request?->body()->all())
-            ->toBe(['php_version' => '8.4']);
-    });
-
-    it('reports the updated PHP version for humans', function (): void {
-        MockClient::global([
-            UpdateInstancePhpRequest::class => instance_mock_response(status: 200, phpVersion: '8.4'),
-        ]);
-
-        $this
-            ->artisan('instance:php', ['instance' => '5', 'version' => '8.4'])
-            ->expectsOutput('Instance [dev] now uses PHP 8.4.')
-            ->expectsOutput('Request ID: '.instance_request_id())
-            ->assertExitCode(0);
-    });
-});
-
-it('rejects invalid instance IDs before making an API request', function (string $command, string $instanceId): void {
+it('rejects invalid Instance IDs before making an API request', function (string $command, string $instanceId): void {
     $mockClient = MockClient::global();
-    $parameters = ['instance' => $instanceId];
-
-    if ($command === 'instance:php') {
-        $parameters['version'] = '8.5';
-    }
 
     $this
-        ->artisan($command, $parameters)
+        ->artisan($command, ['instance' => $instanceId])
         ->expectsOutputToContain('Instance ID must be a positive integer.')
         ->assertExitCode(1);
 
@@ -288,10 +199,9 @@ it('rejects invalid instance IDs before making an API request', function (string
 })->with([
     'show zero' => ['instance:show', '0'],
     'remove negative' => ['instance:remove', '-1'],
-    'php non-numeric' => ['instance:php', 'dev'],
 ]);
 
-it('rejects invalid parent IDs before creating an instance', function (
+it('rejects invalid parent IDs before creating an AppInstance', function (
     string $appId,
     string $nodeId,
     string $message,
@@ -299,11 +209,7 @@ it('rejects invalid parent IDs before creating an instance', function (
     $mockClient = MockClient::global();
 
     $this
-        ->artisan('instance:new', [
-            'app' => $appId,
-            'node' => $nodeId,
-            'name' => 'dev',
-        ])
+        ->artisan('instance:new', ['app' => $appId, 'node' => $nodeId, 'name' => 'dev'])
         ->expectsOutputToContain($message)
         ->assertExitCode(1);
 
@@ -313,25 +219,8 @@ it('rejects invalid parent IDs before creating an instance', function (
     'invalid node' => ['3', '-1', 'Node ID must be a positive integer.'],
 ]);
 
-it('rejects invalid PHP versions before making an API request', function (string $command, string $version): void {
-    $mockClient = MockClient::global();
-    $parameters = $command === 'instance:new'
-        ? ['app' => '3', 'node' => '2', 'name' => 'dev', '--php' => $version]
-        : ['instance' => '5', 'version' => $version];
-
-    $this
-        ->artisan($command, $parameters)
-        ->expectsOutputToContain('PHP version must use major.minor format, for example 8.5.')
-        ->assertExitCode(1);
-
-    expect($mockClient->getLastPendingRequest())->toBeNull();
-})->with([
-    'new malformed' => ['instance:new', 'php8.5'],
-    'update patch version' => ['instance:php', '8.5.1'],
-]);
-
-/** @return array<string, int|string|list<string>|null> */
-function instance_payload(string $phpVersion = '8.5'): array
+/** @return array<string, int|string|null> */
+function instance_payload(): array
 {
     return [
         'id' => 5,
@@ -339,29 +228,28 @@ function instance_payload(string $phpVersion = '8.5'): array
         'node_id' => 2,
         'name' => 'dev',
         'environment' => 'development',
-        'checkout_path' => '/home/orbit/apps/orbit-docs',
-        'document_root' => 'public',
-        'php_version' => $phpVersion,
-        'hostname' => 'orbit-docs.beast',
-        'certificate_mode' => 'internal',
+        'source_kind' => 'managed_clone',
+        'checkout_path' => '/home/orbit/apps/orbit-docs/dev',
+        'root' => null,
+        'effective_root' => 'public',
+        'selected_branch' => 'dev',
+        'starting_commit' => str_repeat('a', times: 40),
         'status' => 'active',
-        'failed_step' => null,
-        'error_code' => null,
     ];
 }
 
-function instance_mock_response(int $status = 200, string $phpVersion = '8.5'): MockResponse
+function instance_mock_response(int $status = 200): MockResponse
 {
     return MockResponse::make([
-        'data' => instance_payload($phpVersion),
+        'data' => instance_payload(),
         'meta' => ['request_id' => instance_request_id()],
     ], $status);
 }
 
-function instance_json(string $phpVersion = '8.5'): string
+function instance_json(): string
 {
     return json_encode([
-        ...instance_payload($phpVersion),
+        ...instance_payload(),
         'request_id' => instance_request_id(),
     ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
 }

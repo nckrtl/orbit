@@ -33,9 +33,11 @@
                 "Doctor",
                 "Gateway",
                 "Ingress",
+                "Legacy Instance",
                 "Node",
                 "Route",
-                "Router"
+                "Router",
+                "Workspace"
             ],
             "governing_adrs": [
                 "0004",
@@ -57,12 +59,15 @@
                 "Cluster",
                 "Doctor",
                 "Documentation context",
+                "Effective web root",
                 "Gateway",
                 "Ingress",
+                "Legacy Instance",
                 "Node",
                 "Proof topology",
                 "Route",
-                "Router"
+                "Router",
+                "Workspace"
             ],
             "governing_adrs": [
                 "0004",
@@ -123,7 +128,8 @@
                 "App",
                 "Doctor",
                 "Gateway",
-                "Node"
+                "Node",
+                "Workspace"
             ],
             "governing_adrs": [
                 "0004",
@@ -171,7 +177,8 @@
             "concepts": [
                 "App",
                 "Gateway",
-                "Node"
+                "Node",
+                "Workspace"
             ],
             "governing_adrs": [
                 "0008"
@@ -186,11 +193,14 @@
                 "App",
                 "AppInstance",
                 "Cluster",
+                "Effective web root",
                 "Gateway",
                 "Ingress",
+                "Legacy Instance",
                 "Node",
                 "Route",
-                "Router"
+                "Router",
+                "Workspace"
             ],
             "governing_adrs": [
                 "0008",
@@ -216,6 +226,7 @@
                 "App",
                 "AppInstance",
                 "Cluster",
+                "Effective web root",
                 "Ingress",
                 "Node",
                 "Route",
@@ -253,10 +264,12 @@
                 "AppInstance",
                 "Cluster",
                 "Doctor",
+                "Effective web root",
                 "Gateway",
                 "Ingress",
                 "Node",
-                "Proof topology"
+                "Proof topology",
+                "Workspace"
             ],
             "governing_adrs": [
                 "0002",
@@ -332,9 +345,11 @@
                 "Cluster",
                 "Gateway",
                 "Ingress",
+                "Legacy Instance",
                 "Node",
                 "Route",
-                "Router"
+                "Router",
+                "Workspace"
             ],
             "governing_adrs": [
                 "0009",
@@ -353,6 +368,7 @@
                 "AppInstance",
                 "Cluster",
                 "Doctor",
+                "Effective web root",
                 "Gateway",
                 "Node",
                 "Route"
@@ -420,8 +436,33 @@
             "title": "Product Areas",
             "kind": "domain",
             "components": [],
-            "concepts": [],
+            "concepts": [
+                "App",
+                "AppInstance"
+            ],
             "governing_adrs": []
+        },
+        {
+            "path": "docs/domains/applications.md",
+            "title": "Applications",
+            "kind": "domain",
+            "components": [],
+            "concepts": [
+                "App",
+                "AppInstance",
+                "Cluster",
+                "Effective web root",
+                "Gateway",
+                "Ingress",
+                "Legacy Instance",
+                "Node",
+                "Workspace"
+            ],
+            "governing_adrs": [
+                "0009",
+                "0011",
+                "0018"
+            ]
         },
         {
             "path": "docs/mission.md",
@@ -562,7 +603,8 @@
                 "Doctor",
                 "Gateway",
                 "Node",
-                "Proof topology"
+                "Proof topology",
+                "Workspace"
             ],
             "governing_adrs": []
         },

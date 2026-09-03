@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\Clusters\ClusterState;
 use App\Domain\Nodes\NodeRoleDependencySet;
 use App\Domain\Nodes\NodeRoleDependentCleaner;
 use App\Domain\Nodes\NodeRoleOperationException;
@@ -11,6 +13,8 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tools\ToolManagerMaterializer;
 use App\Infrastructure\Processes\CommandResult;
 use App\Models\Activity;
+use App\Models\App as OrbitApp;
+use App\Models\AppInstance;
 use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -492,6 +496,50 @@ it('returns the exact mutation snapshot and forwards purge data on confirmed rem
         ->and($this->roleLifecycle->removed)
         ->toBe([['role' => 'app-dev', 'purge_data' => true]]);
 });
+
+it('does not let force offline or purge remove an app-dev role beneath an AppInstance', function (array $body): void {
+    $cluster = Cluster::query()->create(['name' => 'development', 'state' => ClusterState::Active]);
+    $this->node->update(['cluster_id' => $cluster->id]);
+    $assignment = $this->node
+        ->roles()
+        ->create([
+            'role' => RoleName::AppDev,
+            'status' => LifecycleStatus::Active,
+        ]);
+    $app = OrbitApp::query()->create([
+        'name' => 'Acme',
+        'slug' => 'acme',
+        'repository_url' => 'https://github.com/acme/site.git',
+        'main_branch' => 'main',
+        'root' => 'public',
+    ]);
+    AppInstance::query()->create([
+        'app_id' => $app->id,
+        'node_id' => $this->node->id,
+        'name' => 'dev',
+        'checkout_path' => '/srv/orbit/apps/acme/dev',
+        'branch' => 'dev',
+        'starting_commit' => str_repeat('a', 40),
+        'status' => AppInstanceState::Active,
+    ]);
+
+    $this
+        ->deleteJson("/api/v1/nodes/{$this->node->id}/roles/app-dev", $body)
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'validation.failed')
+        ->assertJsonPath('error.details.reason', 'app_instances_attached');
+
+    expect($assignment->refresh()->status)
+        ->toBe(LifecycleStatus::Active)
+        ->and(AppInstance::query()->count())
+        ->toBe(1)
+        ->and($this->roleLifecycle->removed)
+        ->toBeEmpty();
+})->with([
+    'force' => [['force' => true]],
+    'force and purge' => [['force' => true, 'purge_data' => true]],
+    'force and offline' => [['force' => true, 'offline' => true]],
+]);
 
 it('requires force when purge data is true before the removal action runs', function (): void {
     $assignment = $this->node

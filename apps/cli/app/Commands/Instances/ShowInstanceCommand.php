@@ -7,8 +7,8 @@ namespace App\Commands\Instances;
 use App\Commands\GatewayCommand;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
-use Orbit\Sdk\Requests\Instances\ShowInstanceRequest;
-use Orbit\Sdk\Responses\Instances\InstanceResponse;
+use Orbit\Sdk\Requests\AppInstances\ShowAppInstanceRequest;
+use Orbit\Sdk\Responses\AppInstances\AppInstanceResponse;
 
 final class ShowInstanceCommand extends GatewayCommand
 {
@@ -36,9 +36,9 @@ final class ShowInstanceCommand extends GatewayCommand
             return self::FAILURE;
         }
 
-        $instance = $this->send($connector, new ShowInstanceRequest($instanceId), InstanceResponse::class);
+        $instance = $this->send($connector, new ShowAppInstanceRequest($instanceId), AppInstanceResponse::class);
 
-        if (! $instance instanceof InstanceResponse) {
+        if (! $instance instanceof AppInstanceResponse) {
             return self::FAILURE;
         }
 
@@ -52,16 +52,12 @@ final class ShowInstanceCommand extends GatewayCommand
         $this->line("App: {$instance->appId}");
         $this->line("Node: {$instance->nodeId}");
         $this->line("Environment: {$instance->environment}");
+        $this->line("Source: {$instance->sourceKind}");
         $this->line("Checkout: {$instance->checkoutPath}");
-        $this->line("Document root: {$instance->documentRoot}");
-        $this->line("PHP: {$instance->phpVersion}");
-        $this->line("Hostname: {$instance->hostname}");
-        $this->line("Certificate: {$instance->certificateMode}");
-
-        if ($instance->failedStep !== null || $instance->errorCode !== null) {
-            $failure = implode(' / ', array_filter([$instance->failedStep, $instance->errorCode], is_string(...)));
-            $this->line("Failure: {$failure}");
-        }
+        $this->line('Root override: '.($instance->root ?? '-'));
+        $this->line('Effective root: '.($instance->effectiveRoot ?? '-'));
+        $this->line('Branch: '.($instance->selectedBranch ?? '-'));
+        $this->line('Starting commit: '.($instance->startingCommit ?? '-'));
 
         $this->line("Request ID: {$instance->requestId}");
 

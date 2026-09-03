@@ -18,6 +18,7 @@ use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppDev\AppDevTldConverger;
 use App\Domain\AppDev\AppDevTldRouteManager;
 use App\Domain\AppDev\PrivateDnsManager;
+use App\Domain\AppInstances\DevelopmentAppInstanceSourceLifecycle;
 use App\Domain\AppProd\AppProdCaddyManager;
 use App\Domain\AppProd\AppProdPhpFpmManager;
 use App\Domain\AppProd\AppProdRuntimeConverger;
@@ -77,6 +78,7 @@ use App\Infrastructure\AppDev\RemoteAppDevCertificateManager;
 use App\Infrastructure\AppDev\RemoteAppDevPhpFpmManager;
 use App\Infrastructure\AppDev\RemoteAppDevSourceManager;
 use App\Infrastructure\AppDev\RemoteAppDevTldRouteManager;
+use App\Infrastructure\AppInstances\RemoteDevelopmentAppInstanceSourceLifecycle;
 use App\Infrastructure\AppProd\NativeAppProdRuntimeConverger;
 use App\Infrastructure\AppProd\RemoteAppProdCaddyManager;
 use App\Infrastructure\AppProd\RemoteAppProdPhpFpmManager;
@@ -170,6 +172,7 @@ final class AppServiceProvider extends ServiceProvider
         AppDevTldConverger::class => NativeAppDevTldConverger::class,
         AppDevTldRouteManager::class => RemoteAppDevTldRouteManager::class,
         AppDevSourceManager::class => RemoteAppDevSourceManager::class,
+        DevelopmentAppInstanceSourceLifecycle::class => RemoteDevelopmentAppInstanceSourceLifecycle::class,
         AppProdCaddyManager::class => RemoteAppProdCaddyManager::class,
         AppProdPhpFpmManager::class => RemoteAppProdPhpFpmManager::class,
         AppProdRuntimeConverger::class => NativeAppProdRuntimeConverger::class,

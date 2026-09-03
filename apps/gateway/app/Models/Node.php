@@ -86,6 +86,12 @@ final class Node extends Model
         return $this->hasMany(Instance::class);
     }
 
+    /** @return HasMany<AppInstance, $this> */
+    public function appInstances(): HasMany
+    {
+        return $this->hasMany(AppInstance::class);
+    }
+
     /** @return HasMany<FirewallRule, $this> */
     public function firewallRules(): HasMany
     {

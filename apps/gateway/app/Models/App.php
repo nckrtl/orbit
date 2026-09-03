@@ -32,6 +32,12 @@ final class App extends Model
         return $this->hasMany(Instance::class);
     }
 
+    /** @return HasMany<AppInstance, $this> */
+    public function appInstances(): HasMany
+    {
+        return $this->hasMany(AppInstance::class);
+    }
+
     /** @return array<string, string> */
     protected function casts(): array
     {

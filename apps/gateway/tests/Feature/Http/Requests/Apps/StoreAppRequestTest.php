@@ -51,6 +51,8 @@ it('returns 422 without persistence or secret exposure for credential-bearing re
         ->postJson('/api/v1/apps', [
             'slug' => 'acme',
             'repository_url' => $repositoryUrl,
+            'main_branch' => 'main',
+            'root' => 'public',
         ]);
 
     $response
@@ -109,6 +111,8 @@ it('returns 422 without persistence or secret exposure for embedded repository c
         ->postJson('/api/v1/apps', [
             'slug' => 'acme',
             'repository_url' => $repositoryUrl,
+            'main_branch' => 'main',
+            'root' => 'public',
         ]);
 
     $response
@@ -152,6 +156,8 @@ it('returns 422 without persistence when a repository origin contains a query or
         ->postJson('/api/v1/apps', [
             'slug' => 'acme',
             'repository_url' => $repositoryUrl,
+            'main_branch' => 'main',
+            'root' => 'public',
         ])
         ->assertUnprocessable()
         ->assertJsonPath('error.code', 'validation.failed')

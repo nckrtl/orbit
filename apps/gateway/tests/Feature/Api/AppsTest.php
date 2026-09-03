@@ -2,9 +2,13 @@
 
 declare(strict_types=1);
 
+use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\Clusters\ClusterState;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Activity;
 use App\Models\App as OrbitApp;
+use App\Models\AppInstance;
+use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\Node;
 use Illuminate\Support\Str;
@@ -281,6 +285,43 @@ describe('app lifecycle', function (): void {
             ->assertJsonPath('error.code', 'app.has_instances');
 
         expect($app->fresh())->not->toBeNull();
+    });
+
+    it('does not remove an App that still owns AppInstances', function (): void {
+        $cluster = Cluster::query()->create(['name' => 'development', 'state' => ClusterState::Active]);
+        $node = Node::query()->create([
+            'cluster_id' => $cluster->id,
+            'name' => 'app-dev',
+            'status' => LifecycleStatus::Active,
+            'public_ssh_host' => '192.0.2.10',
+        ]);
+        $app = OrbitApp::query()->create([
+            'name' => 'Acme',
+            'slug' => 'acme',
+            'repository_url' => 'https://github.com/acme/site.git',
+            'main_branch' => 'main',
+            'root' => 'public',
+        ]);
+        AppInstance::query()->create([
+            'app_id' => $app->id,
+            'node_id' => $node->id,
+            'name' => 'dev',
+            'checkout_path' => '/srv/orbit/apps/acme/dev',
+            'branch' => 'dev',
+            'starting_commit' => str_repeat('a', 40),
+            'status' => AppInstanceState::Active,
+        ]);
+
+        $this
+            ->deleteJson("/api/v1/apps/{$app->id}")
+            ->assertConflict()
+            ->assertJsonPath('error.code', 'app.has_app_instances');
+
+        expect($app->fresh())
+            ->not
+            ->toBeNull()
+            ->and(AppInstance::query()->count())
+            ->toBe(1);
     });
 });
 

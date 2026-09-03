@@ -56,7 +56,31 @@ by each Node's assigned roles.
 
 ## Applications and traffic
 
-An App represents an application and its shared settings. An AppInstance belongs to that App and one Node, where it is developed or runs in production. A Route connects a hostname to an AppInstance.
+Orbit can group related Nodes in a Cluster, but a Cluster is not required. An
+App represents an application and owns its repository, default branch,
+relative web root, and shared settings. An AppInstance represents one place on
+a Node where that App is developed or runs in production. Cluster placement is
+derived from the Node rather than selected or stored on the AppInstance. A
+Route connects a hostname to an AppInstance.
+
+A managed-clone development AppInstance uses one independent Git clone at
+*<apps-root>/<app-slug>/<instance-name>*. Orbit records this path before source
+work and never moves it when the Node apps root changes. Creation has four
+durable states:
+
+    reserved -> checkout_prepared -> source_resolved -> active
+
+Each retry verifies the evidence stored by the current state. Orbit selects an
+existing remote branch with the AppInstance name. If that branch does not
+exist, Orbit creates it from the exact fetched App default branch commit.
+Source resolution records the selected branch and starting commit before the
+AppInstance becomes active.
+
+This development lifecycle owns source only. It does not install PHP, converge
+an application runtime, publish Caddy configuration, create certificates,
+change DNS, or create Routes. The Node app-dev role owns runtime prerequisites.
+Later issues own runtime and publication behavior. See
+[Applications](domains/applications.md).
 
 A Node keeps its own optional TLD when it joins a Cluster. Direct Node routing
 remains authoritative while the Cluster is inactive or has no TLD. When the
@@ -69,6 +93,10 @@ application. You can read more about this design in
 [ADR 0011](decisions/0011-clustered-production-ingress-and-app-prod-placement.md),
 as superseded and extended by
 [ADR 0017](decisions/0017-optional-cluster-placement-and-tld-precedence.md).
+
+Legacy Instance and Workspace records remain available during staged
+conversion. New instance commands use AppInstance. Route, runtime, and Ingress
+work remains separate.
 
 ## Doctor
 

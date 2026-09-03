@@ -1,13 +1,13 @@
 # Public contract
 
-The SDK models exactly 62 concrete public Gateway API operations:
+The SDK models exactly 61 concrete public Gateway API operations:
 
 - Gateway: status and root trust.
 - Activity: list and show.
 - Node: list, show, provision, settings update, remove, access add, access remove, role list, role add, and role remove.
 - Cluster: list, show, create, update, remove, Node attach, Node detach, Router set, and Router clear.
 - App: list, show, create, and remove.
-- Instance: list, show, create, remove, and update PHP.
+- AppInstance: list, show, create, and remove through the concise Instance routes.
 - Workspace: list, show, create, remove, and update PHP.
 - Process: list, add, start, stop, restart, logs, and remove.
 - Firewall: list, allow, deny, and remove.
@@ -23,8 +23,8 @@ operations. Keep the public API typed and small.
   for identifiers.
 - Send `host_key_fingerprint` in a node provision request. Parse
   `ssh_host_fingerprint` from a node response.
-- Keep production-instance `hostname` optional in SDK transport. The Gateway
-  validates it for app production and derives it for app development.
+- Keep AppInstance transport limited to App, Node, name, optional root, and
+  explicit source-discard intent. The Gateway owns placement and source policy.
 - Preserve explicitly supplied process fields for every runtime. The Gateway
   owns cross-field policy.
 - Model binary node access add/remove and node-show access lists. Do not model

@@ -1,0 +1,66 @@
+{
+    "setup": [
+        {
+            "id": "source-fixture-app-dev",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/proof.sh", "setup-app-dev"],
+            "timeout_seconds": 60
+        },
+        {
+            "id": "trust-source-fixture-gateway",
+            "node": "gateway",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/proof.sh", "setup-gateway"],
+            "timeout_seconds": 120
+        }
+    ],
+    "acceptance": [
+        {
+            "id": "source-defaults-create-and-retry",
+            "node": "gateway",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/proof.sh", "01"],
+            "timeout_seconds": 900
+        },
+        {
+            "id": "independent-clone-evidence",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/proof.sh", "02"],
+            "timeout_seconds": 120
+        },
+        {
+            "id": "discard-preserves-source-identity",
+            "node": "gateway",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/proof.sh", "03"],
+            "timeout_seconds": 120
+        },
+        {
+            "id": "prepare-removal-cases",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/proof.sh", "04"],
+            "timeout_seconds": 60
+        },
+        {
+            "id": "active-retry-and-removal-refusal",
+            "node": "gateway",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/proof.sh", "05"],
+            "timeout_seconds": 300
+        },
+        {
+            "id": "active-retry-preserves-source",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/proof.sh", "05-source-preserved"],
+            "timeout_seconds": 60
+        },
+        {
+            "id": "clean-and-discard-removal",
+            "node": "gateway",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/proof.sh", "05-remove"],
+            "timeout_seconds": 300
+        },
+        {
+            "id": "exact-source-removal-final-state",
+            "node": "app-dev",
+            "argv": ["bash", "/var/lib/orbit-e2e/proof/proof.sh", "06"],
+            "timeout_seconds": 60
+        }
+    ]
+}

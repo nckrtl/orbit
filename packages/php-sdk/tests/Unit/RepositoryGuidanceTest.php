@@ -153,6 +153,11 @@ describe('repository guidance bootstrap', function (): void {
         }
 
         $requestDirectory = "{$root}/src/Requests";
+        $retiredInstanceRequestPaths = [
+            'Instances/CreateInstanceRequest.php',
+            'Instances/ListInstancesRequest.php',
+            'Instances/UpdateInstancePhpRequest.php',
+        ];
         $requestClasses = [];
         $requestFileCount = 0;
         $files = new RecursiveIteratorIterator(
@@ -164,13 +169,21 @@ describe('repository guidance bootstrap', function (): void {
                 continue;
             }
 
-            $requestFileCount++;
-
             $relative = str_replace(
                 search: $requestDirectory.'/',
                 replace: '',
                 subject: $file->getPathname(),
             );
+
+            if (in_array($relative, $retiredInstanceRequestPaths, strict: true)) {
+                expect((string) file_get_contents($file->getPathname()))
+                    ->not
+                    ->toMatch('/\b(?:class|interface|trait|enum)\s+[A-Za-z_]/');
+
+                continue;
+            }
+
+            $requestFileCount++;
             $class = 'Orbit\\Sdk\\Requests\\'.str_replace(['/', '.php'], ['\\', ''], $relative);
             $reflection = new ReflectionClass($class);
 
@@ -180,20 +193,22 @@ describe('repository guidance bootstrap', function (): void {
         }
 
         expect($requestFileCount)
-            ->toBe(64)
+            ->toBe(63)
             ->and($requestClasses)
-            ->toHaveCount(62)
+            ->toHaveCount(61)
+            ->toContain(Orbit\Sdk\Requests\AppInstances\CreateAppInstanceRequest::class)
+            ->toContain(Orbit\Sdk\Requests\AppInstances\RemoveAppInstanceRequest::class)
             ->toContain(Orbit\Sdk\Requests\Doctor\RunDoctorRequest::class)
             ->toContain(Orbit\Sdk\Requests\Clusters\ListClustersRequest::class)
             ->toContain(Orbit\Sdk\Requests\Clusters\ClearClusterRouterRequest::class);
     });
 
-    it('documents the 62-operation SDK surface, Clusters, Doctor, and the binary node access boundary', function (): void {
+    it('documents the 61-operation SDK surface, AppInstances, Clusters, Doctor, and node access', function (): void {
         $publicContract = repository_guidance_contents('.ai/rules/public-contract.md');
         $normalizedPublicContract = repository_guidance_normalized_contents('.ai/rules/public-contract.md');
 
         expect($publicContract)
-            ->toContain('The SDK models exactly 62 concrete public Gateway API operations:')
+            ->toContain('The SDK models exactly 61 concrete public Gateway API operations:')
             ->toContain(
                 '- Node: list, show, provision, settings update, remove, access add, access remove, role list, role add, and role remove.',
             )
@@ -201,6 +216,7 @@ describe('repository guidance bootstrap', function (): void {
                 '- Cluster: list, show, create, update, remove, Node attach, Node detach, Router set, and Router clear.',
             )
             ->toContain('- Doctor: run the complete typed Gateway report.')
+            ->toContain('- AppInstance: list, show, create, and remove through the concise Instance routes.')
             ->not->toContain('Docker Swarm, permissions, role add/remove')->toContain(
                 'Do not restore the retired Agent, generic executor, direct SSH execution,',
             )->toContain('Docker Swarm, Compose, image-building, stream, database,')

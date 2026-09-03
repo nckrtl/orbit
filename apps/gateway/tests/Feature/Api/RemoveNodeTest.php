@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use App\Domain\AppDev\PrivateDnsManager;
+use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\Clusters\ClusterState;
 use App\Domain\Metrics\ExporterDegradationReason;
 use App\Domain\Metrics\ExporterDegradationRepository;
 use App\Domain\Metrics\MetricsFleetReconciler;
@@ -19,6 +21,7 @@ use App\Infrastructure\Metrics\MetricsExporterRuntime;
 use App\Infrastructure\Metrics\MetricsExporterState;
 use App\Models\Activity;
 use App\Models\App as OrbitApp;
+use App\Models\AppInstance;
 use App\Models\Cluster;
 use App\Models\FirewallRule;
 use App\Models\Instance;
@@ -31,6 +34,50 @@ beforeEach(function (): void {
     app()->instance(PrivateDnsManager::class, $this->dns);
     app()->instance('App\\Domain\\WireGuard\\GatewayPeerProjectionManager', $this->peers);
 });
+
+it('refuses Node removal around an AppInstance for ordinary and forced offline paths', function (array $body): void {
+    $caller = remove_node_record(name: 'operator', wireguardIp: '10.44.0.2');
+    $target = remove_node_record(name: 'app-dev', wireguardIp: '10.44.0.3');
+    $caller->accessibleNodes()->attach($target);
+    $cluster = Cluster::query()->create(['name' => 'development', 'state' => ClusterState::Active]);
+    $target->update(['cluster_id' => $cluster->id]);
+    $app = OrbitApp::query()->create([
+        'name' => 'Acme',
+        'slug' => 'acme',
+        'repository_url' => 'https://github.com/acme/site.git',
+        'main_branch' => 'main',
+        'root' => 'public',
+    ]);
+    AppInstance::query()->create([
+        'app_id' => $app->id,
+        'node_id' => $target->id,
+        'name' => 'dev',
+        'checkout_path' => '/srv/orbit/apps/acme/dev',
+        'branch' => 'dev',
+        'starting_commit' => str_repeat('a', 40),
+        'status' => AppInstanceState::Active,
+    ]);
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
+        ->deleteJson("/api/v1/nodes/{$target->id}", $body)
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'node.has_app_instances');
+
+    expect($target->refresh()->status)
+        ->toBe(LifecycleStatus::Active)
+        ->and($target->cluster_id)
+        ->toBe($cluster->id)
+        ->and(AppInstance::query()->count())
+        ->toBe(1)
+        ->and($this->peers->removed)
+        ->toBeEmpty()
+        ->and($this->dns->convergences)
+        ->toBe(0);
+})->with([
+    'ordinary' => [['offline' => false, 'force' => false]],
+    'forced offline' => [['offline' => true, 'force' => true]],
+]);
 
 it('retires Metrics exporter state before removing network projections', function (): void {
     $caller = remove_node_record(name: 'operator', wireguardIp: '10.44.0.2');

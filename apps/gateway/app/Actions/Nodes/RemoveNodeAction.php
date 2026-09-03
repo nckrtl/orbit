@@ -22,6 +22,7 @@ use Throwable;
 /**
  * @mago-expect lint:cyclomatic-complexity Removal keeps guarded projection rollback in one transaction flow.
  * @mago-expect lint:halstead Removal keeps the ordered recovery boundary visible in one transaction flow.
+ * @mago-expect lint:kan-defect Removal keeps guarded projection rollback in one transaction flow.
  * @mago-expect lint:too-many-methods Removal keeps its guards, role shedding and ordered recovery in one boundary.
  */
 final readonly class RemoveNodeAction
@@ -195,6 +196,13 @@ final readonly class RemoveNodeAction
      */
     private function guardProtected(Node $node, Node $caller): void
     {
+        if ($node->appInstances()->exists()) {
+            throw $this->conflict(
+                'node.has_app_instances',
+                "Node [{$node->name}] still owns AppInstances.",
+            );
+        }
+
         if ($node->is($caller)) {
             throw $this->conflict('node.self_removal_forbidden', 'A node cannot remove itself.');
         }
