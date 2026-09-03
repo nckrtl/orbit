@@ -162,30 +162,50 @@ it('automatically releases the exact cold inventory after an injected constructi
     $beforePromotion = $manifests->promoted()?->toArray();
     $injectedSha = str_repeat('0', 40);
     $constructionFailure = null;
+    $cleanup = null;
+    $primaryFailure = null;
 
     try {
-        $constructor->construct(new ColdTopologyPlan(
-            $target,
-            $repository,
-            $injectedSha,
-            [$image => $host->imageFingerprint($image)],
-            $laravel,
-            $operation,
-            [
-                'user.orbit.e2e.issue' => 'SCN-2',
-                'user.orbit.e2e.attempt' => $attempt->value,
-                'user.orbit.e2e.operation' => $operation->value,
-                'user.orbit.e2e.recipe' => $recipe->id,
-            ],
-        ));
+        try {
+            $constructor->construct(new ColdTopologyPlan(
+                $target,
+                $repository,
+                $injectedSha,
+                [$image => $host->imageFingerprint($image)],
+                $laravel,
+                $operation,
+                [
+                    'user.orbit.e2e.issue' => 'SCN-2',
+                    'user.orbit.e2e.attempt' => $attempt->value,
+                    'user.orbit.e2e.operation' => $operation->value,
+                    'user.orbit.e2e.recipe' => $recipe->id,
+                ],
+            ));
+        } catch (Throwable $failure) {
+            $constructionFailure = $failure;
+        }
+
+        expect($constructionFailure)
+            ->toBeInstanceOf(InvalidArgumentException::class)
+            ->and($constructionFailure?->getMessage())
+            ->toBe('The Git command failed.');
     } catch (Throwable $failure) {
-        $constructionFailure = $failure;
+        $primaryFailure = $failure;
+    } finally {
+        $cleanup = $constructor->cleanup($target, $operation);
     }
 
-    expect($constructionFailure)
-        ->toBeInstanceOf(InvalidArgumentException::class)
-        ->and($constructionFailure?->getMessage())
-        ->toBe('The Git command failed.');
+    if (! $cleanup->successful()) {
+        throw new ColdTopologyCleanupException(
+            $cleanup,
+            $primaryFailure ?? new RuntimeException('Injected construction-failure scenario cleanup was refused.'),
+        );
+    }
+    if ($primaryFailure !== null) {
+        throw $primaryFailure;
+    }
+
+    expect($cleanup->refused)->toBe([]);
     expect($host->instances(array_map($target->instance(...), $recipe->nodeKeys())))->toBe([]);
     expect($host->network($target->network()))->toBeNull();
     expect($manifests->promoted()?->toArray())->toBe($beforePromotion);

@@ -65,6 +65,9 @@ final class ColdConstructorProcessState
     /** @var list<string> */
     public array $deleted = [];
 
+    /** @var list<string> */
+    public array $mutations = [];
+
     public bool $networkExists = false;
 
     public bool $foreignOnGit = false;
@@ -144,19 +147,23 @@ final class ColdConstructorProcessState
         }
         if (in_array($command[3] ?? null, ['start', 'stop'], true)) {
             $name = preg_replace('/\Alocal:/', '', (string) ($command[4] ?? ''));
-            $this->instances[$name] = ($command[3] ?? null) === 'start' ? 'Running' : 'Stopped';
+            $action = (string) ($command[3] ?? '');
+            $this->instances[$name] = $action === 'start' ? 'Running' : 'Stopped';
+            $this->mutations[] = "{$action}:{$name}";
 
             return Process::result();
         }
         if (($command[3] ?? null) === 'delete') {
             $name = preg_replace('/\Alocal:/', '', (string) ($command[4] ?? ''));
             $this->deleted[] = $name;
+            $this->mutations[] = "delete:{$name}";
             unset($this->instances[$name]);
 
             return Process::result();
         }
         if (($command[3] ?? null) === 'network' && ($command[4] ?? null) === 'delete') {
             $this->deleted[] = $this->target->network();
+            $this->mutations[] = "delete:{$this->target->network()}";
             $this->networkExists = false;
 
             return Process::result();
@@ -262,64 +269,20 @@ describe('ColdTopologyConstructor cleanup', function () {
         expect($state->networkExists)->toBeTrue();
     });
 
-    it('deletes the exact variable-size inventory in reverse Node order', function () {
+    it('stops and deletes the exact variable-size inventory sequentially in reverse Node order', function () {
         $operation = str_repeat('d', 32);
         $target = TopologyTarget::disposableCold(
             'ORB-106',
             new AttemptId(str_repeat('a', 32)),
             TopologyRecipe::coldAcceptance(),
         );
-        $existing = array_map($target->instance(...), $target->recipe->nodeKeys());
-        $networkExists = true;
-        $deleted = [];
-        Process::fake(function (PendingProcess $process) use (
-            &$existing,
-            &$networkExists,
-            &$deleted,
-            $target,
-            $operation,
-        ) {
-            $command = $process->command;
-            assert(is_array($command));
-            if (($command[0] ?? null) === 'python3') {
-                return Process::result(json_encode(['changed' => true], JSON_THROW_ON_ERROR));
-            }
-            if ($command === ['incus', '--project', 'default', 'list', 'local:', '--format=json']) {
-                return Process::result(json_encode(array_map(
-                    fn (string $name): array => cold_constructor_instance($name, $target->network(), $operation),
-                    $existing,
-                ), JSON_THROW_ON_ERROR));
-            }
-            if ($command === ['incus', '--project', 'default', 'network', 'list', 'local:', '--format=json']) {
-                return Process::result(json_encode(
-                    $networkExists
-                        ? [[
-                            'name' => $target->network(),
-                            'config' => [
-                                'user.orbit.e2e.owner' => 'orbit-e2e',
-                                'user.orbit.e2e.operation' => $operation,
-                            ],
-                            'used_by' => [],
-                        ]] : [],
-                    JSON_THROW_ON_ERROR,
-                ));
-            }
-            if (($command[3] ?? null) === 'delete') {
-                $name = preg_replace('/\Alocal:/', '', (string) ($command[4] ?? ''));
-                $deleted[] = $name;
-                $existing = array_values(array_diff($existing, [$name]));
-
-                return Process::result();
-            }
-            if (array_slice($command, 3, 2) === ['network', 'delete']) {
-                $deleted[] = $target->network();
-                $networkExists = false;
-
-                return Process::result();
-            }
-
-            throw new RuntimeException(json_encode($command, JSON_THROW_ON_ERROR));
-        });
+        $state = new ColdConstructorProcessState($target, $operation);
+        $state->instances = array_fill_keys(
+            array_map($target->instance(...), $target->recipe->nodeKeys()),
+            'Running',
+        );
+        $state->networkExists = true;
+        Process::fake($state->result(...));
 
         $result = cold_constructor_service(new IncusHost(pool: 'orbit-e2e'))
             ->cleanup($target, new OperationId($operation));
@@ -333,7 +296,17 @@ describe('ColdTopologyConstructor cleanup', function () {
             $target->instance('gateway'),
             $target->network(),
         ]);
-        expect($deleted)->toBe($result->removed);
+        expect($state->mutations)->toBe([
+            "stop:{$target->instance('extra')}",
+            "delete:{$target->instance('extra')}",
+            "stop:{$target->instance('app-prod')}",
+            "delete:{$target->instance('app-prod')}",
+            "stop:{$target->instance('operator')}",
+            "delete:{$target->instance('operator')}",
+            "stop:{$target->instance('gateway')}",
+            "delete:{$target->instance('gateway')}",
+            "delete:{$target->network()}",
+        ]);
     });
 
     it('refuses every deletion when one resource belongs to another operation', function () {

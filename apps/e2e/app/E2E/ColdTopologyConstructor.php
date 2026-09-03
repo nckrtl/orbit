@@ -8,7 +8,6 @@ use App\E2E\State\OperationLock;
 use App\E2E\State\StatePaths;
 use App\E2E\Value\ColdTopologyCleanupResult;
 use App\E2E\Value\ColdTopologyPlan;
-use App\E2E\Value\IncusInstance;
 use App\E2E\Value\OperationId;
 use App\E2E\Value\SourceState;
 use App\E2E\Value\TopologyTarget;
@@ -97,20 +96,16 @@ final readonly class ColdTopologyConstructor
                 $this->assertOperationResource($network->metadata, $operation, $network->name);
             }
 
-            $running = array_keys(array_filter(
-                $instances,
-                static fn (IncusInstance $instance): bool => $instance->isRunning(),
-            ));
-            if ($running !== []) {
-                $this->host->stopAll($running);
-            }
-            $deletions = array_values(array_filter(
-                array_reverse($instanceNames),
-                static fn (string $name): bool => isset($instances[$name]),
-            ));
-            if ($deletions !== []) {
-                $this->host->deleteInstances($deletions);
-                array_push($removed, ...$deletions);
+            foreach (array_reverse($instanceNames) as $name) {
+                $instance = $instances[$name] ?? null;
+                if ($instance === null) {
+                    continue;
+                }
+                if ($instance->isRunning()) {
+                    $this->host->stop($name);
+                }
+                $this->host->deleteInstance($name);
+                $removed[] = $name;
             }
             if ($network !== null) {
                 $this->networks->delete($network->name);
