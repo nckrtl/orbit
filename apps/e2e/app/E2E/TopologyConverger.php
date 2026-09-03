@@ -20,7 +20,7 @@ use RuntimeException;
  */
 final readonly class TopologyConverger
 {
-    private const int INSTANCE_API_READINESS_ATTEMPTS = 5;
+    private const int INSTANCE_API_READINESS_ATTEMPTS = 30;
 
     public function __construct(
         private IncusHost $host,
