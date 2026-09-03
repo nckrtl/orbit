@@ -26,8 +26,7 @@ it('keeps fixture contract tests independent of individual issue artifacts', fun
             continue;
         }
         expect($test->getFilename())
-            ->not->toMatch($individualFile)
-            ->and((string) file_get_contents($test->getPathname()))
+            ->not->toMatch($individualFile)->and((string) file_get_contents($test->getPathname()))
             ->not->toMatch($individualIssue);
     }
 });

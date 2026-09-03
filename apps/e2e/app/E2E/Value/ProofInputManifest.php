@@ -209,7 +209,8 @@ final readonly class ProofInputManifest
             ! array_is_list($paths)
             || ! array_all(
                 $paths,
-                fn (mixed $path): bool => is_string($path) && $this->safePath($path),
+                fn (mixed $path): bool => is_string($path)
+                && $this->safePath($path),
             )
         ) {
             throw new InvalidArgumentException("The proof-input manifest {$label} paths are invalid.");

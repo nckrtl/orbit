@@ -99,10 +99,11 @@ describe('ProofPlanFile', function (): void {
         expect(fn () => ProofPlanFile::currentOrRetained(
             new TopologyRequest('TST-42', $fixture['root']),
             null,
-        ))->toThrow(
-            InvalidArgumentException::class,
-            'Proof plan ".loop/proof/TST-42.json" cannot be read from the current issue workspace.',
-        );
+        ))
+            ->toThrow(
+                InvalidArgumentException::class,
+                'Proof plan ".loop/proof/TST-42.json" cannot be read from the current issue workspace.',
+            );
     });
 
     it('names the active plan when its current contents are invalid', function (): void {
