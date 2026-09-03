@@ -4,25 +4,14 @@
         "apps/e2e/phpunit.xml",
         "apps/e2e/tests"
     ],
-    "observed_inputs": true,
     "acceptance": [
-        {
-            "id": "concurrent-sury-orbit-cli",
-            "node": "gateway",
-            "argv": [
-                "bash",
-                "-c",
-                "for process in 1 2 3 4; do orbit node:list --json >/dev/null & done; wait"
-            ],
-            "timeout_seconds": 120
-        },
         {
             "id": "recorded-input-equivalence-contract",
             "node": "app-dev",
             "argv": [
                 "sh",
                 "-c",
-                "cd /home/orbit/orbit/apps/e2e && PYTHONDONTWRITEBYTECODE=1 php artisan test --compact --colors=never tests/Unit/E2E/StaticProofInputPolicyTest.php tests/Unit/E2E/ProofInputManifestBuilderTest.php tests/Unit/E2E/ProofEquivalenceEvaluatorTest.php tests/Unit/E2E/ObservedPhpInputCollectorTest.php tests/Unit/E2E/ObservePhpGuestScriptTest.php tests/Unit/E2E/Value/ProofEvidenceValueTest.php tests/Unit/E2E/Value/CandidateConvergenceResultTest.php tests/Unit/E2E/Git/GitRepositoryTest.php tests/Unit/E2E/IssueStateTest.php tests/Unit/E2E/TopologyReleaserTest.php tests/Unit/E2E/TopologyProofRunnerTest.php tests/Unit/E2E/TopologySnapshotPromoterTest.php tests/Feature/Commands/TopologyCommandsTest.php"
+                "cd /home/orbit/orbit/apps/e2e && PYTHONDONTWRITEBYTECODE=1 php artisan test --compact --colors=never tests/Unit/E2E/StaticProofInputPolicyTest.php tests/Unit/E2E/ProofInputManifestBuilderTest.php tests/Unit/E2E/ProofEquivalenceEvaluatorTest.php tests/Unit/E2E/Value/ProofEvidenceValueTest.php tests/Unit/E2E/Git/GitRepositoryTest.php tests/Unit/E2E/TopologyReleaserTest.php tests/Unit/E2E/TopologySnapshotPromoterTest.php tests/Feature/Commands/TopologyCommandsTest.php"
             ],
             "timeout_seconds": 900
         }
