@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Clusters;
 
+use App\Domain\Clusters\ActiveTldScopeGuard;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Cluster;
@@ -12,6 +13,10 @@ use Illuminate\Support\Facades\DB;
 
 final readonly class DetachClusterNodeAction
 {
+    public function __construct(
+        private ActiveTldScopeGuard $tldScope,
+    ) {}
+
     public function execute(Cluster $cluster, Node $node): Cluster
     {
         /**
@@ -45,6 +50,8 @@ final readonly class DetachClusterNodeAction
                     status: 409,
                 );
             }
+
+            $this->tldScope->assertNodeCanDetach($lockedCluster, $lockedNode);
 
             $lockedNode->update(['cluster_id' => null]);
 

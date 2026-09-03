@@ -62,6 +62,39 @@ it('requires explicit consent to detach a Node and preserves membership on refus
     expect($this->node->refresh()->cluster_id)->toBeNull();
 });
 
+it('refuses to detach a matching-TLD Node from an active TLD-bearing Cluster', function (): void {
+    $this->firstCluster->update([
+        'tld' => 'beast',
+        'state' => 'active',
+    ]);
+    $this->node->update([
+        'cluster_id' => $this->firstCluster->id,
+        'tld' => 'beast',
+    ]);
+
+    $this
+        ->deleteJson(
+            "/api/v1/clusters/{$this->firstCluster->id}/nodes/{$this->node->id}",
+            ['force' => true],
+        )
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'cluster.tld_conflict');
+
+    expect($this->node->refresh()->cluster_id)->toBe($this->firstCluster->id);
+
+    $this
+        ->patchJson("/api/v1/clusters/{$this->firstCluster->id}", ['tld' => null])
+        ->assertOk();
+    $this
+        ->deleteJson(
+            "/api/v1/clusters/{$this->firstCluster->id}/nodes/{$this->node->id}",
+            ['force' => true],
+        )
+        ->assertOk();
+
+    expect($this->node->refresh()->cluster_id)->toBeNull();
+});
+
 it('protects Cluster membership until every persisted Ingress lifecycle row is deleted', function (
     LifecycleStatus $status,
     ?string $failedStep,

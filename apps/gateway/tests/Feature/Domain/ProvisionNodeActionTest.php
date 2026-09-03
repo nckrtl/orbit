@@ -6,6 +6,7 @@ use App\Actions\Nodes\ProvisionNodeAction;
 use App\Data\Nodes\ProvisionNodeData;
 use App\Domain\AppDev\AppDevTldConverger;
 use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\Clusters\ClusterState;
 use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Nodes\NodeConverger;
 use App\Domain\Nodes\NodeProvisioningException;
@@ -24,13 +25,15 @@ use App\Domain\Tools\ToolManagerName;
 use App\Domain\WireGuard\GatewayPeerProjectionManager;
 use App\Infrastructure\Processes\CommandResult;
 use App\Models\App;
+use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\ToolManagerRecord;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Facades\DB;
 use Tests\Support\FakeToolManagerMaterializer;
 
-/** @mago-expect lint:halstead The provisioning group keeps ordering and failure boundaries visible. */
+/** @mago-expect lint:halstead,cyclomatic-complexity The provisioning group keeps ordering and failure boundaries visible. */
 describe(ProvisionNodeAction::class, function (): void {
     beforeEach(function (): void {
         app()->instance(ToolManagerMaterializer::class, new FakeToolManagerMaterializer);
@@ -1840,6 +1843,65 @@ describe(ProvisionNodeAction::class, function (): void {
         });
 
         expect($converger->calls)->toBe(0);
+    });
+
+    it('rejects a Node TLD when a Cluster activates after preflight', function (): void {
+        $converger = new class implements NodeConverger {
+            public int $calls = 0;
+
+            public function converge(
+                Node $node,
+                NodeProvisioningIdentity $identity,
+                ?string $expectedSshHostFingerprint = null,
+                bool $rolelessOperator = false,
+            ): void {
+                $this->calls++;
+            }
+        };
+        app()->instance(NodeConverger::class, $converger);
+        $cluster = Cluster::query()->create([
+            'name' => 'development',
+            'tld' => 'beast',
+            'state' => ClusterState::Inactive,
+        ]);
+        $activatedAfterPreflight = false;
+        DB::listen(static function (QueryExecuted $query) use ($cluster, &$activatedAfterPreflight): void {
+            if (
+                $activatedAfterPreflight
+                || ! str_contains($query->sql, 'from "clusters"')
+                || ! str_contains($query->sql, '"state" = ?')
+                || ! str_contains($query->sql, '"tld" = ?')
+            ) {
+                return;
+            }
+
+            $activatedAfterPreflight = true;
+            $cluster->update(['state' => ClusterState::Active]);
+        });
+
+        expect(fn () => app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
+            name: 'outside',
+            publicSshHost: '192.0.2.52',
+            architecture: 'x86_64',
+            tld: 'beast',
+            expectedSshHostFingerprint: 'SHA256:pinned',
+        )))->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)
+                ->toBe('node.tld_conflict')
+                ->and($exception->status)
+                ->toBe(409);
+        });
+
+        expect($activatedAfterPreflight)
+            ->toBeTrue()
+            ->and(Node::query()->where('name', 'outside')->exists())
+            ->toBeFalse()
+            ->and($cluster->refresh()->state)
+            ->toBe(ClusterState::Active)
+            ->and($cluster->tld)
+            ->toBe('beast')
+            ->and($converger->calls)
+            ->toBe(0);
     });
 
     it('requires a first-contact fingerprint before persisting a node', function (): void {
