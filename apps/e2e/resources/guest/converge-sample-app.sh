@@ -277,16 +277,45 @@ case ${1-} in
     [[ $# -eq 3 || ( $# -eq 4 && "$3" == app-dev ) ]]
     if [[ $# -eq 4 ]]; then
       [[ -f "$sample_state" ]]
-      if ! typed_instances=$("$orbit" instance:list --json 2>&1); then
-        if php -r '$v=json_decode(stream_get_contents(STDIN), true, 8, JSON_THROW_ON_ERROR); if(!is_array($v) || array_keys($v)!==["error"] || !is_array($v["error"])) exit(1); $e=$v["error"]; $keys=array_keys($e); if($keys!==["code","message","request_id"] && $keys!==["code","message","details","request_id"]) exit(1); if(!in_array($e["code"] ?? null, ["gateway.unreachable","gateway.unavailable"], true) || !is_string($e["message"] ?? null) || $e["message"]==="" || strlen($e["message"])>512 || (($e["request_id"] ?? null)!==null && (!is_string($e["request_id"]) || preg_match("/\\A[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\\z/Di", $e["request_id"])!==1)) || array_key_exists("details", $e) && !is_array($e["details"])) exit(1); foreach($e["details"] ?? [] as $key=>$value) if(!is_string($key) || !is_string($value)) exit(1);' <<<"$typed_instances"; then
-          exit 75
+      hydration_preflight_attempts=5
+      hydration_preflight_delay_seconds=1
+      hydration_instance_preflight() {
+        local attempt instances probe_exit validation_failure
+        for ((attempt = 1; attempt <= hydration_preflight_attempts; attempt++)); do
+          validation_failure=
+          if instances=$("$orbit" instance:list --json 2>&1); then
+            probe_exit=0
+            if ! php -r '$v=json_decode(stream_get_contents(STDIN), false, 512, JSON_THROW_ON_ERROR); if(!is_object($v)) exit(65); $legacy=property_exists($v, "instances"); $typed=property_exists($v, "app_instances"); if($legacy===$typed) exit(65); $shape=$legacy ? "instances" : "app_instances"; if(!is_array($v->{$shape}) || !array_is_list($v->{$shape})) exit(65); foreach($v->{$shape} as $instance) if(!is_object($instance)) exit(65);' <<<"$instances" >/dev/null 2>&1; then
+              validation_failure='malformed or unsupported response envelope'
+              probe_exit=65
+            fi
+          else
+            probe_exit=$?
+          fi
+          if [[ "$probe_exit" -eq 0 ]]; then
+            printf '%s' "$instances"
+            return 0
+          fi
+          if [[ "$attempt" -lt "$hydration_preflight_attempts" ]]; then
+            sleep "$hydration_preflight_delay_seconds"
+          fi
+        done
+        if [[ -n "$validation_failure" ]]; then
+          printf 'hydrate: instance:list --json failed after %d attempts; final attempt %d validation failure: %s\n' "$hydration_preflight_attempts" "$hydration_preflight_attempts" "$validation_failure" >&2
+        else
+          printf 'hydrate: instance:list --json failed after %d attempts; final attempt %d exited with code %d: %s\n' "$hydration_preflight_attempts" "$hydration_preflight_attempts" "$probe_exit" "$instances" >&2
         fi
-        exit 1
+        return "$probe_exit"
+      }
+      if typed_instances=$(hydration_instance_preflight); then
+        :
+      else
+        exit $?
       fi
       php -r '$v=json_decode(file_get_contents($argv[1]), true, 16, JSON_THROW_ON_ERROR); $path=$v["checkout_path"] ?? null; if(array_keys($v)!==["shape","app_id","node_id","name","checkout_path","effective_root"] || $v["shape"]!=="app_instances" || !is_int($v["app_id"]) || !is_int($v["node_id"]) || $v["name"]!=="e2e-dev" || !is_string($path) || !str_starts_with($path, "/") || str_contains($path, "//") || preg_match("#(?:\\A|/)\\.\\.?(/|\\z)#D", $path)===1 || $path!==$argv[2] || $v["effective_root"]!=="public") exit(65); $r=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); if(!is_array($r) || array_key_exists("instances", $r) || !array_key_exists("app_instances", $r) || !is_array($r["app_instances"]) || !array_is_list($r["app_instances"])) exit(65); $m=array_values(array_filter($r["app_instances"], fn($x) => is_array($x) && ($x["name"] ?? null)==="e2e-dev")); if(count($m)!==1) exit(65); $x=$m[0]; if(($x["app_id"] ?? null)!==$v["app_id"] || ($x["node_id"] ?? null)!==$v["node_id"] || ($x["status"] ?? null)!=="active" || ($x["checkout_path"] ?? null)!==$path || !is_string($x["selected_branch"] ?? null) || $x["selected_branch"]==="" || !is_string($x["starting_commit"] ?? null) || preg_match("/\\A[0-9a-f]{40}\\z/D", $x["starting_commit"])!==1 || ($x["effective_root"] ?? null)!=="public") exit(65);' "$sample_state" "$4" <<<"$typed_instances"
-      # Exit 75 belongs only to the validated Gateway request above. Once that
-      # boundary passes, remap the same status from any later hydration command
-      # so the host never retries work that may already have mutated the checkout.
+      # Once the preflight boundary passes, remap the reserved retry status from
+      # any later hydration command so callers never retry work that may have
+      # already mutated the checkout.
       trap 'status=$?; trap - EXIT; if [[ "$status" -eq 75 ]]; then exit 1; fi; exit "$status"' EXIT
     fi
     case "$3" in
