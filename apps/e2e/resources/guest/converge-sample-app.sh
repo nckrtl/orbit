@@ -37,6 +37,15 @@ case ${1-} in
     rm -f "$ca.new"
     "$orbit" gateway:add "https://$2" --name=e2e --ca="$ca" --use --json
     ;;
+  gateway-readiness)
+    [[ "$(id -u)" -eq 0 ]] && exec sudo -u orbit -- env HOME=/home/orbit ORBIT_HOME=/home/orbit/.orbit DB_DATABASE=/home/orbit/.orbit/gateway.sqlite bash "$0" "$@"
+    [[ $# -eq 1 ]] || exit 64
+    if ! status=$("$orbit" gateway:status --json 2>&1); then
+      printf 'gateway-readiness: gateway:status failed: %s\n' "$status" >&2
+      exit 1
+    fi
+    php -r '$v=json_decode(stream_get_contents(STDIN), true, 16, JSON_THROW_ON_ERROR); if(!is_array($v) || array_keys($v)!==["gateway","url","name","status","version","php_version","laravel_version","request_id"] || ($v["gateway"] ?? null)!=="e2e" || ($v["url"] ?? null)!=="https://10.44.0.1" || ($v["name"] ?? null)!=="orbit-gateway" || ($v["status"] ?? null)!=="ok" || !is_string($v["version"] ?? null) || $v["version"]==="" || !is_string($v["php_version"] ?? null) || $v["php_version"]==="" || !is_string($v["laravel_version"] ?? null) || $v["laravel_version"]==="" || !is_string($v["request_id"] ?? null) || preg_match("/\\A[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\\z/Di", $v["request_id"])!==1) exit(65);' <<<"$status"
+    ;;
   create-resources)
     [[ "$(id -u)" -eq 0 ]] && exec sudo -u orbit -- env HOME=/home/orbit ORBIT_HOME=/home/orbit/.orbit DB_DATABASE=/home/orbit/.orbit/gateway.sqlite bash "$0" "$@"
     [[ $# -eq 4 && "$2" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]{0,62}$ && "$3" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]{0,62}$ && "$4" =~ ^[0-9a-f]{40}$ ]]

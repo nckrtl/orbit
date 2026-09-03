@@ -1,0 +1,14 @@
+{
+    "setup": [],
+    "acceptance": [
+        {
+            "id": "fresh-publication-readiness-hydration-handoff",
+            "node": "app-dev",
+            "argv": [
+                "bash",
+                "/var/lib/orbit-e2e/proof/fresh-handoff.sh"
+            ],
+            "timeout_seconds": 120
+        }
+    ]
+}
