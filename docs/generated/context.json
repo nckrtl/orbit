@@ -346,6 +346,27 @@
             ]
         },
         {
+            "path": "docs/decisions/0018-register-caller-local-development-worktrees.md",
+            "title": "ADR 0018: Register caller-local development worktrees as AppInstances",
+            "kind": "decision",
+            "components": [],
+            "concepts": [
+                "App",
+                "AppInstance",
+                "Cluster",
+                "Doctor",
+                "Gateway",
+                "Node",
+                "Route"
+            ],
+            "governing_adrs": [
+                "0009",
+                "0016",
+                "0017",
+                "0018"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
