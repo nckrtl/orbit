@@ -621,6 +621,7 @@ final class IncusHost implements GuestTransport
         array $instancesByRole,
         string $network,
         ?TopologyTarget $target = null,
+        bool $requireRunning = false,
     ): void {
         $recipe = $target?->recipe ?? TopologyRecipe::registered();
         $this->validateName($network, 'network');
@@ -645,6 +646,9 @@ final class IncusHost implements GuestTransport
             }
             $vm = $this->instanceFromResource($resource);
             $this->assertOwned($vm->metadata, "instance {$instance}");
+            if ($requireRunning && ! $vm->isRunning()) {
+                throw new RuntimeException("Incus instance {$instance} is not running.");
+            }
             $eth0 = $resource['devices']['eth0'] ?? $resource['expanded_devices']['eth0'] ?? null;
             if (! is_array($eth0) || ($eth0['network'] ?? null) !== $network) {
                 throw new RuntimeException("Incus instance {$instance} network identity does not match topology.");

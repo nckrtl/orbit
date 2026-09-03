@@ -125,7 +125,7 @@ final readonly class TopologyVerifier
         foreach ($target->recipe->nodeKeys() as $node) {
             $inventory[$node] = $target->instance($node);
         }
-        $this->host->assertTopologyNetworkIdentity($inventory, $target->network(), $target);
+        $this->host->assertTopologyNetworkIdentity($inventory, $target->network(), $target, requireRunning: true);
         $typedCheckoutPath = $this->typedCheckoutPath($instances['app-dev']);
         if ($typedCheckoutPath !== null) {
             unset($probes['role.app-prod'], $probes['workspace.app-dev'], $probes['laravel.prod']);

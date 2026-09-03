@@ -85,10 +85,12 @@ function isGlobalIpv4TopologyVerifierProbe(array $argv): bool
     ];
 }
 
+/** @mago-expect lint:cyclomatic-complexity The fake models exact network, VM identity, and fault variants. */
 function topologyVerifierInventory(
     PendingProcess $process,
     ?TopologyTarget $topologyTarget = null,
     bool $invalidExtraMac = false,
+    bool $stoppedExtra = false,
 ): ?ProcessResult {
     $command = $process->command;
     if (! is_array($command) || ($command[array_key_last($command)] ?? null) !== '--format=json') {
@@ -116,14 +118,15 @@ function topologyVerifierInventory(
         ));
 
         return Process::result(json_encode(array_map(
-            static function (string $node) use ($topologyTarget, $invalidExtraMac): array {
+            static function (string $node) use ($topologyTarget, $invalidExtraMac, $stoppedExtra): array {
                 $instance = $topologyTarget->instance($node);
+                $stopped = $stoppedExtra && $node === 'extra';
 
                 return [
                     'name' => $instance,
                     'type' => 'virtual-machine',
-                    'status' => 'Running',
-                    'status_code' => 103,
+                    'status' => $stopped ? 'Stopped' : 'Running',
+                    'status_code' => $stopped ? 102 : 103,
                     'config' => ['user.orbit.e2e.owner' => 'orbit-e2e'],
                     'devices' => [
                         'root' => ['pool' => 'orbit-e2e'],
@@ -699,6 +702,31 @@ describe('TopologyVerifier declared end state', function (): void {
             new SourceState(str_repeat('a', 40), str_repeat('a', 40)),
         ))
             ->toThrow(RuntimeException::class, 'MAC identity does not match topology');
+    });
+
+    it('rejects a stopped roleless cold recipe Node', function (): void {
+        setUpTopologyVerifierProcessFacade();
+        $target = TopologyTarget::disposableCold(
+            'ORB-106',
+            new \App\E2E\Value\AttemptId(str_repeat('a', 32)),
+            TopologyRecipe::coldAcceptance(),
+        );
+        Process::fake(function (PendingProcess $process) use ($target) {
+            return (
+                topologyVerifierInventory($process, $target, stoppedExtra: true) ?? Process::result(
+                    '',
+                    'Unexpected command.',
+                    2,
+                )
+            );
+        });
+
+        expect(fn () => new TopologyVerifier(new IncusHost(pool: 'orbit-e2e'))->verify(
+            $target,
+            VerificationMode::Proof,
+            new SourceState(str_repeat('a', 40), str_repeat('a', 40)),
+        ))
+            ->toThrow(RuntimeException::class, 'is not running');
     });
 
     it('runs every probe when the plan declares nothing', function (): void {
