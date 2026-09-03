@@ -10,7 +10,6 @@ use App\E2E\Value\GuestCommand;
 use App\E2E\Value\GuestCommandResult;
 use App\E2E\Value\OperationId;
 use App\E2E\Value\SourceState;
-use App\E2E\Value\TopologyProfile;
 use App\E2E\Value\TopologyTarget;
 use InvalidArgumentException;
 use JsonException;
@@ -81,9 +80,9 @@ final readonly class WorktreeSynchronizer
         ], JSON_THROW_ON_ERROR);
 
         $commands = [];
-        foreach (TopologyProfile::CHECKOUT_ROLES as $role) {
-            $commands["source-marker.{$role}"] = [
-                'instance' => $target->instance($role),
+        foreach ($target->recipe->checkoutNodeKeys() as $node) {
+            $commands["source-marker.{$node}"] = [
+                'instance' => $target->instance($node),
                 'command' => new GuestCommand([
                     'sh',
                     '-c',
@@ -151,11 +150,11 @@ final readonly class WorktreeSynchronizer
             $effectiveTreeHash = $overlay?->treeHash ?? $repository->effectiveTreeHash();
             [$guestShas, $scriptStatus] = $this->guestPreflight($target, $guestScripts, $guestScriptHash);
             $roles = [];
-            foreach (['gateway', 'app-dev'] as $role) {
-                $instance = $target->instance($role);
-                $guestSha = is_array($guestShas[$role]) ? $guestShas[$role]['sha'] : null;
+            foreach ($target->recipe->checkoutNodeKeys() as $node) {
+                $instance = $target->instance($node);
+                $guestSha = is_array($guestShas[$node]) ? $guestShas[$node]['sha'] : null;
                 $bundleRequired = $guestSha !== $hostSha;
-                $roles[$role] = [
+                $roles[$node] = [
                     'instance' => $instance,
                     'bundleRequired' => $bundleRequired,
                     'prerequisite' => $bundleRequired
@@ -166,9 +165,9 @@ final readonly class WorktreeSynchronizer
             }
 
             $changedScriptRoles = [];
-            foreach (['gateway', 'app-dev', 'app-prod'] as $role) {
-                if (! $scriptStatus[$role]) {
-                    $changedScriptRoles[$role] = $target->instance($role);
+            foreach ($target->recipe->nodeKeys() as $node) {
+                if (! $scriptStatus[$node]) {
+                    $changedScriptRoles[$node] = $target->instance($node);
                 }
             }
             $this->installGuestScripts($changedScriptRoles, $guestScripts, $markerFile, $operationId);
@@ -261,11 +260,11 @@ final readonly class WorktreeSynchronizer
 
             [$guestShas, $scriptStatus] = $this->guestPreflight($target, $guestScripts, $guestScriptHash);
             $roles = [];
-            foreach (TopologyProfile::CHECKOUT_ROLES as $role) {
-                $guestSha = is_array($guestShas[$role]) ? $guestShas[$role]['sha'] : null;
+            foreach ($target->recipe->checkoutNodeKeys() as $node) {
+                $guestSha = is_array($guestShas[$node]) ? $guestShas[$node]['sha'] : null;
                 $bundleRequired = $guestSha !== $candidateSha;
-                $roles[$role] = [
-                    'instance' => $target->instance($role),
+                $roles[$node] = [
+                    'instance' => $target->instance($node),
                     'bundleRequired' => $bundleRequired,
                     'prerequisite' => $bundleRequired
                         ? $this->bundlePrerequisite($git, $guestSha, $candidateSha)
@@ -274,9 +273,9 @@ final readonly class WorktreeSynchronizer
                 ];
             }
             $changedScriptRoles = [];
-            foreach (TopologyProfile::ROLES as $role) {
-                if (! $scriptStatus[$role]) {
-                    $changedScriptRoles[$role] = $target->instance($role);
+            foreach ($target->recipe->nodeKeys() as $node) {
+                if (! $scriptStatus[$node]) {
+                    $changedScriptRoles[$node] = $target->instance($node);
                 }
             }
             $this->installGuestScripts($changedScriptRoles, $guestScripts, $markerFile, $operationId);
@@ -525,17 +524,16 @@ final readonly class WorktreeSynchronizer
         }
     }
 
-    /** @return array{gateway:array{sha:string,markerSha:?string,tree:?string,clean:bool,hydrated:bool}|null,app-dev:array{sha:string,markerSha:?string,tree:?string,clean:bool,hydrated:bool}|null} */
     /**
      * @param list<string> $scripts
-     * @return array{0: array<string, array{sha: string, markerSha: ?string, tree: ?string, clean: bool, hydrated: bool}|null>, 1: array{gateway: bool, 'app-dev': bool, 'app-prod': bool}}
+     * @return array{0: array<string, array{sha: string, markerSha: ?string, tree: ?string, clean: bool, hydrated: bool}|null>, 1: array<string, bool>}
      */
     private function guestPreflight(TopologyTarget $target, array $scripts, string $scriptHash): array
     {
         $commands = [];
-        foreach (['gateway', 'app-dev'] as $role) {
-            $commands["guest-sha.{$role}"] = [
-                'instance' => $target->instance($role),
+        foreach ($target->recipe->checkoutNodeKeys() as $node) {
+            $commands["guest-sha.{$node}"] = [
+                'instance' => $target->instance($node),
                 'command' => new GuestCommand([
                     'runuser',
                     '-u',
@@ -551,12 +549,12 @@ final readonly class WorktreeSynchronizer
                     'HEAD^{commit}',
                 ]),
             ];
-            $commands["guest-marker.{$role}"] = [
-                'instance' => $target->instance($role),
+            $commands["guest-marker.{$node}"] = [
+                'instance' => $target->instance($node),
                 'command' => new GuestCommand(['cat', '/home/orbit/orbit/.git/orbit-source-state']),
             ];
-            $commands["guest-status.{$role}"] = [
-                'instance' => $target->instance($role),
+            $commands["guest-status.{$node}"] = [
+                'instance' => $target->instance($node),
                 'command' => new GuestCommand([
                     'runuser',
                     '-u',
@@ -572,8 +570,8 @@ final readonly class WorktreeSynchronizer
                     '--untracked-files=all',
                 ]),
             ];
-            $commands["guest-hydration.{$role}"] = [
-                'instance' => $target->instance($role),
+            $commands["guest-hydration.{$node}"] = [
+                'instance' => $target->instance($node),
                 'command' => new GuestCommand(['cat', '/home/orbit/orbit/.git/orbit-hydrated.sha']),
             ];
         }
@@ -582,27 +580,27 @@ final readonly class WorktreeSynchronizer
             $scripts,
         );
         $expectedContentHashes = $this->guestScriptContentHashes($installedScripts, $scripts);
-        foreach (['gateway', 'app-dev', 'app-prod'] as $role) {
-            $commands["script-marker.{$role}"] = [
-                'instance' => $target->instance($role),
+        foreach ($target->recipe->nodeKeys() as $node) {
+            $commands["script-marker.{$node}"] = [
+                'instance' => $target->instance($node),
                 'command' => new GuestCommand(['cat', '/var/lib/orbit-e2e/guest-scripts.sha256']),
             ];
-            $commands["script-content.{$role}"] = [
-                'instance' => $target->instance($role),
+            $commands["script-content.{$node}"] = [
+                'instance' => $target->instance($node),
                 'command' => new GuestCommand(['sha256sum', '--', ...$installedScripts]),
             ];
         }
         $results = $this->incus->execAll($commands);
         $guestShas = [];
-        foreach (['gateway', 'app-dev'] as $role) {
-            $result = $results["guest-sha.{$role}"] ?? null;
+        foreach ($target->recipe->checkoutNodeKeys() as $node) {
+            $result = $results["guest-sha.{$node}"] ?? null;
             if (! $result instanceof GuestCommandResult) {
                 throw new RuntimeException('Guest SHA batch result is invalid.');
             }
             $sha = strtolower(trim($result->stdout));
-            $marker = $results["guest-marker.{$role}"] ?? null;
-            $status = $results["guest-status.{$role}"] ?? null;
-            $hydration = $results["guest-hydration.{$role}"] ?? null;
+            $marker = $results["guest-marker.{$node}"] ?? null;
+            $status = $results["guest-status.{$node}"] ?? null;
+            $hydration = $results["guest-hydration.{$node}"] ?? null;
             $tree = null;
             if ($marker instanceof GuestCommandResult && $marker->exitCode === 0) {
                 try {
@@ -621,7 +619,7 @@ final readonly class WorktreeSynchronizer
             } else {
                 $markerSha = null;
             }
-            $guestShas[$role] =
+            $guestShas[$node] =
                 $result->exitCode === 0 && preg_match('/\A[0-9a-f]{40}\z/D', $sha) === 1
                     ? [
                         'sha' => $sha,
@@ -642,13 +640,13 @@ final readonly class WorktreeSynchronizer
         }
 
         $scriptStatus = [];
-        foreach (['gateway', 'app-dev', 'app-prod'] as $role) {
-            $markerProbe = $results["script-marker.{$role}"] ?? null;
-            $contentProbe = $results["script-content.{$role}"] ?? null;
+        foreach ($target->recipe->nodeKeys() as $node) {
+            $markerProbe = $results["script-marker.{$node}"] ?? null;
+            $contentProbe = $results["script-content.{$node}"] ?? null;
             if (! $markerProbe instanceof GuestCommandResult || ! $contentProbe instanceof GuestCommandResult) {
                 throw new RuntimeException('Guest script probe batch result is invalid.');
             }
-            $scriptStatus[$role] =
+            $scriptStatus[$node] =
                 $markerProbe->successful()
                 && trim($markerProbe->stdout) === $scriptHash
                 && $contentProbe->successful()
@@ -880,8 +878,8 @@ final readonly class WorktreeSynchronizer
     public function probeCheckoutIdentity(TopologyTarget $target, string $sha, string $tree): void
     {
         $instances = [];
-        foreach (TopologyProfile::CHECKOUT_ROLES as $role) {
-            $instances[$role] = $target->instance($role);
+        foreach ($target->recipe->checkoutNodeKeys() as $node) {
+            $instances[$node] = $target->instance($node);
         }
         $this->probeCheckoutIdentityOf($instances, $sha, $tree);
     }
@@ -1015,7 +1013,7 @@ final readonly class WorktreeSynchronizer
 
     /**
      * @param list<string> $scripts
-     * @return array{gateway:bool,app-dev:bool,app-prod:bool}
+     * @return array<string, bool>
      */
     private function unchangedGuestScripts(TopologyTarget $target, array $scripts, string $hash): array
     {
@@ -1026,26 +1024,26 @@ final readonly class WorktreeSynchronizer
         $expectedContentHashes = $this->guestScriptContentHashes($installedScripts, $scripts);
         $marker = '/var/lib/orbit-e2e/guest-scripts.sha256';
         $commands = [];
-        foreach (['gateway', 'app-dev', 'app-prod'] as $role) {
-            $instance = $target->instance($role);
-            $commands["script-marker.{$role}"] = [
+        foreach ($target->recipe->nodeKeys() as $node) {
+            $instance = $target->instance($node);
+            $commands["script-marker.{$node}"] = [
                 'instance' => $instance,
                 'command' => new GuestCommand(['cat', $marker]),
             ];
-            $commands["script-content.{$role}"] = [
+            $commands["script-content.{$node}"] = [
                 'instance' => $instance,
                 'command' => new GuestCommand(['sha256sum', '--', ...$installedScripts]),
             ];
         }
         $results = $this->incus->execAll($commands);
         $status = [];
-        foreach (['gateway', 'app-dev', 'app-prod'] as $role) {
-            $markerProbe = $results["script-marker.{$role}"] ?? null;
-            $contentProbe = $results["script-content.{$role}"] ?? null;
+        foreach ($target->recipe->nodeKeys() as $node) {
+            $markerProbe = $results["script-marker.{$node}"] ?? null;
+            $contentProbe = $results["script-content.{$node}"] ?? null;
             if (! $markerProbe instanceof GuestCommandResult || ! $contentProbe instanceof GuestCommandResult) {
                 throw new RuntimeException('Guest script probe batch result is invalid.');
             }
-            $status[$role] =
+            $status[$node] =
                 $markerProbe->successful()
                 && trim($markerProbe->stdout) === $hash
                 && $contentProbe->successful()

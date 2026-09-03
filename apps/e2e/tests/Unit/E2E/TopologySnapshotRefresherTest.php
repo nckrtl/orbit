@@ -2,7 +2,9 @@
 
 declare(strict_types=1);
 
+use App\E2E\ColdTopologyConstructor;
 use App\E2E\Git\GitRepository;
+use App\E2E\HostCapacity;
 use App\E2E\IncusHost;
 use App\E2E\IncusNetworkLifecycle;
 use App\E2E\LaravelReleaseResolver;
@@ -57,11 +59,14 @@ function topologySnapshotRefresherForPowerTests(
         new PreparedStateFingerprint($git),
         $manifests,
         new TopologySnapshotBuilder(
-            $host,
-            new IncusNetworkLifecycle($host),
-            $synchronizer,
-            $converger,
-            $verifier,
+            new ColdTopologyConstructor(
+                $host,
+                new IncusNetworkLifecycle($host),
+                $synchronizer,
+                $converger,
+                new HostCapacity($host, 9),
+                $paths,
+            ),
             $manifests,
             $state,
             $root,
@@ -396,6 +401,7 @@ function refreshProcess(
                 'user.orbit.e2e.owner' => 'orbit-e2e',
                 'ipv4.address' => '10.232.1.1/24',
                 'ipv4.nat' => 'true',
+                'ipv4.dhcp.ranges' => '10.232.1.10-10.232.1.12',
                 'ipv6.address' => 'none',
                 'raw.dnsmasq' => 'port=0',
             ],
@@ -815,11 +821,14 @@ describe('TopologySnapshotRefresher contracts', function () {
         $converger = new TopologyConverger($host);
         $verifier = new TopologyVerifier($host, 1, 0);
         $builder = new TopologySnapshotBuilder(
-            $host,
-            new IncusNetworkLifecycle($host),
-            $synchronizer,
-            $converger,
-            $verifier,
+            new ColdTopologyConstructor(
+                $host,
+                new IncusNetworkLifecycle($host),
+                $synchronizer,
+                $converger,
+                new HostCapacity($host, 9),
+                $paths,
+            ),
             $manifests,
             $state,
             $root,

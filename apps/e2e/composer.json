@@ -62,6 +62,10 @@
         "lint": "vendor/bin/mago lint app tests --reporting-format=medium --minimum-report-level=error",
         "rector": "vendor/bin/rector process --no-progress-bar",
         "test": "vendor/bin/pest --parallel --no-tia --compact",
+        "test:scenario-cold": [
+            "Composer\\Config::disableProcessTimeout",
+            "vendor/bin/pest --no-tia --compact tests/Scenario/ColdTopologyAcceptanceTest.php"
+        ],
         "post-autoload-dump": [
             "Illuminate\\Foundation\\ComposerScripts::postAutoloadDump",
             "@php artisan package:discover --ansi"

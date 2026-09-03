@@ -170,6 +170,7 @@ function topologyVmJson(
     string $name,
     array $metadata = ['user.orbit.e2e.owner' => 'orbit-e2e'],
     ?string $network = null,
+    bool $running = false,
 ): string {
     $devices = ['root' => ['pool' => 'default']];
     if ($network !== null) {
@@ -188,8 +189,8 @@ function topologyVmJson(
     return json_encode([[
         'name' => $name,
         'type' => 'virtual-machine',
-        'status' => 'Stopped',
-        'status_code' => 102,
+        'status' => $running ? 'Running' : 'Stopped',
+        'status_code' => $running ? 103 : 102,
         'config' => $metadata,
         'devices' => $devices,
     ]], JSON_THROW_ON_ERROR);
@@ -250,12 +251,14 @@ function pinnedFeatureWorktree(string $repositoryRoot, string $suffix): string
 
 /**
  * @param list<string> $command
+ * @param list<string> $runningInstances
  * @mago-expect lint:cyclomatic-complexity The fake inventories each exact Incus resource kind.
  */
 function pinnedWorktreeInventoryResult(
     array $command,
     TopologyTarget $target,
     ?string $operationId = null,
+    array $runningInstances = [],
 ): ?\Illuminate\Contracts\Process\ProcessResult {
     if (($firewall = topologyFirewallResult($command)) !== null) {
         return $firewall;
@@ -283,6 +286,7 @@ function pinnedWorktreeInventoryResult(
                             'user.orbit.e2e.generation' => 'fixture-generation',
                         ],
                         $target->network(),
+                        in_array($target->instance($role), $runningInstances, true),
                     ),
                     true,
                     16,
@@ -304,7 +308,11 @@ function pinnedWorktreeInventoryResult(
         return Process::result(
             $name === $target->network()
                 ? '[]'
-                : topologyVmJson($name, ['user.orbit.e2e.owner' => 'orbit-e2e']),
+                : topologyVmJson(
+                    $name,
+                    ['user.orbit.e2e.owner' => 'orbit-e2e'],
+                    running: in_array($name, $runningInstances, true),
+                ),
         );
     }
     if (($command[3] ?? null) === 'snapshot' && ($command[4] ?? null) === 'list') {
@@ -434,8 +442,10 @@ function fakePinnedWorktreeProcesses(
     ?string $operationId = null,
 ): void {
     $realProcess = new ProcessFactory;
+    $runningInstances = [];
     Process::fake(function (\Illuminate\Process\PendingProcess $process) use (
         &$events,
+        &$runningInstances,
         $realProcess,
         $target,
         $observe,
@@ -454,9 +464,17 @@ function fakePinnedWorktreeProcesses(
             return $batch;
         }
         $events[] = $command;
+        if (($command[3] ?? null) === 'start' && is_string($command[4] ?? null)) {
+            $runningInstances[] = preg_replace('/\A[^:]+:/', '', $command[4]);
+        }
 
         return (
-            pinnedWorktreeInventoryResult($command, $target, $operationId) ?? $guestOverride?->__invoke(array_slice(
+            pinnedWorktreeInventoryResult(
+                $command,
+                $target,
+                $operationId,
+                $runningInstances,
+            ) ?? $guestOverride?->__invoke(array_slice(
                 $command,
                 6,
             )) ?? pinnedWorktreeGuestResult($command)

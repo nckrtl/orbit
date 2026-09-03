@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\E2E\ColdTopologyConstructor;
+use App\E2E\HostCapacity;
 use App\E2E\IncusHost;
 use App\E2E\IncusNetworkLifecycle;
 use App\E2E\State\AtomicJsonStore;
@@ -9,7 +11,6 @@ use App\E2E\State\StatePaths;
 use App\E2E\TopologyConverger;
 use App\E2E\TopologySnapshotBuilder;
 use App\E2E\TopologySnapshotManifestStore;
-use App\E2E\TopologyVerifier;
 use App\E2E\Value\LaravelRelease;
 use App\E2E\Value\OperationId;
 use App\E2E\Value\PreparedFingerprint;
@@ -34,11 +35,14 @@ function cold_cleanup_builder(IncusHost $host, AtomicJsonStore $state, StatePath
     $uninitialized = fn (string $class): object => new ReflectionClass($class)->newInstanceWithoutConstructor();
 
     return new TopologySnapshotBuilder(
-        $host,
-        new IncusNetworkLifecycle($host),
-        $uninitialized(WorktreeSynchronizer::class),
-        $uninitialized(TopologyConverger::class),
-        $uninitialized(TopologyVerifier::class),
+        new ColdTopologyConstructor(
+            $host,
+            new IncusNetworkLifecycle($host),
+            $uninitialized(WorktreeSynchronizer::class),
+            $uninitialized(TopologyConverger::class),
+            new HostCapacity($host, 9),
+            $paths,
+        ),
         new TopologySnapshotManifestStore($state, $paths, $host),
         $state,
         __DIR__,
@@ -114,11 +118,7 @@ describe('TopologySnapshotBuilder', function () {
         $host = $uninitialized(IncusHost::class);
         $manifests = new TopologySnapshotManifestStore($state, $paths, $host);
         $builder = new TopologySnapshotBuilder(
-            $host,
-            $uninitialized(IncusNetworkLifecycle::class),
-            $uninitialized(WorktreeSynchronizer::class),
-            $uninitialized(TopologyConverger::class),
-            $uninitialized(TopologyVerifier::class),
+            $uninitialized(ColdTopologyConstructor::class),
             $manifests,
             $state,
             __DIR__,

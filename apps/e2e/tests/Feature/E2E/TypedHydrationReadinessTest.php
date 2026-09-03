@@ -15,7 +15,7 @@ function typedHydrationResponse(array $instances): string
 }
 
 /**
- * @param  array{git_reset_exit_code?:int,transient_failures?:int,transient_response?:string,transient_exit_code?:int}  $options
+ * @param  array{git_reset_exit_code?:int,root_invocation?:bool,transient_failures?:int,transient_response?:string,transient_exit_code?:int}  $options
  * @return array{root:string,checkout:string,script:string,state:string,environment:array<string,string>}
  */
 function typedHydrationReadinessFixture(
@@ -24,6 +24,7 @@ function typedHydrationReadinessFixture(
     array $options = [],
 ): array {
     $gitResetExitCode = $options['git_reset_exit_code'] ?? 0;
+    $rootInvocation = $options['root_invocation'] ?? false;
     $transientFailures = $options['transient_failures'] ?? 0;
     $transientResponse = $options['transient_response'] ?? '';
     $transientExitCode = $options['transient_exit_code'] ?? 1;
@@ -65,6 +66,7 @@ function typedHydrationReadinessFixture(
         [[ "$*" == 'instance:list --json' ]]
         state=$(dirname "$0")
         printf '%s\n' "$*" >>"$state/orbit-calls"
+        printf '%s|%s|%s|%s\n' "${TYPED_HYDRATION_RUNTIME_USER-}" "$HOME" "${ORBIT_HOME-}" "${DB_DATABASE-}" >>"$state/orbit-profile"
         attempt=$(wc -l <"$state/orbit-calls")
         if [[ "$attempt" -le "$TYPED_HYDRATION_TRANSIENT_FAILURES" ]]; then
           printf '%s' "$TYPED_HYDRATION_TRANSIENT_RESPONSE"
@@ -126,6 +128,29 @@ function typedHydrationReadinessFixture(
         printf '%s\n' "composer $*" >>"$TYPED_HYDRATION_MUTATION_CALLS"
         exit 99
         BASH);
+    if ($rootInvocation) {
+        file_put_contents("{$root}/bin/id", <<<'BASH'
+            #!/usr/bin/env bash
+            set -euo pipefail
+            [[ "$*" == '-u' ]]
+            if [[ "${TYPED_HYDRATION_RUNTIME_USER-}" == orbit ]]; then
+              printf '1000\n'
+            else
+              printf '0\n'
+            fi
+            BASH);
+        file_put_contents("{$root}/bin/sudo", <<<'BASH'
+            #!/usr/bin/env bash
+            set -euo pipefail
+            printf '%s\n' "$*" >>"$TYPED_HYDRATION_SUDO_CALLS"
+            [[ "$1" == -u && "$2" == orbit && "$3" == -- && "$4" == env ]]
+            shift 3
+            export TYPED_HYDRATION_RUNTIME_USER=orbit
+            exec "$@"
+            BASH);
+        chmod("{$root}/bin/id", 0o700);
+        chmod("{$root}/bin/sudo", 0o700);
+    }
     chmod("{$root}/orbit", 0o700);
     chmod("{$root}/bin/git", 0o700);
     chmod("{$root}/bin/sleep", 0o700);
@@ -159,12 +184,58 @@ function typedHydrationReadinessFixture(
             'TYPED_HYDRATION_MUTATION_CALLS' => "{$root}/mutation-calls",
             'TYPED_HYDRATION_RESPONSE' => $response,
             'TYPED_HYDRATION_SLEEP_CALLS' => "{$root}/sleep-calls",
+            'TYPED_HYDRATION_SUDO_CALLS' => "{$root}/sudo-calls",
             'TYPED_HYDRATION_TRANSIENT_EXIT' => (string) $transientExitCode,
             'TYPED_HYDRATION_TRANSIENT_FAILURES' => (string) $transientFailures,
             'TYPED_HYDRATION_TRANSIENT_RESPONSE' => $transientResponse,
         ],
     ];
 }
+
+it('uses the Orbit runtime profile when root invokes typed hydration', function (): void {
+    $response = typedHydrationResponse([[
+        'id' => 4,
+        'app_id' => 1,
+        'node_id' => 2,
+        'name' => 'e2e-dev',
+        'status' => 'active',
+        'checkout_path' => '__CHECKOUT__',
+        'selected_branch' => 'main',
+        'starting_commit' => str_repeat('a', 40),
+        'effective_root' => 'public',
+    ]]);
+    $fixture = typedHydrationReadinessFixture($response, 0, ['root_invocation' => true]);
+
+    try {
+        $process = new Process([
+            'bash',
+            $fixture['script'],
+            'hydrate',
+            str_repeat('b', 40),
+            'app-dev',
+            $fixture['checkout'],
+        ], env: $fixture['environment']);
+
+        expect($process->run())->toBe(0, $process->getErrorOutput());
+        expect(file("{$fixture['root']}/sudo-calls", FILE_IGNORE_NEW_LINES))->toBe([
+            '-u orbit -- env HOME=/home/orbit ORBIT_HOME=/home/orbit/.orbit DB_DATABASE=/home/orbit/.orbit/gateway.sqlite bash '
+                .$fixture['script']
+                .' hydrate '
+                .str_repeat('b', 40)
+                .' app-dev '
+                .$fixture['checkout'],
+        ]);
+        expect(file("{$fixture['root']}/orbit-profile", FILE_IGNORE_NEW_LINES))->toBe([
+            'orbit|/home/orbit|/home/orbit/.orbit|/home/orbit/.orbit/gateway.sqlite',
+        ]);
+        expect(file("{$fixture['root']}/orbit-calls", FILE_IGNORE_NEW_LINES))->toBe([
+            'instance:list --json',
+        ]);
+        expect(file("{$fixture['root']}/git-reset-called", FILE_IGNORE_NEW_LINES))->toHaveCount(1);
+    } finally {
+        new Filesystem()->deleteDirectory($fixture['root']);
+    }
+});
 
 it('hydrates once after readiness and six transient preflight failures within the 30 second bound', function (): void {
     $response = typedHydrationResponse([[
