@@ -474,12 +474,13 @@
             "kind": "reference",
             "components": [],
             "concepts": [
-                "App",
                 "Gateway",
                 "Node",
                 "Route"
             ],
-            "governing_adrs": []
+            "governing_adrs": [
+                "0003"
+            ]
         },
         {
             "path": "docs/reference/node-retarget.md",
@@ -501,6 +502,7 @@
             "components": [],
             "concepts": [
                 "App",
+                "Gateway",
                 "Node",
                 "Route"
             ],
