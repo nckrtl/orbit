@@ -72,6 +72,6 @@ invoke any one directly; no private orchestration order is implied.
   paragraphs, and concrete examples. Keep delivery rules and internal workflow
   language in contributor guidance or ADRs.
 - Do not add a document when the change has no durable project learning.
-- Every implementation contract classifies documentation impact as `required`
-  or `none` with a rationale. Reconcile required documentation in the same pull
-  request as the behavior it describes.
+- Every issue states documentation impact with the `docs` label. Preflight
+  audits and writes the issue's documentation; the pull request that changes
+  behavior carries the pages that describe it.

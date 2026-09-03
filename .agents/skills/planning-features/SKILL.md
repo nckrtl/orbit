@@ -28,7 +28,7 @@ Fill every section of `.orbit/plan.md` without copying the issue into it:
 
 - **Outcome:** the issue's outcome in one sentence.
 - **Code boundaries:** for each `In` bullet, the files or directories that change. For each `Out` bullet, the exclusion that keeps it unchanged.
-- **Documentation:** the pages under `docs/` this task changed and what each now states, plus every audit finding it reported instead of fixing. Without the `docs` label and with no drift found, `none`.
+- **Documentation:** the pages under `docs/` this task changed and what each now states, plus every audit finding it reported instead of fixing and where it went. Without the `docs` label and with no drift found, `none`.
 - **Acceptance map:** one row per `Acceptance` item, in the issue's order, mapped to its code boundary and the exact focused proof: a test file, a command, or an Incus proof action.
 - **Implementation order:** the smallest coherent ordered changes.
 - **Must preserve:** every attached ADR `Decision` bullet the change touches, plus the existing tests and invariants that protect adjacent behavior.

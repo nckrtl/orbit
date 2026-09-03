@@ -46,4 +46,4 @@ Verification: `composer docs-lint` <passed | findings>
 
 ## Verify
 
-Run `composer docs-lint` and `composer docs-build` from the repository root after fixes. Inside issue preflight, the audit is complete when the plan's Documentation section lists every fixed page and every reported finding appears under open questions or as a separate Linear issue.
+Run `composer docs-lint` and `composer docs-build` from the repository root after fixes. Inside issue preflight, the audit is complete when the plan's Documentation section lists every fixed page and every reported finding is a separate Linear issue, or an open question when it is a fact the repository cannot answer.

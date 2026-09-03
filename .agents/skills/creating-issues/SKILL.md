@@ -42,7 +42,7 @@ The description never mirrors status, relations, labels, or ADR lists.
 3. Write `Scope` as the smallest set of surfaces that change and the adjacent behavior that does not. An `In` bullet names what changes; it never describes how, and it never repeats a criterion.
 4. Write `Acceptance` as a checklist. Each item is one observable behavior with one proof action that exists today. A sentence that fits both Scope and Acceptance is written once, as a criterion.
 5. Use the `proof:incus` label when a criterion depends on a real OS, service manager, privilege boundary, network, certificate, filesystem ownership, or multi-node behavior. Omit it for automated-only work.
-6. Use the `docs` label when durable behavior, terminology, architecture synthesis, an operational or public contract, or agent context changes. Without the label, documentation is out of scope.
+6. Use the `docs` label when durable behavior, terminology, architecture synthesis, an operational or public contract, or agent context changes. Without the label, the outcome changes no documented behavior; preflight can still fix drift it finds in the issue's scope and lists in the plan.
 7. Name `apps/e2e` only on a dedicated harness issue. Product issues never include harness changes.
 8. Keep `Readiness` only in `Backlog`. State the exact missing product decision, ADR, dependency, proof path, or component boundary. Delete the section before `Todo`.
 

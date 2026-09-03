@@ -87,7 +87,7 @@ it('keeps planning, plan review, and development independently invokable', funct
         ->toContain('One issue per worktree')
         ->toContain('Discovery and proof use separate topologies')
         ->toContain('lists every `Acceptance` item in the issue\'s order')
-        ->toContain('Preflight already wrote the documentation')
+        ->toContain('When no plan exists, run `auditing-documentation`')
         ->not->toContain('retained Builder')
         ->not->toContain('plan `PASS`');
 
