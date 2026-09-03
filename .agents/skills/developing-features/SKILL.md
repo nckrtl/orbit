@@ -19,7 +19,7 @@ Stop if the issue is not `Todo`, still has a `Readiness` section, has an unfinis
 
 ## Steps
 
-1. **Read the contract.** Issue, attached ADRs, nearest `AGENTS.md`, the plan, and `composer docs-context` for the labeled components.
+1. **Read the contract.** Issue, attached ADRs, nearest `AGENTS.md`, the plan, and `composer docs-context` for the labeled components when the issue has any; never run it unfiltered.
 2. **Acquire a topology when needed.** With the `proof:incus` label, run `bin/e2e-topology acquire <ISSUE> <worktree>`. The worktree is mounted on `gateway` and `app-dev`; `app-prod` runs no Orbit code.
 3. **Develop.** Work the acceptance map in order. Use `bin/e2e-topology shell <ISSUE> <role>` or `bin/e2e-topology exec <ISSUE> <role> --argv='[...]'` for discovery.
 4. **Report harness gaps.** If `apps/e2e` or `bin/e2e-*` prevents product work, stop and report a dedicated harness issue.
