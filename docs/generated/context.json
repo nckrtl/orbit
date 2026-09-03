@@ -401,6 +401,22 @@
             ]
         },
         {
+            "path": "docs/decisions/0021-pin-sury-php-fpm-with-opcache-profiles-per-role.md",
+            "title": "ADR 0021: Pin Sury PHP-FPM with OPcache profiles per role",
+            "kind": "decision",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "App",
+                "Gateway",
+                "Node"
+            ],
+            "governing_adrs": [
+                "0021"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",

@@ -277,7 +277,7 @@ case ${1-} in
     [[ $# -eq 3 || ( $# -eq 4 && "$3" == app-dev ) ]]
     if [[ $# -eq 4 ]]; then
       [[ -f "$sample_state" ]]
-      hydration_preflight_attempts=5
+      hydration_preflight_attempts=30
       hydration_preflight_delay_seconds=1
       hydration_instance_preflight() {
         local attempt instances probe_exit validation_failure
