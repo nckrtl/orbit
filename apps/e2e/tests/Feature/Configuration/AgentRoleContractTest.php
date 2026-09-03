@@ -88,7 +88,7 @@ it('keeps planning, plan review, and development independently invokable', funct
         ->toContain('Discovery and proof use separate topologies')
         ->toContain('lists every `Acceptance` item in the issue\'s order')
         ->toContain('When no plan exists, run `auditing-documentation`')
-        ->toContain('carry the audit\'s `Fixed` list into the pull request body')
+        ->toContain('carry the audit\'s `Fixed` and `Reported` lists into the pull request body')
         ->not->toContain('retained Builder')
         ->not->toContain('plan `PASS`');
 
