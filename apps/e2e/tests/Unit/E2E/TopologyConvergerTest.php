@@ -459,7 +459,7 @@ describe('TopologyConverger', function () {
         'malformed instance envelope' => 65,
     ]);
 
-    it('does not retry a typed hydration failure after readiness succeeds', function (int $exitCode): void {
+    it('does not retry the hydration invocation after readiness succeeds', function (int $exitCode): void {
         $recorded = [];
         Process::fake(function (PendingProcess $process) use (&$recorded, $exitCode): ProcessResult {
             $command = $process->command;
@@ -497,6 +497,8 @@ describe('TopologyConverger', function () {
         ))->toHaveCount(1);
     })->with([
         'semantic typed state' => 65,
+        'persistent preflight CLI failure' => 69,
+        'reserved preflight status' => 75,
         'remapped post-readiness command' => 1,
     ]);
 
