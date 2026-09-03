@@ -16,11 +16,13 @@ placement has a separate contract in
 New Apps require a repository URL and a normalized relative web root. The
 app:new command accepts an optional main branch:
 
-    orbit app:new \
-      acme \
-      git@github.com:acme/site.git \
-      --main-branch=main \
-      --root=public
+```text
+orbit app:new \
+  acme \
+  git@github.com:acme/site.git \
+  --main-branch=main \
+  --root=public
+```
 
 When you omit the main branch, the Gateway reads the remote default branch once
 and stores it. A later remote default change does not rewrite the App.
@@ -35,11 +37,15 @@ missing values. ORB-76 does not add an update or backfill command.
 
 Select one active Node with an active app-dev role:
 
-    orbit instance:new <app-id> <node-id> feature-one
+```text
+orbit instance:new <app-id> <node-id> feature-one
+```
 
 The Gateway derives and records this immutable checkout path:
 
-    <node-apps-root>/acme/feature-one
+```text
+<node-apps-root>/acme/feature-one
+```
 
 The AppInstance has the immutable source kind `managed_clone`. Its clone has
 its own .git directory. It does not use a Workspace, Git worktree metadata, or
@@ -52,7 +58,9 @@ before it publishes the AppInstance as active.
 
 Creation moves through four durable states:
 
-    reserved -> checkout_prepared -> source_resolved -> active
+```text
+reserved -> checkout_prepared -> source_resolved -> active
+```
 
 An identical retry verifies the recorded App, Node, source kind, root, path,
 repository, branch, and pre-activation commit evidence. It then resumes the
@@ -65,8 +73,10 @@ without a second row or checkout.
 By default, an AppInstance inherits the App root. Use the root option to store
 a relative override:
 
-    orbit instance:new <app-id> <node-id> feature-one \
-      --root=site/public
+```text
+orbit instance:new <app-id> <node-id> feature-one \
+  --root=site/public
+```
 
 The effective root is the AppInstance root when set and the App root otherwise.
 Orbit rejects absolute paths and parent traversal.
@@ -79,15 +89,19 @@ path, an out-of-root path, the wrong owner, or invalid Git metadata.
 
 Remove clean, published source with:
 
-    orbit instance:remove <id>
+```text
+orbit instance:remove <id>
+```
 
 Use destructive source discard only when you intend to lose dirty or
 unpublished work:
 
-    orbit instance:remove <id> --discard-source
+```text
+orbit instance:remove <id> --discard-source
+```
 
-The discard-source option waives only the dirty-source and unpublished-commit
-checks. It does not waive origin, symlink, canonical-path, containment,
+With `--discard-source`, Orbit waives the dirty-source check and the
+unpublished-commit check. It does not waive origin, symlink, canonical-path, containment,
 ownership, or repository-identity checks. Orbit removes only the exact
 recorded checkout. It does not remove sibling, legacy, or unrelated
 repositories.

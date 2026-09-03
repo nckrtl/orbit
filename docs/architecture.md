@@ -68,7 +68,9 @@ A managed-clone development AppInstance uses one independent Git clone at
 work and never moves it when the Node apps root changes. Creation has four
 durable states:
 
-    reserved -> checkout_prepared -> source_resolved -> active
+```text
+reserved -> checkout_prepared -> source_resolved -> active
+```
 
 Each retry verifies the evidence stored by the current state. Orbit selects an
 existing remote branch with the AppInstance name. If that branch does not
@@ -78,7 +80,7 @@ AppInstance becomes active.
 
 This development lifecycle owns source only. It does not install PHP, converge
 an application runtime, publish Caddy configuration, create certificates,
-change DNS, or create Routes. The Node app-dev role owns runtime prerequisites.
+change DNS, or create Routes. Runtime prerequisites belong to the Node's app-dev role.
 Later issues own runtime and publication behavior. See
 [Applications](domains/applications.md).
 
