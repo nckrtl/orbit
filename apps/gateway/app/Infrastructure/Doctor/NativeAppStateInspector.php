@@ -32,7 +32,8 @@ final readonly class NativeAppStateInspector implements AppStateInspector
 
     public function inspect(App $app, Node $node): AppInspectionData
     {
-        if (! is_string($node->wireguard_ip) || $node->wireguard_ip === '') {
+        $host = $node->wireguard_ip;
+        if (! is_string($host) || $host === '') {
             throw new DoctorInspectionException;
         }
 
@@ -62,9 +63,7 @@ final readonly class NativeAppStateInspector implements AppStateInspector
                     'mode' => 'app-prod',
                 ];
             } else {
-                if ($account === null) {
-                    $account = $this->accounts->resolve($node);
-                }
+                $account ??= $this->accounts->resolve($node);
                 $checkouts[] = [
                     'path' => $instance->checkout_path,
                     'root' => $account->home,
@@ -76,9 +75,7 @@ final readonly class NativeAppStateInspector implements AppStateInspector
             }
             $workspaces = $instance->workspaces;
             foreach ($workspaces as $workspace) {
-                if ($account === null) {
-                    $account = $this->accounts->resolve($node);
-                }
+                $account ??= $this->accounts->resolve($node);
                 $checkouts[] = [
                     'path' => $workspace->checkout_path,
                     'root' => $account->home,
@@ -94,7 +91,7 @@ final readonly class NativeAppStateInspector implements AppStateInspector
             try {
                 $result = $this->ssh->execute(
                     new SshConnection(
-                        $node->wireguard_ip,
+                        $host,
                         $node->user,
                         22,
                         $this->keys->privateKeyPath(),
