@@ -286,7 +286,6 @@ function typed_cluster_creation_commands(): array
     return [
         'node:list --json',
         'instance:list --json',
-        'app:list --json',
         'cluster:list --json',
         'cluster:new e2e-development --json',
         'cluster:node:attach 3 2 --json',
@@ -2020,6 +2019,7 @@ describe('convergence guest scripts', function () {
 
             expect($firstCommands)->toBe([
                 ...typed_cluster_creation_commands(),
+                'app:list --json',
                 'app:new laravel-typed https://github.com/laravel/laravel.git --name=Laravel --root=public --json',
                 'instance:new 1 2 e2e-dev --json',
                 'instance:list --json',
@@ -2057,8 +2057,8 @@ describe('convergence guest scripts', function () {
                 ...$firstCommands,
                 'node:list --json',
                 'instance:list --json',
-                'app:list --json',
                 'cluster:list --json',
+                'app:list --json',
             ]);
             expect(array_filter($allCommands, fn (string $command): bool => str_starts_with($command, 'app:new ')))
                 ->toHaveCount(1)
@@ -2419,7 +2419,7 @@ describe('convergence guest scripts', function () {
         }
     });
 
-    it('rejects typed sample conflicts before mutation', function (string $conflict): void {
+    it('rejects typed sample conflicts before App or AppInstance mutation', function (string $conflict): void {
         $fixture = typed_sample_resource_fixture();
         $environment = match ($conflict) {
             'App' => [
@@ -2455,21 +2455,20 @@ describe('convergence guest scripts', function () {
 
             expect($process->run())->not->toBe(0);
             expect(file("{$fixture['root']}/commands", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES))->toBe([
-                'node:list --json',
-                'instance:list --json',
+                ...typed_cluster_creation_commands(),
                 'app:list --json',
             ]);
             expect(file_exists("{$fixture['root']}/app"))->toBe($conflict === 'AppInstance');
             expect(file_exists("{$fixture['root']}/instance"))
                 ->toBeFalse()
                 ->and(file_exists("{$fixture['root']}/cluster"))
-                ->toBeFalse()
+                ->toBeTrue()
                 ->and(file_exists("{$fixture['root']}/attached"))
-                ->toBeFalse()
+                ->toBeTrue()
                 ->and(file_exists("{$fixture['root']}/router"))
-                ->toBeFalse()
+                ->toBeTrue()
                 ->and(file_exists("{$fixture['root']}/active"))
-                ->toBeFalse()
+                ->toBeTrue()
                 ->and(file_exists($fixture['state']))
                 ->toBeFalse();
         } finally {
@@ -2534,7 +2533,6 @@ describe('convergence guest scripts', function () {
             expect(file("{$fixture['root']}/commands", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES))->toBe([
                 'node:list --json',
                 'instance:list --json',
-                'app:list --json',
             ]);
         } finally {
             new Illuminate\Filesystem\Filesystem()->deleteDirectory($fixture['root']);

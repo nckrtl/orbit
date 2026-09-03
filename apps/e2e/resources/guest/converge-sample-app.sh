@@ -45,7 +45,6 @@ case ${1-} in
     prod_id=$(php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); $m=array_values(array_filter($v["nodes"], fn($x) => ($x["name"] ?? null)===$argv[1])); if(count($m)!==1 || !is_int($m[0]["id"] ?? null)) exit(65); echo $m[0]["id"];' "$3" <<<"$nodes")
     initial_instances=$("$orbit" instance:list --json)
     instance_shape=$(php -r '$v=json_decode(stream_get_contents(STDIN), false, 512, JSON_THROW_ON_ERROR); if(!is_object($v)) exit(65); $legacy=property_exists($v, "instances"); $typed=property_exists($v, "app_instances"); if($legacy===$typed) exit(65); $key=$legacy ? "instances" : "app_instances"; $items=$v->{$key}; if(!is_array($items)) exit(65); $targets=[]; foreach($items as $item) { if(!is_object($item)) exit(65); $name=$item->name ?? null; if(in_array($name, ["e2e-dev", "e2e-prod"], true)) { if(isset($targets[$name])) exit(65); $targets[$name]=true; } } echo $key;' <<<"$initial_instances")
-    apps=$("$orbit" app:list --json)
     if [[ "$instance_shape" == app_instances ]]; then
       typed_cluster_name=e2e-development
       typed_dev_name=$2
@@ -61,18 +60,6 @@ case ${1-} in
       typed_app_instance_state() {
         php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); if(!is_array($v) || array_key_exists("instances", $v) || !array_key_exists("app_instances", $v) || !is_array($v["app_instances"]) || !array_is_list($v["app_instances"])) exit(65); $m=array_values(array_filter($v["app_instances"], fn($x) => is_array($x) && ($x["name"] ?? null)===$argv[1])); if(count($m)!==1) exit(65); $x=$m[0]; $path=$x["checkout_path"] ?? null; $branch=$x["selected_branch"] ?? null; $commit=$x["starting_commit"] ?? null; if(($x["app_id"] ?? null)!==(int)$argv[2] || ($x["node_id"] ?? null)!==(int)$argv[3] || ($x["status"] ?? null)!=="active" || !is_string($path) || !str_starts_with($path, "/") || str_contains($path, "//") || preg_match("#(?:\\A|/)\\.\\.?(/|\\z)#D", $path)===1 || ($argv[4]!=="" && $path!==$argv[4]) || !is_string($branch) || $branch==="" || !is_string($commit) || preg_match("/\\A[0-9a-f]{40}\\z/D", $commit)!==1 || ($x["effective_root"] ?? null)!=="public") exit(65); echo json_encode(["shape"=>"app_instances", "app_id"=>(int)$argv[2], "node_id"=>(int)$argv[3], "name"=>$argv[1], "checkout_path"=>$path, "effective_root"=>"public"], JSON_THROW_ON_ERROR);' e2e-dev "$app_id" "$dev_id" "$previous_checkout"
       }
-      app_id=$(php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); $m=array_values(array_filter($v["apps"], fn($x) => ($x["slug"] ?? null)===$argv[1])); if(count($m)>1 || $m && (($m[0]["repository_url"] ?? null)!==$argv[2] || ($m[0]["name"] ?? null)!==$argv[3] || ($m[0]["root"] ?? null)!==$argv[4] || !is_string($m[0]["main_branch"] ?? null) || $m[0]["main_branch"]==="") || $m && !is_int($m[0]["id"] ?? null)) exit(65); echo $m[0]["id"] ?? "";' laravel-typed https://github.com/laravel/laravel.git Laravel public <<<"$apps")
-      typed_target_count=$(php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); echo count(array_filter($v["app_instances"], fn($x) => ($x["name"] ?? null)===$argv[1]));' e2e-dev <<<"$initial_instances")
-      [[ -n "$app_id" || "$typed_target_count" -eq 0 ]] || exit 65
-      typed_instances=$initial_instances
-      typed_count=$(php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); echo count($v["app_instances"]);' <<<"$typed_instances")
-      previous_checkout=
-      if [[ -f "$sample_state" ]]; then
-        previous_checkout=$(php -r '$v=json_decode(file_get_contents($argv[1]), true, 16, JSON_THROW_ON_ERROR); if(($v["shape"] ?? null)==="app_instances" && is_string($v["checkout_path"] ?? null)) echo $v["checkout_path"];' "$sample_state")
-      fi
-      if [[ "$typed_count" -gt 0 ]]; then
-        typed_state=$(typed_app_instance_state <<<"$typed_instances")
-      fi
       node_cluster_id=$(typed_node_cluster_id <<<"$nodes")
       clusters=$("$orbit" cluster:list --json)
       cluster_state=$(typed_cluster_state "$node_cluster_id" <<<"$clusters")
@@ -121,6 +108,19 @@ case ${1-} in
         read -r verified_cluster_id cluster_phase <<<"$cluster_state"
         [[ "$cluster_phase" == verified && "$verified_cluster_id" == "$cluster_id" ]]
       fi
+      apps=$("$orbit" app:list --json)
+      app_id=$(php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); $m=array_values(array_filter($v["apps"], fn($x) => ($x["slug"] ?? null)===$argv[1])); if(count($m)>1 || $m && (($m[0]["repository_url"] ?? null)!==$argv[2] || ($m[0]["name"] ?? null)!==$argv[3] || ($m[0]["root"] ?? null)!==$argv[4] || !is_string($m[0]["main_branch"] ?? null) || $m[0]["main_branch"]==="") || $m && !is_int($m[0]["id"] ?? null)) exit(65); echo $m[0]["id"] ?? "";' laravel-typed https://github.com/laravel/laravel.git Laravel public <<<"$apps")
+      typed_target_count=$(php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); echo count(array_filter($v["app_instances"], fn($x) => ($x["name"] ?? null)===$argv[1]));' e2e-dev <<<"$initial_instances")
+      [[ -n "$app_id" || "$typed_target_count" -eq 0 ]] || exit 65
+      typed_instances=$initial_instances
+      typed_count=$(php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); echo count($v["app_instances"]);' <<<"$typed_instances")
+      previous_checkout=
+      if [[ -f "$sample_state" ]]; then
+        previous_checkout=$(php -r '$v=json_decode(file_get_contents($argv[1]), true, 16, JSON_THROW_ON_ERROR); if(($v["shape"] ?? null)==="app_instances" && is_string($v["checkout_path"] ?? null)) echo $v["checkout_path"];' "$sample_state")
+      fi
+      if [[ "$typed_count" -gt 0 ]]; then
+        typed_state=$(typed_app_instance_state <<<"$typed_instances")
+      fi
       if [[ -z "$app_id" ]]; then
         app_id=$("$orbit" app:new laravel-typed https://github.com/laravel/laravel.git --name=Laravel --root=public --json | php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); if(!is_int($v["id"] ?? null)) exit(65); echo $v["id"];')
       fi
@@ -135,6 +135,7 @@ case ${1-} in
       printf '%s\n' "$typed_state"
       exit 0
     fi
+    apps=$("$orbit" app:list --json)
     app_id=$(php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); $m=array_values(array_filter($v["apps"], fn($x) => ($x["slug"] ?? null)===$argv[1])); if(count($m)>1 || $m && (($m[0]["repository_url"] ?? null)!==$argv[2] || ($m[0]["name"] ?? null)!==$argv[3])) exit(65); echo $m[0]["id"] ?? "";' laravel https://github.com/laravel/laravel.git Laravel <<<"$apps")
     if [[ -z "$app_id" ]]; then
       app_id=$("$orbit" app:new laravel https://github.com/laravel/laravel.git --name=Laravel --json | php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); echo $v["id"];')

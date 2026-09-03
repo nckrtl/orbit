@@ -351,9 +351,9 @@ Known prepared-state limits (first observed on 2026-08-30, NCK-58):
   runtime mutation during `reproject`; it validates the persisted source-ready
   `e2e-dev` item for the separate `laravel-typed` App.
 - During `converge-sample-app.sh create-resources`, the typed
-  `app_instances` branch reads the Node, AppInstance, and App collections and
-  refuses conflicting sample identities before any write. It then reads the
-  current Cluster collection and converges the deterministic
+  `app_instances` branch validates the Node and AppInstance collection
+  envelopes, then reads the current Cluster collection and converges the
+  deterministic
   `e2e-development` Cluster: create it with a null TLD when absent, attach the
   selected active app-dev Node, set that Node as Router, and activate the
   Cluster, in that order. After any Cluster mutation it re-reads `node:list`
@@ -361,7 +361,9 @@ Known prepared-state limits (first observed on 2026-08-30, NCK-58):
   reads without duplicate mutations or read-back calls. The accepted state
   contains one matching active Cluster whose only member and Router are the
   selected Node, and the Cluster ID equals the Node's `cluster_id`. Only then
-  may the branch create the typed App or AppInstance. The App uses
+  does the branch read the App collection, validate the existing typed App and
+  AppInstance identities, and create either resource when missing. Conflicts
+  fail before App or AppInstance mutation. The App uses
   `https://github.com/laravel/laravel.git`, an explicit `public` root, and the
   repository's remote default branch. A legacy `laravel` App may keep nullable
   `main_branch` and `root` values during this transition. Typed convergence
