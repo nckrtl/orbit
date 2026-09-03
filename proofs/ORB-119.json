@@ -1,0 +1,14 @@
+{
+    "setup": [],
+    "acceptance": [
+        {
+            "id": "orb-119-root-hydration-profile",
+            "node": "app-dev",
+            "argv": [
+                "bash",
+                "/var/lib/orbit-e2e/proof/root-hydration-profile.sh"
+            ],
+            "timeout_seconds": 30
+        }
+    ]
+}

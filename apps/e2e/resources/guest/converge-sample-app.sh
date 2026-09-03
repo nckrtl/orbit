@@ -275,6 +275,7 @@ case ${1-} in
   hydrate)
     [[ "$2" =~ ^[0-9a-f]{40}$ ]]
     [[ $# -eq 3 || ( $# -eq 4 && "$3" == app-dev ) ]]
+    [[ $# -eq 4 && "$(id -u)" -eq 0 ]] && exec sudo -u orbit -- env HOME=/home/orbit ORBIT_HOME=/home/orbit/.orbit DB_DATABASE=/home/orbit/.orbit/gateway.sqlite bash "$0" "$@"
     if [[ $# -eq 4 ]]; then
       [[ -f "$sample_state" ]]
       hydration_preflight_attempts=30
