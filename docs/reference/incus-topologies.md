@@ -4,7 +4,7 @@ This page is for a contributor or agent who proves an issue on Incus. It answers
 
 ## Discovery and proof
 
-An issue with the `proof:incus` label gets disposable topologies, each a proof topology as [Concepts](../concepts.md) defines the term. [ADR 0005](../decisions/0005-rolling-incus-development-topology.md) governs the rolling topology snapshot they are copied from. [ADR 0006](../decisions/0006-topology-led-feature-development.md) separates discovery from proof. Discovery mounts the worktree and may change while the contributor works. Proof never mounts host state: the harness synchronizes one exact commit from Git and keeps a proved topology immutable until release. Both exist at the same time, and discovery is the default target of every development command. Automated-only work does not use Incus.
+An issue with the `proof:incus` label gets disposable topologies, each a proof topology as [Concepts](../concepts.md) defines the term. [ADR 0005](../decisions/0005-rolling-incus-development-topology.md) governs the rolling topology snapshot they are copied from. [ADR 0006](../decisions/0006-topology-led-feature-development.md) separates discovery from proof and requires fresh proof, immutable proved attempts. Discovery mounts the worktree and may change while the contributor works. Proof never mounts host state: the harness synchronizes one exact commit from Git and keeps a proved topology immutable until release. Both exist at the same time, and discovery is the default target of every development command. Automated-only work does not use Incus.
 
 ## Registered profile
 
