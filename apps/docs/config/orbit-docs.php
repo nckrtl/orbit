@@ -29,6 +29,13 @@ return [
         'librarian.document_complexity',
     ],
 
+    // A maintained page outside docs/decisions states current behavior, not the
+    // work that produced it. These tracker prefixes name that work.
+    'issue_key_prefixes' => [
+        'NCK',
+        'ORB',
+    ],
+
     // Change narration is rejected in every maintained page outside
     // docs/decisions. A page states current behavior; history lives in ADRs.
     'narrative_phrases' => [

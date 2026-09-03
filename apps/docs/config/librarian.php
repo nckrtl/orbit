@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Librarian\Rules\ContextIndexFreshRule;
 use App\Librarian\Rules\DecisionRecordLanguageRule;
 use App\Librarian\Rules\DecisionRecordStructureRule;
+use App\Librarian\Rules\DocumentationIssueReferenceRule;
 use App\Librarian\Rules\DocumentationNarrativeRule;
 use HardImpact\Librarian\Linting\Rules\BulletComplexityRule;
 use HardImpact\Librarian\Linting\Rules\CompoundNounStackRule;
@@ -27,6 +28,7 @@ return [
         DecisionRecordStructureRule::class,
         DecisionRecordLanguageRule::class,
         DocumentationNarrativeRule::class,
+        DocumentationIssueReferenceRule::class,
         RequirementSmellRule::class,
         SentenceCaseHeadingRule::class,
         DocumentComplexityRule::class,

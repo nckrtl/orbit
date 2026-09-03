@@ -31,7 +31,7 @@ A domain page under `domains/` exists only when a feature needs a guide that no 
 3. Use the term from `concepts.md` and its capitalization: Node, Cluster, App, AppInstance, Route, Router, Ingress, Gateway, Doctor. Expand an acronym on first use in the page.
 4. Put a list of commands, fields, options, or failure codes in a table. Open every section with one sentence of prose before a table or list.
 5. Keep one mechanism in one place. If a fact already lives on another page or in an ADR, link it.
-6. Remove change narration. A page never says what was, what is no longer, or what comes later. History is in ADRs and Git.
+6. Remove change narration and every tracker identifier. A page never says what was, what is no longer, or what comes later, and never names the issue that produced it. History is in ADRs and Git.
 7. Write markdown paragraphs as one line each. Hard wraps break the prose rules' sentence measurement.
 
 ## Verify
