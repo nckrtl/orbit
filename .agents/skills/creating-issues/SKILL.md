@@ -43,7 +43,7 @@ The description never mirrors status, relations, labels, or ADR lists. The outco
 4. Write `Acceptance` as a checklist. Each item is one observable behavior with one proof action that exists today. `Proof:` names a test file or suite, a command, or an Incus proof action; only the last is an action in `proofs/<ISSUE>.json`. A sentence that fits both Scope and Acceptance is written once, as a criterion. Write every bullet on one line, never hard-wrapped, and put quoted output in backticks.
 5. Use the `proof:incus` label when a criterion depends on a real OS, service manager, privilege boundary, network, certificate, filesystem ownership, or multi-node behavior. Omit it for automated-only work.
 6. Use the `docs` label when durable behavior, terminology, architecture synthesis, an operational or public contract, or agent context changes. Without the label, the outcome changes no documented behavior; the audit can still fix drift it finds in the issue's scope, listed in the plan or the pull request body.
-7. Name `apps/e2e` only on a dedicated harness issue. Product issues never include harness changes.
+7. Name `apps/e2e` on a dedicated harness issue, or on an issue whose change under `apps/e2e` stays inside `apps/e2e/tests/Feature/**` and `apps/e2e/tests/Unit/**`, which are not harness code. Product issues never include harness changes.
 8. Keep `Readiness` only in `Backlog`. State the exact missing product decision, ADR, dependency, proof path, component boundary, or acceptance. Delete the section before `Todo`.
 
 ## Parents and children
@@ -65,7 +65,7 @@ Use `Backlog` while the contract is incomplete. Use `Todo` only when every gover
 
 A `Todo` issue may be `blocked by` unfinished work; the relation carries that fact. When the prerequisite becomes `Done`, re-read current `origin/main` and revalidate before it is claimed.
 
-An existing issue in an earlier description shape is rewritten to `template.md` with this skill before it is planned. When a plan review returns `BLOCK`, a planner or implementer reports a stop, or `recording-decisions` hands over an accepted ADR that intersects the issue, revalidate the contract against current `origin/main`: return a conflicting or incomplete issue to `Backlog` and write the `Readiness` section that names the gap, and cancel obsolete work only with the repository owner's explicit authority. Correct a label the plan's Documentation section or a pull request body reports as wrong. The issue comes back to `Todo` only through the rules above.
+An existing issue in an earlier description shape is rewritten to `template.md` with this skill before it is planned. When a plan review returns `BLOCK`, a planner or implementer reports a stop, or `recording-decisions` hands over an accepted ADR that intersects the issue, revalidate the contract against current `origin/main`: return a conflicting or incomplete issue to `Backlog` and write the `Readiness` section that names the gap, and cancel obsolete work only with the repository owner's explicit authority. Correct a label the plan's Documentation section or a pull request body reports as wrong, and create the issues a merged pull request body reports as owners of documentation findings. The issue comes back to `Todo` only through the rules above.
 
 ## Complete-set feasibility
 

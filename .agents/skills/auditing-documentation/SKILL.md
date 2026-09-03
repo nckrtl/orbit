@@ -30,7 +30,7 @@ The reference for a page is the code and tests on the current branch. Inside the
 
 ## Fix or report
 
-Fix a finding when the correct statement is derivable from code, tests, or an accepted ADR, following `writing-documentation`. Report a finding, without fixing it, when the right statement needs a product decision, when it is outside the scope, or when it needs an ADR. A reported finding names its owner: a Linear issue the caller creates through `creating-issues`, an ADR through `recording-decisions`, or a product decision for the repository owner.
+Fix a finding when the correct statement is derivable from code, tests, or an accepted ADR, following `writing-documentation`. Report a finding, without fixing it, when the right statement needs a product decision, when it is outside the scope, or when it needs an ADR. A reported finding names its owner: a Linear issue, an ADR through `recording-decisions`, or a product decision for the repository owner. A caller that may change Linear creates the issue through `creating-issues` at once; the planner may not, so it lists the finding in the plan's Documentation section, the implementer carries it into the pull request body, and `creating-issues` creates the issue from the merged pull request body.
 
 Report in this shape:
 

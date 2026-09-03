@@ -89,6 +89,7 @@ it('keeps planning, plan review, and development independently invokable', funct
         ->toContain('rather than against code that does not exist yet')
         ->toContain('where a component is one of the five Composer projects')
         ->toContain('`bin/e2e-*` counts as `apps/e2e`')
+        ->toContain('which are not harness code')
         ->toContain('returns to `Backlog` with a `Readiness` section through `creating-issues`')
         ->not->toContain('same reviewer')
         ->not->toContain('one correction')
@@ -103,6 +104,7 @@ it('keeps planning, plan review, and development independently invokable', funct
         ->toContain('carry the audit\'s `Fixed` and `Reported` lists into the pull request body')
         ->toContain('recorded under `## Deviations` in the plan and in the pull request body')
         ->toContain('The body opens with `Issue: <ID>`')
+        ->toContain('every reported finding from either audit with its owner')
         ->toContain('Include current `origin/main` before pushing')
         ->not->toContain('retained Builder')
         ->not->toContain('plan `PASS`');
@@ -230,6 +232,7 @@ it('keeps decision records templated and linted', function () use ($read, $root)
         ->toContain('## Reference')
         ->toContain('A non-zero exit means the index matched nothing')
         ->toContain('names its owner')
+        ->toContain('creates the issue from the merged pull request body')
         ->toContain('## Documentation audit');
     expect(file_exists($root.'/docs/decisions/TEMPLATE.md'))->toBeFalse();
 });
