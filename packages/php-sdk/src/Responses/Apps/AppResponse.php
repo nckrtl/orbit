@@ -39,7 +39,7 @@ final readonly class AppResponse
             repositoryUrl: is_string($data['repository_url'] ?? null)
                 ? $redactor->redactText($data['repository_url'])
                 : '',
-            mainBranch: ! is_string($data['main_branch'] ?? null) ? null : $data['main_branch'],
+            mainBranch: is_string($data['main_branch'] ?? null) ? $data['main_branch'] : null,
             root: is_string($data['root'] ?? null) ? $data['root'] : null,
             defaults: $defaults === null ? null : $redactor->redactTransportArray($defaults),
             requestId: $requestId,
