@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Clusters;
 
 use App\Data\Clusters\UpdateClusterData;
+use App\Domain\Clusters\ActiveTldScopeGuard;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -13,6 +14,10 @@ use Illuminate\Support\Facades\DB;
 
 final readonly class UpdateClusterAction
 {
+    public function __construct(
+        private ActiveTldScopeGuard $tldScope,
+    ) {}
+
     public function execute(Cluster $cluster, UpdateClusterData $data): Cluster
     {
         /**
@@ -21,8 +26,12 @@ final readonly class UpdateClusterAction
          */
         $updated = DB::transaction(function () use ($cluster, $data): Cluster {
             $locked = Cluster::query()->lockForUpdate()->findOrFail($cluster->id);
+            $proposedTld = $data->tldProvided ? $data->tld : $locked->tld;
+            $proposedState = $data->state ?? $locked->state;
 
-            if ($data->state === ClusterState::Active && $locked->state !== ClusterState::Active) {
+            $this->tldScope->assertClusterTldAvailable($locked, $proposedTld, $proposedState);
+
+            if ($proposedState === ClusterState::Active && $proposedTld !== null) {
                 $hasActiveRouter = $locked
                     ->routerAssignment()
                     ->whereHas('node', static fn ($query) => $query->where('status', LifecycleStatus::Active))

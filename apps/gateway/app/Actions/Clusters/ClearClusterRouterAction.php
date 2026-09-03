@@ -22,10 +22,10 @@ final readonly class ClearClusterRouterAction
         $updated = DB::transaction(function () use ($cluster): Cluster {
             $lockedCluster = Cluster::query()->lockForUpdate()->findOrFail($cluster->id);
 
-            if ($lockedCluster->state === ClusterState::Active) {
+            if ($lockedCluster->state === ClusterState::Active && $lockedCluster->tld !== null) {
                 throw new ResourceOperationException(
                     errorCode: 'cluster.active_router_required',
-                    message: 'Deactivate the Cluster before clearing its Router.',
+                    message: 'Deactivate the TLD-bearing Cluster or remove its TLD before clearing its Router.',
                     status: 409,
                 );
             }

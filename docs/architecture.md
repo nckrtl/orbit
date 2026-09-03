@@ -20,8 +20,10 @@ Human or AI agent
   Managed Nodes
 ```
 
-Web traffic follows a separate path. It passes through the Router and, for
-public sites, the Ingress before reaching the Node that runs the application.
+Web traffic follows a separate path. Standalone traffic reaches its Node
+directly. Traffic for an active Cluster with a TLD passes through the Router
+and, for public sites, the Ingress before reaching the Node that runs the
+application.
 
 ## CLI
 
@@ -43,8 +45,9 @@ needed to apply those settings.
 
 ## Nodes and roles
 
-A Node is a machine connected to Orbit. A Node can have one or more roles. For
-example, an `app-dev` Node runs development applications, while a Router sends
+A Node is a machine connected to Orbit. It can remain standalone or belong to
+one optional Cluster, and it can have one or more roles. For example, an
+`app-dev` Node runs development applications, while a Router sends clustered
 traffic to the right application.
 
 The Gateway manages Nodes over SSH. After setup, WireGuard provides the private
@@ -53,22 +56,28 @@ by each Node's assigned roles.
 
 ## Applications and traffic
 
-Orbit groups related Nodes and applications in a Cluster. An App represents an
-application and its shared settings. An AppInstance represents one place where
-that App is developed or runs in production. A Route connects a hostname to an
-AppInstance.
+Orbit can group related Nodes in a Cluster, but a Cluster is not required. An
+App represents an application and its shared settings. An AppInstance belongs
+to that App and one Node, where it is developed or runs in production. A Route
+connects a hostname to an AppInstance.
 
-A Cluster has one Router for private traffic. Public traffic first reaches the
-Ingress, which accepts the connection and forwards it to the Router. Caddy on
-the Node then sends the request to the application. You can read more about
-this design in
+A Node keeps its own optional TLD when it joins a Cluster. Direct Node routing
+remains authoritative while the Cluster is inactive or has no TLD. When the
+Cluster is active and has a TLD, that TLD takes precedence over its members'
+Node TLDs and requires one active Router. A TLD-less active Cluster adds no
+Router hop. Public clustered traffic first reaches the Ingress, which forwards
+it to the Router; Caddy on the workload Node then sends the request to the
+application. You can read more about this design in
 [ADR 0009](decisions/0009-clustered-app-instance-routing.md) and
-[ADR 0011](decisions/0011-clustered-production-ingress-and-app-prod-placement.md).
+[ADR 0011](decisions/0011-clustered-production-ingress-and-app-prod-placement.md),
+as superseded and extended by
+[ADR 0017](decisions/0017-optional-cluster-placement-and-tld-precedence.md).
 
-These application and routing features are still being built. Some APIs still
-use the older Instance and Workspace names, and not every AppInstance, Route,
-or Ingress feature is available yet. Check the code before using these newer
-features.
+These application and routing features are still being built. Cluster
+activation and TLD ownership already enforce the control-plane rules above,
+but AppInstance, Route, DNS cutover, and Ingress work is not complete. Some APIs
+still use the older Instance and Workspace names. Check the code before using
+these newer features.
 
 ## Doctor
 
