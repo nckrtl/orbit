@@ -11,6 +11,33 @@ return [
         'librarian.core_docs_structure',
     ],
 
+    // Prose rules that do not apply to accepted decision records numbered
+    // below decision_records.from_number, because those records are immutable.
+    'legacy_decision_rules' => [
+        'librarian.requirement_smell',
+        'librarian.sentence_case_heading',
+        'librarian.document_complexity',
+        'librarian.bullet_complexity',
+        'librarian.long_section_structure',
+        'librarian.section_opener_prose',
+        'librarian.compound_noun_stack',
+        'librarian.table_prose_complexity',
+    ],
+
+    // Change narration is rejected in every maintained page outside
+    // docs/decisions. A page states current behavior; history lives in ADRs.
+    'narrative_phrases' => [
+        'deprecated',
+        'historical',
+        'historically',
+        'no longer',
+        'previously',
+        'formerly',
+        'retired',
+        'pre-rename',
+        'transitional',
+    ],
+
     // Architecture decision records numbered at or above `from_number` must
     // follow the template in .agents/skills/recording-decisions/template.md and
     // avoid the blocked phrases. Earlier accepted records are immutable and

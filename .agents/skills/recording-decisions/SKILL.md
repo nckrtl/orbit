@@ -28,7 +28,7 @@ Stop when the request contains more than one independent decision, when the deci
 
 ## Verify
 
-Run `composer docs:lint` from `apps/docs`. The rules `orbit.adr_structure` and `orbit.adr_language` reject a record with missing or reordered sections, a malformed Status line, an unknown component, or a blocked phrase. Fix every finding before presenting the draft. The blocked phrase list lives in `apps/docs/config/orbit-docs.php`.
+Run `composer docs-lint` from the repository root. The rules `orbit.adr_structure` and `orbit.adr_language` reject a record with missing or reordered sections, a malformed Status line, an unknown component, or a blocked phrase. Fix every finding before presenting the draft. The blocked phrase list lives in `apps/docs/config/orbit-docs.php`.
 
 ## Accept and commit
 

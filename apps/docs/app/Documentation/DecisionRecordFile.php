@@ -91,21 +91,6 @@ final readonly class DecisionRecordFile
      */
     public function proseLines(): array
     {
-        $lines = [];
-        $inFence = false;
-
-        foreach ($this->lines as $index => $line) {
-            if (preg_match('/^\s*```/', $line) === 1) {
-                $inFence = ! $inFence;
-
-                continue;
-            }
-
-            if (! $inFence) {
-                $lines[$index + 1] = $line;
-            }
-        }
-
-        return $lines;
+        return MarkdownProse::lines(implode("\n", $this->lines));
     }
 }

@@ -21,8 +21,10 @@ The skills under `.agents/skills/` are standalone task guides. A contributor may
 invoke any one directly; no private orchestration order is implied.
 
 - `recording-decisions` — draft, lint, and accept one architecture decision record.
+- `writing-documentation` — write or change one maintained page under `docs/`.
+- `auditing-documentation` — find and fix documentation drift for one issue, or for the whole corpus on request.
 - `creating-issues` — refine a request into a current, verifiable Linear contract.
-- `planning-features` — prepare or correct a concise Feature plan.
+- `planning-features` — audit and write the issue's documentation, then prepare or correct a concise Feature plan.
 - `reviewing-feature-plans` — independently review a Feature plan.
 - `developing-features` — implement and prove one issue.
 - `reviewing-pull-requests` — independently review one pushed head and inspect

@@ -9,6 +9,7 @@ use App\Documentation\DocumentationLintPolicy;
 use App\Documentation\DocumentationRepository;
 use App\Librarian\Rules\DecisionRecordLanguageRule;
 use App\Librarian\Rules\DecisionRecordStructureRule;
+use App\Librarian\Rules\DocumentationNarrativeRule;
 use HardImpact\Librarian\Docs\MarkdownSnapshot;
 use Illuminate\Support\ServiceProvider;
 use LogicException;
@@ -18,23 +19,16 @@ final class AppServiceProvider extends ServiceProvider
     #[\Override]
     public function register(): void
     {
-        $this->app->singleton(DocumentationLintPolicy::class, function (): DocumentationLintPolicy {
-            $ignoredRules = config('orbit-docs.ignored_librarian_rules', []);
-            if (! is_array($ignoredRules)) {
-                throw new LogicException('Ignored Librarian rules must be configured as an array.');
-            }
+        $this->app->singleton(DocumentationLintPolicy::class, fn (): DocumentationLintPolicy => new DocumentationLintPolicy(
+            $this->stringList('orbit-docs.ignored_librarian_rules'),
+            $this->stringList('orbit-docs.legacy_decision_rules'),
+            $this->decisionRecordInteger('from_number'),
+        ));
 
-            $rules = [];
-            foreach ($ignoredRules as $rule) {
-                if (! is_string($rule)) {
-                    throw new LogicException('Ignored Librarian rule names must be strings.');
-                }
-
-                $rules[] = $rule;
-            }
-
-            return new DocumentationLintPolicy($rules);
-        });
+        $this->app->singleton(DocumentationNarrativeRule::class, fn (): DocumentationNarrativeRule => new DocumentationNarrativeRule(
+            $this->app->make(MarkdownSnapshot::class),
+            new BlockedPhrases($this->stringList('orbit-docs.narrative_phrases')),
+        ));
 
         $this->app->singleton(DecisionRecordStructureRule::class, fn (): DecisionRecordStructureRule => new DecisionRecordStructureRule(
             $this->app->make(MarkdownSnapshot::class),
@@ -42,23 +36,9 @@ final class AppServiceProvider extends ServiceProvider
             $this->configuredComponents(),
         ));
 
-        $this->app->singleton(BlockedPhrases::class, function (): BlockedPhrases {
-            $phrases = config('orbit-docs.decision_records.blocked_phrases', []);
-            if (! is_array($phrases)) {
-                throw new LogicException('Blocked phrases must be configured as an array.');
-            }
-
-            $blocked = [];
-            foreach ($phrases as $phrase) {
-                if (! is_string($phrase)) {
-                    throw new LogicException('Blocked phrases must be strings.');
-                }
-
-                $blocked[] = $phrase;
-            }
-
-            return new BlockedPhrases($blocked);
-        });
+        $this->app->singleton(BlockedPhrases::class, fn (): BlockedPhrases => new BlockedPhrases(
+            $this->stringList('orbit-docs.decision_records.blocked_phrases'),
+        ));
 
         $this->app->singleton(DecisionRecordLanguageRule::class, fn (): DecisionRecordLanguageRule => new DecisionRecordLanguageRule(
             $this->app->make(MarkdownSnapshot::class),
@@ -80,21 +60,27 @@ final class AppServiceProvider extends ServiceProvider
     /** @return list<string> */
     private function configuredComponents(): array
     {
-        $configuredComponents = config('orbit-docs.components', []);
-        if (! is_array($configuredComponents)) {
-            throw new LogicException('Orbit documentation components must be configured as an array.');
+        return $this->stringList('orbit-docs.components');
+    }
+
+    /** @return list<string> */
+    private function stringList(string $key): array
+    {
+        $values = config($key, []);
+        if (! is_array($values)) {
+            throw new LogicException("The {$key} value must be configured as an array.");
         }
 
-        $components = [];
-        foreach ($configuredComponents as $component) {
-            if (! is_string($component) || $component === '') {
-                throw new LogicException('Orbit documentation components must be non-empty strings.');
+        $strings = [];
+        foreach ($values as $value) {
+            if (! is_string($value) || $value === '') {
+                throw new LogicException("The {$key} entries must be non-empty strings.");
             }
 
-            $components[] = $component;
+            $strings[] = $value;
         }
 
-        return $components;
+        return $strings;
     }
 
     private function decisionRecordInteger(string $key): int

@@ -58,6 +58,9 @@ it('keeps planning, plan review, and development independently invokable', funct
         ->toContain('Review verdict: PENDING')
         ->toContain('one row per `Acceptance` item')
         ->toContain('every attached ADR `Decision` bullet the change touches')
+        ->toContain('## Write the documentation')
+        ->toContain('run `auditing-documentation` in its default issue scope')
+        ->toContain('following `writing-documentation`')
         ->toContain('Do not create slice files')
         ->not->toContain('retained Builder')
         ->not->toContain('second non-`PASS`');
@@ -73,6 +76,8 @@ it('keeps planning, plan review, and development independently invokable', funct
         ->toContain('smallest safe recommended')
         ->toContain('Never approve a')
         ->toContain('every boundary is inside a component the issue is labeled with')
+        ->toContain('the diff under `docs/`')
+        ->toContain('pass `composer docs-lint`')
         ->not->toContain('same reviewer')
         ->not->toContain('one correction')
         ->not->toContain('second non-`PASS`');
@@ -82,6 +87,7 @@ it('keeps planning, plan review, and development independently invokable', funct
         ->toContain('One issue per worktree')
         ->toContain('Discovery and proof use separate topologies')
         ->toContain('lists every `Acceptance` item in the issue\'s order')
+        ->toContain('Preflight already wrote the documentation')
         ->not->toContain('retained Builder')
         ->not->toContain('plan `PASS`');
 
@@ -163,7 +169,7 @@ it('keeps decision records templated and linted', function () use ($read, $root)
     $template = $read('.agents/skills/recording-decisions/template.md');
 
     expect($skill)
-        ->toContain('composer docs:lint')
+        ->toContain('composer docs-lint')
         ->toContain('orbit.adr_structure')
         ->toContain('orbit.adr_language')
         ->toContain('Accepted records are immutable');
@@ -180,7 +186,26 @@ it('keeps decision records templated and linted', function () use ($read, $root)
         expect($template)->toContain($needle);
     }
 
-    expect($read('AGENTS.md'))->toContain('`recording-decisions`');
+    expect($read('AGENTS.md'))
+        ->toContain('`recording-decisions`')
+        ->toContain('`writing-documentation`')
+        ->toContain('`auditing-documentation`');
+
+    $writing = $read('.agents/skills/writing-documentation/SKILL.md');
+    $auditing = $read('.agents/skills/auditing-documentation/SKILL.md');
+
+    expect($writing)
+        ->toContain('## Authority')
+        ->toContain('| Kind | Lives in | Holds | Never holds |')
+        ->toContain('never a product fact')
+        ->toContain('composer docs-lint');
+
+    expect($auditing)
+        ->toContain('The default scope is one issue')
+        ->toContain('composer docs-context')
+        ->toContain('The whole corpus is the scope only when the caller asks for it')
+        ->toContain('A finding outside the scope is recorded, never fixed in passing')
+        ->toContain('## Documentation audit');
     expect(file_exists($root.'/docs/decisions/TEMPLATE.md'))->toBeFalse();
 });
 
