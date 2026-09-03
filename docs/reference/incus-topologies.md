@@ -402,19 +402,34 @@ Known prepared-state limits (first observed on 2026-08-30, NCK-58):
   `node:role:add --converge` for every app role. The legacy `instances` branch
   then runs `instance:php` for every Instance, with development Instances last
   because the app-dev runtime converger publishes the Gateway DNS records for
-  every active site. The typed `app_instances` branch validates the persisted
-  source-ready `e2e-dev` item for the separate `laravel-typed` App instead. The
-  App uses `https://github.com/laravel/laravel.git`, an explicit `public` root,
-  and the repository's remote default branch. A legacy `laravel` App may keep
-  nullable `main_branch` and `root` values during this transition. Typed
-  convergence does not change that App or its legacy Instance and Workspace
-  records. This branch is source-only. It never runs `instance:php`, creates a
+  every active site. The typed `app_instances` branch performs no Cluster or
+  runtime mutation during `reproject`; it validates the persisted source-ready
+  `e2e-dev` item for the separate `laravel-typed` App.
+- During `converge-sample-app.sh create-resources`, the typed
+  `app_instances` branch validates the Node and AppInstance collection
+  envelopes, then reads the current Cluster collection and converges the
+  deterministic
+  `e2e-development` Cluster: create it with a null TLD when absent, attach the
+  selected active app-dev Node, set that Node as Router, and activate the
+  Cluster, in that order. After any Cluster mutation it re-reads `node:list`
+  and `cluster:list`; an already settled Cluster is accepted from the initial
+  reads without duplicate mutations or read-back calls. The accepted state
+  contains one matching active Cluster whose only member and Router are the
+  selected Node, and the Cluster ID equals the Node's `cluster_id`. Only then
+  does the branch read the App collection, validate the existing typed App and
+  AppInstance identities, and create either resource when missing. Conflicts
+  fail before App or AppInstance mutation. The App uses
+  `https://github.com/laravel/laravel.git`, an explicit `public` root, and the
+  repository's remote default branch. A legacy `laravel` App may keep nullable
+  `main_branch` and `root` values during this transition. Typed convergence
+  does not change that App or its legacy Instance and Workspace records. This
+  AppInstance branch is source-only: it never runs `instance:php`, creates a
   Workspace, or prepares an app-prod site. It hydrates and verifies only the
   typed item's recorded `checkout_path`.
-  The prepared-state allowlist tracks the App, legacy Instance, typed item,
-  Node, and legacy Workspace command closure used by these two deterministic
-  branches. A change in either branch therefore invalidates the promoted
-  generation. Before legacy re-projection,
+  The prepared-state allowlist tracks the Cluster, App, legacy Instance, typed
+  item, Node, and legacy Workspace command closure used by these two
+  deterministic branches. A change in either branch therefore invalidates the
+  promoted generation. Before legacy re-projection,
   `converge-sample-app.sh internal-tls` on `app-prod` places the e2e
   `local_certs` global block as
   `fragments/00-orbit-e2e-global.caddy` inside the managed Caddy version
@@ -611,3 +626,9 @@ the issue contract must name the additional focused lifecycle checks. The
 successful proof must still be immutable and promotable before closeout. Orbit
 does not create a validation clone, a second persistent snapshot, or a generic
 nested lifecycle run.
+
+For ORB-98, focused fixtures are the complete evidence for deterministic
+Cluster convergence in the typed `app_instances` branch, including retries,
+idempotence, final Node and Cluster read-back, and refusal paths. Current-main
+product output uses the legacy `instances` shape, so a topology proof does not
+execute the typed branch and must not be presented as evidence for it.

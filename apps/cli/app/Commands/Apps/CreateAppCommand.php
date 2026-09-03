@@ -18,6 +18,8 @@ final class CreateAppCommand extends GatewayCommand
         {slug : Unique app slug}
         {repository : Git repository URL}
         {--name= : Optional display name}
+        {--main-branch= : Stored main branch; resolve the remote default when omitted}
+        {--root=public : Relative web root}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -59,12 +61,20 @@ final class CreateAppCommand extends GatewayCommand
             return self::FAILURE;
         }
 
+        $root = $this->stringOption('root');
+
+        if ($root === null) {
+            return $this->renderGatewayFailure('app.root_required', 'App root is required.');
+        }
+
         $app = $this->send(
             $connector,
             new CreateAppRequest(
                 slug: $slug,
                 repositoryUrl: $repositoryUrl,
+                root: $root,
                 name: $this->stringOption('name'),
+                mainBranch: $this->stringOption('main-branch'),
             ),
             AppResponse::class,
         );

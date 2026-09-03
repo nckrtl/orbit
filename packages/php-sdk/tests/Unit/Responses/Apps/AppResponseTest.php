@@ -11,6 +11,8 @@ describe(AppResponse::class, function (): void {
             'name' => 'Orbit Docs',
             'slug' => 'orbit-docs',
             'repository_url' => 'git@github.com:nckrtl/orbit-docs.git',
+            'main_branch' => 'main',
+            'root' => 'public',
             'defaults' => ['php_version' => '8.5'],
         ], '0198e15c-bf97-7c23-8f1f-61b8fe67a844');
 
@@ -19,6 +21,8 @@ describe(AppResponse::class, function (): void {
             'name' => 'Orbit Docs',
             'slug' => 'orbit-docs',
             'repository_url' => 'git@github.com:nckrtl/orbit-docs.git',
+            'main_branch' => 'main',
+            'root' => 'public',
             'defaults' => ['php_version' => '8.5'],
             'request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844',
         ]);
@@ -27,6 +31,11 @@ describe(AppResponse::class, function (): void {
     it('normalizes invalid optional defaults to null', function (): void {
         $response = AppResponse::fromGatewayData(['defaults' => 'invalid'], 'request-id');
 
-        expect($response->defaults)->toBeNull();
+        expect($response->mainBranch)
+            ->toBeNull()
+            ->and($response->root)
+            ->toBeNull()
+            ->and($response->defaults)
+            ->toBeNull();
     });
 });

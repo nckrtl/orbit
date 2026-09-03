@@ -18,12 +18,18 @@ final class CreateAppRequest extends GatewayRequest implements HasBody
     #[\Override]
     protected Method $method = Method::POST;
 
-    /** @param array<array-key, mixed>|null $defaults */
+    /**
+     * @param array<array-key, mixed>|null $defaults
+     *
+     * @mago-expect lint:excessive-parameter-list The request transports the complete bounded App creation contract.
+     */
     public function __construct(
         private readonly string $slug,
         #[\SensitiveParameter]
         private readonly string $repositoryUrl,
+        private readonly string $root,
         private readonly ?string $name = null,
+        private readonly ?string $mainBranch = null,
         #[\SensitiveParameter]
         private readonly ?array $defaults = null,
     ) {}
@@ -49,6 +55,8 @@ final class CreateAppRequest extends GatewayRequest implements HasBody
                 'name' => $this->name,
                 'slug' => $this->slug,
                 'repository_url' => $this->repositoryUrl,
+                'main_branch' => $this->mainBranch,
+                'root' => $this->root,
                 'defaults' => $this->defaults,
             ],
             static fn (mixed $value): bool => $value !== null,

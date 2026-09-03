@@ -59,6 +59,7 @@ use App\Domain\Nodes\NodeRoleToolIntentGuard;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\Storage\NodeStorageRootPreparer;
 use App\Domain\Processes\ProcessRuntimeManager;
+use App\Domain\SourceControl\RepositoryDefaultBranchResolver;
 use App\Domain\Tools\ToolInspector;
 use App\Domain\Tools\ToolManagerMaterializer;
 use App\Domain\Tools\ToolManagerRegistry;
@@ -130,6 +131,7 @@ use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Processes\RemoteProcessRuntimeManager;
+use App\Infrastructure\SourceControl\NativeRepositoryDefaultBranchResolver;
 use App\Infrastructure\Ssh\GatewaySshKeys;
 use App\Infrastructure\Ssh\HostKeyScanner;
 use App\Infrastructure\Ssh\KnownHostsRepository;
@@ -202,6 +204,7 @@ final class AppServiceProvider extends ServiceProvider
         NodeRoleFirewallManager::class => NativeNodeRoleFirewallManager::class,
         RoleBaselineConverger::class => NativeRoleBaselineConverger::class,
         ProcessRuntimeManager::class => RemoteProcessRuntimeManager::class,
+        RepositoryDefaultBranchResolver::class => NativeRepositoryDefaultBranchResolver::class,
         ProcessRunner::class => NativeProcessRunner::class,
         SshExecutor::class => NativeSshExecutor::class,
         PrivateDnsManager::class => DnsmasqPrivateDnsManager::class,
