@@ -63,6 +63,7 @@ it('keeps planning, plan review, and development independently invokable', funct
         ->toContain('run `auditing-documentation` in its default issue scope')
         ->toContain('following `writing-documentation`')
         ->toContain('the reference is the issue and its ADRs, not the code')
+        ->toContain('neither is a code boundary or a component')
         ->toContain('whose message starts with `docs:`')
         ->toContain('the issue is not `Todo`')
         ->toContain('does not follow the `creating-issues` template')
@@ -84,6 +85,7 @@ it('keeps planning, plan review, and development independently invokable', funct
         ->toContain('the diff under `docs/`')
         ->toContain('pass `composer docs-lint`')
         ->toContain('rather than against code that does not exist yet')
+        ->toContain('where pages under `docs/` and files under `proofs/` are not components')
         ->toContain('returns to `Backlog` with a `Readiness` section through `creating-issues`')
         ->not->toContain('same reviewer')
         ->not->toContain('one correction')
@@ -171,7 +173,7 @@ it('keeps issue creation current, atomic, and proof feasible', function () use (
         )->toContain('`apps/e2e`')->toContain('relation graph is explicit and acyclic')->toContain(
             'compatibility bridge',
         )->toContain('composer issue:lint')->toContain(
-            'return the issue to `Backlog` and write the `Readiness` section',
+            'return a conflicting or incomplete issue to `Backlog` and write the `Readiness` section',
         )->toContain('only the last is an action in `proofs/<ISSUE>.json`');
 
     expect($read('.agents/skills/creating-issues/template.md'))
