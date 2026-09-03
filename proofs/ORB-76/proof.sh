@@ -8,7 +8,11 @@ apps_root=/home/orbit/orb76-apps
 next_apps_root=/home/orbit/orb76-apps-next
 app_dev_address=10.44.0.2
 origin="https://${app_dev_address}:9443/origin.git"
+baseline_apps=/tmp/orb76-baseline-apps.json
+baseline_clusters=/tmp/orb76-baseline-clusters.json
 baseline_instances=/tmp/orb76-baseline-app-instances.json
+baseline_nodes=/tmp/orb76-baseline-nodes.json
+baseline_apps_path=/tmp/orb76-baseline-apps-path
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
@@ -150,7 +154,7 @@ case "$criterion" in
     fail 'app-dev source fixture did not start'
     ;;
   setup-gateway)
-    rm -f -- "$baseline_instances"
+    rm -f -- "$baseline_apps" "$baseline_clusters" "$baseline_instances" "$baseline_nodes" "$baseline_apps_path"
     app_dev=$(node_id app-dev)
     orbit firewall:allow orb76-source --node="$app_dev" --from=10.44.0.1 --protocol=tcp --port=9443 --json >/dev/null
     curl --silent --show-error --insecure --fail "https://${app_dev_address}:9443/server.crt" -o /tmp/orb76-source.crt
@@ -162,7 +166,12 @@ case "$criterion" in
     app_dev=$(node_id app-dev)
     for _ in $(seq 1 30); do curl --silent --show-error --insecure --fail "$origin/HEAD" >/dev/null && break; sleep 1; done
     curl --silent --show-error --insecure --fail "$origin/HEAD" >/dev/null
+    orbit app:list --json | json_get apps > "$baseline_apps"
+    orbit cluster:list --json | json_get clusters > "$baseline_clusters"
     orbit instance:list --json | json_get app_instances > "$baseline_instances"
+    orbit node:list --json | json_get nodes > "$baseline_nodes"
+    orbit node:list --json | json_find nodes name app-dev settings | json_get apps.path > "$baseline_apps_path"
+    [[ "$(cat "$baseline_apps_path")" == /* ]] || fail 'baseline apps path is invalid'
 
     orbit node:settings app-dev --setting="apps.path:$apps_root" --json >/dev/null
     legacy_app=$(app_id laravel)
@@ -211,6 +220,7 @@ case "$criterion" in
     [[ "$(echo "$baseline_cluster" | json_get state)" == active ]] || fail 'baseline Cluster state changed'
     [[ "$(echo "$baseline_cluster" | json_get tld)" == null ]] || fail 'baseline Cluster TLD changed'
     [[ "$(echo "$baseline_cluster" | json_get router.id)" == "$app_dev" ]] || fail 'baseline Cluster Router was not restored'
+    [[ "$(orbit cluster:list --json | json_get clusters)" == "$(cat "$baseline_clusters")" ]] || fail 'ORB-76 changed baseline Clusters'
 
     retry=$(orbit instance:new "$orbit_app" "$app_dev" tld-member --root=web --json)
     [[ "$(echo "$retry" | json_get id)" == "$(echo "$tld" | json_get id)" ]] || fail 'retry created a second AppInstance'
@@ -288,17 +298,28 @@ case "$criterion" in
     orbit instance:remove "$dirty" --discard-source --json >/dev/null
     orbit instance:remove "$advanced" --discard-source --json >/dev/null
     orbit firewall:remove orb76-source --node="$app_dev" --json >/dev/null
-    [[ -f "$baseline_instances" ]] || fail 'baseline AppInstance snapshot is missing'
+    orbit node:settings app-dev --setting="apps.path:$(cat "$baseline_apps_path")" --json >/dev/null
+    orbit app:remove "$(app_id orb76)" --json >/dev/null
+    sudo rm -f -- /usr/local/share/ca-certificates/orb76-source.crt /tmp/orb76-source.crt
+    sudo update-ca-certificates >/dev/null
+    [[ -f "$baseline_apps" && -f "$baseline_instances" && -f "$baseline_nodes" ]] || fail 'baseline Gateway snapshot is missing'
+    [[ "$(orbit app:list --json | json_get apps)" == "$(cat "$baseline_apps")" ]] || fail 'ORB-76 changed baseline Apps'
     [[ "$(orbit instance:list --json | json_get app_instances)" == "$(cat "$baseline_instances")" ]] || fail 'ORB-76 removal changed baseline AppInstances or left owned AppInstances listed'
+    [[ "$(orbit node:list --json | json_get nodes)" == "$(cat "$baseline_nodes")" ]] || fail 'ORB-76 changed baseline Nodes'
+    rm -f -- "$baseline_apps" "$baseline_clusters" "$baseline_instances" "$baseline_nodes" "$baseline_apps_path"
     echo 'criterion 5 removal: safe clean, dirty, and unpublished removal passed'
     ;;
   06)
     for path in "$apps_root/orb76/e2e-dev" "$apps_root/orb76/inactive-member" \
       "$apps_root/orb76/tldless-member" "$apps_root/orb76/tld-member" "$next_apps_root/orb76/later"; do
-      [[ ! -e "$path" ]] || fail "removed checkout remains: $path"
+    [[ ! -e "$path" ]] || fail "removed checkout remains: $path"
     done
     [[ -f "$apps_root/unrelated/sentinel" ]] || fail 'unrelated source was removed'
     [[ "$(cat "$apps_root/unrelated/sentinel")" == preserve ]] || fail 'unrelated source changed'
+    if [[ -f "$fixture/server.pid" ]]; then kill "$(cat "$fixture/server.pid")" 2>/dev/null || true; fi
+    sudo rm -f -- /usr/local/share/ca-certificates/orb76-source.crt
+    sudo update-ca-certificates >/dev/null
+    rm -rf -- "$fixture" "$apps_root" "$next_apps_root"
     echo 'criterion 6: only exact recorded checkouts were removed'
     ;;
   *) fail "unknown ORB-76 proof criterion [$criterion]" ;;

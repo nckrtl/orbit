@@ -264,6 +264,30 @@ it('does not let discard remove a checkout with shared Git administration', func
         ->toBeTrue();
 });
 
+it('refuses grouping-directory ownership drift before deleting the checkout', function (): void {
+    $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
+    $this->source->prepare($instance, false);
+    $resolution = $this->source->resolve($instance);
+    $instance->update([
+        'branch' => $resolution->branch,
+        'starting_commit' => $resolution->startingCommit,
+        'status' => AppInstanceState::Active,
+    ]);
+    $groups = posix_getgroups();
+    $alternateGroup = is_array($groups)
+        ? collect($groups)->first(static fn (int $group): bool => $group !== posix_getegid())
+        : null;
+
+    if (! is_int($alternateGroup)) {
+        $this->markTestSkipped('The ownership-ordering test requires a supplementary group.');
+    }
+
+    expect(chgrp(dirname($instance->checkout_path), $alternateGroup))->toBeTrue();
+
+    expect(fn () => $this->source->remove($instance, true))->toThrow(RuntimeConvergenceException::class);
+    expect(is_dir($instance->checkout_path))->toBeTrue();
+});
+
 it('refuses a recorded path that is outside the exact App and instance identity', function (): void {
     $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
     $instance->update(['checkout_path' => $this->sandbox.'/unrelated']);

@@ -114,6 +114,8 @@ final readonly class NativeInstanceStateInspector implements InstanceStateInspec
                 test -d "$checkout/.git"
                 test ! -L "$checkout/.git"
                 test "$(git -C "$checkout" rev-parse --show-toplevel)" = "$checkout"
+                test "$(git -C "$checkout" rev-parse --absolute-git-dir)" = "$checkout/.git"
+                test "$(git -C "$checkout" rev-parse --path-format=absolute --git-common-dir)" = "$checkout/.git"
             }
             origin_matches() {
                 repository_independent

@@ -17,8 +17,8 @@ New Apps require a repository URL and a normalized relative web root. The
 app:new command accepts an optional main branch:
 
     orbit app:new \
-      --slug=acme \
-      --repository-url=git@github.com:acme/site.git \
+      acme \
+      git@github.com:acme/site.git \
       --main-branch=main \
       --root=public
 
@@ -79,12 +79,12 @@ path, an out-of-root path, the wrong owner, or invalid Git metadata.
 
 Remove clean, published source with:
 
-    orbit instance:remove --instance=<id>
+    orbit instance:remove <id>
 
 Use destructive source discard only when you intend to lose dirty or
 unpublished work:
 
-    orbit instance:remove --instance=<id> --discard-source
+    orbit instance:remove <id> --discard-source
 
 The discard-source option waives only the dirty-source and unpublished-commit
 checks. It does not waive origin, symlink, canonical-path, containment,

@@ -62,6 +62,5 @@
             "argv": ["bash", "/var/lib/orbit-e2e/proof/proof.sh", "06"],
             "timeout_seconds": 60
         }
-    ],
-    "mutates": true
+    ]
 }

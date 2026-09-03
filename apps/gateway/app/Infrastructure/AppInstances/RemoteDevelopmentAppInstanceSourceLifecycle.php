@@ -202,12 +202,12 @@ final readonly class RemoteDevelopmentAppInstanceSourceLifecycle implements Deve
                         fi
                     fi
 
+                    test -d "$grouping_directory"
+                    test ! -L "$grouping_directory"
+                    test "$(realpath -e "$grouping_directory")" = "$grouping_directory"
+                    test "$(stat -c '%U:%G' "$grouping_directory")" = "$managed_user:$managed_group"
                     rm -rf -- "$checkout"
-                    if [ -d "$grouping_directory" ] && [ ! -L "$grouping_directory" ]; then
-                        test "$(realpath -e "$grouping_directory")" = "$grouping_directory"
-                        test "$(stat -c '%U:%G' "$grouping_directory")" = "$managed_user:$managed_group"
-                        rmdir --ignore-fail-on-non-empty -- "$grouping_directory"
-                    fi
+                    rmdir --ignore-fail-on-non-empty -- "$grouping_directory"
                     BASH,
             ),
             step: 'app-instance-source-remove',

@@ -26,6 +26,7 @@ use App\Infrastructure\Doctor\NativeInstanceStateInspector;
 use App\Infrastructure\Doctor\NativeWorkspaceStateInspector;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Ssh\HostKey;
@@ -38,6 +39,8 @@ use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Workspace;
+use Illuminate\Filesystem\Filesystem;
+use Illuminate\Support\Str;
 use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Symfony\Component\Process\Process;
 use Tests\Support\AppDevFakeSshExecutor;
@@ -217,6 +220,56 @@ it('maps each AppInstance source observation without retaining diagnostics', fun
     'source identity mismatch' => ["1\n1\n1\n0\n", new InstanceInspectionData(true, true, true, false)],
 ]);
 
+it('reports shared AppInstance Git administration as non-independent', function (): void {
+    $node = application_inspector_node();
+    $appInstance = application_app_instance(application_inspector_app(), $node);
+    $ssh = new AppDevFakeSshExecutor([app_inspector_result("1\n1\n1\n1\n")]);
+    application_instance_inspector($ssh)->inspect($appInstance);
+    $sandbox = sys_get_temp_dir().'/orbit-doctor-instance-'.Str::uuid();
+    $checkout = "{$sandbox}/apps/acme/development";
+    $sharedGitDirectory = "{$sandbox}/shared.git";
+    $files = new Filesystem;
+    $files->makeDirectory(dirname($checkout), 0o755, true);
+    application_run(['git', 'init', '--initial-branch=development', $checkout]);
+    application_run(['git', '-C', $checkout, 'config', 'user.name', 'Orbit Test']);
+    application_run(['git', '-C', $checkout, 'config', 'user.email', 'orbit@example.test']);
+    file_put_contents("{$checkout}/README.md", "managed\n");
+    application_run(['git', '-C', $checkout, 'add', 'README.md']);
+    application_run(['git', '-C', $checkout, 'commit', '-m', 'Managed']);
+    application_run(['git', '-C', $checkout, 'remote', 'add', 'origin', 'https://github.com/acme/project.git']);
+    $startingCommit = trim(application_run(['git', '-C', $checkout, 'rev-parse', 'HEAD'])->stdout);
+    $files->copyDirectory("{$checkout}/.git", $sharedGitDirectory);
+    file_put_contents("{$checkout}/.git/commondir", "{$sharedGitDirectory}\n");
+    $identity = posix_getpwuid(posix_geteuid());
+    $groupIdentity = posix_getgrgid(posix_getegid());
+    $user = is_array($identity) && is_string($identity['name'] ?? null) ? $identity['name'] : 'orbit';
+    $group = is_array($groupIdentity) && is_string($groupIdentity['name'] ?? null)
+        ? $groupIdentity['name']
+        : $user;
+
+    try {
+        $result = application_run(
+            [
+                'bash',
+                '-seu',
+                '--',
+                'https://github.com/acme/project.git',
+                $checkout,
+                "{$sandbox}/apps",
+                $user,
+                $group,
+                'development',
+                $startingCommit,
+            ],
+            $ssh->commands[0]->input,
+        );
+
+        expect($result->stdout)->toBe("1\n0\n1\n1\n");
+    } finally {
+        $files->deleteDirectory($sandbox);
+    }
+});
+
 it('observes every workspace projection in one bounded remote tuple and local DNS check', function (): void {
     [, $node, $instance, $workspace] = application_inspector_models();
     $ssh = new AppDevFakeSshExecutor([app_inspector_result("1\n1\n1\n1\n1\n1\n1\n")]);
@@ -376,6 +429,15 @@ function application_timeout(string $sentinel): ProcessTimedOutException
         new Process(['bash', '-c', $sentinel])->setTimeout(30),
         ProcessTimedOutException::TYPE_GENERAL,
     );
+}
+
+/** @param non-empty-list<string> $arguments */
+function application_run(array $arguments, ?string $input = null): CommandResult
+{
+    $result = new NativeProcessRunner()->run(new ProcessInvocation($arguments, input: $input));
+    expect($result->succeeded())->toBeTrue($result->stderr);
+
+    return $result;
 }
 
 function application_capture_exception(Closure $operation): DoctorInspectionException
