@@ -16,6 +16,11 @@ the exact candidate commit from Git. ADR 0006 also supersedes the
 ADR 0002 boundary that the last paragraph of the Decision section preserves.
 The decision below uses the current topology snapshot terminology.
 
+Corrected on 2026-09-03 to match the harness: the feature-network hash covers
+the issue ID and the attempt ID. The original text named the issue ID alone,
+which would place the discovery and proof topologies of one issue on the same
+bridge.
+
 ## Context
 
 Orbit benefits from a repeatable, live-like venue for feature experiments and
@@ -45,11 +50,13 @@ namespaces are distinct from Orbit-old resources. The canonical topology
 snapshot identities are
 `orbit-e2e-topology-snapshot-gateway`, `orbit-e2e-topology-snapshot-app-dev`, and
 `orbit-e2e-topology-snapshot-app-prod`, on network `oe-topo-snap`. Feature
-networks use `oe-<issue-hash>`, where `<issue-hash>` is the first 12 lowercase
-hexadecimal characters of the issue ID's SHA-256 digest. This keeps every
-managed bridge within Linux's 15-character interface-name limit while readable
-VM names retain the full issue ID. The issue identity and node role also derive
-deterministic MAC, IPv4, and machine identities. Isolated networks let
+networks use `oe-<hash>`, where `<hash>` is the first 12 lowercase hexadecimal
+characters of the SHA-256 digest of the issue ID and the attempt ID joined by a
+colon. Deriving the name from both keeps the discovery and proof topologies of
+one issue on separate bridges. This keeps every managed bridge within Linux's
+15-character interface-name limit while readable VM names retain the full issue
+ID. The issue identity and node role also derive deterministic MAC, IPv4, and
+machine identities. Isolated networks let
 concurrent topologies reuse role-local conventions without a conflict. Each
 generation uses coordinated snapshots named `main-<generation-id>` on all
 three VMs.
