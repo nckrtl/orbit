@@ -5,6 +5,6 @@
 ## Proof
 
 <!-- One of:
-Proved with `proofs/<ISSUE>.json` at `<sha>`.
+Proved with `.loop/proof/<ISSUE>.json` at `<sha>`.
 Automated tests only.
 -->

@@ -109,7 +109,7 @@ Completed during planning preflight:
 
 ## Deviations
 
-- none.
+- `apps/e2e/tests/Feature/Configuration/AgentRoleContractTest.php` spells the retired issue-workspace path as the split expression `'$worktree/.or'.'bit/plan.md'`. This test-only AC7 self-reference technique lets the contract assert that `bin/worktree-create` does not emit the old form without causing the repository's own literal old-form scan to match the assertion; no product or contributor contract consumes the split spelling.
 
 ## Review findings
 
