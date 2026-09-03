@@ -22,7 +22,7 @@ Stop, and report the gap instead of planning around it, when:
 - the issue does not follow the `creating-issues` template; it is refined through `creating-issues` first;
 - an attached ADR's Status is not `Accepted on`, or an attached ADR contradicts the issue;
 - an `Acceptance` item has no proof action the current machinery can run;
-- an `In` bullet needs a component the issue is not labeled with;
+- an `In` bullet needs a component the issue is not labeled with, where a path outside every component, such as `bin/`, `.agents/`, `AGENTS.md`, `README.md`, the root `composer.json`, or `.github/`, needs no label and is bounded by `Scope`, and `bin/e2e-*` counts as `apps/e2e`;
 - the outcome changes documented behavior and the issue has no `docs` label; report it for relabeling; or
 - a page cannot be written without guessing product behavior.
 
@@ -37,7 +37,7 @@ Fill every section of `.orbit/plan.md` without copying the issue into it:
 - **Outcome:** the issue's outcome in one sentence.
 - **Code boundaries:** for each `In` bullet, the files or directories that change. For each `Out` bullet, the exclusion that keeps it unchanged. Pages under `docs/` belong to the Documentation section and `proofs/<ISSUE>.json` to the acceptance map; neither is a code boundary or a component.
 - **Documentation:** the pages under `docs/` this task changed and what each now states, plus every audit finding it reported instead of fixing, each with its owner. When the label is absent and no drift was found, `none: <why the outcome changes no documented behavior>`. When the label is present and the pages already state the outcome, say so; that is not a stop, and the label is corrected through `creating-issues` afterwards.
-- **Acceptance map:** one row per `Acceptance` item, in the issue's order, mapped to its code boundary and the exact focused proof: a test file, a command, or an Incus proof action.
+- **Acceptance map:** one row per `Acceptance` item, in the issue's order, mapped to its code boundary, or to the page from the Documentation section when documentation is what the item delivers, and the exact focused proof: a test file, a command, or an Incus proof action.
 - **Implementation order:** the smallest coherent ordered changes.
 - **Must preserve:** every attached ADR `Decision` bullet the change touches, plus the existing tests and invariants that protect adjacent behavior.
 - **Open questions:** facts the implementer cannot verify from the repository. A product decision is not an open question; it is a stop.
@@ -50,4 +50,4 @@ When given review findings, change only the plan content and the pages the findi
 
 ## Verify
 
-The plan is complete when every `Acceptance` item has a row, every row names a boundary and a runnable proof, every `Out` bullet has an exclusion, the Documentation section lists every changed page and every reported finding with its owner, every change under `docs/` is committed, `composer docs-lint` passes, `Must preserve` names the touched ADR bullets, and no open question hides a product decision.
+The plan is complete when every `Acceptance` item has a row, every row names a boundary or a page and a runnable proof, every `Out` bullet has an exclusion, the Documentation section lists every changed page and every reported finding with its owner, every change under `docs/` is committed, `composer docs-lint` passes, `Must preserve` names the touched ADR bullets, and no open question hides a product decision.

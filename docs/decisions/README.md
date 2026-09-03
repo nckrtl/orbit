@@ -21,7 +21,7 @@ An approved ADR does not intrinsically need a Linear issue or pull request. It
 may be committed directly to `main` only when:
 
 - the user approved the exact final text;
-- the commit contains only the approved ADR;
+- the commit contains only the approved ADR and the regenerated `docs/generated/context.json`;
 - local `main` matches the current remote base; and
 - no unrelated work is included, modified, stashed, reset, or discarded.
 

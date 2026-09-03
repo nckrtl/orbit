@@ -64,6 +64,8 @@ it('keeps planning, plan review, and development independently invokable', funct
         ->toContain('following `writing-documentation`')
         ->toContain('the reference is the issue and its ADRs, not the code')
         ->toContain('neither is a code boundary or a component')
+        ->toContain('or to the page from the Documentation section')
+        ->toContain('needs no label and is bounded by `Scope`')
         ->toContain('whose message starts with `docs:`')
         ->toContain('the issue is not `Todo`')
         ->toContain('does not follow the `creating-issues` template')
@@ -85,7 +87,8 @@ it('keeps planning, plan review, and development independently invokable', funct
         ->toContain('the diff under `docs/`')
         ->toContain('pass `composer docs-lint`')
         ->toContain('rather than against code that does not exist yet')
-        ->toContain('where pages under `docs/` and files under `proofs/` are not components')
+        ->toContain('where a component is one of the five Composer projects')
+        ->toContain('`bin/e2e-*` counts as `apps/e2e`')
         ->toContain('returns to `Backlog` with a `Readiness` section through `creating-issues`')
         ->not->toContain('same reviewer')
         ->not->toContain('one correction')
@@ -117,7 +120,7 @@ it('keeps implementation guidance on Orbit code and proof', function () use ($re
         'bin/e2e-topology prove <ISSUE>',
         'shell --proof',
         'action must exit `0`',
-        'Product feature branches never touch `apps/e2e` or `bin/e2e-*`.',
+        'Product feature branches never touch harness code as defined above.',
         'Discovery and proof use separate topologies',
     ] as $needle) {
         expect($skill)->toContain($needle);
@@ -190,7 +193,8 @@ it('keeps decision records templated and linted', function () use ($read, $root)
         ->toContain('composer docs-lint')
         ->toContain('orbit.adr_structure')
         ->toContain('orbit.adr_language')
-        ->toContain('Accepted records are immutable');
+        ->toContain('Accepted records are immutable')
+        ->toContain('commit `docs/generated/context.json` with the record');
 
     foreach ([
         '## Status',
@@ -241,7 +245,7 @@ it('keeps repository guidance and agent manifests current', function () use ($re
     expect($agents)->not->toContain('reconciling-feature-blocks');
     expect($agents)->not->toContain('Builder');
     expect($agents)->not->toContain('after plan approval');
-    expect($agents)->toContain('Product feature branches never modify the harness');
+    expect($agents)->toContain('Product feature branches never modify the harness')->toContain('are not harness code');
     expect($agents)->toContain('A proved topology is immutable evidence');
     expect($agents)->toContain('Production release is separate from development proof');
 

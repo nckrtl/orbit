@@ -24,7 +24,7 @@ Copy `template.md` beside this skill into the description. Everything else is a 
 | Fact | Where it lives |
 |---|---|
 | Type | exactly one of the `Feature`, `Improvement`, or `Bug` labels |
-| Components | one label per affected component: `apps/cli`, `apps/docs`, `apps/e2e`, `apps/gateway`, `packages/php-sdk`; none when only pages under `docs/` change |
+| Components | one label per affected component, where a component is one of the five Composer projects: `apps/cli`, `apps/docs`, `apps/e2e`, `apps/gateway`, `packages/php-sdk`; `bin/e2e-*` counts as `apps/e2e`; no component label when only pages under `docs/` or paths outside every component change, such as `bin/`, `.agents/`, `AGENTS.md`, `README.md`, the root `composer.json`, or `.github/` |
 | Real-machine proof | the `proof:incus` label |
 | Documentation impact | the `docs` label when maintained documentation under `docs/` changes |
 | Governing ADRs | one link attachment per ADR, using its canonical `docs/decisions/` URL on `origin/main` |
@@ -65,7 +65,7 @@ Use `Backlog` while the contract is incomplete. Use `Todo` only when every gover
 
 A `Todo` issue may be `blocked by` unfinished work; the relation carries that fact. When the prerequisite becomes `Done`, re-read current `origin/main` and revalidate before it is claimed.
 
-An existing issue in an earlier description shape is rewritten to `template.md` with this skill before it is planned. When a plan review returns `BLOCK`, a planner or implementer reports a stop, or `recording-decisions` hands over an accepted ADR that intersects the issue, revalidate the contract against current `origin/main`: return a conflicting or incomplete issue to `Backlog` and write the `Readiness` section that names the gap, and cancel obsolete work only with the repository owner's explicit authority. The issue comes back to `Todo` only through the rules above.
+An existing issue in an earlier description shape is rewritten to `template.md` with this skill before it is planned. When a plan review returns `BLOCK`, a planner or implementer reports a stop, or `recording-decisions` hands over an accepted ADR that intersects the issue, revalidate the contract against current `origin/main`: return a conflicting or incomplete issue to `Backlog` and write the `Readiness` section that names the gap, and cancel obsolete work only with the repository owner's explicit authority. Correct a label the plan's Documentation section or a pull request body reports as wrong. The issue comes back to `Todo` only through the rules above.
 
 ## Complete-set feasibility
 

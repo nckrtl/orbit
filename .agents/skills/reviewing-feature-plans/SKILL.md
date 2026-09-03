@@ -15,8 +15,8 @@ Read the same sources the planner had: the issue with its labels, attachments, a
 
 ## Check
 
-- **Coverage:** every `Acceptance` item has one row, in order, with a concrete boundary and a proof that exists and can run today.
-- **Labels:** every boundary is inside a component the issue is labeled with, where pages under `docs/` and files under `proofs/` are not components. A boundary in an unlabeled component is a finding, not a silent expansion.
+- **Coverage:** every `Acceptance` item has one row, in order, with a concrete boundary, or the page from the Documentation section when documentation is what the item delivers, and a proof that exists and can run today.
+- **Labels:** every boundary is inside a component the issue is labeled with, where a component is one of the five Composer projects, pages under `docs/` and files under `proofs/` are not components, a path outside every component, such as `bin/`, `.agents/`, `AGENTS.md`, `README.md`, the root `composer.json`, or `.github/`, needs no label and is bounded by `Scope`, and `bin/e2e-*` counts as `apps/e2e`. A boundary in an unlabeled component is a finding, not a silent expansion.
 - **Exclusions:** every `Out` bullet has an exclusion, and no boundary or order step crosses one.
 - **Documentation:** the changed pages state the behavior the `Acceptance` items deliver, judged against the issue and its ADRs rather than against code that does not exist yet; they follow `writing-documentation`, restate no ADR bullet, and pass `composer docs-lint`; every change under `docs/` is committed; the audit in the issue's scope found no drift that is neither fixed nor reported with an owner; pages written for the outcome exist when the `docs` label is present unless the Documentation section states the pages already describe the outcome, which is accepted as written, and every other changed page is a drift fix the audit found.
 - **ADRs:** `Must preserve` names every attached ADR `Decision` bullet the boundaries touch, and no step contradicts one.

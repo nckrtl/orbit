@@ -11,7 +11,7 @@ Find where maintained pages under `docs/` disagree with current code, tests, acc
 
 The default scope is one issue. Run `composer docs-context -- --component=<label> --concept=<term>` from the repository root with every component label of the issue and every `concepts.md` term its outcome and `Scope` bullets name, and audit only the pages it returns plus the pages the issue's `docs` label requires you to write. A non-zero exit means the index matched nothing; then the scope is only the pages the `docs` label requires and the `concepts.md` entries for the issue's terms.
 
-The whole corpus is the scope only when the caller asks for it, with a phrase such as "audit all documentation". Then audit every page under `docs/` except `decisions/` and `generated/`, in the authority order from `writing-documentation`. Fixes from a whole-corpus audit ship through a `docs`-labeled `Improvement` issue with no component label, whose one `Acceptance` item is the audit report with `Proof: composer docs-lint`.
+The whole corpus is the scope only when the caller asks for it, with a phrase such as "audit all documentation". Then audit every page under `docs/` except `decisions/` and `generated/`, in the authority order from `writing-documentation`. Fixes from a whole-corpus audit ship through a `docs`-labeled `Improvement` issue with no component label, whose one `Acceptance` item is the audit report with `Proof: composer docs-lint`. Create that issue and its worktree first and run the audit there, committing the fixes as `docs:` commits on its branch, so the fixes are the issue's own change.
 
 A finding outside the scope is recorded, never fixed in passing.
 
