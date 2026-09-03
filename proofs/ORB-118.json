@@ -1,0 +1,14 @@
+{
+    "setup": [],
+    "acceptance": [
+        {
+            "id": "host-instance-readiness-window",
+            "node": "app-dev",
+            "argv": [
+                "bash",
+                "/var/lib/orbit-e2e/proof/host-instance-readiness-window.sh"
+            ],
+            "timeout_seconds": 120
+        }
+    ]
+}

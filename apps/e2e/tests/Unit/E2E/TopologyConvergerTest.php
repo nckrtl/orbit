@@ -461,7 +461,7 @@ describe('TopologyConverger', function () {
             );
     });
 
-    it('retries transient instance API readiness before invoking each hydration exactly once', function (bool $typed): void {
+    it('survives six transient instance API readiness failures before invoking each hydration exactly once', function (bool $typed): void {
         $recorded = [];
         $readinessAttempts = 0;
         Process::fake(function (PendingProcess $process) use (&$recorded, &$readinessAttempts, $typed): ProcessResult {
@@ -472,7 +472,7 @@ describe('TopologyConverger', function () {
                 && in_array('instance-api-readiness', $command, true)
             ) {
                 $readinessAttempts++;
-                if ($readinessAttempts === 1) {
+                if ($readinessAttempts <= 6) {
                     $recorded[] = $command;
 
                     return Process::result('', 'Gateway unavailable.', 1);
@@ -508,7 +508,7 @@ describe('TopologyConverger', function () {
                 'internal-tls' => $typed ? null : 1,
                 'reproject' => 1,
                 'metrics-publication' => 1,
-                'instance-api-readiness' => 2,
+                'instance-api-readiness' => 7,
                 'hydrate' => $typed ? 1 : 2,
             ],
             is_int(...),
@@ -524,6 +524,13 @@ describe('TopologyConverger', function () {
             })
             ->values();
 
+        expect(
+            $actions
+                ->slice(-($typed ? 8 : 9), 7)
+                ->values()
+                ->all(),
+        )
+            ->toBe(array_fill(0, 7, 'instance-api-readiness'));
         expect($actions->search('hydrate', strict: true))
             ->toBeGreaterThan($actions->search('instance-api-readiness', strict: true));
     })->with([
@@ -559,8 +566,8 @@ describe('TopologyConverger', function () {
             ->toThrow(
                 RuntimeException::class,
                 'Guest convergence readiness action converge-sample-app.sh instance-api-readiness failed '
-                .'on orbit-e2e-nck-123-aaaaaaaa-app-dev after 5 attempts; probe instance:list --json failed '
-                ."on attempt 5 with exit code {$exitCode}.",
+                .'on orbit-e2e-nck-123-aaaaaaaa-app-dev after 30 attempts; probe instance:list --json failed '
+                ."on attempt 30 with exit code {$exitCode}.",
             );
 
         expect(collect($recorded)->filter(
@@ -569,7 +576,7 @@ describe('TopologyConverger', function () {
                 && in_array('instance-api-readiness', $command, true)
             ),
         ))
-            ->toHaveCount(5)
+            ->toHaveCount(30)
             ->and(collect($recorded)->filter(
                 fn (array $command): bool => (
                     in_array('/usr/local/bin/converge-sample-app.sh', $command, true)
