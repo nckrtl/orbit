@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
+use App\E2E\ColdTopologyConstructor;
 use App\E2E\DiscoveryGuestPreparer;
 use App\E2E\Git\GitRepository;
 use App\E2E\GuestTransport;
@@ -144,6 +145,14 @@ final class AppServiceProvider extends ServiceProvider
             $app->make(IncusHost::class),
             (int) $app->make(Repository::class)->get('e2e.incus.max_vms', 24),
         ));
+        $this->app->singleton(ColdTopologyConstructor::class, fn (Application $app): ColdTopologyConstructor => new ColdTopologyConstructor(
+            $app->make(IncusHost::class),
+            $app->make(IncusNetworkLifecycle::class),
+            $app->make(WorktreeSynchronizer::class),
+            $app->make(TopologyConverger::class),
+            $app->make(HostCapacity::class),
+            $app->make(StatePaths::class),
+        ));
         $this->app->singleton(TopologySnapshotManifestStore::class, fn (Application $app): TopologySnapshotManifestStore => new TopologySnapshotManifestStore(
             $app->make(AtomicJsonStore::class),
             $app->make(StatePaths::class),
@@ -205,11 +214,7 @@ final class AppServiceProvider extends ServiceProvider
         ));
 
         $this->app->singleton(TopologySnapshotBuilder::class, fn (Application $app): TopologySnapshotBuilder => new TopologySnapshotBuilder(
-            $app->make(IncusHost::class),
-            $app->make(IncusNetworkLifecycle::class),
-            $app->make(WorktreeSynchronizer::class),
-            $app->make(TopologyConverger::class),
-            $app->make(TopologyVerifier::class),
+            $app->make(ColdTopologyConstructor::class),
             $app->make(TopologySnapshotManifestStore::class),
             $app->make(AtomicJsonStore::class),
             $repositoryRoot,

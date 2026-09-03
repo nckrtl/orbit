@@ -99,19 +99,33 @@ final readonly class TopologyVerifier
         VerificationMode $mode,
         SourceState $source,
         ?TopologyEndState $endState = null,
-        array $requiredAssignments = TopologyProfile::ASSIGNMENTS,
+        ?array $requiredAssignments = null,
     ): VerificationReport {
         $declared = $endState ?? TopologyEndState::complete();
-        $assignments = array_intersect_key($requiredAssignments, array_flip($declared->nodes));
-        if (array_keys($assignments) !== $declared->nodes) {
+        $requiredAssignments ??= $target->recipe->assignments();
+        $declaredNodes = array_map(
+            fn (string $role): string => $target->recipe->nodeForRole($role)->key,
+            $declared->nodes,
+        );
+        $assignmentNodes = $endState === null ? $target->recipe->nodeKeys() : $declaredNodes;
+        $assignments = array_intersect_key($requiredAssignments, array_flip($assignmentNodes));
+        if (array_keys($assignments) !== $assignmentNodes) {
             throw new InvalidArgumentException('The required topology assignment map is incomplete.');
         }
+        $peerNodes = array_map(
+            fn (string $role): string => $target->recipe->nodeForRole($role)->key,
+            $declared->peers(),
+        );
         $probes = self::probesFor($declared);
         $instances = [];
         foreach (TopologyProfile::ROLES as $role) {
             $instances[$role] = $target->instance($role);
         }
-        $this->host->assertTopologyNetworkIdentity($instances, $target->network());
+        $inventory = [];
+        foreach ($target->recipe->nodeKeys() as $node) {
+            $inventory[$node] = $target->instance($node);
+        }
+        $this->host->assertTopologyNetworkIdentity($inventory, $target->network(), $target, requireRunning: true);
         $typedCheckoutPath = $this->typedCheckoutPath($instances['app-dev']);
         if ($typedCheckoutPath !== null) {
             unset($probes['role.app-prod'], $probes['workspace.app-dev'], $probes['laravel.prod']);
@@ -141,8 +155,7 @@ final readonly class TopologyVerifier
                     $target->instance($role),
                 ];
                 if ($name === 'wireguard.reachability') {
-                    // The registry names the nodes by role; a declared-absent node is not among them.
-                    array_push($arguments, ...$declared->peers());
+                    array_push($arguments, ...$peerNodes);
                 } elseif (in_array($name, ['role.assignments', 'metrics.publication'], true)) {
                     $arguments[] = base64_encode(json_encode($assignments, JSON_THROW_ON_ERROR));
                 } elseif ($name === 'source.manifest') {

@@ -1369,7 +1369,7 @@ describe('convergence guest scripts', function () {
         }
     });
 
-    it('proves the base control-plane role assignments and accepts active extras', function () {
+    it('proves physical Node role assignments, roleless absence, and active extra roles', function () {
         $root = temporaryPath('orbit-verifier-roles-', 4);
         mkdir("{$root}/bin", 0o700, true);
         try {
@@ -1378,7 +1378,7 @@ describe('convergence guest scripts', function () {
             $pdo->exec('CREATE TABLE nodes (id INTEGER PRIMARY KEY, name TEXT, status TEXT)');
             $pdo->exec('CREATE TABLE node_roles (node_id INTEGER, role TEXT, status TEXT)');
             $pdo->exec(
-                "INSERT INTO nodes VALUES (1, 'gateway', 'active'), (2, 'app-dev', 'active'), "
+                "INSERT INTO nodes VALUES (1, 'gateway', 'active'), (2, 'operator', 'active'), "
                 ."(3, 'app-prod', 'active')",
             );
             $pdo->exec(
@@ -1401,7 +1401,12 @@ describe('convergence guest scripts', function () {
                 'proof',
                 str_repeat('a', 40),
                 'orbit-e2e-topology-snapshot-gateway',
-                base64_encode(json_encode(\App\E2E\Value\TopologyProfile::ASSIGNMENTS, JSON_THROW_ON_ERROR)),
+                base64_encode(json_encode([
+                    'gateway' => ['gateway', 'vpn'],
+                    'operator' => ['app-dev', 'metrics'],
+                    'app-prod' => ['app-prod'],
+                    'extra' => [],
+                ], JSON_THROW_ON_ERROR)),
             ];
             $environment = ['PATH' => "{$root}/bin:".getenv('PATH')];
 
@@ -1416,10 +1421,20 @@ describe('convergence guest scripts', function () {
                     'probe' => 'role.assignments',
                     'passed' => true,
                     'identity' => str_repeat('a', 40),
-                    'expected' => 'gateway:gateway+vpn,app-dev:app-dev+metrics,app-prod:app-prod:active',
-                    'observed' => 'gateway:gateway+vpn,app-dev:app-dev+metrics,app-prod:app-prod:active',
+                    'expected' => 'gateway:gateway+vpn,operator:app-dev+metrics,app-prod:app-prod,extra:none:active',
+                    'observed' => 'gateway:gateway+vpn,operator:app-dev+metrics,app-prod:app-prod,extra:none:active',
                     'evidence_ref' => 'incus://orbit-e2e-topology-snapshot-gateway/role.assignments',
                 ]);
+
+            // A declared roleless physical Node must remain absent from Gateway.
+            $pdo->exec("INSERT INTO nodes VALUES (4, 'extra', 'active')");
+            expect(new Process($command, env: $environment)->run())->not->toBe(0);
+            $pdo->exec("DELETE FROM nodes WHERE name = 'extra'");
+
+            // An undeclared Node is not valid evidence for the declared inventory.
+            $pdo->exec("INSERT INTO nodes VALUES (4, 'intruder', 'active')");
+            expect(new Process($command, env: $environment)->run())->not->toBe(0);
+            $pdo->exec("DELETE FROM nodes WHERE name = 'intruder'");
 
             $pdo->exec("UPDATE node_roles SET status = 'failed' WHERE role = 'app-dev'");
             expect(new Process($command, env: $environment)->run())->not->toBe(0);
@@ -1435,7 +1450,7 @@ describe('convergence guest scripts', function () {
             );
             expect($withExtra)->toMatchArray([
                 'passed' => true,
-                'observed' => 'gateway:gateway+vpn,app-dev:app-dev+metrics,app-prod:app-prod:active+app-dev:proof-role',
+                'observed' => 'gateway:gateway+vpn,operator:app-dev+metrics,app-prod:app-prod,extra:none:active+operator:proof-role',
             ]);
 
             // An extra that is not active fails, and so does a missing base assignment.
@@ -2784,7 +2799,11 @@ describe('convergence guest scripts', function () {
         chmod("{$root}/orbit", 0o700);
 
         foreach (['absent', 'active', 'failed'] as $mode) {
-            expect(new Process(['bash', "{$root}/converge.sh", 'metrics'], env: ['METRICS_MODE' => $mode])->run())
+            expect(
+                new Process(['bash', "{$root}/converge.sh", 'metrics', 'app-dev'], env: [
+                    'METRICS_MODE' => $mode,
+                ])->run(),
+            )
                 ->toBe(0);
         }
         expect(file("{$root}/commands-absent", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES))
@@ -2795,7 +2814,11 @@ describe('convergence guest scripts', function () {
             ->toBe(['metrics:status --json', 'node:role:add 2 metrics --converge --json']);
 
         foreach (['wrong', 'provisioning'] as $mode) {
-            expect(new Process(['bash', "{$root}/converge.sh", 'metrics'], env: ['METRICS_MODE' => $mode])->run())
+            expect(
+                new Process(['bash', "{$root}/converge.sh", 'metrics', 'app-dev'], env: [
+                    'METRICS_MODE' => $mode,
+                ])->run(),
+            )
                 ->not
                 ->toBe(0);
         }
@@ -2845,7 +2868,7 @@ describe('convergence guest scripts', function () {
         foreach (['active', 'active', 'absent'] as $mode) {
             expect(
                 new Process(
-                    ['bash', "{$root}/converge.sh", 'metrics-publication'],
+                    ['bash', "{$root}/converge.sh", 'metrics-publication', 'app-dev'],
                     env: ['METRICS_MODE' => $mode],
                 )->run(),
             )
@@ -2873,7 +2896,7 @@ describe('convergence guest scripts', function () {
         ] as $mode) {
             expect(
                 new Process(
-                    ['bash', "{$root}/converge.sh", 'metrics-publication'],
+                    ['bash', "{$root}/converge.sh", 'metrics-publication', 'app-dev'],
                     env: ['METRICS_MODE' => $mode],
                 )->run(),
             )
@@ -2886,6 +2909,7 @@ describe('convergence guest scripts', function () {
                 'bash',
                 "{$root}/converge.sh",
                 'metrics-publication',
+                'app-dev',
                 'extra',
             ], env: ['METRICS_MODE' => 'active'])->run(),
         )
