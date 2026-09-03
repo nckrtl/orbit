@@ -47,6 +47,8 @@ The Incus harness runs the same repair through root `incus exec`
 
 ## Failure codes
 
+Each failure names the step that stopped and what the node record looks like afterwards.
+
 | Code | Step | Node record |
 | --- | --- | --- |
 | `node.public_ssh_host_invalid`, `node.public_ssh_port_invalid` | `validation` | unchanged |
