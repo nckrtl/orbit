@@ -1,6 +1,6 @@
 # PHP runtime defaults
 
-Orbit provisions PHP-FPM from the pinned Sury apt source and fronts every site with Caddy over a unix socket. This page records the runtime defaults Orbit publishes for the `app-dev` and `app-prod` roles and why they differ. It also states the deploy contract that production code caching relies on.
+Orbit provisions PHP-FPM from the pinned Sury apt source and fronts every site with Caddy over a unix socket. This page records the runtime defaults Orbit publishes for the `app-dev` and `app-prod` roles and why they differ. Every production deploy must end with `systemctl reload php<version>-fpm`; the [production deploy contract](#production-deploy-contract) below states why. [ADR 0021](../decisions/0021-pin-sury-php-fpm-with-opcache-profiles-per-role.md) records why these defaults were chosen and the alternatives that were measured and rejected.
 
 ## Where each setting lives
 
@@ -62,7 +62,7 @@ Laravel's `php artisan optimize` (config, route, event, and view caches) remains
 
 ## Process management
 
-Both roles use `pm = ondemand` with a 10 second idle timeout and `pm.max_requests = 500`. OPcache lives in the master, so a worker spawned after an idle period reuses the warm cache. The cold-request cost measured below is within run-to-run noise, while each idle worker would hold its own resident memory. Keep `ondemand` unless a node is dedicated to one busy site.
+Both roles use `pm = ondemand` with a 10 second idle timeout and `pm.max_requests = 500`. OPcache lives in the master, so a worker spawned after an idle period reuses the warm cache. The measured cold-request cost is within run-to-run noise, while each idle worker would hold its own resident memory. Keep `ondemand` unless a node is dedicated to one busy site.
 
 ## Caddy
 
@@ -77,36 +77,6 @@ header @vite Cache-Control "public, max-age=31536000, immutable"
 ```
 
 Laravel's Vite plugin fingerprints every file under `public/build/assets`, so browsers can keep them for a year. The `file` matcher limits the header to assets that exist on disk. A request for a removed fingerprint falls through to Laravel's front controller without the header, so a 404 is never cached as immutable. Development sites do not set caching headers. `php_fastcgi`, `encode zstd gzip`, and `file_server` keep Caddy defaults; `try_files` already matches Laravel's front controller order.
-
-## Measurements (2026-08-30)
-
-All numbers come from the registered two vCPU `app-dev` and `app-prod` nodes serving the `laravel/laravel` welcome page with `wrk` on the node itself. The runtime was PHP 8.5.9 from Sury with four static workers and warmed config, route, and view caches. Single-connection p50 isolates the PHP engine; the c=4 figures include SQLite session contention.
-
-| Variant | p50 (c=1) | req/s (c=1) | req/s (c=4) |
-| --- | --- | --- | --- |
-| Sury, production policy (validate off, JIT off) | 7.1–7.7 ms | 125–135 | 191–198 |
-| Sury, development policy (revalidate every request) | 8.4–9.1 ms | 105–115 | 175–186 |
-| Sury, tracing JIT with 64 MB buffer | 7.3–7.5 ms | 122–133 | 171–192 |
-| static-php.dev 8.5.9 `bulk` (musl) php-fpm, production policy | 8.1–9.0 ms | 105–117 | 177–183 |
-| Sury, OPcache disabled | 90 ms | 11 | 21 |
-
-Conclusions that shaped the defaults:
-
-- Revalidating on every request costs about 1.5 ms per request on a warm cache; disabling OPcache costs about 80 ms. The development policy keeps OPcache on.
-- The tracing JIT is throughput-neutral for a Laravel HTTP request, so it stays off.
-
-### Comparison results
-
-These results compare the adopted defaults with the alternatives that were measured.
-
-- A static-php.dev build is not faster. The `gnu-bulk` (glibc) prebuilt crashed with `SIGILL` on the AMD EPYC VPS.
-- The musl `bulk` build ran 10 to 15 percent slower than Sury's package and lacks `pdo_sqlite` and `pdo_pgsql`.
-- Building custom bundles would also mean owning PHP and library security updates, so Orbit stays on Sury.
-- Through Caddy over the public address the change is throughput-neutral, at about 158 req/s with ten connections before and after.
-- The gain is capacity and defined cache semantics. The engine default of 10000 accelerated files overflows with two Laravel checkouts, and production code is cached until reload instead of re-checked every two seconds.
-- `pm = ondemand` cold requests after the ten second idle timeout measured 45 to 54 ms against 42 to 53 ms warm. That is within run-to-run noise, because OPcache lives in the master.
-- Caddy 2.11.4 from the official release archive and Ubuntu's 2.6.2 package served the same PHP-FPM socket at the same rate.
-- Both reached about 180 to 190 req/s at four connections and about 14k req/s for a static file, so the Caddy package source is not a performance lever.
 
 ## Verification
 
