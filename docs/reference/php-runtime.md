@@ -94,9 +94,10 @@ Conclusions that shaped the defaults:
 
 - Revalidating on every request costs about 1.5 ms per request on a warm cache; disabling OPcache costs about 80 ms. The development policy keeps OPcache on.
 - The tracing JIT is throughput-neutral for a Laravel HTTP request, so it stays off.
-### Rejected variants
 
-These variants were measured and not adopted.
+### Comparison results
+
+These results compare the adopted defaults with the alternatives that were measured.
 
 - A static-php.dev build is not faster. The `gnu-bulk` (glibc) prebuilt crashed with `SIGILL` on the AMD EPYC VPS.
 - The musl `bulk` build ran 10 to 15 percent slower than Sury's package and lacks `pdo_sqlite` and `pdo_pgsql`.

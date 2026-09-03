@@ -5,7 +5,7 @@ package keeps its own dependencies, tests, and Composer lock file.
 
 ## PHP applications
 
-Every project requires PHP 8.5 and uses Composer 2. Each project's `composer.json` pins its own framework, so that file is the source for the version in use.
+Every project requires PHP 8.5 and uses Composer. Each project's `composer.json` pins its own framework, so that file is the source for the version in use.
 
 - `apps/gateway` is a Laravel 13 application.
 - `apps/cli` uses Laravel Zero 13.
@@ -15,10 +15,7 @@ Every project requires PHP 8.5 and uses Composer 2. Each project's `composer.jso
 
 ## Managed machines
 
-Orbit manages Ubuntu Nodes. It installs PHP from the Sury packages and manages
-services with systemd. The [PHP runtime defaults](reference/php-runtime.md)
-page lists the settings Orbit publishes on those machines, and the Gateway's
-package manager for remote PHP names the versions it installs.
+Orbit manages Ubuntu Nodes. It installs PHP from the Sury apt source that `apps/gateway/app/Infrastructure/Nodes/RemotePhpPackageManager.php` pins and manages services with systemd. The [PHP runtime defaults](reference/php-runtime.md) page lists the settings Orbit publishes on those machines.
 
 Caddy handles HTTP and HTTPS traffic. WireGuard provides the private network
 between Nodes. Orbit runs these services directly instead of putting everything

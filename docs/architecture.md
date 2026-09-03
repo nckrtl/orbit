@@ -56,10 +56,7 @@ by each Node's assigned roles.
 
 ## Applications and traffic
 
-An
-App represents an application and its shared settings. An AppInstance belongs
-to that App and one Node, where it is developed or runs in production. A Route
-connects a hostname to an AppInstance.
+An App represents an application and its shared settings. An AppInstance belongs to that App and one Node, where it is developed or runs in production. A Route connects a hostname to an AppInstance.
 
 A Node keeps its own optional TLD when it joins a Cluster. Direct Node routing
 remains authoritative while the Cluster is inactive or has no TLD. When the

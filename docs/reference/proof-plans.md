@@ -16,7 +16,7 @@ A plan is one JSON object at `proofs/<ISSUE>.json` in the worktree, or at the re
 | `inputs` | list of paths | Files or directories that actions read outside the runtime policy and the fixtures | None |
 | `observed_inputs` | boolean | Collect file-level PHP observations with PCOV during setup and acceptance | `false` |
 
-`ends_with.nodes` must name `gateway`, must not repeat a role, and implies `mutates: true`. The harness skips only the probes that run on a declared-absent Node. The fleet probes expect exactly the declared set, so `role.assignments` fails when a declared-absent Node is registered. The normalized plan has a SHA-256 fingerprint, recorded as `plan_sha256`.
+`ends_with.nodes` must name `gateway` and must not repeat a role. A declaration that leaves a role out sets `mutates`; a declaration that names every role counts as no declaration. The harness skips only the probes that run on a declared-absent Node. The fleet probes expect exactly the declared set, so `role.assignments` fails when a declared-absent Node is registered. The normalized plan has a SHA-256 fingerprint, recorded as `plan_sha256`.
 
 ### Actions
 
@@ -47,7 +47,7 @@ The harness empties the guest directory before staging. Every role prints `name<
 | `identity` | Proves each guest checkout holds the candidate SHA and tree |
 | `fixtures` | Stages the fixtures |
 | `sury-runtime` | Prepares the packaged PHP runtime on `gateway` and `app-dev` |
-| `converge` | Runs the full convergence sequence, which ends with reproject; see [Refresh](topology-snapshot.md#refresh) |
+| `converge` | Runs the full convergence sequence; see [Refresh](topology-snapshot.md#refresh) |
 | `setup`, `acceptance` | Runs each action in order; with `observed_inputs`, `pcov.*` phases surround them |
 | `manifest` | Builds the immutable proof-input manifest |
 | `verify` | Runs general topology verification against the declared end state |
@@ -56,9 +56,9 @@ A failure while the harness creates the network and clones rolls the attempt bac
 
 ## Runtime preparation and PCOV
 
-PCOV is a PHP extension that records which files a process executes, and the harness uses it only inside disposable proof roles. The `sury-runtime` phase runs `observe-php.sh prepare runtime` on `gateway` and `app-dev`. It installs or upgrades the `php8.5` packages from the pinned Sury apt source and requires identical versions on both roles. It removes `/usr/local/bin/php` only when it is the base-image link to `/opt/orbit/php/8.5/bin/php` and refuses any other file there, so every entrypoint shares `/usr/bin/php8.5`.
+PCOV is a PHP extension that records which files a process executes, and the harness uses it only inside disposable proof roles. The `sury-runtime` phase runs `observe-php.sh prepare runtime` on `gateway` and `app-dev`. It installs or upgrades the `php8.5` packages from the pinned Sury apt source and requires identical versions on both roles. It removes `/usr/local/bin/php` only when it is the base-image link to `/opt/orbit/php/8.5/bin/php` and refuses any other file there, so every entrypoint shares `/usr/bin/php8.5`. It writes the systemd drop-in `/etc/systemd/system/php8.5-fpm.service.d/orbit-e2e-sury.conf` with `ProtectSystem=false` under `[Service]` and reloads the unit definitions when that file changes.
 
-With `observed_inputs: true`, `pcov.prepare` also installs `php8.5-pcov` at matching versions. The harness enables collection separately for `setup` and `acceptance`. Each phase must produce records from `app-dev:cli`, `gateway:cli`, and `gateway:fpm` with tracked paths below `/home/orbit/orbit`. `pcov.cleanup` removes the prepend module, restores `pcov.enabled=0`, and restarts FPM before verification. A missing surface, an untracked path, empty coverage, malformed output, or a failed cleanup makes the proof a `diagnosis`.
+With `observed_inputs: true`, `pcov.prepare` also installs `php8.5-pcov` at matching versions. The harness enables collection separately for `setup` and `acceptance`. Each phase must produce records from `app-dev:cli`, `gateway:cli`, and `gateway:fpm` with tracked paths below `/home/orbit/orbit`. Every observed process writes `<id>.start.json` when it starts and `<id>.result.json` at shutdown. The collector refuses a duplicate record, a start without its result, a result whose identity fields differ from its start, and a record from another attempt, issue, phase, or role. `pcov.cleanup` removes the prepend module, restores `pcov.enabled=0`, and restarts FPM before verification. A missing surface, an untracked path, empty coverage, malformed output, or a failed cleanup makes the proof a `diagnosis`.
 
 ## Proof result
 
@@ -70,7 +70,7 @@ With `observed_inputs: true`, `pcov.prepare` also installs `php8.5-pcov` at matc
 | `issue`, `attempt_id`, `candidate_sha`, `recorded_at` | The issue, the proof attempt, the proved commit, and the UTC time |
 | `plan_sha256`, `manifest_sha256` | Fingerprints of the normalized plan and of the proof-input manifest; the latter only on `proved` |
 | `actions` | One `{"id","node","exit_code"}` per action that ran |
-| `ends_with`, `skipped_probes` | The declaration and the probes it skipped; present only with a declared end state |
+| `ends_with`, `skipped_probes` | The declaration and the probes it skipped; present only when the declaration leaves a role out |
 | `failed_action` | The action that ended the proof, with `stdout_tail` and `stderr_tail` of the final 4096 bytes |
 | `error` | `proof phase <phase> failed: <message>` |
 

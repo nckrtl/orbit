@@ -10,9 +10,9 @@
                 "apps/gateway"
             ],
             "concepts": [
-                "App",
                 "Cluster",
-                "Gateway"
+                "Gateway",
+                "Node"
             ],
             "governing_adrs": []
         },
@@ -66,6 +66,7 @@
             ],
             "governing_adrs": [
                 "0004",
+                "0009",
                 "0011",
                 "0017"
             ]
@@ -529,6 +530,7 @@
             ],
             "concepts": [
                 "App",
+                "AppInstance",
                 "Doctor",
                 "Gateway",
                 "Node",
@@ -552,7 +554,9 @@
             "concepts": [
                 "App",
                 "Doctor",
-                "Gateway"
+                "Gateway",
+                "Node",
+                "Proof topology"
             ],
             "governing_adrs": []
         },
@@ -593,6 +597,7 @@
                 "packages/php-sdk"
             ],
             "concepts": [
+                "App",
                 "Gateway"
             ],
             "governing_adrs": []
