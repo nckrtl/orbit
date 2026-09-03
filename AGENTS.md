@@ -72,6 +72,7 @@ invoke any one directly; no private orchestration order is implied.
   paragraphs, and concrete examples. Keep delivery rules and internal workflow
   language in contributor guidance or ADRs.
 - Do not add a document when the change has no durable project learning.
-- Every issue states documentation impact with the `docs` label. Preflight
-  audits and writes the issue's documentation; the pull request that changes
-  behavior carries the pages that describe it.
+- Every issue states documentation impact with the `docs` label. Preflight,
+  or the implementer when no plan exists, audits and writes the issue's
+  documentation; the pull request that changes behavior carries the pages that
+  describe it and lists every documentation change.
