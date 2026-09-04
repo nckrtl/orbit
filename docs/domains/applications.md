@@ -38,7 +38,7 @@ missing values. Orbit has no command that updates or backfills them.
 Select one active Node with an active app-dev role:
 
 ```text
-orbit instance:new <app-id> <node-id> feature-one
+orbit instance:new <app-id> <node-id> feature-one [--hostname=feature.acme.example]
 ```
 
 The Gateway derives and records this immutable checkout path:
@@ -68,13 +68,15 @@ next incomplete transition. Once active, the recorded starting commit stays
 unchanged while normal development advances HEAD. A conflicting retry fails
 without a second row or checkout.
 
-## Generate a development Route
+## Create the development Route
 
-After a development AppInstance becomes active, the Gateway uses the Node's effective TLD to create its generated Route. An active Cluster TLD takes precedence over the Node TLD. The main AppInstance gets `<app>.test`; another AppInstance gets `<instance>.<app>.test`. The Route stores its `generated` provenance instead of inferring it from the hostname.
+The Gateway creates the Route only after the development AppInstance becomes active. The optional `--hostname` value creates an explicit Route. Without that option, the Gateway generates `<app>.<node-tld>` for the exact main-branch name and `<instance>.<app>.<node-tld>` for another name. When the Node has no TLD, it uses the active Cluster TLD as the suffix. The Route stores `generated` or `explicit` provenance rather than inferring it from the hostname.
 
-When neither the active Cluster nor the Node supplies a TLD, the Gateway creates no generated Route. The AppInstance remains active, and an operator must create an explicit Route before publication.
+An app-dev Node must have its own TLD or belong to an active Cluster with a TLD. Removing the last Node TLD therefore succeeds only while the active Cluster supplies the fallback. An app-prod Node and its explicit Routes do not require either TLD.
 
-The generated Route keeps exactly one routing scope. It uses the active TLD-bearing Cluster when one supplies the effective TLD and otherwise uses the direct Node. Its initial target is the AppInstance that caused its creation.
+Route scope is independent from hostname selection. An AppInstance outside an active Cluster gets a Node-scoped Route. An AppInstance on a member Node of an active Cluster gets a Cluster-scoped Route whether the hostname uses the Node TLD, Cluster TLD, or explicit input. The initial target is the active AppInstance that caused Route creation.
+
+Node and Cluster TLD, state, and membership changes recompute affected generated names and scopes together. The Gateway preserves explicit names and refuses the whole mutation when any resulting Route would have an invalid hostname, scope, target, or required Router.
 
 ## Set the effective web root
 
@@ -120,7 +122,7 @@ Development AppInstance creation and removal do not accept a repository,
 command, PHP version, process, or shell input. The App owns the repository.
 The Node application role owns PHP and runtime prerequisites.
 
-Route persistence does not change Caddy, certificates, DNS, Routers, firewalls, or runtime services. Those operations belong to later runtime and publication lifecycles. See [Routes](../reference/routes.md) for the Route record and target contract.
+Route persistence does not change Caddy, certificates, DNS, firewalls, or runtime services. It checks that a Cluster-scoped Route has an active Router but does not publish Router configuration. See [Routes](../reference/routes.md) for the Route record, target, reconciliation, and removal contract.
 
 Caller-local Git worktrees are a separate, externally owned source kind. They
 are not adopted by `instance:new`; the later registration lifecycle governed
