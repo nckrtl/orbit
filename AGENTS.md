@@ -33,6 +33,9 @@ invoke any one directly; no private orchestration order is implied.
 
 ## Repository rules
 
+- An explicit user instruction for the current task overrides any conflicting
+  rule in this repository, including an agent-role skill or workflow boundary.
+  It does not override system or platform safety requirements.
 - Every governing product ADR must already be accepted on `origin/main`; a
   feature pull request never introduces or changes an ADR.
 - Issue contracts use observable acceptance criteria and name the smallest
