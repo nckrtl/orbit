@@ -267,26 +267,34 @@ it('binds the external merge closeout lifecycle', function () use ($read): void 
         ->toContain('Commit the reviewed `.loop/plan.md` and no other change with a message beginning `plan:`');
 });
 
-it('keeps issue creation current, atomic, and proof feasible', function () use ($read): void {
+it('keeps issue creation current, dependency-aware, atomic, and proof feasible', function () use ($read): void {
     $skill = $read('.agents/skills/creating-issues/SKILL.md');
 
     expect($skill)
         ->not->toContain('Status: Todo')
         ->not->toContain('Status: Backlog')->toContain('never restates a Decision bullet from an ADR')->toContain(
             'Delete the section before `Todo`',
-        )->toContain('one proof action that exists today')->toContain('Only a leaf issue is claimable')->toContain(
+        )->toContain('proof venue the current machinery supports')->toContain(
+            'planning will materialize in `.loop/proof/<ISSUE>.json`',
+        )->toContain('do not need to exist before `Todo`')->toContain(
+            'unfinished prerequisite never keeps an otherwise complete issue in `Backlog`',
+        )->toContain('encode the prerequisite with `blocked by`')->toContain(
+            'Planning owns the issue-local plan and proof files',
+        )->toContain('Only a leaf issue is claimable')->toContain(
             'they are separate children',
         )->toContain('`apps/e2e`')->toContain('relation graph is explicit and acyclic')->toContain(
             'compatibility bridge',
         )->toContain('composer issue:lint')->toContain(
             'return a conflicting or incomplete issue to `Backlog` and write the `Readiness` section',
-        )->toContain('only the last is an action in `.loop/proof/<ISSUE>.json`');
+        )->not->toContain('only the last is an action in `.loop/proof/<ISSUE>.json`');
 
     expect($skill)->toContain('which are not harness code');
 
     expect($read('.agents/skills/creating-issues/template.md'))
         ->toContain('## Scope')
         ->toContain('## Acceptance')
+        ->toContain('never list an ordinary blocked-by dependency')
+        ->toContain('a plan/proof file that planning will create')
         ->toContain('Proof:');
 });
 

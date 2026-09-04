@@ -2,7 +2,7 @@
 
 ## Readiness
 
-- <Exact missing decision, dependency, or proof path. Backlog only; delete this section before Todo.>
+- <Exact unresolved decision, boundary, acceptance criterion, or unavailable verification capability. Backlog only; never list an ordinary blocked-by dependency or a plan/proof file that planning will create. Delete this section before Todo.>
 
 ## Scope
 

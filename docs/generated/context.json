@@ -430,6 +430,33 @@
             ]
         },
         {
+            "path": "docs/decisions/0023-separate-hostname-selection-from-cluster-routing.md",
+            "title": "ADR 0023: Separate hostname selection from Cluster routing",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "App",
+                "AppInstance",
+                "Cluster",
+                "Gateway",
+                "Ingress",
+                "Node",
+                "Route",
+                "Router"
+            ],
+            "governing_adrs": [
+                "0009",
+                "0011",
+                "0016",
+                "0017",
+                "0023"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
