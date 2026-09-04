@@ -241,6 +241,7 @@ it('exposes orchestration-neutral lifecycle modes', function () use ($read): voi
 
 it('binds removal head and closeout-only lifecycle', function () use ($read): void {
     $developer = $read('.agents/skills/developing-features/SKILL.md');
+    $planReviewer = $read('.agents/skills/reviewing-feature-plans/SKILL.md');
     $reviewer = $read('.agents/skills/reviewing-pull-requests/SKILL.md');
     $merger = $read('.agents/skills/merging-pull-requests/SKILL.md');
 
@@ -257,12 +258,15 @@ it('binds removal head and closeout-only lifecycle', function () use ($read): vo
     expect($merger)
         ->toContain('exact independently approved head')
         ->toContain('still carries `.loop/`')
+        ->toContain("Require the entire parent-to-head difference to be\n   deletions below `.loop/`")
         ->toContain('second independent `Approved.` review bound to the removal head')
         ->toContain('exact second parent')
         ->toContain('tree to equal the accepted head')
         ->toContain('absence of `.loop/` from the merged tree')
         ->toContain('bin/e2e-topology-snapshot promote <ISSUE>')
         ->toContain('bin/worktree-remove <ISSUE> <slug>');
+    expect($planReviewer)
+        ->toContain('Commit the reviewed `.loop/plan.md` and no other change with a message beginning `plan:`');
     expect(substr_count($merger, 'Record the merge-command step as skipped exactly once.'))->toBe(1);
 });
 
