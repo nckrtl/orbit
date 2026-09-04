@@ -22,7 +22,7 @@ it('never strands the exporter of a node Orbit still manages', function (): void
         ->toContain('Metrics node exporter package, its Orbit systemd drop-in and its firewall rule for port 9100');
 });
 
-it('points a still-registered node at convergence, not at the node-local wipe', function (): void {
+it('keeps the existing convergence guidance for a still-registered node', function (): void {
     expect(new NodeSideResidue()->followUp(nodeLeavesFleet: false))
         ->toBe(NodeSideResidue::FOLLOW_UP_ROLE_REMOVED)
         ->and(NodeSideResidue::FOLLOW_UP_ROLE_REMOVED)
@@ -67,5 +67,5 @@ it('leaves nothing behind for the roles that cannot be removed', function (RoleN
 
 it('offers a follow-up that does not name a command Orbit may not ship', function (): void {
     expect(NodeSideResidue::FOLLOW_UP_NODE_REMOVED)
-        ->toBe('Run the node-local Metrics cleanup on the node once it boots, or discard the node.');
+        ->toBe('Discard this node, or clear only the leftovers listed above by hand once it is reachable.');
 });
