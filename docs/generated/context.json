@@ -43,8 +43,10 @@
                 "0004",
                 "0006",
                 "0009",
+                "0011",
                 "0014",
-                "0023"
+                "0023",
+                "0024"
             ]
         },
         {
@@ -70,9 +72,9 @@
             ],
             "governing_adrs": [
                 "0004",
-                "0009",
                 "0011",
-                "0023"
+                "0023",
+                "0024"
             ]
         },
         {
@@ -456,6 +458,28 @@
             ]
         },
         {
+            "path": "docs/decisions/0024-follow-generated-route-targets.md",
+            "title": "ADR 0024: Make generated Route identity follow its target",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "App",
+                "AppInstance",
+                "Cluster",
+                "Gateway",
+                "Node",
+                "Route"
+            ],
+            "governing_adrs": [
+                "0023",
+                "0024"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -624,6 +648,7 @@
                 "App",
                 "AppInstance",
                 "Cluster",
+                "Doctor",
                 "Gateway",
                 "Ingress",
                 "Legacy Instance",
@@ -635,7 +660,8 @@
             "governing_adrs": [
                 "0009",
                 "0011",
-                "0023"
+                "0023",
+                "0024"
             ]
         },
         {

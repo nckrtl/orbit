@@ -40,11 +40,11 @@ The description never mirrors status, relations, labels, or ADR lists. The outco
 1. Title the task as an imperative sentence a reader can scan. No domain prefix or sequence number; the parent and relations carry those.
 2. Write the outcome as the result a user or operator observes. Link the governing ADR when the outcome follows from one.
 3. Write `Scope` as the smallest set of surfaces that change and the adjacent behavior that does not. An `In` bullet names what changes; it never describes how, and it never repeats a criterion.
-4. Write `Acceptance` as a checklist. Each item is one observable behavior with one proof action that exists today. `Proof:` names a test file or suite, a command, or an Incus proof action; only the last is an action in `.loop/proof/<ISSUE>.json`. A sentence that fits both Scope and Acceptance is written once, as a criterion. Write every bullet on one line, never hard-wrapped, and put quoted output in backticks.
+4. Write `Acceptance` as a checklist. Each item is one observable behavior with a proof venue the current machinery supports. `Proof:` names a test file or suite, a command, or an Incus proof action. For Incus proof, name the action that planning will materialize in `.loop/proof/<ISSUE>.json`; that issue-local plan and its fixtures do not need to exist before `Todo`. A sentence that fits both Scope and Acceptance is written once, as a criterion. Write every bullet on one line, never hard-wrapped, and put quoted output in backticks.
 5. Use the `proof:incus` label when a criterion depends on a real OS, service manager, privilege boundary, network, certificate, filesystem ownership, or multi-node behavior. Omit it for automated-only work.
 6. Use the `docs` label when durable behavior, terminology, architecture synthesis, an operational or public contract, or agent context changes. Without the label, the outcome changes no documented behavior; the audit can still fix drift it finds in the issue's scope, listed in the plan or the pull request body.
 7. Name `apps/e2e` on a dedicated harness issue, or on an issue whose change under `apps/e2e` stays inside `apps/e2e/tests/Feature/**` and `apps/e2e/tests/Unit/**`, which are not harness code. Product issues never include harness changes.
-8. Keep `Readiness` only in `Backlog`. State the exact missing product decision, ADR, dependency, proof path, component boundary, or acceptance. Delete the section before `Todo`.
+8. Keep `Readiness` only in `Backlog`. State the exact unresolved product decision, ADR, component boundary, acceptance criterion, or verification capability that prevents a complete issue contract. Delete the section before `Todo`. Never use `Readiness` for an unfinished prerequisite that can be a `blocked by` relation, or because `.loop/plan.md`, `.loop/proof/<ISSUE>.json`, or an issue-local proof fixture will be created during planning.
 
 ## Parents and children
 
@@ -61,15 +61,15 @@ Every issue must be implementable and provable at its position in the relation g
 
 ## Maturity
 
-Use `Backlog` while the contract is incomplete. Use `Todo` only when every governing ADR is accepted on `origin/main`, every criterion is verifiable, every component label is present, every real prerequisite is a relation, and `Readiness` is gone.
+Use `Backlog` only while the issue contract still needs to be crystallized: a governing decision, scope or component boundary, acceptance criterion, or usable verification capability is unresolved. Use `Todo` when every governing ADR is accepted on `origin/main`, every criterion names a proof venue the current machinery supports, every component label is present, every real prerequisite is a relation, and `Readiness` is gone. Planning owns the issue-local plan and proof files, so their absence never keeps an otherwise complete issue in `Backlog`.
 
-A `Todo` issue may be `blocked by` unfinished work; the relation carries that fact. When the prerequisite becomes `Done`, re-read current `origin/main` and revalidate before it is claimed.
+An unfinished prerequisite never keeps an otherwise complete issue in `Backlog`. Put the issue in `Todo`, encode the prerequisite with `blocked by`, and leave it unclaimed until the prerequisite is `Done`. Then re-read current `origin/main` and revalidate before it is claimed.
 
 An existing issue in an earlier description shape is rewritten to `template.md` with this skill before it is planned. When a plan review returns `BLOCK`, a planner or implementer reports a stop, or `recording-decisions` hands over an accepted ADR that intersects the issue, revalidate the contract against current `origin/main`: return a conflicting or incomplete issue to `Backlog` and write the `Readiness` section that names the gap, and cancel obsolete work only with the repository owner's explicit authority. Correct a label the plan's Documentation section or a pull request body reports as wrong, and create the issues a merged pull request body reports as owners of documentation findings. The issue comes back to `Todo` only through the rules above.
 
 ## Complete-set feasibility
 
-When a request needs several issues, refine the whole set against current `main` before saving any of them. Verify that product behavior is decided, including ownership, migration, compatibility, failure, rollback, and removal; that every criterion has one proof action the current machinery can run without mixing product and harness changes; that the relation graph is explicit and acyclic; and that relations encode real prerequisites, not staffing, shared files, or merge-conflict avoidance.
+When a request needs several issues, refine the whole set against current `main` before saving any of them. Verify that product behavior is decided, including ownership, migration, compatibility, failure, rollback, and removal; that every criterion names one proof venue the current machinery supports without mixing product and harness changes; that the relation graph is explicit and acyclic; and that relations encode real prerequisites, not staffing, shared files, or merge-conflict avoidance. Planning may create the issue-local proof plan and fixtures after the issue reaches `Todo`.
 
 When a product contract and its verifier would otherwise require mutually blocking cutovers, define a compatibility bridge child first, then the product change, then the fallback removal.
 
