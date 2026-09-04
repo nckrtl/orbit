@@ -1,7 +1,7 @@
 # Feature plan
 
 Issue: ORB-120
-Review verdict: PENDING
+Review verdict: PASS
 
 ## Outcome
 
@@ -74,6 +74,3 @@ none: ORB-120 has no `docs` label because maintained documentation already descr
 - none.
 
 ## Review findings
-
-- addressed: BLOCK — Nick explicitly authorized exact cleanup of the retired script and candidate on pre-existing Nodes and waived the former Scope Out exclusion. The executor boundary now requires one fixed, non-inspecting, idempotent delete during candidate convergence and reachable removal. That makes the absence action executable on a fresh clone of the current promoted generation without proof setup mutation, while keeping the proved generation eligible for immutable promotion.
-- addressed: FIX — The boundaries now include the stale comments in `NodeSideResidue.php` and `NodeRoleMutationData.php` and the stale test name in `NodeSideResidueTest.php`. The static proof rejects the renderer, old error codes, and node-local escape, wipe, or cleanup wording everywhere in the scoped sources, and separately allowlists the two authorized path literals only in the executor and its lifecycle test.
