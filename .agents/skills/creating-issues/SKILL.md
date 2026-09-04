@@ -1,21 +1,29 @@
 ---
 name: creating-issues
-description: Use when refining an Orbit request into a Linear issue, or returning an issue to Backlog.
+description: Use when confirmed Orbit shaping is ready to become a Linear issue, or when an existing issue must return to Backlog.
 ---
 
 # Creating Issues
 
-Refine an approved request or production report into Linear issues that a builder can implement and a reviewer can verify without reading anything else but the linked ADRs. Accepted ADRs own the reasons and the invariants. An issue owns the outcome, the scope boundary, and the acceptance criteria. It never restates a Decision bullet from an ADR.
+Synthesize confirmed shaping into Linear issues that a builder can implement and a reviewer can verify without reading anything else but the linked ADRs. Accepted ADRs own the reasons and the invariants. An issue owns the outcome, the scope boundary, and the acceptance criteria. It never restates a Decision bullet from an ADR.
 
-This skill produces issue contracts only. It does not plan the implementation or assume who implements it.
+This skill drafts, approves, and publishes issue contracts. It does not conduct a new design interview, plan the implementation, or assume who implements it.
 
 ## Inputs
 
-- The approved request, report, review, or discussion.
+- A confirmed `grilling` handoff, or an equivalently complete and explicitly approved request, report, review, or discussion.
 - Every accepted ADR under `docs/decisions` that governs the change.
 - Current `origin/main`, including product, migration, proof, and harness code the change touches.
 
-Stop when the request changes architecture, ownership, security, or a cross-component contract. That is an ADR first, through `recording-decisions`. An ADR needs no issue of its own.
+Recheck the shaping against current `origin/main`; do not assume that earlier repository observations are still current. Stop when the request changes architecture, ownership, security, a cross-component contract, or another durable constraint. That is an ADR first, through `recording-decisions`. An ADR needs no issue of its own.
+
+If a material decision is absent, return one bounded gap report: name the missing decision, why it changes the contract, the evidence that exposed it, whether it needs an ADR, and the exact question to resume through `grill-with-docs`. Do not restart the interview inside issue creation and do not publish a partial issue.
+
+## Draft and publish
+
+Refine the complete issue set before writing to Linear. Draft every description and every Linear field, including labels, status, attachments, parentage, and relations. Run the issue linter, then present the exact payloads and obtain the user's approval before publishing them.
+
+After approval, recheck that the governing ADRs are still accepted on `origin/main` and that no relevant contract has changed. If that recheck changes a payload, revise it and obtain approval again. Publish the approved payloads in dependency order, then read them back and report any mismatch or partial failure without creating duplicates. Linear and Git retain the publication history; do not add a separate creation receipt or duplicate audit metadata.
 
 ## Shape
 
@@ -69,7 +77,7 @@ An existing issue in an earlier description shape is rewritten to `template.md` 
 
 ## Complete-set feasibility
 
-When a request needs several issues, refine the whole set against current `main` before saving any of them. Verify that product behavior is decided, including ownership, migration, compatibility, failure, rollback, and removal; that every criterion names one proof venue the current machinery supports without mixing product and harness changes; that the relation graph is explicit and acyclic; and that relations encode real prerequisites, not staffing, shared files, or merge-conflict avoidance. Planning may create the issue-local proof plan and fixtures after the issue reaches `Todo`.
+When a request needs several issues, refine the whole set against current `main` before publishing any of them. Verify that product behavior is decided, including ownership, migration, compatibility, failure, retry, rollback, and removal; that every criterion names one proof venue the current machinery supports without mixing product and harness changes; that the relation graph is explicit and acyclic; and that relations encode real prerequisites, not staffing, shared files, or merge-conflict avoidance. Planning may create the issue-local proof plan and fixtures after the issue reaches `Todo`.
 
 When a product contract and its verifier would otherwise require mutually blocking cutovers, define a compatibility bridge child first, then the product change, then the fallback removal.
 
@@ -79,4 +87,4 @@ Create a `Bug` for a post-release defect in the same shape. The outcome states e
 
 ## Verify
 
-Write the draft to a file and run `composer issue:lint -- <file>` from `apps/docs`, or `composer issue:lint -- --parent <file>` for a parent. It rejects a missing or reordered section, a criterion without a proof action, and the same blocked phrases as an ADR. Fix every finding before saving to Linear. Then confirm, in Linear: one type label, component labels, the `proof:incus` and `docs` labels where they apply, one attachment per governing ADR, relations for every prerequisite, and a status matching maturity.
+Write each draft to a file and run `composer issue:lint -- <file>` from `apps/docs`, or `composer issue:lint -- --parent <file>` for a parent. It rejects a missing or reordered section, a criterion without a proof action, and the same blocked phrases as an ADR. Fix every finding before seeking approval. After publication, confirm in Linear: the approved description, one type label, component labels, the `proof:incus` and `docs` labels where they apply, one attachment per governing ADR, relations for every prerequisite, and a status matching maturity.

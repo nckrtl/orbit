@@ -1,3 +1,4 @@
 interface:
   display_name: "Creating Issues"
-  short_description: "Prepare claimable Orbit issues"
+  short_description: "Publish confirmed shaping as Orbit issues"
+  default_prompt: "Use $creating-issues to synthesize the confirmed shaping into complete Orbit issue drafts, obtain approval, and publish them to Linear."

@@ -27,10 +27,19 @@ Read the same sources the planner had: the issue with its labels, attachments, a
 
 Collect every known blocking finding in one pass. Each finding cites an `Acceptance` item, `Scope` bullet, label, ADR bullet, or repository rule. On a second pass, treat findings the planner marked `addressed:` as closed once the cited change is present.
 
+For every `BLOCK`, classify the cause from existing Linear activity and Git history:
+
+- `ISSUE_CREATION_DEFECT` when the issue was incomplete, contradictory, or unsupported when published directly into a claimable state or at its most recent transition to a claimable state;
+- `POST_CREATION_DRIFT` when the issue was complete at that claimable-state baseline and a later change to `main`, an ADR, a dependency, or proof capability invalidated it;
+- `PREFLIGHT_BLOCKER` when the contract remains valid but lifecycle or infrastructure prevents planning, never for unresolved product or architecture decisions; or
+- `UNKNOWN` when available history cannot prove defect versus drift.
+
+An issue that has only ever been intentionally incomplete in `Backlog` is not an issue-creation defect and is not eligible for plan review. The classification explains where a claimable issue's gap entered the flow; it does not change the verdict or authorize a fix. Do not require or create a separate creation receipt.
+
 ## Verdict
 
 - `PASS`: no blocking findings; leave findings empty and commit the recorded verdict.
 - `FIX`: every concrete in-scope plan correction, each with its citation.
-- `BLOCK`: the exact incompatibility, missing contract, label or proof conflict, or product decision, with evidence, the smallest safe recommended resolution, and the apparent decision boundary. A blocked issue returns to `Backlog` with a `Readiness` section through `creating-issues`.
+- `BLOCK`: the classification, exact incompatibility, missing contract, label or proof conflict, or product decision, with evidence, the smallest safe recommended resolution, and the apparent decision boundary. A blocked issue returns to `Backlog` with a `Readiness` section through `creating-issues`.
 
 Do not expand scope or present a recommendation as authority. A new requirement is separate Linear work.

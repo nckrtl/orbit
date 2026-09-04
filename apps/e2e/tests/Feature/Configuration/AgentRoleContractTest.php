@@ -271,6 +271,11 @@ it('keeps issue creation current, dependency-aware, atomic, and proof feasible',
     $skill = $read('.agents/skills/creating-issues/SKILL.md');
 
     expect($skill)
+        ->toContain('confirmed shaping')
+        ->toContain('does not conduct a new design interview')
+        ->toContain('one bounded gap report')
+        ->toContain('obtain the user\'s approval before publishing')
+        ->toContain('do not add a separate creation receipt')
         ->not->toContain('Status: Todo')
         ->not->toContain('Status: Backlog')->toContain('never restates a Decision bullet from an ADR')->toContain(
             'Delete the section before `Todo`',
@@ -299,6 +304,60 @@ it('keeps issue creation current, dependency-aware, atomic, and proof feasible',
         ->toContain('Proof:');
 });
 
+it('shapes features before issue publication without changing project state', function () use ($read): void {
+    $grilling = $read('.agents/skills/grilling/SKILL.md');
+    $domain = $read('.agents/skills/domain-modeling/SKILL.md');
+    $orchestrator = $read('.agents/skills/grill-with-docs/SKILL.md');
+    $manifest = $read('.agents/skills/grill-with-docs/agents/openai.yaml');
+
+    expect($grilling)
+        ->toContain('conversation-only shaping')
+        ->toContain('Ask all ready questions in one short numbered round')
+        ->toContain('Do not ask for facts you can find')
+        ->toContain('Decisions belong to the user')
+        ->toContain('A material fact blocks completion')
+        ->toContain('confirmed shaping handoff');
+    expect($domain)
+        ->toContain('docs/concepts.md')
+        ->toContain('Separate current behavior from proposed behavior')
+        ->toContain('belongs in `.loop/plan.md`, code, and tests')
+        ->toContain('record that consequence, not the mechanism')
+        ->toContain('requires an ADR accepted on `origin/main`')
+        ->toContain('it does not publish future behavior');
+    expect($orchestrator)
+        ->toContain('Run `grilling` with `domain-modeling`')
+        ->toContain('Start from current `origin/main`')
+        ->toContain('Do not confirm the handoff while a material fact or product decision is unresolved')
+        ->toContain('route that chosen decision to `recording-decisions`')
+        ->toContain('Create no issue')
+        ->toContain('ready for `creating-issues`');
+    expect($manifest)
+        ->toContain('$grill-with-docs')
+        ->toContain('allow_implicit_invocation: false');
+});
+
+it('classifies preflight stops without a separate creation receipt', function () use ($read): void {
+    $planner = $read('.agents/skills/planning-features/SKILL.md');
+    $reviewer = $read('.agents/skills/reviewing-feature-plans/SKILL.md');
+
+    foreach ([$planner, $reviewer] as $skill) {
+        expect($skill)
+            ->toContain('ISSUE_CREATION_DEFECT')
+            ->toContain('POST_CREATION_DRIFT')
+            ->toContain('PREFLIGHT_BLOCKER')
+            ->toContain('UNKNOWN')
+            ->toContain('published directly into a claimable state')
+            ->toContain('most recent transition to a claimable state')
+            ->toContain('intentionally incomplete in `Backlog` is not an issue-creation defect')
+            ->toContain('Linear')
+            ->toContain('Git history')
+            ->toContain('separate creation receipt');
+    }
+
+    expect($planner)->toContain('Never use this for an unresolved product or architecture decision');
+    expect($reviewer)->toContain('never for unresolved product or architecture decisions');
+});
+
 it('keeps decision records templated and linted', function () use ($read, $root): void {
     $skill = $read('.agents/skills/recording-decisions/SKILL.md');
     $template = $read('.agents/skills/recording-decisions/template.md');
@@ -323,6 +382,9 @@ it('keeps decision records templated and linted', function () use ($read, $root)
     }
 
     expect($read('AGENTS.md'))
+        ->toContain('`grilling`')
+        ->toContain('`domain-modeling`')
+        ->toContain('`grill-with-docs`')
         ->toContain('`recording-decisions`')
         ->toContain('`writing-documentation`')
         ->toContain('`auditing-documentation`');

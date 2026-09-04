@@ -20,10 +20,13 @@ SDK, and Incus E2E harness.
 The skills under `.agents/skills/` are standalone task guides. A contributor may
 invoke any one directly; no private orchestration order is implied.
 
+- `grilling` — interview the user until every material design branch is settled, without changing project state.
+- `domain-modeling` — sharpen Orbit terms, relationships, and decision boundaries against current evidence.
+- `grill-with-docs` — explicitly run both shaping disciplines and produce a confirmed handoff before issue creation.
 - `recording-decisions` — draft, lint, and accept one architecture decision record.
 - `writing-documentation` — write or change one maintained page under `docs/`.
 - `auditing-documentation` — find and fix documentation drift for one issue, or for the whole corpus on request.
-- `creating-issues` — refine a request into a current, verifiable Linear contract, or return a blocked issue to `Backlog`.
+- `creating-issues` — synthesize confirmed shaping into current, verifiable Linear contracts, or return a blocked issue to `Backlog`.
 - `planning-features` — audit and write the issue's documentation, then prepare or correct the plan for one issue.
 - `reviewing-feature-plans` — independently review one issue's plan and documentation commits.
 - `developing-features` — implement and prove one issue.

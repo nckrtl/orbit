@@ -1,0 +1,6 @@
+interface:
+  display_name: "Grill With Docs"
+  short_description: "Shape an Orbit feature before issue creation"
+  default_prompt: "Use $grill-with-docs to interview me and produce a confirmed Orbit shaping handoff grounded in current project evidence."
+policy:
+  allow_implicit_invocation: false
