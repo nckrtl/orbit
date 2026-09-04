@@ -16,13 +16,14 @@ In:
 - `apps/gateway/app/Infrastructure/Metrics/MetricsFootprint.php`: remove `UninstallScript` and script-specific comments while keeping the shared Metrics paths, ownership markers, candidate suffix, package, service, ports, and firewall constants.
 - `apps/gateway/app/Domain/Nodes/NodeSideResidue.php`, `apps/gateway/app/Data/Nodes/NodeRoleMutationData.php`, `apps/gateway/tests/Unit/Domain/Nodes/NodeSideResidueTest.php`, and `apps/gateway/tests/Feature/Api/RemoveNodeTest.php`: replace only the follow-up for an unreachable Node that leaves the registry. It must tell the operator to discard the Node or clear the listed leftovers by hand and must not name node-local cleanup. Remove the stale comment and test names for a node-local escape or wipe. Keep the residue list, runtime behavior in `NodeRoleMutationData`, and the still-registered Node follow-up unchanged.
 - `apps/e2e/resources/prepared-state.json` and `apps/e2e/tests/Unit/E2E/PreparedStateFingerprintTest.php`: remove the deleted renderer from the sorted prepared-state path list and from the asserted Metrics dependency closure. Keep `MetricsFootprint.php` because its remaining constants still determine prepared guest state.
+- `.loop/proof/ORB-111.json` and `.loop/proof/apt-tool-removal.php`: delete exactly these two residual ORB-111 proof artifacts so ORB-120 can stage only its issue-local proof under ADR 0022. ORB-121 should have removed them; no other issue fixture is part of this cleanup.
 
 Out:
 
-- Do not restore or change the old proof plans and fixtures that exercised the uninstall script; ORB-121 removed that historical proof surface first. The issue-local `.loop/proof/ORB-120.json` named in the acceptance map is proof for this issue, not a code boundary.
+- Other than deleting the two explicitly authorized residual ORB-111 artifacts `.loop/proof/ORB-111.json` and `.loop/proof/apt-tool-removal.php`, do not restore, delete, or change old proof plans and fixtures that exercised the uninstall script. The issue-local `.loop/proof/ORB-120.json` named in the acceptance map is proof for this issue, not a product-code boundary.
 - Do not add `role:transfer` or another way to move a role between Nodes.
 - Do not change harness code under `apps/e2e/app`, `apps/e2e/resources/guest`, or `bin/e2e-*`, including the timeout signal boundary.
-- Do not change another issue's fixtures or their pipefail patterns.
+- Do not change another issue's fixtures or their pipefail patterns beyond the exact two authorized ORB-111 deletions above.
 - Do not change `docs/reference/metrics.md`; it already documents the exporter footprint without a node-local uninstall script.
 
 ## Documentation
@@ -49,7 +50,7 @@ none: ORB-120 has no `docs` label because maintained documentation already descr
 2. Delete `MetricsUninstallScript.php`; remove its constructor dependency and all publication and rollback branches from `MetricsExporterSshExecutor.php`; add the single fixed cleanup operation to `converge()` and `remove()`; remove `MetricsFootprint::UninstallScript` and the comments that describe the escape script.
 3. Remove the deleted renderer path from `apps/e2e/resources/prepared-state.json` and its exact closure assertion, preserving sort order and the remaining Metrics prepared-state inputs.
 4. Run the focused Gateway and E2E tests from the acceptance map, then run the zero-match and cleanup-path allowlist proofs. Correct only the listed boundaries.
-5. Add `.loop/proof/ORB-120.json` with no fixture and one `metrics-uninstall-script-absent` acceptance action on `app-dev`. Run `bin/e2e-topology prove ORB-120` on a fresh proof topology and retain the exact successful evidence; do not change the harness or another issue's proof artifacts.
+5. Delete exactly the residual ORB-111 artifacts `.loop/proof/ORB-111.json` and `.loop/proof/apt-tool-removal.php`, then add `.loop/proof/ORB-120.json` with no fixture and one `metrics-uninstall-script-absent` acceptance action on `app-dev`. Run `bin/e2e-topology prove ORB-120` on a fresh proof topology and retain the exact successful evidence; do not change the harness or any other issue proof artifact.
 6. Run `cd apps/gateway && composer check`, `cd apps/e2e && composer check`, root `bin/test`, root `composer docs-lint`, and `git diff --check` before implementation handoff.
 
 ## Must preserve
@@ -63,7 +64,7 @@ none: ORB-120 has no `docs` label because maintained documentation already descr
 - Node removal from the registry still reports the sorted, unique exporter residue plus every removed role's residue. Role removal from an unreachable but retained Node still omits the fleet-owned exporter and returns `FOLLOW_UP_ROLE_REMOVED` unchanged.
 - `apps/e2e/resources/prepared-state.json` remains valid schema-2 JSON with a sorted, wildcard-free path list, and `PreparedStateFingerprintTest.php` continues to prove the complete guest dependency closure and exclude lifecycle-only harness files.
 - Nodes reached by Metrics exporter convergence or removal lose exactly `/usr/local/sbin/orbit-metrics-uninstall` and `/usr/local/sbin/orbit-metrics-uninstall.orbit-candidate` through one idempotent fixed-argv delete. Orbit does not inspect, execute, publish, or restore either retired path, and no replacement command, background cleanup job, or compatibility path is introduced.
-- The E2E harness, timeout and signal behavior, CLI and PHP SDK contracts, other issues' fixtures, and production release behavior remain unchanged.
+- The E2E harness, timeout and signal behavior, CLI and PHP SDK contracts, other issues' fixtures except the two exact authorized ORB-111 deletions, and production release behavior remain unchanged.
 
 ## Open questions
 
@@ -71,6 +72,7 @@ none: ORB-120 has no `docs` label because maintained documentation already descr
 
 ## Deviations
 
-- none.
+- Nick authorized correcting only the pre-existing formatting defect in `apps/e2e/tests/Feature/Configuration/AgentRoleContractTest.php` so the E2E check passes. This is a format-only change and does not change harness, fixture, or product behavior.
+- Anna authorized deleting exactly `.loop/proof/ORB-111.json` and `.loop/proof/apt-tool-removal.php`. They are residual ORB-111 artifacts that ORB-121 should have removed, and their deletion is required for issue-local proof staging and ADR 0022; no other issue fixture is in scope.
 
 ## Review findings
