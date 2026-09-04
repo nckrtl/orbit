@@ -1,7 +1,7 @@
 # Feature plan
 
 Issue: ORB-111
-Review verdict: PENDING
+Review verdict: FIX
 
 ## Outcome
 
@@ -79,5 +79,4 @@ Completed during the bounded planning correction and committed as `43b4f4b1 docs
 
 ## Review findings
 
-- addressed: Acceptance 7, the `docs` label, and the Durable knowledge rule are now covered by the committed Tools reference, README route, regenerated context, successful docs build and lint, and the updated Documentation section.
-- addressed: Acceptance 4 now preserves ADR 0004, “Return bounded deterministic reports,” with the required bounded-absence, stranded-drift, deleted-intent health, and no-raw-status-or-version invariants.
+- FIX — Acceptance 7, ADR 0001 “Preserve package ownership during removal,” ADR 0004 “Keep Doctor verify-only,” and the `writing-documentation` no-restatement rule conflict in `docs/reference/tools.md`. The new page correctly states the issue-delivered successful-removal, retry, retained-configuration, and bounded Doctor behavior, but it also restates existing ADR decisions: exact-package removal, the `autoremove` prohibition, and Doctor's non-mutation boundary. Delegate those existing limits to the ADR links while retaining the observable behavior required by Acceptance 7, then rerun the documentation index check and `composer docs-lint`.
