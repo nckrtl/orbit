@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Clusters;
 
+use App\Domain\Routes\RouteMutationReconciler;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Cluster;
@@ -13,6 +14,10 @@ use Illuminate\Support\Facades\DB;
 
 final readonly class AttachClusterNodeAction
 {
+    public function __construct(
+        private ?RouteMutationReconciler $routes = null,
+    ) {}
+
     public function execute(Cluster $cluster, Node $node): Cluster
     {
         /**
@@ -40,6 +45,9 @@ final readonly class AttachClusterNodeAction
             }
 
             try {
+                ($this->routes ?? app(RouteMutationReconciler::class))->reconcile(nodeOverrides: [
+                    $lockedNode->id => ['cluster_id' => $lockedCluster->id],
+                ]);
                 $lockedNode->update(['cluster_id' => $lockedCluster->id]);
             } catch (QueryException $exception) {
                 throw new ResourceOperationException(

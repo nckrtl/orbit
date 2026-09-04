@@ -11,5 +11,6 @@ final readonly class CreateAppInstanceData
         public int $nodeId,
         public string $name,
         public ?string $root,
+        public ?string $hostname,
     ) {}
 }

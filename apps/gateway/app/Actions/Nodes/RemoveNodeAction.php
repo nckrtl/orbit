@@ -13,6 +13,7 @@ use App\Domain\Nodes\NodeReachabilityProbe;
 use App\Domain\Nodes\NodeRemovalException;
 use App\Domain\Nodes\NodeSideResidue;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\RouteRemovalGuard;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WireGuard\GatewayPeerProjectionManager;
@@ -35,6 +36,7 @@ final readonly class RemoveNodeAction
         private NodeReachabilityProbe $reachability,
         private RemoveNodeRoleAction $roles,
         private NodeSideResidue $residue,
+        private ?RouteRemovalGuard $routes = null,
     ) {}
 
     /** @mago-expect lint:no-boolean-flag-parameter The public removal contract carries the explicit claim and consent. */
@@ -44,6 +46,7 @@ final readonly class RemoveNodeAction
         bool $offline = false,
         bool $force = false,
     ): RemoveNodeData {
+        ($this->routes ?? app(RouteRemovalGuard::class))->assertNodeRemovable($node);
         $this->guardProtected($node, $caller);
         $shed = $offline ? $this->shedRoles($node, $force) : null;
         $this->guardRemoval($node);

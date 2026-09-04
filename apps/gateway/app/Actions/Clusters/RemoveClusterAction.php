@@ -4,12 +4,17 @@ declare(strict_types=1);
 
 namespace App\Actions\Clusters;
 
+use App\Domain\Routes\RouteRemovalGuard;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Cluster;
 use Illuminate\Support\Facades\DB;
 
 final readonly class RemoveClusterAction
 {
+    public function __construct(
+        private ?RouteRemovalGuard $routes = null,
+    ) {}
+
     public function execute(Cluster $cluster): Cluster
     {
         /**
@@ -18,6 +23,7 @@ final readonly class RemoveClusterAction
          */
         $removed = DB::transaction(function () use ($cluster): Cluster {
             $locked = Cluster::query()->lockForUpdate()->findOrFail($cluster->id);
+            ($this->routes ?? app(RouteRemovalGuard::class))->assertClusterRemovable($locked);
 
             if ($locked->nodes()->exists()) {
                 throw new ResourceOperationException(

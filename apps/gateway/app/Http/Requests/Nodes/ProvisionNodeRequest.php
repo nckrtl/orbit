@@ -158,6 +158,7 @@ final class ProvisionNodeRequest extends FormRequest
                 : null,
             platform: is_string($validated['platform'] ?? null) ? $validated['platform'] : 'linux',
             architecture: is_string($validated['architecture'] ?? null) ? $validated['architecture'] : null,
+            tldProvided: property_exists($this->decodedPayloadObject(), 'tld'),
             tld: is_string($validated['tld'] ?? null) ? $validated['tld'] : null,
             clusterProvided: property_exists($this->decodedPayloadObject(), 'cluster_id'),
             clusterId: is_int($validated['cluster_id'] ?? null) ? $validated['cluster_id'] : null,

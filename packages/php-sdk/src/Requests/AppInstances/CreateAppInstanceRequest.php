@@ -23,6 +23,7 @@ final class CreateAppInstanceRequest extends GatewayRequest implements HasBody
         private readonly int $nodeId,
         private readonly string $name,
         private readonly ?string $root = null,
+        private readonly ?string $hostname = null,
     ) {}
 
     public function resolveEndpoint(): string
@@ -49,6 +50,10 @@ final class CreateAppInstanceRequest extends GatewayRequest implements HasBody
 
         if ($this->root !== null) {
             $body['root'] = $this->root;
+        }
+
+        if ($this->hostname !== null) {
+            $body['hostname'] = $this->hostname;
         }
 
         return $body;

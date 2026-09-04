@@ -97,6 +97,13 @@ it('declares node access scope on every active-peer API route', function (): voi
         'process:restart' => ServingNode::ProcessOwning,
         'process:start' => ServingNode::ProcessOwning,
         'process:stop' => ServingNode::ProcessOwning,
+        'route:list' => ServingNode::Collection,
+        'route:new' => ServingNode::RouteOwning,
+        'route:remove' => ServingNode::RouteOwning,
+        'route:show' => ServingNode::RouteOwning,
+        'route:target:clear' => ServingNode::RouteOwning,
+        'route:target:set' => ServingNode::RouteOwning,
+        'route:update' => ServingNode::RouteOwning,
         'tool:install' => ServingNode::ToolOwning,
         'tool:list' => ServingNode::ToolOwning,
         'tool:manager:list' => ServingNode::ToolOwning,
@@ -111,6 +118,26 @@ it('declares node access scope on every active-peer API route', function (): voi
     ];
 
     expect($actualScopes)->toBe($expectedScopes);
+});
+
+it('registers every Route endpoint with its exact HTTP contract', function (): void {
+    $actual = collect(Route::getRoutes()->getRoutes())
+        ->filter(static fn (IlluminateRoute $route): bool => str_starts_with($route->getName() ?? '', 'route:'))
+        ->mapWithKeys(static fn (IlluminateRoute $route): array => [
+            $route->getName() => [$route->methods()[0], $route->uri()],
+        ])
+        ->all();
+    ksort($actual);
+
+    expect($actual)->toBe([
+        'route:list' => ['GET', 'api/v1/routes'],
+        'route:new' => ['POST', 'api/v1/routes'],
+        'route:remove' => ['DELETE', 'api/v1/routes/{route}'],
+        'route:show' => ['GET', 'api/v1/routes/{route}'],
+        'route:target:clear' => ['DELETE', 'api/v1/routes/{route}/target'],
+        'route:target:set' => ['PUT', 'api/v1/routes/{route}/target'],
+        'route:update' => ['PATCH', 'api/v1/routes/{route}'],
+    ]);
 });
 
 it('registers every Tool route with its exact HTTP contract', function (): void {

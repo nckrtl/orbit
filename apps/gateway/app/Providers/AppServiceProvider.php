@@ -8,6 +8,7 @@ use App\Actions\Gateway\BootstrapGatewayAction;
 use App\Actions\Gateway\GatewayBootstrapIdentityValidator;
 use App\Actions\Gateway\GatewayOperatingSystemGuard;
 use App\Actions\Nodes\AssignRoleAction;
+use App\Actions\Routes\CreateRouteAction;
 use App\Console\GatewayBoostInstallCommand;
 use App\Domain\AppDev\AppDevCaddyManager;
 use App\Domain\AppDev\AppDevCertificateManager;
@@ -18,6 +19,7 @@ use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppDev\AppDevTldConverger;
 use App\Domain\AppDev\AppDevTldRouteManager;
 use App\Domain\AppDev\PrivateDnsManager;
+use App\Domain\AppInstances\AppInstanceActivationHook;
 use App\Domain\AppInstances\DevelopmentAppInstanceSourceLifecycle;
 use App\Domain\AppProd\AppProdCaddyManager;
 use App\Domain\AppProd\AppProdPhpFpmManager;
@@ -173,6 +175,7 @@ final class AppServiceProvider extends ServiceProvider
         AppDevTldRouteManager::class => RemoteAppDevTldRouteManager::class,
         AppDevSourceManager::class => RemoteAppDevSourceManager::class,
         DevelopmentAppInstanceSourceLifecycle::class => RemoteDevelopmentAppInstanceSourceLifecycle::class,
+        AppInstanceActivationHook::class => CreateRouteAction::class,
         AppProdCaddyManager::class => RemoteAppProdCaddyManager::class,
         AppProdPhpFpmManager::class => RemoteAppProdPhpFpmManager::class,
         AppProdRuntimeConverger::class => NativeAppProdRuntimeConverger::class,

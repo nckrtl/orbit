@@ -6,6 +6,7 @@ namespace App\Actions\AppInstances;
 
 use App\Data\AppInstances\CreateAppInstanceData;
 use App\Domain\AppDev\AppDevSourceOperationLock;
+use App\Domain\AppInstances\AppInstanceActivationHook;
 use App\Domain\AppInstances\AppInstanceSourceKind;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\AppInstances\DevelopmentAppInstanceSourceLifecycle;
@@ -39,6 +40,7 @@ final readonly class CreateAppInstanceAction
         private ManagedCheckoutOverlap $checkoutOverlap,
         private AppDevSourceOperationLock $sourceLock,
         private DevelopmentAppInstanceSourceLifecycle $source,
+        private AppInstanceActivationHook $activationHook,
     ) {}
 
     /** @return array{appInstance: AppInstance, created: bool} */
@@ -87,6 +89,7 @@ final readonly class CreateAppInstanceAction
             $appInstance->node_id,
             fn (): AppInstance => $this->resume($appInstance, ! $created),
         );
+        $this->activationHook->complete($result, $data->hostname);
 
         return ['appInstance' => $result, 'created' => $created];
     }

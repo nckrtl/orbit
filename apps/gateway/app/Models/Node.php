@@ -11,6 +11,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
+ * @mago-expect lint:too-many-methods The Node aggregate exposes each bounded owned relation and cast explicitly.
+ *
  * @property int $id
  * @property int|null $cluster_id
  * @property string $name
@@ -90,6 +92,18 @@ final class Node extends Model
     public function appInstances(): HasMany
     {
         return $this->hasMany(AppInstance::class);
+    }
+
+    /** @return HasMany<Route, $this> */
+    public function scopedRoutes(): HasMany
+    {
+        return $this->hasMany(Route::class);
+    }
+
+    /** @return HasMany<Route, $this> */
+    public function generatedRoutes(): HasMany
+    {
+        return $this->hasMany(Route::class, 'generation_basis_node_id');
     }
 
     /** @return HasMany<FirewallRule, $this> */

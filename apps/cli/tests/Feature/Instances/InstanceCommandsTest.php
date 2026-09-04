@@ -86,6 +86,28 @@ describe('instance:new', function (): void {
         ]);
     });
 
+    it('transports an optional Route hostname without local policy validation', function (): void {
+        $mockClient = MockClient::global([
+            CreateAppInstanceRequest::class => instance_mock_response(201),
+        ]);
+
+        $this
+            ->artisan('instance:new', [
+                'app' => '3',
+                'node' => '2',
+                'name' => 'dev',
+                '--hostname' => 'Odd_Value',
+            ])
+            ->assertExitCode(0);
+
+        expect($mockClient->getLastRequest()?->body()->all())->toBe([
+            'app_id' => 3,
+            'node_id' => 2,
+            'name' => 'dev',
+            'hostname' => 'Odd_Value',
+        ]);
+    });
+
     it('reports the created AppInstance for humans', function (): void {
         MockClient::global([CreateAppInstanceRequest::class => instance_mock_response(201)]);
 

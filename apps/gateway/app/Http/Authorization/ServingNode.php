@@ -14,6 +14,7 @@ enum ServingNode
     case ProcessOwning;
     case ToolOwning;
     case ClusterOwning;
+    case RouteOwning;
     case RoleMutation;
     case Collection;
 }
