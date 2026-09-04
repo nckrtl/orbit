@@ -1,7 +1,7 @@
 # Feature plan
 
 Issue: ORB-111
-Review verdict: FIX
+Review verdict: PASS
 
 ## Outcome
 
@@ -78,5 +78,3 @@ Completed during the bounded planning correction and committed as `43b4f4b1 docs
 - none.
 
 ## Review findings
-
-- FIX — Acceptance 7, Scope Out “removal-plan exactness rules,” ADR 0001 “Preserve package ownership during removal,” and the `writing-documentation` no-restatement rule still conflict in `docs/reference/tools.md` after recovery commit `49292d48d21c56dddfd806799156ea2e8d029b8c`. The recovery delegates the Limits section, but the removal flow still says that the Gateway accepts only an exact-package plan, and the outcomes table still states exact-package success and the multi-package refusal. Delegate those remaining ADR-owned exactness statements to the ADR 0001 link while retaining the issue-delivered successful-removal, retry, retained-configuration, and bounded Doctor behavior, then rerun the documentation index check and `composer docs-lint`.
