@@ -10,6 +10,7 @@ These are the common terms you will see throughout the Orbit documentation. Each
 - **Effective web root** — The web root an AppInstance serves. An AppInstance override replaces the App root. Both are normalized relative paths.
 - **Legacy Instance** — The earlier runnable application record. Orbit retains it for existing Workspace and Doctor behavior. New development placements use AppInstance.
 - **Workspace** — A Git worktree owned by a legacy Instance. AppInstance creation does not use or change Workspace source.
+- **Schedule** — A recurring command stored for one Node or AppInstance. A protected systemd timer runs it with target-derived execution context. See [Schedules](reference/schedules.md) and [ADR 0013](decisions/0013-native-systemd-schedule-management.md).
 - **Route** — An App-owned hostname with stored provenance and one Node or active Cluster scope. A generated Route follows its target Node and retains that Node as its basis after target clearing. See [Routes](reference/routes.md) and [ADR 0024](decisions/0024-follow-generated-route-targets.md).
 - **Router** — The Node role that receives Routes with Cluster scope and selects their workload targets. Every Cluster with a Route needs one active Router.
 - **Ingress** — The Node role that receives public HTTP and HTTPS traffic and forwards it to the Router. See [ADR 0011](decisions/0011-clustered-production-ingress-and-app-prod-placement.md).

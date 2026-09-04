@@ -20,7 +20,7 @@ Choose a page based on what you want to learn:
 - [Product areas](domains/README.md) groups feature documentation as it grows.
 - [Decisions](decisions/README.md) keeps the history behind important design
   choices.
-- Product reference pages describe [Apps](reference/apps.md), the [Metrics role](reference/metrics.md), [Node retarget](reference/node-retarget.md), [PHP runtime defaults](reference/php-runtime.md), [Routes](reference/routes.md), and [Tools](reference/tools.md).
+- Product reference pages describe [Apps](reference/apps.md), the [Metrics role](reference/metrics.md), [Node retarget](reference/node-retarget.md), [PHP runtime defaults](reference/php-runtime.md), [Routes](reference/routes.md), [Schedules](reference/schedules.md), and [Tools](reference/tools.md).
 - Development reference pages describe the [Incus topology registry](reference/incus-topologies.md), [Proof plans](reference/proof-plans.md), and the [Topology snapshot](reference/topology-snapshot.md).
 - [Solutions](solutions/README.md) collects useful fixes and lessons from past
   work.

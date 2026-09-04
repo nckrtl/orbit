@@ -68,11 +68,13 @@
                 "Proof topology",
                 "Route",
                 "Router",
+                "Schedule",
                 "Workspace"
             ],
             "governing_adrs": [
                 "0004",
                 "0011",
+                "0013",
                 "0023",
                 "0024"
             ]
@@ -201,6 +203,7 @@
                 "Node",
                 "Route",
                 "Router",
+                "Schedule",
                 "Workspace"
             ],
             "governing_adrs": [
@@ -270,6 +273,7 @@
                 "Ingress",
                 "Node",
                 "Proof topology",
+                "Schedule",
                 "Workspace"
             ],
             "governing_adrs": [
@@ -660,6 +664,26 @@
                 "0011",
                 "0023",
                 "0024"
+            ]
+        },
+        {
+            "path": "docs/reference/schedules.md",
+            "title": "Schedules",
+            "kind": "reference",
+            "components": [],
+            "concepts": [
+                "App",
+                "AppInstance",
+                "Cluster",
+                "Doctor",
+                "Gateway",
+                "Node",
+                "Schedule",
+                "Workspace"
+            ],
+            "governing_adrs": [
+                "0004",
+                "0013"
             ]
         },
         {

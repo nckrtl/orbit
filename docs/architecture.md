@@ -37,8 +37,7 @@ and coordinates changes on Nodes. Because an Orbit setup has one active
 Gateway, you always have one place to see the machines and applications managed
 by Orbit.
 
-The Gateway stores its data in SQLite. Nodes hold the files and run the services
-needed to apply those settings.
+The Gateway stores its data in SQLite. Nodes hold the files and run the services needed to apply those settings. [Schedules](reference/schedules.md) explains how the Gateway projects recurring commands to native systemd timers.
 
 ## Nodes and roles
 
