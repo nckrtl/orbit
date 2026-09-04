@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Metrics\MetricsExporterSshExecutor;
-use App\Infrastructure\Metrics\MetricsFootprint;
-use App\Infrastructure\Metrics\MetricsUninstallScript;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -62,9 +60,6 @@ it('converges protected exporter configuration and exact Metrics-owned firewall 
         metricsExporterResult(exitCode: 1),
         metricsExporterResult(stdout: "Status: active\n"),
         metricsExporterResult(exitCode: 3, stdout: "inactive\n"),
-        metricsExporterResult(),
-        metricsExporterResult(),
-        metricsExporterResult(),
         metricsExporterResult(),
         metricsExporterResult(),
         metricsExporterResult(),
@@ -211,6 +206,7 @@ it('removes only proven exporter configuration and firewall state', function ():
         metricsExporterResult(),
         metricsExporterResult(),
         metricsExporterResult(),
+        metricsExporterResult(),
         metricsExporterResult(exitCode: 1),
         metricsExporterResult(exitCode: 3, stdout: "inactive\n"),
         metricsExporterResult(stdout: "Status: active\n"),
@@ -229,14 +225,7 @@ it('removes only proven exporter configuration and firewall state', function ():
         ['sudo', 'systemctl', 'disable', '--now', 'prometheus-node-exporter'],
         ['sudo', 'rm', '-f', '--', '/etc/systemd/system/prometheus-node-exporter.service.d/orbit.conf'],
         ['sudo', 'ufw', '--force', 'delete', '5'],
-        [
-            'sudo',
-            'rm',
-            '-f',
-            '--',
-            MetricsFootprint::UninstallScript,
-            MetricsFootprint::UninstallScript.MetricsFootprint::CandidateSuffix,
-        ],
+        metricsExporterRetiredArtifactCleanupArguments(),
     );
 });
 
@@ -261,7 +250,11 @@ it('restores absent exporter state when convergence verification fails', functio
         ->and($ssh->serviceActive)
         ->toBeFalse()
         ->and($ssh->firewall)
-        ->toBeFalse();
+        ->toBeFalse()
+        ->and($ssh->retiredArtifacts)
+        ->toBeFalse()
+        ->and(metricsExporterRetiredArtifactCommands($ssh->commands))
+        ->toBe([metricsExporterRetiredArtifactCleanupArguments()]);
 });
 
 it('restores active exporter state when removal fails after service disablement', function (): void {
@@ -285,7 +278,11 @@ it('restores active exporter state when removal fails after service disablement'
         ->and($ssh->serviceActive)
         ->toBeTrue()
         ->and($ssh->firewall)
-        ->toBeTrue();
+        ->toBeTrue()
+        ->and($ssh->retiredArtifacts)
+        ->toBeFalse()
+        ->and(metricsExporterRetiredArtifactCommands($ssh->commands))
+        ->toBe([metricsExporterRetiredArtifactCleanupArguments()]);
 });
 
 it('fails removal when the exporter service remains active', function (): void {
@@ -305,12 +302,11 @@ it('fails removal when the exporter service remains active', function (): void {
         ->toThrow(ResourceOperationException::class, 'service remained active');
 });
 
-it('publishes the node-local uninstall script through the candidate and move staging pattern', function (): void {
+it('deletes both retired artifacts without inspecting them before convergence mutation', function (): void {
     $ssh = new MetricsExporterStatefulSsh(
         configuration: null,
         serviceActive: false,
         firewall: false,
-        uninstallScript: null,
     );
     $executor = metricsExporterExecutor($ssh);
 
@@ -319,56 +315,32 @@ it('publishes the node-local uninstall script through the candidate and move sta
         metricsExporterNode('metrics', '10.44.0.3'),
     );
 
-    $candidate = MetricsFootprint::UninstallScript.MetricsFootprint::CandidateSuffix;
-
-    expect(array_map(
+    $arguments = array_map(
         static fn (RemoteCommand $command): array => $command->arguments,
         $ssh->commands,
-    ))
-        ->toContain(
-            ['sudo', 'cat', '--', MetricsFootprint::UninstallScript],
-            ['sudo', 'rm', '-f', '--', $candidate],
-            ['sudo', 'install', '-D', '-o', 'root', '-g', 'root', '-m', '0755', '/dev/stdin', $candidate],
-            ['sudo', 'mv', '-fT', '--', $candidate, MetricsFootprint::UninstallScript],
-        )
-        ->and($ssh->uninstallScript)
-        ->toBe(new MetricsUninstallScript()->render());
-});
-
-it('does not republish the uninstall script when the node already holds byte-identical content', function (): void {
-    $ssh = new MetricsExporterStatefulSsh(
-        configuration: null,
-        serviceActive: false,
-        firewall: false,
-        uninstallScript: new MetricsUninstallScript()->render(),
     );
-    $executor = metricsExporterExecutor($ssh);
-
-    $executor->converge(
-        metricsExporterNode('app-prod', '10.44.0.4'),
-        metricsExporterNode('metrics', '10.44.0.3'),
+    $cleanup = metricsExporterRetiredArtifactCleanupArguments();
+    $cleanupIndex = array_search($cleanup, $arguments, strict: true);
+    $mutationIndex = array_search(
+        ['sudo', 'apt-get', 'install', '--yes', '--no-install-recommends', '--', 'prometheus-node-exporter'],
+        $arguments,
+        strict: true,
     );
 
-    $candidate = MetricsFootprint::UninstallScript.MetricsFootprint::CandidateSuffix;
-
-    expect(array_map(
-        static fn (RemoteCommand $command): array => $command->arguments,
-        $ssh->commands,
-    ))
-        ->toContain(['sudo', 'cat', '--', MetricsFootprint::UninstallScript])
-        // One needle per call: `not->toContain` with several needles passes as
-        // soon as any one of them is absent.
-        ->not->toContain(['sudo', 'rm', '-f', '--', $candidate])
-        ->not->toContain(['sudo', 'mv', '-fT', '--', $candidate, MetricsFootprint::UninstallScript]);
+    expect(metricsExporterRetiredArtifactCommands($ssh->commands))
+        ->toBe([$cleanup])
+        ->and($ssh->retiredArtifacts)
+        ->toBeFalse()
+        ->and(is_int($cleanupIndex) && is_int($mutationIndex) && $cleanupIndex < $mutationIndex)
+        ->toBeTrue();
 });
 
-it('removes the uninstall script only after firewall removal is verified', function (): void {
+it('deletes both retired artifacts without inspecting them before reachable removal mutation', function (): void {
     $configuration = metricsExporterConfiguration('10.44.0.4');
     $ssh = new MetricsExporterStatefulSsh(
         configuration: $configuration,
         serviceActive: true,
         firewall: true,
-        uninstallScript: new MetricsUninstallScript()->render(),
     );
     $executor = metricsExporterExecutor($ssh);
 
@@ -377,125 +349,93 @@ it('removes the uninstall script only after firewall removal is verified', funct
         metricsExporterNode('metrics', '10.44.0.3'),
     );
 
-    expect(array_map(
+    $arguments = array_map(
         static fn (RemoteCommand $command): array => $command->arguments,
         $ssh->commands,
-    ))
-        ->toContain([
-            'sudo',
-            'rm',
-            '-f',
-            '--',
-            MetricsFootprint::UninstallScript,
-            MetricsFootprint::UninstallScript.MetricsFootprint::CandidateSuffix,
-        ])
-        ->and($ssh->uninstallScript)
-        ->toBeNull();
-});
-
-it('leaves the uninstall script in place when firewall removal cannot be verified', function (): void {
-    $configuration = metricsExporterConfiguration('10.44.0.4');
-    $ssh = new MetricsExporterStatefulSsh(
-        configuration: $configuration,
-        serviceActive: true,
-        firewall: true,
-        uninstallScript: new MetricsUninstallScript()->render(),
-        removeFirewallChangesState: false,
     );
-    $executor = metricsExporterExecutor($ssh);
+    $cleanup = metricsExporterRetiredArtifactCleanupArguments();
+    $cleanupIndex = array_search($cleanup, $arguments, strict: true);
+    $mutationIndex = array_search(
+        ['sudo', 'systemctl', 'disable', '--now', 'prometheus-node-exporter'],
+        $arguments,
+        strict: true,
+    );
 
-    expect(fn () => $executor->remove(
-        metricsExporterNode('app-prod', '10.44.0.4'),
-        metricsExporterNode('metrics', '10.44.0.3'),
-    ))
-        ->toThrow(ResourceOperationException::class);
-
-    expect(array_map(
-        static fn (RemoteCommand $command): array => $command->arguments,
-        $ssh->commands,
-    ))
-        ->not->toContain([
-            'sudo',
-            'rm',
-            '-f',
-            '--',
-            MetricsFootprint::UninstallScript,
-            MetricsFootprint::UninstallScript.MetricsFootprint::CandidateSuffix,
-        ])->and($ssh->uninstallScript)
-        ->not->toBeNull();
+    expect(metricsExporterRetiredArtifactCommands($ssh->commands))
+        ->toBe([$cleanup])
+        ->and($ssh->retiredArtifacts)
+        ->toBeFalse()
+        ->and(is_int($cleanupIndex) && is_int($mutationIndex) && $cleanupIndex < $mutationIndex)
+        ->toBeTrue();
 });
 
-it('republishes the uninstall script when restoring a state that had a drop-in', function (): void {
+it('maps a convergence cleanup failure before exporter mutation', function (): void {
+    $cleanup = metricsExporterRetiredArtifactCleanupArguments();
     $ssh = new MetricsExporterStatefulSsh(
         configuration: null,
         serviceActive: false,
         firewall: false,
-        uninstallScript: null,
+        failArguments: $cleanup,
     );
     $executor = metricsExporterExecutor($ssh);
-    $state = new App\Infrastructure\Metrics\MetricsExporterState(
-        configuration: metricsExporterConfiguration('10.44.0.4'),
-        serviceActive: true,
-        firewallOwnership: App\Infrastructure\Firewall\UfwRuleOwnership::Exact,
-        firewallStatus: metricsExporterFirewallStatus('10.44.0.4'),
-    );
 
-    $executor->restore(
-        metricsExporterNode('app-prod', '10.44.0.4'),
-        metricsExporterNode('metrics', '10.44.0.3'),
-        $state,
-    );
+    try {
+        $executor->converge(
+            metricsExporterNode('app-prod', '10.44.0.4'),
+            metricsExporterNode('metrics', '10.44.0.3'),
+        );
+        $exception = null;
+    } catch (ResourceOperationException $caught) {
+        $exception = $caught;
+    }
 
-    $candidate = MetricsFootprint::UninstallScript.MetricsFootprint::CandidateSuffix;
-
-    expect(array_map(
+    $arguments = array_map(
         static fn (RemoteCommand $command): array => $command->arguments,
         $ssh->commands,
-    ))
-        ->toContain(
-            ['sudo', 'install', '-D', '-o', 'root', '-g', 'root', '-m', '0755', '/dev/stdin', $candidate],
-            ['sudo', 'mv', '-fT', '--', $candidate, MetricsFootprint::UninstallScript],
-        )
-        ->and($ssh->uninstallScript)
-        ->toBe(new MetricsUninstallScript()->render());
+    );
+
+    expect($exception?->errorCode)
+        ->toBe('metrics.retired_artifact_cleanup_failed')
+        ->and($ssh->retiredArtifacts)
+        ->toBeTrue()
+        ->and($arguments)
+        ->not->toContain(
+            ['sudo', 'apt-get', 'install', '--yes', '--no-install-recommends', '--', 'prometheus-node-exporter'],
+        );
 });
 
-it('removes the uninstall script when restoring a state that had no drop-in', function (): void {
+it('maps a reachable removal cleanup failure before exporter mutation', function (): void {
+    $cleanup = metricsExporterRetiredArtifactCleanupArguments();
     $configuration = metricsExporterConfiguration('10.44.0.4');
     $ssh = new MetricsExporterStatefulSsh(
         configuration: $configuration,
         serviceActive: true,
         firewall: true,
-        uninstallScript: new MetricsUninstallScript()->render(),
+        failArguments: $cleanup,
     );
     $executor = metricsExporterExecutor($ssh);
-    $state = new App\Infrastructure\Metrics\MetricsExporterState(
-        configuration: null,
-        serviceActive: false,
-        firewallOwnership: App\Infrastructure\Firewall\UfwRuleOwnership::Missing,
-        firewallStatus: "Status: active\n",
-    );
 
-    $executor->restore(
-        metricsExporterNode('app-prod', '10.44.0.4'),
-        metricsExporterNode('metrics', '10.44.0.3'),
-        $state,
-    );
+    try {
+        $executor->remove(
+            metricsExporterNode('app-prod', '10.44.0.4'),
+            metricsExporterNode('metrics', '10.44.0.3'),
+        );
+        $exception = null;
+    } catch (ResourceOperationException $caught) {
+        $exception = $caught;
+    }
 
-    expect(array_map(
+    $arguments = array_map(
         static fn (RemoteCommand $command): array => $command->arguments,
         $ssh->commands,
-    ))
-        ->toContain([
-            'sudo',
-            'rm',
-            '-f',
-            '--',
-            MetricsFootprint::UninstallScript,
-            MetricsFootprint::UninstallScript.MetricsFootprint::CandidateSuffix,
-        ])
-        ->and($ssh->uninstallScript)
-        ->toBeNull();
+    );
+
+    expect($exception?->errorCode)
+        ->toBe('metrics.retired_artifact_cleanup_failed')
+        ->and($ssh->retiredArtifacts)
+        ->toBeTrue()
+        ->and($arguments)
+        ->not->toContain(['sudo', 'systemctl', 'disable', '--now', 'prometheus-node-exporter']);
 });
 
 function metricsExporterExecutor(SshExecutor $ssh): MetricsExporterSshExecutor
@@ -533,6 +473,44 @@ function metricsExporterFirewallStatus(string $destination): string
 
         [ 5] {$destination} 9100/tcp on orbit ALLOW IN 10.44.0.3 # orbit:metrics-node-exporter
         STATUS;
+}
+
+/** @return list<string> */
+function metricsExporterRetiredArtifactCleanupArguments(): array
+{
+    return [
+        'sudo',
+        'rm',
+        '-f',
+        '--',
+        '/usr/local/sbin/orbit-metrics-uninstall',
+        '/usr/local/sbin/orbit-metrics-uninstall.orbit-candidate',
+    ];
+}
+
+/**
+ * @param list<RemoteCommand> $commands
+ * @return list<list<string>>
+ */
+function metricsExporterRetiredArtifactCommands(array $commands): array
+{
+    $matching = array_filter(
+        $commands,
+        static fn (RemoteCommand $command): bool => (
+            array_intersect(
+                $command->arguments,
+                [
+                    '/usr/local/sbin/orbit-metrics-uninstall',
+                    '/usr/local/sbin/orbit-metrics-uninstall.orbit-candidate',
+                ],
+            ) !== []
+        ),
+    );
+
+    return array_values(array_map(
+        static fn (RemoteCommand $command): array => $command->arguments,
+        $matching,
+    ));
 }
 
 /**
@@ -578,7 +556,7 @@ final class MetricsExporterCapturingSsh implements SshExecutor
 }
 
 /**
- * @mago-expect lint:cyclomatic-complexity The stateful fake matches every fixed exporter and uninstall-script command.
+ * @mago-expect lint:cyclomatic-complexity The stateful fake matches every fixed exporter command.
  * @mago-expect lint:too-many-methods Each matched command gets its own narrow state-mutating helper.
  */
 final class MetricsExporterStatefulSsh implements SshExecutor
@@ -591,8 +569,6 @@ final class MetricsExporterStatefulSsh implements SshExecutor
 
     private ?string $candidate = null;
 
-    private ?string $uninstallCandidate = null;
-
     /**
      * @param list<string>|null $failArguments
      * @mago-expect lint:excessive-parameter-list The stateful fake exposes every exporter recovery dimension under test.
@@ -604,7 +580,7 @@ final class MetricsExporterStatefulSsh implements SshExecutor
         private ?array $failArguments = null,
         private int $failOccurrence = 1,
         private bool $disableChangesState = true,
-        public ?string $uninstallScript = null,
+        public bool $retiredArtifacts = true,
         private bool $removeFirewallChangesState = true,
     ) {}
 
@@ -696,50 +672,15 @@ final class MetricsExporterStatefulSsh implements SshExecutor
             ]
                 => $this->addFirewall(),
             ['sudo', 'ufw', '--force', 'delete', '5'] => $this->removeFirewall(),
-            ['sudo', 'cat', '--', MetricsFootprint::UninstallScript] => metricsExporterResult(
-                exitCode: $this->uninstallScript === null ? 1 : 0,
-                stdout: $this->uninstallScript ?? '',
-            ),
             [
                 'sudo',
                 'rm',
                 '-f',
                 '--',
-                MetricsFootprint::UninstallScript.MetricsFootprint::CandidateSuffix,
+                '/usr/local/sbin/orbit-metrics-uninstall',
+                '/usr/local/sbin/orbit-metrics-uninstall.orbit-candidate',
             ]
-                => $this->discardUninstallCandidate(),
-            [
-                'sudo',
-                'install',
-                '-D',
-                '-o',
-                'root',
-                '-g',
-                'root',
-                '-m',
-                '0755',
-                '/dev/stdin',
-                MetricsFootprint::UninstallScript.MetricsFootprint::CandidateSuffix,
-            ]
-                => $this->stageUninstall($command),
-            [
-                'sudo',
-                'mv',
-                '-fT',
-                '--',
-                MetricsFootprint::UninstallScript.MetricsFootprint::CandidateSuffix,
-                MetricsFootprint::UninstallScript,
-            ]
-                => $this->publishUninstallCandidate(),
-            [
-                'sudo',
-                'rm',
-                '-f',
-                '--',
-                MetricsFootprint::UninstallScript,
-                MetricsFootprint::UninstallScript.MetricsFootprint::CandidateSuffix,
-            ]
-                => $this->removeUninstallScript(),
+                => $this->cleanupRetiredArtifacts(),
             default => metricsExporterResult(),
         };
     }
@@ -809,35 +750,9 @@ final class MetricsExporterStatefulSsh implements SshExecutor
         return metricsExporterResult();
     }
 
-    private function stageUninstall(RemoteCommand $command): CommandResult
+    private function cleanupRetiredArtifacts(): CommandResult
     {
-        $this->uninstallCandidate = stream_get_contents($command->protectedInput?->stream()) ?: '';
-
-        return metricsExporterResult();
-    }
-
-    private function discardUninstallCandidate(): CommandResult
-    {
-        $this->uninstallCandidate = null;
-
-        return metricsExporterResult();
-    }
-
-    private function publishUninstallCandidate(): CommandResult
-    {
-        if ($this->uninstallCandidate === null) {
-            return metricsExporterResult(exitCode: 1);
-        }
-
-        $this->uninstallScript = $this->uninstallCandidate;
-        $this->uninstallCandidate = null;
-
-        return metricsExporterResult();
-    }
-
-    private function removeUninstallScript(): CommandResult
-    {
-        $this->uninstallScript = null;
+        $this->retiredArtifacts = false;
 
         return metricsExporterResult();
     }

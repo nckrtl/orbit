@@ -286,7 +286,8 @@ it('keeps issue creation current, dependency-aware, atomic, and proof feasible',
             'compatibility bridge',
         )->toContain('composer issue:lint')->toContain(
             'return a conflicting or incomplete issue to `Backlog` and write the `Readiness` section',
-        )->not->toContain('only the last is an action in `.loop/proof/<ISSUE>.json`');
+        )
+        ->not->toContain('only the last is an action in `.loop/proof/<ISSUE>.json`');
 
     expect($skill)->toContain('which are not harness code');
 

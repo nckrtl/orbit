@@ -505,7 +505,7 @@ it('removes an unreachable node holding a role in one command', function (): voi
         ->assertJsonPath('data.wireguard_peer_removed', true)
         ->assertJsonPath(
             'data.follow_up',
-            'Run the node-local Metrics cleanup on the node once it boots, or discard the node.',
+            'Discard this node, or clear only the leftovers listed above by hand once it is reachable.',
         );
 
     expect($response->json('data.retained_on_node'))

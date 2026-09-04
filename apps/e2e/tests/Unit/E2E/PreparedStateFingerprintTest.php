@@ -282,8 +282,7 @@ describe('PreparedStateFingerprint', function (): void {
                 'apps/gateway/app/Domain/Metrics/ExporterSelector.php',
                 'apps/gateway/app/Domain/Metrics/ExporterPreferenceRepository.php',
                 'apps/gateway/app/Infrastructure/Metrics/NativeMetricsCredentialManager.php',
-                // Rendered onto every selected node during convergence, so its bytes are prepared state.
-                'apps/gateway/app/Infrastructure/Metrics/MetricsUninstallScript.php',
+                // Shared values that determine the selected exporters' prepared state.
                 'apps/gateway/app/Infrastructure/Metrics/MetricsFootprint.php',
                 // The carrier of every byte written under /etc/orbit/metrics, and the
                 // resolver that decides which host the publication lands on.
