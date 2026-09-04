@@ -6,16 +6,11 @@ declare(strict_types=1);
 function unsafeProofPipelines(): array
 {
     $repositoryRoot = dirname(__DIR__, 5);
-    $proofRoot = $repositoryRoot.'/.loop/proof';
     $unsafe = [];
-    $files = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($proofRoot));
+    $files = glob($repositoryRoot.'/.loop/proof/*.sh') ?: [];
 
     foreach ($files as $file) {
-        if (! $file instanceof SplFileInfo || ! $file->isFile() || $file->getExtension() !== 'sh') {
-            continue;
-        }
-
-        $contents = file_get_contents($file->getPathname());
+        $contents = file_get_contents($file);
         assert(is_string($contents));
         $logicalContents = preg_replace('/\\\\\R[ \t]*/', ' ', $contents);
         assert(is_string($logicalContents));
@@ -35,7 +30,7 @@ function unsafeProofPipelines(): array
             }
 
             $unsafe[] = [
-                'file' => str_replace($repositoryRoot.'/', '', $file->getPathname()),
+                'file' => str_replace($repositoryRoot.'/', '', $file),
                 'line' => $lineNumber + 1,
                 'command' => trim($line),
             ];
