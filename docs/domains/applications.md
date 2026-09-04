@@ -68,6 +68,14 @@ next incomplete transition. Once active, the recorded starting commit stays
 unchanged while normal development advances HEAD. A conflicting retry fails
 without a second row or checkout.
 
+## Generate a development Route
+
+After a development AppInstance becomes active, the Gateway uses the Node's effective TLD to create its generated Route. An active Cluster TLD takes precedence over the Node TLD. The main AppInstance gets `<app>.test`; another AppInstance gets `<instance>.<app>.test`. The Route stores its `generated` provenance instead of inferring it from the hostname.
+
+When neither the active Cluster nor the Node supplies a TLD, the Gateway creates no generated Route. The AppInstance remains active, and an operator must create an explicit Route before publication.
+
+The generated Route keeps exactly one routing scope. It uses the active TLD-bearing Cluster when one supplies the effective TLD and otherwise uses the direct Node. Its initial target is the AppInstance that caused its creation.
+
 ## Set the effective web root
 
 By default, an AppInstance inherits the App root. Use the root option to store
@@ -112,9 +120,7 @@ Development AppInstance creation and removal do not accept a repository,
 command, PHP version, process, or shell input. The App owns the repository.
 The Node application role owns PHP and runtime prerequisites.
 
-This lifecycle does not change Caddy, certificates, DNS, hostnames, Routes,
-Routers, or runtime services. Those operations belong to later runtime and
-publication lifecycles.
+Route persistence does not change Caddy, certificates, DNS, Routers, firewalls, or runtime services. Those operations belong to later runtime and publication lifecycles. See [Routes](../reference/routes.md) for the Route record and target contract.
 
 Caller-local Git worktrees are a separate, externally owned source kind. They
 are not adopted by `instance:new`; the later registration lifecycle governed

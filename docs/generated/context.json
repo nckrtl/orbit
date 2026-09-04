@@ -471,6 +471,7 @@
                 "Ingress",
                 "Legacy Instance",
                 "Node",
+                "Route",
                 "Workspace"
             ],
             "governing_adrs": [
@@ -585,6 +586,29 @@
             "governing_adrs": [
                 "0015",
                 "0022"
+            ]
+        },
+        {
+            "path": "docs/reference/routes.md",
+            "title": "Routes",
+            "kind": "reference",
+            "components": [],
+            "concepts": [
+                "App",
+                "AppInstance",
+                "Cluster",
+                "Gateway",
+                "Ingress",
+                "Legacy Instance",
+                "Node",
+                "Route",
+                "Router",
+                "Workspace"
+            ],
+            "governing_adrs": [
+                "0009",
+                "0011",
+                "0017"
             ]
         },
         {
