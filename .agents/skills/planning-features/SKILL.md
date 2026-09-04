@@ -26,6 +26,17 @@ Stop, and report the gap instead of planning around it, when:
 - the outcome changes documented behavior and the issue has no `docs` label; report it for relabeling; or
 - a page cannot be written without guessing product behavior.
 
+## Classify a stop
+
+When an issue that is or was claimable reaches preflight and stops, report one classification with evidence and the smallest next action. An issue that has only ever been intentionally incomplete in `Backlog` is not an issue-creation defect; it is not eligible for preflight.
+
+- `ISSUE_CREATION_DEFECT` — the issue was incomplete, contradictory, or unsupported when it was published directly into a claimable state or at its most recent transition to a claimable state.
+- `POST_CREATION_DRIFT` — available history shows that the issue was complete at that claimable-state baseline, then a later change to `main`, an ADR, a dependency, or proof capability made it stale.
+- `PREFLIGHT_BLOCKER` — the issue contract remains valid, but current lifecycle or infrastructure state prevents planning. Never use this for an unresolved product or architecture decision.
+- `UNKNOWN` — current Linear and Git history cannot establish whether the defect existed at creation or appeared later.
+
+Use existing Linear activity and Git history; do not require a separate creation receipt. A missing or conflicting product decision is an issue defect or later drift when history proves which, and otherwise `UNKNOWN`. Do not use the classification to weaken the stop or repair Linear from the planner role.
+
 ## Write the documentation
 
 Before the acceptance map, run `auditing-documentation` in its default issue scope and fix the drift it finds. Then, when the issue carries the `docs` label, write or update the pages that describe the issue's outcome by following `writing-documentation`, stating the behavior the `Acceptance` items deliver in the present tense. For these pages the reference is the issue and its ADRs, not the code; the code follows. Run `composer docs-build` and then `composer docs-lint` from the repository root, then commit every change under `docs/`, including `docs/generated/context.json`, as one commit on the feature branch whose message starts with `docs:`. The plan stays uncommitted until independent plan review; `.loop/` is tracked so the reviewer can commit the reviewed plan and its verdict. A blocked issue keeps its `docs:` commits on the branch, and the next planning pass starts from them. The implementer starts from these pages and corrects them only where implementation deviates.

@@ -13,7 +13,7 @@ Write one architecture decision record under `docs/decisions` from `template.md`
 - Accepted records under `docs/decisions` that the new record extends, amends, or supersedes.
 - Current code, proof, and reference pages the decision constrains.
 
-Stop when the request contains more than one independent decision, when the decision cannot be stated as bounded obligations, or when the user has not chosen between live options. Split the first case into one record per decision. The other two are issues or plans, not records.
+Stop when the request contains more than one independent decision, when the decision cannot be stated as bounded obligations, or when the user has not chosen between live options. Split the first case into one record per decision. Return an unresolved choice to `grill-with-docs` with the exact open decision and alternatives; do not hide product discovery inside ADR drafting.
 
 ## Write the record
 
@@ -35,4 +35,4 @@ Run `composer docs-lint` from the repository root. The rules `orbit.adr_structur
 - Present the draft as `Proposed`. Revise until the user approves the exact final text, then set `Accepted on YYYY-MM-DD` in the same sentence position.
 - Accepted records are immutable. A later change is a new record that names the one it changes.
 - Commit and pull request rules are in `docs/decisions/README.md` and ADR 0010.
-- After the record reaches `origin/main`, inspect every open Linear issue whose outcome or `Scope` intersects the decision and hand each one to `creating-issues` for revalidation, as ADR 0010 requires: a conflicting contract returns to `Backlog` with a `Readiness` section, and obsolete work is cancelled only with the repository owner's explicit authority.
+- After the record reaches `origin/main`, resume `creating-issues` from the confirmed shaping handoff and inspect every open Linear issue whose outcome or `Scope` intersects the decision, as ADR 0010 requires: a conflicting contract returns to `Backlog` with a `Readiness` section, and obsolete work is cancelled only with the repository owner's explicit authority.
