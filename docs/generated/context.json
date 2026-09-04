@@ -515,14 +515,12 @@
             "concepts": [
                 "App",
                 "AppInstance",
-                "Cluster",
                 "Effective web root",
                 "Gateway",
                 "Ingress",
                 "Legacy Instance",
                 "Node",
                 "Route",
-                "Router",
                 "Workspace"
             ],
             "governing_adrs": [

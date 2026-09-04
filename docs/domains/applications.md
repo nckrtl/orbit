@@ -1,7 +1,6 @@
 # Applications
 
-Orbit stores shared source defaults on an App. It creates each development
-AppInstance as an independent clone on one manually selected app-dev Node. The AppInstance stores no Cluster identity or authoritative hostname. Active Cluster membership determines its Route scope, while hostname selection uses the Node TLD first and its active Cluster TLD only as a fallback.
+Orbit stores shared source defaults on an App. It creates each development AppInstance as an independent clone on one manually selected app-dev Node. [Routes](../reference/routes.md) describes the separate hostname, scope, and target contract.
 
 This behavior implements the development source boundary from
 [ADR 0009](../decisions/0009-clustered-app-instance-routing.md). Production
@@ -67,11 +66,7 @@ without a second row or checkout.
 
 ## Generate a development Route
 
-After a development AppInstance becomes active, an input hostname creates an explicit Route that targets it. Without hostname input, the Gateway creates a generated Route from the Node TLD or, when the Node has no TLD, its active Cluster TLD. The main AppInstance gets `<app>.test`; another AppInstance gets `<instance>.<app>.test`. An app-dev Node without either TLD source cannot host the AppInstance.
-
-The generated Route records the target Node as its generation basis. Replacing its target changes the basis, hostname, and routing scope together from the new AppInstance and Node. Replacing an explicit Route target can change its scope but keeps its hostname. Clearing either Route target keeps the Route and its last scope; a generated Route also keeps its last basis and hostname until another target replaces them.
-
-Active Cluster membership gives the Route Cluster scope independently from which TLD supplied its hostname. A Route outside an active Cluster has Node scope. A Cluster that owns a Route needs one active Router even when it has no TLD.
+After a development AppInstance becomes active, the Gateway creates its Route. The optional `--hostname` value requests an explicit Route; omission requests a generated Route. The [Route reference](../reference/routes.md) owns the exact hostname, generation basis, target, routing scope, lifecycle, and failure behavior.
 
 ## Set the effective web root
 
@@ -117,6 +112,6 @@ Development AppInstance creation and removal do not accept a repository,
 command, PHP version, process, or shell input. The App owns the repository.
 The Node application role owns PHP and runtime prerequisites.
 
-Route persistence does not change Caddy, certificates, DNS, Routers, firewalls, or runtime services. See [Routes](../reference/routes.md) for the Route record and target contract.
+The [Route reference](../reference/routes.md) defines the boundary between stored Route intent and traffic projections.
 
 Caller-local Git worktrees are a separate, externally owned source kind. They are not adopted by `instance:new`; the registration lifecycle governed by [ADR 0018](../decisions/0018-register-caller-local-development-worktrees.md) owns that behavior.
