@@ -1,4 +1,4 @@
 interface:
-  display_name: "Merging Pull Requests"
-  short_description: "Merge and close out, or finish a verified manual merge"
-  default_prompt: "Use $merging-pull-requests in merge-and-closeout mode by default, or closeout-only mode when the caller supplies authoritative evidence that the exact second-approved removal head was manually merged; closeout-only skips the merge command once and performs only promotion, cleanup, and read-back."
+  display_name: "Closing Out Pull Requests"
+  short_description: "Verify an external merge, promote, and clean up"
+  default_prompt: "Use $merging-pull-requests after the external orchestrator merges the exact second-approved removal head to verify the merge, promote its proof, and clean up."

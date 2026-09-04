@@ -17,4 +17,4 @@ git -C "$checkout" ls-files --error-unmatch \
 
 cd "$checkout/apps/e2e"
 ./vendor/bin/pest tests/Feature/Configuration/AgentRoleContractTest.php \
-  --filter='binds removal head and closeout-only lifecycle'
+  --filter='binds the external merge closeout lifecycle'

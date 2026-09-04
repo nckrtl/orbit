@@ -154,8 +154,9 @@ it('binds review and merge to one exact remote head', function () use ($read): v
         ->not->toContain('fresh reviewer');
 
     expect($merge)
-        ->toContain('deterministic closeout')
-        ->toContain('gh pr merge <n> --merge --match-head-commit <sha>')
+        ->toContain('Close out one independently approved pull request')
+        ->toContain('external orchestrator merges it')
+        ->toContain('Do not run a merge command')
         ->toContain('bin/e2e-topology-snapshot promote <ISSUE>')
         ->toContain('Do not substitute a refresh')
         ->toContain('For every candidate, if `main` moved after approval')
@@ -183,7 +184,7 @@ it('accepts Todo or In Progress for development', function () use ($read): void 
         ->not->toContain('supplied Todo Orbit issue');
 });
 
-it('exposes orchestration-neutral lifecycle modes', function () use ($read): void {
+it('keeps one external-orchestrator lifecycle', function () use ($read): void {
     $developer = $read('.agents/skills/developing-features/SKILL.md');
     $reviewer = $read('.agents/skills/reviewing-pull-requests/SKILL.md');
     $merger = $read('.agents/skills/merging-pull-requests/SKILL.md');
@@ -192,46 +193,42 @@ it('exposes orchestration-neutral lifecycle modes', function () use ($read): voi
     $mergerManifest = $read('.agents/skills/merging-pull-requests/agents/openai.yaml');
 
     expect($developer)
-        ->toContain('execution mode is `publish` by default')
-        ->toContain('`handoff` when the caller supplies it')
+        ->toContain('external orchestrator owns pull-request creation')
         ->toContain('must not invoke `gh`')
         ->toContain('push the branch')
         ->toContain('pushed head SHA, branch and base')
         ->toContain('complete proposed body')
         ->toContain('retained-proof binding');
     expect($reviewer)
-        ->toContain('execution mode is `publish` by default')
-        ->toContain('`handoff` when the caller supplies it')
-        ->toContain('review and prove the same exact head')
+        ->toContain('external orchestrator owns review publication')
         ->toContain('must not invoke `gh`')
-        ->toContain('make no GitHub mutation')
-        ->toContain('complete formal-review payload');
+        ->toContain('Return the formal review')
+        ->toContain('complete findings')
+        ->toContain('exact reviewed SHA');
     expect($merger)
-        ->toContain('execution mode is `merge-and-closeout` by default')
-        ->toContain('`closeout-only` when the caller supplies it')
+        ->toContain('after the external orchestrator merges it')
         ->toContain('authoritative read-only GitHub state')
-        ->toContain('do not invoke `gh`')
-        ->toContain('or any merge')
-        ->toContain('only mutations are promotion and cleanup');
+        ->toContain('Do not run a merge command')
+        ->toContain('only mutations are proof promotion and resource cleanup');
 
     expect($developerManifest)
-        ->toContain('publish mode by default')
-        ->toContain('handoff mode')
         ->toContain('Todo or In Progress')
-        ->toContain('complete pull-request body and evidence');
+        ->toContain('complete pull-request body and evidence')
+        ->toContain('without mutating GitHub');
     expect($reviewerManifest)
-        ->toContain('publish mode by default')
-        ->toContain('handoff mode')
         ->toContain('complete formal-review payload')
-        ->toContain('no GitHub mutation');
+        ->toContain('without mutating GitHub');
     expect($mergerManifest)
-        ->toContain('merge-and-closeout mode by default')
-        ->toContain('closeout-only mode')
+        ->toContain('external orchestrator merges')
         ->toContain('exact second-approved removal head')
-        ->toContain('promotion, cleanup, and read-back');
+        ->toContain('promote its proof, and clean up');
 
     foreach ([$developer, $reviewer, $merger, $developerManifest, $reviewerManifest, $mergerManifest] as $contract) {
         expect($contract)
+            ->not->toContain('`publish`')
+            ->not->toContain('`handoff`')
+            ->not->toContain('`merge-and-closeout`')
+            ->not->toContain('`closeout-only`')
             ->not->toContain('Anna')
             ->not->toContain('Tom')
             ->not->toContain('Herdr')
@@ -239,7 +236,7 @@ it('exposes orchestration-neutral lifecycle modes', function () use ($read): voi
     }
 });
 
-it('binds removal head and closeout-only lifecycle', function () use ($read): void {
+it('binds the external merge closeout lifecycle', function () use ($read): void {
     $developer = $read('.agents/skills/developing-features/SKILL.md');
     $planReviewer = $read('.agents/skills/reviewing-feature-plans/SKILL.md');
     $reviewer = $read('.agents/skills/reviewing-pull-requests/SKILL.md');
@@ -249,7 +246,7 @@ it('binds removal head and closeout-only lifecycle', function () use ($read): vo
         ->toContain('complete `.loop/` workspace')
         ->toContain('pushes one commit that deletes `.loop/` and changes nothing else')
         ->toContain('evaluates retained-proof equivalence')
-        ->toContain('fresh second approval of the removal head');
+        ->toContain('returns the removal head for a fresh second approval');
     expect($reviewer)
         ->toContain('sole parent to be the approved workspace head')
         ->toContain('only deletions below `.loop/`')
@@ -260,6 +257,7 @@ it('binds removal head and closeout-only lifecycle', function () use ($read): vo
         ->toContain('still carries `.loop/`')
         ->toContain("Require the entire parent-to-head difference to be\n   deletions below `.loop/`")
         ->toContain('second independent `Approved.` review bound to the removal head')
+        ->toContain('Verify the external merge')
         ->toContain('exact second parent')
         ->toContain('tree to equal the accepted head')
         ->toContain('absence of `.loop/` from the merged tree')
@@ -267,7 +265,6 @@ it('binds removal head and closeout-only lifecycle', function () use ($read): vo
         ->toContain('bin/worktree-remove <ISSUE> <slug>');
     expect($planReviewer)
         ->toContain('Commit the reviewed `.loop/plan.md` and no other change with a message beginning `plan:`');
-    expect(substr_count($merger, 'Record the merge-command step as skipped exactly once.'))->toBe(1);
 });
 
 it('keeps issue creation current, atomic, and proof feasible', function () use ($read): void {

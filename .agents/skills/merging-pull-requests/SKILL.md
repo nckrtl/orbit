@@ -1,15 +1,11 @@
 ---
 name: merging-pull-requests
-description: Use for deterministic closeout of an approved Orbit pull request.
+description: Use to close out an Orbit pull request after the external orchestrator merges its exact approved head.
 ---
 
-# Merging Pull Requests
+# Closing Out Pull Requests
 
-Execute deterministic closeout for one independently approved pull request.
-This task does not provide review or approval; it acts only after exact-head
-gates are satisfied.
-
-The execution mode is `merge-and-closeout` by default, or `closeout-only` when the caller supplies it. Both modes verify the same exact removal head and second approval. `merge-and-closeout` performs the guarded merge before promotion and cleanup. `closeout-only` is recovery for an exact head already merged manually: it makes no pull-request or GitHub mutation, records the merge command as skipped exactly once, and performs only proof promotion, resource cleanup, and direct read-back mutations after its read-only gates pass.
+Close out one independently approved pull request after the external orchestrator merges it. This task does not review, approve, or merge; it starts only after exact-head gates are satisfied.
 
 ## Steps
 
@@ -31,16 +27,7 @@ The execution mode is `merge-and-closeout` by default, or `closeout-only` when t
    the diff is empty, any path remains below `.loop/` at the head, or the approved
    workspace head is not the head's only parent. Do not accept an equivalent tree
    produced by a different commit sequence.
-3. **Merge or verify a manual merge.** In `merge-and-closeout` mode, run
-   `gh pr merge <n> --merge --match-head-commit <sha>` and verify the merge
-   commit on `origin/main`. A concurrent push must make the command fail closed.
-   In caller-supplied `closeout-only` mode, do not invoke `gh` or any merge
-   command. Require authoritative read-only GitHub state to report that the pull
-   request merged the exact second-approved removal head into `main`; fetch
-   `origin/main`, require the recorded merge commit to have that removal head as
-   its exact second parent, and require its tree to equal the accepted head's
-   tree. Record the merge-command step as skipped exactly once. A missing,
-   ambiguous, differently parented, or tree-mismatched merge is a stop.
+3. **Verify the external merge.** Require authoritative read-only GitHub state to report that the pull request merged the exact second-approved removal head into `main`; fetch `origin/main`, require the recorded merge commit to have that removal head as its exact second parent, and require its tree to equal the accepted head's tree. Do not run a merge command or mutate the pull-request surface. A missing, ambiguous, differently parented, or tree-mismatched merge is a stop.
 4. **Promote the proof.** For Incus proof, run
    `bin/e2e-topology-snapshot promote <ISSUE>`. Do not substitute a refresh when
    the proof plan mutates state, `main` differs, or another promotion precondition
@@ -62,4 +49,4 @@ The execution mode is `merge-and-closeout` by default, or `closeout-only` when t
 Run each mutation as a bounded command and fail closed. Do not report success from
 exit status alone; verify GitHub, `origin/main`, topology snapshot identity, and cleanup state directly.
 
-In `closeout-only`, all GitHub and merge evidence is read-only and the only mutations are promotion and cleanup. Mode selection never weakens current-main, exact-head, second-approval, proof-equivalence, promotion-lineage, or cleanup gates.
+All GitHub and merge evidence is read-only. The only mutations are proof promotion and resource cleanup; none of the current-main, exact-head, second-approval, proof-equivalence, promotion-lineage, or cleanup gates may be weakened.

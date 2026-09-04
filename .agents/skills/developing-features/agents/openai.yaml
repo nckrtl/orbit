@@ -1,4 +1,4 @@
 interface:
   display_name: "Developing Features"
-  short_description: "Implement and publish or hand off an issue candidate"
-  default_prompt: "Use $developing-features in publish mode by default, or handoff mode when the caller supplies it, to implement an eligible Todo or In Progress Orbit issue, prove and push the exact candidate, and produce the complete pull-request body and evidence."
+  short_description: "Implement, prove, push, and hand off a candidate"
+  default_prompt: "Use $developing-features to implement an eligible Todo or In Progress Orbit issue, prove and push the exact candidate, and return the complete pull-request body and evidence without mutating GitHub."
