@@ -12,9 +12,9 @@ The Gateway stores Route intent independently from Domain Name System (DNS), cer
 | Routing scope | Exactly one direct Node or one active Cluster, independent from the hostname suffix. |
 | Hostname | One normalized hostname that no other Route owns. |
 | Provenance | The immutable stored value `generated` or `explicit`; Orbit does not infer it from hostname text. |
-| Publication intent | Exactly `private` or `public`, retained when the Route has no target. |
-| Lifecycle | `pending` while traffic projection is not part of the operation. Route operations do not mark a Route `active`. |
-| Failure metadata | `failed_step` and `error_code` are null for every successful pending Route operation. Validation failures return an error without storing failure text. |
+| Publication intent | The immutable stored value `private` or `public`, retained when the Route has no target. |
+| Lifecycle | `pending` while traffic projection is not part of the operation. Route operations never mark a Route `active`; traffic convergence owns activation. |
+| Failure metadata | `failed_step` and `error_code` are null for every successful pending Route operation. Validation failures return an error without storing failure text; traffic convergence owns populated failure metadata. |
 | Targets | Ordered one-to-many rows that each reference an AppInstance. The public v1 operations configure and return at most one target. |
 
 The public caller supplies no provenance, lifecycle, failure, backend Node, address, URL, or balancing field. Creating the same Route again with identical App, scope, normalized hostname, publication intent, and target returns the existing Route. A retry with conflicting values fails without changing it.
@@ -43,7 +43,7 @@ The API, PHP SDK, and CLI expose the same seven typed operations and return one 
 | `route:new` | Create an explicit pending Route with one scalar active target. |
 | `route:list` | Return the Routes visible to the caller in stable order. |
 | `route:show` | Return one Route with its App, scope, provenance, intent, lifecycle, failure metadata, and nullable target. |
-| `route:update` | Change publication intent or the hostname of an explicit Route without changing its App, scope, provenance, lifecycle, or target. |
+| `route:update` | Change only the hostname of an explicit Route. A generic update cannot change its App, scope, provenance, publication intent, lifecycle, failure metadata, or target. |
 | `route:target:set` | Replace the configured target atomically while keeping Route identity. |
 | `route:target:clear` | Remove every configured target while keeping the Route and its intent. |
 | `route:remove` | Delete the Route and all rows it owns. |
@@ -70,7 +70,7 @@ Removing an AppInstance deletes only target rows that reference it after the exi
 
 ## Reconcile related mutations
 
-The Gateway locks and validates the complete proposed Route set before it makes a related Node or Cluster value authoritative. A duplicate or invalid generated hostname, invalid scope or target, missing effective development TLD, or missing Router refuses the whole mutation and preserves every old Route, Node, Cluster, and membership value. An app-dev Node must retain its Node TLD or an active Cluster TLD fallback. An app-prod Node with explicit Routes needs neither.
+The Gateway locks and validates the complete proposed Route set before it makes a related Node or Cluster TLD, state, membership, attach, or detach value authoritative. A duplicate or invalid generated hostname, invalid scope or target, missing effective development TLD, or missing Router refuses the whole mutation and preserves every old Route, Node, Cluster, and membership value. An app-dev Node must retain its Node TLD or an active Cluster TLD fallback. An app-prod Node with explicit Routes needs neither.
 
 | Mutation | Route result |
 | --- | --- |
@@ -80,7 +80,7 @@ The Gateway locks and validates the complete proposed Route set before it makes 
 | Deactivate a Cluster or detach a Node | Move affected Routes to Node scope and recompute generated names whose selected TLD changes. Refuse when any target cannot fit one Node scope. |
 | Set or clear a Router | Router replacement keeps Routes unchanged. Clearing is refused while the Cluster owns any Route. |
 
-These operations change stored desired state only. They do not publish or remove a DNS, certificate, Caddy, firewall, health, Router, Ingress, or workload projection.
+These operations change stored desired state only. Traffic convergence owns the extension of this atomic boundary to DNS, Transport Layer Security (TLS), Caddy, firewall, health, and request-path projections. It also owns Route activation and populated failure metadata.
 
 ## Removal guards
 
@@ -97,6 +97,6 @@ The Gateway prevents ordinary, forced, purged, and offline removal paths from or
 
 ## Compatibility and limits
 
-Legacy Instance responses keep `hostname` and `certificate_mode`, Workspace responses keep `hostname`, and Route operations change no legacy row. Route operations do not change AppInstance source or checkout identity.
+Legacy Instance responses keep `hostname` and `certificate_mode`, Workspace responses keep `hostname`, and Route operations change no legacy row. Route operations do not change AppInstance source or checkout identity. Legacy conversion follows [ADR 0009's staged conversion and verified cutover boundary](../decisions/0009-clustered-app-instance-routing.md#convert-legacy-resources-in-stages).
 
 The stored `public` value is intent only. Public traffic still requires Ingress, and no public request reaches a workload Node directly. [ADR 0023](../decisions/0023-separate-hostname-selection-from-cluster-routing.md) defines hostname and scope selection. [ADR 0009](../decisions/0009-clustered-app-instance-routing.md) and [ADR 0011](../decisions/0011-clustered-production-ingress-and-app-prod-placement.md) define the private and public projection boundaries.

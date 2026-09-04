@@ -70,13 +70,13 @@ exist, Orbit creates it from the exact fetched App default branch commit.
 Source resolution records the selected branch and starting commit before the
 AppInstance becomes active.
 
-After the development source becomes active, the Gateway records its Route and target. An optional hostname creates an explicit Route; otherwise the Gateway generates the hostname from the Node TLD, with the active Cluster TLD as a fallback. Route scope comes from active Cluster membership even when the hostname uses the Node TLD. This lifecycle does not install PHP, converge an application runtime, publish Caddy configuration, create certificates, or change DNS. Runtime prerequisites belong to the Node's app-dev role. See [Applications](domains/applications.md) and [Routes](reference/routes.md).
+After the development source becomes active, the Gateway records its pending Route and target. An optional hostname creates an explicit Route; otherwise the Gateway generates the hostname from the Node TLD, with the active Cluster TLD as a fallback. Route scope comes from active Cluster membership even when the hostname uses the Node TLD. Route creation does not activate traffic or store convergence failure metadata. Runtime prerequisites belong to the Node's app-dev role. See [Applications](domains/applications.md) and [Routes](reference/routes.md).
 
 A Node keeps its own optional TLD when it joins a Cluster. The Node TLD remains the first choice for generated names. An active Cluster TLD is the fallback when the Node has no TLD. Active Cluster membership changes each affected Route to Cluster scope whether or not the Cluster has a TLD. A Cluster that owns a Route requires one active Router. Public traffic always enters through Ingress before Router and workload Caddy.
 
-The Gateway validates and updates every affected generated hostname and scope in one database operation before a Node TLD, Cluster TLD, Cluster state, or membership change becomes authoritative. [ADR 0023](decisions/0023-separate-hostname-selection-from-cluster-routing.md) defines this separation of naming and routing.
+The Gateway validates and updates every affected generated hostname and scope in one database operation before a Node or Cluster TLD, state, membership, attach, or detach change becomes authoritative. Traffic convergence owns the related DNS, TLS, Caddy, firewall, health, request-path, activation, and failure-metadata work. [ADR 0023](decisions/0023-separate-hostname-selection-from-cluster-routing.md) defines the separation of naming and routing.
 
-Legacy Instance and Workspace records remain available during staged conversion. New instance commands use AppInstance. Creating or changing a Route does not change a legacy hostname or certificate field. Route projection, runtime, conversion, and Ingress work remain separate.
+Legacy Instance and Workspace records remain available during the [staged conversion and verified cutover defined by ADR 0009](decisions/0009-clustered-app-instance-routing.md#convert-legacy-resources-in-stages). New instance commands use AppInstance. Creating or changing a Route does not change a legacy hostname or certificate field. Route projection, runtime, conversion, and Ingress work remain separate.
 
 ## Doctor
 

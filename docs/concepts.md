@@ -10,7 +10,7 @@ These are the common terms you will see throughout the Orbit documentation. Each
 - **Effective web root** — The web root an AppInstance serves. An AppInstance override replaces the App root. Both are normalized relative paths.
 - **Legacy Instance** — The earlier runnable application record. Orbit retains it for existing Workspace and Doctor behavior. New development placements use AppInstance.
 - **Workspace** — A Git worktree owned by a legacy Instance. AppInstance creation does not use or change Workspace source.
-- **Route** — An App-owned hostname and routing record. It stores provenance and publication intent. It has one scope and an ordered target set. Public operations configure at most one target. See [Routes](reference/routes.md).
+- **Route** — An App-owned routing record for one hostname and exclusive Node-or-Cluster scope. Its provenance and publication intent are immutable. Its targets stay ordered. Public operations configure at most one. See [Routes](reference/routes.md).
 - **Router** — The Node role that forwards traffic for Cluster-scoped Routes. Every Cluster that owns a Route has one active Router.
 - **Ingress** — The Node role that receives public HTTP and HTTPS traffic and forwards it to the Router. See [ADR 0011](decisions/0011-clustered-production-ingress-and-app-prod-placement.md).
 - **Doctor** — The check that compares what the Gateway expects with what is on a Node and reports every difference. Doctor never changes a machine. See [ADR 0004](decisions/0004-verify-only-doctor-boundary.md).
