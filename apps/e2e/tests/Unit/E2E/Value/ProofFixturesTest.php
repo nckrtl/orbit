@@ -21,12 +21,12 @@ describe('ProofFixtures', function (): void {
             ->toBe(hash('sha256', ProofFixtures::inventoryText($files)))
             ->and(ProofFixtures::fromArray($fixtures->toArray())->toArray())
             ->toBe($fixtures->toArray())
-            ->and(ProofFixtures::hostDirectory('NCK-82'))
-            ->toBe('proofs/NCK-82')
+            ->and(ProofFixtures::hostDirectory())
+            ->toBe('.loop/proof')
             ->and(ProofFixtures::guestPath('check.sh'))
             ->toBe('/var/lib/orbit-e2e/proof/check.sh')
-            ->and(ProofFixtures::guestPath('NCK-73/recover.sh'))
-            ->toBe('/var/lib/orbit-e2e/proof/NCK-73/recover.sh');
+            ->and(fn () => ProofFixtures::guestPath('nested/recover.sh'))
+            ->toThrow(InvalidArgumentException::class, 'The proof fixture path is invalid.');
     });
 
     it('rejects an inventory that a role did not observe, an unsorted or unsafe name, or a bad mode', function (

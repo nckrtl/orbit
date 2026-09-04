@@ -53,7 +53,7 @@ describe('proof reuse evidence', function (): void {
 
     it('round-trips canonical immutable manifests and refuses fingerprint tampering', function (): void {
         $manifest = new ProofInputManifest(
-            2,
+            3,
             str_repeat('a', 40),
             str_repeat('b', 40),
             ['apps/cli/app/Feature.php'],
@@ -63,8 +63,7 @@ describe('proof reuse evidence', function (): void {
                 'mode' => '100644',
                 'blob' => str_repeat('c', 40),
             ]],
-            'proofs/ORB-99.json',
-            [],
+            '.loop/proof/AUX-99.json',
             [],
             null,
             [
@@ -149,7 +148,7 @@ describe('proof reuse evidence', function (): void {
 
     it('records proved, accepted, merged, and runtime lineage for retained promotion', function (): void {
         $record = new ProofPromotionRecord(
-            'ORB-99',
+            'AUX-99',
             'generation-1',
             str_repeat('a', 40),
             str_repeat('b', 40),

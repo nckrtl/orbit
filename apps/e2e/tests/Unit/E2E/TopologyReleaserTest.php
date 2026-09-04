@@ -119,18 +119,18 @@ describe('TopologyReleaser', function () {
         mkdir($worktree, 0700);
         $paths = new StatePaths(temporaryPath('orbit-release-host-', 4));
         $attempt = new AttemptId(str_repeat('a', 32));
-        $target = TopologyTarget::feature('NCK-12', $attempt);
-        $state = IssueState::forWorktree('NCK-12', $worktree);
+        $target = TopologyTarget::feature('TST-12', $attempt);
+        $state = IssueState::forWorktree('TST-12', $worktree);
         $state->writeAttempt($attempt, AttemptPurpose::Proof, new OperationId(str_repeat('c', 32)));
         $state->writeProof(['status' => 'proved', 'attempt_id' => $attempt->value]);
         $commands = [];
         fakeReleaseHost(
             $target,
-            ['user.orbit.e2e.issue' => 'NCK-12', 'user.orbit.e2e.attempt' => $attempt->value],
+            ['user.orbit.e2e.issue' => 'TST-12', 'user.orbit.e2e.attempt' => $attempt->value],
             $commands,
         );
 
-        $result = releaserForTest($paths)->release(new TopologyRequest('NCK-12', $worktree));
+        $result = releaserForTest($paths)->release(new TopologyRequest('TST-12', $worktree));
 
         expect($result['state'])
             ->toBe('released')
@@ -171,20 +171,20 @@ describe('TopologyReleaser', function () {
         $paths = new StatePaths(temporaryPath('orbit-release-host-', 4));
         $discovery = new AttemptId(str_repeat('a', 32));
         $proof = new AttemptId(str_repeat('b', 32));
-        $proofTarget = TopologyTarget::feature('ORB-7', $proof);
-        $state = IssueState::forWorktree('ORB-7', $worktree);
+        $proofTarget = TopologyTarget::feature('AUX-7', $proof);
+        $state = IssueState::forWorktree('AUX-7', $worktree);
         $state->writeAttempt($discovery, AttemptPurpose::Discovery, new OperationId(str_repeat('c', 32)));
         $state->writeAttempt($proof, AttemptPurpose::Proof, new OperationId(str_repeat('d', 32)));
         $state->writeProof(['status' => 'diagnosis', 'attempt_id' => $proof->value]);
         $commands = [];
         fakeReleaseHost(
             $proofTarget,
-            ['user.orbit.e2e.issue' => 'ORB-7', 'user.orbit.e2e.attempt' => $proof->value],
+            ['user.orbit.e2e.issue' => 'AUX-7', 'user.orbit.e2e.attempt' => $proof->value],
             $commands,
         );
 
         $result = releaserForTest($paths)->release(
-            new TopologyRequest('ORB-7', $worktree),
+            new TopologyRequest('AUX-7', $worktree),
             AttemptPurpose::Proof,
         );
 
@@ -207,20 +207,20 @@ describe('TopologyReleaser', function () {
         $discovery = new AttemptId(str_repeat('a', 32));
         $proof = new AttemptId(str_repeat('b', 32));
         $candidate = new AttemptId(str_repeat('c', 32));
-        $target = TopologyTarget::feature('ORB-7', $candidate);
-        $state = IssueState::forWorktree('ORB-7', $worktree);
+        $target = TopologyTarget::feature('AUX-7', $candidate);
+        $state = IssueState::forWorktree('AUX-7', $worktree);
         $state->writeAttempt($discovery, AttemptPurpose::Discovery, new OperationId(str_repeat('d', 32)));
         $state->writeAttempt($proof, AttemptPurpose::Proof, new OperationId(str_repeat('e', 32)));
         $state->writeAttempt($candidate, AttemptPurpose::CandidateConvergence, new OperationId(str_repeat('f', 32)));
         $commands = [];
         fakeReleaseHost(
             $target,
-            ['user.orbit.e2e.issue' => 'ORB-7', 'user.orbit.e2e.attempt' => $candidate->value],
+            ['user.orbit.e2e.issue' => 'AUX-7', 'user.orbit.e2e.attempt' => $candidate->value],
             $commands,
         );
 
         $result = releaserForTest($paths)->release(
-            new TopologyRequest('ORB-7', $worktree),
+            new TopologyRequest('AUX-7', $worktree),
             AttemptPurpose::CandidateConvergence,
         );
 
@@ -238,7 +238,7 @@ describe('TopologyReleaser', function () {
         $worktree = temporaryPath('orbit-release-worktree-', 4);
         mkdir($worktree, 0700);
         file_put_contents($worktree.'/.gitignore', "/.e2e/\n");
-        Process::run(['git', '-C', $worktree, 'init', '--quiet', '-b', 'codex/orb-99-release'])->throw();
+        Process::run(['git', '-C', $worktree, 'init', '--quiet', '-b', 'codex/aux-99-release'])->throw();
         Process::run(['git', '-C', $worktree, 'config', 'user.email', 'orbit@example.test'])->throw();
         Process::run(['git', '-C', $worktree, 'config', 'user.name', 'Orbit'])->throw();
         Process::run(['git', '-C', $worktree, 'add', '.'])->throw();
@@ -246,25 +246,25 @@ describe('TopologyReleaser', function () {
         $repository = new GitRepository($worktree);
         $proved = $repository->commit();
         $attempt = new AttemptId(str_repeat('a', 32));
-        $target = TopologyTarget::feature('ORB-99', $attempt);
-        $state = IssueState::forWorktree('ORB-99', $worktree);
+        $target = TopologyTarget::feature('AUX-99', $attempt);
+        $state = IssueState::forWorktree('AUX-99', $worktree);
         $state->writeAttempt($attempt, AttemptPurpose::Proof, new OperationId(str_repeat('c', 32)));
         $state->writeProof([
             'status' => 'proved',
             'attempt_id' => $attempt->value,
             'manifest_sha256' => str_repeat('d', 64),
         ]);
-        $repository->pinProof('ORB-99', $attempt, $proved);
+        $repository->pinProof('AUX-99', $attempt, $proved);
         $commands = [];
         fakeReleaseHost(
             $target,
-            ['user.orbit.e2e.issue' => 'ORB-99', 'user.orbit.e2e.attempt' => $attempt->value],
+            ['user.orbit.e2e.issue' => 'AUX-99', 'user.orbit.e2e.attempt' => $attempt->value],
             $commands,
         );
 
         releaserForTest(new StatePaths(temporaryPath('orbit-release-host-', 4)))
             ->release(
-                new TopologyRequest('ORB-99', $worktree),
+                new TopologyRequest('AUX-99', $worktree),
                 AttemptPurpose::Proof,
             );
         $output = [];
@@ -275,7 +275,7 @@ describe('TopologyReleaser', function () {
             $worktree,
             'show-ref',
             '--verify',
-            'refs/orbit/e2e-proof/orb-99/'.$attempt->value,
+            'refs/orbit/e2e-proof/aux-99/'.$attempt->value,
         ])).' 2>/dev/null', $output, $exitCode);
 
         expect($exitCode)->not->toBe(0);
@@ -286,25 +286,25 @@ describe('TopologyReleaser', function () {
         mkdir($worktree, 0700);
         $paths = new StatePaths(temporaryPath('orbit-release-host-', 4));
         $attempt = new AttemptId(str_repeat('a', 32));
-        $target = TopologyTarget::feature('NCK-12', $attempt);
+        $target = TopologyTarget::feature('TST-12', $attempt);
         $commands = [];
 
-        expect(fn () => releaserForTest($paths)->release(new TopologyRequest('NCK-12', $worktree)))
-            ->toThrow(RuntimeException::class, 'NCK-12 has no active attempt.');
+        expect(fn () => releaserForTest($paths)->release(new TopologyRequest('TST-12', $worktree)))
+            ->toThrow(RuntimeException::class, 'TST-12 has no active attempt.');
 
-        IssueState::forWorktree('NCK-12', $worktree)
+        IssueState::forWorktree('TST-12', $worktree)
             ->writeAttempt($attempt, AttemptPurpose::Discovery, new OperationId(str_repeat('c', 32)));
         fakeReleaseHost(
             $target,
-            ['user.orbit.e2e.issue' => 'NCK-12', 'user.orbit.e2e.attempt' => str_repeat('f', 32)],
+            ['user.orbit.e2e.issue' => 'TST-12', 'user.orbit.e2e.attempt' => str_repeat('f', 32)],
             $commands,
         );
 
-        expect(fn () => releaserForTest($paths)->release(new TopologyRequest('NCK-12', $worktree)))
+        expect(fn () => releaserForTest($paths)->release(new TopologyRequest('TST-12', $worktree)))
             ->toThrow(RuntimeException::class, 'ownership does not match the issue attempt')
             ->and(array_filter($commands, static fn (string $command): bool => str_starts_with($command, 'delete')))
             ->toBe([])
-            ->and(IssueState::forWorktree('NCK-12', $worktree)->hasAttempt())
+            ->and(IssueState::forWorktree('TST-12', $worktree)->hasAttempt())
             ->toBeTrue();
     });
 });

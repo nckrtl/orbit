@@ -1,4 +1,4 @@
 interface:
   display_name: "Reviewing Pull Requests"
-  short_description: "Independently review an Orbit pull request"
-  default_prompt: "Use $reviewing-pull-requests to review this Orbit pull request against its Linear issue and candidate commit."
+  short_description: "Review an exact head and return the verdict"
+  default_prompt: "Use $reviewing-pull-requests to review and prove one exact Orbit candidate head and return the complete formal-review payload without mutating GitHub."

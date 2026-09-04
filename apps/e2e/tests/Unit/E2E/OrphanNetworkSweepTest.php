@@ -76,7 +76,7 @@ describe('orphan network filter', function () {
             'oe-orphan' => sweepNetwork('oe-orphan'),
             'orbit-e2e-n-legacy' => sweepNetwork('orbit-e2e-n-legacy'),
             'orbit-e2e-p-n-legacy' => sweepNetwork('orbit-e2e-p-n-legacy'),
-            'oe-used' => sweepNetwork('oe-used', ['/1.0/instances/orbit-e2e-nck-12-aaaaaaaa-gateway']),
+            'oe-used' => sweepNetwork('oe-used', ['/1.0/instances/orbit-e2e-tst-12-aaaaaaaa-gateway']),
             'oe-topo-snap' => sweepNetwork('oe-topo-snap'),
             'incusbr0' => sweepNetwork('incusbr0'),
             'control-unused' => sweepNetwork('control-unused'),
@@ -112,7 +112,7 @@ describe('orphan network filter', function () {
     });
 
     it('never selects an explicitly protected network', function () {
-        $protected = TopologyTarget::feature('NCK-12', new AttemptId(str_repeat('a', 32)))->network();
+        $protected = TopologyTarget::feature('TST-12', new AttemptId(str_repeat('a', 32)))->network();
 
         expect(OrphanNetworkSweep::orphans([
             $protected => sweepNetwork($protected),

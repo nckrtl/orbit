@@ -15,7 +15,7 @@ function observedRecord(string $role, string $type, string $id, array $files): a
         'schema' => 2,
         'id' => $id,
         'attempt' => str_repeat('a', 32),
-        'issue' => 'ORB-9',
+        'issue' => 'AUX-9',
         'phase' => 'setup',
         'role' => $role,
         'process_type' => $type,
@@ -152,9 +152,9 @@ it('uses Incus-safe batch labels for every process-surface probe', function (): 
     };
 
     new ObservedPhpInputCollector($transport)->begin(
-        TopologyTarget::feature('ORB-9', new AttemptId(str_repeat('a', 32))),
+        TopologyTarget::feature('AUX-9', new AttemptId(str_repeat('a', 32))),
         'setup',
-        'ORB-9',
+        'AUX-9',
         new AttemptId(str_repeat('a', 32)),
     );
 
@@ -169,7 +169,7 @@ it('records one exact Sury CLI, FPM, and package inventory across both roles', f
     ]));
 
     expect($collector->prepare(
-        TopologyTarget::feature('ORB-9', new AttemptId(str_repeat('a', 32))),
+        TopologyTarget::feature('AUX-9', new AttemptId(str_repeat('a', 32))),
     ))->toBe([
         ['role' => 'app-dev', ...$inventory],
         ['role' => 'gateway', ...$inventory],
@@ -184,7 +184,7 @@ it('requires identical Sury CLI and FPM packages before normal convergence', fun
     ]));
 
     $collector->normalizeRuntime(
-        TopologyTarget::feature('ORB-9', new AttemptId(str_repeat('a', 32))),
+        TopologyTarget::feature('AUX-9', new AttemptId(str_repeat('a', 32))),
     );
 
     expect(true)->toBeTrue();
@@ -197,7 +197,7 @@ it('fails before collection when Sury runtime inventories differ across roles', 
     ]));
 
     expect(fn () => $collector->prepare(
-        TopologyTarget::feature('ORB-9', new AttemptId(str_repeat('a', 32))),
+        TopologyTarget::feature('AUX-9', new AttemptId(str_repeat('a', 32))),
     ))
         ->toThrow(RuntimeException::class, 'runtime inventories differ');
 });
@@ -224,9 +224,9 @@ it('unions concurrent CLI and FPM process paths by role without overwriting evid
     ], ['mode' => '100644', 'type' => 'blob', 'object' => str_repeat('b', 40)]);
 
     $surfaces = $collector->collect(
-        TopologyTarget::feature('ORB-9', new AttemptId(str_repeat('a', 32))),
+        TopologyTarget::feature('AUX-9', new AttemptId(str_repeat('a', 32))),
         'setup',
-        'ORB-9',
+        'AUX-9',
         new AttemptId(str_repeat('a', 32)),
         observedCollectedRuntimes(),
         $entries,
@@ -272,9 +272,9 @@ it('rejects a collected process that reports runtime drift', function (): void {
     ]));
 
     expect(fn () => $collector->collect(
-        TopologyTarget::feature('ORB-9', new AttemptId(str_repeat('a', 32))),
+        TopologyTarget::feature('AUX-9', new AttemptId(str_repeat('a', 32))),
         'setup',
-        'ORB-9',
+        'AUX-9',
         new AttemptId(str_repeat('a', 32)),
         observedCollectedRuntimes(),
         [
@@ -313,9 +313,9 @@ it('rejects zero coverage even when another process supplies the required surfac
     ]));
 
     expect(fn () => $collector->collect(
-        TopologyTarget::feature('ORB-9', new AttemptId(str_repeat('a', 32))),
+        TopologyTarget::feature('AUX-9', new AttemptId(str_repeat('a', 32))),
         'setup',
-        'ORB-9',
+        'AUX-9',
         new AttemptId(str_repeat('a', 32)),
         observedCollectedRuntimes(),
         [
@@ -333,9 +333,9 @@ it('fails closed for malformed, missing-surface, and untracked process output', 
     $collector = new ObservedPhpInputCollector(observedTransport($records));
 
     expect(fn () => $collector->collect(
-        TopologyTarget::feature('ORB-9', new AttemptId(str_repeat('a', 32))),
+        TopologyTarget::feature('AUX-9', new AttemptId(str_repeat('a', 32))),
         'setup',
-        'ORB-9',
+        'AUX-9',
         new AttemptId(str_repeat('a', 32)),
         observedCollectedRuntimes(),
         ['apps/cli/app/One.php' => ['mode' => '100644', 'type' => 'blob', 'object' => str_repeat('b', 40)]],

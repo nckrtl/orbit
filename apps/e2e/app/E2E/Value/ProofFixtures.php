@@ -8,7 +8,7 @@ use InvalidArgumentException;
 
 /**
  * The proof-only fixture inventory one proof staged on every role: each file
- * of `proofs/<issue>/` at the candidate commit, installed
+ * beside the plan under `.loop/proof/` at the candidate commit, installed
  * root-owned at the fixed guest directory, plus the digest every role reported
  * after installation. A plan references a fixture by its guest path on any node.
  *
@@ -18,7 +18,7 @@ final readonly class ProofFixtures
 {
     public const string GUEST_DIRECTORY = '/var/lib/orbit-e2e/proof';
 
-    public const string HOST_DIRECTORY = 'proofs';
+    public const string HOST_DIRECTORY = '.loop/proof';
 
     private const array MODES = ['644', '755'];
 
@@ -64,32 +64,16 @@ final readonly class ProofFixtures
         return preg_match('/\A[a-z0-9][a-z0-9._-]{0,127}\z/D', $name) === 1 && ! str_contains($name, '..');
     }
 
-    /** A fixture path is one safe name or one issue namespace plus one safe name. */
+    /** A fixture path is one flat, safe name. */
     public static function isFixturePath(string $path): bool
     {
-        $parts = explode('/', $path);
-        if (count($parts) === 1) {
-            return self::isFixtureName($parts[0]);
-        }
-
-        if (count($parts) !== 2 || ! self::isFixtureName($parts[1])) {
-            return false;
-        }
-        try {
-            TopologyTarget::assertIssue($parts[0]);
-        } catch (InvalidArgumentException) {
-            return false;
-        }
-
-        return true;
+        return self::isFixtureName($path);
     }
 
-    /** The host directory of one issue's fixtures, relative to the repository root. */
-    public static function hostDirectory(string $issue): string
+    /** The active issue's fixture directory, relative to the repository root. */
+    public static function hostDirectory(): string
     {
-        TopologyTarget::assertIssue($issue);
-
-        return self::HOST_DIRECTORY.'/'.$issue;
+        return self::HOST_DIRECTORY;
     }
 
     public static function guestPath(string $name): string

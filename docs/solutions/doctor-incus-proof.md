@@ -10,7 +10,7 @@ Doctor reports one finding per inspector that fails, so a fixture must break exa
 
 ## Solution
 
-Four fixture patterns give a Doctor proof its baseline, its drift, its unverifiable condition, and its evidence that Doctor writes nothing. The self-checking actions live under `proofs/<ISSUE>/` as proof fixtures and run from the candidate checkout on the Nodes that have one. An action on `app-prod`, which has no checkout, is a short `sudo bash -c` argv string.
+Four fixture patterns give a Doctor proof its baseline, its drift, its unverifiable condition, and its evidence that Doctor writes nothing. The self-checking actions live beside the plan under `.loop/proof/` as proof fixtures and run from the candidate checkout on the Nodes that have one. [ADR 0022](../decisions/0022-track-the-issue-workspace-and-delete-it-before-merge.md) governs that issue workspace. An action on `app-prod`, which has no checkout, is a short `sudo bash -c` argv string.
 
 ### Baseline
 

@@ -1,5 +1,0 @@
-{
-    "setup": [{"id":"populate-and-retarget","node":"app-dev","argv":["bash","/var/lib/orbit-e2e/proof/populate-and-retarget.sh"],"timeout_seconds":900}],
-    "acceptance": [{"id":"verify-retargeted-hosts-dns-tls-and-idempotence","node":"app-dev","argv":["bash","/var/lib/orbit-e2e/proof/verify-retarget.sh"],"timeout_seconds":300}],
-    "mutates": true
-}

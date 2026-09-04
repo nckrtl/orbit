@@ -511,9 +511,9 @@ describe('worktree synchronization values', function () {
 
 describe('WorktreeSynchronizer', function () {
     it('uses one preflight batch and no guest mutation for hydrated clean source', function () {
-        [$root, $worktree] = createSynchronizerRepositoryFixture('NCK-130');
+        [$root, $worktree] = createSynchronizerRepositoryFixture('TST-130');
         try {
-            $target = featureTarget('NCK-130');
+            $target = featureTarget('TST-130');
             $sha = trim(synchronizerGit($worktree, ['rev-parse', 'HEAD'])[0]);
             $tree = new GitRepository($worktree)->effectiveTreeHash();
             /** @mago-expect lint:cyclomatic-complexity The fixture callback keeps its exact hydration assertions together. */
@@ -592,10 +592,10 @@ describe('WorktreeSynchronizer', function () {
     });
 
     it('skips transfer when hydrated guests already match the dirty effective tree', function () {
-        [$root, $worktree] = createSynchronizerRepositoryFixture('NCK-141');
+        [$root, $worktree] = createSynchronizerRepositoryFixture('TST-141');
         try {
             file_put_contents($worktree.'/README.md', "dirty source\n");
-            $target = featureTarget('NCK-141');
+            $target = featureTarget('TST-141');
             $sha = trim(synchronizerGit($worktree, ['rev-parse', 'HEAD'])[0]);
             $tree = new GitRepository($worktree)->effectiveTreeHash();
             $scriptHash = hash('sha256', implode('', array_map(
@@ -648,10 +648,10 @@ describe('WorktreeSynchronizer', function () {
     });
 
     it('transfers a dirty effective tree only to the checkout role that drifted', function () {
-        [$root, $worktree] = createSynchronizerRepositoryFixture('NCK-142');
+        [$root, $worktree] = createSynchronizerRepositoryFixture('TST-142');
         try {
             file_put_contents($worktree.'/README.md', "dirty source\n");
-            $target = featureTarget('NCK-142');
+            $target = featureTarget('TST-142');
             $sha = trim(synchronizerGit($worktree, ['rev-parse', 'HEAD'])[0]);
             $tree = new GitRepository($worktree)->effectiveTreeHash();
             $scriptHash = hash('sha256', implode('', array_map(
@@ -693,14 +693,14 @@ describe('WorktreeSynchronizer', function () {
     });
 
     it('uses the injected operation identity in source evidence', function () {
-        [$root, $worktree] = createSynchronizerRepositoryFixture('NCK-129');
+        [$root, $worktree] = createSynchronizerRepositoryFixture('TST-129');
         try {
             $sha = trim(synchronizerGit($worktree, ['rev-parse', 'HEAD'])[0]);
             $state = new WorktreeSynchronizer(
                 new WorktreeSynchronizerGuestFake($sha),
                 $root,
                 new OperationId(str_repeat('a', 32)),
-            )->sync(featureTarget('NCK-129'), $worktree);
+            )->sync(featureTarget('TST-129'), $worktree);
             expect($state->operationId)->toBe(str_repeat('a', 32));
         } finally {
             destroySynchronizerRepositoryFixture($root, $worktree);
@@ -714,16 +714,16 @@ describe('WorktreeSynchronizer', function () {
     });
 
     it('reuses one prerequisite bundle for cloned guests at the same ancestor during full synchronization', function () {
-        [$root, $worktree] = createSynchronizerRepositoryFixture('NCK-131');
+        [$root, $worktree] = createSynchronizerRepositoryFixture('TST-131');
         try {
             $ancestor = trim(synchronizerGit($worktree, ['rev-parse', 'HEAD^'])[0]);
             $guest = new WorktreeSynchronizerGuestFake([
-                'orbit-e2e-nck-131-aaaaaaaa-gateway' => $ancestor,
-                'orbit-e2e-nck-131-aaaaaaaa-app-dev' => $ancestor,
+                'orbit-e2e-tst-131-aaaaaaaa-gateway' => $ancestor,
+                'orbit-e2e-tst-131-aaaaaaaa-app-dev' => $ancestor,
             ]);
 
             new WorktreeSynchronizer($guest, $root, new OperationId(str_repeat('a', 32)))->sync(
-                featureTarget('NCK-131'),
+                featureTarget('TST-131'),
                 $worktree,
             );
 
@@ -740,7 +740,7 @@ describe('WorktreeSynchronizer', function () {
     });
 
     it('falls back to a full bundle when the guest commit is a descendant of the host commit', function () {
-        [$root, $worktree] = createSynchronizerRepositoryFixture('NCK-160');
+        [$root, $worktree] = createSynchronizerRepositoryFixture('TST-160');
         try {
             $hostSha = trim(synchronizerGit($worktree, ['rev-parse', 'HEAD'])[0]);
             file_put_contents($worktree.'/later.txt', "later\n");
@@ -760,7 +760,7 @@ describe('WorktreeSynchronizer', function () {
             $guest = new WorktreeSynchronizerGuestFake($descendant);
 
             new WorktreeSynchronizer($guest, $root, new OperationId(str_repeat('a', 32)))->sync(
-                featureTarget('NCK-160'),
+                featureTarget('TST-160'),
                 $worktree,
             );
 
@@ -774,13 +774,13 @@ describe('WorktreeSynchronizer', function () {
     });
 
     it('does not push bundles when each guest already has the host commit', function () {
-        [$root, $worktree] = createSynchronizerRepositoryFixture('NCK-140');
+        [$root, $worktree] = createSynchronizerRepositoryFixture('TST-140');
         try {
             $sha = trim(synchronizerGit($worktree, ['rev-parse', 'HEAD'])[0]);
             $guest = new WorktreeSynchronizerGuestFake($sha);
 
             new WorktreeSynchronizer($guest, $root, new OperationId(str_repeat('a', 32)))->sync(
-                featureTarget('NCK-140'),
+                featureTarget('TST-140'),
                 $worktree,
             );
 
@@ -797,7 +797,7 @@ describe('WorktreeSynchronizer', function () {
     });
 
     it('batches independent probes and source transfer phases in dependency order', function () {
-        [$root, $worktree] = createSynchronizerRepositoryFixture('NCK-137');
+        [$root, $worktree] = createSynchronizerRepositoryFixture('TST-137');
         try {
             $sha = trim(synchronizerGit($worktree, ['rev-parse', 'HEAD'])[0]);
             $scripts = array_map(
@@ -817,7 +817,7 @@ describe('WorktreeSynchronizer', function () {
             );
 
             new WorktreeSynchronizer($guest, $root, new OperationId(str_repeat('a', 32)))->sync(
-                featureTarget('NCK-137'),
+                featureTarget('TST-137'),
                 $worktree,
             );
 
@@ -866,7 +866,7 @@ describe('WorktreeSynchronizer', function () {
     });
 
     it('creates only the distinct prerequisite bundles required by cloned guests', function () {
-        [$root, $worktree] = createSynchronizerRepositoryFixture('NCK-132');
+        [$root, $worktree] = createSynchronizerRepositoryFixture('TST-132');
         try {
             $earlier = trim(synchronizerGit($worktree, ['rev-parse', 'HEAD^'])[0]);
             $later = trim(synchronizerGit($worktree, ['rev-parse', 'HEAD'])[0]);
@@ -883,12 +883,12 @@ describe('WorktreeSynchronizer', function () {
                 'new head',
             ]);
             $guest = new WorktreeSynchronizerGuestFake([
-                'orbit-e2e-nck-132-aaaaaaaa-gateway' => $earlier,
-                'orbit-e2e-nck-132-aaaaaaaa-app-dev' => $later,
+                'orbit-e2e-tst-132-aaaaaaaa-gateway' => $earlier,
+                'orbit-e2e-tst-132-aaaaaaaa-app-dev' => $later,
             ]);
 
             new WorktreeSynchronizer($guest, $root, new OperationId(str_repeat('a', 32)))->sync(
-                featureTarget('NCK-132'),
+                featureTarget('TST-132'),
                 $worktree,
             );
 
@@ -906,17 +906,17 @@ describe('WorktreeSynchronizer', function () {
     });
 
     it('falls back per guest when an incremental prerequisite cannot be proved', function () {
-        [$root, $worktree] = createSynchronizerRepositoryFixture('NCK-133');
+        [$root, $worktree] = createSynchronizerRepositoryFixture('TST-133');
         try {
             $ancestor = trim(synchronizerGit($worktree, ['rev-parse', 'HEAD^'])[0]);
             $unknown = str_repeat('f', 40);
             $guest = new WorktreeSynchronizerGuestFake([
-                'orbit-e2e-nck-133-aaaaaaaa-gateway' => $ancestor,
-                'orbit-e2e-nck-133-aaaaaaaa-app-dev' => $unknown,
+                'orbit-e2e-tst-133-aaaaaaaa-gateway' => $ancestor,
+                'orbit-e2e-tst-133-aaaaaaaa-app-dev' => $unknown,
             ]);
 
             $state = new WorktreeSynchronizer($guest, $root, new OperationId(str_repeat('a', 32)))->sync(
-                featureTarget('NCK-133'),
+                featureTarget('TST-133'),
                 $worktree,
             );
 
@@ -929,8 +929,8 @@ describe('WorktreeSynchronizer', function () {
                 ->toContain("-{$unknown} ")
                 ->and(array_column($guest->bundlePushes, 'instance'))
                 ->toBe([
-                    'orbit-e2e-nck-133-aaaaaaaa-gateway',
-                    'orbit-e2e-nck-133-aaaaaaaa-app-dev',
+                    'orbit-e2e-tst-133-aaaaaaaa-gateway',
+                    'orbit-e2e-tst-133-aaaaaaaa-app-dev',
                 ])
                 ->and($state->guestSha)
                 ->toBe($state->hostSha);
@@ -940,7 +940,7 @@ describe('WorktreeSynchronizer', function () {
     });
 
     it('uses a known divergent guest commit as a prerequisite and falls back for malformed state', function () {
-        [$root, $worktree] = createSynchronizerRepositoryFixture('NCK-134');
+        [$root, $worktree] = createSynchronizerRepositoryFixture('TST-134');
         try {
             file_put_contents($root.'/README.md', "diverged\n");
             synchronizerGit($root, ['add', 'README.md']);
@@ -958,12 +958,12 @@ describe('WorktreeSynchronizer', function () {
             $feature = trim(synchronizerGit($worktree, ['rev-parse', 'HEAD'])[0]);
             $common = trim(synchronizerGit($root, ['merge-base', $diverged, $feature])[0]);
             $guest = new WorktreeSynchronizerGuestFake([
-                'orbit-e2e-nck-134-aaaaaaaa-gateway' => $diverged,
-                'orbit-e2e-nck-134-aaaaaaaa-app-dev' => 'invalid',
+                'orbit-e2e-tst-134-aaaaaaaa-gateway' => $diverged,
+                'orbit-e2e-tst-134-aaaaaaaa-app-dev' => 'invalid',
             ]);
 
             new WorktreeSynchronizer($guest, $root, new OperationId(str_repeat('a', 32)))->sync(
-                featureTarget('NCK-134'),
+                featureTarget('TST-134'),
                 $worktree,
             );
 
@@ -982,15 +982,15 @@ describe('WorktreeSynchronizer', function () {
     });
 
     it('falls back to a full bundle when a guest does not report a commit', function () {
-        [$root, $worktree] = createSynchronizerRepositoryFixture('NCK-135');
+        [$root, $worktree] = createSynchronizerRepositoryFixture('TST-135');
         try {
             $ancestor = trim(synchronizerGit($worktree, ['rev-parse', 'HEAD^'])[0]);
             $guest = new WorktreeSynchronizerGuestFake([
-                'orbit-e2e-nck-135-aaaaaaaa-gateway' => $ancestor,
+                'orbit-e2e-tst-135-aaaaaaaa-gateway' => $ancestor,
             ]);
 
             new WorktreeSynchronizer($guest, $root, new OperationId(str_repeat('a', 32)))->sync(
-                featureTarget('NCK-135'),
+                featureTarget('TST-135'),
                 $worktree,
             );
 
@@ -1006,26 +1006,26 @@ describe('WorktreeSynchronizer', function () {
     });
 
     it('rejects mismatched source evidence from each transferred guest', function () {
-        [$root, $worktree] = createSynchronizerRepositoryFixture('NCK-136');
+        [$root, $worktree] = createSynchronizerRepositoryFixture('TST-136');
         try {
             $sha = trim(synchronizerGit($worktree, ['rev-parse', 'HEAD'])[0]);
             $guest = new WorktreeSynchronizerGuestFake(
                 $sha,
-                evidenceShas: ['orbit-e2e-nck-136-aaaaaaaa-app-dev' => str_repeat('f', 40)],
+                evidenceShas: ['orbit-e2e-tst-136-aaaaaaaa-app-dev' => str_repeat('f', 40)],
             );
 
             expect(fn () => new WorktreeSynchronizer(
                 $guest,
                 $root,
                 new OperationId(str_repeat('a', 32)),
-            )->sync(featureTarget('NCK-136'), $worktree))
+            )->sync(featureTarget('TST-136'), $worktree))
                 ->toThrow(RuntimeException::class, 'Guest source evidence does not match the host.');
         } finally {
             destroySynchronizerRepositoryFixture($root, $worktree);
         }
     });
     it('skips script transfer when every guest marker matches', function () {
-        [$root, $worktree] = createSynchronizerRepositoryFixture('NCK-125');
+        [$root, $worktree] = createSynchronizerRepositoryFixture('TST-125');
         $sha = trim(synchronizerGit($worktree, ['rev-parse', 'HEAD'])[0]);
         $scripts = array_map(
             fn (string $name): string => $worktree.'/apps/e2e/resources/guest/'.$name,
@@ -1040,7 +1040,7 @@ describe('WorktreeSynchronizer', function () {
         $guest = new WorktreeSynchronizerGuestFake($sha, $hash, null, synchronizerScriptContentHashes($worktree));
         try {
             new WorktreeSynchronizer($guest, $root, new OperationId(str_repeat('a', 32)))->sync(
-                featureTarget('NCK-125'),
+                featureTarget('TST-125'),
                 $worktree,
             );
             expect(array_filter($guest->pushes, fn (array $push): bool => str_contains(
@@ -1053,7 +1053,7 @@ describe('WorktreeSynchronizer', function () {
     });
 
     it('does not take the source no-op when the guest checkout has drifted', function () {
-        [$root, $worktree] = createSynchronizerRepositoryFixture('NCK-142');
+        [$root, $worktree] = createSynchronizerRepositoryFixture('TST-142');
         try {
             $sha = trim(synchronizerGit($worktree, ['rev-parse', 'HEAD'])[0]);
             $scripts = array_map(
@@ -1072,10 +1072,10 @@ describe('WorktreeSynchronizer', function () {
                 null,
                 synchronizerScriptContentHashes($worktree),
                 [],
-                [featureTarget('NCK-142')->instance('gateway') => " M README.md\n"],
+                [featureTarget('TST-142')->instance('gateway') => " M README.md\n"],
             );
             new WorktreeSynchronizer($guest, $root, new OperationId(str_repeat('a', 32)))->sync(
-                featureTarget('NCK-142'),
+                featureTarget('TST-142'),
                 $worktree,
             );
             expect(array_filter($guest->pushes, fn (array $push): bool => str_contains(
@@ -1088,10 +1088,10 @@ describe('WorktreeSynchronizer', function () {
     });
 
     it('retries hydration after source receive succeeded on the previous sync', function () {
-        [$root, $worktree] = createSynchronizerRepositoryFixture('NCK-144');
+        [$root, $worktree] = createSynchronizerRepositoryFixture('TST-144');
         try {
             $sha = trim(synchronizerGit($worktree, ['rev-parse', 'HEAD'])[0]);
-            $target = featureTarget('NCK-144');
+            $target = featureTarget('TST-144');
             $guest = new WorktreeSynchronizerGuestFake($sha, failure: 'source-hydrate');
             $synchronizer = new WorktreeSynchronizer(
                 $guest,
@@ -1160,7 +1160,7 @@ describe('WorktreeSynchronizer', function () {
     });
 
     it('reinstalls scripts when the marker matches but installed content drifts', function () {
-        [$root, $worktree] = createSynchronizerRepositoryFixture('NCK-126');
+        [$root, $worktree] = createSynchronizerRepositoryFixture('TST-126');
         $sha = trim(synchronizerGit($worktree, ['rev-parse', 'HEAD'])[0]);
         $scripts = array_map(
             fn (string $name): string => $worktree.'/apps/e2e/resources/guest/'.$name,
@@ -1181,7 +1181,7 @@ describe('WorktreeSynchronizer', function () {
         $guest = new WorktreeSynchronizerGuestFake($sha, $markerHash, null, $drifted);
         try {
             new WorktreeSynchronizer($guest, $root, new OperationId(str_repeat('a', 32)))->sync(
-                featureTarget('NCK-126'),
+                featureTarget('TST-126'),
                 $worktree,
             );
             expect(synchronizerInstalledScripts($guest))->toHaveCount(30);
@@ -1191,7 +1191,7 @@ describe('WorktreeSynchronizer', function () {
     });
 
     it('installs changed guest scripts through one ordered batch boundary', function () {
-        [$root, $worktree] = createSynchronizerRepositoryFixture('NCK-141');
+        [$root, $worktree] = createSynchronizerRepositoryFixture('TST-141');
         try {
             $sha = trim(synchronizerGit($worktree, ['rev-parse', 'HEAD'])[0]);
             $guest = new WorktreeSynchronizerGuestFake($sha);
@@ -1208,7 +1208,7 @@ describe('WorktreeSynchronizer', function () {
             }
 
             new WorktreeSynchronizer($guest, $root, new OperationId(str_repeat('a', 32)))->sync(
-                featureTarget('NCK-141'),
+                featureTarget('TST-141'),
                 $worktree,
             );
 
@@ -1235,19 +1235,19 @@ describe('WorktreeSynchronizer', function () {
     });
 
     it('does not publish script markers and cleans every changed role after an install failure', function () {
-        [$root, $worktree] = createSynchronizerRepositoryFixture('NCK-142');
+        [$root, $worktree] = createSynchronizerRepositoryFixture('TST-142');
         try {
             $sha = trim(synchronizerGit($worktree, ['rev-parse', 'HEAD'])[0]);
             $guest = new WorktreeSynchronizerGuestFake(
                 $sha,
-                failure: 'script-install:orbit-e2e-nck-142-aaaaaaaa-app-dev',
+                failure: 'script-install:orbit-e2e-tst-142-aaaaaaaa-app-dev',
             );
 
             expect(fn () => new WorktreeSynchronizer(
                 $guest,
                 $root,
                 new OperationId(str_repeat('a', 32)),
-            )->sync(featureTarget('NCK-142'), $worktree))
+            )->sync(featureTarget('TST-142'), $worktree))
                 ->toThrow(
                     RuntimeException::class,
                     'Guest script installation failed. Failed operations: '
@@ -1272,12 +1272,12 @@ describe('WorktreeSynchronizer', function () {
     });
 
     it('reports script installation and cleanup failures without masking either failure', function () {
-        [$root, $worktree] = createSynchronizerRepositoryFixture('NCK-143');
+        [$root, $worktree] = createSynchronizerRepositoryFixture('TST-143');
         try {
             $sha = trim(synchronizerGit($worktree, ['rev-parse', 'HEAD'])[0]);
             $guest = new WorktreeSynchronizerGuestFake($sha, failure: [
-                'script-install:orbit-e2e-nck-143-aaaaaaaa-app-dev',
-                'script-cleanup:orbit-e2e-nck-143-aaaaaaaa-app-prod',
+                'script-install:orbit-e2e-tst-143-aaaaaaaa-app-dev',
+                'script-cleanup:orbit-e2e-tst-143-aaaaaaaa-app-prod',
             ]);
 
             try {
@@ -1285,7 +1285,7 @@ describe('WorktreeSynchronizer', function () {
                     $guest,
                     $root,
                     new OperationId(str_repeat('a', 32)),
-                )->sync(featureTarget('NCK-143'), $worktree);
+                )->sync(featureTarget('TST-143'), $worktree);
                 $this->fail('Expected script installation to fail.');
             } catch (RuntimeException $exception) {
                 expect($exception->getMessage())
@@ -1302,12 +1302,12 @@ describe('WorktreeSynchronizer', function () {
     });
 
     it('installs scripts before hydration and cleans staging', function () {
-        [$root, $worktree] = createSynchronizerRepositoryFixture('NCK-123');
+        [$root, $worktree] = createSynchronizerRepositoryFixture('TST-123');
         $sha = trim(synchronizerGit($worktree, ['rev-parse', 'HEAD'])[0]);
         $guest = new WorktreeSynchronizerGuestFake($sha);
         try {
             $state = new WorktreeSynchronizer($guest, $root, new OperationId(str_repeat('a', 32)))->sync(
-                featureTarget('NCK-123'),
+                featureTarget('TST-123'),
                 $worktree,
             );
             $scriptInstalls = synchronizerInstalledScripts($guest);
@@ -1356,12 +1356,12 @@ describe('WorktreeSynchronizer', function () {
     });
 
     it('fails inventory before guest mutation', function () {
-        [$root, $worktree] = createSynchronizerRepositoryFixture('NCK-127');
+        [$root, $worktree] = createSynchronizerRepositoryFixture('TST-127');
         try {
             unlink($worktree.'/apps/e2e/resources/guest/receive-source.sh');
             $guest = new WorktreeSynchronizerGuestFake(str_repeat('a', 40));
             expect(fn () => new WorktreeSynchronizer($guest, $root, new OperationId(str_repeat('a', 32)))->sync(
-                featureTarget('NCK-127'),
+                featureTarget('TST-127'),
                 $worktree,
             ))
                 ->toThrow(RuntimeException::class, 'Guest script inventory is invalid.');
@@ -1372,11 +1372,11 @@ describe('WorktreeSynchronizer', function () {
     });
 
     it('rejects the primary checkout for feature synchronization before guest mutation', function () {
-        [$root, $worktree] = createSynchronizerRepositoryFixture('NCK-129');
+        [$root, $worktree] = createSynchronizerRepositoryFixture('TST-129');
         $guest = new WorktreeSynchronizerGuestFake(str_repeat('a', 40));
         try {
             expect(fn () => new WorktreeSynchronizer($guest, $root, new OperationId(str_repeat('a', 32)))->sync(
-                featureTarget('NCK-129'),
+                featureTarget('TST-129'),
                 $root,
             ))
                 ->toThrow(InvalidArgumentException::class, 'linked worktree');
@@ -1387,7 +1387,7 @@ describe('WorktreeSynchronizer', function () {
     });
 
     it('accepts the primary checkout for topology snapshot validation', function () {
-        $root = createSynchronizerPrimaryFixture('NCK-130');
+        $root = createSynchronizerPrimaryFixture('TST-130');
         $sha = trim(synchronizerGit($root, ['rev-parse', 'HEAD'])[0]);
         $guest = new WorktreeSynchronizerGuestFake($sha);
         try {
@@ -1402,12 +1402,12 @@ describe('WorktreeSynchronizer', function () {
     });
 
     it('cleans source staging after receive failure', function () {
-        [$root, $worktree] = createSynchronizerRepositoryFixture('NCK-128');
+        [$root, $worktree] = createSynchronizerRepositoryFixture('TST-128');
         $sha = trim(synchronizerGit($worktree, ['rev-parse', 'HEAD'])[0]);
         $guest = new WorktreeSynchronizerGuestFake($sha, null, 'source-receive');
         try {
             expect(fn () => new WorktreeSynchronizer($guest, $root, new OperationId(str_repeat('a', 32)))->sync(
-                featureTarget('NCK-128'),
+                featureTarget('TST-128'),
                 $worktree,
             ))
                 ->toThrow(RuntimeException::class);
@@ -1429,8 +1429,8 @@ describe('WorktreeSynchronizer', function () {
                 ->toHaveCount(2)
                 ->and(array_column($cleanups, 'instance'))
                 ->toBe([
-                    'orbit-e2e-nck-128-aaaaaaaa-gateway',
-                    'orbit-e2e-nck-128-aaaaaaaa-app-dev',
+                    'orbit-e2e-tst-128-aaaaaaaa-gateway',
+                    'orbit-e2e-tst-128-aaaaaaaa-app-dev',
                 ])
                 ->and(array_map(
                     fn (array $cleanup): mixed => $cleanup['command']->command[array_key_last(
@@ -1451,18 +1451,18 @@ describe('WorktreeSynchronizer', function () {
     });
 
     it('reports the primary transfer failure and secondary batched cleanup failure', function () {
-        [$root, $worktree] = createSynchronizerRepositoryFixture('NCK-138');
+        [$root, $worktree] = createSynchronizerRepositoryFixture('TST-138');
         $sha = trim(synchronizerGit($worktree, ['rev-parse', 'HEAD'])[0]);
         $guest = new WorktreeSynchronizerGuestFake($sha, failure: [
-            'source-receive:orbit-e2e-nck-138-aaaaaaaa-gateway',
-            'source-cleanup:orbit-e2e-nck-138-aaaaaaaa-app-dev',
+            'source-receive:orbit-e2e-tst-138-aaaaaaaa-gateway',
+            'source-cleanup:orbit-e2e-tst-138-aaaaaaaa-app-dev',
         ]);
         try {
             expect(fn () => new WorktreeSynchronizer(
                 $guest,
                 $root,
                 new OperationId(str_repeat('a', 32)),
-            )->sync(featureTarget('NCK-138'), $worktree))
+            )->sync(featureTarget('TST-138'), $worktree))
                 ->toThrow(
                     RuntimeException::class,
                     'Primary operation failed: Guest source installation failed. Failed operations: '
@@ -1475,18 +1475,18 @@ describe('WorktreeSynchronizer', function () {
     });
 
     it('does not start dependent source phases after a batched prepare failure', function () {
-        [$root, $worktree] = createSynchronizerRepositoryFixture('NCK-139');
+        [$root, $worktree] = createSynchronizerRepositoryFixture('TST-139');
         $sha = trim(synchronizerGit($worktree, ['rev-parse', 'HEAD'])[0]);
         $guest = new WorktreeSynchronizerGuestFake(
             $sha,
-            failure: 'source-prepare:orbit-e2e-nck-139-aaaaaaaa-app-dev',
+            failure: 'source-prepare:orbit-e2e-tst-139-aaaaaaaa-app-dev',
         );
         try {
             expect(fn () => new WorktreeSynchronizer(
                 $guest,
                 $root,
                 new OperationId(str_repeat('a', 32)),
-            )->sync(featureTarget('NCK-139'), $worktree))
+            )->sync(featureTarget('TST-139'), $worktree))
                 ->toThrow(RuntimeException::class, 'Guest source staging failed.');
 
             $sourceBatches = array_values(array_filter(
@@ -1508,14 +1508,14 @@ describe('WorktreeSynchronizer', function () {
         }
     });
     it('preserves the hydrated gateway environment outside the checkout as root', function () {
-        [$root, $worktree] = createSynchronizerRepositoryFixture('NCK-140');
+        [$root, $worktree] = createSynchronizerRepositoryFixture('TST-140');
         try {
             $sha = trim(synchronizerGit($worktree, ['rev-parse', 'HEAD'])[0]);
             $guest = new WorktreeSynchronizerGuestFake(
-                ['orbit-e2e-nck-140-aaaaaaaa-gateway' => '', 'orbit-e2e-nck-140-aaaaaaaa-app-dev' => $sha],
+                ['orbit-e2e-tst-140-aaaaaaaa-gateway' => '', 'orbit-e2e-tst-140-aaaaaaaa-app-dev' => $sha],
                 installedScriptsHash: synchronizerScriptContentHashes($worktree),
             );
-            $target = featureTarget('NCK-140');
+            $target = featureTarget('TST-140');
 
             new WorktreeSynchronizer($guest, $root, new OperationId(str_repeat('a', 32)))->sync($target, $worktree);
 
@@ -1548,7 +1548,7 @@ describe('WorktreeSynchronizer', function () {
     });
 
     it('fails closed and cleans staging when the gateway environment cannot be preserved', function () {
-        [$root, $worktree] = createSynchronizerRepositoryFixture('NCK-141');
+        [$root, $worktree] = createSynchronizerRepositoryFixture('TST-141');
         try {
             $guest = new WorktreeSynchronizerGuestFake(
                 '',
@@ -1557,7 +1557,7 @@ describe('WorktreeSynchronizer', function () {
             );
 
             expect(fn () => new WorktreeSynchronizer($guest, $root, new OperationId(str_repeat('a', 32)))->sync(
-                featureTarget('NCK-141'),
+                featureTarget('TST-141'),
                 $worktree,
             ))
                 ->toThrow(RuntimeException::class, 'gateway environment preservation failed')
@@ -1569,11 +1569,11 @@ describe('WorktreeSynchronizer', function () {
     });
 
     it('records the host identity of a mounted worktree without transferring files', function () {
-        [$root, $worktree] = createSynchronizerRepositoryFixture('NCK-142');
+        [$root, $worktree] = createSynchronizerRepositoryFixture('TST-142');
         try {
             $sha = trim(synchronizerGit($worktree, ['rev-parse', 'HEAD'])[0]);
             $guest = new WorktreeSynchronizerGuestFake('');
-            $target = featureTarget('NCK-142');
+            $target = featureTarget('TST-142');
             $synchronizer = new WorktreeSynchronizer($guest, $root, new OperationId(str_repeat('a', 32)));
 
             $clean = $synchronizer->syncWorkingTree($target, $worktree);
@@ -1626,15 +1626,15 @@ describe('WorktreeSynchronizer', function () {
     });
 
     it('fails closed when a mounted source marker cannot be written', function () {
-        [$root, $worktree] = createSynchronizerRepositoryFixture('NCK-143');
+        [$root, $worktree] = createSynchronizerRepositoryFixture('TST-143');
         try {
             $guest = new WorktreeSynchronizerGuestFake(
                 '',
-                failure: 'source-marker:orbit-e2e-nck-143-aaaaaaaa-app-dev',
+                failure: 'source-marker:orbit-e2e-tst-143-aaaaaaaa-app-dev',
             );
 
             expect(fn () => new WorktreeSynchronizer($guest, $root, new OperationId(str_repeat('a', 32)))
-                ->syncWorkingTree(featureTarget('NCK-143'), $worktree))
+                ->syncWorkingTree(featureTarget('TST-143'), $worktree))
                 ->toThrow(
                     RuntimeException::class,
                     'source marker write failed. Failed operations: source-marker.app-dev',
@@ -1645,14 +1645,14 @@ describe('WorktreeSynchronizer', function () {
     });
 
     it('validates the mounted worktree exactly as a transferred one', function () {
-        [$root, $worktree] = createSynchronizerRepositoryFixture('NCK-144');
+        [$root, $worktree] = createSynchronizerRepositoryFixture('TST-144');
         try {
             $guest = new WorktreeSynchronizerGuestFake('');
             $synchronizer = new WorktreeSynchronizer($guest, $root, new OperationId(str_repeat('a', 32)));
 
-            expect(fn () => $synchronizer->syncWorkingTree(featureTarget('NCK-144'), $root))
+            expect(fn () => $synchronizer->syncWorkingTree(featureTarget('TST-144'), $root))
                 ->toThrow(InvalidArgumentException::class, 'registered linked worktree')
-                ->and(fn () => $synchronizer->syncWorkingTree(featureTarget('NCK-999'), $worktree))
+                ->and(fn () => $synchronizer->syncWorkingTree(featureTarget('TST-999'), $worktree))
                 ->toThrow(InvalidArgumentException::class, 'branch does not match')
                 ->and($guest->execs)
                 ->toBe([]);
@@ -1820,10 +1820,10 @@ describe('WorktreeSynchronizer::syncCommit', function () {
     });
 
     it('transfers only the exact candidate commit and ignores later host worktree state', function () {
-        $fixture = createSynchronizerCandidateFixture('NCK-150');
+        $fixture = createSynchronizerCandidateFixture('TST-150');
         ['root' => $root, 'worktree' => $worktree, 'candidate' => $candidate] = $fixture;
         try {
-            $target = featureTarget('NCK-150');
+            $target = featureTarget('TST-150');
             $treeHash = hash('sha256', $fixture['candidateTree']);
             $guest = candidateGuestFake($target, $worktree, $candidate, $fixture['candidateTree']);
 
@@ -1871,10 +1871,10 @@ describe('WorktreeSynchronizer::syncCommit', function () {
     });
 
     it('detaches every checkout at the candidate and proves it before hydration', function () {
-        $fixture = createSynchronizerCandidateFixture('NCK-156');
+        $fixture = createSynchronizerCandidateFixture('TST-156');
         ['root' => $root, 'worktree' => $worktree, 'candidate' => $candidate] = $fixture;
         try {
-            $target = featureTarget('NCK-156');
+            $target = featureTarget('TST-156');
             $treeHash = hash('sha256', $fixture['candidateTree']);
             $guest = candidateGuestFake($target, $worktree, $candidate, $fixture['candidateTree']);
 
@@ -1950,10 +1950,10 @@ describe('WorktreeSynchronizer::syncCommit', function () {
     });
 
     it('installs the guest scripts of the candidate commit, not the working tree', function () {
-        $fixture = createSynchronizerCandidateFixture('NCK-157');
+        $fixture = createSynchronizerCandidateFixture('TST-157');
         ['root' => $root, 'worktree' => $worktree, 'candidate' => $candidate] = $fixture;
         try {
-            $target = featureTarget('NCK-157');
+            $target = featureTarget('TST-157');
             $script = $worktree.'/apps/e2e/resources/guest/receive-source.sh';
             file_put_contents($script, "# dirty host edit\n", FILE_APPEND);
             $candidateScripts = synchronizerCandidateScripts($worktree, $candidate);
@@ -2003,7 +2003,7 @@ describe('WorktreeSynchronizer::syncCommit', function () {
     });
 
     it('refuses to sync a candidate into the topology snapshot before any guest interaction', function () {
-        $fixture = createSynchronizerCandidateFixture('NCK-158');
+        $fixture = createSynchronizerCandidateFixture('TST-158');
         ['root' => $root, 'worktree' => $worktree, 'candidate' => $candidate] = $fixture;
         try {
             $guest = new WorktreeSynchronizerGuestFake('');
@@ -2026,10 +2026,10 @@ describe('WorktreeSynchronizer::syncCommit', function () {
     });
 
     it('uses a known guest commit as the bundle prerequisite and resets a guest already at the candidate', function () {
-        $fixture = createSynchronizerCandidateFixture('NCK-151');
+        $fixture = createSynchronizerCandidateFixture('TST-151');
         ['root' => $root, 'worktree' => $worktree, 'candidate' => $candidate] = $fixture;
         try {
-            $target = featureTarget('NCK-151');
+            $target = featureTarget('TST-151');
             $ancestor = trim(synchronizerGit($worktree, ['rev-parse', $candidate.'^'])[0]);
             $guest = candidateGuestFake(
                 $target,
@@ -2062,10 +2062,10 @@ describe('WorktreeSynchronizer::syncCommit', function () {
     });
 
     it('sends a full bundle when the guest commit is not an ancestor of the candidate', function () {
-        $fixture = createSynchronizerCandidateFixture('NCK-159');
+        $fixture = createSynchronizerCandidateFixture('TST-159');
         ['root' => $root, 'worktree' => $worktree, 'candidate' => $candidate] = $fixture;
         try {
-            $target = featureTarget('NCK-159');
+            $target = featureTarget('TST-159');
             $guest = candidateGuestFake(
                 $target,
                 $worktree,
@@ -2093,9 +2093,9 @@ describe('WorktreeSynchronizer::syncCommit', function () {
     });
 
     it('rejects an unreachable, inexact, or foreign candidate before any guest interaction', function () {
-        $fixture = createSynchronizerCandidateFixture('NCK-152');
+        $fixture = createSynchronizerCandidateFixture('TST-152');
         ['root' => $root, 'worktree' => $worktree, 'candidate' => $candidate] = $fixture;
-        $foreign = createSynchronizerPrimaryFixture('NCK-153');
+        $foreign = createSynchronizerPrimaryFixture('TST-153');
         try {
             $orphanOutput = implode("\n", synchronizerGit($worktree, [
                 '-c',
@@ -2112,7 +2112,7 @@ describe('WorktreeSynchronizer::syncCommit', function () {
             expect($unreachable)->toMatch('/\A[0-9a-f]{40}\z/');
             $guest = new WorktreeSynchronizerGuestFake('');
             $synchronizer = new WorktreeSynchronizer($guest, $root, new OperationId(str_repeat('a', 32)));
-            $target = featureTarget('NCK-152');
+            $target = featureTarget('TST-152');
 
             expect(fn () => $synchronizer->syncCommit($target, $worktree, $unreachable))
                 ->toThrow(InvalidArgumentException::class, 'not reachable')
@@ -2139,12 +2139,12 @@ describe('WorktreeSynchronizer::syncCommit', function () {
     });
 
     it('accepts the candidate from the primary checkout without a worktree or branch rule', function () {
-        $root = createSynchronizerPrimaryFixture('NCK-154');
+        $root = createSynchronizerPrimaryFixture('TST-154');
         try {
             $candidate = trim(synchronizerGit($root, ['rev-parse', 'HEAD'])[0]);
             $candidateTree = trim(synchronizerGit($root, ['rev-parse', 'HEAD^{tree}'])[0]);
             file_put_contents($root.'/README.md', "dirty primary\n");
-            $target = featureTarget('NCK-999');
+            $target = featureTarget('TST-999');
             $guest = new WorktreeSynchronizerGuestFake(
                 $candidate,
                 installedScriptsHash: synchronizerScriptContentHashes($root),
@@ -2172,10 +2172,10 @@ describe('WorktreeSynchronizer::syncCommit', function () {
         string $failure,
         string $message,
     ) {
-        $fixture = createSynchronizerCandidateFixture('NCK-155');
+        $fixture = createSynchronizerCandidateFixture('TST-155');
         ['root' => $root, 'worktree' => $worktree, 'candidate' => $candidate] = $fixture;
         try {
-            $target = featureTarget('NCK-155');
+            $target = featureTarget('TST-155');
             $trees = [
                 $target->instance('gateway') => $fixture['candidateTree'],
                 $target->instance('app-dev') => $failure === 'source-tree'

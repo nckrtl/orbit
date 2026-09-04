@@ -55,7 +55,7 @@ it('rejects ambiguous required role mappings before construction', function () {
         ),
     ]);
     $target = TopologyTarget::disposableCold(
-        'ORB-106',
+        'AUX-106',
         new AttemptId(str_repeat('a', 32)),
         $recipe,
     );
@@ -76,7 +76,7 @@ it('rejects required roles assigned to the same physical Node before constructio
             ['app-dev', 'app-prod'],
         ),
     ]);
-    $target = TopologyTarget::disposableCold('ORB-106', new AttemptId(str_repeat('a', 32)), $recipe);
+    $target = TopologyTarget::disposableCold('AUX-106', new AttemptId(str_repeat('a', 32)), $recipe);
 
     expect(fn () => cold_topology_plan($target))
         ->toThrow(InvalidArgumentException::class, 'distinct physical Node');
@@ -84,7 +84,7 @@ it('rejects required roles assigned to the same physical Node before constructio
 
 it('rejects invalid additional Incus metadata before construction', function (array $metadata) {
     $target = TopologyTarget::disposableCold(
-        'ORB-106',
+        'AUX-106',
         new AttemptId(str_repeat('a', 32)),
         TopologyRecipe::coldAcceptance(),
     );
@@ -103,12 +103,12 @@ it('rejects invalid additional Incus metadata before construction', function (ar
 })->with([
     'foreign key' => [['foo' => 'bar']],
     'owner override' => [['user.orbit.e2e.owner' => 'someone-else']],
-    'nul value' => [['user.orbit.e2e.issue' => "ORB-106\0"]],
+    'nul value' => [['user.orbit.e2e.issue' => "AUX-106\0"]],
 ]);
 
 it('derives disposable persistence from the absence of a fixed slot', function () {
     $target = TopologyTarget::disposableCold(
-        'ORB-106',
+        'AUX-106',
         new AttemptId(str_repeat('a', 32)),
         TopologyRecipe::coldAcceptance(),
     );

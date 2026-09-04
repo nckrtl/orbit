@@ -32,9 +32,9 @@ describe('OperationLock', function () {
         $paths = new StatePaths(temporaryPath('orbit-lock-', 4));
         $lock = new OperationLock($paths);
         $operation = new OperationId(str_repeat('d', 32));
-        $lock->acquire('feature-NCK-321', $operation, true, 0.05);
+        $lock->acquire('feature-TST-321', $operation, true, 0.05);
         $owner = json_decode(
-            (string) file_get_contents($paths->path('locks/feature-NCK-321.lock')),
+            (string) file_get_contents($paths->path('locks/feature-TST-321.lock')),
             true,
             512,
             JSON_THROW_ON_ERROR,

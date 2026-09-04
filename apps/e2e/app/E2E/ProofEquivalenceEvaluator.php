@@ -145,11 +145,14 @@ final readonly class ProofEquivalenceEvaluator
             $provedMainEntries = $repository->entries($manifest->includedMainSha);
             $acceptedMainEntries = $repository->entries($includedMainSha);
         }
+        $loopRemoved = ! array_any(
+            array_keys($acceptedEntries),
+            static fn (string $path): bool => str_starts_with($path, '.loop/'),
+        );
         $changedPaths = [];
         foreach ($repository->changes($provedSha, $acceptedSha) as $change) {
             $classification = $this->changeClassification(
                 $change,
-                $request->issue,
                 $planPath,
                 $plan,
                 $manifest,
@@ -157,6 +160,7 @@ final readonly class ProofEquivalenceEvaluator
                 $acceptedEntries,
                 $provedMainEntries,
                 $acceptedMainEntries,
+                $loopRemoved,
             );
             $changedPaths[] = [...$change, 'classification' => $classification->value];
             if ($classification === ProofInputClassification::Indeterminate) {
@@ -215,7 +219,6 @@ final readonly class ProofEquivalenceEvaluator
      */
     private function changeClassification(
         array $change,
-        string $issue,
         string $planPath,
         ProofPlan $plan,
         ?ProofInputManifest $manifest,
@@ -223,7 +226,16 @@ final readonly class ProofEquivalenceEvaluator
         array $acceptedEntries,
         array $provedMainEntries,
         array $acceptedMainEntries,
+        bool $loopRemoved,
     ): ProofInputClassification {
+        if (
+            $loopRemoved
+            && $change['change'] === 'deleted'
+            && $change['previous_path'] === null
+            && str_starts_with($change['path'], '.loop/')
+        ) {
+            return ProofInputClassification::NonRuntime;
+        }
         $paths = array_filter([$change['path'], $change['previous_path']]);
         if (
             $manifest?->observedInputs !== null
@@ -245,9 +257,9 @@ final readonly class ProofEquivalenceEvaluator
 
             return ProofInputClassification::Runtime;
         }
-        $classifications = [$this->classifyPath($change['path'], $issue, $planPath, $plan)];
+        $classifications = [$this->classifyPath($change['path'], $planPath, $plan)];
         if ($change['previous_path'] !== null) {
-            $classifications[] = $this->classifyPath($change['previous_path'], $issue, $planPath, $plan);
+            $classifications[] = $this->classifyPath($change['previous_path'], $planPath, $plan);
         }
         foreach ([
             ProofInputClassification::Indeterminate,
@@ -266,17 +278,12 @@ final readonly class ProofEquivalenceEvaluator
 
     private function classifyPath(
         string $path,
-        string $issue,
         string $planPath,
         ProofPlan $plan,
     ): ProofInputClassification {
         if (
             $path === $planPath
-            || str_starts_with($path, 'proofs/'.$issue.'/')
-            || array_any($plan->fixtureIssues, static fn (string $fixtureIssue): bool => str_starts_with(
-                $path,
-                'proofs/'.$fixtureIssue.'/',
-            ))
+            || str_starts_with($path, ProofPlanFile::DIRECTORY.'/')
             || array_any($plan->inputs, static fn (string $input): bool => $path === $input
             || str_starts_with($path, $input.'/'))
         ) {

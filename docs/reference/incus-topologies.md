@@ -56,13 +56,13 @@ Every `incus` call carries `--project` from `e2e.incus.project` and lists resour
 | `exec ISSUE ROLE --argv=JSON [--proof]` | Runs one argument vector as `orbit` on one role; `--argv-file=PATH` replaces `--argv` |
 | `sync ISSUE` | Proves the mount, re-verifies the mounted source identity, and verifies readiness |
 | `verify ISSUE` | Verifies discovery readiness and records the report |
-| `prove ISSUE [--plan=PATH]` | Proves the clean worktree HEAD on a fresh proof topology; the plan defaults to `proofs/ISSUE.json` |
-| `equivalence ISSUE [--plan=PATH]` | Compares the clean HEAD with the retained proof and writes an immutable report; see [Equivalence outcomes](proof-plans.md#equivalence-outcomes) |
+| `prove ISSUE [--plan=PATH]` | Proves the clean worktree HEAD on a fresh proof topology; the plan defaults to `.loop/proof/ISSUE.json` |
+| `equivalence ISSUE [--plan=PATH]` | Compares the clean HEAD with the retained proof using the plan that defaults to `.loop/proof/ISSUE.json`, then writes an immutable report; see [Equivalence outcomes](proof-plans.md#equivalence-outcomes) |
 | `candidate ISSUE` | Converges and verifies the accepted head on a candidate-convergence topology after an `equivalent` report that requires it |
 | `status ISSUE` | Reports the state files without touching Incus |
 | `release ISSUE [--proof\|--candidate]` | Releases discovery, or the selected retained topology, verifies absence, and sweeps orphaned networks |
 
-`bin/worktree-remove ISSUE slug` releases the proof topology, then discovery, then removes the worktree.
+`bin/worktree-remove ISSUE slug` releases the proof topology, then discovery, then removes the worktree. [ADR 0022](../decisions/0022-track-the-issue-workspace-and-delete-it-before-merge.md) governs the tracked plan and fixture lifecycle on an issue branch.
 
 ### Guest commands
 

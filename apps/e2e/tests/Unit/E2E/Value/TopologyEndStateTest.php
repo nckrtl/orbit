@@ -90,7 +90,7 @@ describe('TopologyEndState', function (): void {
             );
     })->with([
         'an unknown role' => ['app-staging'],
-        'an instance name' => ['orbit-e2e-nck-113-app-prod'],
+        'an instance name' => ['orbit-e2e-tst-113-app-prod'],
         'an empty string' => [''],
         'an integer' => [1],
         'null' => [null],

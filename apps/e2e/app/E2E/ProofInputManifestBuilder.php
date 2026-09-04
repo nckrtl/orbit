@@ -94,9 +94,6 @@ final readonly class ProofInputManifestBuilder
         }
         usort($inputs, static fn (array $left, array $right): int => $left['path'] <=> $right['path']);
 
-        $fixtureIssues = $plan->fixtureIssues;
-        sort($fixtureIssues, SORT_STRING);
-
         return new ProofInputManifest(
             StaticProofInputPolicy::VERSION,
             $provedSha,
@@ -104,7 +101,6 @@ final readonly class ProofInputManifestBuilder
             $featureRuntimePaths,
             $inputs,
             $planPath,
-            $fixtureIssues,
             $plan->inputs,
             $observedInputs,
             [
@@ -169,12 +165,12 @@ final readonly class ProofInputManifestBuilder
      */
     private function contractPaths(array $entries, string $issue, string $planPath, ProofPlan $plan): array
     {
+        if ($planPath !== ProofPlanFile::pathForIssue($issue)) {
+            throw new InvalidArgumentException("Proof plan [{$planPath}] does not belong to issue [{$issue}].");
+        }
         $contract = [];
         $this->requirePath($entries, $planPath, $contract);
-        $this->addDirectory($entries, 'proofs/'.$issue, $contract, required: false);
-        foreach ($plan->fixtureIssues as $fixtureIssue) {
-            $this->addDirectory($entries, 'proofs/'.$fixtureIssue, $contract, required: true);
-        }
+        $this->addDirectory($entries, ProofPlanFile::DIRECTORY, $contract, required: true);
         foreach ($plan->inputs as $input) {
             $this->addFileOrDirectory($entries, $input, $contract);
         }

@@ -18,7 +18,7 @@ describe('AttemptId', function (): void {
     it('rejects anything but exact 32 lowercase hexadecimal characters', function (string $value): void {
         expect(fn () => new AttemptId($value))->toThrow(InvalidArgumentException::class);
     })->with([
-        'issue identity' => ['NCK-123'],
+        'issue identity' => ['TST-123'],
         'empty' => [''],
         'uppercase hexadecimal' => [str_repeat('A', 32)],
         'too short' => [str_repeat('a', 31)],

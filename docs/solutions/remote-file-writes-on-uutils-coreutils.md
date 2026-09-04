@@ -40,8 +40,4 @@ Numeric container identities such as Grafana's `472` also need a separate
 
 ## Verification
 
-`proofs/NCK-73.json` disables and re-enables the `app-prod` exporter and then
-recovers a failed assignment. Each step reconverges over configuration that
-already exists, which is exactly the case that failed before. Unit coverage
-lives in `apps/gateway/tests/Unit/Infrastructure/Metrics/MetricsSshExecutorTest.php`
-and `MetricsExporterSshExecutorLifecycleTest.php`.
+A live verification plan under `.loop/proof/` disables and re-enables the `app-prod` exporter and then recovers a failed assignment. Each step reconverges over configuration that already exists, which is exactly the case that failed before. [ADR 0022](../decisions/0022-track-the-issue-workspace-and-delete-it-before-merge.md) governs the issue-local plan and fixtures. Unit coverage lives in `apps/gateway/tests/Unit/Infrastructure/Metrics/MetricsSshExecutorTest.php` and `MetricsExporterSshExecutorLifecycleTest.php`.

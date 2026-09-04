@@ -91,9 +91,9 @@ describe('HostCapacity', function () {
     it('admits proof beside the persistent snapshot and discovery at the minimum budget', function () {
         fakeCapacityHost([
             ...TopologySnapshotIdentity::primary()->instances(),
-            'orbit-e2e-nck-1-aaaaaaaa-gateway',
-            'orbit-e2e-nck-1-aaaaaaaa-app-dev',
-            'orbit-e2e-nck-1-aaaaaaaa-app-prod',
+            'orbit-e2e-tst-1-aaaaaaaa-gateway',
+            'orbit-e2e-tst-1-aaaaaaaa-app-dev',
+            'orbit-e2e-tst-1-aaaaaaaa-app-prod',
         ], ['10.232.1.1/24', '10.232.2.1/24']);
 
         expect(new HostCapacity(new IncusHost, 9)->reserveSlot())->toBe(3);
@@ -104,12 +104,12 @@ describe('HostCapacity', function () {
             'orbit-e2e-topology-snapshot-gateway',
             'orbit-e2e-topology-snapshot-app-dev',
             'orbit-e2e-topology-snapshot-app-prod',
-            'orbit-e2e-nck-1-aaaaaaaa-gateway',
-            'orbit-e2e-nck-1-aaaaaaaa-app-dev',
-            'orbit-e2e-nck-1-aaaaaaaa-app-prod',
-            'orbit-e2e-nck-2-bbbbbbbb-gateway',
-            'orbit-e2e-nck-2-bbbbbbbb-app-dev',
-            'orbit-e2e-nck-2-bbbbbbbb-app-prod',
+            'orbit-e2e-tst-1-aaaaaaaa-gateway',
+            'orbit-e2e-tst-1-aaaaaaaa-app-dev',
+            'orbit-e2e-tst-1-aaaaaaaa-app-prod',
+            'orbit-e2e-tst-2-bbbbbbbb-gateway',
+            'orbit-e2e-tst-2-bbbbbbbb-app-dev',
+            'orbit-e2e-tst-2-bbbbbbbb-app-prod',
         ], ['10.232.1.1/24']);
 
         expect(fn () => new HostCapacity(new IncusHost, 9)->reserveSlot())
@@ -131,8 +131,8 @@ describe('HostCapacity', function () {
     it('admits one more topology at the shipped budget when discovery and proof are present', function () {
         fakeCapacityHost([
             ...array_map(static fn (int $i): string => "orbit-e2e-topology-snapshot-role{$i}", range(1, 3)),
-            ...array_map(static fn (int $i): string => "orbit-e2e-nck-1-aaaaaaaa-role{$i}", range(1, 3)),
-            ...array_map(static fn (int $i): string => "orbit-e2e-nck-2-bbbbbbbb-role{$i}", range(1, 3)),
+            ...array_map(static fn (int $i): string => "orbit-e2e-tst-1-aaaaaaaa-role{$i}", range(1, 3)),
+            ...array_map(static fn (int $i): string => "orbit-e2e-tst-2-bbbbbbbb-role{$i}", range(1, 3)),
         ], ['10.232.1.1/24']);
 
         expect(new HostCapacity(new IncusHost, 24)->reserveSlot())->toBeGreaterThan(1);

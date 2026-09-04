@@ -648,7 +648,7 @@ function runTopologyVerifierWithEndState(
 describe('TopologyVerifier declared end state', function (): void {
     it('uses the complete cold recipe assignment map and physical peer names', function (): void {
         $target = TopologyTarget::disposableCold(
-            'ORB-106',
+            'AUX-106',
             new \App\E2E\Value\AttemptId(str_repeat('a', 32)),
             TopologyRecipe::coldAcceptance(),
         );
@@ -682,7 +682,7 @@ describe('TopologyVerifier declared end state', function (): void {
     it('rejects invalid network identity on the roleless cold recipe Node', function (): void {
         setUpTopologyVerifierProcessFacade();
         $target = TopologyTarget::disposableCold(
-            'ORB-106',
+            'AUX-106',
             new \App\E2E\Value\AttemptId(str_repeat('a', 32)),
             TopologyRecipe::coldAcceptance(),
         );
@@ -707,7 +707,7 @@ describe('TopologyVerifier declared end state', function (): void {
     it('rejects a stopped roleless cold recipe Node', function (): void {
         setUpTopologyVerifierProcessFacade();
         $target = TopologyTarget::disposableCold(
-            'ORB-106',
+            'AUX-106',
             new \App\E2E\Value\AttemptId(str_repeat('a', 32)),
             TopologyRecipe::coldAcceptance(),
         );

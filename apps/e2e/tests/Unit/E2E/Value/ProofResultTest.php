@@ -10,7 +10,7 @@ use App\E2E\Value\TopologyEndState;
 describe('ProofResult', function () {
     it('prints a compact verdict with per-action exit codes and the failing tails', function () {
         $result = new ProofResult(
-            'NCK-12',
+            'TST-12',
             new AttemptId(str_repeat('a', 32)),
             ProofStatus::Diagnosis,
             str_repeat('b', 40),
@@ -59,7 +59,7 @@ describe('ProofResult', function () {
     it('rejects a proved verdict that carries a failure', function () {
         expect(
             fn () => new ProofResult(
-                'NCK-12',
+                'TST-12',
                 new AttemptId(str_repeat('a', 32)),
                 ProofStatus::Proved,
                 str_repeat('b', 40),
@@ -75,7 +75,7 @@ describe('ProofResult', function () {
             ->toThrow(InvalidArgumentException::class, 'cannot carry a failure')
             ->and(
                 fn () => new ProofResult(
-                    'NCK-12',
+                    'TST-12',
                     new AttemptId(str_repeat('a', 32)),
                     ProofStatus::Proved,
                     str_repeat('b', 40),
@@ -93,7 +93,7 @@ describe('ProofResult', function () {
 describe('ProofResult declared end state', function (): void {
     it('records the declaration and the probes it skipped', function (): void {
         $result = new ProofResult(
-            'NCK-113',
+            'TST-113',
             new AttemptId(str_repeat('a', 32)),
             ProofStatus::Proved,
             str_repeat('b', 40),
@@ -127,7 +127,7 @@ describe('ProofResult declared end state', function (): void {
 
     it('says nothing about an end state a plan did not declare', function (?TopologyEndState $endState): void {
         $result = new ProofResult(
-            'NCK-113',
+            'TST-113',
             new AttemptId(str_repeat('a', 32)),
             ProofStatus::Proved,
             str_repeat('b', 40),
@@ -151,7 +151,7 @@ describe('ProofResult declared end state', function (): void {
         ?TopologyEndState $endState,
     ): void {
         expect(fn (): ProofResult => new ProofResult(
-            'NCK-113',
+            'TST-113',
             new AttemptId(str_repeat('a', 32)),
             ProofStatus::Proved,
             str_repeat('b', 40),

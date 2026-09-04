@@ -317,7 +317,7 @@ describe('TopologySnapshotRebuilder', function () {
         $state->instanceMetadata[$copy] = [
             'user.orbit.e2e.owner' => 'orbit-e2e',
             'user.orbit.e2e.operation' => str_repeat('a', 32),
-            'user.orbit.e2e.issue' => 'ORB-92',
+            'user.orbit.e2e.issue' => 'AUX-92',
             'user.orbit.e2e.attempt' => str_repeat('b', 32),
         ];
         $state->networks = [$identity->network()];
@@ -495,7 +495,7 @@ describe('TopologySnapshotRebuilder', function () {
         $state->instances = $identity->instances();
         $state->instanceMetadata[$identity->instance('app-dev')] = [
             'user.orbit.e2e.owner' => 'orbit-e2e',
-            'user.orbit.e2e.issue' => 'NCK-104',
+            'user.orbit.e2e.issue' => 'TST-104',
         ];
         fakeRebuildHost($state);
 
@@ -506,7 +506,7 @@ describe('TopologySnapshotRebuilder', function () {
             rebuildAuthorization($state),
             static function (string $_phase): void {},
         ))
-            ->toThrow(RuntimeException::class, 'belongs to issue NCK-104')
+            ->toThrow(RuntimeException::class, 'belongs to issue TST-104')
             ->and($state->deleted)
             ->toBe([]);
     });

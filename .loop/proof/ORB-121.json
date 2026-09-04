@@ -1,0 +1,14 @@
+{
+  "setup": [],
+  "acceptance": [
+    {
+      "id": "prove-loop-workspace",
+      "node": "app-dev",
+      "argv": [
+        "bash",
+        "/var/lib/orbit-e2e/proof/prove-loop-workspace.sh"
+      ],
+      "timeout_seconds": 120
+    }
+  ]
+}

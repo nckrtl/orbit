@@ -22,16 +22,16 @@ beforeEach(function (): void {
 function proofManifestRepository(): array
 {
     $root = temporaryPath('orbit-proof-inputs-', 6);
-    foreach (['apps/cli/app', 'docs/extra', 'docs/reference', 'proofs/ORB-99'] as $directory) {
+    foreach (['apps/cli/app', 'docs/extra', 'docs/reference', '.loop/proof'] as $directory) {
         mkdir($root.'/'.$directory, 0700, true);
     }
     file_put_contents($root.'/.gitignore', "/.e2e/\n");
     file_put_contents($root.'/apps/cli/app/base.php', "<?php\n");
     file_put_contents($root.'/docs/extra/input.txt', "extra\n");
     file_put_contents($root.'/docs/reference/note.md', "note\n");
-    file_put_contents($root.'/proofs/ORB-99/check.sh', "#!/bin/sh\n");
-    chmod($root.'/proofs/ORB-99/check.sh', 0755);
-    file_put_contents($root.'/proofs/ORB-99.json', json_encode([
+    file_put_contents($root.'/.loop/proof/check.sh', "#!/bin/sh\n");
+    chmod($root.'/.loop/proof/check.sh', 0755);
+    file_put_contents($root.'/.loop/proof/AUX-99.json', json_encode([
         'setup' => [],
         'acceptance' => [[
             'id' => 'read-extra',
@@ -41,7 +41,7 @@ function proofManifestRepository(): array
         ]],
         'inputs' => ['docs/extra/'],
     ], JSON_THROW_ON_ERROR));
-    proofInputGit($root, ['init', '--quiet', '-b', 'codex/orb-99-inputs']);
+    proofInputGit($root, ['init', '--quiet', '-b', 'codex/aux-99-inputs']);
     proofInputGit($root, ['config', 'user.email', 'orbit@example.test']);
     proofInputGit($root, ['config', 'user.name', 'Orbit']);
     proofInputGit($root, ['add', '.']);
@@ -57,7 +57,7 @@ function proofManifestRepository(): array
         'root' => $root,
         'main' => $main,
         'proved' => $proved,
-        'plan' => ProofPlan::fromFile($root.'/proofs/ORB-99.json'),
+        'plan' => ProofPlan::fromFile($root.'/.loop/proof/AUX-99.json'),
     ];
 }
 
@@ -118,8 +118,8 @@ describe('ProofInputManifestBuilder', function (): void {
             new GitRepository($fixture['root']),
             $fixture['proved'],
             $fixture['main'],
-            'ORB-99',
-            'proofs/ORB-99.json',
+            'AUX-99',
+            '.loop/proof/AUX-99.json',
             $plan,
             $observed,
         );
@@ -138,8 +138,8 @@ describe('ProofInputManifestBuilder', function (): void {
             new GitRepository($fixture['root']),
             $fixture['proved'],
             $fixture['main'],
-            'ORB-99',
-            'proofs/ORB-99.json',
+            'AUX-99',
+            '.loop/proof/AUX-99.json',
             $fixture['plan'],
         );
         $byPath = array_column($manifest->staticInputs, null, 'path');
@@ -150,9 +150,9 @@ describe('ProofInputManifestBuilder', function (): void {
             ->toBe(['docs/extra'])
             ->and($byPath['apps/cli/app/base.php']['classification'])
             ->toBe('runtime')
-            ->and($byPath['proofs/ORB-99.json']['classification'])
+            ->and($byPath['.loop/proof/AUX-99.json']['classification'])
             ->toBe('proof-contract')
-            ->and($byPath['proofs/ORB-99/check.sh']['mode'])
+            ->and($byPath['.loop/proof/check.sh']['mode'])
             ->toBe('100755')
             ->and($byPath['docs/extra/input.txt']['classification'])
             ->toBe('proof-contract')
@@ -176,8 +176,8 @@ describe('ProofInputManifestBuilder', function (): void {
             new GitRepository($fixture['root']),
             $fixture['proved'],
             $fixture['main'],
-            'ORB-99',
-            'proofs/ORB-99.json',
+            'AUX-99',
+            '.loop/proof/AUX-99.json',
             $plan,
         ))
             ->toThrow(InvalidArgumentException::class, 'reads undeclared checkout input');
@@ -205,8 +205,8 @@ describe('ProofInputManifestBuilder', function (): void {
             new GitRepository($fixture['root']),
             $candidate,
             $fixture['main'],
-            'ORB-99',
-            'proofs/ORB-99.json',
+            'AUX-99',
+            '.loop/proof/AUX-99.json',
             $plan,
         );
 
@@ -231,8 +231,8 @@ describe('ProofInputManifestBuilder', function (): void {
             new GitRepository($fixture['root']),
             $fixture['proved'],
             $fixture['main'],
-            'ORB-99',
-            'proofs/ORB-99.json',
+            'AUX-99',
+            '.loop/proof/AUX-99.json',
             $plan,
         ))
             ->toThrow(InvalidArgumentException::class, 'reads undeclared checkout input');
@@ -249,8 +249,8 @@ describe('ProofInputManifestBuilder', function (): void {
             new GitRepository($fixture['root']),
             $candidate,
             $fixture['main'],
-            'ORB-99',
-            'proofs/ORB-99.json',
+            'AUX-99',
+            '.loop/proof/AUX-99.json',
             $fixture['plan'],
         ))
             ->toThrow(InvalidArgumentException::class, 'classification is incomplete: unexpected.txt');
@@ -267,8 +267,8 @@ describe('ProofInputManifestBuilder', function (): void {
             new GitRepository($fixture['root']),
             $fixture['proved'],
             $advancedMain,
-            'ORB-99',
-            'proofs/ORB-99.json',
+            'AUX-99',
+            '.loop/proof/AUX-99.json',
             $fixture['plan'],
         ))
             ->toThrow(InvalidArgumentException::class, 'does not include current origin/main');

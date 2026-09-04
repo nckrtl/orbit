@@ -56,7 +56,7 @@ function legacyProofWorktree(): array
 {
     $sourceRoot = dirname(__DIR__, 5);
     $worktree = temporaryPath('orbit-legacy-proof-', 4);
-    $branch = 'orb-4-legacy-proof-'.bin2hex(random_bytes(6));
+    $branch = 'aux-4-legacy-proof-'.bin2hex(random_bytes(6));
     $processes = new ProcessFactory;
 
     expect(
@@ -155,9 +155,9 @@ function candidateConvergenceFixture(): array
     $manifests = new TopologySnapshotManifestStore(new AtomicJsonStore($paths), $paths, $host);
     $generation = $manifests->promoted();
     assert($generation !== null);
-    $target = TopologyTarget::feature('NCK-123', new AttemptId(str_repeat('a', 32)));
+    $target = TopologyTarget::feature('TST-123', new AttemptId(str_repeat('a', 32)));
     $operation = new OperationId(str_repeat('b', 32));
-    $state = IssueState::forWorktree('NCK-123', $worktree);
+    $state = IssueState::forWorktree('TST-123', $worktree);
     $state->writeAttempt($target->requireAttempt(), AttemptPurpose::Proof, $operation);
     $verification = new VerificationReport(true, [
         'proof.verify' => [
@@ -211,13 +211,12 @@ function candidateConvergenceFixture(): array
         $proved,
         [],
         [[
-            'path' => 'proofs/NCK-123.json',
+            'path' => '.loop/proof/TST-123.json',
             'classification' => 'proof-contract',
             'mode' => '100644',
             'blob' => str_repeat('d', 40),
         ]],
-        'proofs/NCK-123.json',
-        [],
+        '.loop/proof/TST-123.json',
         [],
         $observed,
         [
@@ -233,7 +232,7 @@ function candidateConvergenceFixture(): array
     $state->writeProofInputManifest($manifest->fingerprint(), $manifest->toArray());
     $state->writeProof([
         'status' => 'proved',
-        'issue' => 'NCK-123',
+        'issue' => 'TST-123',
         'attempt_id' => $target->requireAttempt()->value,
         'candidate_sha' => $proved,
         'plan_sha256' => $planFingerprint,
@@ -272,14 +271,14 @@ function candidateConvergenceFixture(): array
             'proved',
             'report',
             'operation',
-        ) + ['request' => new TopologyRequest('NCK-123', $worktree)]
+        ) + ['request' => new TopologyRequest('TST-123', $worktree)]
     );
 }
 
 it('converges and verifies an authorized exact candidate without rerunning acceptance actions', function (): void {
     $fixture = candidateConvergenceFixture();
     $attempt = new AttemptId(str_repeat('c', 32));
-    $candidateTarget = TopologyTarget::feature('NCK-123', $attempt);
+    $candidateTarget = TopologyTarget::feature('TST-123', $attempt);
     $candidateTree = new GitRepository($fixture['worktree'])->tree($fixture['candidate']);
     $events = [];
     $packageVersions = array_fill_keys([
@@ -330,7 +329,7 @@ it('converges and verifies an authorized exact candidate without rerunning accep
 
     $result = candidateConvergenceRunner($fixture, $attempt)->convergeCandidate($fixture['request']);
 
-    $state = IssueState::forWorktree('NCK-123', $fixture['worktree']);
+    $state = IssueState::forWorktree('TST-123', $fixture['worktree']);
     $recorded = $state->candidateConvergence();
     $commands = array_map(
         static fn (array $event): string => implode(' ', array_map(strval(...), $event)),
@@ -341,7 +340,7 @@ it('converges and verifies an authorized exact candidate without rerunning accep
         ->and($result)
         ->toMatchArray([
             'status' => 'converged',
-            'issue' => 'NCK-123',
+            'issue' => 'TST-123',
             'attempt_id' => $attempt->value,
             'candidate_sha' => $fixture['candidate'],
             'equivalence_sha256' => $fixture['report']->fingerprint(),
@@ -399,7 +398,7 @@ function runProofAction(
     array &$transportArgv,
 ): array {
     $attempt = new AttemptId(str_repeat('a', 32));
-    $target = TopologyTarget::feature('ORB-7', $attempt);
+    $target = TopologyTarget::feature('AUX-7', $attempt);
     $instance = $target->instance('app-dev');
     Process::fake(function (PendingProcess $process) use ($exitCode, $instance, &$transportTimeout, &$transportArgv) {
         if (($process->command[3] ?? null) === 'list') {
@@ -453,7 +452,7 @@ it('refuses proof from a schema 4 generation before creating an attempt', functi
         $state = new AtomicJsonStore($paths);
         $manifests = new TopologySnapshotManifestStore($state, $paths, new IncusHost(pool: 'orbit-e2e'));
         $manifests->promote(legacyProofGeneration());
-        $request = new TopologyRequest('ORB-4', $fixture['worktree']);
+        $request = new TopologyRequest('AUX-4', $fixture['worktree']);
         $plan = ProofPlan::fromArray([
             'setup' => [],
             'acceptance' => [[
@@ -469,10 +468,10 @@ it('refuses proof from a schema 4 generation before creating an attempt', functi
                 $fixture['sourceRoot'],
                 $paths,
                 $manifests,
-            )->prove($request, $plan, 'proofs/NCK-103.json'),
+            )->prove($request, $plan, '.loop/proof/AUX-4.json'),
         )
             ->toThrow(RuntimeException::class, 'legacy; refresh it before proof')
-            ->and(IssueState::forWorktree('ORB-4', $fixture['worktree'])->hasAttempt())
+            ->and(IssueState::forWorktree('AUX-4', $fixture['worktree'])->hasAttempt())
             ->toBeFalse();
     } finally {
         removeLegacyProofWorktree($fixture);
@@ -490,7 +489,7 @@ it('allows proof preparation while discovery remains active', function () {
             new IncusHost(pool: 'orbit-e2e'),
         );
         $manifests->promote(legacyProofGeneration());
-        $state = IssueState::forWorktree('ORB-4', $fixture['worktree']);
+        $state = IssueState::forWorktree('AUX-4', $fixture['worktree']);
         $discovery = new AttemptId(str_repeat('c', 32));
         $state->writeAttempt($discovery, AttemptPurpose::Discovery, new OperationId(str_repeat('d', 32)));
         $plan = ProofPlan::fromArray([
@@ -507,7 +506,7 @@ it('allows proof preparation while discovery remains active', function () {
             $fixture['sourceRoot'],
             $paths,
             $manifests,
-        )->prove(new TopologyRequest('ORB-4', $fixture['worktree']), $plan, 'proofs/NCK-103.json'))
+        )->prove(new TopologyRequest('AUX-4', $fixture['worktree']), $plan, '.loop/proof/AUX-4.json'))
             ->toThrow(RuntimeException::class, 'legacy; refresh it before proof')
             ->and($state->attemptId(AttemptPurpose::Discovery)->value)
             ->toBe($discovery->value)

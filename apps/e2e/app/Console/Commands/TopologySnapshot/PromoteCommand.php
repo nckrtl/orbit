@@ -5,9 +5,8 @@ declare(strict_types=1);
 namespace App\Console\Commands\TopologySnapshot;
 
 use App\Console\Commands\E2ECommand;
+use App\E2E\ProofPlanFile;
 use App\E2E\TopologySnapshotPromoter;
-use App\E2E\Value\ProofPlan;
-use App\E2E\Value\TopologyRequest;
 use Throwable;
 
 final class PromoteCommand extends E2ECommand
@@ -16,7 +15,7 @@ final class PromoteCommand extends E2ECommand
     protected $signature =
         'topology-snapshot:promote {issue} '
             .self::WORKTREE_OPTION
-            .' {--plan= : The proof plan of the proved attempt; defaults to proofs/<ISSUE>.json in the worktree} {--json}';
+            .' {--plan= : The proof plan of the proved attempt; defaults to .loop/proof/<ISSUE>.json} {--json}';
     #[\Override]
     protected $description = 'Promote the proved topology of the issue to the topology snapshot generation and release it';
 
@@ -24,7 +23,8 @@ final class PromoteCommand extends E2ECommand
     {
         try {
             $request = $this->request();
-            $result = $promoter->promote($request, ProofPlan::fromFile($this->planPath($request)));
+            $plan = ProofPlanFile::currentOrRetained($request, $this->option('plan'));
+            $result = $promoter->promote($request, $plan->plan);
             $this->log($request, 'attempt='.$result['attempt_id'].' generation='.$result['generation_id'].' ok');
             $this->outputJson($result, 'promoted '.$result['generation_id']);
 
@@ -37,15 +37,5 @@ final class PromoteCommand extends E2ECommand
 
             return self::FAILURE;
         }
-    }
-
-    private function planPath(TopologyRequest $request): string
-    {
-        $plan = $this->option('plan');
-        if (! is_string($plan) || $plan === '') {
-            $plan = 'proofs/'.$request->issue.'.json';
-        }
-
-        return str_starts_with($plan, '/') ? $plan : $request->worktree.'/'.$plan;
     }
 }

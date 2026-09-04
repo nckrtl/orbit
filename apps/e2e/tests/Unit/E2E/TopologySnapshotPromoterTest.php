@@ -73,8 +73,8 @@ function promotableFixture(
     $promoted = $manifests->promoted();
     assert($promoted !== null);
 
-    $target = TopologyTarget::feature('NCK-123', new AttemptId(str_repeat('a', 32)));
-    $state = IssueState::forWorktree('NCK-123', $worktree);
+    $target = TopologyTarget::feature('TST-123', new AttemptId(str_repeat('a', 32)));
+    $state = IssueState::forWorktree('TST-123', $worktree);
     $operation = new OperationId(str_repeat('b', 32));
     $state->writeAttempt($target->requireAttempt(), $purpose, $operation);
     $state->writeTopology(new FeatureTopology(
@@ -94,7 +94,7 @@ function promotableFixture(
             ],
         ]),
     ));
-    $planPath = $worktree.'/proofs/NCK-123.json';
+    $planPath = $worktree.'/.loop/proof/TST-123.json';
     mkdir(dirname($planPath), 0700, true);
     $planValue = [
         'setup' => [],
@@ -112,18 +112,17 @@ function promotableFixture(
     $plan = ProofPlan::fromFile($planPath);
     if ($purpose === AttemptPurpose::Proof) {
         $manifest = new ProofInputManifest(
-            2,
+            ProofInputManifest::SCHEMA,
             $candidate,
             $candidate,
             [],
             [[
-                'path' => 'proofs/NCK-123.json',
+                'path' => '.loop/proof/TST-123.json',
                 'classification' => 'proof-contract',
                 'mode' => '100644',
                 'blob' => str_repeat('d', 40),
             ]],
-            'proofs/NCK-123.json',
-            [],
+            '.loop/proof/TST-123.json',
             [],
             null,
             [
@@ -138,7 +137,7 @@ function promotableFixture(
         $state->writeProofInputManifest($manifest->fingerprint(), $manifest->toArray());
         $state->writeProof([
             'status' => 'proved',
-            'issue' => 'NCK-123',
+            'issue' => 'TST-123',
             'attempt_id' => $target->requireAttempt()->value,
             'candidate_sha' => $candidate,
             'plan_sha256' => $plan->fingerprint(),
@@ -153,7 +152,7 @@ function promotableFixture(
         'worktree' => $worktree,
         'paths' => $paths,
         'manifests' => $manifests,
-        'request' => new TopologyRequest('NCK-123', $worktree),
+        'request' => new TopologyRequest('TST-123', $worktree),
         'target' => $target,
         'candidate' => $candidate,
         'plan' => $plan,
@@ -194,7 +193,7 @@ function promoterFor(
 function candidatePromotionFixture(): array
 {
     $fixture = promotableFixture(observedInputs: true);
-    $state = IssueState::forWorktree('NCK-123', $fixture['worktree']);
+    $state = IssueState::forWorktree('TST-123', $fixture['worktree']);
     $proof = $state->proof();
     assert($proof !== null);
     $proofTarget = $fixture['target'];
@@ -235,18 +234,17 @@ function candidatePromotionFixture(): array
         $surface('gateway', 'fpm', '3'),
     ];
     $manifest = new ProofInputManifest(
-        2,
+        ProofInputManifest::SCHEMA,
         $fixture['candidate'],
         $fixture['candidate'],
         [],
         [[
-            'path' => 'proofs/NCK-123.json',
+            'path' => '.loop/proof/TST-123.json',
             'classification' => 'proof-contract',
             'mode' => '100644',
             'blob' => str_repeat('d', 40),
         ]],
-        'proofs/NCK-123.json',
-        [],
+        '.loop/proof/TST-123.json',
         [],
         new ObservedPhpInputs(
             [$runtime('app-dev'), $runtime('gateway')],
@@ -285,7 +283,7 @@ function candidatePromotionFixture(): array
     );
     $state->writeEquivalence($equivalence->fingerprint(), $equivalence->toArray());
 
-    $candidateTarget = TopologyTarget::feature('NCK-123', new AttemptId(str_repeat('c', 32)));
+    $candidateTarget = TopologyTarget::feature('TST-123', new AttemptId(str_repeat('c', 32)));
     $proofTopology = $state->requireTopology(AttemptPurpose::Proof);
     $verification = new VerificationReport(true, [
         'candidate.verify' => [
@@ -315,7 +313,7 @@ function candidatePromotionFixture(): array
     ));
     $state->writeCandidateConvergence(new CandidateConvergenceResult(
         'converged',
-        'NCK-123',
+        'TST-123',
         $candidateTarget->requireAttempt(),
         $accepted,
         $repository->tree($accepted),
@@ -326,7 +324,7 @@ function candidatePromotionFixture(): array
         '2026-09-03T00:00:00Z',
     ));
 
-    $discoveryTarget = TopologyTarget::feature('NCK-123', new AttemptId(str_repeat('d', 32)));
+    $discoveryTarget = TopologyTarget::feature('TST-123', new AttemptId(str_repeat('d', 32)));
     $state->writeAttempt(
         $discoveryTarget->requireAttempt(),
         AttemptPurpose::Discovery,
@@ -657,8 +655,8 @@ describe('TopologySnapshotPromoter', function (): void {
     it('promotes the proved topology and releases both proof and discovery', function (): void {
         $fixture = promotableFixture();
         $target = $fixture['target'];
-        $discoveryTarget = TopologyTarget::feature('NCK-123', new AttemptId(str_repeat('d', 32)));
-        $state = IssueState::forWorktree('NCK-123', $fixture['worktree']);
+        $discoveryTarget = TopologyTarget::feature('TST-123', new AttemptId(str_repeat('d', 32)));
+        $state = IssueState::forWorktree('TST-123', $fixture['worktree']);
         $proofTopology = $state->requireTopology(AttemptPurpose::Proof);
         $state->writeAttempt(
             $discoveryTarget->requireAttempt(),
@@ -709,7 +707,7 @@ describe('TopologySnapshotPromoter', function (): void {
             )->value)
             ->and($fixture['manifests']->recorded())
             ->toHaveCount(1)
-            ->and(IssueState::forWorktree('NCK-123', $fixture['worktree'])->hasAttempt())
+            ->and(IssueState::forWorktree('TST-123', $fixture['worktree'])->hasAttempt())
             ->toBeFalse();
 
         $expected = [];
@@ -756,7 +754,7 @@ describe('TopologySnapshotPromoter', function (): void {
 
     it('promotes retained proof for a different accepted SHA with equivalent recorded inputs', function (): void {
         $fixture = promotableFixture();
-        $state = IssueState::forWorktree('NCK-123', $fixture['worktree']);
+        $state = IssueState::forWorktree('TST-123', $fixture['worktree']);
         $proof = $state->proof();
         assert($proof !== null && is_string($proof['manifest_sha256'] ?? null));
         mkdir($fixture['worktree'].'/docs', 0700, true);
@@ -859,14 +857,14 @@ describe('TopologySnapshotPromoter', function (): void {
                 'accepted_sha' => $result['accepted_sha'],
                 'equivalence_sha256' => $candidate['equivalence']->fingerprint(),
             ])
-            ->and(IssueState::forWorktree('NCK-123', $fixture['worktree'])->hasAttempt())
+            ->and(IssueState::forWorktree('TST-123', $fixture['worktree'])->hasAttempt())
             ->toBeFalse();
     });
 
     it('refuses candidate promotion without complete convergence evidence before any mutation', function (): void {
         $candidate = candidatePromotionFixture();
         $fixture = $candidate['fixture'];
-        $state = IssueState::forWorktree('NCK-123', $fixture['worktree']);
+        $state = IssueState::forWorktree('TST-123', $fixture['worktree']);
         $topology = $state->requireTopology(AttemptPurpose::CandidateConvergence);
         $failedVerification = new VerificationReport(false, [
             'candidate.verify' => [
@@ -879,7 +877,7 @@ describe('TopologySnapshotPromoter', function (): void {
         ]);
         $state->writeCandidateConvergence(new CandidateConvergenceResult(
             'diagnosis',
-            'NCK-123',
+            'TST-123',
             $topology->attempt,
             $topology->source->hostSha,
             new GitRepository($fixture['worktree'])->tree($topology->source->hostSha),
@@ -930,7 +928,7 @@ describe('TopologySnapshotPromoter', function (): void {
             ->toContain('delete:'.TopologyTarget::topologySnapshot()->instance('gateway'))
             ->and($fixture['manifests']->promoted()?->toArray())
             ->toBe($old?->toArray())
-            ->and(IssueState::forWorktree('NCK-123', $fixture['worktree'])->hasAttempt())
+            ->and(IssueState::forWorktree('TST-123', $fixture['worktree'])->hasAttempt())
             ->toBeTrue();
     });
 
@@ -952,7 +950,7 @@ describe('TopologySnapshotPromoter', function (): void {
         fakePromotionHost($fixture['target'], $events);
         $plan = ProofPlan::fromArray($fixture['plan']->toArray() + ['mutates' => true]);
         $promoted = $fixture['manifests']->promoted()?->toArray();
-        $state = IssueState::forWorktree('NCK-123', $fixture['worktree']);
+        $state = IssueState::forWorktree('TST-123', $fixture['worktree']);
 
         expect(fn () => promoterFor($fixture['root'], $fixture['paths'], $fixture['manifests'])
             ->promote($fixture['request'], $plan))
@@ -968,7 +966,7 @@ describe('TopologySnapshotPromoter', function (): void {
 
     it('refuses proof evidence recorded for a different plan without touching Incus', function (): void {
         $fixture = promotableFixture();
-        $state = IssueState::forWorktree('NCK-123', $fixture['worktree']);
+        $state = IssueState::forWorktree('TST-123', $fixture['worktree']);
         $proof = $state->proof();
         assert($proof !== null);
         $proof['plan_sha256'] = str_repeat('f', 64);
@@ -984,7 +982,7 @@ describe('TopologySnapshotPromoter', function (): void {
 
     it('refuses incomplete or nonzero proof actions without touching Incus', function (array $actions): void {
         $fixture = promotableFixture();
-        $state = IssueState::forWorktree('NCK-123', $fixture['worktree']);
+        $state = IssueState::forWorktree('TST-123', $fixture['worktree']);
         $proof = $state->proof();
         assert($proof !== null);
         $proof['actions'] = $actions;
@@ -1009,7 +1007,7 @@ describe('TopologySnapshotPromoter', function (): void {
         Process::run(['git', '-C', $fixture['worktree'], 'commit', '--quiet', '-m', 'docs correction'])->throw();
         $accepted = new GitRepository($fixture['worktree'])->commit();
         Process::run(['git', '-C', $fixture['root'], 'branch', '-f', 'main', $accepted])->throw();
-        $state = IssueState::forWorktree('NCK-123', $fixture['worktree']);
+        $state = IssueState::forWorktree('TST-123', $fixture['worktree']);
         $proof = $state->proof();
         assert($proof !== null && is_string($proof['manifest_sha256'] ?? null));
         $result = match ($case) {

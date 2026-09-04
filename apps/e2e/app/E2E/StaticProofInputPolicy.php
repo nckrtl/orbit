@@ -13,7 +13,7 @@ use App\E2E\Value\ProofInputClassification;
  */
 final readonly class StaticProofInputPolicy
 {
-    public const int VERSION = 2;
+    public const int VERSION = 3;
 
     /** Ordinary PHP source eligible for replacement by complete PCOV observations. */
     private const array OBSERVABLE_PHP_DIRECTORIES = [
@@ -63,7 +63,7 @@ final readonly class StaticProofInputPolicy
         'apps/e2e/',
         'packages/php-sdk/',
         'bin/',
-        'proofs/',
+        '.loop/',
     ];
 
     private const array NON_RUNTIME_ROOT_FILES = [
@@ -91,7 +91,7 @@ final readonly class StaticProofInputPolicy
         if (in_array($path, self::NON_RUNTIME_ROOT_FILES, true)) {
             return ProofInputClassification::NonRuntime;
         }
-        if (str_starts_with($path, 'proofs/')) {
+        if (str_starts_with($path, '.loop/')) {
             return ProofInputClassification::NonRuntime;
         }
         if (str_starts_with($path, 'bin/e2e-')) {

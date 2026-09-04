@@ -32,7 +32,7 @@ function probeFirewallHelper(array $prefix = [], array $suffix = []): array
     $helper = dirname(__DIR__, 3).'/resources/host/reconcile-firewall.py';
     $process = new NativeProcess(['python3', '-c', $code, $helper]);
     $process->setInput(json_encode([
-        'network' => 'oe-nck-123',
+        'network' => 'oe-tst-123',
         'prefix' => $prefix,
         'suffix' => $suffix,
     ], JSON_THROW_ON_ERROR));
@@ -58,10 +58,10 @@ describe('host firewall helper', function (): void {
                 $result['desired'],
             ))
             ->toBe([
-                'orbit-e2e:oe-nck-123:intra',
-                'orbit-e2e:oe-nck-123:isolate',
-                'orbit-e2e:oe-nck-123:egress',
-                'orbit-e2e:oe-nck-123:return',
+                'orbit-e2e:oe-tst-123:intra',
+                'orbit-e2e:oe-tst-123:isolate',
+                'orbit-e2e:oe-tst-123:egress',
+                'orbit-e2e:oe-tst-123:return',
             ]);
     });
 
@@ -89,7 +89,7 @@ describe('host firewall helper', function (): void {
     });
 
     it('does not claim an unmarked administrator rule with identical traffic matches', function (): void {
-        $administratorRule = ['-i', 'oe-nck-123', '-o', 'oe-nck-123', '-j', 'ACCEPT'];
+        $administratorRule = ['-i', 'oe-tst-123', '-o', 'oe-tst-123', '-j', 'ACCEPT'];
 
         $result = probeFirewallHelper(suffix: [$administratorRule]);
 
@@ -107,11 +107,11 @@ describe('host firewall helper', function (): void {
         expect($result['transaction'])
             ->toBe(implode("\n", [
                 '*filter',
-                '-D FORWARD -i oe-nck-123 -o oe-nck-123 -m comment --comment orbit-e2e:oe-nck-123:intra -j ACCEPT',
-                '-I FORWARD 1 -i oe-nck-123 -o oe-nck-123 -m comment --comment orbit-e2e:oe-nck-123:intra -j ACCEPT',
-                '-I FORWARD 2 -i oe-nck-123 -o oe+ -m comment --comment orbit-e2e:oe-nck-123:isolate -j DROP',
-                '-I FORWARD 3 -i oe-nck-123 -m conntrack --ctstate NEW,RELATED,ESTABLISHED -m comment --comment orbit-e2e:oe-nck-123:egress -j ACCEPT',
-                '-I FORWARD 4 -o oe-nck-123 -m conntrack --ctstate RELATED,ESTABLISHED -m comment --comment orbit-e2e:oe-nck-123:return -j ACCEPT',
+                '-D FORWARD -i oe-tst-123 -o oe-tst-123 -m comment --comment orbit-e2e:oe-tst-123:intra -j ACCEPT',
+                '-I FORWARD 1 -i oe-tst-123 -o oe-tst-123 -m comment --comment orbit-e2e:oe-tst-123:intra -j ACCEPT',
+                '-I FORWARD 2 -i oe-tst-123 -o oe+ -m comment --comment orbit-e2e:oe-tst-123:isolate -j DROP',
+                '-I FORWARD 3 -i oe-tst-123 -m conntrack --ctstate NEW,RELATED,ESTABLISHED -m comment --comment orbit-e2e:oe-tst-123:egress -j ACCEPT',
+                '-I FORWARD 4 -o oe-tst-123 -m conntrack --ctstate RELATED,ESTABLISHED -m comment --comment orbit-e2e:oe-tst-123:return -j ACCEPT',
                 'COMMIT',
                 '',
             ]));

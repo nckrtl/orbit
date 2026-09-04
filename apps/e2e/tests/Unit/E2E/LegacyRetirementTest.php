@@ -91,7 +91,7 @@ function legacyFixture(): array
         ]],
         'base_images' => [['name' => 'ubuntu-generic', 'classification' => 'preserve']],
         'pools' => [['name' => 'orbit-e2e', 'identity' => 'pool-uuid-1', 'classification' => 'preserve']],
-        'new_namespace' => [['name' => 'orbit-e2e-nck-123-aaaaaaaa-gateway', 'classification' => 'preserve']],
+        'new_namespace' => [['name' => 'orbit-e2e-tst-123-aaaaaaaa-gateway', 'classification' => 'preserve']],
         'evidence' => [[
             'path' => $root.'/evidence/proof.json',
             'identity' => 'proof-1',

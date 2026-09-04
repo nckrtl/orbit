@@ -23,7 +23,7 @@ Every command accepts `--json`, and `--main-sha=SHA` must be the full SHA of the
 | --- | --- |
 | `status` | Prints the promoted generation, `missing`, or `stale` with a `recovery` command; fails when the VMs are not stopped |
 | `fingerprint [--main-sha=SHA]` | Computes the prepared-state fingerprint of that commit, default `HEAD` |
-| `promote ISSUE [--plan=PATH]` | Makes the issue's proved or candidate topology the new generation, then releases the issue's topologies |
+| `promote ISSUE [--plan=PATH]` | Reads the reviewed plan that defaults to `.loop/proof/ISSUE.json`, makes the issue's proved or candidate topology the new generation, then releases the issue's topologies |
 | `refresh --main-sha=SHA [--allow-cold]` | Refreshes the generation in place when the fingerprint changed; `--allow-cold` permits only initial construction |
 | `restore` | Restores the promoted snapshots, leaves the VMs stopped, and clears `corrupt.json` |
 | `rebuild --main-sha=SHA` | Forgets stale manifests and builds from the base image when every exact resource is absent |
@@ -31,7 +31,7 @@ Every command accepts `--json`, and `--main-sha=SHA` must be the full SHA of the
 
 ## Promote
 
-After a merge, `promote` installs the reviewer's retained topology instead of rebuilding it. The harness refuses, without touching Incus, in each of these cases.
+After a merge, `promote` installs the reviewer's retained topology instead of rebuilding it and verifies the plan selected from `.loop/proof/`. [ADR 0022](../decisions/0022-track-the-issue-workspace-and-delete-it-before-merge.md) governs the reviewable issue workspace that supplied that plan. The harness refuses, without touching Incus, in each of these cases.
 
 | Refusal | Condition |
 | --- | --- |

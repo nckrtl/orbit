@@ -10,14 +10,14 @@ use App\E2E\Value\TopologyTarget;
 describe('StatePaths', function () {
     it('keeps host state in the primary checkout and issue state in the worktree', function () {
         $base = temporaryPath('orbit-paths-', 4);
-        mkdir($base.'/primary/.worktrees/nck-1-slug', 0700, true);
+        mkdir($base.'/primary/.worktrees/tst-1-slug', 0700, true);
         $primary = StatePaths::forPrimary($base.'/primary/');
-        $worktree = StatePaths::forWorktree($base.'/primary/.worktrees/nck-1-slug');
+        $worktree = StatePaths::forWorktree($base.'/primary/.worktrees/tst-1-slug');
 
         expect($primary->root())
             ->toBe($base.'/primary/.e2e')
             ->and($worktree->root())
-            ->toBe($base.'/primary/.worktrees/nck-1-slug/.e2e')
+            ->toBe($base.'/primary/.worktrees/tst-1-slug/.e2e')
             ->and(fileperms($primary->root()) & 0777)
             ->toBe(0700);
     });
@@ -43,7 +43,7 @@ describe('StatePaths', function () {
     });
 
     it('provides stable exact profile roles and target names', function () {
-        $target = TopologyTarget::feature('NCK-321', new AttemptId(str_repeat('a', 32)));
+        $target = TopologyTarget::feature('TST-321', new AttemptId(str_repeat('a', 32)));
 
         expect(TopologyProfile::ROLES)
             ->toBe(['gateway', 'app-dev', 'app-prod'])
@@ -56,8 +56,8 @@ describe('StatePaths', function () {
                 'app-prod' => ['app-prod'],
             ])
             ->and($target->network())
-            ->toBe('oe-3ed34a09f138')
+            ->toBe('oe-9498fa889742')
             ->and($target->instance('app-prod'))
-            ->toBe('orbit-e2e-nck-321-aaaaaaaa-app-prod');
+            ->toBe('orbit-e2e-tst-321-aaaaaaaa-app-prod');
     });
 });

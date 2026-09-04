@@ -1,0 +1,117 @@
+# Feature plan
+
+Issue: ORB-121
+Review verdict: PASS
+
+## Outcome
+
+Replace the ignored per-worktree `.orbit` planning area and the repository-level `proofs/` archive with one Git-tracked `.loop/` issue workspace whose plan, proof plan, and fixtures are reviewed on the issue branch and removed alone before merge.
+
+## Code boundaries
+
+In:
+
+- `.gitignore`: stop ignoring `/.orbit/`, do not add `/.loop/`, and continue ignoring `/.e2e/` so the issue workspace is tracked while retained topology state is not.
+- `bin/worktree-create`: scaffold `.loop/plan.md` with the standard plan headings and create `.loop/proof/` in each new issue worktree; do not create `.orbit/`.
+- `README.md`: replace the contributor-facing ignored `.orbit/plan.md` description with the tracked `.loop/plan.md` and `.loop/proof/` workflow.
+- `bin/e2e-topology`: make its proof-plan help text agree with the `.loop/proof/<ISSUE>.json` default.
+- `.agents/skills/planning-features/SKILL.md`: make the tracked `.loop/plan.md` the planning contract, place Incus proof plans and fixtures under `.loop/proof/`, accept an otherwise eligible issue in exactly `Todo` or `In Progress`, and stop for every other lifecycle state.
+- `.agents/skills/reviewing-feature-plans/SKILL.md`: consume the tracked `.loop/plan.md` and have the independent plan reviewer commit its verdict and findings to the tracked plan.
+- `.agents/skills/developing-features/SKILL.md` and `.agents/skills/developing-features/agents/openai.yaml`: consume the tracked plan, place Incus proof under `.loop/proof/`, accept otherwise eligible issues in exactly `Todo` or `In Progress`, push the exact branch head, and return the complete pull-request body and evidence without invoking `gh` or mutating GitHub.
+- `.agents/skills/reviewing-pull-requests/SKILL.md` and `.agents/skills/reviewing-pull-requests/agents/openai.yaml`: review and prove the same exact head, then return the complete formal-review payload without invoking `gh` or mutating GitHub.
+- `.agents/skills/merging-pull-requests/SKILL.md` and `.agents/skills/merging-pull-requests/agents/openai.yaml`: perform closeout only after authoritative read-only evidence proves that the external orchestrator merged the exact second-approved removal head; run no merge command or pull-request mutation, then promote proof, clean up resources, and verify the result.
+- The three standalone lifecycle skills and their `agents/openai.yaml` manifests describe one external-orchestrator flow and name no private controller, including `Anna`, `Tom`, `Herdr`, or `Builder`.
+- `apps/e2e/app/E2E/ProofPlanFile.php` and `apps/e2e/app/Console/Commands/Topology/{ProveCommand.php,EquivalenceCommand.php}` plus `apps/e2e/app/Console/Commands/TopologySnapshot/PromoteCommand.php`: resolve the active issue's plan only from `.loop/proof/`, use `.loop/proof/<ISSUE>.json` by default, reject unsafe or cross-issue plan selection consistently, and include the offending plan path in refusals.
+- `apps/e2e/app/E2E/Value/ProofPlan.php`: remove the `fixture_issues` key and `fixtureIssues` value entirely while preserving validation, normalized serialization, and fingerprinting for the remaining proof contract.
+- `apps/e2e/app/E2E/ProofFixtureStager.php` and its caller in `apps/e2e/app/E2E/TopologyProofRunner.php`: stage only the active issue's fixtures from `.loop/proof/` at the exact candidate commit; remove additional-issue staging and namespaced cross-issue guest paths.
+- `apps/e2e/app/E2E/ProofInputManifestBuilder.php`, `apps/e2e/app/E2E/ProofEquivalenceEvaluator.php`, `apps/e2e/app/E2E/StaticProofInputPolicy.php`, and the affected proof value objects under `apps/e2e/app/E2E/Value/`: record, classify, and compare the active `.loop/proof/` plan and fixtures as proof inputs, with no fallback to `proofs/` and no referenced-issue fixture set.
+- `apps/e2e/tests/Feature/Commands/TopologyCommandsTest.php`, `apps/e2e/tests/Feature/Commands/TopologySnapshotCommandsTest.php`, `apps/e2e/tests/Unit/E2E/Value/ProofPlanTest.php`, `apps/e2e/tests/Unit/E2E/ProofFixtureStagerTest.php`, `apps/e2e/tests/Unit/E2E/ProofInputManifestBuilderTest.php`, `apps/e2e/tests/Unit/E2E/ProofEquivalenceEvaluatorTest.php`, `apps/e2e/tests/Unit/E2E/StaticProofInputPolicyTest.php`, `apps/e2e/tests/Unit/E2E/TopologyProofRunnerTest.php`, `apps/e2e/tests/Unit/E2E/TopologySnapshotPromoterTest.php`, and affected proof-value tests: cover `.loop/proof/` lookup, current-issue fixture staging, the removed declaration, plan-naming refusal, fingerprints, manifests, equivalence, and promotion.
+- `apps/e2e/tests/Feature/Configuration/AgentRoleContractTest.php`: assert the `.loop` worktree scaffold, tracked plan-review contract, planning and developing gates for exactly `Todo` or `In Progress`, developer and reviewer no-GitHub boundaries, complete returned payloads, removal-head equivalence and fresh second approval, authoritative external-merge verification, promotion and cleanup boundaries, and consistent descriptions and prompts in all three `agents/openai.yaml` manifests.
+- `apps/e2e/tests/**`: replace every hard-coded `NCK-<number>` or `ORB-<number>` test identifier with neutral generated or non-individual fixture identifiers while retaining the same validation and lifecycle coverage.
+- Repository issue artifacts, outside the component boundaries: delete the complete legacy `proofs/` tree, and add this issue's reviewed proof plan plus any fixtures beneath `.loop/proof/` for the life of the branch.
+
+Out:
+
+- Keep the managed user's `<managed-user-home>/.orbit/worktrees` directory, certificate and SSH state, and Caddy traversal state unchanged; no product or E2E guest-runtime reference to `/home/orbit/.orbit` is part of the workspace rename.
+- Keep the CLI profile `$HOME/.orbit`, the Gateway home derived by `apps/gateway/config`, and `.orbit` hostnames such as `gateway.orbit`, `metrics.orbit`, and `user.orbit` unchanged; make no rename-driven change in `apps/gateway/app`, `apps/gateway/config`, or `apps/cli/config`.
+- Do not modify `docs/decisions/**`; accepted ADRs retain their historical text, including ADR 0022's explicit correction to `.loop`.
+- Keep `.e2e/` ignored and keep its retained discovery, proof, and topology-snapshot state layout unchanged.
+- Do not change GitHub branch-protection settings or review identities; this issue changes repository instructions and deterministic merge checks only.
+
+## Documentation
+
+Completed during planning preflight:
+
+- `docs/reference/proof-plans.md` now locates the active plan and its fixtures under `.loop/proof/`, removes `fixture_issues`, documents current-issue-only plan selection and fixture staging, and links ADR 0022 for the tracked issue-workspace lifecycle rather than repeating its removal rule.
+- `docs/reference/incus-topologies.md` now gives `.loop/proof/ISSUE.json` as the `prove` and `equivalence` default, preserves topology state under `.e2e/`, and links ADR 0022 for issue-workspace lifecycle details.
+- `docs/reference/topology-snapshot.md` now states that `promote` consumes the reviewed plan from `.loop/proof/`, preserves the exact proof/equivalence and snapshot-promotion gates, and links ADR 0022 for workspace review ownership.
+- `docs/solutions/doctor-incus-proof.md` now locates its reusable self-checking fixture pattern beside the plan under `.loop/proof/` and delegates workspace lifecycle policy to ADR 0022.
+- `docs/solutions/remote-file-writes-on-uutils-coreutils.md` now describes live verification through an issue-local `.loop/proof/` plan without retaining a closed issue's plan path, and delegates workspace lifecycle policy to ADR 0022.
+- `docs/generated/context.json` was regenerated so all five maintained pages carry their current concepts and ADR 0022 relationship.
+- Audit result — issue scope covered the `apps/e2e` context, the issue-named reference pages, and the retained solution pages selected by the named Node and Gateway concepts. The five drift findings above were fixed; no finding requires a separate owner. `composer docs-build` completed and `composer docs-lint` passed with zero issues.
+- Compatibility recovery adds only contributor lifecycle instructions, agent-manifest prompts, contract tests, and closeout proof requirements; it changes no maintained product behavior, so the committed pages above remain current and this correction adds no documentation finding.
+
+## Acceptance map
+
+| Criterion | Boundary | Focused proof |
+| --- | --- | --- |
+| A proof uses a plan and fixtures that exist only in `.loop/proof/` and records `proved`. | `.loop/proof/ORB-121.json`; `ProofPlanFile`; `ProveCommand`; `ProofPlan`; `TopologyProofRunner`; `ProofFixtureStager`; manifest/static-policy boundaries | Incus action `prove-loop-workspace` in `.loop/proof/ORB-121.json`, executed by `bin/e2e-topology prove ORB-121`, exits `0`; `bin/e2e-topology status ORB-121` reports `proved`. |
+| No non-ADR file names the old issue-workspace forms. | `.gitignore`; `README.md`; `bin/**`; `.agents/skills/**`; `apps/e2e/**`; maintained documentation | `grep -rn "\\.orbit/plan\\.md\\|worktree/\\.orbit" apps bin docs README.md .gitignore` returns no matches. |
+| Managed-user state, CLI profile state, Gateway home, and `.orbit` hostnames are untouched. | Out boundaries for `apps/gateway/app`, `apps/gateway/config`, `apps/cli/config`, and guest-runtime `/home/orbit/.orbit` references | Review `git diff --stat main -- apps/gateway/app apps/gateway/config apps/cli/config` and confirm no listed change renames `.orbit`; inspect the scoped diff for preservation of guest-runtime state references. |
+| The legacy tracked proof archive is absent. | Repository artifact removal: `proofs/**` | `git ls-files proofs` returns no output and `test ! -d proofs` exits `0`. |
+| Git tracks the issue workspace. | `.gitignore`; `.loop/plan.md` | `git check-ignore .loop/plan.md` exits non-zero. |
+| A plan that names another issue's fixtures is refused and the error names the plan. | `ProofPlanFile`; `ProofPlan`; `ProofFixtureStager`; command and value tests | Focused Pest cases in `tests/Unit/E2E/Value/ProofPlanTest.php` and `tests/Feature/Commands/TopologyCommandsTest.php` submit the removed cross-issue declaration or cross-issue plan selection and assert a failure containing the plan path. |
+| Fixture checks name no individual issue fixture. | `apps/e2e/tests/**`, especially fixture-stager, manifest, equivalence, static-policy, runner, promotion, and proof-value tests | `grep -rnE "NCK-[0-9]+|ORB-[0-9]+" apps/e2e/tests` returns no matches. |
+| New worktrees contain `.loop/proof/` beside the plan. | `bin/worktree-create`; `AgentRoleContractTest` | The focused `apps/e2e` Pest case for `bin/worktree-create` asserts `.loop/plan.md` and `.loop/proof/` exist and `.orbit/plan.md` does not. |
+| Merge and plan-review instructions enforce the removal-only head and committed verdict. | `merging-pull-requests`, `reviewing-feature-plans`, `planning-features`, `developing-features`, `reviewing-pull-requests`; `AgentRoleContractTest` | `cd apps/e2e && ./vendor/bin/pest tests/Feature/Configuration/AgentRoleContractTest.php`. |
+| Planning proceeds for an otherwise eligible issue in `Todo` or `In Progress` and stops for every other lifecycle state. | `.agents/skills/planning-features/SKILL.md`; `apps/e2e/tests/Feature/Configuration/AgentRoleContractTest.php` | The focused `AgentRoleContractTest` case reads the planning skill text and asserts that `Todo` and `In Progress` are the complete eligible set and every other state is a stop; run `cd apps/e2e && ./vendor/bin/pest tests/Feature/Configuration/AgentRoleContractTest.php`. |
+| All affected projects, repository tests, and documentation checks remain green. | All boundaries above and required documentation pages | Run `composer check` in `apps/e2e`, `apps/gateway`, `apps/cli`, and `apps/docs`; run root `bin/test`; run root `composer docs-lint`; every command exits `0`. |
+| Development accepts an otherwise eligible issue in exactly `Todo` or `In Progress`, and its agent manifest no longer says `Todo` only. | `developing-features/SKILL.md`; its `agents/openai.yaml`; `AgentRoleContractTest` | `cd apps/e2e && ./vendor/bin/pest tests/Feature/Configuration/AgentRoleContractTest.php --filter="accepts Todo or In Progress for development"` asserts both accepted states, representative stopped states, and manifest consistency. |
+| The developer and reviewer return complete exact-head payloads without GitHub mutation; the external orchestrator creates, updates, reviews, and merges the pull request; closeout only verifies the external merge, promotes proof, and cleans up. | The three lifecycle `SKILL.md` files and their three `agents/openai.yaml` manifests; `AgentRoleContractTest` | `cd apps/e2e && ./vendor/bin/pest tests/Feature/Configuration/AgentRoleContractTest.php --filter="keeps one external-orchestrator lifecycle"` covers the `gh` and GitHub mutation prohibitions, required developer push, complete exact-head PR and review payloads, external-merge closeout boundary, and absence of private-controller names. |
+| A first-approved tracked-workspace head advances through one pushed removal-only commit, exact/equivalent retained proof, a fresh second approval, exact external merge, and successful promotion and cleanup while `.loop` is absent. | `developing-features`; `reviewing-pull-requests`; `merging-pull-requests`; their manifests; `AgentRoleContractTest`; `.loop/proof/ORB-121.json` and retained proof state | Focused executable proof: `cd apps/e2e && ./vendor/bin/pest tests/Feature/Configuration/AgentRoleContractTest.php --filter="binds the external merge closeout lifecycle"`. Real criterion: the first tracked head records `proved`; `git diff <workspace-head> <removal-head> --name-status` contains only `.loop/` deletions; `bin/e2e-topology equivalence ORB-121` records `exact` or `equivalent` for the pushed removal head; a fresh `Approved.` binds that SHA; authoritative GitHub and `origin/main` read-back bind the external merge to that exact head; closeout promotes retained proof, removes issue resources, and reads back the promoted snapshot and cleanup successfully while the merged tree has no `.loop/`. |
+| `AgentRoleContractTest` and the three agent manifests agree on the single external-orchestrator flow, returned payloads, lifecycle gates, external-merge closeout, and the two-approval removal contract. | `apps/e2e/tests/Feature/Configuration/AgentRoleContractTest.php`; the three lifecycle `SKILL.md` files and their three `agents/openai.yaml` manifests | `cd apps/e2e && ./vendor/bin/pest tests/Feature/Configuration/AgentRoleContractTest.php` exits `0` and directly reads all six instruction/manifest files. |
+
+## Implementation order
+
+1. Establish the repository contract first: remove the ignored workspace rule, teach `bin/worktree-create` to scaffold tracked `.loop/plan.md` and `.loop/proof/`, and update root help text.
+2. Update the five lifecycle skills together so planning, plan review, development, PR review, external-merge closeout, and the required second approval describe one consistent ADR 0022 flow. Make planning and development accept exactly `Todo` or `In Progress`; make development and review return complete payloads without GitHub mutation; and make closeout start only after an authoritative external merge.
+3. Update the developing, PR-review, and merge `agents/openai.yaml` descriptions and prompts to match the developer state gate, exact-head payloads, GitHub mutation boundary, and external-merge closeout precondition.
+4. Centralize proof-plan resolution in `ProofPlanFile` on `.loop/proof/<ISSUE>.json` for prove, equivalence, and promote, preserving safe repository-relative validation while refusing selection or declarations that reach another issue's fixtures and naming the rejected plan.
+5. Remove `fixture_issues` from proof-plan parsing, normalized output, fingerprints, staging, manifests, equivalence, and static classification; stage and inventory only files carried in the active branch's `.loop/proof/` at the exact candidate commit.
+6. Update focused command, value, staging, manifest, equivalence, policy, runner, promotion, worktree, and agent-contract tests. Give `AgentRoleContractTest` executable cases for the single external-orchestrator flow, no-GitHub developer and reviewer boundaries, exact `Todo`/`In Progress` development eligibility, exact-head payloads, authoritative external-merge verification, promotion and cleanup boundaries, manifest consistency, and the removal-head/second-approval contract; replace individual issue identifiers throughout `apps/e2e/tests` without weakening assertions.
+7. Delete the entire legacy `proofs/` tree so neither tracked files nor the directory remain.
+8. Treat the five maintained pages completed and committed during planning preflight as the behavior contract; if implementation reveals a deviation, correct only the affected page, rebuild the generated context, and rerun documentation lint.
+9. Add `.loop/proof/ORB-121.json` and only the fixtures needed by its Incus actions; run focused Pest coverage, all required project checks, root tests, the grep/check-ignore/archive commands, and the fresh Incus proof of the tracked workspace head.
+10. Push the branch and return its exact SHA plus the complete body and evidence without GitHub mutation. Keep the proved `.loop/` workspace intact for the first exact-head review; the reviewer returns the complete review payload without publishing it.
+11. After first approval, push one commit deleting `.loop/` and nothing else, verify its parent and deletion-only diff, require retained-proof `exact` or `equivalent`, and obtain a fresh second approval bound to the removal SHA. After the external orchestrator merges that exact head, verify the merge authoritatively, promote proof, clean up, and read back success while `.loop/` remains absent.
+
+## Must preserve
+
+- ADR 0022: `.loop/` is Git-tracked and contains the issue plan, proof plan, and fixtures only on the issue branch; `main` carries no `.loop/`; the harness reads plans and fixtures only from `.loop/proof/`; the reviewer sees and approves the complete workspace; the next commit deletes only `.loop/`; the merge gate verifies that exact difference and requires another approval; cross-issue fixtures are copied locally rather than declared; fixture checks are generic; `.e2e/` remains ignored.
+- ADR 0015 as amended by ADR 0022: proof results remain bound to the normalized proof-plan fingerprint and immutable proof-input manifest; content and Git mode changes stay material; the active proof plan, active fixtures, declared inputs, and governed runtime inventory remain fail-closed static inputs; equivalence verifies retained evidence and reports `exact`, `equivalent`, `stale`, or `indeterminate`; only valid exact/equivalent evidence can be retained; review, merge-tree, promotion-lineage, current-main, zero-exit, immutable-evidence, cleanup, and production-separation gates remain intact.
+- ADR 0008: `<managed-user-home>/.orbit/worktrees` remains the default managed checkout root and protected-path exception; recorded checkout origins, containment/removal rules, certificate/SSH state, and Caddy traversal accounting are not renamed or reinterpreted.
+- Existing proof-plan safety stays fail closed: reject unreadable/non-object plans, unknown keys, unsafe paths, malformed actions, duplicate IDs, invalid nodes/arguments/timeouts, and inconsistent fingerprints; removing `fixture_issues` must not loosen any remaining validation.
+- Planning eligibility stays fail closed: `Todo` and `In Progress` are the only accepted issue states, and every other lifecycle state remains a stop rather than an alias or implicit exception.
+- Development eligibility independently stays fail closed on the same exact `Todo`/`In Progress` set; its skill and manifest must not collapse that set back to `Todo` only.
+- Development and PR review must retain full work quality and exact-head binding while returning their complete payloads without GitHub mutation.
+- Development must push the branch but may not call `gh` or mutate the pull-request surface; PR review may not call `gh` or mutate GitHub. Their payloads must include the exact head SHA, acceptance evidence, documentation and deviation report, proof binding, and formal review decision or findings that the external orchestrator needs.
+- Closeout is available only after authoritative read-only evidence binds the exact externally merged removal head to its fresh second approval. It executes no merge or pull-request mutation and permits only proof promotion and resource cleanup afterward.
+- The removal head has the first-approved tracked-workspace head as its sole parent and differs only by deleting `.loop/`; retained proof is `exact` or `equivalent`; the second approval is fresh and SHA-bound; the merged tree remains `.loop`-free throughout promotion and cleanup.
+- Lifecycle skills and their agent manifests remain standalone and orchestration-neutral: preconditions, mutation limits, and returned payloads agree, and private-controller vocabulary never becomes part of the repository contract.
+- Fixtures continue to come from the exact candidate commit, reject unsafe entries and symlinks, preserve executable modes, install with the established root ownership and permissions, cover every topology role, and contribute deterministically to the manifest and proof result.
+- Prove, equivalence, and promote continue to consume the same normalized plan and verify the recorded plan/manifest fingerprints; a path-only rename must not bypass stale or indeterminate outcomes.
+- The existing topology remains immutable after a successful proof, every proof action must exit `0`, discovery and proof resources remain separate, and disposable Incus evidence never becomes production authority.
+- Adjacent `.orbit` meanings under managed homes, CLI/Gateway state, and hostnames remain byte-for-byte semantic invariants even where E2E tests or guest scripts mention them.
+
+## Open questions
+
+- none; the issue contract and accepted ADRs decide the workspace name, tracking lifetime, proof location, cross-issue-fixture policy, external-orchestrator lifecycle, closeout boundary, and two-approval removal flow.
+
+## Deviations
+
+- `apps/e2e/tests/Feature/Configuration/AgentRoleContractTest.php` spells the retired issue-workspace path as the split expression `'$worktree/.or'.'bit/plan.md'`. This test-only AC7 self-reference technique lets the contract assert that `bin/worktree-create` does not emit the old form without causing the repository's own literal old-form scan to match the assertion; no product or contributor contract consumes the split spelling.
+- `apps/e2e/tests/Unit/E2E/ProofFixtureContractTest.php` builds its individual-issue scan patterns with the split literals `'N'.'CK|O'.'RB'` and `'Nck|Orb'`. This test-only AC7 self-reference technique lets the recursive contract scan reject individual issue identifiers and issue-named test files without matching the scanner's own pattern source; no product or contributor contract consumes the split spelling.
+
+## Review findings
+
+- none.

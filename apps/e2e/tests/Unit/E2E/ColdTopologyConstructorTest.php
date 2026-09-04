@@ -216,7 +216,7 @@ describe('ColdTopologyConstructor cleanup', function () {
 
     it('automatically rolls back resources after a post-mutation construction failure', function () {
         $operation = new OperationId(str_repeat('d', 32));
-        $target = TopologyTarget::disposableCold('ORB-106', attemptId(), TopologyRecipe::coldAcceptance());
+        $target = TopologyTarget::disposableCold('AUX-106', attemptId(), TopologyRecipe::coldAcceptance());
         $state = new ColdConstructorProcessState($target, $operation->value);
         Process::fake($state->result(...));
 
@@ -239,7 +239,7 @@ describe('ColdTopologyConstructor cleanup', function () {
 
     it('reports cleanup refusal and preserves the primary construction failure', function () {
         $operation = new OperationId(str_repeat('d', 32));
-        $target = TopologyTarget::disposableCold('ORB-106', attemptId(), TopologyRecipe::coldAcceptance());
+        $target = TopologyTarget::disposableCold('AUX-106', attemptId(), TopologyRecipe::coldAcceptance());
         $state = new ColdConstructorProcessState($target, $operation->value);
         $state->foreignOnGit = true;
         Process::fake($state->result(...));
@@ -272,7 +272,7 @@ describe('ColdTopologyConstructor cleanup', function () {
     it('stops and deletes the exact variable-size inventory sequentially in reverse Node order', function () {
         $operation = str_repeat('d', 32);
         $target = TopologyTarget::disposableCold(
-            'ORB-106',
+            'AUX-106',
             new AttemptId(str_repeat('a', 32)),
             TopologyRecipe::coldAcceptance(),
         );
@@ -311,7 +311,7 @@ describe('ColdTopologyConstructor cleanup', function () {
 
     it('refuses every deletion when one resource belongs to another operation', function () {
         $target = TopologyTarget::disposableCold(
-            'ORB-106',
+            'AUX-106',
             new AttemptId(str_repeat('a', 32)),
             TopologyRecipe::coldAcceptance(),
         );

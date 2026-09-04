@@ -516,12 +516,14 @@
                 "Doctor",
                 "Gateway",
                 "Node",
-                "Proof topology"
+                "Proof topology",
+                "Workspace"
             ],
             "governing_adrs": [
                 "0005",
                 "0006",
-                "0019"
+                "0019",
+                "0022"
             ]
         },
         {
@@ -577,10 +579,12 @@
                 "App",
                 "Gateway",
                 "Node",
-                "Proof topology"
+                "Proof topology",
+                "Workspace"
             ],
             "governing_adrs": [
-                "0015"
+                "0015",
+                "0022"
             ]
         },
         {
@@ -596,9 +600,12 @@
                 "Doctor",
                 "Gateway",
                 "Node",
-                "Proof topology"
+                "Proof topology",
+                "Workspace"
             ],
-            "governing_adrs": []
+            "governing_adrs": [
+                "0022"
+            ]
         },
         {
             "path": "docs/solutions/README.md",
@@ -621,7 +628,9 @@
                 "Proof topology",
                 "Workspace"
             ],
-            "governing_adrs": []
+            "governing_adrs": [
+                "0022"
+            ]
         },
         {
             "path": "docs/solutions/remote-file-writes-on-uutils-coreutils.md",
@@ -632,9 +641,12 @@
             ],
             "concepts": [
                 "App",
-                "Gateway"
+                "Gateway",
+                "Workspace"
             ],
-            "governing_adrs": []
+            "governing_adrs": [
+                "0022"
+            ]
         },
         {
             "path": "docs/solutions/vpn-dnsmasq-uplink-resolvers.md",
