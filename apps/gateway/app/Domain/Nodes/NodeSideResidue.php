@@ -14,16 +14,16 @@ namespace App\Domain\Nodes;
  *
  * Whether the node itself is leaving matters. A node Orbit still owns keeps
  * being managed: its Metrics exporter is the fleet's business, and telling the
- * operator to wipe the node locally would strip state Orbit expects to find
+ * operator to clear the whole node would strip state Orbit expects to find
  * when the node comes back. Only a node that has left the registry is fully
- * orphaned, and only then is the node-local escape the right answer.
+ * orphaned, so its reported leftovers can be cleared by hand.
  */
 final readonly class NodeSideResidue
 {
     private const string EXPORTER = 'Metrics node exporter package, its Orbit systemd drop-in and its firewall rule for port 9100';
 
     /** The node is gone from Orbit, so nothing on it is managed any more. */
-    public const string FOLLOW_UP_NODE_REMOVED = 'Run the node-local Metrics cleanup on the node once it boots, or discard the node.';
+    public const string FOLLOW_UP_NODE_REMOVED = 'Discard this node, or clear only the leftovers listed above by hand once it is reachable.';
 
     /** The node stays registered, so only the removed role's leftovers are stranded. */
     public const string FOLLOW_UP_ROLE_REMOVED = 'Orbit still manages this node. Clean up only the leftovers listed above; provision the node again when it is reachable.';

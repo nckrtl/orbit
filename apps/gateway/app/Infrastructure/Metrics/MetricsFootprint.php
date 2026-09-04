@@ -6,12 +6,6 @@ namespace App\Infrastructure\Metrics;
 
 /**
  * Every trace Metrics leaves on a node, and the proof Orbit owns each one.
- *
- * The remote executors and the node-local escape script remove the same
- * resources through different transports. Naming a path, label or firewall
- * comment twice would let the two drift apart, and the escape would then
- * either miss a resource or delete one it cannot prove is Orbit's. Both read
- * these constants instead.
  */
 final readonly class MetricsFootprint
 {
@@ -71,7 +65,4 @@ final readonly class MetricsFootprint
     public const string PublicationFirewallComment = 'orbit:metrics-grafana-upstream';
 
     public const string WireGuardInterface = 'orbit';
-
-    /** The node-local escape, published beside the exporter drop-in it removes. */
-    public const string UninstallScript = '/usr/local/sbin/orbit-metrics-uninstall';
 }
