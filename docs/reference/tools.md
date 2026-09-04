@@ -40,9 +40,4 @@ A retained Tool row for an absent package produces bounded `tool.not_installed` 
 
 ## Limits
 
-Tool removal keeps these boundaries.
-
-- APT removal does not purge configuration files.
-- APT removal does not run `autoremove` or remove dependencies.
-- Orbit removes only the exact package owned by the selected Tool row.
-- Doctor reports state and never repairs or removes a package or Tool row.
+[ADR 0001](../decisions/0001-tool-management.md) governs Tool ownership and removal limits. [ADR 0004](../decisions/0004-verify-only-doctor-boundary.md) governs Doctor inspection and reporting limits.
