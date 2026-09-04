@@ -1,6 +1,6 @@
 # Routes
 
-This page tells an operator what a Route records, how Orbit selects its hostname and routing scope, and which changes Orbit accepts before traffic convergence.
+This page tells an operator what a Route records, how Orbit selects its hostname and routing scope, and which changes Orbit accepts before traffic convergence. [ADR 0023](../decisions/0023-separate-hostname-selection-from-cluster-routing.md) owns hostname and scope selection, and [ADR 0024](../decisions/0024-follow-generated-route-targets.md) owns generated target identity.
 
 ## Route record
 
@@ -14,8 +14,9 @@ The Gateway stores Route intent independently from Domain Name System (DNS), cer
 | Provenance | The immutable stored value `generated` or `explicit`; Orbit does not infer provenance from hostname text. |
 | Generation basis | The current target Node for a generated Route, or its last target Node after target clearing. An explicit Route stores no generation basis. |
 | Publication intent | The requested publication state, retained even when the Route has no target. |
-| Lifecycle | A bounded state with nullable failure step and error code. |
-| Targets | The schema permits several ordered Route-owned rows. The current API accepts at most one configured AppInstance target, and a generated Route always has at most one target. |
+| Lifecycle | Stored intent has status `pending`, `failed_step = null`, and `error_code = null`. These operations do not advance the lifecycle. |
+| Target storage | The Route can own several ordered target rows. |
+| Configured target | The API, PHP SDK, and CLI accept zero or one AppInstance target. A generated Route also permits at most one target. |
 
 Creating the same explicit Route again with identical App, hostname, publication intent, scope, and target returns the existing Route. A retry that changes one of those values fails without changing the Route.
 
