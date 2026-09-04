@@ -45,7 +45,8 @@
                 "0009",
                 "0011",
                 "0014",
-                "0017"
+                "0023",
+                "0024"
             ]
         },
         {
@@ -71,9 +72,9 @@
             ],
             "governing_adrs": [
                 "0004",
-                "0009",
                 "0011",
-                "0017"
+                "0023",
+                "0024"
             ]
         },
         {
@@ -521,6 +522,7 @@
                 "Legacy Instance",
                 "Node",
                 "Route",
+                "Router",
                 "Workspace"
             ],
             "governing_adrs": [
@@ -646,6 +648,7 @@
                 "App",
                 "AppInstance",
                 "Cluster",
+                "Doctor",
                 "Gateway",
                 "Ingress",
                 "Legacy Instance",
@@ -657,7 +660,8 @@
             "governing_adrs": [
                 "0009",
                 "0011",
-                "0017"
+                "0023",
+                "0024"
             ]
         },
         {

@@ -1,10 +1,7 @@
 # Applications
 
 Orbit stores shared source defaults on an App. It creates each development
-AppInstance as an independent clone on one manually selected app-dev Node. The
-AppInstance stores no Cluster identity. The selected Node can be standalone or
-in an inactive, active TLD-less, or active TLD-bearing Cluster. Any later
-routing scope derives from the Node at routing time.
+AppInstance as an independent clone on one manually selected app-dev Node. The AppInstance stores no Cluster identity or authoritative hostname. Active Cluster membership determines its Route scope, while hostname selection uses the Node TLD first and its active Cluster TLD only as a fallback.
 
 This behavior implements the development source boundary from
 [ADR 0009](../decisions/0009-clustered-app-instance-routing.md). Production
@@ -38,7 +35,7 @@ missing values. Orbit has no command that updates or backfills them.
 Select one active Node with an active app-dev role:
 
 ```text
-orbit instance:new <app-id> <node-id> feature-one
+orbit instance:new <app-id> <node-id> feature-one [--hostname=feature.example.test]
 ```
 
 The Gateway derives and records this immutable checkout path:
@@ -70,11 +67,11 @@ without a second row or checkout.
 
 ## Generate a development Route
 
-After a development AppInstance becomes active, the Gateway uses the Node's effective TLD to create its generated Route. An active Cluster TLD takes precedence over the Node TLD. The main AppInstance gets `<app>.test`; another AppInstance gets `<instance>.<app>.test`. The Route stores its `generated` provenance instead of inferring it from the hostname.
+After a development AppInstance becomes active, an input hostname creates an explicit Route that targets it. Without hostname input, the Gateway creates a generated Route from the Node TLD or, when the Node has no TLD, its active Cluster TLD. The main AppInstance gets `<app>.test`; another AppInstance gets `<instance>.<app>.test`. An app-dev Node without either TLD source cannot host the AppInstance.
 
-When neither the active Cluster nor the Node supplies a TLD, the Gateway creates no generated Route. The AppInstance remains active, and an operator must create an explicit Route before publication.
+The generated Route records the target Node as its generation basis. Replacing its target changes the basis, hostname, and routing scope together from the new AppInstance and Node. Replacing an explicit Route target can change its scope but keeps its hostname. Clearing either Route target keeps the Route and its last scope; a generated Route also keeps its last basis and hostname until another target replaces them.
 
-The generated Route keeps exactly one routing scope. It uses the active TLD-bearing Cluster when one supplies the effective TLD and otherwise uses the direct Node. Its initial target is the AppInstance that caused its creation.
+Active Cluster membership gives the Route Cluster scope independently from which TLD supplied its hostname. A Route outside an active Cluster has Node scope. A Cluster that owns a Route needs one active Router even when it has no TLD.
 
 ## Set the effective web root
 
@@ -120,9 +117,6 @@ Development AppInstance creation and removal do not accept a repository,
 command, PHP version, process, or shell input. The App owns the repository.
 The Node application role owns PHP and runtime prerequisites.
 
-Route persistence does not change Caddy, certificates, DNS, Routers, firewalls, or runtime services. Those operations belong to later runtime and publication lifecycles. See [Routes](../reference/routes.md) for the Route record and target contract.
+Route persistence does not change Caddy, certificates, DNS, Routers, firewalls, or runtime services. See [Routes](../reference/routes.md) for the Route record and target contract.
 
-Caller-local Git worktrees are a separate, externally owned source kind. They
-are not adopted by `instance:new`; the later registration lifecycle governed
-by [ADR 0018](../decisions/0018-register-caller-local-development-worktrees.md)
-owns that behavior.
+Caller-local Git worktrees are a separate, externally owned source kind. They are not adopted by `instance:new`; the registration lifecycle governed by [ADR 0018](../decisions/0018-register-caller-local-development-worktrees.md) owns that behavior.

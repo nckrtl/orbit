@@ -20,10 +20,7 @@ Human or AI agent
   Managed Nodes
 ```
 
-Web traffic follows a separate path. Standalone traffic reaches its Node
-directly. Traffic for an active Cluster with a TLD passes through the Router
-and, for public sites, the Ingress before reaching the Node that runs the
-application.
+Web traffic follows a separate path. Private traffic for Node scope reaches its workload Node. Private traffic for Cluster scope normally passes through the Router. An allowed client can also address the same hostname on a target workload Node. Public traffic always enters through the Cluster Ingress before the Router and workload. Co-located roles keep the same ownership but skip local self-proxy hops.
 
 ## CLI
 
@@ -56,7 +53,7 @@ by each Node's assigned roles.
 
 ## Applications and traffic
 
-Orbit can group related Nodes in a Cluster, but a Cluster is not required. An App represents an application and owns its repository, default branch, relative web root, shared settings, and Routes. An AppInstance represents one place on a Node where that App is developed or runs in production. Cluster placement is derived from the Node rather than selected or stored on the AppInstance. A Route stores one hostname, one direct Node or active Cluster routing scope, publication intent, and zero or one AppInstance target in that App and scope.
+Orbit can group related Nodes in a Cluster, but a Cluster is not required. An App represents an application and owns its repository, default branch, relative web root, shared settings, and Routes. An AppInstance represents one place on a Node where that App is developed or runs in production. Cluster placement is derived from the Node rather than selected or stored on the AppInstance. A Route stores one hostname, one Node or active Cluster routing scope, publication intent, and zero or one AppInstance target. A generated Route also stores the current or last target Node as its hostname-generation basis.
 
 A managed-clone development AppInstance uses one independent Git clone at
 *<apps-root>/<app-slug>/<instance-name>*. Orbit records this path before source
@@ -73,21 +70,13 @@ exist, Orbit creates it from the exact fetched App default branch commit.
 Source resolution records the selected branch and starting commit before the
 AppInstance becomes active.
 
-This development lifecycle owns source only. After the source becomes active, the Gateway records a generated Route and its target when the Node has an effective TLD. It does not install PHP, converge an application runtime, publish Caddy configuration, create certificates, or change DNS. Runtime prerequisites belong to the Node's app-dev role. Later issues own runtime and publication convergence. See [Applications](domains/applications.md) and [Routes](reference/routes.md).
+This development lifecycle owns source only. After the source becomes active, optional hostname input creates an explicit Route; otherwise the Gateway records a generated Route from the target Node TLD or its active Cluster TLD fallback. It does not install PHP, converge an application runtime, publish Caddy configuration, create certificates, or change DNS. Runtime prerequisites belong to the Node's app-dev role. See [Applications](domains/applications.md) and [Routes](reference/routes.md).
 
-A Node keeps its own optional TLD when it joins a Cluster. Direct Node routing
-remains authoritative while the Cluster is inactive or has no TLD. When the
-Cluster is active and has a TLD, that TLD takes precedence over its members'
-Node TLDs and requires one active Router. A TLD-less active Cluster adds no
-Router hop. Public clustered traffic first reaches the Ingress, which forwards
-it to the Router; Caddy on the workload Node then sends the request to the
-application. You can read more about this design in
-[ADR 0009](decisions/0009-clustered-app-instance-routing.md) and
-[ADR 0011](decisions/0011-clustered-production-ingress-and-app-prod-placement.md),
-as superseded and extended by
-[ADR 0017](decisions/0017-optional-cluster-placement-and-tld-precedence.md).
+A Node keeps its optional TLD when it joins a Cluster. A generated Route uses its basis Node TLD first and the active Cluster TLD only when that Node has no TLD. Active Cluster membership selects Cluster scope independently from hostname selection. A TLD-less Cluster can route an explicit hostname and needs one Router whenever it owns a Route.
 
-Legacy Instance and Workspace records remain available during staged conversion. New instance commands use AppInstance. Creating or changing a Route does not change a legacy hostname or certificate field. Route projection, runtime, conversion, and Ingress work remains separate.
+Router and workload Caddy project the same Route hostname. Public traffic first reaches Ingress, which forwards it to Router; workload Caddy then sends the request to the application. [ADR 0009](decisions/0009-clustered-app-instance-routing.md) and [ADR 0011](decisions/0011-clustered-production-ingress-and-app-prod-placement.md) define ownership. [ADR 0023](decisions/0023-separate-hostname-selection-from-cluster-routing.md) and [ADR 0024](decisions/0024-follow-generated-route-targets.md) define hostname, scope, and target changes.
+
+Legacy Instance and Workspace records remain available during staged conversion. New instance commands use AppInstance. Creating or changing a Route does not change a legacy hostname or certificate field. Route persistence remains separate from runtime projection, conversion, and Ingress behavior.
 
 ## Doctor
 
