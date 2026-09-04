@@ -1,7 +1,7 @@
 # Feature plan
 
 Issue: ORB-111
-Review verdict: FIX
+Review verdict: PENDING
 
 ## Outcome
 
@@ -24,14 +24,13 @@ Out:
 
 ## Documentation
 
-No maintained page changed during planning because the direct task limits this pass to `.loop/plan.md`.
+Completed during the bounded planning correction and committed as `43b4f4b1 docs: document APT Tool removal`:
 
-Read-only issue audit:
-
-- Scope: ORB-111; the `apps/gateway` documentation context; the Gateway, Node, and Doctor concept context; and the Tool removal reference required by the `docs` label.
-- Reported — owner ORB-111: `docs/reference/tools.md` does not exist, so maintained documentation does not state that successful APT removal deletes the Tool row while dpkg may retain configuration files. After plan approval, create this reference for Tool operators, describe successful removal and bounded retry behavior without restating ADR decisions, and state that retained configuration files remain on the Node.
-- Reported — owner ORB-111: route the new Tool reference from `docs/README.md`, then regenerate `docs/generated/context.json` with `composer docs-build` so its Gateway, Node, Doctor, and ADR relationships are current.
-- No other in-scope drift was found. `composer docs-lint` passed with zero issues on the planning head.
+- `docs/reference/tools.md` now tells Tool operators how successful removal and retry behave, states that APT leaves package configuration files on the Node, lists the bounded removal outcomes, and explains the bounded Doctor result before and after the Tool row is deleted.
+- `docs/README.md` now routes readers to the Tools reference with the other product reference pages.
+- `docs/generated/context.json` was regenerated and now indexes the Tools reference with its Gateway, Node, Doctor, ADR 0001, and ADR 0004 relationships.
+- Audit scope covered ORB-111, the `apps/gateway` documentation context, the Gateway, Node, and Doctor concept context, and the Tool removal reference required by the `docs` label. The two reported coverage gaps were fixed; no finding requires a separate owner.
+- `composer docs-build` completed and `composer docs-lint` passed with zero issues.
 
 ## Acceptance map
 
@@ -49,7 +48,7 @@ Read-only issue audit:
 
 ## Implementation order
 
-1. Create `docs/reference/tools.md`, route it from `docs/README.md`, regenerate `docs/generated/context.json`, run `composer docs-build` and `composer docs-lint`, and commit the maintained documentation as the planning contract requires before product code.
+1. Start from the committed `docs/reference/tools.md` behavior contract and change it only if implementation reveals a deviation; regenerate context and rerun documentation lint after any such correction.
 2. Add the recognized removed-disposition matrix and the preserved invalid-output matrix to `AptToolManagerTest.php`; add APT-backed absence coverage to `NativeToolInspectorTest.php` without changing the inspector seam.
 3. Refactor only `AptToolManager::installedVersion` enough to validate one exact status/version record before returning the raw version for `install ok installed` or null for the four closed removed dispositions. Preserve the existing exact no-record and one-line `unknown ok not-installed` cases.
 4. Run both focused infrastructure test files and the unchanged `RemoveToolActionTest.php`; correct only the APT parser or its new focused expectations.
@@ -63,6 +62,7 @@ Read-only issue audit:
 - ADR 0001, “Serialize mutations and retain recoverable state”: the existing identity and manager locks remain in force; a real failed probe or removal keeps one bounded failed record; a retry probes live state first; a successful removal deletes the row.
 - ADR 0001, “Treat caller input as a security boundary” and “Split component ownership”: callers gain no argv, option, repository, or privilege input; unsafe or ambiguous dpkg output still fails closed; raw stdout, stderr, and retained versions do not enter public errors or activity; the policy stays in the Gateway.
 - ADR 0004, “Keep Doctor verify-only”: `NativeToolInspector` continues to call only the read-only installed-version probe and returns only installed state plus a nullable normalized version. Doctor does not mutate the package, configuration files, Tool row, or manager state.
+- ADR 0004, “Return bounded deterministic reports”: recognized removed dpkg records yield only bounded absence. Stranded Tool intent remains `tool.not_installed` drift, while deleted intent leaves the `tool` family healthy when no other finding exists. Neither the raw dpkg status nor the retained package version enters the Doctor report.
 - ADR 0004, “Preserve the Tool contract”: while a stranded Tool row still exists, a recognized removed dpkg record is verifiable absence and the Tool probe may report `tool.not_installed` drift; it must not become `tool.inspection_failed`. After a successful retry deletes the row, the `tool` family is healthy with no managed resource to inspect.
 - The installed-version parser keeps the exact successful no-record stderr match, the exact one-line `unknown ok not-installed` case, the exact `install ok installed` status, one safe retained version for every two-line record, trailing-newline normalization, and rejection of missing, extra, control-bearing, oversized, truncated, nonzero, or unknown output.
 - `AptToolManager` package validation, fixed argv, Debian version normalization, sanitized exceptions, candidate probing, mutation commands, and removal-plan parsing remain unchanged.
@@ -79,5 +79,5 @@ Read-only issue audit:
 
 ## Review findings
 
-- FIX — Acceptance 7, the `docs` label, and the repository Durable knowledge rule require the maintained pages for this outcome during planning. The branch has no documentation commit between its base and head, `docs/reference/tools.md` is absent, and the Documentation section defers all three named documentation changes until implementation. Create and commit `docs/reference/tools.md`, route it from `docs/README.md`, regenerate and commit `docs/generated/context.json`, run `composer docs-build` and `composer docs-lint`, and update the Documentation section before the second review.
-- FIX — Acceptance 4 changes the observable Doctor family status and therefore touches ADR 0004, “Return bounded deterministic reports,” but `Must preserve` does not name that decision. Add it with the invariant that recognized removed dpkg records yield only bounded absence, that stranded intent remains `tool.not_installed` drift while deleted intent leaves the family healthy, and that neither the raw dpkg status nor retained version enters the report.
+- addressed: Acceptance 7, the `docs` label, and the Durable knowledge rule are now covered by the committed Tools reference, README route, regenerated context, successful docs build and lint, and the updated Documentation section.
+- addressed: Acceptance 4 now preserves ADR 0004, “Return bounded deterministic reports,” with the required bounded-absence, stranded-drift, deleted-intent health, and no-raw-status-or-version invariants.
