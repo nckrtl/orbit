@@ -588,6 +588,21 @@
             ]
         },
         {
+            "path": "docs/reference/tools.md",
+            "title": "Tools",
+            "kind": "reference",
+            "components": [],
+            "concepts": [
+                "Doctor",
+                "Gateway",
+                "Node"
+            ],
+            "governing_adrs": [
+                "0001",
+                "0004"
+            ]
+        },
+        {
             "path": "docs/reference/topology-snapshot.md",
             "title": "Topology snapshot",
             "kind": "reference",

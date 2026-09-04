@@ -2,12 +2,23 @@
 
 declare(strict_types=1);
 
+use App\Domain\Tools\DebianVersionNormalizer;
+use App\Domain\Tools\SemverVersionNormalizer;
 use App\Domain\Tools\ToolInspectionException;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolManagerRegistry;
+use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\Ssh\HostKey;
+use App\Infrastructure\Ssh\KnownHostsStore;
+use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Infrastructure\Tools\AptToolManager;
 use App\Infrastructure\Tools\NativeToolInspector;
+use App\Infrastructure\Tools\RemoteToolCommandRunner;
+use App\Models\Node;
 use App\Models\Tool;
+use App\Models\ToolManagerRecord;
 use Tests\Support\FakeToolManager;
+use Tests\Support\ToolManagerFakeSshExecutor;
 
 it('returns bounded installed state and normalized version', function (): void {
     $manager = new FakeToolManager;
@@ -37,6 +48,63 @@ it('returns absent state when the manager reports no installed version', functio
     $data = new NativeToolInspector(new ToolManagerRegistry([$manager]))->inspect($tool);
 
     expect($data->installed)->toBeFalse()->and($data->normalizedVersion)->toBeNull();
+});
+
+it('reports an APT package with retained configuration as bounded absence', function (): void {
+    $ssh = new ToolManagerFakeSshExecutor([
+        new CommandResult(
+            exitCode: 0,
+            stdout: "deinstall ok config-files\n1:2.4.3-1ubuntu2\n",
+            stderr: '',
+            durationMs: 10,
+            truncated: false,
+        ),
+    ]);
+    $manager = new AptToolManager(
+        commands: new RemoteToolCommandRunner(
+            ssh: $ssh,
+            keys: new class implements SshKeyProvider {
+                public function privateKeyPath(): string
+                {
+                    return '/tmp/orbit/id_ed25519';
+                }
+
+                public function publicKey(): string
+                {
+                    return 'ssh-ed25519 AAAATEST orbit@test';
+                }
+            },
+            knownHosts: new class implements KnownHostsStore {
+                public function path(): string
+                {
+                    return '/tmp/orbit/known_hosts';
+                }
+
+                public function put(string $host, int $port, HostKey $key): void {}
+            },
+        ),
+        versions: new DebianVersionNormalizer(new SemverVersionNormalizer),
+    );
+    $node = Node::make([
+        'platform' => 'linux',
+        'public_ssh_host' => '127.0.0.1',
+        'user' => 'orbit',
+        'wireguard_ip' => '10.8.0.43',
+    ]);
+    $node->setAttribute('id', 1);
+    $tool = Tool::make(['package' => 'redis-server']);
+    $tool->setRelation('node', $node);
+    $tool->setRelation('manager', ToolManagerRecord::make([
+        'node_id' => 1,
+        'name' => ToolManagerName::Apt,
+    ]));
+
+    $data = new NativeToolInspector(new ToolManagerRegistry([$manager]))->inspect($tool);
+
+    expect($data->installed)->toBeFalse()->and($data->normalizedVersion)->toBeNull();
+    expect($ssh->arguments())->toBe([
+        ['dpkg-query', '--show', '--showformat=${Status}\n${Version}\n', '--', 'redis-server'],
+    ]);
 });
 
 it('fails closed when ownership is invalid', function (): void {
