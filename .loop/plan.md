@@ -110,6 +110,7 @@ Completed during planning preflight:
 ## Deviations
 
 - `apps/e2e/tests/Feature/Configuration/AgentRoleContractTest.php` spells the retired issue-workspace path as the split expression `'$worktree/.or'.'bit/plan.md'`. This test-only AC7 self-reference technique lets the contract assert that `bin/worktree-create` does not emit the old form without causing the repository's own literal old-form scan to match the assertion; no product or contributor contract consumes the split spelling.
+- `apps/e2e/tests/Unit/E2E/ProofFixtureContractTest.php` builds its individual-issue scan patterns with the split literals `'N'.'CK|O'.'RB'` and `'Nck|Orb'`. This test-only AC7 self-reference technique lets the recursive contract scan reject individual issue identifiers and issue-named test files without matching the scanner's own pattern source; no product or contributor contract consumes the split spelling.
 
 ## Review findings
 
