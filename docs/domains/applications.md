@@ -1,10 +1,6 @@
 # Applications
 
-Orbit stores shared source defaults on an App. It creates each development
-AppInstance as an independent clone on one manually selected app-dev Node. The
-AppInstance stores no Cluster identity. The selected Node can be standalone or
-in an inactive, active TLD-less, or active TLD-bearing Cluster. Any later
-routing scope derives from the Node at routing time.
+Orbit stores shared source defaults on an App. It creates each development AppInstance as an independent clone on one manually selected app-dev Node. [Routes](../reference/routes.md) describes the separate hostname, scope, and target contract.
 
 This behavior implements the development source boundary from
 [ADR 0009](../decisions/0009-clustered-app-instance-routing.md). Production
@@ -38,7 +34,7 @@ missing values. Orbit has no command that updates or backfills them.
 Select one active Node with an active app-dev role:
 
 ```text
-orbit instance:new <app-id> <node-id> feature-one
+orbit instance:new <app-id> <node-id> feature-one [--hostname=feature.example.test]
 ```
 
 The Gateway derives and records this immutable checkout path:
@@ -67,6 +63,10 @@ repository, branch, and pre-activation commit evidence. It then resumes the
 next incomplete transition. Once active, the recorded starting commit stays
 unchanged while normal development advances HEAD. A conflicting retry fails
 without a second row or checkout.
+
+## Generate a development Route
+
+After a development AppInstance becomes active, the Gateway creates its Route. The optional `--hostname` value requests an explicit Route; omission requests a generated Route. The [Route reference](../reference/routes.md) owns the exact hostname, generation basis, target, routing scope, lifecycle, and failure behavior.
 
 ## Set the effective web root
 
@@ -112,11 +112,6 @@ Development AppInstance creation and removal do not accept a repository,
 command, PHP version, process, or shell input. The App owns the repository.
 The Node application role owns PHP and runtime prerequisites.
 
-This lifecycle does not change Caddy, certificates, DNS, hostnames, Routes,
-Routers, or runtime services. Those operations belong to later runtime and
-publication lifecycles.
+The [Route reference](../reference/routes.md) defines the boundary between stored Route intent and traffic projections.
 
-Caller-local Git worktrees are a separate, externally owned source kind. They
-are not adopted by `instance:new`; the later registration lifecycle governed
-by [ADR 0018](../decisions/0018-register-caller-local-development-worktrees.md)
-owns that behavior.
+Caller-local Git worktrees are a separate, externally owned source kind. They are not adopted by `instance:new`; the registration lifecycle governed by [ADR 0018](../decisions/0018-register-caller-local-development-worktrees.md) owns that behavior.

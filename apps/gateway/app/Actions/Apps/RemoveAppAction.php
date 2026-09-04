@@ -4,13 +4,20 @@ declare(strict_types=1);
 
 namespace App\Actions\Apps;
 
+use App\Domain\Routes\RouteRemovalGuard;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\App as OrbitApp;
 
 final readonly class RemoveAppAction
 {
+    public function __construct(
+        private ?RouteRemovalGuard $routes = null,
+    ) {}
+
     public function execute(OrbitApp $app): OrbitApp
     {
+        ($this->routes ?? app(RouteRemovalGuard::class))->assertAppRemovable($app);
+
         if ($app->appInstances()->exists()) {
             throw new ResourceOperationException(
                 errorCode: 'app.has_app_instances',

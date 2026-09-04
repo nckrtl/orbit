@@ -12,6 +12,7 @@ use App\Models\FirewallRule;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process as OrbitProcess;
+use App\Models\Route;
 use App\Models\Tool;
 use App\Models\Workspace;
 use Illuminate\Database\Eloquent\Builder;
@@ -152,7 +153,16 @@ final readonly class CommandActivityTargetResolver
             return $this->createdFirewallRule($request);
         }
 
-        foreach (['firewallRule', 'process', 'workspace', 'instance', 'app', 'servingNode', 'node'] as $parameter) {
+        foreach ([
+            'firewallRule',
+            'process',
+            'workspace',
+            'instance',
+            'route',
+            'app',
+            'servingNode',
+            'node',
+        ] as $parameter) {
             $model = $request->route($parameter);
 
             if ($model instanceof Model) {
@@ -166,6 +176,9 @@ final readonly class CommandActivityTargetResolver
             'instance:new' => AppInstance::query()
                 ->where('app_id', $request->integer('app_id'))
                 ->where('name', $request->input('name'))
+                ->first(),
+            'route:new' => Route::query()
+                ->where('hostname', mb_strtolower(trim((string) $request->input('hostname'))))
                 ->first(),
             'workspace:new' => Workspace::query()
                 ->where('instance_id', $request->integer('instance_id'))
@@ -244,6 +257,20 @@ final readonly class CommandActivityTargetResolver
 
         if ($subject instanceof Tool) {
             return $subject->node_id;
+        }
+
+        if ($subject instanceof Route) {
+            if ($subject->node_id !== null) {
+                return $subject->node_id;
+            }
+
+            $targetNodeId = $subject->targets()->with('appInstance')->first()?->appInstance?->node_id;
+
+            if ($targetNodeId !== null) {
+                return $targetNodeId;
+            }
+
+            return $subject->cluster?->routerAssignment?->node_id;
         }
 
         if ($subject instanceof FirewallRule) {

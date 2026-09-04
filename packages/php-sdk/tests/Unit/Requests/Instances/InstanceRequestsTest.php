@@ -55,6 +55,26 @@ describe('AppInstance requests', function (): void {
         ]);
     });
 
+    it('transports an optional Route hostname and preserves omission', function (): void {
+        $explicit = new CreateAppInstanceRequest(
+            appId: 3,
+            nodeId: 4,
+            name: 'main',
+            hostname: 'Preview.Example.Test',
+        );
+        $generated = new CreateAppInstanceRequest(appId: 3, nodeId: 4, name: 'main');
+
+        expect($explicit->body()->all())
+            ->toBe([
+                'app_id' => 3,
+                'node_id' => 4,
+                'name' => 'main',
+                'hostname' => 'Preview.Example.Test',
+            ])
+            ->and($generated->body()->all())
+            ->not->toHaveKey('hostname');
+    });
+
     it('lists instances through the explicit collection route', function (): void {
         $mockClient = new MockClient([
             ListAppInstancesRequest::class => MockResponse::make([

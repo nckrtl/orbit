@@ -45,7 +45,8 @@
                 "0009",
                 "0011",
                 "0014",
-                "0017"
+                "0023",
+                "0024"
             ]
         },
         {
@@ -71,9 +72,9 @@
             ],
             "governing_adrs": [
                 "0004",
-                "0009",
                 "0011",
-                "0017"
+                "0023",
+                "0024"
             ]
         },
         {
@@ -514,12 +515,12 @@
             "concepts": [
                 "App",
                 "AppInstance",
-                "Cluster",
                 "Effective web root",
                 "Gateway",
                 "Ingress",
                 "Legacy Instance",
                 "Node",
+                "Route",
                 "Workspace"
             ],
             "governing_adrs": [
@@ -634,6 +635,31 @@
             "governing_adrs": [
                 "0015",
                 "0022"
+            ]
+        },
+        {
+            "path": "docs/reference/routes.md",
+            "title": "Routes",
+            "kind": "reference",
+            "components": [],
+            "concepts": [
+                "App",
+                "AppInstance",
+                "Cluster",
+                "Doctor",
+                "Gateway",
+                "Ingress",
+                "Legacy Instance",
+                "Node",
+                "Route",
+                "Router",
+                "Workspace"
+            ],
+            "governing_adrs": [
+                "0009",
+                "0011",
+                "0023",
+                "0024"
             ]
         },
         {

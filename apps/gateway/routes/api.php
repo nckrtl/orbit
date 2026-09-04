@@ -15,6 +15,7 @@ use App\Http\Controllers\Api\NodeRolesController;
 use App\Http\Controllers\Api\NodesController;
 use App\Http\Controllers\Api\ProcessesController;
 use App\Http\Controllers\Api\RootCaCertificatesController;
+use App\Http\Controllers\Api\RoutesController;
 use App\Http\Controllers\Api\ToolManagersController;
 use App\Http\Controllers\Api\ToolsController;
 use App\Http\Controllers\Api\WorkspacesController;
@@ -115,6 +116,23 @@ Route::prefix('v1')->group(function (): void {
         Route::post('instances', [AppInstancesController::class, 'store'])->name('instance:new');
         Route::delete('instances/{instance}', [AppInstancesController::class, 'destroy'])
             ->name('instance:remove');
+        Route::get('routes', [RoutesController::class, 'index'])->name('route:list');
+        Route::post('routes', [RoutesController::class, 'store'])->name('route:new');
+        Route::get('routes/{route}', [RoutesController::class, 'show'])
+            ->whereNumber('route')
+            ->name('route:show');
+        Route::patch('routes/{route}', [RoutesController::class, 'update'])
+            ->whereNumber('route')
+            ->name('route:update');
+        Route::put('routes/{route}/target', [RoutesController::class, 'setTarget'])
+            ->whereNumber('route')
+            ->name('route:target:set');
+        Route::delete('routes/{route}/target', [RoutesController::class, 'clearTarget'])
+            ->whereNumber('route')
+            ->name('route:target:clear');
+        Route::delete('routes/{route}', [RoutesController::class, 'destroy'])
+            ->whereNumber('route')
+            ->name('route:remove');
         Route::get('workspaces', [WorkspacesController::class, 'index'])->name('workspace:list');
         Route::get('workspaces/{workspace}', [WorkspacesController::class, 'show'])
             ->name('workspace:show');

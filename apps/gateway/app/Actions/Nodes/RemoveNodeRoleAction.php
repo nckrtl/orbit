@@ -20,6 +20,7 @@ use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\RoleRegistry;
 use App\Domain\Processes\ProcessOperationException;
+use App\Domain\Routes\RouteRemovalGuard;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolManagerScopeLock;
@@ -48,6 +49,7 @@ final readonly class RemoveNodeRoleAction
         private ToolManagerScopeLock $managerScope,
         private NodeReachabilityProbe $reachability,
         private NodeSideResidue $residue,
+        private ?RouteRemovalGuard $routes = null,
     ) {}
 
     /**
@@ -60,6 +62,8 @@ final readonly class RemoveNodeRoleAction
         bool $purgeData = false,
         bool $offline = false,
     ): NodeRoleRemovalOutcome {
+        $this->routeGuard()->assertRoleRemovable($node, $role);
+
         if ($role === RoleName::Ingress) {
             return $this->removeIngress($node, $force);
         }
@@ -271,6 +275,11 @@ final readonly class RemoveNodeRoleAction
         return $role === RoleName::AppDev || $role === RoleName::AppProd;
     }
 
+    private function routeGuard(): RouteRemovalGuard
+    {
+        return $this->routes ?? app(RouteRemovalGuard::class);
+    }
+
     /** @return array{NodeRole, NodeRoleDependencySet} */
     private function claim(Node $node, RoleName $role): array
     {
@@ -284,6 +293,7 @@ final readonly class RemoveNodeRoleAction
                 ->where('role', $role)
                 ->lockForUpdate()
                 ->firstOrFail();
+            $this->routeGuard()->assertRoleRemovable($node, $role);
             $this->guardPolicy($node->refresh(), $role);
 
             if ($role === RoleName::AppDev && $node->appInstances()->exists()) {

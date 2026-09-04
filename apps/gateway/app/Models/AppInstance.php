@@ -8,6 +8,7 @@ use App\Domain\AppInstances\AppInstanceSourceKind;
 use App\Domain\AppInstances\AppInstanceState;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
  * @property int $id
@@ -59,6 +60,12 @@ final class AppInstance extends Model
     public function node(): BelongsTo
     {
         return $this->belongsTo(Node::class);
+    }
+
+    /** @return HasMany<RouteTarget, $this> */
+    public function routeTargets(): HasMany
+    {
+        return $this->hasMany(RouteTarget::class);
     }
 
     public function effectiveRoot(): ?string

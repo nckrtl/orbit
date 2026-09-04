@@ -49,6 +49,12 @@ final class Cluster extends Model
             ->where('status', LifecycleStatus::Active);
     }
 
+    /** @return HasMany<Route, $this> */
+    public function routes(): HasMany
+    {
+        return $this->hasMany(Route::class);
+    }
+
     /** @return array<string, class-string> */
     protected function casts(): array
     {

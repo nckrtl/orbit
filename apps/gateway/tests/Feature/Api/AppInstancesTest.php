@@ -19,6 +19,8 @@ use App\Models\AppInstance;
 use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Route;
+use App\Models\RouteTarget;
 use App\Models\Workspace;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
@@ -91,6 +93,7 @@ beforeEach(function (): void {
         'name' => 'app-dev',
         'status' => LifecycleStatus::Active,
         'platform' => 'linux',
+        'tld' => 'test',
         'public_ssh_host' => '192.0.2.10',
         'wireguard_ip' => '10.44.0.3',
         'user' => 'orbit',
@@ -164,7 +167,123 @@ it('creates an active managed-clone AppInstance on a standalone Node with inheri
         ->and(Schema::hasColumn('app_instances', 'source_kind'))
         ->toBeTrue()
         ->and(Schema::hasColumn('app_instances', 'cluster_id'))
-        ->toBeFalse();
+        ->toBeFalse()
+        ->and(Route::query()->sole()->getAttributes())
+        ->toMatchArray([
+            'app_id' => $this->orbitApp->id,
+            'node_id' => $this->node->id,
+            'cluster_id' => null,
+            'generation_basis_node_id' => $this->node->id,
+            'hostname' => 'dev.acme.test',
+            'provenance' => 'generated',
+            'publication' => 'private',
+            'status' => 'pending',
+            'failed_step' => null,
+            'error_code' => null,
+        ])
+        ->and(Route::query()->sole()->targets()->sole()->app_instance_id)
+        ->toBe(AppInstance::query()->sole()->id);
+});
+
+it('creates explicit Routes after activation and preserves exact retry identity', function (): void {
+    $this->source->resolution = new DevelopmentSourceResolution('main', str_repeat('a', 40));
+    $payload = [
+        'app_id' => $this->orbitApp->id,
+        'node_id' => $this->node->id,
+        'name' => 'main',
+        'hostname' => 'Preview.Example.Test',
+    ];
+
+    $created = $this->postJson('/api/v1/instances', $payload)->assertCreated();
+    $route = Route::query()->sole();
+
+    expect($route->getAttributes())
+        ->toMatchArray([
+            'hostname' => 'preview.example.test',
+            'provenance' => 'explicit',
+            'generation_basis_node_id' => null,
+            'status' => 'pending',
+            'failed_step' => null,
+            'error_code' => null,
+        ]);
+
+    $this
+        ->postJson('/api/v1/instances', $payload)
+        ->assertOk()
+        ->assertJsonPath('data.id', $created->json('data.id'));
+
+    expect(Route::query()->count())->toBe(1);
+});
+
+it('keeps activated source evidence when generated Route validation fails and completes on retry', function (): void {
+    $this->node->update(['tld' => null]);
+    $payload = [
+        'app_id' => $this->orbitApp->id,
+        'node_id' => $this->node->id,
+        'name' => 'dev',
+    ];
+
+    $this
+        ->postJson('/api/v1/instances', $payload)
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'route.tld_required');
+
+    $instance = AppInstance::query()->sole();
+    expect($instance->status)
+        ->toBe(AppInstanceState::Active)
+        ->and($instance->starting_commit)
+        ->toBe(str_repeat('a', 40))
+        ->and(Route::query()->count())
+        ->toBe(0);
+
+    $this->node->update(['tld' => 'test']);
+    $this->postJson('/api/v1/instances', $payload)->assertOk();
+
+    expect(Route::query()->sole()->hostname)->toBe('dev.acme.test');
+});
+
+it('uses Node TLD before active Cluster fallback while Cluster membership selects scope', function (): void {
+    $this->source->resolution = new DevelopmentSourceResolution('main', str_repeat('a', 40));
+    $cluster = Cluster::query()->create([
+        'name' => 'routing',
+        'state' => ClusterState::Active,
+        'tld' => 'cluster.test',
+    ]);
+    $this->node->update(['cluster_id' => $cluster->id]);
+    $this->node
+        ->roles()
+        ->create([
+            'cluster_id' => $cluster->id,
+            'role' => RoleName::Router,
+            'status' => LifecycleStatus::Active,
+        ]);
+
+    $this->postJson('/api/v1/instances', [
+        'app_id' => $this->orbitApp->id,
+        'node_id' => $this->node->id,
+        'name' => 'main',
+    ])->assertCreated();
+
+    expect(Route::query()->sole()->hostname)
+        ->toBe('acme.test')
+        ->and(Route::query()->sole()->cluster_id)
+        ->toBe($cluster->id);
+
+    Route::query()->sole()->delete();
+    AppInstance::query()->sole()->delete();
+    $this->node->update(['tld' => null]);
+    $this->source->resolution = new DevelopmentSourceResolution('feature', str_repeat('b', 40));
+
+    $this->postJson('/api/v1/instances', [
+        'app_id' => $this->orbitApp->id,
+        'node_id' => $this->node->id,
+        'name' => 'feature',
+    ])->assertCreated();
+
+    expect(Route::query()->sole()->hostname)
+        ->toBe('feature.acme.cluster.test')
+        ->and(Route::query()->sole()->cluster_id)
+        ->toBe($cluster->id);
 });
 
 it('creates equivalent source on Nodes in every optional Cluster state', function (string $placement): void {
@@ -175,6 +294,16 @@ it('creates equivalent source on Nodes in every optional Cluster state', functio
             'tld' => $placement === 'active-with-tld' ? 'orbit' : null,
         ]);
         $this->node->update(['cluster_id' => $cluster->id]);
+
+        if ($cluster->state === ClusterState::Active) {
+            $this->node
+                ->roles()
+                ->create([
+                    'cluster_id' => $cluster->id,
+                    'role' => RoleName::Router,
+                    'status' => LifecycleStatus::Active,
+                ]);
+        }
     }
 
     $this
@@ -526,6 +655,19 @@ it('removes through the source-only lifecycle and transports discard intent', fu
         'node_id' => $this->node->id,
         'name' => 'dev',
     ])->assertCreated();
+    $route = Route::query()->sole();
+    $routeBefore = $route->only([
+        'app_id',
+        'node_id',
+        'cluster_id',
+        'generation_basis_node_id',
+        'hostname',
+        'provenance',
+        'publication',
+        'status',
+        'failed_step',
+        'error_code',
+    ]);
     $this->source->calls = [];
 
     $this
@@ -537,6 +679,10 @@ it('removes through the source-only lifecycle and transports discard intent', fu
 
     expect(AppInstance::query()->count())
         ->toBe(0)
+        ->and(RouteTarget::query()->count())
+        ->toBe(0)
+        ->and($route->refresh()->only(array_keys($routeBefore)))
+        ->toBe($routeBefore)
         ->and($this->source->calls)
         ->toBe([$discard ? 'remove-discard:active' : 'remove:active']);
 })->with([false, true]);

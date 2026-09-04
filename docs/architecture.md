@@ -20,10 +20,7 @@ Human or AI agent
   Managed Nodes
 ```
 
-Web traffic follows a separate path. Standalone traffic reaches its Node
-directly. Traffic for an active Cluster with a TLD passes through the Router
-and, for public sites, the Ingress before reaching the Node that runs the
-application.
+Web traffic follows a separate path from CLI control traffic. [Routes](reference/routes.md) explains how a hostname reaches its AppInstance target through the Node, Router, and Ingress roles.
 
 ## CLI
 
@@ -56,12 +53,7 @@ by each Node's assigned roles.
 
 ## Applications and traffic
 
-Orbit can group related Nodes in a Cluster, but a Cluster is not required. An
-App represents an application and owns its repository, default branch,
-relative web root, and shared settings. An AppInstance represents one place on
-a Node where that App is developed or runs in production. Cluster placement is
-derived from the Node rather than selected or stored on the AppInstance. A
-Route connects a hostname to an AppInstance.
+Orbit can group related Nodes in a Cluster, but a Cluster is not required. An App represents an application and owns its source defaults and Routes. An AppInstance represents one place on a Node where that App is developed or runs in production. [Applications](domains/applications.md) explains source placement, and [Routes](reference/routes.md) owns the hostname and target contract.
 
 A managed-clone development AppInstance uses one independent Git clone at
 *<apps-root>/<app-slug>/<instance-name>*. Orbit records this path before source
@@ -78,27 +70,11 @@ exist, Orbit creates it from the exact fetched App default branch commit.
 Source resolution records the selected branch and starting commit before the
 AppInstance becomes active.
 
-This development lifecycle owns source only. It does not install PHP, converge
-an application runtime, publish Caddy configuration, create certificates,
-change DNS, or create Routes. Runtime prerequisites belong to the Node's app-dev role.
-Later issues own runtime and publication behavior. See
-[Applications](domains/applications.md).
+This development lifecycle owns source only. After the source becomes active, the Gateway records its Route intent. It does not install PHP or change runtime and traffic projections. Runtime prerequisites belong to the Node's app-dev role. [Routes](reference/routes.md) describes hostname selection, routing scope, target changes, and projection boundaries.
 
-A Node keeps its own optional TLD when it joins a Cluster. Direct Node routing
-remains authoritative while the Cluster is inactive or has no TLD. When the
-Cluster is active and has a TLD, that TLD takes precedence over its members'
-Node TLDs and requires one active Router. A TLD-less active Cluster adds no
-Router hop. Public clustered traffic first reaches the Ingress, which forwards
-it to the Router; Caddy on the workload Node then sends the request to the
-application. You can read more about this design in
-[ADR 0009](decisions/0009-clustered-app-instance-routing.md) and
-[ADR 0011](decisions/0011-clustered-production-ingress-and-app-prod-placement.md),
-as superseded and extended by
-[ADR 0017](decisions/0017-optional-cluster-placement-and-tld-precedence.md).
+[ADR 0009](decisions/0009-clustered-app-instance-routing.md) and [ADR 0011](decisions/0011-clustered-production-ingress-and-app-prod-placement.md) define traffic ownership. [ADR 0023](decisions/0023-separate-hostname-selection-from-cluster-routing.md) and [ADR 0024](decisions/0024-follow-generated-route-targets.md) define hostname, scope, and target identity.
 
-Legacy Instance and Workspace records remain available during staged
-conversion. New instance commands use AppInstance. Route, runtime, and Ingress
-work remains separate.
+Legacy Instance and Workspace records remain available during staged conversion. New instance commands use AppInstance. Creating or changing a Route does not change a legacy hostname or certificate field. Route persistence remains separate from runtime projection, conversion, and Ingress behavior.
 
 ## Doctor
 

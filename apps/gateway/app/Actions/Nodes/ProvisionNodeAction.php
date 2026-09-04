@@ -21,6 +21,7 @@ use App\Domain\Nodes\NodeTld;
 use App\Domain\Nodes\RecoverableNodeConverger;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\ConfiguredStoragePathValidator;
+use App\Domain\Routes\RouteMutationReconciler;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ToolManagerMaterializer;
@@ -52,6 +53,7 @@ final readonly class ProvisionNodeAction
         private UpdateNodeSettingsAction $nodeSettings,
         private ManagedUserAccountResolver $accounts,
         private ActiveTldScopeGuard $tldScope,
+        private ?RouteMutationReconciler $routes = null,
     ) {}
 
     public function execute(ProvisionNodeData $data): Node
@@ -172,6 +174,7 @@ final readonly class ProvisionNodeAction
         $platform = $this->platform($node, $data);
         $architecture = $this->architecture($node, $data);
         $previousTld = $node->exists && is_string($node->tld) ? $node->tld : null;
+        $previousClusterId = $node->exists ? $node->cluster_id : null;
         $tld = $this->tld($node, $data, $clusterId);
         $convergeChangedAppDevTld = $node->exists && $previousTld !== $tld && $this->hasActiveAppDevRole($node);
 
@@ -266,8 +269,16 @@ final readonly class ProvisionNodeAction
         ]);
 
         try {
-            DB::transaction(function () use ($node, $tld, $clusterId): void {
+            DB::transaction(function () use ($node, $tld, $clusterId, $previousTld, $previousClusterId): void {
                 $this->tldScope->assertNodeTldAvailable($node, $tld, $clusterId);
+                if ($node->exists) {
+                    $this->routeReconciler()->reconcile(
+                        nodeOverrides: [$node->id => ['tld' => $tld, 'cluster_id' => $clusterId]],
+                        baselineNodeOverrides: [
+                            $node->id => ['tld' => $previousTld, 'cluster_id' => $previousClusterId],
+                        ],
+                    );
+                }
                 $node->save();
             });
         } catch (QueryException $exception) {
@@ -334,12 +345,22 @@ final readonly class ProvisionNodeAction
             $this->convergeChangedAppDevTld($node, $previousTld);
         }
 
-        $node->update([
-            'user' => $managedUser,
-            'status' => LifecycleStatus::Active,
-            'failed_step' => null,
-            'error_code' => null,
-        ]);
+        try {
+            DB::transaction(function () use ($node, $managedUser): void {
+                $node->update([
+                    'user' => $managedUser,
+                    'status' => LifecycleStatus::Active,
+                    'failed_step' => null,
+                    'error_code' => null,
+                ]);
+            });
+        } catch (Throwable $exception) {
+            if ($priorActiveState !== null) {
+                $this->restorePriorActiveState($node, $priorActiveState);
+            }
+
+            throw $exception;
+        }
 
         if ($data->settingsProvided) {
             try {
@@ -407,10 +428,12 @@ final readonly class ProvisionNodeAction
 
     private function tld(Node $node, ProvisionNodeData $data, ?int $clusterId): ?string
     {
-        $requested = $data->tld ?? (is_string($node->tld) ? $node->tld : null);
+        $requested = $data->tldProvided || $data->tld !== null
+            ? $data->tld
+            : (is_string($node->tld) ? $node->tld : null);
 
         if ($requested === null) {
-            if (! $this->hasAppDevRole($node, $data)) {
+            if (! $this->hasAppDevRole($node, $data) || $this->activeClusterTld($clusterId) !== null) {
                 return null;
             }
 
@@ -445,6 +468,28 @@ final readonly class ProvisionNodeAction
         $this->tldScope->assertNodeTldAvailable($node, $tld, $clusterId);
 
         return $tld;
+    }
+
+    private function activeClusterTld(?int $clusterId): ?string
+    {
+        if ($clusterId === null) {
+            return null;
+        }
+
+        $cluster = Cluster::query()->find($clusterId);
+
+        if (! $cluster instanceof Cluster) {
+            return null;
+        }
+
+        return $cluster->state === \App\Domain\Clusters\ClusterState::Active && is_string($cluster->tld)
+            ? $cluster->tld
+            : null;
+    }
+
+    private function routeReconciler(): RouteMutationReconciler
+    {
+        return $this->routes ?? app(RouteMutationReconciler::class);
     }
 
     private function platform(Node $node, ProvisionNodeData $data): string
@@ -502,7 +547,14 @@ final readonly class ProvisionNodeAction
         try {
             $this->appDevTldConverger->converge($node);
         } catch (Throwable $exception) {
-            $node->update(['tld' => $previousTld]);
+            $currentTld = is_string($node->tld) ? $node->tld : null;
+            DB::transaction(function () use ($node, $previousTld, $currentTld): void {
+                $this->routeReconciler()->reconcile(
+                    nodeOverrides: [$node->id => ['tld' => $previousTld, 'cluster_id' => $node->cluster_id]],
+                    baselineNodeOverrides: [$node->id => ['tld' => $currentTld, 'cluster_id' => $node->cluster_id]],
+                );
+                $node->update(['tld' => $previousTld]);
+            });
 
             try {
                 $this->appDevTldConverger->converge($node->refresh());
@@ -565,7 +617,7 @@ final readonly class ProvisionNodeAction
         }
 
         try {
-            $node->update($priorActiveState);
+            $this->restorePriorActiveState($node, $priorActiveState);
         } catch (Throwable) {
             throw new NodeProvisioningException(
                 step: 'node-rollback',
@@ -591,5 +643,35 @@ final readonly class ProvisionNodeAction
                 message: 'Node reprovisioning rollback failed.',
             );
         }
+    }
+
+    /** @param array<string, mixed> $priorActiveState */
+    private function restorePriorActiveState(Node $node, array $priorActiveState): void
+    {
+        $currentTld = is_string($node->tld) ? $node->tld : null;
+        $currentClusterId = $node->cluster_id;
+        $previousTld = is_string($priorActiveState['tld'] ?? null) ? $priorActiveState['tld'] : null;
+        $previousClusterId = is_int($priorActiveState['cluster_id'] ?? null)
+            ? $priorActiveState['cluster_id']
+            : null;
+
+        DB::transaction(function () use (
+            $node,
+            $priorActiveState,
+            $currentTld,
+            $currentClusterId,
+            $previousTld,
+            $previousClusterId,
+        ): void {
+            $this->routeReconciler()->reconcile(
+                nodeOverrides: [
+                    $node->id => ['tld' => $previousTld, 'cluster_id' => $previousClusterId],
+                ],
+                baselineNodeOverrides: [
+                    $node->id => ['tld' => $currentTld, 'cluster_id' => $currentClusterId],
+                ],
+            );
+            $node->update($priorActiveState);
+        });
     }
 }

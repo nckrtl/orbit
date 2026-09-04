@@ -24,6 +24,7 @@ final class ProvisionNodeData extends Data
         public ?string $expectedSshHostFingerprint = null,
         public string $platform = 'linux',
         public ?string $architecture = null,
+        public bool $tldProvided = false,
         public ?string $tld = null,
         public bool $clusterProvided = false,
         public ?int $clusterId = null,

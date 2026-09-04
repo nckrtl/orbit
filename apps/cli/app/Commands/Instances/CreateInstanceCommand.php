@@ -18,6 +18,7 @@ final class CreateInstanceCommand extends GatewayCommand
         {node : Numeric node ID}
         {name : Development AppInstance and branch name}
         {--root= : Optional relative web-root override}
+        {--hostname= : Optional explicit Route hostname}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -58,6 +59,7 @@ final class CreateInstanceCommand extends GatewayCommand
                 nodeId: $nodeId,
                 name: $name,
                 root: $this->stringOption('root'),
+                hostname: $this->stringOption('hostname'),
             ),
             AppInstanceResponse::class,
         );

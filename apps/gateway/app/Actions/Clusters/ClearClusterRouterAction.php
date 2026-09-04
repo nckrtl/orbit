@@ -6,6 +6,7 @@ namespace App\Actions\Clusters;
 
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\RouteRemovalGuard;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Cluster;
 use App\Models\NodeRole;
@@ -13,6 +14,10 @@ use Illuminate\Support\Facades\DB;
 
 final readonly class ClearClusterRouterAction
 {
+    public function __construct(
+        private ?RouteRemovalGuard $routes = null,
+    ) {}
+
     public function execute(Cluster $cluster): Cluster
     {
         /**
@@ -21,6 +26,7 @@ final readonly class ClearClusterRouterAction
          */
         $updated = DB::transaction(function () use ($cluster): Cluster {
             $lockedCluster = Cluster::query()->lockForUpdate()->findOrFail($cluster->id);
+            ($this->routes ?? app(RouteRemovalGuard::class))->assertRouterRemovable($lockedCluster);
 
             if ($lockedCluster->state === ClusterState::Active && $lockedCluster->tld !== null) {
                 throw new ResourceOperationException(

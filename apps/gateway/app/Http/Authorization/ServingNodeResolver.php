@@ -12,6 +12,7 @@ use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\Route;
 use App\Models\Tool;
 use App\Models\Workspace;
 use Illuminate\Http\Request;
@@ -35,6 +36,7 @@ final readonly class ServingNodeResolver
             ServingNode::ProcessOwning => $this->processOwning($request),
             ServingNode::ToolOwning => $this->toolOwning($request),
             ServingNode::ClusterOwning => $this->clusterOwning($request),
+            ServingNode::RouteOwning => $this->routeOwning($request),
             ServingNode::RoleMutation => $this->roleMutation($request),
             ServingNode::Collection => [],
         };
@@ -207,6 +209,48 @@ final readonly class ServingNodeResolver
             return [];
         }
 
+        /** @var list<Node> $nodes */
+        $nodes = $cluster->nodes()->orderBy('id')->get()->all();
+
+        return $nodes !== [] ? $nodes : $this->gateway();
+    }
+
+    /** @return list<Node> */
+    private function routeOwning(Request $request): array
+    {
+        $route = $request->route('route');
+
+        if ($route instanceof Route) {
+            if ($route->node_id !== null) {
+                return [Node::query()->findOrFail($route->node_id)];
+            }
+
+            return $this->clusterNodes((int) $route->cluster_id);
+        }
+
+        $appInstanceId = $this->positiveInteger($request->input('app_instance_id'));
+
+        if ($appInstanceId !== null) {
+            $appInstance = AppInstance::query()->findOrFail($appInstanceId);
+
+            return [Node::query()->findOrFail($appInstance->node_id)];
+        }
+
+        $nodeId = $this->positiveInteger($request->input('node_id'));
+
+        if ($nodeId !== null) {
+            return [Node::query()->findOrFail($nodeId)];
+        }
+
+        $clusterId = $this->positiveInteger($request->input('cluster_id'));
+
+        return $clusterId === null ? [] : $this->clusterNodes($clusterId);
+    }
+
+    /** @return list<Node> */
+    private function clusterNodes(int $clusterId): array
+    {
+        $cluster = Cluster::query()->findOrFail($clusterId);
         /** @var list<Node> $nodes */
         $nodes = $cluster->nodes()->orderBy('id')->get()->all();
 

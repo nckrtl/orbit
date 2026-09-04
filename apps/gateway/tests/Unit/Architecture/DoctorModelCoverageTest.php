@@ -13,6 +13,8 @@ use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Models\NodeRole;
 use App\Models\Process;
+use App\Models\Route;
+use App\Models\RouteTarget;
 use App\Models\Setting;
 use App\Models\Tool;
 use App\Models\ToolManagerRecord;
@@ -29,7 +31,14 @@ it('partitions every persisted model across doctor dispositions', function (): v
         Process::class => DoctorFamily::Process,
         FirewallRule::class => DoctorFamily::Firewall,
     ];
-    $ownerInputs = [ToolManagerRecord::class, Setting::class, Cluster::class, Instance::class];
+    $ownerInputs = [
+        ToolManagerRecord::class,
+        Setting::class,
+        Cluster::class,
+        Instance::class,
+        Route::class,
+        RouteTarget::class,
+    ];
     $excluded = [NodeAccess::class, Activity::class];
     $modelsDirectory = new ReflectionClass(Node::class)->getFileName();
     if (! is_string($modelsDirectory)) {

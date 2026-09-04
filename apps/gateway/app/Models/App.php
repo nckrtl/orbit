@@ -38,6 +38,12 @@ final class App extends Model
         return $this->hasMany(AppInstance::class);
     }
 
+    /** @return HasMany<Route, $this> */
+    public function routes(): HasMany
+    {
+        return $this->hasMany(Route::class);
+    }
+
     /** @return array<string, string> */
     protected function casts(): array
     {

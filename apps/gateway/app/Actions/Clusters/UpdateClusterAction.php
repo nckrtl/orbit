@@ -7,6 +7,7 @@ namespace App\Actions\Clusters;
 use App\Data\Clusters\UpdateClusterData;
 use App\Domain\Clusters\ActiveTldScopeGuard;
 use App\Domain\Clusters\ClusterState;
+use App\Domain\Routes\RouteMutationReconciler;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Cluster;
@@ -16,6 +17,7 @@ final readonly class UpdateClusterAction
 {
     public function __construct(
         private ActiveTldScopeGuard $tldScope,
+        private ?RouteMutationReconciler $routes = null,
     ) {}
 
     public function execute(Cluster $cluster, UpdateClusterData $data): Cluster
@@ -59,6 +61,10 @@ final readonly class UpdateClusterAction
             if ($data->stateProvided) {
                 $updates['state'] = $data->state;
             }
+
+            ($this->routes ?? app(RouteMutationReconciler::class))->reconcile(clusterOverrides: [
+                $locked->id => ['tld' => $proposedTld, 'state' => $proposedState],
+            ]);
 
             $locked->update($updates);
 

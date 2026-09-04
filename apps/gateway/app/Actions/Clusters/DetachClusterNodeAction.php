@@ -6,6 +6,7 @@ namespace App\Actions\Clusters;
 
 use App\Domain\Clusters\ActiveTldScopeGuard;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\RouteMutationReconciler;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Cluster;
 use App\Models\Node;
@@ -15,6 +16,7 @@ final readonly class DetachClusterNodeAction
 {
     public function __construct(
         private ActiveTldScopeGuard $tldScope,
+        private ?RouteMutationReconciler $routes = null,
     ) {}
 
     public function execute(Cluster $cluster, Node $node): Cluster
@@ -52,6 +54,10 @@ final readonly class DetachClusterNodeAction
             }
 
             $this->tldScope->assertNodeCanDetach($lockedCluster, $lockedNode);
+
+            ($this->routes ?? app(RouteMutationReconciler::class))->reconcile(nodeOverrides: [
+                $lockedNode->id => ['cluster_id' => null],
+            ]);
 
             $lockedNode->update(['cluster_id' => null]);
 

@@ -71,6 +71,13 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'process:restart',
         'process:start',
         'process:stop',
+        'route:list',
+        'route:new',
+        'route:remove',
+        'route:show',
+        'route:target:clear',
+        'route:target:set',
+        'route:update',
         'tool:install',
         'tool:list',
         'tool:manager:list',
@@ -89,7 +96,7 @@ it('does not register hidden Orbit product commands', function (): void {
     $orbitCommands = collect(app(Kernel::class)->all())
         ->filter(static fn (Command $command): bool => str_starts_with($command::class, 'App\\Commands\\'));
 
-    expect($orbitCommands)->toHaveCount(63);
+    expect($orbitCommands)->toHaveCount(70);
     expect($orbitCommands->every(
         static fn (Command $command): bool => ! $command->isHidden(),
     ))->toBeTrue();
@@ -162,7 +169,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'instance:list' => [[], ['json' => false]],
         'instance:new' => [
             ['app', 'node', 'name'],
-            ['root' => null, 'json' => false],
+            ['root' => null, 'hostname' => null, 'json' => false],
         ],
         'instance:remove' => [['instance'], ['discard-source' => false, 'json' => false]],
         'instance:show' => [['instance'], ['json' => false]],
@@ -228,6 +235,22 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'process:restart' => [['process'], ['json' => false]],
         'process:start' => [['process'], ['json' => false]],
         'process:stop' => [['process'], ['json' => false]],
+        'route:list' => [[], ['json' => false]],
+        'route:new' => [
+            ['app', 'hostname'],
+            [
+                'publication' => 'private',
+                'target' => null,
+                'node' => null,
+                'cluster' => null,
+                'json' => false,
+            ],
+        ],
+        'route:remove' => [['route'], ['json' => false]],
+        'route:show' => [['route'], ['json' => false]],
+        'route:target:clear' => [['route'], ['json' => false]],
+        'route:target:set' => [['route', 'target'], ['json' => false]],
+        'route:update' => [['route'], ['hostname' => null, 'publication' => null, 'json' => false]],
         'tool:install' => [
             ['package'],
             ['node' => null, 'manager' => null, 'constraint' => null, 'json' => false],
@@ -407,6 +430,13 @@ it('renders one exact json failure envelope for every Orbit product command', fu
         'process:restart' => [['process' => '1'], ...$profileMissing],
         'process:start' => [['process' => '1'], ...$profileMissing],
         'process:stop' => [['process' => '1'], ...$profileMissing],
+        'route:list' => [[], ...$profileMissing],
+        'route:new' => [['app' => '1', 'hostname' => 'app.test', '--node' => '1'], ...$profileMissing],
+        'route:remove' => [['route' => '1'], ...$profileMissing],
+        'route:show' => [['route' => '1'], ...$profileMissing],
+        'route:target:clear' => [['route' => '1'], ...$profileMissing],
+        'route:target:set' => [['route' => '1', 'target' => '2'], ...$profileMissing],
+        'route:update' => [['route' => '1', '--publication' => 'private'], ...$profileMissing],
         'tool:install' => [
             ['package' => 'curl', '--node' => '1', '--manager' => 'apt'],
             ...$profileMissing,
