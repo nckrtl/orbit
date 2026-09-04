@@ -20,7 +20,8 @@ Choose a page based on what you want to learn:
 - [Product areas](domains/README.md) groups feature documentation as it grows.
 - [Decisions](decisions/README.md) keeps the history behind important design
   choices.
-- Reference pages hold the operational contracts: [Apps](reference/apps.md), the [Incus topology registry](reference/incus-topologies.md), the [Metrics role](reference/metrics.md), [Node retarget](reference/node-retarget.md), [PHP runtime defaults](reference/php-runtime.md), [Proof plans](reference/proof-plans.md), and [Topology snapshot](reference/topology-snapshot.md).
+- Product reference pages describe [Apps](reference/apps.md), the [Metrics role](reference/metrics.md), [Node retarget](reference/node-retarget.md), [PHP runtime defaults](reference/php-runtime.md), and [Tools](reference/tools.md).
+- Development reference pages describe the [Incus topology registry](reference/incus-topologies.md), [Proof plans](reference/proof-plans.md), and the [Topology snapshot](reference/topology-snapshot.md).
 - [Solutions](solutions/README.md) collects useful fixes and lessons from past
   work.
 
