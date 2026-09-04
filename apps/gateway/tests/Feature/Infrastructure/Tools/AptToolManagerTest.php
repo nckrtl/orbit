@@ -178,6 +178,24 @@ describe(AptToolManager::class, function (): void {
         ]);
     });
 
+    it('returns null for an exact removed dpkg status with a retained version', function (string $status): void {
+        [$manager, $ssh] = apt_tool_manager([
+            apt_result("{$status}\n1:2.4.3-1ubuntu2\n"),
+        ]);
+
+        $version = $manager->installedVersion(apt_tool_node(), 'jq');
+
+        expect($version)->toBeNull();
+        expect($ssh->arguments())->toBe([
+            ['dpkg-query', '--show', '--showformat=${Status}\n${Version}\n', '--', 'jq'],
+        ]);
+    })->with([
+        'deinstall with retained configuration' => ['deinstall ok config-files'],
+        'deinstall with an absent package' => ['deinstall ok not-installed'],
+        'purge with retained configuration' => ['purge ok config-files'],
+        'purge with an absent package' => ['purge ok not-installed'],
+    ]);
+
     it('returns null for the exact dpkg no-record miss', function (): void {
         [$manager, $ssh] = apt_tool_manager([
             apt_result(
@@ -276,7 +294,7 @@ describe(AptToolManager::class, function (): void {
         'truncated' => [apt_result('secret stdout', stderr: 'secret stderr', truncated: true), 'ssh'],
         'missing version' => [apt_result("install ok installed\n"), 'installed-version'],
         'duplicate version' => [apt_result("install ok installed\n1.0.0\n2.0.0\n"), 'installed-version'],
-        'malformed status' => [apt_result("deinstall ok config-files\n1.0.0\n"), 'installed-version'],
+        'unrecognized status' => [apt_result("hold ok installed\n1.0.0\n"), 'installed-version'],
         'control bearing' => [apt_result("install ok installed\n1.0\0hidden\n"), 'installed-version'],
         'oversized' => [apt_result("install ok installed\n".str_repeat('1', times: 256)."\n"), 'installed-version'],
     ]);

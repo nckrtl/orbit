@@ -15,6 +15,7 @@ use App\Models\Node;
 
 /**
  * @mago-expect lint:cyclomatic-complexity The adapter keeps each fail-closed APT parsing branch explicit.
+ * @mago-expect lint:kan-defect The score reflects explicit package-state parsing and failure gates.
  * @mago-expect lint:too-many-methods The closed manager contract requires every lifecycle method on one adapter.
  */
 final readonly class AptToolManager implements ToolManager
@@ -26,6 +27,13 @@ final readonly class AptToolManager implements ToolManager
     private const string PACKAGE_PATTERN = '/\A[a-z0-9][a-z0-9+.-]*\z/D';
 
     private const string PLANNED_PACKAGE_PATTERN = '/\ARemv\s+([a-z0-9][a-z0-9+.-]*(?::[a-z0-9][a-z0-9-]*)?)(?:\s|$)/D';
+
+    private const array REMOVED_STATUSES = [
+        'deinstall ok config-files',
+        'deinstall ok not-installed',
+        'purge ok config-files',
+        'purge ok not-installed',
+    ];
 
     public function __construct(
         private RemoteToolCommandRunner $commands,
@@ -168,7 +176,7 @@ final readonly class AptToolManager implements ToolManager
             return null;
         }
 
-        if (count($lines) !== 2 || $lines[0] !== 'install ok installed') {
+        if (count($lines) !== 2) {
             throw new ToolManagerException(
                 step: 'installed-version',
                 message: 'The APT installed version probe returned malformed output.',
@@ -179,6 +187,18 @@ final readonly class AptToolManager implements ToolManager
         $version = $lines[1];
 
         if (! $this->isSafeVersion($version)) {
+            throw new ToolManagerException(
+                step: 'installed-version',
+                message: 'The APT installed version probe returned malformed output.',
+                result: $result,
+            );
+        }
+
+        if (in_array($lines[0], self::REMOVED_STATUSES, strict: true)) {
+            return null;
+        }
+
+        if ($lines[0] !== 'install ok installed') {
             throw new ToolManagerException(
                 step: 'installed-version',
                 message: 'The APT installed version probe returned malformed output.',
