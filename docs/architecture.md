@@ -55,24 +55,17 @@ by each Node's assigned roles.
 
 Orbit can group related Nodes in a Cluster, but a Cluster is not required. An App represents an application and owns its source defaults and Routes. An AppInstance represents one place on a Node where that App is developed or runs in production. [Applications](domains/applications.md) explains source placement, and [Routes](reference/routes.md) owns the hostname and target contract.
 
-A managed-clone development AppInstance uses one independent Git clone at
-*<apps-root>/<app-slug>/<instance-name>*. Orbit records this path before source
-work and never moves it when the Node apps root changes. Creation has four
-durable states:
+A managed-clone development AppInstance uses one independent Git clone at *<apps-root>/<app-slug>/<instance-name>*. Orbit records this path before source work and never moves it when the Node apps root changes. Source preparation has three durable states:
 
 ```text
-reserved -> checkout_prepared -> source_resolved -> active
+reserved -> checkout_prepared -> source_resolved
 ```
 
-Each retry verifies the evidence stored by the current state. Orbit selects an
-existing remote branch with the AppInstance name. If that branch does not
-exist, Orbit creates it from the exact fetched App default branch commit.
-Source resolution records the selected branch and starting commit before the
-AppInstance becomes active.
+Each retry verifies the evidence stored by the current state. Orbit selects an existing remote branch with the AppInstance name. If that branch does not exist, Orbit creates it from the exact fetched App default branch commit. Source resolution records the selected branch and starting commit before endpoint provisioning starts.
 
-This development lifecycle owns source only. After the source becomes active, the Gateway records its Route intent. It does not install PHP or change runtime and traffic projections. Runtime prerequisites belong to the Node's app-dev role. [Routes](reference/routes.md) describes hostname selection, routing scope, target changes, and projection boundaries.
+After source resolution, the Gateway creates the AppInstance's sole Route, aligns a detected Laravel application's canonical URL, and prepares the workload runtime, certificates, Caddy, firewall, and private DNS projections. A Cluster-scoped Route also prepares the Router path. The Gateway records successful boundaries so an identical retry resumes without creating another checkout or Route. The AppInstance and Route become active when Orbit provisioning succeeds; an application error response does not make them inactive. [Applications](domains/applications.md) describes the application configuration boundary, and [Routes](reference/routes.md) describes the traffic path.
 
-[ADR 0009](decisions/0009-clustered-app-instance-routing.md) and [ADR 0011](decisions/0011-clustered-production-ingress-and-app-prod-placement.md) define traffic ownership. [ADR 0023](decisions/0023-separate-hostname-selection-from-cluster-routing.md) and [ADR 0024](decisions/0024-follow-generated-route-targets.md) define hostname, scope, and target identity.
+[ADR 0009](decisions/0009-clustered-app-instance-routing.md) and [ADR 0011](decisions/0011-clustered-production-ingress-and-app-prod-placement.md) define traffic ownership. [ADR 0023](decisions/0023-separate-hostname-selection-from-cluster-routing.md) and [ADR 0024](decisions/0024-follow-generated-route-targets.md) define hostname, scope, and target identity. [ADR 0028](decisions/0028-require-one-route-per-active-appinstance.md), [ADR 0029](decisions/0029-manage-laravel-application-urls-through-orbit.md), and [ADR 0030](decisions/0030-complete-appinstance-provisioning-without-application-health-gates.md) define active Route ownership, Laravel URL alignment, and the application-health boundary.
 
 Legacy Instance and Workspace records remain available during staged conversion. New instance commands use AppInstance. Creating or changing a Route does not change a legacy hostname or certificate field. Route persistence remains separate from runtime projection, conversion, and Ingress behavior.
 
