@@ -28,7 +28,16 @@ Close out one independently approved pull request after the external orchestrato
    workspace head is not the head's only parent. Do not accept an equivalent tree
    produced by a different commit sequence.
 3. **Verify the external merge.** Require authoritative read-only GitHub state to report that the pull request merged the exact second-approved removal head into `main`; fetch `origin/main`, require the recorded merge commit to have that removal head as its exact second parent, and require its tree to equal the accepted head's tree. Do not run a merge command or mutate the pull-request surface. A missing, ambiguous, differently parented, or tree-mismatched merge is a stop.
-4. **Promote the proof.** For Incus proof, run
+4. **Promote the proof.** Before Incus promotion, locate the primary checkout
+   through `git worktree list --porcelain` and inspect its `HEAD`, local `main`,
+   and fetched `origin/main`. The promoter reads local `main`; a detached
+   primary `HEAD` may have advanced while that reference stayed stale. When the
+   external merge is verified, the primary `HEAD` equals `origin/main`, and
+   only local `main` is stale, update only that reference with
+   `git -C <primary> branch -f main origin/main`, read all three references
+   back, and retry promotion. Do not reset or clean the checkout. Any other
+   mismatch remains a stop; this repair never waives proof or merge lineage.
+   For Incus proof, run
    `bin/e2e-topology-snapshot promote <ISSUE>`. Do not substitute a refresh when
    the proof plan mutates state, `main` differs, or another promotion precondition
    fails. Promotion requires the merge tree to equal the exact accepted head
