@@ -1,17 +1,17 @@
 ---
 name: resolve-pipeline-issues
-description: Resolve Orbit Blocked and Backlog Linear issues one at a time. Use for an explicit pipeline run, an explicitly named single issue, or a read-only proposal for one exact issue delegated by an orchestrator after it moves to Blocked or Backlog.
+description: Resolve Orbit Blocked and Backlog Linear issues one at a time, or return a read-only proposal for one exact issue delegated at a process stop before blocking or after it moves to Blocked or Backlog.
 ---
 
 # Resolve Pipeline Issues
 
-Turn unready Orbit Linear work into complete, verifiable `Todo` contracts. This is issue-readiness work, not planning or implementation.
+Turn unready Orbit Linear work into complete, verifiable `Todo` contracts. In delegated advisory mode, diagnose one issue's process stop and propose a resolution. This skill does not plan or implement the issue.
 
 ## Choose the mode
 
 - Use interactive pipeline mode only when the user explicitly asks to resolve the Orbit pipeline, such as “Let's resolve pipeline issues.”
 - Use interactive single-issue mode only when the user explicitly names one `Blocked` or `Backlog` issue by ID or URL and asks to resolve it or make it ready.
-- Use delegated advisory mode when an orchestrator assigns a dedicated resolution agent one exact Orbit issue by ID or URL after that issue moves to `Blocked` or `Backlog`, and asks for a proposed resolution. The state transition is a valid orchestrator trigger; dispatch mechanics remain outside this skill.
+- Use delegated advisory mode when an orchestrator assigns a dedicated resolution agent one exact Orbit issue by ID or URL and asks for a proposed resolution of a named process stop before blocking, or after that issue moves to `Blocked` or `Backlog`. The assignment supplies the stop evidence and current state; moving to `Blocked` is not a prerequisite. Dispatch, adoption, escalation, and comment publication remain outside this skill.
 - Do not activate merely because an issue is mentioned, happens to have one of those states, or needs a status explanation.
 
 Interactive pipeline mode continues across turns without requiring a new invocation after each issue. Keep only one issue active at a time so its decisions and approval remain clear. Interactive single-issue mode stops after that issue. Delegated advisory mode inspects and returns a proposal for only the assigned issue.
@@ -22,7 +22,7 @@ Start from live Linear and current `origin/main`. Read each issue's description,
 
 In interactive pipeline mode, address all `Blocked` issues before any `Backlog` issue. Within a state, prefer unresolved prerequisites that unlock other work, then preserve Linear's displayed order. Refresh the queue after every published issue because status, relations, and repository state may have changed.
 
-In either single-issue mode, inspect only the named issue. If it is no longer `Blocked` or `Backlog`, report its current state and stop.
+In interactive single-issue mode, inspect only the named issue. If it is no longer `Blocked` or `Backlog`, report its current state and stop. In delegated advisory mode, inspect only the named issue and confirm that the assigned stop still exists in its current state. If it has been resolved or the issue is complete or canceled, report that evidence and stop; do not recreate the blocker or change its state to qualify for this skill.
 
 Apply the parent and child rules from `creating-issues`. A parent is shaped as an outcome and ordered set of children, never as claimable implementation work; its leaf children carry acceptance.
 
@@ -65,9 +65,10 @@ Return this concise Markdown contract:
 - **Ordinary dependencies**
 - **Recommended resolution**
 - **Main trade-off**
-- **Required ADR**, if any
-- **Human decisions still needed**
+- **Required ADR**: explicitly `None`, or each proposed new, amended, or superseding ADR and why it is needed
+- **Human decisions still needed**: explicitly `None`, or each decision with a recommended answer
 - **Proposed issue and status changes**
+- **Verification and restart condition**: how to prove the resolution works and what work can then resume
 - **Evidence checked**
 
 The orchestrator owns every action after this return, including whether to post the proposal as a comment, keep the issue in its current state, request a human decision, adopt the proposal as the new direction, invoke interactive shaping and publication, or move the issue to `Todo`.
