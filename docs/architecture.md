@@ -55,20 +55,13 @@ by each Node's assigned roles.
 
 Orbit can group related Nodes in a Cluster, but a Cluster is not required. An App represents an application and owns its source defaults and Routes. An AppInstance represents one place on a Node where that App is developed or runs in production. [Applications](domains/applications.md) explains source placement, and [Routes](reference/routes.md) owns the hostname and target contract.
 
-A managed-clone development AppInstance uses one independent Git clone at
-*<apps-root>/<app-slug>/<instance-name>*. Orbit records this path before source
-work and never moves it when the Node apps root changes. Creation has four
-durable states:
+A development AppInstance owns one managed Git source with source layout `checkout` or `worktree`. `instance:new` creates a checkout at *<apps-root>/<app-slug>/<instance-name>*. Orbit records this path before source work and never moves it when the Node apps root changes. Creation has four durable states:
 
 ```text
 reserved -> checkout_prepared -> source_resolved -> active
 ```
 
-Each retry verifies the evidence stored by the current state. Orbit selects an
-existing remote branch with the AppInstance name. If that branch does not
-exist, Orbit creates it from the exact fetched App default branch commit.
-Source resolution records the selected branch and starting commit before the
-AppInstance becomes active.
+Each retry verifies the evidence stored by the current state. The reserved `default` AppInstance uses the App `default_branch`. Another AppInstance selects a matching remote branch or creates its branch from the exact fetched `default_branch` commit. Source resolution records the selected branch and starting commit before the AppInstance becomes active. [Applications](domains/applications.md) describes the stable identity and manual migration boundary from [ADR 0025](decisions/0025-stabilize-the-default-appinstance-identity.md) and the source layouts from [ADR 0027](decisions/0027-adopt-local-git-sources-into-appinstance-ownership.md).
 
 This development lifecycle owns source only. After the source becomes active, the Gateway records its Route intent. It does not install PHP or change runtime and traffic projections. Runtime prerequisites belong to the Node's app-dev role. [Routes](reference/routes.md) describes hostname selection, routing scope, target changes, and projection boundaries.
 

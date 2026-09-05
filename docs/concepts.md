@@ -5,8 +5,8 @@ These are the common terms you will see throughout the Orbit documentation. Each
 - **Gateway** — The central Orbit service. It stores every machine and application record, authorizes each action, and applies changes to machines over SSH. See [Architecture](architecture.md#gateway).
 - **Node** — A machine connected to Orbit. It runs one or more roles and reaches the Gateway over WireGuard. A Node outside a Cluster is standalone.
 - **Cluster** — An optional group of Nodes with one name and at most one development TLD. Active membership gives member Routes Cluster scope. The Cluster can have no TLD. See [ADR 0023](decisions/0023-separate-hostname-selection-from-cluster-routing.md).
-- **App** — An application managed by Orbit. It holds the repository URL, default branch, and relative web root that every AppInstance inherits. See [Apps](reference/apps.md).
-- **AppInstance** — One placement of an App on one Node. It inherits Cluster membership from the Node. Hostname input creates a Route; AppInstance stores no hostname. See [Applications](domains/applications.md).
+- **App** — An application managed by Orbit. It holds the repository URL, `default_branch`, and relative web root that every AppInstance inherits. See [Apps](reference/apps.md) and [ADR 0025](decisions/0025-stabilize-the-default-appinstance-identity.md).
+- **AppInstance** — One managed App placement on one Node with source layout `checkout` or `worktree`; `default` is its reserved default-source identity. See [Applications](domains/applications.md), [ADR 0025](decisions/0025-stabilize-the-default-appinstance-identity.md), and [ADR 0027](decisions/0027-adopt-local-git-sources-into-appinstance-ownership.md).
 - **Effective web root** — The web root an AppInstance serves. An AppInstance override replaces the App root. Both are normalized relative paths.
 - **Legacy Instance** — The earlier runnable application record. Orbit retains it for existing Workspace and Doctor behavior. New development placements use AppInstance.
 - **Workspace** — A Git worktree owned by a legacy Instance. AppInstance creation does not use or change Workspace source.

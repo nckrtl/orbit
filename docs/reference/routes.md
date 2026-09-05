@@ -24,11 +24,11 @@ Creating the same explicit Route again with identical App, hostname, publication
 
 Optional hostname input during app-dev AppInstance creation is a convenience that creates an explicit Route after the AppInstance becomes active. The AppInstance does not store a second authoritative hostname. Without hostname input, the Gateway creates a generated Route after activation.
 
-A generated Route derives its hostname from the target AppInstance name, App name, and effective target Node TLD. The Node TLD has priority; the active Cluster TLD is the fallback when the Node has no TLD.
+A generated Route derives its hostname from the target AppInstance identity, App name, and effective target Node TLD. The Node TLD has priority; the active Cluster TLD is the fallback when the Node has no TLD. [ADR 0025](../decisions/0025-stabilize-the-default-appinstance-identity.md) defines the reserved default identity and hostname shape.
 
 | AppInstance name | Generated hostname with effective TLD `test` |
 | --- | --- |
-| The App's exact main branch | `<app>.test` |
+| `default` | `<app>.test` |
 | Any other name | `<instance>.<app>.test` |
 
 An app-dev Node must have a Node TLD or belong to an active Cluster with a TLD. An app-prod Node can remain valid without either TLD because an explicit Route supplies its hostname.
