@@ -10,6 +10,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Metrics\MetricsFootprint;
 use App\Models\Node;
 
+/** @mago-expect lint:too-many-methods One catalog owns the exact firewall rule shapes shared by every projector. */
 final class NodeFirewallRuleCatalog
 {
     /** @return list<UfwManagedRule> */ public function forNode(Node $node): array
@@ -31,6 +32,24 @@ final class NodeFirewallRuleCatalog
             RoleName::AppProd => [$this->rule('orbit:app-prod-http', '80'), $this->rule('orbit:app-prod-https', '443')],
             RoleName::Metrics => [],
         };
+    }
+
+    /** @return non-empty-list<UfwManagedRule> */
+    public function retiredForRole(Node $node, RoleName $role): array
+    {
+        $rules = [$this->rule('orbit:vpn-ssh', '22', $this->wireguardIp($node), 'orbit')];
+
+        if ($role !== RoleName::AppDev) {
+            return $rules;
+        }
+
+        return [
+            ...$rules,
+            $this->rule('orbit:app-dev-http', '80', $this->wireguardIp($node), 'orbit'),
+            $this->rule('orbit:app-dev-https', '443', $this->wireguardIp($node), 'orbit'),
+            $this->rule('orbit:app-dev-direct-http', '80'),
+            $this->rule('orbit:app-dev-direct-https', '443'),
+        ];
     }
 
     private function wireguardMemberTrust(Node $node): UfwManagedRule

@@ -117,6 +117,21 @@ it('does not expose app development web ports on public interfaces', function ()
         ->not->toContain(['sudo', 'ufw', 'allow', 'in', 'proto', 'tcp', 'to', 'any', 'port', '80']);
 });
 
+it('retires the superseded VPN and app development listener rules', function (): void {
+    $ssh = new RoleFirewallSshExecutor;
+    $ssh->seed([
+        'orbit:vpn-ssh',
+        'orbit:app-dev-http',
+        'orbit:app-dev-https',
+        'orbit:app-dev-direct-http',
+        'orbit:app-dev-direct-https',
+    ]);
+
+    role_firewall_manager($ssh)->converge(role_firewall_node(), RoleName::AppDev, 'nckrtl');
+
+    expect($ssh->comments())->toBe(['orbit:wireguard-members']);
+});
+
 it('removes only exact owned rules in descending number order', function (): void {
     expect(class_exists(NativeNodeRoleFirewallManager::class))->toBeTrue();
 
@@ -266,6 +281,14 @@ final class RoleFirewallSshExecutor implements SshExecutor
         return new CommandResult(0, '', '', 1, false);
     }
 
+    /** @param list<string> $comments */
+    public function seed(array $comments): void
+    {
+        foreach ($comments as $comment) {
+            $this->add($comment);
+        }
+    }
+
     /** @return list<string> */
     public function users(): array
     {
@@ -302,6 +325,8 @@ final class RoleFirewallSshExecutor implements SshExecutor
                 'orbit:app-prod-http',
                 'orbit:app-prod-https',
                 'orbit:gateway-https',
+                'orbit:app-dev-direct-http',
+                'orbit:app-dev-direct-https',
             ],
             strict: true,
         )
@@ -340,6 +365,7 @@ final class RoleFirewallSshExecutor implements SshExecutor
         return match ($comment) {
             'orbit:public-ssh-recovery' => "[ {$number}] 22/tcp{$v6} ALLOW IN Anywhere{$v6} # {$comment}",
             'orbit:wireguard-members' => "[ {$number}] 10.44.0.2 on orbit ALLOW IN Anywhere # {$comment}",
+            'orbit:vpn-ssh' => "[ {$number}] 10.44.0.2 22/tcp on orbit ALLOW IN Anywhere # {$comment}",
             'orbit:app-dev-http' => "[ {$number}] 10.44.0.2 80/tcp on orbit ALLOW IN Anywhere # {$comment}",
             'orbit:app-dev-https' => "[ {$number}] 10.44.0.2 443/tcp on orbit ALLOW IN Anywhere # {$comment}",
             'orbit:app-dev-direct-http' => "[ {$number}] 80/tcp{$v6} ALLOW IN Anywhere{$v6} # {$comment}",

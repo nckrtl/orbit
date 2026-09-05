@@ -97,14 +97,24 @@ final readonly class RemoteDevelopmentAppInstanceConfigurator implements Develop
 
                         env = root / '.env'
                         safe_regular(env)
+                        template = root / '.env.example'
                         if env.exists():
                             original = env.read_bytes()
-                            replacement = ('APP_URL=' + url).encode()
-                            updated, count = re.subn(rb'(?m)^APP_URL=.*$', replacement, original, count=1)
-                            if count == 0:
-                                separator = b'' if original == b'' or original.endswith(b'\n') else b'\n'
-                                updated = original + separator + replacement + b'\n'
-                            if updated != original: atomic(env, updated, env.stat().st_mode & 0o777)
+                            mode = env.stat().st_mode & 0o777
+                        else:
+                            safe_regular(template)
+                            original = template.read_bytes() if template.exists() else b''
+                            mode = template.stat().st_mode & 0o777 if template.exists() else 0o600
+                        replacement = ('APP_URL=' + url).encode()
+                        matches = list(re.finditer(rb'(?m)^APP_URL=.*$', original))
+                        if len(matches) > 1: raise SystemExit(42)
+                        if len(matches) == 1:
+                            match = matches[0]
+                            updated = original[:match.start()] + replacement + original[match.end():]
+                        else:
+                            separator = b'' if original == b'' or original.endswith(b'\n') else b'\n'
+                            updated = original + separator + replacement + b'\n'
+                        if updated != original or not env.exists(): atomic(env, updated, mode)
 
                         cache = root / 'bootstrap' / 'cache' / 'config.php'
                         safe_regular(cache)

@@ -55,6 +55,7 @@ final readonly class NativeNodeRoleFirewallManager implements NodeRoleFirewallMa
 
         $this->convergeRules($node, $rules, publicConnection: false, enable: false, managedUser: $managedUser);
         $this->removeRules($node, [$this->publicSshRule($node)], $managedUser);
+        $this->removeRules($node, $this->catalog->retiredForRole($node, $role), $managedUser);
     }
 
     public function remove(Node $node, RoleName $role, string $managedUser): void

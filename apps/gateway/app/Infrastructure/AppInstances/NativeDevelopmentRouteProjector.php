@@ -45,6 +45,12 @@ final readonly class NativeDevelopmentRouteProjector implements DevelopmentRoute
             );
         }
 
+        if ($router instanceof Node && $router->is($appInstance->node)) {
+            $this->dns->convergeRoute($route);
+
+            return;
+        }
+
         if ($router instanceof Node) {
             $this->certificates->convergeRouteRouter($route, $router);
             $this->convergeLanFirewall($appInstance, $route, $router);

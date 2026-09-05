@@ -49,6 +49,8 @@ beforeEach(function (): void {
 
         public bool $failConfiguration = false;
 
+        public bool $laravel = true;
+
         public function inspect(AppInstance $appInstance): DevelopmentSourceProfile
         {
             $this->inspections++;
@@ -56,7 +58,7 @@ beforeEach(function (): void {
                 throw provisioning_failure('source-classification');
             }
 
-            return new DevelopmentSourceProfile('8.5', true);
+            return new DevelopmentSourceProfile('8.5', $this->laravel);
         }
 
         public function configureLaravelUrl(AppInstance $appInstance, string $url): void
@@ -70,13 +72,13 @@ beforeEach(function (): void {
     $this->projection = new class implements DevelopmentRouteProjector {
         public int $convergences = 0;
 
-        public bool $fail = false;
+        public ?RuntimeConvergenceException $failure = null;
 
         public function converge(AppInstance $appInstance, Route $route): void
         {
             $this->convergences++;
-            if ($this->fail) {
-                throw provisioning_failure('runtime');
+            if ($this->failure instanceof RuntimeConvergenceException) {
+                throw $this->failure;
             }
         }
     };
@@ -133,13 +135,13 @@ it('resumes Laravel URL configuration from selected PHP evidence', function (): 
 
 it('does not repeat Laravel configuration after a projection failure', function (): void {
     $this->provisioner->reserve($this->instance, null);
-    $this->projection->fail = true;
+    $this->projection->failure = provisioning_failure('runtime');
 
     expect(fn () => $this->provisioner->complete($this->instance, null))
         ->toThrow(RuntimeConvergenceException::class);
     expect($this->instance->refresh()->provisioning_step)->toBe('url-configured');
 
-    $this->projection->fail = false;
+    $this->projection->failure = null;
     $this->provisioner->reserve($this->instance, null);
     $this->provisioner->complete($this->instance, null);
 
@@ -150,6 +152,69 @@ it('does not repeat Laravel configuration after a projection failure', function 
         ->and($this->instance->routes()->count())
         ->toBe(1);
 });
+
+it('leaves non-Laravel source unchanged while completing its Route', function (): void {
+    $this->configuration->laravel = false;
+    $this->provisioner->reserve($this->instance, null);
+
+    $result = $this->provisioner->complete($this->instance, null);
+
+    expect($result->status)
+        ->toBe(AppInstanceState::Active)
+        ->and($this->configuration->configurations)
+        ->toBe(0)
+        ->and($this->projection->convergences)
+        ->toBe(1)
+        ->and($result->routes()->sole()->status)
+        ->toBe(RouteStatus::Active);
+});
+
+it('retains and resumes each runtime projection failure boundary', function (
+    string $step,
+    string $errorCode,
+): void {
+    $this->provisioner->reserve($this->instance, null);
+    $routeId = $this->instance->routes()->sole()->id;
+    $this->projection->failure = new RuntimeConvergenceException(
+        step: $step,
+        errorCode: $errorCode,
+        message: "The {$step} boundary failed.",
+    );
+
+    expect(fn () => $this->provisioner->complete($this->instance, null))
+        ->toThrow(RuntimeConvergenceException::class);
+    expect($this->instance->refresh()->provisioning_step)
+        ->toBe('url-configured')
+        ->and($this->instance->error_code)
+        ->toBe($errorCode)
+        ->and($this->instance->routes()->sole()->only(['id', 'status', 'failed_step', 'error_code']))
+        ->toBe([
+            'id' => $routeId,
+            'status' => RouteStatus::Failed,
+            'failed_step' => $step,
+            'error_code' => $errorCode,
+        ]);
+
+    $this->projection->failure = null;
+    $this->provisioner->reserve($this->instance, null);
+    $result = $this->provisioner->complete($this->instance, null);
+
+    expect($result->status)
+        ->toBe(AppInstanceState::Active)
+        ->and($result->routes()->sole()->id)
+        ->toBe($routeId)
+        ->and($result->routes()->count())
+        ->toBe(1)
+        ->and($this->configuration->configurations)
+        ->toBe(1)
+        ->and($this->projection->convergences)
+        ->toBe(2);
+})->with([
+    'runtime' => ['php-fpm-config', 'app-dev.php_fpm_config_failed'],
+    'certificate' => ['certificate-publish', 'app-dev.certificate_publish_failed'],
+    'firewall' => ['route-firewall', 'app-dev.route_firewall_failed'],
+    'publication' => ['private-dns', 'app-dev.dns_config_failed'],
+]);
 
 function provisioning_failure(string $step): RuntimeConvergenceException
 {

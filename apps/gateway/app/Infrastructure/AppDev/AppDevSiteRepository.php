@@ -80,7 +80,11 @@ final readonly class AppDevSiteRepository
 
             $router = $route->cluster?->routerAssignment?->node;
 
-            if ($router instanceof Node && is_string($router->wireguard_ip)) {
+            if (
+                $router instanceof Node
+                && is_string($router->wireguard_ip)
+                && ! $router->is($target->node)
+            ) {
                 $sites->push($this->routerSite($target, $route, $router));
             }
         }
