@@ -8,6 +8,7 @@ use App\Domain\AppInstances\AppInstanceSourceKind;
 use App\Domain\AppInstances\AppInstanceState;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
@@ -21,9 +22,15 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property string|null $root
  * @property string|null $branch
  * @property string|null $starting_commit
+ * @property string|null $selected_php_version
+ * @property string|null $provisioning_step
+ * @property string|null $failed_step
+ * @property string|null $error_code
  * @property AppInstanceState $status
  * @property-read App $app
  * @property-read Node $node
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, RouteTarget> $routeTargets
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, Route> $routes
  */
 final class AppInstance extends Model
 {
@@ -47,6 +54,10 @@ final class AppInstance extends Model
         'root',
         'branch',
         'starting_commit',
+        'selected_php_version',
+        'provisioning_step',
+        'failed_step',
+        'error_code',
         'status',
     ];
 
@@ -66,6 +77,12 @@ final class AppInstance extends Model
     public function routeTargets(): HasMany
     {
         return $this->hasMany(RouteTarget::class);
+    }
+
+    /** @return BelongsToMany<Route, $this> */
+    public function routes(): BelongsToMany
+    {
+        return $this->belongsToMany(Route::class, 'route_targets')->withPivot('position');
     }
 
     public function effectiveRoot(): ?string

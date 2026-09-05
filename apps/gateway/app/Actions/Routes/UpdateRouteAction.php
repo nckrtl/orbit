@@ -7,6 +7,7 @@ namespace App\Actions\Routes;
 use App\Data\Routes\UpdateRouteData;
 use App\Domain\Routes\RouteHostname;
 use App\Domain\Routes\RouteProvenance;
+use App\Domain\Routes\RouteReconciliationGuard;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Route;
 use Illuminate\Database\QueryException;
@@ -36,6 +37,23 @@ final readonly class UpdateRouteAction
 
                 if ($data->publicationProvided && $data->publication !== null) {
                     $attributes['publication'] = $data->publication;
+                }
+
+                $changed = array_filter(
+                    $attributes,
+                    static function (mixed $value, string $key) use ($locked): bool {
+                        $current = $locked->getAttribute($key);
+
+                        return (
+                            ($current instanceof \BackedEnum ? $current->value : $current)
+                            !== ($value instanceof \BackedEnum ? $value->value : $value)
+                        );
+                    },
+                    ARRAY_FILTER_USE_BOTH,
+                );
+
+                if ($changed !== []) {
+                    app(RouteReconciliationGuard::class)->assertRouteMutable($locked);
                 }
 
                 $locked->update($attributes);

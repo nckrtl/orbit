@@ -181,7 +181,7 @@ it('refuses dirty and unpublished source unless discard is explicit', function (
     $instance->update([
         'branch' => $resolution->branch,
         'starting_commit' => $resolution->startingCommit,
-        'status' => AppInstanceState::Active,
+        'status' => AppInstanceState::SourceResolved,
     ]);
 
     if ($mutation === 'dirty') {
@@ -208,7 +208,7 @@ it('does not let discard waive origin or symlink identity checks', function (str
     $instance->update([
         'branch' => $resolution->branch,
         'starting_commit' => $resolution->startingCommit,
-        'status' => AppInstanceState::Active,
+        'status' => AppInstanceState::SourceResolved,
     ]);
     $decoy = $this->sandbox.'/decoy';
     $this->files->makeDirectory($decoy, 0o755, true);
@@ -243,7 +243,7 @@ it('does not let discard remove a checkout with shared Git administration', func
     $instance->update([
         'branch' => $resolution->branch,
         'starting_commit' => $resolution->startingCommit,
-        'status' => AppInstanceState::Active,
+        'status' => AppInstanceState::SourceResolved,
     ]);
     $sharedGitDirectory = $this->sandbox.'/shared.git';
     $this->files->copyDirectory($instance->checkout_path.'/.git', $sharedGitDirectory);
@@ -283,7 +283,7 @@ it('does not let removal waive the recorded starting commit ancestry', function 
     $instance->update([
         'branch' => $resolution->branch,
         'starting_commit' => $unrelatedCommit,
-        'status' => AppInstanceState::Active,
+        'status' => AppInstanceState::SourceResolved,
     ]);
 
     expect(fn () => $this->source->remove($instance, $discardSource))->toThrow(RuntimeConvergenceException::class);
@@ -300,7 +300,7 @@ it('refuses grouping-directory ownership drift before deleting the checkout', fu
     $instance->update([
         'branch' => $resolution->branch,
         'starting_commit' => $resolution->startingCommit,
-        'status' => AppInstanceState::Active,
+        'status' => AppInstanceState::SourceResolved,
     ]);
     $groups = posix_getgroups();
     $alternateGroup = is_array($groups)

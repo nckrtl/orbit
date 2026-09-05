@@ -1,6 +1,24 @@
-# PHP runtime defaults
+# PHP runtimes
 
 Orbit provisions PHP-FPM from the pinned Sury apt source and fronts every site with Caddy over a unix socket. This page tells an operator or deployer which runtime values Orbit publishes for the `app-dev` and `app-prod` roles, where each value lives on a Node, and how to verify them. The deployer must end every production deploy with `systemctl reload php<version>-fpm`; the [production deploy contract](#production-deploy-contract) below states the obligation. [ADR 0021](../decisions/0021-pin-sury-php-fpm-with-opcache-profiles-per-role.md) records why the values differ per role and which alternatives it rejected.
+
+## Select an AppInstance runtime
+
+For a development AppInstance, the Gateway reads source metadata after source preparation and before runtime or Domain Name System (DNS) publication. [ADR 0034](../decisions/0034-select-appinstance-php-from-composer-constraints.md) defines this source-driven selection boundary.
+
+Orbit's code-owned development candidate set is PHP 8.5 followed by PHP 8.4. The Gateway compares a Composer constraint only with these candidates in this order. It does not select another PHP version, even when that version is syntactically valid.
+
+| Source or package result | Runtime result | Error code |
+| --- | --- | --- |
+| No `composer.json` file | Orbit classifies the source as non-PHP and prepares no PHP runtime. | None |
+| Valid `composer.json` without a PHP platform constraint | Orbit selects PHP 8.5. | None |
+| Valid `composer.json` whose PHP platform constraint matches a candidate | Orbit selects the first matching candidate: PHP 8.5 before PHP 8.4. | None |
+| Invalid PHP platform constraint, or a constraint below, between, or above all candidates | The Gateway stops at PHP selection. | `app-dev.php_version_unsupported` |
+| Selected candidate is unavailable from the pinned Sury source | The Gateway stops when it verifies the runtime source. | `app-dev.php_package_source_unavailable` |
+
+Both failures happen before runtime or DNS publication. The Gateway retains the prepared source and pending Route evidence so the same creation request can retry without another source or Route.
+
+AppInstance input, persisted AppInstance state, API responses, the PHP SDK, and the CLI do not expose a PHP-version field. The Node application role owns installation, configuration, and removal of every selected PHP runtime.
 
 ## Where each setting lives
 
@@ -11,7 +29,7 @@ Orbit publishes the runtime in two layers: one module per PHP-FPM service for si
 | Runtime module | `/etc/php/<version>/mods-available/orbit-runtime.ini`, enabled for the fpm SAPI as `/etc/php/<version>/fpm/conf.d/99-orbit-runtime.ini` through `phpenmod` | The Gateway's PHP package manager | One PHP-FPM service |
 | Pool directives | `php_admin_value[opcache.*]` inside `/etc/php/<version>/fpm/pool.d/orbit-scopes.conf` (app-dev) and `orbit-prod-scopes.conf` (app-prod) | The Gateway's pool renderer for each role | One site pool |
 
-The runtime module is a normal Debian PHP module: it carries the `; priority=99` header and is enabled only for `fpm`. On every convergence the Gateway renders the module, compares it with the installed file, writes the file only when it differs, and repairs a missing or wrong `conf.d` link. It then verifies through `php-fpm<version> -i` that every managed directive has its rendered value for the fpm SAPI.
+The runtime module is a normal Debian PHP module: it carries the `; priority=99` header and is enabled only for `fpm`. On every convergence the Gateway renders the module, compares it with the installed file, writes the file only when it differs, and repairs a missing or wrong `conf.d` link. It then verifies through `php-fpm<version> -i` that every managed directive has its rendered value for the FPM Server Application Programming Interface (SAPI).
 
 The Gateway reloads a running service when the file, its enablement, or the FPM PCOV enablement changed. When a publication fails, the Gateway restores the previous module file, or removes the file when none existed, removes the link when the publication created it, and reloads a running service before the command fails. The CLI SAPI keeps stock defaults (`opcache.enable_cli=0`).
 

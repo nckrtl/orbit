@@ -72,7 +72,7 @@ final readonly class NativeRoleStateInspector implements RoleStateInspector
 
     public function inspect(NodeRole $role): RoleInspectionData
     {
-        if ($role->role === RoleName::Router || $role->role === RoleName::Ingress) {
+        if ($role->role === RoleName::Ingress) {
             return new RoleInspectionData(true, true, true);
         }
 

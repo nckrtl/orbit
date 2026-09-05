@@ -6,6 +6,7 @@ namespace App\Actions\Routes;
 
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Routes\RouteProvenance;
+use App\Domain\Routes\RouteReconciliationGuard;
 use App\Domain\Routes\RouteStateResolver;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\AppInstance;
@@ -26,6 +27,13 @@ final readonly class SetRouteTargetAction
             $updated = DB::transaction(function () use ($route, $appInstanceId): Route {
                 $locked = Route::query()->lockForUpdate()->findOrFail($route->id);
                 $target = AppInstance::query()->with(['app', 'node'])->lockForUpdate()->findOrFail($appInstanceId);
+                $currentTarget = $locked->targets()->first();
+
+                if ($currentTarget?->app_instance_id === $target->id) {
+                    return $locked->load('targets');
+                }
+
+                app(RouteReconciliationGuard::class)->assertRouteMutable($locked);
 
                 if ($target->app_id !== $locked->app_id) {
                     throw new ResourceOperationException(
