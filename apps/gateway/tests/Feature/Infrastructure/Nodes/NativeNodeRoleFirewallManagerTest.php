@@ -51,7 +51,7 @@ it('preserves public SSH before enabling inactive UFW', function (): void {
         ->each->toBe('nckrtl');
 });
 
-it('keeps SSH on WireGuard and removes public recovery after VPN convergence', function (): void {
+it('trusts WireGuard membership and removes public recovery after VPN convergence', function (): void {
     $ssh = new RoleFirewallSshExecutor;
     $manager = role_firewall_manager($ssh);
     $node = role_firewall_node();
@@ -61,7 +61,7 @@ it('keeps SSH on WireGuard and removes public recovery after VPN convergence', f
     $manager->converge($node, RoleName::Vpn, 'nckrtl');
 
     expect($ssh->comments())
-        ->toContain('orbit:vpn-ssh')
+        ->toContain('orbit:wireguard-members')
         ->not->toContain('orbit:public-ssh-recovery')->and(array_column($ssh->calls, 'connection'))->each(
             fn ($connection) => $connection->host->toBe('10.44.0.2'),
         )->and($ssh->users())
@@ -77,7 +77,7 @@ it('converges private SSH and each exact role-owned firewall intent', function (
     $manager->converge(role_firewall_node(), $role, 'nckrtl');
 
     expect($ssh->comments())
-        ->toContain('orbit:vpn-ssh', ...$comments)
+        ->toContain('orbit:wireguard-members', ...$comments)
         ->not->toContain('orbit:public-ssh-recovery');
 
     expect($ssh->calls[0]['connection']->host)
@@ -85,15 +85,8 @@ it('converges private SSH and each exact role-owned firewall intent', function (
         ->and($ssh->users())
         ->each->toBe('nckrtl');
 })->with([
-    'app development' => [
-        RoleName::AppDev,
-        [
-            'orbit:app-dev-http',
-            'orbit:app-dev-https',
-            'orbit:app-dev-direct-http',
-            'orbit:app-dev-direct-https',
-        ],
-    ],
+    'app development' => [RoleName::AppDev, []],
+    'Router' => [RoleName::Router, []],
     'app production' => [RoleName::AppProd, ['orbit:app-prod-http', 'orbit:app-prod-https']],
     'gateway' => [RoleName::Gateway, ['orbit:gateway-https']],
     'VPN' => [RoleName::Vpn, []],
@@ -113,42 +106,15 @@ it('does not reapply exact managed role rules', function (): void {
     expect($ssh->mutations())->toBe($firstMutations);
 });
 
-it('adds direct app development web access without changing private rules', function (): void {
+it('does not expose app development web ports on public interfaces', function (): void {
     $ssh = new RoleFirewallSshExecutor;
 
     role_firewall_manager($ssh)->converge(role_firewall_node(), RoleName::AppDev, 'nckrtl');
 
-    expect($ssh->mutations())
-        ->toContain(
-            [
-                'sudo',
-                'ufw',
-                'allow',
-                'in',
-                'proto',
-                'tcp',
-                'to',
-                'any',
-                'port',
-                '80',
-                'comment',
-                'orbit:app-dev-direct-http',
-            ],
-            [
-                'sudo',
-                'ufw',
-                'allow',
-                'in',
-                'proto',
-                'tcp',
-                'to',
-                'any',
-                'port',
-                '443',
-                'comment',
-                'orbit:app-dev-direct-https',
-            ],
-        );
+    expect($ssh->comments())
+        ->toBe(['orbit:wireguard-members'])
+        ->and($ssh->mutations())
+        ->not->toContain(['sudo', 'ufw', 'allow', 'in', 'proto', 'tcp', 'to', 'any', 'port', '80']);
 });
 
 it('removes only exact owned rules in descending number order', function (): void {
@@ -183,7 +149,7 @@ it('removes only exact owned rules in descending number order', function (): voi
 it('fails closed without mutation when an owned comment has drifted', function (): void {
     expect(class_exists(NativeNodeRoleFirewallManager::class))->toBeTrue();
 
-    $ssh = new RoleFirewallSshExecutor(driftedComment: 'orbit:app-dev-http');
+    $ssh = new RoleFirewallSshExecutor(driftedComment: 'orbit:wireguard-members');
     $manager = role_firewall_manager($ssh);
 
     expect(fn () => $manager->converge(role_firewall_node(), RoleName::AppDev, 'nckrtl'))
@@ -333,8 +299,6 @@ final class RoleFirewallSshExecutor implements SshExecutor
             $comment,
             [
                 'orbit:public-ssh-recovery',
-                'orbit:app-dev-direct-http',
-                'orbit:app-dev-direct-https',
                 'orbit:app-prod-http',
                 'orbit:app-prod-https',
                 'orbit:gateway-https',
@@ -375,7 +339,7 @@ final class RoleFirewallSshExecutor implements SshExecutor
 
         return match ($comment) {
             'orbit:public-ssh-recovery' => "[ {$number}] 22/tcp{$v6} ALLOW IN Anywhere{$v6} # {$comment}",
-            'orbit:vpn-ssh' => "[ {$number}] 10.44.0.2 22/tcp on orbit ALLOW IN Anywhere # {$comment}",
+            'orbit:wireguard-members' => "[ {$number}] 10.44.0.2 on orbit ALLOW IN Anywhere # {$comment}",
             'orbit:app-dev-http' => "[ {$number}] 10.44.0.2 80/tcp on orbit ALLOW IN Anywhere # {$comment}",
             'orbit:app-dev-https' => "[ {$number}] 10.44.0.2 443/tcp on orbit ALLOW IN Anywhere # {$comment}",
             'orbit:app-dev-direct-http' => "[ {$number}] 80/tcp{$v6} ALLOW IN Anywhere{$v6} # {$comment}",

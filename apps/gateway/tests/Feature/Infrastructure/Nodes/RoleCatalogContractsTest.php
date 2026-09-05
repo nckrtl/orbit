@@ -21,7 +21,7 @@ it('covers exact package and service matrices', function (): void {
         ->and($p->forRole($node, RoleName::Vpn))
         ->toBe(['dnsmasq', 'openssl'])
         ->and($p->forRole($node, RoleName::Router))
-        ->toBe([])
+        ->toBe(['caddy', 'openssl'])
         ->and($p->forRole($node, RoleName::AppDev))
         ->toBe(['acl', 'attr', 'caddy', 'composer', 'docker.io', 'git', 'openssl', 'unzip'])
         ->and($p->forRole($node, RoleName::AppProd))
@@ -31,15 +31,16 @@ it('covers exact package and service matrices', function (): void {
         ->and($s->forRole(RoleName::Vpn))
         ->toBe(['wg-quick@orbit', 'dnsmasq'])
         ->and($s->forRole(RoleName::Router))
-        ->toBe([])
+        ->toBe(['caddy'])
         ->and($s->forRole(RoleName::AppDev))
         ->toBe(['caddy', 'docker'])
         ->and($s->forRole(RoleName::AppProd))
         ->toBe(['caddy', 'docker']);
 });
 
-it('gives Router and Ingress no package service or firewall projection', function (RoleName $role): void {
+it('gives Ingress no package service or firewall projection', function (): void {
     $node = new Node(['public_ssh_port' => 22, 'wireguard_ip' => '10.0.0.1']);
+    $role = RoleName::Ingress;
 
     expect(new NodeBootstrapPackageCatalog()->forRole($node, $role))
         ->toBe([])
@@ -47,10 +48,7 @@ it('gives Router and Ingress no package service or firewall projection', functio
         ->toBe([])
         ->and(new NodeFirewallRuleCatalog()->forRole($node, $role))
         ->toBe([]);
-})->with([
-    'Router' => [RoleName::Router],
-    'Ingress' => [RoleName::Ingress],
-]);
+});
 it('returns typed exact firewall rules', function (): void {
     $rules = new NodeFirewallRuleCatalog()->forNode(new Node([
         'public_ssh_port' => 22,

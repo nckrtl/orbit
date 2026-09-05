@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Actions\Routes;
 
 use App\Data\Routes\CreateRouteData;
-use App\Domain\AppInstances\AppInstanceActivationHook;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Routes\RouteHostname;
 use App\Domain\Routes\RouteProvenance;
@@ -23,7 +22,7 @@ use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 
 /** @mago-expect lint:cyclomatic-complexity Route creation validates each explicit and generated invariant before one atomic write. */
-final readonly class CreateRouteAction implements AppInstanceActivationHook
+final readonly class CreateRouteAction
 {
     public function __construct(
         private RouteStateResolver $state,
@@ -41,10 +40,19 @@ final readonly class CreateRouteAction implements AppInstanceActivationHook
     {
         $appInstance->refresh()->loadMissing(['app', 'node']);
 
-        if ($appInstance->status !== AppInstanceState::Active) {
+        if (! in_array(
+            $appInstance->status,
+            [
+                AppInstanceState::Reserved,
+                AppInstanceState::CheckoutPrepared,
+                AppInstanceState::SourceResolved,
+                AppInstanceState::Active,
+            ],
+            true,
+        )) {
             throw new ResourceOperationException(
                 errorCode: 'route.instance_inactive',
-                message: 'A Route can be created only after AppInstance activation.',
+                message: 'A Route can be created only during AppInstance provisioning or after activation.',
                 status: 409,
             );
         }
@@ -98,11 +106,6 @@ final readonly class CreateRouteAction implements AppInstanceActivationHook
             generationBasisNodeId: $provenance === RouteProvenance::Generated ? $appInstance->node_id : null,
             appInstance: $appInstance,
         );
-    }
-
-    public function complete(AppInstance $appInstance, ?string $requestedName): void
-    {
-        $this->ensureForAppInstance($appInstance, $requestedName);
     }
 
     /** @return array{route: Route, created: bool} */

@@ -16,7 +16,7 @@ final class NodeFirewallRuleCatalog
     {
         return [
             $this->rule('orbit:public-ssh-recovery', (string) $node->public_ssh_port),
-            $this->rule('orbit:vpn-ssh', '22', $this->wireguardIp($node), 'orbit'),
+            $this->wireguardMemberTrust($node),
         ];
     }
 
@@ -26,17 +26,43 @@ final class NodeFirewallRuleCatalog
             RoleName::Gateway => [
                 $this->rule('orbit:gateway-https', '443', 'any', 'orbit'),
             ],
-            RoleName::Vpn => [$this->rule('orbit:vpn-ssh', '22', $this->wireguardIp($node), 'orbit')],
-            RoleName::Router, RoleName::Ingress => [],
-            RoleName::AppDev => [
-                $this->rule('orbit:app-dev-http', '80', $this->wireguardIp($node), 'orbit'),
-                $this->rule('orbit:app-dev-https', '443', $this->wireguardIp($node), 'orbit'),
-                $this->rule('orbit:app-dev-direct-http', '80'),
-                $this->rule('orbit:app-dev-direct-https', '443'),
-            ],
+            RoleName::Vpn => [],
+            RoleName::Router, RoleName::Ingress, RoleName::AppDev => [],
             RoleName::AppProd => [$this->rule('orbit:app-prod-http', '80'), $this->rule('orbit:app-prod-https', '443')],
             RoleName::Metrics => [],
         };
+    }
+
+    private function wireguardMemberTrust(Node $node): UfwManagedRule
+    {
+        $destination = $this->wireguardIp($node);
+
+        return new UfwManagedRule(
+            new UfwRuleShape(
+                comment: 'orbit:wireguard-members',
+                action: 'allow',
+                direction: 'in',
+                source: 'any',
+                destination: $destination,
+                port: 'any',
+                protocol: 'any',
+                inInterface: 'orbit',
+                outInterface: null,
+                family: 'v4',
+            ),
+            [
+                'sudo',
+                'ufw',
+                'allow',
+                'in',
+                'on',
+                'orbit',
+                'to',
+                $destination,
+                'comment',
+                'orbit:wireguard-members',
+            ],
+        );
     }
 
     public function metricsExporter(Node $node, Node $metricsNode): UfwManagedRule

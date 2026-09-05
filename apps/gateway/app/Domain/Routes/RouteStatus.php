@@ -7,4 +7,6 @@ namespace App\Domain\Routes;
 enum RouteStatus: string
 {
     case Pending = 'pending';
+    case Active = 'active';
+    case Failed = 'failed';
 }

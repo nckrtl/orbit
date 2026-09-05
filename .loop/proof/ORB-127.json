@@ -1,0 +1,65 @@
+{
+  "setup": [],
+  "acceptance": [
+    {
+      "id": "composer-php-runtime-selection",
+      "node": "gateway",
+      "argv": ["bash", "-lc", "cd /home/orbit/orbit/apps/gateway && ./vendor/bin/pest tests/Feature/Infrastructure/AppInstances/PhpRuntimeSelectionTest.php --colors=never"],
+      "timeout_seconds": 120
+    },
+    {
+      "id": "laravel-url-before-dependencies",
+      "node": "gateway",
+      "argv": ["bash", "-lc", "cd /home/orbit/orbit/apps/gateway && ./vendor/bin/pest tests/Feature/Infrastructure/AppInstances/LaravelUrlConfigurationTest.php --colors=never"],
+      "timeout_seconds": 120
+    },
+    {
+      "id": "non-laravel-provisioning",
+      "node": "gateway",
+      "argv": ["bash", "-lc", "cd /home/orbit/orbit/apps/gateway && ./vendor/bin/pest tests/Feature/Infrastructure/AppInstances/LaravelUrlConfigurationTest.php --colors=never"],
+      "timeout_seconds": 120
+    },
+    {
+      "id": "initial-node-route",
+      "node": "gateway",
+      "argv": ["bash", "-lc", "cd /home/orbit/orbit/apps/gateway && ./vendor/bin/pest tests/Feature/Api/AppInstancesTest.php --colors=never"],
+      "timeout_seconds": 180
+    },
+    {
+      "id": "initial-cluster-route",
+      "node": "gateway",
+      "argv": ["bash", "-lc", "cd /home/orbit/orbit/apps/gateway && ./vendor/bin/pest tests/Feature/Api/ClusterRouterTest.php tests/Feature/Infrastructure/Nodes/NodeRoleBaselinesTest.php --colors=never"],
+      "timeout_seconds": 180
+    },
+    {
+      "id": "initial-route-network-boundary",
+      "node": "gateway",
+      "argv": ["bash", "-lc", "cd /home/orbit/orbit/apps/gateway && ./vendor/bin/pest tests/Feature/Infrastructure/Nodes/NativeNodeRoleFirewallManagerTest.php tests/Feature/Infrastructure/Nodes/RoleCatalogContractsTest.php --colors=never"],
+      "timeout_seconds": 180
+    },
+    {
+      "id": "initial-route-address-selection",
+      "node": "gateway",
+      "argv": ["bash", "-lc", "cd /home/orbit/orbit/apps/gateway && ./vendor/bin/pest tests/Feature/Infrastructure/AppInstances tests/Feature/Infrastructure/AppDev --colors=never"],
+      "timeout_seconds": 300
+    },
+    {
+      "id": "initial-route-certificates",
+      "node": "gateway",
+      "argv": ["bash", "-lc", "cd /home/orbit/orbit/apps/gateway && ./vendor/bin/pest tests/Feature/Infrastructure/AppInstances tests/Feature/Infrastructure/AppDev --colors=never"],
+      "timeout_seconds": 300
+    },
+    {
+      "id": "development-provisioning-failures",
+      "node": "gateway",
+      "argv": ["bash", "-lc", "cd /home/orbit/orbit/apps/gateway && ./vendor/bin/pest tests/Feature/Domain/ProvisionDevelopmentAppInstanceTest.php --colors=never"],
+      "timeout_seconds": 120
+    },
+    {
+      "id": "provisioned-route-mutation-guards",
+      "node": "gateway",
+      "argv": ["bash", "-lc", "cd /home/orbit/orbit/apps/gateway && ./vendor/bin/pest tests/Feature/Domain/RouteMutationReconciliationTest.php tests/Feature/Api/AppInstancesTest.php --colors=never"],
+      "timeout_seconds": 180
+    }
+  ]
+}
