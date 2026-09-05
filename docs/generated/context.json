@@ -480,6 +480,73 @@
             ]
         },
         {
+            "path": "docs/decisions/0025-stabilize-the-default-appinstance-identity.md",
+            "title": "ADR 0025: Stabilize the default AppInstance identity",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "App",
+                "AppInstance",
+                "Gateway",
+                "Route"
+            ],
+            "governing_adrs": [
+                "0009",
+                "0016",
+                "0024",
+                "0025"
+            ]
+        },
+        {
+            "path": "docs/decisions/0026-identify-each-app-by-one-repository.md",
+            "title": "ADR 0026: Identify each App by one repository",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "App",
+                "Gateway"
+            ],
+            "governing_adrs": [
+                "0009",
+                "0016",
+                "0026"
+            ]
+        },
+        {
+            "path": "docs/decisions/0027-adopt-local-git-sources-into-appinstance-ownership.md",
+            "title": "ADR 0027: Adopt local Git sources into AppInstance ownership",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "App",
+                "AppInstance",
+                "Gateway",
+                "Node",
+                "Route"
+            ],
+            "governing_adrs": [
+                "0008",
+                "0009",
+                "0016",
+                "0018",
+                "0025",
+                "0026",
+                "0027"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
