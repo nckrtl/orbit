@@ -594,6 +594,31 @@
             ]
         },
         {
+            "path": "docs/decisions/0030-complete-appinstance-provisioning-without-application-health-gates.md",
+            "title": "ADR 0030: Complete AppInstance provisioning without application health gates",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/e2e",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "App",
+                "AppInstance",
+                "Gateway",
+                "Ingress",
+                "Route"
+            ],
+            "governing_adrs": [
+                "0009",
+                "0011",
+                "0028",
+                "0029",
+                "0030"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
