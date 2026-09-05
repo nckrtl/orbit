@@ -619,6 +619,50 @@
             ]
         },
         {
+            "path": "docs/decisions/0031-clone-initial-production-source-during-provisioning.md",
+            "title": "ADR 0031: Clone initial production source during provisioning",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/e2e",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "App",
+                "AppInstance",
+                "Gateway",
+                "Ingress",
+                "Route"
+            ],
+            "governing_adrs": [
+                "0011",
+                "0030",
+                "0031",
+                "0032"
+            ]
+        },
+        {
+            "path": "docs/decisions/0032-preserve-explicit-appinstance-branch-selection.md",
+            "title": "ADR 0032: Preserve explicit AppInstance branch selection",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "App",
+                "AppInstance",
+                "Gateway",
+                "Route"
+            ],
+            "governing_adrs": [
+                "0025",
+                "0032"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
