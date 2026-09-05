@@ -547,6 +547,53 @@
             ]
         },
         {
+            "path": "docs/decisions/0028-require-one-route-per-active-appinstance.md",
+            "title": "ADR 0028: Require one Route per active AppInstance",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "App",
+                "AppInstance",
+                "Cluster",
+                "Gateway",
+                "Route"
+            ],
+            "governing_adrs": [
+                "0009",
+                "0023",
+                "0024",
+                "0028"
+            ]
+        },
+        {
+            "path": "docs/decisions/0029-manage-laravel-application-urls-through-orbit.md",
+            "title": "ADR 0029: Manage Laravel application URLs through Orbit",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "App",
+                "AppInstance",
+                "Cluster",
+                "Gateway",
+                "Ingress",
+                "Route"
+            ],
+            "governing_adrs": [
+                "0011",
+                "0023",
+                "0028",
+                "0029"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
