@@ -13,11 +13,15 @@ it('derives one identity from equivalent supported repository origins', function
     expect(GitRepositoryIdentity::derive($repository))->toBe('github.com/acme/site');
 })->with([
     'scp-like SSH with suffix' => ['git@github.com:acme/site.git'],
+    'scp-like SSH with suffix and trailing separator' => ['git@github.com:acme/site.git/'],
     'SSH URL with suffix' => ['ssh://git@github.com/acme/site.git'],
+    'SSH URL with trailing separator' => ['ssh://git@github.com/acme/site/'],
     'SSH URL with another user' => ['ssh://deploy@github.com/acme/site'],
     'SSH URL with a port' => ['ssh://git@github.com:2222/acme/site.git'],
     'HTTPS URL with suffix' => ['https://github.com/acme/site.git'],
+    'HTTPS URL with suffix and trailing separator' => ['https://github.com/acme/site.git/'],
     'HTTPS URL without suffix' => ['https://github.com/acme/site'],
+    'HTTPS URL with trailing separator' => ['https://github.com/acme/site/'],
     'HTTPS URL with a port' => ['https://github.com:8443/acme/site.git'],
     'case-insensitive host' => ['https://GITHUB.COM/acme/site.git'],
 ]);
@@ -31,6 +35,7 @@ it('keeps different repository hosts and paths distinct', function (
     'different host' => ['https://gitlab.com/acme/site.git', 'gitlab.com/acme/site'],
     'different path' => ['https://github.com/acme/other.git', 'github.com/acme/other'],
     'case-sensitive path' => ['https://github.com/Acme/site.git', 'github.com/Acme/site'],
+    'uppercase suffix is part of the path' => ['https://github.com/acme/site.GIT', 'github.com/acme/site.GIT'],
 ]);
 
 it('finds at most one App from equivalent checkout origins', function (
@@ -56,6 +61,14 @@ it('finds at most one App from equivalent checkout origins', function (
     'HTTPS-created and SSH checkout' => [
         'https://github.com/acme/site.git',
         'ssh://deploy@github.com/acme/site.git',
+    ],
+    'trailing-separator HTTPS-created and scp-like checkout' => [
+        'https://github.com/acme/site.git/',
+        'git@github.com:acme/site.git',
+    ],
+    'scp-like-created and trailing-separator HTTPS checkout' => [
+        'git@github.com:acme/site.git',
+        'https://github.com/acme/site/',
     ],
 ]);
 

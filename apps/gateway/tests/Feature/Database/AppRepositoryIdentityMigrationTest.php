@@ -14,7 +14,7 @@ it('reports every duplicate identity before changing the App schema or rows', fu
     $migration->down();
 
     $first = app_repository_identity_legacy_app('first', 'git@github.com:acme/site.git');
-    $second = app_repository_identity_legacy_app('second', 'https://github.com/acme/site');
+    $second = app_repository_identity_legacy_app('second', 'https://github.com/acme/site.git/');
     $third = app_repository_identity_legacy_app('third', 'ssh://git@gitlab.com/acme/api.git');
     $fourth = app_repository_identity_legacy_app('fourth', 'https://gitlab.com/acme/api');
     app_repository_identity_legacy_app('unique', 'https://example.test/acme/unique.git');

@@ -37,11 +37,13 @@ final class GitRepositoryIdentity
             }
         }
 
-        $path = ltrim($path, '/');
+        $path = trim($path, '/');
 
         if (str_ends_with($path, '.git')) {
             $path = substr($path, 0, -4);
         }
+
+        $path = rtrim($path, '/');
 
         return strtolower($host).'/'.$path;
     }

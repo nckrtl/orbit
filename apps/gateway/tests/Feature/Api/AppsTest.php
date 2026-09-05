@@ -174,6 +174,8 @@ describe('app creation', function (): void {
     })->with([
         'same access URL' => ['git@github.com:acme/site.git'],
         'equivalent HTTPS URL' => ['https://github.com/acme/site'],
+        'equivalent HTTPS URL with trailing separator' => ['https://github.com/acme/site/'],
+        'equivalent HTTPS URL with suffix and trailing separator' => ['https://github.com/acme/site.git/'],
         'equivalent SSH URL' => ['ssh://deploy@github.com/acme/site.git'],
     ]);
 
