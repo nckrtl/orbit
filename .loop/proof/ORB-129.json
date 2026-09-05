@@ -6,7 +6,7 @@
       "node": "app-dev",
       "argv": [
         "bash",
-        "/home/orbit/orbit/.loop/proof/ORB-129-route-preflight.sh"
+        "/var/lib/orbit-e2e/proof/route-preflight.sh"
       ],
       "timeout_seconds": 120
     }
