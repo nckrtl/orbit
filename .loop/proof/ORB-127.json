@@ -39,13 +39,13 @@
     },
     {
       "id": "initial-route-address-selection",
-      "node": "gateway",
+      "node": "app-dev",
       "argv": ["bash", "-lc", "cd /home/orbit/orbit/apps/gateway && ./vendor/bin/pest tests/Feature/Infrastructure/AppInstances tests/Feature/Infrastructure/AppDev --colors=never"],
       "timeout_seconds": 300
     },
     {
       "id": "initial-route-certificates",
-      "node": "gateway",
+      "node": "app-dev",
       "argv": ["bash", "-lc", "cd /home/orbit/orbit/apps/gateway && ./vendor/bin/pest tests/Feature/Infrastructure/AppInstances tests/Feature/Infrastructure/AppDev --colors=never"],
       "timeout_seconds": 300
     },
