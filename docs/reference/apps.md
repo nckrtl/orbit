@@ -10,11 +10,7 @@ Use `app:new` with a slug and an HTTPS or SSH Git origin:
 orbit app:new acme https://github.com/acme/site.git
 ```
 
-The CLI sends `public` as the root unless `--root` supplies another normalized
-relative path. It asks the Gateway to resolve the repository's symbolic default
-branch when `--main-branch` is omitted. The Gateway performs that lookup once
-and stores the result; a later change to the remote default does not rewrite the
-App.
+The CLI sends `public` as the root unless `--root` supplies another normalized relative path. It asks the Gateway to resolve the repository's symbolic default branch when `--main-branch` is omitted. The Gateway performs that lookup once and stores the result; a later change to the remote default does not rewrite the App.
 
 Both source defaults can be explicit:
 
@@ -24,16 +20,9 @@ orbit app:new acme https://github.com/acme/site.git \
   --root=web/public
 ```
 
-The Gateway verifies that an explicit main branch exists in the repository.
-Repository access failures, missing explicit branches, and an unavailable or
-malformed remote default return `app.default_branch_unavailable` without
-including repository diagnostics or credentials.
+The Gateway verifies that an explicit main branch exists in the repository. Repository access failures, missing explicit branches, and an unavailable or malformed remote default return `app.default_branch_unavailable` without including repository diagnostics or credentials.
 
-The Gateway API requires `repository_url` and `root`, accepts an optional
-`main_branch`, and returns all three values. The PHP SDK's
-`CreateAppRequest` carries the same fields. SDK App responses and the
-`app:list` and `app:show` commands expose the stored repository, main branch,
-and root.
+The Gateway API requires `repository_url` and `root`, accepts an optional `main_branch`, and returns all three values. The PHP SDK's `CreateAppRequest` carries the same fields. SDK App responses and the `app:list` and `app:show` commands expose the stored repository, main branch, and root.
 
 ## Keep one repository owner
 
@@ -49,10 +38,8 @@ During an upgrade, the Gateway checks every existing App before it makes reposit
 
 `app:new` is an idempotent creation command. Repeating it with the same name, slug, repository access URL, main branch, root, and defaults returns the existing App. An omitted branch is not resolved again during that retry.
 
-A same-slug retry that changes any creation value fails with `app.identity_conflict` and does not mutate the App. Use the separate App update operation for a deliberate slug or source-default change; creation never performs update reconciliation. See [ADR 0016](../decisions/0016-reconcile-app-identity-and-source-default-updates.md) for that boundary.
+A retry that changes any creation value fails with `app.identity_conflict` and does not mutate the App. Orbit does not expose an App update operation, and creation never performs update reconciliation. [ADR 0016](../decisions/0016-reconcile-app-identity-and-source-default-updates.md) defines the reconciliation boundary for a separate lifecycle.
 
 ## Legacy Apps
 
-Apps created before source defaults were required can have a null main branch
-or root. API, SDK, and CLI JSON responses report those nulls unchanged. Reading
-or retrying creation does not infer values for a legacy App.
+Apps created before source defaults were required can have a null main branch or root. API, SDK, and CLI JSON responses report those nulls unchanged. Reading or retrying creation does not infer values for a legacy App.

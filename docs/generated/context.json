@@ -46,7 +46,12 @@
                 "0011",
                 "0014",
                 "0023",
-                "0024"
+                "0024",
+                "0028",
+                "0029",
+                "0030",
+                "0033",
+                "0034"
             ]
         },
         {
@@ -76,7 +81,8 @@
                 "0011",
                 "0023",
                 "0024",
-                "0026"
+                "0026",
+                "0028"
             ]
         },
         {
@@ -598,6 +604,122 @@
             ]
         },
         {
+            "path": "docs/decisions/0030-complete-appinstance-provisioning-without-application-health-gates.md",
+            "title": "ADR 0030: Complete AppInstance provisioning without application health gates",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/e2e",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "App",
+                "AppInstance",
+                "Gateway",
+                "Ingress",
+                "Route"
+            ],
+            "governing_adrs": [
+                "0009",
+                "0011",
+                "0028",
+                "0029",
+                "0030"
+            ]
+        },
+        {
+            "path": "docs/decisions/0031-clone-initial-production-source-during-provisioning.md",
+            "title": "ADR 0031: Clone initial production source during provisioning",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/e2e",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "App",
+                "AppInstance",
+                "Gateway",
+                "Ingress",
+                "Route"
+            ],
+            "governing_adrs": [
+                "0011",
+                "0030",
+                "0031",
+                "0032"
+            ]
+        },
+        {
+            "path": "docs/decisions/0032-preserve-explicit-appinstance-branch-selection.md",
+            "title": "ADR 0032: Preserve explicit AppInstance branch selection",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "App",
+                "AppInstance",
+                "Gateway",
+                "Route"
+            ],
+            "governing_adrs": [
+                "0025",
+                "0032"
+            ]
+        },
+        {
+            "path": "docs/decisions/0033-trust-wireguard-members-for-private-node-traffic.md",
+            "title": "ADR 0033: Trust WireGuard members for private Node traffic",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/e2e",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "App",
+                "Cluster",
+                "Gateway",
+                "Ingress",
+                "Node",
+                "Route",
+                "Router"
+            ],
+            "governing_adrs": [
+                "0009",
+                "0011",
+                "0023",
+                "0033"
+            ]
+        },
+        {
+            "path": "docs/decisions/0034-select-appinstance-php-from-composer-constraints.md",
+            "title": "ADR 0034: Select AppInstance PHP from Composer constraints",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "App",
+                "AppInstance",
+                "Gateway",
+                "Node"
+            ],
+            "governing_adrs": [
+                "0009",
+                "0021",
+                "0034"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -633,12 +755,14 @@
             "concepts": [
                 "App",
                 "AppInstance",
+                "Cluster",
                 "Effective web root",
                 "Gateway",
                 "Ingress",
                 "Legacy Instance",
                 "Node",
                 "Route",
+                "Router",
                 "Workspace"
             ],
             "governing_adrs": [
@@ -725,17 +849,19 @@
         },
         {
             "path": "docs/reference/php-runtime.md",
-            "title": "PHP runtime defaults",
+            "title": "PHP runtimes",
             "kind": "reference",
             "components": [],
             "concepts": [
                 "App",
+                "AppInstance",
                 "Gateway",
                 "Node",
                 "Route"
             ],
             "governing_adrs": [
-                "0021"
+                "0021",
+                "0034"
             ]
         },
         {
@@ -779,7 +905,11 @@
                 "0009",
                 "0011",
                 "0023",
-                "0024"
+                "0024",
+                "0028",
+                "0029",
+                "0030",
+                "0033"
             ]
         },
         {
@@ -811,10 +941,12 @@
                 "Gateway",
                 "Node",
                 "Proof topology",
+                "Route",
                 "Workspace"
             ],
             "governing_adrs": [
-                "0022"
+                "0022",
+                "0028"
             ]
         },
         {

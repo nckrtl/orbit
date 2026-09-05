@@ -6,9 +6,9 @@ namespace App\Actions\AppInstances;
 
 use App\Data\AppInstances\CreateAppInstanceData;
 use App\Domain\AppDev\AppDevSourceOperationLock;
-use App\Domain\AppInstances\AppInstanceActivationHook;
 use App\Domain\AppInstances\AppInstanceSourceKind;
 use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\AppInstances\DevelopmentAppInstanceProvisioner;
 use App\Domain\AppInstances\DevelopmentAppInstanceSourceLifecycle;
 use App\Domain\AppInstances\DevelopmentSourceResolution;
 use App\Domain\Nodes\ManagedUserAccountResolver;
@@ -16,6 +16,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Nodes\Storage\StorageRootResolver;
+use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
@@ -24,7 +25,9 @@ use App\Domain\SourceControl\RelativeWebRoot;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Node;
+use App\Models\Route;
 use Illuminate\Support\Facades\DB;
+use Throwable;
 
 /**
  * @mago-expect lint:cyclomatic-complexity The action keeps the closed durable state machine visible.
@@ -40,7 +43,7 @@ final readonly class CreateAppInstanceAction
         private ManagedCheckoutOverlap $checkoutOverlap,
         private AppDevSourceOperationLock $sourceLock,
         private DevelopmentAppInstanceSourceLifecycle $source,
-        private AppInstanceActivationHook $activationHook,
+        private DevelopmentAppInstanceProvisioner $provisioner,
     ) {}
 
     /** @return array{appInstance: AppInstance, created: bool} */
@@ -85,16 +88,26 @@ final readonly class CreateAppInstanceAction
             $created = true;
         }
 
-        $result = $this->sourceLock->synchronized(
-            $appInstance->node_id,
-            fn (): AppInstance => $this->resume($appInstance, ! $created),
-        );
-        $this->activationHook->complete($result, $data->hostname);
+        $this->provisioner->reserve($appInstance, $data->hostname);
+        try {
+            $result = $this->sourceLock->synchronized(
+                $appInstance->node_id,
+                function () use ($appInstance, $created, $data): AppInstance {
+                    $resolved = $this->resumeSource($appInstance, ! $created);
+
+                    return $this->provisioner->complete($resolved, $data->hostname);
+                },
+            );
+        } catch (Throwable $exception) {
+            $this->recordFailure($appInstance, $exception);
+
+            throw $exception;
+        }
 
         return ['appInstance' => $result, 'created' => $created];
     }
 
-    private function resume(AppInstance $appInstance, bool $allowPreparedSource): AppInstance
+    private function resumeSource(AppInstance $appInstance, bool $allowPreparedSource): AppInstance
     {
         while (true) {
             $appInstance->refresh()->loadMissing(['app', 'node']);
@@ -125,9 +138,6 @@ final readonly class CreateAppInstanceAction
             if ($appInstance->status === AppInstanceState::SourceResolved) {
                 $this->source->inspectPrepared($appInstance);
                 $this->assertStoredResolution($appInstance, $this->source->inspectResolved($appInstance));
-                $this->transition($appInstance, AppInstanceState::SourceResolved, [
-                    'status' => AppInstanceState::Active,
-                ]);
 
                 return $appInstance->refresh();
             }
@@ -250,5 +260,37 @@ final readonly class CreateAppInstanceAction
     private function conflict(string $errorCode, string $message): ResourceOperationException
     {
         return new ResourceOperationException($errorCode, $message, 409);
+    }
+
+    private function recordFailure(AppInstance $appInstance, Throwable $exception): void
+    {
+        $appInstance->refresh();
+        $step = property_exists($exception, 'step') && is_string($exception->step)
+            ? $exception->step
+            : match ($appInstance->status) {
+                AppInstanceState::Reserved => 'source-prepare',
+                AppInstanceState::CheckoutPrepared => 'source-resolve',
+                default => 'provisioning',
+            };
+        $errorCode = property_exists($exception, 'errorCode') && is_string($exception->errorCode)
+            ? $exception->errorCode
+            : 'instance.provisioning_failed';
+
+        DB::transaction(static function () use ($appInstance, $step, $errorCode): void {
+            AppInstance::query()
+                ->whereKey($appInstance->id)
+                ->update([
+                    'failed_step' => $step,
+                    'error_code' => $errorCode,
+                ]);
+            Route::query()
+                ->whereHas('targets', static fn ($query) => $query->where('app_instance_id', $appInstance->id))
+                ->where('status', '<>', RouteStatus::Active->value)
+                ->update([
+                    'status' => RouteStatus::Failed,
+                    'failed_step' => $step,
+                    'error_code' => $errorCode,
+                ]);
+        });
     }
 }

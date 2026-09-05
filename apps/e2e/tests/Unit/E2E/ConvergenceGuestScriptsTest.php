@@ -148,6 +148,9 @@ function typed_sample_resource_fixture(): array
           [[ -e "$state/active" ]] && lifecycle=active
           printf '{"id":3,"name":"e2e-development","tld":null,"state":"%s","nodes":%s,"router":%s}' "$lifecycle" "$nodes" "$router"
         }
+        route_json() {
+          printf '{"id":5,"app_id":1,"node_id":null,"cluster_id":3,"generation_basis_node_id":null,"hostname":"e2e-dev.orbit","provenance":"explicit","publication":"private","status":"pending","failed_step":null,"error_code":null,"target":{"id":6,"app_instance_id":4,"position":0}}'
+        }
         normal_nodes() {
           local cluster_id=null
           [[ -e "$state/attached" ]] && cluster_id=3
@@ -233,8 +236,30 @@ function typed_sample_resource_fixture(): array
             ;;
           instance:new)
             [[ -e "$state/verified" ]] || touch "$state/instance-before-cluster"
+            [[ "$*" == 'instance:new 1 2 e2e-dev --hostname=e2e-dev.orbit --json' ]]
             touch "$state/instance"
+            touch "$state/route"
             printf '{"id":4}'
+            ;;
+          route:list)
+            if [[ -e "$state/route" && -n "${FINAL_ROUTE_LIST_RESPONSE:-}" ]]; then
+              printf '%s' "$FINAL_ROUTE_LIST_RESPONSE"
+            elif [[ -n "${ROUTE_LIST_RESPONSE:-}" ]]; then
+              printf '%s' "$ROUTE_LIST_RESPONSE"
+            elif [[ -e "$state/route" ]]; then
+              printf '{"routes":['; route_json; printf '],"request_id":"0198e15d-16c4-7855-8eb2-182b53ad28ba"}'
+            else
+              printf '{"routes":[],"request_id":"0198e15d-16c4-7855-8eb2-182b53ad28ba"}'
+            fi
+            ;;
+          route:new)
+            [[ "$*" == 'route:new 1 e2e-dev.orbit --publication=private --target=4 --json' ]]
+            touch "$state/route"
+            if [[ -n "${ROUTE_NEW_RESPONSE:-}" ]]; then
+              printf '%s' "$ROUTE_NEW_RESPONSE"
+            else
+              printf '{"id":5,"app_id":1,"node_id":null,"cluster_id":3,"generation_basis_node_id":null,"hostname":"e2e-dev.orbit","provenance":"explicit","publication":"private","status":"pending","failed_step":null,"error_code":null,"target":{"id":6,"app_instance_id":4,"position":0},"request_id":"0198e15d-16c4-7855-8eb2-182b53ad28ba"}'
+            fi
             ;;
           *) exit 70 ;;
         esac
@@ -263,6 +288,36 @@ function typed_sample_create_resources_process(array $fixture, array $environmen
         'app-prod',
         str_repeat('a', 40),
     ], env: $environment);
+}
+
+/** @param array<string, mixed> $overrides
+ *  @return array<string, mixed>
+ */
+function typed_sample_route(array $overrides = []): array
+{
+    return array_replace([
+        'id' => 5,
+        'app_id' => 1,
+        'node_id' => null,
+        'cluster_id' => 3,
+        'generation_basis_node_id' => null,
+        'hostname' => 'e2e-dev.orbit',
+        'provenance' => 'explicit',
+        'publication' => 'private',
+        'status' => 'pending',
+        'failed_step' => null,
+        'error_code' => null,
+        'target' => ['id' => 6, 'app_instance_id' => 4, 'position' => 0],
+    ], $overrides);
+}
+
+/** @param list<array<string, mixed>> $routes */
+function typed_sample_route_list(array $routes): string
+{
+    return json_encode([
+        'routes' => $routes,
+        'request_id' => '0198e15d-16c4-7855-8eb2-182b53ad28ba',
+    ], JSON_THROW_ON_ERROR);
 }
 
 /** @param array<int, string> $commands
@@ -728,8 +783,92 @@ function verifierWireguardProcess(string $root, array $peers): Process
     ], env: ['PATH' => "{$root}/bin:".getenv('PATH')]);
 }
 
+/**
+ * @param list<string> $statuses
+ * @param list<int> $targets
+ * @return array{root:string,process:Process}
+ */
+function appinstance_routes_probe_fixture(array $statuses, array $targets): array
+{
+    $root = temporaryPath('orbit-appinstance-routes-probe-', 5);
+    mkdir($root, 0o700, true);
+    $db = "{$root}/gateway.sqlite";
+    $pdo = new PDO("sqlite:{$db}");
+    $pdo->exec('CREATE TABLE app_instances (id INTEGER PRIMARY KEY, status TEXT NOT NULL)');
+    $pdo->exec(
+        'CREATE TABLE route_targets (id INTEGER PRIMARY KEY, route_id INTEGER NOT NULL, app_instance_id INTEGER NOT NULL)',
+    );
+    $instanceStatement = $pdo->prepare('INSERT INTO app_instances (id, status) VALUES (?, ?)');
+    foreach ($statuses as $index => $status) {
+        $instanceStatement->execute([$index + 1, $status]);
+    }
+    $targetStatement = $pdo->prepare(
+        'INSERT INTO route_targets (id, route_id, app_instance_id) VALUES (?, ?, ?)',
+    );
+    foreach ($targets as $index => $target) {
+        $targetStatement->execute([$index + 1, $index + 1, $target]);
+    }
+    $script = str_replace(
+        '/home/orbit/.orbit/gateway.sqlite',
+        $db,
+        (string) file_get_contents(dirname(__DIR__, 3).'/resources/guest/verify-topology.sh'),
+    );
+    file_put_contents("{$root}/verify-topology.sh", $script);
+    chmod("{$root}/verify-topology.sh", 0o700);
+
+    return [
+        'root' => $root,
+        'process' => new Process([
+            'bash',
+            "{$root}/verify-topology.sh",
+            'appinstance.routes',
+            'readiness',
+            str_repeat('a', 40),
+            'orbit-e2e-topology-snapshot-gateway',
+        ]),
+    ];
+}
+
 /** @mago-expect lint:cyclomatic-complexity,kan-defect The guest-script tests keep the complete shell contract in one specification. */
 describe('convergence guest scripts', function () {
+    it('requires exactly one Route association for every active AppInstance', function (
+        array $statuses,
+        array $targets,
+        bool $passes,
+    ): void {
+        $fixture = appinstance_routes_probe_fixture($statuses, $targets);
+
+        try {
+            $exit = $fixture['process']->run();
+            expect($exit === 0)->toBe($passes);
+            if ($passes) {
+                $evidence = json_decode(
+                    $fixture['process']->getOutput(),
+                    true,
+                    16,
+                    JSON_THROW_ON_ERROR,
+                );
+                $active = count(array_filter($statuses, static fn (string $status): bool => $status === 'active'));
+                expect($evidence['probe'] ?? null)
+                    ->toBe('appinstance.routes')
+                    ->and($evidence['expected'] ?? null)
+                    ->toBe("active-appinstances={$active},route-associations={$active}")
+                    ->and($evidence['observed'] ?? null)
+                    ->toBe("active-appinstances={$active},route-associations={$active}");
+            } else {
+                expect($fixture['process']->getOutput())->toBe('');
+            }
+        } finally {
+            new Illuminate\Filesystem\Filesystem()->deleteDirectory($fixture['root']);
+        }
+    })->with([
+        'one association' => [['active'], [1], true],
+        'zero associations' => [['active'], [], false],
+        'multiple associations' => [['active'], [1, 1], false],
+        'several active AppInstances' => [['active', 'active'], [1, 2], true],
+        'inactive AppInstance without a Route' => [['active', 'inactive'], [1], true],
+    ]);
+
     it('runs Gateway Artisan commands from the Gateway checkout', function () {
         $root = temporaryPath('orbit-gateway-converge-', 4);
         try {
@@ -2050,8 +2189,9 @@ describe('convergence guest scripts', function () {
                 ...typed_cluster_creation_commands(),
                 'app:list --json',
                 'app:new laravel-typed https://github.com/laravel/laravel.git --name=Laravel --root=public --json',
-                'instance:new 1 2 e2e-dev --json',
+                'instance:new 1 2 e2e-dev --hostname=e2e-dev.orbit --json',
                 'instance:list --json',
+                'route:list --json',
             ]);
             expect(implode("\n", $firstCommands))
                 ->not
@@ -2059,7 +2199,6 @@ describe('convergence guest scripts', function () {
                     'e2e-prod',
                     'workspace:',
                     '--environment',
-                    '--hostname',
                     '--php',
                     '--repository',
                     '--main-branch',
@@ -2088,6 +2227,7 @@ describe('convergence guest scripts', function () {
                 'instance:list --json',
                 'cluster:list --json',
                 'app:list --json',
+                'route:list --json',
             ]);
             expect(array_filter($allCommands, fn (string $command): bool => str_starts_with($command, 'app:new ')))
                 ->toHaveCount(1)
@@ -2114,6 +2254,111 @@ describe('convergence guest scripts', function () {
             new Illuminate\Filesystem\Filesystem()->deleteDirectory($fixture['root']);
         }
     });
+
+    it('creates the missing explicit private Route for an existing active typed AppInstance', function (): void {
+        $fixture = typed_sample_resource_fixture();
+        foreach (['cluster', 'attached', 'router', 'active', 'app', 'instance'] as $stateFile) {
+            touch("{$fixture['root']}/{$stateFile}");
+        }
+
+        try {
+            $process = typed_sample_create_resources_process($fixture);
+
+            expect($process->run())->toBe(0, $process->getErrorOutput());
+            $commands = file("{$fixture['root']}/commands", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+            expect($commands)
+                ->toBe([
+                    'node:list --json',
+                    'instance:list --json',
+                    'cluster:list --json',
+                    'app:list --json',
+                    'route:list --json',
+                    'route:new 1 e2e-dev.orbit --publication=private --target=4 --json',
+                    'route:list --json',
+                ])
+                ->and(file_exists("{$fixture['root']}/route"))
+                ->toBeTrue();
+        } finally {
+            new Illuminate\Filesystem\Filesystem()->deleteDirectory($fixture['root']);
+        }
+    });
+
+    it('refuses conflicting or malformed typed Routes without Route mutation', function (string $response): void {
+        $fixture = typed_sample_resource_fixture();
+        foreach (['cluster', 'attached', 'router', 'active', 'app', 'instance'] as $stateFile) {
+            touch("{$fixture['root']}/{$stateFile}");
+        }
+
+        try {
+            $process = typed_sample_create_resources_process($fixture, ['ROUTE_LIST_RESPONSE' => $response]);
+
+            expect($process->run())->not->toBe(0);
+            $commands = file("{$fixture['root']}/commands", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+            expect($commands)->toContain('route:list --json');
+            expect(implode("\n", $commands))
+                ->not
+                ->toContain('route:new ', 'sqlite', 'gateway.sqlite');
+            expect(file_exists("{$fixture['root']}/route"))
+                ->toBeFalse()
+                ->and(file_exists($fixture['state']))
+                ->toBeFalse();
+        } finally {
+            new Illuminate\Filesystem\Filesystem()->deleteDirectory($fixture['root']);
+        }
+    })->with([
+        'malformed response' => ['{'],
+        'wrong App' => [typed_sample_route_list([typed_sample_route(['app_id' => 9])])],
+        'wrong target' => [typed_sample_route_list([typed_sample_route([
+            'target' => ['id' => 6, 'app_instance_id' => 9, 'position' => 0],
+        ])])],
+        'Node scope' => [typed_sample_route_list([typed_sample_route(['node_id' => 2, 'cluster_id' => null])])],
+        'wrong Cluster scope' => [typed_sample_route_list([typed_sample_route(['cluster_id' => 9])])],
+        'wrong hostname' => [typed_sample_route_list([typed_sample_route(['hostname' => 'wrong.orbit'])])],
+        'generated provenance' => [typed_sample_route_list([typed_sample_route([
+            'generation_basis_node_id' => 2,
+            'provenance' => 'generated',
+        ])])],
+        'public publication' => [typed_sample_route_list([typed_sample_route(['publication' => 'public'])])],
+        'targetless hostname' => [typed_sample_route_list([typed_sample_route(['target' => null])])],
+        'nonzero target position' => [typed_sample_route_list([typed_sample_route([
+            'target' => ['id' => 6, 'app_instance_id' => 4, 'position' => 1],
+        ])])],
+        'missing nullable scope field' => [typed_sample_route_list([array_diff_key(
+            typed_sample_route(),
+            ['node_id' => true],
+        )])],
+        'multiple associations' => [typed_sample_route_list([
+            typed_sample_route(),
+            typed_sample_route(['id' => 7, 'hostname' => 'second.orbit']),
+        ])],
+    ]);
+
+    it('fails closed when the created Route response or final read-back is not exact', function (
+        array $environment,
+    ): void {
+        $fixture = typed_sample_resource_fixture();
+        foreach (['cluster', 'attached', 'router', 'active', 'app', 'instance'] as $stateFile) {
+            touch("{$fixture['root']}/{$stateFile}");
+        }
+
+        try {
+            $process = typed_sample_create_resources_process($fixture, $environment);
+
+            expect($process->run())->not->toBe(0);
+            $commands = file("{$fixture['root']}/commands", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+            expect($commands)->toContain('route:new 1 e2e-dev.orbit --publication=private --target=4 --json');
+            expect(file_exists($fixture['state']))->toBeFalse();
+        } finally {
+            new Illuminate\Filesystem\Filesystem()->deleteDirectory($fixture['root']);
+        }
+    })->with([
+        'malformed create response' => [['ROUTE_NEW_RESPONSE' => '{']],
+        'conflicting final read-back' => [[
+            'FINAL_ROUTE_LIST_RESPONSE' => typed_sample_route_list([
+                typed_sample_route(['publication' => 'public']),
+            ]),
+        ]],
+    ]);
 
     it('resumes typed Cluster convergence from every compatible partial state', function (
         array $stateFiles,
@@ -2637,7 +2882,7 @@ describe('convergence guest scripts', function () {
 
             expect($process->run())->not->toBe(0);
             $commands = file("{$fixture['root']}/commands", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-            expect($commands)->toContain('instance:new 1 2 e2e-dev --json');
+            expect($commands)->toContain('instance:new 1 2 e2e-dev --hostname=e2e-dev.orbit --json');
             expect(file_exists($fixture['state']))->toBeFalse();
             expect(implode("\n", $commands))
                 ->not

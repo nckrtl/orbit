@@ -27,6 +27,7 @@ final readonly class TopologyVerifier
         'role.app-dev' => 'app-dev',
         'role.app-prod' => 'app-prod',
         'role.assignments' => 'gateway',
+        'appinstance.routes' => 'gateway',
         'metrics.publication' => 'gateway',
         'service.gateway' => 'gateway',
         'service.vpn' => 'gateway',

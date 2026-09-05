@@ -13,8 +13,9 @@ final readonly class AppDevSite
         public string $scope,
         public string $checkoutPath,
         public string $documentRoot,
-        public string $phpVersion,
+        public ?string $phpVersion,
         public string $hostname,
+        public ?string $upstreamAddress = null,
     ) {}
 
     public function poolName(): string
@@ -30,5 +31,10 @@ final readonly class AppDevSite
     public function certificateDirectory(): string
     {
         return "/etc/caddy/orbit-certificates/{$this->scope}/current";
+    }
+
+    public function isProxy(): bool
+    {
+        return $this->upstreamAddress !== null;
     }
 }
