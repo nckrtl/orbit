@@ -1,0 +1,14 @@
+{
+  "setup": [],
+  "acceptance": [
+    {
+      "id": "promoted-topology-route-preflight",
+      "node": "app-dev",
+      "argv": [
+        "bash",
+        "/home/orbit/orbit/.loop/proof/ORB-129-route-preflight.sh"
+      ],
+      "timeout_seconds": 120
+    }
+  ]
+}

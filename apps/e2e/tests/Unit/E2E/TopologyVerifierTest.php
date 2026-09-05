@@ -29,6 +29,7 @@ function topologyVerifierProbeRoles(): array
         'role.app-dev' => 'app-dev',
         'role.app-prod' => 'app-prod',
         'role.assignments' => 'gateway',
+        'appinstance.routes' => 'gateway',
         'metrics.publication' => 'gateway',
         'service.gateway' => 'gateway',
         'service.vpn' => 'gateway',
@@ -356,7 +357,7 @@ describe('TopologyVerifier', function () {
         expect($report->passed)
             ->toBeTrue()
             ->and($report->probes)
-            ->toHaveCount(23)
+            ->toHaveCount(24)
             ->and($report->probes['service.vpn'] ?? null)
             ->toBe([
                 'passed' => true,
@@ -753,6 +754,7 @@ describe('TopologyVerifier declared end state', function (): void {
                 'vm.gateway.running' => 'gateway',
                 'role.gateway' => 'gateway',
                 'role.assignments' => 'gateway',
+                'appinstance.routes' => 'gateway',
                 'metrics.publication' => 'gateway',
                 'service.gateway' => 'gateway',
                 'service.vpn' => 'gateway',
@@ -825,7 +827,7 @@ describe('TopologyVerifier declared end state', function (): void {
             ->and($run['argv']['wireguard.reachability'] ?? null)
             ->toBe([$script, 'wireguard.reachability', 'proof', $sha, $gateway, 'app-dev', 'app-prod'])
             ->and($run['report']->probes)
-            ->toHaveCount(23);
+            ->toHaveCount(24);
     });
 
     it('keeps the Gateway publication probe when app-dev is declared absent', function (): void {

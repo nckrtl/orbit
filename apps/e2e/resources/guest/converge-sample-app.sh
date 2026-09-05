@@ -76,6 +76,12 @@ case ${1-} in
       typed_app_instance_state() {
         php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); if(!is_array($v) || array_key_exists("instances", $v) || !array_key_exists("app_instances", $v) || !is_array($v["app_instances"]) || !array_is_list($v["app_instances"])) exit(65); $m=array_values(array_filter($v["app_instances"], fn($x) => is_array($x) && ($x["name"] ?? null)===$argv[1])); if(count($m)!==1) exit(65); $x=$m[0]; $path=$x["checkout_path"] ?? null; $branch=$x["selected_branch"] ?? null; $commit=$x["starting_commit"] ?? null; if(($x["app_id"] ?? null)!==(int)$argv[2] || ($x["node_id"] ?? null)!==(int)$argv[3] || ($x["status"] ?? null)!=="active" || !is_string($path) || !str_starts_with($path, "/") || str_contains($path, "//") || preg_match("#(?:\\A|/)\\.\\.?(/|\\z)#D", $path)===1 || ($argv[4]!=="" && $path!==$argv[4]) || !is_string($branch) || $branch==="" || !is_string($commit) || preg_match("/\\A[0-9a-f]{40}\\z/D", $commit)!==1 || ($x["effective_root"] ?? null)!=="public") exit(65); echo json_encode(["shape"=>"app_instances", "app_id"=>(int)$argv[2], "node_id"=>(int)$argv[3], "name"=>$argv[1], "checkout_path"=>$path, "effective_root"=>"public"], JSON_THROW_ON_ERROR);' e2e-dev "$app_id" "$dev_id" "$previous_checkout"
       }
+      typed_app_instance_id() {
+        php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); if(!is_array($v) || !is_array($v["app_instances"] ?? null) || !array_is_list($v["app_instances"])) exit(65); $m=array_values(array_filter($v["app_instances"], fn($x) => is_array($x) && ($x["name"] ?? null)===$argv[1])); if(count($m)!==1 || !is_int($m[0]["id"] ?? null) || $m[0]["id"]<1) exit(65); echo $m[0]["id"];' e2e-dev
+      }
+      typed_route_id() {
+        php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); $list=$argv[4]==="list"; if($list) { if(!is_array($v) || array_is_list($v) || !is_array($v["routes"] ?? null) || !array_is_list($v["routes"]) || !is_string($v["request_id"] ?? null) || $v["request_id"]==="") exit(65); $routes=$v["routes"]; } else { if(!is_array($v) || array_is_list($v) || !is_string($v["request_id"] ?? null) || $v["request_id"]==="") exit(65); $routes=[$v]; } $matches=[]; foreach($routes as $route) { if(!is_array($route) || array_is_list($route)) exit(65); foreach(["id","app_id","node_id","cluster_id","generation_basis_node_id","hostname","provenance","publication","status","failed_step","error_code","target"] as $key) if(!array_key_exists($key, $route)) exit(65); $target=$route["target"]; if(!is_int($route["id"]) || $route["id"]<1 || !is_int($route["app_id"]) || $route["app_id"]<1 || (!is_int($route["node_id"]) && $route["node_id"]!==null) || (!is_int($route["cluster_id"]) && $route["cluster_id"]!==null) || (($route["node_id"]===null)===($route["cluster_id"]===null)) || (!is_int($route["generation_basis_node_id"]) && $route["generation_basis_node_id"]!==null) || !is_string($route["hostname"]) || $route["hostname"]==="" || !in_array($route["provenance"], ["generated","explicit"], true) || !in_array($route["publication"], ["private","public"], true) || !is_string($route["status"]) || (!is_string($route["failed_step"]) && $route["failed_step"]!==null) || (!is_string($route["error_code"]) && $route["error_code"]!==null)) exit(65); if($target!==null && (!is_array($target) || array_is_list($target) || !is_int($target["id"] ?? null) || $target["id"]<1 || !is_int($target["app_instance_id"] ?? null) || $target["app_instance_id"]<1 || !is_int($target["position"] ?? null) || $target["position"]<0)) exit(65); $targetsInstance=is_array($target) && $target["app_instance_id"]===(int)$argv[2]; if($route["hostname"]==="e2e-dev.orbit" || $targetsInstance) $matches[]=$route; } if($list && $matches===[]) { echo "missing"; exit; } if(count($matches)!==1) exit(65); $route=$matches[0]; $target=$route["target"]; if($route["app_id"]!==(int)$argv[1] || $route["node_id"]!==null || $route["cluster_id"]!==(int)$argv[3] || $route["generation_basis_node_id"]!==null || $route["hostname"]!=="e2e-dev.orbit" || $route["provenance"]!=="explicit" || $route["publication"]!=="private" || !is_array($target) || $target["app_instance_id"]!==(int)$argv[2] || $target["position"]!==0) exit(65); echo $route["id"];' "$app_id" "$1" "$cluster_id" "$2"
+      }
       node_cluster_id=$(typed_node_cluster_id <<<"$nodes")
       clusters=$("$orbit" cluster:list --json)
       cluster_state=$(typed_cluster_state "$node_cluster_id" <<<"$clusters")
@@ -141,9 +147,19 @@ case ${1-} in
         app_id=$("$orbit" app:new laravel-typed https://github.com/laravel/laravel.git --name=Laravel --root=public --json | php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); if(!is_int($v["id"] ?? null)) exit(65); echo $v["id"];')
       fi
       if [[ "$typed_count" -eq 0 ]]; then
-        "$orbit" instance:new "$app_id" "$dev_id" e2e-dev --json >/dev/null
+        "$orbit" instance:new "$app_id" "$dev_id" e2e-dev --hostname=e2e-dev.orbit --json >/dev/null
         typed_instances=$("$orbit" instance:list --json)
         typed_state=$(typed_app_instance_state <<<"$typed_instances")
+      fi
+      typed_instance_id=$(typed_app_instance_id <<<"$typed_instances")
+      typed_routes=$("$orbit" route:list --json)
+      typed_route=$(typed_route_id "$typed_instance_id" list <<<"$typed_routes")
+      if [[ "$typed_route" == missing ]]; then
+        route_response=$("$orbit" route:new "$app_id" e2e-dev.orbit --publication=private --target="$typed_instance_id" --json)
+        created_route=$(typed_route_id "$typed_instance_id" response <<<"$route_response")
+        typed_routes=$("$orbit" route:list --json)
+        typed_route=$(typed_route_id "$typed_instance_id" list <<<"$typed_routes")
+        [[ "$created_route" == "$typed_route" ]]
       fi
       state_tmp=$(mktemp "$sample_state.XXXXXX")
       printf '%s\n' "$typed_state" >"$state_tmp"

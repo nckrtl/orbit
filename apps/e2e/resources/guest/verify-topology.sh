@@ -93,6 +93,14 @@ case "$probe" in
       observed="${expected}+${extra}"
     fi
     ;;
+  appinstance.routes)
+    db=/home/orbit/.orbit/gateway.sqlite
+    [[ -r "$db" ]]
+    read -r active associations < <(php -r '$pdo=new PDO("sqlite:".$argv[1], null, null, [PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]); $statement=$pdo->prepare("SELECT ai.id, COUNT(rt.id) AS association_count FROM app_instances ai LEFT JOIN route_targets rt ON rt.app_instance_id = ai.id WHERE ai.status = ? GROUP BY ai.id ORDER BY ai.id"); $statement->execute(["active"]); $rows=$statement->fetchAll(PDO::FETCH_ASSOC); $associations=0; foreach($rows as $row) { if(!is_array($row) || !ctype_digit((string)($row["id"] ?? "")) || (int)$row["id"]<1 || !ctype_digit((string)($row["association_count"] ?? "")) || (int)$row["association_count"]!==1) exit(1); $associations++; } echo count($rows), " ", $associations, "\n";' -- "$db")
+    expected="active-appinstances=$active,route-associations=$active"
+    observed="active-appinstances=$active,route-associations=$associations"
+    [[ "$observed" == "$expected" ]]
+    ;;
   metrics.publication)
     db=/home/orbit/.orbit/gateway.sqlite
     [[ -r "$db" ]]
