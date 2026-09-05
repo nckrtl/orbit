@@ -688,6 +688,28 @@
             ]
         },
         {
+            "path": "docs/decisions/0034-select-appinstance-php-from-composer-constraints.md",
+            "title": "ADR 0034: Select AppInstance PHP from Composer constraints",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "App",
+                "AppInstance",
+                "Gateway",
+                "Node"
+            ],
+            "governing_adrs": [
+                "0009",
+                "0021",
+                "0034"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
