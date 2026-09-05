@@ -663,6 +663,31 @@
             ]
         },
         {
+            "path": "docs/decisions/0033-trust-wireguard-members-for-private-node-traffic.md",
+            "title": "ADR 0033: Trust WireGuard members for private Node traffic",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/e2e",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "App",
+                "Cluster",
+                "Gateway",
+                "Ingress",
+                "Node",
+                "Route",
+                "Router"
+            ],
+            "governing_adrs": [
+                "0009",
+                "0011",
+                "0023",
+                "0033"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
