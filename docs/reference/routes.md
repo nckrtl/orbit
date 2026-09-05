@@ -1,6 +1,6 @@
 # Routes
 
-This page tells an operator what a Route records, how Orbit provisions its initial private traffic path, and which later changes Orbit temporarily refuses. [ADR 0023](../decisions/0023-separate-hostname-selection-from-cluster-routing.md) owns hostname and scope selection, [ADR 0024](../decisions/0024-follow-generated-route-targets.md) owns generated target identity, and [ADR 0028](../decisions/0028-require-one-route-per-active-appinstance.md) requires one Route per active AppInstance.
+This page tells an operator what a Route records, how Orbit provisions its initial private traffic path, and which later changes Orbit temporarily refuses. [ADR 0023](../decisions/0023-separate-hostname-selection-from-cluster-routing.md) owns hostname and scope selection, [ADR 0024](../decisions/0024-follow-generated-route-targets.md) owns generated target identity, [ADR 0028](../decisions/0028-require-one-route-per-active-appinstance.md) requires one Route per active AppInstance, and [ADR 0033](../decisions/0033-trust-wireguard-members-for-private-node-traffic.md) owns private Node trust.
 
 ## Route record
 
@@ -88,17 +88,19 @@ For Cluster scope, Gateway DNS resolves the same hostname to the Router. Router 
 
 The Router uses the workload Node's configured LAN address. It uses WireGuard only when that LAN address is absent. A configured but unreachable LAN path fails publication and never falls back to WireGuard.
 
-### Publication
+### Private network and publication
 
 Publication exposes the Route only after every required private projection is ready.
 
-Route firewall rules admit the required private client and Router paths and do not open a workload listener to unintended public traffic. Orbit publishes private DNS only after runtime, certificates, Caddy, and firewall preparation succeed.
+Active WireGuard membership trusts a Node to reach every other active WireGuard member over all protocols and ports. Node grants do not limit ordinary private Node traffic; they authorize only Orbit commands and Gateway API actions. A configured LAN path can carry Router-to-workload traffic only when it preserves the same registered-Node trust boundary.
+
+Public traffic enters through Ingress on HTTP or HTTPS. The firewall does not expose a Router or workload Node as a direct public endpoint. Orbit publishes private DNS only after runtime, certificates, Caddy, and firewall preparation succeed.
 
 ## Guard later reconciliation
 
 Initial projection does not implement later reconciliation. The Gateway returns `route.reconciliation_required` before a mutation that would change an active Route's hostname, target, Node-or-Cluster scope, runtime projection, or Laravel URL. It preserves source, application configuration, Route records, and the serving path.
 
-The temporary guard covers Route hostname changes, target replacement or clearing, Route removal, Node attachment and detachment, Cluster activation and deactivation, Node or Cluster TLD changes, and Router replacement or clearing when an active Route depends on it. An identical request that makes no change remains safe.
+The temporary guard covers Route hostname or publication changes, target replacement or clearing, Route removal, and AppInstance removal. It also covers Node WireGuard, LAN, TLD, or Cluster-membership changes, Cluster activation, deactivation, or TLD changes, and Router replacement or clearing when an active Route depends on the change. An identical request that makes no change remains safe. A Node grant change does not alter private network reachability and retains its command-authorization behavior.
 
 Routes without an active AppInstance retain the existing validation for hostname, scope, target, uniqueness, generation basis, and required Router. Full reconciliation of an existing active Route is a separate contract.
 
@@ -120,4 +122,4 @@ Route ownership prevents deletion from leaving an invalid retained record.
 
 Route operations do not change legacy Instance hostname or certificate fields, Workspace hostnames, AppInstance source, Nodes, Clusters, or checkouts. Route and route target are typed inputs to the existing `instance` Doctor family; Doctor adds no family and remains verify-only.
 
-This contract projects the first private development Route only. It does not implement later Route reconciliation or removal, public Ingress, public DNS providers, multi-target balancing, production placement, application setup, or application health tracking. [ADR 0009](../decisions/0009-clustered-app-instance-routing.md), [ADR 0011](../decisions/0011-clustered-production-ingress-and-app-prod-placement.md), [ADR 0023](../decisions/0023-separate-hostname-selection-from-cluster-routing.md), [ADR 0024](../decisions/0024-follow-generated-route-targets.md), [ADR 0029](../decisions/0029-manage-laravel-application-urls-through-orbit.md), and [ADR 0030](../decisions/0030-complete-appinstance-provisioning-without-application-health-gates.md) define the remaining boundaries.
+This contract projects the first private development Route only. It does not implement later Route reconciliation or removal, public Ingress, public DNS providers, multi-target balancing, production placement, application setup, or application health tracking. [ADR 0009](../decisions/0009-clustered-app-instance-routing.md), [ADR 0011](../decisions/0011-clustered-production-ingress-and-app-prod-placement.md), [ADR 0023](../decisions/0023-separate-hostname-selection-from-cluster-routing.md), [ADR 0024](../decisions/0024-follow-generated-route-targets.md), [ADR 0029](../decisions/0029-manage-laravel-application-urls-through-orbit.md), [ADR 0030](../decisions/0030-complete-appinstance-provisioning-without-application-health-gates.md), and [ADR 0033](../decisions/0033-trust-wireguard-members-for-private-node-traffic.md) define the remaining boundaries.

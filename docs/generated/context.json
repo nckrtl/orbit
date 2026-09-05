@@ -49,7 +49,9 @@
                 "0024",
                 "0028",
                 "0029",
-                "0030"
+                "0030",
+                "0033",
+                "0034"
             ]
         },
         {
@@ -841,17 +843,19 @@
         },
         {
             "path": "docs/reference/php-runtime.md",
-            "title": "PHP runtime defaults",
+            "title": "PHP runtimes",
             "kind": "reference",
             "components": [],
             "concepts": [
                 "App",
+                "AppInstance",
                 "Gateway",
                 "Node",
                 "Route"
             ],
             "governing_adrs": [
-                "0021"
+                "0021",
+                "0034"
             ]
         },
         {
@@ -898,7 +902,8 @@
                 "0024",
                 "0028",
                 "0029",
-                "0030"
+                "0030",
+                "0033"
             ]
         },
         {
