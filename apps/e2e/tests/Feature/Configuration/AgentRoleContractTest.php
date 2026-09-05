@@ -336,7 +336,9 @@ it('shapes features before issue publication without changing project state', fu
         ->toContain('allow_implicit_invocation: false');
 });
 
-it('supports interactive resolution and delegated proposals for blocked and backlog issues', function () use ($read): void {
+it('supports interactive resolution and delegated proposals for blocked and backlog issues', function () use (
+    $read,
+): void {
     $skill = $read('.agents/skills/resolve-pipeline-issues/SKILL.md');
     $manifest = $read('.agents/skills/resolve-pipeline-issues/agents/openai.yaml');
     $agents = $read('AGENTS.md');

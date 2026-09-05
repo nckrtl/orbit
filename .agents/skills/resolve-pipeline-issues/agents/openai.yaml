@@ -1,4 +1,4 @@
 interface:
   display_name: "Resolve Pipeline Issues"
   short_description: "Resolve or propose fixes for unready Orbit issues"
-  default_prompt: "Use $resolve-pipeline-issues to resolve Orbit pipeline issues, or return a read-only proposal for one exact Blocked or Backlog issue."
+  default_prompt: "Use $resolve-pipeline-issues to resolve Orbit pipeline issues, or return a read-only proposal for one exact Blocked or Backlog issue or an issue delegated at a process stop before blocking."
