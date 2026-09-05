@@ -6,12 +6,17 @@ Orbit provisions PHP-FPM from the pinned Sury apt source and fronts every site w
 
 For a development AppInstance, the Gateway reads source metadata after source preparation and before runtime or Domain Name System (DNS) publication. [ADR 0034](../decisions/0034-select-appinstance-php-from-composer-constraints.md) defines this source-driven selection boundary.
 
-| Source | Runtime result |
-| --- | --- |
-| No `composer.json` file | Orbit classifies the source as non-PHP and prepares no PHP runtime. |
-| Valid `composer.json` without a PHP platform constraint | Orbit selects PHP 8.5. |
-| Valid `composer.json` with a supported PHP platform constraint | Orbit selects the highest Orbit-supported PHP version that satisfies the constraint. |
-| Invalid or unsupported PHP platform constraint | The Gateway stops at PHP selection before runtime or DNS publication. |
+Orbit's code-owned development candidate set is PHP 8.5 followed by PHP 8.4. The Gateway compares a Composer constraint only with these candidates in this order. It does not select another PHP version, even when that version is syntactically valid.
+
+| Source or package result | Runtime result | Error code |
+| --- | --- | --- |
+| No `composer.json` file | Orbit classifies the source as non-PHP and prepares no PHP runtime. | None |
+| Valid `composer.json` without a PHP platform constraint | Orbit selects PHP 8.5. | None |
+| Valid `composer.json` whose PHP platform constraint matches a candidate | Orbit selects the first matching candidate: PHP 8.5 before PHP 8.4. | None |
+| Invalid PHP platform constraint, or a constraint below, between, or above all candidates | The Gateway stops at PHP selection. | `app-dev.php_version_unsupported` |
+| Selected candidate is unavailable from the pinned Sury source | The Gateway stops when it verifies the runtime source. | `app-dev.php_package_source_unavailable` |
+
+Both failures happen before runtime or DNS publication. The Gateway retains the prepared source and pending Route evidence so the same creation request can retry without another source or Route.
 
 AppInstance input, persisted AppInstance state, API responses, the PHP SDK, and the CLI do not expose a PHP-version field. The Node application role owns installation, configuration, and removal of every selected PHP runtime.
 

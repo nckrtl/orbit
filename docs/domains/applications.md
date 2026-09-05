@@ -54,12 +54,6 @@ After source resolution, the Gateway classifies the source, selects any required
 
 Orbit records each completed boundary. The same request can continue after a failure without duplicating source or Route records. Orbit returns the active AppInstance with its Route, hostname, and HTTPS URL when every provisioning step owned by Orbit succeeds.
 
-## Select a PHP runtime
-
-Orbit treats source with a valid `composer.json` file as a PHP project. A PHP platform constraint selects the highest PHP version that Orbit supports and that satisfies the constraint. A PHP project without a PHP platform constraint uses PHP 8.5. Source without Composer metadata receives no PHP runtime.
-
-AppInstance create input, stored AppInstance state, API responses, the PHP SDK, and the CLI have no PHP-version field. An invalid or unsupported PHP constraint stops provisioning before runtime or DNS publication. Orbit reports the PHP-selection boundary and retains compatible source and Route evidence for an identical retry.
-
 ## Configure a Laravel URL
 
 Orbit detects Laravel only when the source has both a regular, non-symlink `artisan` file and a valid `composer.json` file that declares `laravel/framework`. A source with neither marker is not Laravel. Partial, malformed, conflicting, duplicate, or unsafe marker evidence stops provisioning before configuration or publication.
@@ -109,7 +103,7 @@ With `--discard-source`, Orbit waives the dirty-source and unpublished-commit ch
 
 ## Input boundary
 
-Development AppInstance creation and removal do not accept a repository, command, PHP version, process, or shell input. The App owns the repository. The Node application role owns installation and configuration of selected PHP runtimes. Orbit does not install application dependencies as part of framework detection.
+Development AppInstance creation and removal do not accept a repository, command, process, or shell input. The App owns the repository. Orbit does not install application dependencies as part of framework detection.
 
 The [Route reference](../reference/routes.md) defines initial private traffic projection and the temporary refusal boundary for Route, Node, Cluster, and access changes that need coordinated runtime and Laravel URL reconciliation.
 
