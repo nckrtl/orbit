@@ -921,10 +921,12 @@
                 "Gateway",
                 "Node",
                 "Proof topology",
+                "Route",
                 "Workspace"
             ],
             "governing_adrs": [
-                "0022"
+                "0022",
+                "0028"
             ]
         },
         {
