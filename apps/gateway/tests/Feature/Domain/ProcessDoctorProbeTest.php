@@ -295,10 +295,11 @@ function doctor_process(
     DesiredProcessState $desired,
     string $name = 'process',
 ): Process {
+    $slug = fake()->unique()->slug();
     $app = OrbitApp::query()->create([
         'name' => fake()->word(),
-        'slug' => fake()->unique()->slug(),
-        'repository_url' => 'git@example.test:app.git',
+        'slug' => $slug,
+        'repository_url' => "git@example.test:{$slug}.git",
     ]);
     $instance = Instance::query()->create([
         'app_id' => $app->id,

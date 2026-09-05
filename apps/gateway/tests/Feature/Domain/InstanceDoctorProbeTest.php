@@ -211,7 +211,7 @@ function instance_probe_app(): App
     return App::query()->create([
         'name' => "Instance App {$number}",
         'slug' => "instance-app-{$number}",
-        'repository_url' => 'https://github.com/acme/private-instance.git',
+        'repository_url' => "https://github.com/acme/private-instance-{$number}.git",
         'main_branch' => 'main',
         'root' => 'public',
     ]);
