@@ -336,6 +336,43 @@ it('shapes features before issue publication without changing project state', fu
         ->toContain('allow_implicit_invocation: false');
 });
 
+it('supports interactive resolution and delegated proposals for blocked and backlog issues', function () use ($read): void {
+    $skill = $read('.agents/skills/resolve-pipeline-issues/SKILL.md');
+    $manifest = $read('.agents/skills/resolve-pipeline-issues/agents/openai.yaml');
+    $agents = $read('AGENTS.md');
+
+    expect($skill)
+        ->toContain('explicitly asks to resolve the Orbit pipeline')
+        ->toContain('explicitly names one `Blocked` or `Backlog` issue')
+        ->toContain('an orchestrator assigns a dedicated resolution agent one exact Orbit issue by ID or URL')
+        ->toContain('after that issue moves to `Blocked` or `Backlog`')
+        ->toContain('Do not activate merely because an issue is mentioned')
+        ->toContain('one issue active at a time')
+        ->toContain('all `Blocked` issues before any `Backlog` issue')
+        ->toContain('current `origin/main`')
+        ->toContain('ordinary unfinished prerequisite belongs only in a Linear `blocked by` relation')
+        ->toContain('Apply `grilling` with the `domain-modeling` discipline')
+        ->toContain('route it through `recording-decisions`')
+        ->toContain('use `creating-issues`')
+        ->toContain('complete issue moves to `Todo`')
+        ->toContain('`Blocked` issue returns to `Todo`')
+        ->toContain('`Backlog` issue moves to `Todo`')
+        ->toContain('Do not implement the issue')
+        ->toContain('immediately introduce the next issue')
+        ->toContain('Do not interview the user, mutate Linear, post a comment, change status')
+        ->toContain('Return a useful proposal even when a human decision is still required')
+        ->toContain('Clearly label the result as an unapproved proposal')
+        ->toContain('Delegated advisory mode ends after returning its proposal')
+        ->toContain('The orchestrator owns every action after this return');
+
+    expect($manifest)
+        ->toContain('Resolve Pipeline Issues')
+        ->toContain('$resolve-pipeline-issues')
+        ->toContain('read-only proposal for one exact Blocked or Backlog issue');
+
+    expect($agents)->toContain('`resolve-pipeline-issues`');
+});
+
 it('classifies preflight stops without a separate creation receipt', function () use ($read): void {
     $planner = $read('.agents/skills/planning-features/SKILL.md');
     $reviewer = $read('.agents/skills/reviewing-feature-plans/SKILL.md');

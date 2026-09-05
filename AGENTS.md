@@ -23,6 +23,7 @@ invoke any one directly; no private orchestration order is implied.
 - `grilling` — interview the user until every material design branch is settled, without changing project state.
 - `domain-modeling` — sharpen Orbit terms, relationships, and decision boundaries against current evidence.
 - `grill-with-docs` — explicitly run both shaping disciplines and produce a confirmed handoff before issue creation.
+- `resolve-pipeline-issues` — make `Blocked` and `Backlog` Linear work ready for `Todo`, or return a read-only resolution proposal for one exact issue.
 - `recording-decisions` — draft, lint, and accept one architecture decision record.
 - `writing-documentation` — write or change one maintained page under `docs/`.
 - `auditing-documentation` — find and fix documentation drift for one issue, or for the whole corpus on request.
