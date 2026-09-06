@@ -43,7 +43,9 @@ it('reads complete worktree listings without early-exit SIGPIPE', function () us
     }
 });
 
-it('releases retained proof and discovery only for a merged branch, before removing a worktree', function () use ($read): void {
+it('releases retained proof and discovery only for a merged branch, before removing a worktree', function () use (
+    $read,
+): void {
     $script = $read('bin/worktree-remove');
 
     expect($script)
@@ -55,9 +57,9 @@ it('releases retained proof and discovery only for a merged branch, before remov
     $mergeCheck = strpos($script, 'git merge-base --is-ancestor "$branch" origin/main');
     $proofRelease = strpos($script, 'release "$linear_id" "--worktree=$worktree" --proof');
 
-    expect($mergeCheck)->not->toBeFalse()
-        ->and($proofRelease)->not->toBeFalse()
-        ->and($mergeCheck)->toBeLessThan($proofRelease);
+    expect($mergeCheck)
+        ->not->toBeFalse()->and($proofRelease)
+        ->not->toBeFalse()->and($mergeCheck)->toBeLessThan($proofRelease);
 });
 
 it('keeps planning, plan review, and development independently invokable', function () use ($read, $root): void {
