@@ -68,7 +68,7 @@ it('keeps the extended runtime fixture fail-closed at its local and remote shell
     expect($source)
         ->toContain(
             'set -euo pipefail',
-            '[[ $# -eq 3 ]]',
+            '[[ $# -eq 4 ]]',
             '[[ -r "$database" ]]',
             'ping -c 1 -W 5 -- "$extra_address"',
             '-o BatchMode=yes',
@@ -91,7 +91,8 @@ it('refuses missing or altered extended-runtime action arguments before inspecti
     expect($result->successful())->toBeFalse();
 })->with([
     'missing arguments' => [[]],
-    'wrong original Node' => [['app-dev', 'app-prod-2', '10.44.0.4']],
-    'wrong extra Node' => [['app-prod', 'extra', '10.44.0.4']],
-    'wrong extra address' => [['app-prod', 'app-prod-2', '10.44.0.5']],
+    'wrong development Node' => [['other', 'app-prod', 'app-prod-2', '10.44.0.4']],
+    'wrong original Node' => [['app-dev', 'other', 'app-prod-2', '10.44.0.4']],
+    'wrong extra Node' => [['app-dev', 'app-prod', 'extra', '10.44.0.4']],
+    'wrong extra address' => [['app-dev', 'app-prod', 'app-prod-2', '10.44.0.5']],
 ]);

@@ -232,8 +232,13 @@ it('constructs an extended discovery without adopting proof resources or sharing
             'copy local:orbit-e2e-topology-snapshot-app-prod/main-app-prod',
             'init local:orbit-base-ubuntu-26.04-runtime',
             $discoveryTarget->instance('app-prod-2'),
+            $discoveryTarget->instance('app-prod').' -- /usr/local/bin/retarget-vpn.sh 10.44.0.10',
         )
-        ->not->toContain($proofTarget->network(), $proofTarget->instance('app-prod-2'));
+        ->not->toContain(
+            $proofTarget->network(),
+            $proofTarget->instance('app-prod-2'),
+            $discoveryTarget->instance('app-prod-2').' -- /usr/local/bin/retarget-vpn.sh',
+        );
 
     $state = IssueState::forWorktree('TST-123', $worktree);
     expect($state->requireTopology(AttemptPurpose::Discovery)->toArray())

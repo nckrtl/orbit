@@ -27,6 +27,7 @@
             "argv": [
                 "bash",
                 "/var/lib/orbit-e2e/proof/extended-runtime-connectivity.sh",
+                "app-dev",
                 "app-prod",
                 "app-prod-2",
                 "10.44.0.4"

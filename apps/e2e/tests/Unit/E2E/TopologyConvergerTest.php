@@ -251,7 +251,7 @@ function task7_process_result(
 
 /** @mago-expect lint:cyclomatic-complexity The fixture preserves one complete ordered convergence contract. */
 describe('TopologyConverger', function () {
-    it('provisions both app-prod Nodes but keeps the sole typed sample on the original Node', function (): void {
+    it('provisions both app-prod Nodes but keeps the sole typed sample on app-dev', function (): void {
         $recorded = [];
         $target = featureTarget('TST-123', 'a', TopologyRecipe::extendedAppProd());
         Process::fake(function (PendingProcess $process) use (&$recorded, $target): ProcessResult {
@@ -277,9 +277,10 @@ describe('TopologyConverger', function () {
                 ' aarch64 10.44.0.4',
                 $target->instance('app-dev')
                     .' -- /usr/local/bin/converge-sample-app.sh create-resources app-dev app-prod ',
-                $target->instance('app-prod').' -- /usr/local/bin/converge-sample-app.sh hydrate ',
+                $target->instance('app-dev').' -- /usr/local/bin/converge-sample-app.sh hydrate ',
             )
             ->not->toContain(
+                $target->instance('app-prod').' -- /usr/local/bin/converge-sample-app.sh hydrate ',
                 $target->instance('app-prod-2').' -- /usr/local/bin/converge-sample-app.sh hydrate ',
                 'create-resources app-dev app-prod-2',
             );
@@ -489,7 +490,7 @@ describe('TopologyConverger', function () {
                 '/usr/local/bin/converge-sample-app.sh',
                 'hydrate',
                 str_repeat('b', 40),
-                'app-prod',
+                'app-dev',
                 '/srv/orbit/apps/laravel-typed/e2e-dev',
             ])
             ->not->toContain(
@@ -654,7 +655,7 @@ describe('TopologyConverger', function () {
             ->toThrow(
                 RuntimeException::class,
                 'Guest convergence script converge-sample-app.sh failed on '
-                ."orbit-e2e-tst-123-aaaaaaaa-app-prod with exit code {$exitCode}.",
+                ."orbit-e2e-tst-123-aaaaaaaa-app-dev with exit code {$exitCode}.",
             );
 
         expect(collect($recorded)->filter(

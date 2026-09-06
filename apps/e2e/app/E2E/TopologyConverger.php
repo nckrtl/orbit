@@ -159,10 +159,10 @@ final readonly class TopologyConverger
         $steps['await.instance-api-readiness'] = true;
 
         if ($typedCheckoutPath !== null) {
-            $this->run($instances[$appProdNode], 'converge-sample-app.sh', [
+            $this->run($instances[$appDevNode], 'converge-sample-app.sh', [
                 'hydrate',
                 $laravel->commit,
-                'app-prod',
+                'app-dev',
                 $typedCheckoutPath,
             ]);
         } else {

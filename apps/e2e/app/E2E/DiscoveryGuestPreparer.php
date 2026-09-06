@@ -7,6 +7,7 @@ namespace App\E2E;
 use App\E2E\Value\GuestCommand;
 use App\E2E\Value\GuestCommandResult;
 use App\E2E\Value\MountPath;
+use App\E2E\Value\TopologyProfile;
 use App\E2E\Value\TopologyTarget;
 use RuntimeException;
 
@@ -85,18 +86,18 @@ final readonly class DiscoveryGuestPreparer
     public function repairCloneIdentity(TopologyTarget $target): void
     {
         $instances = array_combine(
-            $target->recipe->nodeKeys(),
-            array_map($target->instance(...), $target->recipe->nodeKeys()),
+            TopologyProfile::ROLES,
+            array_map($target->instance(...), TopologyProfile::ROLES),
         );
         $addresses = $this->host->globalIpv4All($instances);
         $retarget = [];
         $gateway = $target->recipe->nodeForRole('gateway')->key;
-        foreach ($target->recipe->nodes as $node) {
-            if ($node->key === $gateway) {
+        foreach (TopologyProfile::ROLES as $node) {
+            if ($node === $gateway) {
                 continue;
             }
-            $retarget["retarget-vpn.{$node->key}"] = [
-                'instance' => $instances[$node->key],
+            $retarget["retarget-vpn.{$node}"] = [
+                'instance' => $instances[$node],
                 'command' => new GuestCommand(['/usr/local/bin/retarget-vpn.sh', $addresses[$gateway]], 300),
             ];
         }
