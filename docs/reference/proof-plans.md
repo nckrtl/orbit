@@ -10,7 +10,7 @@ A plan is one JSON object at `.loop/proof/<ISSUE>.json` in the worktree. A `--pl
 | --- | --- | --- | --- |
 | `setup` | list of actions | Runs before acceptance, in order | Required; may be empty |
 | `acceptance` | list of actions | One action per acceptance criterion, in order | Required; at least one |
-| `mutates` | boolean | The plan changes reusable node state, so `promote` refuses the proved topology | `false` |
+| `mutates` | boolean | The plan changes reusable node state, so `promote` refuses the proved topology and closeout refreshes the snapshot from the current `main` | `false` |
 | `ends_with` | `{"nodes": [...]}` | The Nodes that remain registered when verification runs; a role left out is proved absent | Every role |
 | `inputs` | list of paths | Files or directories that actions read outside the runtime policy and the fixtures | None |
 | `observed_inputs` | boolean | Collect file-level PHP observations with PCOV during setup and acceptance | `false` |

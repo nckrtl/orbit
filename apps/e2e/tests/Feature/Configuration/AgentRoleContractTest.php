@@ -158,10 +158,12 @@ it('binds review and merge to one exact remote head', function () use ($read): v
         ->toContain('external orchestrator merges it')
         ->toContain('Do not run a merge command')
         ->toContain('bin/e2e-topology-snapshot promote <ISSUE>')
-        ->toContain('Do not substitute a refresh')
+        ->toContain('Do not substitute a refresh when `main` differs')
         ->toContain('For every candidate, if `main` moved after approval')
-        ->not
-        ->toContain('bin/e2e-topology-snapshot refresh')
+        ->toContain('declares `mutates: true`')
+        ->toContain('bin/e2e-topology-snapshot refresh --main-sha=<current origin/main>')
+        ->toContain('bin/e2e-topology release <ISSUE> --proof')
+        ->toContain('ADR 0035')
         ->toContain('bin/worktree-remove <ISSUE> <slug>')
         ->toContain('verify GitHub, `origin/main`')
         ->toContain('topology snapshot identity, and cleanup state directly');
