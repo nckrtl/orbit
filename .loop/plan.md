@@ -63,6 +63,6 @@ none.
 
 ## Deviations
 
-none.
+- The durable E2E suite no longer executes the issue-specific proof fixture. ADR 0022 requires durable fixture checks to apply generically to the current branch rather than name one `.loop` fixture, and `.loop` must be deleted after workspace approval. `ProofFixtureShellContractTest.php` keeps the generic fixture contract; the fresh Incus action remains the acceptance evidence for installed-product identity reuse.
 
 ## Review findings
