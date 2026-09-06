@@ -720,6 +720,22 @@
             ]
         },
         {
+            "path": "docs/decisions/0035-close-out-mutating-proofs-by-refreshing-the-topology-snapshot.md",
+            "title": "ADR 0035: Close out mutating proofs by refreshing the topology snapshot",
+            "kind": "decision",
+            "components": [
+                "apps/e2e"
+            ],
+            "concepts": [
+                "Node"
+            ],
+            "governing_adrs": [
+                "0006",
+                "0015",
+                "0035"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -946,7 +962,8 @@
             ],
             "governing_adrs": [
                 "0022",
-                "0028"
+                "0028",
+                "0035"
             ]
         },
         {
