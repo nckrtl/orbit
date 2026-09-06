@@ -1,0 +1,14 @@
+{
+  "setup": [],
+  "acceptance": [
+    {
+      "id": "sample-branch-field-compatibility",
+      "node": "app-dev",
+      "argv": [
+        "bash",
+        "/var/lib/orbit-e2e/proof/sample-branch-field-compatibility.sh"
+      ],
+      "timeout_seconds": 300
+    }
+  ]
+}

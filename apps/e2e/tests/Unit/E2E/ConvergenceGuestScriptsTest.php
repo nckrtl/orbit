@@ -290,6 +290,140 @@ function typed_sample_create_resources_process(array $fixture, array $environmen
     ], env: $environment);
 }
 
+/**
+ * @param  array<string, mixed>  $branchFields
+ * @param  array<string, mixed>  $overrides
+ */
+function typed_sample_app(array $branchFields, array $overrides = []): string
+{
+    return json_encode(
+        array_replace(
+            [
+                'id' => 1,
+                'slug' => 'laravel-typed',
+                'name' => 'Laravel',
+                'repository_url' => 'https://github.com/laravel/laravel.git',
+                'root' => 'public',
+            ],
+            $branchFields,
+            $overrides,
+        ),
+        JSON_THROW_ON_ERROR,
+    );
+}
+
+/** @return array{root:string,script:string,environment:array<string,string>} */
+function sample_branch_compatibility_proof_fixture(string $branchField, ?string $change = null): array
+{
+    $root = temporaryPath('orbit-sample-branch-proof-', 5);
+    mkdir("{$root}/bin", 0o700, true);
+    $app = [
+        'id' => 2,
+        'name' => 'Laravel',
+        'slug' => 'laravel-typed',
+        'repository_url' => 'https://github.com/laravel/laravel.git',
+        $branchField => '13.x',
+        'root' => 'public',
+    ];
+    $instance = [
+        'id' => 1,
+        'app_id' => 2,
+        'node_id' => 2,
+        'name' => 'e2e-dev',
+        'checkout_path' => '/home/orbit/apps/laravel-typed/e2e-dev',
+        'effective_root' => 'public',
+        'selected_branch' => 'e2e-dev',
+        'starting_commit' => str_repeat('a', 40),
+        'status' => 'active',
+    ];
+    $route = [
+        'id' => 1,
+        'app_id' => 2,
+        'node_id' => null,
+        'cluster_id' => 1,
+        'generation_basis_node_id' => null,
+        'hostname' => 'e2e-dev.orbit',
+        'provenance' => 'explicit',
+        'publication' => 'private',
+        'status' => 'pending',
+        'failed_step' => null,
+        'error_code' => null,
+        'target' => ['id' => 1, 'app_instance_id' => 1, 'position' => 0],
+    ];
+    $before = [
+        'apps' => ['apps' => [$app]],
+        'instances' => ['app_instances' => [$instance]],
+        'routes' => ['routes' => [$route]],
+    ];
+    $after = $before;
+    match ($change) {
+        'App ID' => $after['apps']['apps'][0]['id'] = 3,
+        'AppInstance ID' => $after['instances']['app_instances'][0]['id'] = 3,
+        'selected branch' => $after['instances']['app_instances'][0]['selected_branch'] = 'changed',
+        'starting commit' => $after['instances']['app_instances'][0]['starting_commit'] = str_repeat('b', 40),
+        'Route ID' => $after['routes']['routes'][0]['id'] = 3,
+        'duplicate App' => $after['apps']['apps'][] = [...$app, 'id' => 3],
+        'duplicate AppInstance' => $after['instances']['app_instances'][] = [...$instance, 'id' => 3],
+        'duplicate Route' => $after['routes']['routes'][] = [...$route, 'id' => 3],
+        default => null,
+    };
+    foreach (['before' => $before, 'after' => $after] as $phase => $responses) {
+        foreach ($responses as $kind => $response) {
+            file_put_contents(
+                "{$root}/{$kind}-{$phase}.json",
+                json_encode($response, JSON_THROW_ON_ERROR),
+            );
+        }
+    }
+
+    file_put_contents("{$root}/orbit", str_replace('__ROOT__', $root, <<<'BASH'
+        #!/usr/bin/env bash
+        set -euo pipefail
+        phase=before
+        [[ -e __ROOT__/converged ]] && phase=after
+        case "$1" in
+          app:list) cat "__ROOT__/apps-$phase.json" ;;
+          instance:list) cat "__ROOT__/instances-$phase.json" ;;
+          route:list) cat "__ROOT__/routes-$phase.json" ;;
+          *) exit 70 ;;
+        esac
+        BASH));
+    file_put_contents("{$root}/converge", str_replace('__ROOT__', $root, <<<'BASH'
+        #!/usr/bin/env bash
+        set -euo pipefail
+        [[ "$*" == 'create-resources app-dev app-prod 0000000000000000000000000000000000000000' ]]
+        touch __ROOT__/converged
+        BASH));
+    file_put_contents("{$root}/bin/sudo", <<<'BASH'
+        #!/usr/bin/env bash
+        set -euo pipefail
+        [[ "$1" == -u && "$2" == orbit && "$3" == -- ]]
+        shift 3
+        exec "$@"
+        BASH);
+    foreach (["{$root}/orbit", "{$root}/converge", "{$root}/bin/sudo"] as $executable) {
+        chmod($executable, 0o700);
+    }
+
+    $source = file_get_contents(dirname(__DIR__, 5).'/.loop/proof/sample-branch-field-compatibility.sh');
+    $script = str_replace(
+        [
+            'orbit=/home/orbit/orbit/apps/cli/orbit',
+            'converge=/usr/local/bin/converge-sample-app.sh',
+        ],
+        ["orbit={$root}/orbit", "converge={$root}/converge"],
+        $source,
+    );
+    file_put_contents("{$root}/proof.sh", $script);
+    chmod("{$root}/proof.sh", 0o700);
+
+    return [
+        'root' => $root,
+        'script' => "{$root}/proof.sh",
+        'environment' => ['PATH' => "{$root}/bin:".getenv('PATH')],
+    ];
+}
+
 /** @param array<string, mixed> $overrides
  *  @return array<string, mixed>
  */
@@ -2177,6 +2311,193 @@ describe('convergence guest scripts', function () {
         expect(array_filter($commands, fn (string $command): bool => str_starts_with($command, 'app:new ')))
             ->toHaveCount(1);
     });
+
+    it('reuses the typed sample for each accepted App branch-field response', function (
+        array $branchFields,
+    ): void {
+        $fixture = typed_sample_resource_fixture();
+        $environment = ['TYPED_APP_RESPONSE' => typed_sample_app($branchFields)];
+
+        try {
+            $first = typed_sample_create_resources_process($fixture, $environment);
+            expect($first->run())->toBe(0, $first->getErrorOutput());
+
+            $second = typed_sample_create_resources_process($fixture, $environment);
+            expect($second->run())->toBe(0, $second->getErrorOutput());
+
+            $commands = file("{$fixture['root']}/commands", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+            expect(array_filter($commands, fn (string $command): bool => str_starts_with($command, 'app:new ')))
+                ->toHaveCount(0)
+                ->and(array_filter($commands, fn (string $command): bool => str_starts_with(
+                    $command,
+                    'instance:new ',
+                )))
+                ->toHaveCount(1)
+                ->and(array_filter($commands, fn (string $command): bool => str_starts_with($command, 'route:new ')))
+                ->toHaveCount(0);
+            expect(json_decode(
+                (string) file_get_contents($fixture['state']),
+                true,
+                16,
+                JSON_THROW_ON_ERROR,
+            ))->toBe([
+                'shape' => 'app_instances',
+                'app_id' => 1,
+                'node_id' => 2,
+                'name' => 'e2e-dev',
+                'checkout_path' => "{$fixture['root']}/laravel-typed/e2e-dev",
+                'effective_root' => 'public',
+            ]);
+        } finally {
+            new Illuminate\Filesystem\Filesystem()->deleteDirectory($fixture['root']);
+        }
+    })->with([
+        'default branch' => [['default_branch' => '13.x']],
+        'legacy main branch' => [['main_branch' => '13.x']],
+        'default branch takes precedence' => [['default_branch' => '13.x', 'main_branch' => null]],
+    ]);
+
+    it('rejects invalid App branch fields before App or AppInstance mutation', function (
+        array $branchFields,
+    ): void {
+        $fixture = typed_sample_resource_fixture();
+
+        try {
+            $process = typed_sample_create_resources_process($fixture, [
+                'TYPED_APP_RESPONSE' => typed_sample_app($branchFields),
+            ]);
+
+            expect($process->run())->not->toBe(0);
+            $commands = file("{$fixture['root']}/commands", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+            expect(implode("\n", $commands))
+                ->not
+                ->toContain('app:new ', 'instance:new ');
+            expect(file_exists("{$fixture['root']}/app"))
+                ->toBeFalse()
+                ->and(file_exists("{$fixture['root']}/instance"))
+                ->toBeFalse()
+                ->and(file_exists($fixture['state']))
+                ->toBeFalse();
+        } finally {
+            new Illuminate\Filesystem\Filesystem()->deleteDirectory($fixture['root']);
+        }
+    })->with([
+        'missing branch fields' => [[]],
+        'null default with valid legacy fallback' => [['default_branch' => null, 'main_branch' => '13.x']],
+        'empty default with valid legacy fallback' => [['default_branch' => '', 'main_branch' => '13.x']],
+        'non-string default with valid legacy fallback' => [['default_branch' => 13, 'main_branch' => '13.x']],
+        'null legacy branch' => [['main_branch' => null]],
+        'empty legacy branch' => [['main_branch' => '']],
+        'non-string legacy branch' => [['main_branch' => 13]],
+    ]);
+
+    it('preserves identity and ownership refusal for each accepted App branch shape', function (
+        array $branchFields,
+        string $guard,
+    ): void {
+        $fixture = typed_sample_resource_fixture();
+        $appOverrides = match ($guard) {
+            'repository' => ['repository_url' => 'https://example.invalid/wrong.git'],
+            'slug' => ['slug' => 'wrong'],
+            'name' => ['name' => 'Wrong'],
+            'root' => ['root' => 'web'],
+            'identity' => ['id' => '1'],
+            default => [],
+        };
+        $app = typed_sample_app($branchFields, $appOverrides);
+        $environment = ['TYPED_APP_RESPONSE' => $guard === 'duplicate' ? "{$app},{$app}" : $app];
+        if (in_array($guard, ['slug', 'ownership'], true)) {
+            $environment['INITIAL_TYPED_RESPONSE'] = json_encode([
+                'app_instances' => [[
+                    'id' => 4,
+                    'app_id' => $guard === 'ownership' ? 99 : 1,
+                    'node_id' => 2,
+                    'name' => 'e2e-dev',
+                    'status' => 'active',
+                    'checkout_path' => "{$fixture['root']}/laravel-typed/e2e-dev",
+                    'selected_branch' => 'e2e-dev',
+                    'starting_commit' => str_repeat('a', 40),
+                    'effective_root' => 'public',
+                ]],
+            ], JSON_THROW_ON_ERROR);
+        }
+
+        try {
+            $process = typed_sample_create_resources_process($fixture, $environment);
+
+            expect($process->run())->not->toBe(0);
+            $commands = file("{$fixture['root']}/commands", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+            expect(implode("\n", $commands))
+                ->not
+                ->toContain('app:new ', 'instance:new ');
+            expect(file_exists("{$fixture['root']}/app"))
+                ->toBeFalse()
+                ->and(file_exists("{$fixture['root']}/instance"))
+                ->toBeFalse()
+                ->and(file_exists($fixture['state']))
+                ->toBeFalse();
+        } finally {
+            new Illuminate\Filesystem\Filesystem()->deleteDirectory($fixture['root']);
+        }
+    })->with([
+        'default branch with wrong repository' => [['default_branch' => '13.x'], 'repository'],
+        'legacy branch with wrong repository' => [['main_branch' => '13.x'], 'repository'],
+        'default branch with wrong slug' => [['default_branch' => '13.x'], 'slug'],
+        'legacy branch with wrong slug' => [['main_branch' => '13.x'], 'slug'],
+        'default branch with wrong name' => [['default_branch' => '13.x'], 'name'],
+        'legacy branch with wrong name' => [['main_branch' => '13.x'], 'name'],
+        'default branch with wrong root' => [['default_branch' => '13.x'], 'root'],
+        'legacy branch with wrong root' => [['main_branch' => '13.x'], 'root'],
+        'default branch with nonnumeric identity' => [['default_branch' => '13.x'], 'identity'],
+        'legacy branch with nonnumeric identity' => [['main_branch' => '13.x'], 'identity'],
+        'duplicate default-branch App' => [['default_branch' => '13.x'], 'duplicate'],
+        'duplicate legacy-branch App' => [['main_branch' => '13.x'], 'duplicate'],
+        'default branch with wrong AppInstance ownership' => [['default_branch' => '13.x'], 'ownership'],
+        'legacy branch with wrong AppInstance ownership' => [['main_branch' => '13.x'], 'ownership'],
+    ]);
+
+    it('runs the self-checking sample branch compatibility proof for each accepted App shape', function (
+        string $branchField,
+    ): void {
+        $fixture = sample_branch_compatibility_proof_fixture($branchField);
+
+        try {
+            $process = new Process(['bash', $fixture['script']], env: $fixture['environment']);
+
+            expect($process->run())
+                ->toBe(0, $process->getErrorOutput())
+                ->and($process->getOutput())
+                ->toContain('App 2, AppInstance 1, source e2e-dev@'.str_repeat('a', 40).', and Route 1 were reused.');
+        } finally {
+            new Illuminate\Filesystem\Filesystem()->deleteDirectory($fixture['root']);
+        }
+    })->with([
+        'default branch' => ['default_branch'],
+        'legacy main branch' => ['main_branch'],
+    ]);
+
+    it('makes the self-checking sample branch compatibility proof refuse identity changes and duplicates', function (
+        string $change,
+    ): void {
+        $fixture = sample_branch_compatibility_proof_fixture('main_branch', $change);
+
+        try {
+            $process = new Process(['bash', $fixture['script']], env: $fixture['environment']);
+
+            expect($process->run())->not->toBe(0);
+        } finally {
+            new Illuminate\Filesystem\Filesystem()->deleteDirectory($fixture['root']);
+        }
+    })->with([
+        'replaced App' => ['App ID'],
+        'replaced AppInstance' => ['AppInstance ID'],
+        'changed selected branch' => ['selected branch'],
+        'changed starting commit' => ['starting commit'],
+        'replaced Route' => ['Route ID'],
+        'duplicate App' => ['duplicate App'],
+        'duplicate AppInstance' => ['duplicate AppInstance'],
+        'duplicate matching Route' => ['duplicate Route'],
+    ]);
 
     it('creates one typed development AppInstance with only authorized source inputs', function (): void {
         $fixture = typed_sample_resource_fixture();
