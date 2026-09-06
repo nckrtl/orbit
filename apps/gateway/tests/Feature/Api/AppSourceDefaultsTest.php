@@ -167,6 +167,9 @@ it('rejects conflicting creation identity without mutation or remote access', fu
         ->toBeEmpty();
 })->with([
     'repository' => [['repository_url' => 'https://github.com/acme/other.git']],
+    'equivalent repository access URL' => [[
+        'repository_url' => 'ssh://git@github.com/acme/site.git',
+    ]],
     'main branch' => [['main_branch' => 'stable']],
     'root' => [['root' => 'web']],
     'name' => [['name' => 'Renamed']],

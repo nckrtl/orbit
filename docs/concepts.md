@@ -5,7 +5,8 @@ These are the common terms you will see throughout the Orbit documentation. Each
 - **Gateway** — The central Orbit service. It stores every machine and application record, authorizes each action, and applies changes to machines over SSH. See [Architecture](architecture.md#gateway).
 - **Node** — A machine connected to Orbit. It runs one or more roles and reaches the Gateway over WireGuard. A Node outside a Cluster is standalone.
 - **Cluster** — An optional group of Nodes with one name and at most one development TLD. Active membership gives member Routes Cluster scope. The Cluster can have no TLD. See [ADR 0023](decisions/0023-separate-hostname-selection-from-cluster-routing.md).
-- **App** — An application managed by Orbit. It holds the repository URL, default branch, and relative web root that every AppInstance inherits. See [Apps](reference/apps.md).
+- **App** — An application managed by Orbit. It owns one repository identity and access URL, plus the default branch and relative web root that every AppInstance inherits. See [Apps](reference/apps.md).
+- **Repository identity** — The transport-independent Git host and path that one App owns after optional terminal `.git` removal. See [Apps](reference/apps.md) and [ADR 0026](decisions/0026-identify-each-app-by-one-repository.md).
 - **AppInstance** — One placement of an App on one Node. It inherits Cluster membership from the Node. An active AppInstance has one Route and returns its hostname. See [Applications](domains/applications.md) and [ADR 0028](decisions/0028-require-one-route-per-active-appinstance.md).
 - **Effective web root** — The web root an AppInstance serves. An AppInstance override replaces the App root. Both are normalized relative paths.
 - **Legacy Instance** — The earlier runnable application record. Orbit retains it for existing Workspace and Doctor behavior. New development placements use AppInstance.

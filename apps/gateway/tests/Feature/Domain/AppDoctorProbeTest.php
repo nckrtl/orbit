@@ -163,7 +163,7 @@ function app_probe_app(): App
     return App::query()->create([
         'name' => "App {$number}",
         'slug' => "app-{$number}",
-        'repository_url' => 'https://github.com/acme/private-origin.git',
+        'repository_url' => "https://github.com/acme/private-origin-{$number}.git",
     ]);
 }
 

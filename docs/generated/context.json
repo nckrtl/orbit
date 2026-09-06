@@ -71,6 +71,7 @@
                 "Legacy Instance",
                 "Node",
                 "Proof topology",
+                "Repository identity",
                 "Route",
                 "Router",
                 "Workspace"
@@ -80,6 +81,7 @@
                 "0011",
                 "0023",
                 "0024",
+                "0026",
                 "0028"
             ]
         },
@@ -332,6 +334,7 @@
                 "Gateway",
                 "Ingress",
                 "Node",
+                "Repository identity",
                 "Route",
                 "Router"
             ],
@@ -518,7 +521,8 @@
             ],
             "concepts": [
                 "App",
-                "Gateway"
+                "Gateway",
+                "Repository identity"
             ],
             "governing_adrs": [
                 "0009",
@@ -801,10 +805,12 @@
             "components": [],
             "concepts": [
                 "App",
-                "Gateway"
+                "Gateway",
+                "Repository identity"
             ],
             "governing_adrs": [
-                "0016"
+                "0016",
+                "0026"
             ]
         },
         {
