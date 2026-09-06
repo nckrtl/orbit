@@ -805,6 +805,50 @@
             ]
         },
         {
+            "path": "docs/decisions/0039-use-round-robin-for-production-route-pools.md",
+            "title": "ADR 0039: Use round-robin for production Route pools",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "App",
+                "AppInstance",
+                "Cluster",
+                "Gateway",
+                "Ingress",
+                "Route",
+                "Router"
+            ],
+            "governing_adrs": [
+                "0011",
+                "0028",
+                "0030",
+                "0039"
+            ]
+        },
+        {
+            "path": "docs/decisions/0040-extend-issue-proof-with-one-app-prod-node.md",
+            "title": "ADR 0040: Extend issue proof with one app-prod Node",
+            "kind": "decision",
+            "components": [
+                "apps/e2e"
+            ],
+            "concepts": [
+                "App",
+                "Gateway",
+                "Node"
+            ],
+            "governing_adrs": [
+                "0006",
+                "0035",
+                "0037",
+                "0040"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
