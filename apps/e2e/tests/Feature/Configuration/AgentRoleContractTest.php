@@ -54,6 +54,10 @@ it('releases retained proof and discovery only for a merged branch, before remov
         ->toContain('if [[ -f "$worktree/.e2e/attempt.json" ]]')
         ->toContain('release "$linear_id" "--worktree=$worktree"');
 
+    expect($script)
+        ->toContain('awk -v ref="branch refs/heads/$branch"')
+        ->toContain('[[ -n "$worktree" ]] || worktree="$primary_root/.worktrees/$name"');
+
     $mergeCheck = strpos($script, 'git merge-base --is-ancestor "$branch" origin/main');
     $proofRelease = strpos($script, 'release "$linear_id" "--worktree=$worktree" --proof');
 
