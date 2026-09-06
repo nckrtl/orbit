@@ -135,6 +135,7 @@ it('keeps implementation guidance on Orbit code and proof', function () use ($re
 
     foreach ([
         'bin/e2e-topology acquire <ISSUE> <worktree>',
+        'An extended topology requires its `.loop/proof/<ISSUE>.json` extension declaration before acquisition',
         'bin/e2e-topology shell <ISSUE> <role>',
         '.loop/proof/<ISSUE>.json',
         'bin/e2e-topology prove <ISSUE>',
@@ -176,8 +177,14 @@ it('binds review and merge to one exact remote head', function () use ($read): v
         ->toContain('Never integrate `main`')
         ->toContain('after the `.loop/` removal')
         ->toContain('declares `mutates: true`')
+        ->toContain('A normalized extended proof plan')
+        ->toContain('always declares `mutates: true` and is refresh-only')
         ->toContain('bin/e2e-topology-snapshot refresh --main-sha=<current origin/main>')
         ->toContain('bin/e2e-topology release <ISSUE> --proof')
+        ->toContain('If refresh fails, leave both the')
+        ->toContain('proof and discovery attempts active and stop')
+        ->toContain('Release neither')
+        ->toContain('attempt before successful refresh')
         ->toContain('ADR 0035')
         ->toContain('bin/worktree-remove <ISSUE> <slug>')
         ->toContain('verify GitHub, `origin/main`')
@@ -187,6 +194,14 @@ it('binds review and merge to one exact remote head', function () use ($read): v
         ->toContain('repository-owner-approved behavior')
         ->toContain('issue-specific proof')
         ->not->toContain('bin/e2e-live');
+});
+
+it('documents physical Node targeting for extended issue topologies', function () use ($read): void {
+    $script = $read('bin/e2e-topology');
+
+    expect($script)
+        ->toContain('recorded physical Node key')
+        ->toContain('including app-prod-2 when declared');
 });
 
 it('accepts Todo or In Progress for development', function () use ($read): void {

@@ -46,4 +46,9 @@ final readonly class TopologyNode
             throw new InvalidArgumentException('The topology Node key is invalid.');
         }
     }
+
+    public function wireGuardAddress(): string
+    {
+        return '10.44.0.'.($this->address - 9);
+    }
 }

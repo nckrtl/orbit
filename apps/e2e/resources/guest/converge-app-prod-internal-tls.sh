@@ -2,9 +2,9 @@
 set -euo pipefail
 umask 077
 cd /home/orbit/orbit/apps/gateway
-[[ $# -eq 3 && "$1" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]{0,62}$ && "$2" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || exit 64
-[[ "$3" =~ ^(x86_64|aarch64)$ ]] || exit 65
-wireguard_ip=10.44.0.3
+[[ $# -eq 4 && "$1" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]{0,62}$ && "$2" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || exit 64
+[[ "$3" =~ ^(x86_64|aarch64)$ && "$4" =~ ^10\.44\.0\.[1-9][0-9]{0,2}$ ]] || exit 65
+wireguard_ip=$4
 db=/home/orbit/.orbit/gateway.sqlite
 # The Gateway store is the source of truth: an active node with an active
 # role is already provisioned. Public SSH closes after provisioning, so a

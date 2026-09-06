@@ -164,7 +164,7 @@ describe('ProofPlan', function (): void {
             ->toThrow(
                 InvalidArgumentException::class,
                 'The proof plan must have exactly the keys setup and acceptance, '
-                .'plus optional mutates, ends_with, inputs, and observed_inputs.',
+                .'plus optional extension, mutates, ends_with, inputs, and observed_inputs.',
             );
     });
 
@@ -206,7 +206,7 @@ describe('ProofPlan', function (): void {
             ->toThrow(
                 InvalidArgumentException::class,
                 'The proof plan must have exactly the keys setup and acceptance, '
-                .'plus optional mutates, ends_with, inputs, and observed_inputs.',
+                .'plus optional extension, mutates, ends_with, inputs, and observed_inputs.',
             );
     })->with([
         'missing setup' => [function (array $plan): array {
@@ -517,4 +517,43 @@ describe('ProofPlan ends_with', function (): void {
             'The proof plan key ends_with.nodes must keep the gateway node.',
         ],
     ]);
+});
+
+describe('ProofPlan app-prod extension', function (): void {
+    it('keeps standard normalization unchanged and forces mutation only for the typed extension', function (): void {
+        $standard = ProofPlan::fromArray(proofPlanFixture());
+        $extended = ProofPlan::fromArray(proofPlanFixture() + ['extension' => 'app-prod']);
+
+        expect($standard->toArray())
+            ->toBe(proofPlanFixture())
+            ->and($standard->fingerprint())
+            ->toBe('ba9b56b9a479781bdd5cb95c6084ee8c61fed78885a8bac00cbd33bee222a2f5')
+            ->and($standard->recipe()->nodeKeys())
+            ->toBe(TopologyProfile::ROLES)
+            ->and($extended->mutates)
+            ->toBeTrue()
+            ->and($extended->recipe()->nodeKeys())
+            ->toBe(['gateway', 'app-dev', 'app-prod', 'app-prod-2'])
+            ->and($extended->toArray()['extension'] ?? null)
+            ->toBe('app-prod');
+    });
+
+    it('accepts physical extra-Node actions and refuses unsupported or removal declarations', function (): void {
+        $plan = proofPlanFixture();
+        $plan['extension'] = 'app-prod';
+        $plan['acceptance'][0]['node'] = 'app-prod-2';
+
+        expect(ProofPlan::fromArray($plan)->acceptance[0]['node'])
+            ->toBe('app-prod-2')
+            ->and(fn () => ProofPlan::fromArray(proofPlanFixture() + ['extension' => 'app-dev']))
+            ->toThrow(InvalidArgumentException::class, 'extension must be app-prod')
+            ->and(fn () => ProofPlan::fromArray(
+                proofPlanFixture()
+                + [
+                    'extension' => 'app-prod',
+                    'ends_with' => ['nodes' => TopologyProfile::ROLES],
+                ],
+            ))
+            ->toThrow(InvalidArgumentException::class, 'must keep app-prod-2');
+    });
 });

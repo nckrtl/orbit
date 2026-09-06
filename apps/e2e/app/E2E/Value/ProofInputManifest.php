@@ -13,7 +13,7 @@ use InvalidArgumentException;
  */
 final readonly class ProofInputManifest
 {
-    public const int SCHEMA = 3;
+    public const int SCHEMA = 4;
 
     /**
      * @param list<string> $featureRuntimePaths
@@ -29,6 +29,7 @@ final readonly class ProofInputManifest
         public array $staticInputs,
         public string $proofPlanPath,
         public array $extraInputs,
+        public TopologyConstructionInputs $construction,
         public ?ObservedPhpInputs $observedInputs,
         public array $completeness,
     ) {
@@ -110,6 +111,7 @@ final readonly class ProofInputManifest
                 'feature_runtime_paths',
                 'static_inputs',
                 'proof_contract',
+                'construction',
                 'observed_inputs',
                 'completeness',
                 'fingerprint',
@@ -121,6 +123,7 @@ final readonly class ProofInputManifest
             || ! is_array($value['feature_runtime_paths'])
             || ! is_array($value['static_inputs'])
             || ! is_array($value['proof_contract'])
+            || ! is_array($value['construction'])
             || array_keys($value['proof_contract']) !== ['plan_path', 'extra_inputs']
             || ! is_string($value['proof_contract']['plan_path'])
             || ! is_array($value['proof_contract']['extra_inputs'])
@@ -159,6 +162,7 @@ final readonly class ProofInputManifest
             $staticInputs,
             $value['proof_contract']['plan_path'],
             $extraInputs,
+            TopologyConstructionInputs::fromArray($value['construction']),
             $observedInputs,
             $completeness,
         );
@@ -197,6 +201,7 @@ final readonly class ProofInputManifest
                 'plan_path' => $this->proofPlanPath,
                 'extra_inputs' => $this->extraInputs,
             ],
+            'construction' => $this->construction->toArray(),
             'observed_inputs' => $this->observedInputs?->toArray(),
             'completeness' => $this->completeness,
         ];

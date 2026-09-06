@@ -78,7 +78,7 @@ assert_mounted_source() {
 }
 
 case "$probe" in
-  vm.gateway.running|vm.app-dev.running|vm.app-prod.running) state=$(systemctl is-system-running 2>/dev/null) || { [[ "$state" == degraded ]] || exit 1; }; expected='running|degraded'; observed=$state; [[ "$state" == running || "$state" == degraded ]] ;;
+  vm.gateway.running|vm.app-dev.running|vm.app-prod.running|vm.app-prod-2.running) state=$(systemctl is-system-running 2>/dev/null) || { [[ "$state" == degraded ]] || exit 1; }; expected='running|degraded'; observed=$state; [[ "$state" == running || "$state" == degraded ]] ;;
   role.gateway) [[ -f /home/orbit/orbit/apps/gateway/artisan && -f /home/orbit/orbit/apps/gateway/.env && -f /home/orbit/.orbit/gateway.app-key && -f /home/orbit/.orbit/gateway.sqlite && "$(stat -c '%U:%a' /home/orbit/.orbit/gateway.sqlite 2>/dev/null)" == orbit:600 && -f /etc/wireguard/orbit.conf && -f /etc/caddy/Caddyfile ]]; expected='gateway,vpn:configured'; observed=$expected ;;
   role.assignments)
     db=/home/orbit/.orbit/gateway.sqlite
@@ -161,6 +161,7 @@ case "$probe" in
     observed=$expected
     ;;
   role.app-prod) [[ -d /var/www/laravel/e2e-prod ]]; expected='app-prod:prepared'; observed=$expected ;;
+  role.app-prod-2) [[ -d /var/www && -f /etc/caddy/Caddyfile ]]; expected='app-prod-2:services-prepared'; observed=$expected ;;
   service.gateway) caddy_state=$(systemctl is-active caddy 2>/dev/null); php_state=$(systemctl is-active php8.5-fpm 2>/dev/null); expected='caddy=active,php8.5-fpm=active'; observed="caddy=$caddy_state,php8.5-fpm=$php_state"; [[ "$observed" == "$expected" ]] ;;
   service.vpn) vpn_state=$(systemctl is-active wg-quick@orbit 2>/dev/null); expected='wg-quick@orbit=active'; observed="wg-quick@orbit=$vpn_state"; [[ "$observed" == "$expected" ]] ;;
   wireguard.reachability)
@@ -207,8 +208,9 @@ case "$probe" in
     expected='https://gateway.orbit/up:vpn-dns+reachable,tries<=3'
     observed="https://gateway.orbit/up:vpn-dns+reachable,tries=$dns_tries"
     ;;
-  php-fpm.app-dev|php-fpm.app-prod) php_state=$(systemctl is-active php8.5-fpm 2>/dev/null); expected='php8.5-fpm=active'; observed="php8.5-fpm=$php_state"; [[ "$observed" == "$expected" ]] ;;
-  caddy.app-dev|caddy.app-prod) caddy_state=$(systemctl is-active caddy 2>/dev/null); caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1; expected='caddy=active,config=valid'; observed="caddy=$caddy_state,config=valid"; [[ "$observed" == "$expected" ]] ;;
+  php.app-prod-2) php -r 'exit(PHP_VERSION_ID >= 80500 ? 0 : 1);'; expected='php>=8.5:usable'; observed=$expected ;;
+  php-fpm.app-dev|php-fpm.app-prod|php-fpm.app-prod-2) php_state=$(systemctl is-active php8.5-fpm 2>/dev/null); expected='php8.5-fpm=active'; observed="php8.5-fpm=$php_state"; [[ "$observed" == "$expected" ]] ;;
+  caddy.app-dev|caddy.app-prod|caddy.app-prod-2) caddy_state=$(systemctl is-active caddy 2>/dev/null); caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1; expected='caddy=active,config=valid'; observed="caddy=$caddy_state,config=valid"; [[ "$observed" == "$expected" ]] ;;
   laravel.dev)
     laravel_checkout=${typed_checkout:-/home/orbit/apps/laravel}
     [[ -f "$laravel_checkout/artisan" ]] && php "$laravel_checkout/artisan" --version >/dev/null

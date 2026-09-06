@@ -166,23 +166,27 @@ function topologySnapshotSnapshotInventoryJson(
     );
 }
 
+/** @mago-expect lint:excessive-parameter-list The fixture exposes each independent Incus inventory field. */
 function topologyVmJson(
     string $name,
     array $metadata = ['user.orbit.e2e.owner' => 'orbit-e2e'],
     ?string $network = null,
     bool $running = false,
+    ?\App\E2E\Value\TopologyRecipe $recipe = null,
+    int $slot = 2,
 ): string {
     $devices = ['root' => ['pool' => 'default']];
     if ($network !== null) {
         $role = match (true) {
             str_ends_with($name, '-gateway') => 'gateway',
             str_ends_with($name, '-app-dev') => 'app-dev',
+            str_ends_with($name, '-app-prod-2') => 'app-prod-2',
             default => 'app-prod',
         };
         $devices['eth0'] = [
             'network' => $network,
             'hwaddr' => '00:16:3e:'.implode(':', str_split(substr(sha1($network.':'.$role), 0, 6), 2)),
-            'ipv4.address' => TopologyTarget::ipv4For(2, $role),
+            'ipv4.address' => TopologyTarget::ipv4For($slot, $role, $recipe),
         ];
     }
 
@@ -259,6 +263,7 @@ function pinnedWorktreeInventoryResult(
     TopologyTarget $target,
     ?string $operationId = null,
     array $runningInstances = [],
+    int $slot = 2,
 ): ?\Illuminate\Contracts\Process\ProcessResult {
     if (($firewall = topologyFirewallResult($command)) !== null) {
         return $firewall;
@@ -287,12 +292,14 @@ function pinnedWorktreeInventoryResult(
                         ],
                         $target->network(),
                         in_array($target->instance($role), $runningInstances, true),
+                        $target->recipe,
+                        $slot,
                     ),
                     true,
                     16,
                     JSON_THROW_ON_ERROR,
                 )[0],
-                \App\E2E\Value\TopologyProfile::ROLES,
+                $target->recipe->nodeKeys(),
             );
 
             return Process::result(json_encode(array_merge(
@@ -312,6 +319,8 @@ function pinnedWorktreeInventoryResult(
                     $name,
                     ['user.orbit.e2e.owner' => 'orbit-e2e'],
                     running: in_array($name, $runningInstances, true),
+                    recipe: $target->recipe,
+                    slot: $slot,
                 ),
         );
     }
@@ -433,6 +442,7 @@ function pinnedWorktreeBatchResult(
  * @param list<array<array-key, mixed>> $events
  * @param null|Closure(list<string>): void $observe
  * @param null|Closure(list<string>): (?\Illuminate\Contracts\Process\ProcessResult) $guestOverride
+ * @mago-expect lint:cyclomatic-complexity,excessive-parameter-list The fake models one full topology construction boundary.
  */
 function fakePinnedWorktreeProcesses(
     TopologyTarget $target,
@@ -440,17 +450,22 @@ function fakePinnedWorktreeProcesses(
     ?Closure $observe = null,
     ?Closure $guestOverride = null,
     ?string $operationId = null,
+    ?TopologyTarget $existingTarget = null,
 ): void {
     $realProcess = new ProcessFactory;
     $runningInstances = [];
+    $networkCreated = false;
+    /** @mago-expect lint:cyclomatic-complexity The fake maps every Incus and guest construction operation. */
     Process::fake(function (\Illuminate\Process\PendingProcess $process) use (
         &$events,
         &$runningInstances,
+        &$networkCreated,
         $realProcess,
         $target,
         $observe,
         $guestOverride,
         $operationId,
+        $existingTarget,
     ) {
         $command = $process->command;
         $observe?->__invoke($command);
@@ -464,6 +479,100 @@ function fakePinnedWorktreeProcesses(
             return $batch;
         }
         $events[] = $command;
+        if (($command[3] ?? null) === 'network' && ($command[4] ?? null) === 'create') {
+            $networkCreated = true;
+        }
+        if ($existingTarget !== null && ($command[3] ?? null) === 'network' && ($command[4] ?? null) === 'list') {
+            $networks = [[
+                'name' => $existingTarget->network(),
+                'config' => ['user.orbit.e2e.owner' => 'orbit-e2e', 'ipv4.address' => '10.232.2.1/24'],
+            ]];
+            if ($networkCreated) {
+                $networks[] = [
+                    'name' => $target->network(),
+                    'config' => ['user.orbit.e2e.owner' => 'orbit-e2e', 'ipv4.address' => '10.232.3.1/24'],
+                ];
+            }
+
+            return Process::result(json_encode($networks, JSON_THROW_ON_ERROR));
+        }
+        if ($existingTarget !== null && ($command[3] ?? null) === 'list' && ($command[4] ?? null) === 'local:') {
+            $existing = array_map(
+                static fn (string $node): array => json_decode(
+                    topologyVmJson(
+                        $existingTarget->instance($node),
+                        [
+                            'user.orbit.e2e.owner' => 'orbit-e2e',
+                            'user.orbit.e2e.issue' => $existingTarget->issue,
+                            'user.orbit.e2e.attempt' => $existingTarget->requireAttempt()->value,
+                        ],
+                        $existingTarget->network(),
+                        true,
+                        $existingTarget->recipe,
+                    ),
+                    true,
+                    16,
+                    JSON_THROW_ON_ERROR,
+                )[0],
+                $existingTarget->recipe->nodeKeys(),
+            );
+            if (! $networkCreated) {
+                return Process::result(json_encode(array_merge(
+                    array_values(array_filter(
+                        json_decode(topologySnapshotVmInventoryJson(), true, 16, JSON_THROW_ON_ERROR),
+                        static fn (array $vm): bool => str_contains((string) $vm['name'], 'topology-snapshot'),
+                    )),
+                    $existing,
+                ), JSON_THROW_ON_ERROR));
+            }
+            $created = array_map(
+                static fn (string $node): array => json_decode(
+                    topologyVmJson(
+                        $target->instance($node),
+                        [
+                            'user.orbit.e2e.owner' => 'orbit-e2e',
+                            'user.orbit.e2e.issue' => $target->issue,
+                            'user.orbit.e2e.attempt' => $target->requireAttempt()->value,
+                            'user.orbit.e2e.operation' => $operationId ?? str_repeat('f', 32),
+                            'user.orbit.e2e.generation' => 'fixture-generation',
+                        ],
+                        $target->network(),
+                        in_array($target->instance($node), $runningInstances, true),
+                        $target->recipe,
+                        3,
+                    ),
+                    true,
+                    16,
+                    JSON_THROW_ON_ERROR,
+                )[0],
+                $target->recipe->nodeKeys(),
+            );
+
+            return Process::result(json_encode(array_merge(
+                array_values(array_filter(
+                    json_decode(topologySnapshotVmInventoryJson(), true, 16, JSON_THROW_ON_ERROR),
+                    static fn (array $vm): bool => str_contains((string) $vm['name'], 'topology-snapshot'),
+                )),
+                $existing,
+                $created,
+            ), JSON_THROW_ON_ERROR));
+        }
+        if (! $networkCreated && ($command[3] ?? null) === 'network' && ($command[4] ?? null) === 'list') {
+            return Process::result('[]');
+        }
+        if (! $networkCreated && ($command[3] ?? null) === 'list') {
+            if (($command[4] ?? null) !== 'local:') {
+                return Process::result('[]');
+            }
+
+            return Process::result(json_encode(
+                array_values(array_filter(
+                    json_decode(topologySnapshotVmInventoryJson(), true, 16, JSON_THROW_ON_ERROR),
+                    static fn (array $vm): bool => ! str_contains((string) $vm['name'], 'tst-123'),
+                )),
+                JSON_THROW_ON_ERROR,
+            ));
+        }
         if (($command[3] ?? null) === 'start' && is_string($command[4] ?? null)) {
             $runningInstances[] = preg_replace('/\A[^:]+:/', '', $command[4]);
         }
@@ -474,6 +583,7 @@ function fakePinnedWorktreeProcesses(
                 $target,
                 $operationId,
                 $runningInstances,
+                $existingTarget === null ? 2 : 3,
             ) ?? $guestOverride?->__invoke(array_slice(
                 $command,
                 6,

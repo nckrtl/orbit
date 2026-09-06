@@ -18,6 +18,21 @@ it('preserves the registered three-Node profile', function () {
         ->toBe([10, 11, 12]);
 });
 
+it('declares exactly one temporary app-prod Node with fixed physical addresses', function () {
+    $recipe = TopologyRecipe::extendedAppProd();
+
+    expect($recipe->nodeKeys())
+        ->toBe(['gateway', 'app-dev', 'app-prod', 'app-prod-2'])
+        ->and($recipe->checkoutNodeKeys())
+        ->toBe(['gateway', 'app-dev'])
+        ->and($recipe->node('app-prod-2')->address)
+        ->toBe(13)
+        ->and($recipe->node('app-prod-2')->wireGuardAddress())
+        ->toBe('10.44.0.4')
+        ->and(array_map(static fn (TopologyNode $node): string => $node->key, $recipe->nodesForRole('app-prod')))
+        ->toBe(['app-prod', 'app-prod-2']);
+});
+
 it('maps product roles onto separate physical Node keys', function () {
     $recipe = TopologyRecipe::coldAcceptance();
 

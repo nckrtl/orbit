@@ -121,6 +121,7 @@ describe('ProofInputManifestBuilder', function (): void {
             'AUX-99',
             '.loop/proof/AUX-99.json',
             $plan,
+            topologyConstructionFixture(),
             $observed,
         );
 
@@ -141,6 +142,7 @@ describe('ProofInputManifestBuilder', function (): void {
             'AUX-99',
             '.loop/proof/AUX-99.json',
             $fixture['plan'],
+            topologyConstructionFixture(),
         );
         $byPath = array_column($manifest->staticInputs, null, 'path');
 
@@ -179,6 +181,7 @@ describe('ProofInputManifestBuilder', function (): void {
             'AUX-99',
             '.loop/proof/AUX-99.json',
             $plan,
+            topologyConstructionFixture(),
         ))
             ->toThrow(InvalidArgumentException::class, 'reads undeclared checkout input');
     });
@@ -208,6 +211,7 @@ describe('ProofInputManifestBuilder', function (): void {
             'AUX-99',
             '.loop/proof/AUX-99.json',
             $plan,
+            topologyConstructionFixture(),
         );
 
         expect(array_column($manifest->staticInputs, 'classification', 'path')['custom/input.txt'])
@@ -234,6 +238,7 @@ describe('ProofInputManifestBuilder', function (): void {
             'AUX-99',
             '.loop/proof/AUX-99.json',
             $plan,
+            topologyConstructionFixture(),
         ))
             ->toThrow(InvalidArgumentException::class, 'reads undeclared checkout input');
     });
@@ -252,6 +257,7 @@ describe('ProofInputManifestBuilder', function (): void {
             'AUX-99',
             '.loop/proof/AUX-99.json',
             $fixture['plan'],
+            topologyConstructionFixture(),
         ))
             ->toThrow(InvalidArgumentException::class, 'classification is incomplete: unexpected.txt');
     });
@@ -270,6 +276,7 @@ describe('ProofInputManifestBuilder', function (): void {
             'AUX-99',
             '.loop/proof/AUX-99.json',
             $fixture['plan'],
+            topologyConstructionFixture(),
         ))
             ->toThrow(InvalidArgumentException::class, 'does not include current origin/main');
     });
