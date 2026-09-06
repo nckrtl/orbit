@@ -131,7 +131,7 @@ case ${1-} in
         [[ "$cluster_phase" == verified && "$verified_cluster_id" == "$cluster_id" ]]
       fi
       apps=$("$orbit" app:list --json)
-      app_id=$(php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); $m=array_values(array_filter($v["apps"], fn($x) => ($x["slug"] ?? null)===$argv[1])); if(count($m)>1 || $m && (($m[0]["repository_url"] ?? null)!==$argv[2] || ($m[0]["name"] ?? null)!==$argv[3] || ($m[0]["root"] ?? null)!==$argv[4] || !is_string($m[0]["main_branch"] ?? null) || $m[0]["main_branch"]==="") || $m && !is_int($m[0]["id"] ?? null)) exit(65); echo $m[0]["id"] ?? "";' laravel-typed https://github.com/laravel/laravel.git Laravel public <<<"$apps")
+      app_id=$(php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); $m=array_values(array_filter($v["apps"], fn($x) => ($x["slug"] ?? null)===$argv[1])); if(count($m)>1) exit(65); if($m) { $x=$m[0]; $branch=array_key_exists("default_branch", $x) ? $x["default_branch"] : ($x["main_branch"] ?? null); if(($x["repository_url"] ?? null)!==$argv[2] || ($x["name"] ?? null)!==$argv[3] || ($x["root"] ?? null)!==$argv[4] || !is_string($branch) || $branch==="" || !is_int($x["id"] ?? null)) exit(65); } echo $m[0]["id"] ?? "";' laravel-typed https://github.com/laravel/laravel.git Laravel public <<<"$apps")
       typed_target_count=$(php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); echo count(array_filter($v["app_instances"], fn($x) => ($x["name"] ?? null)===$argv[1]));' e2e-dev <<<"$initial_instances")
       [[ -n "$app_id" || "$typed_target_count" -eq 0 ]] || exit 65
       typed_instances=$initial_instances
