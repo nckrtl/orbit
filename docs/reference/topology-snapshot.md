@@ -47,7 +47,9 @@ The harness records the generation with the merged SHA as `main_sha` and the old
 
 ## Refresh
 
-`refresh` is the maintenance path when no proved topology exists, and, at the current `origin/main`, the closeout path when the merged candidate's proof plan declares `mutates: true` ([ADR 0035](../decisions/0035-close-out-mutating-proofs-by-refreshing-the-topology-snapshot.md)); merge closeout never substitutes it for a missing proof. It requires the primary checkout at the requested SHA with a clean tree. When the fingerprints of that commit equal the promoted ones, it proves the snapshots exist and the VMs are stopped, then reports `unchanged`. Otherwise it restores the promoted snapshots, starts the VMs, synchronizes `main`, converges, verifies, stops the VMs, snapshots `main-<generation-id>`, and promotes the generation. A failure restores the promoted snapshots; a failed restore writes `corrupt.json`. The result is `unchanged`, `promoted`, or `failed`.
+`refresh` is the maintenance path when no proved topology exists, and, at the current `origin/main`, the closeout path when the merged candidate's proof plan declares `mutates: true` ([ADR 0035](../decisions/0035-close-out-mutating-proofs-by-refreshing-the-topology-snapshot.md)); merge closeout never substitutes it for a missing proof.
+
+It requires the primary checkout at the requested SHA with a clean tree. When the fingerprints of that commit equal the promoted ones, it proves the snapshots exist and the VMs are stopped, then reports `unchanged`. Otherwise it restores the promoted snapshots, starts the VMs, synchronizes `main`, converges, verifies, stops the VMs, snapshots `main-<generation-id>`, and promotes the generation. A failure restores the promoted snapshots; a failed restore writes `corrupt.json`. The result is `unchanged`, `promoted`, or `failed`.
 
 ### Convergence
 
