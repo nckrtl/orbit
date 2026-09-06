@@ -10,12 +10,15 @@ A plan is one JSON object at `.loop/proof/<ISSUE>.json` in the worktree. A `--pl
 | --- | --- | --- | --- |
 | `setup` | list of actions | Runs before acceptance, in order | Required; may be empty |
 | `acceptance` | list of actions | One action per acceptance criterion, in order | Required; at least one |
+| `extension` | string | Adds one temporary app-prod Node to discovery and proof | None; the only accepted value is `app-prod` |
 | `mutates` | boolean | The plan changes reusable node state, so `promote` refuses the proved topology and closeout refreshes the snapshot from the current `main` | `false` |
-| `ends_with` | `{"nodes": [...]}` | The Nodes that remain registered when verification runs; a role left out is proved absent | Every role |
+| `ends_with` | `{"nodes": [...]}` | The physical Nodes that remain registered when verification runs; a Node left out is proved absent | Every Node in the selected topology |
 | `inputs` | list of paths | Files or directories that actions read outside the runtime policy and the fixtures | None |
 | `observed_inputs` | boolean | Collect file-level PHP observations with PCOV during setup and acceptance | `false` |
 
-`ends_with.nodes` must name `gateway` and must not repeat a role. A declaration that leaves a role out sets `mutates`; a declaration that names every role counts as no declaration. The harness skips only the probes that run on a declared-absent Node. The fleet probes expect exactly the declared set, so `role.assignments` fails when a declared-absent Node is registered. The normalized plan has a SHA-256 fingerprint, recorded as `plan_sha256`.
+`ends_with.nodes` must name `gateway` and must not repeat a physical Node key. A declaration that leaves a Node out sets `mutates`; a declaration that names every Node counts as no declaration. An extended plan must keep `app-prod-2`; the harness refuses a declaration that removes only the extra Node. Declaring an extension also sets `mutates`, even when the input says `"mutates": false`.
+
+The harness skips only the probes that run on a declared-absent Node. The fleet probes expect exactly the declared set, so `role.assignments` fails when a declared-absent Node is registered. The normalized plan has a SHA-256 fingerprint, recorded as `plan_sha256`; a plan without `extension` keeps its existing normalized form and fingerprint.
 
 ### Actions
 
@@ -24,7 +27,7 @@ Each action has exactly these four keys, and the harness refuses a `stdin` key b
 | Key | Type | Rule |
 | --- | --- | --- |
 | `id` | string | 1 to 64 characters matching `[a-z0-9][a-z0-9-]*`, unique across setup and acceptance |
-| `node` | string | `gateway`, `app-dev`, or `app-prod` |
+| `node` | string | A physical Node key in the selected topology: `gateway`, `app-dev`, `app-prod`, and, for an extended plan, `app-prod-2` |
 | `argv` | list of strings | Non-empty, without NUL or newline; the first item is a program or absolute path and cannot start with `-` or carry `=` |
 | `timeout_seconds` | integer | 1 through 900 |
 
@@ -32,7 +35,7 @@ A literal `/home/orbit/orbit/...` argument must resolve to a runtime path under 
 
 ## Fixtures
 
-Files beside the plan under `.loop/proof/` are the active issue's proof-only fixtures. The harness refuses a nested directory, a symlink, a name outside `[a-z0-9][a-z0-9._-]{0,127}`, and every declaration that names another issue's fixtures. `prove` reads the fixtures from the exact candidate commit, never from the host working tree. It installs them root-owned, `0755` for an executable blob and `0644` otherwise, at `/var/lib/orbit-e2e/proof/<name>` on every role, including `app-prod`. A plan references a fixture by that guest path, for example `["/var/lib/orbit-e2e/proof/fixture-check.sh", "app-prod"]`.
+Files beside the plan under `.loop/proof/` are the active issue's proof-only fixtures. The harness refuses a nested directory, a symlink, a name outside `[a-z0-9][a-z0-9._-]{0,127}`, and every declaration that names another issue's fixtures. `prove` reads the fixtures from the exact candidate commit, never from the host working tree. It installs them root-owned, `0755` for an executable blob and `0644` otherwise, at `/var/lib/orbit-e2e/proof/<name>` on every physical Node, including `app-prod-2` in an extended proof. A plan references a fixture by that guest path, for example `["/var/lib/orbit-e2e/proof/fixture-check.sh", "app-prod-2"]`.
 
 The harness empties the guest directory before staging. Every role prints `name<TAB>mode<TAB>sha256` per file, and the digest must equal the host digest. An issue with no fixture files beside its plan stages an empty inventory.
 
@@ -42,6 +45,7 @@ The harness empties the guest directory before staging. Every role prints `name<
 
 | Phase | What the harness does |
 | --- | --- |
+| `construct` | Clones the three standard Nodes from the promoted generation and, for an extended plan, constructs `app-prod-2` from the recorded generic base image |
 | `sync.candidate` | Transfers exactly the candidate commit from Git to the checkout roles |
 | `identity` | Proves each guest checkout holds the candidate SHA and tree |
 | `fixtures` | Stages the fixtures |
@@ -51,7 +55,7 @@ The harness empties the guest directory before staging. Every role prints `name<
 | `manifest` | Builds the immutable proof-input manifest |
 | `verify` | Runs general topology verification against the declared end state |
 
-A failure while the harness creates the network and clones rolls the attempt back. Every later failure records a `diagnosis` and keeps the topology alive. The operator inspects it with `shell --proof` or `exec --proof` and runs `release --proof` before the next proof. The first nonzero exit, including `124` and `137` from a timeout, stops later actions and makes the proof a `diagnosis`. Each action runs under `timeout --signal=TERM --kill-after=5s <timeout_seconds>s`: `TERM` at the deadline, five seconds for cleanup traps, then `KILL`, with seven seconds of transport headroom.
+A failure while the harness creates the network and complete VM inventory rolls the attempt back. Every later failure records a `diagnosis` and keeps the complete topology alive. The operator addresses either app-prod Node by its physical key with `shell --proof` or `exec --proof` and runs `release --proof` before the next proof. The first nonzero exit, including `124` and `137` from a timeout, stops later actions and makes the proof a `diagnosis`. Each action runs under `timeout --signal=TERM --kill-after=5s <timeout_seconds>s`: `TERM` at the deadline, five seconds for cleanup traps, then `KILL`, with seven seconds of transport headroom.
 
 ## Runtime preparation and PCOV
 
@@ -67,13 +71,13 @@ With `observed_inputs: true`, `pcov.prepare` also installs `php8.5-pcov` at matc
 | --- | --- |
 | `status` | `proved` or `diagnosis` |
 | `issue`, `attempt_id`, `candidate_sha`, `recorded_at` | The issue, the proof attempt, the proved commit, and the UTC time |
-| `plan_sha256`, `manifest_sha256` | Fingerprints of the normalized plan and of the proof-input manifest; the latter only on `proved` |
+| `plan_sha256`, `manifest_sha256` | Fingerprints of the normalized plan and of the proof-input manifest; the latter binds the selected topology and exists only on `proved` |
 | `actions` | One `{"id","node","exit_code"}` per action that ran |
 | `ends_with`, `skipped_probes` | The declaration and the probes it skipped; present only when the declaration leaves a role out |
 | `failed_action` | The action that ended the proof, with `stdout_tail` and `stderr_tail` of the final 4096 bytes |
 | `error` | `proof phase <phase> failed: <message>` |
 
-A proved result also writes the manifest, whose content [ADR 0015](../decisions/0015-retain-incus-proof-by-recorded-input-equivalence.md) defines, to `<worktree>/.e2e/proof-inputs/<manifest_sha256>.json`. It pins the commit at `refs/orbit/e2e-proof/<issue-lowercase>/<attempt_id>` until release. The harness never overwrites immutable evidence.
+A proved result also writes the manifest, whose content [ADR 0015](../decisions/0015-retain-incus-proof-by-recorded-input-equivalence.md) defines, to `<worktree>/.e2e/proof-inputs/<manifest_sha256>.json`. Its topology input records the normalized extension, promoted source generation, ordered physical Node inventory and identities, and the extra Node's image alias and fingerprint. Equivalence is stale when the current extension or construction input differs. The harness pins the commit at `refs/orbit/e2e-proof/<issue-lowercase>/<attempt_id>` until release and never overwrites immutable evidence.
 
 ## Equivalence outcomes
 
