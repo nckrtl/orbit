@@ -2,6 +2,9 @@
 
 declare(strict_types=1);
 
+use App\Actions\Clusters\ClearClusterRouterAction;
+use App\Actions\Clusters\SetClusterRouterAction;
+use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Cluster;
@@ -9,6 +12,35 @@ use App\Models\Node;
 use App\Models\NodeRole;
 
 beforeEach(function (): void {
+    $this->baselines = new class implements RoleBaselineConverger {
+        /** @var list<string> */
+        public array $calls = [];
+
+        public bool $failConverge = false;
+
+        public bool $failRemove = false;
+
+        public function converge(Node $node, NodeRole $assignment): void
+        {
+            $this->calls[] = "converge:{$node->id}";
+
+            if ($this->failConverge) {
+                throw new RuntimeException('convergence failed');
+            }
+        }
+
+        public function remove(Node $node, NodeRole $assignment, bool $purgeData): void
+        {
+            $this->calls[] = "remove:{$node->id}";
+
+            if ($this->failRemove) {
+                throw new RuntimeException('removal failed');
+            }
+        }
+
+        public function removeUnreachable(Node $node, NodeRole $assignment): void {}
+    };
+    app()->instance(RoleBaselineConverger::class, $this->baselines);
     $this->gateway = $this->markAsGateway(cluster_router_api_node('gateway-router-peer', '10.44.0.1'));
     $this->cluster = Cluster::query()->create(['name' => 'development']);
     $this->first = cluster_router_api_node('first-router', '10.44.0.2', $this->cluster);
@@ -62,6 +94,87 @@ it('atomically replaces the Router and preserves exactly one assignment', functi
         ->toBe(1)
         ->and($this->cluster->routerAssignment()->sole()->node_id)
         ->toBe($this->second->id);
+});
+
+it('retains a failed initial Router convergence and resumes an identical set', function (): void {
+    $this->baselines->failConverge = true;
+
+    expect(fn () => app(SetClusterRouterAction::class)->execute($this->cluster, $this->first))
+        ->toThrow(RuntimeException::class, 'convergence failed');
+
+    $assignment = $this->first->roles()->where('role', RoleName::Router)->sole();
+    expect($assignment->status)
+        ->toBe(LifecycleStatus::Failed)
+        ->and($assignment->failed_step)
+        ->toBe('converge:baseline')
+        ->and($this->cluster->routerAssignment()->exists())
+        ->toBeFalse();
+
+    $this->baselines->failConverge = false;
+    app(SetClusterRouterAction::class)->execute($this->cluster, $this->first);
+
+    expect($assignment->refresh()->status)
+        ->toBe(LifecycleStatus::Active)
+        ->and($this->baselines->calls)
+        ->toBe([
+            "converge:{$this->first->id}",
+            "converge:{$this->first->id}",
+        ]);
+});
+
+it('keeps the active Router when replacement convergence fails', function (): void {
+    app(SetClusterRouterAction::class)->execute($this->cluster, $this->first);
+    $this->baselines->failConverge = true;
+
+    expect(fn () => app(SetClusterRouterAction::class)->execute($this->cluster, $this->second))
+        ->toThrow(RuntimeException::class, 'convergence failed');
+
+    expect($this->cluster->routerAssignment()->sole()->node_id)
+        ->toBe($this->first->id)
+        ->and($this->second->roles()->where('role', RoleName::Router)->sole()->status)
+        ->toBe(LifecycleStatus::Failed);
+});
+
+it('retains failed old Router cleanup with the replacement active and resumes it', function (): void {
+    app(SetClusterRouterAction::class)->execute($this->cluster, $this->first);
+    $this->baselines->failRemove = true;
+
+    expect(fn () => app(SetClusterRouterAction::class)->execute($this->cluster, $this->second))
+        ->toThrow(RuntimeException::class, 'removal failed');
+
+    expect($this->cluster->routerAssignment()->sole()->node_id)
+        ->toBe($this->second->id)
+        ->and($this->first->roles()->where('role', RoleName::Router)->sole()->failed_step)
+        ->toBe('remove:baseline');
+
+    $this->baselines->failRemove = false;
+    app(SetClusterRouterAction::class)->execute($this->cluster, $this->second);
+
+    expect(NodeRole::query()->where('role', RoleName::Router)->sole()->node_id)->toBe($this->second->id);
+});
+
+it('retains failed Router clear cleanup and removes every retained assignment on retry', function (): void {
+    app(SetClusterRouterAction::class)->execute($this->cluster, $this->first);
+    $active = $this->cluster->routerAssignment()->sole();
+    $this->second
+        ->roles()
+        ->create([
+            'cluster_id' => $this->cluster->id,
+            'role' => RoleName::Router,
+            'status' => LifecycleStatus::Failed,
+            'failed_step' => 'remove:baseline',
+            'error_code' => 'test.failure',
+        ]);
+    $this->baselines->failRemove = true;
+
+    expect(fn () => app(ClearClusterRouterAction::class)->execute($this->cluster))
+        ->toThrow(RuntimeException::class, 'removal failed');
+    expect($active->refresh()->status)->toBe(LifecycleStatus::Active);
+
+    $this->baselines->failRemove = false;
+    app(ClearClusterRouterAction::class)->execute($this->cluster);
+
+    expect(NodeRole::query()->where('role', RoleName::Router)->exists())->toBeFalse();
 });
 
 it('requires an active member Node for Router assignment', function (): void {

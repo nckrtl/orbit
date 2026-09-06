@@ -8,10 +8,13 @@ use App\Domain\AppDev\AppDevCertificateManager;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Infrastructure\Ssh\RemoteCommand;
+use App\Models\AppInstance;
 use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Route;
 use App\Models\Workspace;
 
+/** @mago-expect lint:too-many-methods One certificate manager keeps each workload and Router scope on the same protected publication lifecycle. */
 final readonly class RemoteAppDevCertificateManager implements AppDevCertificateManager
 {
     public function __construct(
@@ -46,6 +49,17 @@ final readonly class RemoteAppDevCertificateManager implements AppDevCertificate
     {
         $workspace->loadMissing('instance.node');
         $this->remove($workspace->instance->node, "workspace-{$workspace->id}");
+    }
+
+    public function convergeAppInstance(AppInstance $appInstance, Route $route): void
+    {
+        $appInstance->loadMissing('node');
+        $this->converge($appInstance->node, "app-instance-{$appInstance->id}", $route->hostname);
+    }
+
+    public function convergeRouteRouter(Route $route, Node $router): void
+    {
+        $this->converge($router, "route-{$route->id}-router", $route->hostname);
     }
 
     private function converge(Node $node, string $scope, string $hostname): void

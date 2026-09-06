@@ -46,7 +46,12 @@
                 "0011",
                 "0014",
                 "0023",
-                "0024"
+                "0024",
+                "0028",
+                "0029",
+                "0030",
+                "0033",
+                "0034"
             ]
         },
         {
@@ -74,7 +79,8 @@
                 "0004",
                 "0011",
                 "0023",
-                "0024"
+                "0024",
+                "0028"
             ]
         },
         {
@@ -745,12 +751,14 @@
             "concepts": [
                 "App",
                 "AppInstance",
+                "Cluster",
                 "Effective web root",
                 "Gateway",
                 "Ingress",
                 "Legacy Instance",
                 "Node",
                 "Route",
+                "Router",
                 "Workspace"
             ],
             "governing_adrs": [
@@ -835,17 +843,19 @@
         },
         {
             "path": "docs/reference/php-runtime.md",
-            "title": "PHP runtime defaults",
+            "title": "PHP runtimes",
             "kind": "reference",
             "components": [],
             "concepts": [
                 "App",
+                "AppInstance",
                 "Gateway",
                 "Node",
                 "Route"
             ],
             "governing_adrs": [
-                "0021"
+                "0021",
+                "0034"
             ]
         },
         {
@@ -889,7 +899,11 @@
                 "0009",
                 "0011",
                 "0023",
-                "0024"
+                "0024",
+                "0028",
+                "0029",
+                "0030",
+                "0033"
             ]
         },
         {

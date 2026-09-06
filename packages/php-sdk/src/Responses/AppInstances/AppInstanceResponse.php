@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Orbit\Sdk\Responses\AppInstances;
 
+use Orbit\Sdk\Responses\Routes\RouteResponse;
 use SensitiveParameter;
 
 /**
@@ -25,6 +26,9 @@ final readonly class AppInstanceResponse
         public ?string $selectedBranch,
         public ?string $startingCommit,
         public string $status,
+        public ?RouteResponse $route,
+        public ?string $hostname,
+        public ?string $url,
         public string $requestId,
     ) {}
 
@@ -48,11 +52,14 @@ final readonly class AppInstanceResponse
             selectedBranch: is_string($data['selected_branch'] ?? null) ? $data['selected_branch'] : null,
             startingCommit: is_string($data['starting_commit'] ?? null) ? $data['starting_commit'] : null,
             status: is_string($data['status'] ?? null) ? $data['status'] : '',
+            route: self::route($data['route'] ?? null, $requestId),
+            hostname: is_string($data['hostname'] ?? null) ? $data['hostname'] : null,
+            url: is_string($data['url'] ?? null) ? $data['url'] : null,
             requestId: $requestId,
         );
     }
 
-    /** @return array<string, int|string|null> */
+    /** @return array<string, int|string|null|array<string, mixed>> */
     public function toArray(): array
     {
         return [
@@ -68,7 +75,28 @@ final readonly class AppInstanceResponse
             'selected_branch' => $this->selectedBranch,
             'starting_commit' => $this->startingCommit,
             'status' => $this->status,
+            'route' => $this->route?->toArray(),
+            'hostname' => $this->hostname,
+            'url' => $this->url,
             'request_id' => $this->requestId,
         ];
+    }
+
+    /** @mago-expect analysis:mixed-assignment Gateway values remain mixed until their string keys are retained. */
+    private static function route(#[SensitiveParameter] mixed $value, string $requestId): ?RouteResponse
+    {
+        if (! is_array($value)) {
+            return null;
+        }
+
+        $route = [];
+
+        foreach ($value as $key => $item) {
+            if (is_string($key)) {
+                $route[$key] = $item;
+            }
+        }
+
+        return RouteResponse::fromGatewayData($route, $requestId);
     }
 }

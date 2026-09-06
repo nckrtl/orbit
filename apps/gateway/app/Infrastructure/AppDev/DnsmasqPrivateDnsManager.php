@@ -9,6 +9,7 @@ use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Models\Node;
+use App\Models\Route;
 use RuntimeException;
 
 final readonly class DnsmasqPrivateDnsManager implements PrivateDnsManager
@@ -19,6 +20,16 @@ final readonly class DnsmasqPrivateDnsManager implements PrivateDnsManager
     ) {}
 
     public function converge(?Node $pendingNode = null): void
+    {
+        $this->convergeProjection($pendingNode);
+    }
+
+    public function convergeRoute(Route $route): void
+    {
+        $this->convergeProjection(null, $route);
+    }
+
+    private function convergeProjection(?Node $pendingNode = null, ?Route $pendingRoute = null): void
     {
         /** @mago-expect analysis:mixed-assignment Laravel configuration is an untyped boundary. */
         $configuredHome = config('orbit.home');
@@ -48,16 +59,16 @@ final readonly class DnsmasqPrivateDnsManager implements PrivateDnsManager
                 throw new RuntimeException("Could not acquire DNS projection lock [{$lockPath}].");
             }
 
-            $this->publish($pendingNode);
+            $this->publish($pendingNode, $pendingRoute);
         } finally {
             flock($lock, LOCK_UN);
             fclose($lock);
         }
     }
 
-    private function publish(?Node $pendingNode): void
+    private function publish(?Node $pendingNode, ?Route $pendingRoute): void
     {
-        $configuration = $this->renderer->render($pendingNode);
+        $configuration = $this->renderer->render($pendingNode, $pendingRoute);
         $encoded = base64_encode($configuration);
         $result = $this->processes->run(new ProcessInvocation(
             arguments: ['sudo', 'bash', '-seu'],
