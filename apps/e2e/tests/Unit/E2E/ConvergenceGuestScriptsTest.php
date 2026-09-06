@@ -1090,7 +1090,14 @@ describe('convergence guest scripts', function () {
         $fixture = convergence_app_fixture('converge-app-prod-internal-tls.sh');
 
         try {
-            $process = new Process(['bash', $fixture['script'], 'app-prod', '192.0.2.12', 'aarch64'], env: [
+            $process = new Process([
+                'bash',
+                $fixture['script'],
+                'app-prod',
+                '192.0.2.12',
+                'aarch64',
+                '10.44.0.3',
+            ], env: [
                 'PATH' => "{$fixture['root']}/bin:".getenv('PATH'),
             ]);
             expect($process->run())
@@ -1109,7 +1116,15 @@ describe('convergence guest scripts', function () {
         $sample = file_get_contents("{$guest}/converge-sample-app.sh");
 
         expect($production)
-            ->toContain('orbit-e2e-global.caddy', 'local_certs', 'caddy-ca-path')
+            ->toContain(
+                "dpkg-query -W -f='\${Status}' php8.5-fpm",
+                'apt-get install --yes --no-install-recommends -- php8.5-fpm',
+                'systemctl enable --now php8.5-fpm',
+                'install -d -m 0755 /var/www',
+                'orbit-e2e-global.caddy',
+                'local_certs',
+                'caddy-ca-path',
+            )
             ->not->toContain('readlink -f')->and($production)
             ->not->toContain('systemctl reload caddy')->and($sample)->toContain(
                 'internal-tls)',
@@ -1817,13 +1832,12 @@ describe('convergence guest scripts', function () {
                 'ssh-keyscan -T 5 -t ed25519 -- "$1"',
                 'scan_host_key "$2"',
                 'SELECT COUNT(*) FROM nodes n INNER JOIN node_roles r ON r.node_id = n.id',
-                '[[ "$3" =~ ^(x86_64|aarch64)$ ]]',
+                '[[ "$3" =~ ^(x86_64|aarch64)$ && "$4" =~ ^10\\.44\\.0\\.[1-9][0-9]{0,2}$ ]]',
                 '--architecture="$3"',
                 '--user=orbit',
-                'wireguard_ip=10.44.0.3',
+                'wireguard_ip=$4',
                 '--wireguard-ip="$wireguard_ip"',
             )
-            ->not->toContain('wireguard_address')
             ->not->toContain('--wireguard-address')
             ->not->toContain('uname -m');
     });

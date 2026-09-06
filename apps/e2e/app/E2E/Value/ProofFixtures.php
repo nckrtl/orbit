@@ -48,10 +48,16 @@ final readonly class ProofFixtures
                 throw new InvalidArgumentException("Proof fixture [{$name}] has an invalid name, mode, or digest.");
             }
         }
-        if (preg_match('/\A[0-9a-f]{64}\z/D', $digest) !== 1 || array_keys($roles) !== TopologyProfile::ROLES) {
+        $roleKeys = array_keys($roles);
+        if (
+            preg_match('/\A[0-9a-f]{64}\z/D', $digest) !== 1
+            || array_slice($roleKeys, 0, count(TopologyProfile::ROLES)) !== TopologyProfile::ROLES
+            || count($roleKeys) !== count(array_unique($roleKeys))
+        ) {
             throw new InvalidArgumentException('The proof fixture digest or role inventory is invalid.');
         }
         foreach ($roles as $role => $observed) {
+            TopologyNode::assertKey($role);
             if ($observed !== $digest) {
                 throw new InvalidArgumentException("Role [{$role}] did not observe the staged proof fixture digest.");
             }

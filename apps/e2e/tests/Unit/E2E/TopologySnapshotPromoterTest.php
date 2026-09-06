@@ -30,6 +30,7 @@ use App\E2E\Value\ProofInputManifest;
 use App\E2E\Value\ProofPlan;
 use App\E2E\Value\SourceState;
 use App\E2E\Value\TopologyProfile;
+use App\E2E\Value\TopologyRecipe;
 use App\E2E\Value\TopologyRequest;
 use App\E2E\Value\TopologySnapshotIdentity;
 use App\E2E\Value\TopologyTarget;
@@ -60,6 +61,7 @@ function promotableFixture(
     bool $mainHoldsCandidate = true,
     AttemptPurpose $purpose = AttemptPurpose::Proof,
     bool $observedInputs = false,
+    bool $extended = false,
 ): array {
     $root = preparedTopologyRepository();
     $worktree = pinnedFeatureWorktree($root, 'promote');
@@ -73,7 +75,11 @@ function promotableFixture(
     $promoted = $manifests->promoted();
     assert($promoted !== null);
 
-    $target = TopologyTarget::feature('TST-123', new AttemptId(str_repeat('a', 32)));
+    $target = TopologyTarget::feature(
+        'TST-123',
+        new AttemptId(str_repeat('a', 32)),
+        $extended ? TopologyRecipe::extendedAppProd() : TopologyRecipe::registered(),
+    );
     $state = IssueState::forWorktree('TST-123', $worktree);
     $operation = new OperationId(str_repeat('b', 32));
     $state->writeAttempt($target->requireAttempt(), $purpose, $operation);
@@ -82,7 +88,10 @@ function promotableFixture(
         $purpose,
         $promoted,
         $target->network(),
-        array_combine(TopologyProfile::ROLES, array_map($target->instance(...), TopologyProfile::ROLES)),
+        array_combine(
+            $target->recipe->nodeKeys(),
+            array_map($target->instance(...), $target->recipe->nodeKeys()),
+        ),
         new SourceState($candidate, $candidate, operationId: $operation->value),
         new VerificationReport(true, [
             'proof.verify' => [
@@ -93,6 +102,15 @@ function promotableFixture(
                 'evidence_ref' => 'incus://'.$target->instance('gateway').'/proof.verify',
             ],
         ]),
+        construction: $extended
+            ? \App\E2E\Value\TopologyConstructionInputs::create(
+                $target,
+                $promoted,
+                2,
+                \App\E2E\Value\TopologyExtension::AppProd,
+                str_repeat('f', 64),
+            )
+            : null,
     ));
     $planPath = $worktree.'/.loop/proof/TST-123.json';
     mkdir(dirname($planPath), 0700, true);
@@ -108,11 +126,14 @@ function promotableFixture(
     if ($observedInputs) {
         $planValue['observed_inputs'] = true;
     }
+    if ($extended) {
+        $planValue['extension'] = 'app-prod';
+    }
     file_put_contents($planPath, json_encode($planValue, JSON_THROW_ON_ERROR));
     $plan = ProofPlan::fromFile($planPath);
     if ($purpose === AttemptPurpose::Proof) {
         $manifest = new ProofInputManifest(
-            ProofInputManifest::SCHEMA,
+            \App\E2E\StaticProofInputPolicy::VERSION,
             $candidate,
             $candidate,
             [],
@@ -124,6 +145,15 @@ function promotableFixture(
             ]],
             '.loop/proof/TST-123.json',
             [],
+            $extended
+                ? \App\E2E\Value\TopologyConstructionInputs::create(
+                    $target,
+                    $promoted,
+                    2,
+                    \App\E2E\Value\TopologyExtension::AppProd,
+                    str_repeat('f', 64),
+                )
+                : \App\E2E\Value\TopologyConstructionInputs::create($target, $promoted, 2),
             null,
             [
                 'static_classification' => true,
@@ -234,7 +264,7 @@ function candidatePromotionFixture(): array
         $surface('gateway', 'fpm', '3'),
     ];
     $manifest = new ProofInputManifest(
-        ProofInputManifest::SCHEMA,
+        \App\E2E\StaticProofInputPolicy::VERSION,
         $fixture['candidate'],
         $fixture['candidate'],
         [],
@@ -246,6 +276,7 @@ function candidatePromotionFixture(): array
         ]],
         '.loop/proof/TST-123.json',
         [],
+        $state->requireTopology(AttemptPurpose::Proof)->construction,
         new ObservedPhpInputs(
             [$runtime('app-dev'), $runtime('gateway')],
             ['setup' => $surfaces, 'acceptance' => $surfaces],
@@ -616,6 +647,17 @@ function fakePromotionHost(
 
 /** @mago-expect lint:cyclomatic-complexity,kan-defect The promotion test asserts the complete ordered command chain. */
 describe('TopologySnapshotPromoter', function (): void {
+    it('refuses an extended proved topology before any Incus command', function (): void {
+        $fixture = promotableFixture(extended: true);
+        Process::fake();
+
+        expect(fn () => promoterFor($fixture['root'], $fixture['paths'], $fixture['manifests'])
+            ->promote($fixture['request'], $fixture['plan']))
+            ->toThrow(RuntimeException::class, 'cannot become the shared topology snapshot');
+
+        Process::assertNothingRan();
+    });
+
     it('refuses a candidate with a missing required assignment before any mutation', function (): void {
         $fixture = promotableFixture();
         $events = [];

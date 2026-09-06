@@ -43,13 +43,17 @@ Close out one independently approved pull request after the external orchestrato
    not reset or clean the checkout. Any other mismatch remains a stop; this
    repair never waives proof or merge lineage.
    For Incus proof, run
-   `bin/e2e-topology-snapshot promote <ISSUE>`. When the retained proof plan
-   declares `mutates: true`, run
+   `bin/e2e-topology-snapshot promote <ISSUE>`. A normalized extended proof plan
+   always declares `mutates: true` and is refresh-only. For that plan, or any
+   other retained proof plan that declares `mutates: true`, run
    `bin/e2e-topology-snapshot refresh --main-sha=<current origin/main>` instead,
-   with the primary checkout at that commit, then
-   `bin/e2e-topology release <ISSUE>` and `bin/e2e-topology release <ISSUE> --proof`,
-   and record the proved attempt, accepted head, merge commit, and promoted
-   generation in the closeout handoff
+   with the primary checkout at that commit. If refresh fails, leave both the
+   proof and discovery attempts active and stop. Only after refresh succeeds,
+   record the proved attempt, accepted head, merge commit, and promoted
+   generation in the closeout handoff, then run
+   `bin/e2e-topology release <ISSUE> --proof` and
+   `bin/e2e-topology release <ISSUE>`. Release neither
+   attempt before successful refresh
    ([ADR 0035](../../../docs/decisions/0035-close-out-mutating-proofs-by-refreshing-the-topology-snapshot.md)).
    Do not substitute a refresh when `main` differs or another promotion
    precondition fails. Promotion requires the merge tree to equal the exact

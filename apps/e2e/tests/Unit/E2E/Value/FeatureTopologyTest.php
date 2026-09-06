@@ -121,13 +121,46 @@ describe('feature topology mounts', function () {
         $version = json_encode($schema, JSON_THROW_ON_ERROR);
 
         expect(FeatureTopology::SCHEMA)
-            ->toBe(3)
+            ->toBe(4)
             ->and(fn () => FeatureTopology::fromArray($value))
             ->toThrow(
                 InvalidArgumentException::class,
                 "schema {$version} is not supported; release with the previous harness",
             );
-    })->with(['schema 2' => [2], 'schema 1' => [1], 'string schema' => ['3']]);
+    })->with(['schema 3' => [3], 'schema 2' => [2], 'string schema' => ['4']]);
+});
+
+it('round-trips the exact extended mixed-source construction inventory', function (): void {
+    $recipe = \App\E2E\Value\TopologyRecipe::extendedAppProd();
+    $target = TopologyTarget::feature('TST-321', attemptId(), $recipe);
+    $generation = mountedTopologyFixture(false)->generation;
+    $construction = \App\E2E\Value\TopologyConstructionInputs::create(
+        $target,
+        $generation,
+        7,
+        \App\E2E\Value\TopologyExtension::AppProd,
+        str_repeat('f', 64),
+    );
+    $topology = new FeatureTopology(
+        $target,
+        AttemptPurpose::Proof,
+        $generation,
+        $target->network(),
+        array_combine($recipe->nodeKeys(), array_map($target->instance(...), $recipe->nodeKeys())),
+        new SourceState(str_repeat('b', 40), str_repeat('b', 40)),
+        new VerificationReport(true, ['fixture' => verificationProbeFixture()]),
+        construction: $construction,
+    );
+
+    expect($topology->construction->nodes['app-prod-2'])
+        ->toBe([
+            'source' => 'image',
+            'instance' => $target->instance('app-prod-2'),
+            'incus_address' => '10.232.7.13',
+            'wireguard_address' => '10.44.0.4',
+        ])
+        ->and(FeatureTopology::fromArray($topology->toArray())->toArray())
+        ->toBe($topology->toArray());
 });
 
 describe('mount paths', function () {

@@ -1,0 +1,39 @@
+{
+    "setup": [],
+    "acceptance": [
+        {
+            "id": "extended-topology-ready",
+            "node": "gateway",
+            "argv": [
+                "php",
+                "-r",
+                "$pdo=new PDO('sqlite:/home/orbit/.orbit/gateway.sqlite'); $names=$pdo->query(\"SELECT name FROM nodes WHERE status='active' ORDER BY name\")->fetchAll(PDO::FETCH_COLUMN); $expected=['app-dev','app-prod','app-prod-2','gateway']; sort($names); exit($names===$expected ? 0 : 1);"
+            ],
+            "timeout_seconds": 60
+        },
+        {
+            "id": "extended-node-targeting",
+            "node": "app-prod-2",
+            "argv": [
+                "bash",
+                "-c",
+                "hostname | grep -Eq '^orbit-e2e-orb-132-[0-9a-f]{8}-app-prod-2$' && ip -4 address show dev orbit | grep -Fq -- '10.44.0.4/'"
+            ],
+            "timeout_seconds": 60
+        },
+        {
+            "id": "extended-runtime-connectivity",
+            "node": "gateway",
+            "argv": [
+                "bash",
+                "/var/lib/orbit-e2e/proof/extended-runtime-connectivity.sh",
+                "app-dev",
+                "app-prod",
+                "app-prod-2",
+                "10.44.0.4"
+            ],
+            "timeout_seconds": 120
+        }
+    ],
+    "extension": "app-prod"
+}

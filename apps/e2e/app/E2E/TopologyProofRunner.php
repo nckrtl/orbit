@@ -21,6 +21,7 @@ use App\E2E\Value\ProofPlan;
 use App\E2E\Value\ProofResult;
 use App\E2E\Value\ProofStatus;
 use App\E2E\Value\SourceState;
+use App\E2E\Value\TopologyConstructionInputs;
 use App\E2E\Value\TopologyProfile;
 use App\E2E\Value\TopologyRequest;
 use App\E2E\Value\TopologySnapshotGeneration;
@@ -65,6 +66,7 @@ final readonly class TopologyProofRunner
         private string $repositoryRoot = '',
         /** @var (Closure(): AttemptId)|null Mints the attempt identity; injectable so tests pin resource names. */
         private ?Closure $attempts = null,
+        private ?IssueTopologyConstructor $constructor = null,
     ) {}
 
     /**
@@ -216,16 +218,23 @@ final readonly class TopologyProofRunner
             $generation->snapshots,
         ));
 
-        $target = TopologyTarget::feature($request->issue, $this->mintAttempt());
+        $target = TopologyTarget::feature($request->issue, $this->mintAttempt(), $plan->recipe());
         $state->writeAttempt($target->requireAttempt(), AttemptPurpose::Proof, $this->operation);
         try {
-            $this->createTopology($target, $generation);
+            $construction = $this->createTopology($target, $generation, $plan->extension);
         } catch (Throwable $exception) {
             $this->rollback($target, $state, AttemptPurpose::Proof, $exception);
         }
 
         $source = $this->candidateSource($candidateSha);
-        $this->record($state, $target, $generation, $source, $this->pendingVerification($target));
+        $this->record(
+            $state,
+            $target,
+            $generation,
+            $source,
+            $this->pendingVerification($target),
+            construction: $construction,
+        );
         $actions = [];
         $error = null;
         $verification = null;
@@ -291,6 +300,7 @@ final readonly class TopologyProofRunner
                 $request->issue,
                 $planPath,
                 $plan,
+                $construction,
                 $observed,
             );
             $phase = 'verify';
@@ -299,9 +309,7 @@ final readonly class TopologyProofRunner
                 VerificationMode::Proof,
                 $source,
                 $plan->endsWith,
-                $generation->topologyAssignments ?? throw new RuntimeException(
-                    'The pinned generation has no assignment declaration.',
-                ),
+                $plan->recipe()->assignments(),
             );
             if (! $verification->passed) {
                 throw new RuntimeException('Candidate proof verification failed.'.$verification->failedSummary());
@@ -338,7 +346,7 @@ final readonly class TopologyProofRunner
                 ? $manifest->fingerprint()
                 : null,
         );
-        $this->record($state, $target, $generation, $source, $verification);
+        $this->record($state, $target, $generation, $source, $verification, construction: $construction);
         if ($status === ProofStatus::Proved) {
             if (! $manifest instanceof ProofInputManifest) {
                 throw new RuntimeException('The successful proof has no proof-input manifest.');
@@ -378,14 +386,14 @@ final readonly class TopologyProofRunner
         $purpose = AttemptPurpose::CandidateConvergence;
         $state->writeAttempt($target->requireAttempt(), $purpose, $this->operation);
         try {
-            $this->createTopology($target, $generation);
+            $construction = $this->createTopology($target, $generation);
         } catch (Throwable $exception) {
             $this->rollback($target, $state, $purpose, $exception);
         }
 
         $source = $this->candidateSource($candidateSha);
         $verification = $this->pendingVerification($target);
-        $this->record($state, $target, $generation, $source, $verification, $purpose);
+        $this->record($state, $target, $generation, $source, $verification, $construction, $purpose);
         $phase = 'sync.candidate';
         $convergence = null;
         $error = null;
@@ -418,7 +426,7 @@ final readonly class TopologyProofRunner
             $error = "candidate-convergence phase {$phase} failed: ".$exception->getMessage();
             $verification = $this->failedVerification($target, $phase, $exception);
         }
-        $this->record($state, $target, $generation, $source, $verification, $purpose);
+        $this->record($state, $target, $generation, $source, $verification, $construction, $purpose);
         $result = new CandidateConvergenceResult(
             $status,
             $request->issue,
@@ -436,41 +444,23 @@ final readonly class TopologyProofRunner
         return $result->toArray();
     }
 
-    /** Network and clones, under the host creation lock; nothing of the candidate is on them yet. */
-    private function createTopology(TopologyTarget $target, TopologySnapshotGeneration $generation): void
-    {
+    /** Network and Nodes are constructed before any candidate source reaches the attempt. */
+    private function createTopology(
+        TopologyTarget $target,
+        TopologySnapshotGeneration $generation,
+        ?\App\E2E\Value\TopologyExtension $extension = null,
+    ): TopologyConstructionInputs {
         $metadata = [
             'user.orbit.e2e.issue' => $target->issue,
             'user.orbit.e2e.attempt' => $target->requireAttempt()->value,
             'user.orbit.e2e.operation' => $this->operation->value,
         ];
-        $creation = new OperationLock($this->hostPaths);
-        if (! $creation->acquire(OrphanNetworkSweep::CREATION_LOCK, $this->operation, timeoutSeconds: 600)) {
-            throw new RuntimeException('Another topology creation holds the host.');
-        }
-        try {
-            $slot = $this->capacity->reserveSlot();
-            $this->networks->create($target->network(), $slot, $metadata);
-            $copies = [];
-            foreach (TopologyProfile::ROLES as $role) {
-                $copies[$role] = [
-                    'source' => TopologyTarget::topologySnapshot($this->topologySnapshotIdentity)->instance($role),
-                    'snapshot' => $generation->snapshots[$role],
-                    'target' => $target->instance($role),
-                    'metadata' => [...$metadata, 'user.orbit.e2e.generation' => $generation->id],
-                    'network' => $target->network(),
-                    'role' => $role,
-                    'topology' => $target->network(),
-                    'slot' => $slot,
-                ];
-            }
-            $this->copyPinnedSnapshots($generation, $copies);
-        } finally {
-            $creation->release();
-        }
-        $instances = array_map($target->instance(...), TopologyProfile::ROLES);
+        $construction = $this->issueConstructor()->construct($target, $generation, $metadata, extension: $extension);
+        $instances = array_map($target->instance(...), $target->recipe->nodeKeys());
         $this->host->startAll($instances);
         $this->host->prepareClonedHostStates($instances);
+
+        return $construction;
     }
 
     /**
@@ -520,11 +510,12 @@ final readonly class TopologyProofRunner
         TopologySnapshotGeneration $generation,
         SourceState $source,
         VerificationReport $verification,
+        TopologyConstructionInputs $construction,
         AttemptPurpose $purpose = AttemptPurpose::Proof,
     ): void {
         $instances = [];
-        foreach (TopologyProfile::ROLES as $role) {
-            $instances[$role] = $target->instance($role);
+        foreach ($target->recipe->nodeKeys() as $node) {
+            $instances[$node] = $target->instance($node);
         }
         $state->writeTopology(new FeatureTopology(
             $target,
@@ -534,6 +525,7 @@ final readonly class TopologyProofRunner
             $instances,
             $source,
             $verification,
+            construction: $construction,
         ));
     }
 
@@ -549,7 +541,7 @@ final readonly class TopologyProofRunner
         AttemptPurpose $purpose,
         Throwable $exception,
     ): never {
-        $resources = [$target->network(), ...array_map($target->instance(...), TopologyProfile::ROLES)];
+        $resources = [$target->network(), ...array_map($target->instance(...), $target->recipe->nodeKeys())];
         $rollback = AcquisitionRollback::forHost($this->host, $this->networks, $target);
         $refused = [];
         try {
@@ -602,30 +594,6 @@ final readonly class TopologyProofRunner
         ]);
     }
 
-    /**
-     * @param array<string, array{source:string,snapshot:string,target:string,metadata:array<string, string>,network?:string,role?:string,topology?:string,slot?:int}> $copies
-     */
-    private function copyPinnedSnapshots(TopologySnapshotGeneration $generation, array $copies): void
-    {
-        $lock = new OperationLock($this->hostPaths);
-        if (! $lock->acquire(
-            'standby-generation',
-            $this->operation,
-            exclusive: false,
-            timeoutSeconds: 3600,
-        )) {
-            throw new RuntimeException('The promoted topology snapshot generation is locked.');
-        }
-        try {
-            if ($this->topologySnapshot->promoted()?->toArray() !== $generation->toArray()) {
-                throw new RuntimeException('The promoted topology snapshot generation changed before snapshot copy.');
-            }
-            $this->host->copySnapshots($copies);
-        } finally {
-            $lock->release();
-        }
-    }
-
     private function assertRepositoryIdentity(TopologyRequest $request, GitRepository $repository): void
     {
         $expectedRoot = $this->repositoryRoot !== '' ? $this->repositoryRoot : dirname(__DIR__, 4);
@@ -635,6 +603,21 @@ final readonly class TopologyProofRunner
         if (! TopologyTarget::issueMatchesBranch($request->issue, $repository->branch())) {
             throw new InvalidArgumentException('The worktree branch does not match the issue.');
         }
+    }
+
+    private function issueConstructor(): IssueTopologyConstructor
+    {
+        return (
+            $this->constructor ?? new IssueTopologyConstructor(
+                $this->host,
+                $this->networks,
+                $this->capacity,
+                $this->hostPaths,
+                $this->operation,
+                $this->topologySnapshot,
+                $this->topologySnapshotIdentity,
+            )
+        );
     }
 
     private function mintAttempt(): AttemptId

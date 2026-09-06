@@ -28,8 +28,10 @@ use App\E2E\Value\ProofEquivalenceReport;
 use App\E2E\Value\ProofEquivalenceResult;
 use App\E2E\Value\ProofInputManifest;
 use App\E2E\Value\ProofPlan;
+use App\E2E\Value\ProofStatus;
 use App\E2E\Value\SourceState;
 use App\E2E\Value\TopologyProfile;
+use App\E2E\Value\TopologyRecipe;
 use App\E2E\Value\TopologyRequest;
 use App\E2E\Value\TopologySnapshotGeneration;
 use App\E2E\Value\TopologySnapshotIdentity;
@@ -218,6 +220,7 @@ function candidateConvergenceFixture(): array
         ]],
         '.loop/proof/TST-123.json',
         [],
+        \App\E2E\Value\TopologyConstructionInputs::create($target, $generation, 2),
         $observed,
         [
             'static_classification' => true,
@@ -560,4 +563,158 @@ it('keeps ordinary orbit-user commands unchanged', function () {
         ->toBe([...GuestCommand::ORBIT_USER_PREFIX, 'orbit', 'node:list', '--json'])
         ->and($command->timeout)
         ->toBe(30);
+});
+
+it('constructs and retains an independently addressed extended proof beside discovery', function (): void {
+    $root = preparedTopologyRepository();
+    $processes = new ProcessFactory;
+    $main = trim($processes->run(['git', '-C', $root, 'rev-parse', 'main'])->output());
+    expect($processes->run(['git', '-C', $root, 'update-ref', 'refs/remotes/origin/main', $main])->successful())
+        ->toBeTrue();
+    $paths = new StatePaths(temporaryPath('orbit-extended-proof-state-', 4));
+    promoteDiscoveryGeneration($root, $paths);
+    $worktree = pinnedFeatureWorktree($root, 'extended-proof');
+    $planDirectory = $worktree.'/.loop/proof';
+    mkdir($planDirectory, 0o700, true);
+    $planValue = [
+        'setup' => [],
+        'acceptance' => [[
+            'id' => 'extended-ready',
+            'node' => 'app-prod-2',
+            'argv' => ['true'],
+            'timeout_seconds' => 30,
+        ]],
+        'inputs' => ['feature-source-extended-proof.txt'],
+        'extension' => 'app-prod',
+    ];
+    file_put_contents(
+        $planDirectory.'/TST-123.json',
+        json_encode($planValue, JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT)."\n",
+    );
+    expect($processes->run(['git', '-C', $worktree, 'add', '.loop/proof/TST-123.json'])->successful())
+        ->toBeTrue()
+        ->and($processes->run(['git', '-C', $worktree, 'commit', '-q', '-m', 'Add extended proof'])->successful())
+        ->toBeTrue();
+
+    $recipe = TopologyRecipe::extendedAppProd();
+    $discoveryTarget = featureTarget('TST-123', 'a', $recipe);
+    $proofTarget = featureTarget('TST-123', 'b', $recipe);
+    $events = [];
+    $candidate = trim($processes->run(['git', '-C', $worktree, 'rev-parse', 'HEAD'])->output());
+    $tree = trim($processes->run(['git', '-C', $worktree, 'rev-parse', 'HEAD^{tree}'])->output());
+    $packages = array_fill_keys([
+        'php8.5-cli',
+        'php8.5-fpm',
+        'php8.5-common',
+        'php8.5-curl',
+        'php8.5-mbstring',
+        'php8.5-sqlite3',
+        'php8.5-xml',
+    ], '8.5.10-sury');
+    $runtime = json_encode([
+        'php_version' => '8.5.10',
+        'fpm_version' => '8.5.10',
+        'pcov_version' => null,
+        'package_versions' => $packages,
+    ], JSON_THROW_ON_ERROR);
+    fakePinnedWorktreeProcesses(
+        $proofTarget,
+        $events,
+        guestOverride: static function (array $guest) use ($candidate, $tree, $runtime) {
+            if ($guest === ['/usr/local/bin/observe-php.sh', 'runtime-info', 'runtime']) {
+                return Process::result($runtime);
+            }
+            if ($guest === ['git', '-C', '/home/orbit/orbit', 'rev-parse', '--verify', 'HEAD^{commit}']) {
+                return Process::result($candidate."\n");
+            }
+            if ($guest === ['git', '-C', '/home/orbit/orbit', 'rev-parse', '--verify', 'HEAD^{tree}']) {
+                return Process::result($tree."\n");
+            }
+            if ($guest === ['git', '-C', '/home/orbit/orbit', 'status', '--porcelain=v1', '--untracked-files=all']) {
+                return Process::result();
+            }
+
+            return null;
+        },
+        operationId: str_repeat('f', 32),
+        existingTarget: $discoveryTarget,
+    );
+    $host = new IncusHost(pool: 'default');
+    $operation = new OperationId(str_repeat('f', 32));
+    $manifests = new TopologySnapshotManifestStore(new AtomicJsonStore($paths), $paths, $host);
+    $state = IssueState::forWorktree('TST-123', $worktree);
+    $state->writeAttempt($discoveryTarget->requireAttempt(), AttemptPurpose::Discovery, $operation);
+    $runner = new TopologyProofRunner(
+        $host,
+        new IncusNetworkLifecycle($host),
+        $manifests,
+        new WorktreeSynchronizer($host, $root, $operation),
+        new TopologyConverger($host),
+        new TopologyVerifier($host, 1, 0),
+        new ProofFixtureStager($host, $operation),
+        new HostCapacity($host, 24),
+        $paths,
+        $operation,
+        TopologySnapshotIdentity::primary(),
+        new ProofInputManifestBuilder(new StaticProofInputPolicy),
+        new ObservedPhpInputCollector($host),
+        $root,
+        fn () => attemptId('b'),
+    );
+    $plan = ProofPlan::fromArray($planValue);
+    $result = $runner->prove(
+        new TopologyRequest('TST-123', $worktree),
+        $plan,
+        '.loop/proof/TST-123.json',
+    );
+
+    $topology = $state->requireTopology(AttemptPurpose::Proof);
+    if ($result->manifestSha256 === null) {
+        throw new RuntimeException((string) $result->error);
+    }
+    $manifest = $state->proofInputManifest((string) $result->manifestSha256);
+    $commands = implode("\n", array_map(
+        static fn (array $event): string => implode(' ', array_map(strval(...), $event)),
+        $events,
+    ));
+    expect($result->status)
+        ->toBe(ProofStatus::Proved)
+        ->and($result->actions)
+        ->toBe([[
+            'id' => 'extended-ready',
+            'node' => 'app-prod-2',
+            'exit_code' => 0,
+            'stdout' => '',
+            'stderr' => '',
+        ]])
+        ->and($topology->construction->slot)
+        ->toBe(3)
+        ->and($topology->construction->nodes['app-prod-2']['incus_address'])
+        ->toBe('10.232.3.13')
+        ->and($topology->construction->nodes['app-prod-2']['wireguard_address'])
+        ->toBe('10.44.0.4')
+        ->and($topology->target->network())
+        ->not->toBe($discoveryTarget->network())->and($topology->instances)
+        ->not->toBe(array_combine($recipe->nodeKeys(), array_map(
+            $discoveryTarget->instance(...),
+            $recipe->nodeKeys(),
+        )))->and($manifest['construction'] ?? null)->toBe(
+            $topology->construction->toArray(),
+        )->and($state->attemptId(AttemptPurpose::Discovery)->value)->toBe($discoveryTarget->requireAttempt()->value)->and(
+            $commands,
+        )
+        ->not->toContain(
+            'copy local:'.$discoveryTarget->instance('gateway'),
+            'copy local:'.$discoveryTarget->instance('app-prod-2'),
+        );
+
+    $eventCount = count($events);
+    expect(fn () => $runner->prove(
+        new TopologyRequest('TST-123', $worktree),
+        $plan,
+        '.loop/proof/TST-123.json',
+    ))
+        ->toThrow(RuntimeException::class, 'already has proof attempt')
+        ->and(count($events))
+        ->toBe($eventCount);
 });

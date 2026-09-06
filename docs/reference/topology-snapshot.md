@@ -1,10 +1,10 @@
 # Topology snapshot
 
-This page is for the operator who maintains Orbit's one persistent topology snapshot. Every proof topology and discovery topology is copied from it. It answers which `bin/e2e-topology-snapshot` command from the `apps/e2e` harness to run, what each one changes, and how to recover when the manifest and the host disagree. The disposable topologies copied from it are on the [Incus topology registry](incus-topologies.md).
+This page is for the operator who maintains Orbit's one persistent topology snapshot. Every proof topology and discovery topology starts from it. It answers which `bin/e2e-topology-snapshot` command from the `apps/e2e` harness to run, what each one changes, and how to recover when the manifest and the host disagree. The disposable topologies that clone it and any issue-local extension are on the [Incus topology registry](incus-topologies.md).
 
 ## Identity
 
-A topology snapshot is a coordinated set of three Incus snapshots in one promoted generation. The primary checkout owns it, keeps its VMs stopped, and records the generation under `<primary>/.e2e/topology-snapshot/`: `promoted.json`, `generations/<id>.json`, `promotions/<id>.json` for lineage, `corrupt.json` after a failed rollback, and the recovery journal.
+A topology snapshot is a coordinated set of three Incus snapshots in one promoted generation. It never includes an issue's temporary `app-prod-2` Node. The primary checkout owns it, keeps its VMs stopped, and records the generation under `<primary>/.e2e/topology-snapshot/`: `promoted.json`, `generations/<id>.json`, `promotions/<id>.json` for lineage, `corrupt.json` after a failed rollback, and the recovery journal.
 
 | Resource | Name |
 | --- | --- |
@@ -36,7 +36,7 @@ After a merge, `promote` installs the reviewer's retained topology instead of re
 | Refusal | Condition |
 | --- | --- |
 | Evidence | No `proved` attempt, or the plan fingerprint, zero-exit action list, or manifest does not match the recorded proof |
-| Mutation | The plan declares `mutates: true`, or its `ends_with` leaves a Node out, which sets `mutates` |
+| Mutation | The plan declares an extension, declares `mutates: true`, or its `ends_with` leaves a Node out; each condition sets `mutates` |
 | Tree | Primary `main` does not hold the accepted tree, or a different accepted tree has no `equivalent` report bound to that head |
 | Fingerprint | The proved, accepted, and merged runtime fingerprints differ, or the cold epoch or base image alias changed |
 | Leftover | A `-next` copy from an earlier promotion exists |
@@ -47,9 +47,9 @@ The harness records the generation with the merged SHA as `main_sha` and the old
 
 ## Refresh
 
-`refresh` is the maintenance path when no proved topology exists, and, at the current `origin/main`, the closeout path when the merged candidate's proof plan declares `mutates: true` ([ADR 0035](../decisions/0035-close-out-mutating-proofs-by-refreshing-the-topology-snapshot.md)); merge closeout never substitutes it for a missing proof.
+`refresh` is the maintenance path when no proved topology exists, and, at the current `origin/main`, the closeout path when the merged candidate's proof plan normalizes to `mutates: true` ([ADR 0035](../decisions/0035-close-out-mutating-proofs-by-refreshing-the-topology-snapshot.md)). An extended plan always takes this closeout path. Merge closeout never substitutes a refresh for a missing or invalid proof.
 
-It requires the primary checkout at the requested SHA with a clean tree. When the fingerprints of that commit equal the promoted ones, it proves the snapshots exist and the VMs are stopped, then reports `unchanged`. Otherwise it restores the promoted snapshots, starts the VMs, synchronizes `main`, converges, verifies, stops the VMs, snapshots `main-<generation-id>`, and promotes the generation. A failure restores the promoted snapshots; a failed restore writes `corrupt.json`. The result is `unchanged`, `promoted`, or `failed`.
+It requires the primary checkout at the requested SHA with a clean tree. When the fingerprints of that commit equal the promoted ones, it proves the snapshots exist and the VMs are stopped, then reports `unchanged`. Otherwise it restores the promoted snapshots, starts the VMs, synchronizes `main`, converges, verifies, stops the VMs, snapshots `main-<generation-id>`, and promotes the generation. After a successful extended-proof closeout refresh, closeout records the proved attempt, accepted head, merge commit, and promoted generation, then releases the complete extended proof and discovery inventories. A failed refresh retains both attempts and does not report closeout complete. The result is `unchanged`, `promoted`, or `failed`.
 
 ### Convergence
 

@@ -6,7 +6,7 @@ namespace App\E2E\Value;
 
 use InvalidArgumentException;
 
-/** @mago-expect lint:too-many-methods One identity boundary derives every attempt-scoped resource name. */
+/** @mago-expect lint:cyclomatic-complexity,too-many-methods One identity boundary derives every attempt-scoped resource name. */
 final readonly class TopologyTarget
 {
     private const string ISSUE_PATTERN = '/\A[A-Z][A-Z0-9]{1,9}-[1-9][0-9]{0,8}\z/D';
@@ -18,11 +18,11 @@ final readonly class TopologyTarget
         private ?TopologySnapshotIdentity $topologySnapshot = null,
     ) {}
 
-    public static function feature(string $issue, AttemptId $attempt): self
+    public static function feature(string $issue, AttemptId $attempt, ?TopologyRecipe $recipe = null): self
     {
         self::assertIssue($issue);
 
-        return new self($issue, $attempt, TopologyRecipe::registered());
+        return new self($issue, $attempt, $recipe ?? TopologyRecipe::registered());
     }
 
     public static function disposableCold(string $issue, AttemptId $attempt, TopologyRecipe $recipe): self
@@ -57,13 +57,13 @@ final readonly class TopologyTarget
         }
     }
 
-    public static function ipv4For(int $slot, int|string $node): string
+    public static function ipv4For(int $slot, int|string $node, ?TopologyRecipe $recipe = null): string
     {
         if ($slot < 1 || $slot > 200) {
             throw new InvalidArgumentException('The topology slot is invalid.');
         }
 
-        $address = is_int($node) ? $node : TopologyRecipe::registered()->resolveNode($node)->address;
+        $address = is_int($node) ? $node : ($recipe ?? TopologyRecipe::registered())->resolveNode($node)->address;
         if ($address < 10 || $address > 254) {
             throw new InvalidArgumentException('The topology Node address position is invalid.');
         }

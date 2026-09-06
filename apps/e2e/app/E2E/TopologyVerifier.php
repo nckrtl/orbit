@@ -8,7 +8,6 @@ use App\E2E\Value\GuestCommand;
 use App\E2E\Value\GuestCommandResult;
 use App\E2E\Value\SourceState;
 use App\E2E\Value\TopologyEndState;
-use App\E2E\Value\TopologyProfile;
 use App\E2E\Value\TopologyTarget;
 use App\E2E\Value\VerificationMode;
 use App\E2E\Value\VerificationReport;
@@ -46,6 +45,14 @@ final readonly class TopologyVerifier
         'source.manifest' => 'gateway',
     ];
 
+    private const array EXTENDED_APP_PROD_PROBES = [
+        'vm.app-prod-2.running' => 'app-prod-2',
+        'role.app-prod-2' => 'app-prod-2',
+        'php.app-prod-2' => 'app-prod-2',
+        'php-fpm.app-prod-2' => 'app-prod-2',
+        'caddy.app-prod-2' => 'app-prod-2',
+    ];
+
     public function __construct(
         private IncusHost $host,
         private int $readinessTimeoutSeconds = 120,
@@ -71,7 +78,7 @@ final readonly class TopologyVerifier
     public static function probesFor(TopologyEndState $endState): array
     {
         $probes = [];
-        foreach (self::PROBES as $name => $role) {
+        foreach (self::probes($endState) as $name => $role) {
             if (! $endState->keeps($role)) {
                 continue;
             }
@@ -92,7 +99,17 @@ final readonly class TopologyVerifier
      */
     public static function skippedProbes(TopologyEndState $endState): array
     {
-        return array_values(array_diff(array_keys(self::PROBES), array_keys(self::probesFor($endState))));
+        return array_values(array_diff(array_keys(self::probes($endState)), array_keys(self::probesFor($endState))));
+    }
+
+    /** @return array<string, string> */
+    private static function probes(TopologyEndState $endState): array
+    {
+        return (
+            in_array('app-prod-2', $endState->recipeNodes(), true)
+                ? [...self::PROBES, ...self::EXTENDED_APP_PROD_PROBES]
+                : self::PROBES
+        );
     }
 
     public function verify(
@@ -102,10 +119,10 @@ final readonly class TopologyVerifier
         ?TopologyEndState $endState = null,
         ?array $requiredAssignments = null,
     ): VerificationReport {
-        $declared = $endState ?? TopologyEndState::complete();
+        $declared = $endState ?? TopologyEndState::complete($target->recipe);
         $requiredAssignments ??= $target->recipe->assignments();
         $declaredNodes = array_map(
-            fn (string $role): string => $target->recipe->nodeForRole($role)->key,
+            fn (string $node): string => $target->recipe->resolveNode($node)->key,
             $declared->nodes,
         );
         $assignmentNodes = $endState === null ? $target->recipe->nodeKeys() : $declaredNodes;
@@ -114,20 +131,21 @@ final readonly class TopologyVerifier
             throw new InvalidArgumentException('The required topology assignment map is incomplete.');
         }
         $peerNodes = array_map(
-            fn (string $role): string => $target->recipe->nodeForRole($role)->key,
+            fn (string $node): string => $target->recipe->resolveNode($node)->key,
             $declared->peers(),
         );
         $probes = self::probesFor($declared);
         $instances = [];
-        foreach (TopologyProfile::ROLES as $role) {
-            $instances[$role] = $target->instance($role);
+        foreach ($target->recipe->nodeKeys() as $node) {
+            $instances[$node] = $target->instance($node);
         }
         $inventory = [];
         foreach ($target->recipe->nodeKeys() as $node) {
             $inventory[$node] = $target->instance($node);
         }
         $this->host->assertTopologyNetworkIdentity($inventory, $target->network(), $target, requireRunning: true);
-        $typedCheckoutPath = $this->typedCheckoutPath($instances['app-dev']);
+        $appDevNode = $target->recipe->nodeForRole('app-dev')->key;
+        $typedCheckoutPath = $this->typedCheckoutPath($instances[$appDevNode]);
         if ($typedCheckoutPath !== null) {
             unset($probes['role.app-prod'], $probes['workspace.app-dev'], $probes['laravel.prod']);
         }

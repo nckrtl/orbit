@@ -61,6 +61,8 @@ final readonly class TopologyAcquirer
         private string $repositoryRoot = '',
         /** @var (Closure(): AttemptId)|null Mints the attempt identity; injectable so tests pin resource names. */
         private ?Closure $attempts = null,
+        private ?TopologyConverger $converger = null,
+        private ?IssueTopologyConstructor $constructor = null,
     ) {}
 
     public function acquire(TopologyRequest $request): FeatureTopology
@@ -94,13 +96,14 @@ final readonly class TopologyAcquirer
             $this->networks->reconcile($topology->target->network());
             $this->guests->assertSourceMounted($topology->target);
             $source = $this->synchronizer->syncWorkingTree($topology->target, $request->worktree);
+            if ($topology->construction->extension !== null) {
+                $this->topologyConverger()->converge($topology->target, $source, $topology->generation->laravel);
+            }
             $verification = $this->verifier->verify(
                 $topology->target,
                 VerificationMode::Readiness,
                 $source,
-                requiredAssignments: $topology->generation->topologyAssignments ?? throw new RuntimeException(
-                    'The pinned generation has no assignment declaration.',
-                ),
+                requiredAssignments: $topology->target->recipe->assignments(),
             );
             if (! $verification->passed) {
                 throw new RuntimeException('Feature topology verification failed.'.$verification->failedSummary());
@@ -128,9 +131,7 @@ final readonly class TopologyAcquirer
                 $topology->target,
                 VerificationMode::Readiness,
                 $topology->source,
-                requiredAssignments: $topology->generation->topologyAssignments ?? throw new RuntimeException(
-                    'The pinned generation has no assignment declaration.',
-                ),
+                requiredAssignments: $topology->target->recipe->assignments(),
             );
             if (! $report->passed) {
                 throw new RuntimeException('Feature topology verification failed.'.$report->failedSummary());
@@ -176,14 +177,16 @@ final readonly class TopologyAcquirer
 
     private function create(TopologyRequest $request, IssueState $state): FeatureTopology
     {
+        $proofPlan = ProofPlanFile::forAcquisition($request)?->plan;
+        $recipe = $proofPlan?->recipe() ?? \App\E2E\Value\TopologyRecipe::registered();
         $generation = $this->promotedGeneration($request->worktree);
         $this->assertMountableWorktree($request->worktree);
         $this->assertVendorHydrated($request->worktree);
 
         $attempt = $this->mintAttempt();
-        $target = TopologyTarget::feature($request->issue, $attempt);
+        $target = TopologyTarget::feature($request->issue, $attempt, $recipe);
         $mounts = [];
-        foreach (TopologyProfile::CHECKOUT_ROLES as $role) {
+        foreach ($recipe->checkoutNodeKeys() as $role) {
             $mounts[$role] = [
                 'device' => FeatureTopology::SOURCE_DEVICE,
                 'source' => $request->worktree,
@@ -196,9 +199,15 @@ final readonly class TopologyAcquirer
             'user.orbit.e2e.operation' => $this->operation->value,
         ];
         $state->writeAttempt($attempt, AttemptPurpose::Discovery, $this->operation);
-        $instances = array_map($target->instance(...), TopologyProfile::ROLES);
+        $instances = array_map($target->instance(...), $recipe->nodeKeys());
         try {
-            $this->createResources($target, $generation, $metadata, $mounts);
+            $construction = $this->issueConstructor()->construct(
+                $target,
+                $generation,
+                $metadata,
+                $mounts,
+                $proofPlan?->extension,
+            );
             $this->host->startAll($instances);
             $this->host->prepareClonedHostStates($instances);
             $this->guests->assertSourceMounted($target);
@@ -206,13 +215,18 @@ final readonly class TopologyAcquirer
             $this->guests->exposeOrbitCli($target);
             $this->guests->repairCloneIdentity($target);
             $source = $this->synchronizer->syncWorkingTree($target, $request->worktree);
+            if ($proofPlan?->extension !== null) {
+                $this->topologyConverger()->converge($target, $source, $generation->laravel);
+            }
             $verification = $this->verifier->verify(
                 $target,
                 VerificationMode::Readiness,
                 $source,
-                requiredAssignments: $generation->topologyAssignments ?? throw new RuntimeException(
-                    'The pinned generation has no assignment declaration.',
-                ),
+                requiredAssignments: $proofPlan?->extension === null
+                    ? $generation->topologyAssignments ?? throw new RuntimeException(
+                        'The pinned generation has no assignment declaration.',
+                    )
+                    : $recipe->assignments(),
             );
             if (! $verification->passed) {
                 throw new RuntimeException(
@@ -224,10 +238,11 @@ final readonly class TopologyAcquirer
                 AttemptPurpose::Discovery,
                 $generation,
                 $target->network(),
-                array_combine(TopologyProfile::ROLES, $instances),
+                array_combine($recipe->nodeKeys(), $instances),
                 $source,
                 $verification,
                 $mounts,
+                $construction,
             );
             $state->writeTopology($topology);
 
@@ -237,52 +252,10 @@ final readonly class TopologyAcquirer
         }
     }
 
-    /**
-     * Network and clones exist only after this returns; the creation lock keeps
-     * the orphan sweep away from a network whose first VM is not attached yet.
-     *
-     * @param array<string, string> $metadata
-     * @param array<string, array{device:string,source:string,path:string}> $mounts
-     */
-    private function createResources(
-        TopologyTarget $target,
-        TopologySnapshotGeneration $generation,
-        array $metadata,
-        array $mounts,
-    ): void {
-        $creation = new OperationLock($this->hostPaths);
-        if (! $creation->acquire(OrphanNetworkSweep::CREATION_LOCK, $this->operation, timeoutSeconds: 600)) {
-            throw new RuntimeException('Another topology creation holds the host.');
-        }
-        try {
-            $slot = $this->capacity->reserveSlot();
-            $this->networks->create($target->network(), $slot, $metadata);
-            $copies = [];
-            foreach (TopologyProfile::ROLES as $role) {
-                $copies[$role] = [
-                    'source' => TopologyTarget::topologySnapshot($this->topologySnapshotIdentity)->instance($role),
-                    'snapshot' => $generation->snapshots[$role],
-                    'target' => $target->instance($role),
-                    'metadata' => [...$metadata, 'user.orbit.e2e.generation' => $generation->id],
-                    'network' => $target->network(),
-                    'role' => $role,
-                    'topology' => $target->network(),
-                    'slot' => $slot,
-                ];
-                if (array_key_exists($role, $mounts)) {
-                    $copies[$role]['mount'] = $mounts[$role];
-                }
-            }
-            $this->copyPinnedSnapshots($generation, $copies);
-        } finally {
-            $creation->release();
-        }
-    }
-
     /** Roll every intended resource back, drop the lease, and rethrow. */
     private function rollback(TopologyTarget $target, IssueState $state, Throwable $exception): never
     {
-        $resources = [$target->network(), ...array_map($target->instance(...), TopologyProfile::ROLES)];
+        $resources = [$target->network(), ...array_map($target->instance(...), $target->recipe->nodeKeys())];
         $rollback = AcquisitionRollback::forHost($this->host, $this->networks, $target);
         $refused = [];
         try {
@@ -361,6 +334,7 @@ final readonly class TopologyAcquirer
             $source,
             $verification,
             $topology->mounts,
+            $topology->construction,
         );
     }
 
@@ -396,33 +370,6 @@ final readonly class TopologyAcquirer
         return $generation;
     }
 
-    /**
-     * Hold the shared generation pin only across the exact snapshot copy, so a
-     * refresh cannot replace the source between the check and the copy.
-     *
-     * @param array<string, array{source:string,snapshot:string,target:string,metadata:array<string, string>,network?:string,role?:string,topology?:string,slot?:int,mount?:array{device:string,source:string,path:string}}> $copies
-     */
-    private function copyPinnedSnapshots(TopologySnapshotGeneration $generation, array $copies): void
-    {
-        $lock = new OperationLock($this->hostPaths);
-        if (! $lock->acquire(
-            'standby-generation',
-            $this->operation,
-            exclusive: false,
-            timeoutSeconds: 3600,
-        )) {
-            throw new RuntimeException('The promoted topology snapshot generation is locked.');
-        }
-        try {
-            if ($this->topologySnapshot->promoted()?->toArray() !== $generation->toArray()) {
-                throw new RuntimeException('The promoted topology snapshot generation changed before snapshot copy.');
-            }
-            $this->host->copySnapshots($copies);
-        } finally {
-            $lock->release();
-        }
-    }
-
     private function issueLock(string $issue): OperationLock
     {
         $lock = new OperationLock($this->hostPaths);
@@ -436,6 +383,26 @@ final readonly class TopologyAcquirer
     private function mintAttempt(): AttemptId
     {
         return $this->attempts === null ? AttemptId::generate() : ($this->attempts)();
+    }
+
+    private function topologyConverger(): TopologyConverger
+    {
+        return $this->converger ?? new TopologyConverger($this->host);
+    }
+
+    private function issueConstructor(): IssueTopologyConstructor
+    {
+        return (
+            $this->constructor ?? new IssueTopologyConstructor(
+                $this->host,
+                $this->networks,
+                $this->capacity,
+                $this->hostPaths,
+                $this->operation,
+                $this->topologySnapshot,
+                $this->topologySnapshotIdentity,
+            )
+        );
     }
 
     /** The worktree becomes an Incus disk source verbatim, so it must satisfy the mount path rule. */

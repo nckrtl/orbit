@@ -121,7 +121,9 @@ function topologyVerifierInventory(
         return Process::result(json_encode(array_map(
             static function (string $node) use ($topologyTarget, $invalidExtraMac, $stoppedExtra): array {
                 $instance = $topologyTarget->instance($node);
-                $stopped = $stoppedExtra && $node === 'extra';
+                $extension =
+                    $topologyTarget->recipe->node($node)->purpose === \App\E2E\Value\TopologyNodePurpose::Extension;
+                $stopped = $stoppedExtra && $extension;
 
                 return [
                     'name' => $instance,
@@ -134,7 +136,7 @@ function topologyVerifierInventory(
                         'eth0' => [
                             'network' => $topologyTarget->network(),
                             'ipv4.address' => TopologyTarget::ipv4For(2, $topologyTarget->recipe->node($node)->address),
-                            'hwaddr' => $invalidExtraMac && $node === 'extra'
+                            'hwaddr' => $invalidExtraMac && $extension
                                 ? '00:16:3e:00:00:00'
                                 : $topologyTarget->mac($node),
                         ],
@@ -601,6 +603,7 @@ function runTopologyVerifierWithEndState(
     $batches = [];
 
     $target ??= TopologyTarget::topologySnapshot();
+    /** @mago-expect lint:cyclomatic-complexity The fake answers the complete physical-Node verification matrix. */
     Process::fake(function (PendingProcess $process) use ($sha, $failing, &$argv, &$batches, $target) {
         $inventory = topologyVerifierInventory($process, $target->isTopologySnapshot() ? null : $target);
         if ($inventory instanceof ProcessResult) {
@@ -647,6 +650,93 @@ function runTopologyVerifierWithEndState(
 }
 
 describe('TopologyVerifier declared end state', function (): void {
+    it('targets every extended physical Node and requires the extra app-prod runtime probes', function (): void {
+        $target = featureTarget('AUX-106', 'a', TopologyRecipe::extendedAppProd());
+        $run = runTopologyVerifierWithEndState(null, target: $target);
+        $sha = str_repeat('a', 40);
+        $gateway = $target->instance('gateway');
+
+        expect($run['report']->passed)
+            ->toBeTrue()
+            ->and(array_keys($run['report']->probes))
+            ->toContain(
+                'vm.app-prod-2.running',
+                'role.app-prod-2',
+                'php.app-prod-2',
+                'php-fpm.app-prod-2',
+                'caddy.app-prod-2',
+            )
+            ->and($run['argv']['php.app-prod-2'] ?? null)
+            ->toBe([
+                '/usr/local/bin/verify-topology.sh',
+                'php.app-prod-2',
+                'proof',
+                $sha,
+                $target->instance('app-prod-2'),
+            ])
+            ->and($run['argv']['role.assignments'] ?? null)
+            ->toBe([
+                '/usr/local/bin/verify-topology.sh',
+                'role.assignments',
+                'proof',
+                $sha,
+                $gateway,
+                base64_encode(json_encode($target->recipe->assignments(), JSON_THROW_ON_ERROR)),
+            ])
+            ->and($run['argv']['wireguard.reachability'] ?? null)
+            ->toBe([
+                '/usr/local/bin/verify-topology.sh',
+                'wireguard.reachability',
+                'proof',
+                $sha,
+                $gateway,
+                'app-dev',
+                'app-prod',
+                'app-prod-2',
+            ]);
+    });
+
+    it('fails proof when an extended-node runtime probe refuses its condition', function (string $probe): void {
+        $target = featureTarget('AUX-106', 'a', TopologyRecipe::extendedAppProd());
+        $run = runTopologyVerifierWithEndState(null, [$probe], $target);
+
+        expect($run['report']->passed)
+            ->toBeFalse()
+            ->and($run['report']->probes[$probe]['passed'] ?? null)
+            ->toBeFalse();
+    })->with([
+        'extra VM state' => 'vm.app-prod-2.running',
+        'extra app-prod role' => 'role.app-prod-2',
+        'extra PHP runtime' => 'php.app-prod-2',
+        'extra PHP-FPM service' => 'php-fpm.app-prod-2',
+        'extra Caddy service and configuration' => 'caddy.app-prod-2',
+    ]);
+
+    it('refuses an extended Node with invalid network identity or stopped state', function (bool $invalidMac): void {
+        setUpTopologyVerifierProcessFacade();
+        $target = featureTarget('AUX-106', 'a', TopologyRecipe::extendedAppProd());
+        Process::fake(function (PendingProcess $process) use ($target, $invalidMac) {
+            return (
+                topologyVerifierInventory(
+                    $process,
+                    $target,
+                    invalidExtraMac: $invalidMac,
+                    stoppedExtra: ! $invalidMac,
+                ) ?? Process::result('', 'Unexpected command.', 2)
+            );
+        });
+
+        expect(fn () => new TopologyVerifier(new IncusHost(pool: 'orbit-e2e'))->verify(
+            $target,
+            VerificationMode::Proof,
+            new SourceState(str_repeat('a', 40), str_repeat('a', 40)),
+        ))
+            ->toThrow(RuntimeException::class, $invalidMac ? 'MAC identity does not match' : 'is not running');
+    })->with([
+        'invalid MAC' => true,
+        'stopped VM' => false,
+    ]);
+
     it('uses the complete cold recipe assignment map and physical peer names', function (): void {
         $target = TopologyTarget::disposableCold(
             'AUX-106',
@@ -677,6 +767,7 @@ describe('TopologyVerifier declared end state', function (): void {
                 $gateway,
                 'operator',
                 'app-prod',
+                'extra',
             ]);
     });
 

@@ -276,20 +276,61 @@ describe('topology commands', function () {
             ->assertFailed();
     });
 
-    it('refuses exec and sync on a proved attempt before touching Incus', function () {
-        ['worktree' => $worktree] = commandPrimaryFixture();
+    it('refuses sync and exec on a proved extended attempt before touching Incus', function () {
+        ['primary' => $primary, 'worktree' => $worktree] = commandPrimaryFixture();
+        rmdir($worktree);
+        file_put_contents($primary.'/README.md', "fixture\n");
+        Process::run(['git', '-C', $primary, 'init', '--quiet', '-b', 'main'])->throw();
+        Process::run(['git', '-C', $primary, 'config', 'user.email', 'orbit@example.test'])->throw();
+        Process::run(['git', '-C', $primary, 'config', 'user.name', 'Orbit'])->throw();
+        Process::run(['git', '-C', $primary, 'add', '.'])->throw();
+        Process::run(['git', '-C', $primary, 'commit', '--quiet', '-m', 'fixture'])->throw();
+        Process::run(['git', '-C', $primary, 'worktree', 'add', '--quiet', '-b', 'tst-12-feature', $worktree])->throw();
         $state = IssueState::forWorktree('TST-12', $worktree);
-        $discovery = new AttemptId(str_repeat('b', 32));
         $proof = new AttemptId(str_repeat('c', 32));
-        $state->writeAttempt($discovery, AttemptPurpose::Discovery, new OperationId(str_repeat('a', 32)));
-        $state->writeTopology(commandTopologyFixture('TST-12', $discovery, AttemptPurpose::Discovery));
         $state->writeAttempt($proof, AttemptPurpose::Proof, new OperationId(str_repeat('b', 32)));
         $state->writeProof(['status' => 'proved', 'attempt_id' => $proof->value]);
-        $state->writeTopology(commandTopologyFixture('TST-12', $proof));
+        $state->writeTopology(commandTopologyFixture(
+            'TST-12',
+            $proof,
+            recipe: \App\E2E\Value\TopologyRecipe::extendedAppProd(),
+        ));
         app()->instance(
             \App\E2E\State\StatePaths::class,
             new \App\E2E\State\StatePaths(temporaryPath('orbit-command-host-', 6)),
         );
+        app()->instance(\App\E2E\TopologyAcquirer::class, new \App\E2E\TopologyAcquirer(
+            app(\App\E2E\IncusHost::class),
+            app(\App\E2E\IncusNetworkLifecycle::class),
+            app(\App\E2E\PreparedStateFingerprint::class),
+            app(\App\E2E\TopologySnapshotManifestStore::class),
+            app(\App\E2E\WorktreeSynchronizer::class),
+            app(\App\E2E\TopologyVerifier::class),
+            app(\App\E2E\DiscoveryGuestPreparer::class),
+            app(\App\E2E\HostCapacity::class),
+            app(\App\E2E\State\StatePaths::class),
+            app(\App\E2E\Value\OperationId::class),
+            app(\App\E2E\Value\TopologySnapshotIdentity::class),
+            $primary,
+            converger: app(\App\E2E\TopologyConverger::class),
+            constructor: app(\App\E2E\IssueTopologyConstructor::class),
+        ));
+        $commands = [];
+        Process::fake(function (PendingProcess $process) use (&$commands) {
+            $command = $process->command;
+            assert(is_array($command));
+            $commands[] = $command;
+            if (($command[0] ?? null) === 'git') {
+                $gitCommand = ['git', '-C', $process->path ?? getcwd(), ...array_slice($command, 1)];
+                $output = [];
+                $exitCode = 0;
+                exec(implode(' ', array_map(escapeshellarg(...), $gitCommand)).' 2>&1', $output, $exitCode);
+
+                return Process::result(implode("\n", $output), exitCode: $exitCode);
+            }
+
+            return Process::result();
+        });
 
         $this
             ->artisan('topology:exec', [
@@ -300,6 +341,93 @@ describe('topology commands', function () {
             ])
             ->expectsOutputToContain('is proved; release it before changing it')
             ->assertFailed();
+        $exitCode = $this->withoutMockingConsoleOutput()->artisan('topology:sync', ['issue' => 'TST-12']);
+        expect($exitCode)
+            ->toBe(1)
+            ->and(Artisan::output())
+            ->toContain('has no active discovery attempt');
+
+        expect(array_filter($commands, static fn (array $command): bool => ($command[0] ?? null) === 'incus'))
+            ->toBe([]);
+    });
+
+    it('executes on app-prod-2 and rejects an unrecorded physical Node key', function (): void {
+        ['worktree' => $worktree] = commandPrimaryFixture('AUX-132');
+        $state = IssueState::forWorktree('AUX-132', $worktree);
+        $attempt = new AttemptId(str_repeat('a', 32));
+        $topology = commandTopologyFixture(
+            'AUX-132',
+            $attempt,
+            AttemptPurpose::Discovery,
+            \App\E2E\Value\TopologyRecipe::extendedAppProd(),
+        );
+        $state->writeAttempt($attempt, AttemptPurpose::Discovery, new OperationId(str_repeat('b', 32)));
+        $state->writeTopology($topology);
+        app()->instance(
+            \App\E2E\State\StatePaths::class,
+            new \App\E2E\State\StatePaths(temporaryPath('orbit-command-host-', 6)),
+        );
+        $commands = [];
+        Process::fake(function (PendingProcess $process) use (&$commands, $topology) {
+            $command = $process->command;
+            assert(is_array($command));
+            $commands[] = $command;
+
+            if (($command[3] ?? null) === 'list') {
+                return Process::result(json_encode([
+                    commandInstanceFixture($topology, 'app-prod-2'),
+                ], JSON_THROW_ON_ERROR));
+            }
+
+            return Process::result("extra-node-ok\n");
+        });
+
+        $shellInstance = app(\App\E2E\TopologyAcquirer::class)->instance(
+            new \App\E2E\Value\TopologyRequest('AUX-132', $worktree),
+            'app-prod-2',
+        );
+
+        $this
+            ->artisan('topology:exec', [
+                'issue' => 'AUX-132',
+                'role' => 'app-prod-2',
+                '--argv' => '["php","-v"]',
+            ])
+            ->expectsOutput("extra-node-ok\n")
+            ->assertSuccessful();
+        $this
+            ->artisan('topology:exec', [
+                'issue' => 'AUX-132',
+                'role' => 'app-prod-3',
+                '--argv' => '["php","-v"]',
+            ])
+            ->expectsOutputToContain('Topology role [app-prod-3] must resolve to exactly one physical Node.')
+            ->assertFailed();
+        $this
+            ->artisan('topology:shell', [
+                'issue' => 'AUX-132',
+                'role' => 'app-prod-3',
+            ])
+            ->expectsOutputToContain('Topology role [app-prod-3] must resolve to exactly one physical Node.')
+            ->assertFailed();
+
+        expect($shellInstance)
+            ->toBe($topology->target->instance('app-prod-2'))
+            ->and(array_values(array_filter(
+                $commands,
+                static fn (array $command): bool => ($command[3] ?? null) === 'exec',
+            )))
+            ->toBe([[
+                'incus',
+                '--project',
+                'default',
+                'exec',
+                'local:'.$topology->target->instance('app-prod-2'),
+                '--',
+                ...GuestCommand::ORBIT_USER_PREFIX,
+                'php',
+                '-v',
+            ]]);
     });
 
     it('executes on discovery by default and on a retained failed proof when selected', function () {
@@ -414,34 +542,45 @@ function commandTopologyFixture(
     string $issue,
     AttemptId $attempt,
     AttemptPurpose $purpose = AttemptPurpose::Proof,
+    ?\App\E2E\Value\TopologyRecipe $recipe = null,
 ): \App\E2E\Value\FeatureTopology {
-    $target = \App\E2E\Value\TopologyTarget::feature($issue, $attempt);
+    $target = \App\E2E\Value\TopologyTarget::feature($issue, $attempt, $recipe);
+    $generation = new \App\E2E\Value\TopologySnapshotGeneration(
+        'g-'.str_repeat('a', 12),
+        str_repeat('b', 40),
+        ['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod'],
+        str_repeat('c', 64),
+        str_repeat('d', 64),
+        new \App\E2E\Value\LaravelRelease('v13.10.1', '5aad4ddf34d5e21dfe6b4c07eeac67d5bd5e08b0'),
+        str_repeat('e', 64),
+        2,
+        'ubuntu-26.04-amd64-v1',
+        'orbit-base-ubuntu-26.04-runtime',
+        'gateway_app-dev_app-prod',
+        ['gateway', 'app-dev', 'app-prod'],
+        ['gateway', 'app-dev'],
+    );
 
     return new \App\E2E\Value\FeatureTopology(
         $target,
         $purpose,
-        new \App\E2E\Value\TopologySnapshotGeneration(
-            'g-'.str_repeat('a', 12),
-            str_repeat('b', 40),
-            ['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod'],
-            str_repeat('c', 64),
-            str_repeat('d', 64),
-            new \App\E2E\Value\LaravelRelease('v13.10.1', '5aad4ddf34d5e21dfe6b4c07eeac67d5bd5e08b0'),
-            str_repeat('e', 64),
-            2,
-            'ubuntu-26.04-amd64-v1',
-            'orbit-base-ubuntu-26.04-runtime',
-            'gateway_app-dev_app-prod',
-            ['gateway', 'app-dev', 'app-prod'],
-            ['gateway', 'app-dev'],
-        ),
+        $generation,
         $target->network(),
         array_combine(
-            \App\E2E\Value\TopologyProfile::ROLES,
-            array_map($target->instance(...), \App\E2E\Value\TopologyProfile::ROLES),
+            $target->recipe->nodeKeys(),
+            array_map($target->instance(...), $target->recipe->nodeKeys()),
         ),
         new \App\E2E\Value\SourceState(str_repeat('d', 40), str_repeat('d', 40)),
         new \App\E2E\Value\VerificationReport(true, ['ready' => verificationProbeFixture(probe: 'ready')]),
+        construction: $recipe?->nodeKeys() === \App\E2E\Value\TopologyRecipe::extendedAppProd()->nodeKeys()
+            ? \App\E2E\Value\TopologyConstructionInputs::create(
+                $target,
+                $generation,
+                2,
+                \App\E2E\Value\TopologyExtension::AppProd,
+                str_repeat('f', 64),
+            )
+            : null,
     );
 }
 

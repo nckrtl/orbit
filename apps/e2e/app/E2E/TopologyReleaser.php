@@ -9,7 +9,6 @@ use App\E2E\State\OperationLock;
 use App\E2E\State\StatePaths;
 use App\E2E\Value\AttemptPurpose;
 use App\E2E\Value\OperationId;
-use App\E2E\Value\TopologyProfile;
 use App\E2E\Value\TopologyRequest;
 use App\E2E\Value\TopologyTarget;
 use RuntimeException;
@@ -54,7 +53,7 @@ final readonly class TopologyReleaser
                         : AttemptPurpose::CandidateConvergence
                 );
             $attempt = $state->attemptId($purpose);
-            $target = TopologyTarget::feature($request->issue, $attempt);
+            $target = $state->topology($purpose)?->target ?? TopologyTarget::feature($request->issue, $attempt);
             [$released, $absent] = $this->deleteResources($target);
             $proof = $state->proof() ?? [];
             if (
@@ -84,7 +83,7 @@ final readonly class TopologyReleaser
     /** @return array{list<string>, list<string>} */
     private function deleteResources(TopologyTarget $target): array
     {
-        $names = array_map($target->instance(...), TopologyProfile::ROLES);
+        $names = array_map($target->instance(...), $target->recipe->nodeKeys());
         $observed = $this->host->instances($names);
         $released = [];
         $absent = [];
