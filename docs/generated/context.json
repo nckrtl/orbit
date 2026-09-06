@@ -759,6 +759,30 @@
             ]
         },
         {
+            "path": "docs/decisions/0037-promote-fresh-three-node-topology-snapshots.md",
+            "title": "ADR 0037: Promote fresh three-node topology snapshots",
+            "kind": "decision",
+            "components": [
+                "apps/e2e"
+            ],
+            "concepts": [
+                "App",
+                "AppInstance",
+                "Gateway",
+                "Node",
+                "Proof topology",
+                "Route"
+            ],
+            "governing_adrs": [
+                "0005",
+                "0006",
+                "0015",
+                "0019",
+                "0036",
+                "0037"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
