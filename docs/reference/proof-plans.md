@@ -37,7 +37,7 @@ A literal `/home/orbit/orbit/...` argument must resolve to a runtime path under 
 
 Files beside the plan under `.loop/proof/` are the active issue's proof-only fixtures. The harness refuses a nested directory, a symlink, a name outside `[a-z0-9][a-z0-9._-]{0,127}`, and every declaration that names another issue's fixtures. `prove` reads the fixtures from the exact candidate commit, never from the host working tree. It installs them root-owned, `0755` for an executable blob and `0644` otherwise, at `/var/lib/orbit-e2e/proof/<name>` on every physical Node, including `app-prod-2` in an extended proof. A plan references a fixture by that guest path, for example `["/var/lib/orbit-e2e/proof/fixture-check.sh", "app-prod-2"]`.
 
-The harness empties the guest directory before staging. Every role prints `name<TAB>mode<TAB>sha256` per file, and the digest must equal the host digest. An issue with no fixture files beside its plan stages an empty inventory.
+The harness empties the guest directory before staging. Every physical Node prints `name<TAB>mode<TAB>sha256` per file, and the digest must equal the host digest. An issue with no fixture files beside its plan stages an empty inventory.
 
 ## Proof phases
 
@@ -73,7 +73,7 @@ With `observed_inputs: true`, `pcov.prepare` also installs `php8.5-pcov` at matc
 | `issue`, `attempt_id`, `candidate_sha`, `recorded_at` | The issue, the proof attempt, the proved commit, and the UTC time |
 | `plan_sha256`, `manifest_sha256` | Fingerprints of the normalized plan and of the proof-input manifest; the latter binds the selected topology and exists only on `proved` |
 | `actions` | One `{"id","node","exit_code"}` per action that ran |
-| `ends_with`, `skipped_probes` | The declaration and the probes it skipped; present only when the declaration leaves a role out |
+| `ends_with`, `skipped_probes` | The declaration and the probes it skipped; present only when the declaration leaves a physical Node out |
 | `failed_action` | The action that ended the proof, with `stdout_tail` and `stderr_tail` of the final 4096 bytes |
 | `error` | `proof phase <phase> failed: <message>` |
 
