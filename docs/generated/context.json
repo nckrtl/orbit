@@ -936,10 +936,13 @@
             ],
             "concepts": [
                 "App",
+                "AppInstance",
                 "Doctor",
                 "Gateway",
+                "Legacy Instance",
                 "Node",
                 "Proof topology",
+                "Route",
                 "Workspace"
             ],
             "governing_adrs": [

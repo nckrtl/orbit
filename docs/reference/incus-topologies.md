@@ -28,6 +28,8 @@ An extended attempt keeps the three cloned Nodes and constructs one Node from th
 
 The attempt record stores the normalized extension, the complete physical Node inventory, the promoted source generation, and the extra Node's image alias and fingerprint. Discovery and proof construct separate `app-prod-2` VMs and never adopt one from another attempt.
 
+Convergence gives `app-prod-2` active app-prod services and a usable PHP runtime, with PHP-FPM and Caddy active. The sole sample AppInstance stays on `app-prod`. The extension creates no legacy Instance or Workspace, no production AppInstance placement on `app-prod-2`, and no Route target or other graph edge that creates multi-target routing.
+
 ## Topology states
 
 Each topology is one attempt with a purpose, a lease, and a record under `<worktree>/.e2e/`, which dies with the worktree.
