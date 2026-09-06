@@ -17,7 +17,7 @@
             "argv": [
                 "bash",
                 "-c",
-                "test \"$(hostname)\" = app-prod-2 && ip -4 address show dev orbit | grep -Fq -- '10.44.0.4/'"
+                "hostname | grep -Eq '^orbit-e2e-orb-132-[0-9a-f]{8}-app-prod-2$' && ip -4 address show dev orbit | grep -Fq -- '10.44.0.4/'"
             ],
             "timeout_seconds": 60
         },
