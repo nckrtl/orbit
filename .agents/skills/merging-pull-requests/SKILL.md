@@ -21,7 +21,11 @@ Close out one independently approved pull request after the external orchestrato
    exact tree) or carry an `exact`/`equivalent` retained-proof report.
    For every candidate, if `main` moved after approval, stop until a head that
    includes current `origin/main` carries a new approval, a green CI run, and,
-   with Incus proof, a new equivalence decision or complete proof.
+   with Incus proof, a new equivalence decision or complete proof. Rebuild that
+   head from the approved workspace head that still carries `.loop/`: integrate
+   `origin/main` into it, obtain its new approval, then create a fresh
+   single-parent removal commit and its second approval. Never integrate `main`
+   after the `.loop/` removal; a removal head with two parents cannot pass step 2.
 2. **Verify the removal.** Run `git diff <approved-sha> <head> --name-status`
    and fail unless every line has status `D` and a path below `.loop/`; fail if
    the diff is empty, any path remains below `.loop/` at the head, or the approved
