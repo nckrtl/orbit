@@ -39,6 +39,12 @@ sudo -u orbit -- env HOME=/home/orbit ssh -i /home/orbit/.orbit/ssh/id_ed25519 \
   -o StrictHostKeyChecking=yes \
   -- orbit@"$wireguard_ip" 'bash -se' <<'GUEST'
 set -euo pipefail
+if [[ "$(dpkg-query -W -f='${Status}' php8.5-fpm 2>/dev/null || true)" != 'install ok installed' ]]; then
+  sudo env DEBIAN_FRONTEND=noninteractive apt-get update
+  sudo env DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends -- php8.5-fpm
+fi
+sudo systemctl enable --now php8.5-fpm
+sudo install -d -m 0755 /var/www
 install_root_text_file() {
   local value="$1" destination="$2" source
   source=$(mktemp)

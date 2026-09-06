@@ -1116,7 +1116,15 @@ describe('convergence guest scripts', function () {
         $sample = file_get_contents("{$guest}/converge-sample-app.sh");
 
         expect($production)
-            ->toContain('orbit-e2e-global.caddy', 'local_certs', 'caddy-ca-path')
+            ->toContain(
+                "dpkg-query -W -f='\${Status}' php8.5-fpm",
+                'apt-get install --yes --no-install-recommends -- php8.5-fpm',
+                'systemctl enable --now php8.5-fpm',
+                'install -d -m 0755 /var/www',
+                'orbit-e2e-global.caddy',
+                'local_certs',
+                'caddy-ca-path',
+            )
             ->not->toContain('readlink -f')->and($production)
             ->not->toContain('systemctl reload caddy')->and($sample)->toContain(
                 'internal-tls)',
