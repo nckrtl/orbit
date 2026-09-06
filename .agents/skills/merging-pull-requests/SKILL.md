@@ -41,7 +41,8 @@ Close out one independently approved pull request after the external orchestrato
    For Incus proof, run
    `bin/e2e-topology-snapshot promote <ISSUE>`. When the retained proof plan
    declares `mutates: true`, run
-   `bin/e2e-topology-snapshot refresh --main-sha=<merge commit>` instead, then
+   `bin/e2e-topology-snapshot refresh --main-sha=<current origin/main>` instead,
+   with the primary checkout at that commit, then
    `bin/e2e-topology release <ISSUE>` and `bin/e2e-topology release <ISSUE> --proof`,
    and record the proved attempt, accepted head, merge commit, and promoted
    generation in the closeout handoff

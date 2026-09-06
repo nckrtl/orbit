@@ -1,6 +1,6 @@
 # ADR 0035: Close out mutating proofs by refreshing the topology snapshot
 
-In the context of merge closeout after an Incus proof whose plan declares `mutates: true`, facing a promoter that refuses the proved topology by design and a closeout contract that stops without a promotable proof, we decided for refreshing the topology snapshot from the merge commit and against a second candidate-convergence topology or a revert, to achieve unattended closeout that keeps the snapshot aligned with `main`, accepting that the snapshot after such a merge is converged from `main` rather than promoted from the proved topology.
+In the context of merge closeout after an Incus proof whose plan declares `mutates: true`, facing a promoter that refuses the proved topology by design and a closeout contract that stops without a promotable proof, we decided for refreshing the topology snapshot from the current `main` that contains the merge and against a second candidate-convergence topology or a revert, to achieve unattended closeout that keeps the snapshot aligned with `main`, accepting that the snapshot after such a merge is converged from `main` rather than promoted from the proved topology.
 
 ## Status
 
@@ -12,7 +12,7 @@ A proof plan that declares `mutates: true` changes reusable node state, so the p
 
 ## Decision
 
-- Closeout must run `bin/e2e-topology-snapshot refresh --main-sha=<merge commit>` when the retained proof plan of the merged candidate declares `mutates: true`, after the external merge is verified.
+- Closeout must run `bin/e2e-topology-snapshot refresh --main-sha=<current origin/main>`, with the primary checkout at that commit, when the retained proof plan of the merged candidate declares `mutates: true`, after the external merge is verified and `origin/main` contains the merge commit.
 - Closeout must record the proved attempt, the accepted head, the merge commit, and the promoted generation in the closeout handoff before cleanup.
 - Closeout must release the issue's discovery and proof topologies after the refresh promotes a generation.
 - Closeout must not substitute a refresh for a missing, failed, or non-equivalent proof; ADR 0015's retention and equivalence rules stay in force.
@@ -34,4 +34,4 @@ A proof plan that declares `mutates: true` changes reusable node state, so the p
 - Components: apps/e2e
 - ADRs: extends [ADR 0015](0015-retain-incus-proof-by-recorded-input-equivalence.md); supersedes [ADR 0006](0006-topology-led-feature-development.md) for the closeout of a mutating proof
 - Detail: [docs/reference/topology-snapshot.md](../reference/topology-snapshot.md)
-- Verify: `bin/e2e-topology-snapshot status` reports the generation whose `main_sha` equals the merge commit after closeout
+- Verify: `bin/e2e-topology-snapshot status` reports the generation whose `main_sha` equals the `origin/main` commit the refresh used
