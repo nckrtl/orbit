@@ -18,7 +18,9 @@ slug="$2"
 name="${linear_id,,}-$slug"
 branch="$name"
 primary_root="$(git worktree list --porcelain | awk '/^worktree / && !found { print substr($0, 10); found=1 }')"
-worktree="$primary_root/.worktrees/$name"
+# The worktree that has the branch checked out wins; the slug-derived path is the fallback.
+worktree="$(git worktree list --porcelain | awk -v ref="branch refs/heads/$branch" '/^worktree / { path=substr($0, 10) } $0 == ref { print path; exit }')"
+[[ -n "$worktree" ]] || worktree="$primary_root/.worktrees/$name"
 
 git fetch --prune origin
 
