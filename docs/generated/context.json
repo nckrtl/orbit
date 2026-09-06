@@ -783,6 +783,28 @@
             ]
         },
         {
+            "path": "docs/decisions/0038-cascade-appinstance-removal-through-processes-and-schedules.md",
+            "title": "ADR 0038: Cascade AppInstance removal through processes and schedules",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "AppInstance",
+                "Gateway",
+                "Legacy Instance",
+                "Node",
+                "Workspace"
+            ],
+            "governing_adrs": [
+                "0013",
+                "0036",
+                "0038"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
