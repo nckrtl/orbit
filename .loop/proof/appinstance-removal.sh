@@ -27,7 +27,7 @@ gateway_test() {
             APP_ENV=testing \
             DB_CONNECTION=sqlite \
             DB_DATABASE=:memory: \
-            php vendor/bin/pest "$file" "$@"
+            php artisan test "$file" "$@"
     )
 }
 
