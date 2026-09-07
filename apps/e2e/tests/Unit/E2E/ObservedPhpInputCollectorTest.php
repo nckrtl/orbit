@@ -9,6 +9,8 @@ use App\E2E\Value\GuestCommand;
 use App\E2E\Value\GuestCommandResult;
 use App\E2E\Value\TopologyTarget;
 
+require_once __DIR__.'/Support/ObservedPhpRuntimeFixtures.php';
+
 function observedRecord(string $role, string $type, string $id, array $files): array
 {
     return [
@@ -201,6 +203,23 @@ it('fails before collection when Sury runtime inventories differ across roles', 
     ))
         ->toThrow(RuntimeException::class, 'runtime inventories differ');
 });
+
+it('rejects malformed runtime versions at the live inventory boundary', function (string $fixture): void {
+    $inventory = malformedObservedPhpRuntime($fixture);
+    $collector = new ObservedPhpInputCollector(observedRuntimeTransport([
+        'app-dev' => $inventory,
+        'gateway' => $inventory,
+    ]));
+
+    expect(fn () => $collector->prepare(
+        TopologyTarget::feature('AUX-9', new AttemptId(str_repeat('a', 32))),
+    ))
+        ->toThrow(RuntimeException::class, 'runtime verification was malformed');
+})->with([
+    'PHP version' => 'php-version',
+    'PCOV version' => 'pcov-version',
+    'package version' => 'package-version',
+]);
 
 it('unions concurrent CLI and FPM process paths by role without overwriting evidence', function (): void {
     $first = str_repeat('1', 32);
