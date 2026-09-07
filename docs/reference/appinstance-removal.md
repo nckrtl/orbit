@@ -59,7 +59,7 @@ The API, PHP SDK, CLI human output, CLI JSON output, and activity use one bounde
 
 | Progress value | Meaning |
 | --- | --- |
-| `operation_id`, AppInstance ID and name | The immutable removal and originally requested AppInstance. |
+| `operation_id`, `id`, `name` | The immutable removal and originally requested AppInstance identity. |
 | `force` | Whether the accepted request permits dirty or unpublished source deletion. |
 | `status` | `removing`, `failed`, or `completed`. |
 | `current_step` | The first unfinished `source_preparation`, `route_target_clear`, `source_finalization`, `runtime_cleanup`, or `row_deletion` step; null only when completed. |
