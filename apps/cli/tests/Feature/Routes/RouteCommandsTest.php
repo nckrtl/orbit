@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
 use Illuminate\Filesystem\Filesystem;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Routes\ClearRouteTargetRequest;
 use Orbit\Sdk\Requests\Routes\CreateRouteRequest;
@@ -105,6 +106,47 @@ it('rejects impossible create shapes before transport', function (array $argumen
             '--json' => true,
         ],
         'route.id_invalid',
+    ],
+]);
+
+it('renders only the first invalid input as one JSON document', function (
+    string $command,
+    array $arguments,
+    string $code,
+    string $message,
+): void {
+    $mock = MockClient::global();
+
+    $exitCode = Artisan::call($command, [...$arguments, '--json' => true]);
+    $output = trim(Artisan::output());
+
+    expect($exitCode)->toBe(1);
+    expect(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))->toBe([
+        'error' => [
+            'code' => $code,
+            'message' => $message,
+            'request_id' => null,
+        ],
+    ]);
+    expect($mock->getLastPendingRequest())->toBeNull();
+})->with([
+    'create Route' => [
+        'route:new',
+        [
+            'app' => 'invalid',
+            'hostname' => '',
+            '--target' => 'invalid',
+            '--node' => 'invalid',
+            '--cluster' => 'invalid',
+        ],
+        'app.id_invalid',
+        'App ID must be a positive integer.',
+    ],
+    'set Route target' => [
+        'route:target:set',
+        ['route' => 'invalid', 'target' => 'invalid'],
+        'route.id_invalid',
+        'Route ID must be a positive integer.',
     ],
 ]);
 

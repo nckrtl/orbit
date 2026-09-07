@@ -24,9 +24,16 @@ final class DetachClusterNodeCommand extends ClusterCommand
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
         $clusterId = $this->clusterId();
-        $nodeId = $this->nodeId();
+        if ($clusterId === null) {
+            return self::FAILURE;
+        }
 
-        if ($clusterId === null || $nodeId === null || ! $this->confirmed('Node detachment')) {
+        $nodeId = $this->nodeId();
+        if ($nodeId === null) {
+            return self::FAILURE;
+        }
+
+        if (! $this->confirmed('Node detachment')) {
             return self::FAILURE;
         }
 
