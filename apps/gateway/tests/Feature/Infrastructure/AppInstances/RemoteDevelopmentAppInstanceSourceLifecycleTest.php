@@ -8,9 +8,14 @@ use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\Storage\CheckoutRemovalBoundary;
 use App\Domain\Nodes\Storage\ProtectedPathCatalog;
+use App\Domain\Routes\RouteProvenance;
+use App\Domain\Routes\RoutePublication;
+use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
+use App\Infrastructure\AppDev\NativeAppDevSourceOperationLock;
 use App\Infrastructure\AppInstances\RemoteDevelopmentAppInstanceSourceLifecycle;
+use App\Infrastructure\AppInstances\RemoteDevelopmentAppInstanceSourceRemoval;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\ProcessInvocation;
@@ -22,7 +27,9 @@ use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
+use App\Models\AppInstanceRemovalMember;
 use App\Models\Node;
+use App\Models\Route;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 
@@ -79,6 +86,12 @@ beforeEach(function (): void {
         $ssh,
         $accounts,
         new CheckoutRemovalBoundary(new ProtectedPathCatalog),
+    );
+    $this->removal = new RemoteDevelopmentAppInstanceSourceRemoval(
+        $ssh,
+        $accounts,
+        new CheckoutRemovalBoundary(new ProtectedPathCatalog),
+        new NativeAppDevSourceOperationLock($this->sandbox.'/locks'),
     );
 
     $this->node = Node::query()->create([
@@ -223,7 +236,7 @@ it('refuses matching pre-existing source for a fresh reservation and resumes it 
     expect(is_dir($instance->checkout_path.'/.git'))->toBeTrue();
 });
 
-it('refuses dirty and unpublished source unless discard is explicit', function (string $mutation): void {
+it('refuses dirty and unpublished source unless force is explicit', function (string $mutation): void {
     $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
     $this->source->prepare($instance, false);
     $resolution = $this->source->resolve($instance);
@@ -243,14 +256,15 @@ it('refuses dirty and unpublished source unless discard is explicit', function (
         orb76_run(['git', '-C', $instance->checkout_path, 'commit', '-m', 'Unpublished']);
     }
 
-    expect(fn () => $this->source->remove($instance, false))->toThrow(RuntimeConvergenceException::class);
+    expect(fn () => orb124_remove_source($this->removal, $instance, false))
+        ->toThrow(RuntimeConvergenceException::class);
     expect(is_dir($instance->checkout_path))->toBeTrue();
 
-    $this->source->remove($instance, true);
+    orb124_remove_source($this->removal, $instance, true);
     expect(file_exists($instance->checkout_path))->toBeFalse();
 })->with(['dirty', 'unpublished']);
 
-it('does not let discard waive origin or symlink identity checks', function (string $mutation): void {
+it('does not let force waive origin or symlink identity checks', function (string $mutation): void {
     $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
     $this->source->prepare($instance, false);
     $resolution = $this->source->resolve($instance);
@@ -278,14 +292,15 @@ it('does not let discard waive origin or symlink identity checks', function (str
         symlink($decoy, $instance->checkout_path);
     }
 
-    expect(fn () => $this->source->remove($instance, true))->toThrow(RuntimeConvergenceException::class);
+    expect(fn () => orb124_remove_source($this->removal, $instance, true))
+        ->toThrow(RuntimeConvergenceException::class);
     expect(file_exists($decoy.'/sentinel'))
         ->toBeTrue()
         ->and(file_exists($instance->checkout_path) || is_link($instance->checkout_path))
         ->toBeTrue();
 })->with(['origin', 'symlink']);
 
-it('does not let discard remove a checkout with shared Git administration', function (): void {
+it('does not let force remove a checkout with shared Git administration', function (): void {
     $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
     $this->source->prepare($instance, false);
     $resolution = $this->source->resolve($instance);
@@ -306,14 +321,87 @@ it('does not let discard remove a checkout with shared Git administration', func
         '--git-common-dir',
     ])->stdout))
         ->toBe($sharedGitDirectory);
-    expect(fn () => $this->source->remove($instance, true))->toThrow(RuntimeConvergenceException::class);
+    expect(fn () => orb124_remove_source($this->removal, $instance, true))
+        ->toThrow(RuntimeConvergenceException::class);
     expect(is_dir($instance->checkout_path))
         ->toBeTrue()
         ->and(is_dir($sharedGitDirectory))
         ->toBeTrue();
 });
 
-it('does not let removal waive the recorded starting commit ancestry', function (bool $discardSource): void {
+it('removes one worktree while retaining its branch common repository and sibling checkout', function (): void {
+    $checkout = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
+    $this->source->prepare($checkout, false);
+    $resolution = $this->source->resolve($checkout);
+    $checkout->update([
+        'branch' => $resolution->branch,
+        'starting_commit' => $resolution->startingCommit,
+        'status' => AppInstanceState::SourceResolved,
+    ]);
+    $worktreePath = $this->appsRoot.'/acme/feature';
+    orb76_run(['git', '-C', $checkout->checkout_path, 'worktree', 'add', '-b', 'feature', $worktreePath, 'HEAD']);
+    $worktree = AppInstance::query()->create([
+        'app_id' => $this->orbitApp->id,
+        'node_id' => $this->node->id,
+        'name' => 'feature',
+        'source_layout' => 'worktree',
+        'checkout_path' => $worktreePath,
+        'branch' => 'feature',
+        'starting_commit' => $resolution->startingCommit,
+        'status' => AppInstanceState::SourceResolved,
+    ]);
+
+    orb124_remove_source($this->removal, $worktree, false);
+
+    $inventory = orb76_run(['git', '-C', $checkout->checkout_path, 'worktree', 'list', '--porcelain'])->stdout;
+    expect(file_exists($worktreePath))
+        ->toBeFalse()
+        ->and(is_dir($checkout->checkout_path.'/.git'))
+        ->toBeTrue()
+        ->and($inventory)
+        ->toContain("worktree {$checkout->checkout_path}")
+        ->not
+        ->toContain("worktree {$worktreePath}")
+        ->and(
+            orb76_run([
+                'git',
+                '-C',
+                $checkout->checkout_path,
+                'show-ref',
+                '--verify',
+                'refs/heads/feature',
+            ])->succeeded(),
+        )
+        ->toBeTrue()
+        ->and(orb76_run(['git', '--git-dir='.$this->repository, 'show-ref', '--verify', 'refs/heads/dev'])->succeeded())
+        ->toBeTrue();
+});
+
+it('accepts an absent source only with its matching durable completion receipt', function (): void {
+    $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
+    $this->source->prepare($instance, false);
+    $resolution = $this->source->resolve($instance);
+    $instance->update([
+        'branch' => $resolution->branch,
+        'starting_commit' => $resolution->startingCommit,
+        'status' => AppInstanceState::SourceResolved,
+    ]);
+    $member = orb124_remove_source($this->removal, $instance, false);
+    $receipt = hash(
+        'sha256',
+        "{$member->app_instance_removal_id}\0{$member->id}\0{$member->source_digest}\0finalized",
+    );
+
+    expect($this->removal->finalize($member))->toBe($receipt);
+
+    $receiptPath = "{$member->root}/.orbit-removals/{$member->app_instance_removal_id}.{$member->id}.receipt";
+    file_put_contents($receiptPath, 'mismatched');
+
+    expect(fn () => $this->removal->finalize($member))
+        ->toThrow(RuntimeConvergenceException::class);
+});
+
+it('does not let removal waive the recorded starting commit ancestry', function (bool $force): void {
     $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
     $this->source->prepare($instance, false);
     $resolution = $this->source->resolve($instance);
@@ -335,11 +423,12 @@ it('does not let removal waive the recorded starting commit ancestry', function 
         'status' => AppInstanceState::SourceResolved,
     ]);
 
-    expect(fn () => $this->source->remove($instance, $discardSource))->toThrow(RuntimeConvergenceException::class);
+    expect(fn () => orb124_remove_source($this->removal, $instance, $force))
+        ->toThrow(RuntimeConvergenceException::class);
     expect(is_dir($instance->checkout_path))->toBeTrue();
 })->with([
     'normal removal' => false,
-    'discard' => true,
+    'force' => true,
 ]);
 
 it('refuses grouping-directory ownership drift before deleting the checkout', function (): void {
@@ -362,7 +451,8 @@ it('refuses grouping-directory ownership drift before deleting the checkout', fu
 
     expect(chgrp(dirname($instance->checkout_path), $alternateGroup))->toBeTrue();
 
-    expect(fn () => $this->source->remove($instance, true))->toThrow(RuntimeConvergenceException::class);
+    expect(fn () => orb124_remove_source($this->removal, $instance, true))
+        ->toThrow(RuntimeConvergenceException::class);
     expect(is_dir($instance->checkout_path))->toBeTrue();
 });
 
@@ -370,7 +460,8 @@ it('refuses a recorded path that is outside the exact App and instance identity'
     $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
     $instance->update(['checkout_path' => $this->sandbox.'/unrelated']);
 
-    expect(fn () => $this->source->remove($instance, true))->toThrow(RuntimeConvergenceException::class);
+    expect(fn () => orb124_remove_source($this->removal, $instance, true))
+        ->toThrow(RuntimeConvergenceException::class);
     expect($this->transport->commands)->toBeEmpty();
 });
 
@@ -385,9 +476,65 @@ it('fails closed before source resolution when the stored App default branch is 
 it('fails closed before removal when stored source identity is incomplete', function (): void {
     $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
 
-    expect(fn () => $this->source->remove($instance, true))->toThrow(RuntimeConvergenceException::class);
+    expect(fn () => orb124_remove_source($this->removal, $instance, true))
+        ->toThrow(RuntimeConvergenceException::class);
     expect($this->transport->commands)->toBeEmpty();
 });
+
+function orb124_remove_source(
+    RemoteDevelopmentAppInstanceSourceRemoval $removal,
+    AppInstance $instance,
+    bool $force,
+): AppInstanceRemovalMember {
+    $inventory = $removal->inspect($instance, $force);
+    $route = Route::query()->create([
+        'app_id' => $instance->app_id,
+        'node_id' => $instance->node_id,
+        'generation_basis_node_id' => $instance->node_id,
+        'hostname' => "source-removal-{$instance->id}.test",
+        'provenance' => RouteProvenance::Generated,
+        'publication' => RoutePublication::Private,
+        'status' => RouteStatus::Pending,
+    ]);
+    $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+    $route->update(['status' => RouteStatus::Active]);
+    $instance->update(['status' => AppInstanceState::Active]);
+    $operation = \App\Models\AppInstanceRemoval::query()->create([
+        'id' => (string) Str::uuid(),
+        'requested_app_instance_id' => $instance->id,
+        'requested_name' => $instance->name,
+        'force' => $force,
+        'inventory_digest' => $inventory->digest,
+        'total' => 1,
+        'status' => \App\Domain\AppInstances\AppInstanceRemovalStatus::Removing,
+        'current_step' => \App\Domain\AppInstances\AppInstanceRemovalStep::SourcePreparation,
+    ]);
+    $member = $operation
+        ->members()
+        ->create([
+            'position' => 0,
+            'app_instance_id' => $instance->id,
+            'app_id' => $instance->app_id,
+            'node_id' => $instance->node_id,
+            'route_id' => $route->id,
+            'name' => $instance->name,
+            'environment' => $instance->environment,
+            'source_layout' => $inventory->layout,
+            'repository_identity' => $inventory->repositoryIdentity,
+            'checkout_path' => $inventory->checkoutPath,
+            'root' => $inventory->root,
+            'branch' => $inventory->branch,
+            'starting_commit' => $inventory->startingCommit,
+            'common_repository_path' => $inventory->commonRepositoryPath,
+            'linked_worktree_paths' => $inventory->linkedWorktreePaths,
+            'source_digest' => $inventory->digest,
+        ]);
+
+    $removal->prepare($member);
+    $removal->finalize($member);
+
+    return $member;
+}
 
 function orb76_source_instance(
     OrbitApp $app,
@@ -453,9 +600,29 @@ final class Orb76LocalSourceSshExecutor implements \App\Infrastructure\Ssh\SshEx
             $command->arguments,
         );
 
-        return new NativeProcessRunner()->run(new ProcessInvocation(
+        $result = new NativeProcessRunner()->run(new ProcessInvocation(
             arguments: $arguments,
             input: $command->input,
         ));
+
+        $stdout = str_replace(
+            [
+                $this->localOrigin,
+                base64_encode($this->localOrigin),
+            ],
+            [
+                $this->remoteOrigin,
+                base64_encode($this->remoteOrigin),
+            ],
+            $result->stdout,
+        );
+
+        return new CommandResult(
+            exitCode: $result->exitCode,
+            stdout: $stdout,
+            stderr: $result->stderr,
+            durationMs: $result->durationMs,
+            truncated: $result->truncated,
+        );
     }
 }

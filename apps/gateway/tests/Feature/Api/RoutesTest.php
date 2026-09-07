@@ -187,6 +187,13 @@ it('leaves the complete Route unchanged for invalid target proposals', function 
     ])->assertConflict()->assertJsonPath('error.code', 'route.target_inactive');
     expect($route->fresh(['targets'])->toArray())->toBe($before);
 
+    $this->target->update(['status' => AppInstanceState::Removing]);
+    $this->putJson("/api/v1/routes/{$route->id}/target", [
+        'app_instance_id' => $this->target->id,
+    ])->assertConflict()->assertJsonPath('error.code', 'route.target_inactive');
+    expect($route->fresh(['targets'])->toArray())->toBe($before);
+    $this->target->update(['status' => AppInstanceState::Active]);
+
     $tldlessNode = route_node('tldless', '10.44.0.4', null);
     $tldless = route_instance($this->orbitApp, $tldlessNode, 'tldless');
     $this->putJson("/api/v1/routes/{$route->id}/target", [

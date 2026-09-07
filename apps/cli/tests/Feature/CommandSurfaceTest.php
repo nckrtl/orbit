@@ -171,7 +171,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
             ['app', 'node', 'name'],
             ['root' => null, 'hostname' => null, 'branch' => null, 'json' => false],
         ],
-        'instance:remove' => [['instance'], ['discard-source' => false, 'json' => false]],
+        'instance:remove' => [['instance'], ['force' => false, 'json' => false]],
         'instance:show' => [['instance'], ['json' => false]],
         'metrics:credentials' => [[], ['reset' => false, 'json' => false]],
         'metrics:disable' => [[], ['force' => false, 'purge-data' => false, 'json' => false]],

@@ -19,21 +19,33 @@ final readonly class AppDevCaddyConfigRenderer
             $sites
                 ->sortBy('hostname')
                 ->map(static function (AppDevSite $site): string {
-                    $handler = $site->isProxy()
-                        ? <<<CADDY
-                            reverse_proxy https://{$site->upstreamAddress} {
-                                header_up Host {$site->hostname}
-                                transport http {
-                                    tls_server_name {$site->hostname}
-                                }
-                            }
+                    $upstreams = implode(' ', array_map(
+                        static fn (string $address): string => "https://{$address}",
+                        $site->proxyAddresses(),
+                    ));
+                    $handler = $site->unavailable
+                        ? <<<'CADDY'
+                            header Cache-Control "no-store"
+                            header Content-Type "text/plain; charset=utf-8"
+                            respond "Orbit Route unavailable\n" 503
                             CADDY
-                        : implode(PHP_EOL, array_filter([
-                            "root * {$site->checkoutPath}/{$site->documentRoot}",
-                            'encode zstd gzip',
-                            $site->phpVersion === null ? null : "php_fastcgi unix/{$site->socketPath()}",
-                            'file_server',
-                        ]));
+                        : (
+                            $site->isProxy()
+                                ? <<<CADDY
+                                    reverse_proxy {$upstreams} {
+                                        header_up Host {$site->hostname}
+                                        transport http {
+                                            tls_server_name {$site->hostname}
+                                        }
+                                    }
+                                    CADDY
+                                : implode(PHP_EOL, array_filter([
+                                    "root * {$site->checkoutPath}/{$site->documentRoot}",
+                                    'encode zstd gzip',
+                                    $site->phpVersion === null ? null : "php_fastcgi unix/{$site->socketPath()}",
+                                    'file_server',
+                                ]))
+                        );
 
                     return <<<CADDY
                         https://{$site->hostname} {

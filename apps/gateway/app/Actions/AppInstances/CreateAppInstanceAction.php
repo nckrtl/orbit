@@ -209,6 +209,13 @@ final readonly class CreateAppInstanceAction
         ?string $root,
         ?string $branchOverride,
     ): void {
+        if ($appInstance->status === AppInstanceState::Removing) {
+            throw $this->conflict(
+                'instance.removal_conflict',
+                "AppInstance [{$appInstance->name}] is being removed.",
+            );
+        }
+
         if ($appInstance->migration_required) {
             throw $this->conflict(
                 'instance.migration_required',

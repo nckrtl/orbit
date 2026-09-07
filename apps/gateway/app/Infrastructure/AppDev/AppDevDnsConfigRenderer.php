@@ -6,6 +6,7 @@ namespace App\Infrastructure\AppDev;
 
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Route;
 use Illuminate\Database\Eloquent\Builder;
@@ -16,8 +17,11 @@ final readonly class AppDevDnsConfigRenderer
         private AppDevSiteRepository $sites,
     ) {}
 
-    public function render(?Node $pendingNode = null, ?Route $pendingRoute = null): string
-    {
+    public function render(
+        ?Node $pendingNode = null,
+        ?Route $pendingRoute = null,
+        ?AppInstance $unavailableInstance = null,
+    ): string {
         $nodes = Node::query()
             ->where(static function (Builder $q) use ($pendingNode): void {
                 $q->where('status', LifecycleStatus::Active->value);
@@ -43,7 +47,7 @@ final readonly class AppDevDnsConfigRenderer
         $records = $nodes
             ->toBase()
             ->merge($this->sites
-                ->all($pendingRoute)
+                ->all($pendingRoute, $unavailableInstance)
                 ->groupBy('hostname')
                 ->map(static function ($sites): string {
                     /** @var AppDevSite $site */

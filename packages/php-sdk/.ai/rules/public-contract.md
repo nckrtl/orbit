@@ -25,7 +25,8 @@ operations. Keep the public API typed and small.
 - Send `host_key_fingerprint` in a node provision request. Parse
   `ssh_host_fingerprint` from a node response.
 - Keep AppInstance transport limited to App, Node, name, optional root, optional
-  Route hostname, optional creation branch, and explicit source-discard intent.
+  Route hostname, optional creation branch, explicit removal force intent, and
+  bounded removal progress. Do not expose the retired discard compatibility name.
   The Gateway owns placement, source, and Route policy.
 - Keep Route transport limited to App, hostname, publication intent, exclusive
   Node-or-Cluster scope, and at most one scalar AppInstance target. The Gateway

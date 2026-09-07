@@ -62,6 +62,17 @@ final readonly class RemoteAppDevCertificateManager implements AppDevCertificate
         $this->converge($router, "route-{$route->id}-router", $route->hostname);
     }
 
+    public function removeAppInstance(AppInstance $appInstance): void
+    {
+        $appInstance->loadMissing('node');
+        $this->remove($appInstance->node, "app-instance-{$appInstance->id}");
+    }
+
+    public function removeRouteRouter(Route $route, Node $router): void
+    {
+        $this->remove($router, "route-{$route->id}-router");
+    }
+
     private function converge(Node $node, string $scope, string $hostname): void
     {
         $account = $this->accounts->resolve($node);

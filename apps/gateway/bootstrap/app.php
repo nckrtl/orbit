@@ -2,7 +2,9 @@
 
 declare(strict_types=1);
 
+use App\Data\AppInstances\AppInstanceRemovalData;
 use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\AppInstances\Removal\AppInstanceRemovalException;
 use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\NodeRemovalException;
@@ -53,6 +55,28 @@ return Application::configure(basePath: dirname(__DIR__))
          * @mago-expect lint:halstead The closure keeps the public error contract visible in bootstrap order.
          */
         function (Exceptions $exceptions): void {
+            $exceptions->render(function (AppInstanceRemovalException $exception, Request $request): JsonResponse {
+                $request->attributes->set('orbit.error_code', $exception->errorCode);
+                $removal = AppInstanceRemovalData::fromModel($exception->removal)->toArray();
+                $request->attributes->set('orbit.app_instance_removal', $removal);
+                $requestId = $request->attributes->get('orbit.request_id');
+
+                if (! is_string($requestId) || $requestId === '') {
+                    $requestId = $request->header('X-Orbit-Request-Id', '');
+                }
+
+                return response()
+                    ->json([
+                        'error' => [
+                            'code' => $exception->errorCode,
+                            'message' => $exception->getMessage(),
+                            'details' => [
+                                'removal' => $removal,
+                            ],
+                        ],
+                    ], $exception->status)
+                    ->header('X-Orbit-Request-Id', is_string($requestId) ? $requestId : '');
+            });
             $notFound = static function (Request $request): JsonResponse {
                 $requestId = $request->attributes->get('orbit.request_id');
 

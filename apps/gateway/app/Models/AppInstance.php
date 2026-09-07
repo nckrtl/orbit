@@ -33,6 +33,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property-read Node $node
  * @property-read \Illuminate\Database\Eloquent\Collection<int, RouteTarget> $routeTargets
  * @property-read \Illuminate\Database\Eloquent\Collection<int, Route> $routes
+ * @property-read AppInstanceRemovalMember|null $removalMember
  */
 final class AppInstance extends Model
 {
@@ -88,6 +89,12 @@ final class AppInstance extends Model
     public function routes(): BelongsToMany
     {
         return $this->belongsToMany(Route::class, 'route_targets')->withPivot('position');
+    }
+
+    /** @return \Illuminate\Database\Eloquent\Relations\HasOne<AppInstanceRemovalMember, $this> */
+    public function removalMember(): \Illuminate\Database\Eloquent\Relations\HasOne
+    {
+        return $this->hasOne(AppInstanceRemovalMember::class)->whereNull('row_deleted_at');
     }
 
     public function effectiveRoot(): ?string

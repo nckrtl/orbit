@@ -29,6 +29,14 @@ final readonly class SetRouteTargetAction
                 $target = AppInstance::query()->with(['app', 'node'])->lockForUpdate()->findOrFail($appInstanceId);
                 $currentTarget = $locked->targets()->first();
 
+                if ($target->status !== AppInstanceState::Active) {
+                    throw new ResourceOperationException(
+                        errorCode: 'route.target_inactive',
+                        message: 'The Route target must be active.',
+                        status: 409,
+                    );
+                }
+
                 if ($currentTarget?->app_instance_id === $target->id) {
                     return $locked->load('targets');
                 }
@@ -39,14 +47,6 @@ final readonly class SetRouteTargetAction
                     throw new ResourceOperationException(
                         errorCode: 'route.target_app_conflict',
                         message: 'The Route target must belong to the Route App.',
-                        status: 409,
-                    );
-                }
-
-                if ($target->status !== AppInstanceState::Active) {
-                    throw new ResourceOperationException(
-                        errorCode: 'route.target_inactive',
-                        message: 'The Route target must be active.',
                         status: 409,
                     );
                 }

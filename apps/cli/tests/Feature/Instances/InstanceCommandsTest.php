@@ -149,6 +149,7 @@ describe('instance:new', function (): void {
 
 describe('instance:list', function (): void {
     it('lists AppInstances as JSON', function (): void {
+        MockClient::destroyGlobal();
         MockClient::global([
             ListAppInstancesRequest::class => MockResponse::make([
                 'data' => [instance_payload()],
@@ -194,6 +195,7 @@ describe('instance:list', function (): void {
                     'Route hostname',
                     'URL',
                     'Status',
+                    'Removal',
                 ],
                 [[
                     5,
@@ -209,9 +211,39 @@ describe('instance:list', function (): void {
                     'dev.orbit.test',
                     'https://dev.orbit.test',
                     'active',
+                    '-',
                 ]],
             )
             ->expectsOutput('Request ID: '.instance_request_id())
+            ->assertExitCode(0);
+    });
+
+    it('lists bounded unfinished removal progress for humans and JSON', function (): void {
+        $payload = instance_payload(removal: removal_progress_payload());
+        MockClient::global([
+            ListAppInstancesRequest::class => MockResponse::make([
+                'data' => [$payload],
+                'meta' => ['request_id' => instance_request_id()],
+            ]),
+        ]);
+
+        $this
+            ->artisan('instance:list')
+            ->expectsOutputToContain(
+                'normal 0/2 completed; 2 remaining; runtime_cleanup; failed runtime_cleanup (instance.runtime_interrupted)',
+            )
+            ->assertExitCode(0);
+
+        MockClient::destroyGlobal();
+        MockClient::global([
+            ListAppInstancesRequest::class => MockResponse::make([
+                'data' => [$payload],
+                'meta' => ['request_id' => instance_request_id()],
+            ]),
+        ]);
+        $this
+            ->artisan('instance:list', ['--json' => true])
+            ->expectsOutputToContain('"removal":{"operation_id":"0198e15d-16c4-7855-8eb2-182b53ad28bb"')
             ->assertExitCode(0);
     });
 });
@@ -246,29 +278,105 @@ describe('instance:show', function (): void {
             ->expectsOutput('URL: https://dev.orbit.test')
             ->assertExitCode(0);
     });
+
+    it('shows bounded unfinished removal progress for humans', function (): void {
+        $payload = instance_payload(removal: removal_progress_payload(force: true));
+        MockClient::destroyGlobal();
+        MockClient::global([ShowAppInstanceRequest::class => instance_mock_response(payload: $payload)]);
+
+        $this
+            ->artisan('instance:show', ['instance' => '5'])
+            ->expectsOutput('dev (#5): removing')
+            ->expectsOutput('Removal mode: forced')
+            ->expectsOutput('Removal progress: 0/2 completed; 2 remaining')
+            ->expectsOutput('Removal step: runtime_cleanup')
+            ->expectsOutput('Removal failed step: runtime_cleanup')
+            ->expectsOutput('Removal error code: instance.runtime_interrupted')
+            ->assertExitCode(0);
+    });
+
+    it('shows bounded unfinished removal progress as JSON', function (): void {
+        $payload = instance_payload(removal: removal_progress_payload(force: true));
+        MockClient::global([ShowAppInstanceRequest::class => instance_mock_response(payload: $payload)]);
+
+        $expected = json_encode([
+            ...$payload,
+            'route' => [...instance_route_payload(), 'request_id' => instance_request_id()],
+            'request_id' => instance_request_id(),
+        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+        $this
+            ->artisan('instance:show', ['instance' => '5', '--json' => true])
+            ->expectsOutput($expected)
+            ->assertExitCode(0);
+    });
 });
 
 describe('instance:remove', function (): void {
-    it('removes an AppInstance without discard by default', function (): void {
-        $mockClient = MockClient::global([RemoveAppInstanceRequest::class => instance_mock_response()]);
+    it('removes an AppInstance in normal mode by default', function (): void {
+        $mockClient = MockClient::global([RemoveAppInstanceRequest::class => removal_mock_response()]);
 
         $this
             ->artisan('instance:remove', ['instance' => '5', '--json' => true])
-            ->expectsOutput(instance_json())
+            ->expectsOutput(removal_json())
             ->assertExitCode(0);
 
         expect($mockClient->getLastRequest()?->body()->all())->toBeEmpty();
     });
 
-    it('transports explicit destructive source-discard intent', function (): void {
-        $mockClient = MockClient::global([RemoveAppInstanceRequest::class => instance_mock_response()]);
+    it('transports explicit force and renders bounded progress', function (): void {
+        $mockClient = MockClient::global([RemoveAppInstanceRequest::class => removal_mock_response(force: true)]);
 
         $this
-            ->artisan('instance:remove', ['instance' => '5', '--discard-source' => true])
+            ->artisan('instance:remove', ['instance' => '5', '--force' => true])
             ->expectsOutput('Instance [dev] removed.')
+            ->expectsOutput('Mode: forced')
+            ->expectsOutput('Progress: 2/2 completed; 0 remaining')
+            ->expectsOutput('Current step: -')
             ->assertExitCode(0);
 
-        expect($mockClient->getLastRequest()?->body()->all())->toBe(['discard_source' => true]);
+        expect($mockClient->getLastRequest()?->body()->all())->toBe(['force' => true]);
+    });
+
+    it('preserves bounded failed removal progress in human and JSON errors', function (): void {
+        $failure = [
+            'error' => [
+                'code' => 'instance.runtime_interrupted',
+                'message' => 'AppInstance removal was accepted but remains incomplete.',
+                'details' => ['removal' => removal_progress_payload()],
+                'request_id' => instance_request_id(),
+            ],
+        ];
+        MockClient::global([
+            RemoveAppInstanceRequest::class => MockResponse::make(
+                $failure,
+                502,
+                ['X-Orbit-Request-Id' => instance_request_id()],
+            ),
+        ]);
+
+        $this
+            ->artisan('instance:remove', ['instance' => '5'])
+            ->expectsOutputToContain('AppInstance removal was accepted but remains incomplete.')
+            ->expectsOutput('Mode: normal')
+            ->expectsOutput('Progress: 0/2 completed; 2 remaining')
+            ->expectsOutput('Current step: runtime_cleanup')
+            ->expectsOutput('Failed step: runtime_cleanup')
+            ->expectsOutput('Error code: instance.runtime_interrupted')
+            ->assertExitCode(1);
+
+        MockClient::destroyGlobal();
+        MockClient::global([
+            RemoveAppInstanceRequest::class => MockResponse::make(
+                $failure,
+                502,
+                ['X-Orbit-Request-Id' => instance_request_id()],
+            ),
+        ]);
+        $expected = json_encode($failure, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+        $this
+            ->artisan('instance:remove', ['instance' => '5', '--json' => true])
+            ->expectsOutput($expected)
+            ->assertExitCode(1);
     });
 });
 
@@ -305,7 +413,7 @@ it('rejects invalid parent IDs before creating an AppInstance', function (
 ]);
 
 /** @return array<string, mixed> */
-function instance_payload(): array
+function instance_payload(?array $removal = null): array
 {
     return [
         'id' => 5,
@@ -321,10 +429,11 @@ function instance_payload(): array
         'branch_override' => null,
         'migration_required' => false,
         'starting_commit' => str_repeat('a', times: 40),
-        'status' => 'active',
+        'status' => $removal === null ? 'active' : 'removing',
         'route' => instance_route_payload(),
         'hostname' => 'dev.orbit.test',
         'url' => 'https://dev.orbit.test',
+        'removal' => $removal,
     ];
 }
 
@@ -347,12 +456,56 @@ function instance_route_payload(): array
     ];
 }
 
-function instance_mock_response(int $status = 200): MockResponse
+function instance_mock_response(int $status = 200, ?array $payload = null): MockResponse
 {
     return MockResponse::make([
-        'data' => instance_payload(),
+        'data' => $payload ?? instance_payload(),
         'meta' => ['request_id' => instance_request_id()],
     ], $status);
+}
+
+function removal_mock_response(bool $force = false): MockResponse
+{
+    return MockResponse::make([
+        'data' => removal_payload($force),
+        'meta' => ['request_id' => instance_request_id()],
+    ]);
+}
+
+/** @return array<string, mixed> */
+function removal_payload(bool $force = false): array
+{
+    return [
+        'operation_id' => '0198e15d-16c4-7855-8eb2-182b53ad28bb',
+        'id' => 5,
+        'name' => 'dev',
+        'force' => $force,
+        'status' => 'completed',
+        'current_step' => null,
+        'total' => 2,
+        'completed' => 2,
+        'remaining' => 0,
+        'failed_step' => null,
+        'error_code' => null,
+    ];
+}
+
+/** @return array<string, mixed> */
+function removal_progress_payload(bool $force = false): array
+{
+    return [
+        'operation_id' => '0198e15d-16c4-7855-8eb2-182b53ad28bb',
+        'id' => 5,
+        'name' => 'dev',
+        'force' => $force,
+        'status' => 'failed',
+        'current_step' => 'runtime_cleanup',
+        'total' => 2,
+        'completed' => 0,
+        'remaining' => 2,
+        'failed_step' => 'runtime_cleanup',
+        'error_code' => 'instance.runtime_interrupted',
+    ];
 }
 
 function instance_json(): string
@@ -360,6 +513,14 @@ function instance_json(): string
     return json_encode([
         ...instance_payload(),
         'route' => [...instance_route_payload(), 'request_id' => instance_request_id()],
+        'request_id' => instance_request_id(),
+    ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+}
+
+function removal_json(): string
+{
+    return json_encode([
+        ...removal_payload(),
         'request_id' => instance_request_id(),
     ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
 }

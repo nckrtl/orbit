@@ -3,9 +3,11 @@
 declare(strict_types=1);
 
 use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
+use App\Domain\Shared\LifecycleStatus;
 use App\Models\Route;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
@@ -84,6 +86,8 @@ it('enforces multi-target storage rules with compatible Cluster-scoped explicit 
     $twoNode = route_migration_node('two');
     $oneNode->update(['cluster_id' => $cluster->id]);
     $twoNode->update(['cluster_id' => $cluster->id]);
+    $oneNode->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
+    $twoNode->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
     $one = route_migration_instance($app, $oneNode, 'one');
     $two = route_migration_instance($app, $twoNode, 'two');
     $route = Route::query()->create([
@@ -131,6 +135,7 @@ function route_migration_instance(
         'app_id' => $app->id,
         'node_id' => $node->id,
         'name' => $name,
+        'environment' => 'production',
         'checkout_path' => "/srv/{$name}",
         'status' => AppInstanceState::Active,
     ]);
