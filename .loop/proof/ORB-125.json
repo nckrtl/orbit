@@ -21,6 +21,7 @@
         }
     ],
     "mutates": true,
+    "observed_inputs": true,
     "acceptance": [
         {
             "id": "legacy-default-remains-serving",

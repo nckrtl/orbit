@@ -132,6 +132,93 @@ it('preserves pre-existing healthy publication when repeated convergence fails',
     ]);
 });
 
+it('removes newly created publications in reverse order when DNS publication fails', function (): void {
+    $events = [];
+    $manager = metrics_publication_manager(
+        $events,
+        [
+            metrics_publication_manager_result(stdout: "Status: active\n"),
+            metrics_publication_manager_result(),
+            metrics_publication_manager_result(stdout: metrics_publication_manager_firewall()),
+            metrics_publication_manager_result(stdout: metrics_publication_manager_firewall()),
+            metrics_publication_manager_result(),
+            metrics_publication_manager_result(stdout: "Status: active\n"),
+        ],
+        failDns: true,
+    );
+
+    expect(fn () => $manager->converge(
+        metrics_publication_manager_node('gateway', '10.44.0.1'),
+        metrics_publication_manager_node('metrics', '10.44.0.3'),
+    ))
+        ->toThrow(RuntimeException::class, 'DNS publication failed.');
+    expect($events)->toBe([
+        'certificate:issue',
+        'process:certificate',
+        'ssh:status',
+        'ssh:apply',
+        'ssh:status',
+        'process:caddy',
+        'dns:metrics',
+        'process:caddy',
+        'ssh:status',
+        'ssh:delete',
+        'ssh:status',
+        'process:certificate',
+    ]);
+});
+
+it('restores replaced Caddy and certificate publications when DNS publication fails', function (): void {
+    $events = [];
+    $manager = metrics_publication_manager(
+        $events,
+        [metrics_publication_manager_result(stdout: metrics_publication_manager_firewall())],
+        failDns: true,
+        previousCertificateTarget: '/etc/caddy/orbit-metrics-cert-versions/previous',
+        previousCaddyConfiguration: "# Managed by Orbit: metrics\nold metrics\n",
+    );
+
+    expect(fn () => $manager->converge(
+        metrics_publication_manager_node('gateway', '10.44.0.1'),
+        metrics_publication_manager_node('metrics', '10.44.0.3'),
+    ))
+        ->toThrow(RuntimeException::class, 'DNS publication failed.');
+    expect($events)->toBe([
+        'certificate:issue',
+        'process:certificate',
+        'ssh:status',
+        'process:caddy',
+        'dns:metrics',
+        'process:caddy',
+        'process:certificate',
+    ]);
+});
+
+it('restores a renewed certificate after an unchanged Caddy publication when DNS fails', function (): void {
+    $events = [];
+    $manager = metrics_publication_manager(
+        $events,
+        [metrics_publication_manager_result(stdout: metrics_publication_manager_firewall())],
+        caddyChanged: false,
+        failDns: true,
+        previousCertificateTarget: '/etc/caddy/orbit-metrics-cert-versions/previous',
+    );
+
+    expect(fn () => $manager->converge(
+        metrics_publication_manager_node('gateway', '10.44.0.1'),
+        metrics_publication_manager_node('metrics', '10.44.0.3'),
+    ))
+        ->toThrow(RuntimeException::class, 'DNS publication failed.');
+    expect($events)->toBe([
+        'certificate:issue',
+        'process:certificate',
+        'ssh:status',
+        'process:caddy',
+        'dns:metrics',
+        'process:certificate',
+    ]);
+});
+
 it('retracts only the Gateway side of the publication, never touching the firewall', function (): void {
     $events = [];
     $manager = metrics_publication_manager($events, []);
@@ -146,13 +233,25 @@ it('retracts only the Gateway side of the publication, never touching the firewa
 });
 
 /** @param list<string> $events @param list<CommandResult> $sshResults */
+/** @mago-expect lint:excessive-parameter-list Named failure controls keep each rollback scenario explicit. */
 function metrics_publication_manager(
     array &$events,
     array $sshResults,
     bool $failCaddy = false,
     bool $certificateChanged = true,
+    bool $caddyChanged = true,
+    bool $failDns = false,
+    ?string $previousCertificateTarget = null,
+    ?string $previousCaddyConfiguration = null,
 ): MetricsPublicationManager {
-    $processes = new MetricsPublicationManagerProcessRunner($events, $failCaddy, $certificateChanged);
+    $processes = new MetricsPublicationManagerProcessRunner(
+        $events,
+        $failCaddy,
+        $certificateChanged,
+        $caddyChanged,
+        $previousCertificateTarget,
+        $previousCaddyConfiguration,
+    );
 
     return new MetricsPublicationManager(
         certificates: new MetricsPublicationManagerCertificateIssuer($events),
@@ -163,7 +262,7 @@ function metrics_publication_manager(
             new MetricsPublicationManagerSshKeyProvider,
             new MetricsPublicationManagerKnownHostsStore,
         ),
-        dns: new MetricsPublicationManagerDns($events),
+        dns: new MetricsPublicationManagerDns($events, $failDns),
     );
 }
 
@@ -193,10 +292,14 @@ function metrics_publication_manager_firewall(): string
 final class MetricsPublicationManagerProcessRunner implements ProcessRunner
 {
     /** @param list<string> $events */
+    /** @mago-expect lint:excessive-parameter-list The test runner models each independent publication outcome. */
     public function __construct(
         private array &$events,
         private bool $failCaddy,
         private bool $certificateChanged,
+        private bool $caddyChanged,
+        private ?string $previousCertificateTarget,
+        private ?string $previousCaddyConfiguration,
     ) {}
 
     public function run(ProcessInvocation $invocation): CommandResult
@@ -210,11 +313,17 @@ final class MetricsPublicationManagerProcessRunner implements ProcessRunner
             return new CommandResult(1, '', 'private failure detail', 1, false);
         }
 
-        $changed = $event === 'process:certificate'
-            ? $this->certificateChanged
-            : true;
+        $changed = $event === 'process:certificate' ? $this->certificateChanged : $this->caddyChanged;
+        $previous = $event === 'process:certificate'
+            ? $this->previousCertificateTarget
+            : $this->previousCaddyConfiguration;
+        $change = is_string($previous)
+            ? 'replaced:'.base64_encode($previous)
+            : 'created';
 
-        return metrics_publication_manager_result(stdout: $changed ? "changed\n" : '');
+        return metrics_publication_manager_result(
+            stdout: 'orbit-metrics-publication:'.($changed ? $change : 'unchanged')."\n",
+        );
     }
 }
 
@@ -283,10 +392,15 @@ final class MetricsPublicationManagerDns implements PrivateDnsManager
     /** @param list<string> $events */
     public function __construct(
         private array &$events,
+        private bool $fail,
     ) {}
 
     public function converge(?Node $pendingNode = null): void
     {
         $this->events[] = 'dns:'.($pendingNode?->name ?? 'none');
+
+        if ($this->fail) {
+            throw new RuntimeException('DNS publication failed.');
+        }
     }
 }

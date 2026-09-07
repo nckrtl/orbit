@@ -8,6 +8,7 @@ use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\UbuntuRelease;
 use App\Infrastructure\Nodes\NodeBootstrapPackageCatalog;
+use App\Infrastructure\Nodes\OsReleaseParserProgram;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Node;
 
@@ -30,62 +31,8 @@ final readonly class NodeRolePrerequisiteCommandFactory
             managed_group=$2
             managed_home=$3
             shift 3
-            release_count=$1
-            shift
-            unsupported_text=$1
-            shift
-
-            fail_os() {
-                if [ "$#" -eq 2 ] && [ -n "$1" ] && [ -n "$2" ]; then
-                    printf 'Node operating system [%s/%s] is not supported.\n' "$1" "$2" >&2
-                else
-                    printf '%s\n' "$unsupported_text" >&2
-                fi
-                exit 1
-            }
-
-            if ! [ -r /etc/os-release ]; then
-                fail_os
-            fi
-
-            os_id=
-            os_codename=
-            found_id=false
-            found_codename=false
-            while IFS= read -r line || [ -n "$line" ]; do
-                case "$line" in
-                    ID=*)
-                        [ "$found_id" = false ] || fail_os
-                        os_id=${line#ID=}
-                        if [[ "$os_id" =~ ^\"[A-Za-z0-9._-]+\"$ ]]; then os_id=${os_id:1:${#os_id}-2}; elif [[ "$os_id" =~ ^\'[A-Za-z0-9._-]+\'$ ]]; then os_id=${os_id:1:${#os_id}-2}; elif [[ ! "$os_id" =~ ^[A-Za-z0-9._-]+$ ]]; then fail_os; fi
-                        found_id=true
-                        ;;
-                    VERSION_CODENAME=*)
-                        [ "$found_codename" = false ] || fail_os
-                        os_codename=${line#VERSION_CODENAME=}
-                        if [[ "$os_codename" =~ ^\"[A-Za-z0-9._-]+\"$ ]]; then os_codename=${os_codename:1:${#os_codename}-2}; elif [[ "$os_codename" =~ ^\'[A-Za-z0-9._-]+\'$ ]]; then os_codename=${os_codename:1:${#os_codename}-2}; elif [[ ! "$os_codename" =~ ^[A-Za-z0-9._-]+$ ]]; then fail_os; fi
-                        found_codename=true
-                        ;;
-                esac
-            done < /etc/os-release
-
-            if [ "$found_id" != true ] || [ "$found_codename" != true ]; then
-                fail_os
-            fi
-
-            supported_release=false
-            for _ in $(seq 1 "$release_count"); do
-                supported_codename=$1
-                shift
-                if [ "$os_codename" = "$supported_codename" ]; then
-                    supported_release=true
-                fi
-            done
-
-            if [ "$os_id" != 'ubuntu' ] || [ "$supported_release" != 'true' ]; then
-                fail_os "$os_id" "$os_codename"
-            fi
-
+            BASH;
+        $input .= "\n".OsReleaseParserProgram::render()."\n".<<<'BASH'
             docker_ce_healthy=false
             if [ "$(dpkg-query -W -f='${Status}' docker-ce 2>/dev/null)" = 'install ok installed' ] \
                 && [ "$(dpkg-query -W -f='${Status}' docker-ce-cli 2>/dev/null)" = 'install ok installed' ] \
@@ -315,8 +262,9 @@ final readonly class NodeRolePrerequisiteCommandFactory
                 $account->user,
                 $account->group,
                 $account->home,
-                (string) count(UbuntuRelease::forRole($role)),
+                'ubuntu',
                 UbuntuRelease::unsupportedText(),
+                (string) count(UbuntuRelease::forRole($role)),
                 ...array_map(
                     static fn (UbuntuRelease $release): string => $release->value,
                     UbuntuRelease::forRole($role),

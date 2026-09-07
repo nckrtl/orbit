@@ -7,6 +7,7 @@ namespace App\Infrastructure\WireGuard;
 use App\Data\Gateway\BootstrapGatewayData;
 use App\Domain\Gateway\GatewayVpnConverger;
 use App\Domain\Nodes\NodeProvisioningException;
+use App\Domain\WireGuard\Ipv4Subnet;
 use App\Infrastructure\Files\ProtectedFileWriter;
 use App\Infrastructure\Firewall\UfwManagedRule;
 use App\Infrastructure\Firewall\UfwRuleOwnership;
@@ -20,6 +21,7 @@ use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Processes\SystemdVpnOrderingDropIn;
 use App\Models\Node;
 use Closure;
+use InvalidArgumentException;
 
 /**
  * @mago-expect lint:cyclomatic-complexity The converger keeps dependent VPN safety gates in execution order.
@@ -62,12 +64,22 @@ final readonly class NativeGatewayVpnConverger implements GatewayVpnConverger
 
     private function convergeWireGuard(Node $gateway, BootstrapGatewayData $data): void
     {
-        $prefixLength = $this->prefixLength($data->wireguardSubnet);
+        $subnet = $this->subnet($data->wireguardSubnet);
+
+        if (! $subnet->containsUsableAddress($data->wireguardIp)) {
+            throw new NodeProvisioningException(
+                step: 'wireguard-configuration',
+                errorCode: 'vpn.configuration_invalid',
+                message: "Gateway WireGuard address [{$data->wireguardIp}] is not usable in [{$subnet->value()}].",
+            );
+        }
+
+        $prefixLength = $subnet->prefixLength();
         $privateKey = $this->key('private');
         $publicKey = $this->key('public');
         $configuration = new VpnConfiguration(
             server: $gateway,
-            subnet: $data->wireguardSubnet,
+            subnet: $subnet->value(),
             prefixLength: $prefixLength,
             port: $data->wireguardPort,
             endpoint: $data->wireguardEndpoint,
@@ -752,30 +764,17 @@ final readonly class NativeGatewayVpnConverger implements GatewayVpnConverger
         );
     }
 
-    private function prefixLength(string $subnet): int
+    private function subnet(string $value): Ipv4Subnet
     {
-        [$network, $prefix] = array_pad(
-            array: explode(separator: '/', string: $subnet, limit: 2),
-            length: 2,
-            value: null,
-        );
-        $prefixLength = filter_var($prefix, FILTER_VALIDATE_INT);
-
-        if (
-            ! is_string($network)
-            || ! is_int($prefixLength)
-            || $prefixLength < 8
-            || $prefixLength > 30
-            || ip2long($network) === false
-        ) {
+        try {
+            return Ipv4Subnet::from($value);
+        } catch (InvalidArgumentException) {
             throw new NodeProvisioningException(
                 step: 'wireguard-configuration',
                 errorCode: 'vpn.configuration_invalid',
-                message: "WireGuard subnet [{$subnet}] is invalid.",
+                message: "WireGuard subnet [{$value}] is invalid.",
             );
         }
-
-        return $prefixLength;
     }
 
     private function key(string $name): string

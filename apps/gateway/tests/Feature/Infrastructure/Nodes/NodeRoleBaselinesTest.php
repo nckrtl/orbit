@@ -327,9 +327,9 @@ it('passes a nondefault managed account into every baseline prerequisite command
 
     expect($events)
         ->toContain(
-            '["sudo","bash","-seu","--","vpn","nckrtl","nckrtl","\/srv\/users\/nckrtl","1","Node operating system [unknown\/unknown] is not supported.","resolute","dnsmasq","openssl"]',
-            '["sudo","bash","-seu","--","app-dev","nckrtl","nckrtl","\/srv\/users\/nckrtl","1","Node operating system [unknown\/unknown] is not supported.","resolute","acl","attr","caddy","composer","docker.io","git","openssl","unzip"]',
-            '["sudo","bash","-seu","--","app-prod","nckrtl","nckrtl","\/srv\/users\/nckrtl","1","Node operating system [unknown\/unknown] is not supported.","resolute","acl","attr","caddy","composer","docker.io","git","openssl","unzip"]',
+            '["sudo","bash","-seu","--","vpn","nckrtl","nckrtl","\/srv\/users\/nckrtl","ubuntu","Node operating system [unknown\/unknown] is not supported.","1","resolute","dnsmasq","openssl"]',
+            '["sudo","bash","-seu","--","app-dev","nckrtl","nckrtl","\/srv\/users\/nckrtl","ubuntu","Node operating system [unknown\/unknown] is not supported.","1","resolute","acl","attr","caddy","composer","docker.io","git","openssl","unzip"]',
+            '["sudo","bash","-seu","--","app-prod","nckrtl","nckrtl","\/srv\/users\/nckrtl","ubuntu","Node operating system [unknown\/unknown] is not supported.","1","resolute","acl","attr","caddy","composer","docker.io","git","openssl","unzip"]',
         );
 });
 

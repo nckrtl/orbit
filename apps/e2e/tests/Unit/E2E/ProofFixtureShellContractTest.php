@@ -61,38 +61,21 @@ it('keeps early-exit proof pipeline producers truthful under pipefail', function
     expect($unexpected)->toBe([]);
 });
 
-it('keeps the extended runtime fixture fail-closed at its local and remote shell boundaries', function (): void {
-    $source = file_get_contents(dirname(__DIR__, 5).'/.loop/proof/extended-runtime-connectivity.sh');
-    assert(is_string($source));
+it('keeps permanent fixture contracts independent of individual proof fixtures', function (): void {
+    $individualFixture = '/\.loop\/proof\/[A-Za-z0-9][A-Za-z0-9._-]{0,127}/';
+    $contractTests = glob(__DIR__.'/*ContractTest.php') ?: [];
+    $dependencies = [];
 
-    expect($source)
-        ->toContain(
-            'set -euo pipefail',
-            '[[ $# -eq 4 ]]',
-            '[[ -r "$database" ]]',
-            'ping -c 1 -W 5 -- "$extra_address"',
-            '-o BatchMode=yes',
-            '-o ConnectTimeout=5',
-            '-o StrictHostKeyChecking=yes',
-            '-o UserKnownHostsFile=/home/orbit/.orbit/ssh/known_hosts',
-            '"orbit@$extra_address"',
-            '"set -euo pipefail; php -r',
-            'systemctl is-active php8.5-fpm',
-            'systemctl is-active caddy',
-            'sudo caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile',
-        )
-        ->not->toContain('StrictHostKeyChecking=no', '|| true');
+    foreach ($contractTests as $contractTest) {
+        $contents = file_get_contents($contractTest);
+        assert(is_string($contents));
+        $matched = preg_match_all($individualFixture, $contents, $matches);
+        assert(is_int($matched));
+
+        foreach ($matches[0] as $match) {
+            $dependencies[] = basename($contractTest).': '.$match;
+        }
+    }
+
+    expect($dependencies)->toBe([]);
 });
-
-it('refuses missing or altered extended-runtime action arguments before inspection', function (array $arguments): void {
-    $script = dirname(__DIR__, 5).'/.loop/proof/extended-runtime-connectivity.sh';
-    $result = new \Illuminate\Process\Factory()->run(['bash', $script, ...$arguments]);
-
-    expect($result->successful())->toBeFalse();
-})->with([
-    'missing arguments' => [[]],
-    'wrong development Node' => [['other', 'app-prod', 'app-prod-2', '10.44.0.4']],
-    'wrong original Node' => [['app-dev', 'other', 'app-prod-2', '10.44.0.4']],
-    'wrong extra Node' => [['app-dev', 'app-prod', 'extra', '10.44.0.4']],
-    'wrong extra address' => [['app-dev', 'app-prod', 'app-prod-2', '10.44.0.5']],
-]);

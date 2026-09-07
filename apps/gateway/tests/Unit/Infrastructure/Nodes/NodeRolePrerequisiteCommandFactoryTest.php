@@ -188,8 +188,20 @@ it('uses fixed managed account argv and dynamic paths for a nondefault home', fu
     $account = nondefault_managed_user_account();
     $command = new NodeRolePrerequisiteCommandFactory()->make(new Node, RoleName::AppDev, $account);
 
-    expect(array_slice($command->arguments, 0, 9))
-        ->toBe(['sudo', 'bash', '-seu', '--', 'app-dev', 'nckrtl', 'nckrtl', '/srv/users/nckrtl', '1'])
+    expect(array_slice($command->arguments, 0, 11))
+        ->toBe([
+            'sudo',
+            'bash',
+            '-seu',
+            '--',
+            'app-dev',
+            'nckrtl',
+            'nckrtl',
+            '/srv/users/nckrtl',
+            'ubuntu',
+            UbuntuRelease::unsupportedText(),
+            '1',
+        ])
         ->and($command->input ?? '')
         ->toContain(
             'managed_user=$1',
@@ -1035,8 +1047,9 @@ function role_prerequisite_process_arguments(
         $account->user,
         $account->group,
         $account->home,
-        (string) count($releases),
+        'ubuntu',
         $requirement ?? UbuntuRelease::unsupportedText(),
+        (string) count($releases),
         ...$releases,
         ...$packages,
     ];
@@ -1052,8 +1065,8 @@ function role_prerequisite_process_arguments(
 function role_prerequisite_packages(\App\Infrastructure\Ssh\RemoteCommand $command): array
 {
     $arguments = $command->arguments;
-    $releaseCount = (int) $arguments[8];
-    $packageOffset = 10 + $releaseCount;
+    $releaseCount = (int) $arguments[10];
+    $packageOffset = 11 + $releaseCount;
 
     return array_slice($arguments, $packageOffset);
 }

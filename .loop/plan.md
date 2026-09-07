@@ -75,7 +75,7 @@ Legacy migration Incus fixture contract:
 4. Add optional branch input, stored override, branch selection, and retry identity without disturbing Route reservation or resumable provisioning.
 5. Add migration/destination preflight, layout-aware Doctor/activity, identity-only hostname generation, and legacy Route preservation.
 6. Update the SDK rule, typed transport, and tests; then update CLI options, help, transport, output, JSON fixtures, and command-surface assertions.
-7. Add a `mutates: true` ORB-125 proof plan and `stable-source-identity.sh` with the exact ordered legacy setup and acceptance argv above plus the other three named Incus actions. Run focused proofs, all three component checks, `bin/test`, and one fresh Incus proof with every action at exit `0`.
+7. Add a `mutates: true`, `observed_inputs: true` ORB-125 proof plan and `stable-source-identity.sh` with the exact ordered legacy setup and acceptance argv above plus the other three named Incus actions. The actions exercise app-dev CLI, Gateway CLI, and Gateway FPM so the harness can collect complete PHP observations. Run focused proofs, all three component checks, `bin/test`, and one fresh Incus proof with every action at exit `0`.
 
 ## Must preserve
 
@@ -96,7 +96,7 @@ Legacy migration Incus fixture contract:
 ## Deviations
 
 - The disposable Incus sample App stores `13.x`, which cannot be an AppInstance name under the existing name contract. The proof-only legacy fixture therefore stages the sample repository's existing `master` branch as a normal named checkout on `app-dev`, then changes only the disposable fixture App's default to `master` on `gateway` immediately before rolling back the source-identity migration. The recorded pre-upgrade graph still has an exact matching App default, AppInstance name, local branch, and name-based path, so the approved before/after migration assertions and every Acceptance meaning remain unchanged.
-- The current `origin/main` retains `.loop/proof/ORB-132.json`. The exact-commit proof stager rejects another issue's JSON plan as an invalid fixture, so the ORB-125 candidate removes that stale plan while preserving its shared `extended-runtime-connectivity.sh` fixture, which repository E2E contract tests require and the proof stager accepts as an additional shell fixture. No product or E2E harness path changes, and every Acceptance meaning remains unchanged.
+- The previously approved candidate removed the stale `.loop/proof/ORB-132.json` from its then-current base and retained the shared `extended-runtime-connectivity.sh` fixture because permanent E2E tests required it. ORB-151 made those tests fixture-neutral and removed the shared fixture from `origin/main`, so this integration also removes it. ORB-125 uses only `stable-source-identity.sh`; its complete issue workspace remains intact, no product or harness behavior changes, and every Acceptance meaning remains unchanged.
 
 ## Review findings
 

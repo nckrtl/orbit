@@ -6,6 +6,7 @@ use App\Domain\Certificates\GatewayCertificatePaths;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Metrics\MetricsCaddyPublisher;
 use App\Infrastructure\Metrics\MetricsCertificatePublisher;
+use App\Infrastructure\Metrics\MetricsPublicationReceipt;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
@@ -60,7 +61,74 @@ it('reloads Caddy after swapping in a renewed Metrics certificate', function ():
         ->and($reload)
         ->toBeInt()
         ->toBeGreaterThan($swap)
-        ->toBeLessThan(strpos($script, "printf 'changed\\n'"));
+        ->toBeLessThan(strrpos($script, "printf 'orbit-metrics-publication:"));
+});
+
+it('returns replacement receipts without copying certificate key content', function (): void {
+    $certificateTarget = '/etc/caddy/orbit-metrics-cert-versions/previous';
+    $caddyConfiguration = "# Managed by Orbit: metrics\nmetrics.orbit {\n    respond old\n}\n";
+    $processes = new MetricsLocalPublicationProcessRunner([
+        metrics_local_publication_receipt($certificateTarget),
+        metrics_local_publication_receipt($caddyConfiguration),
+    ]);
+
+    $certificateReceipt = new MetricsCertificatePublisher($processes)->publish(new GatewayCertificatePaths(
+        privateKeyPath: '/var/lib/orbit/ca/new-private-key',
+        certificatePath: '/var/lib/orbit/ca/new-certificate',
+    ));
+    $caddyReceipt = new MetricsCaddyPublisher($processes)->publish("# Managed by Orbit: metrics\nnew\n");
+
+    expect($certificateReceipt->previousPublication())->toBe($certificateTarget);
+    expect($caddyReceipt->previousPublication())->toBe($caddyConfiguration);
+    expect($certificateReceipt->previousPublication())
+        ->not
+        ->toContain('new-private-key', 'new-certificate');
+});
+
+it('restores certificate pointers and Caddy fragments through locked component operations', function (): void {
+    $previousTarget = '/etc/caddy/orbit-metrics-cert-versions/previous';
+    $previousConfiguration = "# Managed by Orbit: metrics\nmetrics.orbit {\n    respond old\n}\n";
+    $processes = new MetricsLocalPublicationProcessRunner;
+
+    new MetricsCertificatePublisher($processes)->restore(MetricsPublicationReceipt::replaced($previousTarget));
+    new MetricsCaddyPublisher($processes)->restore(MetricsPublicationReceipt::replaced($previousConfiguration));
+
+    expect($processes->invocations)->toHaveCount(2);
+    expect($processes->invocations[0]->arguments)->toContain('replaced', $previousTarget);
+    expect($processes->invocations[0]->input)
+        ->toContain('published_target=$(readlink "$current")')
+        ->toContain('ln -s -- "$published_target" "$link"')
+        ->toContain('systemctl reload-or-restart caddy || true');
+    expect($processes->invocations[1]->input)
+        ->toContain(base64_encode($previousConfiguration))
+        ->toContain('for fragment in "$current_fragments"/*.caddy')
+        ->toContain('cp --preserve=mode,ownership -- "$fragment" "$candidate/fragments/"');
+});
+
+it('removes a newly created component publication during restoration', function (): void {
+    $processes = new MetricsLocalPublicationProcessRunner;
+
+    new MetricsCaddyPublisher($processes)->restore(MetricsPublicationReceipt::created());
+    new MetricsCertificatePublisher($processes)->restore(MetricsPublicationReceipt::created());
+
+    expect($processes->invocations)->toHaveCount(2);
+    expect($processes->invocations[0]->arguments)->toContain('metrics.caddy');
+    expect($processes->invocations[1]->arguments)->toContain('created', '');
+});
+
+it('recovers the previous certificate pointer when publication reload fails', function (): void {
+    $processes = new MetricsLocalPublicationProcessRunner;
+
+    new MetricsCertificatePublisher($processes)->publish(new GatewayCertificatePaths(
+        privateKeyPath: '/var/lib/orbit/ca/metrics.key',
+        certificatePath: '/var/lib/orbit/ca/metrics.pem',
+    ));
+
+    expect($processes->invocations[0]->input)
+        ->toContain('if ! systemctl reload-or-restart caddy; then')
+        ->toContain('ln -s -- "$previous_target" "$link"')
+        ->toContain('rm -f -- "$current"')
+        ->toContain('rm -rf -- "$directory"');
 });
 
 it('removes only Metrics-owned local publication state', function (): void {
@@ -105,6 +173,25 @@ final class MetricsLocalPublicationProcessRunner implements ProcessRunner
     {
         $this->invocations[] = $invocation;
 
-        return array_shift($this->results) ?? new CommandResult(0, '', '', 1, false);
+        return (
+            array_shift($this->results) ?? new CommandResult(
+                0,
+                "orbit-metrics-publication:created\n",
+                '',
+                1,
+                false,
+            )
+        );
     }
+}
+
+function metrics_local_publication_receipt(string $previous): CommandResult
+{
+    return new CommandResult(
+        0,
+        'orbit-metrics-publication:replaced:'.base64_encode($previous)."\n",
+        '',
+        1,
+        false,
+    );
 }
