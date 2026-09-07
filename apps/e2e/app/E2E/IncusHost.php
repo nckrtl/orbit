@@ -93,47 +93,7 @@ final class IncusHost implements GuestTransport
 
         foreach ($resources as $resource) {
             if (is_array($resource) && ($resource['name'] ?? null) === $name) {
-                if (($resource['type'] ?? null) !== 'virtual-machine') {
-                    throw new RuntimeException("Incus instance {$name} is not a virtual machine.");
-                }
-
-                $pool = $resource['devices']['root']['pool'] ?? $resource['expanded_devices']['root']['pool'] ?? null;
-                if (! is_string($pool) || $pool === '') {
-                    throw new RuntimeException("Incus instance {$name} has no storage pool identity.");
-                }
-
-                if ($pool !== $this->pool) {
-                    throw new RuntimeException("Incus instance {$name} storage pool identity does not match.");
-                }
-
-                $status = $resource['status'] ?? null;
-                $statusCode = $resource['status_code'] ?? null;
-                if (! is_string($status) || ! is_int($statusCode)) {
-                    throw new RuntimeException("Incus instance {$name} has no valid power status.");
-                }
-                $network =
-                    $resource['devices']['eth0']['network'] ?? $resource['expanded_devices']['eth0']['network'] ?? null;
-                $mac =
-                    $resource['devices']['eth0']['hwaddr'] ?? $resource['expanded_devices']['eth0']['hwaddr'] ?? null;
-                if ($network !== null && ! is_string($network)) {
-                    throw new RuntimeException("Incus instance {$name} has an invalid network identity.");
-                }
-                if ($mac !== null && ! is_string($mac)) {
-                    throw new RuntimeException("Incus instance {$name} has an invalid MAC identity.");
-                }
-
-                return new IncusInstance(
-                    $this->remote,
-                    $this->project,
-                    $name,
-                    $pool,
-                    $this->metadata($resource),
-                    strtoupper($status),
-                    $statusCode,
-                    $network,
-                    $mac,
-                    $this->disks($resource, $name),
-                );
+                return $this->instanceFromResource($resource, $name);
             }
         }
 
@@ -1631,24 +1591,48 @@ final class IncusHost implements GuestTransport
     }
 
     /** @param array<array-key, mixed> $resource */
-    private function instanceFromResource(array $resource): IncusInstance
+    private function instanceFromResource(array $resource, ?string $requestedName = null): IncusInstance
     {
         $name = $resource['name'] ?? null;
         if (! is_string($name) || ($resource['type'] ?? null) !== 'virtual-machine') {
+            if ($requestedName !== null) {
+                throw new RuntimeException("Incus instance {$requestedName} is not a virtual machine.");
+            }
             throw new RuntimeException('Incus instance identity is not a virtual machine.');
         }
         $pool = $resource['devices']['root']['pool'] ?? $resource['expanded_devices']['root']['pool'] ?? null;
+        if (! is_string($pool) || $pool === '') {
+            if ($requestedName !== null) {
+                throw new RuntimeException("Incus instance {$name} has no storage pool identity.");
+            }
+            throw new RuntimeException("Incus instance {$name} identity is invalid.");
+        }
+        if ($pool !== $this->pool) {
+            if ($requestedName !== null) {
+                throw new RuntimeException("Incus instance {$name} storage pool identity does not match.");
+            }
+            throw new RuntimeException("Incus instance {$name} identity is invalid.");
+        }
         $status = $resource['status'] ?? null;
         $statusCode = $resource['status_code'] ?? null;
-        if (! is_string($pool) || $pool !== $this->pool || ! is_string($status) || ! is_int($statusCode)) {
+        if (! is_string($status) || ! is_int($statusCode)) {
+            if ($requestedName !== null) {
+                throw new RuntimeException("Incus instance {$name} has no valid power status.");
+            }
             throw new RuntimeException("Incus instance {$name} identity is invalid.");
         }
         $network = $resource['devices']['eth0']['network'] ?? $resource['expanded_devices']['eth0']['network'] ?? null;
         $mac = $resource['devices']['eth0']['hwaddr'] ?? $resource['expanded_devices']['eth0']['hwaddr'] ?? null;
         if ($network !== null && ! is_string($network)) {
+            if ($requestedName !== null) {
+                throw new RuntimeException("Incus instance {$name} has an invalid network identity.");
+            }
             throw new RuntimeException("Incus instance {$name} network identity is invalid.");
         }
         if ($mac !== null && ! is_string($mac)) {
+            if ($requestedName !== null) {
+                throw new RuntimeException("Incus instance {$name} has an invalid MAC identity.");
+            }
             throw new RuntimeException("Incus instance {$name} MAC identity is invalid.");
         }
 
