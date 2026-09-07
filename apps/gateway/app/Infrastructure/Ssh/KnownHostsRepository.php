@@ -7,8 +7,13 @@ namespace App\Infrastructure\Ssh;
 use InvalidArgumentException;
 use RuntimeException;
 
+/** @mago-expect lint:cyclomatic-complexity The repository keeps one bounded locked file transaction explicit. */
 final readonly class KnownHostsRepository implements KnownHostsStore
 {
+    private const int LockRetryMicroseconds = 10_000;
+
+    private const int LockTimeoutNanoseconds = 10_000_000_000;
+
     public function __construct(
         private string $path,
     ) {}
@@ -36,6 +41,75 @@ final readonly class KnownHostsRepository implements KnownHostsStore
 
         chmod(filename: $directory, permissions: 0o700);
 
+        $lock = $this->acquireLock();
+
+        try {
+            $this->replace($host, $port, $key);
+        } finally {
+            $this->releaseLock($lock);
+        }
+    }
+
+    /** @return resource */
+    private function acquireLock()
+    {
+        $lockPath = $this->path.'.lock';
+        $deadline = $this->monotonicNanoseconds() + self::LockTimeoutNanoseconds;
+        $lock = fopen(filename: $lockPath, mode: 'c');
+
+        if ($lock === false) {
+            throw new RuntimeException("Could not open SSH host keys lock [{$lockPath}].");
+        }
+
+        if (! chmod(filename: $lockPath, permissions: 0o600)) {
+            fclose($lock);
+
+            throw new RuntimeException("Could not protect SSH host keys lock [{$lockPath}].");
+        }
+
+        while (true) {
+            $wouldBlock = 0;
+
+            if (flock($lock, LOCK_EX | LOCK_NB, $wouldBlock)) {
+                return $lock;
+            }
+
+            if ($wouldBlock !== 1) {
+                fclose($lock);
+
+                throw new RuntimeException("Could not acquire SSH host keys lock [{$lockPath}].");
+            }
+
+            $remainingNanoseconds = $deadline - $this->monotonicNanoseconds();
+
+            if ($remainingNanoseconds <= 0) {
+                fclose($lock);
+
+                throw new RuntimeException(
+                    "Timed out after 10 seconds waiting to update SSH host keys [{$this->path}].",
+                );
+            }
+
+            usleep(min(
+                self::LockRetryMicroseconds,
+                max(1, intdiv($remainingNanoseconds, 1_000)),
+            ));
+        }
+    }
+
+    /** @param resource $lock */
+    private function releaseLock($lock): void
+    {
+        try {
+            flock($lock, LOCK_UN);
+        } finally {
+            fclose($lock);
+        }
+    }
+
+    private function replace(string $host, int $port, HostKey $key): void
+    {
+        $directory = dirname($this->path);
         $hostLabel = $port === 22 ? $host : "[{$host}]:{$port}";
         $lines = $this->lines();
         $lines = array_values(array_filter(
@@ -44,18 +118,45 @@ final readonly class KnownHostsRepository implements KnownHostsStore
         ));
         $lines[] = "{$hostLabel} {$key->type} {$key->value}";
 
-        $temporaryPath = $this->path.'.tmp';
+        $candidatePath = tempnam(
+            directory: $directory,
+            prefix: basename($this->path).'.candidate.',
+        );
+
+        if ($candidatePath === false) {
+            throw new RuntimeException("Could not create SSH host keys candidate [{$this->path}].");
+        }
+
         $contents = implode(PHP_EOL, $lines).PHP_EOL;
 
-        if (file_put_contents($temporaryPath, $contents, LOCK_EX) === false) {
-            throw new RuntimeException("Could not write SSH host keys [{$temporaryPath}].");
-        }
+        try {
+            if (realpath(dirname($candidatePath)) !== realpath($directory)) {
+                throw new RuntimeException("Could not create SSH host keys candidate [{$this->path}].");
+            }
 
-        chmod(filename: $temporaryPath, permissions: 0o600);
+            $written = file_put_contents($candidatePath, $contents, LOCK_EX);
 
-        if (! rename($temporaryPath, $this->path)) {
-            throw new RuntimeException("Could not install SSH host keys [{$this->path}].");
+            if ($written !== strlen($contents)) {
+                throw new RuntimeException("Could not write SSH host keys [{$candidatePath}].");
+            }
+
+            if (! chmod(filename: $candidatePath, permissions: 0o600)) {
+                throw new RuntimeException("Could not protect SSH host keys [{$candidatePath}].");
+            }
+
+            if (! rename($candidatePath, $this->path)) {
+                throw new RuntimeException("Could not install SSH host keys [{$this->path}].");
+            }
+        } finally {
+            if (is_file($candidatePath)) {
+                unlink($candidatePath);
+            }
         }
+    }
+
+    private function monotonicNanoseconds(): int
+    {
+        return (int) hrtime(true);
     }
 
     /** @return list<string> */
