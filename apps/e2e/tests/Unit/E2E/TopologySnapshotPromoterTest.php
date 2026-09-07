@@ -83,15 +83,19 @@ function promotableFixture(
     $state = IssueState::forWorktree('TST-123', $worktree);
     $operation = new OperationId(str_repeat('b', 32));
     $state->writeAttempt($target->requireAttempt(), $purpose, $operation);
+    $construction = $extended
+        ? \App\E2E\Value\TopologyConstructionInputs::create(
+            $target,
+            $promoted,
+            2,
+            \App\E2E\Value\TopologyExtension::AppProd,
+            str_repeat('f', 64),
+        )
+        : \App\E2E\Value\TopologyConstructionInputs::create($target, $promoted, 2);
     $state->writeTopology(new FeatureTopology(
-        $target,
+        $construction,
         $purpose,
         $promoted,
-        $target->network(),
-        array_combine(
-            $target->recipe->nodeKeys(),
-            array_map($target->instance(...), $target->recipe->nodeKeys()),
-        ),
         new SourceState($candidate, $candidate, operationId: $operation->value),
         new VerificationReport(true, [
             'proof.verify' => [
@@ -102,15 +106,6 @@ function promotableFixture(
                 'evidence_ref' => 'incus://'.$target->instance('gateway').'/proof.verify',
             ],
         ]),
-        construction: $extended
-            ? \App\E2E\Value\TopologyConstructionInputs::create(
-                $target,
-                $promoted,
-                2,
-                \App\E2E\Value\TopologyExtension::AppProd,
-                str_repeat('f', 64),
-            )
-            : null,
     ));
     $planPath = $worktree.'/.loop/proof/TST-123.json';
     mkdir(dirname($planPath), 0700, true);
@@ -145,15 +140,7 @@ function promotableFixture(
             ]],
             '.loop/proof/TST-123.json',
             [],
-            $extended
-                ? \App\E2E\Value\TopologyConstructionInputs::create(
-                    $target,
-                    $promoted,
-                    2,
-                    \App\E2E\Value\TopologyExtension::AppProd,
-                    str_repeat('f', 64),
-                )
-                : \App\E2E\Value\TopologyConstructionInputs::create($target, $promoted, 2),
+            $construction,
             null,
             [
                 'static_classification' => true,
@@ -329,14 +316,13 @@ function candidatePromotionFixture(): array
         new OperationId(str_repeat('c', 32)),
     );
     $state->writeTopology(new FeatureTopology(
-        $candidateTarget,
+        \App\E2E\Value\TopologyConstructionInputs::create(
+            $candidateTarget,
+            $proofTopology->generation,
+            2,
+        ),
         AttemptPurpose::CandidateConvergence,
         $proofTopology->generation,
-        $candidateTarget->network(),
-        array_combine(
-            TopologyProfile::ROLES,
-            array_map($candidateTarget->instance(...), TopologyProfile::ROLES),
-        ),
         new SourceState($accepted, $accepted, operationId: str_repeat('c', 32)),
         $verification,
     ));
@@ -360,14 +346,13 @@ function candidatePromotionFixture(): array
         new OperationId(str_repeat('d', 32)),
     );
     $state->writeTopology(new FeatureTopology(
-        $discoveryTarget,
+        \App\E2E\Value\TopologyConstructionInputs::create(
+            $discoveryTarget,
+            $proofTopology->generation,
+            2,
+        ),
         AttemptPurpose::Discovery,
         $proofTopology->generation,
-        $discoveryTarget->network(),
-        array_combine(
-            TopologyProfile::ROLES,
-            array_map($discoveryTarget->instance(...), TopologyProfile::ROLES),
-        ),
         $proofTopology->source,
         $proofTopology->verification,
     ));
@@ -704,14 +689,13 @@ describe('TopologySnapshotPromoter', function (): void {
             new OperationId(str_repeat('d', 32)),
         );
         $state->writeTopology(new FeatureTopology(
-            $discoveryTarget,
+            \App\E2E\Value\TopologyConstructionInputs::create(
+                $discoveryTarget,
+                $proofTopology->generation,
+                2,
+            ),
             AttemptPurpose::Discovery,
             $proofTopology->generation,
-            $discoveryTarget->network(),
-            array_combine(
-                TopologyProfile::ROLES,
-                array_map($discoveryTarget->instance(...), TopologyProfile::ROLES),
-            ),
             $proofTopology->source,
             $proofTopology->verification,
         ));

@@ -144,20 +144,17 @@ describe('topology snapshot commands', function () {
         $state = IssueState::forWorktree('AUX-132', $worktree);
         $state->writeAttempt($attempt, AttemptPurpose::Proof, new OperationId(str_repeat('b', 32)));
         $state->writeTopology(new FeatureTopology(
-            $target,
-            AttemptPurpose::Proof,
-            $generation,
-            $target->network(),
-            array_combine($target->recipe->nodeKeys(), array_map($target->instance(...), $target->recipe->nodeKeys())),
-            new SourceState(str_repeat('c', 40), str_repeat('c', 40)),
-            new VerificationReport(true, ['ready' => verificationProbeFixture(probe: 'ready')]),
-            construction: TopologyConstructionInputs::create(
+            TopologyConstructionInputs::create(
                 $target,
                 $generation,
                 2,
                 TopologyExtension::AppProd,
                 str_repeat('d', 64),
             ),
+            AttemptPurpose::Proof,
+            $generation,
+            new SourceState(str_repeat('c', 40), str_repeat('c', 40)),
+            new VerificationReport(true, ['ready' => verificationProbeFixture(probe: 'ready')]),
         ));
         $state->writeProof(['status' => 'proved', 'attempt_id' => $attempt->value]);
         Process::fake();

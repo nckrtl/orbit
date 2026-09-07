@@ -229,7 +229,6 @@ final readonly class TopologyProofRunner
         $source = $this->candidateSource($candidateSha);
         $this->record(
             $state,
-            $target,
             $generation,
             $source,
             $this->pendingVerification($target),
@@ -346,7 +345,7 @@ final readonly class TopologyProofRunner
                 ? $manifest->fingerprint()
                 : null,
         );
-        $this->record($state, $target, $generation, $source, $verification, construction: $construction);
+        $this->record($state, $generation, $source, $verification, construction: $construction);
         if ($status === ProofStatus::Proved) {
             if (! $manifest instanceof ProofInputManifest) {
                 throw new RuntimeException('The successful proof has no proof-input manifest.');
@@ -393,7 +392,7 @@ final readonly class TopologyProofRunner
 
         $source = $this->candidateSource($candidateSha);
         $verification = $this->pendingVerification($target);
-        $this->record($state, $target, $generation, $source, $verification, $construction, $purpose);
+        $this->record($state, $generation, $source, $verification, $construction, $purpose);
         $phase = 'sync.candidate';
         $convergence = null;
         $error = null;
@@ -426,7 +425,7 @@ final readonly class TopologyProofRunner
             $error = "candidate-convergence phase {$phase} failed: ".$exception->getMessage();
             $verification = $this->failedVerification($target, $phase, $exception);
         }
-        $this->record($state, $target, $generation, $source, $verification, $construction, $purpose);
+        $this->record($state, $generation, $source, $verification, $construction, $purpose);
         $result = new CandidateConvergenceResult(
             $status,
             $request->issue,
@@ -506,26 +505,18 @@ final readonly class TopologyProofRunner
 
     private function record(
         IssueState $state,
-        TopologyTarget $target,
         TopologySnapshotGeneration $generation,
         SourceState $source,
         VerificationReport $verification,
         TopologyConstructionInputs $construction,
         AttemptPurpose $purpose = AttemptPurpose::Proof,
     ): void {
-        $instances = [];
-        foreach ($target->recipe->nodeKeys() as $node) {
-            $instances[$node] = $target->instance($node);
-        }
         $state->writeTopology(new FeatureTopology(
-            $target,
+            $construction,
             $purpose,
             $generation,
-            $target->network(),
-            $instances,
             $source,
             $verification,
-            construction: $construction,
         ));
     }
 
