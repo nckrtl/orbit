@@ -7,10 +7,14 @@ gateway="$repository/apps/gateway"
 state=/tmp/orb-124-normal-removal.json
 
 probe_gateway() {
-    orbit node:list --json | php -r '
-        $v=json_decode(stream_get_contents(STDIN), true, 32, JSON_THROW_ON_ERROR);
-        if (!is_array($v["nodes"] ?? null) || !is_string($v["request_id"] ?? null)) exit(65);
-    '
+    orbit node:list --json | python3 -c '
+import json
+import sys
+
+value = json.load(sys.stdin)
+if not isinstance(value.get("nodes"), list) or not isinstance(value.get("request_id"), str):
+    raise SystemExit(65)
+'
 }
 
 gateway_test() {
@@ -30,32 +34,61 @@ gateway_test() {
 assert_normal_removal() {
     test -f "$state"
     local id checkout hostname result
-    read -r id checkout hostname < <(php -r '
-        $v=json_decode(file_get_contents($argv[1]), true, 32, JSON_THROW_ON_ERROR);
-        foreach (["id", "checkout_path", "hostname"] as $key) {
-            if (!is_int($v[$key] ?? null) && !is_string($v[$key] ?? null)) exit(65);
-        }
-        echo $v["id"], " ", $v["checkout_path"], " ", $v["hostname"], "\n";
-    ' "$state")
+    read -r id checkout hostname < <(python3 -c '
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as source:
+    value = json.load(source)
+if type(value.get("id")) is not int:
+    raise SystemExit(65)
+if not isinstance(value.get("checkout_path"), str) or not isinstance(value.get("hostname"), str):
+    raise SystemExit(65)
+print(value["id"], value["checkout_path"], value["hostname"])
+' "$state")
     test -d "$checkout"
     result=$(orbit instance:remove "$id" --json)
-    php -r '
-        $v=json_decode($argv[1], true, 32, JSON_THROW_ON_ERROR);
-        if (($v["id"] ?? null)!==(int)$argv[2] || ($v["status"] ?? null)!=="completed") exit(65);
-        if (($v["force"] ?? null)!==false || !array_key_exists("current_step", $v) || $v["current_step"]!==null) exit(65);
-        if (($v["total"] ?? null)!==1 || ($v["completed"] ?? null)!==1 || ($v["remaining"] ?? null)!==0) exit(65);
-        if (!array_key_exists("failed_step", $v) || $v["failed_step"]!==null) exit(65);
-        if (!array_key_exists("error_code", $v) || $v["error_code"]!==null) exit(65);
-    ' "$result" "$id"
+    python3 -c '
+import json
+import sys
+
+value = json.loads(sys.argv[1])
+expected_id = int(sys.argv[2])
+valid = (
+    value.get("id") == expected_id
+    and value.get("status") == "completed"
+    and value.get("force") is False
+    and "current_step" in value
+    and value["current_step"] is None
+    and value.get("total") == 1
+    and value.get("completed") == 1
+    and value.get("remaining") == 0
+    and "failed_step" in value
+    and value["failed_step"] is None
+    and "error_code" in value
+    and value["error_code"] is None
+)
+if not valid:
+    raise SystemExit(65)
+' "$result" "$id"
     test ! -e "$checkout"
-    orbit instance:list --json | php -r '
-        $v=json_decode(stream_get_contents(STDIN), true, 32, JSON_THROW_ON_ERROR);
-        foreach ($v["app_instances"] ?? [] as $instance) if (($instance["id"] ?? null)===(int)$argv[1]) exit(65);
-    ' "$id"
-    orbit route:list --json | php -r '
-        $v=json_decode(stream_get_contents(STDIN), true, 32, JSON_THROW_ON_ERROR);
-        foreach ($v["routes"] ?? [] as $route) if (($route["hostname"] ?? null)===$argv[1]) exit(65);
-    ' "$hostname"
+    orbit instance:list --json | python3 -c '
+import json
+import sys
+
+value = json.load(sys.stdin)
+expected_id = int(sys.argv[1])
+if any(instance.get("id") == expected_id for instance in value.get("app_instances", [])):
+    raise SystemExit(65)
+' "$id"
+    orbit route:list --json | python3 -c '
+import json
+import sys
+
+value = json.load(sys.stdin)
+if any(route.get("hostname") == sys.argv[1] for route in value.get("routes", [])):
+    raise SystemExit(65)
+' "$hostname"
 }
 
 assert_shared_production_removal() {
@@ -151,16 +184,16 @@ PHP
 case "${scenario}" in
     setup)
         probe_gateway
-        app_id=$(orbit app:list --json | php -r '$v=json_decode(stream_get_contents(STDIN),true,32,JSON_THROW_ON_ERROR); $a=$v["apps"]??[]; if(count($a)!==1||!is_int($a[0]["id"]??null))exit(65); echo $a[0]["id"];')
-        node_id=$(orbit node:list --json | php -r '$v=json_decode(stream_get_contents(STDIN),true,32,JSON_THROW_ON_ERROR); foreach($v["nodes"]??[] as $n)if(($n["name"]??null)==="app-dev"){echo $n["id"];exit;} exit(65);')
+        app_id=$(orbit app:list --json | python3 -c 'import json, sys; value = json.load(sys.stdin); apps = value.get("apps", []); sys.exit(65) if len(apps) != 1 or type(apps[0].get("id")) is not int else None; print(apps[0]["id"])')
+        node_id=$(orbit node:list --json | python3 -c 'import json, sys; value = json.load(sys.stdin); nodes = [node for node in value.get("nodes", []) if node.get("name") == "app-dev"]; sys.exit(65) if len(nodes) != 1 or type(nodes[0].get("id")) is not int else None; print(nodes[0]["id"])')
         test ! -e /home/orbit/apps/laravel-typed/orb124-normal
         orbit instance:new "$app_id" "$node_id" orb124-normal --branch=13.x --hostname=orb124-normal.orbit --json > "$state"
-        php -r '$v=json_decode(file_get_contents($argv[1]),true,32,JSON_THROW_ON_ERROR); if(($v["status"]??null)!=="active"||($v["name"]??null)!=="orb124-normal")exit(65);' "$state"
+        python3 -c 'import json, sys; value = json.load(open(sys.argv[1], encoding="utf-8")); sys.exit(65) if value.get("status") != "active" or value.get("name") != "orb124-normal" else None' "$state"
         ;;
     setup-gateway)
         cd "$gateway"
         php artisan migrate:status | grep -F '2026_09_07_200000_make_app_instance_removal_retry_safe' >/dev/null
-        php artisan route:list --name=instance:remove --json | php -r '$v=json_decode(stream_get_contents(STDIN),true,32,JSON_THROW_ON_ERROR); if(count($v)!==1)exit(65);'
+        php artisan route:list --name=instance:remove --json | python3 -c 'import json, sys; sys.exit(65) if len(json.load(sys.stdin)) != 1 else None'
         ;;
     removal-preflight-refusals)
         probe_gateway
