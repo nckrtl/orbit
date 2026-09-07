@@ -1,6 +1,6 @@
 # AppInstance removal
 
-This page tells an operator when Orbit removes development AppInstance source, what `--force` changes, and how an interrupted removal resumes. [ADR 0027](../decisions/0027-adopt-local-git-sources-into-appinstance-ownership.md) owns source-removal safety, [ADR 0028](../decisions/0028-require-one-route-per-active-appinstance.md) owns the coordinated Route boundary, and [ADR 0041](../decisions/0041-delete-an-empty-route-during-appinstance-removal.md) owns final-target Route deletion.
+This page tells an operator how Orbit removes an AppInstance, what `--force` changes for development source, and how an interrupted removal resumes. [ADR 0027](../decisions/0027-adopt-local-git-sources-into-appinstance-ownership.md) owns source-removal safety, [ADR 0028](../decisions/0028-require-one-route-per-active-appinstance.md) owns the coordinated Route boundary, and [ADR 0041](../decisions/0041-delete-an-empty-route-during-appinstance-removal.md) owns final-target Route deletion.
 
 ## Choose normal or forced removal
 
@@ -72,4 +72,4 @@ Durable finalization evidence binds the source identity to its outcome. A retry 
 
 ## Limits
 
-AppInstance removal does not change App source settings, migrate a default source, adopt a local source, delete remote branches, delete a worktree branch, remove a common repository for one worktree, or reconcile unrelated Route changes. It does not remove operator-deployed production placement.
+AppInstance removal does not change App source settings, migrate a default source, adopt a local source, delete remote branches, delete a worktree branch, remove a common repository for one worktree, or reconcile unrelated Route changes. It retains production application content that the operator deployed.
