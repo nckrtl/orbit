@@ -44,6 +44,65 @@ it('activates the gateway WireGuard address through a validated atomic server co
     }
 });
 
+it('rejects invalid subnet inputs before host mutation', function (
+    string $subnet,
+    string $address,
+    string $message,
+): void {
+    [$converger, $processes, $orbitHome] = gateway_vpn_converger();
+    $node = Node::query()->create([
+        'name' => 'gateway',
+        'public_ssh_host' => '85.9.218.89',
+        'wireguard_ip' => $address,
+    ]);
+
+    try {
+        expect(fn () => $converger->converge(
+            $node,
+            gateway_bootstrap_data(wireguardSubnet: $subnet, wireguardIp: $address),
+        ))
+            ->toThrow(function (NodeProvisioningException $exception) use ($message): void {
+                expect($exception->errorCode)
+                    ->toBe('vpn.configuration_invalid')
+                    ->and($exception->getMessage())
+                    ->toBe($message);
+            });
+
+        expect($processes->calls)
+            ->toBe([])
+            ->and(is_file($orbitHome.'/generated/wireguard/orbit.conf'))
+            ->toBeFalse();
+    } finally {
+        new Filesystem()->deleteDirectory($orbitHome);
+    }
+})->with([
+    'subnet host bits' => [
+        '10.44.0.1/24',
+        '10.44.0.2',
+        'WireGuard subnet [10.44.0.1/24] is invalid.',
+    ],
+    'bad prefix' => [
+        '10.44.0.0/31',
+        '10.44.0.1',
+        'WireGuard subnet [10.44.0.0/31] is invalid.',
+    ],
+    'network address' => [
+        '10.44.0.0/30',
+        '10.44.0.0',
+        'Gateway WireGuard address [10.44.0.0] is not usable in [10.44.0.0/30].',
+    ],
+    'broadcast address' => [
+        '10.44.0.0/30',
+        '10.44.0.3',
+        'Gateway WireGuard address [10.44.0.3] is not usable in [10.44.0.0/30].',
+    ],
+    'outside address' => [
+        '10.44.0.0/30',
+        '10.44.0.4',
+        'Gateway WireGuard address [10.44.0.4] is not usable in [10.44.0.0/30].',
+    ],
+]);
+
 function assert_gateway_generated_files(GatewayVpnFakeProcessRunner $processes, string $orbitHome): void
 {
     expect(file_get_contents($orbitHome.'/generated/wireguard/orbit.conf'))
@@ -956,12 +1015,15 @@ function gateway_vpn_converger(
     ];
 }
 
-function gateway_bootstrap_data(?string $privateInterface = null): BootstrapGatewayData
-{
+function gateway_bootstrap_data(
+    ?string $privateInterface = null,
+    string $wireguardSubnet = '10.44.0.0/24',
+    string $wireguardIp = '10.44.0.1',
+): BootstrapGatewayData {
     return new BootstrapGatewayData(
         publicHost: '85.9.218.89',
-        wireguardIp: '10.44.0.1',
-        wireguardSubnet: '10.44.0.0/24',
+        wireguardIp: $wireguardIp,
+        wireguardSubnet: $wireguardSubnet,
         wireguardEndpoint: '85.9.218.89:51820',
         dnsServer: '10.44.0.1',
         domain: 'orbit',

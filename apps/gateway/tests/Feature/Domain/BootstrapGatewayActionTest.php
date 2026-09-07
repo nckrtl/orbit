@@ -403,7 +403,11 @@ it('rejects an existing root CA that is not RSA 4096', function (): void {
     }
 });
 
-it('rejects an invalid static identity before persistence or host side effects', function (): void {
+it('rejects an invalid static identity before persistence or host side effects', function (
+    string $wireguardIp,
+    string $wireguardSubnet,
+    string $domain,
+): void {
     $orbitHome = sys_get_temp_dir().'/orbit-bootstrap-'.(string) Str::uuid();
     $processes = new class implements ProcessRunner {
         public int $calls = 0;
@@ -435,11 +439,11 @@ it('rejects an invalid static identity before persistence or host side effects',
 
     expect(fn () => $action->execute(new BootstrapGatewayData(
         publicHost: '85.9.218.89',
-        wireguardIp: '10.44.0.1',
-        wireguardSubnet: '10.44.0.0/24',
+        wireguardIp: $wireguardIp,
+        wireguardSubnet: $wireguardSubnet,
         wireguardEndpoint: '85.9.218.89:51820',
         dnsServer: '10.44.0.1',
-        domain: 'invalid domain',
+        domain: $domain,
     )))
         ->toThrow(InvalidArgumentException::class)
         ->and(Node::query()->count())
@@ -448,7 +452,14 @@ it('rejects an invalid static identity before persistence or host side effects',
         ->toBeFalse()
         ->and($processes->calls)
         ->toBe(0);
-});
+})->with([
+    'invalid domain' => ['10.44.0.1', '10.44.0.0/24', 'invalid domain'],
+    'subnet host bits' => ['10.44.0.2', '10.44.0.1/24', 'orbit'],
+    'bad prefix' => ['10.44.0.1', '10.44.0.0/31', 'orbit'],
+    'network address' => ['10.44.0.0', '10.44.0.0/30', 'orbit'],
+    'broadcast address' => ['10.44.0.3', '10.44.0.0/30', 'orbit'],
+    'outside address' => ['10.44.0.4', '10.44.0.0/30', 'orbit'],
+]);
 
 it('records provisioning and failed host convergence state and activates an idempotent retry', function (): void {
     $orbitHome = sys_get_temp_dir().'/orbit-bootstrap-'.(string) Str::uuid();

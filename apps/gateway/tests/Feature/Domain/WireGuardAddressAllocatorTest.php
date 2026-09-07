@@ -86,6 +86,18 @@ it('returns stable errors for invalid and exhausted configured subnets', functio
         });
 });
 
+it('rejects a noncanonical configured subnet with the stable boundary error', function (): void {
+    configure_wireguard_subnet('10.44.0.1/24');
+
+    expect(fn (): string => app(WireGuardAddressAllocator::class)->next())
+        ->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)
+                ->toBe('vpn.subnet_invalid')
+                ->and($exception->getMessage())
+                ->toBe('WireGuard subnet [10.44.0.1/24] is invalid.');
+        });
+});
+
 function configure_wireguard_subnet(string $subnet): void
 {
     app(VpnSettings::class)->configure(subnet: $subnet);

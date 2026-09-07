@@ -2,11 +2,11 @@
     "setup": [],
     "acceptance": [
         {
-            "id": "shared-os-release-parser",
+            "id": "canonical-ipv4-subnet",
             "node": "gateway",
             "argv": [
                 "bash",
-                "/var/lib/orbit-e2e/proof/shared-os-release-parser.sh"
+                "/var/lib/orbit-e2e/proof/canonical-ipv4-subnet.sh"
             ],
             "timeout_seconds": 300
         }
