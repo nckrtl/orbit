@@ -15,6 +15,10 @@ final readonly class ProofEquivalenceReport
 {
     public const int SCHEMA = 1;
 
+    public ?string $promotionPath;
+
+    public string $nextAction;
+
     private const array CHANGE_KINDS = [
         'added',
         'deleted',
@@ -37,8 +41,6 @@ final readonly class ProofEquivalenceReport
         public string $manifestSha256,
         public ProofEquivalenceResult $result,
         public array $changedPaths,
-        public ?string $promotionPath,
-        public string $nextAction,
         public array $errors,
         public string $recordedAt,
     ) {
@@ -97,7 +99,7 @@ final readonly class ProofEquivalenceReport
             ProofEquivalenceResult::Stale => $hasMaterial && $errors === [],
             ProofEquivalenceResult::Indeterminate => $errors !== [] || $hasIndeterminate,
         };
-        $expectedNextAction = match (true) {
+        $this->nextAction = match (true) {
             $result === ProofEquivalenceResult::Equivalent && $hasUnrelatedRuntime => 'run-candidate-convergence',
             in_array($result, [ProofEquivalenceResult::Exact, ProofEquivalenceResult::Equivalent], true)
                 => 'review-exact-head',
@@ -105,7 +107,7 @@ final readonly class ProofEquivalenceReport
             $result === ProofEquivalenceResult::Indeterminate => 'resolve-equivalence-failure-and-run-complete-reproof',
             default => throw new \LogicException('The proof equivalence result is unsupported.'),
         };
-        $expectedPromotionPath = $result === ProofEquivalenceResult::Equivalent && $hasUnrelatedRuntime
+        $this->promotionPath = $result === ProofEquivalenceResult::Equivalent && $hasUnrelatedRuntime
             ? 'candidate-convergence'
             : (
                 in_array($result, [ProofEquivalenceResult::Exact, ProofEquivalenceResult::Equivalent], true)
@@ -113,11 +115,7 @@ final readonly class ProofEquivalenceReport
                     : null
             );
         if (
-            $promotionPath !== null
-            && ! in_array($promotionPath, ['retained-proof', 'candidate-convergence'], true)
-            || $promotionPath !== $expectedPromotionPath
-            || $nextAction !== $expectedNextAction
-            || preg_match('/\A\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\z/D', $recordedAt) !== 1
+            preg_match('/\A\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\z/D', $recordedAt) !== 1
             || $orderedChanges !== $sortedChanges
             || count($orderedChanges) !== count(array_unique(array_map(serialize(...), $orderedChanges)))
             || count($errors) !== count(array_unique($errors))
@@ -197,11 +195,15 @@ final readonly class ProofEquivalenceReport
             $value['manifest_sha256'],
             $result,
             $changedPaths,
-            $value['promotion_path'],
-            $value['next_action'],
             $errors,
             $value['recorded_at'],
         );
+        if (
+            $report->promotionPath !== $value['promotion_path']
+            || $report->nextAction !== $value['next_action']
+        ) {
+            throw new InvalidArgumentException('The equivalence report decision is invalid.');
+        }
         if (! hash_equals($report->fingerprint(), $value['fingerprint'])) {
             throw new InvalidArgumentException('The equivalence report fingerprint is invalid.');
         }

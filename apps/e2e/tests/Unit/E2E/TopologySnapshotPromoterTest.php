@@ -307,8 +307,6 @@ function candidatePromotionFixture(): array
             'change' => 'added',
             'classification' => 'unrelated-runtime',
         ]],
-        'candidate-convergence',
-        'run-candidate-convergence',
         [],
         '2026-09-03T00:00:00Z',
     );
@@ -818,8 +816,6 @@ describe('TopologySnapshotPromoter', function (): void {
                 'change' => 'added',
                 'classification' => 'non-runtime',
             ]],
-            'retained-proof',
-            'review-exact-head',
             [],
             '2026-09-02T10:00:00Z',
         );
@@ -1075,12 +1071,6 @@ describe('TopologySnapshotPromoter', function (): void {
                 'change' => 'added',
                 'classification' => $classification,
             ]],
-            $result === ProofEquivalenceResult::Equivalent ? 'retained-proof' : null,
-            match ($result) {
-                ProofEquivalenceResult::Equivalent => 'review-exact-head',
-                ProofEquivalenceResult::Stale => 'release-proof-and-run-complete-reproof',
-                default => 'resolve-equivalence-failure-and-run-complete-reproof',
-            },
             $result === ProofEquivalenceResult::Indeterminate ? ['Unknown input.'] : [],
             '2026-09-02T10:00:00Z',
         );
