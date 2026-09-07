@@ -852,6 +852,27 @@
             ]
         },
         {
+            "path": "docs/decisions/0041-delete-an-empty-route-during-appinstance-removal.md",
+            "title": "ADR 0041: Delete an empty Route during AppInstance removal",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "AppInstance",
+                "Gateway",
+                "Route"
+            ],
+            "governing_adrs": [
+                "0024",
+                "0028",
+                "0039",
+                "0041"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
