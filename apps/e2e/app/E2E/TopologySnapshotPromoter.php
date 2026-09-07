@@ -209,6 +209,11 @@ final readonly class TopologySnapshotPromoter
                 "{$state->issue} attempt {$topology->attempt->value} is not proved; only a proved topology can be promoted.",
             );
         }
+        if ($plan->extension !== null || $topology->construction->extension !== null) {
+            throw new RuntimeException(
+                'An extended issue topology cannot become the shared topology snapshot; refresh from merged main.',
+            );
+        }
         if ($plan->mutates) {
             throw new RuntimeException(
                 'The proof plan declares mutates: true; a topology the plan changed cannot become the topology snapshot.',
@@ -254,6 +259,7 @@ final readonly class TopologySnapshotPromoter
         }
         if (
             $manifest->policyVersion !== StaticProofInputPolicy::VERSION
+            || $manifest->construction->toArray() !== $state->requireTopology(AttemptPurpose::Proof)->construction->toArray()
             || $plan->observedInputs !== ($manifest->observedInputs !== null)
             || in_array(false, $manifest->completeness, true)
         ) {

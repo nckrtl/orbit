@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace App\Data\AppInstances;
 
+use App\Data\Routes\RouteData;
 use App\Models\AppInstance;
+use App\Models\Route;
 use Spatie\LaravelData\Attributes\MapOutputName;
 use Spatie\LaravelData\Data;
 use Spatie\LaravelData\Mappers\SnakeCaseMapper;
 
-/** @mago-expect lint:excessive-parameter-list */
+/** @mago-expect lint:excessive-parameter-list The response includes its sole serving Route. */
 #[MapOutputName(SnakeCaseMapper::class)]
 final class AppInstanceData extends Data
 {
@@ -26,11 +28,15 @@ final class AppInstanceData extends Data
         public ?string $selectedBranch,
         public ?string $startingCommit,
         public string $status,
+        public ?RouteData $route,
+        public ?string $hostname,
+        public ?string $url,
     ) {}
 
     public static function fromModel(AppInstance $appInstance): self
     {
-        $appInstance->loadMissing('app');
+        $appInstance->loadMissing(['app', 'routes.targets']);
+        $route = $appInstance->routes->first();
 
         return new self(
             id: $appInstance->id,
@@ -45,6 +51,9 @@ final class AppInstanceData extends Data
             selectedBranch: $appInstance->branch,
             startingCommit: $appInstance->starting_commit,
             status: $appInstance->status->value,
+            route: $route instanceof Route ? RouteData::fromModel($route) : null,
+            hostname: $route?->hostname,
+            url: $route instanceof Route ? "https://{$route->hostname}" : null,
         );
     }
 }

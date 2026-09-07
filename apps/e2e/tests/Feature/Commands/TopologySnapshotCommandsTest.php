@@ -11,6 +11,7 @@ use App\Console\Commands\TopologySnapshot\RestoreCommand;
 use App\Console\Commands\TopologySnapshot\StatusCommand;
 use App\E2E\Git\GitRepository;
 use App\E2E\IncusHost;
+use App\E2E\IssueState;
 use App\E2E\LaravelReleaseResolver;
 use App\E2E\PreparedStateFingerprint;
 use App\E2E\State\AtomicJsonStore;
@@ -19,9 +20,19 @@ use App\E2E\State\StatePaths;
 use App\E2E\TopologySnapshotManifestStore;
 use App\E2E\TopologySnapshotRebuilder;
 use App\E2E\TopologySnapshotRefresher;
+use App\E2E\Value\AttemptId;
+use App\E2E\Value\AttemptPurpose;
+use App\E2E\Value\FeatureTopology;
 use App\E2E\Value\LaravelRelease;
+use App\E2E\Value\OperationId;
+use App\E2E\Value\SourceState;
+use App\E2E\Value\TopologyConstructionInputs;
+use App\E2E\Value\TopologyExtension;
+use App\E2E\Value\TopologyRecipe;
 use App\E2E\Value\TopologySnapshotGeneration;
 use App\E2E\Value\TopologySnapshotIdentity;
+use App\E2E\Value\TopologyTarget;
+use App\E2E\Value\VerificationReport;
 use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Process;
@@ -111,6 +122,55 @@ describe('topology snapshot commands', function () {
             ->artisan('topology-snapshot:promote', ['issue' => 'TST-123', '--worktree' => $worktree, '--json' => true])
             ->expectsOutputToContain('TST-123 has no active attempt.')
             ->assertFailed();
+        Process::assertNothingRan();
+    });
+
+    it('refuses direct promotion of an extended proof before touching Incus', function (): void {
+        $worktree = temporaryPath('orbit-topology-snapshot-extended-', 8);
+        mkdir($worktree.'/.loop/proof', 0700, true);
+        file_put_contents($worktree.'/.loop/proof/AUX-132.json', json_encode([
+            'setup' => [],
+            'acceptance' => [[
+                'id' => 'extended-topology-ready',
+                'node' => 'app-prod-2',
+                'argv' => ['true'],
+                'timeout_seconds' => 60,
+            ]],
+            'extension' => 'app-prod',
+        ], JSON_THROW_ON_ERROR));
+        $attempt = new AttemptId(str_repeat('a', 32));
+        $target = TopologyTarget::feature('AUX-132', $attempt, TopologyRecipe::extendedAppProd());
+        $generation = promotedGenerationFixture();
+        $state = IssueState::forWorktree('AUX-132', $worktree);
+        $state->writeAttempt($attempt, AttemptPurpose::Proof, new OperationId(str_repeat('b', 32)));
+        $state->writeTopology(new FeatureTopology(
+            $target,
+            AttemptPurpose::Proof,
+            $generation,
+            $target->network(),
+            array_combine($target->recipe->nodeKeys(), array_map($target->instance(...), $target->recipe->nodeKeys())),
+            new SourceState(str_repeat('c', 40), str_repeat('c', 40)),
+            new VerificationReport(true, ['ready' => verificationProbeFixture(probe: 'ready')]),
+            construction: TopologyConstructionInputs::create(
+                $target,
+                $generation,
+                2,
+                TopologyExtension::AppProd,
+                str_repeat('d', 64),
+            ),
+        ));
+        $state->writeProof(['status' => 'proved', 'attempt_id' => $attempt->value]);
+        Process::fake();
+
+        $this
+            ->artisan('topology-snapshot:promote', [
+                'issue' => 'AUX-132',
+                '--worktree' => $worktree,
+                '--json' => true,
+            ])
+            ->expectsOutputToContain('cannot become the shared topology snapshot')
+            ->assertFailed();
+
         Process::assertNothingRan();
     });
 

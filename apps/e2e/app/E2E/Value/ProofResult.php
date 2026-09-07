@@ -53,7 +53,7 @@ final readonly class ProofResult
             if (
                 array_keys($action) !== ['id', 'node', 'exit_code', 'stdout', 'stderr']
                 || ! is_string($action['id'])
-                || ! in_array($action['node'], TopologyProfile::ROLES, true)
+                || ! in_array($action['node'], $endsWith?->recipeNodes() ?? TopologyProfile::ROLES, true)
                 || ! is_int($action['exit_code'])
                 || ! is_string($action['stdout'])
                 || ! is_string($action['stderr'])

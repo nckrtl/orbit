@@ -8,8 +8,8 @@ if [[ $# -lt 1 ]]; then
 usage: bin/e2e-topology <action> ISSUE [...]
 
   acquire ISSUE WORKTREE          fresh discovery topology on the mounted worktree
-  shell   ISSUE ROLE [--proof]    interactive shell as orbit on discovery or a failed proof
-  exec    ISSUE ROLE --argv=JSON  run one argv vector as orbit on discovery; --proof selects a failed proof
+  shell   ISSUE NODE [--proof]    shell on a recorded physical Node key (including app-prod-2 when declared)
+  exec    ISSUE NODE --argv=JSON  run on a recorded physical Node key; --proof selects a failed proof
   sync    ISSUE                   re-verify the mounted source identity
   verify  ISSUE                   verify the discovery topology
   prove   ISSUE [--plan=PATH]     prove the worktree HEAD (default .loop/proof/ISSUE.json)

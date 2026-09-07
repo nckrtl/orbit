@@ -36,7 +36,13 @@ describe('AppInstance requests', function (): void {
             ->and($response)
             ->toBeInstanceOf(AppInstanceResponse::class)
             ->and($response->requestId)
-            ->toBe(instance_request_id());
+            ->toBe(instance_request_id())
+            ->and($response->hostname)
+            ->toBe('orbit-docs.test')
+            ->and($response->url)
+            ->toBe('https://orbit-docs.test')
+            ->and($response->route?->hostname)
+            ->toBe('orbit-docs.test');
     });
 
     it('transports only the optional root override', function (): void {
@@ -97,7 +103,7 @@ describe('AppInstance requests', function (): void {
             ->toHaveCount(1)
             ->and($response->toArray())
             ->toBe([
-                'app_instances' => [instance_gateway_data()],
+                'app_instances' => [instance_sdk_data()],
                 'request_id' => instance_request_id(),
             ]);
     });
@@ -173,6 +179,37 @@ function instance_gateway_data(): array
         'selected_branch' => 'main',
         'starting_commit' => 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
         'status' => 'active',
+        'route' => instance_gateway_route_data(),
+        'hostname' => 'orbit-docs.test',
+        'url' => 'https://orbit-docs.test',
+    ];
+}
+
+/** @return array<string, mixed> */
+function instance_sdk_data(): array
+{
+    return [
+        ...instance_gateway_data(),
+        'route' => [...instance_gateway_route_data(), 'request_id' => instance_request_id()],
+    ];
+}
+
+/** @return array<string, mixed> */
+function instance_gateway_route_data(): array
+{
+    return [
+        'id' => 9,
+        'app_id' => 3,
+        'node_id' => 4,
+        'cluster_id' => null,
+        'generation_basis_node_id' => 4,
+        'hostname' => 'orbit-docs.test',
+        'provenance' => 'generated',
+        'publication' => 'private',
+        'status' => 'active',
+        'failed_step' => null,
+        'error_code' => null,
+        'target' => ['id' => 10, 'app_instance_id' => 7, 'position' => 0],
     ];
 }
 

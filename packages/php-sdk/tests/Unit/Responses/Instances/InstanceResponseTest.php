@@ -34,6 +34,9 @@ describe(AppInstanceResponse::class, function (): void {
             'selected_branch' => 'main',
             'starting_commit' => 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
             'status' => 'active',
+            'route' => null,
+            'hostname' => null,
+            'url' => null,
             'request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844',
         ]);
     });

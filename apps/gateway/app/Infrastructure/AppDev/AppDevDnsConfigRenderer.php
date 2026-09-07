@@ -7,6 +7,7 @@ namespace App\Infrastructure\AppDev;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Node;
+use App\Models\Route;
 use Illuminate\Database\Eloquent\Builder;
 
 final readonly class AppDevDnsConfigRenderer
@@ -15,7 +16,7 @@ final readonly class AppDevDnsConfigRenderer
         private AppDevSiteRepository $sites,
     ) {}
 
-    public function render(?Node $pendingNode = null): string
+    public function render(?Node $pendingNode = null, ?Route $pendingRoute = null): string
     {
         $nodes = Node::query()
             ->where(static function (Builder $q) use ($pendingNode): void {
@@ -41,9 +42,17 @@ final readonly class AppDevDnsConfigRenderer
             ]);
         $records = $nodes
             ->toBase()
-            ->merge($this->sites->all()->map(
-                static fn (AppDevSite $s): string => "host-record={$s->hostname},{$s->nodeAddress}",
-            ));
+            ->merge($this->sites
+                ->all($pendingRoute)
+                ->groupBy('hostname')
+                ->map(static function ($sites): string {
+                    /** @var AppDevSite $site */
+                    $site = $sites->first(
+                        static fn (AppDevSite $candidate): bool => $candidate->isProxy(),
+                    ) ?? $sites->first();
+
+                    return "host-record={$site->hostname},{$site->nodeAddress}";
+                }));
         $gateway = Node::query()
             ->where('status', LifecycleStatus::Active->value)
             ->whereNotNull('wireguard_ip')

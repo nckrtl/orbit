@@ -1,65 +1,74 @@
 # Applications
 
-This page tells an operator how Apps provide source defaults, how Orbit creates a development AppInstance, and when an existing source needs manual migration. [Routes](../reference/routes.md) describes the separate hostname, scope, and target contract.
+This page tells an operator how Orbit creates, configures, and exposes a development AppInstance on one manually selected app-dev Node. An App stores shared source defaults, and each AppInstance uses an independent clone and one Route.
 
-This behavior implements the development source boundary from [ADR 0009](../decisions/0009-clustered-app-instance-routing.md), the stable default identity from [ADR 0025](../decisions/0025-stabilize-the-default-appinstance-identity.md), and the source-layout terms from [ADR 0027](../decisions/0027-adopt-local-git-sources-into-appinstance-ownership.md). Production placement has a separate contract in [ADR 0011](../decisions/0011-clustered-production-ingress-and-app-prod-placement.md).
+[ADR 0009](../decisions/0009-clustered-app-instance-routing.md) defines the development source boundary. [ADR 0011](../decisions/0011-clustered-production-ingress-and-app-prod-placement.md) defines the separate production placement contract.
 
 ## Create an App
 
-New Apps require a repository URL and a normalized relative web root. The `app:new` command accepts an optional default branch:
+New Apps require a repository URL and a normalized relative web root. The `app:new` command accepts an optional main branch:
 
 ```text
 orbit app:new \
   acme \
   git@github.com:acme/site.git \
-  --default-branch=main \
+  --main-branch=main \
   --root=public
 ```
 
-When you omit the default branch, the Gateway reads the remote default branch once and stores it. A later remote default change does not rewrite the App.
+When you omit the main branch, the Gateway reads the remote default branch once and stores it. A later remote default change does not rewrite the App.
 
-An App can return null for `default_branch` and root when its source defaults are incomplete. Existing legacy Instance and Workspace records continue to use that App. New AppInstance creation fails with `app.source_defaults_incomplete` until a separate conversion lifecycle supplies the missing values. Orbit has no command that updates or backfills them.
+Apps that existed before this source contract can return null for the main branch and root. Existing legacy Instance and Workspace records continue to use those Apps. New AppInstance creation fails with `app.source_defaults_incomplete` until a separate conversion lifecycle supplies the missing values. Orbit has no command that updates or backfills them.
 
 ## Create a development AppInstance
 
-Select one active Node with an active app-dev role. Use the reserved `default` name for the App's default development source:
-
-```text
-orbit instance:new <app-id> <node-id> default
-```
-
-Use another name for a branch-specific source:
+Select one active Node with an active app-dev role:
 
 ```text
 orbit instance:new <app-id> <node-id> feature-one [--hostname=feature.example.test]
 ```
 
-The Gateway derives the placement and branch from the requested identity.
-
-| AppInstance identity | Managed placement | Selected branch |
-| --- | --- | --- |
-| `default` | `<node-apps-root>/<app-slug>/default` | The App `default_branch` |
-| Any other name | `<node-apps-root>/<app-slug>/<instance-name>` | The matching remote branch, or a new branch from the exact fetched `default_branch` commit |
-
-`instance:new` stores source layout `checkout`. The checkout has its own `.git` directory and does not use a Workspace or shared worktree administration. An adopted linked worktree uses source layout `worktree`; the separate `instance:register` workflow owns adoption and manual migration.
-
-Orbit records the selected branch and starting commit before it publishes the AppInstance as active. Creation moves through four durable states:
+The Gateway derives and records this immutable checkout path:
 
 ```text
-reserved -> checkout_prepared -> source_resolved -> active
+<node-apps-root>/acme/feature-one
 ```
 
-An identical retry verifies the recorded App, Node, source layout, root, path, repository, branch, and pre-activation commit evidence. It then resumes the next incomplete transition. Once active, the recorded starting commit stays unchanged while normal development advances HEAD. A conflicting retry fails without a second row or checkout.
+The AppInstance has the immutable source kind `managed_clone`. Its clone has its own `.git` directory. It does not use a Workspace, Git worktree metadata, or shared worktree administration.
 
-## Complete a required source migration
+Orbit fetches the App repository. It checks out `origin/feature-one` when that branch exists. Otherwise, it creates `feature-one` from the exact fetched `origin/<app.main_branch>` commit. Orbit records the branch and starting commit before it provisions the application endpoint.
 
-An AppInstance can require manual migration when its stored name follows a branch-named default identity. Orbit keeps that name, checkout path, selected branch, source, and Route authoritative until `instance:register` completes the migration. List and show operations remain available, the existing Route continues to serve the same source path, and Route-only reconciliation can continue to use the AppInstance.
+Source preparation moves through three durable states:
 
-The Gateway returns `instance.migration_required` before any database, Git, runtime, or Route mutation when an operation would remove, rebind, or change this source. A `default` identity or destination-path collision returns a bounded migration conflict and preserves the existing AppInstance and source.
+```text
+reserved -> checkout_prepared -> source_resolved
+```
 
-## Generate a development Route
+An identical retry verifies the recorded App, Node, source kind, root, path, repository, branch, and pre-activation commit evidence. It then resumes the next incomplete source or provisioning boundary. Once active, the recorded starting commit stays unchanged while normal development advances `HEAD`. A conflicting retry fails without a second row, checkout, or Route.
 
-After a development AppInstance becomes active, the Gateway creates its Route. The optional `--hostname` value requests an explicit Route; omission requests a generated Route. The [Route reference](../reference/routes.md) owns the exact hostname, generation basis, target, routing scope, lifecycle, and failure behavior.
+## Provision the application endpoint
+
+Before source or runtime changes, the Gateway resolves the Route hostname. The optional `--hostname` value requests an explicit hostname and takes precedence over generated naming. Without it, the Gateway uses the Node or Cluster naming basis described in the [Route reference](../reference/routes.md). The request fails before source or runtime mutation when neither basis can produce a hostname.
+
+After source resolution, the Gateway classifies the source, selects any required PHP runtime, associates the AppInstance with its sole Route, configures Laravel when detected, and prepares the runtime, certificates, Caddy, firewall, and private Domain Name System (DNS) projection. A Cluster-scoped Route also prepares the Router path. The [PHP runtime reference](../reference/php-runtime.md) describes source-driven runtime selection.
+
+Orbit records each completed boundary. The same request can continue after a failure without duplicating source or Route records. Orbit returns the active AppInstance with its Route, hostname, and HTTPS URL when every provisioning step owned by Orbit succeeds.
+
+## Configure a Laravel URL
+
+Orbit detects Laravel only when the source has both a regular, non-symlink `artisan` file and a valid `composer.json` file that declares `laravel/framework`. A source with neither marker is not Laravel. Partial, malformed, conflicting, duplicate, or unsafe marker evidence stops provisioning before configuration or publication.
+
+Detection and URL configuration do not run Composer, Artisan, installed application code, or application bootstrap. Framework detection does not install dependencies or infer setup commands.
+
+Orbit sets Laravel's canonical application URL to `https://<route-hostname>`. When `.env` exists, Orbit changes only `APP_URL` and preserves every unrelated byte. When `.env` is missing and an environment template exists, Orbit preserves the template's installation inputs and adds or replaces `APP_URL`. Orbit also replaces a static cached `app.url` without changing unrelated cached configuration. A symlinked, malformed, duplicate, or otherwise unsafe configuration file stops provisioning before publication.
+
+## Handle provisioning and application errors
+
+The Gateway reports a failed source, PHP selection, Laravel URL, runtime, certificate, firewall, or publication boundary and does not return a provisioned AppInstance. Secret environment values, certificate material, and private keys do not appear in command arguments, errors, API responses, activity data, or debug output.
+
+Active state means that Orbit prepared the source, selected any required PHP runtime, aligned Laravel configuration when applicable, and prepared the Route. It does not promise that the application is healthy. Missing dependencies, an application key, or a database can make a new Laravel application return an error, including HTTP 500, without making the AppInstance or Route inactive.
+
+The endpoint is available for an agent or operator to inspect and finish application setup. App setup-step configuration and execution belong to a separate contract.
 
 ## Set the effective web root
 
@@ -74,7 +83,9 @@ The effective root is the AppInstance root when set and the App root otherwise. 
 
 ## Remove development source
 
-Normal removal verifies the recorded checkout identity. It refuses a dirty checkout, unpublished commits, a changed origin, a symlinked or non-canonical path, an out-of-root path, the wrong owner, or invalid Git metadata.
+Orbit refuses to remove an active AppInstance while coordinated Route and source removal is unavailable. It returns `route.reconciliation_required` before it changes the Route, source, or AppInstance record.
+
+For an AppInstance that is eligible for removal, normal removal verifies the recorded checkout identity. It refuses a dirty checkout, unpublished commits, a changed origin, a symlinked or non-canonical path, an out-of-root path, the wrong owner, or invalid Git metadata.
 
 Remove clean, published source with:
 
@@ -88,12 +99,12 @@ Use destructive source discard only when you intend to lose dirty or unpublished
 orbit instance:remove <id> --discard-source
 ```
 
-With `--discard-source`, Orbit waives the dirty-source check and the unpublished-commit check. It does not waive origin, symlink, canonical-path, containment, ownership, or repository-identity checks. Orbit removes only the exact recorded checkout. It does not remove sibling, legacy, or unrelated repositories.
+With `--discard-source`, Orbit waives the dirty-source and unpublished-commit checks after the Route guard passes. It does not waive origin, symlink, canonical-path, containment, ownership, or repository-identity checks. Orbit removes only the exact recorded checkout. It does not remove sibling, legacy, or unrelated repositories.
 
-## Source-only boundary
+## Input boundary
 
-Development AppInstance creation and removal do not accept a repository, command, PHP version, process, or shell input. The App owns the repository. The Node application role owns PHP and runtime prerequisites.
+Development AppInstance creation and removal do not accept a repository, command, process, or shell input. The App owns the repository. Orbit does not install application dependencies as part of framework detection.
 
-The [Route reference](../reference/routes.md) defines the boundary between stored Route intent and traffic projections.
+The [Route reference](../reference/routes.md) defines initial private traffic projection and the temporary refusal boundary for Route, Node, Cluster, and access changes that need coordinated runtime and Laravel URL reconciliation.
 
-`instance:new` does not adopt caller-local Git sources. The `instance:register` workflow governed by [ADR 0027](../decisions/0027-adopt-local-git-sources-into-appinstance-ownership.md) owns checkout and worktree adoption, including manual migration of a branch-named default source.
+Caller-local Git worktrees are a separate, externally owned source kind. They are not adopted by `instance:new`; [ADR 0018](../decisions/0018-register-caller-local-development-worktrees.md) defines that registration lifecycle.

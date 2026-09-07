@@ -9,10 +9,12 @@ use InvalidArgumentException;
 /** @mago-expect lint:cyclomatic-complexity The manifest schema fails closed on every field. */
 final readonly class FeatureTopology
 {
-    public const int SCHEMA = 3;
+    public const int SCHEMA = 4;
 
     /** The one disk device name a mounted worktree uses on every checkout role. */
     public const string SOURCE_DEVICE = 'orbit-source';
+
+    public TopologyConstructionInputs $construction;
 
     /** The exact attempt this topology belongs to; two attempts of one issue never share resources. */
     public AttemptId $attempt;
@@ -31,6 +33,7 @@ final readonly class FeatureTopology
         public SourceState $source,
         public VerificationReport $verification,
         public array $mounts = [],
+        ?TopologyConstructionInputs $construction = null,
     ) {
         if ($target->isTopologySnapshot() || $target->attempt === null) {
             throw new InvalidArgumentException('A feature topology requires an attempt-scoped target.');
@@ -38,8 +41,18 @@ final readonly class FeatureTopology
 
         $this->attempt = $target->attempt;
 
-        if ($network !== $target->network() || array_keys($instances) !== TopologyProfile::ROLES) {
+        if ($network !== $target->network() || array_keys($instances) !== $target->recipe->nodeKeys()) {
             throw new InvalidArgumentException('The topology resources do not match the target.');
+        }
+
+        $this->construction = $construction ?? TopologyConstructionInputs::create($target, $generation, 2);
+        if (
+            $this->construction->target->issue !== $target->issue
+            || $this->construction->target->requireAttempt()->value !== $target->requireAttempt()->value
+            || $this->construction->target->recipe->nodeKeys() !== $target->recipe->nodeKeys()
+            || $this->construction->sourceGeneration !== $generation->id
+        ) {
+            throw new InvalidArgumentException('The topology construction inputs do not match the target.');
         }
 
         foreach ($instances as $role => $instance) {
@@ -55,7 +68,7 @@ final readonly class FeatureTopology
             throw new InvalidArgumentException('Topology resource identities must be unique.');
         }
 
-        self::validateMounts($mounts, $source->mounted ? TopologyProfile::CHECKOUT_ROLES : []);
+        self::validateMounts($mounts, $source->mounted ? $target->recipe->checkoutNodeKeys() : []);
     }
 
     /**
@@ -101,6 +114,7 @@ final readonly class FeatureTopology
             'attempt_id' => $this->attempt->value,
             'purpose' => $this->purpose->value,
             'profile' => TopologyProfile::NAME,
+            'construction' => $this->construction->toArray(),
             'generation' => $this->generation->toArray(),
             'network' => $this->network,
             'instances' => $this->instances,
@@ -119,6 +133,7 @@ final readonly class FeatureTopology
             'attempt_id',
             'purpose',
             'profile',
+            'construction',
             'generation',
             'network',
             'instances',
@@ -142,6 +157,7 @@ final readonly class FeatureTopology
             || ! is_string($value['attempt_id'])
             || ! is_string($value['purpose'])
             || ! is_string($value['network'])
+            || ! is_array($value['construction'])
             || ! is_array($value['generation'])
             || ! is_array($value['instances'])
             || ! is_array($value['mounts'])
@@ -160,8 +176,10 @@ final readonly class FeatureTopology
         /** @var array<string, array{device:string,source:string,path:string}> $mounts */
         $mounts = $value['mounts'];
 
+        $construction = TopologyConstructionInputs::fromArray($value['construction']);
+
         return new self(
-            TopologyTarget::feature($value['issue'], new AttemptId($value['attempt_id'])),
+            $construction->target,
             $purpose,
             TopologySnapshotGeneration::fromArray($value['generation']),
             $value['network'],
@@ -169,6 +187,7 @@ final readonly class FeatureTopology
             SourceState::fromArray($value['source']),
             VerificationReport::fromArray($value['verification']),
             $mounts,
+            $construction,
         );
     }
 }

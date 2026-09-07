@@ -97,6 +97,7 @@ it('enforces multi-target storage rules with compatible Cluster-scoped explicit 
     $route->targets()->create(['app_instance_id' => $one->id, 'position' => 0]);
 
     expect($route->targets()->pluck('position')->all())->toBe([0, 1]);
+    $route->targets()->delete();
 
     $generated = Route::query()->create([
         'app_id' => $app->id,

@@ -114,7 +114,9 @@ function task7_process_result(
             $argv = $request['argv'];
             $recorded[] = ['incus', '--project', 'orbit', 'exec', $request['instance'], '--', ...$argv];
             if ($argv === ['uname', '-m']) {
-                $architecture = $request['label'] === 'app-dev' ? 'x86_64' : 'aarch64';
+                $architecture = in_array($request['label'], ['app-dev', 'operator'], true)
+                    ? 'x86_64'
+                    : 'aarch64';
                 $results[] = [
                     'label' => $request['label'],
                     'stdout' => $architecture."\n",
@@ -249,6 +251,41 @@ function task7_process_result(
 
 /** @mago-expect lint:cyclomatic-complexity The fixture preserves one complete ordered convergence contract. */
 describe('TopologyConverger', function () {
+    it('provisions both app-prod Nodes but keeps the sole typed sample on app-dev', function (): void {
+        $recorded = [];
+        $target = featureTarget('TST-123', 'a', TopologyRecipe::extendedAppProd());
+        Process::fake(function (PendingProcess $process) use (&$recorded, $target): ProcessResult {
+            return task7_process_result($process, $recorded, typed: true, target: $target);
+        });
+
+        new TopologyConverger(task7_host())->converge(
+            $target,
+            new SourceState(str_repeat('a', 40), str_repeat('a', 40), false),
+            new LaravelRelease('v13.10.1', str_repeat('b', 40)),
+        );
+
+        $commands = array_map(
+            static fn (array $command): string => implode(' ', array_map(strval(...), $command)),
+            $recorded,
+        );
+        $all = implode("\n", $commands);
+        expect($all)
+            ->toContain(
+                $target->instance('gateway').' -- /usr/local/bin/converge-app-prod-internal-tls.sh app-prod ',
+                ' aarch64 10.44.0.3',
+                $target->instance('gateway').' -- /usr/local/bin/converge-app-prod-internal-tls.sh app-prod-2 ',
+                ' aarch64 10.44.0.4',
+                $target->instance('app-dev')
+                    .' -- /usr/local/bin/converge-sample-app.sh create-resources app-dev app-prod ',
+                $target->instance('app-dev').' -- /usr/local/bin/converge-sample-app.sh hydrate ',
+            )
+            ->not->toContain(
+                $target->instance('app-prod').' -- /usr/local/bin/converge-sample-app.sh hydrate ',
+                $target->instance('app-prod-2').' -- /usr/local/bin/converge-sample-app.sh hydrate ',
+                'create-resources app-dev app-prod-2',
+            );
+    });
+
     it('validates and converges an existing ready topology in the required order', function () {
         $recorded = [];
         Process::fake(function (PendingProcess $process) use (&$recorded): ProcessResult {
@@ -320,6 +357,7 @@ describe('TopologyConverger', function () {
                     'app-prod',
                     '192.0.2.12',
                     'aarch64',
+                    '10.44.0.3',
                 ],
                 ['/usr/local/bin/converge-sample-app.sh', 'grant-operator', 'app-dev', 'gateway'],
                 ['/usr/local/bin/converge-sample-app.sh', 'configure-cli', '10.44.0.1'],

@@ -31,7 +31,7 @@ final readonly class DiscoveryGuestPreparer
     public function assertSourceMounted(TopologyTarget $target): void
     {
         $commands = [];
-        foreach (TopologyProfile::CHECKOUT_ROLES as $role) {
+        foreach ($target->recipe->checkoutNodeKeys() as $role) {
             $commands["mountpoint.{$role}"] = [
                 'instance' => $target->instance($role),
                 'command' => new GuestCommand(['mountpoint', '-q', '--', MountPath::GUEST_SOURCE], 30),
@@ -69,7 +69,7 @@ final readonly class DiscoveryGuestPreparer
     public function exposeOrbitCli(TopologyTarget $target): void
     {
         $commands = [];
-        foreach (TopologyProfile::CHECKOUT_ROLES as $role) {
+        foreach ($target->recipe->checkoutNodeKeys() as $role) {
             $commands["orbit-cli.{$role}"] = [
                 'instance' => $target->instance($role),
                 'command' => GuestCommand::linkOrbitCli(),
@@ -85,19 +85,26 @@ final readonly class DiscoveryGuestPreparer
      */
     public function repairCloneIdentity(TopologyTarget $target): void
     {
-        $instances = array_combine(TopologyProfile::ROLES, array_map($target->instance(...), TopologyProfile::ROLES));
+        $instances = array_combine(
+            TopologyProfile::ROLES,
+            array_map($target->instance(...), TopologyProfile::ROLES),
+        );
         $addresses = $this->host->globalIpv4All($instances);
         $retarget = [];
-        foreach (['app-dev', 'app-prod'] as $role) {
-            $retarget["retarget-vpn.{$role}"] = [
-                'instance' => $instances[$role],
-                'command' => new GuestCommand(['/usr/local/bin/retarget-vpn.sh', $addresses['gateway']], 300),
+        $gateway = $target->recipe->nodeForRole('gateway')->key;
+        foreach (TopologyProfile::ROLES as $node) {
+            if ($node === $gateway) {
+                continue;
+            }
+            $retarget["retarget-vpn.{$node}"] = [
+                'instance' => $instances[$node],
+                'command' => new GuestCommand(['/usr/local/bin/retarget-vpn.sh', $addresses[$gateway]], 300),
             ];
         }
         $this->assertGuestBatch($this->host->execAll($retarget), 'WireGuard retargeting failed on');
 
         $restart = [];
-        foreach (TopologyProfile::CHECKOUT_ROLES as $role) {
+        foreach ($target->recipe->checkoutNodeKeys() as $role) {
             $restart["php-fpm.{$role}"] = [
                 'instance' => $instances[$role],
                 'command' => new GuestCommand(['systemctl', 'restart', 'php8.5-fpm'], 120),

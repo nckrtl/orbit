@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\E2E\Git\GitRepository;
+use App\E2E\IncusHost;
 use App\E2E\IssueState;
 use App\E2E\ProofEquivalenceEvaluator;
 use App\E2E\ProofInputManifestBuilder;
@@ -111,6 +112,11 @@ function proofEquivalenceFixture(bool $observedInputs = false): array
         'AUX-99',
         '.loop/proof/AUX-99.json',
         $plan,
+        \App\E2E\Value\TopologyConstructionInputs::forGeneration(
+            featureTarget('AUX-99'),
+            'equivalence-generation',
+            2,
+        ),
         $observed,
     );
     $attempt = new AttemptId(str_repeat('a', 32));
@@ -161,6 +167,7 @@ function proofEquivalenceFixture(bool $observedInputs = false): array
             $builder,
             new StatePaths(temporaryPath('orbit-equivalence-host-', 6)),
             new OperationId(str_repeat('c', 32)),
+            new IncusHost,
             $root,
         ),
     ];

@@ -65,6 +65,7 @@ describe('proof reuse evidence', function (): void {
             ]],
             '.loop/proof/AUX-99.json',
             [],
+            topologyConstructionFixture(),
             null,
             [
                 'static_classification' => true,

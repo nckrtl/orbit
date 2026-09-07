@@ -67,6 +67,9 @@ final readonly class WorktreeSynchronizer
     {
         $repository = new GitRepository($worktree);
         $this->validateWorktree($repository, $target);
+        if (count($target->recipe->nodes) > count(\App\E2E\Value\TopologyProfile::ROLES)) {
+            $this->syncWorkingTreeGuestScripts($target, $repository);
+        }
         $hostSha = $repository->commit();
         $overlay = $repository->dirtyOverlay();
         $paths = $overlay === null ? [] : $overlay->paths;
@@ -106,6 +109,33 @@ final readonly class WorktreeSynchronizer
             true,
             $pointerHash,
         );
+    }
+
+    /** Install the mounted worktree's current guest scripts on every physical Node. */
+    private function syncWorkingTreeGuestScripts(TopologyTarget $target, GitRepository $repository): void
+    {
+        $temporaryDirectory = $this->temporaryDirectory();
+        try {
+            $scripts = $this->guestScripts($repository->root());
+            $hash = $this->guestScriptHash($scripts);
+            ['markerFile' => $markerFile] = $this->stageTransferFiles(
+                $repository,
+                $temporaryDirectory,
+                [],
+                $hash,
+            );
+            $status = $this->unchangedGuestScripts($target, $scripts, $hash);
+            $changed = [];
+            foreach ($target->recipe->nodeKeys() as $node) {
+                if (! $status[$node]) {
+                    $changed[$node] = $target->instance($node);
+                }
+            }
+            $this->installGuestScripts($changed, $scripts, $markerFile, $this->operation->value);
+        } catch (\Throwable $primary) {
+            $this->failAfterTemporaryCleanup($temporaryDirectory, $primary);
+        }
+        $this->cleanupTemporaryDirectory($temporaryDirectory);
     }
 
     /**

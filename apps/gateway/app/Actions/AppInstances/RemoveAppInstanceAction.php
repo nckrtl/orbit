@@ -27,6 +27,14 @@ final readonly class RemoveAppInstanceAction
             function () use ($appInstance, $discardSource): AppInstance {
                 $snapshot = $appInstance->refresh()->load(['app', 'node']);
 
+                if ($snapshot->routes()->where('routes.status', 'active')->exists()) {
+                    throw new ResourceOperationException(
+                        errorCode: 'route.reconciliation_required',
+                        message: 'The active AppInstance Route must be reconciled before removal.',
+                        status: 409,
+                    );
+                }
+
                 if ($snapshot->source_kind !== AppInstanceSourceKind::ManagedClone->value) {
                     throw new ResourceOperationException(
                         errorCode: 'instance.source_kind_conflict',

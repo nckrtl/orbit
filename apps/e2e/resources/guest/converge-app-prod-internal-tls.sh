@@ -2,9 +2,9 @@
 set -euo pipefail
 umask 077
 cd /home/orbit/orbit/apps/gateway
-[[ $# -eq 3 && "$1" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]{0,62}$ && "$2" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || exit 64
-[[ "$3" =~ ^(x86_64|aarch64)$ ]] || exit 65
-wireguard_ip=10.44.0.3
+[[ $# -eq 4 && "$1" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]{0,62}$ && "$2" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || exit 64
+[[ "$3" =~ ^(x86_64|aarch64)$ && "$4" =~ ^10\.44\.0\.[1-9][0-9]{0,2}$ ]] || exit 65
+wireguard_ip=$4
 db=/home/orbit/.orbit/gateway.sqlite
 # The Gateway store is the source of truth: an active node with an active
 # role is already provisioned. Public SSH closes after provisioning, so a
@@ -39,6 +39,12 @@ sudo -u orbit -- env HOME=/home/orbit ssh -i /home/orbit/.orbit/ssh/id_ed25519 \
   -o StrictHostKeyChecking=yes \
   -- orbit@"$wireguard_ip" 'bash -se' <<'GUEST'
 set -euo pipefail
+if [[ "$(dpkg-query -W -f='${Status}' php8.5-fpm 2>/dev/null || true)" != 'install ok installed' ]]; then
+  sudo env DEBIAN_FRONTEND=noninteractive apt-get update
+  sudo env DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends -- php8.5-fpm
+fi
+sudo systemctl enable --now php8.5-fpm
+sudo install -d -m 0755 /var/www
 install_root_text_file() {
   local value="$1" destination="$2" source
   source=$(mktemp)

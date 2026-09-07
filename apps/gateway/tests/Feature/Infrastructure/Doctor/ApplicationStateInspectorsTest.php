@@ -61,7 +61,7 @@ it('checks only selected-node app projections through the fixed SSH boundary', f
             'bash',
             '-seu',
             '--',
-            'https://github.com/acme/project.git',
+            $app->repository_url,
             $instance->checkout_path,
             '/srv/users/nckrtl',
             'nckrtl',
@@ -236,7 +236,15 @@ it('reports shared AppInstance Git administration as non-independent', function 
     file_put_contents("{$checkout}/README.md", "managed\n");
     application_run(['git', '-C', $checkout, 'add', 'README.md']);
     application_run(['git', '-C', $checkout, 'commit', '-m', 'Managed']);
-    application_run(['git', '-C', $checkout, 'remote', 'add', 'origin', 'https://github.com/acme/project.git']);
+    application_run([
+        'git',
+        '-C',
+        $checkout,
+        'remote',
+        'add',
+        'origin',
+        $appInstance->app->repository_url,
+    ]);
     $startingCommit = trim(application_run(['git', '-C', $checkout, 'rev-parse', 'HEAD'])->stdout);
     $files->copyDirectory("{$checkout}/.git", $sharedGitDirectory);
     file_put_contents("{$checkout}/.git/commondir", "{$sharedGitDirectory}\n");
@@ -253,7 +261,7 @@ it('reports shared AppInstance Git administration as non-independent', function 
                 'bash',
                 '-seu',
                 '--',
-                'https://github.com/acme/project.git',
+                $appInstance->app->repository_url,
                 $checkout,
                 "{$sandbox}/apps",
                 $user,
@@ -504,7 +512,7 @@ function application_inspector_app(): App
     return App::query()->create([
         'name' => "Project {$number}",
         'slug' => "project-{$number}",
-        'repository_url' => 'https://github.com/acme/project.git',
+        'repository_url' => "https://github.com/acme/project-{$number}.git",
     ]);
 }
 

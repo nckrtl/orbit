@@ -43,7 +43,9 @@ it('reads complete worktree listings without early-exit SIGPIPE', function () us
     }
 });
 
-it('releases retained proof and discovery before removing a worktree', function () use ($read): void {
+it('releases retained proof and discovery only for a merged branch, before removing a worktree', function () use (
+    $read,
+): void {
     $script = $read('bin/worktree-remove');
 
     expect($script)
@@ -51,6 +53,17 @@ it('releases retained proof and discovery before removing a worktree', function 
         ->toContain('release "$linear_id" "--worktree=$worktree" --proof')
         ->toContain('if [[ -f "$worktree/.e2e/attempt.json" ]]')
         ->toContain('release "$linear_id" "--worktree=$worktree"');
+
+    expect($script)
+        ->toContain('awk -v ref="branch refs/heads/$branch"')
+        ->toContain('[[ -n "$worktree" ]] || worktree="$primary_root/.worktrees/$name"');
+
+    $mergeCheck = strpos($script, 'git merge-base --is-ancestor "$branch" origin/main');
+    $proofRelease = strpos($script, 'release "$linear_id" "--worktree=$worktree" --proof');
+
+    expect($mergeCheck)
+        ->not->toBeFalse()->and($proofRelease)
+        ->not->toBeFalse()->and($mergeCheck)->toBeLessThan($proofRelease);
 });
 
 it('keeps planning, plan review, and development independently invokable', function () use ($read, $root): void {
@@ -122,6 +135,7 @@ it('keeps implementation guidance on Orbit code and proof', function () use ($re
 
     foreach ([
         'bin/e2e-topology acquire <ISSUE> <worktree>',
+        'An extended topology requires its `.loop/proof/<ISSUE>.json` extension declaration before acquisition',
         'bin/e2e-topology shell <ISSUE> <role>',
         '.loop/proof/<ISSUE>.json',
         'bin/e2e-topology prove <ISSUE>',
@@ -158,10 +172,20 @@ it('binds review and merge to one exact remote head', function () use ($read): v
         ->toContain('external orchestrator merges it')
         ->toContain('Do not run a merge command')
         ->toContain('bin/e2e-topology-snapshot promote <ISSUE>')
-        ->toContain('Do not substitute a refresh')
+        ->toContain('Do not substitute a refresh when `main` differs')
         ->toContain('For every candidate, if `main` moved after approval')
-        ->not
-        ->toContain('bin/e2e-topology-snapshot refresh')
+        ->toContain('Never integrate `main`')
+        ->toContain('after the `.loop/` removal')
+        ->toContain('declares `mutates: true`')
+        ->toContain('A normalized extended proof plan')
+        ->toContain('always declares `mutates: true` and is refresh-only')
+        ->toContain('bin/e2e-topology-snapshot refresh --main-sha=<current origin/main>')
+        ->toContain('bin/e2e-topology release <ISSUE> --proof')
+        ->toContain('If refresh fails, leave both the')
+        ->toContain('proof and discovery attempts active and stop')
+        ->toContain('Release neither')
+        ->toContain('attempt before successful refresh')
+        ->toContain('ADR 0035')
         ->toContain('bin/worktree-remove <ISSUE> <slug>')
         ->toContain('verify GitHub, `origin/main`')
         ->toContain('topology snapshot identity, and cleanup state directly');
@@ -170,6 +194,14 @@ it('binds review and merge to one exact remote head', function () use ($read): v
         ->toContain('repository-owner-approved behavior')
         ->toContain('issue-specific proof')
         ->not->toContain('bin/e2e-live');
+});
+
+it('documents physical Node targeting for extended issue topologies', function () use ($read): void {
+    $script = $read('bin/e2e-topology');
+
+    expect($script)
+        ->toContain('recorded physical Node key')
+        ->toContain('including app-prod-2 when declared');
 });
 
 it('accepts Todo or In Progress for development', function () use ($read): void {
@@ -334,6 +366,45 @@ it('shapes features before issue publication without changing project state', fu
     expect($manifest)
         ->toContain('$grill-with-docs')
         ->toContain('allow_implicit_invocation: false');
+});
+
+it('supports interactive resolution and delegated proposals for blocked and backlog issues', function () use (
+    $read,
+): void {
+    $skill = $read('.agents/skills/resolve-pipeline-issues/SKILL.md');
+    $manifest = $read('.agents/skills/resolve-pipeline-issues/agents/openai.yaml');
+    $agents = $read('AGENTS.md');
+
+    expect($skill)
+        ->toContain('explicitly asks to resolve the Orbit pipeline')
+        ->toContain('explicitly names one `Blocked` or `Backlog` issue')
+        ->toContain('an orchestrator assigns a dedicated resolution agent one exact Orbit issue by ID or URL')
+        ->toContain('after that issue moves to `Blocked` or `Backlog`')
+        ->toContain('Do not activate merely because an issue is mentioned')
+        ->toContain('one issue active at a time')
+        ->toContain('all `Blocked` issues before any `Backlog` issue')
+        ->toContain('current `origin/main`')
+        ->toContain('ordinary unfinished prerequisite belongs only in a Linear `blocked by` relation')
+        ->toContain('Apply `grilling` with the `domain-modeling` discipline')
+        ->toContain('route it through `recording-decisions`')
+        ->toContain('use `creating-issues`')
+        ->toContain('complete issue moves to `Todo`')
+        ->toContain('`Blocked` issue returns to `Todo`')
+        ->toContain('`Backlog` issue moves to `Todo`')
+        ->toContain('Do not implement the issue')
+        ->toContain('immediately introduce the next issue')
+        ->toContain('Do not interview the user, mutate Linear, post a comment, change status')
+        ->toContain('Return a useful proposal even when a human decision is still required')
+        ->toContain('Clearly label the result as an unapproved proposal')
+        ->toContain('Delegated advisory mode ends after returning its proposal')
+        ->toContain('The orchestrator owns every action after this return');
+
+    expect($manifest)
+        ->toContain('Resolve Pipeline Issues')
+        ->toContain('$resolve-pipeline-issues')
+        ->toContain('read-only proposal for one exact Blocked or Backlog issue');
+
+    expect($agents)->toContain('`resolve-pipeline-issues`');
 });
 
 it('classifies preflight stops without a separate creation receipt', function () use ($read): void {

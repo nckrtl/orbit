@@ -75,6 +75,9 @@ final class CreateInstanceCommand extends GatewayCommand
         }
 
         $this->info("Instance [{$instance->name}] is {$instance->status}.");
+        if ($instance->url !== null) {
+            $this->line("URL: {$instance->url}");
+        }
         $this->line("Request ID: {$instance->requestId}");
 
         return self::SUCCESS;

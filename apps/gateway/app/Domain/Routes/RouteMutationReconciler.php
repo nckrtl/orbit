@@ -45,7 +45,18 @@ final readonly class RouteMutationReconciler
         );
 
         foreach ($routes as $route) {
-            $route->update($proposals[$route->id]);
+            $proposal = $proposals[$route->id];
+            $changed = array_filter(
+                $proposal,
+                static fn (mixed $value, string $key): bool => $route->getAttribute($key) !== $value,
+                ARRAY_FILTER_USE_BOTH,
+            );
+
+            if ($changed !== [] && $route->status === RouteStatus::Active) {
+                new RouteReconciliationGuard()->refuse();
+            }
+
+            $route->update($proposal);
         }
     }
 

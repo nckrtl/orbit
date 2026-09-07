@@ -29,6 +29,7 @@ use App\Infrastructure\Nodes\Roles\MetricsRoleBaseline;
 use App\Infrastructure\Nodes\Roles\NativeRoleBaselineConverger;
 use App\Infrastructure\Nodes\Roles\NodeRoleOperatingSystemGuard;
 use App\Infrastructure\Nodes\Roles\NodeRolePrerequisiteCommandFactory;
+use App\Infrastructure\Nodes\Roles\RouterRoleBaseline;
 use App\Infrastructure\Nodes\Roles\VpnRoleBaseline;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
@@ -37,6 +38,7 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\NodeRole;
 
@@ -104,6 +106,66 @@ it('converges and removes only app production role-owned infrastructure', functi
         'firewall:converge:app-prod',
         'caddy:remove',
         'firewall:remove:app-prod',
+    ]);
+});
+
+it('converges removes and dispatches the dedicated Router-only baseline', function (): void {
+    $events = [];
+    [$node, $assignment] = role_baseline_models(RoleName::Router, 'router-only');
+    $router = router_role_baseline($events);
+
+    $router->converge($node, $assignment);
+    $router->remove($node, $assignment, purgeData: false);
+
+    expect($events)->toBe([
+        'ssh:router',
+        'caddy:converge',
+        'firewall:converge:router',
+        'caddy:remove',
+        'firewall:remove:router',
+    ]);
+
+    $events = [];
+    $metricsFleet = Mockery::mock(MetricsFleetReconciler::class);
+    $metricsFleet->shouldReceive('reconcile')->twice();
+    $dispatcher = new NativeRoleBaselineConverger(
+        new GatewayRoleBaseline(baseline_firewall($events)),
+        new VpnRoleBaseline(
+            new NodeRolePrerequisiteCommandFactory,
+            baseline_ssh($events),
+            baseline_keys(),
+            baseline_known_hosts(),
+            baseline_firewall($events),
+            baseline_account_resolver(),
+        ),
+        app_dev_role_baseline($events),
+        app_prod_role_baseline($events),
+        new MetricsRoleBaseline(
+            Mockery::mock(MetricsRuntimeLifecycle::class)->shouldIgnoreMissing(),
+            Mockery::mock(MetricsExporterLifecycle::class)->shouldIgnoreMissing(),
+            Mockery::mock(MetricsPublicationManager::class)->shouldIgnoreMissing(),
+            new MetricsGatewayResolver,
+            new MetricsPublicationReport,
+        ),
+        $metricsFleet,
+        new NodeRoleOperatingSystemGuard(
+            baseline_guard_ssh($events),
+            baseline_keys(),
+            baseline_known_hosts(),
+        ),
+        router_role_baseline($events),
+    );
+
+    $dispatcher->converge($node, $assignment);
+    $dispatcher->remove($node, $assignment, purgeData: false);
+
+    expect($events)->toBe([
+        'guard:gateway',
+        'ssh:router',
+        'caddy:converge',
+        'firewall:converge:router',
+        'caddy:remove',
+        'firewall:remove:router',
     ]);
 });
 
@@ -594,7 +656,11 @@ function baseline_guard_ssh(array &$events): SshExecutor
 function role_baseline_models(RoleName $role, string $name = 'role-node'): array
 {
     $address = '10.44.0.'.(Node::query()->count() + 2);
+    $cluster = $role === RoleName::Router
+        ? Cluster::query()->create(['name' => "{$name}-cluster"])
+        : null;
     $node = Node::query()->create([
+        'cluster_id' => $cluster?->id,
         'name' => $name,
         'status' => 'active',
         'platform' => 'linux',
@@ -603,7 +669,11 @@ function role_baseline_models(RoleName $role, string $name = 'role-node'): array
         'user' => 'orbit',
         'wireguard_ip' => $address,
     ]);
-    $assignment = $node->roles()->create(['role' => $role, 'status' => 'provisioning']);
+    $assignment = $node->roles()->create([
+        'cluster_id' => $cluster?->id,
+        'role' => $role,
+        'status' => 'provisioning',
+    ]);
 
     return [$node, $assignment];
 }
@@ -703,6 +773,35 @@ function app_prod_role_baseline(array &$events): AppProdRoleBaseline
     return new AppProdRoleBaseline(
         new NodeRolePrerequisiteCommandFactory,
         new AppProdSshExecutor(baseline_ssh($events), baseline_keys(), baseline_known_hosts()),
+        $caddy,
+        baseline_firewall($events),
+        baseline_account_resolver(),
+    );
+}
+
+/** @param list<string> $events */
+function router_role_baseline(array &$events): RouterRoleBaseline
+{
+    $caddy = new class($events) implements AppDevCaddyManager {
+        /** @param list<string> $events */
+        public function __construct(
+            private array &$events,
+        ) {}
+
+        public function converge(Node $node): void
+        {
+            $this->events[] = 'caddy:converge';
+        }
+
+        public function remove(Node $node): void
+        {
+            $this->events[] = 'caddy:remove';
+        }
+    };
+
+    return new RouterRoleBaseline(
+        new NodeRolePrerequisiteCommandFactory,
+        new AppDevSshExecutor(baseline_ssh($events), baseline_keys(), baseline_known_hosts()),
         $caddy,
         baseline_firewall($events),
         baseline_account_resolver(),

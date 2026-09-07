@@ -10,6 +10,7 @@ use App\E2E\Value\GuestCommandResult;
 use App\E2E\Value\OperationId;
 use App\E2E\Value\ProofFixtures;
 use App\E2E\Value\TopologyProfile;
+use App\E2E\Value\TopologyRecipe;
 use Illuminate\Container\Container;
 use Illuminate\Process\Factory as ProcessFactory;
 use Illuminate\Support\Facades\Facade;
@@ -215,6 +216,24 @@ describe('ProofFixtureStager', function (): void {
 
         expect(max(array_map(count(...), $guest->batches)))
             ->toBeLessThanOrEqual(128);
+    });
+
+    it('stages and verifies fixtures on all four extended physical Nodes', function (): void {
+        ['repository' => $repository, 'commit' => $commit] = proofFixtureRepository('AUX-132', [
+            'extended-runtime-connectivity.sh' => ["#!/bin/sh\nexit 0\n", 0755],
+        ]);
+        $guest = new ProofFixtureGuestFake;
+        $target = featureTarget('AUX-132', 'b', TopologyRecipe::extendedAppProd());
+
+        $fixtures = new ProofFixtureStager($guest, new OperationId(str_repeat('a', 32)))
+            ->stage($target, $repository, $commit);
+
+        expect(array_keys($fixtures->roles))
+            ->toBe(['gateway', 'app-dev', 'app-prod', 'app-prod-2'])
+            ->and(array_keys($guest->installed))
+            ->toBe(array_map($target->instance(...), $target->recipe->nodeKeys()))
+            ->and($guest->reset)
+            ->toBe(array_map($target->instance(...), $target->recipe->nodeKeys()));
     });
 
     it('empties the guest fixture directory on every role before it installs', function (): void {

@@ -4,13 +4,18 @@ declare(strict_types=1);
 
 use App\Domain\AppInstances\AppInstanceSourceKind;
 use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\AppInstances\DevelopmentAppInstanceConfigurator;
 use App\Domain\AppInstances\DevelopmentAppInstanceSourceLifecycle;
+use App\Domain\AppInstances\DevelopmentRouteProjector;
+use App\Domain\AppInstances\DevelopmentSourceProfile;
 use App\Domain\AppInstances\DevelopmentSourceResolution;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Instances\CertificateMode;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
+use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Activity;
@@ -19,6 +24,7 @@ use App\Models\AppInstance;
 use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\Node;
+use App\Models\NodeRole;
 use App\Models\Route;
 use App\Models\RouteTarget;
 use App\Models\Workspace;
@@ -26,6 +32,24 @@ use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
 beforeEach(function (): void {
+    app()->instance(RoleBaselineConverger::class, new class implements RoleBaselineConverger {
+        public function converge(Node $node, NodeRole $assignment): void {}
+
+        public function remove(Node $node, NodeRole $assignment, bool $purgeData): void {}
+
+        public function removeUnreachable(Node $node, NodeRole $assignment): void {}
+    });
+    app()->instance(DevelopmentAppInstanceConfigurator::class, new class implements DevelopmentAppInstanceConfigurator {
+        public function inspect(AppInstance $appInstance): DevelopmentSourceProfile
+        {
+            return new DevelopmentSourceProfile('8.5', false);
+        }
+
+        public function configureLaravelUrl(AppInstance $appInstance, string $url): void {}
+    });
+    app()->instance(DevelopmentRouteProjector::class, new class implements DevelopmentRouteProjector {
+        public function converge(AppInstance $appInstance, Route $route): void {}
+    });
     app()->instance(ManagedUserAccountResolver::class, new class implements ManagedUserAccountResolver {
         public function resolve(Node $node): ManagedUserAccount
         {
@@ -177,7 +201,7 @@ it('creates an active managed-clone AppInstance on a standalone Node with inheri
             'hostname' => 'dev.acme.test',
             'provenance' => 'generated',
             'publication' => 'private',
-            'status' => 'pending',
+            'status' => 'active',
             'failed_step' => null,
             'error_code' => null,
         ])
@@ -185,7 +209,7 @@ it('creates an active managed-clone AppInstance on a standalone Node with inheri
         ->toBe(AppInstance::query()->sole()->id);
 });
 
-it('creates explicit Routes after activation and preserves exact retry identity', function (): void {
+it('creates explicit Routes during provisioning and preserves exact retry identity', function (): void {
     $this->source->resolution = new DevelopmentSourceResolution('main', str_repeat('a', 40));
     $payload = [
         'app_id' => $this->orbitApp->id,
@@ -202,7 +226,7 @@ it('creates explicit Routes after activation and preserves exact retry identity'
             'hostname' => 'preview.example.test',
             'provenance' => 'explicit',
             'generation_basis_node_id' => null,
-            'status' => 'pending',
+            'status' => 'active',
             'failed_step' => null,
             'error_code' => null,
         ]);
@@ -215,7 +239,7 @@ it('creates explicit Routes after activation and preserves exact retry identity'
     expect(Route::query()->count())->toBe(1);
 });
 
-it('keeps activated source evidence when generated Route validation fails and completes on retry', function (): void {
+it('refuses unavailable generated naming before source mutation and completes on retry', function (): void {
     $this->node->update(['tld' => null]);
     $payload = [
         'app_id' => $this->orbitApp->id,
@@ -230,9 +254,11 @@ it('keeps activated source evidence when generated Route validation fails and co
 
     $instance = AppInstance::query()->sole();
     expect($instance->status)
-        ->toBe(AppInstanceState::Active)
+        ->toBe(AppInstanceState::Reserved)
         ->and($instance->starting_commit)
-        ->toBe(str_repeat('a', 40))
+        ->toBeNull()
+        ->and($this->source->calls)
+        ->toBe([])
         ->and(Route::query()->count())
         ->toBe(0);
 
@@ -269,6 +295,8 @@ it('uses Node TLD before active Cluster fallback while Cluster membership select
         ->and(Route::query()->sole()->cluster_id)
         ->toBe($cluster->id);
 
+    AppInstance::query()->sole()->update(['status' => AppInstanceState::SourceResolved]);
+    Route::query()->sole()->update(['status' => 'pending']);
     Route::query()->sole()->delete();
     AppInstance::query()->sole()->delete();
     $this->node->update(['tld' => null]);
@@ -320,7 +348,7 @@ it('creates equivalent source on Nodes in every optional Cluster state', functio
     expect(AppInstance::query()->sole()->getAttributes())->not->toHaveKey('cluster_id');
 })->with(['standalone', 'inactive', 'active-without-tld', 'active-with-tld']);
 
-it('preserves AppInstance source identity through Cluster and Router changes', function (): void {
+it('refuses Cluster activation that would change an active AppInstance Route', function (): void {
     $created = $this->postJson('/api/v1/instances', [
         'app_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
@@ -347,17 +375,26 @@ it('preserves AppInstance source identity through Cluster and Router changes', f
     $this->putJson("/api/v1/clusters/{$cluster->id}/nodes/{$this->node->id}")->assertOk();
     $this->putJson("/api/v1/clusters/{$cluster->id}/router/{$firstRouter->id}")->assertOk();
     $this->patchJson("/api/v1/clusters/{$cluster->id}", ['tld' => 'orbit'])->assertOk();
-    $this->patchJson("/api/v1/clusters/{$cluster->id}", ['state' => 'active'])->assertOk();
-    $this->putJson("/api/v1/clusters/{$cluster->id}/router/{$secondRouter->id}")->assertOk();
-    $this->patchJson("/api/v1/clusters/{$cluster->id}", ['state' => 'inactive'])->assertOk();
     $this
-        ->deleteJson("/api/v1/clusters/{$cluster->id}/nodes/{$this->node->id}", ['force' => true])
-        ->assertOk();
+        ->patchJson("/api/v1/clusters/{$cluster->id}", ['state' => 'active'])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'route.reconciliation_required');
 
     expect(AppInstance::query()->findOrFail($created->json('data.id'))->getAttributes())
         ->toBe($before)
-        ->and($this->node->refresh()->cluster_id)
-        ->toBeNull()
+        ->and($cluster->refresh()->state)
+        ->toBe(ClusterState::Inactive)
+        ->and(Route::query()->sole()->only(['status', 'node_id', 'cluster_id', 'hostname']))
+        ->toBe([
+            'status' => RouteStatus::Active,
+            'node_id' => $this->node->id,
+            'cluster_id' => null,
+            'hostname' => 'dev.acme.test',
+        ])
+        ->and($firstRouter->roles()->where('role', RoleName::Router)->sole()->status)
+        ->toBe(LifecycleStatus::Active)
+        ->and($secondRouter->roles()->where('role', RoleName::Router)->exists())
+        ->toBeFalse()
         ->and($this->source->calls)
         ->toBeEmpty();
 });
@@ -649,7 +686,7 @@ it('keeps overlapping AppInstance and legacy Instance IDs in separate endpoint d
         ->assertJsonPath('data.name', 'workspace');
 });
 
-it('removes through the source-only lifecycle and transports discard intent', function (bool $discard): void {
+it('refuses active AppInstance removal before source mutation', function (bool $discard): void {
     $created = $this->postJson('/api/v1/instances', [
         'app_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
@@ -674,20 +711,20 @@ it('removes through the source-only lifecycle and transports discard intent', fu
         ->deleteJson("/api/v1/instances/{$created->json('data.id')}", [
             'discard_source' => $discard,
         ])
-        ->assertOk()
-        ->assertJsonPath('data.id', $created->json('data.id'));
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'route.reconciliation_required');
 
     expect(AppInstance::query()->count())
-        ->toBe(0)
+        ->toBe(1)
         ->and(RouteTarget::query()->count())
-        ->toBe(0)
+        ->toBe(1)
         ->and($route->refresh()->only(array_keys($routeBefore)))
         ->toBe($routeBefore)
         ->and($this->source->calls)
-        ->toBe([$discard ? 'remove-discard:active' : 'remove:active']);
+        ->toBeEmpty();
 })->with([false, true]);
 
-it('uses normal source checks when removal sends an empty JSON body', function (): void {
+it('uses the active Route guard when removal sends an empty JSON body', function (): void {
     $created = $this->postJson('/api/v1/instances', [
         'app_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
@@ -698,39 +735,29 @@ it('uses normal source checks when removal sends an empty JSON body', function (
     $response = $this->deleteJson("/api/v1/instances/{$created->json('data.id')}");
 
     $response
-        ->assertOk()
-        ->assertJsonPath('data.id', $created->json('data.id'));
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'route.reconciliation_required');
     expect(AppInstance::query()->count())
-        ->toBe(0)
+        ->toBe(1)
         ->and($this->source->calls)
-        ->toBe(['remove:active']);
+        ->toBeEmpty();
 });
 
-it('refuses removal when another managed checkout overlaps the recorded path', function (): void {
+it('checks the active Route before checkout overlap during removal', function (): void {
     $created = $this->postJson('/api/v1/instances', [
         'app_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
         'name' => 'dev',
     ])->assertCreated();
-    AppInstance::query()->create([
-        'app_id' => $this->orbitApp->id,
-        'node_id' => $this->node->id,
-        'name' => 'nested',
-        'source_kind' => 'managed_clone',
-        'checkout_path' => '/srv/orbit/apps/acme/dev/nested',
-        'branch' => 'nested',
-        'starting_commit' => str_repeat('b', 40),
-        'status' => AppInstanceState::Active,
-    ]);
     $this->source->calls = [];
 
     $this
         ->deleteJson("/api/v1/instances/{$created->json('data.id')}")
         ->assertConflict()
-        ->assertJsonPath('error.code', 'instance.checkout_path_unsafe');
+        ->assertJsonPath('error.code', 'route.reconciliation_required');
 
     expect(AppInstance::query()->count())
-        ->toBe(2)
+        ->toBe(1)
         ->and($this->source->calls)
         ->toBeEmpty();
 });

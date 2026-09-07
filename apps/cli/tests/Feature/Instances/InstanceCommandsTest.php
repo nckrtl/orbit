@@ -114,6 +114,7 @@ describe('instance:new', function (): void {
         $this
             ->artisan('instance:new', ['app' => '3', 'node' => '2', 'name' => 'dev'])
             ->expectsOutput('Instance [dev] is active.')
+            ->expectsOutput('URL: https://dev.orbit.test')
             ->expectsOutput('Request ID: '.instance_request_id())
             ->assertExitCode(0);
     });
@@ -128,7 +129,10 @@ describe('instance:list', function (): void {
             ]),
         ]);
         $expected = json_encode([
-            'app_instances' => [instance_payload()],
+            'app_instances' => [[
+                ...instance_payload(),
+                'route' => [...instance_route_payload(), 'request_id' => instance_request_id()],
+            ]],
             'request_id' => instance_request_id(),
         ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
 
@@ -241,7 +245,7 @@ it('rejects invalid parent IDs before creating an AppInstance', function (
     'invalid node' => ['3', '-1', 'Node ID must be a positive integer.'],
 ]);
 
-/** @return array<string, int|string|null> */
+/** @return array<string, mixed> */
 function instance_payload(): array
 {
     return [
@@ -257,6 +261,28 @@ function instance_payload(): array
         'selected_branch' => 'dev',
         'starting_commit' => str_repeat('a', times: 40),
         'status' => 'active',
+        'route' => instance_route_payload(),
+        'hostname' => 'dev.orbit.test',
+        'url' => 'https://dev.orbit.test',
+    ];
+}
+
+/** @return array<string, mixed> */
+function instance_route_payload(): array
+{
+    return [
+        'id' => 8,
+        'app_id' => 3,
+        'node_id' => 2,
+        'cluster_id' => null,
+        'generation_basis_node_id' => 2,
+        'hostname' => 'dev.orbit.test',
+        'provenance' => 'generated',
+        'publication' => 'private',
+        'status' => 'active',
+        'failed_step' => null,
+        'error_code' => null,
+        'target' => ['id' => 9, 'app_instance_id' => 5, 'position' => 0],
     ];
 }
 
@@ -272,6 +298,7 @@ function instance_json(): string
 {
     return json_encode([
         ...instance_payload(),
+        'route' => [...instance_route_payload(), 'request_id' => instance_request_id()],
         'request_id' => instance_request_id(),
     ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
 }

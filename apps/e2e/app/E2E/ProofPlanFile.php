@@ -10,7 +10,7 @@ use App\E2E\Value\TopologyRequest;
 use App\E2E\Value\TopologyTarget;
 use InvalidArgumentException;
 
-/** Resolve and load the one proof plan owned by an issue workspace. */
+/** @mago-expect lint:cyclomatic-complexity Plan resolution fails closed across workspace and retained-proof sources. */
 final readonly class ProofPlanFile
 {
     public const string DIRECTORY = '.loop/proof';
@@ -23,6 +23,17 @@ final readonly class ProofPlanFile
     public static function current(TopologyRequest $request, mixed $option): self
     {
         $path = self::path($request->issue, $option);
+
+        return new self($path, self::fromFile($request->worktree, $path));
+    }
+
+    /** Load the issue plan before discovery construction when it already exists. */
+    public static function forAcquisition(TopologyRequest $request): ?self
+    {
+        $path = self::pathForIssue($request->issue);
+        if (! file_exists($request->worktree.'/'.$path)) {
+            return null;
+        }
 
         return new self($path, self::fromFile($request->worktree, $path));
     }
