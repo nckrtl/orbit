@@ -1,7 +1,7 @@
 # Feature plan
 
 Issue: ORB-125
-Review verdict: FIX
+Review verdict: PASS
 
 ## Outcome
 
@@ -29,10 +29,12 @@ Out:
 
 Commit `6b6ef302 docs: refresh stable AppInstance source identity` contains the issue-scoped documentation change:
 
-- `docs/architecture.md`: source layouts, reserved identity, inherited/explicit branch selection, migration boundary, and automatic provisioning.
-- `docs/concepts.md`: App `default_branch` and AppInstance placement, source layout, and one-Route definition.
-- `docs/domains/applications.md`: CLI/API/SDK branch contract, override persistence, retry and migration refusals, collision cases, Route output, and manual registration boundary.
-- `docs/reference/apps.md`: exact default-branch fields and removal of old public names while retaining repository identity and retry rules.
+Correction commits `521cbdbd docs: correct stable source boundaries` and `f15058fc docs: clarify App branch selection` remove claims that excluded adoption and App-update operations exist, distinguish root inheritance from branch selection, and route branch-selection detail out of the architecture summary.
+
+- `docs/architecture.md`: source-layout and provisioning summary with branch selection and migration details routed to the application guide.
+- `docs/concepts.md`: App-owned branch fallback distinct from inherited root, plus AppInstance placement, source layout, and one-Route definition.
+- `docs/domains/applications.md`: CLI/API/SDK branch contract, override persistence, retry and migration refusals, collision cases, Route output, and an explicit statement that adoption and manual migration commands are unavailable.
+- `docs/reference/apps.md`: exact default-branch fields, removal of old public names, repository identity and retry rules, and an explicit statement that no App update operation exists.
 - `docs/reference/routes.md`: sole-Route hostname/URL output, both generated shapes, and branch-independent Route identity.
 - `docs/generated/context.json`: current ADR, component, and concept index.
 
@@ -51,13 +53,19 @@ Documentation audit: scope was ORB-125, component labels `apps/gateway`, `packag
 | Invalid syntax fails validation; absent explicit remote branch fails without fallback or publication. | Gateway request/create/source failure; proof plan | `AppInstancesTest.php` proves unchanged collaborators/state; Incus action `explicit-branch-missing` exits `0`. |
 | Retry preserves identical override and rejects added, removed, or changed intent before mutation. | Gateway create retry identity | `AppInstancesTest.php` exits `0` for all forms with database and collaborator before/after snapshots. |
 | Explicit and generated hostnames come from the sole Route and follow identity, not branch. | Gateway Route resolver/actions/reconciler and response; SDK/CLI | Focused Gateway AppInstance/reconciliation, SDK Instance, and CLI Instance suites exit `0` with exact hostnames and no AppInstance hostname column. |
-| Legacy default remains readable and serving at its exact source and Route while reporting migration. | Gateway migration/read/Doctor/reconciler; proof plan | Migration test exits `0`; Incus action `legacy-default-remains-serving` checks source, branch, Route ID/target/hostname, and HTTP response at exit `0`. |
+| Legacy default remains readable and serving at its exact source and Route while reporting migration. | Gateway migration/read/Doctor/reconciler; proof plan | Migration test exits `0`; the ordered fixture contract below establishes pre-upgrade state, then Incus action `legacy-default-remains-serving` applies the exact migration and compares every recorded database, source, Route, target, and HTTP value at exit `0`. |
 | Source changes return `instance.migration_required` first while reads and Route-only reconciliation work. | Gateway migration guard, remove/create, list/show, reconciler | Focused AppInstance and reconciliation tests exit `0` with full no-mutation snapshots and allowed reads/reconciliation. |
 | All three collision cases return `instance.migration_conflict` with bounded cause. | Gateway identity/managed-overlap/unmanaged-destination preflight | `AppInstancesTest.php` exits `0` for all cases and proves no database, source, Route, configuration, or runtime change. |
 | Default creation completes current provisioning without an application health gate and aligns Laravel URL. | Existing provisioner/configurator/Route plus default selection; proof plan | Focused AppInstance/provisioning tests exit `0`; `stable-default-instance` verifies active state, Route, URL, and reachable application error without dependencies/database. |
 | Maintained documentation and context state the full contract. | Documentation section | `composer docs-build`, `composer docs-lint`, and `git diff --exit-code HEAD -- docs` exit `0`. |
 | Gateway, SDK, and CLI delivery gates pass. | Three component boundaries | Each component's `composer check` exits `0`. |
 | All repository suites pass. | All boundaries | `bin/test` exits `0`. |
+
+Legacy migration Incus fixture contract:
+
+1. Setup action `legacy-default-source-ready` runs on `app-dev` with argv `["/var/lib/orbit-e2e/proof/stable-source-identity.sh", "prepare-legacy-default"]` and timeout 300. Against the converged candidate, it reuses the topology sample App and app-dev Node, requires a nonempty App default branch, creates an active AppInstance whose name equals that branch with a unique explicit Route hostname, and proves the Route serves a deterministic marker from the checkout.
+2. Setup action `legacy-default-pre-upgrade` runs on `gateway` with argv `["/var/lib/orbit-e2e/proof/stable-source-identity.sh", "record-pre-upgrade", "/home/orbit/orbit/apps/gateway/database/migrations/2026_09_07_000000_migrate_app_and_app_instance_source_identity.php"]` and timeout 300. It rolls back only that migration, proves the old columns exist and the new columns do not, then writes `/tmp/orb-125-legacy-default-before.json`. The record contains the App ID and `main_branch`; every AppInstance attribute including ID, App ID, Node ID, name, `managed_clone`, checkout path, root, branch, starting commit, PHP/provisioning/failure/status values, and timestamps; every Route attribute including ID, hostname, provenance, scope, generation basis, publication, status, failure values, and timestamps; the RouteTarget ID, Route ID, AppInstance ID, and position; remote source realpath, device/inode, owner/mode, Git top-level, common Git directory, origin, branch, HEAD, and marker SHA-256; and HTTPS status plus response-body SHA-256.
+3. Acceptance action `legacy-default-remains-serving` runs on `gateway` with argv `["/var/lib/orbit-e2e/proof/stable-source-identity.sh", "migrate-and-verify-legacy-default", "/home/orbit/orbit/apps/gateway/database/migrations/2026_09_07_000000_migrate_app_and_app_instance_source_identity.php"]` and timeout 300. It runs `php artisan migrate --force --path=database/migrations/2026_09_07_000000_migrate_app_and_app_instance_source_identity.php`, proves `default_branch`, `source_layout`, `branch_override`, and `migration_required` replaced the old columns, and requires `default_branch` to equal the recorded `main_branch`, `source_layout=checkout`, `branch_override=null`, and `migration_required=1`. It byte-compares every other recorded App, AppInstance, Route, and RouteTarget value, repeats the remote source observations, and requires the same source path, device/inode, ownership/mode, Git identity, branch, HEAD, marker digest, HTTPS status, and body digest. The fixture uses fail-fast checks, bounded output, no secrets, and exits `0` only when every assertion succeeds.
 
 ## Implementation order
 
@@ -67,7 +75,7 @@ Documentation audit: scope was ORB-125, component labels `apps/gateway`, `packag
 4. Add optional branch input, stored override, branch selection, and retry identity without disturbing Route reservation or resumable provisioning.
 5. Add migration/destination preflight, layout-aware Doctor/activity, identity-only hostname generation, and legacy Route preservation.
 6. Update the SDK rule, typed transport, and tests; then update CLI options, help, transport, output, JSON fixtures, and command-surface assertions.
-7. Add a `mutates: true` ORB-125 proof plan and minimal fixture for the four named actions. Run focused proofs, all three component checks, `bin/test`, and one fresh Incus proof with every action at exit `0`.
+7. Add a `mutates: true` ORB-125 proof plan and `stable-source-identity.sh` with the exact ordered legacy setup and acceptance argv above plus the other three named Incus actions. Run focused proofs, all three component checks, `bin/test`, and one fresh Incus proof with every action at exit `0`.
 
 ## Must preserve
 
@@ -91,7 +99,4 @@ Documentation audit: scope was ORB-125, component labels `apps/gateway`, `packag
 
 ## Review findings
 
-- `FIX` — Acceptance item 10 requires the Incus action `legacy-default-remains-serving` to prove that a branch-named default remains on the same source and sole Route after upgrade. The plan names a minimal fixture and post-upgrade assertions, but it does not define how the pre-upgrade row, source, and serving Route exist before the exact migration under test. `TopologyProofRunner` stages fixtures and converges the candidate, including Gateway migrations, before it runs setup or acceptance actions. Define the ordered setup and acceptance argv, including the source of pre-upgrade state and the before/after IDs, path, branch, Route, hostname, target, and HTTP-response assertions. Every declared action must remain zero-exit under the repository proof rule.
-- `FIX` — Acceptance item 14, the first two `Scope: Out` bullets, and `writing-documentation` require maintained pages to describe current behavior without presenting excluded work as shipped. `docs/domains/applications.md` presents `instance:register` as an available workflow that completes migration and adoption, but current `origin/main` has no such command and the plan excludes that operation. `docs/reference/apps.md` also describes a separate explicit App update lifecycle although this issue excludes an App update/source-reconciliation endpoint. State the manual migration and update boundaries without claiming those unavailable operations exist, or report the drift with its separate owner.
-- `FIX` — Acceptance items 3 through 5 and ADR 0032 distinguish inherited branch selection from matching-name and explicit selection. `docs/concepts.md` instead says every AppInstance inherits `default_branch`. Correct the self-contained App definition so it does not claim inheritance when a named matching remote branch or explicit branch wins; keep relative-root inheritance distinct.
-- `FIX` — The `writing-documentation` core-page rule says `docs/architecture.md` links to the page that owns each detail and does not repeat that detail. Its changed application paragraph repeats the reserved-identity and complete inherited/matching/fallback branch-selection mechanism already owned by `docs/domains/applications.md`. Keep the architecture summary and route that mechanism to the domain page.
+- none.
