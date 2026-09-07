@@ -41,6 +41,8 @@ it('migrates stable source identity without changing legacy rows or relationship
     $migration->up();
 
     $migrated = app_instance_identity_rows();
+    $sourceLayout = collect(DB::select('PRAGMA table_info(app_instances)'))
+        ->firstWhere('name', 'source_layout');
     expect(Schema::hasColumns('apps', ['default_branch']))
         ->toBeTrue()
         ->and(Schema::hasColumn('apps', 'main_branch'))
@@ -52,6 +54,8 @@ it('migrates stable source identity without changing legacy rows or relationship
         ->toBeTrue()
         ->and(Schema::hasColumn('app_instances', 'source_kind'))
         ->toBeFalse()
+        ->and($sourceLayout->dflt_value)
+        ->toBe("'checkout'")
         ->and($migrated['apps'][0]['default_branch'])
         ->toBe($legacy['apps'][0]['main_branch'])
         ->and($migrated['app_instances'][0]['source_layout'])
@@ -213,16 +217,38 @@ function app_instance_identity_rows(): array
     return $rows;
 }
 
-/** @return list<array<string, mixed>> */
+/** @return array{objects: list<array<string, mixed>>, columns: list<array<string, mixed>>, foreign_keys: list<array<string, mixed>>} */
 function app_instance_identity_schema(): array
 {
-    return collect(DB::select(<<<'SQL'
+    $objects = collect(DB::select(<<<'SQL'
         SELECT type, name, tbl_name, sql
         FROM sqlite_master
         WHERE type IN ('table', 'index', 'trigger')
             AND tbl_name IN ('apps', 'app_instances', 'routes', 'route_targets')
         ORDER BY type, name
         SQL))
+        ->reject(static fn (object $entry): bool => $entry->type === 'table' && $entry->name === 'app_instances')
         ->map(static fn (object $entry): array => (array) $entry)
         ->all();
+    $columns = collect(DB::select('PRAGMA table_info(app_instances)'))
+        ->map(static function (object $column): array {
+            $attributes = (array) $column;
+            unset($attributes['cid']);
+
+            return $attributes;
+        })
+        ->sortBy('name')
+        ->values()
+        ->all();
+    $foreignKeys = collect(DB::select('PRAGMA foreign_key_list(app_instances)'))
+        ->map(static fn (object $foreignKey): array => (array) $foreignKey)
+        ->sortBy(['table', 'from'])
+        ->values()
+        ->all();
+
+    return [
+        'objects' => $objects,
+        'columns' => $columns,
+        'foreign_keys' => $foreignKeys,
+    ];
 }

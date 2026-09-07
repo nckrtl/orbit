@@ -2,10 +2,14 @@
 
 declare(strict_types=1);
 
+use App\Actions\AppInstances\CreateAppInstanceAction;
+use App\Data\AppInstances\CreateAppInstanceData;
+use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppInstances\AppInstanceDestinationGuard;
 use App\Domain\AppInstances\AppInstanceSourceLayout;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\AppInstances\DevelopmentAppInstanceConfigurator;
+use App\Domain\AppInstances\DevelopmentAppInstanceProvisioner;
 use App\Domain\AppInstances\DevelopmentAppInstanceSourceLifecycle;
 use App\Domain\AppInstances\DevelopmentRouteProjector;
 use App\Domain\AppInstances\DevelopmentSourceProfile;
@@ -599,6 +603,241 @@ it('persists each durable state and resumes the next transition', function (
     'checkout prepared' => ['resolve', AppInstanceState::CheckoutPrepared],
     'source resolved' => ['inspect-resolved', AppInstanceState::SourceResolved],
 ]);
+
+it('keeps a failed attempt from overwriting a successful retry after lease release', function (): void {
+    $data = new CreateAppInstanceData(
+        appId: $this->orbitApp->id,
+        nodeId: $this->node->id,
+        name: 'dev',
+        root: null,
+        hostname: null,
+        branch: null,
+    );
+    $native = app(DevelopmentAppInstanceProvisioner::class);
+    $provisioner = new class($native) implements DevelopmentAppInstanceProvisioner {
+        public int $completions = 0;
+
+        public function __construct(
+            private readonly DevelopmentAppInstanceProvisioner $native,
+        ) {}
+
+        public function reserve(AppInstance $appInstance, ?string $hostname): void
+        {
+            $this->native->reserve($appInstance, $hostname);
+        }
+
+        public function complete(AppInstance $appInstance, ?string $hostname): AppInstance
+        {
+            $this->completions++;
+
+            if ($this->completions === 1) {
+                throw new ResourceOperationException('instance.first_attempt_failed', 'The first attempt failed.');
+            }
+
+            return $this->native->complete($appInstance, $hostname);
+        }
+    };
+    app()->instance(DevelopmentAppInstanceProvisioner::class, $provisioner);
+    $lock = new class($data) implements AppDevSourceOperationLock {
+        public int $leases = 0;
+
+        public function __construct(
+            private readonly CreateAppInstanceData $data,
+        ) {}
+
+        public function synchronized(int $nodeId, \Closure $operation): mixed
+        {
+            $this->leases++;
+
+            try {
+                return $operation();
+            } catch (\Throwable $exception) {
+                if ($this->leases === 1) {
+                    app(CreateAppInstanceAction::class)->execute($this->data);
+                }
+
+                throw $exception;
+            }
+        }
+    };
+    app()->instance(AppDevSourceOperationLock::class, $lock);
+
+    expect(fn () => app(CreateAppInstanceAction::class)->execute($data))
+        ->toThrow(ResourceOperationException::class, 'The first attempt failed.');
+
+    expect($lock->leases)
+        ->toBe(2)
+        ->and($provisioner->completions)
+        ->toBe(2)
+        ->and(AppInstance::query()->sole()->only(['status', 'failed_step', 'error_code']))
+        ->toBe([
+            'status' => AppInstanceState::Active,
+            'failed_step' => null,
+            'error_code' => null,
+        ])
+        ->and(Route::query()->sole()->only(['status', 'failed_step', 'error_code']))
+        ->toBe([
+            'status' => RouteStatus::Active,
+            'failed_step' => null,
+            'error_code' => null,
+        ]);
+});
+
+it('persists unexpected provisioning failures before releasing the lease', function (): void {
+    $native = app(DevelopmentAppInstanceProvisioner::class);
+    app()->instance(DevelopmentAppInstanceProvisioner::class, new class($native) implements
+        DevelopmentAppInstanceProvisioner {
+        public function __construct(
+            private readonly DevelopmentAppInstanceProvisioner $native,
+        ) {}
+
+        public function reserve(AppInstance $appInstance, ?string $hostname): void
+        {
+            $this->native->reserve($appInstance, $hostname);
+        }
+
+        public function complete(AppInstance $appInstance, ?string $hostname): AppInstance
+        {
+            throw new \LogicException('Unexpected provisioning failure.');
+        }
+    });
+
+    expect(fn () => app(CreateAppInstanceAction::class)->execute(new CreateAppInstanceData(
+        appId: $this->orbitApp->id,
+        nodeId: $this->node->id,
+        name: 'dev',
+        root: null,
+        hostname: null,
+        branch: null,
+    )))
+        ->toThrow(\LogicException::class, 'Unexpected provisioning failure.');
+
+    expect(AppInstance::query()->sole()->only(['status', 'failed_step', 'error_code']))
+        ->toBe([
+            'status' => AppInstanceState::SourceResolved,
+            'failed_step' => 'provisioning',
+            'error_code' => 'instance.provisioning_failed',
+        ])
+        ->and(Route::query()->sole()->only(['status', 'failed_step', 'error_code']))
+        ->toBe([
+            'status' => RouteStatus::Failed,
+            'failed_step' => 'provisioning',
+            'error_code' => 'instance.provisioning_failed',
+        ]);
+});
+
+it('does not reserve or persist failure evidence when lease acquisition fails', function (): void {
+    $provisioner = new class implements DevelopmentAppInstanceProvisioner {
+        public int $reservations = 0;
+
+        public function reserve(AppInstance $appInstance, ?string $hostname): void
+        {
+            $this->reservations++;
+        }
+
+        public function complete(AppInstance $appInstance, ?string $hostname): AppInstance
+        {
+            return $appInstance;
+        }
+    };
+    app()->instance(DevelopmentAppInstanceProvisioner::class, $provisioner);
+    app()->instance(AppDevSourceOperationLock::class, new class implements AppDevSourceOperationLock {
+        public function synchronized(int $nodeId, \Closure $operation): mixed
+        {
+            throw new \RuntimeException('Lease acquisition failed.');
+        }
+    });
+
+    expect(fn () => app(CreateAppInstanceAction::class)->execute(new CreateAppInstanceData(
+        appId: $this->orbitApp->id,
+        nodeId: $this->node->id,
+        name: 'dev',
+        root: null,
+        hostname: null,
+        branch: null,
+    )))
+        ->toThrow(\RuntimeException::class, 'Lease acquisition failed.');
+
+    expect($provisioner->reservations)
+        ->toBe(0)
+        ->and(Route::query()->count())
+        ->toBe(0)
+        ->and(AppInstance::query()->sole()->only(['status', 'failed_step', 'error_code']))
+        ->toBe([
+            'status' => AppInstanceState::Reserved,
+            'failed_step' => null,
+            'error_code' => null,
+        ]);
+});
+
+it('persists reservation conflicts before releasing the lease', function (): void {
+    $lock = new class implements AppDevSourceOperationLock {
+        public bool $held = false;
+
+        public bool $failurePersistedWhileHeld = false;
+
+        public function synchronized(int $nodeId, \Closure $operation): mixed
+        {
+            $this->held = true;
+
+            try {
+                return $operation();
+            } catch (\Throwable $exception) {
+                $instance = AppInstance::query()->sole();
+                $this->failurePersistedWhileHeld =
+                    $instance->failed_step === 'source-prepare' && $instance->error_code === 'route.hostname_taken';
+
+                throw $exception;
+            } finally {
+                $this->held = false;
+            }
+        }
+    };
+    $provisioner = new class($lock) implements DevelopmentAppInstanceProvisioner {
+        public bool $reservedWhileHeld = false;
+
+        public function __construct(
+            private readonly AppDevSourceOperationLock $lock,
+        ) {}
+
+        public function reserve(AppInstance $appInstance, ?string $hostname): void
+        {
+            $this->reservedWhileHeld = $this->lock->held;
+
+            throw new ResourceOperationException('route.hostname_taken', 'The hostname is unavailable.', 409);
+        }
+
+        public function complete(AppInstance $appInstance, ?string $hostname): AppInstance
+        {
+            return $appInstance;
+        }
+    };
+    app()->instance(AppDevSourceOperationLock::class, $lock);
+    app()->instance(DevelopmentAppInstanceProvisioner::class, $provisioner);
+
+    expect(fn () => app(CreateAppInstanceAction::class)->execute(new CreateAppInstanceData(
+        appId: $this->orbitApp->id,
+        nodeId: $this->node->id,
+        name: 'dev',
+        root: null,
+        hostname: 'dev.example.test',
+        branch: null,
+    )))
+        ->toThrow(ResourceOperationException::class, 'The hostname is unavailable.');
+
+    expect($provisioner->reservedWhileHeld)
+        ->toBeTrue()
+        ->and($lock->failurePersistedWhileHeld)
+        ->toBeTrue()
+        ->and($lock->held)
+        ->toBeFalse()
+        ->and(AppInstance::query()->sole()->only(['status', 'failed_step', 'error_code']))
+        ->toBe([
+            'status' => AppInstanceState::Reserved,
+            'failed_step' => 'source-prepare',
+            'error_code' => 'route.hostname_taken',
+        ]);
+});
 
 it('rejects a retry on another Node before source work or state mutation', function (): void {
     $this->postJson('/api/v1/instances', [

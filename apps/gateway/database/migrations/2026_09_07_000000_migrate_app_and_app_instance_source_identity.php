@@ -29,7 +29,7 @@ return new class extends Migration {
                 $table->renameColumn('main_branch', 'default_branch');
             });
             Schema::table('app_instances', static function (Blueprint $table): void {
-                $table->renameColumn('source_kind', 'source_layout');
+                $table->string('source_layout')->default('checkout')->after('source_kind');
                 $table->string('branch_override')->nullable()->after('branch');
                 $table->boolean('migration_required')->default(false)->after('branch_override');
             });
@@ -45,6 +45,9 @@ return new class extends Migration {
                         ->whereColumn('apps.default_branch', 'app_instances.name');
                 })
                 ->update(['migration_required' => true]);
+            Schema::table('app_instances', static function (Blueprint $table): void {
+                $table->dropColumn('source_kind');
+            });
 
             $this->createLayoutTriggers();
         });
@@ -68,11 +71,13 @@ return new class extends Migration {
         DB::transaction(function (): void {
             DB::statement('DROP TRIGGER IF EXISTS app_instances_source_layout_insert');
             DB::statement('DROP TRIGGER IF EXISTS app_instances_source_layout_update');
-            DB::table('app_instances')->update(['source_layout' => 'managed_clone']);
 
             Schema::table('app_instances', static function (Blueprint $table): void {
-                $table->dropColumn(['branch_override', 'migration_required']);
-                $table->renameColumn('source_layout', 'source_kind');
+                $table->string('source_kind')->default('managed_clone')->after('environment');
+            });
+            DB::table('app_instances')->update(['source_kind' => 'managed_clone']);
+            Schema::table('app_instances', static function (Blueprint $table): void {
+                $table->dropColumn(['branch_override', 'migration_required', 'source_layout']);
             });
             Schema::table('apps', static function (Blueprint $table): void {
                 $table->renameColumn('default_branch', 'main_branch');
