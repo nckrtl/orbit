@@ -103,31 +103,28 @@ final readonly class NativeInstanceStateInspector implements InstanceStateInspec
                 if "$@"; then printf '1\n'; else printf '0\n'; fi
             }
             checkout_exists() {
-                test -d "$checkout"
-                test ! -L "$checkout"
                 case "$checkout" in "$allowed_root"/*) ;; *) return 1 ;; esac
-                test "$(realpath -e "$checkout")" = "$checkout"
-                test "$(stat -c '%U:%G' "$checkout")" = "$managed_user:$managed_group"
+                test -d "$checkout" &&
+                    test ! -L "$checkout" &&
+                    test "$(realpath -e "$checkout")" = "$checkout" &&
+                    test "$(stat -c '%U:%G' "$checkout")" = "$managed_user:$managed_group"
             }
             repository_independent() {
-                checkout_exists
-                test -d "$checkout/.git"
-                test ! -L "$checkout/.git"
-                test "$(git -C "$checkout" rev-parse --show-toplevel)" = "$checkout"
-                test "$(git -C "$checkout" rev-parse --absolute-git-dir)" = "$checkout/.git"
-                test "$(git -C "$checkout" rev-parse --path-format=absolute --git-common-dir)" = "$checkout/.git"
+                test -d "$checkout/.git" &&
+                    test ! -L "$checkout/.git" &&
+                    test "$(git -C "$checkout" rev-parse --show-toplevel)" = "$checkout" &&
+                    test "$(git -C "$checkout" rev-parse --absolute-git-dir)" = "$checkout/.git" &&
+                    test "$(git -C "$checkout" rev-parse --path-format=absolute --git-common-dir)" = "$checkout/.git"
             }
             origin_matches() {
-                repository_independent
                 test "$(git -C "$checkout" remote get-url origin)" = "$repository"
             }
             source_identity_matches() {
-                origin_matches
-                test -n "$branch"
-                test -n "$starting_commit"
-                test "$(git -C "$checkout" symbolic-ref --short HEAD)" = "$branch"
-                test "$(git -C "$checkout" rev-parse --verify "$starting_commit^{commit}")" = "$starting_commit"
-                git -C "$checkout" merge-base --is-ancestor "$starting_commit" HEAD
+                test -n "$branch" &&
+                    test -n "$starting_commit" &&
+                    test "$(git -C "$checkout" symbolic-ref --short HEAD)" = "$branch" &&
+                    test "$(git -C "$checkout" rev-parse --verify "$starting_commit^{commit}")" = "$starting_commit" &&
+                    git -C "$checkout" merge-base --is-ancestor "$starting_commit" HEAD
             }
 
             emit checkout_exists
