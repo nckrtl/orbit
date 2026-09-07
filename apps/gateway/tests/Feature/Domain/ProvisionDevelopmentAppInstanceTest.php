@@ -89,7 +89,7 @@ beforeEach(function (): void {
     );
 });
 
-it('retains source classification failure evidence and reuses the sole Route', function (): void {
+it('reports source classification failure without persisting it and reuses the sole Route', function (): void {
     $this->provisioner->reserve($this->instance, null);
     $routeId = $this->instance->routes()->sole()->id;
     $this->configuration->failInspection = true;
@@ -98,8 +98,16 @@ it('retains source classification failure evidence and reuses the sole Route', f
         ->toThrow(RuntimeConvergenceException::class);
     expect($this->instance->refresh()->provisioning_step)
         ->toBeNull()
-        ->and($this->instance->routes()->sole()->status)
-        ->toBe(RouteStatus::Failed);
+        ->and($this->instance->failed_step)
+        ->toBeNull()
+        ->and($this->instance->error_code)
+        ->toBeNull()
+        ->and($this->instance->routes()->sole()->only(['status', 'failed_step', 'error_code']))
+        ->toBe([
+            'status' => RouteStatus::Pending,
+            'failed_step' => null,
+            'error_code' => null,
+        ]);
 
     $this->configuration->failInspection = false;
     $this->provisioner->reserve($this->instance, null);
@@ -169,7 +177,7 @@ it('leaves non-Laravel source unchanged while completing its Route', function ()
         ->toBe(RouteStatus::Active);
 });
 
-it('retains and resumes each runtime projection failure boundary', function (
+it('reports and resumes each runtime projection failure boundary without persisting it', function (
     string $step,
     string $errorCode,
 ): void {
@@ -186,13 +194,13 @@ it('retains and resumes each runtime projection failure boundary', function (
     expect($this->instance->refresh()->provisioning_step)
         ->toBe('url-configured')
         ->and($this->instance->error_code)
-        ->toBe($errorCode)
+        ->toBeNull()
         ->and($this->instance->routes()->sole()->only(['id', 'status', 'failed_step', 'error_code']))
         ->toBe([
             'id' => $routeId,
-            'status' => RouteStatus::Failed,
-            'failed_step' => $step,
-            'error_code' => $errorCode,
+            'status' => RouteStatus::Pending,
+            'failed_step' => null,
+            'error_code' => null,
         ]);
 
     $this->projection->failure = null;

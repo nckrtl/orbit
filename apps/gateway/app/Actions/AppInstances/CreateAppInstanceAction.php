@@ -88,21 +88,21 @@ final readonly class CreateAppInstanceAction
             $created = true;
         }
 
-        $this->provisioner->reserve($appInstance, $data->hostname);
-        try {
-            $result = $this->sourceLock->synchronized(
-                $appInstance->node_id,
-                function () use ($appInstance, $created, $data): AppInstance {
+        $result = $this->sourceLock->synchronized(
+            $appInstance->node_id,
+            function () use ($appInstance, $created, $data): AppInstance {
+                try {
+                    $this->provisioner->reserve($appInstance, $data->hostname);
                     $resolved = $this->resumeSource($appInstance, ! $created);
 
                     return $this->provisioner->complete($resolved, $data->hostname);
-                },
-            );
-        } catch (Throwable $exception) {
-            $this->recordFailure($appInstance, $exception);
+                } catch (Throwable $exception) {
+                    $this->recordFailure($appInstance, $exception);
 
-            throw $exception;
-        }
+                    throw $exception;
+                }
+            },
+        );
 
         return ['appInstance' => $result, 'created' => $created];
     }
