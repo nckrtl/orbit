@@ -1,0 +1,14 @@
+{
+    "setup": [],
+    "acceptance": [
+        {
+            "id": "retirement-content-digests",
+            "node": "gateway",
+            "argv": [
+                "bash",
+                "/var/lib/orbit-e2e/proof/retirement-content-digests.sh"
+            ],
+            "timeout_seconds": 300
+        }
+    ]
+}

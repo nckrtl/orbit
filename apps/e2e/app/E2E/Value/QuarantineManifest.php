@@ -15,7 +15,7 @@ use InvalidArgumentException;
 final readonly class QuarantineManifest
 {
     /**
-     * @param array{path: string, sha256: string, mode: int, filesystem_type: string} $freezeEvidence
+     * @param array{path: string, content_sha256: string, mode: int, filesystem_type: string} $freezeEvidence
      * @param list<array<string, mixed>> $targets
      * @param array<string, list<array<string, mixed>>> $preserved
      * @mago-expect lint:excessive-parameter-list Every reviewed quarantine fact is explicit and immutable.
@@ -30,8 +30,8 @@ final readonly class QuarantineManifest
     ) {
         if (
             preg_match('/\A[a-f0-9]{64}\z/', $inventorySha256) !== 1
-            || array_keys($freezeEvidence) !== ['path', 'sha256', 'mode', 'filesystem_type']
-            || preg_match('/\A[a-f0-9]{64}\z/', $freezeEvidence['sha256'] ?? '') !== 1
+            || array_keys($freezeEvidence) !== ['path', 'content_sha256', 'mode', 'filesystem_type']
+            || preg_match('/\A[a-f0-9]{64}\z/', $freezeEvidence['content_sha256'] ?? '') !== 1
             || ($freezeEvidence['mode'] ?? null) !== 0600
             || ($freezeEvidence['filesystem_type'] ?? null) !== 'file'
             || ! is_string($freezeEvidence['path'] ?? null)
@@ -63,7 +63,7 @@ final readonly class QuarantineManifest
                     'dependencies',
                     'recovery',
                     'observed',
-                    'observed_sha256',
+                    'observed_resource_sha256',
                     'result',
                 ]
             ) {
@@ -86,12 +86,12 @@ final readonly class QuarantineManifest
                 && strcmp($lastIdentity, $identity) >= 0
                 || isset($seen[$key])
                 || ! is_array($observed)
-                || ! is_string($target['observed_sha256'] ?? null)
+                || ! is_string($target['observed_resource_sha256'] ?? null)
                 || ! is_array($target['metadata'] ?? null)
                 || ! is_array($target['dependencies'] ?? null)
                 || ! is_array($target['recovery'] ?? null)
                 || ! in_array($target['result'] ?? null, ['stopped', 'unchanged'], true)
-                || ! hash_equals($target['observed_sha256'], hash('sha256', json_encode(
+                || ! hash_equals($target['observed_resource_sha256'], hash('sha256', json_encode(
                     $observed,
                     JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES,
                 )))
@@ -129,7 +129,7 @@ final readonly class QuarantineManifest
     public function toArray(): array
     {
         return [
-            'version' => 1,
+            'version' => 2,
             'inventory_sha256' => $this->inventorySha256,
             'freeze_evidence' => $this->freezeEvidence,
             'targets' => $this->targets,
@@ -161,7 +161,7 @@ final readonly class QuarantineManifest
             }
         }
         if (
-            ($value['version'] ?? null) !== 1
+            ($value['version'] ?? null) !== 2
             || ! is_array($value['freeze_evidence'] ?? null)
             || ! is_array($value['targets'] ?? null)
             || ! is_array($value['preserved'] ?? null)
@@ -170,7 +170,7 @@ final readonly class QuarantineManifest
         }
 
         $inventorySha256 = $value['inventory_sha256'];
-        /** @var array{path: string, sha256: string, mode: int, filesystem_type: string} $freezeEvidence */
+        /** @var array{path: string, content_sha256: string, mode: int, filesystem_type: string} $freezeEvidence */
         $freezeEvidence = $value['freeze_evidence'];
         $quarantinedAt = $value['quarantined_at'];
         $deleteAfter = $value['delete_after'];
