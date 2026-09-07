@@ -38,7 +38,7 @@ describe('app creation', function (): void {
             ->postJson('/api/v1/apps', [
                 'slug' => 'acme',
                 'repository_url' => 'git@github.com:acme/site.git',
-                'main_branch' => 'main',
+                'default_branch' => 'main',
                 'root' => 'public',
             ]);
 
@@ -54,7 +54,7 @@ describe('app creation', function (): void {
             ->postJson('/api/v1/apps', [
                 'slug' => 'acme',
                 'repository_url' => 'git@github.com:acme/site.git',
-                'main_branch' => 'main',
+                'default_branch' => 'main',
                 'root' => 'public',
             ]);
 
@@ -82,7 +82,7 @@ describe('app creation', function (): void {
             'name' => 'Acme',
             'slug' => 'acme',
             'repository_url' => 'git@github.com:acme/site.git',
-            'main_branch' => 'main',
+            'default_branch' => 'main',
             'root' => 'public',
         ]);
 
@@ -90,7 +90,7 @@ describe('app creation', function (): void {
             ->postJson('/api/v1/apps', [
                 'slug' => 'acme',
                 'repository_url' => 'https://github.com/acme/other.git',
-                'main_branch' => 'main',
+                'default_branch' => 'main',
                 'root' => 'public',
             ])
             ->assertConflict()
@@ -108,7 +108,7 @@ describe('app creation', function (): void {
                 'name' => 'Acme',
                 'slug' => 'acme',
                 'repository_url' => 'git@github.com:acme/site.git',
-                'main_branch' => 'main',
+                'default_branch' => 'main',
                 'root' => 'public',
                 'defaults' => ['php_version' => '8.5'],
             ])
@@ -136,7 +136,7 @@ describe('app creation', function (): void {
                 'name' => 'Other',
                 'slug' => 'other',
                 'repository_url' => $repository,
-                'main_branch' => 'main',
+                'default_branch' => 'main',
                 'root' => 'web/public',
                 'defaults' => ['php_version' => '8.4'],
             ])
@@ -152,7 +152,7 @@ describe('app creation', function (): void {
                     'name',
                     'slug',
                     'repository_url',
-                    'main_branch',
+                    'default_branch',
                     'root',
                     'defaults',
                 ]))
@@ -161,7 +161,7 @@ describe('app creation', function (): void {
                 'name' => 'Acme',
                 'slug' => 'acme',
                 'repository_url' => 'git@github.com:acme/site.git',
-                'main_branch' => 'main',
+                'default_branch' => 'main',
                 'root' => 'public',
                 'defaults' => ['php_version' => '8.5'],
             ])
@@ -194,7 +194,7 @@ describe('app creation', function (): void {
                 'name' => 'Owner',
                 'slug' => 'owner',
                 'repository_url' => 'git@github.com:acme/site.git',
-                'main_branch' => 'main',
+                'default_branch' => 'main',
                 'root' => 'public',
             ]);
         });
@@ -205,7 +205,7 @@ describe('app creation', function (): void {
                 'name' => 'Candidate',
                 'slug' => 'candidate',
                 'repository_url' => $repository,
-                'main_branch' => 'main',
+                'default_branch' => 'main',
                 'root' => 'public',
             ])
             ->assertConflict()
@@ -236,7 +236,7 @@ describe('app defaults projection', function (): void {
                 'name' => 'Acme',
                 'slug' => 'acme',
                 'repository_url' => 'https://github.com/acme/site.git',
-                'main_branch' => 'main',
+                'default_branch' => 'main',
                 'root' => 'public',
                 'defaults' => $defaults,
             ])
@@ -297,7 +297,7 @@ describe('app defaults diagnostics', function (): void {
             ->postJson('/api/v1/apps', [
                 'slug' => 'acme',
                 'repository_url' => 'https://github.com/acme/site.git',
-                'main_branch' => 'main',
+                'default_branch' => 'main',
                 'root' => 'public',
                 'defaults' => $defaults,
             ])
@@ -323,7 +323,7 @@ describe('app defaults diagnostics', function (): void {
             'name' => 'Acme',
             'slug' => 'acme',
             'repository_url' => 'https://github.com/acme/site.git',
-            'main_branch' => 'main',
+            'default_branch' => 'main',
             'root' => 'public',
             'defaults' => ['php_version' => '8.5'],
         ]);
@@ -333,7 +333,7 @@ describe('app defaults diagnostics', function (): void {
             ->postJson('/api/v1/apps', [
                 'slug' => 'acme',
                 'repository_url' => 'https://github.com/acme/other.git',
-                'main_branch' => 'main',
+                'default_branch' => 'main',
                 'root' => 'public',
                 'defaults' => [
                     'nested' => ['api_token' => $errorSecret],
@@ -428,7 +428,7 @@ describe('app lifecycle', function (): void {
             'name' => 'Acme',
             'slug' => 'acme',
             'repository_url' => 'https://github.com/acme/site.git',
-            'main_branch' => 'main',
+            'default_branch' => 'main',
             'root' => 'public',
         ]);
         AppInstance::query()->create([

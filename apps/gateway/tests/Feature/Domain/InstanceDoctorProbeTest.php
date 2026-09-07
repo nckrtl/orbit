@@ -110,7 +110,7 @@ it('reports lifecycle and every false instance field in stable order', function 
         ->toBe([
             'instance.lifecycle_not_active',
             'instance.checkout_missing',
-            'instance.repository_not_independent',
+            'instance.repository_layout_mismatch',
             'instance.origin_mismatch',
             'instance.source_identity_mismatch',
         ])
@@ -156,10 +156,10 @@ it('continues after a typed instance inspection failure', function (): void {
         ->toBeGreaterThan($failed->id);
 });
 
-it('exposes and refuses an unexpected AppInstance source kind without remote inspection', function (): void {
+it('inspects the supported worktree source layout', function (): void {
     $node = instance_probe_node();
     $instance = instance_probe_instance(instance_probe_app(), $node);
-    $instance->update(['source_kind' => 'registered_worktree']);
+    $instance->update(['source_layout' => 'worktree']);
     $calls = 0;
 
     $report = new InstanceDoctorProbe(new class($calls) implements InstanceStateInspector {
@@ -176,15 +176,9 @@ it('exposes and refuses an unexpected AppInstance source kind without remote ins
     })->inspect(instance_probe_context($node));
 
     expect($report->issues)
-        ->toHaveCount(1)
-        ->and($report->issues[0]->code)
-        ->toBe('instance.source_kind_mismatch')
-        ->and($report->issues[0]->expected)
-        ->toBe('managed_clone')
-        ->and($report->issues[0]->observed)
-        ->toBe('registered_worktree')
+        ->toBe([])
         ->and($calls)
-        ->toBe(0);
+        ->toBe(1);
 });
 
 function instance_probe_node(): Node
@@ -212,7 +206,7 @@ function instance_probe_app(): App
         'name' => "Instance App {$number}",
         'slug' => "instance-app-{$number}",
         'repository_url' => "https://github.com/acme/private-instance-{$number}.git",
-        'main_branch' => 'main',
+        'default_branch' => 'main',
         'root' => 'public',
     ]);
 }

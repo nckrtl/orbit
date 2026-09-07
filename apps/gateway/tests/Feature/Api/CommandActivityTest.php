@@ -263,7 +263,7 @@ it('correlates unhandled failures without exposing exception text', function ():
         ->postJson('/api/v1/apps', [
             'slug' => 'acme',
             'repository_url' => 'https://github.com/acme/site.git',
-            'main_branch' => 'main',
+            'default_branch' => 'main',
             'root' => 'public',
         ]);
 

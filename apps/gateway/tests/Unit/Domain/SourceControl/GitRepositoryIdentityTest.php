@@ -46,7 +46,7 @@ it('finds at most one App from equivalent checkout origins', function (
         'name' => 'Acme',
         'slug' => 'acme',
         'repository_url' => $storedRepository,
-        'main_branch' => 'main',
+        'default_branch' => 'main',
         'root' => 'public',
     ]);
 

@@ -15,7 +15,7 @@ use SensitiveParameter;
  * @property string $slug
  * @property string $repository_url
  * @property string $repository_identity
- * @property string|null $main_branch
+ * @property string|null $default_branch
  * @property string|null $root
  * @property array<string, mixed>|null $defaults
  */
@@ -23,7 +23,7 @@ final class App extends Model
 {
     /** @var array<int, string> */
     #[\Override]
-    protected $fillable = ['name', 'slug', 'repository_url', 'main_branch', 'root', 'defaults'];
+    protected $fillable = ['name', 'slug', 'repository_url', 'default_branch', 'root', 'defaults'];
 
     /** @var array<array-key, string> */
     #[\Override]

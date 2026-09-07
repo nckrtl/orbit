@@ -24,14 +24,16 @@ One AppInstance cannot belong to two Routes. An active AppInstance has exactly o
 
 ## Select a hostname and scope
 
-During creation of a development AppInstance, optional hostname input selects an explicit Route. The AppInstance does not store a second authoritative hostname. Without hostname input, the Gateway selects a generated Route. The Gateway refuses a request without an explicit hostname when neither the Node nor its active Cluster supplies a generation basis, and it does so before source or runtime mutation.
+During creation of a development AppInstance, optional hostname input selects an explicit Route. The AppInstance does not store a second authoritative hostname; API, PHP SDK, and CLI AppInstance output derives the hostname and URL from its sole Route. Without hostname input, the Gateway selects a generated Route. The Gateway refuses a request without an explicit hostname when neither the Node nor its active Cluster supplies a generation basis, and it does so before source or runtime mutation.
 
-A generated Route derives its hostname from the target AppInstance name, App name, and effective target Node TLD. The Node TLD has priority; the active Cluster TLD is the fallback when the Node has no TLD.
+A generated Route derives its hostname from the target AppInstance identity, App name, and effective target Node TLD. The Node TLD has priority; the active Cluster TLD is the fallback when the Node has no TLD. [ADR 0025](../decisions/0025-stabilize-the-default-appinstance-identity.md) defines the reserved default identity and hostname shape.
 
 | AppInstance name | Generated hostname with effective TLD `test` |
 | --- | --- |
-| The App's exact main branch | `<app>.test` |
+| `default` | `<app>.test` |
 | Any other name | `<instance>.<app>.test` |
+
+An explicit source branch changes neither placement nor generated Route identity. For example, `instance:new <app> <node> default --branch=release` still generates `<app>.test`.
 
 An app-dev Node must have a Node TLD or belong to an active Cluster with a TLD. An app-prod Node can remain valid without either TLD because an explicit Route supplies its hostname.
 

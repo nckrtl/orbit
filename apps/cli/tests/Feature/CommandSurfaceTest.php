@@ -134,7 +134,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'app:list' => [[], ['json' => false]],
         'app:new' => [
             ['slug', 'repository'],
-            ['name' => null, 'main-branch' => null, 'root' => 'public', 'json' => false],
+            ['name' => null, 'default-branch' => null, 'root' => 'public', 'json' => false],
         ],
         'app:remove' => [['app'], ['json' => false]],
         'app:show' => [['app'], ['json' => false]],
@@ -169,7 +169,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'instance:list' => [[], ['json' => false]],
         'instance:new' => [
             ['app', 'node', 'name'],
-            ['root' => null, 'hostname' => null, 'json' => false],
+            ['root' => null, 'hostname' => null, 'branch' => null, 'json' => false],
         ],
         'instance:remove' => [['instance'], ['discard-source' => false, 'json' => false]],
         'instance:show' => [['instance'], ['json' => false]],

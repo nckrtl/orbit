@@ -64,12 +64,13 @@ final readonly class SetRouteTargetAction
 
                 if ($locked->provenance === RouteProvenance::Generated) {
                     $attributes['generation_basis_node_id'] = $target->node_id;
-                    $attributes['hostname'] = $this->state->generatedHostname(
-                        $target->app->slug,
-                        (string) $target->app->main_branch,
-                        $target->name,
-                        $placement->effectiveTld,
-                    );
+                    $attributes['hostname'] = $target->migration_required
+                        ? $locked->hostname
+                        : $this->state->generatedHostname(
+                            $target->app->slug,
+                            $target->name,
+                            $placement->effectiveTld,
+                        );
                 }
 
                 $locked->update($attributes);

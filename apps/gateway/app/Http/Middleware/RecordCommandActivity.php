@@ -405,7 +405,7 @@ final readonly class RecordCommandActivity
             $updates = [...$updates, ...$target];
 
             if (($target['subject_type'] ?? null) === AppInstance::class) {
-                $updates = $this->withAppInstanceSourceKind($activity, $request, $updates, $target);
+                $updates = $this->withAppInstanceSourceLayout($activity, $request, $updates, $target);
             }
         }
 
@@ -441,7 +441,7 @@ final readonly class RecordCommandActivity
      * @param array<string, mixed> $target
      * @return array<string, mixed>
      */
-    private function withAppInstanceSourceKind(
+    private function withAppInstanceSourceLayout(
         Activity $activity,
         Request $request,
         array $updates,
@@ -465,7 +465,9 @@ final readonly class RecordCommandActivity
             ...$updates,
             'properties' => [
                 ...$properties,
-                'source_kind' => $appInstance->source_kind,
+                'source_layout' => $appInstance->source_layout,
+                'branch_override' => $appInstance->branch_override,
+                'migration_required' => $appInstance->migration_required,
             ],
         ];
     }

@@ -81,6 +81,26 @@ describe('AppInstance requests', function (): void {
             ->not->toHaveKey('hostname');
     });
 
+    it('transports an optional explicit branch and preserves omission', function (): void {
+        $explicit = new CreateAppInstanceRequest(
+            appId: 3,
+            nodeId: 4,
+            name: 'default',
+            branch: 'release',
+        );
+        $inherited = new CreateAppInstanceRequest(appId: 3, nodeId: 4, name: 'default');
+
+        expect($explicit->body()->all())
+            ->toBe([
+                'app_id' => 3,
+                'node_id' => 4,
+                'name' => 'default',
+                'branch' => 'release',
+            ])
+            ->and($inherited->body()->all())
+            ->not->toHaveKey('branch');
+    });
+
     it('lists instances through the explicit collection route', function (): void {
         $mockClient = new MockClient([
             ListAppInstancesRequest::class => MockResponse::make([
@@ -172,11 +192,13 @@ function instance_gateway_data(): array
         'node_id' => 4,
         'name' => 'main',
         'environment' => 'development',
-        'source_kind' => 'managed_clone',
+        'source_layout' => 'checkout',
         'checkout_path' => '/home/orbit/apps/orbit-docs',
         'root' => null,
         'effective_root' => 'public',
         'selected_branch' => 'main',
+        'branch_override' => null,
+        'migration_required' => false,
         'starting_commit' => 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
         'status' => 'active',
         'route' => instance_gateway_route_data(),

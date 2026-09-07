@@ -19,11 +19,13 @@ final readonly class AppInstanceResponse
         public int $nodeId,
         public string $name,
         public string $environment,
-        public string $sourceKind,
+        public string $sourceLayout,
         public string $checkoutPath,
         public ?string $root,
         public ?string $effectiveRoot,
         public ?string $selectedBranch,
+        public ?string $branchOverride,
+        public bool $migrationRequired,
         public ?string $startingCommit,
         public string $status,
         public ?RouteResponse $route,
@@ -45,11 +47,13 @@ final readonly class AppInstanceResponse
             nodeId: is_int($data['node_id'] ?? null) ? $data['node_id'] : 0,
             name: is_string($data['name'] ?? null) ? $data['name'] : '',
             environment: is_string($data['environment'] ?? null) ? $data['environment'] : '',
-            sourceKind: is_string($data['source_kind'] ?? null) ? $data['source_kind'] : '',
+            sourceLayout: is_string($data['source_layout'] ?? null) ? $data['source_layout'] : '',
             checkoutPath: is_string($data['checkout_path'] ?? null) ? $data['checkout_path'] : '',
             root: is_string($data['root'] ?? null) ? $data['root'] : null,
             effectiveRoot: is_string($data['effective_root'] ?? null) ? $data['effective_root'] : null,
             selectedBranch: is_string($data['selected_branch'] ?? null) ? $data['selected_branch'] : null,
+            branchOverride: is_string($data['branch_override'] ?? null) ? $data['branch_override'] : null,
+            migrationRequired: ($data['migration_required'] ?? null) === true,
             startingCommit: is_string($data['starting_commit'] ?? null) ? $data['starting_commit'] : null,
             status: is_string($data['status'] ?? null) ? $data['status'] : '',
             route: self::route($data['route'] ?? null, $requestId),
@@ -59,7 +63,7 @@ final readonly class AppInstanceResponse
         );
     }
 
-    /** @return array<string, int|string|null|array<string, mixed>> */
+    /** @return array<string, bool|int|string|null|array<string, mixed>> */
     public function toArray(): array
     {
         return [
@@ -68,11 +72,13 @@ final readonly class AppInstanceResponse
             'node_id' => $this->nodeId,
             'name' => $this->name,
             'environment' => $this->environment,
-            'source_kind' => $this->sourceKind,
+            'source_layout' => $this->sourceLayout,
             'checkout_path' => $this->checkoutPath,
             'root' => $this->root,
             'effective_root' => $this->effectiveRoot,
             'selected_branch' => $this->selectedBranch,
+            'branch_override' => $this->branchOverride,
+            'migration_required' => $this->migrationRequired,
             'starting_commit' => $this->startingCommit,
             'status' => $this->status,
             'route' => $this->route?->toArray(),
@@ -92,9 +98,11 @@ final readonly class AppInstanceResponse
         $route = [];
 
         foreach ($value as $key => $item) {
-            if (is_string($key)) {
-                $route[$key] = $item;
+            if (! is_string($key)) {
+                continue;
             }
+
+            $route[$key] = $item;
         }
 
         return RouteResponse::fromGatewayData($route, $requestId);

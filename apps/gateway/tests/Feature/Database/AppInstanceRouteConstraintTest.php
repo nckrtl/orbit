@@ -26,7 +26,7 @@ it('reports every invalid active AppInstance before changing the upgrade schema 
         'name' => 'Preflight',
         'slug' => 'preflight',
         'repository_url' => 'https://example.test/preflight.git',
-        'main_branch' => 'main',
+        'default_branch' => 'main',
         'root' => 'public',
     ]);
     $node = Node::query()->create([
@@ -105,7 +105,7 @@ function app_instance_route_constraint_fixture(): array
         'name' => 'Constraint',
         'slug' => 'constraint',
         'repository_url' => 'https://example.test/constraint.git',
-        'main_branch' => 'main',
+        'default_branch' => 'main',
         'root' => 'public',
     ]);
     $node = Node::query()->create([

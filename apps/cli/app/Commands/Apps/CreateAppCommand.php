@@ -18,7 +18,7 @@ final class CreateAppCommand extends GatewayCommand
         {slug : Unique app slug}
         {repository : Git repository URL}
         {--name= : Optional display name}
-        {--main-branch= : Stored main branch; resolve the remote default when omitted}
+        {--default-branch= : Stored default branch; resolve the remote default when omitted}
         {--root=public : Relative web root}
         {--json : Return machine-readable JSON}';
 
@@ -74,7 +74,7 @@ final class CreateAppCommand extends GatewayCommand
                 repositoryUrl: $repositoryUrl,
                 root: $root,
                 name: $this->stringOption('name'),
-                mainBranch: $this->stringOption('main-branch'),
+                defaultBranch: $this->stringOption('default-branch'),
             ),
             AppResponse::class,
         );

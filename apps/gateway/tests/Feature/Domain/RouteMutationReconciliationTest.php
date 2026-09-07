@@ -39,7 +39,7 @@ beforeEach(function (): void {
         'name' => 'Acme',
         'slug' => 'acme',
         'repository_url' => 'https://example.test/acme.git',
-        'main_branch' => 'main',
+        'default_branch' => 'main',
         'root' => 'public',
     ]);
     $this->node = reconciliation_node('dev', 'dev.test');
@@ -211,6 +211,56 @@ it('reconciles a retained generated Route and Node TLD before remote provisionin
             'failed_step' => null,
             'error_code' => null,
         ]);
+});
+
+it('preserves a legacy default hostname and source during Route-only reconciliation', function (): void {
+    $this->target->update([
+        'name' => 'main',
+        'checkout_path' => '/srv/acme/main',
+        'branch' => 'main',
+        'migration_required' => true,
+    ]);
+    $route = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
+    $route->update(['hostname' => 'acme.dev.test']);
+    $cluster = Cluster::query()->create([
+        'name' => 'legacy-routing',
+        'state' => ClusterState::Inactive,
+        'tld' => 'cluster.test',
+    ]);
+    $router = reconciliation_node('legacy-router', null);
+    $router->update(['cluster_id' => $cluster->id]);
+    $router
+        ->roles()
+        ->create([
+            'cluster_id' => $cluster->id,
+            'role' => RoleName::Router,
+            'status' => LifecycleStatus::Active,
+        ]);
+    app(AttachClusterNodeAction::class)->execute($cluster, $this->node);
+    $sourceBefore = $this->target
+        ->fresh()
+        ->only([
+            'name',
+            'source_layout',
+            'checkout_path',
+            'root',
+            'branch',
+            'branch_override',
+            'migration_required',
+            'starting_commit',
+        ]);
+    $routeTargetBefore = $route->targets()->firstOrFail()->getAttributes();
+
+    app(UpdateClusterAction::class)->execute($cluster, reconciliation_update(state: ClusterState::Active));
+
+    expect($this->target->fresh()->only(array_keys($sourceBefore)))
+        ->toBe($sourceBefore)
+        ->and($route->refresh()->hostname)
+        ->toBe('acme.dev.test')
+        ->and($route->cluster_id)
+        ->toBe($cluster->id)
+        ->and($route->targets()->firstOrFail()->getAttributes())
+        ->toBe($routeTargetBefore);
 });
 
 it('preserves Node and Route state when the last app-dev TLD has no active fallback', function (): void {

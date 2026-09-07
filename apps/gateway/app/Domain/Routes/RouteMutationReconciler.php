@@ -166,19 +166,20 @@ final readonly class RouteMutationReconciler
         $hostname = $route->hostname;
 
         if ($route->provenance === RouteProvenance::Generated) {
-            $hostname = $firstTarget instanceof AppInstance
-                ? $this->state->generatedHostname(
+            if ($firstTarget instanceof AppInstance && ! $firstTarget->migration_required) {
+                $hostname = $this->state->generatedHostname(
                     $route->app->slug,
-                    (string) $route->app->main_branch,
                     $firstTarget->name,
                     $placement->effectiveTld,
-                )
-                : $this->rebaseRetainedHostname(
+                );
+            } elseif (! $firstTarget instanceof AppInstance) {
+                $hostname = $this->rebaseRetainedHostname(
                     $route,
                     $placement,
                     $baselineNodeOverrides,
                     $baselineClusterOverrides,
                 );
+            }
         }
 
         return [

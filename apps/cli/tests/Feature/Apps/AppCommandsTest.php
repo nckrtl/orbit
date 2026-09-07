@@ -44,7 +44,7 @@ describe('app:new', function (): void {
                 'slug' => 'orbit',
                 'repository' => 'git@github.com:nckrtl/orbit.git',
                 '--name' => 'Orbit',
-                '--main-branch' => 'stable',
+                '--default-branch' => 'stable',
                 '--json' => true,
             ])
             ->expectsOutput(app_json())
@@ -61,7 +61,7 @@ describe('app:new', function (): void {
                 'name' => 'Orbit',
                 'slug' => 'orbit',
                 'repository_url' => 'git@github.com:nckrtl/orbit.git',
-                'main_branch' => 'stable',
+                'default_branch' => 'stable',
                 'root' => 'public',
             ]);
     });
@@ -264,7 +264,7 @@ describe('app:list', function (): void {
         $this
             ->artisan('app:list')
             ->expectsTable(
-                ['ID', 'Name', 'Slug', 'Repository', 'Main branch', 'Root'],
+                ['ID', 'Name', 'Slug', 'Repository', 'Default branch', 'Root'],
                 [[3, 'Orbit', 'orbit', 'git@github.com:nckrtl/orbit.git', 'main', 'public']],
             )
             ->expectsOutput('Request ID: '.app_request_id())
@@ -372,14 +372,14 @@ describe('app:show', function (): void {
             ->artisan('app:show', ['app' => '3'])
             ->expectsOutput('Orbit [orbit] (#3)')
             ->expectsOutput('Repository: git@github.com:nckrtl/orbit.git')
-            ->expectsOutput('Main branch: main')
+            ->expectsOutput('Default branch: main')
             ->expectsOutput('Root: public')
             ->expectsOutput('Request ID: '.app_request_id())
             ->assertExitCode(0);
     });
 
     it('returns legacy null source defaults unchanged', function (): void {
-        $payload = [...app_payload(), 'main_branch' => null, 'root' => null];
+        $payload = [...app_payload(), 'default_branch' => null, 'root' => null];
         MockClient::global([
             ShowAppRequest::class => MockResponse::make([
                 'data' => $payload,
@@ -447,7 +447,7 @@ function app_payload(): array
         'name' => 'Orbit',
         'slug' => 'orbit',
         'repository_url' => 'git@github.com:nckrtl/orbit.git',
-        'main_branch' => 'main',
+        'default_branch' => 'main',
         'root' => 'public',
         'defaults' => ['php_version' => '8.5'],
     ];

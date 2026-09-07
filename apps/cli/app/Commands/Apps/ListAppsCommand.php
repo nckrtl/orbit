@@ -49,12 +49,12 @@ final class ListAppsCommand extends GatewayCommand
                 $app->name,
                 $app->slug,
                 $app->repositoryUrl,
-                $app->mainBranch ?? '—',
+                $app->defaultBranch ?? '—',
                 $app->root ?? '—',
             ];
         }
 
-        $this->table(['ID', 'Name', 'Slug', 'Repository', 'Main branch', 'Root'], $rows);
+        $this->table(['ID', 'Name', 'Slug', 'Repository', 'Default branch', 'Root'], $rows);
         $this->line("Request ID: {$response->requestId}");
 
         return self::SUCCESS;

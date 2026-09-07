@@ -93,7 +93,7 @@ beforeEach(function (): void {
         'name' => 'Acme',
         'slug' => 'acme',
         'repository_url' => $this->remoteOrigin,
-        'main_branch' => 'main',
+        'default_branch' => 'main',
         'root' => 'public',
     ]);
 });
@@ -102,7 +102,7 @@ afterEach(function (): void {
     $this->files->deleteDirectory($this->sandbox);
 });
 
-it('creates independent clones from an existing remote branch and the exact fetched main branch', function (): void {
+it('creates independent clones from an existing remote branch and the exact fetched default branch', function (): void {
     $existing = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
     $fallback = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'feature');
 
@@ -125,6 +125,55 @@ it('creates independent clones from an existing remote branch and the exact fetc
         ->toBeTrue()
         ->and(dirname($existing->checkout_path))
         ->toBe(dirname($fallback->checkout_path));
+});
+
+it('uses the App default branch for the reserved default identity', function (): void {
+    $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'default');
+
+    $this->source->prepare($instance, false);
+    $resolution = $this->source->resolve($instance);
+
+    expect($resolution->branch)
+        ->toBe('main')
+        ->and($resolution->startingCommit)
+        ->toBe(trim(orb76_run(['git', '--git-dir='.$this->repository, 'rev-parse', 'refs/heads/main'])->stdout))
+        ->and($instance->checkout_path)
+        ->toEndWith('/acme/default');
+});
+
+it('uses an existing explicit branch for any instance identity', function (): void {
+    $instance = orb76_source_instance(
+        $this->orbitApp,
+        $this->node,
+        $this->appsRoot,
+        'default',
+        'dev',
+    );
+
+    $this->source->prepare($instance, false);
+    $resolution = $this->source->resolve($instance);
+
+    expect($resolution->branch)
+        ->toBe('dev')
+        ->and($resolution->startingCommit)
+        ->toBe(trim(orb76_run(['git', '--git-dir='.$this->repository, 'rev-parse', 'refs/heads/dev'])->stdout));
+});
+
+it('refuses a missing explicit branch without falling back', function (): void {
+    $instance = orb76_source_instance(
+        $this->orbitApp,
+        $this->node,
+        $this->appsRoot,
+        'default',
+        'missing',
+    );
+    $this->source->prepare($instance, false);
+
+    expect(fn () => $this->source->resolve($instance))
+        ->toThrow(
+            \App\Domain\AppDev\RuntimeConvergenceException::class,
+            'App development step [app-instance-source-resolve] failed',
+        );
 });
 
 it('makes preparation idempotent and uses only fixed source-control commands', function (): void {
@@ -325,9 +374,9 @@ it('refuses a recorded path that is outside the exact App and instance identity'
     expect($this->transport->commands)->toBeEmpty();
 });
 
-it('fails closed before source resolution when the stored App main branch is incomplete', function (): void {
+it('fails closed before source resolution when the stored App default branch is incomplete', function (): void {
     $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
-    $instance->app->main_branch = null;
+    $instance->app->default_branch = null;
 
     expect(fn () => $this->source->resolve($instance))->toThrow(RuntimeConvergenceException::class);
     expect($this->transport->commands)->toBeEmpty();
@@ -345,14 +394,16 @@ function orb76_source_instance(
     Node $node,
     string $appsRoot,
     string $name,
+    ?string $branchOverride = null,
 ): AppInstance {
     return AppInstance::query()
         ->create([
             'app_id' => $app->id,
             'node_id' => $node->id,
             'name' => $name,
-            'source_kind' => 'managed_clone',
+            'source_layout' => 'checkout',
             'checkout_path' => "{$appsRoot}/{$app->slug}/{$name}",
+            'branch_override' => $branchOverride,
             'status' => AppInstanceState::Reserved,
         ])
         ->load(['app', 'node']);

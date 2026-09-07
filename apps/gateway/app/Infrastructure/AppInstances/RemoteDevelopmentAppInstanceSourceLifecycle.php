@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\AppInstances;
 
 use App\Domain\AppDev\RuntimeConvergenceException;
-use App\Domain\AppInstances\AppInstanceSourceKind;
+use App\Domain\AppInstances\AppInstanceSourceLayout;
 use App\Domain\AppInstances\DevelopmentAppInstanceSourceLifecycle;
 use App\Domain\AppInstances\DevelopmentSourceResolution;
 use App\Domain\Nodes\ManagedUserAccountResolver;
@@ -17,7 +17,10 @@ use App\Infrastructure\AppDev\AppDevSshExecutor;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\AppInstance;
 
-/** @mago-expect lint:too-many-methods The adapter keeps one fixed source-only lifecycle and its evidence checks together. */
+/**
+ * @mago-expect lint:cyclomatic-complexity The adapter keeps each fail-closed source-layout and evidence branch together.
+ * @mago-expect lint:too-many-methods The adapter keeps one fixed source-only lifecycle and its evidence checks together.
+ */
 final readonly class RemoteDevelopmentAppInstanceSourceLifecycle implements DevelopmentAppInstanceSourceLifecycle
 {
     public function __construct(
@@ -88,14 +91,15 @@ final readonly class RemoteDevelopmentAppInstanceSourceLifecycle implements Deve
     public function resolve(AppInstance $appInstance): DevelopmentSourceResolution
     {
         $context = $this->context($appInstance);
-        $mainBranch = $this->mainBranch($appInstance);
+        $defaultBranch = $this->defaultBranch($appInstance);
         $result = $this->ssh->execute(
             $appInstance->node,
             new RemoteCommand(
                 arguments: [
                     ...$this->arguments($appInstance, $context),
                     $appInstance->name,
-                    $mainBranch,
+                    $defaultBranch,
+                    $appInstance->branch_override ?? '',
                 ],
                 input: self::preparedRepositoryGuard().<<<'BASH'
                     repository=$1
@@ -103,17 +107,29 @@ final readonly class RemoteDevelopmentAppInstanceSourceLifecycle implements Deve
                     allowed_root=$3
                     managed_user=$4
                     managed_group=$5
-                    branch=$6
-                    main_branch=$7
+                    instance_name=$6
+                    default_branch=$7
+                    branch_override=$8
                     checkout_parent=$(dirname "$checkout")
 
                     guard_parent_chain "$checkout_parent" "$allowed_root"
                     inspect_prepared_repository
                     git -C "$checkout" fetch --prune -- origin
-                    if git -C "$checkout" show-ref --verify --quiet "refs/remotes/origin/$branch"; then
+
+                    if [ -n "$branch_override" ]; then
+                        branch=$branch_override
+                        source_ref="refs/remotes/origin/$branch"
+                        git -C "$checkout" show-ref --verify --quiet "$source_ref"
+                    elif [ "$instance_name" = default ]; then
+                        branch=$default_branch
+                        source_ref="refs/remotes/origin/$branch"
+                        git -C "$checkout" show-ref --verify --quiet "$source_ref"
+                    elif git -C "$checkout" show-ref --verify --quiet "refs/remotes/origin/$instance_name"; then
+                        branch=$instance_name
                         source_ref="refs/remotes/origin/$branch"
                     else
-                        source_ref="refs/remotes/origin/$main_branch"
+                        branch=$instance_name
+                        source_ref="refs/remotes/origin/$default_branch"
                         git -C "$checkout" show-ref --verify --quiet "$source_ref"
                     fi
                     git -C "$checkout" checkout --quiet --force --no-track -B "$branch" "$source_ref"
@@ -234,11 +250,11 @@ final readonly class RemoteDevelopmentAppInstanceSourceLifecycle implements Deve
         ];
     }
 
-    private function mainBranch(AppInstance $appInstance): string
+    private function defaultBranch(AppInstance $appInstance): string
     {
-        $mainBranch = $appInstance->app->main_branch;
+        $defaultBranch = $appInstance->app->default_branch;
 
-        if (! is_string($mainBranch) || ! GitBranchName::isValid($mainBranch)) {
+        if (! is_string($defaultBranch) || ! GitBranchName::isValid($defaultBranch)) {
             throw new RuntimeConvergenceException(
                 step: 'app-instance-source-resolve',
                 errorCode: 'instance.branch_resolution_failed',
@@ -246,7 +262,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceLifecycle implements Deve
             );
         }
 
-        return $mainBranch;
+        return $defaultBranch;
     }
 
     private function storedResolution(AppInstance $appInstance): DevelopmentSourceResolution
@@ -270,11 +286,11 @@ final readonly class RemoteDevelopmentAppInstanceSourceLifecycle implements Deve
     {
         $appInstance->loadMissing(['app', 'node']);
 
-        if ($appInstance->source_kind !== AppInstanceSourceKind::ManagedClone->value) {
+        if ($appInstance->source_layout !== AppInstanceSourceLayout::Checkout->value) {
             throw new RuntimeConvergenceException(
-                step: 'app-instance-source-kind',
-                errorCode: 'instance.source_kind_conflict',
-                message: "AppInstance [{$appInstance->name}] is not an Orbit-managed clone.",
+                step: 'app-instance-source-layout',
+                errorCode: 'instance.source_layout_conflict',
+                message: "AppInstance [{$appInstance->name}] does not own an independent checkout.",
             );
         }
 
@@ -297,7 +313,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceLifecycle implements Deve
         if (
             ! is_array($lines)
             || count($lines) !== 2
-            || $lines[0] !== $appInstance->name
+            || $lines[0] !== $this->selectedBranch($appInstance)
             || preg_match('/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/D', $lines[1]) !== 1
         ) {
             throw new RuntimeConvergenceException(
@@ -308,6 +324,23 @@ final readonly class RemoteDevelopmentAppInstanceSourceLifecycle implements Deve
         }
 
         return new DevelopmentSourceResolution($lines[0], $lines[1]);
+    }
+
+    private function selectedBranch(AppInstance $appInstance): string
+    {
+        $branch = is_string($appInstance->branch_override)
+            ? $appInstance->branch_override
+            : ($appInstance->name === 'default' ? $this->defaultBranch($appInstance) : $appInstance->name);
+
+        if (! GitBranchName::isValid($branch)) {
+            throw new RuntimeConvergenceException(
+                step: 'app-instance-source-resolve',
+                errorCode: 'instance.branch_resolution_failed',
+                message: "AppInstance [{$appInstance->name}] has an invalid branch selection.",
+            );
+        }
+
+        return $branch;
     }
 
     private static function preparedRepositoryGuard(): string
