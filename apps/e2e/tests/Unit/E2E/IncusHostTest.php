@@ -125,6 +125,17 @@ function vmJson(
     ]], JSON_THROW_ON_ERROR);
 }
 
+/** @return array<array-key, mixed> */
+function vmResource(): array
+{
+    return json_decode(
+        vmJson(network: 'oe-b32d6c83af72', mac: '00:16:3e:5e:4b:52'),
+        true,
+        16,
+        JSON_THROW_ON_ERROR,
+    )[0];
+}
+
 function snapshotJson(string $name, string $owner = 'orbit-e2e'): string
 {
     return json_encode([[
@@ -145,6 +156,77 @@ function incusHost(?SecretRedactor $redactor = null, int $guestReadinessTimeoutS
 }
 
 describe('IncusHost reads', function () {
+    it('decodes the same valid VM device shapes through exact and batch reads', function (bool $expanded): void {
+        $resource = vmResource();
+        if ($expanded) {
+            $resource['expanded_devices'] = $resource['devices'];
+            $resource['devices'] = [];
+        }
+        Process::fake(['*' => Process::result(json_encode([$resource], JSON_THROW_ON_ERROR))]);
+        $name = 'orbit-e2e-tst-123-aaaaaaaa-gateway';
+        $host = incusHost();
+
+        $exact = $host->instance($name);
+        $batch = $host->instances([$name]);
+
+        expect($exact)
+            ->toEqual($batch[$name])
+            ->and($exact?->pool)
+            ->toBe('orbit-e2e')
+            ->and($exact?->network)
+            ->toBe('oe-b32d6c83af72')
+            ->and($exact?->mac)
+            ->toBe('00:16:3e:5e:4b:52');
+    })->with([
+        'local devices' => false,
+        'expanded devices' => true,
+    ]);
+
+    it('rejects the same malformed VM shapes through exact and batch reads', function (
+        string $field,
+        mixed $value,
+        string $exactMessage,
+        string $batchMessage,
+    ): void {
+        $resource = vmResource();
+        match ($field) {
+            'type' => $resource['type'] = $value,
+            'pool' => $resource['devices']['root']['pool'] = $value,
+            'status' => $resource['status'] = $value,
+            'status_code' => $resource['status_code'] = $value,
+            'network' => $resource['devices']['eth0']['network'] = $value,
+            'mac' => $resource['devices']['eth0']['hwaddr'] = $value,
+        };
+        Process::fake(['*' => Process::result(json_encode([$resource], JSON_THROW_ON_ERROR))]);
+        $name = 'orbit-e2e-tst-123-aaaaaaaa-gateway';
+        $host = incusHost();
+
+        expect(fn () => $host->instance($name))
+            ->toThrow(RuntimeException::class, $exactMessage)
+            ->and(fn () => $host->instances([$name]))
+            ->toThrow(RuntimeException::class, $batchMessage);
+    })->with([
+        'container' => ['type', 'container', 'not a virtual machine', 'identity is not a virtual machine'],
+        'missing pool' => ['pool', null, 'no storage pool identity', 'identity is invalid'],
+        'wrong pool' => ['pool', 'other', 'storage pool identity does not match', 'identity is invalid'],
+        'missing status' => ['status', null, 'no valid power status', 'identity is invalid'],
+        'invalid status code' => ['status_code', '102', 'no valid power status', 'identity is invalid'],
+        'invalid network' => ['network', 12, 'invalid network identity', 'network identity is invalid'],
+        'invalid MAC' => ['mac', 12, 'invalid MAC identity', 'MAC identity is invalid'],
+    ]);
+
+    it('keeps exact lookup semantics while rejecting duplicate batch inventory rows', function (): void {
+        $resource = vmResource();
+        Process::fake(['*' => Process::result(json_encode([$resource, $resource], JSON_THROW_ON_ERROR))]);
+        $name = 'orbit-e2e-tst-123-aaaaaaaa-gateway';
+        $host = incusHost();
+
+        expect($host->instance($name))
+            ->toBeInstanceOf(IncusInstance::class)
+            ->and(fn () => $host->instances([$name]))
+            ->toThrow(RuntimeException::class, 'appears more than once in inventory');
+    });
+
     it('resolves default-route dev tokens and stops before chained commands when none exists', function (
         string $routes,
         string $expectedOutput,
