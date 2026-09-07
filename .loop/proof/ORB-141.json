@@ -2,11 +2,11 @@
     "setup": [],
     "acceptance": [
         {
-            "id": "canonical-ipv4-subnet",
+            "id": "metrics-publication-receipts",
             "node": "gateway",
             "argv": [
                 "bash",
-                "/var/lib/orbit-e2e/proof/canonical-ipv4-subnet.sh"
+                "/var/lib/orbit-e2e/proof/metrics-publication-receipts.sh"
             ],
             "timeout_seconds": 300
         }

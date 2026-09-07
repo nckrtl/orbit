@@ -16,7 +16,7 @@ final readonly class MetricsCertificatePublisher
         private ProcessRunner $processes,
     ) {}
 
-    public function publish(GatewayCertificatePaths $certificate): bool
+    public function publish(GatewayCertificatePaths $certificate): MetricsPublicationReceipt
     {
         $this->validatePath($certificate->certificatePath);
         $this->validatePath($certificate->privateKeyPath);
@@ -53,13 +53,16 @@ final readonly class MetricsCertificatePublisher
                     install -d -o root -g caddy -m 0750 -- "$versions"
                     printf 'metrics-certificate\n' | install -o root -g caddy -m 0640 /dev/stdin "$owner"
                 fi
+                previous_target=
                 if [ -L "$current" ]; then
                     current_target=$(readlink -f "$current")
                     case "$current_target" in
                         "$versions"/*) ;;
                         *) exit 1 ;;
                     esac
+                    previous_target=$(readlink "$current")
                     if cmp -s -- "$source_certificate" "$current/metrics.pem" && cmp -s -- "$source_key" "$current/metrics.key"; then
+                        printf 'orbit-metrics-publication:unchanged\n'
                         exit 0
                     fi
                 elif [ -e "$current" ]; then
@@ -75,9 +78,24 @@ final readonly class MetricsCertificatePublisher
                 ln -s -- "$directory" "$link"
                 mv -fT -- "$link" "$current"
                 if systemctl is-active --quiet caddy; then
-                    systemctl reload-or-restart caddy
+                    if ! systemctl reload-or-restart caddy; then
+                        if [ -n "$previous_target" ]; then
+                            ln -s -- "$previous_target" "$link"
+                            mv -fT -- "$link" "$current"
+                        else
+                            rm -f -- "$current"
+                        fi
+                        systemctl reload-or-restart caddy || true
+                        rm -rf -- "$directory"
+                        exit 1
+                    fi
                 fi
-                printf 'changed\n'
+                if [ -n "$previous_target" ]; then
+                    previous_encoded=$(printf '%s' "$previous_target" | base64 -w 0)
+                    printf 'orbit-metrics-publication:replaced:%s\n' "$previous_encoded"
+                else
+                    printf 'orbit-metrics-publication:created\n'
+                fi
                 BASH,
         ));
 
@@ -89,7 +107,84 @@ final readonly class MetricsCertificatePublisher
             );
         }
 
-        return trim($result->stdout) === 'changed';
+        try {
+            return MetricsPublicationReceipt::fromProcessOutput($result->stdout);
+        } catch (InvalidArgumentException) {
+            throw new ResourceOperationException(
+                'metrics.certificate_publication_failed',
+                'Metrics certificate publication did not complete.',
+                502,
+            );
+        }
+    }
+
+    public function restore(MetricsPublicationReceipt $receipt): void
+    {
+        if ($receipt->isUnchanged()) {
+            return;
+        }
+
+        $previousTarget = $receipt->wasCreated() ? '' : $receipt->previousPublication();
+        $this->validatePreviousTarget($previousTarget);
+        $change = $receipt->wasCreated() ? 'created' : 'replaced';
+        $result = $this->processes->run(new ProcessInvocation(
+            arguments: ['sudo', 'bash', '-seu', '--', $change, $previousTarget],
+            timeout: 60.0,
+            input: <<<'BASH'
+                change=$1
+                previous_target=$2
+                versions=/etc/caddy/orbit-metrics-cert-versions
+                current=/etc/caddy/orbit-metrics-cert-current
+                owner="$versions/.orbit-owner"
+                link=/etc/caddy/orbit-metrics-cert-current.rollback
+                exec 9>/run/lock/orbit-caddy.lock
+                flock -w 30 9
+                trap 'rm -f -- "$link"' EXIT
+                test -d "$versions"
+                test -f "$owner"
+                test "$(cat -- "$owner")" = metrics-certificate
+                test -L "$current"
+                published_target=$(readlink "$current")
+                published_resolved=$(readlink -f "$current")
+                case "$published_resolved" in
+                    "$versions"/*) ;;
+                    *) exit 1 ;;
+                esac
+                case "$change" in
+                    created)
+                        test -z "$previous_target"
+                        rm -f -- "$current"
+                        ;;
+                    replaced)
+                        test -n "$previous_target"
+                        previous_resolved=$(readlink -f -- "$previous_target")
+                        case "$previous_resolved" in
+                            "$versions"/*) ;;
+                            *) exit 1 ;;
+                        esac
+                        test -d "$previous_resolved"
+                        ln -s -- "$previous_target" "$link"
+                        mv -fT -- "$link" "$current"
+                        ;;
+                    *) exit 1 ;;
+                esac
+                if systemctl is-active --quiet caddy && ! systemctl reload-or-restart caddy; then
+                    ln -s -- "$published_target" "$link"
+                    mv -fT -- "$link" "$current"
+                    systemctl reload-or-restart caddy || true
+                    exit 1
+                fi
+                rm -rf -- "$published_resolved"
+                BASH,
+        ));
+
+        if (! $result->succeeded()) {
+            throw new ResourceOperationException(
+                'metrics.certificate_restoration_failed',
+                'Metrics certificate restoration did not complete.',
+                502,
+            );
+        }
     }
 
     public function remove(): void
@@ -141,6 +236,21 @@ final readonly class MetricsCertificatePublisher
             || ! str_starts_with($path, '/')
         ) {
             throw new InvalidArgumentException('Metrics certificate source paths must be absolute paths.');
+        }
+    }
+
+    private function validatePreviousTarget(string $target): void
+    {
+        if ($target === '') {
+            return;
+        }
+
+        if (
+            str_contains($target, "\0")
+            || preg_match('/[\r\n]/', $target) === 1
+            || ! str_starts_with($target, '/etc/caddy/orbit-metrics-cert-versions/')
+        ) {
+            throw new InvalidArgumentException('A previous Metrics certificate target is invalid.');
         }
     }
 }
