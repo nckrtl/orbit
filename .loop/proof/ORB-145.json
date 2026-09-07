@@ -1,0 +1,14 @@
+{
+    "setup": [],
+    "acceptance": [
+        {
+            "id": "shared-os-release-parser",
+            "node": "gateway",
+            "argv": [
+                "bash",
+                "/var/lib/orbit-e2e/proof/shared-os-release-parser.sh"
+            ],
+            "timeout_seconds": 300
+        }
+    ]
+}

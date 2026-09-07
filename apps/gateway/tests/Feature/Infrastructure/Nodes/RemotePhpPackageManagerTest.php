@@ -62,8 +62,8 @@ it('converges the pinned Sury Resolute source before package installation', func
         ->and($sourceScript)
         ->toContain(
             '[ ! -r /etc/os-release ]',
-            'while IFS= read -r os_line',
-            '[ "$os_id" != "$expected_id" ]',
+            'while IFS= read -r os_release_line',
+            '[ "$os_id" = "$expected_id" ]',
             "selected_codename=''",
             'ppa\\.launchpadcontent\\.net/ondrej/php',
             'packages\\.sury\\.org/php',
@@ -98,7 +98,7 @@ it('converges the pinned Sury Resolute source before package installation', func
         )))->and(array_slice(
             array: $installCommand->arguments,
             offset: 0,
-            length: 9,
+            length: 10,
         ))->toBe([
             'bash',
             '-seu',
@@ -106,6 +106,7 @@ it('converges the pinned Sury Resolute source before package installation', func
             '8.4',
             'app-dev',
             base64_encode(new PhpFpmRuntimeIniRenderer()->render('app-dev')),
+            'ubuntu',
             UbuntuRelease::unsupportedText(),
             '1',
             'resolute',
@@ -245,7 +246,7 @@ it('does not treat package arguments as allowed release codenames', function ():
 
     foreach ([$transport->commands[0], $transport->commands[1]] as $command) {
         $script = $command->input ?? '';
-        $start = mb_strpos($script, str_contains($script, 'expected_id=$1') ? 'expected_id=$1' : 'version=$1');
+        $start = mb_strpos($script, 'expected_id=$1');
         $end = mb_strpos($script, 'shift "$allowed_count"') + mb_strlen('shift "$allowed_count"');
 
         expect($start)->toBeInt()->and($end)->toBeInt();
@@ -260,9 +261,9 @@ it('does not treat package arguments as allowed release codenames', function ():
             printf '%s\n' "$selected_codename"
             BASH;
 
-        $headerLength = str_contains($script, 'expected_id=$1') ? 3 : 5;
-        $arguments = array_slice($command->arguments, 3, $headerLength);
-        $arguments[$headerLength - 1] = '1';
+        $argumentOffset = str_contains($script, 'version=$1') ? 6 : 3;
+        $arguments = array_slice($command->arguments, $argumentOffset, 3);
+        $arguments[2] = '1';
         $process = new Process(['bash', '-seu', '--', ...$arguments, 'resolute', 'bookworm']);
         $process->setInput($argumentBoundary);
         $process->run();
@@ -848,7 +849,7 @@ it('keeps PCOV when app-prod convergence targets a dual-role node', function ():
         php_package_app_prod_ssh($transport),
     );
 
-    expect(array_slice(array: $transport->commands[1]->arguments, offset: 9))
+    expect(array_slice(array: $transport->commands[1]->arguments, offset: 10))
         ->toContain('php8.5-pcov')
         ->and($transport->commands[1]->input)
         ->toContain('phpenmod -v "$version" -s cli pcov', 'phpdismod -v "$version" -s fpm pcov');
