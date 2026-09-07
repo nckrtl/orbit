@@ -2,11 +2,11 @@
     "setup": [],
     "acceptance": [
         {
-            "id": "metrics-publication-receipts",
+            "id": "immutable-certificate-paths",
             "node": "gateway",
             "argv": [
                 "bash",
-                "/var/lib/orbit-e2e/proof/metrics-publication-receipts.sh"
+                "/var/lib/orbit-e2e/proof/immutable-certificate-paths.sh"
             ],
             "timeout_seconds": 300
         }
