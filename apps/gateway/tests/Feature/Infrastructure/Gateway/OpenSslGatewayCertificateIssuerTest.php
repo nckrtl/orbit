@@ -6,6 +6,8 @@ use App\Infrastructure\Certificates\OpenSslGatewayCertificateIssuer;
 use App\Infrastructure\Certificates\OpenSslGatewayCertificateValidator;
 use App\Infrastructure\Files\AtomicSymlinkPublisher;
 use App\Infrastructure\Files\NativeAtomicSymlinkPublisher;
+use App\Infrastructure\Gateway\NativeGatewayCertificatePublisher;
+use App\Infrastructure\Metrics\MetricsCertificatePublisher;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\ProcessInvocation;
@@ -192,11 +194,15 @@ it('publishes the Metrics leaf without replacing the Gateway certificate scope',
         $metrics = $issuer->issue('metrics.orbit', '10.44.0.1');
 
         expect($gateway->certificatePath)
-            ->toBe($caDirectory.'/gateway-current/gateway.pem')
+            ->toStartWith($caDirectory.'/gateway-versions/')
             ->and($metrics->certificatePath)
-            ->toBe($caDirectory.'/metrics-current/gateway.pem')
+            ->toStartWith($caDirectory.'/metrics-versions/')
             ->and($metrics->privateKeyPath)
-            ->toBe($caDirectory.'/metrics-current/gateway.key')
+            ->toBe(dirname($metrics->certificatePath).'/gateway.key')
+            ->and(realpath($caDirectory.'/gateway-current'))
+            ->toBe(dirname($gateway->certificatePath))
+            ->and(realpath($caDirectory.'/metrics-current'))
+            ->toBe(dirname($metrics->certificatePath))
             ->and(file_get_contents($gateway->certificatePath))
             ->toBe($gatewayCertificate)
             ->and(gateway_certificate_text($processes, $metrics->certificatePath))
@@ -205,6 +211,128 @@ it('publishes the Metrics leaf without replacing the Gateway certificate scope',
             ->toBeTrue()
             ->and(is_dir($caDirectory.'/metrics-versions'))
             ->toBeTrue();
+    } finally {
+        new Filesystem()->deleteDirectory($orbitHome);
+    }
+});
+
+it('keeps an issued generation stable while later certificates are published', function (): void {
+    $orbitHome = gateway_certificate_test_home();
+    $processes = new NativeProcessRunner;
+    $issuer = new OpenSslGatewayCertificateIssuer(
+        processes: $processes,
+        validator: new OpenSslGatewayCertificateValidator($processes),
+        links: new NativeAtomicSymlinkPublisher,
+        orbitHome: $orbitHome,
+    );
+
+    try {
+        $first = $issuer->issue('gateway.orbit', '10.44.0.1');
+        $firstCertificate = file_get_contents($first->certificatePath);
+        $firstPrivateKey = file_get_contents($first->privateKeyPath);
+        $second = $issuer->issue('gateway.orbit', '10.44.0.2');
+        $publications = new class implements ProcessRunner {
+            /** @var list<ProcessInvocation> */
+            public array $invocations = [];
+
+            public function run(ProcessInvocation $invocation): CommandResult
+            {
+                $this->invocations[] = $invocation;
+                $stdout = ($invocation->arguments[1] ?? null) === 'bash'
+                    ? "orbit-metrics-publication:created\n"
+                    : 'PUBLIC KEY';
+
+                return new CommandResult(0, $stdout, '', 1, false);
+            }
+        };
+
+        new NativeGatewayCertificatePublisher($publications, $orbitHome)->publish($first);
+        new MetricsCertificatePublisher($publications)->publish($first);
+
+        $copySources = array_values(array_map(
+            static function (ProcessInvocation $invocation): string {
+                $separator = array_search('--', $invocation->arguments, strict: true);
+
+                return is_int($separator) ? $invocation->arguments[$separator + 1] : '';
+            },
+            array_filter(
+                $publications->invocations,
+                static fn (ProcessInvocation $invocation): bool => (
+                    ($invocation->arguments[1] ?? null) === 'install'
+                    && in_array('--', $invocation->arguments, strict: true)
+                ),
+            ),
+        ));
+        $metricsPublication = $publications->invocations[array_key_last($publications->invocations)];
+
+        expect($first->certificatePath)
+            ->toStartWith($orbitHome.'/ca/gateway-versions/')
+            ->not->toBe($orbitHome.'/ca/gateway-current/gateway.pem');
+        expect(dirname($first->certificatePath))
+            ->not
+            ->toBe(dirname($second->certificatePath));
+        expect(file_get_contents($first->certificatePath))
+            ->toBe($firstCertificate);
+        expect(file_get_contents($first->privateKeyPath))
+            ->toBe($firstPrivateKey);
+        expect($copySources)->toBe([$first->certificatePath, $first->privateKeyPath]);
+        expect(array_slice($metricsPublication->arguments, 5, 2))
+            ->toBe([$first->certificatePath, $first->privateKeyPath]);
+    } finally {
+        new Filesystem()->deleteDirectory($orbitHome);
+    }
+});
+
+it('reuses one resolved generation when the current alias changes during validation', function (): void {
+    $orbitHome = gateway_certificate_test_home();
+    $processes = new NativeProcessRunner;
+    $issuer = new OpenSslGatewayCertificateIssuer(
+        processes: $processes,
+        validator: new OpenSslGatewayCertificateValidator($processes),
+        links: new NativeAtomicSymlinkPublisher,
+        orbitHome: $orbitHome,
+    );
+
+    try {
+        $first = $issuer->issue('gateway.orbit', '10.44.0.1');
+        $second = $issuer->issue('gateway.orbit', '10.44.0.2');
+        $currentDirectory = $orbitHome.'/ca/gateway-current';
+        new NativeAtomicSymlinkPublisher()->publish(dirname($first->certificatePath), $currentDirectory);
+        $switchingProcesses = new class(dirname($second->certificatePath), $currentDirectory) implements ProcessRunner {
+            private NativeProcessRunner $processes;
+
+            private bool $switched = false;
+
+            public function __construct(
+                private string $replacement,
+                private string $currentDirectory,
+            ) {
+                $this->processes = new NativeProcessRunner;
+            }
+
+            public function run(ProcessInvocation $invocation): CommandResult
+            {
+                $result = $this->processes->run($invocation);
+
+                if (! $this->switched) {
+                    new NativeAtomicSymlinkPublisher()->publish($this->replacement, $this->currentDirectory);
+                    $this->switched = true;
+                }
+
+                return $result;
+            }
+        };
+        $switchingIssuer = new OpenSslGatewayCertificateIssuer(
+            processes: $switchingProcesses,
+            validator: new OpenSslGatewayCertificateValidator($switchingProcesses),
+            links: new NativeAtomicSymlinkPublisher,
+            orbitHome: $orbitHome,
+        );
+
+        $reused = $switchingIssuer->issue('gateway.orbit', '10.44.0.1');
+
+        expect($reused)->toEqual($first);
+        expect(realpath($currentDirectory))->toBe(dirname($second->certificatePath));
     } finally {
         new Filesystem()->deleteDirectory($orbitHome);
     }
@@ -491,6 +619,36 @@ it('rejects invalid certificate identities before invoking OpenSSL', function (
 function gateway_test_openssl_binary(): string
 {
     return is_executable('/opt/homebrew/bin/openssl') ? '/opt/homebrew/bin/openssl' : 'openssl';
+}
+
+function gateway_certificate_test_home(): string
+{
+    $orbitHome = sys_get_temp_dir().'/orbit-gateway-certificate-paths-'.Str::uuid();
+    $caDirectory = $orbitHome.'/ca';
+    mkdir(directory: $caDirectory, permissions: 0o700, recursive: true);
+    $processes = new NativeProcessRunner;
+
+    foreach ([
+        ['openssl', 'genrsa', '-out', $caDirectory.'/root.key', '4096'],
+        [
+            'openssl',
+            'req',
+            '-x509',
+            '-new',
+            '-key',
+            $caDirectory.'/root.key',
+            '-out',
+            $caDirectory.'/root.pem',
+            '-days',
+            '3650',
+            '-subj',
+            '/CN=Orbit Root CA',
+        ],
+    ] as $arguments) {
+        expect($processes->run(new ProcessInvocation($arguments))->succeeded())->toBeTrue();
+    }
+
+    return $orbitHome;
 }
 
 it('preserves the current usable certificate pair when atomic publication fails', function (): void {

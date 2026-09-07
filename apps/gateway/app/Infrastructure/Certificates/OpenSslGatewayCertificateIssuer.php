@@ -31,18 +31,28 @@ final readonly class OpenSslGatewayCertificateIssuer implements GatewayCertifica
         $this->guardIdentity($hostname, $wireguardIp);
         $directory = rtrim(string: $this->orbitHome, characters: '/').'/ca';
         $scope = $hostname === 'metrics.orbit' ? 'metrics' : 'gateway';
-        $paths = new GatewayCertificatePaths(
-            privateKeyPath: $directory.'/'.$scope.'-current/gateway.key',
-            certificatePath: $directory.'/'.$scope.'-current/gateway.pem',
-        );
+        $versionsDirectory = $directory.'/'.$scope.'-versions';
+        $currentDirectory = $directory.'/'.$scope.'-current';
+        $resolvedDirectory = realpath($currentDirectory);
+        $resolvedVersionsDirectory = realpath($versionsDirectory);
+        $paths =
+            $resolvedDirectory !== false
+            && $resolvedVersionsDirectory !== false
+            && dirname($resolvedDirectory) === $resolvedVersionsDirectory
+            && preg_match('/\A[a-f0-9]{16}\z/', basename($resolvedDirectory)) === 1
+                ? new GatewayCertificatePaths(
+                    privateKeyPath: $resolvedDirectory.'/gateway.key',
+                    certificatePath: $resolvedDirectory.'/gateway.pem',
+                )
+                : null;
 
-        if ($this->isCurrent($paths, $hostname, $wireguardIp, $directory.'/root.pem')) {
+        if ($paths !== null && $this->isCurrent($paths, $hostname, $wireguardIp, $directory.'/root.pem')) {
             $this->protect($paths, $directory);
 
             return $paths;
         }
 
-        $this->issueVersion($paths, $hostname, $wireguardIp, $directory, $scope);
+        $paths = $this->issueVersion($currentDirectory, $hostname, $wireguardIp, $directory, $scope);
         $this->protect($paths, $directory);
 
         return $paths;
@@ -73,12 +83,12 @@ final readonly class OpenSslGatewayCertificateIssuer implements GatewayCertifica
     }
 
     private function issueVersion(
-        GatewayCertificatePaths $currentPaths,
+        string $currentDirectory,
         string $hostname,
         string $wireguardIp,
         string $caDirectory,
         string $scope,
-    ): void {
+    ): GatewayCertificatePaths {
         $versionsDirectory = $caDirectory.'/'.$scope.'-versions';
         $version = bin2hex(random_bytes(8));
         $candidateDirectory = "{$versionsDirectory}/{$version}.candidate";
@@ -86,6 +96,10 @@ final readonly class OpenSslGatewayCertificateIssuer implements GatewayCertifica
         $candidatePaths = new GatewayCertificatePaths(
             privateKeyPath: $candidateDirectory.'/gateway.key',
             certificatePath: $candidateDirectory.'/gateway.pem',
+        );
+        $versionPaths = new GatewayCertificatePaths(
+            privateKeyPath: $versionDirectory.'/gateway.key',
+            certificatePath: $versionDirectory.'/gateway.pem',
         );
         $candidateRequest = $candidateDirectory.'/gateway.csr';
         $this->ensureVersionDirectory($versionsDirectory, $candidateDirectory);
@@ -123,7 +137,7 @@ final readonly class OpenSslGatewayCertificateIssuer implements GatewayCertifica
             }
 
             try {
-                $this->links->publish($versionDirectory, dirname($currentPaths->certificatePath));
+                $this->links->publish($versionDirectory, $currentDirectory);
             } catch (Throwable $exception) {
                 $this->cleanupVersion($versionDirectory);
 
@@ -134,6 +148,8 @@ final readonly class OpenSslGatewayCertificateIssuer implements GatewayCertifica
                     previous: $exception,
                 );
             }
+
+            return $versionPaths;
         } finally {
             $this->cleanupVersion($candidateDirectory);
         }
