@@ -42,12 +42,12 @@ After preflight succeeds, the Gateway records one fixed deletion set and marks e
 | Step | Result |
 | --- | --- |
 | Source preparation | Record the verified source and finalization identity without deleting it. |
-| Route target clear | Remove the AppInstance target, keep a shared Route serving its remaining targets, or delete a final-target Route after its unavailable transition. |
+| Route target clear | Remove the AppInstance target, keep a shared production Route serving its remaining targets, or delete a final-target Route and release its hostname. |
 | Source finalization | Delete the exact owned source and record the matching outcome. |
 | Runtime cleanup | Remove the AppInstance runtime artifacts after Route traffic stops reaching that source. |
 | Row deletion | Delete the completed AppInstance row. |
 
-Source finalization never starts before the Route stops forwarding requests to that source. A shared production Route keeps its identity and serves its remaining targets. When removal clears a Route's final target, HTTPS GET returns `503 Service Unavailable` during the brief reconciliation interval before deletion propagates. The response has `Content-Type: text/plain; charset=utf-8`, `Cache-Control: no-store`, and the exact body `Orbit Route unavailable\n`; it never contacts the former target. The Gateway then deletes the Route and releases its hostname before source finalization. It does not retain a targetless Route.
+Source finalization never starts before the Route stops forwarding requests to that source. A shared production Route keeps its identity and serves its remaining targets. For every final target, the Gateway deletes the Route and releases its hostname before source finalization. During coordinated normal or forced development removal only, HTTPS GET returns `503 Service Unavailable` in the brief interval after target clearing and before Route deletion propagates. The response has `Content-Type: text/plain; charset=utf-8`, `Cache-Control: no-store`, and the exact body `Orbit Route unavailable\n`; it never contacts the former target. Orbit does not define that exact response for production removal, and it does not retain a targetless Route in either environment.
 
 A forced checkout cascade finalizes linked worktrees and their administration entries before it finalizes the common checkout. It never expands the recorded set when a later inspection finds another path or worktree.
 
