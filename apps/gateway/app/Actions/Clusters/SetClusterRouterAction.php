@@ -76,21 +76,20 @@ final readonly class SetClusterRouterAction
 
     private function finishOldCleanup(Cluster $cluster, NodeRole $current): void
     {
-        $old = NodeRole::query()
+        $obsoleteAssignments = NodeRole::query()
             ->where('cluster_id', $cluster->id)
             ->where('role', RoleName::Router)
             ->whereKeyNot($current->id)
-            ->first();
+            ->orderBy('id')
+            ->get();
 
-        if (! $old instanceof NodeRole) {
-            return;
-        }
-
-        try {
-            $this->baselines->remove($old->node, $old, false);
-            $old->delete();
-        } catch (Throwable $exception) {
-            $this->fail($old, 'remove', $exception);
+        foreach ($obsoleteAssignments as $assignment) {
+            try {
+                $this->baselines->remove($assignment->node, $assignment, false);
+                $assignment->delete();
+            } catch (Throwable $exception) {
+                $this->fail($assignment, 'remove', $exception);
+            }
         }
     }
 
