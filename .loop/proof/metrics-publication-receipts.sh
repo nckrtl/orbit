@@ -20,7 +20,7 @@ if grep -Eq '\$(certificate|caddy)Changed' "$manager"; then
 fi
 
 caddy_restore_line=$(grep -nF '$this->caddy->restore($caddyReceipt);' "$manager" | cut -d: -f1)
-firewall_restore_line=$(grep -nF '$this->firewall->remove($metrics, $gatewayAddress);' "$manager" | head -n 1 | cut -d: -f1)
+firewall_restore_line=$(grep -nFm1 '$this->firewall->remove($metrics, $gatewayAddress);' "$manager" | cut -d: -f1)
 certificate_restore_line=$(grep -nF '$this->certificatePublisher->restore($certificateReceipt);' "$manager" | cut -d: -f1)
 test "$caddy_restore_line" -lt "$firewall_restore_line"
 test "$firewall_restore_line" -lt "$certificate_restore_line"
@@ -56,7 +56,8 @@ case "$caddyfile" in
     *) exit 1 ;;
 esac
 metrics_fragment="$(dirname "$caddyfile")/fragments/metrics.caddy"
-sudo head -n 1 "$metrics_fragment" | grep -Fqx -- '# Managed by Orbit: metrics'
+metrics_owner=$(sudo sed -n '1p' "$metrics_fragment")
+test "$metrics_owner" = '# Managed by Orbit: metrics'
 sudo caddy validate --config "$caddyfile" --adapter caddyfile >/dev/null
 sudo systemctl is-active --quiet caddy
 
