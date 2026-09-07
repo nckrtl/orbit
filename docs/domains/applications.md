@@ -42,7 +42,7 @@ The Gateway derives placement from the requested identity and selects the branch
 | Another name without `--branch` | `<node-apps-root>/<app-slug>/<instance-name>` | The matching remote branch, or a new branch from the exact fetched `default_branch` commit |
 | Any name with `--branch=<branch>` | The placement for the requested name | The existing remote `<branch>` |
 
-`instance:new` stores source layout `checkout`. The checkout has its own `.git` directory and does not use a Workspace or shared worktree administration. An adopted linked worktree uses source layout `worktree`; the separate `instance:register` workflow owns adoption and manual migration.
+`instance:new` stores source layout `checkout`. The checkout has its own `.git` directory and does not use a Workspace or shared worktree administration. The `worktree` layout identifies a linked Git worktree under AppInstance ownership, but Orbit exposes no command that adopts or migrates an existing source.
 
 The API and PHP SDK accept the optional `branch` input. API, SDK, and CLI JSON responses return the resolved branch as `selected_branch`. They return the explicit input as nullable `branch_override`, including when it equals `default_branch`; inherited selection returns null. An explicit branch that does not exist returns `instance.branch_resolution_failed` without a fallback or an active AppInstance or Route.
 
@@ -58,7 +58,7 @@ An identical retry verifies the recorded App, Node, source layout, root, path, r
 
 ## Complete a required source migration
 
-An AppInstance can require manual migration when its stored name follows the earlier branch-named default identity. Orbit keeps that name, checkout path, selected branch, source, and Route authoritative until `instance:register` completes the migration. List and show responses return `migration_required: true`, Doctor reports the same bounded condition, and the existing Route continues to serve the same source path.
+An AppInstance can require manual migration when its stored name follows the earlier branch-named default identity. Orbit keeps that name, checkout path, selected branch, source, and Route authoritative until an operator completes migration outside the current command set. List and show responses return `migration_required: true`, Doctor reports the same bounded condition, and the existing Route continues to serve the same source path.
 
 The Gateway returns `instance.migration_required` before database, Git, filesystem, runtime, or Route mutation when an operation would remove, rebind, or change this source. Read-only inspection remains available, and Orbit can still reconcile its Route without changing the source. An occupied `default` identity, an overlapping Orbit-managed destination, or an occupied unmanaged destination returns `instance.migration_conflict` with a bounded message that identifies the cause and preserves every existing AppInstance, source, and Route.
 
@@ -123,4 +123,4 @@ Development AppInstance creation and removal do not accept a repository, command
 
 The [Route reference](../reference/routes.md) defines initial private traffic projection and the temporary refusal boundary for Route, Node, Cluster, and access changes that need coordinated runtime and Laravel URL reconciliation.
 
-`instance:new` does not adopt caller-local Git sources. The `instance:register` workflow governed by [ADR 0027](../decisions/0027-adopt-local-git-sources-into-appinstance-ownership.md) owns checkout and worktree adoption, including manual migration of a branch-named default source.
+`instance:new` does not adopt caller-local Git sources. Orbit exposes no adoption or manual migration command. [ADR 0027](../decisions/0027-adopt-local-git-sources-into-appinstance-ownership.md) defines the ownership and safety boundary for that separate contract.

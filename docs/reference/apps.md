@@ -47,7 +47,7 @@ During an upgrade, the Gateway checks every existing App before it makes reposit
 
 `app:new` is an idempotent creation command. Repeating it with the same name, slug, repository access URL, default branch, root, and defaults returns the existing App. An omitted branch is not resolved again during that retry.
 
-A retry that changes any creation value fails with `app.identity_conflict` and does not mutate the App. A different repository access URL is a changed value even when it has the same canonical repository identity, so creation never switches the stored URL. [ADR 0016](../decisions/0016-reconcile-app-identity-and-source-default-updates.md) defines repository access-URL changes as a separate explicit App update lifecycle.
+A retry that changes any creation value fails with `app.identity_conflict` and does not mutate the App. A different repository access URL is a changed value even when it has the same canonical repository identity, so creation never switches the stored URL. Orbit exposes no App update operation. [ADR 0016](../decisions/0016-reconcile-app-identity-and-source-default-updates.md) defines the reconciliation boundary for a separate contract.
 
 ## Incomplete source defaults
 
