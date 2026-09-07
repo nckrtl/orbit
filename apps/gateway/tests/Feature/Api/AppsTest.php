@@ -597,48 +597,140 @@ describe('app list access', function (): void {
             'slug' => 'inaccessible',
             'repository_url' => 'https://example.test/inaccessible.git',
         ]);
-        Instance::query()->create([
+        $multiplyPlaced = OrbitApp::query()->create([
+            'name' => 'Multiply placed',
+            'slug' => 'multiply-placed',
+            'repository_url' => 'https://example.test/multiply-placed.git',
+        ]);
+        AppInstance::query()->create([
             'app_id' => $accessible->id,
             'node_id' => $accessibleNode->id,
             'name' => 'main',
-            'environment' => 'development',
             'checkout_path' => '/srv/accessible',
-            'hostname' => 'accessible.example.test',
-            'certificate_mode' => 'orbit-ca',
+            'status' => AppInstanceState::Active,
         ]);
-        Instance::query()->create([
+        AppInstance::query()->create([
             'app_id' => $inaccessible->id,
             'node_id' => $inaccessibleNode->id,
             'name' => 'main',
-            'environment' => 'development',
             'checkout_path' => '/srv/inaccessible',
-            'hostname' => 'inaccessible.example.test',
-            'certificate_mode' => 'orbit-ca',
+            'status' => AppInstanceState::Active,
+        ]);
+        AppInstance::query()->create([
+            'app_id' => $multiplyPlaced->id,
+            'node_id' => $accessibleNode->id,
+            'name' => 'first',
+            'checkout_path' => '/srv/multiply-placed/first',
+            'status' => AppInstanceState::Active,
+        ]);
+        AppInstance::query()->create([
+            'app_id' => $multiplyPlaced->id,
+            'node_id' => $accessibleNode->id,
+            'name' => 'second',
+            'checkout_path' => '/srv/multiply-placed/second',
+            'status' => AppInstanceState::Active,
         ]);
 
         $this
             ->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
             ->getJson('/api/v1/apps')
             ->assertOk()
-            ->assertJsonPath('data.*.id', [$inaccessible->id, $accessible->id, $unplaced->id]);
+            ->assertJsonPath('data.*.id', [$multiplyPlaced->id, $inaccessible->id, $accessible->id, $unplaced->id]);
 
         $this
             ->withServerVariables(['REMOTE_ADDR' => $gatewayAccessConsumer->wireguard_ip])
             ->getJson('/api/v1/apps')
             ->assertOk()
-            ->assertJsonPath('data.*.id', [$inaccessible->id, $accessible->id, $unplaced->id]);
+            ->assertJsonPath('data.*.id', [$multiplyPlaced->id, $inaccessible->id, $accessible->id, $unplaced->id]);
 
         $this
             ->withServerVariables(['REMOTE_ADDR' => $directConsumer->wireguard_ip])
             ->getJson('/api/v1/apps')
             ->assertOk()
-            ->assertJsonPath('data.*.id', [$accessible->id]);
+            ->assertJsonPath('data.*.id', [$multiplyPlaced->id, $accessible->id]);
 
         $this
             ->withServerVariables(['REMOTE_ADDR' => $noEdgeConsumer->wireguard_ip])
             ->getJson('/api/v1/apps')
             ->assertForbidden()
             ->assertJsonPath('error.code', 'node_access.required');
+    });
+
+    it('uses only AppInstance placement for a direct consumer', function (): void {
+        $accessibleNode = Node::query()->create([
+            'name' => 'accessible-node',
+            'status' => LifecycleStatus::Active,
+            'public_ssh_host' => '192.0.2.20',
+            'wireguard_ip' => '10.44.0.20',
+        ]);
+        $inaccessibleNode = Node::query()->create([
+            'name' => 'inaccessible-node',
+            'status' => LifecycleStatus::Active,
+            'public_ssh_host' => '192.0.2.21',
+            'wireguard_ip' => '10.44.0.21',
+        ]);
+        $consumer = Node::query()->create([
+            'name' => 'direct-consumer',
+            'status' => LifecycleStatus::Active,
+            'public_ssh_host' => '192.0.2.22',
+            'wireguard_ip' => '10.44.0.22',
+        ]);
+        $consumer->accessibleNodes()->attach($accessibleNode);
+        $legacyOnly = OrbitApp::query()->create([
+            'name' => 'Legacy only',
+            'slug' => 'legacy-only',
+            'repository_url' => 'https://example.test/legacy-only.git',
+        ]);
+        $mixedHidden = OrbitApp::query()->create([
+            'name' => 'Mixed hidden',
+            'slug' => 'mixed-hidden',
+            'repository_url' => 'https://example.test/mixed-hidden.git',
+        ]);
+        $mixedVisible = OrbitApp::query()->create([
+            'name' => 'Mixed visible',
+            'slug' => 'mixed-visible',
+            'repository_url' => 'https://example.test/mixed-visible.git',
+        ]);
+        foreach ([$legacyOnly, $mixedHidden] as $app) {
+            Instance::query()->create([
+                'app_id' => $app->id,
+                'node_id' => $accessibleNode->id,
+                'name' => 'legacy',
+                'environment' => 'development',
+                'checkout_path' => "/srv/legacy/{$app->slug}",
+                'hostname' => "{$app->slug}.example.test",
+                'certificate_mode' => 'orbit-ca',
+            ]);
+        }
+        Instance::query()->create([
+            'app_id' => $mixedVisible->id,
+            'node_id' => $inaccessibleNode->id,
+            'name' => 'legacy',
+            'environment' => 'development',
+            'checkout_path' => '/srv/legacy/mixed-visible',
+            'hostname' => 'mixed-visible.example.test',
+            'certificate_mode' => 'orbit-ca',
+        ]);
+        AppInstance::query()->create([
+            'app_id' => $mixedHidden->id,
+            'node_id' => $inaccessibleNode->id,
+            'name' => 'current',
+            'checkout_path' => '/srv/current/mixed-hidden',
+            'status' => AppInstanceState::Active,
+        ]);
+        AppInstance::query()->create([
+            'app_id' => $mixedVisible->id,
+            'node_id' => $accessibleNode->id,
+            'name' => 'current',
+            'checkout_path' => '/srv/current/mixed-visible',
+            'status' => AppInstanceState::Active,
+        ]);
+
+        $this
+            ->withServerVariables(['REMOTE_ADDR' => $consumer->wireguard_ip])
+            ->getJson('/api/v1/apps')
+            ->assertOk()
+            ->assertJsonPath('data.*.id', [$mixedVisible->id]);
     });
 });
 
