@@ -22,10 +22,15 @@ final class SetRouteTargetCommand extends RouteCommand
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
         $routeId = $this->routeId();
-        $targetId = $this->positiveId('target', 'AppInstance', 'route.target_id_invalid');
-        if ($routeId === null || $targetId === null) {
+        if ($routeId === null) {
             return self::FAILURE;
         }
+
+        $targetId = $this->positiveId('target', 'AppInstance', 'route.target_id_invalid');
+        if ($targetId === null) {
+            return self::FAILURE;
+        }
+
         $connector = $this->gatewayConnector($repository, $connectors);
         if ($connector === null) {
             return self::FAILURE;

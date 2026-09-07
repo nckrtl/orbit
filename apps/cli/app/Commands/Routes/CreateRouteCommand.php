@@ -27,20 +27,32 @@ final class CreateRouteCommand extends RouteCommand
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
         $appId = $this->positiveId('app', 'App', 'app.id_invalid');
-        $hostname = $this->stringArgument('hostname', 'Route hostname', 'route.hostname_required');
-        $targetId = $this->optionId('target', 'AppInstance');
-        $nodeId = $this->optionId('node', 'Node');
-        $clusterId = $this->optionId('cluster', 'Cluster');
-        $publication = $this->option('publication');
+        if ($appId === null) {
+            return self::FAILURE;
+        }
 
-        if (
-            $appId === null
-            || $hostname === null
-            || $targetId === 0
-            || $nodeId === 0
-            || $clusterId === 0
-            || ! is_string($publication)
-        ) {
+        $hostname = $this->stringArgument('hostname', 'Route hostname', 'route.hostname_required');
+        if ($hostname === null) {
+            return self::FAILURE;
+        }
+
+        $targetId = $this->optionId('target', 'AppInstance');
+        if ($targetId === 0) {
+            return self::FAILURE;
+        }
+
+        $nodeId = $this->optionId('node', 'Node');
+        if ($nodeId === 0) {
+            return self::FAILURE;
+        }
+
+        $clusterId = $this->optionId('cluster', 'Cluster');
+        if ($clusterId === 0) {
+            return self::FAILURE;
+        }
+
+        $publication = $this->option('publication');
+        if (! is_string($publication)) {
             return self::FAILURE;
         }
 

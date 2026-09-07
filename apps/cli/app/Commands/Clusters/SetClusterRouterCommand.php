@@ -23,9 +23,12 @@ final class SetClusterRouterCommand extends ClusterCommand
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
         $clusterId = $this->clusterId();
-        $nodeId = $this->nodeId();
+        if ($clusterId === null) {
+            return self::FAILURE;
+        }
 
-        if ($clusterId === null || $nodeId === null) {
+        $nodeId = $this->nodeId();
+        if ($nodeId === null) {
             return self::FAILURE;
         }
 
