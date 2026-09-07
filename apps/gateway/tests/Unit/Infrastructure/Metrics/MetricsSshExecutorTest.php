@@ -544,9 +544,143 @@ describe(MetricsSshExecutor::class, function (): void {
 
         expectMetricsDockerCommandsUsePrivilegedBoundary($ssh);
     });
+
+    it('restores both services when a replacement transition fails', function (string $transition): void {
+        $specs = metricsReplacementSpecs();
+        $ssh = new MetricsStatefulSshExecutor(
+            specs: $specs,
+            faultTransition: $transition,
+            faultService: MetricsService::Grafana,
+            applyFault: false,
+        );
+
+        try {
+            metricsSshExecutor($ssh)->convergeContainers(metricsSshNode(), $specs);
+            test()->fail('Expected container convergence to fail.');
+        } catch (\App\Domain\Shared\ResourceOperationException $exception) {
+            expect($exception->errorCode)->toBe('metrics.container_convergence_failed');
+        }
+
+        expect($ssh->containerNames())
+            ->toBe(['orbit-metrics-grafana', 'orbit-metrics-prometheus'])
+            ->and($ssh->runningContainerNames())
+            ->toBe(['orbit-metrics-grafana', 'orbit-metrics-prometheus'])
+            ->and($ssh->activeSpecHashes())
+            ->toBe(['grafana' => 'legacy-grafana', 'prometheus' => 'legacy-prometheus']);
+    })->with([
+        'stop' => 'stop',
+        'rename' => 'rename',
+        'replacement start' => 'run',
+    ]);
+
+    it('reconciles a replacement transition that succeeds with an ambiguous remote result', function (
+        string $transition,
+    ): void {
+        $specs = metricsReplacementSpecs();
+        $ssh = new MetricsStatefulSshExecutor(
+            specs: $specs,
+            faultTransition: $transition,
+            faultService: MetricsService::Prometheus,
+            applyFault: true,
+        );
+
+        metricsSshExecutor($ssh)->convergeContainers(metricsSshNode(), $specs);
+
+        expect($ssh->containerNames())
+            ->toBe(['orbit-metrics-grafana', 'orbit-metrics-prometheus'])
+            ->and($ssh->runningContainerNames())
+            ->toBe(['orbit-metrics-grafana', 'orbit-metrics-prometheus'])
+            ->and($ssh->activeSpecHashes())
+            ->toBe([
+                'grafana' => $specs[1]->specHash,
+                'prometheus' => $specs[0]->specHash,
+            ]);
+    })->with([
+        'stop' => 'stop',
+        'rename' => 'rename',
+        'replacement start' => 'run',
+    ]);
+
+    it('keeps committed replacements when either backup deletion fails', function (
+        MetricsService $service,
+        array $expectedNames,
+    ): void {
+        $specs = metricsReplacementSpecs();
+        $ssh = new MetricsStatefulSshExecutor(
+            specs: $specs,
+            faultTransition: 'backup-delete',
+            faultService: $service,
+            applyFault: false,
+        );
+
+        try {
+            metricsSshExecutor($ssh)->convergeContainers(metricsSshNode(), $specs);
+            test()->fail('Expected committed cleanup to fail.');
+        } catch (\App\Domain\Shared\ResourceOperationException $exception) {
+            expect($exception->errorCode)->toBe('metrics.container_cleanup_failed');
+        }
+
+        expect($ssh->containerNames())
+            ->toBe($expectedNames)
+            ->and($ssh->runningContainerNames())
+            ->toContain('orbit-metrics-grafana', 'orbit-metrics-prometheus')
+            ->and($ssh->activeSpecHashes())
+            ->toBe([
+                'grafana' => $specs[1]->specHash,
+                'prometheus' => $specs[0]->specHash,
+            ]);
+    })->with([
+        'first backup' => [
+            MetricsService::Prometheus,
+            [
+                'orbit-metrics-grafana',
+                'orbit-metrics-grafana-orbit-rollback',
+                'orbit-metrics-prometheus',
+                'orbit-metrics-prometheus-orbit-rollback',
+            ],
+        ],
+        'second backup' => [
+            MetricsService::Grafana,
+            [
+                'orbit-metrics-grafana',
+                'orbit-metrics-grafana-orbit-rollback',
+                'orbit-metrics-prometheus',
+            ],
+        ],
+    ]);
+
+    it('accepts an ambiguous backup deletion after inspection proves it completed', function (
+        MetricsService $service,
+    ): void {
+        $specs = metricsReplacementSpecs();
+        $ssh = new MetricsStatefulSshExecutor(
+            specs: $specs,
+            faultTransition: 'backup-delete',
+            faultService: $service,
+            applyFault: true,
+        );
+
+        metricsSshExecutor($ssh)->convergeContainers(metricsSshNode(), $specs);
+
+        expect($ssh->containerNames())->toBe(['orbit-metrics-grafana', 'orbit-metrics-prometheus']);
+    })->with([
+        'first backup' => MetricsService::Prometheus,
+        'second backup' => MetricsService::Grafana,
+    ]);
 });
 
-function metricsSshExecutor(MetricsCapturingSshExecutor $ssh): MetricsSshExecutor
+/** @return non-empty-list<\App\Infrastructure\Metrics\MetricsContainerSpec> */
+function metricsReplacementSpecs(): array
+{
+    $runtime = new MetricsRuntimeSpec;
+
+    return [
+        $runtime->for(MetricsService::Prometheus, 41, '10.44.0.3', 'new-prometheus'),
+        $runtime->for(MetricsService::Grafana, 41, '10.44.0.3', 'new-grafana'),
+    ];
+}
+
+function metricsSshExecutor(SshExecutor $ssh): MetricsSshExecutor
 {
     return new MetricsSshExecutor(
         ssh: $ssh,
@@ -613,6 +747,198 @@ final class MetricsCapturingSshExecutor implements SshExecutor
         $this->commands[] = $command;
 
         return array_shift($this->results) ?? metricsCommandResult();
+    }
+}
+
+/**
+ * @mago-expect lint:cyclomatic-complexity The fake models the fixed Docker command protocol and its remote state transitions.
+ * @mago-expect lint:kan-defect The explicit branches let each transition fail before or after its remote mutation.
+ */
+final class MetricsStatefulSshExecutor implements SshExecutor
+{
+    /** @var array<string, array{labels: array<string, string>, running: bool}> */
+    private array $containers = [];
+
+    /** @var array<string, array<string, string>> */
+    private array $volumes = [];
+
+    private bool $faulted = false;
+
+    /**
+     * @param non-empty-list<\App\Infrastructure\Metrics\MetricsContainerSpec> $specs
+     */
+    public function __construct(
+        array $specs,
+        private readonly string $faultTransition,
+        private readonly MetricsService $faultService,
+        private readonly bool $applyFault,
+    ) {
+        foreach ($specs as $spec) {
+            $this->containers[$spec->name] = [
+                'labels' => [
+                    ...$spec->labels,
+                    'com.orbit.metrics.spec-hash' => "legacy-{$spec->service->value}",
+                ],
+                'running' => true,
+            ];
+            $this->volumes[$spec->volume] = $spec->volumeLabels;
+        }
+    }
+
+    public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+    {
+        $arguments = $command->arguments;
+
+        if (array_slice($arguments, 0, 4) === ['sudo', 'docker', 'container', 'inspect']) {
+            return $this->inspectContainer($arguments);
+        }
+
+        if (array_slice($arguments, 0, 4) === ['sudo', 'docker', 'container', 'ls']) {
+            $filter = $arguments[array_search('--filter', $arguments, true) + 1];
+            $name = mb_substr($filter, 7, -1);
+
+            return metricsCommandResult(stdout: isset($this->containers[$name]) ? "{$name}\n" : '');
+        }
+
+        if (array_slice($arguments, 0, 4) === ['sudo', 'docker', 'volume', 'inspect']) {
+            $name = $arguments[array_key_last($arguments)];
+
+            return isset($this->volumes[$name])
+                ? metricsCommandResult(stdout: json_encode($this->volumes[$name], JSON_THROW_ON_ERROR)."\n")
+                : metricsCommandResult(exitCode: 1);
+        }
+
+        if (array_slice($arguments, 0, 4) === ['sudo', 'docker', 'container', 'stop']) {
+            $name = $arguments[array_key_last($arguments)];
+
+            return $this->transition('stop', $name, function () use ($name): void {
+                $this->containers[$name]['running'] = false;
+            });
+        }
+
+        if (array_slice($arguments, 0, 4) === ['sudo', 'docker', 'container', 'rename']) {
+            $from = $arguments[4];
+            $to = $arguments[5];
+
+            return $this->transition('rename', $from, function () use ($from, $to): void {
+                $this->containers[$to] = $this->containers[$from];
+                unset($this->containers[$from]);
+            });
+        }
+
+        if (array_slice($arguments, 0, 4) === ['sudo', 'docker', 'container', 'run']) {
+            $name = $arguments[array_search('--name', $arguments, true) + 1];
+            $labels = [];
+
+            foreach (array_keys($arguments, '--label', true) as $index) {
+                [$key, $value] = explode('=', $arguments[$index + 1], 2);
+                $labels[$key] = $value;
+            }
+
+            return $this->transition('run', $name, function () use ($name, $labels): void {
+                $this->containers[$name] = ['labels' => $labels, 'running' => true];
+            });
+        }
+
+        if (array_slice($arguments, 0, 4) === ['sudo', 'docker', 'container', 'rm']) {
+            $name = $arguments[array_key_last($arguments)];
+            $transition = str_ends_with($name, '-orbit-rollback') ? 'backup-delete' : 'replacement-delete';
+
+            return $this->transition($transition, $name, function () use ($name): void {
+                unset($this->containers[$name]);
+            });
+        }
+
+        if (array_slice($arguments, 0, 4) === ['sudo', 'docker', 'container', 'start']) {
+            $name = $arguments[array_key_last($arguments)];
+            $this->containers[$name]['running'] = true;
+
+            return metricsCommandResult();
+        }
+
+        return metricsCommandResult();
+    }
+
+    /** @return list<string> */
+    public function containerNames(): array
+    {
+        $names = array_keys($this->containers);
+        sort($names);
+
+        return $names;
+    }
+
+    /** @return list<string> */
+    public function runningContainerNames(): array
+    {
+        $names = array_keys(array_filter(
+            $this->containers,
+            static fn (array $container): bool => $container['running'],
+        ));
+        sort($names);
+
+        return $names;
+    }
+
+    /** @return array<string, string> */
+    public function activeSpecHashes(): array
+    {
+        $hashes = [];
+
+        foreach (['grafana', 'prometheus'] as $service) {
+            $hashes[$service] = $this->containers["orbit-metrics-{$service}"]['labels']['com.orbit.metrics.spec-hash'];
+        }
+
+        return $hashes;
+    }
+
+    private function inspectContainer(array $arguments): CommandResult
+    {
+        $name = $arguments[array_key_last($arguments)];
+
+        if (! isset($this->containers[$name])) {
+            return metricsCommandResult(exitCode: 1);
+        }
+
+        if (in_array('--format={{.State.Running}}', $arguments, true)) {
+            return metricsCommandResult(stdout: $this->containers[$name]['running'] ? "true\n" : "false\n");
+        }
+
+        if (in_array('--format={{.State.Status}} {{.State.Health.Status}}', $arguments, true)) {
+            return metricsCommandResult(
+                stdout: $this->containers[$name]['running'] ? "running healthy\n" : "exited healthy\n",
+            );
+        }
+
+        if (in_array('--format={{.State.Health.Status}}', $arguments, true)) {
+            return metricsCommandResult(stdout: "healthy\n");
+        }
+
+        return metricsCommandResult(
+            stdout: json_encode($this->containers[$name]['labels'], JSON_THROW_ON_ERROR)."\n",
+        );
+    }
+
+    private function transition(string $transition, string $name, \Closure $mutation): CommandResult
+    {
+        $faultMatches =
+            ! $this->faulted
+            && $transition === $this->faultTransition
+            && str_contains($name, $this->faultService->value);
+
+        if (! $faultMatches) {
+            $mutation();
+
+            return metricsCommandResult();
+        }
+
+        $this->faulted = true;
+
+        if ($this->applyFault) {
+            $mutation();
+        }
+
+        return metricsCommandResult(exitCode: 1);
     }
 }
 
