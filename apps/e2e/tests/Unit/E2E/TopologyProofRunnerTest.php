@@ -257,8 +257,6 @@ function candidateConvergenceFixture(): array
             'change' => 'content-changed',
             'classification' => 'unrelated-runtime',
         ]],
-        'candidate-convergence',
-        'run-candidate-convergence',
         [],
         '2026-09-03T00:00:00Z',
     );
