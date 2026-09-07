@@ -1,0 +1,14 @@
+{
+    "setup": [],
+    "acceptance": [
+        {
+            "id": "metrics-replacement-progress",
+            "node": "gateway",
+            "argv": [
+                "bash",
+                "/var/lib/orbit-e2e/proof/metrics-replacement-progress.sh"
+            ],
+            "timeout_seconds": 300
+        }
+    ]
+}
