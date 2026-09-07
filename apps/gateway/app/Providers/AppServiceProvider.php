@@ -19,6 +19,7 @@ use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppDev\AppDevTldConverger;
 use App\Domain\AppDev\AppDevTldRouteManager;
 use App\Domain\AppDev\PrivateDnsManager;
+use App\Domain\AppInstances\AppInstanceDestinationGuard;
 use App\Domain\AppInstances\DevelopmentAppInstanceConfigurator;
 use App\Domain\AppInstances\DevelopmentAppInstanceProvisioner;
 use App\Domain\AppInstances\DevelopmentAppInstanceSourceLifecycle;
@@ -84,6 +85,7 @@ use App\Infrastructure\AppDev\RemoteAppDevSourceManager;
 use App\Infrastructure\AppDev\RemoteAppDevTldRouteManager;
 use App\Infrastructure\AppInstances\NativeDevelopmentAppInstanceProvisioner;
 use App\Infrastructure\AppInstances\NativeDevelopmentRouteProjector;
+use App\Infrastructure\AppInstances\RemoteAppInstanceDestinationGuard;
 use App\Infrastructure\AppInstances\RemoteDevelopmentAppInstanceConfigurator;
 use App\Infrastructure\AppInstances\RemoteDevelopmentAppInstanceSourceLifecycle;
 use App\Infrastructure\AppProd\NativeAppProdRuntimeConverger;
@@ -172,6 +174,7 @@ final class AppServiceProvider extends ServiceProvider
 {
     /** @var array<class-string, class-string> */
     public array $bindings = [
+        AppInstanceDestinationGuard::class => RemoteAppInstanceDestinationGuard::class,
         AppDevCaddyManager::class => RemoteAppDevCaddyManager::class,
         AppDevCertificateManager::class => RemoteAppDevCertificateManager::class,
         AppDevPhpFpmManager::class => RemoteAppDevPhpFpmManager::class,

@@ -25,24 +25,24 @@ final readonly class CreateAppAction
     {
         $repositoryUrl = GitRepositoryOrigin::validate($data->repositoryUrl);
         $repositoryIdentity = GitRepositoryIdentity::derive($repositoryUrl);
-        $mainBranch = $data->mainBranch === null ? null : GitBranchName::validate($data->mainBranch);
+        $defaultBranch = $data->defaultBranch === null ? null : GitBranchName::validate($data->defaultBranch);
         $root = RelativeWebRoot::validate($data->root);
         $app = OrbitApp::query()->where('slug', $data->slug)->first();
 
         if ($app instanceof OrbitApp) {
-            $this->assertIdentityMatches($app, $data, $repositoryUrl, $mainBranch, $root);
+            $this->assertIdentityMatches($app, $data, $repositoryUrl, $defaultBranch, $root);
 
             return ['app' => $app, 'created' => false];
         }
 
         $this->assertRepositoryIdentityAvailable($repositoryIdentity);
 
-        $requestedMainBranch = $mainBranch;
+        $requestedDefaultBranch = $defaultBranch;
 
-        if ($mainBranch === null) {
-            $mainBranch = GitBranchName::validate($this->branches->resolve($repositoryUrl));
+        if ($defaultBranch === null) {
+            $defaultBranch = GitBranchName::validate($this->branches->resolve($repositoryUrl));
         } else {
-            $this->branches->verify($repositoryUrl, $mainBranch);
+            $this->branches->verify($repositoryUrl, $defaultBranch);
         }
 
         try {
@@ -50,7 +50,7 @@ final readonly class CreateAppAction
                 'slug' => $data->slug,
                 'name' => $data->name,
                 'repository_url' => $repositoryUrl,
-                'main_branch' => $mainBranch,
+                'default_branch' => $defaultBranch,
                 'root' => $root,
                 'defaults' => $data->defaults,
             ]);
@@ -62,7 +62,7 @@ final readonly class CreateAppAction
                     $app,
                     $data,
                     $repositoryUrl,
-                    $requestedMainBranch,
+                    $requestedDefaultBranch,
                     $root,
                 );
 
@@ -101,14 +101,14 @@ final readonly class CreateAppAction
         OrbitApp $app,
         CreateAppData $data,
         string $repositoryUrl,
-        ?string $mainBranch,
+        ?string $defaultBranch,
         string $root,
     ): void {
         if (
             $app->name === $data->name
             && $app->repository_url === $repositoryUrl
-            && ($mainBranch === null
-            || $app->main_branch === $mainBranch)
+            && ($defaultBranch === null
+            || $app->default_branch === $defaultBranch)
             && $app->root === $root
             && $app->defaults === $data->defaults
         ) {

@@ -50,14 +50,35 @@ final class ListInstancesCommand extends GatewayCommand
                 $instance->nodeId,
                 $instance->name,
                 $instance->environment,
-                $instance->sourceKind,
+                $instance->sourceLayout,
                 $instance->effectiveRoot ?? '-',
                 $instance->selectedBranch ?? '-',
+                $instance->branchOverride ?? '-',
+                $instance->migrationRequired ? 'yes' : 'no',
+                $instance->hostname ?? '-',
+                $instance->url ?? '-',
                 $instance->status,
             ];
         }
 
-        $this->table(['ID', 'App', 'Node', 'Name', 'Environment', 'Source', 'Root', 'Branch', 'Status'], $rows);
+        $this->table(
+            [
+                'ID',
+                'App',
+                'Node',
+                'Name',
+                'Environment',
+                'Source layout',
+                'Root',
+                'Selected branch',
+                'Branch override',
+                'Migration required',
+                'Route hostname',
+                'URL',
+                'Status',
+            ],
+            $rows,
+        );
         $this->line("Request ID: {$response->requestId}");
 
         return self::SUCCESS;

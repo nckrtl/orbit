@@ -1,0 +1,63 @@
+{
+    "setup": [
+        {
+            "id": "legacy-default-source-ready",
+            "node": "app-dev",
+            "argv": [
+                "/var/lib/orbit-e2e/proof/stable-source-identity.sh",
+                "prepare-legacy-default"
+            ],
+            "timeout_seconds": 300
+        },
+        {
+            "id": "legacy-default-pre-upgrade",
+            "node": "gateway",
+            "argv": [
+                "/var/lib/orbit-e2e/proof/stable-source-identity.sh",
+                "record-pre-upgrade",
+                "/home/orbit/orbit/apps/gateway/database/migrations/2026_09_07_000000_migrate_app_and_app_instance_source_identity.php"
+            ],
+            "timeout_seconds": 300
+        }
+    ],
+    "mutates": true,
+    "acceptance": [
+        {
+            "id": "legacy-default-remains-serving",
+            "node": "gateway",
+            "argv": [
+                "/var/lib/orbit-e2e/proof/stable-source-identity.sh",
+                "migrate-and-verify-legacy-default",
+                "/home/orbit/orbit/apps/gateway/database/migrations/2026_09_07_000000_migrate_app_and_app_instance_source_identity.php"
+            ],
+            "timeout_seconds": 300
+        },
+        {
+            "id": "stable-default-instance",
+            "node": "app-dev",
+            "argv": [
+                "/var/lib/orbit-e2e/proof/stable-source-identity.sh",
+                "stable-default-instance"
+            ],
+            "timeout_seconds": 300
+        },
+        {
+            "id": "explicit-instance-branch",
+            "node": "app-dev",
+            "argv": [
+                "/var/lib/orbit-e2e/proof/stable-source-identity.sh",
+                "explicit-instance-branch"
+            ],
+            "timeout_seconds": 300
+        },
+        {
+            "id": "explicit-branch-missing",
+            "node": "app-dev",
+            "argv": [
+                "/var/lib/orbit-e2e/proof/stable-source-identity.sh",
+                "explicit-branch-missing"
+            ],
+            "timeout_seconds": 300
+        }
+    ]
+}

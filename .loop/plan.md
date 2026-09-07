@@ -95,7 +95,7 @@ Legacy migration Incus fixture contract:
 
 ## Deviations
 
-- none.
+- The disposable Incus sample App stores `13.x`, which cannot be an AppInstance name under the existing name contract. The proof-only legacy fixture therefore stages the sample repository's existing `master` branch as a normal named checkout on `app-dev`, then changes only the disposable fixture App's default to `master` on `gateway` immediately before rolling back the source-identity migration. The recorded pre-upgrade graph still has an exact matching App default, AppInstance name, local branch, and name-based path, so the approved before/after migration assertions and every Acceptance meaning remain unchanged.
 
 ## Review findings
 

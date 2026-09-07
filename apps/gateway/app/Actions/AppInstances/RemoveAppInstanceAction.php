@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\AppInstances;
 
 use App\Domain\AppDev\AppDevSourceOperationLock;
-use App\Domain\AppInstances\AppInstanceSourceKind;
+use App\Domain\AppInstances\AppInstanceSourceLayout;
 use App\Domain\AppInstances\DevelopmentAppInstanceSourceLifecycle;
 use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
 use App\Domain\Nodes\Storage\StoragePath;
@@ -27,6 +27,14 @@ final readonly class RemoveAppInstanceAction
             function () use ($appInstance, $discardSource): AppInstance {
                 $snapshot = $appInstance->refresh()->load(['app', 'node']);
 
+                if ($snapshot->migration_required) {
+                    throw new ResourceOperationException(
+                        errorCode: 'instance.migration_required',
+                        message: "AppInstance [{$snapshot->name}] requires manual source migration.",
+                        status: 409,
+                    );
+                }
+
                 if ($snapshot->routes()->where('routes.status', 'active')->exists()) {
                     throw new ResourceOperationException(
                         errorCode: 'route.reconciliation_required',
@@ -35,9 +43,9 @@ final readonly class RemoveAppInstanceAction
                     );
                 }
 
-                if ($snapshot->source_kind !== AppInstanceSourceKind::ManagedClone->value) {
+                if ($snapshot->source_layout !== AppInstanceSourceLayout::Checkout->value) {
                     throw new ResourceOperationException(
-                        errorCode: 'instance.source_kind_conflict',
+                        errorCode: 'instance.source_layout_conflict',
                         message: "AppInstance [{$snapshot->name}] is not an Orbit-managed clone.",
                         status: 409,
                     );

@@ -23,7 +23,7 @@ final class AppData extends Data
         public string $name,
         public string $slug,
         public string $repositoryUrl,
-        public ?string $mainBranch,
+        public ?string $defaultBranch,
         public ?string $root,
         public ?array $defaults,
     ) {}
@@ -35,7 +35,7 @@ final class AppData extends Data
             name: $app->name,
             slug: $app->slug,
             repositoryUrl: $app->repository_url,
-            mainBranch: $app->main_branch,
+            defaultBranch: $app->default_branch,
             root: $app->root,
             defaults: self::publicDefaults($app->defaults),
         );

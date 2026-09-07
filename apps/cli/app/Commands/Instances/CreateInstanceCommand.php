@@ -16,9 +16,10 @@ final class CreateInstanceCommand extends GatewayCommand
     protected $signature = 'instance:new
         {app : Numeric app ID}
         {node : Numeric node ID}
-        {name : Development AppInstance and branch name}
+        {name : Development AppInstance name; default is reserved for the App default source}
         {--root= : Optional relative web-root override}
         {--hostname= : Optional explicit Route hostname}
+        {--branch= : Optional explicit source branch}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -60,6 +61,7 @@ final class CreateInstanceCommand extends GatewayCommand
                 name: $name,
                 root: $this->stringOption('root'),
                 hostname: $this->stringOption('hostname'),
+                branch: $this->stringOption('branch'),
             ),
             AppInstanceResponse::class,
         );
@@ -75,7 +77,12 @@ final class CreateInstanceCommand extends GatewayCommand
         }
 
         $this->info("Instance [{$instance->name}] is {$instance->status}.");
+        $this->line("Source layout: {$instance->sourceLayout}");
+        $this->line('Selected branch: '.($instance->selectedBranch ?? '-'));
+        $this->line('Branch override: '.($instance->branchOverride ?? '-'));
+        $this->line('Migration required: '.($instance->migrationRequired ? 'yes' : 'no'));
         if ($instance->url !== null) {
+            $this->line('Route hostname: '.($instance->hostname ?? '-'));
             $this->line("URL: {$instance->url}");
         }
         $this->line("Request ID: {$instance->requestId}");

@@ -64,7 +64,7 @@ it('stores explicit source defaults and returns them through every App response'
         'name' => 'Acme',
         'slug' => 'acme',
         'repository_url' => 'https://github.com/acme/site.git',
-        'main_branch' => 'stable',
+        'default_branch' => 'stable',
         'root' => 'web/public',
         'defaults' => ['php_version' => '8.5'],
     ]);
@@ -72,18 +72,18 @@ it('stores explicit source defaults and returns them through every App response'
     $created
         ->assertCreated()
         ->assertJsonPath('data.repository_url', 'https://github.com/acme/site.git')
-        ->assertJsonPath('data.main_branch', 'stable')
+        ->assertJsonPath('data.default_branch', 'stable')
         ->assertJsonPath('data.root', 'web/public');
     $appId = $created->json('data.id');
     $this
         ->getJson('/api/v1/apps')
         ->assertOk()
-        ->assertJsonPath('data.0.main_branch', 'stable')
+        ->assertJsonPath('data.0.default_branch', 'stable')
         ->assertJsonPath('data.0.root', 'web/public');
     $this
         ->getJson("/api/v1/apps/{$appId}")
         ->assertOk()
-        ->assertJsonPath('data.main_branch', 'stable')
+        ->assertJsonPath('data.default_branch', 'stable')
         ->assertJsonPath('data.root', 'web/public');
 
     expect($this->branches->resolvedRepositories)
@@ -93,15 +93,15 @@ it('stores explicit source defaults and returns them through every App response'
             'repository' => 'https://github.com/acme/site.git',
             'branch' => 'stable',
         ]])
-        ->and(OrbitApp::query()->sole()->only(['repository_url', 'main_branch', 'root']))
+        ->and(OrbitApp::query()->sole()->only(['repository_url', 'default_branch', 'root']))
         ->toBe([
             'repository_url' => 'https://github.com/acme/site.git',
-            'main_branch' => 'stable',
+            'default_branch' => 'stable',
             'root' => 'web/public',
         ]);
 });
 
-it('resolves an omitted main branch once and returns the existing App on an exact retry', function (): void {
+it('resolves an omitted default branch once and returns the existing App on an exact retry', function (): void {
     $payload = [
         'name' => 'Acme',
         'slug' => 'acme',
@@ -113,13 +113,13 @@ it('resolves an omitted main branch once and returns the existing App on an exac
     $created = $this
         ->postJson('/api/v1/apps', $payload)
         ->assertCreated()
-        ->assertJsonPath('data.main_branch', 'trunk');
+        ->assertJsonPath('data.default_branch', 'trunk');
     $this->branches->defaultBranch = 'renamed-default';
     $retried = $this
         ->postJson('/api/v1/apps', $payload)
         ->assertOk()
         ->assertJsonPath('data.id', $created->json('data.id'))
-        ->assertJsonPath('data.main_branch', 'trunk');
+        ->assertJsonPath('data.default_branch', 'trunk');
 
     expect($retried->json('data'))
         ->toBe($created->json('data'))
@@ -134,7 +134,7 @@ it('rejects conflicting creation identity without mutation or remote access', fu
         'name' => 'Acme',
         'slug' => 'acme',
         'repository_url' => 'https://github.com/acme/site.git',
-        'main_branch' => 'main',
+        'default_branch' => 'main',
         'root' => 'public',
         'defaults' => ['php_version' => '8.5'],
     ];
@@ -152,14 +152,14 @@ it('rejects conflicting creation identity without mutation or remote access', fu
         ->only([
             'name',
             'repository_url',
-            'main_branch',
+            'default_branch',
             'root',
             'defaults',
         ]))
         ->toBe([
             'name' => 'Acme',
             'repository_url' => 'https://github.com/acme/site.git',
-            'main_branch' => 'main',
+            'default_branch' => 'main',
             'root' => 'public',
             'defaults' => ['php_version' => '8.5'],
         ])
@@ -170,7 +170,7 @@ it('rejects conflicting creation identity without mutation or remote access', fu
     'equivalent repository access URL' => [[
         'repository_url' => 'ssh://git@github.com/acme/site.git',
     ]],
-    'main branch' => [['main_branch' => 'stable']],
+    'default branch' => [['default_branch' => 'stable']],
     'root' => [['root' => 'web']],
     'name' => [['name' => 'Renamed']],
     'defaults' => [['defaults' => ['php_version' => '8.4']]],
@@ -181,18 +181,18 @@ it('returns null source defaults truthfully for a legacy App', function (): void
         'name' => 'Legacy',
         'slug' => 'legacy',
         'repository_url' => 'https://github.com/acme/legacy.git',
-        'main_branch' => null,
+        'default_branch' => null,
         'root' => null,
     ]);
 
     $this
         ->getJson("/api/v1/apps/{$app->id}")
         ->assertOk()
-        ->assertJsonPath('data.main_branch', null)
+        ->assertJsonPath('data.default_branch', null)
         ->assertJsonPath('data.root', null);
 
-    expect($app->refresh()->only(['main_branch', 'root']))
-        ->toBe(['main_branch' => null, 'root' => null]);
+    expect($app->refresh()->only(['default_branch', 'root']))
+        ->toBe(['default_branch' => null, 'root' => null]);
 });
 
 it('rejects invalid or incomplete source defaults without persistence', function (array $payload): void {
@@ -202,53 +202,53 @@ it('rejects invalid or incomplete source defaults without persistence', function
 })->with([
     'missing repository' => [[
         'slug' => 'acme',
-        'main_branch' => 'main',
+        'default_branch' => 'main',
         'root' => 'public',
     ]],
     'missing root' => [[
         'slug' => 'acme',
         'repository_url' => 'https://github.com/acme/site.git',
-        'main_branch' => 'main',
+        'default_branch' => 'main',
     ]],
     'invalid branch' => [[
         'slug' => 'acme',
         'repository_url' => 'https://github.com/acme/site.git',
-        'main_branch' => '../main',
+        'default_branch' => '../main',
         'root' => 'public',
     ]],
     'absolute root' => [[
         'slug' => 'acme',
         'repository_url' => 'https://github.com/acme/site.git',
-        'main_branch' => 'main',
+        'default_branch' => 'main',
         'root' => '/public',
     ]],
     'traversing root' => [[
         'slug' => 'acme',
         'repository_url' => 'https://github.com/acme/site.git',
-        'main_branch' => 'main',
+        'default_branch' => 'main',
         'root' => '../public',
     ]],
     'leading dot segment' => [[
         'slug' => 'acme',
         'repository_url' => 'https://github.com/acme/site.git',
-        'main_branch' => 'main',
+        'default_branch' => 'main',
         'root' => './public',
     ]],
     'nested dot segment' => [[
         'slug' => 'acme',
         'repository_url' => 'https://github.com/acme/site.git',
-        'main_branch' => 'main',
+        'default_branch' => 'main',
         'root' => 'public/./assets',
     ]],
     'empty root' => [[
         'slug' => 'acme',
         'repository_url' => 'https://github.com/acme/site.git',
-        'main_branch' => 'main',
+        'default_branch' => 'main',
         'root' => '',
     ]],
 ]);
 
-it('rejects an unavailable explicit or default branch with one stable error', function (?string $mainBranch): void {
+it('rejects an unavailable explicit or default branch with one stable error', function (?string $defaultBranch): void {
     $this->branches->available = false;
     $repository = 'https://example.test/private-repository.git';
     $payload = [
@@ -257,8 +257,8 @@ it('rejects an unavailable explicit or default branch with one stable error', fu
         'root' => 'public',
     ];
 
-    if ($mainBranch !== null) {
-        $payload['main_branch'] = $mainBranch;
+    if ($defaultBranch !== null) {
+        $payload['default_branch'] = $defaultBranch;
     }
 
     $response = $this
@@ -276,8 +276,8 @@ it('rejects an unavailable explicit or default branch with one stable error', fu
         ->and(OrbitApp::query()->exists())
         ->toBeFalse();
 })->with([
-    'omitted main branch' => [null],
-    'explicit main branch' => ['main'],
+    'omitted default branch' => [null],
+    'explicit default branch' => ['main'],
 ]);
 
 it('returns 422 without persistence when the remote default branch is malformed UTF-8', function (): void {
@@ -314,9 +314,9 @@ it('rejects unsupported and duplicate App source keys', function (string $body):
     expect(OrbitApp::query()->count())->toBe(0);
 })->with([
     'unsupported key' => [
-        '{"slug":"acme","repository_url":"https://github.com/acme/site.git","main_branch":"main","root":"public","command":"id"}',
+        '{"slug":"acme","repository_url":"https://github.com/acme/site.git","default_branch":"main","root":"public","command":"id"}',
     ],
     'duplicate repository' => [
-        '{"slug":"acme","repository_url":"https://github.com/acme/site.git","repository_url":"https://github.com/acme/other.git","main_branch":"main","root":"public"}',
+        '{"slug":"acme","repository_url":"https://github.com/acme/site.git","repository_url":"https://github.com/acme/other.git","default_branch":"main","root":"public"}',
     ],
 ]);

@@ -50,7 +50,7 @@ final class ShowAppCommand extends GatewayCommand
 
         $this->info("{$app->name} [{$app->slug}] (#{$app->id})");
         $this->line("Repository: {$app->repositoryUrl}");
-        $this->line('Main branch: '.($app->mainBranch ?? '—'));
+        $this->line('Default branch: '.($app->defaultBranch ?? '—'));
         $this->line('Root: '.($app->root ?? '—'));
         $this->line("Request ID: {$app->requestId}");
 

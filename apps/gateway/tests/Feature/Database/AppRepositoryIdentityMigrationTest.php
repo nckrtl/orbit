@@ -89,7 +89,7 @@ function app_repository_identity_legacy_app(string $slug, string $repository): i
         'name' => ucfirst($slug),
         'slug' => $slug,
         'repository_url' => $repository,
-        'main_branch' => 'main',
+        'default_branch' => 'main',
         'root' => 'public',
         'created_at' => now(),
         'updated_at' => now(),

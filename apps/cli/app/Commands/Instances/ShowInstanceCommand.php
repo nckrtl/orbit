@@ -52,12 +52,16 @@ final class ShowInstanceCommand extends GatewayCommand
         $this->line("App: {$instance->appId}");
         $this->line("Node: {$instance->nodeId}");
         $this->line("Environment: {$instance->environment}");
-        $this->line("Source: {$instance->sourceKind}");
+        $this->line("Source layout: {$instance->sourceLayout}");
         $this->line("Checkout: {$instance->checkoutPath}");
         $this->line('Root override: '.($instance->root ?? '-'));
         $this->line('Effective root: '.($instance->effectiveRoot ?? '-'));
-        $this->line('Branch: '.($instance->selectedBranch ?? '-'));
+        $this->line('Selected branch: '.($instance->selectedBranch ?? '-'));
+        $this->line('Branch override: '.($instance->branchOverride ?? '-'));
+        $this->line('Migration required: '.($instance->migrationRequired ? 'yes' : 'no'));
         $this->line('Starting commit: '.($instance->startingCommit ?? '-'));
+        $this->line('Route hostname: '.($instance->hostname ?? '-'));
+        $this->line('URL: '.($instance->url ?? '-'));
 
         $this->line("Request ID: {$instance->requestId}");
 

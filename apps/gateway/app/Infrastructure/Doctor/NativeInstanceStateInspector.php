@@ -46,6 +46,7 @@ final readonly class NativeInstanceStateInspector implements InstanceStateInspec
                         $root->value,
                         $account->user,
                         $account->group,
+                        $appInstance->source_layout,
                         $appInstance->branch ?? '',
                         $appInstance->starting_commit ?? '',
                     ],
@@ -63,7 +64,7 @@ final readonly class NativeInstanceStateInspector implements InstanceStateInspec
 
         return new InstanceInspectionData(
             checkoutExists: $values[0],
-            repositoryIndependent: $values[1],
+            repositoryLayoutMatches: $values[1],
             originMatches: $values[2],
             sourceIdentityMatches: $values[3],
         );
@@ -96,8 +97,9 @@ final readonly class NativeInstanceStateInspector implements InstanceStateInspec
             allowed_root=$3
             managed_user=$4
             managed_group=$5
-            branch=$6
-            starting_commit=$7
+            source_layout=$6
+            branch=$7
+            starting_commit=$8
 
             emit() {
                 if "$@"; then printf '1\n'; else printf '0\n'; fi
@@ -109,16 +111,28 @@ final readonly class NativeInstanceStateInspector implements InstanceStateInspec
                 test "$(realpath -e "$checkout")" = "$checkout"
                 test "$(stat -c '%U:%G' "$checkout")" = "$managed_user:$managed_group"
             }
-            repository_independent() {
+            repository_layout_matches() {
                 checkout_exists
-                test -d "$checkout/.git"
-                test ! -L "$checkout/.git"
                 test "$(git -C "$checkout" rev-parse --show-toplevel)" = "$checkout"
-                test "$(git -C "$checkout" rev-parse --absolute-git-dir)" = "$checkout/.git"
-                test "$(git -C "$checkout" rev-parse --path-format=absolute --git-common-dir)" = "$checkout/.git"
+
+                git_dir=$(git -C "$checkout" rev-parse --absolute-git-dir)
+                common_dir=$(git -C "$checkout" rev-parse --path-format=absolute --git-common-dir)
+
+                if [ "$source_layout" = checkout ]; then
+                    test -d "$checkout/.git"
+                    test ! -L "$checkout/.git"
+                    test "$git_dir" = "$checkout/.git"
+                    test "$common_dir" = "$checkout/.git"
+                    return
+                fi
+
+                test "$source_layout" = worktree
+                test -f "$checkout/.git"
+                test ! -L "$checkout/.git"
+                test "$git_dir" != "$common_dir"
             }
             origin_matches() {
-                repository_independent
+                repository_layout_matches
                 test "$(git -C "$checkout" remote get-url origin)" = "$repository"
             }
             source_identity_matches() {
@@ -131,7 +145,7 @@ final readonly class NativeInstanceStateInspector implements InstanceStateInspec
             }
 
             emit checkout_exists
-            emit repository_independent
+            emit repository_layout_matches
             emit origin_matches
             emit source_identity_matches
             BASH;

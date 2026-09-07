@@ -510,7 +510,7 @@ it('does not let force offline or purge remove an app-dev role beneath an AppIns
         'name' => 'Acme',
         'slug' => 'acme',
         'repository_url' => 'https://github.com/acme/site.git',
-        'main_branch' => 'main',
+        'default_branch' => 'main',
         'root' => 'public',
     ]);
     AppInstance::query()->create([

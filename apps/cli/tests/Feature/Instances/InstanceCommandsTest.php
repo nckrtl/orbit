@@ -35,7 +35,7 @@ describe('instance:new', function (): void {
         $this
             ->artisan('help', ['command_name' => 'instance:new'])
             ->expectsOutputToContain('Create a development AppInstance on an app-dev node.')
-            ->expectsOutputToContain('Development AppInstance and branch name')
+            ->expectsOutputToContain('default is reserved for the App default source')
             ->assertExitCode(0);
     });
 
@@ -108,12 +108,39 @@ describe('instance:new', function (): void {
         ]);
     });
 
+    it('transports an optional branch without local policy validation', function (): void {
+        $mockClient = MockClient::global([
+            CreateAppInstanceRequest::class => instance_mock_response(201),
+        ]);
+
+        $this
+            ->artisan('instance:new', [
+                'app' => '3',
+                'node' => '2',
+                'name' => 'default',
+                '--branch' => 'release',
+            ])
+            ->assertExitCode(0);
+
+        expect($mockClient->getLastRequest()?->body()->all())->toBe([
+            'app_id' => 3,
+            'node_id' => 2,
+            'name' => 'default',
+            'branch' => 'release',
+        ]);
+    });
+
     it('reports the created AppInstance for humans', function (): void {
         MockClient::global([CreateAppInstanceRequest::class => instance_mock_response(201)]);
 
         $this
             ->artisan('instance:new', ['app' => '3', 'node' => '2', 'name' => 'dev'])
             ->expectsOutput('Instance [dev] is active.')
+            ->expectsOutput('Source layout: checkout')
+            ->expectsOutput('Selected branch: dev')
+            ->expectsOutput('Branch override: -')
+            ->expectsOutput('Migration required: no')
+            ->expectsOutput('Route hostname: dev.orbit.test')
             ->expectsOutput('URL: https://dev.orbit.test')
             ->expectsOutput('Request ID: '.instance_request_id())
             ->assertExitCode(0);
@@ -153,8 +180,36 @@ describe('instance:list', function (): void {
         $this
             ->artisan('instance:list')
             ->expectsTable(
-                ['ID', 'App', 'Node', 'Name', 'Environment', 'Source', 'Root', 'Branch', 'Status'],
-                [[5, 3, 2, 'dev', 'development', 'managed_clone', 'public', 'dev', 'active']],
+                [
+                    'ID',
+                    'App',
+                    'Node',
+                    'Name',
+                    'Environment',
+                    'Source layout',
+                    'Root',
+                    'Selected branch',
+                    'Branch override',
+                    'Migration required',
+                    'Route hostname',
+                    'URL',
+                    'Status',
+                ],
+                [[
+                    5,
+                    3,
+                    2,
+                    'dev',
+                    'development',
+                    'checkout',
+                    'public',
+                    'dev',
+                    '-',
+                    'no',
+                    'dev.orbit.test',
+                    'https://dev.orbit.test',
+                    'active',
+                ]],
             )
             ->expectsOutput('Request ID: '.instance_request_id())
             ->assertExitCode(0);
@@ -179,12 +234,16 @@ describe('instance:show', function (): void {
             ->expectsOutput('dev (#5): active')
             ->expectsOutput('App: 3')
             ->expectsOutput('Node: 2')
-            ->expectsOutput('Source: managed_clone')
+            ->expectsOutput('Source layout: checkout')
             ->expectsOutput('Checkout: /home/orbit/apps/orbit-docs/dev')
             ->expectsOutput('Root override: -')
             ->expectsOutput('Effective root: public')
-            ->expectsOutput('Branch: dev')
+            ->expectsOutput('Selected branch: dev')
+            ->expectsOutput('Branch override: -')
+            ->expectsOutput('Migration required: no')
             ->expectsOutput('Starting commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')
+            ->expectsOutput('Route hostname: dev.orbit.test')
+            ->expectsOutput('URL: https://dev.orbit.test')
             ->assertExitCode(0);
     });
 });
@@ -254,11 +313,13 @@ function instance_payload(): array
         'node_id' => 2,
         'name' => 'dev',
         'environment' => 'development',
-        'source_kind' => 'managed_clone',
+        'source_layout' => 'checkout',
         'checkout_path' => '/home/orbit/apps/orbit-docs/dev',
         'root' => null,
         'effective_root' => 'public',
         'selected_branch' => 'dev',
+        'branch_override' => null,
+        'migration_required' => false,
         'starting_commit' => str_repeat('a', times: 40),
         'status' => 'active',
         'route' => instance_route_payload(),

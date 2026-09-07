@@ -28,7 +28,7 @@ beforeEach(function (): void {
         'name' => 'Acme',
         'slug' => 'acme',
         'repository_url' => 'https://example.test/acme.git',
-        'main_branch' => 'main',
+        'default_branch' => 'main',
         'root' => 'public',
     ]);
     $this->node = route_removal_node('dev');

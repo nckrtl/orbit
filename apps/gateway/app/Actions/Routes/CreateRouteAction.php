@@ -90,7 +90,6 @@ final readonly class CreateRouteAction
         $resolvedHostname = $hostname === null
             ? $this->state->generatedHostname(
                 $appInstance->app->slug,
-                (string) $appInstance->app->main_branch,
                 $appInstance->name,
                 $placement->effectiveTld,
             )

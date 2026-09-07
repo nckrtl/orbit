@@ -23,7 +23,7 @@ final class StoreAppRequest extends FormRequest
             'name' => ['sometimes', 'string', 'max:255'],
             'slug' => ['required', 'string', 'alpha_dash:ascii', 'max:63'],
             'repository_url' => ['required', 'string', 'max:2048'],
-            'main_branch' => ['sometimes', 'string', 'max:255'],
+            'default_branch' => ['sometimes', 'string', 'max:255'],
             'root' => ['required', 'string', 'max:255'],
             'defaults' => ['nullable', 'array'],
         ];
@@ -34,7 +34,7 @@ final class StoreAppRequest extends FormRequest
         try {
             return app(TopLevelJsonObjectInspector::class)->inspect(
                 $this->getContent(),
-                ['name', 'slug', 'repository_url', 'main_branch', 'root', 'defaults'],
+                ['name', 'slug', 'repository_url', 'default_branch', 'root', 'defaults'],
             );
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
@@ -73,7 +73,7 @@ final class StoreAppRequest extends FormRequest
             name: is_string($validated['name'] ?? null) ? $validated['name'] : $slug,
             slug: $slug,
             repositoryUrl: (string) $validated['repository_url'],
-            mainBranch: is_string($validated['main_branch'] ?? null) ? $validated['main_branch'] : null,
+            defaultBranch: is_string($validated['default_branch'] ?? null) ? $validated['default_branch'] : null,
             root: (string) $validated['root'],
             defaults: $defaults,
         );
@@ -81,10 +81,10 @@ final class StoreAppRequest extends FormRequest
 
     private function validateSourceDefaults(Validator $validator): void
     {
-        $branch = $this->input('main_branch');
+        $branch = $this->input('default_branch');
 
         if (is_string($branch) && ! GitBranchName::isValid($branch)) {
-            $validator->errors()->add('main_branch', 'The main branch is not a valid Git branch name.');
+            $validator->errors()->add('default_branch', 'The default branch is not a valid Git branch name.');
         }
 
         $root = $this->input('root');

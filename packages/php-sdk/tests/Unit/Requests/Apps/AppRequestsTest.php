@@ -52,7 +52,7 @@ describe('app requests', function (): void {
             repositoryUrl: 'git@github.com:nckrtl/orbit-docs.git',
             root: 'web/public',
             name: 'Orbit Docs',
-            mainBranch: 'stable',
+            defaultBranch: 'stable',
             defaults: ['php_version' => '8.5'],
         );
 
@@ -60,7 +60,7 @@ describe('app requests', function (): void {
             'name' => 'Orbit Docs',
             'slug' => 'orbit-docs',
             'repository_url' => 'git@github.com:nckrtl/orbit-docs.git',
-            'main_branch' => 'stable',
+            'default_branch' => 'stable',
             'root' => 'web/public',
             'defaults' => ['php_version' => '8.5'],
         ]);
@@ -154,7 +154,7 @@ function app_gateway_data(): array
         'name' => 'orbit-docs',
         'slug' => 'orbit-docs',
         'repository_url' => 'git@github.com:nckrtl/orbit-docs.git',
-        'main_branch' => 'main',
+        'default_branch' => 'main',
         'root' => 'public',
         'defaults' => null,
     ];

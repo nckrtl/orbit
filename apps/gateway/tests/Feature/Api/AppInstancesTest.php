@@ -2,7 +2,8 @@
 
 declare(strict_types=1);
 
-use App\Domain\AppInstances\AppInstanceSourceKind;
+use App\Domain\AppInstances\AppInstanceDestinationGuard;
+use App\Domain\AppInstances\AppInstanceSourceLayout;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\AppInstances\DevelopmentAppInstanceConfigurator;
 use App\Domain\AppInstances\DevelopmentAppInstanceSourceLifecycle;
@@ -32,6 +33,21 @@ use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
 beforeEach(function (): void {
+    $this->destination = new class implements AppInstanceDestinationGuard {
+        public bool $occupied = false;
+
+        public function assertUnoccupied(Node $node, \App\Domain\Nodes\Storage\StoragePath $destination): void
+        {
+            if ($this->occupied) {
+                throw new ResourceOperationException(
+                    'instance.migration_conflict',
+                    'AppInstance destination is occupied by unmanaged data.',
+                    409,
+                );
+            }
+        }
+    };
+    app()->instance(AppInstanceDestinationGuard::class, $this->destination);
     app()->instance(RoleBaselineConverger::class, new class implements RoleBaselineConverger {
         public function converge(Node $node, NodeRole $assignment): void {}
 
@@ -64,6 +80,8 @@ beforeEach(function (): void {
         public array $prepareExisting = [];
 
         public ?string $fail = null;
+
+        public string $failureCode = 'instance.source_interrupted';
 
         public DevelopmentSourceResolution $resolution;
 
@@ -107,7 +125,7 @@ beforeEach(function (): void {
             $this->calls[] = "{$operation}:{$appInstance->status->value}";
 
             if ($this->fail === $operation) {
-                throw new ResourceOperationException('instance.source_interrupted', 'Source operation interrupted.');
+                throw new ResourceOperationException($this->failureCode, 'Source operation interrupted.');
             }
         }
     };
@@ -141,12 +159,12 @@ beforeEach(function (): void {
         'name' => 'Acme',
         'slug' => 'acme',
         'repository_url' => 'https://github.com/acme/site.git',
-        'main_branch' => 'main',
+        'default_branch' => 'main',
         'root' => 'public',
     ]);
 });
 
-it('creates an active managed-clone AppInstance on a standalone Node with inherited root', function (): void {
+it('creates an active checkout AppInstance on a standalone Node with inherited root', function (): void {
     $requestId = (string) Str::uuid();
     $response = $this->postJson(
         '/api/v1/instances',
@@ -161,11 +179,13 @@ it('creates an active managed-clone AppInstance on a standalone Node with inheri
     $response
         ->assertCreated()
         ->assertJsonMissingPath('data.cluster_id')
-        ->assertJsonPath('data.source_kind', 'managed_clone')
+        ->assertJsonPath('data.source_layout', 'checkout')
         ->assertJsonPath('data.checkout_path', '/srv/orbit/apps/acme/dev')
         ->assertJsonPath('data.root', null)
         ->assertJsonPath('data.effective_root', 'public')
         ->assertJsonPath('data.selected_branch', 'dev')
+        ->assertJsonPath('data.branch_override', null)
+        ->assertJsonPath('data.migration_required', false)
         ->assertJsonMissingPath('data.branch')
         ->assertJsonPath('data.starting_commit', str_repeat('a', 40))
         ->assertJsonPath('data.status', 'active');
@@ -182,13 +202,17 @@ it('creates an active managed-clone AppInstance on a standalone Node with inheri
         ])
         ->and($this->source->prepareExisting)
         ->toBe([false])
-        ->and(AppInstance::query()->sole()->source_kind)
-        ->toBe(AppInstanceSourceKind::ManagedClone->value)
+        ->and(AppInstance::query()->sole()->source_layout)
+        ->toBe(AppInstanceSourceLayout::Checkout->value)
         ->and(Activity::query()->where('request_id', $requestId)->sole()->subject_type)
         ->toBe(AppInstance::class)
-        ->and(Activity::query()->where('request_id', $requestId)->sole()->properties?->get('source_kind'))
-        ->toBe('managed_clone')
-        ->and(Schema::hasColumn('app_instances', 'source_kind'))
+        ->and(Activity::query()->where('request_id', $requestId)->sole()->properties?->get('source_layout'))
+        ->toBe('checkout')
+        ->and(Activity::query()->where('request_id', $requestId)->sole()->properties?->get('branch_override'))
+        ->toBeNull()
+        ->and(Activity::query()->where('request_id', $requestId)->sole()->properties?->get('migration_required'))
+        ->toBeFalse()
+        ->and(Schema::hasColumn('app_instances', 'source_layout'))
         ->toBeTrue()
         ->and(Schema::hasColumn('app_instances', 'cluster_id'))
         ->toBeFalse()
@@ -209,12 +233,128 @@ it('creates an active managed-clone AppInstance on a standalone Node with inheri
         ->toBe(AppInstance::query()->sole()->id);
 });
 
+it('keeps explicit branch selection separate from default identity and Route identity', function (): void {
+    $this->source->resolution = new DevelopmentSourceResolution('release', str_repeat('b', 40));
+
+    $response = $this->postJson('/api/v1/instances', [
+        'app_id' => $this->orbitApp->id,
+        'node_id' => $this->node->id,
+        'name' => 'default',
+        'branch' => 'release',
+    ]);
+
+    $response
+        ->assertCreated()
+        ->assertJsonPath('data.name', 'default')
+        ->assertJsonPath('data.checkout_path', '/srv/orbit/apps/acme/default')
+        ->assertJsonPath('data.selected_branch', 'release')
+        ->assertJsonPath('data.branch_override', 'release')
+        ->assertJsonPath('data.hostname', 'acme.test');
+});
+
+it('retains explicit override intent when it equals the App default branch', function (): void {
+    $this->source->resolution = new DevelopmentSourceResolution('main', str_repeat('b', 40));
+
+    $this
+        ->postJson('/api/v1/instances', [
+            'app_id' => $this->orbitApp->id,
+            'node_id' => $this->node->id,
+            'name' => 'default',
+            'branch' => 'main',
+        ])
+        ->assertCreated()
+        ->assertJsonPath('data.selected_branch', 'main')
+        ->assertJsonPath('data.branch_override', 'main');
+});
+
+it('rejects invalid branch input before persistence or source work', function (): void {
+    $this
+        ->postJson('/api/v1/instances', [
+            'app_id' => $this->orbitApp->id,
+            'node_id' => $this->node->id,
+            'name' => 'default',
+            'branch' => '../release',
+        ])
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'validation.failed')
+        ->assertJsonPath('error.details.branch.0', 'The branch is not a valid Git branch name.');
+
+    expect(AppInstance::query()->count())
+        ->toBe(0)
+        ->and(Route::query()->count())
+        ->toBe(0)
+        ->and($this->source->calls)
+        ->toBe([]);
+});
+
+it('reports an absent explicit remote branch without fallback or publication', function (): void {
+    $this->source->fail = 'resolve';
+    $this->source->failureCode = 'instance.branch_resolution_failed';
+
+    $this
+        ->postJson('/api/v1/instances', [
+            'app_id' => $this->orbitApp->id,
+            'node_id' => $this->node->id,
+            'name' => 'default',
+            'branch' => 'missing',
+        ])
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'instance.branch_resolution_failed');
+
+    expect(AppInstance::query()->sole()->branch_override)
+        ->toBe('missing')
+        ->and(AppInstance::query()->sole()->status)
+        ->toBe(AppInstanceState::CheckoutPrepared)
+        ->and(Route::query()->sole()->status)
+        ->toBe(RouteStatus::Failed);
+});
+
+it('rejects added removed or changed branch override on creation retry before mutation', function (
+    ?string $original,
+    ?string $retry,
+): void {
+    $this->source->resolution = new DevelopmentSourceResolution($original ?? 'dev', str_repeat('b', 40));
+    $payload = [
+        'app_id' => $this->orbitApp->id,
+        'node_id' => $this->node->id,
+        'name' => 'dev',
+    ];
+
+    if ($original !== null) {
+        $payload['branch'] = $original;
+    }
+
+    $this->postJson('/api/v1/instances', $payload)->assertCreated();
+    $before = AppInstance::query()->sole()->getAttributes();
+    $this->source->calls = [];
+
+    if ($retry === null) {
+        unset($payload['branch']);
+    } else {
+        $payload['branch'] = $retry;
+    }
+
+    $this
+        ->postJson('/api/v1/instances', $payload)
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'instance.placement_conflict');
+
+    expect(AppInstance::query()->sole()->getAttributes())
+        ->toBe($before)
+        ->and($this->source->calls)
+        ->toBe([]);
+})->with([
+    'changed' => ['release', 'hotfix'],
+    'removed' => ['release', null],
+    'added' => [null, 'release'],
+]);
+
 it('creates explicit Routes during provisioning and preserves exact retry identity', function (): void {
     $this->source->resolution = new DevelopmentSourceResolution('main', str_repeat('a', 40));
     $payload = [
         'app_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
-        'name' => 'main',
+        'name' => 'default',
         'hostname' => 'Preview.Example.Test',
     ];
 
@@ -287,7 +427,7 @@ it('uses Node TLD before active Cluster fallback while Cluster membership select
     $this->postJson('/api/v1/instances', [
         'app_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
-        'name' => 'main',
+        'name' => 'default',
     ])->assertCreated();
 
     expect(Route::query()->sole()->hostname)
@@ -342,7 +482,7 @@ it('creates equivalent source on Nodes in every optional Cluster state', functio
         ])
         ->assertCreated()
         ->assertJsonMissingPath('data.cluster_id')
-        ->assertJsonPath('data.source_kind', 'managed_clone')
+        ->assertJsonPath('data.source_layout', 'checkout')
         ->assertJsonPath('data.status', 'active');
 
     expect(AppInstance::query()->sole()->getAttributes())->not->toHaveKey('cluster_id');
@@ -413,7 +553,7 @@ it('transports a root override and returns it as the effective root', function (
 });
 
 it('fails before mutation when a legacy App has incomplete source defaults', function (): void {
-    $this->orbitApp->update(['main_branch' => null, 'root' => null]);
+    $this->orbitApp->update(['default_branch' => null, 'root' => null]);
 
     $this
         ->postJson('/api/v1/instances', [
@@ -579,7 +719,7 @@ it('keeps the first checkout immutable when a later AppInstance uses a changed a
         ->toBe('/srv/orbit/apps/acme/dev');
 });
 
-it('rejects immutable root and source-kind conflicts on retry', function (string $conflict): void {
+it('rejects immutable root and source-layout conflicts on retry', function (string $conflict): void {
     $payload = [
         'app_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
@@ -591,7 +731,7 @@ it('rejects immutable root and source-kind conflicts on retry', function (string
     if ($conflict === 'root') {
         $payload['root'] = 'other/public';
     } else {
-        AppInstance::query()->sole()->update(['source_kind' => 'registered_worktree']);
+        AppInstance::query()->sole()->update(['source_layout' => 'worktree']);
     }
     $before = AppInstance::query()->sole()->getAttributes();
 
@@ -602,7 +742,104 @@ it('rejects immutable root and source-kind conflicts on retry', function (string
     expect(AppInstance::query()->sole()->getAttributes())->toBe($before);
 
     expect($this->source->calls)->toBeEmpty();
-})->with(['root', 'source kind']);
+})->with(['root', 'source layout']);
+
+it('returns migration required before retry or removal mutates a legacy default', function (
+    string $operation,
+): void {
+    $payload = [
+        'app_id' => $this->orbitApp->id,
+        'node_id' => $this->node->id,
+        'name' => 'dev',
+    ];
+    $created = $this->postJson('/api/v1/instances', $payload)->assertCreated();
+    $instance = AppInstance::query()->sole();
+    $instance->update(['migration_required' => true]);
+    $before = $instance->refresh()->getAttributes();
+    $this->source->calls = [];
+
+    $response = $operation === 'retry'
+        ? $this->postJson('/api/v1/instances', $payload)
+        : $this->deleteJson("/api/v1/instances/{$created->json('data.id')}");
+
+    $response
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'instance.migration_required');
+    expect(AppInstance::query()->sole()->getAttributes())
+        ->toBe($before)
+        ->and($this->source->calls)
+        ->toBe([]);
+})->with(['retry', 'remove']);
+
+it('returns migration conflict for an occupied reserved default identity before mutation', function (): void {
+    $this->source->resolution = new DevelopmentSourceResolution('main', str_repeat('b', 40));
+    $payload = [
+        'app_id' => $this->orbitApp->id,
+        'node_id' => $this->node->id,
+        'name' => 'default',
+    ];
+    $this->postJson('/api/v1/instances', $payload)->assertCreated();
+    AppInstance::query()->sole()->update(['checkout_path' => '/srv/orbit/apps/acme/legacy-default']);
+    $before = AppInstance::query()->sole()->getAttributes();
+    $this->source->calls = [];
+
+    $this
+        ->postJson('/api/v1/instances', $payload)
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'instance.migration_conflict')
+        ->assertJsonPath('error.message', 'The reserved default AppInstance identity is occupied by another source.');
+
+    expect(AppInstance::query()->sole()->getAttributes())
+        ->toBe($before)
+        ->and($this->source->calls)
+        ->toBe([]);
+});
+
+it('returns migration conflict for a managed default destination overlap before mutation', function (): void {
+    Instance::query()->create([
+        'app_id' => $this->orbitApp->id,
+        'node_id' => $this->node->id,
+        'name' => 'legacy',
+        'environment' => 'development',
+        'checkout_path' => '/srv/orbit/apps/acme/default',
+        'hostname' => 'legacy.example.test',
+        'certificate_mode' => CertificateMode::OrbitCa,
+        'status' => LifecycleStatus::Active,
+    ]);
+
+    $this
+        ->postJson('/api/v1/instances', [
+            'app_id' => $this->orbitApp->id,
+            'node_id' => $this->node->id,
+            'name' => 'default',
+        ])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'instance.migration_conflict');
+
+    expect(AppInstance::query()->count())
+        ->toBe(0)
+        ->and($this->source->calls)
+        ->toBe([]);
+});
+
+it('returns migration conflict for an unmanaged occupied default destination before mutation', function (): void {
+    $this->destination->occupied = true;
+
+    $this
+        ->postJson('/api/v1/instances', [
+            'app_id' => $this->orbitApp->id,
+            'node_id' => $this->node->id,
+            'name' => 'default',
+        ])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'instance.migration_conflict')
+        ->assertJsonPath('error.message', 'AppInstance destination is occupied by unmanaged data.');
+
+    expect(AppInstance::query()->count())
+        ->toBe(0)
+        ->and($this->source->calls)
+        ->toBe([]);
+});
 
 it('treats active creation evidence as terminal when development HEAD advances', function (): void {
     $payload = [
@@ -635,7 +872,7 @@ it('rejects repository execution and unsupported transport keys', function (): v
             'name' => 'dev',
             'repository_url' => 'https://github.com/acme/other.git',
             'cluster_id' => 1,
-            'source_kind' => 'managed_clone',
+            'source_layout' => 'checkout',
             'checkout_path' => '/tmp/acme',
             'command' => 'id',
         ])
@@ -678,7 +915,7 @@ it('keeps overlapping AppInstance and legacy Instance IDs in separate endpoint d
         ->getJson("/api/v1/instances/{$legacy->id}")
         ->assertOk()
         ->assertJsonPath('data.name', 'dev')
-        ->assertJsonPath('data.source_kind', 'managed_clone');
+        ->assertJsonPath('data.source_layout', 'checkout');
     $this
         ->getJson("/api/v1/workspaces/{$workspace->id}")
         ->assertOk()

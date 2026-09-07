@@ -6,6 +6,7 @@ namespace App\Http\Requests\AppInstances;
 
 use App\Data\AppInstances\CreateAppInstanceData;
 use App\Domain\Routes\RouteHostname;
+use App\Domain\SourceControl\GitBranchName;
 use App\Domain\SourceControl\RelativeWebRoot;
 use App\Http\Requests\TopLevelJsonObjectInspector;
 use App\Models\App as OrbitApp;
@@ -32,6 +33,7 @@ final class StoreAppInstanceRequest extends FormRequest
             ],
             'root' => ['sometimes', 'string', 'max:255'],
             'hostname' => ['sometimes', 'string', 'max:253'],
+            'branch' => ['sometimes', 'string', 'max:255'],
         ];
     }
 
@@ -40,7 +42,7 @@ final class StoreAppInstanceRequest extends FormRequest
         try {
             return app(TopLevelJsonObjectInspector::class)->inspect(
                 $this->getContent(),
-                ['app_id', 'node_id', 'name', 'root', 'hostname'],
+                ['app_id', 'node_id', 'name', 'root', 'hostname', 'branch'],
             );
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
@@ -62,6 +64,12 @@ final class StoreAppInstanceRequest extends FormRequest
             if (is_string($hostname) && ! RouteHostname::isValid($hostname)) {
                 $validator->errors()->add('hostname', 'The Route hostname is invalid.');
             }
+
+            $branch = $this->input('branch');
+
+            if (is_string($branch) && ! GitBranchName::isValid($branch)) {
+                $validator->errors()->add('branch', 'The branch is not a valid Git branch name.');
+            }
         }];
     }
 
@@ -78,6 +86,7 @@ final class StoreAppInstanceRequest extends FormRequest
             hostname: is_string($validated['hostname'] ?? null)
                 ? RouteHostname::normalize($validated['hostname'])
                 : null,
+            branch: is_string($validated['branch'] ?? null) ? $validated['branch'] : null,
         );
     }
 }

@@ -195,11 +195,12 @@ it('observes only AppInstance source evidence through the fixed SSH boundary', f
             '/srv/users/nckrtl/apps',
             'nckrtl',
             'nckrtl',
+            $appInstance->source_layout,
             $appInstance->branch,
             $appInstance->starting_commit,
         ])
         ->and($ssh->commands[0]->input)
-        ->toContain('repository_independent', 'origin_matches', 'source_identity_matches')
+        ->toContain('repository_layout_matches', 'origin_matches', 'source_identity_matches')
         ->not->toContain('caddy', 'php', 'certificate', 'dns', 'hostname');
 });
 
@@ -266,6 +267,7 @@ it('reports shared AppInstance Git administration as non-independent', function 
                 "{$sandbox}/apps",
                 $user,
                 $group,
+                'checkout',
                 'development',
                 $startingCommit,
             ],
@@ -547,7 +549,7 @@ function application_inspector_instance(App $app, Node $node, CertificateMode $m
 
 function application_app_instance(App $app, Node $node): AppInstance
 {
-    $app->update(['main_branch' => 'main', 'root' => 'public']);
+    $app->update(['default_branch' => 'main', 'root' => 'public']);
 
     return AppInstance::query()->create([
         'app_id' => $app->id,
