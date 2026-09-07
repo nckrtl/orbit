@@ -560,27 +560,22 @@ function commandTopologyFixture(
         ['gateway', 'app-dev', 'app-prod'],
         ['gateway', 'app-dev'],
     );
+    $construction = $recipe?->nodeKeys() === \App\E2E\Value\TopologyRecipe::extendedAppProd()->nodeKeys()
+        ? \App\E2E\Value\TopologyConstructionInputs::create(
+            $target,
+            $generation,
+            2,
+            \App\E2E\Value\TopologyExtension::AppProd,
+            str_repeat('f', 64),
+        )
+        : \App\E2E\Value\TopologyConstructionInputs::create($target, $generation, 2);
 
     return new \App\E2E\Value\FeatureTopology(
-        $target,
+        $construction,
         $purpose,
         $generation,
-        $target->network(),
-        array_combine(
-            $target->recipe->nodeKeys(),
-            array_map($target->instance(...), $target->recipe->nodeKeys()),
-        ),
         new \App\E2E\Value\SourceState(str_repeat('d', 40), str_repeat('d', 40)),
         new \App\E2E\Value\VerificationReport(true, ['ready' => verificationProbeFixture(probe: 'ready')]),
-        construction: $recipe?->nodeKeys() === \App\E2E\Value\TopologyRecipe::extendedAppProd()->nodeKeys()
-            ? \App\E2E\Value\TopologyConstructionInputs::create(
-                $target,
-                $generation,
-                2,
-                \App\E2E\Value\TopologyExtension::AppProd,
-                str_repeat('f', 64),
-            )
-            : null,
     );
 }
 

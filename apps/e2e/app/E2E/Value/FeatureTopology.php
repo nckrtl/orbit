@@ -14,59 +14,46 @@ final readonly class FeatureTopology
     /** The one disk device name a mounted worktree uses on every checkout role. */
     public const string SOURCE_DEVICE = 'orbit-source';
 
-    public TopologyConstructionInputs $construction;
+    public TopologyTarget $target;
+
+    public string $network;
+
+    /** @var array<string, string> */
+    public array $instances;
 
     /** The exact attempt this topology belongs to; two attempts of one issue never share resources. */
     public AttemptId $attempt;
 
     /**
-     * @param array<array-key, mixed> $instances
      * @param array<string, array{device:string,source:string,path:string}> $mounts
-     * @mago-expect lint:excessive-parameter-list The manifest keeps eight independent typed fields.
+     * @mago-expect lint:excessive-parameter-list The manifest keeps six independent typed fields.
      */
     public function __construct(
-        public TopologyTarget $target,
+        public TopologyConstructionInputs $construction,
         public AttemptPurpose $purpose,
         public TopologySnapshotGeneration $generation,
-        public string $network,
-        public array $instances,
         public SourceState $source,
         public VerificationReport $verification,
         public array $mounts = [],
-        ?TopologyConstructionInputs $construction = null,
     ) {
+        $this->target = $this->construction->target;
+
+        $target = $this->target;
         if ($target->isTopologySnapshot() || $target->attempt === null) {
             throw new InvalidArgumentException('A feature topology requires an attempt-scoped target.');
         }
 
         $this->attempt = $target->attempt;
-
-        if ($network !== $target->network() || array_keys($instances) !== $target->recipe->nodeKeys()) {
-            throw new InvalidArgumentException('The topology resources do not match the target.');
-        }
-
-        $this->construction = $construction ?? TopologyConstructionInputs::create($target, $generation, 2);
-        if (
-            $this->construction->target->issue !== $target->issue
-            || $this->construction->target->requireAttempt()->value !== $target->requireAttempt()->value
-            || $this->construction->target->recipe->nodeKeys() !== $target->recipe->nodeKeys()
-            || $this->construction->sourceGeneration !== $generation->id
-        ) {
+        if ($this->construction->sourceGeneration !== $generation->id) {
             throw new InvalidArgumentException('The topology construction inputs do not match the target.');
         }
 
-        foreach ($instances as $role => $instance) {
-            if (! is_string($role)) {
-                throw new InvalidArgumentException('Topology instance roles must be strings.');
-            }
-            if ($instance !== $target->instance($role)) {
-                throw new InvalidArgumentException('A topology instance does not match its role.');
-            }
+        $this->network = $target->network();
+        $instances = [];
+        foreach ($this->construction->nodes as $role => $node) {
+            $instances[$role] = $node['instance'];
         }
-
-        if (count(array_unique($instances)) !== count($instances)) {
-            throw new InvalidArgumentException('Topology resource identities must be unique.');
-        }
+        $this->instances = $instances;
 
         self::validateMounts($mounts, $source->mounted ? $target->recipe->checkoutNodeKeys() : []);
     }
@@ -178,16 +165,23 @@ final readonly class FeatureTopology
 
         $construction = TopologyConstructionInputs::fromArray($value['construction']);
 
-        return new self(
-            $construction->target,
+        $topology = new self(
+            $construction,
             $purpose,
             TopologySnapshotGeneration::fromArray($value['generation']),
-            $value['network'],
-            $value['instances'],
             SourceState::fromArray($value['source']),
             VerificationReport::fromArray($value['verification']),
             $mounts,
-            $construction,
         );
+        if (
+            $value['issue'] !== $topology->target->issue
+            || $value['attempt_id'] !== $topology->attempt->value
+            || $value['network'] !== $topology->network
+            || $value['instances'] !== $topology->instances
+        ) {
+            throw new InvalidArgumentException('The feature topology identity does not match its construction inputs.');
+        }
+
+        return $topology;
     }
 }

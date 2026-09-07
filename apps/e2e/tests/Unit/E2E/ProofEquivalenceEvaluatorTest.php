@@ -124,11 +124,9 @@ function proofEquivalenceFixture(bool $observedInputs = false): array
     $state = IssueState::forWorktree('AUX-99', $root);
     $state->writeAttempt($attempt, AttemptPurpose::Proof, new OperationId(str_repeat('b', 32)));
     $state->writeTopology(new FeatureTopology(
-        $target,
+        $manifest->construction,
         AttemptPurpose::Proof,
         proofEquivalenceGeneration($main),
-        $target->network(),
-        array_combine(TopologyProfile::ROLES, array_map($target->instance(...), TopologyProfile::ROLES)),
         new SourceState($proved, $proved),
         new VerificationReport(true, [
             'proof.verify' => [

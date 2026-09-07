@@ -234,15 +234,12 @@ final readonly class TopologyAcquirer
                 );
             }
             $topology = new FeatureTopology(
-                $target,
+                $construction,
                 AttemptPurpose::Discovery,
                 $generation,
-                $target->network(),
-                array_combine($recipe->nodeKeys(), $instances),
                 $source,
                 $verification,
                 $mounts,
-                $construction,
             );
             $state->writeTopology($topology);
 
@@ -326,15 +323,12 @@ final readonly class TopologyAcquirer
         \App\E2E\Value\VerificationReport $verification,
     ): FeatureTopology {
         return new FeatureTopology(
-            $topology->target,
+            $topology->construction,
             $topology->purpose,
             $topology->generation,
-            $topology->network,
-            $topology->instances,
             $source,
             $verification,
             $topology->mounts,
-            $topology->construction,
         );
     }
 
