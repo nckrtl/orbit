@@ -136,6 +136,8 @@ it('preserves narrow existing traversal permissions when writing the gateway con
     expect(fileperms($this->configDirectory) & 0o777)
         ->toBe(0o710)
         ->and(fileperms($this->configPath) & 0o777)
+        ->toBe(0o600)
+        ->and(fileperms($this->configPath.'.lock') & 0o777)
         ->toBe(0o600);
 });
 
@@ -158,6 +160,30 @@ it('rejects an existing gateway configuration directory readable by other users'
 
     expect(fn () => $repository->add(new GatewayProfile('test', 'https://10.70.0.1', null)))
         ->toThrow(GatewayConfigException::class, 'Orbit gateway configuration directory is not private.');
+});
+
+it('rejects a gateway configuration lock readable by other users', function (): void {
+    $repository = new GatewayConfigRepository($this->configPath);
+    $repository->add(new GatewayProfile('test', 'https://10.70.0.1', null));
+    chmod(filename: $this->configPath.'.lock', permissions: 0o644);
+    $original = file_get_contents($this->configPath);
+
+    expect(fn () => $repository->add(new GatewayProfile('production', 'https://10.80.0.1', null)))
+        ->toThrow(GatewayConfigException::class, 'Orbit gateway configuration lock is not private.');
+    expect(file_get_contents($this->configPath))->toBe($original);
+});
+
+it('rejects a symbolic-link gateway configuration lock without changing its target', function (): void {
+    mkdir(directory: $this->configDirectory, permissions: 0o700, recursive: true);
+    $target = $this->configDirectory.'/target';
+    file_put_contents(filename: $target, data: 'unchanged');
+    chmod(filename: $target, permissions: 0o600);
+    symlink($target, $this->configPath.'.lock');
+    $repository = new GatewayConfigRepository($this->configPath);
+
+    expect(fn () => $repository->add(new GatewayProfile('test', 'https://10.70.0.1', null)))
+        ->toThrow(GatewayConfigException::class, 'Orbit gateway configuration lock is not private.');
+    expect(file_get_contents($target))->toBe('unchanged');
 });
 
 function write_gateway_security_config(
