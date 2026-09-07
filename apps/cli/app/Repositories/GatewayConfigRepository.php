@@ -28,25 +28,29 @@ final readonly class GatewayConfigRepository
             throw new GatewayConfigException('Gateway profile is invalid.');
         }
 
-        $config = $this->read();
-        $config['gateways'][$profile->name] = $profile->toArray();
+        new GatewayConfigLock($this->path)->synchronized(function () use ($profile): void {
+            $config = $this->read();
+            $config['gateways'][$profile->name] = $profile->toArray();
 
-        $config['active_gateway'] ??= $profile->name;
+            $config['active_gateway'] ??= $profile->name;
 
-        $this->write($config);
+            $this->write($config);
+        });
     }
 
     public function use(string $name): void
     {
-        $config = $this->read();
+        new GatewayConfigLock($this->path)->synchronized(function () use ($name): void {
+            $config = $this->read();
 
-        if (! array_key_exists($name, $config['gateways'])) {
-            throw new GatewayConfigException("Gateway profile [{$name}] does not exist.");
-        }
+            if (! array_key_exists($name, $config['gateways'])) {
+                throw new GatewayConfigException("Gateway profile [{$name}] does not exist.");
+            }
 
-        $config['active_gateway'] = $name;
+            $config['active_gateway'] = $name;
 
-        $this->write($config);
+            $this->write($config);
+        });
     }
 
     public function active(): ?GatewayProfile
@@ -162,38 +166,7 @@ final readonly class GatewayConfigRepository
     /** @param array{active_gateway: ?string, gateways: array<string, array<string, mixed>>} $config */
     private function write(array $config): void
     {
-        $directory = dirname($this->path);
-        $directoryCreated = false;
-
-        if (! is_dir($directory)) {
-            $directoryCreated = mkdir(directory: $directory, permissions: 0o700, recursive: true);
-
-            if (! $directoryCreated && ! is_dir($directory)) {
-                throw new GatewayConfigException('Could not update Orbit gateway configuration.');
-            }
-        }
-
-        if ($directoryCreated && ! chmod(filename: $directory, permissions: 0o700)) {
-            throw new GatewayConfigException('Could not update Orbit gateway configuration.');
-        }
-
-        if (! $directoryCreated) {
-            $permissions = fileperms($directory);
-            $owner = fileowner($directory);
-            $effectiveUserId = function_exists('posix_geteuid') ? posix_geteuid() : null;
-
-            if (
-                is_link($directory)
-                || ! is_int($permissions)
-                || ($permissions & 0o700) !== 0o700
-                || ($permissions & 0o067) !== 0
-                || ! is_int($owner)
-                || ! is_int($effectiveUserId)
-                || $owner !== $effectiveUserId
-            ) {
-                throw new GatewayConfigException('Orbit gateway configuration directory is not private.');
-            }
-        }
+        $directory = new GatewayConfigLock($this->path)->ensurePrivateDirectory();
 
         $temporaryPath = $this->path.'.tmp.'.bin2hex(random_bytes(8));
 
