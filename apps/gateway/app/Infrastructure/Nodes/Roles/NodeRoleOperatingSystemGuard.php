@@ -7,6 +7,7 @@ namespace App\Infrastructure\Nodes\Roles;
 use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\UbuntuRelease;
+use App\Infrastructure\Nodes\OsReleaseParserProgram;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
@@ -50,8 +51,9 @@ final readonly class NodeRoleOperatingSystemGuard
                     '-seu',
                     '--',
                     $role->value,
-                    (string) count($requiredReleases),
+                    'ubuntu',
                     UbuntuRelease::unsupportedText(),
+                    (string) count($requiredReleases),
                     ...array_map(
                         static fn (UbuntuRelease $release): string => $release->value,
                         $requiredReleases,
@@ -60,66 +62,7 @@ final readonly class NodeRoleOperatingSystemGuard
                 input: <<<'BASH'
                     role=$1
                     shift
-                    release_count=$1
-                    shift
-                    unsupported_text=$1
-                    shift
-
-                    fail_os() {
-                        if [ "$#" -eq 2 ] && [ -n "$1" ] && [ -n "$2" ]; then
-                            printf 'Node operating system [%s/%s] is not supported.\n' "$1" "$2" >&2
-                        else
-                            printf '%s\n' "$unsupported_text" >&2
-                        fi
-                        exit 1
-                    }
-
-                    if ! [ -r /etc/os-release ]; then
-                        fail_os
-                    fi
-
-                    os_id=
-                    os_codename=
-                    found_id=false
-                    found_codename=false
-                    while IFS= read -r line || [ -n "$line" ]; do
-                        case "$line" in
-                    ID=*)
-                        [ "$found_id" = false ] || fail_os
-                        os_id=${line#ID=}
-                        if [[ "$os_id" =~ ^\"[A-Za-z0-9._-]+\"$ ]]; then os_id=${os_id:1:${#os_id}-2};
-                        elif [[ "$os_id" =~ ^\'[A-Za-z0-9._-]+\'$ ]]; then os_id=${os_id:1:${#os_id}-2};
-                        elif [[ ! "$os_id" =~ ^[A-Za-z0-9._-]+$ ]]; then fail_os; fi
-                        found_id=true
-                                ;;
-                            VERSION_CODENAME=*)
-                                [ "$found_codename" = false ] || fail_os
-                                os_codename=${line#VERSION_CODENAME=}
-                        if [[ "$os_codename" =~ ^\"[A-Za-z0-9._-]+\"$ ]]; then os_codename=${os_codename:1:${#os_codename}-2};
-                        elif [[ "$os_codename" =~ ^\'[A-Za-z0-9._-]+\'$ ]]; then os_codename=${os_codename:1:${#os_codename}-2};
-                        elif [[ ! "$os_codename" =~ ^[A-Za-z0-9._-]+$ ]]; then fail_os; fi
-                        found_codename=true
-                                ;;
-                        esac
-                    done < /etc/os-release
-
-                    if [ "$found_id" != true ] || [ "$found_codename" != true ]; then
-                        fail_os
-                    fi
-
-                    supported_release=false
-                    for _ in $(seq 1 "$release_count"); do
-                        supported_codename=$1
-                        shift
-                        if [ "$os_codename" = "$supported_codename" ]; then
-                            supported_release=true
-                        fi
-                    done
-
-                    if [ "$os_id" != 'ubuntu' ] || [ "$supported_release" != 'true' ]; then
-                        fail_os "$os_id" "$os_codename"
-                    fi
-                    BASH,
+                    BASH."\n".OsReleaseParserProgram::render(),
             ),
         );
 
