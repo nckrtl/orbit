@@ -22,8 +22,8 @@ final readonly class ListAppsAction
             ->when(
                 ! $this->access->hasGatewayAuthority($consumer),
                 fn ($query) => $query->whereHas(
-                    'instances',
-                    fn ($instances) => $instances->whereIn(
+                    'appInstances',
+                    fn ($appInstances) => $appInstances->whereIn(
                         'node_id',
                         $this->access->accessibleNodeIds($consumer),
                     ),
