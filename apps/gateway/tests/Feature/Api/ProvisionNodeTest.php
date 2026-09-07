@@ -97,8 +97,9 @@ describe('POST /api/v1/nodes', function (): void {
             ->toBe($cluster->id)
             ->and($node->wireguard_ip)
             ->toBe('10.44.0.3')
-            ->and($node->wireguard_address)
-            ->toBe('10.44.0.3')
+            ->and($node->getAttributes())
+            ->not
+            ->toHaveKey('wireguard_address')
             ->and($node->lan_ip)
             ->toBe('10.0.0.3');
     });
