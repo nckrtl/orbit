@@ -189,35 +189,6 @@ final readonly class ProofEquivalenceEvaluator
             $manifestSha256,
             $result,
             $changedPaths,
-            $result === ProofEquivalenceResult::Equivalent
-            && array_any(
-                $changedPaths,
-                static fn (array $change): bool => (
-                    $change['classification'] === ProofInputClassification::UnrelatedRuntime->value
-                ),
-            )
-                ? 'candidate-convergence'
-                : (
-                    in_array($result, [ProofEquivalenceResult::Exact, ProofEquivalenceResult::Equivalent], true)
-                        ? 'retained-proof'
-                        : null
-                ),
-            match (true) {
-                $result === ProofEquivalenceResult::Equivalent
-                    && array_any(
-                        $changedPaths,
-                        static fn (array $change): bool => (
-                            $change['classification'] === ProofInputClassification::UnrelatedRuntime->value
-                        ),
-                    )
-                    => 'run-candidate-convergence',
-                in_array($result, [ProofEquivalenceResult::Exact, ProofEquivalenceResult::Equivalent], true)
-                    => 'review-exact-head',
-                $result === ProofEquivalenceResult::Stale => 'release-proof-and-run-complete-reproof',
-                $result === ProofEquivalenceResult::Indeterminate
-                    => 'resolve-equivalence-failure-and-run-complete-reproof',
-                default => throw new \LogicException('The proof equivalence result is unsupported.'),
-            },
             $errors,
             gmdate('Y-m-d\TH:i:s\Z'),
         );
