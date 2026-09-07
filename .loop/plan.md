@@ -96,7 +96,7 @@ Legacy migration Incus fixture contract:
 ## Deviations
 
 - The disposable Incus sample App stores `13.x`, which cannot be an AppInstance name under the existing name contract. The proof-only legacy fixture therefore stages the sample repository's existing `master` branch as a normal named checkout on `app-dev`, then changes only the disposable fixture App's default to `master` on `gateway` immediately before rolling back the source-identity migration. The recorded pre-upgrade graph still has an exact matching App default, AppInstance name, local branch, and name-based path, so the approved before/after migration assertions and every Acceptance meaning remain unchanged.
-- The current `origin/main` retains `.loop/proof/ORB-132.json` and `.loop/proof/extended-runtime-connectivity.sh`. The exact-commit proof stager rejects another issue's JSON plan as an invalid fixture, so the ORB-125 candidate removes those two stale process artifacts and retains only the complete ORB-125 proof workspace. No product or E2E harness path changes, and every Acceptance meaning remains unchanged.
+- The current `origin/main` retains `.loop/proof/ORB-132.json`. The exact-commit proof stager rejects another issue's JSON plan as an invalid fixture, so the ORB-125 candidate removes that stale plan while preserving its shared `extended-runtime-connectivity.sh` fixture, which repository E2E contract tests require and the proof stager accepts as an additional shell fixture. No product or E2E harness path changes, and every Acceptance meaning remains unchanged.
 
 ## Review findings
 
