@@ -45,6 +45,7 @@ use Illuminate\Support\Facades\Facade;
 use Illuminate\Support\Facades\Process;
 
 require_once __DIR__.'/Support/TopologyFixtures.php';
+require_once __DIR__.'/Support/ObservedPhpRuntimeFixtures.php';
 
 beforeEach(function () {
     $container = new Container;
@@ -367,6 +368,74 @@ it('converges and verifies an authorized exact candidate without rerunning accep
             '/usr/local/bin/verify-topology.sh',
         )
         ->not->toContain('/var/lib/orbit-e2e/proof');
+});
+
+it('stops candidate actions when the runtime inventory is malformed', function (): void {
+    $fixture = candidateConvergenceFixture();
+    $attempt = new AttemptId(str_repeat('c', 32));
+    $candidateTarget = TopologyTarget::feature('TST-123', $attempt);
+    $candidateTree = new GitRepository($fixture['worktree'])->tree($fixture['candidate']);
+    $events = [];
+    $runtimeInventory = malformedObservedPhpRuntime('php-version');
+    $runtimeInventory['pcov_version'] = null;
+    unset($runtimeInventory['package_versions']['php8.5-pcov']);
+    $runtime = json_encode($runtimeInventory, JSON_THROW_ON_ERROR);
+    fakePinnedWorktreeProcesses(
+        $candidateTarget,
+        $events,
+        guestOverride: static function (array $guest) use ($candidateTree, $fixture, $runtime) {
+            if ($guest === ['/usr/local/bin/observe-php.sh', 'runtime-info', 'runtime']) {
+                return Process::result($runtime);
+            }
+            if ($guest === ['git', '-C', '/home/orbit/orbit', 'rev-parse', '--verify', 'HEAD^{commit}']) {
+                return Process::result($fixture['candidate']."\n");
+            }
+            if ($guest === ['git', '-C', '/home/orbit/orbit', 'rev-parse', '--verify', 'HEAD^{tree}']) {
+                return Process::result($candidateTree."\n");
+            }
+            if (
+                $guest === [
+                    'git',
+                    '-C',
+                    '/home/orbit/orbit',
+                    'status',
+                    '--porcelain=v1',
+                    '--untracked-files=all',
+                ]
+            ) {
+                return Process::result();
+            }
+
+            return null;
+        },
+        operationId: $fixture['operation']->value,
+    );
+
+    $result = candidateConvergenceRunner($fixture, $attempt)->convergeCandidate($fixture['request']);
+    $commands = implode("\n", array_map(
+        static fn (array $event): string => implode(' ', array_map(strval(...), $event)),
+        $events,
+    ));
+    $executed = array_values(array_filter(
+        $events,
+        static fn (array $event): bool => ($event[3] ?? null) === 'exec',
+    ));
+
+    expect($result['status'])
+        ->toBe('diagnosis')
+        ->and($result['error'])
+        ->toContain('sury-runtime', 'runtime verification was malformed')
+        ->and($commands)
+        ->toContain('/usr/local/bin/observe-php.sh prepare runtime')
+        ->and(array_any(
+            $executed,
+            static fn (array $event): bool => in_array(
+                $event[6] ?? null,
+                ['/usr/local/bin/converge-gateway.sh', '/usr/local/bin/verify-topology.sh'],
+                true,
+            ),
+        ))
+        ->toBeFalse();
 });
 
 function candidateConvergenceRunner(

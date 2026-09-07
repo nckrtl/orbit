@@ -21,16 +21,7 @@ final readonly class ObservedPhpInputs
 
     public const array PHASES = ['setup', 'acceptance'];
 
-    public const array PACKAGES = [
-        'php8.5-cli',
-        'php8.5-fpm',
-        'php8.5-common',
-        'php8.5-curl',
-        'php8.5-mbstring',
-        'php8.5-sqlite3',
-        'php8.5-xml',
-        'php8.5-pcov',
-    ];
+    public const array PACKAGES = PhpRuntimeInventory::PACKAGES;
 
     /** @var list<array{role:string,php_version:string,fpm_version:string,pcov_version:string,package_versions:array<string,string>}> */
     public array $runtimes;
@@ -44,7 +35,7 @@ final readonly class ObservedPhpInputs
      */
     public function __construct(array $runtimes, array $phases)
     {
-        $this->runtimes = $this->validateRuntimes($runtimes);
+        $this->runtimes = PhpRuntimeInventory::pcovRequired($runtimes)->pcovRuntimes();
         $this->phases = $this->validatePhases($phases);
     }
 
@@ -95,62 +86,6 @@ final readonly class ObservedPhpInputs
         }
 
         return $paths;
-    }
-
-    /**
-     * @param list<array{role:string,php_version:string,fpm_version:string,pcov_version:string,package_versions:array<string,string>}> $runtimes
-     * @return list<array{role:string,php_version:string,fpm_version:string,pcov_version:string,package_versions:array<string,string>}>
-     */
-    private function validateRuntimes(array $runtimes): array
-    {
-        if (! array_is_list($runtimes)) {
-            throw new InvalidArgumentException('The observed PHP runtime inventory is invalid.');
-        }
-        $roles = [];
-        $shared = null;
-        foreach ($runtimes as $runtime) {
-            if (
-                ! is_array($runtime)
-                || array_keys($runtime) !== [
-                    'role',
-                    'php_version',
-                    'fpm_version',
-                    'pcov_version',
-                    'package_versions',
-                ]
-                || ! in_array($runtime['role'], ['app-dev', 'gateway'], true)
-                || ! is_string($runtime['php_version'])
-                || preg_match('/\A8\.5\.[0-9]+(?:[^\r\n]*)?\z/D', $runtime['php_version']) !== 1
-                || ! is_string($runtime['fpm_version'])
-                || $runtime['fpm_version'] !== $runtime['php_version']
-                || ! is_string($runtime['pcov_version'])
-                || preg_match('/\A[0-9]+\.[0-9]+\.[0-9]+(?:[^\r\n]*)?\z/D', $runtime['pcov_version']) !== 1
-                || ! is_array($runtime['package_versions'])
-                || array_keys($runtime['package_versions']) !== self::PACKAGES
-                || array_any(
-                    $runtime['package_versions'],
-                    static fn (mixed $version): bool => ! is_string($version)
-                    || $version === ''
-                    || str_contains($version, "\n"),
-                )
-                || count(array_unique(array_slice($runtime['package_versions'], 0, count(self::PACKAGES) - 1))) !== 1
-                || isset($roles[$runtime['role']])
-            ) {
-                throw new InvalidArgumentException('An observed PHP runtime entry is invalid.');
-            }
-            $comparison = $runtime;
-            unset($comparison['role']);
-            if ($shared !== null && $comparison !== $shared) {
-                throw new InvalidArgumentException('The observed PHP runtime inventories are not identical.');
-            }
-            $shared = $comparison;
-            $roles[$runtime['role']] = true;
-        }
-        if (array_keys($roles) !== ['app-dev', 'gateway']) {
-            throw new InvalidArgumentException('The observed PHP runtime inventory is incomplete.');
-        }
-
-        return $runtimes;
     }
 
     /**

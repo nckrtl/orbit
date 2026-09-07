@@ -8,6 +8,8 @@ use App\E2E\Value\ProofEquivalenceResult;
 use App\E2E\Value\ProofInputManifest;
 use App\E2E\Value\ProofPromotionRecord;
 
+require_once dirname(__DIR__).'/Support/ObservedPhpRuntimeFixtures.php';
+
 describe('proof reuse evidence', function (): void {
     it('requires identical CLI, FPM, PCOV, and package runtime evidence across roles', function (): void {
         $packages = array_fill_keys(ObservedPhpInputs::PACKAGES, '8.5.10-sury');
@@ -50,6 +52,36 @@ describe('proof reuse evidence', function (): void {
         ))
             ->toThrow(InvalidArgumentException::class, 'not identical');
     });
+
+    it('rejects the live malformed runtime fixtures at the retained evidence boundary', function (string $fixture): void {
+        $runtime = malformedObservedPhpRuntime($fixture);
+        $entry = static fn (string $role): array => ['role' => $role, ...$runtime];
+        $surface = static fn (string $role, string $type, string $id): array => [
+            'role' => $role,
+            'process_type' => $type,
+            'processes' => [[
+                'id' => str_repeat($id, 32),
+                'started_at' => '2026-09-03T10:00:00.000001Z',
+                'finished_at' => '2026-09-03T10:00:00.000002Z',
+            ]],
+            'paths' => ['apps/cli/orbit'],
+        ];
+        $surfaces = [
+            $surface('app-dev', 'cli', '1'),
+            $surface('gateway', 'cli', '2'),
+            $surface('gateway', 'fpm', '3'),
+        ];
+
+        expect(fn () => new ObservedPhpInputs(
+            [$entry('app-dev'), $entry('gateway')],
+            ['setup' => $surfaces, 'acceptance' => $surfaces],
+        ))
+            ->toThrow(InvalidArgumentException::class, 'runtime entry is invalid');
+    })->with([
+        'PHP version' => 'php-version',
+        'PCOV version' => 'pcov-version',
+        'package version' => 'package-version',
+    ]);
 
     it('round-trips canonical immutable manifests and refuses fingerprint tampering', function (): void {
         $manifest = new ProofInputManifest(
