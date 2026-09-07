@@ -59,7 +59,7 @@ final readonly class LegacyRetirement
                 $this->assertIdentity($kind, $resource);
                 $resource = $this->withFilesystemType($kind, $resource);
                 $legacy = $this->isLegacyCandidate($kind, $resource);
-                $resource = $this->withDigest($resource);
+                $resource = $this->withResourceDigest($resource);
                 if ($legacy) {
                     $candidates[$kind][] = $resource;
                 } else {
@@ -132,7 +132,7 @@ final readonly class LegacyRetirement
                 'dependencies' => $resource['dependencies'] ?? [],
                 'recovery' => $this->recoveryCommands($kind, $resource),
                 'observed' => $resource,
-                'observed_sha256' => hash('sha256', $this->canonical($resource)),
+                'observed_resource_sha256' => hash('sha256', $this->canonical($resource)),
                 'result' => $kind === 'instances' && $status === 'RUNNING' ? 'stopped' : 'unchanged',
             ];
         }
@@ -300,7 +300,7 @@ final readonly class LegacyRetirement
                 $actual = $this->find($observed[$kind] ?? [], $this->identity($resource));
                 if (
                     $actual === null
-                    || $this->canonical($this->withDigest($this->withFilesystemType(
+                    || $this->canonical($this->withResourceDigest($this->withFilesystemType(
                         $kind,
                         $actual,
                     ))) !== $this->canonical($resource)
@@ -574,7 +574,11 @@ final readonly class LegacyRetirement
         }
         $actual = $this->withFilesystemType($kind, $actual);
 
-        return $this->canonical($this->withDigest($actual)) === $this->canonical($this->withDigest($expected));
+        return (
+            $this->canonical($this->withResourceDigest($actual)) === $this->canonical($this->withResourceDigest(
+                $expected,
+            ))
+        );
     }
 
     /**
@@ -602,7 +606,7 @@ final readonly class LegacyRetirement
                 'pending',
                 'completed',
             ]
-            || ($resume['version'] ?? null) !== 1
+            || ($resume['version'] ?? null) !== 2
             || ! in_array($resume['phase'] ?? null, ['pending', 'complete'], true)
             || ($resume['inventory_sha256'] ?? null) !== $inventory->sha256()
             || ($resume['freeze_evidence'] ?? null) !== $evidenceIdentity
@@ -685,7 +689,7 @@ final readonly class LegacyRetirement
                 'pending',
                 'completed',
             ]
-            || ($resume['version'] ?? null) !== 1
+            || ($resume['version'] ?? null) !== 2
             || ! in_array($resume['phase'] ?? null, ['pending', 'complete'], true)
             || ($resume['quarantine_sha256'] ?? null) !== $manifest->sha256()
             || ($resume['freeze_evidence'] ?? null) !== $manifest->freezeEvidence
@@ -952,7 +956,7 @@ final readonly class LegacyRetirement
         string $phase,
     ): array {
         return [
-            'version' => 1,
+            'version' => 2,
             'operation' => 'quarantine',
             'phase' => $phase,
             'inventory_sha256' => $manifest->inventorySha256,
@@ -972,7 +976,7 @@ final readonly class LegacyRetirement
         string $phase,
     ): array {
         return [
-            'version' => 1,
+            'version' => 2,
             'operation' => 'delete',
             'phase' => $phase,
             'quarantine_sha256' => $manifest->sha256(),
@@ -1026,7 +1030,7 @@ final readonly class LegacyRetirement
         return $targets;
     }
 
-    /** @return array{path: string, sha256: string, mode: int, filesystem_type: string} */
+    /** @return array{path: string, content_sha256: string, mode: int, filesystem_type: string} */
     private function freezeEvidenceIdentity(string $path): array
     {
         if (
@@ -1056,13 +1060,13 @@ final readonly class LegacyRetirement
 
         return [
             'path' => $path,
-            'sha256' => $sha256,
+            'content_sha256' => $sha256,
             'mode' => fileperms($path) & 0777,
             'filesystem_type' => 'file',
         ];
     }
 
-    /** @param array{path: string, sha256: string, mode: int, filesystem_type: string} $evidence */
+    /** @param array{path: string, content_sha256: string, mode: int, filesystem_type: string} $evidence */
     private function assertFreezeEvidenceIdentity(array $evidence): void
     {
         $actual = $this->freezeEvidenceIdentity($evidence['path']);
@@ -1295,10 +1299,10 @@ final readonly class LegacyRetirement
     }
 
     /** @param array<string, mixed> $resource @return array<string, mixed> */
-    private function withDigest(array $resource): array
+    private function withResourceDigest(array $resource): array
     {
-        unset($resource['sha256']);
-        $resource['sha256'] = hash('sha256', $this->canonical($resource));
+        unset($resource['resource_sha256']);
+        $resource['resource_sha256'] = hash('sha256', $this->canonical($resource));
 
         return $resource;
     }
