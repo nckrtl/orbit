@@ -103,6 +103,11 @@ it('rejects unsafe endpoint, DNS, and domain values before rendering peer shell 
         expect($configuration->forPeer($peer)->dnsThroughWireGuard)
             ->toBeTrue();
 
+        $peer->update(['dns_server_override' => '2001:db8::53']);
+
+        expect($configuration->forPeer($peer)->dnsThroughWireGuard)
+            ->toBeFalse();
+
         $peer->update(['dns_server_override' => '10.0.0.2']);
         $settings->configure(subnet: '10.44.0.0/24', domain: 'orbit; touch /tmp/orbit-injected');
 
@@ -112,3 +117,58 @@ it('rejects unsafe endpoint, DNS, and domain values before rendering peer shell 
         new Filesystem()->deleteDirectory($orbitHome);
     }
 });
+
+it('rejects a noncanonical configured subnet with the stable configuration error', function (): void {
+    $gateway = Node::query()->create([
+        'name' => 'gateway',
+        'public_ssh_host' => '192.0.2.1',
+        'wireguard_ip' => '10.44.0.1',
+    ]);
+    $gateway->roles()->create(['role' => RoleName::Vpn]);
+    $peer = Node::query()->create([
+        'name' => 'app-dev',
+        'public_ssh_host' => '192.0.2.2',
+        'wireguard_ip' => '10.44.0.2',
+    ]);
+    $settings = new VpnSettings(app(SettingRepository::class));
+    $settings->configure(subnet: '10.44.0.1/24');
+    $configuration = new VpnConfigurationRepository($settings, '/missing');
+
+    expect(fn () => $configuration->forPeer($peer))
+        ->toThrow(function (NodeProvisioningException $exception): void {
+            expect($exception->errorCode)
+                ->toBe('vpn.configuration_invalid')
+                ->and($exception->getMessage())
+                ->toBe('WireGuard subnet [10.44.0.1/24] is invalid.');
+        });
+});
+
+it('rejects peer addresses outside the usable subnet range', function (string $address): void {
+    $gateway = Node::query()->create([
+        'name' => 'gateway',
+        'public_ssh_host' => '192.0.2.1',
+        'wireguard_ip' => '10.44.0.1',
+    ]);
+    $gateway->roles()->create(['role' => RoleName::Vpn]);
+    $peer = Node::query()->create([
+        'name' => 'app-dev',
+        'public_ssh_host' => '192.0.2.2',
+        'wireguard_ip' => $address,
+    ]);
+    $settings = new VpnSettings(app(SettingRepository::class));
+    $settings->configure(subnet: '10.44.0.0/30');
+    $configuration = new VpnConfigurationRepository($settings, '/missing');
+
+    expect(fn () => $configuration->forPeer($peer))
+        ->toThrow(function (NodeProvisioningException $exception) use ($address): void {
+            expect($exception->errorCode)
+                ->toBe('vpn.configuration_invalid')
+                ->and($exception->getMessage())
+                ->toBe("Node [app-dev] has invalid WireGuard address [{$address}] for subnet [10.44.0.0/30].");
+        });
+})->with([
+    'network' => '10.44.0.0',
+    'broadcast' => '10.44.0.3',
+    'outside' => '10.44.0.4',
+    'IPv6' => '2001:db8::2',
+]);
