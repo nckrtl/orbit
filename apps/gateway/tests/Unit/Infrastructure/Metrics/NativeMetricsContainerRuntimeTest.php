@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Data\Metrics\MetricsCredentialsData;
 use App\Domain\Metrics\MetricsCredentialManager;
 use App\Domain\Metrics\MetricsExporterLifecycle;
+use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Metrics\GrafanaConfigRenderer;
 use App\Infrastructure\Metrics\MetricsConfigurationBundle;
 use App\Infrastructure\Metrics\MetricsConfigurationRenderer;
@@ -112,6 +113,47 @@ describe(NativeMetricsContainerRuntime::class, function (): void {
                 'publish-configuration',
                 'converge:prometheus,grafana',
                 'restore-configuration',
+            ]);
+    });
+
+    it('keeps published configuration after committed container cleanup fails', function (): void {
+        $host = new MetricsRuntimeHostFake;
+        $host->convergenceFailure = new ResourceOperationException(
+            'metrics.container_cleanup_failed',
+            'committed cleanup failed',
+            502,
+        );
+        $runtime = metricsContainerRuntime(
+            $host,
+            new MetricsCredentialManagerFake,
+            new MetricsExporterLifecycleFake,
+        );
+        [$node, $assignment] = metricsRuntimeModels();
+
+        expect(fn () => $runtime->converge($node, $assignment))
+            ->toThrow(ResourceOperationException::class, 'committed cleanup failed')
+            ->and($host->events)
+            ->toBe([
+                'snapshot-configuration',
+                'publish-configuration',
+                'converge:prometheus,grafana',
+            ]);
+    });
+
+    it('keeps published configuration when credential verification fails after container commit', function (): void {
+        $host = new MetricsRuntimeHostFake;
+        $credentials = new MetricsCredentialManagerFake;
+        $credentials->verificationFailure = new RuntimeException('credential verification failed');
+        $runtime = metricsContainerRuntime($host, $credentials, new MetricsExporterLifecycleFake);
+        [$node, $assignment] = metricsRuntimeModels();
+
+        expect(fn () => $runtime->converge($node, $assignment))
+            ->toThrow(RuntimeException::class, 'credential verification failed')
+            ->and($host->events)
+            ->toBe([
+                'snapshot-configuration',
+                'publish-configuration',
+                'converge:prometheus,grafana',
             ]);
     });
 
@@ -247,6 +289,8 @@ final class MetricsCredentialManagerFake implements MetricsCredentialManager
     /** @var list<int> */
     public array $purged = [];
 
+    public ?RuntimeException $verificationFailure = null;
+
     public function passwordForConvergence(Node $node): string
     {
         return 'runtime-admin-password';
@@ -255,6 +299,10 @@ final class MetricsCredentialManagerFake implements MetricsCredentialManager
     public function verifyActive(Node $node): void
     {
         $this->verified[] = $node->id;
+
+        if ($this->verificationFailure instanceof RuntimeException) {
+            throw $this->verificationFailure;
+        }
     }
 
     public function purge(Node $node): void

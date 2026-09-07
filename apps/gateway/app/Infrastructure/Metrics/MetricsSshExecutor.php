@@ -212,79 +212,94 @@ final readonly class MetricsSshExecutor implements MetricsRuntimeHost, MetricsCr
 
     public function convergeContainers(Node $node, array $specs): void
     {
-        $states = [];
-        $backupStates = [];
-        $volumeStates = [];
+        /** @var list<MetricsContainerReplacementProgress> $services */
+        $services = [];
 
         foreach ($specs as $spec) {
-            $states[$spec->service->value] = $this->inspectContainer($node, $spec->name);
-            $this->assertContainerOwnership($states[$spec->service->value], $spec);
+            $state = $this->inspectContainer($node, $spec->name);
+            $this->assertContainerOwnership($state, $spec);
 
-            $backupStates[$spec->service->value] = $this->inspectContainer($node, $this->backupName($spec));
-            $this->assertContainerOwnership($backupStates[$spec->service->value], $spec);
+            $backupState = $this->inspectContainer($node, $this->backupName($spec));
+            $this->assertContainerOwnership($backupState, $spec);
 
-            $volumeStates[$spec->service->value] = $this->inspectVolume($node, $spec->volume);
-            $this->assertVolumeOwnership($volumeStates[$spec->service->value], $spec);
+            $volumeState = $this->inspectVolume($node, $spec->volume);
+            $this->assertVolumeOwnership($volumeState, $spec);
+
+            $services[] = new MetricsContainerReplacementProgress(
+                spec: $spec,
+                state: $state,
+                backupState: $backupState,
+                volumeState: $volumeState,
+            );
         }
 
         $createdVolumes = [];
+        /** @var list<MetricsContainerReplacementProgress> $replacements */
         $replacements = [];
 
         try {
-            foreach ($specs as $spec) {
-                $key = $spec->service->value;
-                $state = $states[$key];
-                $backup = $backupStates[$key];
+            foreach ($services as $progress) {
+                $spec = $progress->spec;
 
-                if ($state === null && $backup !== null) {
+                if ($progress->state === null && $progress->backupState !== null) {
                     $this->renameContainer($node, $this->backupName($spec), $spec->name);
                     $this->startContainer($node, $spec->name);
-                    $state = $backup;
-                    $backup = null;
+                    $progress->state = $progress->backupState;
+                    $progress->backupState = null;
                 }
 
-                if ($state !== null && $backup !== null) {
+                if ($progress->state !== null && $progress->backupState !== null) {
                     $this->removeContainer($node, $this->backupName($spec));
-                    $backup = null;
+                    $progress->backupState = null;
                 }
 
-                if ($volumeStates[$key] === null) {
+                if ($progress->volumeState === null) {
                     $this->createVolume($node, $spec);
                     $createdVolumes[] = $spec;
                 }
 
-                if ($state !== null && $this->containerMatches($state, $spec) && $this->healthy($node, $spec->name)) {
+                if (
+                    $progress->state !== null
+                    && $this->containerMatches($progress->state, $spec)
+                    && $this->healthy($node, $spec->name)
+                ) {
                     continue;
                 }
 
-                $hadPrevious = $state !== null;
+                $progress->hadPrevious = $progress->state !== null;
+                $replacements[] = $progress;
 
-                if ($hadPrevious) {
-                    $this->stopContainer($node, $spec->name);
-                    $this->renameContainer($node, $spec->name, $this->backupName($spec));
+                if ($progress->hadPrevious) {
+                    $this->stopReplacement($node, $progress);
+                    $this->renameReplacementBackup($node, $progress);
                 }
 
-                $replacements[] = [$spec, $hadPrevious];
-                $this->runContainer($node, $spec);
+                $this->startReplacement($node, $progress);
 
                 if (! $this->awaitHealthy($node, $spec->name)) {
                     throw new RuntimeException("Metrics service [{$spec->service->value}] is unhealthy.");
                 }
             }
-
-            foreach ($replacements as [$spec, $hadPrevious]) {
-                if ($hadPrevious) {
-                    $this->removeContainer($node, $this->backupName($spec));
-                }
-            }
         } catch (Throwable $exception) {
             try {
-                foreach (array_reverse($replacements) as [$spec, $hadPrevious]) {
-                    $this->removeReplacementContainer($node, $spec);
+                foreach (array_reverse($replacements) as $progress) {
+                    if ($progress->replacementStarted) {
+                        $this->removeReplacementContainer($node, $progress->spec);
+                    }
 
-                    if ($hadPrevious) {
-                        $this->renameContainer($node, $this->backupName($spec), $spec->name);
-                        $this->startContainer($node, $spec->name);
+                    if ($progress->renamed) {
+                        $this->renameContainer(
+                            $node,
+                            $this->backupName($progress->spec),
+                            $progress->spec->name,
+                        );
+                        $this->startContainer($node, $progress->spec->name);
+
+                        continue;
+                    }
+
+                    if ($progress->stopped) {
+                        $this->startContainer($node, $progress->spec->name);
                     }
                 }
 
@@ -311,6 +326,12 @@ final readonly class MetricsSshExecutor implements MetricsRuntimeHost, MetricsCr
                 502,
                 $exception,
             );
+        }
+
+        foreach ($replacements as $progress) {
+            if ($progress->hadPrevious) {
+                $this->removeCommittedBackup($node, $progress);
+            }
         }
     }
 
@@ -706,6 +727,97 @@ final readonly class MetricsSshExecutor implements MetricsRuntimeHost, MetricsCr
         );
     }
 
+    private function stopReplacement(Node $node, MetricsContainerReplacementProgress $progress): void
+    {
+        try {
+            $this->stopContainer($node, $progress->spec->name);
+            $progress->stopped = true;
+        } catch (Throwable $exception) {
+            if ($this->containerRunning($node, $progress->spec->name, $progress->spec) === false) {
+                $progress->stopped = true;
+
+                return;
+            }
+
+            throw $exception;
+        }
+    }
+
+    private function renameReplacementBackup(Node $node, MetricsContainerReplacementProgress $progress): void
+    {
+        try {
+            $this->renameContainer($node, $progress->spec->name, $this->backupName($progress->spec));
+            $progress->renamed = true;
+        } catch (Throwable $exception) {
+            $current = $this->inspectContainer($node, $progress->spec->name);
+            $backup = $this->inspectContainer($node, $this->backupName($progress->spec));
+            $this->assertContainerOwnership($current, $progress->spec);
+            $this->assertContainerOwnership($backup, $progress->spec);
+
+            if ($current === null && $backup !== null) {
+                $progress->renamed = true;
+
+                return;
+            }
+
+            throw $exception;
+        }
+    }
+
+    private function startReplacement(Node $node, MetricsContainerReplacementProgress $progress): void
+    {
+        try {
+            $this->runContainer($node, $progress->spec);
+            $progress->replacementStarted = true;
+        } catch (Throwable $exception) {
+            $current = $this->inspectContainer($node, $progress->spec->name);
+            $this->assertContainerOwnership($current, $progress->spec);
+
+            if ($current !== null && $this->containerMatches($current, $progress->spec)) {
+                $progress->replacementStarted = true;
+
+                return;
+            }
+
+            throw $exception;
+        }
+    }
+
+    private function removeCommittedBackup(Node $node, MetricsContainerReplacementProgress $progress): void
+    {
+        try {
+            $this->removeContainer($node, $this->backupName($progress->spec));
+            $progress->backupDeleted = true;
+
+            return;
+        } catch (Throwable $exception) {
+            try {
+                $backup = $this->inspectContainer($node, $this->backupName($progress->spec));
+                $this->assertContainerOwnership($backup, $progress->spec);
+            } catch (Throwable $inspection) {
+                throw new ResourceOperationException(
+                    'metrics.container_cleanup_failed',
+                    'Metrics containers were committed, but obsolete recovery containers could not be inspected.',
+                    502,
+                    $inspection,
+                );
+            }
+
+            if ($backup === null) {
+                $progress->backupDeleted = true;
+
+                return;
+            }
+
+            throw new ResourceOperationException(
+                'metrics.container_cleanup_failed',
+                'Metrics containers were committed, but obsolete recovery containers could not be removed.',
+                502,
+                $exception,
+            );
+        }
+    }
+
     private function stopContainer(Node $node, string $name): void
     {
         $this->run(
@@ -713,6 +825,39 @@ final readonly class MetricsSshExecutor implements MetricsRuntimeHost, MetricsCr
             new RemoteCommand(['sudo', 'docker', 'container', 'stop', '--time', '30', '--', $name]),
             'metrics.container_stop_failed',
             'A Metrics container could not be stopped.',
+        );
+    }
+
+    private function containerRunning(Node $node, string $name, MetricsContainerSpec $spec): ?bool
+    {
+        $state = $this->inspectContainer($node, $name);
+        $this->assertContainerOwnership($state, $spec);
+
+        if ($state === null) {
+            return null;
+        }
+
+        $result = $this->raw(
+            $node,
+            new RemoteCommand([
+                'sudo',
+                'docker',
+                'container',
+                'inspect',
+                '--format={{.State.Running}}',
+                '--',
+                $name,
+            ]),
+        );
+
+        if ($result->succeeded() && in_array(trim($result->stdout), ['true', 'false'], true)) {
+            return trim($result->stdout) === 'true';
+        }
+
+        throw new ResourceOperationException(
+            'metrics.container_inspection_failed',
+            'Metrics container state could not be inspected.',
+            502,
         );
     }
 
