@@ -2,11 +2,11 @@
     "setup": [],
     "acceptance": [
         {
-            "id": "immutable-certificate-paths",
+            "id": "wireguard-recovery-domains",
             "node": "gateway",
             "argv": [
                 "bash",
-                "/var/lib/orbit-e2e/proof/immutable-certificate-paths.sh"
+                "/var/lib/orbit-e2e/proof/wireguard-recovery-domains.sh"
             ],
             "timeout_seconds": 300
         }

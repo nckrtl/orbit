@@ -167,7 +167,9 @@ it('validates a candidate config under /etc/wireguard before replacing the live 
                 'mv -fT -- "$restore_candidate" "$live"',
                 'systemctl restart wg-quick@orbit || return 1',
                 'printf -v dns_server_escaped \'%q\' "$dns_server"',
-                'printf -v domain_escaped \'%q\' "~$domain"',
+                'dns_domains=("$domain")',
+                'dns_domains+=("$app_dev_tld")',
+                'printf -v dns_domain_escaped \'%q\' "~$dns_domain"',
                 'app_dev_tld=$8',
                 'dns_mode=$9',
                 'operator_dns=${10}',
@@ -177,14 +179,14 @@ it('validates a candidate config under /etc/wireguard before replacing the live 
                 'if [ "$dns_mode" = wireguard ]; then',
                 'if [ "$dns_mode" != operator ] && [ -s "$dns_state" ]; then',
                 'operator_dns_line="DNS = $operator_dns_escaped"',
-                'PostUp = resolvectl dns %i $dns_server_escaped; resolvectl domain %i $dns_domains',
+                'PostUp = resolvectl dns %i $dns_server_escaped; resolvectl domain %i ${dns_domains_escaped[*]}',
                 'PreDown = resolvectl revert %i',
                 'route=$(ip -o route get "$dns_server")',
                 'if [[ "$route" =~ [[:space:]]dev[[:space:]]([^[:space:]]+) ]]; then',
                 'Could not resolve DNS interface.',
                 'resolvectl dns "$dns_link" "$dns_server"',
-                'resolvectl_domain=("~$domain" "~$app_dev_tld")',
-                'printf \'%s\\n%s\\n%s\\n\' "$dns_link" "$dns_server" "$domain" > "$dns_state_candidate"',
+                'resolvectl_domain+=("~$dns_domain")',
+                'printf \'%s\\n\' "$dns_link" "$dns_server" "${dns_domains[@]}" > "$dns_state_candidate"',
             )
             ->not->toContain(
                 'candidate=$(mktemp)',
@@ -202,7 +204,7 @@ it('validates a candidate config under /etc/wireguard before replacing the live 
         $remoteScript = $ssh->commands[1]->input ?? '';
         $dnsStateWrite = mb_strpos(
             haystack: $remoteScript,
-            needle: 'printf \'%s\\n%s\\n%s\\n\' "$dns_link" "$dns_server" "$domain" > "$dns_state_candidate"',
+            needle: 'printf \'%s\\n\' "$dns_link" "$dns_server" "${dns_domains[@]}" > "$dns_state_candidate"',
         );
         $backupRemoval = mb_strrpos(haystack: $remoteScript, needle: 'rm -f -- "$backup"');
 
@@ -1557,6 +1559,49 @@ it('routes the peer TLD with the VPN domain in executable peer installs', functi
     ],
 ]);
 
+it('restores every prior DNS domain after a successive underlay convergence fails', function (
+    string $failureMode,
+): void {
+    $harness = remote_wireguard_peer_install_harness(
+        filesPresent: false,
+        activeState: 'inactive',
+        enabledState: 'disabled',
+        peerTld: 'first.internal',
+        dnsServer: '192.0.2.53',
+    );
+
+    try {
+        $first = $harness->converge(false);
+        $harness->peer()->update(['tld' => 'second.internal']);
+        $harness->clearCommandLog();
+
+        $result = $failureMode === 'retained'
+            ? $harness->convergeRecoverably(static function (): void {
+                throw new RuntimeException('completion failed');
+            })
+            : $harness->converge(true);
+
+        expect($first['succeeded'])
+            ->toBeTrue($first['stderr'])
+            ->and($first['dns']['contents'])
+            ->toBe("eth0\n192.0.2.53\norbit\nfirst.internal\n");
+        expect($result['succeeded'])
+            ->toBeFalse()
+            ->and($result['dns']['contents'])
+            ->toBe("eth0\n192.0.2.53\norbit\nfirst.internal\n")
+            ->and($result['command_log'])
+            ->toContain(
+                'resolvectl domain eth0 ~orbit ~second.internal',
+                'resolvectl domain eth0 ~orbit ~first.internal',
+            );
+    } finally {
+        $harness->cleanup();
+    }
+})->with([
+    'immediate rollback' => 'immediate',
+    'retained rollback' => 'retained',
+]);
+
 /**
  * @mago-expect lint:halstead The harness keeps the complete remote transaction in one executable fixture.
  * @mago-expect lint:excessive-parameter-list The fixture exposes optional DNS inputs for executable route cases.
@@ -1970,6 +2015,11 @@ function remote_wireguard_peer_install_harness(
         public function root(): string
         {
             return $this->root;
+        }
+
+        public function clearCommandLog(): void
+        {
+            new Filesystem()->delete($this->root.'/commands.log');
         }
 
         public function converger(): NativeWireGuardPeerConverger

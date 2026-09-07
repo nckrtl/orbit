@@ -292,17 +292,22 @@ final readonly class NativeWireGuardPeerConverger implements WireGuardPeerConver
 
                 old_dns_link=
                 old_dns_server=
-                old_dns_domain=
+                old_dns_domains=()
                 if [ -s "$dns_state_backup" ]; then
                     mapfile -t old_dns_state < "$dns_state_backup"
                     old_dns_link=${old_dns_state[0]:-}
                     old_dns_server=${old_dns_state[1]:-}
-                    old_dns_domain=${old_dns_state[2]:-}
+                    old_dns_domains=("${old_dns_state[@]:2}")
                     if [[ ! "$old_dns_link" =~ ^[A-Za-z0-9_.:+-]+$ ]] \
                         || [[ ! "$old_dns_server" =~ ^[A-Fa-f0-9:.]+$ ]] \
-                        || [[ ! "$old_dns_domain" =~ ^[A-Za-z0-9.-]+$ ]]; then
+                        || [ "${#old_dns_domains[@]}" -eq 0 ]; then
                         exit 1
                     fi
+                    for old_dns_domain in "${old_dns_domains[@]}"; do
+                        if [[ ! "$old_dns_domain" =~ ^[A-Za-z0-9.-]+$ ]]; then
+                            exit 1
+                        fi
+                    done
                 fi
 
                 current_dns_link=
@@ -317,7 +322,11 @@ final readonly class NativeWireGuardPeerConverger implements WireGuardPeerConver
 
                 if [ -n "$old_dns_link" ]; then
                     resolvectl dns "$old_dns_link" "$old_dns_server"
-                    resolvectl domain "$old_dns_link" "~$old_dns_domain"
+                    old_resolvectl_domains=()
+                    for old_dns_domain in "${old_dns_domains[@]}"; do
+                        old_resolvectl_domains+=("~$old_dns_domain")
+                    done
+                    resolvectl domain "$old_dns_link" "${old_resolvectl_domains[@]}"
                 fi
 
                 if [ "$active_state" = inactive ] && [ "$live_present" = 0 ]; then
@@ -503,17 +512,21 @@ final readonly class NativeWireGuardPeerConverger implements WireGuardPeerConver
                     chmod 0600 "$transaction_candidate"
                     mv -fT -- "$transaction_candidate" "$transaction"
                     printf -v dns_server_escaped '%q' "$dns_server"
-                    printf -v domain_escaped '%q' "~$domain"
-                    printf -v app_dev_tld_escaped '%q' "~$app_dev_tld"
                     printf -v operator_dns_escaped '%q' "$operator_dns"
+
+                    dns_domains=("$domain")
+                    if [ -n "$app_dev_tld" ] && [ "$app_dev_tld" != "$domain" ]; then
+                        dns_domains+=("$app_dev_tld")
+                    fi
+                    dns_domains_escaped=()
+                    for dns_domain in "${dns_domains[@]}"; do
+                        printf -v dns_domain_escaped '%q' "~$dns_domain"
+                        dns_domains_escaped+=("$dns_domain_escaped")
+                    done
 
                     dns_hooks=
                     if [ "$dns_mode" = wireguard ]; then
-                        dns_domains="$domain_escaped"
-                        if [ -n "$app_dev_tld" ] && [ "$app_dev_tld" != "$domain" ]; then
-                            dns_domains="$dns_domains $app_dev_tld_escaped"
-                        fi
-                        dns_hooks="PostUp = resolvectl dns %i $dns_server_escaped; resolvectl domain %i $dns_domains"$'\n'"PreDown = resolvectl revert %i"
+                        dns_hooks="PostUp = resolvectl dns %i $dns_server_escaped; resolvectl domain %i ${dns_domains_escaped[*]}"$'\n'"PreDown = resolvectl revert %i"
                     fi
                     operator_dns_line=
                     if [ -n "$operator_dns" ]; then
@@ -522,19 +535,29 @@ final readonly class NativeWireGuardPeerConverger implements WireGuardPeerConver
 
                     old_dns_link=
                     old_dns_server=
-                    old_dns_domain=
+                    old_dns_domains=()
                     if [ "$dns_mode" != operator ] && [ -s "$dns_state" ]; then
                         mapfile -t old_dns_state < "$dns_state"
                         old_dns_link=${old_dns_state[0]:-}
                         old_dns_server=${old_dns_state[1]:-$dns_server}
-                        old_dns_domain=${old_dns_state[2]:-$domain}
+                        old_dns_domains=("${old_dns_state[@]:2}")
+                        if [ "${#old_dns_domains[@]}" -eq 0 ] || [ -z "${old_dns_domains[0]}" ]; then
+                            old_dns_domains=("$domain")
+                        fi
                         if [[ ! "$old_dns_link" =~ ^[A-Za-z0-9_.:+-]+$ ]] \
-                            || [[ ! "$old_dns_server" =~ ^[A-Fa-f0-9:.]+$ ]] \
-                            || [[ ! "$old_dns_domain" =~ ^[A-Za-z0-9.-]+$ ]]; then
+                            || [[ ! "$old_dns_server" =~ ^[A-Fa-f0-9:.]+$ ]]; then
                             old_dns_link=
                             old_dns_server=
-                            old_dns_domain=
+                            old_dns_domains=()
                         fi
+                        for old_dns_domain in "${old_dns_domains[@]}"; do
+                            if [[ ! "$old_dns_domain" =~ ^[A-Za-z0-9.-]+$ ]]; then
+                                old_dns_link=
+                                old_dns_server=
+                                old_dns_domains=()
+                                break
+                            fi
+                        done
                     fi
 
                     restore_dns_state() {
@@ -605,7 +628,11 @@ final readonly class NativeWireGuardPeerConverger implements WireGuardPeerConver
                         fi
                         if [ -n "$old_dns_link" ]; then
                             resolvectl dns "$old_dns_link" "$old_dns_server" || return 1
-                            resolvectl domain "$old_dns_link" "~$old_dns_domain" || return 1
+                            old_resolvectl_domains=()
+                            for old_dns_domain in "${old_dns_domains[@]}"; do
+                                old_resolvectl_domains+=("~$old_dns_domain")
+                            done
+                            resolvectl domain "$old_dns_link" "${old_resolvectl_domains[@]}" || return 1
                         fi
                     }
                     restore_after_failure() {
@@ -657,11 +684,10 @@ final readonly class NativeWireGuardPeerConverger implements WireGuardPeerConver
                             restore_after_failure || exit 1
                             exit 1
                         fi
-                        if [ -n "$app_dev_tld" ] && [ "$app_dev_tld" != "$domain" ]; then
-                            resolvectl_domain=("~$domain" "~$app_dev_tld")
-                        else
-                            resolvectl_domain=("~$domain")
-                        fi
+                        resolvectl_domain=()
+                        for dns_domain in "${dns_domains[@]}"; do
+                            resolvectl_domain+=("~$dns_domain")
+                        done
                         if ! resolvectl domain "$dns_link" "${resolvectl_domain[@]}"; then
                             restore_after_failure || exit 1
                             exit 1
@@ -675,7 +701,7 @@ final readonly class NativeWireGuardPeerConverger implements WireGuardPeerConver
                             restore_after_failure || exit 1
                             exit 1
                         fi
-                        if ! printf '%s\n%s\n%s\n' "$dns_link" "$dns_server" "$domain" > "$dns_state_candidate"; then
+                        if ! printf '%s\n' "$dns_link" "$dns_server" "${dns_domains[@]}" > "$dns_state_candidate"; then
                             restore_after_failure || exit 1
                             exit 1
                         fi
