@@ -27,6 +27,9 @@ use Throwable;
  */
 final readonly class BootstrapGatewayAction
 {
+    /** @var list<RoleName> */
+    private const array OwnedRoles = [RoleName::Gateway, RoleName::Vpn];
+
     public function __construct(
         private AssignRoleAction $assignRole,
         private GatewayBootstrapIdentityValidator $identity,
@@ -61,7 +64,7 @@ final readonly class BootstrapGatewayAction
         );
 
         try {
-            foreach ([RoleName::Gateway, RoleName::Vpn] as $role) {
+            foreach (self::OwnedRoles as $role) {
                 $this->assignRole
                     ->execute($node, $role)
                     ->update([
@@ -108,7 +111,7 @@ final readonly class BootstrapGatewayAction
             'error_code' => null,
         ];
         $node->update($active);
-        $node->roles()->update($active);
+        $node->roles()->whereIn('role', self::OwnedRoles)->update($active);
 
         return $node->load('roles');
     }
@@ -121,7 +124,7 @@ final readonly class BootstrapGatewayAction
             'error_code' => $exception->errorCode,
         ];
         $node->update($failure);
-        $node->roles()->update($failure);
+        $node->roles()->whereIn('role', self::OwnedRoles)->update($failure);
     }
 
     private function ensureDirectories(): void
