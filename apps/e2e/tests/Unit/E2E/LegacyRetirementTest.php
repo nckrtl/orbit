@@ -78,16 +78,19 @@ function legacyFixture(): array
             'path' => $root.'/sources/old',
             'safe_root' => $root.'/sources',
             'classification' => 'legacy',
+            'content_sha256' => hash('sha256', ''),
         ]],
         'manifests' => [[
             'path' => $root.'/manifests/old.json',
             'safe_root' => $root.'/manifests',
             'classification' => 'legacy',
+            'content_sha256' => hash('sha256', '{}'),
         ]],
         'locks' => [[
             'path' => $root.'/locks/old.lock',
             'safe_root' => $root.'/locks',
             'classification' => 'legacy',
+            'content_sha256' => hash('sha256', 'locked'),
         ]],
         'base_images' => [['name' => 'ubuntu-generic', 'classification' => 'preserve']],
         'pools' => [['name' => 'orbit-e2e', 'identity' => 'pool-uuid-1', 'classification' => 'preserve']],
@@ -96,6 +99,7 @@ function legacyFixture(): array
             'path' => $root.'/evidence/proof.json',
             'identity' => 'proof-1',
             'classification' => 'preserve',
+            'content_sha256' => hash('sha256', '{}'),
         ]],
     ];
 }
@@ -369,12 +373,12 @@ describe('legacy retirement', function () {
                 $target['observed']['name'] = 'orbit-e2e-topology-snapshot-forged';
                 $target['identity'] = 'orbit-e2e-topology-snapshot-forged';
             }
-            unset($target['observed']['sha256']);
-            $target['observed']['sha256'] = hash('sha256', json_encode(
+            unset($target['observed']['resource_sha256']);
+            $target['observed']['resource_sha256'] = hash('sha256', json_encode(
                 $target['observed'],
                 JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES,
             ));
-            $target['observed_sha256'] = hash('sha256', json_encode(
+            $target['observed_resource_sha256'] = hash('sha256', json_encode(
                 $target['observed'],
                 JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES,
             ));
@@ -395,7 +399,7 @@ describe('legacy retirement', function () {
         $case['candidates']['instances'][0] = 'scalar';
         $malformed[] = $case;
         $case = $valid;
-        unset($case['candidates']['instances'][0]['sha256']);
+        unset($case['candidates']['instances'][0]['resource_sha256']);
         $malformed[] = $case;
         $case = $valid;
         $case['candidates']['instances'][0]['extra'] = true;
@@ -437,7 +441,7 @@ describe('legacy retirement', function () {
         $malformed[] = $case;
         $case = $valid;
         $case['freeze_evidence'] = [
-            'sha256' => $case['freeze_evidence']['sha256'],
+            'content_sha256' => $case['freeze_evidence']['content_sha256'],
             'path' => $case['freeze_evidence']['path'],
             'mode' => $case['freeze_evidence']['mode'],
         ];
@@ -521,6 +525,79 @@ describe('legacy retirement', function () {
             ->toBe([]);
     });
 
+    it('keeps content and resource digests distinct and content-sensitive', function () {
+        $observed = legacyFixture();
+        $operations = [];
+        $first = retirementService($observed, $operations, '2026-08-28T10:00:00+00:00')->inventory();
+        $reviewed = $first->candidates['source_paths'][0];
+        $observed['source_paths'][0]['content_sha256'] = hash('sha256', 'changed');
+
+        $changed = retirementService($observed, $operations, '2026-08-28T10:00:00+00:00')->inventory();
+
+        expect($reviewed['content_sha256'])
+            ->toBe(hash('sha256', ''))
+            ->and($reviewed['resource_sha256'])
+            ->not->toBe($reviewed['content_sha256'])->and($changed->candidates['source_paths'][0]['resource_sha256'])
+            ->not->toBe($reviewed['resource_sha256']);
+    });
+
+    it('rejects legacy digest schemas without backfilling missing content evidence', function () {
+        $observed = legacyFixture();
+        $operations = [];
+        $service = retirementService($observed, $operations, '2026-08-28T10:00:00+00:00');
+        $inventory = $service->inventory();
+        $legacyInventory = $inventory->toArray();
+        $legacyInventory['version'] = 1;
+        $legacyResource = &$legacyInventory['candidates']['source_paths'][0];
+        $legacyResource['sha256'] = $legacyResource['resource_sha256'];
+        unset($legacyResource['content_sha256'], $legacyResource['resource_sha256']);
+        unset($legacyResource);
+        $evidence = temporaryFile('freeze-');
+        file_put_contents($evidence, 'frozen');
+        chmod($evidence, 0600);
+        $manifest = $service->quarantine($inventory, $inventory->sha256(), $evidence);
+        $legacyManifest = $manifest->toArray();
+        $legacyManifest['version'] = 1;
+        $legacyResult = new \App\E2E\Value\RetirementResult(
+            true,
+            [],
+            [],
+            $inventory->preserved,
+            $manifest->sha256(),
+        )->toArray();
+        $legacyResult['version'] = 1;
+        $journal = temporaryFile('legacy-journal-');
+        chmod($journal, 0600);
+        $service->write($journal, [
+            'version' => 1,
+            'operation' => 'quarantine',
+            'phase' => 'complete',
+            'inventory_sha256' => $inventory->sha256(),
+            'freeze_evidence' => $manifest->freezeEvidence,
+            'manifest' => $manifest->toArray(),
+            'targets' => $manifest->targets,
+            'pending' => null,
+            'completed' => [['kind' => 'instances', 'identity' => 'orbit-e2e-dev-42']],
+        ]);
+
+        expect(fn () => \App\E2E\Value\RetirementInventory::fromArray($legacyInventory))
+            ->toThrow(InvalidArgumentException::class);
+        expect(fn () => \App\E2E\Value\QuarantineManifest::fromArray($legacyManifest))
+            ->toThrow(InvalidArgumentException::class);
+        expect(fn () => \App\E2E\Value\RetirementResult::fromArray($legacyResult))
+            ->toThrow(InvalidArgumentException::class);
+        expect(fn () => retirementService($observed, $operations, '2026-08-28T10:00:00+00:00')->quarantine(
+            $inventory,
+            $inventory->sha256(),
+            $evidence,
+            $journal,
+        ))
+            ->toThrow(RuntimeException::class, 'recovery journal is invalid');
+
+        unlink($journal);
+        unlink($evidence);
+    });
+
     it('requires exact review and freeze evidence and records reversible quarantine', function () {
         $observed = legacyFixture();
         $operations = [];
@@ -567,6 +644,7 @@ describe('legacy retirement', function () {
                 'safe_root' => $root.'/manifests',
                 'filesystem_type' => 'file',
                 'classification' => 'legacy',
+                'content_sha256' => hash('sha256', '{}'),
             ]],
         ];
         $operations = [];
@@ -838,7 +916,7 @@ describe('legacy retirement', function () {
             ->toThrow(RuntimeException::class);
 
         $service->write($journal, [
-            'version' => 1,
+            'version' => 2,
             'operation' => 'quarantine',
             'phase' => 'pending',
             'inventory_sha256' => $inventory->sha256(),
@@ -873,7 +951,7 @@ describe('legacy retirement', function () {
         chmod($journal, 0600);
 
         $service->write($journal, [
-            'version' => 1,
+            'version' => 2,
             'operation' => 'delete',
             'phase' => 'broken',
             'quarantine_sha256' => $manifest->sha256(),
@@ -903,7 +981,12 @@ describe('legacy retirement', function () {
 
         $pathRoot = temporaryPath('missing-legacy-', 4);
         mkdir($pathRoot, 0700);
-        $source = ['path' => $pathRoot.'/gone', 'safe_root' => $pathRoot, 'classification' => 'legacy'];
+        $source = [
+            'path' => $pathRoot.'/gone',
+            'safe_root' => $pathRoot,
+            'classification' => 'legacy',
+            'content_sha256' => hash('sha256', ''),
+        ];
         $smallObserved = [
             'source_paths' => [$source],
             'pools' => [['name' => 'orbit-e2e', 'classification' => 'preserve']],

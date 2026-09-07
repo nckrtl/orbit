@@ -50,7 +50,7 @@ final readonly class RetirementInventory
         $preserved = $this->preserved;
 
         return [
-            'version' => 1,
+            'version' => 2,
             'created_at' => $this->createdAt,
             'candidates' => $this->candidates,
             'preserved' => $preserved,
@@ -62,7 +62,7 @@ final readonly class RetirementInventory
     {
         if (
             array_keys($value) !== ['version', 'created_at', 'candidates', 'preserved']
-            || ($value['version'] ?? null) !== 1
+            || ($value['version'] ?? null) !== 2
             || ! is_string($value['created_at'] ?? null)
             || ! is_array($value['candidates'] ?? null)
             || ! is_array($value['preserved'] ?? null)
@@ -174,7 +174,7 @@ final readonly class RetirementInventory
                 'classification',
                 'owner',
                 'namespace',
-                'sha256',
+                'resource_sha256',
             ],
             'snapshots', 'networks' => [
                 'name',
@@ -184,7 +184,7 @@ final readonly class RetirementInventory
                 'dependencies',
                 'classification',
                 'namespace',
-                'sha256',
+                'resource_sha256',
             ],
             'source_paths', 'manifests', 'locks' => [
                 'path',
@@ -192,12 +192,28 @@ final readonly class RetirementInventory
                 'filesystem_type',
                 'classification',
                 'namespace',
-                'sha256',
+                'content_sha256',
+                'resource_sha256',
             ],
-            'base_images' => ['name', 'identity', 'fingerprint', 'classification', 'sha256'],
-            'pools' => ['name', 'identity', 'classification', 'sha256'],
-            'new_namespace' => ['name', 'identity', 'remote', 'project', 'classification', 'namespace', 'sha256'],
-            'evidence' => ['path', 'identity', 'filesystem_type', 'classification', 'sha256'],
+            'base_images' => ['name', 'identity', 'fingerprint', 'classification', 'resource_sha256'],
+            'pools' => ['name', 'identity', 'classification', 'resource_sha256'],
+            'new_namespace' => [
+                'name',
+                'identity',
+                'remote',
+                'project',
+                'classification',
+                'namespace',
+                'resource_sha256',
+            ],
+            'evidence' => [
+                'path',
+                'identity',
+                'filesystem_type',
+                'classification',
+                'content_sha256',
+                'resource_sha256',
+            ],
             default => throw new InvalidArgumentException('The retirement resource kind is invalid.'),
         };
         foreach (array_keys($resource) as $key) {
@@ -206,7 +222,7 @@ final readonly class RetirementInventory
             }
         }
         $identityKey = in_array($kind, ['source_paths', 'manifests', 'locks', 'evidence'], true) ? 'path' : 'name';
-        foreach ([$identityKey, 'classification', 'sha256'] as $key) {
+        foreach ([$identityKey, 'classification', 'resource_sha256'] as $key) {
             if (! is_string($resource[$key] ?? null) || $resource[$key] === '') {
                 throw new InvalidArgumentException(
                     'A retirement inventory resource is missing a required string field.',
@@ -226,9 +242,15 @@ final readonly class RetirementInventory
         }
         if (
             ! in_array($resource['classification'], ['legacy', 'preserve'], true)
-            || preg_match('/\A[a-f0-9]{64}\z/', $resource['sha256']) !== 1
+            || preg_match('/\A[a-f0-9]{64}\z/', $resource['resource_sha256']) !== 1
         ) {
             throw new InvalidArgumentException('A retirement inventory classification or digest is invalid.');
+        }
+        if (
+            $expectedFilesystemType !== null
+            && preg_match('/\A[a-f0-9]{64}\z/', $resource['content_sha256'] ?? '') !== 1
+        ) {
+            throw new InvalidArgumentException('A retirement inventory content digest is invalid.');
         }
         foreach (['remote', 'project', 'owner', 'namespace', 'safe_root', 'identity', 'fingerprint'] as $key) {
             if (array_key_exists($key, $resource) && ! is_string($resource[$key])) {
@@ -270,8 +292,8 @@ final readonly class RetirementInventory
             throw new InvalidArgumentException('An inventory instance has invalid status, metadata, or dependencies.');
         }
         $digestInput = $resource;
-        unset($digestInput['sha256']);
-        if (! hash_equals($resource['sha256'], hash('sha256', json_encode(
+        unset($digestInput['resource_sha256']);
+        if (! hash_equals($resource['resource_sha256'], hash('sha256', json_encode(
             $digestInput,
             JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES,
         )))) {
