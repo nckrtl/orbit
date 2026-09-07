@@ -124,20 +124,17 @@ function extendedReleaseTopology(TopologyTarget $target, AttemptPurpose $purpose
     );
 
     return new FeatureTopology(
-        $target,
-        $purpose,
-        $generation,
-        $target->network(),
-        array_combine($target->recipe->nodeKeys(), array_map($target->instance(...), $target->recipe->nodeKeys())),
-        new SourceState(str_repeat('a', 40), str_repeat('a', 40)),
-        new VerificationReport(true, ['ready' => verificationProbeFixture(probe: 'ready')]),
-        construction: TopologyConstructionInputs::create(
+        TopologyConstructionInputs::create(
             $target,
             $generation,
             2,
             TopologyExtension::AppProd,
             str_repeat('b', 64),
         ),
+        $purpose,
+        $generation,
+        new SourceState(str_repeat('a', 40), str_repeat('a', 40)),
+        new VerificationReport(true, ['ready' => verificationProbeFixture(probe: 'ready')]),
     );
 }
 

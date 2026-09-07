@@ -162,6 +162,7 @@ function candidateConvergenceFixture(): array
     $operation = new OperationId(str_repeat('b', 32));
     $state = IssueState::forWorktree('TST-123', $worktree);
     $state->writeAttempt($target->requireAttempt(), AttemptPurpose::Proof, $operation);
+    $construction = \App\E2E\Value\TopologyConstructionInputs::create($target, $generation, 2);
     $verification = new VerificationReport(true, [
         'proof.verify' => [
             'passed' => true,
@@ -172,11 +173,9 @@ function candidateConvergenceFixture(): array
         ],
     ]);
     $state->writeTopology(new FeatureTopology(
-        $target,
+        $construction,
         AttemptPurpose::Proof,
         $generation,
-        $target->network(),
-        array_combine(TopologyProfile::ROLES, array_map($target->instance(...), TopologyProfile::ROLES)),
         new SourceState($proved, $proved, operationId: $operation->value),
         $verification,
     ));
@@ -221,7 +220,7 @@ function candidateConvergenceFixture(): array
         ]],
         '.loop/proof/TST-123.json',
         [],
-        \App\E2E\Value\TopologyConstructionInputs::create($target, $generation, 2),
+        $construction,
         $observed,
         [
             'static_classification' => true,
