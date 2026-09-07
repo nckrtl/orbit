@@ -28,29 +28,25 @@ final readonly class MetricsPublicationManager implements PublicationManager
     {
         $gatewayAddress = $this->address($gateway);
         $metricsAddress = $this->address($metrics);
-        $certificateChanged = false;
+        $certificateReceipt = MetricsPublicationReceipt::unchanged();
         $firewallChanged = false;
-        $caddyChanged = false;
+        $caddyReceipt = MetricsPublicationReceipt::unchanged();
 
         try {
             $certificate = $this->certificates->issue('metrics.orbit', $gatewayAddress);
-            $certificateChanged = $this->certificatePublisher->publish($certificate);
+            $certificateReceipt = $this->certificatePublisher->publish($certificate);
             $firewallChanged = $this->firewall->converge($metrics, $gatewayAddress);
-            $caddyChanged = $this->caddy->publish($this->renderer->caddy($metricsAddress, $gatewayAddress));
+            $caddyReceipt = $this->caddy->publish($this->renderer->caddy($metricsAddress, $gatewayAddress));
             $this->dns->converge($metrics);
         } catch (Throwable $exception) {
             try {
-                if ($caddyChanged) {
-                    $this->caddy->remove();
-                }
+                $this->caddy->restore($caddyReceipt);
 
                 if ($firewallChanged) {
                     $this->firewall->remove($metrics, $gatewayAddress);
                 }
 
-                if ($certificateChanged) {
-                    $this->certificatePublisher->remove();
-                }
+                $this->certificatePublisher->restore($certificateReceipt);
             } catch (Throwable) {
                 throw new ResourceOperationException(
                     'metrics.publication_rollback_failed',

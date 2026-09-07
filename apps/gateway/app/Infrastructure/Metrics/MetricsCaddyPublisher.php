@@ -7,6 +7,7 @@ namespace App\Infrastructure\Metrics;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
+use InvalidArgumentException;
 
 final readonly class MetricsCaddyPublisher
 {
@@ -16,7 +17,7 @@ final readonly class MetricsCaddyPublisher
         private ProcessRunner $processes,
     ) {}
 
-    public function publish(string $configuration): bool
+    public function publish(string $configuration): MetricsPublicationReceipt
     {
         $version = bin2hex(random_bytes(8));
         $encoded = base64_encode($configuration);
@@ -55,8 +56,10 @@ final readonly class MetricsCaddyPublisher
                 test -f "\$source_main"
                 cp -a -- "\$source_main" "\$previous_main"
                 current_fragments=\$(dirname "\$source_main")/fragments
+                previous_configuration=
                 if [ -f "\$current_fragments/\$owned_fragment" ]; then
                     head -n 1 -- "\$current_fragments/\$owned_fragment" | grep -Fqx -- "# Managed by Orbit: metrics"
+                    previous_configuration=\$(base64 -w 0 -- "\$current_fragments/\$owned_fragment")
                 fi
                 previous_target=
                 if [ -L "\$live_caddyfile" ]; then
@@ -91,6 +94,7 @@ final readonly class MetricsCaddyPublisher
                 find "\$candidate" -type d -exec chmod 0750 {} +
                 find "\$candidate" -type f -exec chmod 0640 {} +
                 if [ -f "\$current_fragments/\$owned_fragment" ] && cmp -s -- "\$candidate/fragments/\$owned_fragment" "\$current_fragments/\$owned_fragment"; then
+                    printf 'orbit-metrics-publication:unchanged\n'
                     exit 0
                 fi
                 caddy validate --config "\$candidate/Caddyfile" --adapter caddyfile
@@ -110,11 +114,38 @@ final readonly class MetricsCaddyPublisher
                     rm -rf -- "\$published"
                     exit 1
                 fi
-                printf 'changed\n'
+                if [ -n "\$previous_configuration" ]; then
+                    printf 'orbit-metrics-publication:replaced:%s\n' "\$previous_configuration"
+                else
+                    printf 'orbit-metrics-publication:created\n'
+                fi
                 BASH,
         ));
 
-        return in_array('changed', preg_split('/\R/', trim($result->stdout)) ?: [], strict: true);
+        try {
+            return MetricsPublicationReceipt::fromProcessOutput($result->stdout);
+        } catch (InvalidArgumentException) {
+            throw new ResourceOperationException(
+                'metrics.caddy_publication_failed',
+                'Metrics Caddy publication did not complete.',
+                502,
+            );
+        }
+    }
+
+    public function restore(MetricsPublicationReceipt $receipt): void
+    {
+        if ($receipt->isUnchanged()) {
+            return;
+        }
+
+        if ($receipt->wasCreated()) {
+            $this->remove();
+
+            return;
+        }
+
+        $this->publish($receipt->previousPublication());
     }
 
     public function remove(): void
