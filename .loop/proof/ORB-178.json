@@ -1,0 +1,44 @@
+{
+    "setup": [
+        {
+            "id": "checkout-removal-app-dev-setup",
+            "node": "app-dev",
+            "argv": [
+                "/var/lib/orbit-e2e/proof/orb-178-checkout-removal.sh",
+                "setup-app-dev"
+            ],
+            "timeout_seconds": 300
+        },
+        {
+            "id": "checkout-removal-gateway-setup",
+            "node": "gateway",
+            "argv": [
+                "/var/lib/orbit-e2e/proof/orb-178-checkout-removal.sh",
+                "setup-gateway"
+            ],
+            "timeout_seconds": 300
+        }
+    ],
+    "acceptance": [
+        {
+            "id": "checkout-publication-boundary",
+            "node": "gateway",
+            "argv": [
+                "/var/lib/orbit-e2e/proof/orb-178-checkout-removal.sh",
+                "checkout-publication-boundary"
+            ],
+            "timeout_seconds": 900
+        },
+        {
+            "id": "checkout-removal-refusals",
+            "node": "gateway",
+            "argv": [
+                "/var/lib/orbit-e2e/proof/orb-178-checkout-removal.sh",
+                "checkout-removal-refusals"
+            ],
+            "timeout_seconds": 900
+        }
+    ],
+    "mutates": true,
+    "observed_inputs": true
+}

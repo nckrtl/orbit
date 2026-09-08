@@ -192,7 +192,10 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
             );
         }
 
-        if (! is_string($appInstance->branch) || ! is_string($appInstance->starting_commit)) {
+        $branch = $appInstance->branch;
+        $startingCommit = $appInstance->starting_commit;
+
+        if (! is_string($branch) || ! is_string($startingCommit)) {
             $this->invalidEvidence($appInstance, false);
         }
 
@@ -208,8 +211,8 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
             'root' => $this->boundaries->appInstanceRoot($appInstance, $account),
             'user' => $account->user,
             'group' => $account->group,
-            'branch' => $appInstance->branch,
-            'startingCommit' => $appInstance->starting_commit,
+            'branch' => $branch,
+            'startingCommit' => $startingCommit,
             'repositoryIdentity' => $repositoryIdentity,
         ];
     }
