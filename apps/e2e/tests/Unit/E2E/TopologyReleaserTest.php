@@ -425,6 +425,90 @@ describe('TopologyReleaser', function () {
         expect($exitCode)->not->toBe(0);
     });
 
+    it('refuses an exact cleanup set with a replaced identity before any Incus, Git, or lease mutation', function (): void {
+        $worktree = temporaryPath('orbit-release-exact-replaced-', 4);
+        mkdir($worktree, 0700);
+        file_put_contents($worktree.'/.gitignore', "/.e2e/\n");
+        Process::run(['git', '-C', $worktree, 'init', '--quiet', '-b', 'codex/aux-99-exact'])->throw();
+        Process::run(['git', '-C', $worktree, 'config', 'user.email', 'orbit@example.test'])->throw();
+        Process::run(['git', '-C', $worktree, 'config', 'user.name', 'Orbit'])->throw();
+        Process::run(['git', '-C', $worktree, 'add', '.'])->throw();
+        Process::run(['git', '-C', $worktree, 'commit', '--quiet', '-m', 'proved'])->throw();
+        $repository = new GitRepository($worktree);
+        $proved = $repository->commit();
+        $capturedProof = new AttemptId(str_repeat('a', 32));
+        $replacementProof = new AttemptId(str_repeat('b', 32));
+        $discovery = new AttemptId(str_repeat('c', 32));
+        $state = IssueState::forWorktree('AUX-99', $worktree);
+        $state->writeAttempt($replacementProof, AttemptPurpose::Proof, new OperationId(str_repeat('d', 32)));
+        $state->writeTopology(extendedReleaseTopology(
+            TopologyTarget::feature('AUX-99', $replacementProof, TopologyRecipe::extendedAppProd()),
+            AttemptPurpose::Proof,
+        ));
+        $state->writeAttempt($discovery, AttemptPurpose::Discovery, new OperationId(str_repeat('e', 32)));
+        $state->writeProof([
+            'status' => 'proved',
+            'attempt_id' => $capturedProof->value,
+            'manifest_sha256' => str_repeat('f', 64),
+        ]);
+        $repository->pinProof('AUX-99', $capturedProof, $proved);
+        $leasePath = $worktree.'/.e2e/'.IssueState::PROOF_ATTEMPT;
+        $topologyPath = $worktree.'/.e2e/'.IssueState::PROOF_TOPOLOGY;
+        $lease = file_get_contents($leasePath);
+        $topology = file_get_contents($topologyPath);
+        Process::fake();
+
+        expect(fn () => releaserForTest(new StatePaths(temporaryPath('orbit-release-host-', 4)))
+            ->releaseExact(new TopologyRequest('AUX-99', $worktree), [
+                AttemptPurpose::Discovery->value => $discovery,
+                AttemptPurpose::Proof->value => $capturedProof,
+            ]))
+            ->toThrow(RuntimeException::class, "was replaced by {$replacementProof->value}")
+            ->and(file_get_contents($leasePath))
+            ->toBe($lease)
+            ->and(file_get_contents($topologyPath))
+            ->toBe($topology)
+            ->and($state->attemptId(AttemptPurpose::Discovery)->value)
+            ->toBe($discovery->value);
+        Process::assertNothingRan();
+
+        $output = [];
+        $exitCode = 0;
+        exec(implode(' ', array_map(escapeshellarg(...), [
+            'git',
+            '-C',
+            $worktree,
+            'show-ref',
+            '--verify',
+            'refs/orbit/e2e-proof/aux-99/'.$capturedProof->value,
+        ])).' 2>/dev/null', $output, $exitCode);
+        expect($exitCode)->toBe(0);
+    });
+
+    it('refuses an exact cleanup set with an absent identity before mutating an unchanged attempt', function (): void {
+        $worktree = temporaryPath('orbit-release-exact-absent-', 4);
+        mkdir($worktree, 0700);
+        $discovery = new AttemptId(str_repeat('a', 32));
+        $absentProof = new AttemptId(str_repeat('b', 32));
+        $state = IssueState::forWorktree('AUX-99', $worktree);
+        $state->writeAttempt($discovery, AttemptPurpose::Discovery, new OperationId(str_repeat('c', 32)));
+        $leasePath = $worktree.'/.e2e/'.IssueState::ATTEMPT;
+        $lease = file_get_contents($leasePath);
+        Process::fake();
+
+        expect(fn () => releaserForTest(new StatePaths(temporaryPath('orbit-release-host-', 4)))
+            ->releaseExact(new TopologyRequest('AUX-99', $worktree), [
+                AttemptPurpose::Discovery->value => $discovery,
+                AttemptPurpose::Proof->value => $absentProof,
+            ]))
+            ->toThrow(RuntimeException::class, "Captured proof attempt {$absentProof->value} is absent")
+            ->and(file_get_contents($leasePath))
+            ->toBe($lease)
+            ->and($state->attemptId(AttemptPurpose::Discovery)->value)
+            ->toBe($discovery->value);
+        Process::assertNothingRan();
+    });
+
     it('refuses a VM that another attempt owns and names an absent attempt', function () {
         $worktree = temporaryPath('orbit-release-worktree-', 4);
         mkdir($worktree, 0700);
