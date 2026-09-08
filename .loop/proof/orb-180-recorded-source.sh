@@ -218,8 +218,9 @@ BASH
         worktree_evidence=$(record_source "$target")
         common=$(json_field "$worktree_evidence" common_repository_path)
         before_refs=$(remote_script "$common" <<'BASH'
-git -C "$1" show-ref | sha256sum | cut -d ' ' -f 1
-git -C "$1" ls-remote origin | sha256sum | cut -d ' ' -f 1
+local_refs=$(git -C "$1" show-ref | sha256sum | cut -d ' ' -f 1)
+remote_refs=$(git -C "$1" ls-remote origin | sha256sum | cut -d ' ' -f 1)
+printf '%s\0%s' "$local_refs" "$remote_refs" | sha256sum | cut -d ' ' -f 1
 BASH
 )
         worktree_receipt=$(json_field "$worktree_evidence" receipt)
@@ -238,8 +239,9 @@ git -C "$common" show-ref --verify "refs/heads/$target" >/dev/null
 worktree_inventory=$(git -C "$common" worktree list --porcelain)
 ! grep -F "/home/orbit/apps/laravel-typed/$target" <<< "$worktree_inventory"
 after_refs=$(
-    git -C "$common" show-ref | sha256sum | cut -d ' ' -f 1
-    git -C "$common" ls-remote origin | sha256sum | cut -d ' ' -f 1
+    local_refs=$(git -C "$common" show-ref | sha256sum | cut -d ' ' -f 1)
+    remote_refs=$(git -C "$common" ls-remote origin | sha256sum | cut -d ' ' -f 1)
+    printf '%s\0%s' "$local_refs" "$remote_refs" | sha256sum | cut -d ' ' -f 1
 )
 test "$after_refs" = "$before_refs"
 BASH
