@@ -680,7 +680,8 @@ BASH
 wc -l < /tmp/orb124-former-target-contact
 BASH
 )
-        rm -f -- /tmp/orb124-dns-lock-held /tmp/orb124-dns-lock-release /tmp/orb124-removal-output
+        sudo rm -f -- /tmp/orb124-dns-lock-held /tmp/orb124-dns-lock-release
+        rm -f -- /tmp/orb124-removal-output
         sudo bash -seu <<'BASH' &
 exec 9>/run/lock/orbit-dnsmasq.lock
 flock 9
@@ -690,7 +691,7 @@ while [ ! -f /tmp/orb124-dns-lock-release ]; do
 done
 BASH
         lock_pid=$!
-        trap 'touch /tmp/orb124-dns-lock-release; wait "$lock_pid" || true' EXIT
+        trap 'sudo touch /tmp/orb124-dns-lock-release; wait "$lock_pid" || true' EXIT
         for _ in $(seq 1 100); do
             test -f /tmp/orb124-dns-lock-held && break
             sleep 0.1
@@ -739,7 +740,7 @@ wc -l < /tmp/orb124-former-target-contact
 BASH
 )
         test "$contact_before" = "$contact_after"
-        touch /tmp/orb124-dns-lock-release
+        sudo touch /tmp/orb124-dns-lock-release
         wait "$lock_pid"
         wait "$removal_pid"
         trap - EXIT
