@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Http\Requests\Nodes;
 
 use App\Domain\Nodes\RoleName;
-use App\Http\Requests\TopLevelJsonObjectInspector;
 use Closure;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -59,20 +58,13 @@ final class RemoveNodeRoleRequest extends FormRequest
     public function validationData(): array
     {
         try {
-            $payload = app(TopLevelJsonObjectInspector::class)->inspect(
+            return app(RemoveNodeRoleInputParser::class)->parse(
                 $this->getContent(),
-                ['force', 'purge_data', 'offline'],
+                $this->route('role'),
             );
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
         }
-        $role = $this->route('role');
-
-        if (is_string($role)) {
-            $payload['role'] = $role;
-        }
-
-        return $payload;
     }
 
     public function role(): RoleName
