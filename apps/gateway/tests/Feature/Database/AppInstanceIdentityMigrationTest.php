@@ -141,10 +141,7 @@ function app_instance_identity_migration(): object
 
 function app_instance_identity_removal_migration(): object
 {
-    return require
-        base_path(
-            'database/migrations/2026_09_08_000000_persist_app_instance_removal_inventory.php',
-        );
+    return app_instance_removal_migration_boundary();
 }
 
 /** @return array{app: int, instance: int, route: int, target: int} */

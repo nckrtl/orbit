@@ -105,10 +105,7 @@ it('backfills required unique identities and rolls back only the added boundary'
 
 function app_repository_identity_removal_migration(): object
 {
-    return require
-        base_path(
-            'database/migrations/2026_09_08_000000_persist_app_instance_removal_inventory.php',
-        );
+    return app_instance_removal_migration_boundary();
 }
 
 function app_repository_identity_legacy_app(string $slug, string $repository): int

@@ -97,7 +97,7 @@ orbit instance:new <app-id> <node-id> feature-one \
 
 The effective root is the AppInstance root when set and the App root otherwise. Orbit rejects absolute paths and parent traversal.
 
-## Remove a development AppInstance
+## Remove an AppInstance
 
 Remove clean, published source with:
 
@@ -111,11 +111,11 @@ Use forced removal only when you intend to lose dirty or unpublished work:
 orbit instance:remove <id> --force
 ```
 
-The [AppInstance removal reference](../reference/appinstance-removal.md) describes single-checkout preflight, retained branches, final-target Route deletion, transient unavailable traffic, the `removing` state, ordered cleanup, bounded progress, refusals, and safe retry.
+Production removal uses the same command without deleting application content. It retains a shared Route and republishes its surviving production targets, or deletes a final-target Route and releases its hostname. The [AppInstance removal reference](../reference/appinstance-removal.md) describes development source preflight, retained production content, Route cleanup, the `removing` state, bounded progress, refusals, and safe retry.
 
 ## Input boundary
 
-Development AppInstance creation and removal do not accept a repository, command, process, or shell input. The App owns the repository, and the optional branch input selects source without changing placement or Route identity. Orbit does not install application dependencies as part of framework detection.
+AppInstance creation and removal do not accept a repository, command, process, or shell input. The App owns the repository, and the optional branch input selects source without changing placement or Route identity. Orbit does not install application dependencies as part of framework detection.
 
 The [Route reference](../reference/routes.md) defines initial private traffic projection and the refusal boundary for Route, Node, Cluster, and access changes that still need coordinated runtime and Laravel URL reconciliation.
 

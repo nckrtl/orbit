@@ -13,6 +13,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\AppInstanceRemoval;
+use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\Route;
 use Illuminate\Database\QueryException;
@@ -169,6 +170,188 @@ it('rejects a removing AppInstance inserted without a recorded operation', funct
         ->toThrow(QueryException::class);
 });
 
+it('persists an ordered explicit production Route across distinct active app-prod Nodes', function (): void {
+    [$app, $cluster, $one, $two] = production_route_constraint_fixture();
+    $route = Route::query()->create([
+        'app_id' => $app->id,
+        'cluster_id' => $cluster->id,
+        'hostname' => 'shared.example.test',
+        'provenance' => RouteProvenance::Explicit,
+        'publication' => RoutePublication::Private,
+        'status' => RouteStatus::Pending,
+    ]);
+    $route->targets()->create(['app_instance_id' => $two->id, 'position' => 1]);
+    $route->targets()->create(['app_instance_id' => $one->id, 'position' => 0]);
+    $route->update(['status' => RouteStatus::Active]);
+    $one->update(['status' => AppInstanceState::Active]);
+    $two->update(['status' => AppInstanceState::Active]);
+
+    expect($route->targets()->orderBy('position')->pluck('app_instance_id')->all())
+        ->toBe([$one->id, $two->id]);
+});
+
+it('rejects gapped writes after production Route activation and permits atomic delete compaction', function (): void {
+    [$app, $cluster, $one, $two] = production_route_constraint_fixture();
+    $route = Route::query()->create([
+        'app_id' => $app->id,
+        'cluster_id' => $cluster->id,
+        'hostname' => 'active-order.example.test',
+        'provenance' => RouteProvenance::Explicit,
+        'publication' => RoutePublication::Private,
+        'status' => RouteStatus::Pending,
+    ]);
+    $first = $route->targets()->create(['app_instance_id' => $one->id, 'position' => 0]);
+    $second = $route->targets()->create(['app_instance_id' => $two->id, 'position' => 1]);
+    $route->update(['status' => RouteStatus::Active]);
+    $threeNode = Node::query()->create([
+        'name' => 'shared-three',
+        'cluster_id' => $cluster->id,
+        'status' => LifecycleStatus::Active,
+        'public_ssh_host' => 'shared-three.test',
+        'wireguard_ip' => '10.44.0.83',
+    ]);
+    $threeNode->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
+    $three = AppInstance::query()->create([
+        'app_id' => $app->id,
+        'node_id' => $threeNode->id,
+        'name' => 'three',
+        'environment' => 'production',
+        'checkout_path' => '/srv/three',
+        'status' => AppInstanceState::SourceResolved,
+    ]);
+
+    expect(fn () => $second->update(['position' => 2]))
+        ->toThrow(QueryException::class)
+        ->and(fn () => $route->targets()->create(['app_instance_id' => $three->id, 'position' => 3]))
+        ->toThrow(QueryException::class)
+        ->and($route->targets()->orderBy('position')->pluck('position')->all())
+        ->toBe([0, 1]);
+
+    $route->targets()->create(['app_instance_id' => $three->id, 'position' => 2]);
+    DB::transaction(function () use ($first, $route): void {
+        $first->delete();
+
+        foreach ($route->targets()->orderBy('position')->orderBy('id')->get() as $position => $target) {
+            $target->update(['position' => $position]);
+        }
+    });
+
+    expect($route->targets()->orderBy('position')->pluck('position')->all())
+        ->toBe([0, 1]);
+});
+
+it('prevents an existing shared production target set from drifting through related records', function (): void {
+    [$app, $cluster, $one, $two] = production_route_constraint_fixture();
+    $route = Route::query()->create([
+        'app_id' => $app->id,
+        'cluster_id' => $cluster->id,
+        'hostname' => 'stable.example.test',
+        'provenance' => RouteProvenance::Explicit,
+        'publication' => RoutePublication::Private,
+        'status' => RouteStatus::Pending,
+    ]);
+    $route->targets()->create(['app_instance_id' => $one->id, 'position' => 0]);
+    $route->targets()->create(['app_instance_id' => $two->id, 'position' => 1]);
+    $route->update(['status' => RouteStatus::Active]);
+
+    expect(fn () => $one->node->update(['status' => LifecycleStatus::Failed]))
+        ->toThrow(QueryException::class)
+        ->and(fn () => $two
+            ->node
+            ->roles()
+            ->where('role', RoleName::AppProd->value)
+            ->update([
+                'status' => LifecycleStatus::Failed->value,
+            ]))
+        ->toThrow(QueryException::class)
+        ->and(fn () => $one->update(['environment' => 'development']))
+        ->toThrow(QueryException::class);
+
+    $other = Cluster::query()->create(['name' => 'drift', 'state' => 'active']);
+
+    expect(fn () => $route->update(['cluster_id' => $other->id]))
+        ->toThrow(QueryException::class)
+        ->and($route->refresh()->cluster_id)
+        ->toBe($cluster->id)
+        ->and($route->targets()->count())
+        ->toBe(2);
+});
+
+it('refuses to activate a production target set with a position gap', function (): void {
+    [$app, $cluster, $one, $two] = production_route_constraint_fixture();
+    $route = Route::query()->create([
+        'app_id' => $app->id,
+        'cluster_id' => $cluster->id,
+        'hostname' => 'gap.example.test',
+        'provenance' => RouteProvenance::Explicit,
+        'publication' => RoutePublication::Private,
+        'status' => RouteStatus::Pending,
+    ]);
+    $route->targets()->create(['app_instance_id' => $one->id, 'position' => 0]);
+    $route->targets()->create(['app_instance_id' => $two->id, 'position' => 2]);
+
+    expect(fn () => $route->update(['status' => RouteStatus::Active]))
+        ->toThrow(QueryException::class)
+        ->and($route->refresh()->status)
+        ->toBe(RouteStatus::Pending);
+});
+
+it('keeps generated and development Routes single-target', function (string $kind): void {
+    [$app, $cluster, $one, $two] = production_route_constraint_fixture(
+        environment: $kind === 'development' ? 'development' : 'production',
+        role: $kind === 'development' ? RoleName::AppDev : RoleName::AppProd,
+    );
+    $route = Route::query()->create([
+        'app_id' => $app->id,
+        'cluster_id' => $cluster->id,
+        'generation_basis_node_id' => $kind === 'generated' ? $one->node_id : null,
+        'hostname' => "{$kind}.example.test",
+        'provenance' => $kind === 'generated' ? RouteProvenance::Generated : RouteProvenance::Explicit,
+        'publication' => RoutePublication::Private,
+        'status' => RouteStatus::Pending,
+    ]);
+    $route->targets()->create(['app_instance_id' => $one->id, 'position' => 0]);
+
+    expect(fn () => $route->targets()->create(['app_instance_id' => $two->id, 'position' => 1]))
+        ->toThrow(QueryException::class)
+        ->and($route->targets()->count())
+        ->toBe(1);
+})->with(['generated', 'development']);
+
+it('refuses a shared production target on a wrong Cluster, inactive role, or duplicate Node', function (string $invalid): void {
+    [$app, $cluster, $one, $two] = production_route_constraint_fixture();
+
+    if ($invalid === 'cluster') {
+        $other = Cluster::query()->create(['name' => 'other', 'state' => 'active']);
+        $two->node->update(['cluster_id' => $other->id]);
+    } elseif ($invalid === 'role') {
+        $two
+            ->node
+            ->roles()
+            ->where('role', RoleName::AppProd->value)
+            ->update([
+                'status' => LifecycleStatus::Provisioning->value,
+            ]);
+    } else {
+        $two->update(['node_id' => $one->node_id]);
+    }
+
+    $route = Route::query()->create([
+        'app_id' => $app->id,
+        'cluster_id' => $cluster->id,
+        'hostname' => "invalid-{$invalid}.example.test",
+        'provenance' => RouteProvenance::Explicit,
+        'publication' => RoutePublication::Private,
+        'status' => RouteStatus::Pending,
+    ]);
+    $route->targets()->create(['app_instance_id' => $one->id, 'position' => 0]);
+
+    expect(fn () => $route->targets()->create(['app_instance_id' => $two->id, 'position' => 1]))
+        ->toThrow(QueryException::class)
+        ->and($route->targets()->count())
+        ->toBe(1);
+})->with(['cluster', 'role', 'duplicate Node']);
+
 /** @return array{AppInstance, Route} */
 function app_instance_route_constraint_fixture(): array
 {
@@ -208,6 +391,53 @@ function app_instance_route_constraint_fixture(): array
     ]);
 
     return [$instance, $route];
+}
+
+/** @return array{OrbitApp, Cluster, AppInstance, AppInstance} */
+function production_route_constraint_fixture(
+    string $environment = 'production',
+    RoleName $role = RoleName::AppProd,
+): array {
+    $app = OrbitApp::query()->create([
+        'name' => 'Shared',
+        'slug' => 'shared',
+        'repository_url' => 'https://example.test/shared.git',
+        'default_branch' => 'main',
+        'root' => 'public',
+    ]);
+    $cluster = Cluster::query()->create(['name' => 'shared', 'state' => 'active']);
+    $instances = collect(['one', 'two'])->map(function (string $name) use (
+        $app,
+        $cluster,
+        $environment,
+        $role,
+    ): AppInstance {
+        $suffix = $name === 'one' ? '71' : '72';
+        $node = Node::query()->create([
+            'name' => "shared-{$name}",
+            'cluster_id' => $cluster->id,
+            'status' => LifecycleStatus::Active,
+            'platform' => 'linux',
+            'public_ssh_host' => "192.0.2.{$suffix}",
+            'wireguard_ip' => "10.44.0.{$suffix}",
+        ]);
+        $node->roles()->create(['role' => $role, 'status' => LifecycleStatus::Active]);
+
+        return AppInstance::query()
+            ->create([
+                'app_id' => $app->id,
+                'node_id' => $node->id,
+                'name' => $name,
+                'environment' => $environment,
+                'checkout_path' => "/var/www/shared/{$name}",
+                'branch' => 'main',
+                'starting_commit' => str_repeat('a', 40),
+                'status' => AppInstanceState::SourceResolved,
+            ])
+            ->load('node');
+    });
+
+    return [$app, $cluster, $instances[0], $instances[1]];
 }
 
 function app_instance_route_preflight_instance(OrbitApp $app, Node $node, string $name): AppInstance

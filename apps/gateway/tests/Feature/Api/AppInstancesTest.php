@@ -25,6 +25,8 @@ use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\RouteProvenance;
+use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -247,6 +249,14 @@ beforeEach(function (): void {
             $route->targets()->where('app_instance_id', $member->app_instance_id)->delete();
 
             if ($route->targets()->exists()) {
+                $route
+                    ->targets()
+                    ->orderBy('position')
+                    ->get()
+                    ->each(
+                        static fn (RouteTarget $target, int $position) => $target->update(['position' => $position]),
+                    );
+
                 return 'retained';
             }
 
@@ -1363,6 +1373,76 @@ it('removes an active AppInstance through every durable checkpoint', function (b
         ])
         ->not->toHaveKeys(['checkout_path', 'source_digest', 'finalization_receipt']);
 })->with([false, true]);
+
+it('removes one production target through the public API and reports retained Route progress', function (): void {
+    $cluster = Cluster::query()->create([
+        'name' => 'production-removal',
+        'state' => ClusterState::Active,
+    ]);
+    $instances = collect(['one', 'two'])->map(function (string $name) use ($cluster): AppInstance {
+        $suffix = $name === 'one' ? '91' : '92';
+        $node = Node::query()->create([
+            'cluster_id' => $cluster->id,
+            'name' => "app-prod-{$name}",
+            'status' => LifecycleStatus::Active,
+            'platform' => 'linux',
+            'public_ssh_host' => "192.0.2.{$suffix}",
+            'wireguard_ip' => "10.44.0.{$suffix}",
+        ]);
+        $node->roles()->create([
+            'role' => RoleName::AppProd,
+            'status' => LifecycleStatus::Active,
+        ]);
+
+        return AppInstance::query()->create([
+            'app_id' => $this->orbitApp->id,
+            'node_id' => $node->id,
+            'name' => $name,
+            'environment' => 'production',
+            'checkout_path' => "/var/www/acme/{$name}",
+            'branch' => 'main',
+            'starting_commit' => str_repeat('a', 40),
+            'status' => AppInstanceState::SourceResolved,
+        ]);
+    });
+    $route = Route::query()->create([
+        'app_id' => $this->orbitApp->id,
+        'cluster_id' => $cluster->id,
+        'hostname' => 'production.example.test',
+        'provenance' => RouteProvenance::Explicit,
+        'publication' => RoutePublication::Private,
+        'status' => RouteStatus::Pending,
+    ]);
+    $route->targets()->create(['app_instance_id' => $instances[0]->id, 'position' => 0]);
+    $route->targets()->create(['app_instance_id' => $instances[1]->id, 'position' => 1]);
+    $route->update(['status' => RouteStatus::Active]);
+    $instances->each(static fn (AppInstance $instance) => $instance->update([
+        'status' => AppInstanceState::Active,
+    ]));
+
+    $this
+        ->deleteJson("/api/v1/instances/{$instances[0]->id}")
+        ->assertOk()
+        ->assertJsonPath('data.id', $instances[0]->id)
+        ->assertJsonPath('data.name', 'one')
+        ->assertJsonPath('data.status', 'completed')
+        ->assertJsonPath('data.total', 1)
+        ->assertJsonPath('data.completed', 1)
+        ->assertJsonPath('data.remaining', 0);
+
+    expect(AppInstance::query()->pluck('id')->all())
+        ->toBe([$instances[1]->id])
+        ->and($route->refresh()->status)
+        ->toBe(RouteStatus::Active)
+        ->and($route->targets()->sole()->app_instance_id)
+        ->toBe($instances[1]->id)
+        ->and($route->targets()->sole()->position)
+        ->toBe(0)
+        ->and(AppInstanceRemovalMember::query()->sole()->route_outcome)
+        ->toBe('retained')
+        ->and($this->removalSource->calls)
+        ->toBeEmpty();
+});
 
 it('keeps preflight refusals free of Route source and lifecycle mutation', function (): void {
     $created = $this->postJson('/api/v1/instances', [
