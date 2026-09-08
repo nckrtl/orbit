@@ -21,6 +21,10 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
+beforeEach(function (): void {
+    orb183_production_route_migration()->down();
+});
+
 it('preserves populated AppInstance and Route state while adding empty removal storage', function (): void {
     $migration = orb179_removal_migration();
     $migration->down();

@@ -13,7 +13,9 @@ describe('cluster and node network migration', function (): void {
         $migration = require
             base_path('database/migrations/2026_08_31_165346_add_clusters_and_node_network_identity.php');
         $ingressMigration = require base_path('database/migrations/2026_09_01_120814_add_cluster_ingress_role.php');
+        $productionRoutesMigration = orb183_production_route_migration();
 
+        $productionRoutesMigration->down();
         $obsoleteMigration->down();
         $ingressMigration->down();
         $migration->down();
@@ -31,6 +33,7 @@ describe('cluster and node network migration', function (): void {
         $migration->up();
         $ingressMigration->up();
         $obsoleteMigration->up();
+        $productionRoutesMigration->up();
 
         $node = DB::table('nodes')->where('name', 'legacy-node')->first();
 
@@ -61,7 +64,9 @@ describe('cluster and node network migration', function (): void {
         $migration = require
             base_path('database/migrations/2026_08_31_165346_add_clusters_and_node_network_identity.php');
         $ingressMigration = require base_path('database/migrations/2026_09_01_120814_add_cluster_ingress_role.php');
+        $productionRoutesMigration = orb183_production_route_migration();
 
+        $productionRoutesMigration->down();
         $obsoleteMigration->down();
         $ingressMigration->down();
 
@@ -98,6 +103,7 @@ describe('cluster and node network migration', function (): void {
         $migration->up();
         $ingressMigration->up();
         $obsoleteMigration->up();
+        $productionRoutesMigration->up();
     });
 
     it('enforces Cluster-scoped LAN and Router ownership constraints', function (): void {
