@@ -337,7 +337,12 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
             test ! -L "$checkout/.git"
             test "$git_dir" = "$checkout/.git"
             test "$common" = "$checkout/.git"
-            origin=$(git -C "$checkout" remote get-url origin)
+            origin_with_marker=$(git -C "$checkout" remote get-url origin && printf x)
+            origin=${origin_with_marker%x}
+            case "$origin" in
+                *$'\n') origin=${origin%$'\n'} ;;
+                *) exit 1 ;;
+            esac
             branch=$(git -C "$checkout" symbolic-ref --short HEAD)
             commit=$(git -C "$checkout" rev-parse --verify HEAD^{commit})
             test "$branch" = "$expected_branch"
@@ -431,7 +436,12 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
             test "$(git -C "$checkout" symbolic-ref --short HEAD)" = "$expected_branch"
             test "$(git -C "$checkout" rev-parse --verify HEAD^{commit})" = "$expected_commit"
             git -C "$checkout" merge-base --is-ancestor "$expected_starting_commit" HEAD
-            origin=$(git -C "$checkout" remote get-url origin)
+            origin_with_marker=$(git -C "$checkout" remote get-url origin && printf x)
+            origin=${origin_with_marker%x}
+            case "$origin" in
+                *$'\n') origin=${origin%$'\n'} ;;
+                *) exit 1 ;;
+            esac
             repository_identity=$(printf '%s' "$origin" | php -r '
                 $repository = stream_get_contents(STDIN);
 

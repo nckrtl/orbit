@@ -640,6 +640,68 @@ it('refuses malformed origin ports at the destructive boundary', function (strin
     'normal SSH with an out-of-range port' => ['ssh://git@example.test:65536/acme/site.git', false],
 ]);
 
+it('rejects origins with a trailing line feed during inspection', function (string $origin, bool $force): void {
+    $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
+    $this->source->prepare($instance, false);
+    $resolution = $this->source->resolve($instance);
+    $instance->update([
+        'branch' => $resolution->branch,
+        'starting_commit' => $resolution->startingCommit,
+        'status' => AppInstanceState::SourceResolved,
+    ]);
+    orb76_run([
+        'git',
+        '-C',
+        $instance->checkout_path,
+        'remote',
+        'set-url',
+        'origin',
+        "{$origin}\n",
+    ]);
+
+    expect(fn () => $this->removal->inspect($instance, $force))
+        ->toThrow(RuntimeConvergenceException::class);
+    expect(is_dir($instance->checkout_path))->toBeTrue();
+})->with([
+    'normal HTTPS' => ['https://example.test/acme/site.git', false],
+    'forced HTTPS' => ['https://example.test/acme/site.git', true],
+    'normal SSH' => ['ssh://git@example.test/acme/site.git', false],
+    'forced SSH' => ['ssh://git@example.test/acme/site.git', true],
+]);
+
+it('refuses origins with a trailing line feed at the destructive boundary', function (
+    string $origin,
+    bool $force,
+): void {
+    $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
+    $this->source->prepare($instance, false);
+    $resolution = $this->source->resolve($instance);
+    $instance->update([
+        'branch' => $resolution->branch,
+        'starting_commit' => $resolution->startingCommit,
+        'status' => AppInstanceState::SourceResolved,
+    ]);
+    $inventory = $this->removal->inspect($instance, $force);
+    orb76_run([
+        'git',
+        '-C',
+        $instance->checkout_path,
+        'remote',
+        'set-url',
+        'origin',
+        "{$origin}\n",
+    ]);
+
+    expect(fn () => $this->removal->remove($instance, $inventory, $force))
+        ->toThrow(RuntimeConvergenceException::class);
+    expect(is_dir($instance->checkout_path))->toBeTrue();
+})->with([
+    'normal HTTPS' => ['https://example.test/acme/site.git', false],
+    'forced HTTPS' => ['https://example.test/acme/site.git', true],
+    'normal SSH' => ['ssh://git@example.test/acme/site.git', false],
+    'forced SSH' => ['ssh://git@example.test/acme/site.git', true],
+]);
+
 it('does not let removal waive the recorded starting commit ancestry', function (bool $force): void {
     $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
     $this->source->prepare($instance, false);
