@@ -510,8 +510,10 @@ it('records successful install with the created tool and an exact safe projectio
     $node = Node::query()->create([
         'name' => 'tool-install-node',
         'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
         'public_ssh_host' => '192.0.2.33',
         'wireguard_ip' => '10.44.0.33',
+        'ssh_host_fingerprint' => 'SHA256:tool-install',
     ]);
     $this->markAsGateway($node);
     $manager = ToolManagerRecord::query()->create([
@@ -597,8 +599,10 @@ it('records retained failed tools as subjects with safe outcomes', function (): 
     $node = Node::query()->create([
         'name' => 'tool-retained-node',
         'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
         'public_ssh_host' => '192.0.2.35',
         'wireguard_ip' => '10.44.0.35',
+        'ssh_host_fingerprint' => 'SHA256:tool-retained',
     ]);
     $this->markAsGateway($node);
     ToolManagerRecord::query()->create([
@@ -658,8 +662,10 @@ it('does not persist command result data from manager failures', function (): vo
     $node = Node::query()->create([
         'name' => 'tool-redaction-node',
         'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
         'public_ssh_host' => '192.0.2.36',
         'wireguard_ip' => '10.44.0.36',
+        'ssh_host_fingerprint' => 'SHA256:tool-redaction',
     ]);
     $this->markAsGateway($node);
     ToolManagerRecord::query()->create([
@@ -695,8 +701,10 @@ it('records a successful remove against the deleted tool snapshot', function ():
     $node = Node::query()->create([
         'name' => 'tool-remove-node',
         'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
         'public_ssh_host' => '192.0.2.37',
         'wireguard_ip' => '10.44.0.37',
+        'ssh_host_fingerprint' => 'SHA256:tool-remove',
     ]);
     $this->markAsGateway($node);
     $manager = ToolManagerRecord::query()->create([
@@ -803,8 +811,10 @@ it('records tool update outcomes with an exact safe projection', function (
     $node = Node::query()->create([
         'name' => 'tool-update-node-'.$outcome,
         'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
         'public_ssh_host' => '192.0.2.39',
         'wireguard_ip' => '10.44.0.39',
+        'ssh_host_fingerprint' => 'SHA256:tool-update',
     ]);
     $this->markAsGateway($node);
     $manager = ToolManagerRecord::query()->create([
@@ -864,8 +874,10 @@ it('keeps failed update tools retained and redacted', function (): void {
     $node = Node::query()->create([
         'name' => 'tool-update-failure-node',
         'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
         'public_ssh_host' => '192.0.2.40',
         'wireguard_ip' => '10.44.0.40',
+        'ssh_host_fingerprint' => 'SHA256:tool-update-failure',
     ]);
     $this->markAsGateway($node);
     $manager = ToolManagerRecord::query()->create([
@@ -922,8 +934,10 @@ it('keeps failed remove tools retained and redacted', function (): void {
     $node = Node::query()->create([
         'name' => 'tool-remove-failure-node',
         'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
         'public_ssh_host' => '192.0.2.41',
         'wireguard_ip' => '10.44.0.41',
+        'ssh_host_fingerprint' => 'SHA256:tool-remove-failure',
     ]);
     $this->markAsGateway($node);
     $manager = ToolManagerRecord::query()->create([

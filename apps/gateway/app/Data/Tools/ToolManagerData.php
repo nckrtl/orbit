@@ -14,7 +14,7 @@ final class ToolManagerData extends Data
 {
     /** @mago-expect lint:excessive-parameter-list */
     public function __construct(
-        public int $id,
+        public ?int $id,
         public int $nodeId,
         public string $name,
         public string $status,
@@ -28,11 +28,24 @@ final class ToolManagerData extends Data
         return new self(
             id: $manager->id,
             nodeId: $manager->node_id,
-            name: $manager->name->value,
+            name: $manager->name,
             status: $manager->status->value,
             installedVersion: $manager->installed_version,
             failedStep: $manager->failed_step,
             errorCode: $manager->error_code,
+        );
+    }
+
+    public static function uninstalled(int $nodeId, string $name): self
+    {
+        return new self(
+            id: null,
+            nodeId: $nodeId,
+            name: $name,
+            status: 'uninstalled',
+            installedVersion: null,
+            failedStep: null,
+            errorCode: null,
         );
     }
 }

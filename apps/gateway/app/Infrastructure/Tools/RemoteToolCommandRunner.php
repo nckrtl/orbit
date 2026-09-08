@@ -22,7 +22,7 @@ final readonly class RemoteToolCommandRunner
     ) {}
 
     /** @param non-empty-list<string> $arguments */
-    public function execute(Node $node, array $arguments): CommandResult
+    public function execute(Node $node, array $arguments, ?string $input = null): CommandResult
     {
         $host = $node->wireguard_ip;
 
@@ -41,7 +41,7 @@ final readonly class RemoteToolCommandRunner
                 identityFile: $this->keys->privateKeyPath(),
                 knownHostsFile: $this->knownHosts->path(),
             ),
-            new RemoteCommand($arguments),
+            new RemoteCommand($arguments, $input),
         );
 
         if ($result->truncated) {

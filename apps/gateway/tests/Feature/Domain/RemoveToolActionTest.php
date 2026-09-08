@@ -320,6 +320,7 @@ function removal_tool_action(): array
         new RemoveToolAction(
             managers: new ToolManagerRegistry([$manager]),
             lock: $lock,
+            eligibility: new \App\Domain\Tools\ToolNodeEligibility,
         ),
         $manager,
         $lock,
@@ -359,6 +360,8 @@ function removal_tool_node(string $name, LifecycleStatus $status = LifecycleStat
         'status' => $status,
         'platform' => 'linux',
         'public_ssh_host' => fake()->unique()->ipv4(),
+        'wireguard_ip' => fake()->unique()->ipv4(),
+        'ssh_host_fingerprint' => 'SHA256:'.str_repeat('A', times: 43),
     ]);
 }
 

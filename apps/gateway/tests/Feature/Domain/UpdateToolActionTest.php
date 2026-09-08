@@ -174,24 +174,24 @@ describe(UpdateToolAction::class, function (): void {
             ->toBe(0);
     });
 
-    it('requires an active app role before VP probes', function (ToolManagerName $managerName, string $package): void {
+    it('updates VP and Composer Tools on managed roleless nodes', function (
+        ToolManagerName $managerName,
+        string $package,
+    ): void {
         $node = update_action_node();
         $record = update_action_manager($node, name: $managerName);
         $tool = update_action_tool($node, $record, package: $package);
         [$action, $manager, $lock] = update_action_fixture_for_node($node, $managerName);
+        $manager->installedVersions = ['2.4.0', '2.4.1'];
 
-        $exception = update_action_exception(fn (): mixed => $action->execute($tool));
+        $result = $action->execute($tool);
 
-        expect($exception->errorCode)
-            ->toBe('tool.app_role_required')
-            ->and($exception->status)
-            ->toBe(409)
-            ->and($exception->outcome)
-            ->toBe(ToolOutcome::ManagerFailed)
+        expect($result->outcome)
+            ->toBe(ToolOutcome::Applied)
             ->and($manager->calls)
-            ->toBeEmpty()
+            ->toBe(['installedVersion', 'update', 'installedVersion'])
             ->and($lock->runs)
-            ->toBe(0);
+            ->toBe(1);
     })->with([
         'VP' => [ToolManagerName::Vp, '@openai/codex'],
         'Composer' => [ToolManagerName::Composer, 'laravel/installer'],
@@ -226,7 +226,7 @@ describe(UpdateToolAction::class, function (): void {
         'Composer with provisioning app-prod' => [ToolManagerName::Composer, RoleName::AppProd, 'laravel/installer'],
     ]);
 
-    it('reports the missing app role before unavailable app-scoped manager state', function (): void {
+    it('reports unavailable retained manager state independently of roles', function (): void {
         $node = update_action_node();
         $record = update_action_manager(
             $node,
@@ -239,7 +239,7 @@ describe(UpdateToolAction::class, function (): void {
         $exception = update_action_exception(fn (): mixed => $action->execute($tool));
 
         expect($exception->errorCode)
-            ->toBe('tool.app_role_required')
+            ->toBe('tool.manager_unavailable')
             ->and($manager->calls)
             ->toBeEmpty()
             ->and($lock->runs)
@@ -586,6 +586,7 @@ function update_action_fixture_for_node(Node $node, ToolManagerName $managerName
             managers: new ToolManagerRegistry([$manager]),
             constraints: new VersionConstraint,
             lock: $lock,
+            eligibility: new \App\Domain\Tools\ToolNodeEligibility,
         ),
         $manager,
         $lock,
@@ -602,6 +603,8 @@ function update_action_node(
         'status' => $status,
         'platform' => 'linux',
         'public_ssh_host' => fake()->unique()->ipv4(),
+        'wireguard_ip' => fake()->unique()->ipv4(),
+        'ssh_host_fingerprint' => 'SHA256:'.str_repeat('A', times: 43),
     ]);
 
     if ($role !== null) {

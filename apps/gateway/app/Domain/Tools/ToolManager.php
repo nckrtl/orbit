@@ -15,6 +15,8 @@ interface ToolManager
 
     public function validatePackage(string $package): bool;
 
+    public function materialize(Node $node): void;
+
     public function managerVersion(Node $node): string;
 
     public function candidateVersion(Node $node, string $package, ToolOperation $operation): ?string;

@@ -1,0 +1,25 @@
+{
+    "setup": [],
+    "acceptance": [
+        {
+            "id": "first-use-manager-materialization",
+            "node": "gateway",
+            "argv": [
+                "/var/lib/orbit-e2e/proof/orb-185-tool-manager-proof.sh",
+                "materialize"
+            ],
+            "timeout_seconds": 300
+        },
+        {
+            "id": "managed-node-boundary",
+            "node": "gateway",
+            "argv": [
+                "/var/lib/orbit-e2e/proof/orb-185-tool-manager-proof.sh",
+                "unmanaged"
+            ],
+            "timeout_seconds": 60
+        }
+    ],
+    "mutates": true,
+    "observed_inputs": false
+}

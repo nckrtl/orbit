@@ -9,4 +9,5 @@ enum ToolManagerName: string
     case Apt = 'apt';
     case Vp = 'vp';
     case Composer = 'composer';
+    case Brew = 'brew';
 }

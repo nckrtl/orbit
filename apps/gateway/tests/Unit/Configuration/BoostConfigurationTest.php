@@ -291,10 +291,13 @@ it('keeps generated scoped guidance complete and de-duplicated', function (): vo
             'pinned key digest and fingerprints',
             'exact candidate-origin checks',
             'Never use a Launchpad PPA',
-            'The closed tool manager registry contains apt, vp, and composer.',
+            'The active Tool Manager registry contains the code-owned adapters apt, vp, and',
+            'Persisted identifiers that are absent from the active registry remain',
             'Use Vite+ global packages instead of exposing npm as a manager.',
             'Never persist or return raw manager stdout or stderr.',
             'APT removal must remove only the exact recorded package.',
+            'Treat managers as protected, role-independent Node capabilities.',
+            'Materialize a missing manager on',
         );
     expect($infrastructureRules)
         ->toContain(
