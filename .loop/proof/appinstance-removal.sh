@@ -402,6 +402,15 @@ BASH
 }
 
 case "$scenario" in
+    setup-gateway)
+        probe_gateway
+        cd "$gateway"
+        php artisan migrate --force
+        php artisan migrate:status | grep -F \
+            '2026_09_08_204126_add_source_commit_to_app_instance_removal_members' >/dev/null
+        test -f "$fixture"
+        ;;
+
     worktree-removal-boundaries)
         probe_gateway
         test -f "$fixture"

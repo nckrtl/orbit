@@ -1,5 +1,12 @@
 {
-    "setup": [],
+    "setup": [
+        {
+            "id": "appinstance-removal-setup",
+            "node": "gateway",
+            "argv": ["/var/lib/orbit-e2e/proof/appinstance-removal.sh", "setup-gateway"],
+            "timeout_seconds": 300
+        }
+    ],
     "acceptance": [
         {
             "id": "worktree-removal-boundaries",
