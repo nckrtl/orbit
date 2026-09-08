@@ -265,6 +265,10 @@ final readonly class RecordCommandActivity
             return $this->doctorInput($request);
         }
 
+        if ($command === 'instance:remove') {
+            return $this->appInstanceRemovalInput($request);
+        }
+
         if (! in_array($command, ['node:role:add', 'node:role:remove'], strict: true)) {
             return $this->inputSanitizer->sanitizeProperties($request->collect()->all());
         }
@@ -287,6 +291,22 @@ final readonly class RecordCommandActivity
 
         if ($command === 'node:role:remove' && is_string($routeRole)) {
             $input['role'] = $routeRole;
+        }
+
+        return $this->inputSanitizer->sanitizeProperties($input);
+    }
+
+    /** @return array<array-key, mixed> */
+    private function appInstanceRemovalInput(Request $request): array
+    {
+        try {
+            $input = $this->jsonInspector->inspect($request->getContent(), ['force']);
+        } catch (UnexpectedValueException) {
+            return [];
+        }
+
+        if (array_key_exists('force', $input) && ! is_bool($input['force'])) {
+            return [];
         }
 
         return $this->inputSanitizer->sanitizeProperties($input);
