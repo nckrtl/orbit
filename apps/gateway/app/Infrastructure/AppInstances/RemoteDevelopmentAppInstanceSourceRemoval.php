@@ -289,6 +289,9 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
             $state = $member->source_prepared_at === null
                 ? AppInstanceSourceRevalidationState::Present
                 : $this->revalidationStateLocked($member);
+            $receiptStructure = $state === AppInstanceSourceRevalidationState::ReceiptPendingCleanup
+                ? $this->receiptStructureStateLocked($member)
+                : null;
 
             if (
                 in_array(
@@ -297,7 +300,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
                     true,
                 )
                 || $state === AppInstanceSourceRevalidationState::ReceiptPendingCleanup
-                && $this->receiptStructureIsIntactLocked($member)
+                && $receiptStructure === 'intact'
             ) {
                 $this->inspectRecordedLocked($member, $state);
             }
@@ -326,11 +329,12 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
                 return $receipt;
             }
 
-            if (
-                $state === AppInstanceSourceRevalidationState::ReceiptPendingCleanup
-                && ! $this->receiptStructureIsIntactLocked($member)
-            ) {
-                return $this->cleanupReceiptLocked($member, $receipt);
+            if ($state === AppInstanceSourceRevalidationState::ReceiptPendingCleanup) {
+                $receiptStructure = $this->receiptStructureStateLocked($member);
+
+                if ($receiptStructure === 'incomplete') {
+                    return $this->cleanupReceiptLocked($member, $receipt);
+                }
             }
 
             $inventory = $this->inspectRecordedLocked($member, $state);
@@ -486,7 +490,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
         return $receipt;
     }
 
-    private function receiptStructureIsIntactLocked(AppInstanceRemovalMember $member): bool
+    private function receiptStructureStateLocked(AppInstanceRemovalMember $member): string
     {
         [$node, $user, $group, $root] = $this->memberContext($member);
         $result = $this->ssh->execute(
@@ -515,8 +519,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
         );
 
         return match (trim($result->stdout)) {
-            'intact' => true,
-            'incomplete' => false,
+            'complete', 'incomplete', 'intact' => trim($result->stdout),
             default => $this->recordedConflict(
                 $member,
                 'AppInstance removal returned invalid receipt-recovery evidence.',
@@ -555,6 +558,20 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
 
         if (! $state instanceof AppInstanceSourceRevalidationState) {
             $this->recordedConflict($member, 'AppInstance removal returned invalid source-presence evidence.');
+        }
+
+        if (
+            $state === AppInstanceSourceRevalidationState::Completed
+            && $member->source_layout === AppInstanceSourceLayout::Worktree->value
+        ) {
+            return match ($this->receiptStructureStateLocked($member)) {
+                'complete' => AppInstanceSourceRevalidationState::Completed,
+                'incomplete' => AppInstanceSourceRevalidationState::ReceiptPendingCleanup,
+                default => $this->recordedConflict(
+                    $member,
+                    'Completed worktree evidence still has an inspectable source.',
+                ),
+            };
         }
 
         return $state;
@@ -707,6 +724,10 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
 
             if (isset($quarantineMappings[$value])) {
                 $value = $quarantineMappings[$value];
+            }
+
+            if (! is_string($value)) {
+                $this->invalidEvidence($appInstance, $force);
             }
 
             $path = StoragePath::tryParse($value);
@@ -936,13 +957,18 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
             printf '%s\n' "$receipt" | cmp -s - "$receipt_path"
             test ! -e "$checkout"
             test ! -L "$checkout"
-            test -d "$quarantine"
-            test ! -L "$quarantine"
-            test "$(realpath -e "$quarantine")" = "$quarantine"
-            test "$(stat -c '%d:%i' "$quarantine")" = "$source_identity"
-            test "$(stat -c '%U:%G' "$quarantine")" = "$managed_user:$managed_group"
+            quarantine_present=0
+            if [ -e "$quarantine" ] || [ -L "$quarantine" ]; then
+                test -d "$quarantine"
+                test ! -L "$quarantine"
+                test "$(realpath -e "$quarantine")" = "$quarantine"
+                test "$(stat -c '%d:%i' "$quarantine")" = "$source_identity"
+                test "$(stat -c '%U:%G' "$quarantine")" = "$managed_user:$managed_group"
+                quarantine_present=1
+            fi
             case "$layout" in
                 checkout)
+                    test "$quarantine_present" = 1
                     test ! -e "$recovery"
                     test ! -L "$recovery"
                     if [ -e "$quarantine/.git" ] || [ -L "$quarantine/.git" ]; then
@@ -990,15 +1016,21 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
                     done
                     test "$matching" -le 1
                     admin_present=0
+                    admin_complete=0
                     if [ -e "$admin" ] || [ -L "$admin" ]; then
                         test -d "$admin"
                         test ! -L "$admin"
                         test "$(stat -c '%d:%i' "$admin")" = "$admin_identity"
                         test "$(stat -c '%U:%G' "$admin")" = "$managed_user:$managed_group"
-                        test -f "$admin/gitdir"
-                        test ! -L "$admin/gitdir"
-                        printf '%s\n' "$quarantine/.git" | cmp -s - "$admin/gitdir"
-                        test "$matching" = 1
+                        if [ -e "$admin/gitdir" ] || [ -L "$admin/gitdir" ]; then
+                            test -f "$admin/gitdir"
+                            test ! -L "$admin/gitdir"
+                            printf '%s\n' "$quarantine/.git" | cmp -s - "$admin/gitdir"
+                            test "$matching" = 1
+                            admin_complete=1
+                        else
+                            test "$matching" = 0
+                        fi
                         admin_present=1
                     else
                         test "$matching" = 0
@@ -1010,7 +1042,13 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
                         printf 'gitdir: %s\n' "$admin" | cmp -s - "$quarantine/.git"
                         git_file_present=1
                     fi
-                    if [ "$admin_present" = 1 ] && [ "$git_file_present" = 1 ]; then
+                    if [ "$quarantine_present" = 0 ]; then
+                        if [ "$admin_present" = 0 ]; then
+                            printf 'complete\n'
+                        else
+                            printf 'incomplete\n'
+                        fi
+                    elif [ "$admin_complete" = 1 ] && [ "$git_file_present" = 1 ]; then
                         printf 'intact\n'
                     else
                         printf 'incomplete\n'
@@ -1055,13 +1093,18 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
             printf '%s\n' "$receipt" | cmp -s - "$receipt_path"
             test ! -e "$checkout"
             test ! -L "$checkout"
-            test -d "$quarantine"
-            test ! -L "$quarantine"
-            test "$(realpath -e "$quarantine")" = "$quarantine"
-            test "$(stat -c '%d:%i' "$quarantine")" = "$source_identity"
-            test "$(stat -c '%U:%G' "$quarantine")" = "$managed_user:$managed_group"
+            quarantine_present=0
+            if [ -e "$quarantine" ] || [ -L "$quarantine" ]; then
+                test -d "$quarantine"
+                test ! -L "$quarantine"
+                test "$(realpath -e "$quarantine")" = "$quarantine"
+                test "$(stat -c '%d:%i' "$quarantine")" = "$source_identity"
+                test "$(stat -c '%U:%G' "$quarantine")" = "$managed_user:$managed_group"
+                quarantine_present=1
+            fi
             case "$layout" in
                 checkout)
+                    test "$quarantine_present" = 1
                     test ! -e "$recovery"
                     test ! -L "$recovery"
                     test ! -e "$quarantine/.git"
@@ -1113,10 +1156,14 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
                         test ! -L "$admin"
                         test "$(stat -c '%d:%i' "$admin")" = "$admin_identity"
                         test "$(stat -c '%U:%G' "$admin")" = "$managed_user:$managed_group"
-                        test -f "$admin/gitdir"
-                        test ! -L "$admin/gitdir"
-                        printf '%s\n' "$quarantine/.git" | cmp -s - "$admin/gitdir"
-                        test "$matching" = 1
+                        if [ -e "$admin/gitdir" ] || [ -L "$admin/gitdir" ]; then
+                            test -f "$admin/gitdir"
+                            test ! -L "$admin/gitdir"
+                            printf '%s\n' "$quarantine/.git" | cmp -s - "$admin/gitdir"
+                            test "$matching" = 1
+                        else
+                            test "$matching" = 0
+                        fi
                         if [ -e "$quarantine/.git" ] || [ -L "$quarantine/.git" ]; then
                             test -f "$quarantine/.git"
                             test ! -L "$quarantine/.git"
@@ -1128,9 +1175,11 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
                     else
                         test "$matching" = 0
                     fi
-                    test "$(stat -c '%d:%i' "$quarantine")" = "$source_identity"
-                    test "$(stat -c '%U:%G' "$quarantine")" = "$managed_user:$managed_group"
-                    rm -rf -- "$quarantine"
+                    if [ "$quarantine_present" = 1 ]; then
+                        test "$(stat -c '%d:%i' "$quarantine")" = "$source_identity"
+                        test "$(stat -c '%U:%G' "$quarantine")" = "$managed_user:$managed_group"
+                        rm -rf -- "$quarantine"
+                    fi
                     ;;
                 *) exit 1 ;;
             esac

@@ -882,6 +882,8 @@ it('cleans an acknowledged worktree after one Git structure was partially delete
     match ($fault) {
         'git-file' => unlink("{$quarantine}/.git"),
         'admin-entry' => $this->files->deleteDirectory($admin),
+        'quarantine' => $this->files->deleteDirectory($quarantine),
+        'admin-gitdir' => unlink("{$admin}/gitdir"),
     };
 
     expect($this->removal->revalidate($member))
@@ -907,7 +909,7 @@ it('cleans an acknowledged worktree after one Git structure was partially delete
             ])->succeeded(),
         )
         ->toBeTrue();
-})->with(['git-file', 'admin-entry']);
+})->with(['git-file', 'admin-entry', 'quarantine', 'admin-gitdir']);
 
 it('refuses changed or ambiguous worktree administration during receipt recovery', function (string $fault): void {
     [, $worktree, $siblingPath] = orb180_worktree_source(

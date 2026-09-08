@@ -266,7 +266,7 @@ final class AppServiceProvider extends ServiceProvider
         );
         $this->app->singleton(
             DevelopmentAppInstanceSourceFinalizer::class,
-            static fn (): DevelopmentAppInstanceSourceFinalizer => app(DevelopmentAppInstanceSourceRemoval::class),
+            static fn (): DevelopmentAppInstanceSourceFinalizer => app(RemoteDevelopmentAppInstanceSourceRemoval::class),
         );
         $this->app->singleton(
             LeafCertificateSigner::class,
