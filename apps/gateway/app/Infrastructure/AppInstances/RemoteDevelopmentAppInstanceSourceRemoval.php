@@ -432,46 +432,60 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
             test "$(git -C "$checkout" rev-parse --verify HEAD^{commit})" = "$expected_commit"
             git -C "$checkout" merge-base --is-ancestor "$expected_starting_commit" HEAD
             origin=$(git -C "$checkout" remote get-url origin)
-            case "$origin" in
-                *[[:space:]]*|*'?'*|*'#'*) exit 1 ;;
-                git@*)
-                    origin_without_user=${origin#git@}
-                    case "$origin_without_user" in *:*) ;; *) exit 1 ;; esac
-                    repository_host=${origin_without_user%%:*}
-                    repository_path=${origin_without_user#*:}
-                    ;;
-                https://*)
-                    origin_without_scheme=${origin#https://}
-                    case "$origin_without_scheme" in */*) ;; *) exit 1 ;; esac
-                    repository_authority=${origin_without_scheme%%/*}
-                    case "$repository_authority" in *@*) exit 1 ;; esac
-                    repository_host=${repository_authority%%:*}
-                    repository_path=${origin_without_scheme#*/}
-                    ;;
-                ssh://*)
-                    origin_without_scheme=${origin#ssh://}
-                    case "$origin_without_scheme" in */*) ;; *) exit 1 ;; esac
-                    repository_authority=${origin_without_scheme%%/*}
-                    repository_host_and_port=${repository_authority##*@}
-                    repository_user=${repository_authority%"$repository_host_and_port"}
-                    case "$repository_user" in *:*) exit 1 ;; esac
-                    repository_host=${repository_host_and_port%%:*}
-                    repository_path=${origin_without_scheme#*/}
-                    ;;
-                *) exit 1 ;;
-            esac
-            repository_path=${repository_path#/}
-            while [ "${repository_path%/}" != "$repository_path" ]; do
-                repository_path=${repository_path%/}
-            done
-            case "$repository_path" in *.git) repository_path=${repository_path%.git} ;; esac
-            while [ "${repository_path%/}" != "$repository_path" ]; do
-                repository_path=${repository_path%/}
-            done
-            test -n "$repository_host"
-            test -n "$repository_path"
-            repository_host=$(printf '%s' "$repository_host" | tr '[:upper:]' '[:lower:]')
-            test "$repository_host/$repository_path" = "$expected_repository_identity"
+            repository_identity=$(printf '%s' "$origin" | php -r '
+                $repository = stream_get_contents(STDIN);
+
+                if (
+                    preg_match("//u", $repository) !== 1
+                    || $repository === ""
+                    || preg_match("/[\\p{Z}\\p{C}]/u", $repository) !== 0
+                ) {
+                    exit(1);
+                }
+
+                $matches = [];
+
+                if (preg_match("/\\Agit@([^:\\s?#]+):([^\\s?#]+)\\z/u", $repository, $matches) === 1) {
+                    $host = $matches[1];
+                    $path = $matches[2];
+                } else {
+                    $parts = parse_url($repository);
+
+                    if (!is_array($parts)) {
+                        exit(1);
+                    }
+
+                    $scheme = is_string($parts["scheme"] ?? null) ? $parts["scheme"] : null;
+                    $host = is_string($parts["host"] ?? null) ? $parts["host"] : null;
+                    $path = is_string($parts["path"] ?? null) ? $parts["path"] : null;
+
+                    if (!is_string($host) || $host === "" || !is_string($path) || $path === "") {
+                        exit(1);
+                    }
+
+                    if (array_key_exists("query", $parts) || array_key_exists("fragment", $parts)) {
+                        exit(1);
+                    }
+
+                    $https = $scheme === "https"
+                        && !array_key_exists("user", $parts)
+                        && !array_key_exists("pass", $parts);
+                    $ssh = $scheme === "ssh" && !array_key_exists("pass", $parts);
+
+                    if (!$https && !$ssh) {
+                        exit(1);
+                    }
+                }
+
+                $path = trim($path, "/");
+
+                if (str_ends_with($path, ".git")) {
+                    $path = substr($path, 0, -4);
+                }
+
+                fwrite(STDOUT, strtolower($host)."/".rtrim($path, "/"));
+            ')
+            test "$repository_identity" = "$expected_repository_identity"
             linked_count=0
             while IFS= read -r -d '' field; do
                 case "$field" in

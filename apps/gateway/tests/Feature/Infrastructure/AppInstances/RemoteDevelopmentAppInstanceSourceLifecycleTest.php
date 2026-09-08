@@ -525,6 +525,121 @@ it('accepts an equivalent supported origin at the destructive boundary', functio
     expect(file_exists($instance->checkout_path))->toBeFalse();
 });
 
+it('removes supported URL authorities', function (string $origin, string $identity, bool $force): void {
+    $this->orbitApp->forceFill([
+        'repository_url' => $origin,
+        'repository_identity' => $identity,
+    ])->save();
+    $this->transport->remoteOrigin = $origin;
+    $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
+    $this->source->prepare($instance, false);
+    $resolution = $this->source->resolve($instance);
+    $instance->update([
+        'branch' => $resolution->branch,
+        'starting_commit' => $resolution->startingCommit,
+        'status' => AppInstanceState::SourceResolved,
+    ]);
+
+    orb178_remove_source($this->removal, $instance, $force);
+
+    expect(file_exists($instance->checkout_path))->toBeFalse();
+})->with([
+    'normal bracketed IPv6 HTTPS' => [
+        'https://[2001:db8::1]:8443/acme/site.git',
+        '[2001:db8::1]/acme/site',
+        false,
+    ],
+    'forced bracketed IPv6 HTTPS' => [
+        'https://[2001:db8::1]:8443/acme/site.git',
+        '[2001:db8::1]/acme/site',
+        true,
+    ],
+    'normal bracketed IPv6 SSH' => [
+        'ssh://git@[2001:db8::1]:2222/acme/site.git',
+        '[2001:db8::1]/acme/site',
+        false,
+    ],
+    'forced bracketed IPv6 SSH' => [
+        'ssh://git@[2001:db8::1]:2222/acme/site.git',
+        '[2001:db8::1]/acme/site',
+        true,
+    ],
+    'normal HTTPS with an empty port' => [
+        'https://example.test:/acme/site.git',
+        'example.test/acme/site',
+        false,
+    ],
+    'forced HTTPS with port zero' => [
+        'https://example.test:0/acme/site.git',
+        'example.test/acme/site',
+        true,
+    ],
+    'normal HTTPS with a leading-zero port' => [
+        'https://example.test:00001/acme/site.git',
+        'example.test/acme/site',
+        false,
+    ],
+    'forced HTTPS with a signed port' => [
+        'https://example.test:+22/acme/site.git',
+        'example.test/acme/site',
+        true,
+    ],
+    'normal SSH with port zero' => [
+        'ssh://git@example.test:0/acme/site.git',
+        'example.test/acme/site',
+        false,
+    ],
+    'forced SSH with an empty port' => [
+        'ssh://git@example.test:/acme/site.git',
+        'example.test/acme/site',
+        true,
+    ],
+    'forced SSH with a leading-zero port' => [
+        'ssh://git@example.test:00001/acme/site.git',
+        'example.test/acme/site',
+        true,
+    ],
+    'normal SSH with a signed port' => [
+        'ssh://git@example.test:+22/acme/site.git',
+        'example.test/acme/site',
+        false,
+    ],
+]);
+
+it('refuses malformed origin ports at the destructive boundary', function (string $origin, bool $force): void {
+    $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
+    $this->source->prepare($instance, false);
+    $resolution = $this->source->resolve($instance);
+    $instance->update([
+        'branch' => $resolution->branch,
+        'starting_commit' => $resolution->startingCommit,
+        'status' => AppInstanceState::SourceResolved,
+    ]);
+    $inventory = $this->removal->inspect($instance, $force);
+    orb76_run([
+        'git',
+        '-C',
+        $instance->checkout_path,
+        'remote',
+        'set-url',
+        'origin',
+        $origin,
+    ]);
+
+    expect(fn () => $this->removal->remove($instance, $inventory, $force))
+        ->toThrow(RuntimeConvergenceException::class);
+    expect(is_dir($instance->checkout_path))->toBeTrue();
+})->with([
+    'normal HTTPS' => ['https://example.test:notaport/acme/site.git', false],
+    'forced HTTPS' => ['https://example.test:notaport/acme/site.git', true],
+    'normal SSH' => ['ssh://git@example.test:notaport/acme/site.git', false],
+    'forced SSH' => ['ssh://git@example.test:notaport/acme/site.git', true],
+    'normal HTTPS with a six-digit port' => ['https://example.test:000022/acme/site.git', false],
+    'forced SSH with a six-digit port' => ['ssh://git@example.test:000022/acme/site.git', true],
+    'forced HTTPS with an out-of-range port' => ['https://example.test:65536/acme/site.git', true],
+    'normal SSH with an out-of-range port' => ['ssh://git@example.test:65536/acme/site.git', false],
+]);
+
 it('does not let removal waive the recorded starting commit ancestry', function (bool $force): void {
     $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
     $this->source->prepare($instance, false);
@@ -683,7 +798,7 @@ final class Orb76LocalSourceSshExecutor implements \App\Infrastructure\Ssh\SshEx
     public array $commands = [];
 
     public function __construct(
-        private readonly string $remoteOrigin,
+        public string $remoteOrigin,
         private readonly string $localOrigin,
     ) {}
 
