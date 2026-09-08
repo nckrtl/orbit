@@ -230,6 +230,21 @@ it('leaves the complete Route unchanged for invalid target proposals', function 
     expect($route->fresh(['targets'])->toArray())->toBe($before);
 });
 
+it('returns an unchanged Route when its existing target is not yet active', function (AppInstanceState $state): void {
+    $route = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
+    $this->target->update(['status' => $state]);
+    $before = $route->fresh(['targets'])->toArray();
+
+    $this->putJson("/api/v1/routes/{$route->id}/target", [
+        'app_instance_id' => $this->target->id,
+    ])->assertOk()->assertJsonPath('data.target.app_instance_id', $this->target->id);
+
+    expect($route->fresh(['targets'])->toArray())->toBe($before);
+})->with([
+    'reserved target' => AppInstanceState::Reserved,
+    'source-resolved target' => AppInstanceState::SourceResolved,
+]);
+
 it('keeps legacy Instance and Workspace host identity unchanged through Route operations', function (): void {
     $legacy = Instance::query()->create([
         'app_id' => $this->orbitApp->id,

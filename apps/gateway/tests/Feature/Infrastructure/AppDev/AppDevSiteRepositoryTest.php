@@ -63,6 +63,48 @@ it('keeps the host record when a production target also owns the Router role', f
         ->toContain("host-record={$route->hostname},{$node->wireguard_ip}");
 });
 
+it('projects a cluster-scoped production Route to distinct workload and Router nodes', function (): void {
+    $cluster = Cluster::query()->create([
+        'name' => 'production-'.Str::lower(Str::random(8)),
+        'state' => ClusterState::Active,
+    ]);
+    [$instance, $route, $workload] = production_route_site_models($cluster);
+    $router = Node::query()->create([
+        'cluster_id' => $cluster->id,
+        'name' => 'router-'.Str::lower(Str::random(8)),
+        'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
+        'public_ssh_host' => '192.0.2.81',
+        'wireguard_ip' => '10.44.0.81',
+        'user' => 'orbit',
+    ]);
+    $router
+        ->roles()
+        ->create([
+            'cluster_id' => $cluster->id,
+            'role' => RoleName::Router,
+            'status' => LifecycleStatus::Active,
+        ]);
+    $sites = new AppDevSiteRepository;
+
+    $workloadSite = $sites->all()->where('scope', "app-instance-{$instance->id}")->sole();
+    $routerSite = $sites->all()->where('scope', "route-{$route->id}-router")->sole();
+    $dns = new AppDevDnsConfigRenderer($sites)->render();
+
+    expect($workloadSite->nodeId)
+        ->toBe($workload->id)
+        ->and($workloadSite->isProxy())
+        ->toBeFalse()
+        ->and($routerSite->nodeId)
+        ->toBe($router->id)
+        ->and($routerSite->isProxy())
+        ->toBeTrue()
+        ->and($routerSite->upstreamAddresses)
+        ->toBe([$workload->wireguard_ip])
+        ->and($dns)
+        ->toContain("host-record={$route->hostname},{$router->wireguard_ip}");
+});
+
 /** @return array{AppInstance, Route, Node} */
 function production_route_site_models(?Cluster $cluster = null): array
 {

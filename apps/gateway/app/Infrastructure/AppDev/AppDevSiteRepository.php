@@ -95,13 +95,7 @@ final readonly class AppDevSiteRepository
             foreach ($targets as $target) {
                 assert($target instanceof AppInstance);
 
-                if (
-                    $target->environment === 'development'
-                    || $target->environment === 'production'
-                    && ! $hasRouterSite
-                ) {
-                    $sites->push($this->appInstanceSite($target, $route));
-                }
+                $sites->push($this->appInstanceSite($target, $route));
             }
 
             if ($hasRouterSite) {
