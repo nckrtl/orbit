@@ -167,6 +167,22 @@ sed 's|^|command="/home/orbit/.orb180-finalization-wrapper" |' "$backup" > "$aut
 BASH
 }
 
+restore_finalization_race() {
+    remote_script <<'BASH'
+authorized_keys=/home/orbit/.ssh/authorized_keys
+backup=/home/orbit/.ssh/authorized_keys.orb180
+if [ -e "$backup" ] || [ -L "$backup" ]; then
+    test -f "$backup"
+    test ! -L "$backup"
+    cp -- "$backup" "$authorized_keys"
+fi
+rm -f -- \
+    "$backup" \
+    /home/orbit/.orb180-finalization-race \
+    /home/orbit/.orb180-finalization-wrapper
+BASH
+}
+
 assert_receipt_file() {
     local evidence=$1
     local receipt_path receipt
@@ -551,9 +567,11 @@ BASH
         race_commit=$(make_checkout "$race" "$race")
         seed_instance "$race" checkout "$race" "$race_commit"
         race_evidence=$(record_source "$race")
+        trap restore_finalization_race EXIT
         arm_finalization_race "$race_evidence" "$race"
         gateway_fixture expect-finalize-incomplete "$race"
         assert_control_state "$race"
+        restore_finalization_race
         remote_script "$race" <<'BASH'
 test -d "/home/orbit/apps/laravel-typed/$1/.git"
 test "$(git -C "/home/orbit/apps/laravel-typed/$1" symbolic-ref --short HEAD)" = "$1-changed"
@@ -561,6 +579,7 @@ test ! -e /home/orbit/.ssh/authorized_keys.orb180
 test ! -e /home/orbit/.orb180-finalization-race
 test ! -e /home/orbit/.orb180-finalization-wrapper
 BASH
+        trap - EXIT
         remove_sources "$race"
 
         owner=orb180-drift-owner
