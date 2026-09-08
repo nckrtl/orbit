@@ -22,37 +22,37 @@
     "acceptance": [
         {
             "id": "removal-preflight-refusals",
-            "node": "app-dev",
+            "node": "gateway",
             "argv": ["/var/lib/orbit-e2e/proof/appinstance-removal.sh", "removal-preflight-refusals"],
             "timeout_seconds": 300
         },
         {
             "id": "normal-layout-removal",
-            "node": "app-dev",
+            "node": "gateway",
             "argv": ["/var/lib/orbit-e2e/proof/appinstance-removal.sh", "normal-layout-removal"],
             "timeout_seconds": 300
         },
         {
             "id": "forced-worktree-cascade",
-            "node": "app-dev",
+            "node": "gateway",
             "argv": ["/var/lib/orbit-e2e/proof/appinstance-removal.sh", "forced-worktree-cascade"],
             "timeout_seconds": 300
         },
         {
             "id": "forced-removal-boundaries",
-            "node": "app-dev",
+            "node": "gateway",
             "argv": ["/var/lib/orbit-e2e/proof/appinstance-removal.sh", "forced-removal-boundaries"],
             "timeout_seconds": 300
         },
         {
             "id": "worktree-removal-preserves-common-git",
-            "node": "app-dev",
+            "node": "gateway",
             "argv": ["/var/lib/orbit-e2e/proof/appinstance-removal.sh", "worktree-removal-preserves-common-git"],
             "timeout_seconds": 300
         },
         {
             "id": "checkout-worktree-removal-boundary",
-            "node": "app-dev",
+            "node": "gateway",
             "argv": ["/var/lib/orbit-e2e/proof/appinstance-removal.sh", "checkout-worktree-removal-boundary"],
             "timeout_seconds": 300
         },
@@ -64,37 +64,37 @@
         },
         {
             "id": "final-target-route-removal",
-            "node": "app-dev",
+            "node": "gateway",
             "argv": ["/var/lib/orbit-e2e/proof/appinstance-removal.sh", "final-target-route-removal"],
             "timeout_seconds": 300
         },
         {
             "id": "removal-route-before-source",
-            "node": "app-dev",
+            "node": "gateway",
             "argv": ["/var/lib/orbit-e2e/proof/appinstance-removal.sh", "removal-route-before-source"],
             "timeout_seconds": 300
         },
         {
             "id": "interrupted-removal-state",
-            "node": "app-dev",
+            "node": "gateway",
             "argv": ["/var/lib/orbit-e2e/proof/appinstance-removal.sh", "interrupted-removal-state"],
             "timeout_seconds": 300
         },
         {
             "id": "removal-retry-revalidation",
-            "node": "app-dev",
+            "node": "gateway",
             "argv": ["/var/lib/orbit-e2e/proof/appinstance-removal.sh", "removal-retry-revalidation"],
             "timeout_seconds": 300
         },
         {
             "id": "coordinated-development-removal",
-            "node": "app-dev",
+            "node": "gateway",
             "argv": ["/var/lib/orbit-e2e/proof/appinstance-removal.sh", "coordinated-development-removal"],
             "timeout_seconds": 300
         },
         {
             "id": "removal-retains-branches",
-            "node": "app-dev",
+            "node": "gateway",
             "argv": ["/var/lib/orbit-e2e/proof/appinstance-removal.sh", "removal-retains-branches"],
             "timeout_seconds": 300
         }
