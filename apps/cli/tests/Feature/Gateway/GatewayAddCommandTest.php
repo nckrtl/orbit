@@ -110,6 +110,47 @@ describe(GatewayAddCommand::class, function (): void {
             ->toBe('https://10.80.0.1');
     });
 
+    it('adds and reloads a gateway with the numeric profile name zero', function (): void {
+        $exitCode = Artisan::call('gateway:add', [
+            'gateway' => '10.70.0.1',
+            '--name' => '0',
+            '--json' => true,
+        ]);
+        $repository = app(GatewayConfigRepository::class);
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and(file_get_contents($this->orbitHome.'/config.json'))
+            ->toContain('"gateways": {')
+            ->and($repository->find('0')?->name)
+            ->toBe('0')
+            ->and($repository->active()?->name)
+            ->toBe('0');
+    });
+
+    it('refuses to replace a malformed list-shaped gateway map', function (): void {
+        $configPath = $this->orbitHome.'/config.json';
+        $contents = json_encode([
+            'active_gateway' => '0',
+            'gateways' => [
+                ['url' => 'https://10.70.0.1', 'ca_path' => null],
+            ],
+        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+        file_put_contents(filename: $configPath, data: $contents);
+        chmod(filename: $configPath, permissions: 0o600);
+
+        $this
+            ->artisan('gateway:add', [
+                'gateway' => '10.80.0.1',
+                '--name' => 'production',
+                '--json' => true,
+            ])
+            ->expectsOutputToContain('"code":"gateway.ca_profile_update_failed"')
+            ->assertExitCode(1);
+
+        expect(file_get_contents($configPath))->toBe($contents);
+    });
+
     it('rejects a non-HTTPS gateway URL', function (): void {
         expect(class_exists(GatewayAddCommand::class))->toBeTrue();
 

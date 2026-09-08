@@ -173,7 +173,10 @@ final readonly class GatewayConfigRepository
         try {
             $json =
                 json_encode(
-                    $config,
+                    [
+                        'active_gateway' => $config['active_gateway'],
+                        'gateways' => (object) $config['gateways'],
+                    ],
                     JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES,
                 ).PHP_EOL;
 

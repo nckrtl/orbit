@@ -19,6 +19,45 @@ afterEach(function (): void {
 });
 
 describe(GatewayConfigRepository::class, function (): void {
+    it('serializes an empty gateway map as a JSON object', function (): void {
+        $repository = new GatewayConfigRepository($this->configPath);
+        $write = new ReflectionMethod($repository, 'write');
+
+        $write->invoke($repository, [
+            'active_gateway' => null,
+            'gateways' => [],
+        ]);
+
+        expect(file_get_contents($this->configPath))
+            ->toContain('"gateways": {}');
+    });
+
+    it('serializes numeric gateway maps as objects and round trips every profile', function (
+        array $names,
+        string $active,
+    ): void {
+        $repository = new GatewayConfigRepository($this->configPath);
+
+        foreach ($names as $index => $name) {
+            $repository->add(new GatewayProfile($name, 'https://10.70.0.'.($index + 1)));
+        }
+
+        $repository->use($active);
+
+        expect(file_get_contents($this->configPath))
+            ->toContain('"gateways": {');
+
+        foreach ($names as $index => $name) {
+            expect($repository->find($name)?->url)->toBe('https://10.70.0.'.($index + 1));
+        }
+
+        expect($repository->active()?->name)->toBe($active);
+    })->with([
+        'sole numeric name' => [['0'], '0'],
+        'sequential numeric names' => [['0', '1'], '1'],
+        'mixed numeric and word names' => [['0', 'production'], 'production'],
+    ]);
+
     it('persists gateway profiles and activates the first profile', function (): void {
         expect(class_exists(GatewayConfigRepository::class))->toBeTrue();
 
