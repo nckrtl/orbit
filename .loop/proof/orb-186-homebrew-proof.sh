@@ -175,7 +175,7 @@ if [ "$mode" = recognition ]; then
     [ "$rejected_status" -ne 0 ]
     php -r '
         $payload = json_decode($argv[1], true, flags: JSON_THROW_ON_ERROR);
-        if (($payload["error"]["code"] ?? null) !== "tool.already_installed") {
+        if (($payload["error"]["code"] ?? null) !== "tool.already_installed_unmanaged") {
             exit(1);
         }
     ' "$rejected"
