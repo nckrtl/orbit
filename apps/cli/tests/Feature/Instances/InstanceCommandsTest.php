@@ -249,7 +249,7 @@ describe('instance:show', function (): void {
 });
 
 describe('instance:remove', function (): void {
-    it('removes an AppInstance without discard by default', function (): void {
+    it('removes an AppInstance without force by default', function (): void {
         $mockClient = MockClient::global([RemoveAppInstanceRequest::class => instance_mock_response()]);
 
         $this
@@ -260,15 +260,15 @@ describe('instance:remove', function (): void {
         expect($mockClient->getLastRequest()?->body()->all())->toBeEmpty();
     });
 
-    it('transports explicit destructive source-discard intent', function (): void {
+    it('transports explicit force without changing human output', function (): void {
         $mockClient = MockClient::global([RemoveAppInstanceRequest::class => instance_mock_response()]);
 
         $this
-            ->artisan('instance:remove', ['instance' => '5', '--discard-source' => true])
+            ->artisan('instance:remove', ['instance' => '5', '--force' => true])
             ->expectsOutput('Instance [dev] removed.')
             ->assertExitCode(0);
 
-        expect($mockClient->getLastRequest()?->body()->all())->toBe(['discard_source' => true]);
+        expect($mockClient->getLastRequest()?->body()->all())->toBe(['force' => true]);
     });
 });
 

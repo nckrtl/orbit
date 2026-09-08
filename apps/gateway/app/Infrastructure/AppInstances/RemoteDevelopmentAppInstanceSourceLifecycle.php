@@ -174,7 +174,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceLifecycle implements Deve
         return $this->resolution($result->stdout, $appInstance);
     }
 
-    public function remove(AppInstance $appInstance, bool $discardSource): void
+    public function remove(AppInstance $appInstance, bool $force): void
     {
         $context = $this->context($appInstance);
         $resolution = $this->storedResolution($appInstance);
@@ -189,7 +189,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceLifecycle implements Deve
                     $groupingDirectory,
                     $resolution->branch,
                     $resolution->startingCommit,
-                    $discardSource ? '1' : '0',
+                    $force ? '1' : '0',
                 ],
                 input: self::preparedRepositoryGuard().<<<'BASH'
                     repository=$1
@@ -200,7 +200,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceLifecycle implements Deve
                     grouping_directory=$6
                     branch=$7
                     starting_commit=$8
-                    discard_source=$9
+                    force=$9
                     checkout_parent=$(dirname "$checkout")
 
                     test "$grouping_directory" = "$checkout_parent"
@@ -209,7 +209,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceLifecycle implements Deve
                     test "$(git -C "$checkout" symbolic-ref --short HEAD)" = "$branch"
                     git -C "$checkout" merge-base --is-ancestor "$starting_commit" HEAD
 
-                    if [ "$discard_source" != 1 ]; then
+                    if [ "$force" != 1 ]; then
                         test -z "$(git -C "$checkout" status --porcelain --untracked-files=all)"
                         git -C "$checkout" fetch --prune -- origin
                         if git -C "$checkout" show-ref --verify --quiet "refs/remotes/origin/$branch"; then
@@ -228,7 +228,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceLifecycle implements Deve
                     BASH,
             ),
             step: 'app-instance-source-remove',
-            errorCode: $discardSource ? 'instance.discard_failed' : 'instance.remove_refused',
+            errorCode: $force ? 'instance.force_failed' : 'instance.remove_refused',
         );
     }
 

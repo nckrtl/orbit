@@ -15,7 +15,7 @@ final class RemoveInstanceCommand extends GatewayCommand
     #[\Override]
     protected $signature = 'instance:remove
         {instance : Numeric instance ID}
-        {--discard-source : Delete dirty or unpublished source after identity checks}
+        {--force : Delete dirty or unpublished source after identity checks}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -41,7 +41,7 @@ final class RemoveInstanceCommand extends GatewayCommand
             $connector,
             new RemoveAppInstanceRequest(
                 $instanceId,
-                discardSource: $this->option('discard-source') === true ? true : null,
+                force: $this->option('force') === true ? true : null,
             ),
             AppInstanceResponse::class,
         );

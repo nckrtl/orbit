@@ -223,7 +223,7 @@ it('refuses matching pre-existing source for a fresh reservation and resumes it 
     expect(is_dir($instance->checkout_path.'/.git'))->toBeTrue();
 });
 
-it('refuses dirty and unpublished source unless discard is explicit', function (string $mutation): void {
+it('refuses dirty and unpublished source unless force is explicit', function (string $mutation): void {
     $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
     $this->source->prepare($instance, false);
     $resolution = $this->source->resolve($instance);
@@ -250,7 +250,7 @@ it('refuses dirty and unpublished source unless discard is explicit', function (
     expect(file_exists($instance->checkout_path))->toBeFalse();
 })->with(['dirty', 'unpublished']);
 
-it('does not let discard waive origin or symlink identity checks', function (string $mutation): void {
+it('does not let force waive origin or symlink identity checks', function (string $mutation): void {
     $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
     $this->source->prepare($instance, false);
     $resolution = $this->source->resolve($instance);
@@ -278,14 +278,18 @@ it('does not let discard waive origin or symlink identity checks', function (str
         symlink($decoy, $instance->checkout_path);
     }
 
-    expect(fn () => $this->source->remove($instance, true))->toThrow(RuntimeConvergenceException::class);
+    expect(fn () => $this->source->remove($instance, true))->toThrow(
+        function (RuntimeConvergenceException $exception): void {
+            expect($exception->errorCode)->toBe('instance.force_failed');
+        },
+    );
     expect(file_exists($decoy.'/sentinel'))
         ->toBeTrue()
         ->and(file_exists($instance->checkout_path) || is_link($instance->checkout_path))
         ->toBeTrue();
 })->with(['origin', 'symlink']);
 
-it('does not let discard remove a checkout with shared Git administration', function (): void {
+it('does not let force remove a checkout with shared Git administration', function (): void {
     $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
     $this->source->prepare($instance, false);
     $resolution = $this->source->resolve($instance);
@@ -313,7 +317,7 @@ it('does not let discard remove a checkout with shared Git administration', func
         ->toBeTrue();
 });
 
-it('does not let removal waive the recorded starting commit ancestry', function (bool $discardSource): void {
+it('does not let removal waive the recorded starting commit ancestry', function (bool $force): void {
     $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
     $this->source->prepare($instance, false);
     $resolution = $this->source->resolve($instance);
@@ -335,11 +339,11 @@ it('does not let removal waive the recorded starting commit ancestry', function 
         'status' => AppInstanceState::SourceResolved,
     ]);
 
-    expect(fn () => $this->source->remove($instance, $discardSource))->toThrow(RuntimeConvergenceException::class);
+    expect(fn () => $this->source->remove($instance, $force))->toThrow(RuntimeConvergenceException::class);
     expect(is_dir($instance->checkout_path))->toBeTrue();
 })->with([
     'normal removal' => false,
-    'discard' => true,
+    'force' => true,
 ]);
 
 it('refuses grouping-directory ownership drift before deleting the checkout', function (): void {
