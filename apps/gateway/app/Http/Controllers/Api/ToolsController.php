@@ -100,7 +100,7 @@ final class ToolsController extends Controller
         $activityRequest->attributes->set('orbit.tool_snapshot', $tool);
         $activityRequest->attributes->set('orbit.tool_activity', [
             'node_id' => $tool->node_id,
-            'manager' => $tool->manager->name->value,
+            'manager' => $tool->manager->name,
             'package' => $tool->package,
             'operation' => $operation->value,
             'outcome' => $outcome->value,

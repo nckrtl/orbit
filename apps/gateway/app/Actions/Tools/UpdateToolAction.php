@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace App\Actions\Tools;
 
-use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tools\ToolActionResult;
 use App\Domain\Tools\ToolManager;
 use App\Domain\Tools\ToolManagerException;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolManagerRegistry;
+use App\Domain\Tools\ToolNodeEligibility;
 use App\Domain\Tools\ToolOperation;
 use App\Domain\Tools\ToolOperationException;
 use App\Domain\Tools\ToolOperationLock;
@@ -18,7 +18,6 @@ use App\Domain\Tools\ToolOutcome;
 use App\Domain\Tools\ToolStatus;
 use App\Domain\Tools\VersionConstraint;
 use App\Models\Node;
-use App\Models\NodeRole;
 use App\Models\Tool;
 use App\Models\ToolManagerRecord;
 use Throwable;
@@ -36,6 +35,7 @@ final readonly class UpdateToolAction
         private ToolManagerRegistry $managers,
         private VersionConstraint $constraints,
         private ToolOperationLock $lock,
+        private ToolNodeEligibility $eligibility,
     ) {}
 
     public function execute(Tool $tool): ToolActionResult
@@ -54,9 +54,10 @@ final readonly class UpdateToolAction
             );
         }
 
-        $manager = $this->managers->find($record->name->value);
+        $managerName = ToolManagerName::tryFrom($record->name);
+        $manager = $managerName === null ? null : $this->managers->find($record->name);
 
-        if ($manager === null || $manager->name() !== $record->name) {
+        if ($managerName === null || $manager === null || $manager->name() !== $managerName) {
             throw $this->failure(
                 tool: $tool,
                 errorCode: 'tool.state_invalid',
@@ -71,7 +72,7 @@ final readonly class UpdateToolAction
 
         return $this->lock->run(
             nodeId: $tool->node_id,
-            manager: $record->name,
+            manager: $managerName,
             package: $tool->package,
             operation: ToolOperation::Update,
             versionConstraint: $tool->version_constraint,
@@ -99,7 +100,7 @@ final readonly class UpdateToolAction
         $node = $current->node;
         $record = $current->manager;
 
-        if ($record->node_id !== $current->node_id || $record->name !== $manager->name()) {
+        if ($record->node_id !== $current->node_id || $record->name !== $manager->name()->value) {
             throw $this->failure(
                 tool: $current,
                 errorCode: 'tool.state_invalid',
@@ -351,13 +352,13 @@ final readonly class UpdateToolAction
             );
         }
 
-        if ($this->requiresAppRole($record->name) && ! $this->hasAvailableAppRole($node)) {
+        if (! $this->eligibility->allows($node)) {
             throw $this->failure(
                 tool: $tool,
-                errorCode: 'tool.app_role_required',
+                errorCode: 'tool.node_unmanaged',
                 outcome: ToolOutcome::ManagerFailed,
                 status: 409,
-                message: 'The tool manager requires a provisioning or active app role.',
+                message: 'Tools can be updated only on a Gateway-managed node.',
             );
         }
 
@@ -432,27 +433,6 @@ final readonly class UpdateToolAction
         }
     }
 
-    private function requiresAppRole(ToolManagerName $manager): bool
-    {
-        return in_array($manager, [ToolManagerName::Vp, ToolManagerName::Composer], strict: true);
-    }
-
-    private function hasAvailableAppRole(Node $node): bool
-    {
-        $node->loadMissing('roles');
-
-        return $node->roles->contains(
-            static fn (NodeRole $role): bool => (
-                in_array($role->role, [RoleName::AppDev, RoleName::AppProd], strict: true)
-                && in_array(
-                    $role->status,
-                    [LifecycleStatus::Provisioning, LifecycleStatus::Active],
-                    strict: true,
-                )
-            ),
-        );
-    }
-
     private function isSafeRawVersion(string $version): bool
     {
         return $version !== '' && strlen($version) <= 255 && preg_match('/[\x00-\x1F\x7F]/', $version) !== 1;
@@ -492,7 +472,7 @@ final readonly class UpdateToolAction
             outcome: $outcome,
             status: $status,
             nodeId: $tool->node_id,
-            manager: $tool->manager->name->value,
+            manager: $tool->manager->name,
             package: $tool->package,
             versionConstraint: $tool->version_constraint,
             message: $message,

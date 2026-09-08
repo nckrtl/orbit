@@ -9,6 +9,7 @@ use App\Domain\Tools\ToolActionResult;
 use App\Domain\Tools\ToolManager;
 use App\Domain\Tools\ToolManagerException;
 use App\Domain\Tools\ToolManagerRegistry;
+use App\Domain\Tools\ToolNodeEligibility;
 use App\Domain\Tools\ToolOperation;
 use App\Domain\Tools\ToolOperationException;
 use App\Domain\Tools\ToolOperationLock;
@@ -27,6 +28,7 @@ final readonly class RemoveToolAction
     public function __construct(
         private ToolManagerRegistry $managers,
         private ToolOperationLock $lock,
+        private ToolNodeEligibility $eligibility,
     ) {}
 
     public function execute(Tool $tool): ToolActionResult
@@ -35,7 +37,7 @@ final readonly class RemoveToolAction
             throw $this->failure($tool, 'tool.protected', 409, 'Protected tools cannot be removed.');
         }
 
-        [, $record] = $this->resolveState($tool);
+        [, , $manager] = $this->resolveState($tool);
 
         if (! in_array($tool->status, [ToolStatus::Installed, ToolStatus::Failed], strict: true)) {
             throw $this->failure($tool, 'tool.state_invalid', 409, 'The tool is not in a removable state.');
@@ -43,7 +45,7 @@ final readonly class RemoveToolAction
 
         return $this->lock->run(
             nodeId: $tool->node_id,
-            manager: $record->name,
+            manager: $manager->name(),
             package: $tool->package,
             operation: ToolOperation::Remove,
             versionConstraint: $tool->version_constraint,
@@ -173,11 +175,20 @@ final readonly class RemoveToolAction
             throw $this->failure($tool, 'tool.node_inactive', 409, 'Tools can be removed only from an active node.');
         }
 
+        if (! $this->eligibility->allows($node)) {
+            throw $this->failure(
+                $tool,
+                'tool.node_unmanaged',
+                409,
+                'Tools can be removed only from a Gateway-managed node.',
+            );
+        }
+
         if ($record->status !== LifecycleStatus::Active) {
             throw $this->failure($tool, 'tool.manager_unavailable', 409, 'The tool manager is not available.');
         }
 
-        $manager = $this->managers->find($record->name->value);
+        $manager = $this->managers->find($record->name);
 
         if (! $manager instanceof ToolManager || ! $manager->supportsNode($node)) {
             throw $this->failure($tool, 'tool.manager_unavailable', 409, 'The tool manager is not available.');

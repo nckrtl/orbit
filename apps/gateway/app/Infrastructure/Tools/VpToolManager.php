@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Tools;
 
-use App\Domain\Nodes\RoleName;
-use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tools\SemverVersionNormalizer;
 use App\Domain\Tools\ToolManager;
 use App\Domain\Tools\ToolManagerException;
@@ -41,24 +39,7 @@ final readonly class VpToolManager implements ToolManager
 
     public function supportsNode(Node $node): bool
     {
-        $node->loadMissing('roles');
-
-        if ($node->platform !== 'linux') {
-            return false;
-        }
-
-        foreach ($node->roles as $role) {
-            if (
-                ($role->role === RoleName::AppDev
-                || $role->role === RoleName::AppProd)
-                && ($role->status === LifecycleStatus::Provisioning
-                || $role->status === LifecycleStatus::Active)
-            ) {
-                return true;
-            }
-        }
-
-        return false;
+        return $node->platform === 'linux';
     }
 
     public function validatePackage(string $package): bool
@@ -66,6 +47,128 @@ final readonly class VpToolManager implements ToolManager
         $length = strlen($package);
 
         return $length >= 1 && $length <= self::MAX_PACKAGE_LENGTH && preg_match(self::PACKAGE_PATTERN, $package) === 1;
+    }
+
+    public function materialize(Node $node): void
+    {
+        $this->guardNode($node);
+
+        $program = <<<'BASH'
+            managed_user=$1
+            passwd_entry=$(getent passwd -- "$managed_user")
+            test "$(printf '%s\n' "$passwd_entry" | wc -l)" -eq 1
+            managed_home=$(printf '%s\n' "$passwd_entry" | cut -d: -f6)
+            managed_group=$(id -gn -- "$managed_user")
+
+            if { [ -e /opt/orbit ] || [ -L /opt/orbit ]; } \
+                && { [ -L /opt/orbit ] || [ ! -d /opt/orbit ] || [ "$(stat -c '%U:%G' /opt/orbit)" != 'root:root' ]; }; then
+                printf 'Orbit Vite Plus directory conflict: %s\n' /opt/orbit >&2
+                exit 1
+            fi
+            install -d -m 0755 /opt/orbit
+
+            vp_home=
+            vp_environment=
+            launcher_environment=
+            for candidate in /opt/orbit/vite-plus "$managed_home/.vite-plus" "$managed_home/.local/share/vite-plus"; do
+                if [ -e "$candidate" ] || [ -L "$candidate" ]; then
+                    vp_home="$candidate"
+                    break
+                fi
+            done
+            if [ -z "$vp_home" ]; then
+                vp_home="$managed_home/.local/share/vite-plus"
+            fi
+            if [ "$vp_home" = /opt/orbit/vite-plus ]; then
+                vp_environment='VP_HOME=/opt/orbit/vite-plus'
+                launcher_environment='export VP_HOME=/opt/orbit/vite-plus'
+            fi
+            if { [ -e "$vp_home" ] || [ -L "$vp_home" ]; } \
+                && { [ -L "$vp_home" ] || [ ! -d "$vp_home" ]; }; then
+                printf 'Orbit Vite Plus directory conflict: %s\n' "$vp_home" >&2
+                exit 1
+            fi
+            vp_binary="$vp_home/bin/vp"
+            if [ ! -x "$vp_binary" ]; then
+                sudo -u "$managed_user" -H env -u VP_HOME bash -o pipefail -c 'curl -fsSL https://vite.plus | bash'
+                test -x "$vp_binary"
+                sudo -u "$managed_user" -H env ${vp_environment:-} "$vp_binary" env setup
+                sudo -u "$managed_user" -H env ${vp_environment:-} "$vp_binary" env on
+                sudo -u "$managed_user" -H env ${vp_environment:-} "$vp_binary" env install lts
+                sudo -u "$managed_user" -H env ${vp_environment:-} "$vp_binary" env default lts
+                sudo -u "$managed_user" -H env ${vp_environment:-} "$vp_binary" install -g --node lts pnpm
+            fi
+            test -x "$vp_binary"
+            test -x "$vp_home/bin/pnpm"
+
+            launcher_candidates=$(mktemp -d "/usr/local/bin/.orbit-vp-runtime.XXXXXX")
+            published_paths=
+            rollback_vp_runtime() {
+                runtime_status=$?
+                if [ "$runtime_status" -ne 0 ]; then
+                    for published_path in $published_paths; do
+                        rm -f -- "$published_path"
+                    done
+                fi
+                rm -rf -- "$launcher_candidates"
+                return "$runtime_status"
+            }
+            trap rollback_vp_runtime EXIT
+
+            for binary in vp node pnpm npm npx; do
+                target="$vp_home/bin/$binary"
+                candidate="$launcher_candidates/$binary"
+                test -x "$target"
+                launcher_header='#!/bin/sh'
+                if [ -n "${launcher_environment:-}" ]; then
+                    launcher_header="$launcher_header\\n$launcher_environment"
+                fi
+                printf '%b\n' "$launcher_header" "exec \"$target\" \"\$@\"" > "$candidate"
+                chmod 0755 "$candidate"
+                chown root:root "$candidate"
+            done
+
+            for binary in vp node pnpm npm npx; do
+                launcher="/usr/local/bin/$binary"
+                candidate="$launcher_candidates/$binary"
+                if { [ -e "$launcher" ] || [ -L "$launcher" ]; } \
+                    && { [ -L "$launcher" ] || [ ! -f "$launcher" ] \
+                        || [ "$(stat -c '%U:%G' "$launcher")" != 'root:root' ] \
+                        || [ "$(stat -c '%a' "$launcher")" != '755' ] \
+                        || ! cmp -s "$launcher" "$candidate"; }; then
+                    printf 'Orbit Vite Plus launcher conflict: %s\n' "$launcher" >&2
+                    exit 1
+                fi
+            done
+
+            for binary in vp node pnpm npm npx; do
+                launcher="/usr/local/bin/$binary"
+                candidate="$launcher_candidates/$binary"
+                if ! { [ -e "$launcher" ] || [ -L "$launcher" ]; }; then
+                    mv "$candidate" "$launcher"
+                    published_paths="$published_paths $launcher"
+                fi
+            done
+
+            sudo -u "$managed_user" -H /usr/local/bin/vp --version
+            sudo -u "$managed_user" -H /usr/local/bin/node --version
+            sudo -u "$managed_user" -H /usr/local/bin/pnpm --version
+            sudo -u "$managed_user" -H /usr/local/bin/npm --version
+            sudo -u "$managed_user" -H /usr/local/bin/npx --version
+
+            rm -rf -- "$launcher_candidates"
+            launcher_candidates=
+            published_paths=
+            trap - EXIT
+            BASH;
+
+        $result = $this->commands->execute($node, ['sudo', 'bash', '-seu', '--', $node->user], $program);
+
+        $this->guardSuccessfulResult(
+            result: $result,
+            step: 'materialize',
+            message: 'The VP manager could not be materialized.',
+        );
     }
 
     public function managerVersion(Node $node): string

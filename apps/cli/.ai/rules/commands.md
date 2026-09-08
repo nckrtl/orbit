@@ -22,5 +22,6 @@ commands; project state lets Vite+ select the manager.
 
 Tool commands use the PHP SDK only. Do not execute a package manager, process,
 SSH, sudo, or SemVer policy in the CLI. Interactive install manager choices
-come from the target node's active manager rows. Noninteractive and JSON calls
-must supply node, manager, and package without prompting.
+come from the target Node's active and supported uninstalled manager states.
+Noninteractive and JSON calls must supply node, manager, and package without
+prompting.

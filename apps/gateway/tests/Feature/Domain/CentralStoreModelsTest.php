@@ -225,6 +225,24 @@ it('stores one tracked tool manager and package identity per node', function ():
         ->toBeNull();
 });
 
+it('keeps unknown tool manager identities readable', function (): void {
+    $node = Node::query()->create([
+        'name' => 'future-tools-node',
+        'public_ssh_host' => '192.0.2.82',
+    ]);
+    $manager = $node->toolManagers()->create([
+        'name' => 'future-manager',
+        'status' => LifecycleStatus::Failed,
+    ]);
+
+    $manager->refresh();
+
+    expect($manager->name)
+        ->toBe('future-manager')
+        ->and($manager->status)
+        ->toBe(LifecycleStatus::Failed);
+});
+
 it('enforces manager and tool identity uniqueness', function (): void {
     $node = Node::query()->create([
         'name' => 'unique-tools-node',

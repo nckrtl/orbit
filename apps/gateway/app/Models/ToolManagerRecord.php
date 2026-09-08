@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\Tools\ToolManagerName;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -13,7 +12,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 /**
  * @property int $id
  * @property int $node_id
- * @property ToolManagerName $name
+ * @property string $name
  * @property LifecycleStatus $status
  * @property string|null $installed_version
  * @property string|null $failed_step
@@ -54,7 +53,6 @@ final class ToolManagerRecord extends Model
     protected function casts(): array
     {
         return [
-            'name' => ToolManagerName::class,
             'status' => LifecycleStatus::class,
         ];
     }

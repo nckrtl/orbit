@@ -15,5 +15,7 @@ These are the common terms you will see throughout the Orbit documentation. Each
 - **Router** — The Node role that receives Routes with Cluster scope and selects their workload targets. Every Cluster with a Route needs one active Router.
 - **Ingress** — The Node role that receives public HTTP and HTTPS traffic and forwards it to the Router. See [ADR 0011](decisions/0011-clustered-production-ingress-and-app-prod-placement.md).
 - **Doctor** — The check that compares what the Gateway expects with what is on a Node and reports every difference. Doctor never changes a machine. See [ADR 0004](decisions/0004-verify-only-doctor-boundary.md).
+- **Tool** — One manager-native package that Orbit manages on one Node. Its identity is the Node, Tool Manager, and package. See [Tools](reference/tools.md) and [ADR 0001](decisions/0001-tool-management.md).
+- **Tool Manager** — A protected Node capability for Tool operations through one code-owned adapter. Managers are available on demand and independent of Node roles. See [Tools](reference/tools.md) and [ADR 0042](decisions/0042-provision-tool-managers-on-demand.md).
 - **Proof topology** — A disposable group of Incus machines built for one issue. The harness runs the issue's proof plan on it against one exact commit and keeps the result immutable. See [Incus topologies](reference/incus-topologies.md).
 - **Documentation context** — The ordered list of pages that `composer docs-context` selects for a component or concept. A contributor or agent reads it before changing that part of Orbit.
