@@ -1,0 +1,14 @@
+{
+    "setup": [],
+    "acceptance": [
+        {
+            "id": "wireguard-ipv6-endpoint",
+            "node": "gateway",
+            "argv": [
+                "/var/lib/orbit-e2e/proof/wireguard-ipv6-endpoint.php"
+            ],
+            "timeout_seconds": 120
+        }
+    ],
+    "observed_inputs": false
+}
