@@ -631,6 +631,7 @@ BASH
 
         read -r unavailable_commit _ < <(make_checkout orb124-origin-unavailable orb124-origin-unavailable clean)
         unavailable_id=$(seed_dev orb124-origin-unavailable checkout orb124-origin-unavailable "$unavailable_commit" | seed_id)
+        gateway_fixture project-dev orb124-origin-unavailable
         remote_script app-dev <<'BASH'
 path=/home/orbit/apps/laravel-typed/orb124-origin-unavailable
 git -C "$path" config http.proxy http://127.0.0.1:1
