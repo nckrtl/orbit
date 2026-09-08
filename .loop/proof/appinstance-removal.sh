@@ -414,16 +414,16 @@ install_fpm_access_probe() {
 instance_id=$1
 configuration=/etc/php/8.5/fpm/pool.d/orbit-scopes.conf
 pool="[orbit-app-instance-$instance_id]"
-log="/tmp/orb124-fpm-access-$instance_id.log"
+access_log="/tmp/orb124-fpm-access-$instance_id.log"
 candidate=$(mktemp)
 trap 'rm -f -- "$candidate"' EXIT
 test "$(grep -Fxc -- "$pool" "$configuration")" = 1
-awk -v pool="$pool" -v log="$log" '
-    $0 == pool { print; print "access.log = " log; next }
+awk -v pool="$pool" -v access_log="$access_log" '
+    $0 == pool { print; print "access.log = " access_log; next }
     { print }
 ' "$configuration" > "$candidate"
 sudo install -o root -g root -m 0644 "$candidate" "$configuration"
-sudo rm -f -- "$log"
+sudo rm -f -- "$access_log"
 sudo systemctl restart php8.5-fpm
 test "$(systemctl is-active php8.5-fpm)" = active
 BASH
@@ -433,9 +433,9 @@ fpm_access_count() {
     local instance_id=$1
     remote_script app-dev "$instance_id" <<'BASH'
 instance_id=$1
-log="/tmp/orb124-fpm-access-$instance_id.log"
-test -f "$log"
-wc -l < "$log"
+access_log="/tmp/orb124-fpm-access-$instance_id.log"
+sudo test -f "$access_log"
+sudo awk 'END { print NR }' "$access_log"
 BASH
 }
 

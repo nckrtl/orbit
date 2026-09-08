@@ -175,6 +175,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
                         $account->user,
                         $account->group,
                         (string) $member->source_identity,
+                        (string) $member->repository_identity,
                     ],
                     input: self::finalizationScript(),
                 ),
@@ -754,6 +755,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
             managed_user=$3
             managed_group=$4
             source_identity=$5
+            expected_repository_identity=$6
             export GIT_OPTIONAL_LOCKS=0
             state="$root/.orbit-removals"
             journal="$state/$operation.$member.journal"
@@ -783,10 +785,50 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
                 test "$(git -C "$checkout" rev-parse --show-toplevel)" = "$checkout"
                 test "$(git -C "$checkout" symbolic-ref --short HEAD)" = "$branch"
                 git -C "$checkout" merge-base --is-ancestor "$starting_commit" HEAD
+                origin=$(git -C "$checkout" remote get-url origin)
+                case "$origin" in
+                    *[[:space:]]*|*'?'*|*'#'*) exit 1 ;;
+                    git@*)
+                        origin_without_user=${origin#git@}
+                        case "$origin_without_user" in *:*) ;; *) exit 1 ;; esac
+                        repository_host=${origin_without_user%%:*}
+                        repository_path=${origin_without_user#*:}
+                        ;;
+                    https://*)
+                        origin_without_scheme=${origin#https://}
+                        case "$origin_without_scheme" in */*) ;; *) exit 1 ;; esac
+                        repository_authority=${origin_without_scheme%%/*}
+                        case "$repository_authority" in *@*) exit 1 ;; esac
+                        repository_host=${repository_authority%%:*}
+                        repository_path=${origin_without_scheme#*/}
+                        ;;
+                    ssh://*)
+                        origin_without_scheme=${origin#ssh://}
+                        case "$origin_without_scheme" in */*) ;; *) exit 1 ;; esac
+                        repository_authority=${origin_without_scheme%%/*}
+                        repository_host_and_port=${repository_authority##*@}
+                        repository_user=${repository_authority%"$repository_host_and_port"}
+                        case "$repository_user" in *:*) exit 1 ;; esac
+                        repository_host=${repository_host_and_port%%:*}
+                        repository_path=${origin_without_scheme#*/}
+                        ;;
+                    *) exit 1 ;;
+                esac
+                repository_path=${repository_path#/}
+                while [ "${repository_path%/}" != "$repository_path" ]; do
+                    repository_path=${repository_path%/}
+                done
+                case "$repository_path" in *.git) repository_path=${repository_path%.git} ;; esac
+                while [ "${repository_path%/}" != "$repository_path" ]; do
+                    repository_path=${repository_path%/}
+                done
+                test -n "$repository_host"
+                test -n "$repository_path"
+                repository_host=$(printf '%s' "$repository_host" | tr '[:upper:]' '[:lower:]')
+                test "$repository_host/$repository_path" = "$expected_repository_identity"
                 if [ "$force" != 1 ]; then
                     test -z "$(git -C "$checkout" status --porcelain --untracked-files=all)"
                     commit=$(git -C "$checkout" rev-parse --verify HEAD^{commit})
-                    origin=$(git -C "$checkout" remote get-url origin)
                     published=0
                     scratch=$(mktemp -d)
                     trap 'rm -rf -- "$scratch"' EXIT

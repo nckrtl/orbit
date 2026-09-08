@@ -115,6 +115,46 @@ it('keeps the final Route row until every projection cleanup succeeds', function
         ->toBeNull();
 });
 
+it('resumes final Route cleanup after certificate deletion and a late DNS failure', function (): void {
+    [$member, $route] = orb124_projector_development_member();
+    [$projector, $ssh, $processes] = orb124_removal_projector($this);
+    $processes->failCall = 2;
+
+    expect(fn () => $projector->clearRouteTarget($member))
+        ->toThrow(RuntimeConvergenceException::class);
+    expect(Route::query()->find($route->id))
+        ->not
+        ->toBeNull()
+        ->and($route->refresh()->targets()->count())
+        ->toBe(0)
+        ->and(collect($ssh->commands)
+            ->contains(
+                static fn (RemoteCommand $command): bool => in_array(
+                    "app-instance-{$member->app_instance_id}",
+                    $command->arguments,
+                    true,
+                ),
+            ))
+        ->toBeTrue()
+        ->and(count($processes->invocations))
+        ->toBe(2);
+
+    expect($projector->clearRouteTarget($member))
+        ->toBe('deleted')
+        ->and(Route::query()->find($route->id))
+        ->toBeNull()
+        ->and(count($processes->invocations))
+        ->toBe(3)
+        ->and(
+            collect(orb124_caddy_configurations($ssh->commands))
+                ->filter(
+                    static fn (string $configuration): bool => str_contains($configuration, 'Orbit Route unavailable'),
+                )
+                ->count(),
+        )
+        ->toBe(1);
+});
+
 it('removes only the departing shared production target and republishes the ordered remainder', function (): void {
     [$member, $route, $remaining] = orb124_projector_shared_member();
     [$projector, $ssh] = orb124_removal_projector($this);
@@ -165,7 +205,7 @@ it('deletes a final production Route after cleaning workload and Router artifact
         ->toBeTrue();
 });
 
-/** @return array{NativeAppInstanceRemovalProjector, Orb124RemovalSshExecutor} */
+/** @return array{NativeAppInstanceRemovalProjector, Orb124RemovalSshExecutor, Orb124RemovalProcessRunner} */
 function orb124_removal_projector(object $test): array
 {
     $ssh = new Orb124RemovalSshExecutor;
@@ -232,6 +272,7 @@ function orb124_removal_projector(object $test): array
             new RemoteAppDevRouteFirewallManager($executor),
         ),
         $ssh,
+        $processes,
     ];
 }
 
@@ -449,9 +490,15 @@ final class Orb124RemovalProcessRunner implements ProcessRunner
     /** @var list<ProcessInvocation> */
     public array $invocations = [];
 
+    public ?int $failCall = null;
+
     public function run(ProcessInvocation $invocation): CommandResult
     {
         $this->invocations[] = $invocation;
+
+        if (count($this->invocations) === $this->failCall) {
+            return new CommandResult(1, '', 'injected DNS failure', 1, false);
+        }
 
         return new CommandResult(0, '', '', 1, false);
     }

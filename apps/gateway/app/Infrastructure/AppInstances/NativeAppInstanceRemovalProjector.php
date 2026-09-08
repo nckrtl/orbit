@@ -49,19 +49,23 @@ final readonly class NativeAppInstanceRemovalProjector implements AppInstanceRem
             );
         }
 
-        DB::transaction(function () use ($route, $appInstance): void {
+        $removedTarget = (bool) DB::transaction(function () use ($route, $appInstance): bool {
             $locked = Route::query()->lockForUpdate()->findOrFail($route->id);
             $target = $locked->targets()->where('app_instance_id', $appInstance->id)->first();
 
-            if ($target !== null) {
-                $target->delete();
+            if ($target === null) {
+                return false;
             }
+
+            $target->delete();
 
             foreach ($locked->targets()->orderBy('position')->orderBy('id')->get() as $position => $remaining) {
                 if ($remaining->position !== $position) {
                     $remaining->update(['position' => $position]);
                 }
             }
+
+            return true;
         });
 
         $route->refresh()->load(['targets.appInstance.node', 'cluster.routerAssignment.node']);
@@ -72,7 +76,7 @@ final readonly class NativeAppInstanceRemovalProjector implements AppInstanceRem
             return 'retained';
         }
 
-        if ($member->environment === 'development') {
+        if ($member->environment === 'development' && $removedTarget) {
             $servingNode = $this->servingNode($route, $appInstance);
             $this->caddy->convergeUnavailableRoute($servingNode, $route, $appInstance);
             $this->dns->convergeUnavailableRoute($route, $appInstance);

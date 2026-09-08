@@ -455,6 +455,73 @@ it('does not let force waive origin or symlink identity checks', function (strin
         ->toBeTrue();
 })->with(['origin', 'symlink']);
 
+it('refuses an origin identity change at the destructive boundary', function (bool $force): void {
+    $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
+    $this->source->prepare($instance, false);
+    $resolution = $this->source->resolve($instance);
+    $instance->update([
+        'branch' => $resolution->branch,
+        'starting_commit' => $resolution->startingCommit,
+        'status' => AppInstanceState::SourceResolved,
+    ]);
+    $member = orb124_prepare_remove_source($this->removal, $instance, $force);
+    $member->update(['source_prepared_at' => now()]);
+    $sourceIdentity = orb76_run(['stat', '-c', '%d:%i', $instance->checkout_path])->stdout;
+    $this->transport->beforeFinalization = static function () use ($instance): void {
+        orb76_run([
+            'git',
+            '-C',
+            $instance->checkout_path,
+            'remote',
+            'set-url',
+            'origin',
+            'https://example.test/wrong-repository.git',
+        ]);
+    };
+
+    expect(fn () => $this->removal->finalize($member))
+        ->toThrow(RuntimeConvergenceException::class)
+        ->and(is_dir($instance->checkout_path))
+        ->toBeTrue()
+        ->and(orb76_run(['stat', '-c', '%d:%i', $instance->checkout_path])->stdout)
+        ->toBe($sourceIdentity);
+})->with([
+    'normal removal' => false,
+    'forced removal' => true,
+]);
+
+it('accepts an equivalent origin spelling at the destructive boundary', function (): void {
+    $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
+    $this->source->prepare($instance, false);
+    $resolution = $this->source->resolve($instance);
+    $instance->update([
+        'branch' => $resolution->branch,
+        'starting_commit' => $resolution->startingCommit,
+        'status' => AppInstanceState::SourceResolved,
+    ]);
+    $member = orb124_prepare_remove_source($this->removal, $instance, true);
+    $member->update(['source_prepared_at' => now()]);
+    $this->transport->beforeFinalization = static function () use ($instance): void {
+        orb76_run([
+            'git',
+            '-C',
+            $instance->checkout_path,
+            'remote',
+            'set-url',
+            'origin',
+            'https://EXAMPLE.TEST/acme/site.git/',
+        ]);
+    };
+
+    expect($this->removal->finalize($member))
+        ->toBe(hash(
+            'sha256',
+            "{$member->app_instance_removal_id}\0{$member->id}\0{$member->source_digest}\0finalized",
+        ))
+        ->and(file_exists($instance->checkout_path))
+        ->toBeFalse();
+});
+
 it('does not let force remove a checkout with shared Git administration', function (): void {
     $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
     $this->source->prepare($instance, false);
@@ -940,6 +1007,8 @@ final class Orb76LocalSourceSshExecutor implements \App\Infrastructure\Ssh\SshEx
     /** @var list<RemoteCommand> */
     public array $commands = [];
 
+    public ?\Closure $beforeFinalization = null;
+
     public function __construct(
         private readonly string $remoteOrigin,
         private readonly string $localOrigin,
@@ -950,6 +1019,32 @@ final class Orb76LocalSourceSshExecutor implements \App\Infrastructure\Ssh\SshEx
         \App\Infrastructure\Ssh\RemoteCommand $command,
     ): \App\Infrastructure\Processes\CommandResult {
         $this->commands[] = $command;
+        $input = $command->input;
+
+        if (is_string($input) && str_contains($input, 'receipt_candidate=')) {
+            $checkout = $command->arguments[3] ?? null;
+
+            if (is_string($checkout) && is_dir($checkout)) {
+                $configuredOrigin = trim(orb76_run(['git', '-C', $checkout, 'remote', 'get-url', 'origin'])->stdout);
+
+                if ($configuredOrigin === $this->localOrigin) {
+                    orb76_run(['git', '-C', $checkout, 'remote', 'set-url', 'origin', $this->remoteOrigin]);
+                }
+            }
+
+            if ($this->beforeFinalization instanceof \Closure) {
+                $beforeFinalization = $this->beforeFinalization;
+                $this->beforeFinalization = null;
+                $beforeFinalization();
+            }
+
+            $input = str_replace(
+                'git --git-dir="$scratch/repository.git" remote add origin "$origin"',
+                "git --git-dir=\"\$scratch/repository.git\" remote add origin '{$this->localOrigin}'",
+                $input,
+            );
+        }
+
         $arguments = array_map(
             fn (string $argument): string => $argument === $this->remoteOrigin ? $this->localOrigin : $argument,
             $command->arguments,
@@ -957,7 +1052,7 @@ final class Orb76LocalSourceSshExecutor implements \App\Infrastructure\Ssh\SshEx
 
         $result = new NativeProcessRunner()->run(new ProcessInvocation(
             arguments: $arguments,
-            input: $command->input,
+            input: $input,
         ));
 
         $stdout = str_replace(
