@@ -29,7 +29,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
         private CheckoutRemovalBoundary $boundaries,
     ) {}
 
-    public function inspect(AppInstance $appInstance, bool $discardSource): AppInstanceSourceInventory
+    public function inspect(AppInstance $appInstance, bool $force): AppInstanceSourceInventory
     {
         $context = $this->context($appInstance);
         $result = $this->ssh->execute(
@@ -45,22 +45,22 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
                     $context['group'],
                     $context['branch'],
                     $context['startingCommit'],
-                    $discardSource ? '0' : '1',
+                    $force ? '0' : '1',
                 ],
                 input: self::inspectionScript(),
             ),
             step: 'app-instance-source-removal-inspect',
-            errorCode: $this->failureCode($discardSource),
+            errorCode: $this->failureCode($force),
         );
 
         $values = preg_split('/\R/', trim($result->stdout));
 
         if (! is_array($values) || count($values) !== 8) {
-            $this->invalidEvidence($appInstance, $discardSource);
+            $this->invalidEvidence($appInstance, $force);
         }
 
         [$top, $common, $origin, $branch, $commit, $dirty, $sourceIdentity, $worktrees] = array_map(
-            fn (string $value): string => $this->decode($value, $appInstance, $discardSource),
+            fn (string $value): string => $this->decode($value, $appInstance, $force),
             $values,
         );
         $checkout = StoragePath::tryParse($top);
@@ -76,24 +76,24 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
             || ! in_array($dirty, ['', '0', '1'], true)
             || preg_match('/\A[0-9]+:[0-9]+\z/D', $sourceIdentity) !== 1
         ) {
-            $this->invalidEvidence($appInstance, $discardSource);
+            $this->invalidEvidence($appInstance, $force);
         }
 
         try {
             $repositoryIdentity = GitRepositoryIdentity::derive($origin);
         } catch (InvalidArgumentException) {
-            $this->invalidEvidence($appInstance, $discardSource);
+            $this->invalidEvidence($appInstance, $force);
         }
 
         if ($repositoryIdentity !== $context['repositoryIdentity']) {
-            $this->invalidEvidence($appInstance, $discardSource);
+            $this->invalidEvidence($appInstance, $force);
         }
 
-        if (! $discardSource && $dirty !== '0') {
+        if (! $force && $dirty !== '0') {
             $this->unsafeContent($appInstance);
         }
 
-        if (! $discardSource && ! $this->isPublished($appInstance, $origin, $commit)) {
+        if (! $force && ! $this->isPublished($appInstance, $origin, $commit)) {
             $this->unsafeContent($appInstance);
         }
 
@@ -101,7 +101,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
             $worktrees,
             $appInstance,
             $checkout->value,
-            $discardSource,
+            $force,
         );
         $payload = [
             'app_instance_id' => $appInstance->id,
@@ -134,7 +134,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
     public function remove(
         AppInstance $appInstance,
         AppInstanceSourceInventory $inventory,
-        bool $discardSource,
+        bool $force,
     ): void {
         $context = $this->context($appInstance);
 
@@ -147,7 +147,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
             || $inventory->branch !== $context['branch']
             || $inventory->linkedWorktreePaths !== [$appInstance->checkout_path]
         ) {
-            $this->invalidEvidence($appInstance, $discardSource);
+            $this->invalidEvidence($appInstance, $force);
         }
 
         $groupingDirectory = $this->boundaries
@@ -170,12 +170,12 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
                     $inventory->startingCommit,
                     $inventory->sourceIdentity,
                     $inventory->repositoryIdentity,
-                    $discardSource ? '1' : '0',
+                    $force ? '1' : '0',
                 ],
                 input: self::removalScript(),
             ),
             step: 'app-instance-source-remove',
-            errorCode: $this->failureCode($discardSource),
+            errorCode: $this->failureCode($force),
         );
     }
 
@@ -219,7 +219,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
         string $inventory,
         AppInstance $appInstance,
         string $expectedCheckout,
-        bool $discardSource,
+        bool $force,
     ): array {
         $paths = [];
 
@@ -231,7 +231,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
             $path = StoragePath::tryParse(substr($field, 9));
 
             if (! $path instanceof StoragePath) {
-                $this->invalidEvidence($appInstance, $discardSource);
+                $this->invalidEvidence($appInstance, $force);
             }
 
             $paths[] = $path->value;
@@ -241,7 +241,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
         sort($paths, SORT_STRING);
 
         if (! in_array($expectedCheckout, $paths, true)) {
-            $this->invalidEvidence($appInstance, $discardSource);
+            $this->invalidEvidence($appInstance, $force);
         }
 
         return $paths;
@@ -265,12 +265,12 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
     private function decode(
         string $value,
         AppInstance $appInstance,
-        bool $discardSource,
+        bool $force,
     ): string {
         $decoded = base64_decode($value, true);
 
         if (! is_string($decoded)) {
-            $this->invalidEvidence($appInstance, $discardSource);
+            $this->invalidEvidence($appInstance, $force);
         }
 
         return $decoded;
@@ -285,18 +285,18 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
         );
     }
 
-    private function invalidEvidence(AppInstance $appInstance, bool $discardSource): never
+    private function invalidEvidence(AppInstance $appInstance, bool $force): never
     {
         throw new RuntimeConvergenceException(
             step: 'app-instance-source-removal-inspect',
-            errorCode: $this->failureCode($discardSource),
+            errorCode: $this->failureCode($force),
             message: "AppInstance [{$appInstance->name}] has invalid source evidence.",
         );
     }
 
-    private function failureCode(bool $discardSource): string
+    private function failureCode(bool $force): string
     {
-        return $discardSource ? 'instance.discard_failed' : 'instance.remove_refused';
+        return $force ? 'instance.force_failed' : 'instance.remove_refused';
     }
 
     private static function inspectionScript(): string
@@ -397,7 +397,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
             expected_source_identity=$9
             shift 9
             expected_repository_identity=$1
-            discard_source=$2
+            force=$2
             export GIT_OPTIONAL_LOCKS=0
             test "$grouping_directory" = "$(dirname "$checkout")"
             case "$checkout" in "$root"/*) ;; *) exit 1 ;; esac
@@ -480,7 +480,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
                 esac
             done < <(git -C "$checkout" worktree list --porcelain -z)
             test "$linked_count" = 1
-            if [ "$discard_source" != 1 ]; then
+            if [ "$force" != 1 ]; then
                 test -z "$(git -C "$checkout" status --porcelain --untracked-files=all)"
                 scratch=$(mktemp -d)
                 trap 'rm -rf -- "$scratch"' EXIT

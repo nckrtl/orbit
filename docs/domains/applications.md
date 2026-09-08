@@ -111,13 +111,21 @@ Remove clean, published source with:
 orbit instance:remove <id>
 ```
 
-Use destructive source discard only when you intend to lose dirty or unpublished work:
+Use forced removal only when you intend to lose dirty or unpublished work:
 
 ```text
-orbit instance:remove <id> --discard-source
+orbit instance:remove <id> --force
 ```
 
-With `--discard-source`, Orbit waives the dirty-source and unpublished-commit checks after the migration and Route guards pass. It does not waive origin, symlink, canonical-path, containment, ownership, or repository-identity checks. Orbit removes only the exact recorded source. It does not remove sibling, legacy, or unrelated repositories.
+The removal request exposes the same choice on each operator surface:
+
+| Surface | Forced-removal input | Normal-removal input |
+| --- | --- | --- |
+| CLI | `--force` | Omit `--force` |
+| API | `"force": true` | Omit `force` or send `"force": false` |
+| PHP SDK | `force: true` | Omit `force` or pass `force: false` |
+
+With force, Orbit waives the dirty-source and unpublished-commit checks after the migration and Route guards pass. It does not waive origin, symlink, canonical-path, containment, ownership, or repository-identity checks. Orbit removes only the exact recorded source. It does not remove sibling, legacy, or unrelated repositories.
 
 Checkout removal refuses when Git reports any linked worktree, including another Orbit-owned source. Before deletion, the Gateway verifies that the checkout still has the inspected physical identity, canonical origin, branch, commit ancestry, ownership, placement, and linked-worktree inventory. A refusal leaves the checkout, its Git index and refs, every linked worktree, every local or remote branch, the AppInstance, and its Route unchanged.
 

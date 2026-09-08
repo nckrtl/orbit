@@ -138,9 +138,9 @@ beforeEach(function (): void {
         /** @var null|list<string> */
         public ?array $linkedWorktreePaths = null;
 
-        public function inspect(AppInstance $appInstance, bool $discardSource): AppInstanceSourceInventory
+        public function inspect(AppInstance $appInstance, bool $force): AppInstanceSourceInventory
         {
-            $this->calls[] = $discardSource ? 'inspect-discard' : 'inspect';
+            $this->calls[] = $force ? 'inspect-force' : 'inspect';
 
             return new AppInstanceSourceInventory(
                 appInstanceId: $appInstance->id,
@@ -160,9 +160,9 @@ beforeEach(function (): void {
         public function remove(
             AppInstance $appInstance,
             AppInstanceSourceInventory $inventory,
-            bool $discardSource,
+            bool $force,
         ): void {
-            $this->calls[] = $discardSource ? 'remove-discard' : 'remove';
+            $this->calls[] = $force ? 'remove-force' : 'remove';
         }
     };
     app()->instance(DevelopmentAppInstanceSourceRemoval::class, $this->removal);
@@ -1032,7 +1032,7 @@ it('returns migration required before retry or removal mutates a legacy default'
 
     $response = $operation === 'retry'
         ? $this->postJson('/api/v1/instances', $payload)
-        : $this->deleteJson("/api/v1/instances/{$created->json('data.id')}");
+        : $this->deleteJson("/api/v1/instances/{$created->json('data.id')}", ['force' => true]);
 
     $response
         ->assertConflict()
@@ -1195,7 +1195,7 @@ it('keeps overlapping AppInstance and legacy Instance IDs in separate endpoint d
         ->assertJsonPath('data.name', 'workspace');
 });
 
-it('refuses active AppInstance removal before source mutation', function (bool $discard): void {
+it('refuses active AppInstance removal before source mutation', function (bool $force): void {
     $created = $this->postJson('/api/v1/instances', [
         'app_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
@@ -1218,11 +1218,16 @@ it('refuses active AppInstance removal before source mutation', function (bool $
 
     $this
         ->deleteJson("/api/v1/instances/{$created->json('data.id')}", [
-            'discard_source' => $discard,
+            'force' => $force,
         ])
         ->assertConflict()
         ->assertJsonPath('error.code', 'route.reconciliation_required');
 
+    $activityInput = Activity::query()
+        ->where('command', 'instance:remove')
+        ->latest('id')
+        ->firstOrFail()
+        ->properties?->get('input');
     expect(AppInstance::query()->count())
         ->toBe(1)
         ->and(RouteTarget::query()->count())
@@ -1232,8 +1237,89 @@ it('refuses active AppInstance removal before source mutation', function (bool $
         ->and($this->source->calls)
         ->toBeEmpty()
         ->and($this->removal->calls)
-        ->toBeEmpty();
+        ->toBeEmpty()
+        ->and($activityInput)
+        ->toBe(['force' => $force]);
 })->with([false, true]);
+
+it('uses normal removal for force omission and explicit false', function (array $payload): void {
+    $created = $this->postJson('/api/v1/instances', [
+        'app_id' => $this->orbitApp->id,
+        'node_id' => $this->node->id,
+        'name' => 'dev',
+    ])->assertCreated();
+    AppInstance::query()->sole()->update(['status' => AppInstanceState::SourceResolved]);
+    RouteTarget::query()->delete();
+    Route::query()->delete();
+    $this->source->calls = [];
+    $this->removal->calls = [];
+
+    $this
+        ->deleteJson("/api/v1/instances/{$created->json('data.id')}", $payload)
+        ->assertOk()
+        ->assertJsonPath('data.id', $created->json('data.id'))
+        ->assertJsonMissingPath('data.force')
+        ->assertJsonMissingPath('data.discard_source');
+
+    expect($this->source->calls)
+        ->toBeEmpty()
+        ->and($this->removal->calls)
+        ->toBe(['inspect', 'remove']);
+})->with([
+    'omission' => [[]],
+    'explicit false' => [['force' => false]],
+]);
+
+it('rejects non-boolean force values', function (mixed $force): void {
+    $created = $this->postJson('/api/v1/instances', [
+        'app_id' => $this->orbitApp->id,
+        'node_id' => $this->node->id,
+        'name' => 'dev',
+    ])->assertCreated();
+    $this->source->calls = [];
+    $this->removal->calls = [];
+
+    $this
+        ->deleteJson("/api/v1/instances/{$created->json('data.id')}", ['force' => $force])
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'validation.failed');
+
+    expect($this->source->calls)
+        ->toBeEmpty()
+        ->and($this->removal->calls)
+        ->toBeEmpty();
+})->with([
+    'integer one' => 1,
+    'integer zero' => 0,
+    'true string' => 'true',
+    'false string' => 'false',
+    'null' => null,
+]);
+
+it('rejects discard_source as an unknown removal field without recording it', function (): void {
+    $created = $this->postJson('/api/v1/instances', [
+        'app_id' => $this->orbitApp->id,
+        'node_id' => $this->node->id,
+        'name' => 'dev',
+    ])->assertCreated();
+    $this->source->calls = [];
+    $this->removal->calls = [];
+
+    $this
+        ->deleteJson("/api/v1/instances/{$created->json('data.id')}", ['discard_source' => true])
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'validation.failed');
+
+    $activity = Activity::query()->where('command', 'instance:remove')->latest('id')->firstOrFail();
+    expect($activity->properties?->get('input'))
+        ->toBe([])
+        ->and(AppInstance::query()->count())
+        ->toBe(1)
+        ->and($this->source->calls)
+        ->toBeEmpty()
+        ->and($this->removal->calls)
+        ->toBeEmpty();
+});
 
 it('uses the active Route guard when removal sends an empty JSON body', function (): void {
     $created = $this->postJson('/api/v1/instances', [
@@ -1309,7 +1395,7 @@ it('rejects a non-empty JSON array from the removal transport', function (): voi
         ->toBeEmpty();
 });
 
-it('removes a source-resolved checkout only after reusable source inspection', function (bool $discard): void {
+it('uses forced removal only after reusable source inspection', function (): void {
     $instance = AppInstance::query()->create([
         'app_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
@@ -1322,19 +1408,15 @@ it('removes a source-resolved checkout only after reusable source inspection', f
     ]);
 
     $this
-        ->deleteJson("/api/v1/instances/{$instance->id}", ['discard_source' => $discard])
+        ->deleteJson("/api/v1/instances/{$instance->id}", ['force' => true])
         ->assertOk()
         ->assertJsonPath('data.id', $instance->id);
 
     expect(AppInstance::query()->find($instance->id))
         ->toBeNull()
         ->and($this->removal->calls)
-        ->toBe(
-            $discard
-                ? ['inspect-discard', 'remove-discard']
-                : ['inspect', 'remove'],
-        );
-})->with([false, true]);
+        ->toBe(['inspect-force', 'remove-force']);
+});
 
 it('refuses a linked checkout before source or record deletion', function (): void {
     $instance = AppInstance::query()->create([
@@ -1354,14 +1436,14 @@ it('refuses a linked checkout before source or record deletion', function (): vo
     $before = $instance->refresh()->getAttributes();
 
     $this
-        ->deleteJson("/api/v1/instances/{$instance->id}", ['discard_source' => true])
+        ->deleteJson("/api/v1/instances/{$instance->id}", ['force' => true])
         ->assertConflict()
         ->assertJsonPath('error.code', 'instance.remove_refused');
 
     expect($instance->refresh()->getAttributes())
         ->toBe($before)
         ->and($this->removal->calls)
-        ->toBe(['inspect-discard']);
+        ->toBe(['inspect-force']);
 });
 
 it('refuses an unsupported source layout before source inspection', function (): void {

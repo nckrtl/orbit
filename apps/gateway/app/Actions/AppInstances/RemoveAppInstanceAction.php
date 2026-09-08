@@ -20,11 +20,11 @@ final readonly class RemoveAppInstanceAction
         private ManagedCheckoutOverlap $checkoutOverlap,
     ) {}
 
-    public function execute(AppInstance $appInstance, bool $discardSource): AppInstance
+    public function execute(AppInstance $appInstance, bool $force): AppInstance
     {
         return $this->sourceLock->synchronized(
             $appInstance->node_id,
-            function () use ($appInstance, $discardSource): AppInstance {
+            function () use ($appInstance, $force): AppInstance {
                 $snapshot = $appInstance->refresh()->load(['app', 'node']);
 
                 if ($snapshot->migration_required) {
@@ -67,7 +67,7 @@ final readonly class RemoveAppInstanceAction
                     'instance.checkout_path_unsafe',
                     ignoreAppInstanceId: $snapshot->id,
                 );
-                $inventory = $this->source->inspect($snapshot, $discardSource);
+                $inventory = $this->source->inspect($snapshot, $force);
 
                 if ($inventory->linkedWorktreePaths !== [$snapshot->checkout_path]) {
                     throw new ResourceOperationException(
@@ -83,7 +83,7 @@ final readonly class RemoveAppInstanceAction
                     'instance.checkout_path_unsafe',
                     ignoreAppInstanceId: $snapshot->id,
                 );
-                $this->source->remove($snapshot, $inventory, $discardSource);
+                $this->source->remove($snapshot, $inventory, $force);
                 $snapshot->delete();
 
                 return $snapshot;

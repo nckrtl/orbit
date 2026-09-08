@@ -230,7 +230,7 @@ it('refuses matching pre-existing source for a fresh reservation and resumes it 
     expect(is_dir($instance->checkout_path.'/.git'))->toBeTrue();
 });
 
-it('refuses dirty and unpublished source unless destructive removal is explicit', function (string $mutation): void {
+it('refuses dirty and unpublished source unless force is explicit', function (string $mutation): void {
     $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
     $this->source->prepare($instance, false);
     $resolution = $this->source->resolve($instance);
@@ -258,7 +258,7 @@ it('refuses dirty and unpublished source unless destructive removal is explicit'
     expect(file_exists($instance->checkout_path))->toBeFalse();
 })->with(['dirty', 'unpublished']);
 
-it('does not let destructive removal waive origin or symlink identity checks', function (string $mutation): void {
+it('does not let force waive origin or symlink identity checks', function (string $mutation): void {
     $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
     $this->source->prepare($instance, false);
     $resolution = $this->source->resolve($instance);
@@ -287,14 +287,18 @@ it('does not let destructive removal waive origin or symlink identity checks', f
     }
 
     expect(fn () => orb178_remove_source($this->removal, $instance, true))
-        ->toThrow(RuntimeConvergenceException::class);
+        ->toThrow(
+            function (RuntimeConvergenceException $exception): void {
+                expect($exception->errorCode)->toBe('instance.force_failed');
+            },
+        );
     expect(file_exists($decoy.'/sentinel'))
         ->toBeTrue()
         ->and(file_exists($instance->checkout_path) || is_link($instance->checkout_path))
         ->toBeTrue();
 })->with(['origin', 'symlink']);
 
-it('does not let destructive removal remove a checkout with shared Git administration', function (): void {
+it('does not let force remove a checkout with shared Git administration', function (): void {
     $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
     $this->source->prepare($instance, false);
     $resolution = $this->source->resolve($instance);
@@ -396,7 +400,7 @@ it('keeps the Git index byte-for-byte unchanged through clean inspection and lat
         ->toBe('');
 });
 
-it('skips dirty and remote publication reads for destructive removal', function (): void {
+it('skips dirty and remote publication reads for forced removal', function (): void {
     $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
     $this->source->prepare($instance, false);
     $resolution = $this->source->resolve($instance);
@@ -457,7 +461,7 @@ it('returns linked-worktree inventory and refuses deletion with every path and b
 
 it('refuses a replacement or changed canonical origin between inspection and deletion', function (
     string $mutation,
-    bool $discardSource,
+    bool $force,
 ): void {
     $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
     $this->source->prepare($instance, false);
@@ -467,7 +471,7 @@ it('refuses a replacement or changed canonical origin between inspection and del
         'starting_commit' => $resolution->startingCommit,
         'status' => AppInstanceState::SourceResolved,
     ]);
-    $inventory = $this->removal->inspect($instance, $discardSource);
+    $inventory = $this->removal->inspect($instance, $force);
 
     if ($mutation === 'replacement') {
         expect(rename($instance->checkout_path, $this->sandbox.'/original'))->toBeTrue();
@@ -485,15 +489,15 @@ it('refuses a replacement or changed canonical origin between inspection and del
         ]);
     }
 
-    expect(fn () => $this->removal->remove($instance, $inventory, $discardSource))
+    expect(fn () => $this->removal->remove($instance, $inventory, $force))
         ->toThrow(RuntimeConvergenceException::class)
         ->and(is_dir($instance->checkout_path))
         ->toBeTrue();
 })->with([
     'normal replacement' => ['replacement', false],
-    'destructive replacement' => ['replacement', true],
+    'forced replacement' => ['replacement', true],
     'normal origin change' => ['origin', false],
-    'destructive origin change' => ['origin', true],
+    'forced origin change' => ['origin', true],
 ]);
 
 it('accepts an equivalent supported origin at the destructive boundary', function (): void {
@@ -521,7 +525,7 @@ it('accepts an equivalent supported origin at the destructive boundary', functio
     expect(file_exists($instance->checkout_path))->toBeFalse();
 });
 
-it('does not let removal waive the recorded starting commit ancestry', function (bool $discardSource): void {
+it('does not let removal waive the recorded starting commit ancestry', function (bool $force): void {
     $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
     $this->source->prepare($instance, false);
     $resolution = $this->source->resolve($instance);
@@ -543,12 +547,12 @@ it('does not let removal waive the recorded starting commit ancestry', function 
         'status' => AppInstanceState::SourceResolved,
     ]);
 
-    expect(fn () => orb178_remove_source($this->removal, $instance, $discardSource))
+    expect(fn () => orb178_remove_source($this->removal, $instance, $force))
         ->toThrow(RuntimeConvergenceException::class);
     expect(is_dir($instance->checkout_path))->toBeTrue();
 })->with([
     'normal removal' => false,
-    'discard' => true,
+    'force' => true,
 ]);
 
 it('refuses grouping-directory ownership drift before deleting the checkout', function (): void {
@@ -604,10 +608,10 @@ it('fails closed before removal when stored source identity is incomplete', func
 function orb178_remove_source(
     RemoteDevelopmentAppInstanceSourceRemoval $removal,
     AppInstance $instance,
-    bool $discardSource,
+    bool $force,
 ): AppInstanceSourceInventory {
-    $inventory = $removal->inspect($instance, $discardSource);
-    $removal->remove($instance, $inventory, $discardSource);
+    $inventory = $removal->inspect($instance, $force);
+    $removal->remove($instance, $inventory, $force);
 
     return $inventory;
 }

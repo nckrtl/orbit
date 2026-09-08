@@ -145,13 +145,13 @@ describe('AppInstance requests', function (): void {
             ->toBeInstanceOf(AppInstanceResponse::class);
     });
 
-    it('removes an AppInstance and transports explicit discard intent', function (): void {
+    it('removes an AppInstance and transports explicit force intent', function (): void {
         $mockClient = new MockClient([
             RemoveAppInstanceRequest::class => MockResponse::make(instance_envelope()),
         ]);
         $connector = instance_gateway_connector($mockClient);
 
-        $remove = new RemoveAppInstanceRequest(7, discardSource: true);
+        $remove = new RemoveAppInstanceRequest(7, force: true);
         $response = $connector->send($remove)->dto();
         $request = $mockClient->getLastRequest();
 
@@ -160,9 +160,16 @@ describe('AppInstance requests', function (): void {
             ->and($request?->resolveEndpoint())
             ->toBe('/api/v1/instances/7')
             ->and($remove->body()->all())
-            ->toBe(['discard_source' => true])
+            ->toBe(['force' => true])
             ->and($response->id)
             ->toBe(7);
+    });
+
+    it('preserves force omission and explicit false', function (): void {
+        expect(new RemoveAppInstanceRequest(7)->body()->all())
+            ->toBeEmpty()
+            ->and(new RemoveAppInstanceRequest(7, force: false)->body()->all())
+            ->toBe(['force' => false]);
     });
 });
 

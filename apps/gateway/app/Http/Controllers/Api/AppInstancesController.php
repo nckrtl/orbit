@@ -68,7 +68,7 @@ final class AppInstancesController extends Controller
         RemoveAppInstanceAction $action,
     ): JsonResponse {
         return response()->json([
-            'data' => AppInstanceData::fromModel($action->execute($instance, $request->discardSource()))->toArray(),
+            'data' => AppInstanceData::fromModel($action->execute($instance, $request->force()))->toArray(),
             'meta' => $this->meta($request),
         ]);
     }

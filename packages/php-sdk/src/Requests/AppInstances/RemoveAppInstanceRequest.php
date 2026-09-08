@@ -20,7 +20,7 @@ final class RemoveAppInstanceRequest extends GatewayRequest implements HasBody
 
     public function __construct(
         private readonly int $appInstanceId,
-        private readonly ?bool $discardSource = null,
+        private readonly ?bool $force = null,
     ) {}
 
     public function resolveEndpoint(): string
@@ -36,9 +36,9 @@ final class RemoveAppInstanceRequest extends GatewayRequest implements HasBody
         );
     }
 
-    /** @return array{discard_source?: bool} */
+    /** @return array{force?: bool} */
     protected function defaultBody(): array
     {
-        return $this->discardSource === null ? [] : ['discard_source' => $this->discardSource];
+        return $this->force === null ? [] : ['force' => $this->force];
     }
 }
