@@ -1,6 +1,51 @@
 # Tools
 
-This reference is for operators who remove a Tool and need to know when removal succeeds, how a failed removal retries, and what Doctor reports.
+This reference is for operators who manage packages on Nodes and need to understand Tool Manager availability, first-use provisioning, retries, removal, and Doctor results.
+
+## Choose a Tool Manager
+
+Orbit exposes its code-owned Tool Managers on active Linux Nodes that the Gateway manages over Secure Shell (SSH). A Node role can require a manager during role convergence, but the role does not own the manager or its Tools. Roleless operator clients remain outside Tool management under [ADR 0012](../decisions/0012-ubuntu-24-04-roleless-operator-clients.md).
+
+List every manager supported for a Node before choosing one.
+
+```bash
+orbit tool:manager:list --node=<node-id>
+```
+
+The command reports a nullable manager ID and one of these lifecycle states.
+
+| Status | Meaning |
+| --- | --- |
+| `uninstalled` | Orbit supports the manager on the Node, but the manager has no persisted state and its software is not available yet. |
+| `provisioning` | Orbit is installing or verifying the manager and its protected prerequisites. |
+| `active` | The manager is available for Tool operations. |
+| `failed` | Manager provisioning or verification failed and the next install can retry it. |
+
+An `uninstalled` manager has no database ID. Persisted manager rows use their database ID and retain bounded failure fields when provisioning fails.
+
+The supported managers have these scopes.
+
+| Manager | Package scope | Availability |
+| --- | --- | --- |
+| `apt` | The Node's Advanced Package Tool package database | Materialized with the managed Node baseline |
+| `vp` | Orbit's shared Vite+ global package scope on the Node | Materialized on first use or when a role requires it |
+| `composer` | Orbit's shared Composer global package scope on the Node | Materialized on first use or when a role requires it |
+
+[ADR 0001](../decisions/0001-tool-management.md) defines Tool ownership and caller input. [ADR 0042](../decisions/0042-provision-tool-managers-on-demand.md) defines manager availability and role independence.
+
+## Install a Tool
+
+Install one manager-native package by naming its manager and target Node.
+
+```bash
+orbit tool:install <package> --manager=<manager> --node=<node-id>
+```
+
+When the selected manager is `uninstalled` or `failed`, the Gateway first provisions or retries that manager in its protected scope. A successful provisioning records the manager as `active` before the Gateway changes Tool intent. A failed provisioning returns `tool.manager_provision_failed`, keeps the bounded failure on the manager, and does not create a Tool row. Repeating the same install command retries the manager from live Node state.
+
+The Gateway rejects Tool mutations with `tool.node_unmanaged` when the Node is a roleless operator client or is otherwise outside Gateway-owned SSH management. Manager installation is independent of the Node's assigned infrastructure roles.
+
+Orbit does not install every registered manager during Node provisioning. A materialized manager remains active after its final Tool is removed, and Orbit exposes no manager-removal command.
 
 ## Remove a Tool
 
