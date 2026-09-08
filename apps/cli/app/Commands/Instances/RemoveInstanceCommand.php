@@ -7,9 +7,13 @@ namespace App\Commands\Instances;
 use App\Commands\GatewayCommand;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
+use App\Support\GatewayFailureRenderer;
+use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\Requests\AppInstances\RemoveAppInstanceRequest;
-use Orbit\Sdk\Responses\AppInstances\AppInstanceResponse;
+use Orbit\Sdk\Responses\AppInstances\AppInstanceRemovalProgressResponse;
+use Orbit\Sdk\Responses\AppInstances\AppInstanceRemovalResponse;
 
+/** @mago-expect lint:cyclomatic-complexity Removal has distinct bounded success and resumable-failure output paths. */
 final class RemoveInstanceCommand extends GatewayCommand
 {
     #[\Override]
@@ -37,28 +41,73 @@ final class RemoveInstanceCommand extends GatewayCommand
             return self::FAILURE;
         }
 
-        $instance = $this->send(
-            $connector,
-            new RemoveAppInstanceRequest(
-                $instanceId,
-                force: $this->option('force') === true ? true : null,
-            ),
-            AppInstanceResponse::class,
-        );
+        try {
+            $response = $this->sendOrThrow(
+                $connector,
+                new RemoveAppInstanceRequest(
+                    $instanceId,
+                    force: $this->option('force') === true ? true : null,
+                ),
+                AppInstanceRemovalResponse::class,
+            );
+        } catch (GatewayApiException $exception) {
+            $this->renderRemovalFailure($exception);
 
-        if (! $instance instanceof AppInstanceResponse) {
+            return self::FAILURE;
+        }
+
+        if (! $response instanceof AppInstanceRemovalResponse) {
             return self::FAILURE;
         }
 
         if ($this->option('json') === true) {
-            $this->writeJson($instance->toArray());
+            $this->writeJson($response->toArray());
 
             return self::SUCCESS;
         }
 
-        $this->info("Instance [{$instance->name}] removed.");
-        $this->line("Request ID: {$instance->requestId}");
+        $this->info("Instance [{$response->removal->name}] removed.");
+        $this->writeProgress($response->removal);
+        $this->line("Request ID: {$response->requestId}");
 
         return self::SUCCESS;
+    }
+
+    private function renderRemovalFailure(GatewayApiException $exception): void
+    {
+        /** @mago-expect analysis:mixed-assignment Gateway failure details remain mixed until the removal DTO parses them. */
+        $value = $exception->details()['removal'] ?? null;
+        $progress = null;
+
+        if (is_array($value)) {
+            /** @var array<string, mixed> $value */
+            $progress = AppInstanceRemovalProgressResponse::fromGatewayData($value);
+        }
+
+        GatewayFailureRenderer::write(
+            $this,
+            $exception->errorCode() ?? 'gateway.request_failed',
+            $exception->getMessage(),
+            $exception->requestId(),
+            details: $progress instanceof AppInstanceRemovalProgressResponse
+                ? ['removal' => $progress->toArray()]
+                : [],
+        );
+
+        if ($this->option('json') !== true && $progress instanceof AppInstanceRemovalProgressResponse) {
+            $this->writeProgress($progress);
+        }
+    }
+
+    private function writeProgress(AppInstanceRemovalProgressResponse $progress): void
+    {
+        $this->line('Mode: '.($progress->force ? 'forced' : 'normal'));
+        $this->line("Progress: {$progress->completed}/{$progress->total} completed; {$progress->remaining} remaining");
+        $this->line('Current step: '.($progress->currentStep ?? '-'));
+
+        if ($progress->failedStep !== null) {
+            $this->line("Failed step: {$progress->failedStep}");
+            $this->line('Error code: '.($progress->errorCode ?? '-'));
+        }
     }
 }

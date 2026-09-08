@@ -6,6 +6,7 @@ namespace App\Data\AppInstances;
 
 use App\Data\Routes\RouteData;
 use App\Models\AppInstance;
+use App\Models\AppInstanceRemoval;
 use App\Models\Route;
 use Spatie\LaravelData\Attributes\MapOutputName;
 use Spatie\LaravelData\Data;
@@ -33,12 +34,20 @@ final class AppInstanceData extends Data
         public ?RouteData $route,
         public ?string $hostname,
         public ?string $url,
+        public ?AppInstanceRemovalData $removal,
     ) {}
 
     public static function fromModel(AppInstance $appInstance): self
     {
         $appInstance->loadMissing(['app', 'routes.targets']);
         $route = $appInstance->routes->first();
+        $removal = AppInstanceRemoval::query()
+            ->with('members')
+            ->whereHas('members', static fn ($query) => $query
+                ->where('app_instance_id', $appInstance->id)
+                ->whereNull('row_deleted_at'))
+            ->latest('created_at')
+            ->first();
 
         return new self(
             id: $appInstance->id,
@@ -58,6 +67,9 @@ final class AppInstanceData extends Data
             route: $route instanceof Route ? RouteData::fromModel($route) : null,
             hostname: $route?->hostname,
             url: $route instanceof Route ? "https://{$route->hostname}" : null,
+            removal: $removal instanceof AppInstanceRemoval
+                ? AppInstanceRemovalData::fromModel($removal)
+                : null,
         );
     }
 }

@@ -58,6 +58,9 @@ final class ListInstancesCommand extends GatewayCommand
                 $instance->hostname ?? '-',
                 $instance->url ?? '-',
                 $instance->status,
+                $instance->removal === null
+                    ? '-'
+                    : $this->removalSummary($instance->removal),
             ];
         }
 
@@ -76,11 +79,28 @@ final class ListInstancesCommand extends GatewayCommand
                 'Route hostname',
                 'URL',
                 'Status',
+                'Removal',
             ],
             $rows,
         );
         $this->line("Request ID: {$response->requestId}");
 
         return self::SUCCESS;
+    }
+
+    private function removalSummary(\Orbit\Sdk\Responses\AppInstances\AppInstanceRemovalProgressResponse $removal): string
+    {
+        $summary =
+            ($removal->force ? 'forced' : 'normal')
+            ." {$removal->completed}/{$removal->total} completed"
+            ."; {$removal->remaining} remaining"
+            .'; '
+            .($removal->currentStep ?? '-');
+
+        if ($removal->failedStep !== null) {
+            $summary .= "; failed {$removal->failedStep} (".($removal->errorCode ?? '-').')';
+        }
+
+        return $summary;
     }
 }

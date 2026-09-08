@@ -31,6 +31,7 @@ final readonly class AppInstanceResponse
         public ?RouteResponse $route,
         public ?string $hostname,
         public ?string $url,
+        public ?AppInstanceRemovalProgressResponse $removal,
         public string $requestId,
     ) {}
 
@@ -59,6 +60,7 @@ final readonly class AppInstanceResponse
             route: self::route($data['route'] ?? null, $requestId),
             hostname: is_string($data['hostname'] ?? null) ? $data['hostname'] : null,
             url: is_string($data['url'] ?? null) ? $data['url'] : null,
+            removal: self::removal($data['removal'] ?? null),
             requestId: $requestId,
         );
     }
@@ -84,6 +86,7 @@ final readonly class AppInstanceResponse
             'route' => $this->route?->toArray(),
             'hostname' => $this->hostname,
             'url' => $this->url,
+            'removal' => $this->removal?->toArray(),
             'request_id' => $this->requestId,
         ];
     }
@@ -106,5 +109,25 @@ final readonly class AppInstanceResponse
         }
 
         return RouteResponse::fromGatewayData($route, $requestId);
+    }
+
+    private static function removal(#[SensitiveParameter] mixed $value): ?AppInstanceRemovalProgressResponse
+    {
+        if (! is_array($value)) {
+            return null;
+        }
+
+        $removal = [];
+
+        foreach ($value as $key => $item) {
+            if (! is_string($key)) {
+                continue;
+            }
+
+            /** @mago-expect analysis:mixed-assignment Gateway response values remain intentionally mixed until DTO parsing. */
+            $removal[$key] = $item;
+        }
+
+        return AppInstanceRemovalProgressResponse::fromGatewayData($removal);
     }
 }

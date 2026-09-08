@@ -14,7 +14,10 @@ use App\Domain\AppInstances\DevelopmentAppInstanceSourceLifecycle;
 use App\Domain\AppInstances\DevelopmentRouteProjector;
 use App\Domain\AppInstances\DevelopmentSourceProfile;
 use App\Domain\AppInstances\DevelopmentSourceResolution;
+use App\Domain\AppInstances\Removal\AppInstanceRemovalProjector;
 use App\Domain\AppInstances\Removal\AppInstanceSourceInventory;
+use App\Domain\AppInstances\Removal\AppInstanceSourceRevalidationState;
+use App\Domain\AppInstances\Removal\DevelopmentAppInstanceSourceFinalizer;
 use App\Domain\AppInstances\Removal\DevelopmentAppInstanceSourceRemoval;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Instances\CertificateMode;
@@ -28,6 +31,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Models\Activity;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
+use App\Models\AppInstanceRemovalMember;
 use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\Node;
@@ -35,6 +39,7 @@ use App\Models\NodeRole;
 use App\Models\Route;
 use App\Models\RouteTarget;
 use App\Models\Workspace;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
@@ -131,16 +136,22 @@ beforeEach(function (): void {
         }
     };
     app()->instance(DevelopmentAppInstanceSourceLifecycle::class, $this->source);
-    $this->removal = new class implements DevelopmentAppInstanceSourceRemoval {
+    $this->removalSource = new class implements
+        DevelopmentAppInstanceSourceFinalizer,
+        DevelopmentAppInstanceSourceRemoval {
         /** @var list<string> */
         public array $calls = [];
 
-        /** @var null|list<string> */
-        public ?array $linkedWorktreePaths = null;
+        public ?string $fail = null;
+
+        /** @var array<int, list<string>> */
+        public array $linkedPaths = [];
 
         public function inspect(AppInstance $appInstance, bool $force): AppInstanceSourceInventory
         {
-            $this->calls[] = $force ? 'inspect-force' : 'inspect';
+            $this->record('inspect', $appInstance->id);
+            $paths = $this->linkedPaths[$appInstance->id] ?? [$appInstance->checkout_path];
+            $payload = "{$appInstance->id}\0{$appInstance->checkout_path}";
 
             return new AppInstanceSourceInventory(
                 appInstanceId: $appInstance->id,
@@ -148,12 +159,14 @@ beforeEach(function (): void {
                 repositoryIdentity: $appInstance->app->repository_identity,
                 checkoutPath: $appInstance->checkout_path,
                 root: dirname(dirname($appInstance->checkout_path)),
-                branch: (string) $appInstance->branch,
-                startingCommit: (string) $appInstance->starting_commit,
-                commonRepositoryPath: $appInstance->checkout_path,
-                sourceIdentity: '1:1',
-                linkedWorktreePaths: $this->linkedWorktreePaths ?? [$appInstance->checkout_path],
-                digest: str_repeat('a', 64),
+                branch: $appInstance->branch,
+                startingCommit: $appInstance->starting_commit,
+                commonRepositoryPath: $appInstance->source_layout === 'checkout'
+                    ? $appInstance->checkout_path
+                    : dirname(dirname($appInstance->checkout_path)),
+                sourceIdentity: "test:{$appInstance->id}",
+                linkedWorktreePaths: $paths,
+                digest: hash('sha256', $payload),
             );
         }
 
@@ -162,10 +175,105 @@ beforeEach(function (): void {
             AppInstanceSourceInventory $inventory,
             bool $force,
         ): void {
-            $this->calls[] = $force ? 'remove-force' : 'remove';
+            throw new LogicException('The durable coordinator does not call legacy source removal.');
+        }
+
+        public function prepare(AppInstanceRemovalMember $member): void
+        {
+            $this->record('prepare', $member->app_instance_id);
+        }
+
+        public function revalidate(AppInstanceRemovalMember $member): AppInstanceSourceRevalidationState
+        {
+            $this->record('revalidate', $member->app_instance_id);
+
+            return AppInstanceSourceRevalidationState::Present;
+        }
+
+        public function inspectRecorded(
+            AppInstanceRemovalMember $member,
+            AppInstanceSourceRevalidationState $state,
+        ): AppInstanceSourceInventory {
+            $appInstance = AppInstance::query()->with('app')->findOrFail($member->app_instance_id);
+
+            return $this->inspect($appInstance, (bool) $member->removal()->firstOrFail()->force);
+        }
+
+        public function finalize(AppInstanceRemovalMember $member): string
+        {
+            $this->record('finalize', $member->app_instance_id);
+
+            return hash('sha256', "receipt\0{$member->source_digest}");
+        }
+
+        private function record(string $operation, int $id): void
+        {
+            $this->calls[] = "{$operation}:{$id}";
+
+            if ($this->fail === $operation) {
+                if ($operation === 'revalidate') {
+                    throw new ResourceOperationException(
+                        'instance.removal_conflict',
+                        'Source identity changed after removal acceptance.',
+                        409,
+                    );
+                }
+
+                throw new ResourceOperationException(
+                    'instance.source_interrupted',
+                    'Source operation interrupted.',
+                    502,
+                );
+            }
         }
     };
-    app()->instance(DevelopmentAppInstanceSourceRemoval::class, $this->removal);
+    app()->instance(DevelopmentAppInstanceSourceRemoval::class, $this->removalSource);
+    app()->instance(DevelopmentAppInstanceSourceFinalizer::class, $this->removalSource);
+    $this->removalProjector = new class implements AppInstanceRemovalProjector {
+        /** @var list<string> */
+        public array $calls = [];
+
+        public ?string $fail = null;
+
+        public function clearRouteTarget(AppInstanceRemovalMember $member): string
+        {
+            $this->record('route', $member);
+            $route = Route::query()->find($member->route_id);
+
+            if (! $route instanceof Route) {
+                return 'deleted';
+            }
+
+            $route->targets()->where('app_instance_id', $member->app_instance_id)->delete();
+
+            if ($route->targets()->exists()) {
+                return 'retained';
+            }
+
+            $route->delete();
+
+            return 'deleted';
+        }
+
+        public function cleanupRuntime(AppInstanceRemovalMember $member): void
+        {
+            $this->record('runtime', $member);
+        }
+
+        private function record(string $operation, AppInstanceRemovalMember $member): void
+        {
+            $this->calls[] = "{$operation}:{$member->app_instance_id}";
+
+            if ($this->fail === $operation) {
+                throw new ResourceOperationException(
+                    'instance.runtime_interrupted',
+                    'Removal projection interrupted.',
+                    502,
+                );
+            }
+        }
+    };
+    app()->instance(AppInstanceRemovalProjector::class, $this->removalProjector);
 
     $this->node = Node::query()->create([
         'name' => 'app-dev',
@@ -363,7 +471,6 @@ it('rejects added removed or changed branch override on creation retry before mu
     $this->postJson('/api/v1/instances', $payload)->assertCreated();
     $before = AppInstance::query()->sole()->getAttributes();
     $this->source->calls = [];
-    $this->removal->calls = [];
 
     if ($retry === null) {
         unset($payload['branch']);
@@ -1032,7 +1139,7 @@ it('returns migration required before retry or removal mutates a legacy default'
 
     $response = $operation === 'retry'
         ? $this->postJson('/api/v1/instances', $payload)
-        : $this->deleteJson("/api/v1/instances/{$created->json('data.id')}", ['force' => true]);
+        : $this->deleteJson("/api/v1/instances/{$created->json('data.id')}");
 
     $response
         ->assertConflict()
@@ -1195,174 +1302,288 @@ it('keeps overlapping AppInstance and legacy Instance IDs in separate endpoint d
         ->assertJsonPath('data.name', 'workspace');
 });
 
-it('refuses active AppInstance removal before source mutation', function (bool $force): void {
+it('removes an active AppInstance through every durable checkpoint', function (bool $force): void {
     $created = $this->postJson('/api/v1/instances', [
         'app_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
         'name' => 'dev',
     ])->assertCreated();
-    $route = Route::query()->sole();
-    $routeBefore = $route->only([
-        'app_id',
-        'node_id',
-        'cluster_id',
-        'generation_basis_node_id',
-        'hostname',
-        'provenance',
-        'publication',
-        'status',
-        'failed_step',
-        'error_code',
-    ]);
     $this->source->calls = [];
 
     $this
         ->deleteJson("/api/v1/instances/{$created->json('data.id')}", [
             'force' => $force,
         ])
-        ->assertConflict()
-        ->assertJsonPath('error.code', 'route.reconciliation_required');
-
-    $activityInput = Activity::query()
-        ->where('command', 'instance:remove')
-        ->latest('id')
-        ->firstOrFail()
-        ->properties?->get('input');
-    expect(AppInstance::query()->count())
-        ->toBe(1)
-        ->and(RouteTarget::query()->count())
-        ->toBe(1)
-        ->and($route->refresh()->only(array_keys($routeBefore)))
-        ->toBe($routeBefore)
-        ->and($this->source->calls)
-        ->toBeEmpty()
-        ->and($this->removal->calls)
-        ->toBeEmpty()
-        ->and($activityInput)
-        ->toBe(['force' => $force]);
-})->with([false, true]);
-
-it('uses normal removal for force omission and explicit false', function (array $payload): void {
-    $created = $this->postJson('/api/v1/instances', [
-        'app_id' => $this->orbitApp->id,
-        'node_id' => $this->node->id,
-        'name' => 'dev',
-    ])->assertCreated();
-    AppInstance::query()->sole()->update(['status' => AppInstanceState::SourceResolved]);
-    RouteTarget::query()->delete();
-    Route::query()->delete();
-    $this->source->calls = [];
-    $this->removal->calls = [];
-
-    $this
-        ->deleteJson("/api/v1/instances/{$created->json('data.id')}", $payload)
         ->assertOk()
         ->assertJsonPath('data.id', $created->json('data.id'))
-        ->assertJsonMissingPath('data.force')
-        ->assertJsonMissingPath('data.discard_source');
+        ->assertJsonPath('data.name', 'dev')
+        ->assertJsonPath('data.force', $force)
+        ->assertJsonPath('data.status', 'completed')
+        ->assertJsonPath('data.current_step', null)
+        ->assertJsonPath('data.total', 1)
+        ->assertJsonPath('data.completed', 1)
+        ->assertJsonPath('data.remaining', 0)
+        ->assertJsonPath('data.failed_step', null)
+        ->assertJsonPath('data.error_code', null);
 
-    expect($this->source->calls)
-        ->toBeEmpty()
-        ->and($this->removal->calls)
-        ->toBe(['inspect', 'remove']);
-})->with([
-    'omission' => [[]],
-    'explicit false' => [['force' => false]],
-]);
-
-it('rejects non-boolean force values', function (mixed $force): void {
-    $created = $this->postJson('/api/v1/instances', [
-        'app_id' => $this->orbitApp->id,
-        'node_id' => $this->node->id,
-        'name' => 'dev',
-    ])->assertCreated();
-    $this->source->calls = [];
-    $this->removal->calls = [];
-
-    $this
-        ->deleteJson("/api/v1/instances/{$created->json('data.id')}", ['force' => $force])
-        ->assertUnprocessable()
-        ->assertJsonPath('error.code', 'validation.failed');
-
-    expect($this->source->calls)
-        ->toBeEmpty()
-        ->and($this->removal->calls)
-        ->toBeEmpty();
-})->with([
-    'integer one' => 1,
-    'integer zero' => 0,
-    'true string' => 'true',
-    'false string' => 'false',
-    'null' => null,
-]);
-
-it('rejects discard_source as an unknown removal field without recording it', function (): void {
-    $created = $this->postJson('/api/v1/instances', [
-        'app_id' => $this->orbitApp->id,
-        'node_id' => $this->node->id,
-        'name' => 'dev',
-    ])->assertCreated();
-    $this->source->calls = [];
-    $this->removal->calls = [];
-
-    $this
-        ->deleteJson("/api/v1/instances/{$created->json('data.id')}", ['discard_source' => true])
-        ->assertUnprocessable()
-        ->assertJsonPath('error.code', 'validation.failed');
-
-    $activity = Activity::query()->where('command', 'instance:remove')->latest('id')->firstOrFail();
-    expect($activity->properties?->get('input'))
-        ->toBe([])
-        ->and(AppInstance::query()->count())
-        ->toBe(1)
+    $activity = Activity::query()->where('command', 'instance:remove')->sole();
+    expect(AppInstance::query()->count())
+        ->toBe(0)
+        ->and(RouteTarget::query()->count())
+        ->toBe(0)
+        ->and(Route::query()->count())
+        ->toBe(0)
+        ->and($this->removalSource->calls)
+        ->toBe([
+            "inspect:{$created->json('data.id')}",
+            "prepare:{$created->json('data.id')}",
+            "revalidate:{$created->json('data.id')}",
+            "finalize:{$created->json('data.id')}",
+        ])
         ->and($this->source->calls)
         ->toBeEmpty()
-        ->and($this->removal->calls)
-        ->toBeEmpty();
-});
+        ->and($activity->subject_type)
+        ->toBe(AppInstance::class)
+        ->and($activity->subject_id)
+        ->toBe($created->json('data.id'))
+        ->and($activity->target_node_id)
+        ->toBe($this->node->id)
+        ->and($activity->properties?->get('removal'))
+        ->toMatchArray([
+            'id' => $created->json('data.id'),
+            'name' => 'dev',
+            'force' => $force,
+            'status' => 'completed',
+            'current_step' => null,
+            'total' => 1,
+            'completed' => 1,
+            'remaining' => 0,
+            'failed_step' => null,
+            'error_code' => null,
+        ])
+        ->not->toHaveKeys(['checkout_path', 'source_digest', 'finalization_receipt']);
+})->with([false, true]);
 
-it('uses the active Route guard when removal sends an empty JSON body', function (): void {
+it('keeps preflight refusals free of Route source and lifecycle mutation', function (): void {
     $created = $this->postJson('/api/v1/instances', [
         'app_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
         'name' => 'dev',
     ])->assertCreated();
-    $this->source->calls = [];
-    $this->removal->calls = [];
+    $route = Route::query()->sole();
+    $routeBefore = $route->toArray();
+    $this->removalSource->fail = 'inspect';
 
     $response = $this->deleteJson("/api/v1/instances/{$created->json('data.id')}");
 
     $response
-        ->assertConflict()
-        ->assertJsonPath('error.code', 'route.reconciliation_required');
+        ->assertStatus(502)
+        ->assertJsonPath('error.code', 'instance.source_interrupted')
+        ->assertJsonPath('error.details', []);
     expect(AppInstance::query()->count())
         ->toBe(1)
-        ->and($this->source->calls)
-        ->toBeEmpty()
-        ->and($this->removal->calls)
-        ->toBeEmpty();
+        ->and(AppInstance::query()->sole()->status)
+        ->toBe(AppInstanceState::Active)
+        ->and(RouteTarget::query()->count())
+        ->toBe(1)
+        ->and($route->refresh()->toArray())
+        ->toBe($routeBefore);
 });
 
-it('checks the active Route before checkout overlap during removal', function (): void {
+it('retains bounded failed progress and resumes without recreating a deleted Route', function (): void {
     $created = $this->postJson('/api/v1/instances', [
         'app_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
         'name' => 'dev',
     ])->assertCreated();
-    $this->source->calls = [];
-    $this->removal->calls = [];
+    $id = $created->json('data.id');
+    $this->removalProjector->fail = 'runtime';
 
     $this
-        ->deleteJson("/api/v1/instances/{$created->json('data.id')}")
-        ->assertConflict()
-        ->assertJsonPath('error.code', 'route.reconciliation_required');
+        ->deleteJson("/api/v1/instances/{$id}")
+        ->assertStatus(502)
+        ->assertJsonPath('error.code', 'instance.runtime_interrupted')
+        ->assertJsonPath('error.details.removal.id', $id)
+        ->assertJsonPath('error.details.removal.force', false)
+        ->assertJsonPath('error.details.removal.status', 'failed')
+        ->assertJsonPath('error.details.removal.current_step', 'runtime_cleanup')
+        ->assertJsonPath('error.details.removal.total', 1)
+        ->assertJsonPath('error.details.removal.completed', 0)
+        ->assertJsonPath('error.details.removal.remaining', 1)
+        ->assertJsonPath('error.details.removal.failed_step', 'runtime_cleanup')
+        ->assertJsonPath('error.details.removal.error_code', 'instance.runtime_interrupted');
 
     expect(AppInstance::query()->count())
         ->toBe(1)
-        ->and($this->source->calls)
-        ->toBeEmpty()
-        ->and($this->removal->calls)
-        ->toBeEmpty();
+        ->and(AppInstance::query()->sole()->status)
+        ->toBe(AppInstanceState::Removing)
+        ->and(Route::query()->count())
+        ->toBe(0);
+
+    $this
+        ->getJson("/api/v1/instances/{$id}")
+        ->assertOk()
+        ->assertJsonPath('data.status', 'removing')
+        ->assertJsonPath('data.removal.failed_step', 'runtime_cleanup');
+
+    $failedActivity = Activity::query()->where('command', 'instance:remove')->latest('id')->firstOrFail();
+    expect($failedActivity->status)
+        ->toBe('failed')
+        ->and($failedActivity->error_code)
+        ->toBe('instance.runtime_interrupted')
+        ->and($failedActivity->subject_type)
+        ->toBe(AppInstance::class)
+        ->and($failedActivity->subject_id)
+        ->toBe($id)
+        ->and($failedActivity->target_node_id)
+        ->toBe($this->node->id)
+        ->and($failedActivity->properties?->get('removal'))
+        ->toMatchArray([
+            'id' => $id,
+            'force' => false,
+            'status' => 'failed',
+            'current_step' => 'runtime_cleanup',
+            'total' => 1,
+            'completed' => 0,
+            'remaining' => 1,
+            'failed_step' => 'runtime_cleanup',
+            'error_code' => 'instance.runtime_interrupted',
+        ]);
+
+    $this
+        ->postJson('/api/v1/instances', [
+            'app_id' => $this->orbitApp->id,
+            'node_id' => $this->node->id,
+            'name' => 'dev',
+        ])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'instance.removal_conflict');
+
+    $this->removalProjector->fail = null;
+    $this
+        ->deleteJson("/api/v1/instances/{$id}")
+        ->assertOk()
+        ->assertJsonPath('data.status', 'completed')
+        ->assertJsonPath('data.completed', 1);
+
+    expect(Route::query()->count())->toBe(0);
+});
+
+it('atomically completes final row deletion or preserves the public retry target', function (): void {
+    $created = $this->postJson('/api/v1/instances', [
+        'app_id' => $this->orbitApp->id,
+        'node_id' => $this->node->id,
+        'name' => 'dev',
+    ])->assertCreated();
+    $id = $created->json('data.id');
+    DB::unprepared(<<<'SQL'
+        CREATE TRIGGER orb124_fail_final_completion
+        BEFORE UPDATE OF status ON app_instance_removals
+        WHEN NEW.status = 'completed'
+        BEGIN
+            SELECT RAISE(ABORT, 'Injected final completion failure.');
+        END
+        SQL);
+
+    try {
+        $this
+            ->deleteJson("/api/v1/instances/{$id}")
+            ->assertStatus(502)
+            ->assertJsonPath('error.code', 'instance.removal_incomplete')
+            ->assertJsonPath('error.details.removal.id', $id)
+            ->assertJsonPath('error.details.removal.status', 'failed')
+            ->assertJsonPath('error.details.removal.current_step', 'row_deletion')
+            ->assertJsonPath('error.details.removal.completed', 0)
+            ->assertJsonPath('error.details.removal.remaining', 1)
+            ->assertJsonPath('error.details.removal.failed_step', 'row_deletion');
+    } finally {
+        DB::unprepared('DROP TRIGGER IF EXISTS orb124_fail_final_completion');
+    }
+
+    $member = AppInstanceRemovalMember::query()->sole();
+    expect(AppInstance::query()->whereKey($id)->sole()->status)
+        ->toBe(AppInstanceState::Removing)
+        ->and($member->row_deleted_at)
+        ->toBeNull()
+        ->and($member->removal()->firstOrFail()->status->value)
+        ->toBe('failed')
+        ->and(Route::query()->count())
+        ->toBe(0)
+        ->and($this->removalProjector->calls)
+        ->toBe(["route:{$id}", "runtime:{$id}"]);
+
+    $this
+        ->deleteJson("/api/v1/instances/{$id}")
+        ->assertOk()
+        ->assertJsonPath('data.status', 'completed')
+        ->assertJsonPath('data.completed', 1)
+        ->assertJsonPath('data.remaining', 0);
+
+    expect(AppInstance::query()->whereKey($id)->exists())
+        ->toBeFalse()
+        ->and($member->refresh()->row_deleted_at)
+        ->not
+        ->toBeNull()
+        ->and($member->removal()->firstOrFail()->status->value)
+        ->toBe('completed')
+        ->and(Route::query()->count())
+        ->toBe(0)
+        ->and($this->removalProjector->calls)
+        ->toBe(["route:{$id}", "runtime:{$id}"]);
+});
+
+it('returns current bounded progress when retry source revalidation is refused', function (): void {
+    $created = $this->postJson('/api/v1/instances', [
+        'app_id' => $this->orbitApp->id,
+        'node_id' => $this->node->id,
+        'name' => 'dev',
+    ])->assertCreated();
+    $id = $created->json('data.id');
+    $this->removalProjector->fail = 'route';
+
+    $this
+        ->deleteJson("/api/v1/instances/{$id}")
+        ->assertStatus(502)
+        ->assertJsonPath('error.details.removal.current_step', 'route_target_clear')
+        ->assertJsonPath('error.details.removal.error_code', 'instance.runtime_interrupted');
+
+    $route = Route::query()->sole();
+    $this
+        ->putJson("/api/v1/routes/{$route->id}/target", ['app_instance_id' => $id])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'route.target_inactive');
+
+    $this->removalProjector->fail = null;
+    $this->removalSource->fail = 'revalidate';
+
+    $this
+        ->deleteJson("/api/v1/instances/{$id}")
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'instance.removal_conflict')
+        ->assertJsonPath('error.details.removal.id', $id)
+        ->assertJsonPath('error.details.removal.status', 'failed')
+        ->assertJsonPath('error.details.removal.current_step', 'route_target_clear')
+        ->assertJsonPath('error.details.removal.completed', 0)
+        ->assertJsonPath('error.details.removal.remaining', 1)
+        ->assertJsonPath('error.details.removal.failed_step', 'route_target_clear')
+        ->assertJsonPath('error.details.removal.error_code', 'instance.removal_conflict');
+
+    $operation = AppInstance::query()->findOrFail($id)->removalMember?->removal;
+    $activity = Activity::query()->where('command', 'instance:remove')->latest('id')->firstOrFail();
+    expect(AppInstance::query()->findOrFail($id)->status)
+        ->toBe(AppInstanceState::Removing)
+        ->and($operation?->current_step?->value)
+        ->toBe('route_target_clear')
+        ->and($operation?->error_code)
+        ->toBe('instance.removal_conflict')
+        ->and($activity->properties?->get('removal'))
+        ->toMatchArray([
+            'id' => $id,
+            'status' => 'failed',
+            'current_step' => 'route_target_clear',
+            'failed_step' => 'route_target_clear',
+            'error_code' => 'instance.removal_conflict',
+        ]);
 });
 
 it('rejects a non-empty JSON array from the removal transport', function (): void {
@@ -1372,7 +1593,6 @@ it('rejects a non-empty JSON array from the removal transport', function (): voi
         'name' => 'dev',
     ])->assertCreated();
     $this->source->calls = [];
-    $this->removal->calls = [];
 
     $this
         ->call(
@@ -1390,82 +1610,22 @@ it('rejects a non-empty JSON array from the removal transport', function (): voi
     expect(AppInstance::query()->count())
         ->toBe(1)
         ->and($this->source->calls)
-        ->toBeEmpty()
-        ->and($this->removal->calls)
         ->toBeEmpty();
 });
 
-it('uses forced removal only after reusable source inspection', function (): void {
-    $instance = AppInstance::query()->create([
+it('rejects the removed compatibility key', function (): void {
+    $created = $this->postJson('/api/v1/instances', [
         'app_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
         'name' => 'dev',
-        'source_layout' => AppInstanceSourceLayout::Checkout,
-        'checkout_path' => '/srv/orbit/apps/acme/dev',
-        'branch' => 'dev',
-        'starting_commit' => str_repeat('a', 40),
-        'status' => AppInstanceState::SourceResolved,
-    ]);
+    ])->assertCreated();
 
     $this
-        ->deleteJson("/api/v1/instances/{$instance->id}", ['force' => true])
-        ->assertOk()
-        ->assertJsonPath('data.id', $instance->id);
+        ->deleteJson("/api/v1/instances/{$created->json('data.id')}", [
+            'discard'.'_source' => true,
+        ])
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'validation.failed');
 
-    expect(AppInstance::query()->find($instance->id))
-        ->toBeNull()
-        ->and($this->removal->calls)
-        ->toBe(['inspect-force', 'remove-force']);
-});
-
-it('refuses a linked checkout before source or record deletion', function (): void {
-    $instance = AppInstance::query()->create([
-        'app_id' => $this->orbitApp->id,
-        'node_id' => $this->node->id,
-        'name' => 'dev',
-        'source_layout' => AppInstanceSourceLayout::Checkout,
-        'checkout_path' => '/srv/orbit/apps/acme/dev',
-        'branch' => 'dev',
-        'starting_commit' => str_repeat('a', 40),
-        'status' => AppInstanceState::SourceResolved,
-    ]);
-    $this->removal->linkedWorktreePaths = [
-        $instance->checkout_path,
-        '/srv/orbit/apps/acme/linked',
-    ];
-    $before = $instance->refresh()->getAttributes();
-
-    $this
-        ->deleteJson("/api/v1/instances/{$instance->id}", ['force' => true])
-        ->assertConflict()
-        ->assertJsonPath('error.code', 'instance.remove_refused');
-
-    expect($instance->refresh()->getAttributes())
-        ->toBe($before)
-        ->and($this->removal->calls)
-        ->toBe(['inspect-force']);
-});
-
-it('refuses an unsupported source layout before source inspection', function (): void {
-    $instance = AppInstance::query()->create([
-        'app_id' => $this->orbitApp->id,
-        'node_id' => $this->node->id,
-        'name' => 'dev',
-        'source_layout' => AppInstanceSourceLayout::Worktree,
-        'checkout_path' => '/srv/orbit/apps/acme/dev',
-        'branch' => 'dev',
-        'starting_commit' => str_repeat('a', 40),
-        'status' => AppInstanceState::SourceResolved,
-    ]);
-
-    $this
-        ->deleteJson("/api/v1/instances/{$instance->id}")
-        ->assertConflict()
-        ->assertJsonPath('error.code', 'instance.source_layout_conflict');
-
-    expect(AppInstance::query()->find($instance->id))
-        ->not
-        ->toBeNull()
-        ->and($this->removal->calls)
-        ->toBeEmpty();
+    expect(AppInstance::query()->sole()->status)->toBe(AppInstanceState::Active);
 });
