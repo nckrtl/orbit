@@ -501,6 +501,7 @@ function orb181_projector_member(AppInstance $instance, Route $route): AppInstan
             'root' => $instance->effectiveRoot(),
             'branch' => $instance->branch,
             'starting_commit' => $instance->starting_commit,
+            'source_commit' => $instance->starting_commit,
             'common_repository_path' => $instance->checkout_path,
             'source_identity' => 'test:1',
             'linked_worktree_paths' => [$instance->checkout_path],

@@ -113,6 +113,8 @@ orbit instance:remove <id> --force
 
 Production removal uses the same command without deleting application content. It retains a shared Route and republishes its surviving production targets, or deletes a final-target Route and releases its hostname. The [AppInstance removal reference](../reference/appinstance-removal.md) describes development source preflight, retained production content, Route cleanup, the `removing` state, bounded progress, refusals, and safe retry.
 
+The removal reference also describes worktree preflight, forced fixed-set cascades, retained branches, ordered cleanup, and transient unavailable traffic.
+
 ## Input boundary
 
 AppInstance creation and removal do not accept a repository, command, process, or shell input. The App owns the repository, and the optional branch input selects source without changing placement or Route identity. Orbit does not install application dependencies as part of framework detection.

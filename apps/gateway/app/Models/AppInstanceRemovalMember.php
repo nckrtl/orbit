@@ -23,6 +23,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property string|null $root
  * @property string|null $branch
  * @property string|null $starting_commit
+ * @property string|null $source_commit
  * @property string|null $common_repository_path
  * @property string|null $source_identity
  * @property list<string> $linked_worktree_paths
@@ -55,6 +56,7 @@ final class AppInstanceRemovalMember extends Model
         'root',
         'branch',
         'starting_commit',
+        'source_commit',
         'common_repository_path',
         'source_identity',
         'linked_worktree_paths',

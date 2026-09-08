@@ -8,6 +8,7 @@ use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\AppInstances\AppInstanceSourceLayout;
 use App\Domain\AppInstances\Removal\AppInstanceSourceInventory;
+use App\Domain\AppInstances\Removal\AppInstanceSourceRevalidationExpectation;
 use App\Domain\AppInstances\Removal\AppInstanceSourceRevalidationState;
 use App\Domain\AppInstances\Removal\DevelopmentAppInstanceSourceFinalizer;
 use App\Domain\AppInstances\Removal\DevelopmentAppInstanceSourceRemoval;
@@ -17,6 +18,7 @@ use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\SourceControl\GitRepositoryIdentity;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
 use App\Infrastructure\Ssh\RemoteCommand;
+use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\AppInstanceRemovalMember;
 use App\Models\Node;
@@ -39,16 +41,22 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
         private AppDevSourceOperationLock $lock,
     ) {}
 
-    public function inspect(AppInstance $appInstance, bool $force): AppInstanceSourceInventory
-    {
+    public function inspect(
+        AppInstance $appInstance,
+        bool $force,
+        bool $inspectContent = true,
+    ): AppInstanceSourceInventory {
         return $this->lock->synchronized(
             $appInstance->node_id,
-            fn (): AppInstanceSourceInventory => $this->inspectLocked($appInstance, $force),
+            fn (): AppInstanceSourceInventory => $this->inspectLocked($appInstance, $force, $inspectContent),
         );
     }
 
-    private function inspectLocked(AppInstance $appInstance, bool $force): AppInstanceSourceInventory
-    {
+    private function inspectLocked(
+        AppInstance $appInstance,
+        bool $force,
+        bool $inspectContent,
+    ): AppInstanceSourceInventory {
         $context = $this->context($appInstance);
 
         return $this->inspectPathLocked(
@@ -63,6 +71,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
             startingCommit: $context['startingCommit'],
             expectedRepositoryIdentity: $context['repositoryIdentity'],
             force: $force,
+            inspectContent: $inspectContent,
         );
     }
 
@@ -82,6 +91,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
         string $startingCommit,
         string $expectedRepositoryIdentity,
         bool $force,
+        bool $inspectContent = true,
         array $quarantineMappings = [],
     ): AppInstanceSourceInventory {
         $result = $this->ssh->execute(
@@ -98,7 +108,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
                     $layout,
                     $expectedBranch,
                     $startingCommit,
-                    $force ? '0' : '1',
+                    $inspectContent && ! $force ? '1' : '0',
                 ],
                 input: self::inspectionScript(),
             ),
@@ -147,11 +157,11 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
             $this->invalidEvidence($appInstance, $force);
         }
 
-        if (! $force && $dirty !== '0') {
+        if ($inspectContent && ! $force && $dirty !== '0') {
             $this->unsafeContent($appInstance);
         }
 
-        if (! $force && ! $this->isPublished($appInstance, $origin, $commit)) {
+        if ($inspectContent && ! $force && ! $this->isPublished($appInstance, $origin, $commit)) {
             $this->unsafeContent($appInstance);
         }
 
@@ -251,10 +261,12 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
         );
     }
 
-    public function prepare(AppInstanceRemovalMember $member): void
-    {
-        $this->lock->synchronized($member->node_id, function () use ($member): void {
-            $this->inspectRecordedLocked($member, AppInstanceSourceRevalidationState::Present);
+    public function prepare(
+        AppInstanceRemovalMember $member,
+        ?AppInstanceSourceRevalidationExpectation $expectation = null,
+    ): void {
+        $this->lock->synchronized($member->node_id, function () use ($member, $expectation): void {
+            $this->inspectRecordedLocked($member, AppInstanceSourceRevalidationState::Present, $expectation);
             [$node, $user, $group, $root] = $this->memberContext($member);
             $this->ssh->execute(
                 $node,
@@ -281,10 +293,13 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
         });
     }
 
-    public function revalidate(AppInstanceRemovalMember $member): AppInstanceSourceRevalidationState
-    {
+    public function revalidate(
+        AppInstanceRemovalMember $member,
+        ?AppInstanceSourceRevalidationExpectation $expectation = null,
+    ): AppInstanceSourceRevalidationState {
         return $this->lock->synchronized($member->node_id, function () use (
             $member,
+            $expectation,
         ): AppInstanceSourceRevalidationState {
             $state = $member->source_prepared_at === null
                 ? AppInstanceSourceRevalidationState::Present
@@ -302,7 +317,21 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
                 || $state === AppInstanceSourceRevalidationState::ReceiptPendingCleanup
                 && $receiptStructure === 'intact'
             ) {
-                $this->inspectRecordedLocked($member, $state);
+                $states = $expectation?->authenticatedMemberStates ?? [];
+                $states[$member->id] = $state;
+                $authenticatedExpectation = $expectation instanceof AppInstanceSourceRevalidationExpectation
+                    ? new AppInstanceSourceRevalidationExpectation(
+                        $expectation->requiredLinkedWorktreePaths,
+                        $expectation->permittedLinkedWorktreePaths,
+                        $states,
+                    )
+                    : null;
+                $this->inspectRecordedLocked(
+                    $member,
+                    $state,
+                    $authenticatedExpectation,
+                    allowDependentWorktrees: true,
+                );
             }
 
             return $state;
@@ -312,16 +341,19 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
     public function inspectRecorded(
         AppInstanceRemovalMember $member,
         AppInstanceSourceRevalidationState $state,
+        ?AppInstanceSourceRevalidationExpectation $expectation = null,
     ): AppInstanceSourceInventory {
         return $this->lock->synchronized(
             $member->node_id,
-            fn (): AppInstanceSourceInventory => $this->inspectRecordedLocked($member, $state),
+            fn (): AppInstanceSourceInventory => $this->inspectRecordedLocked($member, $state, $expectation),
         );
     }
 
-    public function finalize(AppInstanceRemovalMember $member): string
-    {
-        return $this->lock->synchronized($member->node_id, function () use ($member): string {
+    public function finalize(
+        AppInstanceRemovalMember $member,
+        ?AppInstanceSourceRevalidationExpectation $expectation = null,
+    ): string {
+        return $this->lock->synchronized($member->node_id, function () use ($member, $expectation): string {
             $state = $this->revalidationStateLocked($member);
             $receipt = $this->receipt($member);
 
@@ -337,7 +369,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
                 }
             }
 
-            $inventory = $this->inspectRecordedLocked($member, $state);
+            $inventory = $this->inspectRecordedLocked($member, $state, $expectation);
             [$node, $user, $group, $root] = $this->memberContext($member);
             $removal = $member->removal()->firstOrFail();
             $result = $this->ssh->execute(
@@ -363,6 +395,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
                         (string) $member->source_identity,
                         $inventory->origin,
                         base64_encode($inventory->worktreeInventory),
+                        (string) $member->source_commit,
                     ],
                     input: self::finalizationScript(),
                 ),
@@ -385,6 +418,8 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
     private function inspectRecordedLocked(
         AppInstanceRemovalMember $member,
         AppInstanceSourceRevalidationState $state,
+        ?AppInstanceSourceRevalidationExpectation $expectation = null,
+        bool $allowDependentWorktrees = false,
     ): AppInstanceSourceInventory {
         if ($state === AppInstanceSourceRevalidationState::Completed) {
             $this->recordedConflict($member, 'A completed source has no inspectable source inventory.');
@@ -397,12 +432,21 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
             $this->recordedConflict($member, 'The recorded AppInstance removal member is unavailable.');
         }
 
+        $this->assertRecordedOwnership($member, $appInstance);
         $context = $this->context($appInstance);
         $logicalCheckout = (string) $member->checkout_path;
         $physicalCheckout = $state === AppInstanceSourceRevalidationState::Present
             ? $logicalCheckout
             : $this->quarantinePath($member, $context['root']);
         $removal = $member->removal()->firstOrFail();
+        $expectation ??= $this->exactExpectation($member);
+        $authenticatedStates = $expectation->authenticatedMemberStates;
+        $authenticatedStates[$member->id] = $state;
+        $expectation = new AppInstanceSourceRevalidationExpectation(
+            $expectation->requiredLinkedWorktreePaths,
+            $expectation->permittedLinkedWorktreePaths,
+            $authenticatedStates,
+        );
         $inventory = $this->inspectPathLocked(
             appInstance: $appInstance,
             physicalCheckout: $physicalCheckout,
@@ -415,22 +459,14 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
             startingCommit: (string) $member->starting_commit,
             expectedRepositoryIdentity: (string) $member->repository_identity,
             force: (bool) $removal->force,
-            quarantineMappings: $this->quarantineMappings($member, $context['root']),
+            quarantineMappings: $this->quarantineMappings($member, $context['root'], $expectation),
         );
 
         if (
-            $member->app_id !== $appInstance->app_id
-            || $member->node_id !== $appInstance->node_id
-            || $member->name !== $appInstance->name
-            || $member->environment !== $appInstance->environment
-            || $member->root !== $appInstance->effectiveRoot()
-            || $member->checkout_path !== $appInstance->checkout_path
-            || $member->source_layout !== $appInstance->source_layout
-            || $member->repository_identity !== $appInstance->app->repository_identity
-            || $member->common_repository_path !== $inventory->commonRepositoryPath
+            $member->common_repository_path !== $inventory->commonRepositoryPath
             || $member->source_identity !== $inventory->sourceIdentity
-            || $member->linked_worktree_paths !== $inventory->linkedWorktreePaths
-            || $member->source_digest !== $inventory->digest
+            || $member->source_commit !== $inventory->startingCommit
+            || $member->source_digest !== $this->originalDigest($member, $inventory)
         ) {
             $this->recordedConflict(
                 $member,
@@ -438,8 +474,11 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
             );
         }
 
+        $this->assertExpectedLinkedInventory($member, $inventory, $expectation);
+
         if (
-            $member->source_layout === AppInstanceSourceLayout::Checkout->value
+            ! $allowDependentWorktrees
+            && $member->source_layout === AppInstanceSourceLayout::Checkout->value
             && $inventory->linkedWorktreePaths !== [$logicalCheckout]
         ) {
             $this->recordedConflict(
@@ -449,6 +488,56 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
         }
 
         return $inventory;
+    }
+
+    private function exactExpectation(
+        AppInstanceRemovalMember $member,
+    ): AppInstanceSourceRevalidationExpectation {
+        $paths = $member->linked_worktree_paths;
+        sort($paths, SORT_STRING);
+
+        return new AppInstanceSourceRevalidationExpectation($paths, $paths);
+    }
+
+    private function originalDigest(
+        AppInstanceRemovalMember $member,
+        AppInstanceSourceInventory $inventory,
+    ): string {
+        return hash('sha256', json_encode([
+            'app_instance_id' => $inventory->appInstanceId,
+            'layout' => $inventory->layout,
+            'repository_identity' => $inventory->repositoryIdentity,
+            'checkout_path' => $inventory->checkoutPath,
+            'root' => $inventory->root,
+            'branch' => $inventory->branch,
+            'starting_commit' => $inventory->startingCommit,
+            'common_repository_path' => $inventory->commonRepositoryPath,
+            'source_identity' => $inventory->sourceIdentity,
+            'linked_worktree_paths' => $member->linked_worktree_paths,
+        ], JSON_THROW_ON_ERROR));
+    }
+
+    private function assertExpectedLinkedInventory(
+        AppInstanceRemovalMember $member,
+        AppInstanceSourceInventory $inventory,
+        AppInstanceSourceRevalidationExpectation $expectation,
+    ): void {
+        $required = array_values(array_unique($expectation->requiredLinkedWorktreePaths));
+        $permitted = array_values(array_unique($expectation->permittedLinkedWorktreePaths));
+        $live = $inventory->linkedWorktreePaths;
+        sort($required, SORT_STRING);
+        sort($permitted, SORT_STRING);
+        sort($live, SORT_STRING);
+
+        if (
+            array_diff($required, $live) !== []
+            || array_diff($live, $permitted) !== []
+        ) {
+            $this->recordedConflict(
+                $member,
+                'The linked-worktree inventory changed after removal acceptance.',
+            );
+        }
     }
 
     private function cleanupReceiptLocked(AppInstanceRemovalMember $member, string $receipt): string
@@ -583,9 +672,20 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
         $appInstance = AppInstance::query()->with(['app', 'node'])->find($member->app_instance_id);
 
         if (! $appInstance instanceof AppInstance) {
-            $this->recordedConflict($member, 'The recorded AppInstance removal member is unavailable.');
+            $appInstance = $this->deletedMemberContext($member);
         }
 
+        $this->assertRecordedOwnership($member, $appInstance);
+
+        $context = $this->context($appInstance);
+
+        return [$appInstance->node, $context['user'], $context['group'], $context['root']];
+    }
+
+    private function assertRecordedOwnership(
+        AppInstanceRemovalMember $member,
+        AppInstance $appInstance,
+    ): void {
         if (
             $member->app_id !== $appInstance->app_id
             || $member->node_id !== $appInstance->node_id
@@ -600,10 +700,38 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
         ) {
             $this->recordedConflict($member, 'The recorded AppInstance removal ownership changed.');
         }
+    }
 
-        $context = $this->context($appInstance);
+    private function deletedMemberContext(AppInstanceRemovalMember $member): AppInstance
+    {
+        $app = OrbitApp::query()->find($member->app_id);
+        $node = Node::query()->find($member->node_id);
 
-        return [$appInstance->node, $context['user'], $context['group'], $context['root']];
+        if (
+            $member->row_deleted_at === null
+            || ! $app instanceof OrbitApp
+            || ! $node instanceof Node
+        ) {
+            $this->recordedConflict($member, 'The recorded AppInstance removal member is unavailable.');
+        }
+
+        $appInstance = new AppInstance;
+        $appInstance->forceFill([
+            'app_id' => $member->app_id,
+            'node_id' => $member->node_id,
+            'name' => $member->name,
+            'environment' => $member->environment,
+            'source_layout' => $member->source_layout,
+            'checkout_path' => $member->checkout_path,
+            'root' => $member->root,
+            'branch' => $member->branch,
+            'starting_commit' => $member->starting_commit,
+        ]);
+        $appInstance->setAttribute('id', $member->app_instance_id);
+        $appInstance->setRelation('app', $app);
+        $appInstance->setRelation('node', $node);
+
+        return $appInstance;
     }
 
     private function assertDevelopmentMember(AppInstanceRemovalMember $member): void
@@ -619,12 +747,14 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
             || ! is_string($member->root)
             || ! is_string($member->branch)
             || ! is_string($member->starting_commit)
+            || ! is_string($member->source_commit)
             || ! is_string($member->common_repository_path)
             || ! is_string($member->source_identity)
             || ! is_string($member->repository_identity)
             || ! Str::isUuid($member->app_instance_removal_id)
             || $member->id < 1
             || preg_match('/\A[0-9a-f]{64}\z/D', $member->source_digest) !== 1
+            || preg_match('/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/D', $member->source_commit) !== 1
         ) {
             $this->recordedConflict($member, 'The recorded AppInstance removal source evidence is incomplete.');
         }
@@ -648,9 +778,39 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
     }
 
     /** @return array<string, string> */
-    private function quarantineMappings(AppInstanceRemovalMember $member, StoragePath $root): array
-    {
-        return [$this->quarantinePath($member, $root) => (string) $member->checkout_path];
+    private function quarantineMappings(
+        AppInstanceRemovalMember $member,
+        StoragePath $root,
+        ?AppInstanceSourceRevalidationExpectation $expectation = null,
+    ): array {
+        if (! $expectation instanceof AppInstanceSourceRevalidationExpectation) {
+            return [$this->quarantinePath($member, $root) => (string) $member->checkout_path];
+        }
+
+        $mappings = [];
+        $members = $member->removal->members()->orderBy('position')->get();
+
+        foreach ($members as $recordedMember) {
+            $state = $expectation->authenticatedMemberStates[$recordedMember->id] ?? null;
+
+            if (
+                $recordedMember->common_repository_path !== $member->common_repository_path
+                || ! in_array(
+                    $state,
+                    [
+                        AppInstanceSourceRevalidationState::Quarantined,
+                        AppInstanceSourceRevalidationState::ReceiptPendingCleanup,
+                    ],
+                    true,
+                )
+            ) {
+                continue;
+            }
+
+            $mappings[$this->quarantinePath($recordedMember, $root)] = (string) $recordedMember->checkout_path;
+        }
+
+        return $mappings;
     }
 
     private function quarantinePath(AppInstanceRemovalMember $member, StoragePath $root): string
@@ -993,27 +1153,41 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
                     [[ "$common_identity" =~ ^[0-9]+:[0-9]+$ ]]
                     [[ "$worktrees_identity" =~ ^[0-9]+:[0-9]+$ ]]
                     test "$(dirname "$admin")" = "$common_repository/.git/worktrees"
-                    test -d "$common_repository/.git"
-                    test ! -L "$common_repository/.git"
-                    test "$(stat -c '%d:%i' "$common_repository/.git")" = "$common_identity"
-                    test "$(stat -c '%U:%G' "$common_repository/.git")" = "$managed_user:$managed_group"
                     worktrees="$common_repository/.git/worktrees"
-                    test -d "$worktrees"
-                    test ! -L "$worktrees"
-                    test "$(stat -c '%d:%i' "$worktrees")" = "$worktrees_identity"
-                    test "$(stat -c '%U:%G' "$worktrees")" = "$managed_user:$managed_group"
+                    common_present=0
+                    if [ -e "$common_repository/.git" ] || [ -L "$common_repository/.git" ]; then
+                        test -d "$common_repository/.git"
+                        test ! -L "$common_repository/.git"
+                        test "$(stat -c '%d:%i' "$common_repository/.git")" = "$common_identity"
+                        test "$(stat -c '%U:%G' "$common_repository/.git")" = "$managed_user:$managed_group"
+                        common_present=1
+                    else
+                        test ! -e "$common_repository"
+                        test ! -L "$common_repository"
+                    fi
+                    worktrees_present=0
+                    if [ -e "$worktrees" ] || [ -L "$worktrees" ]; then
+                        test "$common_present" = 1
+                        test -d "$worktrees"
+                        test ! -L "$worktrees"
+                        test "$(stat -c '%d:%i' "$worktrees")" = "$worktrees_identity"
+                        test "$(stat -c '%U:%G' "$worktrees")" = "$managed_user:$managed_group"
+                        worktrees_present=1
+                    fi
                     matching=0
-                    for candidate in "$worktrees"/*; do
-                        if [ ! -e "$candidate" ] && [ ! -L "$candidate" ]; then
-                            continue
-                        fi
-                        if [ -f "$candidate/gitdir" ] && [ ! -L "$candidate/gitdir" ] && \
-                            { printf '%s\n' "$checkout/.git" | cmp -s - "$candidate/gitdir" || \
-                                printf '%s\n' "$quarantine/.git" | cmp -s - "$candidate/gitdir"; }; then
-                            test "$candidate" = "$admin"
-                            matching=$((matching + 1))
-                        fi
-                    done
+                    if [ "$worktrees_present" = 1 ]; then
+                        for candidate in "$worktrees"/*; do
+                            if [ ! -e "$candidate" ] && [ ! -L "$candidate" ]; then
+                                continue
+                            fi
+                            if [ -f "$candidate/gitdir" ] && [ ! -L "$candidate/gitdir" ] && \
+                                { printf '%s\n' "$checkout/.git" | cmp -s - "$candidate/gitdir" || \
+                                    printf '%s\n' "$quarantine/.git" | cmp -s - "$candidate/gitdir"; }; then
+                                test "$candidate" = "$admin"
+                                matching=$((matching + 1))
+                            fi
+                        done
+                    fi
                     test "$matching" -le 1
                     admin_present=0
                     admin_complete=0
@@ -1209,6 +1383,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
             source_identity=$5
             expected_origin=$6
             expected_worktrees=$7
+            source_commit=$8
             export GIT_OPTIONAL_LOCKS=0
             state="$root/.orbit-removals"
             journal="$state/$operation.$member.journal"
@@ -1286,7 +1461,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
                 *) exit 1 ;;
             esac
             test "$(git -C "$physical" symbolic-ref --short HEAD)" = "$branch"
-            test "$(git -C "$physical" rev-parse --verify HEAD^{commit})" = "$starting_commit"
+            test "$(git -C "$physical" rev-parse --verify HEAD^{commit})" = "$source_commit"
             git -C "$physical" merge-base --is-ancestor "$starting_commit" HEAD
             origin_with_marker=$(git -C "$physical" remote get-url origin && printf x)
             origin=${origin_with_marker%x}
@@ -1306,10 +1481,10 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
                 git --git-dir="$scratch/repository.git" fetch --quiet --no-tags --filter=blob:none origin \
                     '+refs/heads/*:refs/remotes/origin/*' '+refs/tags/*:refs/tags/*'
                 published=0
-                if git --git-dir="$scratch/repository.git" cat-file -e "$starting_commit^{commit}" 2>/dev/null; then
+                if git --git-dir="$scratch/repository.git" cat-file -e "$source_commit^{commit}" 2>/dev/null; then
                     while IFS= read -r advertised; do
                         tip=$(git --git-dir="$scratch/repository.git" rev-parse --verify "$advertised^{commit}" 2>/dev/null) || continue
-                        if git --git-dir="$scratch/repository.git" merge-base --is-ancestor "$starting_commit" "$tip"; then
+                        if git --git-dir="$scratch/repository.git" merge-base --is-ancestor "$source_commit" "$tip"; then
                             published=1
                             break
                         fi

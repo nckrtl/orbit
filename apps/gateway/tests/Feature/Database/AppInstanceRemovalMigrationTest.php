@@ -148,6 +148,8 @@ it('records immutable requested identity, force choice, and ordered member inven
         ->toThrow(QueryException::class)
         ->and(fn () => $firstMember->update(['source_identity' => '1:101']))
         ->toThrow(QueryException::class)
+        ->and(fn () => $firstMember->update(['source_commit' => str_repeat('f', 40)]))
+        ->toThrow(QueryException::class)
         ->and(fn () => $duplicate->members()->create(orb179_removal_member($first, $firstRoute, 0)))
         ->toThrow(QueryException::class)
         ->and(fn () => DB::table('app_instance_removals')
@@ -185,6 +187,126 @@ it('records immutable requested identity, force choice, and ordered member inven
         ->toBe(AppInstanceState::Removing)
         ->and($second->refresh()->status)
         ->toBe(AppInstanceState::Removing);
+});
+
+it('backfills historical source commits and preserves distinct observed evidence', function (): void {
+    $migration = orb182_source_commit_migration();
+    $migration->down();
+    [$historical, $historicalRoute] = orb179_removal_fixture('source-backfill');
+    $historicalRemoval = orb179_removal_operation($historical);
+    $historicalAttributes = orb179_removal_member($historical, $historicalRoute, 0);
+    unset($historicalAttributes['source_commit']);
+    $historicalMember = $historicalRemoval->members()->create($historicalAttributes);
+
+    [$completed, $completedRoute] = orb179_removal_fixture('source-backfill-completed');
+    $completedRemoval = orb179_removal_operation($completed);
+    $completedAttributes = orb179_removal_member($completed, $completedRoute, 0);
+    unset($completedAttributes['source_commit']);
+    $completedMember = $completedRemoval->members()->create($completedAttributes);
+    $completed->update(['status' => AppInstanceState::Removing]);
+    $completedMember->update(['source_prepared_at' => now()]);
+    $completedRoute->targets()->delete();
+    $completedMember->update(['route_cleared_at' => now(), 'route_outcome' => 'retained']);
+    $completedMember->update([
+        'source_finalized_at' => now(),
+        'finalization_receipt' => str_repeat('c', 64),
+    ]);
+    $completedMember->update(['runtime_cleaned_at' => now()]);
+    $completed->delete();
+    $completedMember->update(['row_deleted_at' => now()]);
+    $completedRemoval->update([
+        'status' => AppInstanceRemovalStatus::Completed,
+        'current_step' => null,
+    ]);
+
+    expect(Schema::hasColumn('app_instance_removal_members', 'source_commit'))->toBeFalse();
+
+    $migration->up();
+
+    expect($historicalMember->refresh()->source_commit)
+        ->toBe($historical->starting_commit)
+        ->and($completedMember->refresh()->source_commit)
+        ->toBe($completed->starting_commit)
+        ->and(Schema::hasColumn('app_instance_removal_members', 'source_commit'))
+        ->toBeTrue()
+        ->and(fn () => DB::table('app_instance_removal_members')
+            ->where('id', $completedMember->id)
+            ->update(['updated_at' => now()->addSecond()]))
+        ->toThrow(QueryException::class)
+        ->and(fn () => $historicalMember->update(['source_commit' => str_repeat('f', 40)]))
+        ->toThrow(QueryException::class);
+
+    [$current, $currentRoute] = orb179_removal_fixture('source-current');
+    $currentRemoval = orb179_removal_operation($current);
+    $currentAttributes = orb179_removal_member($current, $currentRoute, 0);
+    unset($currentAttributes['source_commit']);
+
+    expect(fn () => $currentRemoval->members()->create($currentAttributes))
+        ->toThrow(QueryException::class);
+
+    $currentAttributes['source_commit'] = str_repeat('b', 40);
+    $currentMember = $currentRemoval->members()->create($currentAttributes);
+
+    expect($currentMember->source_commit)
+        ->toBe(str_repeat('b', 40))
+        ->and($currentMember->starting_commit)
+        ->toBe(str_repeat('a', 40))
+        ->and(fn () => $migration->down())
+        ->toThrow(
+            RuntimeException::class,
+            "Cannot roll back distinct AppInstance removal source commits: {$currentMember->id}",
+        );
+});
+
+it('rolls back the development source column while retaining production removal evidence', function (): void {
+    [$production, $productionRoute] = orb179_removal_fixture(
+        'source-production',
+        environment: 'production',
+    );
+    $productionRemoval = orb179_removal_operation($production);
+    $productionAttributes = orb179_removal_member($production, $productionRoute, 0);
+    $productionAttributes['source_commit'] = null;
+    $productionMember = $productionRemoval->members()->create($productionAttributes);
+    $production->update(['status' => AppInstanceState::Removing]);
+    $productionMember->update(['source_prepared_at' => now()]);
+    $productionRoute->targets()->delete();
+    $productionMember->update(['route_cleared_at' => now(), 'route_outcome' => 'retained']);
+    $productionMember->update([
+        'source_finalized_at' => now(),
+        'finalization_receipt' => str_repeat('c', 64),
+    ]);
+    $productionMember->update(['runtime_cleaned_at' => now()]);
+    $production->delete();
+    $productionMember->update(['row_deleted_at' => now()]);
+    $productionRemoval->update([
+        'status' => AppInstanceRemovalStatus::Completed,
+        'current_step' => null,
+    ]);
+
+    [$development, $developmentRoute] = orb179_removal_fixture('source-development');
+    $developmentRemoval = orb179_removal_operation($development);
+    $developmentMember = $developmentRemoval
+        ->members()
+        ->create(
+            orb179_removal_member($development, $developmentRoute, 0),
+        );
+    $migration = orb182_source_commit_migration();
+
+    $migration->down();
+
+    expect(Schema::hasColumn('app_instance_removal_members', 'source_commit'))
+        ->toBeFalse()
+        ->and($productionMember->refresh()->starting_commit)
+        ->toBe(str_repeat('a', 40))
+        ->and($developmentMember->refresh()->starting_commit)
+        ->toBe(str_repeat('a', 40));
+
+    $migration->up();
+
+    expect($productionMember->refresh()->source_commit)
+        ->toBeNull()
+        ->and($developmentMember->refresh()->source_commit)
+        ->toBe(str_repeat('a', 40));
 });
 
 it('orders member checkpoints and completes only after every row deletion', function (): void {
@@ -346,12 +468,21 @@ function orb179_removal_migration(): object
         );
 }
 
+function orb182_source_commit_migration(): object
+{
+    return require
+        base_path(
+            'database/migrations/2026_09_08_204126_add_source_commit_to_app_instance_removal_members.php',
+        );
+}
+
 /** @return array{AppInstance, Route} */
 function orb179_removal_fixture(
     string $suffix,
     ?OrbitApp $app = null,
     ?Node $node = null,
     ?string $timestamp = null,
+    string $environment = 'development',
 ): array {
     $app ??= OrbitApp::query()->create([
         'name' => "Removal {$suffix}",
@@ -377,7 +508,7 @@ function orb179_removal_fixture(
         'app_id' => $app->id,
         'node_id' => $node->id,
         'name' => $suffix,
-        'environment' => 'development',
+        'environment' => $environment,
         'source_layout' => 'checkout',
         'checkout_path' => "/srv/orbit/apps/{$app->slug}/{$suffix}",
         'root' => null,
@@ -449,6 +580,7 @@ function orb179_removal_member(AppInstance $instance, Route $route, int $positio
         'root' => $instance->effectiveRoot(),
         'branch' => $instance->branch,
         'starting_commit' => $instance->starting_commit,
+        'source_commit' => $instance->starting_commit,
         'common_repository_path' => $instance->checkout_path,
         'source_identity' => "1:{$instance->id}",
         'linked_worktree_paths' => [$instance->checkout_path],

@@ -16,6 +16,7 @@ use App\Domain\AppInstances\DevelopmentSourceProfile;
 use App\Domain\AppInstances\DevelopmentSourceResolution;
 use App\Domain\AppInstances\Removal\AppInstanceRemovalProjector;
 use App\Domain\AppInstances\Removal\AppInstanceSourceInventory;
+use App\Domain\AppInstances\Removal\AppInstanceSourceRevalidationExpectation;
 use App\Domain\AppInstances\Removal\AppInstanceSourceRevalidationState;
 use App\Domain\AppInstances\Removal\DevelopmentAppInstanceSourceFinalizer;
 use App\Domain\AppInstances\Removal\DevelopmentAppInstanceSourceRemoval;
@@ -45,6 +46,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
+/** @mago-expect lint:cyclomatic-complexity The stateful removal fake models durable retry and inventory transitions. */
 beforeEach(function (): void {
     $this->destination = new class implements AppInstanceDestinationGuard {
         public bool $occupied = false;
@@ -149,11 +151,35 @@ beforeEach(function (): void {
         /** @var array<int, list<string>> */
         public array $linkedPaths = [];
 
-        public function inspect(AppInstance $appInstance, bool $force): AppInstanceSourceInventory
-        {
+        /** @var list<string>|null */
+        public ?array $livePaths = null;
+
+        /** @var array<int, AppInstanceSourceRevalidationState> */
+        public array $states = [];
+
+        public ?int $failPrepareFor = null;
+
+        public function inspect(
+            AppInstance $appInstance,
+            bool $force,
+            bool $inspectContent = true,
+        ): AppInstanceSourceInventory {
             $this->record('inspect', $appInstance->id);
-            $paths = $this->linkedPaths[$appInstance->id] ?? [$appInstance->checkout_path];
-            $payload = "{$appInstance->id}\0{$appInstance->checkout_path}";
+            $paths = $this->linkedPaths[$appInstance->id] ?? $this->livePaths ?? [$appInstance->checkout_path];
+            $payload = [
+                'app_instance_id' => $appInstance->id,
+                'layout' => $appInstance->source_layout,
+                'repository_identity' => $appInstance->app->repository_identity,
+                'checkout_path' => $appInstance->checkout_path,
+                'root' => dirname(dirname($appInstance->checkout_path)),
+                'branch' => $appInstance->branch,
+                'starting_commit' => $appInstance->starting_commit,
+                'common_repository_path' => $appInstance->source_layout === 'checkout'
+                    ? $appInstance->checkout_path
+                    : dirname(dirname($appInstance->checkout_path)).'/acme/default',
+                'source_identity' => "test:{$appInstance->id}",
+                'linked_worktree_paths' => $paths,
+            ];
 
             return new AppInstanceSourceInventory(
                 appInstanceId: $appInstance->id,
@@ -163,12 +189,10 @@ beforeEach(function (): void {
                 root: dirname(dirname($appInstance->checkout_path)),
                 branch: $appInstance->branch,
                 startingCommit: $appInstance->starting_commit,
-                commonRepositoryPath: $appInstance->source_layout === 'checkout'
-                    ? $appInstance->checkout_path
-                    : dirname(dirname($appInstance->checkout_path)),
+                commonRepositoryPath: $payload['common_repository_path'],
                 sourceIdentity: "test:{$appInstance->id}",
                 linkedWorktreePaths: $paths,
-                digest: hash('sha256', $payload),
+                digest: hash('sha256', json_encode($payload, JSON_THROW_ON_ERROR)),
             );
         }
 
@@ -180,30 +204,65 @@ beforeEach(function (): void {
             throw new LogicException('The durable coordinator does not call legacy source removal.');
         }
 
-        public function prepare(AppInstanceRemovalMember $member): void
-        {
+        public function prepare(
+            AppInstanceRemovalMember $member,
+            ?AppInstanceSourceRevalidationExpectation $expectation = null,
+        ): void {
             $this->record('prepare', $member->app_instance_id);
+
+            if ($this->failPrepareFor === $member->app_instance_id) {
+                throw new ResourceOperationException(
+                    'instance.source_interrupted',
+                    'Source preparation interrupted.',
+                    502,
+                );
+            }
         }
 
-        public function revalidate(AppInstanceRemovalMember $member): AppInstanceSourceRevalidationState
-        {
+        public function revalidate(
+            AppInstanceRemovalMember $member,
+            ?AppInstanceSourceRevalidationExpectation $expectation = null,
+        ): AppInstanceSourceRevalidationState {
             $this->record('revalidate', $member->app_instance_id);
 
-            return AppInstanceSourceRevalidationState::Present;
+            $state = $this->states[$member->app_instance_id] ?? AppInstanceSourceRevalidationState::Present;
+
+            if ($state === AppInstanceSourceRevalidationState::Present && $this->livePaths !== null) {
+                $required = $expectation?->requiredLinkedWorktreePaths ?? $member->linked_worktree_paths;
+                $permitted = $expectation?->permittedLinkedWorktreePaths ?? $member->linked_worktree_paths;
+
+                if (array_diff($required, $this->livePaths) !== [] || array_diff($this->livePaths, $permitted) !== []) {
+                    throw new ResourceOperationException(
+                        'instance.removal_conflict',
+                        'The linked-worktree inventory changed after removal acceptance.',
+                        409,
+                    );
+                }
+            }
+
+            return $state;
         }
 
         public function inspectRecorded(
             AppInstanceRemovalMember $member,
             AppInstanceSourceRevalidationState $state,
+            ?AppInstanceSourceRevalidationExpectation $expectation = null,
         ): AppInstanceSourceInventory {
             $appInstance = AppInstance::query()->with('app')->findOrFail($member->app_instance_id);
 
             return $this->inspect($appInstance, (bool) $member->removal()->firstOrFail()->force);
         }
 
-        public function finalize(AppInstanceRemovalMember $member): string
-        {
+        public function finalize(
+            AppInstanceRemovalMember $member,
+            ?AppInstanceSourceRevalidationExpectation $expectation = null,
+        ): string {
             $this->record('finalize', $member->app_instance_id);
+            $this->states[$member->app_instance_id] = AppInstanceSourceRevalidationState::Completed;
+
+            if ($this->livePaths !== null) {
+                $this->livePaths = array_values(array_diff($this->livePaths, [(string) $member->checkout_path]));
+            }
 
             return hash('sha256', "receipt\0{$member->source_digest}");
         }
@@ -1344,12 +1403,15 @@ it('removes an active AppInstance through every durable checkpoint', function (b
         ->and(Route::query()->count())
         ->toBe(0)
         ->and($this->removalSource->calls)
-        ->toBe([
-            "inspect:{$created->json('data.id')}",
-            "prepare:{$created->json('data.id')}",
-            "revalidate:{$created->json('data.id')}",
-            "finalize:{$created->json('data.id')}",
-        ])
+        ->toBe(array_merge(
+            ["inspect:{$created->json('data.id')}"],
+            $force ? [] : ["inspect:{$created->json('data.id')}"],
+            [
+                "prepare:{$created->json('data.id')}",
+                "revalidate:{$created->json('data.id')}",
+                "finalize:{$created->json('data.id')}",
+            ],
+        ))
         ->and($this->source->calls)
         ->toBeEmpty()
         ->and($activity->subject_type)
@@ -1373,6 +1435,99 @@ it('removes an active AppInstance through every durable checkpoint', function (b
         ])
         ->not->toHaveKeys(['checkout_path', 'source_digest', 'finalization_receipt']);
 })->with([false, true]);
+
+it('refuses normal checkout cascade with force guidance and reports forced bounded totals', function (): void {
+    [$checkout, $first, $second, $paths] = orb182_api_removal_graph($this);
+
+    $this
+        ->deleteJson("/api/v1/instances/{$checkout->id}")
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'instance.remove_refused')
+        ->assertJsonPath('error.message', 'The checkout has registered linked worktrees; retry with --force.');
+    expect(AppInstance::query()->count())->toBe(3)->and(Route::query()->count())->toBe(3);
+
+    $this
+        ->deleteJson("/api/v1/instances/{$checkout->id}", ['force' => true])
+        ->assertOk()
+        ->assertJsonPath('data.id', $checkout->id)
+        ->assertJsonPath('data.force', true)
+        ->assertJsonPath('data.status', 'completed')
+        ->assertJsonPath('data.total', 3)
+        ->assertJsonPath('data.completed', 3)
+        ->assertJsonPath('data.remaining', 0);
+    $members = AppInstanceRemovalMember::query()->orderBy('position')->get();
+    expect($members->pluck('app_instance_id')->all())
+        ->toBe([$first->id, $second->id, $checkout->id])
+        ->and($members->every(fn (AppInstanceRemovalMember $member): bool => $member->linked_worktree_paths === $paths))
+        ->toBeTrue()
+        ->and(AppInstance::query()->count())
+        ->toBe(0)
+        ->and(Route::query()->count())
+        ->toBe(0);
+});
+
+it('refuses unregistered checkout inventory in normal and forced modes without mutation', function (bool $force): void {
+    [$checkout, , , $paths] = orb182_api_removal_graph($this);
+    $paths[] = '/srv/orbit/apps/acme/unregistered';
+    sort($paths, SORT_STRING);
+    $this->removalSource->livePaths = $paths;
+    $this->removalSource->linkedPaths[$checkout->id] = $paths;
+
+    $this
+        ->deleteJson("/api/v1/instances/{$checkout->id}", ['force' => $force])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'instance.remove_refused')
+        ->assertJsonPath(
+            'error.message',
+            'Every linked worktree must be a registered AppInstance before removal.',
+        );
+    expect(AppInstanceRemovalMember::query()->count())
+        ->toBe(0)
+        ->and(AppInstance::query()->count())
+        ->toBe(3)
+        ->and(Route::query()->count())
+        ->toBe(3);
+})->with([false, true]);
+
+it('reports retained fixed-set progress and refuses a new source before retry advances', function (): void {
+    [$checkout, $first, $second, $paths] = orb182_api_removal_graph($this);
+    $this->removalSource->failPrepareFor = $second->id;
+
+    $this
+        ->deleteJson("/api/v1/instances/{$checkout->id}", ['force' => true])
+        ->assertStatus(502)
+        ->assertJsonPath('error.details.removal.total', 3)
+        ->assertJsonPath('error.details.removal.completed', 1)
+        ->assertJsonPath('error.details.removal.remaining', 2)
+        ->assertJsonPath('error.details.removal.current_step', 'source_preparation');
+    $operation = $checkout->refresh()->removalMember?->removal;
+    $secondMember = $operation?->members()->where('app_instance_id', $second->id)->sole();
+    $paths[] = '/srv/orbit/apps/acme/new-worktree';
+    sort($paths, SORT_STRING);
+    $this->removalSource->livePaths = $paths;
+    $this->removalSource->failPrepareFor = null;
+
+    $this
+        ->deleteJson("/api/v1/instances/{$checkout->id}", ['force' => true])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'instance.removal_conflict')
+        ->assertJsonPath('error.details.removal.total', 3)
+        ->assertJsonPath('error.details.removal.completed', 1)
+        ->assertJsonPath('error.details.removal.remaining', 2);
+    expect($operation?->members()->count())
+        ->toBe(3)
+        ->and($secondMember?->refresh()->route_cleared_at)
+        ->toBeNull()
+        ->and(
+            Route::query()
+                ->whereHas('targets', fn ($query) => $query->where(
+                    'app_instance_id',
+                    $second->id,
+                ))
+                ->exists(),
+        )
+        ->toBeTrue();
+});
 
 it('removes one production target through the public API and reports retained Route progress', function (): void {
     $cluster = Cluster::query()->create([
@@ -1709,3 +1864,51 @@ it('rejects the removed compatibility key', function (): void {
 
     expect(AppInstance::query()->sole()->status)->toBe(AppInstanceState::Active);
 });
+
+/**
+ * @return array{AppInstance, AppInstance, AppInstance, list<string>}
+ */
+function orb182_api_removal_graph(Tests\TestCase $test): array
+{
+    $instances = [];
+
+    foreach (['default', 'worktree-a', 'worktree-b'] as $position => $name) {
+        $instance = AppInstance::query()->create([
+            'app_id' => $test->orbitApp->id,
+            'node_id' => $test->node->id,
+            'name' => $name,
+            'environment' => 'development',
+            'source_layout' => $position === 0
+                ? AppInstanceSourceLayout::Checkout->value
+                : AppInstanceSourceLayout::Worktree->value,
+            'checkout_path' => "/srv/orbit/apps/acme/{$name}",
+            'branch' => $name,
+            'starting_commit' => str_repeat('a', 40),
+            'status' => AppInstanceState::SourceResolved,
+        ]);
+        $route = Route::query()->create([
+            'app_id' => $test->orbitApp->id,
+            'node_id' => $test->node->id,
+            'generation_basis_node_id' => $test->node->id,
+            'hostname' => "{$name}.acme.test",
+            'provenance' => RouteProvenance::Generated,
+            'publication' => RoutePublication::Private,
+            'status' => RouteStatus::Pending,
+        ]);
+        $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+        $route->update(['status' => RouteStatus::Active]);
+        $instance->update(['status' => AppInstanceState::Active]);
+        $instances[] = $instance->load(['app', 'node', 'routes.targets']);
+    }
+
+    [$checkout, $first, $second] = $instances;
+    $paths = [$checkout->checkout_path, $first->checkout_path, $second->checkout_path];
+    sort($paths, SORT_STRING);
+    $test->removalSource->livePaths = $paths;
+
+    foreach ([$checkout, $first, $second] as $instance) {
+        $test->removalSource->linkedPaths[$instance->id] = $paths;
+    }
+
+    return [$checkout, $first, $second, $paths];
+}
