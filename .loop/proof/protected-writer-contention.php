@@ -187,6 +187,7 @@ if ($temporary === false || !unlink($temporary) || !mkdir($temporary, 0o700)) {
 }
 
 $processes = [];
+$proofExitCode = 0;
 
 try {
     $gatewayPath = $temporary . '/generated/gateway/Caddyfile';
@@ -289,7 +290,7 @@ try {
         . "\n");
 } catch (Throwable $exception) {
     fwrite(STDERR, "ORB-156 proof failed: {$exception->getMessage()}\n");
-    exit(1);
+    $proofExitCode = 1;
 } finally {
     if (is_int($heldProcessId ?? null)) {
         posix_kill($heldProcessId, 18);
@@ -303,3 +304,5 @@ try {
 
     removeProofDirectory($temporary);
 }
+
+exit($proofExitCode);
