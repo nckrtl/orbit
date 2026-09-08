@@ -35,7 +35,7 @@ final class ToolData extends Data
         return new self(
             id: $tool->id,
             nodeId: $tool->node_id,
-            manager: $tool->manager->name->value,
+            manager: $tool->manager->name,
             package: $tool->package,
             versionConstraint: $tool->version_constraint,
             protected: $tool->protected,

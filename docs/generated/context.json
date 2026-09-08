@@ -13,7 +13,8 @@
                 "AppInstance",
                 "Cluster",
                 "Gateway",
-                "Node"
+                "Node",
+                "Tool"
             ],
             "governing_adrs": []
         },
@@ -78,15 +79,19 @@
                 "Repository identity",
                 "Route",
                 "Router",
+                "Tool",
+                "Tool Manager",
                 "Workspace"
             ],
             "governing_adrs": [
+                "0001",
                 "0004",
                 "0011",
                 "0023",
                 "0024",
                 "0026",
-                "0028"
+                "0028",
+                "0042"
             ]
         },
         {
@@ -97,7 +102,8 @@
             "concepts": [
                 "App",
                 "Gateway",
-                "Node"
+                "Node",
+                "Tool"
             ],
             "governing_adrs": [
                 "0001",
@@ -123,7 +129,8 @@
             "concepts": [
                 "App",
                 "Gateway",
-                "Node"
+                "Node",
+                "Tool"
             ],
             "governing_adrs": [
                 "0003",
@@ -142,6 +149,7 @@
                 "Doctor",
                 "Gateway",
                 "Node",
+                "Tool",
                 "Workspace"
             ],
             "governing_adrs": [
@@ -282,6 +290,7 @@
                 "Ingress",
                 "Node",
                 "Proof topology",
+                "Tool",
                 "Workspace"
             ],
             "governing_adrs": [
@@ -385,7 +394,8 @@
                 "Effective web root",
                 "Gateway",
                 "Node",
-                "Route"
+                "Route",
+                "Tool"
             ],
             "governing_adrs": [
                 "0009",
@@ -598,7 +608,8 @@
                 "Cluster",
                 "Gateway",
                 "Ingress",
-                "Route"
+                "Route",
+                "Tool"
             ],
             "governing_adrs": [
                 "0011",
@@ -884,7 +895,9 @@
             ],
             "concepts": [
                 "Gateway",
-                "Node"
+                "Node",
+                "Tool",
+                "Tool Manager"
             ],
             "governing_adrs": [
                 "0001",
@@ -903,7 +916,9 @@
             ],
             "concepts": [
                 "Gateway",
-                "Node"
+                "Node",
+                "Tool",
+                "Tool Manager"
             ],
             "governing_adrs": [
                 "0001",
@@ -973,7 +988,8 @@
             "components": [],
             "concepts": [
                 "App",
-                "Gateway"
+                "Gateway",
+                "Tool"
             ],
             "governing_adrs": []
         },
@@ -1144,11 +1160,15 @@
             "concepts": [
                 "Doctor",
                 "Gateway",
-                "Node"
+                "Node",
+                "Tool",
+                "Tool Manager"
             ],
             "governing_adrs": [
                 "0001",
-                "0004"
+                "0004",
+                "0012",
+                "0042"
             ]
         },
         {

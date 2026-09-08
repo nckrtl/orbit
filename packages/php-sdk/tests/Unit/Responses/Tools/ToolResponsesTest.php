@@ -76,6 +76,23 @@ describe('tool responses', function (): void {
         ]);
     });
 
+    it('maps an uninstalled manager without a database identifier', function (): void {
+        $response = ToolManagerResponse::fromGatewayData([
+            'id' => null,
+            'node_id' => 12,
+            'name' => 'composer',
+            'status' => 'uninstalled',
+            'installed_version' => null,
+            'failed_step' => null,
+            'error_code' => null,
+        ], tool_response_request_id());
+
+        expect($response->id)
+            ->toBeNull()
+            ->and($response->toArray()['status'])
+            ->toBe('uninstalled');
+    });
+
     it('preserves the full bounded package and version constraint', function (): void {
         $package = str_repeat('p', times: 255);
         $constraint = str_repeat('c', times: 255);

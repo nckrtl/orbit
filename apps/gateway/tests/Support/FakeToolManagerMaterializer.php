@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Support;
 
 use App\Domain\Nodes\NodeProvisioningException;
+use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tools\ToolManagerMaterializer;
 use App\Domain\Tools\ToolManagerName;
 use App\Models\Node;
@@ -20,6 +21,8 @@ final class FakeToolManagerMaterializer implements ToolManagerMaterializer
 
     public ?NodeProvisioningException $failure = null;
 
+    public bool $persistActive = false;
+
     public function converge(Node $node, ToolManagerName ...$managerNames): void
     {
         $this->requests[] = array_values($managerNames);
@@ -29,6 +32,20 @@ final class FakeToolManagerMaterializer implements ToolManagerMaterializer
 
         if ($this->failure !== null) {
             throw $this->failure;
+        }
+
+        if ($this->persistActive) {
+            foreach ($managerNames as $managerName) {
+                $node->toolManagers()->updateOrCreate(
+                    ['name' => $managerName->value],
+                    [
+                        'status' => LifecycleStatus::Active,
+                        'installed_version' => '1.0.0',
+                        'failed_step' => null,
+                        'error_code' => null,
+                    ],
+                );
+            }
         }
     }
 

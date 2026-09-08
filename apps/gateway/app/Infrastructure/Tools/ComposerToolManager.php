@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Tools;
 
-use App\Domain\Nodes\RoleName;
-use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tools\SemverVersionNormalizer;
 use App\Domain\Tools\ToolManager;
 use App\Domain\Tools\ToolManagerException;
@@ -14,7 +12,6 @@ use App\Domain\Tools\ToolOperation;
 use App\Domain\Tools\ToolRemovalPlan;
 use App\Infrastructure\Processes\CommandResult;
 use App\Models\Node;
-use App\Models\NodeRole;
 use JsonException;
 use stdClass;
 
@@ -58,18 +55,7 @@ final readonly class ComposerToolManager implements ToolManager
 
     public function supportsNode(Node $node): bool
     {
-        $node->loadMissing('roles');
-
-        if ($node->platform !== 'linux') {
-            return false;
-        }
-
-        return $node->roles->contains(
-            static fn (NodeRole $role): bool => (
-                in_array($role->role, [RoleName::AppDev, RoleName::AppProd], strict: true)
-                && in_array($role->status, [LifecycleStatus::Provisioning, LifecycleStatus::Active], strict: true)
-            ),
-        );
+        return $node->platform === 'linux';
     }
 
     public function validatePackage(string $package): bool
@@ -78,6 +64,76 @@ final readonly class ComposerToolManager implements ToolManager
             $package !== ''
             && strlen($package) <= self::MAX_PACKAGE_LENGTH
             && preg_match(self::PACKAGE_PATTERN, $package) === 1
+        );
+    }
+
+    public function materialize(Node $node): void
+    {
+        $this->guardSupportedNode($node);
+
+        $program = <<<'BASH'
+            managed_user=$1
+            passwd_entry=$(getent passwd -- "$managed_user")
+            test "$(printf '%s\n' "$passwd_entry" | wc -l)" -eq 1
+            managed_home=$(printf '%s\n' "$passwd_entry" | cut -d: -f6)
+            managed_group=$(id -gn -- "$managed_user")
+
+            export DEBIAN_FRONTEND=noninteractive
+            apt-get update
+            apt-get install --yes --no-install-recommends --no-remove -- composer git unzip
+
+            if { [ -e /opt/orbit ] || [ -L /opt/orbit ]; } \
+                && { [ -L /opt/orbit ] || [ ! -d /opt/orbit ] || [ "$(stat -c '%U:%G' /opt/orbit)" != 'root:root' ]; }; then
+                printf 'Orbit Composer directory conflict: %s\n' /opt/orbit >&2
+                exit 1
+            fi
+
+            install -d -m 0755 /opt/orbit
+            install -d -m 0755 -o "$managed_user" -g "$managed_group" /opt/orbit/composer
+            if [ -L /opt/orbit/composer/composer.json ]; then
+                printf 'Orbit Composer manifest conflict: %s\n' /opt/orbit/composer/composer.json >&2
+                exit 1
+            elif [ -e /opt/orbit/composer/composer.json ]; then
+                if ! test -f /opt/orbit/composer/composer.json \
+                    || ! test "$(stat -c %U:%G /opt/orbit/composer/composer.json)" = "$managed_user:$managed_group"; then
+                    printf 'Orbit Composer manifest conflict: %s\n' /opt/orbit/composer/composer.json >&2
+                    exit 1
+                fi
+            else
+                composer_manifest=$(mktemp /opt/orbit/.composer.json.XXXXXX)
+                cleanup_composer_manifest() {
+                    [ -z "${composer_manifest:-}" ] || rm -f -- "$composer_manifest"
+                }
+                trap cleanup_composer_manifest EXIT
+                printf '%s\n' '{"require":{}}' > "$composer_manifest"
+                chmod 0644 "$composer_manifest"
+                chown "$managed_user:$managed_group" "$composer_manifest"
+                if ! ln "$composer_manifest" /opt/orbit/composer/composer.json; then
+                    if [ -L /opt/orbit/composer/composer.json ] \
+                        || ! test -f /opt/orbit/composer/composer.json \
+                        || ! test "$(stat -c %U:%G /opt/orbit/composer/composer.json)" = "$managed_user:$managed_group"; then
+                        rm -f -- "$composer_manifest"
+                        printf 'Orbit Composer manifest conflict: %s\n' /opt/orbit/composer/composer.json >&2
+                        exit 1
+                    fi
+                fi
+                rm -f -- "$composer_manifest"
+            fi
+            test ! -L /opt/orbit/composer/composer.json
+            test -f /opt/orbit/composer/composer.json
+            test "$(stat -c %U:%G /opt/orbit/composer/composer.json)" = "$managed_user:$managed_group"
+            composer_manifest=
+            trap - EXIT
+            install -d -m 0755 -o "$managed_user" -g "$managed_group" /opt/orbit/composer/vendor /opt/orbit/composer/vendor/bin
+            sudo -u "$managed_user" -H env COMPOSER_HOME=/opt/orbit/composer /usr/bin/composer --version --no-ansi
+            BASH;
+
+        $result = $this->commands->execute($node, ['sudo', 'bash', '-seu', '--', $node->user], $program);
+
+        $this->guardSuccessfulResult(
+            result: $result,
+            step: 'materialize',
+            message: 'The Composer manager could not be materialized.',
         );
     }
 
@@ -291,7 +347,7 @@ final readonly class ComposerToolManager implements ToolManager
 
         throw new ToolManagerException(
             step: 'node',
-            message: 'Composer tools require a provisioning or active Linux app node.',
+            message: 'Composer tools require a Linux node.',
         );
     }
 

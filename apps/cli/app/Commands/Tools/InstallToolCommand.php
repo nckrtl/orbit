@@ -18,7 +18,7 @@ final class InstallToolCommand extends ToolCommand
     protected $signature = 'tool:install
         {package? : Manager-native package coordinate}
         {--node= : Numeric target node ID}
-        {--manager= : apt, vp, or composer}
+        {--manager= : Tool manager name}
         {--constraint= : Optional SemVer safety constraint}
         {--json : Return machine-readable JSON}';
 
@@ -54,12 +54,16 @@ final class InstallToolCommand extends ToolCommand
                 static fn (ToolManagerResponse $item): string => $item->name,
                 array_filter(
                     $managers->managers,
-                    static fn (ToolManagerResponse $item): bool => $item->status === 'active',
+                    static fn (ToolManagerResponse $item): bool => in_array(
+                        $item->status,
+                        ['active', 'uninstalled'],
+                        strict: true,
+                    ),
                 ),
             )));
             sort($names);
             if ($names === []) {
-                return $this->renderGatewayFailure('tool.manager_required', 'No active tool manager is available.');
+                return $this->renderGatewayFailure('tool.manager_required', 'No supported tool manager is available.');
             }
             $manager = $this->chooseString('Tool manager', $names);
             if ($manager === null) {

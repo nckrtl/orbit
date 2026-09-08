@@ -62,6 +62,11 @@ final readonly class AptToolManager implements ToolManager
         );
     }
 
+    public function materialize(Node $node): void
+    {
+        $this->managerVersion($node);
+    }
+
     public function managerVersion(Node $node): string
     {
         $result = $this->commands->execute($node, ['apt-get', '--version']);

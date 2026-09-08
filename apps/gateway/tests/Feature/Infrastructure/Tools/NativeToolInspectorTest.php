@@ -26,7 +26,7 @@ it('returns bounded installed state and normalized version', function (): void {
     $tool = Tool::make(['package' => 'example']);
     $node = \App\Models\Node::make();
     $node->setAttribute('id', 1);
-    $record = \App\Models\ToolManagerRecord::make(['node_id' => 1, 'name' => ToolManagerName::Apt]);
+    $record = \App\Models\ToolManagerRecord::make(['node_id' => 1, 'name' => ToolManagerName::Apt->value]);
     $tool->setRelation('node', $node);
     $tool->setRelation('manager', $record);
 
@@ -41,7 +41,7 @@ it('returns absent state when the manager reports no installed version', functio
     $tool = Tool::make(['package' => 'example']);
     $node = \App\Models\Node::make();
     $node->setAttribute('id', 1);
-    $record = \App\Models\ToolManagerRecord::make(['node_id' => 1, 'name' => ToolManagerName::Apt]);
+    $record = \App\Models\ToolManagerRecord::make(['node_id' => 1, 'name' => ToolManagerName::Apt->value]);
     $tool->setRelation('node', $node);
     $tool->setRelation('manager', $record);
 
@@ -96,7 +96,7 @@ it('reports an APT package with retained configuration as bounded absence', func
     $tool->setRelation('node', $node);
     $tool->setRelation('manager', ToolManagerRecord::make([
         'node_id' => 1,
-        'name' => ToolManagerName::Apt,
+        'name' => ToolManagerName::Apt->value,
     ]));
 
     $data = new NativeToolInspector(new ToolManagerRegistry([$manager]))->inspect($tool);
@@ -114,7 +114,7 @@ it('fails closed when ownership is invalid', function (): void {
     $tool->setRelation('node', $node);
     $tool->setRelation('manager', \App\Models\ToolManagerRecord::make([
         'node_id' => 2,
-        'name' => ToolManagerName::Apt,
+        'name' => ToolManagerName::Apt->value,
     ]));
 
     expect(fn (): mixed => new NativeToolInspector(new ToolManagerRegistry([new FakeToolManager]))->inspect($tool))
@@ -124,7 +124,7 @@ it('fails closed when ownership is invalid', function (): void {
 it('fails closed for unsupported, unknown, throwing, and unnormalizable managers', function (): void {
     $node = \App\Models\Node::make();
     $node->setAttribute('id', 1);
-    $record = \App\Models\ToolManagerRecord::make(['node_id' => 1, 'name' => ToolManagerName::Apt]);
+    $record = \App\Models\ToolManagerRecord::make(['node_id' => 1, 'name' => ToolManagerName::Apt->value]);
     $tool = Tool::make(['package' => 'example']);
     $tool->setRelation('node', $node);
     $tool->setRelation('manager', $record);
@@ -150,7 +150,7 @@ it('uses only the read-only installed version interaction and ignores stored ver
     $tool->setRelation('node', $node);
     $tool->setRelation('manager', \App\Models\ToolManagerRecord::make([
         'node_id' => 1,
-        'name' => ToolManagerName::Apt,
+        'name' => ToolManagerName::Apt->value,
     ]));
     $data = new NativeToolInspector(new ToolManagerRegistry([$manager]))->inspect($tool);
     expect($data->normalizedVersion)->toBe('1.2.3')->and($manager->calls)->toBe(['installedVersion']);

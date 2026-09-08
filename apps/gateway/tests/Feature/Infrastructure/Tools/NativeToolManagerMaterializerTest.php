@@ -31,14 +31,12 @@ describe(NativeToolManagerMaterializer::class, function (): void {
             ->toBeInstanceOf(NativeToolManagerScopeLock::class);
     });
 
-    it('materializes supported managers in registry order', function (?RoleName $role, array $expected): void {
+    it('materializes supported managers in registry order independently of roles', function (?RoleName $role): void {
         $node = materializer_node($role);
         $events = [];
         $apt = new MaterializerToolManagerFake(ToolManagerName::Apt, $events, 'apt 3.0');
         $vp = new MaterializerToolManagerFake(ToolManagerName::Vp, $events, '0.32.0');
         $composer = new MaterializerToolManagerFake(ToolManagerName::Composer, $events, '2.8.10');
-        $vp->supports = $role !== null;
-        $composer->supports = $role !== null;
 
         new NativeToolManagerMaterializer(
             new ToolManagerRegistry([$apt, $vp, $composer]),
@@ -46,15 +44,15 @@ describe(NativeToolManagerMaterializer::class, function (): void {
         )->converge($node);
 
         expect($events)
-            ->toBe($expected)
+            ->toBe(['materialize:apt', 'apt', 'materialize:vp', 'vp', 'materialize:composer', 'composer'])
             ->and(ToolManagerRecord::query()->where('node_id', $node->id)->orderBy('id')->pluck('name')->all())
-            ->toBe(array_map(ToolManagerName::from(...), $expected))
+            ->toBe(['apt', 'vp', 'composer'])
             ->and(Tool::query()->count())
             ->toBe(0);
     })->with([
-        'roleless Linux' => [null, ['apt']],
-        'app-dev Linux' => [RoleName::AppDev, ['apt', 'vp', 'composer']],
-        'app-prod Linux' => [RoleName::AppProd, ['apt', 'vp', 'composer']],
+        'roleless Linux' => [null],
+        'app-dev Linux' => [RoleName::AppDev],
+        'app-prod Linux' => [RoleName::AppProd],
     ]);
 
     it('materializes only explicitly selected managers', function (): void {
@@ -69,9 +67,9 @@ describe(NativeToolManagerMaterializer::class, function (): void {
         )->converge($node, ToolManagerName::Apt);
 
         expect($events)
-            ->toBe(['apt'])
+            ->toBe(['materialize:apt', 'apt'])
             ->and(ToolManagerRecord::query()->pluck('name')->all())
-            ->toBe([ToolManagerName::Apt]);
+            ->toBe(['apt']);
     });
 
     it('shares the native manager scope with tool operations', function (): void {
@@ -133,7 +131,7 @@ describe(NativeToolManagerMaterializer::class, function (): void {
             ->toBe(0);
     });
 
-    it('acquires both app scopes before a single app manager probe', function (): void {
+    it('does not acquire an unrelated manager scope for one selected manager', function (): void {
         $node = materializer_node(RoleName::AppDev, LifecycleStatus::Provisioning);
         $events = [];
         $vp = new MaterializerToolManagerFake(ToolManagerName::Vp, $events, '0.32.0');
@@ -141,26 +139,18 @@ describe(NativeToolManagerMaterializer::class, function (): void {
         expect($scope->get())->toBeTrue();
 
         try {
-            expect(
-                fn () => new NativeToolManagerMaterializer(
-                    new ToolManagerRegistry([$vp]),
-                    new NativeToolManagerScopeLock,
-                )->converge($node, ToolManagerName::Vp),
-            )
-                ->toThrow(function (NodeProvisioningException $exception): void {
-                    expect($exception->step)
-                        ->toBe('tool-manager-composer')
-                        ->and($exception->errorCode)
-                        ->toBe('node.tool_manager_locked');
-                });
+            new NativeToolManagerMaterializer(
+                new ToolManagerRegistry([$vp]),
+                new NativeToolManagerScopeLock,
+            )->converge($node, ToolManagerName::Vp);
         } finally {
             $scope->release();
         }
 
         expect($events)
-            ->toBeEmpty()
+            ->toBe(['materialize:vp', 'vp'])
             ->and(ToolManagerRecord::query()->count())
-            ->toBe(0);
+            ->toBe(1);
     });
 
     it('runs the role failure transition before releasing app scopes', function (): void {
@@ -185,10 +175,9 @@ describe(NativeToolManagerMaterializer::class, function (): void {
 
         expect($events)->toBe([
             'enter:vp',
-            'enter:composer',
+            'materialize:vp',
             'vp',
             'failure:tool-manager-vp',
-            'release:composer',
             'release:vp',
         ]);
     });
@@ -286,7 +275,7 @@ describe(NativeToolManagerMaterializer::class, function (): void {
             ->and($composerContended)
             ->toBeTrue()
             ->and($events)
-            ->toBe(['vp']);
+            ->toBe(['materialize:vp', 'vp']);
 
         $releasedVp = new NativeToolManagerScopeLock;
         $releasedComposer = new NativeToolManagerScopeLock;
@@ -296,7 +285,7 @@ describe(NativeToolManagerMaterializer::class, function (): void {
             ->toBeTrue();
     });
 
-    it('retires a successful app manager when a later probe fails for the sole provisioning app role', function (): void {
+    it('preserves a successful manager when a later manager probe fails', function (): void {
         $node = materializer_node(RoleName::AppDev, LifecycleStatus::Provisioning);
         $events = [];
         $vp = new MaterializerToolManagerFake(ToolManagerName::Vp, $events, '0.32.0');
@@ -322,15 +311,15 @@ describe(NativeToolManagerMaterializer::class, function (): void {
             ->toThrow(NodeProvisioningException::class);
 
         expect($events)
-            ->toBe(['vp', 'composer'])
+            ->toBe(['materialize:vp', 'vp', 'materialize:composer', 'composer'])
             ->and($vpRecord->refresh()->status)
-            ->toBe(LifecycleStatus::Failed)
+            ->toBe(LifecycleStatus::Active)
             ->and($vpRecord->installed_version)
             ->toBe('0.32.0')
             ->and($vpRecord->failed_step)
-            ->toBe('app-role')
+            ->toBeNull()
             ->and($vpRecord->error_code)
-            ->toBe('tool_manager.app_role_required')
+            ->toBeNull()
             ->and($composerRecord->refresh()->status)
             ->toBe(LifecycleStatus::Failed)
             ->and($composerRecord->installed_version)
@@ -500,6 +489,11 @@ final class MaterializerToolManagerFake implements ToolManager
     public function validatePackage(string $package): bool
     {
         return true;
+    }
+
+    public function materialize(Node $node): void
+    {
+        $this->events[] = "materialize:{$this->managerName->value}";
     }
 
     public function managerVersion(Node $node): string

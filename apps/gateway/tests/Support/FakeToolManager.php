@@ -65,6 +65,11 @@ final class FakeToolManager implements ToolManager
         return $this->validPackage;
     }
 
+    public function materialize(Node $node): void
+    {
+        $this->failOrCall('materialize');
+    }
+
     public function managerVersion(Node $node): string
     {
         $this->calls[] = 'managerVersion';
