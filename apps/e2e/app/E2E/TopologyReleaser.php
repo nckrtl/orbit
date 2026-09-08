@@ -77,9 +77,16 @@ final readonly class TopologyReleaser
         try {
             $captured = $this->capturedAttempts($request, $state, $attempts);
             $receipts = [];
+            $released = [];
+            $alreadyAbsent = [];
+            $networksReaped = [];
             foreach ($captured as [$purpose, $attempt]) {
                 try {
-                    $receipts[] = $this->releaseAttempt($request, $state, $purpose, $attempt);
+                    $receipt = $this->releaseAttempt($request, $state, $purpose, $attempt);
+                    $receipts[] = $receipt;
+                    $released = [...$released, ...$receipt['released']];
+                    $alreadyAbsent = [...$alreadyAbsent, ...$receipt['already_absent']];
+                    $networksReaped = [...$networksReaped, ...$receipt['networks_reaped']];
                 } catch (Throwable $exception) {
                     $completed = array_map(
                         static fn (array $receipt): string => "{$receipt['purpose']} {$receipt['attempt_id']}",
@@ -100,11 +107,9 @@ final readonly class TopologyReleaser
                 'state' => 'released',
                 'issue' => $request->issue,
                 'attempts' => $receipts,
-                'released' => array_merge(...array_column($receipts, 'released')),
-                'already_absent' => array_merge(...array_column($receipts, 'already_absent')),
-                'networks_reaped' => array_values(array_unique(array_merge(
-                    ...array_column($receipts, 'networks_reaped'),
-                ))),
+                'released' => $released,
+                'already_absent' => $alreadyAbsent,
+                'networks_reaped' => array_values(array_unique($networksReaped)),
             ];
         } finally {
             $lock->release();
