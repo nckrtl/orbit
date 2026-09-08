@@ -16,12 +16,12 @@ Use forced removal only when you intend to lose dirty or unpublished work:
 orbit instance:remove <id> --force
 ```
 
-The two modes differ only when development source is dirty or unpublished. Production removal retains application content, so `--force` does not change its source behavior.
+The two modes differ when development source is dirty or unpublished, or when a checkout has registered linked worktrees. Production removal retains application content, so `--force` does not change its source behavior.
 
 | Mode | Source behavior |
 | --- | --- |
-| Normal | Refuses dirty source or a HEAD that no current advertised origin branch or tag contains. |
-| Forced | May delete dirty or unpublished source after every other safety check passes. |
+| Normal | Refuses dirty source, a HEAD that no current advertised origin branch or tag contains, or a checkout with registered linked worktrees. |
+| Forced | May delete dirty or unpublished source and may accept a complete registered checkout set after every other safety check passes. |
 
 Forced removal does not waive source-layout, repository-identity, ownership, path, containment, symlink, overlap, or linked-worktree inventory checks. Normal preflight reads current advertised origin refs into a temporary object store outside the requested repository. It does not fetch into, prune, refresh the index of, or otherwise change the requested repository. The containing origin ref does not need to match the local branch name.
 

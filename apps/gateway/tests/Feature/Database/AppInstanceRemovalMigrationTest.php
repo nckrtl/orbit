@@ -258,6 +258,57 @@ it('backfills historical source commits and preserves distinct observed evidence
         );
 });
 
+it('rolls back the development source column while retaining production removal evidence', function (): void {
+    [$production, $productionRoute] = orb179_removal_fixture(
+        'source-production',
+        environment: 'production',
+    );
+    $productionRemoval = orb179_removal_operation($production);
+    $productionAttributes = orb179_removal_member($production, $productionRoute, 0);
+    $productionAttributes['source_commit'] = null;
+    $productionMember = $productionRemoval->members()->create($productionAttributes);
+    $production->update(['status' => AppInstanceState::Removing]);
+    $productionMember->update(['source_prepared_at' => now()]);
+    $productionRoute->targets()->delete();
+    $productionMember->update(['route_cleared_at' => now(), 'route_outcome' => 'retained']);
+    $productionMember->update([
+        'source_finalized_at' => now(),
+        'finalization_receipt' => str_repeat('c', 64),
+    ]);
+    $productionMember->update(['runtime_cleaned_at' => now()]);
+    $production->delete();
+    $productionMember->update(['row_deleted_at' => now()]);
+    $productionRemoval->update([
+        'status' => AppInstanceRemovalStatus::Completed,
+        'current_step' => null,
+    ]);
+
+    [$development, $developmentRoute] = orb179_removal_fixture('source-development');
+    $developmentRemoval = orb179_removal_operation($development);
+    $developmentMember = $developmentRemoval
+        ->members()
+        ->create(
+            orb179_removal_member($development, $developmentRoute, 0),
+        );
+    $migration = orb182_source_commit_migration();
+
+    $migration->down();
+
+    expect(Schema::hasColumn('app_instance_removal_members', 'source_commit'))
+        ->toBeFalse()
+        ->and($productionMember->refresh()->starting_commit)
+        ->toBe(str_repeat('a', 40))
+        ->and($developmentMember->refresh()->starting_commit)
+        ->toBe(str_repeat('a', 40));
+
+    $migration->up();
+
+    expect($productionMember->refresh()->source_commit)
+        ->toBeNull()
+        ->and($developmentMember->refresh()->source_commit)
+        ->toBe(str_repeat('a', 40));
+});
+
 it('orders member checkpoints and completes only after every row deletion', function (): void {
     [$instance, $route] = orb179_removal_fixture('checkpoints');
     $removal = orb179_removal_operation($instance);
@@ -431,6 +482,7 @@ function orb179_removal_fixture(
     ?OrbitApp $app = null,
     ?Node $node = null,
     ?string $timestamp = null,
+    string $environment = 'development',
 ): array {
     $app ??= OrbitApp::query()->create([
         'name' => "Removal {$suffix}",
@@ -456,7 +508,7 @@ function orb179_removal_fixture(
         'app_id' => $app->id,
         'node_id' => $node->id,
         'name' => $suffix,
-        'environment' => 'development',
+        'environment' => $environment,
         'source_layout' => 'checkout',
         'checkout_path' => "/srv/orbit/apps/{$app->slug}/{$suffix}",
         'root' => null,

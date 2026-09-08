@@ -37,6 +37,7 @@ return new class extends Migration {
     public function down(): void
     {
         $incompatible = DB::table('app_instance_removal_members')
+            ->where('environment', 'development')
             ->whereRaw('source_commit IS NOT starting_commit')
             ->orderBy('id')
             ->pluck('id')
