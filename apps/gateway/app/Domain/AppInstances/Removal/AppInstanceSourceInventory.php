@@ -22,5 +22,7 @@ final readonly class AppInstanceSourceInventory
         public string $sourceIdentity,
         public array $linkedWorktreePaths,
         public string $digest,
+        public string $origin = '',
+        public string $worktreeInventory = '',
     ) {}
 }

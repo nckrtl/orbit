@@ -2,15 +2,23 @@
 
 declare(strict_types=1);
 
+use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\AppInstances\AppInstanceRemovalStatus;
+use App\Domain\AppInstances\AppInstanceRemovalStep;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\AppInstances\Removal\AppInstanceSourceInventory;
+use App\Domain\AppInstances\Removal\AppInstanceSourceRevalidationState;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\Storage\CheckoutRemovalBoundary;
 use App\Domain\Nodes\Storage\ProtectedPathCatalog;
+use App\Domain\Routes\RouteProvenance;
+use App\Domain\Routes\RoutePublication;
+use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
+use App\Infrastructure\AppDev\NativeAppDevSourceOperationLock;
 use App\Infrastructure\AppInstances\RemoteDevelopmentAppInstanceSourceLifecycle;
 use App\Infrastructure\AppInstances\RemoteDevelopmentAppInstanceSourceRemoval;
 use App\Infrastructure\Processes\CommandResult;
@@ -24,7 +32,10 @@ use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
+use App\Models\AppInstanceRemoval;
+use App\Models\AppInstanceRemovalMember;
 use App\Models\Node;
+use App\Models\Route;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 
@@ -54,7 +65,9 @@ beforeEach(function (): void {
             return $this->account;
         }
     };
+    $this->accounts = $accounts;
     $this->transport = new Orb76LocalSourceSshExecutor($this->remoteOrigin, $this->repository);
+    $this->sourceLock = new NativeAppDevSourceOperationLock($this->sandbox.'/locks');
     $ssh = new AppDevSshExecutor(
         $this->transport,
         new class implements SshKeyProvider {
@@ -77,15 +90,18 @@ beforeEach(function (): void {
             public function put(string $host, int $port, HostKey $key): void {}
         },
     );
+    $this->ssh = $ssh;
+    $this->boundary = new CheckoutRemovalBoundary(new ProtectedPathCatalog);
     $this->source = new RemoteDevelopmentAppInstanceSourceLifecycle(
         $ssh,
         $accounts,
-        new CheckoutRemovalBoundary(new ProtectedPathCatalog),
+        $this->boundary,
     );
     $this->removal = new RemoteDevelopmentAppInstanceSourceRemoval(
         $ssh,
         $accounts,
-        new CheckoutRemovalBoundary(new ProtectedPathCatalog),
+        $this->boundary,
+        $this->sourceLock,
     );
 
     $this->node = Node::query()->create([
@@ -702,6 +718,455 @@ it('refuses origins with a trailing line feed at the destructive boundary', func
     'forced SSH' => ['ssh://git@example.test/acme/site.git', true],
 ]);
 
+it('finalizes one recorded checkout with durable matching evidence', function (): void {
+    $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'recorded');
+    $member = orb180_record_source($this->removal, $instance, false);
+    $receipt = hash(
+        'sha256',
+        "{$member->app_instance_removal_id}\0{$member->id}\0{$member->source_digest}\0finalized",
+    );
+
+    expect($this->removal->finalize($member))
+        ->toBe($receipt)
+        ->and(file_exists($instance->checkout_path))
+        ->toBeFalse()
+        ->and($this->removal->revalidate($member))
+        ->toBe(AppInstanceSourceRevalidationState::Completed)
+        ->and($this->removal->finalize($member))
+        ->toBe($receipt);
+    expect(file_get_contents(orb180_receipt_path($member)))
+        ->toBe("{$receipt}\n");
+});
+
+it('finalizes one recorded worktree while preserving shared Git state', function (): void {
+    $checkout = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'shared');
+    $worktreePath = $this->appsRoot.'/acme/feature';
+    $siblingPath = $this->appsRoot.'/acme/sibling';
+    orb76_run(['git', '-C', $checkout->checkout_path, 'worktree', 'add', '-b', 'feature', $worktreePath, 'HEAD']);
+    orb76_run(['git', '-C', $checkout->checkout_path, 'worktree', 'add', '-b', 'sibling', $siblingPath, 'HEAD']);
+    $worktree = AppInstance::query()
+        ->create([
+            'app_id' => $this->orbitApp->id,
+            'node_id' => $this->node->id,
+            'name' => 'feature',
+            'source_layout' => 'worktree',
+            'checkout_path' => $worktreePath,
+            'branch' => 'feature',
+            'starting_commit' => $checkout->starting_commit,
+            'status' => AppInstanceState::SourceResolved,
+        ])
+        ->load(['app', 'node']);
+    $remoteBranches = orb76_run([
+        'git',
+        '--git-dir='.$this->repository,
+        'for-each-ref',
+        '--format=%(refname)',
+        'refs/heads',
+    ])->stdout;
+    $member = orb180_record_source($this->removal, $worktree, false);
+
+    $this->removal->finalize($member);
+
+    $worktrees = orb76_run(['git', '-C', $checkout->checkout_path, 'worktree', 'list', '--porcelain'])->stdout;
+    expect(file_exists($worktreePath))
+        ->toBeFalse()
+        ->and(is_dir($checkout->checkout_path.'/.git'))
+        ->toBeTrue()
+        ->and(is_dir($siblingPath))
+        ->toBeTrue()
+        ->and($worktrees)
+        ->toContain("worktree {$checkout->checkout_path}")
+        ->toContain("worktree {$siblingPath}")
+        ->not
+        ->toContain("worktree {$worktreePath}")
+        ->and(
+            orb76_run([
+                'git',
+                '-C',
+                $checkout->checkout_path,
+                'show-ref',
+                '--verify',
+                'refs/heads/feature',
+            ])->succeeded(),
+        )
+        ->toBeTrue()
+        ->and(orb76_run([
+            'git',
+            '--git-dir='.$this->repository,
+            'for-each-ref',
+            '--format=%(refname)',
+            'refs/heads',
+        ])->stdout)
+        ->toBe($remoteBranches);
+});
+
+it('refuses to finalize a checkout while a linked worktree depends on it', function (): void {
+    $checkout = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'linked-main');
+    $siblingPath = $this->appsRoot.'/acme/linked-sibling';
+    orb76_run(['git', '-C', $checkout->checkout_path, 'worktree', 'add', '-b', 'linked-sibling', $siblingPath, 'HEAD']);
+
+    expect(fn () => orb180_record_source($this->removal, $checkout, true))
+        ->toThrow(RuntimeConvergenceException::class);
+    expect(is_dir($checkout->checkout_path.'/.git'))
+        ->toBeTrue()
+        ->and(is_dir($siblingPath))
+        ->toBeTrue()
+        ->and(orb76_run(['git', '-C', $checkout->checkout_path, 'status', '--porcelain'])->succeeded())
+        ->toBeTrue()
+        ->and(orb76_run(['git', '-C', $siblingPath, 'status', '--porcelain'])->succeeded())
+        ->toBeTrue();
+});
+
+it('resumes matching quarantine before and after receipt creation', function (bool $withReceipt): void {
+    $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'recovery');
+    $member = orb180_record_source($this->removal, $instance, false);
+    $quarantine = orb180_quarantine_path($member);
+    expect(rename($instance->checkout_path, $quarantine))->toBeTrue();
+    $receipt = hash(
+        'sha256',
+        "{$member->app_instance_removal_id}\0{$member->id}\0{$member->source_digest}\0finalized",
+    );
+
+    if ($withReceipt) {
+        file_put_contents(orb180_receipt_path($member), "{$receipt}\n");
+    }
+
+    expect($this->removal->revalidate($member))
+        ->toBe(
+            $withReceipt
+                ? AppInstanceSourceRevalidationState::ReceiptPendingCleanup
+                : AppInstanceSourceRevalidationState::Quarantined,
+        )
+        ->and($this->removal->finalize($member))
+        ->toBe($receipt)
+        ->and(file_exists($quarantine))
+        ->toBeFalse();
+})->with([
+    'before receipt' => false,
+    'after receipt' => true,
+]);
+
+it('cleans an acknowledged checkout after its Git directory was partially deleted', function (): void {
+    $instance = orb180_resolved_source(
+        $this->source,
+        $this->orbitApp,
+        $this->node,
+        $this->appsRoot,
+        'partial-checkout',
+    );
+    $member = orb180_record_source($this->removal, $instance, true);
+    $quarantine = orb180_quarantine_path($member);
+    expect(rename($instance->checkout_path, $quarantine))->toBeTrue();
+    $receipt = orb180_write_receipt($member);
+    expect($this->files->deleteDirectory("{$quarantine}/.git"))->toBeTrue();
+
+    expect($this->removal->revalidate($member))
+        ->toBe(AppInstanceSourceRevalidationState::ReceiptPendingCleanup)
+        ->and($this->removal->finalize($member))
+        ->toBe($receipt)
+        ->and(file_exists($quarantine))
+        ->toBeFalse();
+});
+
+it('cleans an acknowledged worktree after one Git structure was partially deleted', function (string $fault): void {
+    [$checkout, $worktree, $siblingPath] = orb180_worktree_source(
+        $this->source,
+        $this->orbitApp,
+        $this->node,
+        $this->appsRoot,
+        "partial-{$fault}",
+    );
+    $member = orb180_record_source($this->removal, $worktree, true);
+    [$quarantine, $admin, $receipt] = orb180_stage_worktree_receipt($member);
+
+    match ($fault) {
+        'git-file' => unlink("{$quarantine}/.git"),
+        'admin-entry' => $this->files->deleteDirectory($admin),
+    };
+
+    expect($this->removal->revalidate($member))
+        ->toBe(AppInstanceSourceRevalidationState::ReceiptPendingCleanup)
+        ->and($this->removal->finalize($member))
+        ->toBe($receipt)
+        ->and(file_exists($quarantine))
+        ->toBeFalse()
+        ->and(is_dir($checkout->checkout_path.'/.git'))
+        ->toBeTrue()
+        ->and(is_dir($siblingPath))
+        ->toBeTrue()
+        ->and(orb76_run(['git', '-C', $siblingPath, 'status', '--porcelain'])->succeeded())
+        ->toBeTrue()
+        ->and(
+            orb76_run([
+                'git',
+                '-C',
+                $checkout->checkout_path,
+                'show-ref',
+                '--verify',
+                "refs/heads/partial-{$fault}",
+            ])->succeeded(),
+        )
+        ->toBeTrue();
+})->with(['git-file', 'admin-entry']);
+
+it('refuses changed or ambiguous worktree administration during receipt recovery', function (string $fault): void {
+    [, $worktree, $siblingPath] = orb180_worktree_source(
+        $this->source,
+        $this->orbitApp,
+        $this->node,
+        $this->appsRoot,
+        "metadata-{$fault}",
+    );
+    $member = orb180_record_source($this->removal, $worktree, true);
+    [$quarantine, $admin] = orb180_stage_worktree_receipt($member);
+
+    match ($fault) {
+        'changed' => file_put_contents("{$admin}/gitdir", "{$siblingPath}/.git\n"),
+        'ambiguous' => (function () use ($admin): void {
+            expect($this->files->copyDirectory($admin, dirname($admin).'/duplicate'))->toBeTrue();
+        })(),
+    };
+
+    expect(fn () => $this->removal->revalidate($member))
+        ->toThrow(RuntimeConvergenceException::class)
+        ->and(is_dir($quarantine))
+        ->toBeTrue()
+        ->and(is_dir($siblingPath))
+        ->toBeTrue();
+})->with(['changed', 'ambiguous']);
+
+it('refuses a replaced quarantine after writing the completion receipt', function (): void {
+    $instance = orb180_resolved_source(
+        $this->source,
+        $this->orbitApp,
+        $this->node,
+        $this->appsRoot,
+        'replaced-quarantine',
+    );
+    $member = orb180_record_source($this->removal, $instance, true);
+    $quarantine = orb180_quarantine_path($member);
+    $preserved = $this->sandbox.'/preserved-quarantine';
+    expect(rename($instance->checkout_path, $quarantine))->toBeTrue();
+    orb180_write_receipt($member);
+    expect(rename($quarantine, $preserved))->toBeTrue();
+    expect(mkdir($quarantine))->toBeTrue();
+
+    expect(fn () => $this->removal->revalidate($member))
+        ->toThrow(RuntimeConvergenceException::class)
+        ->and(is_dir($preserved.'/.git'))
+        ->toBeTrue()
+        ->and(is_dir($quarantine))
+        ->toBeTrue();
+});
+
+it('refuses missing, ambiguous, or mismatched recovery evidence', function (string $fault): void {
+    $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'conflict');
+    $member = orb180_record_source($this->removal, $instance, true);
+    $preserved = $this->sandbox.'/preserved';
+
+    match ($fault) {
+        'missing' => rename($instance->checkout_path, $preserved),
+        'ambiguous' => (function () use ($instance, $member): void {
+            expect(rename($instance->checkout_path, orb180_quarantine_path($member)))->toBeTrue();
+            mkdir($instance->checkout_path);
+        })(),
+        'journal' => file_put_contents(
+            dirname(orb180_receipt_path($member))."/{$member->app_instance_removal_id}.{$member->id}.journal",
+            "mismatched\n",
+        ),
+    };
+
+    expect(fn () => $this->removal->revalidate($member))
+        ->toThrow(RuntimeConvergenceException::class)
+        ->and(
+            file_exists($preserved)
+            || file_exists($instance->checkout_path)
+            || file_exists(orb180_quarantine_path($member)),
+        )
+        ->toBeTrue();
+})->with(['missing', 'ambiguous', 'journal']);
+
+it('refuses changed recorded source identity before further deletion', function (string $fault): void {
+    $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'changed');
+    $member = orb180_record_source($this->removal, $instance, true);
+    $preserved = $this->sandbox.'/preserved';
+
+    match ($fault) {
+        'physical' => (function () use ($instance, $preserved): void {
+            expect(rename($instance->checkout_path, $preserved))->toBeTrue();
+            orb76_run([
+                'git',
+                'clone',
+                '--no-checkout',
+                '--origin',
+                'origin',
+                '--',
+                $this->repository,
+                $instance->checkout_path,
+            ]);
+            orb76_run(['git', '-C', $instance->checkout_path, 'checkout', '-b', 'changed', $instance->starting_commit]);
+        })(),
+        'repository' => orb76_run([
+            'git',
+            '-C',
+            $instance->checkout_path,
+            'remote',
+            'set-url',
+            'origin',
+            'https://example.test/other/repository.git',
+        ]),
+        'layout' => $instance->update(['source_layout' => 'worktree']),
+        'placement' => $instance->update(['checkout_path' => $this->appsRoot.'/acme/replacement']),
+        'canonical repository' => $instance
+            ->app
+            ->forceFill([
+                'repository_url' => 'https://example.test/other/repository.git',
+                'repository_identity' => 'example.test/other/repository',
+            ])
+            ->save(),
+        'physical layout' => orb180_share_git_directory($instance, $this->sandbox),
+        'branch' => orb76_run(['git', '-C', $instance->checkout_path, 'branch', '-m', 'changed-branch']),
+        'ancestry' => orb180_replace_ancestry($instance),
+        'inventory' => orb76_run([
+            'git',
+            '-C',
+            $instance->checkout_path,
+            'worktree',
+            'add',
+            '-b',
+            'late',
+            $this->appsRoot.'/acme/late',
+            'HEAD',
+        ]),
+    };
+
+    expect(fn () => $this->removal->revalidate($member))
+        ->toThrow(RuntimeConvergenceException::class)
+        ->and(file_exists((string) $member->checkout_path))
+        ->toBeTrue();
+})->with([
+    'physical',
+    'repository',
+    'layout',
+    'placement',
+    'canonical repository',
+    'physical layout',
+    'branch',
+    'ancestry',
+    'inventory',
+]);
+
+it('refuses mismatched durable completion evidence', function (): void {
+    $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'receipt');
+    $member = orb180_record_source($this->removal, $instance, true);
+    $this->removal->finalize($member);
+    file_put_contents(orb180_receipt_path($member), "mismatched\n");
+
+    expect(fn () => $this->removal->revalidate($member))
+        ->toThrow(RuntimeConvergenceException::class);
+});
+
+it('accepts a canonical-equivalent origin between retries', function (): void {
+    $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'equivalent');
+    $member = orb180_record_source($this->removal, $instance, true);
+    $this->transport->remoteOrigin = 'ssh://git@EXAMPLE.TEST:22/acme/site.git/';
+
+    expect($this->removal->revalidate($member))
+        ->toBe(AppInstanceSourceRevalidationState::Present)
+        ->and($this->removal->finalize($member))
+        ->toBeString()
+        ->and(file_exists($instance->checkout_path))
+        ->toBeFalse();
+});
+
+it('refuses an immediate forced finalization race', function (): void {
+    $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'race');
+    $member = orb180_record_source($this->removal, $instance, true);
+    $this->transport->beforeFinalization = static function () use ($instance): void {
+        orb76_run(['git', '-C', $instance->checkout_path, 'branch', '-m', 'raced']);
+    };
+
+    expect(fn () => $this->removal->finalize($member))
+        ->toThrow(RuntimeConvergenceException::class)
+        ->and(is_dir($instance->checkout_path))
+        ->toBeTrue();
+});
+
+it('refuses control bytes during recorded recovery and destructive revalidation', function (string $boundary): void {
+    $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'control');
+    $member = orb180_record_source($this->removal, $instance, true);
+    $mutate = static function () use ($instance): void {
+        orb76_run([
+            'git',
+            '-C',
+            $instance->checkout_path,
+            'remote',
+            'set-url',
+            'origin',
+            "ssh://git@example.test/acme/site.git\n",
+        ]);
+    };
+
+    if ($boundary === 'recovery') {
+        $mutate();
+    } else {
+        $this->transport->beforeFinalization = $mutate;
+    }
+
+    $operation = $boundary === 'recovery'
+        ? fn () => $this->removal->revalidate($member)
+        : fn () => $this->removal->finalize($member);
+    expect($operation)
+        ->toThrow(RuntimeConvergenceException::class)
+        ->and(is_dir($instance->checkout_path))
+        ->toBeTrue();
+})->with(['recovery', 'finalization']);
+
+it('refuses recorded ownership drift', function (): void {
+    $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'ownership');
+    $member = orb180_record_source($this->removal, $instance, true);
+    $groups = posix_getgroups();
+    $alternateGroup = is_array($groups)
+        ? collect($groups)->first(static fn (int $group): bool => $group !== posix_getegid())
+        : null;
+
+    if (! is_int($alternateGroup)) {
+        $this->markTestSkipped('The ownership revalidation test requires a supplementary group.');
+    }
+
+    expect(chgrp($instance->checkout_path, $alternateGroup))->toBeTrue();
+
+    expect(fn () => $this->removal->revalidate($member))
+        ->toThrow(RuntimeConvergenceException::class)
+        ->and(is_dir($instance->checkout_path))
+        ->toBeTrue();
+});
+
+it('holds the per-Node source lock for every recorded adapter call', function (): void {
+    $lock = new Orb180RecordingSourceLock;
+    $removal = new RemoteDevelopmentAppInstanceSourceRemoval(
+        $this->ssh,
+        $this->accounts,
+        $this->boundary,
+        $lock,
+    );
+    $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'locked');
+    $member = orb180_record_source($removal, $instance, true);
+
+    expect($removal->revalidate($member))->toBe(AppInstanceSourceRevalidationState::Present);
+    $removal->inspectRecorded($member, AppInstanceSourceRevalidationState::Present);
+    $removal->finalize($member);
+
+    expect($lock->nodes)
+        ->toBe([
+            $this->node->id,
+            $this->node->id,
+            $this->node->id,
+            $this->node->id,
+            $this->node->id,
+        ]);
+});
+
 it('does not let removal waive the recorded starting commit ancestry', function (bool $force): void {
     $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
     $this->source->prepare($instance, false);
@@ -782,6 +1247,210 @@ it('fails closed before removal when stored source identity is incomplete', func
     expect($this->transport->commands)->toBeEmpty();
 });
 
+function orb180_resolved_source(
+    RemoteDevelopmentAppInstanceSourceLifecycle $source,
+    OrbitApp $app,
+    Node $node,
+    string $appsRoot,
+    string $name,
+): AppInstance {
+    $instance = orb76_source_instance($app, $node, $appsRoot, $name);
+    $source->prepare($instance, false);
+    $resolution = $source->resolve($instance);
+    $instance->update([
+        'branch' => $resolution->branch,
+        'starting_commit' => $resolution->startingCommit,
+        'status' => AppInstanceState::SourceResolved,
+    ]);
+
+    return $instance->refresh()->load(['app', 'node']);
+}
+
+function orb180_record_source(
+    RemoteDevelopmentAppInstanceSourceRemoval $removal,
+    AppInstance $instance,
+    bool $force,
+): AppInstanceRemovalMember {
+    $inventory = $removal->inspect($instance, $force);
+    $route = Route::query()->create([
+        'app_id' => $instance->app_id,
+        'node_id' => $instance->node_id,
+        'generation_basis_node_id' => $instance->node_id,
+        'hostname' => "source-finalization-{$instance->id}.test",
+        'provenance' => RouteProvenance::Generated,
+        'publication' => RoutePublication::Private,
+        'status' => RouteStatus::Pending,
+    ]);
+    $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+    $route->update(['status' => RouteStatus::Active]);
+    $instance->update(['status' => AppInstanceState::Active]);
+    $operation = AppInstanceRemoval::query()->create([
+        'id' => (string) Str::uuid(),
+        'requested_app_instance_id' => $instance->id,
+        'requested_name' => $instance->name,
+        'force' => $force,
+        'inventory_digest' => $inventory->digest,
+        'total' => 1,
+        'status' => AppInstanceRemovalStatus::Removing,
+        'current_step' => AppInstanceRemovalStep::SourcePreparation,
+    ]);
+    $member = $operation
+        ->members()
+        ->create([
+            'position' => 0,
+            'app_instance_id' => $instance->id,
+            'app_id' => $instance->app_id,
+            'node_id' => $instance->node_id,
+            'route_id' => $route->id,
+            'name' => $instance->name,
+            'environment' => $instance->environment,
+            'source_layout' => $inventory->layout,
+            'repository_identity' => $inventory->repositoryIdentity,
+            'checkout_path' => $inventory->checkoutPath,
+            'root' => $instance->effectiveRoot(),
+            'branch' => $inventory->branch,
+            'starting_commit' => $inventory->startingCommit,
+            'common_repository_path' => $inventory->commonRepositoryPath,
+            'source_identity' => $inventory->sourceIdentity,
+            'linked_worktree_paths' => $inventory->linkedWorktreePaths,
+            'source_digest' => $inventory->digest,
+        ]);
+    $instance->update(['status' => AppInstanceState::Removing]);
+    $removal->prepare($member);
+    $member->update(['source_prepared_at' => now()]);
+
+    return $member->refresh();
+}
+
+/**
+ * @return array{0: AppInstance, 1: AppInstance, 2: string}
+ */
+function orb180_worktree_source(
+    RemoteDevelopmentAppInstanceSourceLifecycle $source,
+    OrbitApp $app,
+    Node $node,
+    string $appsRoot,
+    string $name,
+): array {
+    $checkout = orb180_resolved_source($source, $app, $node, $appsRoot, "{$name}-main");
+    $worktreePath = "{$appsRoot}/acme/{$name}";
+    $siblingPath = "{$appsRoot}/acme/{$name}-sibling";
+    orb76_run(['git', '-C', $checkout->checkout_path, 'worktree', 'add', '-b', $name, $worktreePath, 'HEAD']);
+    orb76_run([
+        'git',
+        '-C',
+        $checkout->checkout_path,
+        'worktree',
+        'add',
+        '-b',
+        "{$name}-sibling",
+        $siblingPath,
+        'HEAD',
+    ]);
+    $worktree = AppInstance::query()
+        ->create([
+            'app_id' => $app->id,
+            'node_id' => $node->id,
+            'name' => $name,
+            'source_layout' => 'worktree',
+            'checkout_path' => $worktreePath,
+            'branch' => $name,
+            'starting_commit' => $checkout->starting_commit,
+            'status' => AppInstanceState::SourceResolved,
+        ])
+        ->load(['app', 'node']);
+
+    return [$checkout, $worktree, $siblingPath];
+}
+
+/** @return array{0: string, 1: string, 2: string} */
+function orb180_stage_worktree_receipt(AppInstanceRemovalMember $member): array
+{
+    $quarantine = orb180_quarantine_path($member);
+    $commonRepository = (string) $member->common_repository_path;
+    orb76_run([
+        'git',
+        "--git-dir={$commonRepository}/.git",
+        'worktree',
+        'move',
+        (string) $member->checkout_path,
+        $quarantine,
+    ]);
+    $admin = trim(orb76_run(['git', '-C', $quarantine, 'rev-parse', '--absolute-git-dir'])->stdout);
+    $worktrees = dirname($admin);
+    $recovery = dirname(orb180_receipt_path($member))."/{$member->app_instance_removal_id}.{$member->id}.recovery";
+    file_put_contents(
+        $recovery,
+        base64_encode($admin)
+        ."\n"
+        .orb180_file_identity($admin)
+        ."\n"
+        .orb180_file_identity("{$commonRepository}/.git")
+        ."\n"
+        .orb180_file_identity($worktrees)
+        ."\n",
+    );
+    chmod($recovery, 0o600);
+
+    return [$quarantine, $admin, orb180_write_receipt($member)];
+}
+
+function orb180_write_receipt(AppInstanceRemovalMember $member): string
+{
+    $receipt = hash(
+        'sha256',
+        "{$member->app_instance_removal_id}\0{$member->id}\0{$member->source_digest}\0finalized",
+    );
+    file_put_contents(orb180_receipt_path($member), "{$receipt}\n");
+    chmod(orb180_receipt_path($member), 0o600);
+
+    return $receipt;
+}
+
+function orb180_file_identity(string $path): string
+{
+    $identity = stat($path);
+    expect($identity)->toBeArray();
+
+    return "{$identity['dev']}:{$identity['ino']}";
+}
+
+function orb180_quarantine_path(AppInstanceRemovalMember $member): string
+{
+    return dirname(orb180_receipt_path($member))."/{$member->app_instance_removal_id}.{$member->id}.quarantine";
+}
+
+function orb180_receipt_path(AppInstanceRemovalMember $member): string
+{
+    $sourceRoot = dirname(dirname((string) $member->checkout_path));
+
+    return "{$sourceRoot}/.orbit-removals/{$member->app_instance_removal_id}.{$member->id}.receipt";
+}
+
+function orb180_replace_ancestry(AppInstance $instance): void
+{
+    orb76_run(['git', '-C', $instance->checkout_path, 'config', 'user.name', 'Orbit Test']);
+    orb76_run(['git', '-C', $instance->checkout_path, 'config', 'user.email', 'orbit@example.test']);
+    $tree = trim(orb76_run(['git', '-C', $instance->checkout_path, 'rev-parse', 'HEAD^{tree}'])->stdout);
+    $commit = trim(orb76_run([
+        'git',
+        '-C',
+        $instance->checkout_path,
+        'commit-tree',
+        $tree,
+        '-m',
+        'Unrelated recorded source',
+    ])->stdout);
+    orb76_run(['git', '-C', $instance->checkout_path, 'reset', '--hard', $commit]);
+}
+
+function orb180_share_git_directory(AppInstance $instance, string $sandbox): void
+{
+    $shared = $sandbox.'/shared.git';
+    expect(new Filesystem()->copyDirectory($instance->checkout_path.'/.git', $shared))->toBeTrue();
+    file_put_contents($instance->checkout_path.'/.git/commondir', "{$shared}\n");
+}
+
 function orb178_remove_source(
     RemoteDevelopmentAppInstanceSourceRemoval $removal,
     AppInstance $instance,
@@ -854,10 +1523,25 @@ function orb178_advance_remote(string $sandbox, string $ref): string
     return trim(orb76_run(['git', '-C', $work, 'rev-parse', 'HEAD'])->stdout);
 }
 
+final class Orb180RecordingSourceLock implements AppDevSourceOperationLock
+{
+    /** @var list<int> */
+    public array $nodes = [];
+
+    public function synchronized(int $nodeId, Closure $operation): mixed
+    {
+        $this->nodes[] = $nodeId;
+
+        return $operation();
+    }
+}
+
 final class Orb76LocalSourceSshExecutor implements \App\Infrastructure\Ssh\SshExecutor
 {
     /** @var list<RemoteCommand> */
     public array $commands = [];
+
+    public ?Closure $beforeFinalization = null;
 
     public function __construct(
         public string $remoteOrigin,
@@ -870,6 +1554,12 @@ final class Orb76LocalSourceSshExecutor implements \App\Infrastructure\Ssh\SshEx
     ): \App\Infrastructure\Processes\CommandResult {
         $this->commands[] = $command;
         $input = $command->input;
+
+        if (is_string($input) && str_contains($input, 'expected_origin=$6')) {
+            $callback = $this->beforeFinalization;
+            $this->beforeFinalization = null;
+            $callback?->__invoke();
+        }
 
         if (is_string($input) && str_contains($input, 'expected_repository_identity=$1')) {
             $checkout = $command->arguments[3] ?? null;
