@@ -6,6 +6,8 @@ use App\Domain\Doctor\DoctorFamily;
 use App\Models\Activity;
 use App\Models\App as AppModel;
 use App\Models\AppInstance;
+use App\Models\AppInstanceRemoval;
+use App\Models\AppInstanceRemovalMember;
 use App\Models\Cluster;
 use App\Models\FirewallRule;
 use App\Models\Instance;
@@ -39,7 +41,7 @@ it('partitions every persisted model across doctor dispositions', function (): v
         Route::class,
         RouteTarget::class,
     ];
-    $excluded = [NodeAccess::class, Activity::class];
+    $excluded = [NodeAccess::class, Activity::class, AppInstanceRemoval::class, AppInstanceRemovalMember::class];
     $modelsDirectory = new ReflectionClass(Node::class)->getFileName();
     if (! is_string($modelsDirectory)) {
         throw new RuntimeException('Unable to locate model directory.');
