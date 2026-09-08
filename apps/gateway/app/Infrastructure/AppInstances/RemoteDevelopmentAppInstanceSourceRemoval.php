@@ -8,6 +8,7 @@ use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\AppInstances\AppInstanceSourceLayout;
 use App\Domain\AppInstances\Removal\AppInstanceSourceInventory;
+use App\Domain\AppInstances\Removal\AppInstanceSourceRevalidationExpectation;
 use App\Domain\AppInstances\Removal\AppInstanceSourceRevalidationState;
 use App\Domain\AppInstances\Removal\DevelopmentAppInstanceSourceFinalizer;
 use App\Domain\AppInstances\Removal\DevelopmentAppInstanceSourceRemoval;
@@ -251,10 +252,12 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
         );
     }
 
-    public function prepare(AppInstanceRemovalMember $member): void
-    {
-        $this->lock->synchronized($member->node_id, function () use ($member): void {
-            $this->inspectRecordedLocked($member, AppInstanceSourceRevalidationState::Present);
+    public function prepare(
+        AppInstanceRemovalMember $member,
+        ?AppInstanceSourceRevalidationExpectation $expectation = null,
+    ): void {
+        $this->lock->synchronized($member->node_id, function () use ($member, $expectation): void {
+            $this->inspectRecordedLocked($member, AppInstanceSourceRevalidationState::Present, $expectation);
             [$node, $user, $group, $root] = $this->memberContext($member);
             $this->ssh->execute(
                 $node,
@@ -281,10 +284,13 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
         });
     }
 
-    public function revalidate(AppInstanceRemovalMember $member): AppInstanceSourceRevalidationState
-    {
+    public function revalidate(
+        AppInstanceRemovalMember $member,
+        ?AppInstanceSourceRevalidationExpectation $expectation = null,
+    ): AppInstanceSourceRevalidationState {
         return $this->lock->synchronized($member->node_id, function () use (
             $member,
+            $expectation,
         ): AppInstanceSourceRevalidationState {
             $state = $member->source_prepared_at === null
                 ? AppInstanceSourceRevalidationState::Present
@@ -302,7 +308,16 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
                 || $state === AppInstanceSourceRevalidationState::ReceiptPendingCleanup
                 && $receiptStructure === 'intact'
             ) {
-                $this->inspectRecordedLocked($member, $state);
+                $states = $expectation?->authenticatedMemberStates ?? [];
+                $states[$member->id] = $state;
+                $authenticatedExpectation = $expectation instanceof AppInstanceSourceRevalidationExpectation
+                    ? new AppInstanceSourceRevalidationExpectation(
+                        $expectation->requiredLinkedWorktreePaths,
+                        $expectation->permittedLinkedWorktreePaths,
+                        $states,
+                    )
+                    : null;
+                $this->inspectRecordedLocked($member, $state, $authenticatedExpectation);
             }
 
             return $state;
@@ -312,16 +327,19 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
     public function inspectRecorded(
         AppInstanceRemovalMember $member,
         AppInstanceSourceRevalidationState $state,
+        ?AppInstanceSourceRevalidationExpectation $expectation = null,
     ): AppInstanceSourceInventory {
         return $this->lock->synchronized(
             $member->node_id,
-            fn (): AppInstanceSourceInventory => $this->inspectRecordedLocked($member, $state),
+            fn (): AppInstanceSourceInventory => $this->inspectRecordedLocked($member, $state, $expectation),
         );
     }
 
-    public function finalize(AppInstanceRemovalMember $member): string
-    {
-        return $this->lock->synchronized($member->node_id, function () use ($member): string {
+    public function finalize(
+        AppInstanceRemovalMember $member,
+        ?AppInstanceSourceRevalidationExpectation $expectation = null,
+    ): string {
+        return $this->lock->synchronized($member->node_id, function () use ($member, $expectation): string {
             $state = $this->revalidationStateLocked($member);
             $receipt = $this->receipt($member);
 
@@ -337,7 +355,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
                 }
             }
 
-            $inventory = $this->inspectRecordedLocked($member, $state);
+            $inventory = $this->inspectRecordedLocked($member, $state, $expectation);
             [$node, $user, $group, $root] = $this->memberContext($member);
             $removal = $member->removal()->firstOrFail();
             $result = $this->ssh->execute(
@@ -385,6 +403,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
     private function inspectRecordedLocked(
         AppInstanceRemovalMember $member,
         AppInstanceSourceRevalidationState $state,
+        ?AppInstanceSourceRevalidationExpectation $expectation = null,
     ): AppInstanceSourceInventory {
         if ($state === AppInstanceSourceRevalidationState::Completed) {
             $this->recordedConflict($member, 'A completed source has no inspectable source inventory.');
@@ -403,6 +422,14 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
             ? $logicalCheckout
             : $this->quarantinePath($member, $context['root']);
         $removal = $member->removal()->firstOrFail();
+        $expectation ??= $this->exactExpectation($member);
+        $authenticatedStates = $expectation->authenticatedMemberStates;
+        $authenticatedStates[$member->id] = $state;
+        $expectation = new AppInstanceSourceRevalidationExpectation(
+            $expectation->requiredLinkedWorktreePaths,
+            $expectation->permittedLinkedWorktreePaths,
+            $authenticatedStates,
+        );
         $inventory = $this->inspectPathLocked(
             appInstance: $appInstance,
             physicalCheckout: $physicalCheckout,
@@ -415,7 +442,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
             startingCommit: (string) $member->starting_commit,
             expectedRepositoryIdentity: (string) $member->repository_identity,
             force: (bool) $removal->force,
-            quarantineMappings: $this->quarantineMappings($member, $context['root']),
+            quarantineMappings: $this->quarantineMappings($member, $context['root'], $expectation),
         );
 
         if (
@@ -429,14 +456,15 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
             || $member->repository_identity !== $appInstance->app->repository_identity
             || $member->common_repository_path !== $inventory->commonRepositoryPath
             || $member->source_identity !== $inventory->sourceIdentity
-            || $member->linked_worktree_paths !== $inventory->linkedWorktreePaths
-            || $member->source_digest !== $inventory->digest
+            || $member->source_digest !== $this->originalDigest($member, $inventory)
         ) {
             $this->recordedConflict(
                 $member,
                 "AppInstance [{$member->name}] source identity changed after removal acceptance.",
             );
         }
+
+        $this->assertExpectedLinkedInventory($member, $inventory, $expectation);
 
         if (
             $member->source_layout === AppInstanceSourceLayout::Checkout->value
@@ -449,6 +477,56 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
         }
 
         return $inventory;
+    }
+
+    private function exactExpectation(
+        AppInstanceRemovalMember $member,
+    ): AppInstanceSourceRevalidationExpectation {
+        $paths = $member->linked_worktree_paths;
+        sort($paths, SORT_STRING);
+
+        return new AppInstanceSourceRevalidationExpectation($paths, $paths);
+    }
+
+    private function originalDigest(
+        AppInstanceRemovalMember $member,
+        AppInstanceSourceInventory $inventory,
+    ): string {
+        return hash('sha256', json_encode([
+            'app_instance_id' => $inventory->appInstanceId,
+            'layout' => $inventory->layout,
+            'repository_identity' => $inventory->repositoryIdentity,
+            'checkout_path' => $inventory->checkoutPath,
+            'root' => $inventory->root,
+            'branch' => $inventory->branch,
+            'starting_commit' => $inventory->startingCommit,
+            'common_repository_path' => $inventory->commonRepositoryPath,
+            'source_identity' => $inventory->sourceIdentity,
+            'linked_worktree_paths' => $member->linked_worktree_paths,
+        ], JSON_THROW_ON_ERROR));
+    }
+
+    private function assertExpectedLinkedInventory(
+        AppInstanceRemovalMember $member,
+        AppInstanceSourceInventory $inventory,
+        AppInstanceSourceRevalidationExpectation $expectation,
+    ): void {
+        $required = array_values(array_unique($expectation->requiredLinkedWorktreePaths));
+        $permitted = array_values(array_unique($expectation->permittedLinkedWorktreePaths));
+        $live = $inventory->linkedWorktreePaths;
+        sort($required, SORT_STRING);
+        sort($permitted, SORT_STRING);
+        sort($live, SORT_STRING);
+
+        if (
+            array_diff($required, $live) !== []
+            || array_diff($live, $permitted) !== []
+        ) {
+            $this->recordedConflict(
+                $member,
+                'The linked-worktree inventory changed after removal acceptance.',
+            );
+        }
     }
 
     private function cleanupReceiptLocked(AppInstanceRemovalMember $member, string $receipt): string
@@ -648,9 +726,39 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
     }
 
     /** @return array<string, string> */
-    private function quarantineMappings(AppInstanceRemovalMember $member, StoragePath $root): array
-    {
-        return [$this->quarantinePath($member, $root) => (string) $member->checkout_path];
+    private function quarantineMappings(
+        AppInstanceRemovalMember $member,
+        StoragePath $root,
+        ?AppInstanceSourceRevalidationExpectation $expectation = null,
+    ): array {
+        if (! $expectation instanceof AppInstanceSourceRevalidationExpectation) {
+            return [$this->quarantinePath($member, $root) => (string) $member->checkout_path];
+        }
+
+        $mappings = [];
+        $members = $member->removal->members()->orderBy('position')->get();
+
+        foreach ($members as $recordedMember) {
+            $state = $expectation->authenticatedMemberStates[$recordedMember->id] ?? null;
+
+            if (
+                $recordedMember->common_repository_path !== $member->common_repository_path
+                || ! in_array(
+                    $state,
+                    [
+                        AppInstanceSourceRevalidationState::Quarantined,
+                        AppInstanceSourceRevalidationState::ReceiptPendingCleanup,
+                    ],
+                    true,
+                )
+            ) {
+                continue;
+            }
+
+            $mappings[$this->quarantinePath($recordedMember, $root)] = (string) $recordedMember->checkout_path;
+        }
+
+        return $mappings;
     }
 
     private function quarantinePath(AppInstanceRemovalMember $member, StoragePath $root): string

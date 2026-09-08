@@ -8,6 +8,7 @@ use App\Domain\AppInstances\AppInstanceRemovalStatus;
 use App\Domain\AppInstances\AppInstanceRemovalStep;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\AppInstances\Removal\AppInstanceSourceInventory;
+use App\Domain\AppInstances\Removal\AppInstanceSourceRevalidationExpectation;
 use App\Domain\AppInstances\Removal\AppInstanceSourceRevalidationState;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
@@ -800,6 +801,156 @@ it('finalizes one recorded worktree while preserving shared Git state', function
         ->toBe($remoteBranches);
 });
 
+it('finalizes a recorded fixed set against each expected real Git inventory', function (): void {
+    [$checkout, $first, $second] = orb182_real_source_graph(
+        $this->source,
+        $this->orbitApp,
+        $this->node,
+        $this->appsRoot,
+        'cascade',
+    );
+    $members = orb182_record_sources($this->removal, [$first, $second, $checkout], true);
+    $paths = [$checkout->checkout_path, $first->checkout_path, $second->checkout_path];
+    sort($paths, SORT_STRING);
+    $remoteBranches = orb76_run([
+        'git',
+        '--git-dir='.$this->repository,
+        'for-each-ref',
+        '--format=%(refname)',
+        'refs/heads',
+    ])->stdout;
+
+    $expectation = new AppInstanceSourceRevalidationExpectation($paths, $paths);
+    $this->removal->prepare($members[0], $expectation);
+    $members[0]->update(['source_prepared_at' => now()]);
+    orb182_clear_test_route($members[0]);
+    $members[0]->update(['route_cleared_at' => now(), 'route_outcome' => 'deleted']);
+    $firstReceipt = $this->removal->finalize($members[0], $expectation);
+    $members[0]->update(['source_finalized_at' => now(), 'finalization_receipt' => $firstReceipt]);
+    $afterFirst = [$checkout->checkout_path, $second->checkout_path];
+    sort($afterFirst, SORT_STRING);
+    $expectation = new AppInstanceSourceRevalidationExpectation($afterFirst, $afterFirst);
+    $this->removal->prepare($members[1], $expectation);
+    $members[1]->update(['source_prepared_at' => now()]);
+    orb182_clear_test_route($members[1]);
+    $members[1]->update(['route_cleared_at' => now(), 'route_outcome' => 'deleted']);
+
+    expect($this->removal->revalidate($members[1], $expectation))
+        ->toBe(AppInstanceSourceRevalidationState::Present);
+    $secondReceipt = $this->removal->finalize($members[1], $expectation);
+    $members[1]->update(['source_finalized_at' => now(), 'finalization_receipt' => $secondReceipt]);
+    $expectation = new AppInstanceSourceRevalidationExpectation(
+        [$checkout->checkout_path],
+        [$checkout->checkout_path],
+    );
+    $this->removal->prepare($members[2], $expectation);
+    $members[2]->update(['source_prepared_at' => now()]);
+    orb182_clear_test_route($members[2]);
+    $members[2]->update(['route_cleared_at' => now(), 'route_outcome' => 'deleted']);
+
+    expect($this->removal->revalidate($members[2], $expectation))
+        ->toBe(AppInstanceSourceRevalidationState::Present)
+        ->and(is_dir($checkout->checkout_path.'/.git'))
+        ->toBeTrue()
+        ->and(file_exists($first->checkout_path))
+        ->toBeFalse()
+        ->and(file_exists($second->checkout_path))
+        ->toBeFalse();
+
+    $this->removal->finalize($members[2], $expectation);
+
+    expect(file_exists($checkout->checkout_path))
+        ->toBeFalse()
+        ->and(orb76_run([
+            'git',
+            '--git-dir='.$this->repository,
+            'for-each-ref',
+            '--format=%(refname)',
+            'refs/heads',
+        ])->stdout)
+        ->toBe($remoteBranches);
+});
+
+it('refuses an unknown real worktree after one accepted member completes', function (): void {
+    [$checkout, $first, $second] = orb182_real_source_graph(
+        $this->source,
+        $this->orbitApp,
+        $this->node,
+        $this->appsRoot,
+        'unknown',
+    );
+    $members = orb182_record_sources($this->removal, [$first, $second, $checkout], true);
+    $paths = [$checkout->checkout_path, $first->checkout_path, $second->checkout_path];
+    sort($paths, SORT_STRING);
+    $this->removal->prepare(
+        $members[0],
+        new AppInstanceSourceRevalidationExpectation($paths, $paths),
+    );
+    $members[0]->update(['source_prepared_at' => now()]);
+    orb182_clear_test_route($members[0]);
+    $members[0]->update(['route_cleared_at' => now(), 'route_outcome' => 'deleted']);
+    $receipt = $this->removal->finalize(
+        $members[0],
+        new AppInstanceSourceRevalidationExpectation($paths, $paths),
+    );
+    $members[0]->update(['source_finalized_at' => now(), 'finalization_receipt' => $receipt]);
+    $unknown = $this->appsRoot.'/acme/unknown-late';
+    orb76_run(['git', '-C', $checkout->checkout_path, 'worktree', 'add', '-b', 'unknown-late', $unknown, 'HEAD']);
+    $expected = [$checkout->checkout_path, $second->checkout_path];
+    sort($expected, SORT_STRING);
+
+    expect(fn () => $this->removal->revalidate(
+        $members[1],
+        new AppInstanceSourceRevalidationExpectation($expected, $expected),
+    ))
+        ->toThrow(RuntimeConvergenceException::class)
+        ->and(is_dir($second->checkout_path))
+        ->toBeTrue()
+        ->and(is_dir($unknown))
+        ->toBeTrue()
+        ->and(is_dir($checkout->checkout_path.'/.git'))
+        ->toBeTrue();
+});
+
+it('authenticates a completed worktree shrink before the database checkpoint', function (): void {
+    [$checkout, $first, $second] = orb182_real_source_graph(
+        $this->source,
+        $this->orbitApp,
+        $this->node,
+        $this->appsRoot,
+        'receipt-cascade',
+    );
+    $members = orb182_record_sources($this->removal, [$first, $second, $checkout], true);
+    $paths = [$checkout->checkout_path, $first->checkout_path, $second->checkout_path];
+    sort($paths, SORT_STRING);
+    $this->removal->prepare(
+        $members[0],
+        new AppInstanceSourceRevalidationExpectation($paths, $paths),
+    );
+    $members[0]->update(['source_prepared_at' => now()]);
+    orb182_clear_test_route($members[0]);
+    $members[0]->update(['route_cleared_at' => now(), 'route_outcome' => 'deleted']);
+    $this->removal->finalize(
+        $members[0],
+        new AppInstanceSourceRevalidationExpectation($paths, $paths),
+    );
+    $expected = [$checkout->checkout_path, $second->checkout_path];
+    sort($expected, SORT_STRING);
+    $states = [$members[0]->id => AppInstanceSourceRevalidationState::Completed];
+    $expectation = new AppInstanceSourceRevalidationExpectation($expected, $expected, $states);
+
+    expect($members[0]->refresh()->source_finalized_at)
+        ->toBeNull()
+        ->and($this->removal->revalidate($members[0], $expectation))
+        ->toBe(AppInstanceSourceRevalidationState::Completed)
+        ->and($this->removal->revalidate($members[1], $expectation))
+        ->toBe(AppInstanceSourceRevalidationState::Present)
+        ->and(is_dir($second->checkout_path))
+        ->toBeTrue()
+        ->and(is_dir($checkout->checkout_path.'/.git'))
+        ->toBeTrue();
+});
+
 it('refuses to finalize a checkout while a linked worktree depends on it', function (): void {
     $checkout = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'linked-main');
     $siblingPath = $this->appsRoot.'/acme/linked-sibling';
@@ -1322,6 +1473,140 @@ function orb180_record_source(
     $member->update(['source_prepared_at' => now()]);
 
     return $member->refresh();
+}
+
+/**
+ * @return array{AppInstance, AppInstance, AppInstance}
+ */
+function orb182_real_source_graph(
+    RemoteDevelopmentAppInstanceSourceLifecycle $source,
+    OrbitApp $app,
+    Node $node,
+    string $appsRoot,
+    string $name,
+): array {
+    $checkout = orb180_resolved_source($source, $app, $node, $appsRoot, "{$name}-main");
+    $worktrees = [];
+
+    foreach (["{$name}-a", "{$name}-b"] as $worktreeName) {
+        $worktreePath = "{$appsRoot}/acme/{$worktreeName}";
+        orb76_run([
+            'git',
+            '-C',
+            $checkout->checkout_path,
+            'worktree',
+            'add',
+            '-b',
+            $worktreeName,
+            $worktreePath,
+            'HEAD',
+        ]);
+        $worktrees[] = AppInstance::query()
+            ->create([
+                'app_id' => $app->id,
+                'node_id' => $node->id,
+                'name' => $worktreeName,
+                'source_layout' => 'worktree',
+                'checkout_path' => $worktreePath,
+                'branch' => $worktreeName,
+                'starting_commit' => $checkout->starting_commit,
+                'status' => AppInstanceState::SourceResolved,
+            ])
+            ->load(['app', 'node']);
+    }
+
+    return [$checkout, $worktrees[0], $worktrees[1]];
+}
+
+/**
+ * @param list<AppInstance> $instances
+ * @return list<AppInstanceRemovalMember>
+ */
+function orb182_record_sources(
+    RemoteDevelopmentAppInstanceSourceRemoval $removal,
+    array $instances,
+    bool $force,
+): array {
+    $inventories = [];
+
+    foreach ($instances as $instance) {
+        $inventories[$instance->id] = $removal->inspect($instance, $force);
+    }
+
+    $routes = [];
+
+    foreach ($instances as $instance) {
+        $route = Route::query()->create([
+            'app_id' => $instance->app_id,
+            'node_id' => $instance->node_id,
+            'generation_basis_node_id' => $instance->node_id,
+            'hostname' => "cascade-source-{$instance->id}.test",
+            'provenance' => RouteProvenance::Generated,
+            'publication' => RoutePublication::Private,
+            'status' => RouteStatus::Pending,
+        ]);
+        $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+        $route->update(['status' => RouteStatus::Active]);
+        $instance->update(['status' => AppInstanceState::Active]);
+        $routes[$instance->id] = $route;
+    }
+
+    $operation = AppInstanceRemoval::query()->create([
+        'id' => (string) Str::uuid(),
+        'requested_app_instance_id' => $instances[array_key_last($instances)]->id,
+        'requested_name' => $instances[array_key_last($instances)]->name,
+        'force' => $force,
+        'inventory_digest' => hash('sha256', implode('', array_map(
+            static fn (AppInstanceSourceInventory $inventory): string => $inventory->digest,
+            $inventories,
+        ))),
+        'total' => count($instances),
+        'status' => AppInstanceRemovalStatus::Removing,
+        'current_step' => AppInstanceRemovalStep::SourcePreparation,
+    ]);
+    $members = [];
+
+    foreach ($instances as $position => $instance) {
+        $inventory = $inventories[$instance->id];
+        $route = $routes[$instance->id];
+        $members[] = $operation
+            ->members()
+            ->create([
+                'position' => $position,
+                'app_instance_id' => $instance->id,
+                'app_id' => $instance->app_id,
+                'node_id' => $instance->node_id,
+                'route_id' => $route->id,
+                'name' => $instance->name,
+                'environment' => $instance->environment,
+                'source_layout' => $inventory->layout,
+                'repository_identity' => $inventory->repositoryIdentity,
+                'checkout_path' => $inventory->checkoutPath,
+                'root' => $instance->effectiveRoot(),
+                'branch' => $inventory->branch,
+                'starting_commit' => $inventory->startingCommit,
+                'common_repository_path' => $inventory->commonRepositoryPath,
+                'source_identity' => $inventory->sourceIdentity,
+                'linked_worktree_paths' => $inventory->linkedWorktreePaths,
+                'source_digest' => $inventory->digest,
+            ]);
+    }
+
+    AppInstance::query()
+        ->whereKey(array_map(static fn (AppInstance $instance): int => $instance->id, $instances))
+        ->update(['status' => AppInstanceState::Removing->value]);
+
+    return array_map(
+        static fn (AppInstanceRemovalMember $member): AppInstanceRemovalMember => $member->refresh(),
+        $members,
+    );
+}
+
+function orb182_clear_test_route(AppInstanceRemovalMember $member): void
+{
+    $route = Route::query()->findOrFail($member->route_id);
+    $route->targets()->delete();
+    $route->delete();
 }
 
 /**

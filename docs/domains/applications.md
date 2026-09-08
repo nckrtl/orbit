@@ -111,7 +111,7 @@ Use forced removal only when you intend to lose dirty or unpublished work:
 orbit instance:remove <id> --force
 ```
 
-The [AppInstance removal reference](../reference/appinstance-removal.md) describes single-checkout preflight, retained branches, final-target Route deletion, transient unavailable traffic, the `removing` state, ordered cleanup, bounded progress, refusals, and safe retry.
+The [AppInstance removal reference](../reference/appinstance-removal.md) describes checkout and worktree preflight, forced fixed-set cascades, retained branches, final-target Route deletion, transient unavailable traffic, the `removing` state, ordered cleanup, bounded progress, refusals, and safe retry.
 
 ## Input boundary
 

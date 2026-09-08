@@ -13,6 +13,8 @@ use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\AppInstances\Removal\AppInstanceRemovalException;
 use App\Domain\AppInstances\Removal\AppInstanceRemovalProjector;
 use App\Domain\AppInstances\Removal\AppInstanceSourceInventory;
+use App\Domain\AppInstances\Removal\AppInstanceSourceRevalidationExpectation;
+use App\Domain\AppInstances\Removal\AppInstanceSourceRevalidationState;
 use App\Domain\AppInstances\Removal\DevelopmentAppInstanceSourceFinalizer;
 use App\Domain\AppInstances\Removal\DevelopmentAppInstanceSourceRemoval;
 use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
@@ -23,6 +25,7 @@ use App\Models\AppInstance;
 use App\Models\AppInstanceRemoval;
 use App\Models\AppInstanceRemovalMember;
 use App\Models\Route;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Throwable;
@@ -100,53 +103,55 @@ final readonly class RemoveAppInstanceAction
     {
         $snapshot = $appInstance->refresh()->load(['app', 'node', 'routes.targets']);
         $this->assertSupported($snapshot);
-        $route = $this->route($snapshot);
-        $path = StoragePath::tryParse($snapshot->checkout_path);
-
-        if (! $path instanceof StoragePath) {
-            throw new ResourceOperationException(
-                errorCode: 'instance.checkout_path_unsafe',
-                message: "AppInstance [{$snapshot->name}] has an unsafe checkout path.",
-                status: 409,
-            );
-        }
-
-        $this->checkoutOverlap->assertAvailable(
-            $snapshot->node_id,
-            $path,
-            'instance.checkout_path_unsafe',
-            ignoreAppInstanceId: $snapshot->id,
-        );
-        $inventory = $this->inspect($snapshot, $force);
-
-        if ($inventory->linkedWorktreePaths !== [$snapshot->checkout_path]) {
-            throw new ResourceOperationException(
-                errorCode: 'instance.remove_refused',
-                message: "AppInstance [{$snapshot->name}] checkout has linked worktrees; cascade removal is not available.",
-                status: 409,
-            );
-        }
-
-        $this->checkoutOverlap->assertAvailable(
-            $snapshot->node_id,
-            $path,
-            'instance.checkout_path_unsafe',
-            ignoreAppInstanceId: $snapshot->id,
-        );
+        [$members, $inventories] = $this->deletionSet($snapshot, $force);
+        $digest = $this->inventoryDigest($snapshot->id, $force, $inventories);
 
         /** @var AppInstanceRemoval $operation */
-        $operation = DB::transaction(function () use ($snapshot, $route, $inventory, $force): AppInstanceRemoval {
-            $locked = AppInstance::query()->lockForUpdate()->findOrFail($snapshot->id);
-            $lockedRoute = Route::query()->with('targets')->lockForUpdate()->findOrFail($route->id);
+        $operation = DB::transaction(function () use (
+            $snapshot,
+            $force,
+            $members,
+            $inventories,
+            $digest,
+        ): AppInstanceRemoval {
+            $lockedMembers = AppInstance::query()
+                ->whereKey($members->pluck('id'))
+                ->lockForUpdate()
+                ->orderBy('id')
+                ->get()
+                ->keyBy('id');
+            $routeIds = $members->map(static fn (AppInstance $member): int => $member->routes->sole()->id);
+            $lockedRoutes = Route::query()
+                ->with('targets')
+                ->whereKey($routeIds)
+                ->lockForUpdate()
+                ->get()
+                ->keyBy('id');
 
-            if (
-                $locked->status !== AppInstanceState::Active
-                || $locked->migration_required
-                || $lockedRoute->status !== RouteStatus::Active
-                || $lockedRoute->targets->count() !== 1
-                || $lockedRoute->targets->sole()->app_instance_id !== $locked->id
-            ) {
+            if ($lockedMembers->count() !== $members->count() || $lockedRoutes->count() !== $members->count()) {
                 $this->conflict($snapshot);
+            }
+
+            foreach ($members as $member) {
+                $lockedMember = $lockedMembers->get($member->id);
+                $route = $member->routes->sole();
+                $lockedRoute = $lockedRoutes->get($route->id);
+
+                if (
+                    ! $lockedMember instanceof AppInstance
+                    || ! $lockedRoute instanceof Route
+                    || $lockedMember->status !== AppInstanceState::Active
+                    || $lockedMember->migration_required
+                    || $lockedMember->app_id !== $member->app_id
+                    || $lockedMember->node_id !== $member->node_id
+                    || $lockedMember->checkout_path !== $member->checkout_path
+                    || $lockedMember->source_layout !== $member->source_layout
+                    || $lockedRoute->status !== RouteStatus::Active
+                    || $lockedRoute->targets->count() !== 1
+                    || $lockedRoute->targets->sole()->app_instance_id !== $lockedMember->id
+                ) {
+                    $this->conflict($snapshot);
+                }
             }
 
             $operation = AppInstanceRemoval::query()->create([
@@ -154,33 +159,40 @@ final readonly class RemoveAppInstanceAction
                 'requested_app_instance_id' => $snapshot->id,
                 'requested_name' => $snapshot->name,
                 'force' => $force,
-                'inventory_digest' => $this->inventoryDigest($snapshot->id, $force, $inventory),
-                'total' => 1,
+                'inventory_digest' => $digest,
+                'total' => $members->count(),
                 'status' => AppInstanceRemovalStatus::Removing,
                 'current_step' => AppInstanceRemovalStep::SourcePreparation,
             ]);
-            $operation
-                ->members()
-                ->create([
-                    'position' => 0,
-                    'app_instance_id' => $snapshot->id,
-                    'app_id' => $snapshot->app_id,
-                    'node_id' => $snapshot->node_id,
-                    'route_id' => $route->id,
-                    'name' => $snapshot->name,
-                    'environment' => $snapshot->environment,
-                    'source_layout' => $inventory->layout,
-                    'repository_identity' => $inventory->repositoryIdentity,
-                    'checkout_path' => $inventory->checkoutPath,
-                    'root' => $snapshot->effectiveRoot(),
-                    'branch' => $inventory->branch,
-                    'starting_commit' => $inventory->startingCommit,
-                    'common_repository_path' => $inventory->commonRepositoryPath,
-                    'source_identity' => $inventory->sourceIdentity,
-                    'linked_worktree_paths' => $inventory->linkedWorktreePaths,
-                    'source_digest' => $inventory->digest,
-                ]);
-            $locked->update(['status' => AppInstanceState::Removing]);
+
+            foreach ($members as $position => $member) {
+                $inventory = $inventories[$member->id];
+                $operation
+                    ->members()
+                    ->create([
+                        'position' => $position,
+                        'app_instance_id' => $member->id,
+                        'app_id' => $member->app_id,
+                        'node_id' => $member->node_id,
+                        'route_id' => $member->routes->sole()->id,
+                        'name' => $member->name,
+                        'environment' => $member->environment,
+                        'source_layout' => $inventory->layout,
+                        'repository_identity' => $inventory->repositoryIdentity,
+                        'checkout_path' => $inventory->checkoutPath,
+                        'root' => $member->effectiveRoot(),
+                        'branch' => $inventory->branch,
+                        'starting_commit' => $inventory->startingCommit,
+                        'common_repository_path' => $inventory->commonRepositoryPath,
+                        'source_identity' => $inventory->sourceIdentity,
+                        'linked_worktree_paths' => $inventory->linkedWorktreePaths,
+                        'source_digest' => $inventory->digest,
+                    ]);
+            }
+
+            AppInstance::query()
+                ->whereKey($members->pluck('id'))
+                ->update(['status' => AppInstanceState::Removing->value]);
 
             return $operation->load('members');
         });
@@ -214,13 +226,140 @@ final readonly class RemoveAppInstanceAction
             );
         }
 
-        if ($appInstance->source_layout !== AppInstanceSourceLayout::Checkout->value) {
+        if (! in_array(
+            $appInstance->source_layout,
+            [AppInstanceSourceLayout::Checkout->value, AppInstanceSourceLayout::Worktree->value],
+            true,
+        )) {
             throw new ResourceOperationException(
                 errorCode: 'instance.remove_refused',
-                message: 'Worktree AppInstance removal is not available.',
+                message: 'AppInstance source layout is not removable.',
                 status: 409,
             );
         }
+    }
+
+    /**
+     * @return array{Collection<int, AppInstance>, array<int, AppInstanceSourceInventory>}
+     */
+    private function deletionSet(AppInstance $requested, bool $force): array
+    {
+        $this->assertMemberPathAvailable($requested);
+        $requestedInventory = $this->inspect($requested, $force);
+        $this->assertMemberPathAvailable($requested);
+        /** @var Collection<int, AppInstance> $members */
+        $members = collect([$requested]);
+
+        if ($requested->source_layout === AppInstanceSourceLayout::Checkout->value) {
+            $registered = AppInstance::query()
+                ->with(['app', 'node', 'routes.targets'])
+                ->where('node_id', $requested->node_id)
+                ->whereIn('checkout_path', $requestedInventory->linkedWorktreePaths)
+                ->get();
+
+            if ($registered->count() !== count($requestedInventory->linkedWorktreePaths)) {
+                throw new ResourceOperationException(
+                    errorCode: 'instance.remove_refused',
+                    message: 'Every linked worktree must be a registered AppInstance before removal.',
+                    status: 409,
+                );
+            }
+
+            if ($registered->count() > 1 && ! $force) {
+                throw new ResourceOperationException(
+                    errorCode: 'instance.remove_refused',
+                    message: 'The checkout has registered linked worktrees; retry with --force.',
+                    status: 409,
+                );
+            }
+
+            if ($force) {
+                $members = collect(
+                    $registered
+                        ->sortBy(static fn (AppInstance $member): string => sprintf(
+                            '%d:%s',
+                            $member->source_layout === AppInstanceSourceLayout::Checkout->value ? 1 : 0,
+                            $member->checkout_path,
+                        ))
+                        ->values()
+                        ->all(),
+                );
+            }
+        }
+
+        /** @var array<int, AppInstanceSourceInventory> $inventories */
+        $inventories = [];
+
+        foreach ($members as $member) {
+            $member->loadMissing(['app', 'node', 'routes.targets']);
+            $this->assertSupported($member);
+
+            if (
+                $member->node_id !== $requested->node_id
+                || $member->app_id !== $requested->app_id
+                || $member->app->repository_identity !== $requested->app->repository_identity
+            ) {
+                throw new ResourceOperationException(
+                    errorCode: 'instance.remove_refused',
+                    message: "AppInstance [{$member->name}] is not owned by the requested source set.",
+                    status: 409,
+                );
+            }
+
+            $this->route($member);
+            $this->assertMemberPathAvailable($member);
+            $inventory = $member->id === $requested->id
+                ? $requestedInventory
+                : $this->inspect($member, $force);
+            $this->assertMemberPathAvailable($member);
+
+            if (
+                $requested->source_layout === AppInstanceSourceLayout::Checkout->value
+                && ($inventory->linkedWorktreePaths !== $requestedInventory->linkedWorktreePaths
+                || $inventory->commonRepositoryPath !== $requestedInventory->commonRepositoryPath)
+            ) {
+                throw new ResourceOperationException(
+                    errorCode: 'instance.remove_refused',
+                    message: 'The linked-worktree inventory is inconsistent.',
+                    status: 409,
+                );
+            }
+
+            $inventories[$member->id] = $inventory;
+        }
+
+        if (
+            $requested->source_layout === AppInstanceSourceLayout::Checkout->value
+            && $members->where('source_layout', AppInstanceSourceLayout::Checkout->value)->count() !== 1
+        ) {
+            throw new ResourceOperationException(
+                errorCode: 'instance.remove_refused',
+                message: 'The linked-worktree inventory does not identify one common checkout.',
+                status: 409,
+            );
+        }
+
+        return [$members, $inventories];
+    }
+
+    private function assertMemberPathAvailable(AppInstance $member): void
+    {
+        $path = StoragePath::tryParse($member->checkout_path);
+
+        if (! $path instanceof StoragePath) {
+            throw new ResourceOperationException(
+                errorCode: 'instance.checkout_path_unsafe',
+                message: "AppInstance [{$member->name}] has an unsafe checkout path.",
+                status: 409,
+            );
+        }
+
+        $this->checkoutOverlap->assertAvailable(
+            $member->node_id,
+            $path,
+            'instance.checkout_path_unsafe',
+            ignoreAppInstanceId: $member->id,
+        );
     }
 
     private function route(AppInstance $appInstance): Route
@@ -300,17 +439,24 @@ final readonly class RemoveAppInstanceAction
         AppInstanceRemovalStep $step,
     ): void {
         match ($step) {
-            AppInstanceRemovalStep::SourcePreparation => $this->prepareSource($member),
+            AppInstanceRemovalStep::SourcePreparation => $this->prepareSource($operation, $member),
             AppInstanceRemovalStep::RouteTargetClear => $this->clearRoute($member),
-            AppInstanceRemovalStep::SourceFinalization => $this->finalizeSource($member),
+            AppInstanceRemovalStep::SourceFinalization => $this->finalizeSource($operation, $member),
             AppInstanceRemovalStep::RuntimeCleanup => $this->cleanupRuntime($member),
             AppInstanceRemovalStep::RowDeletion => $this->deleteRow($operation, $member),
         };
     }
 
-    private function prepareSource(AppInstanceRemovalMember $member): void
-    {
-        $this->sourceFinalizer->prepare($member);
+    private function prepareSource(
+        AppInstanceRemoval $operation,
+        AppInstanceRemovalMember $member,
+    ): void {
+        $expectation = $this->expectationFor(
+            $member,
+            $operation->members()->orderBy('position')->get(),
+            [],
+        );
+        $this->sourceFinalizer->prepare($member, $expectation);
         $member->update(['source_prepared_at' => now()]);
     }
 
@@ -320,10 +466,12 @@ final readonly class RemoveAppInstanceAction
         $member->update(['route_cleared_at' => now(), 'route_outcome' => $outcome]);
     }
 
-    private function finalizeSource(AppInstanceRemovalMember $member): void
-    {
-        $this->sourceFinalizer->revalidate($member);
-        $receipt = $this->sourceFinalizer->finalize($member);
+    private function finalizeSource(
+        AppInstanceRemoval $operation,
+        AppInstanceRemovalMember $member,
+    ): void {
+        $expectation = $this->revalidateUnfinishedSources($operation, $member);
+        $receipt = $this->sourceFinalizer->finalize($member, $expectation);
         $member->update(['source_finalized_at' => now(), 'finalization_receipt' => $receipt]);
     }
 
@@ -340,6 +488,11 @@ final readonly class RemoveAppInstanceAction
             $lockedMember = $lockedOperation->members()->lockForUpdate()->findOrFail($member->id);
             AppInstance::query()->lockForUpdate()->findOrFail($member->app_instance_id)->delete();
             $lockedMember->update(['row_deleted_at' => now()]);
+
+            if ($lockedOperation->members()->whereNull('row_deleted_at')->exists()) {
+                return;
+            }
+
             $lockedOperation->update([
                 'status' => AppInstanceRemovalStatus::Completed,
                 'current_step' => null,
@@ -357,7 +510,99 @@ final readonly class RemoveAppInstanceAction
             return;
         }
 
-        $this->sourceFinalizer->revalidate($member);
+        $this->revalidateUnfinishedSources($operation, $member);
+    }
+
+    private function revalidateUnfinishedSources(
+        AppInstanceRemoval $operation,
+        AppInstanceRemovalMember $current,
+    ): AppInstanceSourceRevalidationExpectation {
+        $members = $operation->members()->orderBy('position')->get();
+        $developmentNodeIds = $members
+            ->where('environment', 'development')
+            ->whereNull('source_finalized_at')
+            ->pluck('node_id')
+            ->unique()
+            ->values();
+
+        if ($developmentNodeIds->count() !== 1) {
+            throw new ResourceOperationException(
+                errorCode: 'instance.removal_conflict',
+                message: 'The recorded removal does not have one development source lock.',
+                status: 409,
+            );
+        }
+
+        return $this->sourceLock->synchronized(
+            (int) $developmentNodeIds->sole(),
+            fn (): AppInstanceSourceRevalidationExpectation => $this->revalidateUnfinishedSourcesLocked(
+                $members,
+                $current,
+            ),
+        );
+    }
+
+    /**
+     * @param Collection<int, AppInstanceRemovalMember> $members
+     */
+    private function revalidateUnfinishedSourcesLocked(
+        Collection $members,
+        AppInstanceRemovalMember $current,
+    ): AppInstanceSourceRevalidationExpectation {
+        /** @var array<int, AppInstanceSourceRevalidationState> $states */
+        $states = [];
+
+        foreach ($members->whereNull('source_finalized_at') as $member) {
+            $expectation = $this->expectationFor($current, $members, $states);
+            $states[$member->id] = $this->sourceFinalizer->revalidate($member, $expectation);
+        }
+
+        return $this->expectationFor($current, $members, $states);
+    }
+
+    /**
+     * @param Collection<int, AppInstanceRemovalMember> $members
+     * @param array<int, AppInstanceSourceRevalidationState> $states
+     */
+    private function expectationFor(
+        AppInstanceRemovalMember $current,
+        Collection $members,
+        array $states,
+    ): AppInstanceSourceRevalidationExpectation {
+        $required = $current->linked_worktree_paths;
+        $permitted = $current->linked_worktree_paths;
+
+        foreach ($members as $member) {
+            if (
+                $member->common_repository_path !== $current->common_repository_path
+                || ! is_string($member->checkout_path)
+            ) {
+                continue;
+            }
+
+            $state = $states[$member->id] ?? null;
+
+            if (
+                $member->source_finalized_at !== null
+                || $state === AppInstanceSourceRevalidationState::Completed
+            ) {
+                $required = array_values(array_diff($required, [$member->checkout_path]));
+                $permitted = array_values(array_diff($permitted, [$member->checkout_path]));
+
+                continue;
+            }
+
+            if ($state === AppInstanceSourceRevalidationState::ReceiptPendingCleanup) {
+                $required = array_values(array_diff($required, [$member->checkout_path]));
+            }
+        }
+
+        $required = array_values(array_unique($required));
+        $permitted = array_values(array_unique($permitted));
+        sort($required, SORT_STRING);
+        sort($permitted, SORT_STRING);
+
+        return new AppInstanceSourceRevalidationExpectation($required, $permitted, $states);
     }
 
     private function stepComplete(AppInstanceRemovalMember $member, AppInstanceRemovalStep $step): bool
@@ -384,16 +629,23 @@ final readonly class RemoveAppInstanceAction
         return AppInstanceRemovalStep::RowDeletion;
     }
 
-    private function inventoryDigest(int $requestedId, bool $force, AppInstanceSourceInventory $inventory): string
+    /** @param array<int, AppInstanceSourceInventory> $inventories */
+    private function inventoryDigest(int $requestedId, bool $force, array $inventories): string
     {
-        return hash('sha256', json_encode([
-            'requested_id' => $requestedId,
-            'force' => $force,
-            'members' => [[
+        $members = collect($inventories)
+            ->sortKeys()
+            ->map(static fn (AppInstanceSourceInventory $inventory): array => [
                 'id' => $inventory->appInstanceId,
                 'digest' => $inventory->digest,
                 'worktrees' => $inventory->linkedWorktreePaths,
-            ]],
+            ])
+            ->values()
+            ->all();
+
+        return hash('sha256', json_encode([
+            'requested_id' => $requestedId,
+            'force' => $force,
+            'members' => $members,
         ], JSON_THROW_ON_ERROR));
     }
 
