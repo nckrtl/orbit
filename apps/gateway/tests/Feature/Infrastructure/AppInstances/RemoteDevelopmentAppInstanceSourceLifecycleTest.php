@@ -2,12 +2,16 @@
 
 declare(strict_types=1);
 
+use App\Actions\AppInstances\RemoveAppInstanceAction;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\AppInstances\Removal\AppInstanceRemovalException;
+use App\Domain\AppInstances\Removal\AppInstanceRemovalProjector;
 use App\Domain\AppInstances\Removal\AppInstanceSourceRevalidationState;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\Storage\CheckoutRemovalBoundary;
+use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
 use App\Domain\Nodes\Storage\ProtectedPathCatalog;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
@@ -88,11 +92,12 @@ beforeEach(function (): void {
         $accounts,
         new CheckoutRemovalBoundary(new ProtectedPathCatalog),
     );
+    $this->sourceLock = new NativeAppDevSourceOperationLock($this->sandbox.'/locks');
     $this->removal = new RemoteDevelopmentAppInstanceSourceRemoval(
         $ssh,
         $accounts,
         new CheckoutRemovalBoundary(new ProtectedPathCatalog),
-        new NativeAppDevSourceOperationLock($this->sandbox.'/locks'),
+        $this->sourceLock,
     );
 
     $this->node = Node::query()->create([
@@ -318,6 +323,102 @@ it('keeps the Git index byte-for-byte unchanged through clean inspection and lat
         ->toBe('');
 });
 
+it('accepts a published HEAD behind an unfetched descendant on a differently named current ref', function (): void {
+    $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
+    $this->source->prepare($instance, false);
+    $resolution = $this->source->resolve($instance);
+    $instance->update([
+        'branch' => $resolution->branch,
+        'starting_commit' => $resolution->startingCommit,
+        'status' => AppInstanceState::SourceResolved,
+    ]);
+    $beforeRefs = orb76_run(['git', '-C', $instance->checkout_path, 'show-ref'])->stdout;
+    $beforeIndex = file_get_contents($instance->checkout_path.'/.git/index');
+    $tip = orb124_advance_remote($this->sandbox, 'published-descendant');
+    orb76_run(['git', '--git-dir='.$this->repository, 'update-ref', '-d', 'refs/heads/main']);
+    orb76_run(['git', '--git-dir='.$this->repository, 'update-ref', '-d', 'refs/heads/dev']);
+
+    expect(
+        orb76_run_allow_failure([
+            'git',
+            '-C',
+            $instance->checkout_path,
+            'cat-file',
+            '-e',
+            "{$tip}^{commit}",
+        ])->succeeded(),
+    )
+        ->toBeFalse()
+        ->and($this->removal->inspect($instance, false)->startingCommit)
+        ->toBe($resolution->startingCommit)
+        ->and(orb76_run(['git', '-C', $instance->checkout_path, 'show-ref'])->stdout)
+        ->toBe($beforeRefs)
+        ->and(file_get_contents($instance->checkout_path.'/.git/index'))
+        ->toBe($beforeIndex)
+        ->and(
+            orb76_run_allow_failure([
+                'git',
+                '-C',
+                $instance->checkout_path,
+                'cat-file',
+                '-e',
+                "{$tip}^{commit}",
+            ])->succeeded(),
+        )
+        ->toBeFalse();
+});
+
+it('rechecks an unfetched advertised descendant before normal finalization', function (): void {
+    $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
+    $this->source->prepare($instance, false);
+    $resolution = $this->source->resolve($instance);
+    $instance->update([
+        'branch' => $resolution->branch,
+        'starting_commit' => $resolution->startingCommit,
+        'status' => AppInstanceState::SourceResolved,
+    ]);
+    $member = orb124_prepare_remove_source($this->removal, $instance, false);
+    $member->update(['source_prepared_at' => now()]);
+    $tip = orb124_advance_remote($this->sandbox, 'advanced-after-acceptance');
+    orb76_run(['git', '--git-dir='.$this->repository, 'update-ref', '-d', 'refs/heads/main']);
+    orb76_run(['git', '--git-dir='.$this->repository, 'update-ref', '-d', 'refs/heads/dev']);
+
+    expect(
+        orb76_run_allow_failure([
+            'git',
+            '-C',
+            $instance->checkout_path,
+            'cat-file',
+            '-e',
+            "{$tip}^{commit}",
+        ])->succeeded(),
+    )
+        ->toBeFalse()
+        ->and($this->removal->finalize($member))
+        ->toBe(hash(
+            'sha256',
+            "{$member->app_instance_removal_id}\0{$member->id}\0{$member->source_digest}\0finalized",
+        ))
+        ->and(file_exists($instance->checkout_path))
+        ->toBeFalse();
+});
+
+it('does not contact an unavailable valid origin during forced inspection or finalization', function (): void {
+    $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
+    $this->source->prepare($instance, false);
+    $resolution = $this->source->resolve($instance);
+    $instance->update([
+        'branch' => $resolution->branch,
+        'starting_commit' => $resolution->startingCommit,
+        'status' => AppInstanceState::SourceResolved,
+    ]);
+    expect(rename($this->repository, $this->repository.'.unavailable'))->toBeTrue();
+
+    orb124_remove_source($this->removal, $instance, true);
+
+    expect(file_exists($instance->checkout_path))->toBeFalse();
+});
+
 it('does not let force waive origin or symlink identity checks', function (string $mutation): void {
     $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
     $this->source->prepare($instance, false);
@@ -468,6 +569,90 @@ it('resumes authenticated quarantine before or after receipt creation', function
     'before receipt' => false,
     'after receipt' => true,
 ]);
+
+it('refuses changed quarantined source before deletion', function (string $mutation, bool $force): void {
+    $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
+    $this->source->prepare($instance, false);
+    $resolution = $this->source->resolve($instance);
+    $instance->update([
+        'branch' => $resolution->branch,
+        'starting_commit' => $resolution->startingCommit,
+        'status' => AppInstanceState::SourceResolved,
+    ]);
+    $member = orb124_prepare_remove_source($this->removal, $instance, $force);
+    $member->update(['source_prepared_at' => now()]);
+    $quarantine = "{$member->root}/.orbit-removals/{$member->app_instance_removal_id}.{$member->id}.quarantine";
+    expect(rename($instance->checkout_path, $quarantine))->toBeTrue();
+
+    match ($mutation) {
+        'dirty' => file_put_contents($quarantine.'/dirty.txt', 'changed after quarantine'),
+        'unpublished' => orb124_commit_unpublished($quarantine),
+        'origin' => orb76_run([
+            'git',
+            '-C',
+            $quarantine,
+            'remote',
+            'set-url',
+            'origin',
+            $this->sandbox.'/distinct.git',
+        ]),
+        'branch' => orb76_run(['git', '-C', $quarantine, 'branch', '-m', 'changed-after-quarantine']),
+    };
+
+    expect(fn () => $this->removal->revalidate($member))
+        ->toThrow(RuntimeConvergenceException::class)
+        ->and(is_dir($quarantine))
+        ->toBeTrue();
+})->with([
+    'dirty normal source' => ['dirty', false],
+    'unpublished normal source' => ['unpublished', false],
+    'different origin under force' => ['origin', true],
+    'different branch under force' => ['branch', true],
+]);
+
+it('refuses a new unregistered worktree added to an authenticated quarantined checkout', function (): void {
+    $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
+    $this->source->prepare($instance, false);
+    $resolution = $this->source->resolve($instance);
+    $instance->update([
+        'branch' => $resolution->branch,
+        'starting_commit' => $resolution->startingCommit,
+        'status' => AppInstanceState::SourceResolved,
+    ]);
+    $member = orb124_prepare_remove_source($this->removal, $instance, true);
+    $member->update(['source_prepared_at' => now()]);
+    $instance->update(['status' => AppInstanceState::Removing]);
+    $quarantine = "{$member->root}/.orbit-removals/{$member->app_instance_removal_id}.{$member->id}.quarantine";
+    $newWorktree = $this->appsRoot.'/acme/unregistered-after-quarantine';
+    expect(rename($instance->checkout_path, $quarantine))->toBeTrue();
+    orb76_run(['git', '-C', $quarantine, 'worktree', 'add', '-b', 'late-worktree', $newWorktree, 'HEAD']);
+    $projector = new class implements AppInstanceRemovalProjector {
+        public function clearRouteTarget(AppInstanceRemovalMember $member): string
+        {
+            throw new LogicException('Route mutation must not run after source revalidation refusal.');
+        }
+
+        public function cleanupRuntime(AppInstanceRemovalMember $member): void
+        {
+            throw new LogicException('Runtime cleanup must not run after source revalidation refusal.');
+        }
+    };
+    $action = new RemoveAppInstanceAction(
+        $this->removal,
+        $projector,
+        new ManagedCheckoutOverlap,
+        $this->sourceLock,
+    );
+
+    expect(fn () => $action->execute($instance->refresh(), true))
+        ->toThrow(AppInstanceRemovalException::class)
+        ->and(is_dir($quarantine))
+        ->toBeTrue()
+        ->and(is_dir($newWorktree))
+        ->toBeTrue()
+        ->and($member->removal()->firstOrFail()->refresh()->error_code)
+        ->toBe('instance.removal_conflict');
+});
 
 it('accepts an absent source only with its matching durable completion receipt', function (): void {
     $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
@@ -720,6 +905,34 @@ function orb76_run(array $arguments, ?string $input = null): CommandResult
     expect($result->succeeded())->toBeTrue($result->stderr);
 
     return $result;
+}
+
+/** @param non-empty-list<string> $arguments */
+function orb76_run_allow_failure(array $arguments): CommandResult
+{
+    return new NativeProcessRunner()->run(new ProcessInvocation($arguments));
+}
+
+function orb124_advance_remote(string $sandbox, string $ref): string
+{
+    $work = $sandbox.'/work';
+    file_put_contents($work.'/README.md', "{$ref}\n", FILE_APPEND);
+    orb76_run(['git', '-C', $work, 'add', 'README.md']);
+    orb76_run(['git', '-C', $work, 'commit', '-m', "Advance {$ref}"]);
+    orb76_run(['git', '-C', $work, 'push', 'origin', "HEAD:refs/heads/{$ref}"]);
+
+    return trim(orb76_run(['git', '-C', $work, 'rev-parse', 'HEAD'])->stdout);
+}
+
+function orb124_commit_unpublished(string $checkout): int
+{
+    orb76_run(['git', '-C', $checkout, 'config', 'user.name', 'Orbit Test']);
+    orb76_run(['git', '-C', $checkout, 'config', 'user.email', 'orbit@example.test']);
+    file_put_contents($checkout.'/unpublished.txt', 'unpublished after quarantine');
+    orb76_run(['git', '-C', $checkout, 'add', 'unpublished.txt']);
+    orb76_run(['git', '-C', $checkout, 'commit', '-m', 'Unpublished after quarantine']);
+
+    return 1;
 }
 
 final class Orb76LocalSourceSshExecutor implements \App\Infrastructure\Ssh\SshExecutor

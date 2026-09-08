@@ -23,7 +23,7 @@ The two modes differ only at the destructive source boundary.
 | Normal | Refuses dirty source or a HEAD that no current advertised origin branch or tag contains, and refuses a checkout while an Orbit-owned linked-worktree AppInstance remains. |
 | Forced | May delete dirty or unpublished source and may include every Orbit-owned linked-worktree AppInstance in one fixed cascade. |
 
-Forced removal does not waive source-layout, repository-identity, ownership, path, containment, symlink, overlap, common-repository, or linked-worktree inventory checks. Normal preflight reads current advertised origin refs without fetching, pruning, taking optional Git locks, refreshing the index, or changing the requested repository, and the containing origin ref does not need to match the local branch name. Orbit never deletes a remote branch. Removing a worktree retains its local branch and common repository.
+Forced removal does not waive source-layout, repository-identity, ownership, path, containment, symlink, overlap, common-repository, or linked-worktree inventory checks. Normal preflight reads current advertised origin refs into a temporary object store outside the requested repository. It does not fetch into, prune, take optional Git locks in, refresh the index of, or otherwise change the requested repository. The containing origin ref does not need to match the local branch name. Forced removal validates the configured origin identity locally and does not require origin reachability. Orbit never deletes a remote branch. Removing a worktree retains its local branch and common repository.
 
 ## Preflight the complete deletion set
 
@@ -70,7 +70,9 @@ The API, PHP SDK, CLI human output, CLI JSON output, and activity use one bounde
 
 Repeating the same removal request resumes the first unfinished step. Before deleting more source, the Gateway revalidates every unfinished member against the recorded inventory. It refuses a changed force value, replacement directory, changed repository identity, changed cascade, unsafe path, or request for a member owned by another removal. A retry after final-target Route deletion continues cleanup without recreating the Route or reclaiming its hostname.
 
-Durable finalization evidence binds the recorded physical source identity to its outcome. A retry authenticates every unfinished member under the Node source lock and normalizes only exact operation-owned quarantine or completion paths in the fixed linked-worktree set. It resumes an authenticated source in quarantine before a receipt, after a receipt, or after deletion before the database checkpoint. It accepts an absent source only when matching completion evidence proves that the same removal finalized it. An unrelated new worktree, absent evidence, ambiguous source, mismatch, or equivalent replacement source remains a refusal.
+Durable finalization evidence binds the recorded physical source identity to its outcome. A retry authenticates every unfinished member under the Node source lock and normalizes only exact operation-owned quarantine or completion paths in the fixed linked-worktree set. Before it deletes an authenticated quarantine, it repeats the applicable clean-and-published check and every recorded source, ownership, layout, containment, common-repository, physical-identity, and fixed-worktree check against that exact relocated path.
+
+Orbit resumes a matching quarantine before a receipt, after a receipt, or after deletion before the database checkpoint. It accepts an absent source only when matching completion evidence proves that the same removal finalized it. An unrelated new worktree, absent evidence, ambiguous source, mismatch, or equivalent replacement source remains a refusal.
 
 ## Limits
 

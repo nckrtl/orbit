@@ -17,6 +17,7 @@ use App\Domain\SourceControl\GitRepositoryIdentity;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\AppInstance;
+use App\Models\AppInstanceRemoval;
 use App\Models\AppInstanceRemovalMember;
 use App\Models\Node;
 
@@ -106,22 +107,32 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
         return $this->lock->synchronized($member->node_id, function () use (
             $member,
         ): AppInstanceSourceRevalidationState {
-            if ($member->source_prepared_at === null) {
-                $this->revalidateLocked($member);
+            $state = $member->source_prepared_at === null
+                ? AppInstanceSourceRevalidationState::Present
+                : $this->revalidationStateLocked($member);
 
-                return AppInstanceSourceRevalidationState::Present;
+            if ($state !== AppInstanceSourceRevalidationState::Completed) {
+                $this->inspectRecordedLocked($member, $state);
             }
-
-            $state = $this->revalidationStateLocked($member);
-
-            if ($state !== AppInstanceSourceRevalidationState::Present) {
-                return $state;
-            }
-
-            $this->revalidateLocked($member);
 
             return $state;
         });
+    }
+
+    public function inspectRecorded(
+        AppInstanceRemovalMember $member,
+        AppInstanceSourceRevalidationState $state,
+    ): AppInstanceSourceInventory {
+        if ($member->environment === 'production') {
+            $appInstance = AppInstance::query()->with(['app', 'node'])->findOrFail($member->app_instance_id);
+
+            return $this->productionInventory($appInstance);
+        }
+
+        return $this->lock->synchronized(
+            $member->node_id,
+            fn (): AppInstanceSourceInventory => $this->inspectRecordedLocked($member, $state),
+        );
     }
 
     public function finalize(AppInstanceRemovalMember $member): string
@@ -131,6 +142,12 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
         }
 
         return $this->lock->synchronized($member->node_id, function () use ($member): string {
+            $state = $this->revalidationStateLocked($member);
+
+            if ($state !== AppInstanceSourceRevalidationState::Completed) {
+                $this->inspectRecordedLocked($member, $state);
+            }
+
             [$node, $account] = $this->memberContext($member);
             $removal = $member->removal()->firstOrFail();
             $receipt = hash(
@@ -180,93 +197,34 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
     private function inspectLocked(AppInstance $appInstance, bool $force): AppInstanceSourceInventory
     {
         $context = $this->sourceContext($appInstance);
-        $result = $this->ssh->execute(
-            $appInstance->node,
-            new RemoteCommand(
-                arguments: [
-                    'bash',
-                    '-seu',
-                    '--',
-                    $appInstance->checkout_path,
-                    $context['root']->value,
-                    $context['account']->user,
-                    $context['account']->group,
-                    $appInstance->source_layout,
-                    (string) $appInstance->branch,
-                    (string) $appInstance->starting_commit,
-                    $force ? '1' : '0',
-                ],
-                input: self::inspectionScript(),
-            ),
-            step: 'app-instance-source-removal-inspect',
-            errorCode: 'instance.remove_refused',
-        );
 
-        $values = preg_split('/\R/', trim($result->stdout));
-
-        if (! is_array($values) || count($values) !== 9) {
-            $this->invalidEvidence($appInstance);
-        }
-
-        [$top, $common, $origin, $branch, $commit, $dirty, $published, $sourceIdentity, $worktrees] = array_map(
-            fn (string $value): string => $this->decode($value, $appInstance),
-            $values,
-        );
-        $checkout = StoragePath::tryParse($top);
-        $commonPath = StoragePath::tryParse($common);
-
-        if (
-            ! $checkout instanceof StoragePath
-            || ! $commonPath instanceof StoragePath
-            || $checkout->value !== $appInstance->checkout_path
-            || $branch !== $appInstance->branch
-            || ! in_array($dirty, ['0', '1'], true)
-            || ! in_array($published, ['0', '1'], true)
-        ) {
-            $this->invalidEvidence($appInstance);
-        }
-
-        try {
-            $repositoryIdentity = GitRepositoryIdentity::derive($origin);
-        } catch (\InvalidArgumentException) {
-            $this->invalidEvidence($appInstance);
-        }
-
-        if ($repositoryIdentity !== $appInstance->app->repository_identity) {
-            $this->invalidEvidence($appInstance);
-        }
-
-        $linkedWorktrees = $this->worktreePaths($worktrees, $appInstance);
-        $commonRepository = dirname($commonPath->value);
-        $payload = [
-            'app_instance_id' => $appInstance->id,
-            'layout' => $appInstance->source_layout,
-            'repository_identity' => $repositoryIdentity,
-            'checkout_path' => $checkout->value,
-            'root' => $context['root']->value,
-            'branch' => $branch,
-            'starting_commit' => $commit,
-            'common_repository_path' => $commonRepository,
-            'source_identity' => $sourceIdentity,
-        ];
-
-        return new AppInstanceSourceInventory(
-            appInstanceId: $appInstance->id,
+        return $this->inspectPathLocked(
+            appInstance: $appInstance,
+            physicalCheckout: $appInstance->checkout_path,
+            logicalCheckout: $appInstance->checkout_path,
+            root: $context['root'],
+            user: $context['account']->user,
+            group: $context['account']->group,
             layout: $appInstance->source_layout,
-            repositoryIdentity: $repositoryIdentity,
-            checkoutPath: $checkout->value,
-            root: $context['root']->value,
-            branch: $branch,
-            startingCommit: $commit,
-            commonRepositoryPath: $commonRepository,
-            sourceIdentity: $sourceIdentity,
-            linkedWorktreePaths: $linkedWorktrees,
-            digest: hash('sha256', json_encode($payload, JSON_THROW_ON_ERROR)),
+            branch: (string) $appInstance->branch,
+            startingCommit: (string) $appInstance->starting_commit,
+            expectedRepositoryIdentity: $appInstance->app->repository_identity,
+            force: $force,
         );
     }
 
-    private function revalidateLocked(AppInstanceRemovalMember $member): void
-    {
+    private function inspectRecordedLocked(
+        AppInstanceRemovalMember $member,
+        AppInstanceSourceRevalidationState $state,
+    ): AppInstanceSourceInventory {
+        if ($state === AppInstanceSourceRevalidationState::Completed) {
+            throw new RuntimeConvergenceException(
+                step: 'app-instance-removal-revalidation',
+                errorCode: 'instance.removal_conflict',
+                message: 'A completed source has no inspectable source inventory.',
+            );
+        }
+
         $appInstance = AppInstance::query()->with(['app', 'node'])->find($member->app_instance_id);
 
         if (! $appInstance instanceof AppInstance) {
@@ -277,16 +235,166 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
             );
         }
 
-        $force = (bool) $member->removal()->firstOrFail()->force;
-        $inventory = $this->inspectLocked($appInstance, $force);
+        $context = $this->sourceContext($appInstance);
+        $logicalCheckout = (string) $member->checkout_path;
+        $quarantine = $this->quarantinePath($member);
+        $physicalCheckout = $state === AppInstanceSourceRevalidationState::Present
+            ? $logicalCheckout
+            : $quarantine;
+        $removal = $member->removal()->firstOrFail();
+        $inventory = $this->inspectPathLocked(
+            appInstance: $appInstance,
+            physicalCheckout: $physicalCheckout,
+            logicalCheckout: $logicalCheckout,
+            root: $context['root'],
+            user: $context['account']->user,
+            group: $context['account']->group,
+            layout: $member->source_layout,
+            branch: (string) $member->branch,
+            startingCommit: (string) $member->starting_commit,
+            expectedRepositoryIdentity: (string) $member->repository_identity,
+            force: (bool) $removal->force,
+            quarantineMappings: $this->quarantineMappings($member),
+        );
 
-        if ($inventory->digest !== $member->source_digest) {
+        if (
+            $member->root !== $context['root']->value
+            || $appInstance->checkout_path !== $logicalCheckout
+            || $appInstance->source_layout !== $member->source_layout
+            || $appInstance->app->repository_identity !== $member->repository_identity
+            || $inventory->digest !== $member->source_digest
+        ) {
             throw new RuntimeConvergenceException(
                 step: 'app-instance-removal-revalidation',
                 errorCode: 'instance.removal_conflict',
                 message: "AppInstance [{$member->name}] source identity changed after removal acceptance.",
             );
         }
+
+        return $inventory;
+    }
+
+    /**
+     * @param array<string, string> $quarantineMappings
+     * @mago-expect lint:excessive-parameter-list Source inspection keeps each recorded identity field explicit.
+     */
+    private function inspectPathLocked(
+        AppInstance $appInstance,
+        string $physicalCheckout,
+        string $logicalCheckout,
+        StoragePath $root,
+        string $user,
+        string $group,
+        string $layout,
+        string $branch,
+        string $startingCommit,
+        string $expectedRepositoryIdentity,
+        bool $force,
+        array $quarantineMappings = [],
+    ): AppInstanceSourceInventory {
+        $result = $this->ssh->execute(
+            $appInstance->node,
+            new RemoteCommand(
+                arguments: [
+                    'bash',
+                    '-seu',
+                    '--',
+                    $physicalCheckout,
+                    $root->value,
+                    $user,
+                    $group,
+                    $layout,
+                    $branch,
+                    $startingCommit,
+                ],
+                input: self::inspectionScript(),
+            ),
+            step: 'app-instance-source-removal-inspect',
+            errorCode: 'instance.remove_refused',
+        );
+
+        $values = preg_split('/\R/', trim($result->stdout));
+
+        if (! is_array($values) || count($values) !== 8) {
+            $this->invalidEvidence($appInstance);
+        }
+
+        [$top, $common, $origin, $actualBranch, $commit, $dirty, $sourceIdentity, $worktrees] = array_map(
+            fn (string $value): string => $this->decode($value, $appInstance),
+            $values,
+        );
+        $top = $top === $physicalCheckout ? $logicalCheckout : $top;
+        $common = $common === $physicalCheckout.'/.git' ? $logicalCheckout.'/.git' : $common;
+        $checkout = StoragePath::tryParse($top);
+        $commonPath = StoragePath::tryParse($common);
+
+        if (
+            ! $checkout instanceof StoragePath
+            || ! $commonPath instanceof StoragePath
+            || $checkout->value !== $logicalCheckout
+            || $actualBranch !== $branch
+            || ! in_array($dirty, ['0', '1'], true)
+        ) {
+            $this->invalidEvidence($appInstance);
+        }
+
+        try {
+            $repositoryIdentity = GitRepositoryIdentity::derive($origin);
+        } catch (\InvalidArgumentException) {
+            $this->invalidEvidence($appInstance);
+        }
+
+        if ($repositoryIdentity !== $expectedRepositoryIdentity) {
+            $this->invalidEvidence($appInstance);
+        }
+
+        $published = $force ? '0' : ($this->isPublishedLocked($appInstance, $origin, $commit) ? '1' : '0');
+
+        if (! $force && ($dirty !== '0' || $published !== '1')) {
+            throw new RuntimeConvergenceException(
+                step: 'app-instance-source-removal-inspect',
+                errorCode: 'instance.remove_refused',
+                message: "AppInstance [{$appInstance->name}] has dirty or unpublished source.",
+            );
+        }
+
+        $linkedWorktrees = $this->worktreePaths(
+            $worktrees,
+            $appInstance,
+            $logicalCheckout,
+            $quarantineMappings,
+        );
+        $commonRepository = dirname($commonPath->value);
+        $payload = [
+            'app_instance_id' => $appInstance->id,
+            'layout' => $appInstance->source_layout,
+            'repository_identity' => $repositoryIdentity,
+            'checkout_path' => $checkout->value,
+            'root' => $root->value,
+            'branch' => $actualBranch,
+            'starting_commit' => $commit,
+            'common_repository_path' => $commonRepository,
+            'source_identity' => $sourceIdentity,
+        ];
+
+        return new AppInstanceSourceInventory(
+            appInstanceId: $appInstance->id,
+            layout: $appInstance->source_layout,
+            repositoryIdentity: $repositoryIdentity,
+            checkoutPath: $checkout->value,
+            root: $root->value,
+            branch: $actualBranch,
+            startingCommit: $commit,
+            commonRepositoryPath: $commonRepository,
+            sourceIdentity: $sourceIdentity,
+            linkedWorktreePaths: $linkedWorktrees,
+            digest: hash('sha256', json_encode($payload, JSON_THROW_ON_ERROR)),
+        );
+    }
+
+    private function revalidateLocked(AppInstanceRemovalMember $member): void
+    {
+        $this->inspectRecordedLocked($member, AppInstanceSourceRevalidationState::Present);
     }
 
     private function revalidationStateLocked(AppInstanceRemovalMember $member): AppInstanceSourceRevalidationState
@@ -435,8 +543,12 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
     }
 
     /** @return list<string> */
-    private function worktreePaths(string $inventory, AppInstance $appInstance): array
-    {
+    private function worktreePaths(
+        string $inventory,
+        AppInstance $appInstance,
+        string $expectedCheckout,
+        array $quarantineMappings = [],
+    ): array {
         $paths = [];
 
         foreach (explode("\0", $inventory) as $field) {
@@ -445,6 +557,10 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
             }
 
             $path = substr($field, 9);
+
+            if (isset($quarantineMappings[$path])) {
+                $path = (string) $quarantineMappings[$path];
+            }
             $parsed = StoragePath::tryParse($path);
 
             if (! $parsed instanceof StoragePath) {
@@ -456,7 +572,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
 
         sort($paths, SORT_STRING);
 
-        if (! in_array($appInstance->checkout_path, $paths, true)) {
+        if (! in_array($expectedCheckout, $paths, true)) {
             $this->invalidEvidence($appInstance);
         }
 
@@ -483,6 +599,50 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
         );
     }
 
+    private function isPublishedLocked(AppInstance $appInstance, string $origin, string $commit): bool
+    {
+        $result = $this->ssh->execute(
+            $appInstance->node,
+            new RemoteCommand(
+                arguments: ['bash', '-seu', '--', $origin, $commit],
+                input: self::publicationScript(),
+            ),
+            step: 'app-instance-source-removal-publication',
+            errorCode: 'instance.remove_refused',
+        );
+
+        return trim($result->stdout) === '1';
+    }
+
+    /** @return array<string, string> */
+    private function quarantineMappings(AppInstanceRemovalMember $member): array
+    {
+        $mappings = [];
+        $removal = AppInstanceRemoval::query()->findOrFail($member->app_instance_removal_id);
+        /** @var \Illuminate\Database\Eloquent\Collection<int, AppInstanceRemovalMember> $members */
+        $members = $removal->members()->where('environment', 'development')->get();
+
+        foreach ($members as $recorded) {
+            if (! is_string($recorded->checkout_path)) {
+                continue;
+            }
+
+            $mappings[$this->quarantinePath($recorded)] = $recorded->checkout_path;
+        }
+
+        return $mappings;
+    }
+
+    private function quarantinePath(AppInstanceRemovalMember $member): string
+    {
+        return sprintf(
+            '%s/.orbit-removals/%s.%d.quarantine',
+            $member->root,
+            $member->app_instance_removal_id,
+            $member->id,
+        );
+    }
+
     private static function inspectionScript(): string
     {
         return <<<'BASH'
@@ -493,7 +653,6 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
             layout=$5
             expected_branch=$6
             expected_commit=$7
-            force=$8
             export GIT_OPTIONAL_LOCKS=0
             case "$checkout" in "$root"/*) ;; *) exit 1 ;; esac
             current=$root
@@ -538,26 +697,6 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
             git -C "$checkout" merge-base --is-ancestor "$expected_commit" HEAD
             dirty=0
             test -z "$(git -C "$checkout" status --porcelain --untracked-files=all)" || dirty=1
-            published=0
-            advertised=$(mktemp)
-            trap 'rm -f -- "$advertised"' EXIT
-            git -C "$checkout" ls-remote --refs origin 'refs/heads/*' 'refs/tags/*' > "$advertised"
-            while read -r advertised_commit advertised_ref; do
-                test -n "$advertised_ref" || continue
-                if [ "$advertised_commit" = "$commit" ]; then
-                    published=1
-                    break
-                fi
-                if git -C "$checkout" cat-file -e "$advertised_commit^{commit}" 2>/dev/null && \
-                    git -C "$checkout" merge-base --is-ancestor "$commit" "$advertised_commit"; then
-                    published=1
-                    break
-                fi
-            done < "$advertised"
-            if [ "$force" != 1 ]; then
-                test "$dirty" = 0
-                test "$published" = 1
-            fi
             encode() { printf '%s' "$1" | base64 --wrap=0; printf '\n'; }
             encode "$top"
             encode "$common"
@@ -565,10 +704,35 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
             encode "$branch"
             encode "$commit"
             encode "$dirty"
-            encode "$published"
             encode "$(stat -c '%d:%i' "$checkout")"
             git -C "$checkout" worktree list --porcelain -z | base64 --wrap=0
             printf '\n'
+            BASH;
+    }
+
+    private static function publicationScript(): string
+    {
+        return <<<'BASH'
+            origin=$1
+            commit=$2
+            scratch=$(mktemp -d)
+            trap 'rm -rf -- "$scratch"' EXIT
+            git init --bare --quiet "$scratch/repository.git"
+            git --git-dir="$scratch/repository.git" remote add origin "$origin"
+            git --git-dir="$scratch/repository.git" fetch --quiet --no-tags --filter=blob:none origin \
+                '+refs/heads/*:refs/remotes/origin/*' '+refs/tags/*:refs/tags/*'
+            published=0
+            if git --git-dir="$scratch/repository.git" cat-file -e "$commit^{commit}" 2>/dev/null; then
+                for advertised in $(git --git-dir="$scratch/repository.git" for-each-ref \
+                    --format='%(refname)' refs/remotes/origin refs/tags); do
+                    tip=$(git --git-dir="$scratch/repository.git" rev-parse --verify "$advertised^{commit}" 2>/dev/null) || continue
+                    if git --git-dir="$scratch/repository.git" merge-base --is-ancestor "$commit" "$tip"; then
+                        published=1
+                        break
+                    fi
+                done
+            fi
+            printf '%s\n' "$published"
             BASH;
     }
 
@@ -590,6 +754,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
             managed_user=$3
             managed_group=$4
             source_identity=$5
+            export GIT_OPTIONAL_LOCKS=0
             state="$root/.orbit-removals"
             journal="$state/$operation.$member.journal"
             receipt_path="$state/$operation.$member.receipt"
@@ -621,24 +786,26 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
                 if [ "$force" != 1 ]; then
                     test -z "$(git -C "$checkout" status --porcelain --untracked-files=all)"
                     commit=$(git -C "$checkout" rev-parse --verify HEAD^{commit})
+                    origin=$(git -C "$checkout" remote get-url origin)
                     published=0
-                    advertised=$(mktemp)
-                    trap 'rm -f -- "$advertised"' EXIT
-                    git -C "$checkout" ls-remote --refs origin 'refs/heads/*' 'refs/tags/*' > "$advertised"
-                    while read -r advertised_commit advertised_ref; do
-                        test -n "$advertised_ref" || continue
-                        if [ "$advertised_commit" = "$commit" ]; then
-                            published=1
-                            break
-                        fi
-                        if git -C "$checkout" cat-file -e "$advertised_commit^{commit}" 2>/dev/null && \
-                            git -C "$checkout" merge-base --is-ancestor "$commit" "$advertised_commit"; then
-                            published=1
-                            break
-                        fi
-                    done < "$advertised"
+                    scratch=$(mktemp -d)
+                    trap 'rm -rf -- "$scratch"' EXIT
+                    git init --bare --quiet "$scratch/repository.git"
+                    git --git-dir="$scratch/repository.git" remote add origin "$origin"
+                    git --git-dir="$scratch/repository.git" fetch --quiet --no-tags --filter=blob:none origin \
+                        '+refs/heads/*:refs/remotes/origin/*' '+refs/tags/*:refs/tags/*'
+                    if git --git-dir="$scratch/repository.git" cat-file -e "$commit^{commit}" 2>/dev/null; then
+                        for advertised in $(git --git-dir="$scratch/repository.git" for-each-ref \
+                            --format='%(refname)' refs/remotes/origin refs/tags); do
+                            tip=$(git --git-dir="$scratch/repository.git" rev-parse --verify "$advertised^{commit}" 2>/dev/null) || continue
+                            if git --git-dir="$scratch/repository.git" merge-base --is-ancestor "$commit" "$tip"; then
+                                published=1
+                                break
+                            fi
+                        done
+                    fi
                     test "$published" = 1
-                    rm -f -- "$advertised"
+                    rm -rf -- "$scratch"
                     trap - EXIT
                 fi
                 case "$layout" in

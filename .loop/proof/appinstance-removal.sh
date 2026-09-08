@@ -96,7 +96,18 @@ case "$mode" in
         base=$(git -C "$path" rev-parse HEAD)
         rm -f /tmp/orb124-former-target-contact
         ;;
-    wrong-origin) git -C "$path" remote set-url origin https://example.com/not-laravel.git ;;
+    published-behind)
+        advertised_descendant=$(git -C "$path" rev-parse HEAD)
+        git -C "$path" reset --hard HEAD^ >/dev/null
+        base=$(git -C "$path" rev-parse HEAD)
+        while read -r ref; do
+            test "$ref" = "refs/heads/$branch" || git -C "$path" update-ref -d "$ref"
+        done < <(git -C "$path" for-each-ref --format='%(refname)')
+        git -C "$path" reflog expire --expire=now --all
+        git -C "$path" gc --prune=now >/dev/null
+        ! git -C "$path" cat-file -e "$advertised_descendant^{commit}" 2>/dev/null
+        ;;
+    wrong-origin) git -C "$path" remote set-url origin https://github.com/laravel/framework.git ;;
     *) exit 64 ;;
 esac
 printf '%s %s\n' "$base" "$(git -C "$path" rev-parse HEAD)"
@@ -504,6 +515,15 @@ test ! -e /home/orbit/apps/laravel-typed/orb124-normal-checkout
 BASH
         assert_completed_evidence orb124-normal-checkout
 
+        read -r behind_commit _ < <(make_checkout orb124-normal-behind orb124-normal-behind published-behind)
+        behind_id=$(seed_dev orb124-normal-behind checkout orb124-normal-behind "$behind_commit" | seed_id)
+        gateway_fixture project-dev orb124-normal-behind
+        remove_success "$behind_id" 0 1
+        remote_script app-dev <<'BASH'
+test ! -e /home/orbit/apps/laravel-typed/orb124-normal-behind
+BASH
+        assert_completed_evidence orb124-normal-behind
+
         graph_commit=$(make_worktree_graph orb124-normal-root orb124-normal-root orb124-normal-worktree orb124-normal-worktree)
         root_id=$(seed_dev orb124-normal-root checkout orb124-normal-root "$graph_commit" | seed_id)
         worktree_id=$(seed_dev orb124-normal-worktree worktree orb124-normal-worktree "$graph_commit" | seed_id)
@@ -604,10 +624,22 @@ BASH
         read -r mismatch_commit _ < <(make_checkout orb124-wrong-origin orb124-wrong-origin wrong-origin)
         mismatch_id=$(seed_dev orb124-wrong-origin checkout orb124-wrong-origin "$mismatch_commit" | seed_id)
         before=$(gateway_fixture instance-state orb124-wrong-origin)
-        expect_remove_failure "$mismatch_id" 1 instance.remove_refused
+        expect_remove_failure "$mismatch_id" 1 instance.source_identity_invalid
         assert_active_unchanged "$before" orb124-wrong-origin
         gateway_fixture cleanup-active orb124-wrong-origin
         remove_sources orb124-wrong-origin
+
+        read -r unavailable_commit _ < <(make_checkout orb124-origin-unavailable orb124-origin-unavailable clean)
+        unavailable_id=$(seed_dev orb124-origin-unavailable checkout orb124-origin-unavailable "$unavailable_commit" | seed_id)
+        remote_script app-dev <<'BASH'
+path=/home/orbit/apps/laravel-typed/orb124-origin-unavailable
+git -C "$path" config http.proxy http://127.0.0.1:1
+! git -C "$path" ls-remote origin refs/heads/13.x >/dev/null 2>&1
+BASH
+        remove_success "$unavailable_id" 1 1
+        remote_script app-dev <<'BASH'
+test ! -e /home/orbit/apps/laravel-typed/orb124-origin-unavailable
+BASH
 
         symlink_commit=$(make_symlink_checkout orb124-symlink orb124-symlink)
         symlink_id=$(seed_dev orb124-symlink checkout orb124-symlink "$symlink_commit" | seed_id)
@@ -809,6 +841,29 @@ BASH
             trap - EXIT
             gateway_fixture complete-removal-route-step "$child_name"
             inject_source_finalization_state "$child_name" "$mode"
+            if [ "$mode" != after-delete ]; then
+                evidence=$(gateway_fixture removal-evidence "$child_name")
+                quarantine=$(python3 -c '
+import json
+import sys
+
+value = json.loads(sys.argv[1])
+member = value["members"][0]
+print(f"{member['"'"'root'"'"']}/.orbit-removals/{value['"'"'operation_id'"'"']}.{member['"'"'member_id'"'"']}.quarantine")
+' "$evidence")
+                remote_script app-dev "$quarantine" <<'BASH'
+quarantine=$1
+test -d "$quarantine"
+git -C "$quarantine" remote set-url origin https://github.com/laravel/framework.git
+BASH
+                expect_remove_failure "$finalize_root_id" 1 instance.source_identity_invalid
+                assert_failure_progress "$finalize_root_id" source_finalization 2 0 2
+                remote_script app-dev "$quarantine" <<'BASH'
+quarantine=$1
+test -d "$quarantine"
+git -C "$quarantine" remote set-url origin https://github.com/laravel/laravel.git
+BASH
+            fi
             remote_script app-dev "$root_name" "$extra_name" <<'BASH'
 root_name=$1
 extra_name=$2

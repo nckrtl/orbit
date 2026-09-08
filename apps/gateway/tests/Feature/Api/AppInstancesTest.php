@@ -178,6 +178,15 @@ beforeEach(function (): void {
             return AppInstanceSourceRevalidationState::Present;
         }
 
+        public function inspectRecorded(
+            AppInstanceRemovalMember $member,
+            AppInstanceSourceRevalidationState $state,
+        ): AppInstanceSourceInventory {
+            $appInstance = AppInstance::query()->with('app')->findOrFail($member->app_instance_id);
+
+            return $this->inspect($appInstance, (bool) $member->removal()->firstOrFail()->force);
+        }
+
         public function finalize(AppInstanceRemovalMember $member): string
         {
             $this->record('finalize', $member->app_instance_id);

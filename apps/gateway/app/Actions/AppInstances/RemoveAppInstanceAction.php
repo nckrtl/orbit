@@ -468,31 +468,29 @@ final readonly class RemoveAppInstanceAction
             $states[$member->id] = $this->sources->revalidate($member);
         }
 
-        $finalizedPaths = $operation
-            ->members()
-            ->whereNotNull('source_finalized_at')
-            ->pluck('checkout_path')
-            ->filter(static fn (mixed $path): bool => is_string($path))
-            ->map(static fn (mixed $path): string => (string) $path)
-            ->all();
-        /** @var array<int, string> $finalizedPaths */
+        /** @var array<int, AppInstanceSourceInventory> $inventories */
+        $inventories = [];
+
+        foreach ($members as $member) {
+            if ($states[$member->id] === AppInstanceSourceRevalidationState::Completed) {
+                continue;
+            }
+
+            $inventories[$member->id] = $this->sources->inspectRecorded($member, $states[$member->id]);
+        }
 
         $allMembers = $operation->members()->orderBy('position')->get();
 
         foreach ($members as $member) {
-            $state = $states[$member->id];
-            $appInstance = AppInstance::query()->find($member->app_instance_id);
-
             if (
-                $state !== AppInstanceSourceRevalidationState::Present
-                || ! $appInstance instanceof AppInstance
+                ! isset($inventories[$member->id])
                 || $member->environment !== 'development'
             ) {
                 continue;
             }
 
-            $inventory = $this->sources->inspect($appInstance, $operation->force);
-            $expectedPaths = array_values(array_diff($member->linked_worktree_paths, $finalizedPaths));
+            $inventory = $inventories[$member->id];
+            $expectedPaths = $member->linked_worktree_paths;
 
             foreach ($allMembers as $recordedMember) {
                 if (
@@ -503,29 +501,16 @@ final readonly class RemoveAppInstanceAction
                     continue;
                 }
 
-                $recordedState = $states[$recordedMember->id] ?? AppInstanceSourceRevalidationState::Completed;
+                $recordedState = $states[$recordedMember->id] ?? null;
 
-                if ($recordedState === AppInstanceSourceRevalidationState::Present) {
+                if (
+                    $recordedMember->source_finalized_at === null
+                    && $recordedState !== AppInstanceSourceRevalidationState::Completed
+                ) {
                     continue;
                 }
 
                 $expectedPaths = array_values(array_diff($expectedPaths, [$recordedMember->checkout_path]));
-
-                if (in_array(
-                    $recordedState,
-                    [
-                        AppInstanceSourceRevalidationState::Quarantined,
-                        AppInstanceSourceRevalidationState::ReceiptPendingCleanup,
-                    ],
-                    true,
-                )) {
-                    $expectedPaths[] = sprintf(
-                        '%s/.orbit-removals/%s.%d.quarantine',
-                        $recordedMember->root,
-                        $recordedMember->app_instance_removal_id,
-                        $recordedMember->id,
-                    );
-                }
             }
 
             $expectedPaths = array_values(array_unique($expectedPaths));

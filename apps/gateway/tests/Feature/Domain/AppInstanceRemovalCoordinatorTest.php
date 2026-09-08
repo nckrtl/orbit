@@ -319,6 +319,45 @@ final class Orb124CoordinatorSource implements DevelopmentAppInstanceSourceRemov
         return $this->states[$member->app_instance_id] ?? AppInstanceSourceRevalidationState::Present;
     }
 
+    public function inspectRecorded(
+        AppInstanceRemovalMember $member,
+        AppInstanceSourceRevalidationState $state,
+    ): AppInstanceSourceInventory {
+        $appInstance = AppInstance::query()->with('app')->findOrFail($member->app_instance_id);
+        $inventory = $this->inspect($appInstance, (bool) $member->removal()->firstOrFail()->force);
+        $paths = $inventory->linkedWorktreePaths;
+
+        foreach ($member->removal()->firstOrFail()->members as $recorded) {
+            $quarantine = sprintf(
+                '%s/.orbit-removals/%s.%d.quarantine',
+                $recorded->root,
+                $recorded->app_instance_removal_id,
+                $recorded->id,
+            );
+            $paths = array_map(
+                static fn (string $path): string => $path === $quarantine
+                    ? (string) $recorded->checkout_path
+                    : $path,
+                $paths,
+            );
+        }
+        sort($paths, SORT_STRING);
+
+        return new AppInstanceSourceInventory(
+            appInstanceId: $inventory->appInstanceId,
+            layout: $inventory->layout,
+            repositoryIdentity: $inventory->repositoryIdentity,
+            checkoutPath: $inventory->checkoutPath,
+            root: $inventory->root,
+            branch: $inventory->branch,
+            startingCommit: $inventory->startingCommit,
+            commonRepositoryPath: $inventory->commonRepositoryPath,
+            sourceIdentity: $inventory->sourceIdentity,
+            linkedWorktreePaths: $paths,
+            digest: $inventory->digest,
+        );
+    }
+
     public function finalize(AppInstanceRemovalMember $member): string
     {
         if ($this->failFinalize) {

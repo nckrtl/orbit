@@ -15,5 +15,10 @@ interface DevelopmentAppInstanceSourceRemoval
 
     public function revalidate(AppInstanceRemovalMember $member): AppInstanceSourceRevalidationState;
 
+    public function inspectRecorded(
+        AppInstanceRemovalMember $member,
+        AppInstanceSourceRevalidationState $state,
+    ): AppInstanceSourceInventory;
+
     public function finalize(AppInstanceRemovalMember $member): string;
 }
