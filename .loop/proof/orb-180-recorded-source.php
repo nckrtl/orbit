@@ -22,8 +22,11 @@ use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Support\Str;
 
 require '/home/orbit/orbit/apps/gateway/vendor/autoload.php';
+/** @var Illuminate\Foundation\Application $laravel */
 $laravel = require '/home/orbit/orbit/apps/gateway/bootstrap/app.php';
-$laravel->make(Kernel::class)->bootstrap();
+/** @var Kernel $kernel */
+$kernel = $laravel->make(Kernel::class);
+$kernel->bootstrap();
 
 function fixtureApp(): OrbitApp
 {
@@ -47,11 +50,7 @@ function fixtureInstance(string $name): AppInstance
 
 function fixtureMember(string $name): AppInstanceRemovalMember
 {
-    return AppInstanceRemovalMember::query()
-        ->where('name', $name)
-        ->with('removal')
-        ->latest('id')
-        ->sole();
+    return AppInstanceRemovalMember::query()->where('name', $name)->with('removal')->latest('id')->sole();
 }
 
 function seedInstance(string $name, string $layout, string $branch, string $commit): AppInstance
@@ -161,12 +160,13 @@ function memberEvidence(AppInstanceRemovalMember $member): array
     ];
 }
 
-function expectConflict(Closure $operation): void
+/** @param list<string> $errorCodes */
+function expectErrorCodes(Closure $operation, array $errorCodes): void
 {
     try {
         $operation();
     } catch (RuntimeConvergenceException $exception) {
-        if ($exception->errorCode !== 'instance.removal_conflict') {
+        if (! in_array($exception->errorCode, $errorCodes, true)) {
             throw $exception;
         }
 
@@ -176,29 +176,12 @@ function expectConflict(Closure $operation): void
     throw new RuntimeException('The recorded-source operation was not refused.');
 }
 
-function cleanup(array $names): void
+function expectConflict(Closure $operation): void
 {
-    $instances = AppInstance::query()->whereIn('name', $names)->with('routes.targets')->get();
-
-    foreach ($instances as $instance) {
-        AppInstanceRemoval::query()
-            ->where('requested_app_instance_id', $instance->id)
-            ->each(
-                static function (AppInstanceRemoval $removal): void {
-                    $removal->members()->delete();
-                    $removal->delete();
-                },
-            );
-
-        foreach ($instance->routes as $route) {
-            $route->targets()->delete();
-            $route->delete();
-        }
-
-        $instance->delete();
-    }
+    expectErrorCodes($operation, ['instance.removal_conflict', 'instance.force_failed']);
 }
 
+/** @param list<string> $argv */
 function runFixture(array $argv): void
 {
     $command = $argv[1] ?? '';
@@ -240,10 +223,7 @@ function runFixture(array $argv): void
                 exit(64);
             }
             echo
-                json_encode(
-                    memberEvidence(fixtureMember($arguments[0])),
-                    JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES,
-                ),
+                json_encode(memberEvidence(fixtureMember($arguments[0])), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),
                 PHP_EOL
             ;
             break;
@@ -269,16 +249,30 @@ function runFixture(array $argv): void
             if (count($arguments) !== 1) {
                 exit(64);
             }
-            expectConflict(static fn () => app(DevelopmentAppInstanceSourceFinalizer::class)
-                ->revalidate(fixtureMember($arguments[0])));
+            expectConflict(static fn () => app(DevelopmentAppInstanceSourceFinalizer::class)->revalidate(fixtureMember(
+                $arguments[0],
+            )));
             break;
 
         case 'expect-finalize-refusal':
             if (count($arguments) !== 1) {
                 exit(64);
             }
-            expectConflict(static fn () => app(DevelopmentAppInstanceSourceFinalizer::class)
-                ->finalize(fixtureMember($arguments[0])));
+            expectConflict(static fn () => app(DevelopmentAppInstanceSourceFinalizer::class)->finalize(fixtureMember(
+                $arguments[0],
+            )));
+            break;
+
+        case 'expect-finalize-incomplete':
+            if (count($arguments) !== 1) {
+                exit(64);
+            }
+            expectErrorCodes(
+                static fn () => app(DevelopmentAppInstanceSourceFinalizer::class)->finalize(fixtureMember(
+                    $arguments[0],
+                )),
+                ['instance.removal_incomplete'],
+            );
             break;
 
         case 'expect-record-refusal':
@@ -295,11 +289,17 @@ function runFixture(array $argv): void
             fixtureInstance($arguments[0])->update(['source_layout' => $arguments[1]]);
             break;
 
-        case 'cleanup':
-            if ($arguments === []) {
+        case 'mutate-app-repository':
+            if (count($arguments) !== 3) {
                 exit(64);
             }
-            cleanup($arguments);
+            fixtureInstance($arguments[0])
+                ->app
+                ->forceFill([
+                    'repository_url' => $arguments[1],
+                    'repository_identity' => $arguments[2],
+                ])
+                ->save();
             break;
 
         default:
@@ -311,9 +311,7 @@ function runFixture(array $argv): void
 try {
     runFixture($argv);
 } catch (Throwable $exception) {
-    $errorCode = $exception instanceof RuntimeConvergenceException
-        ? $exception->errorCode
-        : 'fixture.command_failed';
+    $errorCode = $exception instanceof RuntimeConvergenceException ? $exception->errorCode : 'fixture.command_failed';
     fwrite(STDERR, "ORB-180 fixture failed: {$errorCode}: {$exception->getMessage()}\n");
     exit(70);
 }

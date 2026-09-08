@@ -26,7 +26,7 @@ remote_command() {
 }
 
 remote_script() {
-    remote_command bash -seu -- "$@"
+    remote_command bash -seuo pipefail -- "$@"
 }
 
 gateway_fixture() {
@@ -126,9 +126,45 @@ done
 BASH
 }
 
-cleanup_case() {
-    gateway_fixture cleanup "$@" || true
-    remove_sources "$@"
+arm_finalization_race() {
+    local evidence=$1
+    local name=$2
+
+    remote_script \
+        "$(json_field "$evidence" checkout_path)" \
+        "$(json_field "$evidence" receipt)" \
+        "$name" <<'BASH'
+checkout=$1
+receipt=$2
+branch=$3
+authorized_keys=/home/orbit/.ssh/authorized_keys
+backup=/home/orbit/.ssh/authorized_keys.orb180
+marker=/home/orbit/.orb180-finalization-race
+wrapper=/home/orbit/.orb180-finalization-wrapper
+cp -- "$authorized_keys" "$backup"
+printf '%s\n%s\n%s\n' "$checkout" "$receipt" "$branch" > "$marker"
+cat > "$wrapper" <<'WRAPPER'
+#!/usr/bin/env bash
+set -euo pipefail
+authorized_keys=/home/orbit/.ssh/authorized_keys
+backup=/home/orbit/.ssh/authorized_keys.orb180
+marker=/home/orbit/.orb180-finalization-race
+wrapper=/home/orbit/.orb180-finalization-wrapper
+mapfile -t fields < "$marker"
+checkout=${fields[0]}
+receipt=${fields[1]}
+branch=${fields[2]}
+signature="'$receipt' '1' 'orbit' 'orbit'"
+if [[ ${SSH_ORIGINAL_COMMAND:-} == *"$signature"* ]]; then
+    cp -- "$backup" "$authorized_keys"
+    rm -f -- "$backup" "$marker" "$wrapper"
+    git -C "$checkout" branch -m "$branch-changed"
+fi
+exec bash -c "$SSH_ORIGINAL_COMMAND"
+WRAPPER
+chmod 0700 -- "$wrapper"
+sed 's|^|command="/home/orbit/.orb180-finalization-wrapper" |' "$backup" > "$authorized_keys"
+BASH
 }
 
 assert_receipt_file() {
@@ -157,17 +193,22 @@ case "$scenario" in
         probe_surfaces
 
         checkout=orb180-final-checkout
+        neighbor=orb180-final-neighbor
+        make_checkout "$neighbor" "$neighbor" >/dev/null
         checkout_commit=$(make_checkout "$checkout" "$checkout")
         seed_instance "$checkout" checkout "$checkout" "$checkout_commit"
         checkout_evidence=$(record_source "$checkout")
         checkout_receipt=$(json_field "$checkout_evidence" receipt)
         test "$(gateway_fixture finalize "$checkout")" = "$checkout_receipt"
-        remote_script "$checkout" <<'BASH'
-test ! -e "/home/orbit/apps/laravel-typed/$1"
+        remote_script "$checkout" "$neighbor" <<'BASH'
+checkout=$1
+neighbor=$2
+test ! -e "/home/orbit/apps/laravel-typed/$checkout"
+git -C "/home/orbit/apps/laravel-typed/$neighbor" status --porcelain >/dev/null
 BASH
         assert_receipt_file "$checkout_evidence"
         assert_control_state "$checkout"
-        gateway_fixture cleanup "$checkout"
+        remove_sources "$neighbor"
 
         root=orb180-final-root
         target=orb180-final-target
@@ -177,7 +218,8 @@ BASH
         worktree_evidence=$(record_source "$target")
         common=$(json_field "$worktree_evidence" common_repository_path)
         before_refs=$(remote_script "$common" <<'BASH'
-{ git -C "$1" show-ref; git -C "$1" ls-remote origin; } | sha256sum | cut -d ' ' -f 1
+git -C "$1" show-ref | sha256sum | cut -d ' ' -f 1
+git -C "$1" ls-remote origin | sha256sum | cut -d ' ' -f 1
 BASH
 )
         worktree_receipt=$(json_field "$worktree_evidence" receipt)
@@ -193,13 +235,16 @@ test -d "/home/orbit/apps/laravel-typed/$sibling"
 git -C "$common" status --porcelain >/dev/null
 git -C "/home/orbit/apps/laravel-typed/$sibling" status --porcelain >/dev/null
 git -C "$common" show-ref --verify "refs/heads/$target" >/dev/null
-! git -C "$common" worktree list --porcelain | grep -F "/home/orbit/apps/laravel-typed/$target"
-after_refs=$( { git -C "$common" show-ref; git -C "$common" ls-remote origin; } | sha256sum | cut -d ' ' -f 1 )
+worktree_inventory=$(git -C "$common" worktree list --porcelain)
+! grep -F "/home/orbit/apps/laravel-typed/$target" <<< "$worktree_inventory"
+after_refs=$(
+    git -C "$common" show-ref | sha256sum | cut -d ' ' -f 1
+    git -C "$common" ls-remote origin | sha256sum | cut -d ' ' -f 1
+)
 test "$after_refs" = "$before_refs"
 BASH
         assert_receipt_file "$worktree_evidence"
         assert_control_state "$target"
-        gateway_fixture cleanup "$target"
         remote_script "$common" "$sibling" <<'BASH'
 git -C "$1" worktree remove --force "/home/orbit/apps/laravel-typed/$2"
 rm -rf -- "$1"
@@ -221,7 +266,6 @@ BASH
         test "$(gateway_fixture revalidate "$before")" = quarantined
         test "$(gateway_fixture finalize "$before")" = "$(json_field "$before_evidence" receipt)"
         assert_receipt_file "$before_evidence"
-        gateway_fixture cleanup "$before"
 
         partial=orb180-recovery-partial
         partial_commit=$(make_checkout "$partial" "$partial")
@@ -240,7 +284,6 @@ BASH
         test "$(gateway_fixture revalidate "$partial")" = receipt-pending-cleanup
         test "$(gateway_fixture finalize "$partial")" = "$(json_field "$partial_evidence" receipt)"
         assert_receipt_file "$partial_evidence"
-        gateway_fixture cleanup "$partial"
 
         completed=orb180-recovery-completed
         completed_commit=$(make_checkout "$completed" "$completed")
@@ -250,7 +293,6 @@ BASH
         test "$(gateway_fixture finalize "$completed")" = "$completed_receipt"
         test "$(gateway_fixture revalidate "$completed")" = completed
         test "$(gateway_fixture finalize "$completed")" = "$completed_receipt"
-        gateway_fixture cleanup "$completed"
 
         missing=orb180-recovery-missing
         missing_commit=$(make_checkout "$missing" "$missing")
@@ -260,10 +302,11 @@ BASH
 mv -- "$1" "/home/orbit/$2-preserved"
 BASH
         gateway_fixture expect-revalidate-refusal "$missing"
+        assert_control_state "$missing"
         remote_script "$missing" <<'BASH'
 test -d "/home/orbit/$1-preserved/.git"
 BASH
-        cleanup_case "$missing"
+        remove_sources "$missing"
 
         ambiguous=orb180-recovery-ambiguous
         ambiguous_commit=$(make_checkout "$ambiguous" "$ambiguous")
@@ -276,6 +319,7 @@ mv -- "$1" "$2"
 mkdir -- "$1"
 BASH
         gateway_fixture expect-revalidate-refusal "$ambiguous"
+        assert_control_state "$ambiguous"
         remote_script \
             "$(json_field "$ambiguous_evidence" checkout_path)" \
             "$(json_field "$ambiguous_evidence" quarantine)" <<'BASH'
@@ -283,7 +327,6 @@ test -d "$1"
 test -d "$2/.git"
 rm -rf -- "$1" "$2"
 BASH
-        gateway_fixture cleanup "$ambiguous"
 
         mismatch=orb180-recovery-journal
         mismatch_commit=$(make_checkout "$mismatch" "$mismatch")
@@ -293,7 +336,35 @@ BASH
 printf 'mismatched\n' > "$1"
 BASH
         gateway_fixture expect-revalidate-refusal "$mismatch"
-        cleanup_case "$mismatch"
+        assert_control_state "$mismatch"
+        remote_script "$mismatch" <<'BASH'
+test -d "/home/orbit/apps/laravel-typed/$1/.git"
+BASH
+        remove_sources "$mismatch"
+
+        wrong_receipt=orb180-recovery-receipt
+        wrong_receipt_commit=$(make_checkout "$wrong_receipt" "$wrong_receipt")
+        seed_instance "$wrong_receipt" checkout "$wrong_receipt" "$wrong_receipt_commit"
+        wrong_receipt_evidence=$(record_source "$wrong_receipt")
+        remote_script \
+            "$(json_field "$wrong_receipt_evidence" checkout_path)" \
+            "$(json_field "$wrong_receipt_evidence" quarantine)" \
+            "$(json_field "$wrong_receipt_evidence" receipt_path)" \
+            "$wrong_receipt" <<'BASH'
+mv -- "$1" "$2"
+printf 'mismatched\n' > "$3"
+chmod 0600 -- "$3"
+printf 'preserve\n' > "/home/orbit/$4-preserved"
+BASH
+        gateway_fixture expect-revalidate-refusal "$wrong_receipt"
+        assert_control_state "$wrong_receipt"
+        remote_script \
+            "$(json_field "$wrong_receipt_evidence" quarantine)" \
+            "$wrong_receipt" <<'BASH'
+test -d "$1/.git"
+printf 'preserve\n' | cmp -s - "/home/orbit/$2-preserved"
+rm -rf -- "$1" "/home/orbit/$2-preserved"
+BASH
 
         root=orb180-recovery-root
         target=orb180-recovery-target
@@ -336,9 +407,9 @@ sibling=$3
 test ! -e "/home/orbit/apps/laravel-typed/$target"
 git -C "$common" show-ref --verify "refs/heads/$target" >/dev/null
 git -C "/home/orbit/apps/laravel-typed/$sibling" status --porcelain >/dev/null
-! git -C "$common" worktree list --porcelain | grep -F "/home/orbit/apps/laravel-typed/$target"
+worktree_inventory=$(git -C "$common" worktree list --porcelain)
+! grep -F "/home/orbit/apps/laravel-typed/$target" <<< "$worktree_inventory"
 BASH
-        gateway_fixture cleanup "$target"
         remote_script "$(json_field "$worktree_evidence" common_repository_path)" "$sibling" <<'BASH'
 git -C "$1" worktree remove --force "/home/orbit/apps/laravel-typed/$2"
 rm -rf -- "$1"
@@ -356,23 +427,139 @@ BASH
 git -C "/home/orbit/apps/laravel-typed/$1" remote set-url origin https://github.com/laravel/framework.git
 BASH
         gateway_fixture expect-revalidate-refusal "$origin"
+        assert_control_state "$origin"
         remote_script "$origin" <<'BASH'
 test -d "/home/orbit/apps/laravel-typed/$1/.git"
 BASH
-        cleanup_case "$origin"
+        remove_sources "$origin"
+
+        replacement=orb180-drift-replacement
+        replacement_commit=$(make_checkout "$replacement" "$replacement")
+        seed_instance "$replacement" checkout "$replacement" "$replacement_commit"
+        record_source "$replacement" >/dev/null
+        remote_script "$replacement" <<'BASH'
+name=$1
+path="/home/orbit/apps/laravel-typed/$name"
+mv -- "$path" "/home/orbit/$name-preserved"
+git clone --local --no-checkout /home/orbit/apps/laravel-typed/e2e-dev "$path" >/dev/null
+git -C "$path" remote set-url origin https://github.com/laravel/laravel.git
+git -C "$path" checkout -b "$name" HEAD >/dev/null
+BASH
+        gateway_fixture expect-revalidate-refusal "$replacement"
+        assert_control_state "$replacement"
+        remote_script "$replacement" <<'BASH'
+test -d "/home/orbit/apps/laravel-typed/$1/.git"
+test -d "/home/orbit/$1-preserved/.git"
+BASH
+        remove_sources "$replacement"
+
+        canonical=orb180-drift-canonical
+        canonical_commit=$(make_checkout "$canonical" "$canonical")
+        seed_instance "$canonical" checkout "$canonical" "$canonical_commit"
+        record_source "$canonical" >/dev/null
+        gateway_fixture mutate-app-repository \
+            "$canonical" \
+            https://github.com/laravel/framework.git \
+            github.com/laravel/framework
+        gateway_fixture expect-revalidate-refusal "$canonical"
+        assert_control_state "$canonical"
+        remote_script "$canonical" <<'BASH'
+test -d "/home/orbit/apps/laravel-typed/$1/.git"
+BASH
+        gateway_fixture mutate-app-repository \
+            "$canonical" \
+            https://github.com/laravel/laravel.git \
+            github.com/laravel/laravel
+        remove_sources "$canonical"
+
+        recorded_layout=orb180-drift-recorded-layout
+        recorded_layout_commit=$(make_checkout "$recorded_layout" "$recorded_layout")
+        seed_instance "$recorded_layout" checkout "$recorded_layout" "$recorded_layout_commit"
+        record_source "$recorded_layout" >/dev/null
+        gateway_fixture mutate-layout "$recorded_layout" worktree
+        gateway_fixture expect-revalidate-refusal "$recorded_layout"
+        assert_control_state "$recorded_layout"
+        remote_script "$recorded_layout" <<'BASH'
+test -d "/home/orbit/apps/laravel-typed/$1/.git"
+BASH
+        remove_sources "$recorded_layout"
+
+        physical_layout=orb180-drift-physical-layout
+        physical_layout_commit=$(make_checkout "$physical_layout" "$physical_layout")
+        seed_instance "$physical_layout" checkout "$physical_layout" "$physical_layout_commit"
+        record_source "$physical_layout" >/dev/null
+        remote_script "$physical_layout" <<'BASH'
+name=$1
+path="/home/orbit/apps/laravel-typed/$name"
+git_directory="/home/orbit/$name-physical-git"
+mv -- "$path/.git" "$git_directory"
+printf 'gitdir: %s\n' "$git_directory" > "$path/.git"
+BASH
+        gateway_fixture expect-revalidate-refusal "$physical_layout"
+        assert_control_state "$physical_layout"
+        remote_script "$physical_layout" <<'BASH'
+test -f "/home/orbit/apps/laravel-typed/$1/.git"
+test -d "/home/orbit/$1-physical-git"
+BASH
+        remove_sources "$physical_layout"
+        remote_script "$physical_layout" <<'BASH'
+rm -rf -- "/home/orbit/$1-physical-git"
+BASH
+
+        ancestry=orb180-drift-ancestry
+        ancestry_commit=$(make_checkout "$ancestry" "$ancestry")
+        seed_instance "$ancestry" checkout "$ancestry" "$ancestry_commit"
+        record_source "$ancestry" >/dev/null
+        remote_script "$ancestry" <<'BASH'
+path="/home/orbit/apps/laravel-typed/$1"
+tree=$(git -C "$path" rev-parse HEAD^{tree})
+unrelated=$(printf 'unrelated history\n' | git -C "$path" commit-tree "$tree")
+git -C "$path" reset --hard "$unrelated" >/dev/null
+test "$(git -C "$path" symbolic-ref --short HEAD)" = "$1"
+BASH
+        gateway_fixture expect-revalidate-refusal "$ancestry"
+        assert_control_state "$ancestry"
+        remote_script "$ancestry" <<'BASH'
+test -d "/home/orbit/apps/laravel-typed/$1/.git"
+BASH
+        remove_sources "$ancestry"
+
+        inventory=orb180-drift-inventory
+        inventory_sibling=orb180-drift-inventory-late
+        inventory_commit=$(make_checkout "$inventory" "$inventory")
+        seed_instance "$inventory" checkout "$inventory" "$inventory_commit"
+        record_source "$inventory" >/dev/null
+        remote_script "$inventory" "$inventory_sibling" <<'BASH'
+root="/home/orbit/apps/laravel-typed/$1"
+sibling="/home/orbit/apps/laravel-typed/$2"
+git -C "$root" worktree add -b "$2" "$sibling" HEAD >/dev/null
+BASH
+        gateway_fixture expect-revalidate-refusal "$inventory"
+        assert_control_state "$inventory"
+        remote_script "$inventory" "$inventory_sibling" <<'BASH'
+root="/home/orbit/apps/laravel-typed/$1"
+sibling="/home/orbit/apps/laravel-typed/$2"
+git -C "$root" status --porcelain >/dev/null
+git -C "$sibling" status --porcelain >/dev/null
+git -C "$root" worktree remove --force "$sibling"
+rm -rf -- "$root"
+BASH
 
         race=orb180-drift-race
         race_commit=$(make_checkout "$race" "$race")
         seed_instance "$race" checkout "$race" "$race_commit"
-        record_source "$race" >/dev/null
-        remote_script "$race" <<'BASH'
-git -C "/home/orbit/apps/laravel-typed/$1" branch -m "$1-changed"
-BASH
-        gateway_fixture expect-finalize-refusal "$race"
+        race_evidence=$(record_source "$race")
+        arm_finalization_race "$race_evidence" "$race"
+        gateway_fixture expect-finalize-incomplete "$race"
+        assert_control_state "$race"
         remote_script "$race" <<'BASH'
 test -d "/home/orbit/apps/laravel-typed/$1/.git"
+test "$(git -C "/home/orbit/apps/laravel-typed/$1" symbolic-ref --short HEAD)" = "$1-changed"
+test ! -e /home/orbit/.ssh/authorized_keys.orb180
+test ! -e /home/orbit/.orb180-finalization-race
+test ! -e /home/orbit/.orb180-finalization-wrapper
 BASH
-        cleanup_case "$race"
+        remove_sources "$race"
 
         owner=orb180-drift-owner
         owner_commit=$(make_checkout "$owner" "$owner")
@@ -382,10 +569,11 @@ BASH
 sudo chown root:root "/home/orbit/apps/laravel-typed/$1"
 BASH
         gateway_fixture expect-revalidate-refusal "$owner"
+        assert_control_state "$owner"
         remote_script "$owner" <<'BASH'
 sudo chown orbit:orbit "/home/orbit/apps/laravel-typed/$1"
 BASH
-        cleanup_case "$owner"
+        remove_sources "$owner"
 
         quarantine=orb180-drift-quarantine
         quarantine_commit=$(make_checkout "$quarantine" "$quarantine")
@@ -398,10 +586,10 @@ mv -- "$1" "$2"
 git -C "$2" branch -m orb180-drift-quarantine-changed
 BASH
         gateway_fixture expect-revalidate-refusal "$quarantine"
+        assert_control_state "$quarantine"
         remote_script "$(json_field "$quarantine_evidence" quarantine)" <<'BASH'
 test -d "$1/.git"
 BASH
-        gateway_fixture cleanup "$quarantine"
         remove_sources "$quarantine"
         remote_script "$(json_field "$quarantine_evidence" quarantine)" <<'BASH'
 rm -rf -- "$1"
@@ -416,7 +604,6 @@ BASH
 git -C "/home/orbit/apps/laravel-typed/$1" status --porcelain >/dev/null
 git -C "/home/orbit/apps/laravel-typed/$2" status --porcelain >/dev/null
 BASH
-        gateway_fixture cleanup "$linked"
         remote_script "$linked" "$linked_sibling" <<'BASH'
 root="/home/orbit/apps/laravel-typed/$1"
 git -C "$root" worktree remove --force "/home/orbit/apps/laravel-typed/$2"
