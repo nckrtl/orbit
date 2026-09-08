@@ -46,8 +46,8 @@ only at an intentional bootstrap, publication, or runtime boundary.
 
 ## Use the closed tool manager registry
 
-The active Tool Manager registry contains the code-owned adapters apt, vp, and
-composer. Persisted identifiers that are absent from the active registry remain
+The active Tool Manager registry contains the code-owned adapters apt, vp,
+composer, and brew. Persisted identifiers that are absent from the active registry remain
 readable but cannot serve new Tool installations.
 Use Vite+ global packages instead of exposing npm as a manager. A nullable
 SemVer constraint gates the manager's normal candidate before mutation; it
@@ -57,6 +57,10 @@ Never persist or return raw manager stdout or stderr. Reject unmanaged package
 adoption, protected removal, and unsafe shared-scope removal.
 APT removal must remove only the exact recorded package. VP and Composer
 commands target the exact root package in their Orbit-owned shared scopes.
+Homebrew accepts only unqualified Homebrew Core formula names with a stable,
+SHA-256-described bottle for the Node's Linux architecture. Its fixed commands
+force bottle use, never start formula services, remove only the exact recorded
+formula, and never autoremove dependencies.
 
 Treat managers as protected, role-independent Node capabilities. Allow Tool
 mutations only on active Linux Nodes whose WireGuard address and pinned SSH

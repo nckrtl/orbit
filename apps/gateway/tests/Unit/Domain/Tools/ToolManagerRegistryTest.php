@@ -16,7 +16,8 @@ describe(ToolManagerRegistry::class, function (): void {
             ToolManagerName::Composer,
             static fn (Node $node): bool => $node->platform === 'linux',
         );
-        $registry = new ToolManagerRegistry([$apt, $vp, $composer]);
+        $brew = fake_tool_manager(ToolManagerName::Brew, static fn (Node $node): bool => $node->platform === 'linux');
+        $registry = new ToolManagerRegistry([$apt, $vp, $composer, $brew]);
 
         expect($registry->find('apt'))
             ->toBe($apt)
@@ -24,13 +25,15 @@ describe(ToolManagerRegistry::class, function (): void {
             ->toBe($vp)
             ->and($registry->find('composer'))
             ->toBe($composer)
+            ->and($registry->find('brew'))
+            ->toBe($brew)
             ->and($registry->find('npm'))
             ->toBeNull()
             ->and(array_map(
                 static fn (ToolManager $manager): string => $manager->name()->value,
                 $registry->supportedFor($linuxAppNode),
             ))
-            ->toBe(['apt', 'vp', 'composer']);
+            ->toBe(['apt', 'vp', 'composer', 'brew']);
     });
 });
 

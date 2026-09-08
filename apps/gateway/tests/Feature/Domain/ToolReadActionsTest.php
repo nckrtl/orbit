@@ -10,11 +10,12 @@ use App\Domain\Tools\ToolManagerRegistry;
 use App\Domain\Tools\ToolStatus;
 use App\Infrastructure\Tools\AptToolManager;
 use App\Infrastructure\Tools\ComposerToolManager;
+use App\Infrastructure\Tools\HomebrewToolManager;
 use App\Infrastructure\Tools\VpToolManager;
 use App\Models\Node;
 
 describe('closed tool registry', function (): void {
-    it('registers exactly APT, VP, and Composer managers', function (): void {
+    it('registers exactly APT, Homebrew, VP, and Composer managers', function (): void {
         $registry = app(ToolManagerRegistry::class);
 
         expect($registry->find(ToolManagerName::Apt->value))
@@ -23,6 +24,8 @@ describe('closed tool registry', function (): void {
             ->toBeInstanceOf(VpToolManager::class)
             ->and($registry->find(ToolManagerName::Composer->value))
             ->toBeInstanceOf(ComposerToolManager::class)
+            ->and($registry->find(ToolManagerName::Brew->value))
+            ->toBeInstanceOf(HomebrewToolManager::class)
             ->and($registry->find('npm'))
             ->toBeNull();
     });
@@ -50,13 +53,13 @@ describe('tool read actions', function (): void {
         $managers = app(ListToolManagersAction::class)->execute($node->id);
 
         expect($managers->pluck('name')->all())
-            ->toBe(['apt', 'composer', 'vp'])
+            ->toBe(['apt', 'brew', 'composer', 'vp'])
             ->and($managers->pluck('nodeId')->unique()->all())
             ->toBe([$node->id])
             ->and($managers->pluck('id')->all())
-            ->toBe([$apt->id, null, $vp->id])
+            ->toBe([$apt->id, null, null, $vp->id])
             ->and($managers->pluck('status')->all())
-            ->toBe(['active', 'uninstalled', 'active']);
+            ->toBe(['active', 'uninstalled', 'uninstalled', 'active']);
     });
 
     it('keeps an unknown persisted manager readable without registering it', function (): void {
@@ -71,7 +74,7 @@ describe('tool read actions', function (): void {
         $managers = app(ListToolManagersAction::class)->execute($node->id);
 
         expect($managers->pluck('name')->all())
-            ->toBe(['apt', 'composer', 'future-manager', 'vp'])
+            ->toBe(['apt', 'brew', 'composer', 'future-manager', 'vp'])
             ->and($managers->firstWhere('name', 'future-manager')?->id)
             ->toBe($record->id)
             ->and(app(ToolManagerRegistry::class)->find('future-manager'))
