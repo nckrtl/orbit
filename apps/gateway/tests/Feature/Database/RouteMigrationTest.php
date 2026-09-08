@@ -73,7 +73,7 @@ it('rejects duplicate target Nodes', function (): void {
         ]))->toThrow(QueryException::class)->and($explicit->targets()->count())->toBe(1);
 });
 
-it('enforces multi-target storage rules with compatible Cluster-scoped explicit rows', function (): void {
+it('keeps existing multi-target storage inactive without a production admission projection', function (): void {
     $app = App\Models\App::query()->create([
         'name' => 'Acme',
         'slug' => 'acme',
@@ -96,7 +96,14 @@ it('enforces multi-target storage rules with compatible Cluster-scoped explicit 
     $route->targets()->create(['app_instance_id' => $two->id, 'position' => 1]);
     $route->targets()->create(['app_instance_id' => $one->id, 'position' => 0]);
 
-    expect($route->targets()->pluck('position')->all())->toBe([0, 1]);
+    expect($route->targets()->pluck('position')->all())
+        ->toBe([0, 1])
+        ->and(fn () => $route->update(['status' => RouteStatus::Active]))
+        ->toThrow(QueryException::class)
+        ->and(Schema::hasTable('active_app_prod_nodes'))
+        ->toBeFalse();
+    $one->update(['status' => AppInstanceState::SourceResolved]);
+    $two->update(['status' => AppInstanceState::SourceResolved]);
     $route->targets()->delete();
 
     $generated = Route::query()->create([
