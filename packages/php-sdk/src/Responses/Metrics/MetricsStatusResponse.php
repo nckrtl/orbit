@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Orbit\Sdk\Responses\Metrics;
 
 use Orbit\Sdk\GatewayApiException;
+use Orbit\Sdk\Support\GatewayErrorCode;
 use SensitiveParameter;
 
 /**
@@ -97,7 +98,6 @@ final readonly class MetricsStatusResponse
             || strlen($value['node_name']) > 255
             || ! self::validAssignmentStatus($value['status'] ?? null)
             || ! self::nullableText($value['failed_step'] ?? null)
-            || ! self::nullableText($value['error_code'] ?? null)
         ) {
             throw new GatewayApiException(
                 'Gateway response contains invalid metrics assignment.',
@@ -112,7 +112,7 @@ final readonly class MetricsStatusResponse
             'node_name' => $value['node_name'],
             'status' => $value['status'],
             'failed_step' => $value['failed_step'] ?? null,
-            'error_code' => $value['error_code'] ?? null,
+            'error_code' => GatewayErrorCode::fromTransport($value['error_code'] ?? null),
         ];
 
         return $assignment;

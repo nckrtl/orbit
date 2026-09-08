@@ -65,6 +65,38 @@ it('maps bounded Route responses and list responses', function (): void {
         ->toHaveCount(1);
 });
 
+it('preserves valid Route error-code tokens', function (): void {
+    $response = RouteResponse::fromGatewayData(
+        [...route_data(), 'error_code' => 'route.publication_failed'],
+        route_request_id(),
+    );
+
+    expect($response->errorCode)
+        ->toBe('route.publication_failed')
+        ->and($response->toArray()['error_code'])
+        ->toBe('route.publication_failed');
+});
+
+it('normalizes malformed Route error codes to null', function (mixed $errorCode): void {
+    $response = RouteResponse::fromGatewayData(
+        [...route_data(), 'error_code' => $errorCode],
+        route_request_id(),
+    );
+
+    expect($response->errorCode)
+        ->toBeNull()
+        ->and($response->toArray()['error_code'])
+        ->toBeNull()
+        ->and(serialize($response))
+        ->not->toContain(is_string($errorCode) ? $errorCode : 'credential');
+})->with([
+    'credential-shaped code' => 'token=route-response-credential',
+    'control characters' => "route.failed\r\ncredential",
+    'whitespace' => ' route.failed ',
+    'non-string' => [['credential']],
+    'oversized' => str_repeat('a', times: 129),
+]);
+
 it('defines the exact update, target, clear, and remove transports', function (): void {
     $update = new UpdateRouteRequest(11, hostname: 'next.test', publication: 'public');
     $set = new SetRouteTargetRequest(11, 8);

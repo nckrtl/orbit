@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Orbit\Sdk\Responses\Routes;
 
+use Orbit\Sdk\Support\GatewayErrorCode;
 use SensitiveParameter;
 
 /**
@@ -50,7 +51,7 @@ final readonly class RouteResponse
             publication: is_string($data['publication'] ?? null) ? $data['publication'] : '',
             status: is_string($data['status'] ?? null) ? $data['status'] : '',
             failedStep: is_string($data['failed_step'] ?? null) ? $data['failed_step'] : null,
-            errorCode: is_string($data['error_code'] ?? null) ? $data['error_code'] : null,
+            errorCode: GatewayErrorCode::fromTransport($data['error_code'] ?? null),
             target: $target,
             requestId: $requestId,
         );
