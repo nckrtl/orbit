@@ -88,6 +88,15 @@ if [ "$mode" = unmanaged ]; then
         '
     )
 
+    cleanup_unmanaged_node() {
+        php -r '
+            $database = new PDO("sqlite:/home/orbit/.orbit/gateway.sqlite");
+            $statement = $database->prepare("DELETE FROM nodes WHERE id = ?");
+            $statement->execute([$argv[1]]);
+        ' "$unmanaged_node_id"
+    }
+    trap cleanup_unmanaged_node EXIT
+
     set +e
     rejected=$(orbit tool:install jq --manager=apt --node="$unmanaged_node_id" --json 2>&1)
     status=$?
@@ -99,6 +108,8 @@ if [ "$mode" = unmanaged ]; then
             exit(1);
         }
     ' "$rejected"
+    cleanup_unmanaged_node
+    trap - EXIT
     exit 0
 fi
 
