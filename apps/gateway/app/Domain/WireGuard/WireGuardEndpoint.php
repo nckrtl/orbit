@@ -6,6 +6,15 @@ namespace App\Domain\WireGuard;
 
 final class WireGuardEndpoint
 {
+    public static function format(string $host, int $port): string
+    {
+        if (filter_var($host, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) !== false) {
+            return "[{$host}]:{$port}";
+        }
+
+        return "{$host}:{$port}";
+    }
+
     public static function isValid(string $endpoint): bool
     {
         /** @var array<int, string> $matches */
