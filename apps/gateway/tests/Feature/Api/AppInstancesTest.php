@@ -159,8 +159,11 @@ beforeEach(function (): void {
 
         public ?int $failPrepareFor = null;
 
-        public function inspect(AppInstance $appInstance, bool $force): AppInstanceSourceInventory
-        {
+        public function inspect(
+            AppInstance $appInstance,
+            bool $force,
+            bool $inspectContent = true,
+        ): AppInstanceSourceInventory {
             $this->record('inspect', $appInstance->id);
             $paths = $this->linkedPaths[$appInstance->id] ?? $this->livePaths ?? [$appInstance->checkout_path];
             $payload = [

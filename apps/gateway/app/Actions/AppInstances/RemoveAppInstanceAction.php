@@ -247,7 +247,8 @@ final readonly class RemoveAppInstanceAction
         $this->assertMemberPathAvailable($requested);
         $requestedInventory = $this->inspect(
             $requested,
-            $force || $requested->source_layout === AppInstanceSourceLayout::Checkout->value,
+            $force,
+            inspectContent: $requested->source_layout !== AppInstanceSourceLayout::Checkout->value,
         );
         $this->assertMemberPathAvailable($requested);
         /** @var Collection<int, AppInstance> $members */
@@ -410,10 +411,13 @@ final readonly class RemoveAppInstanceAction
         return $route;
     }
 
-    private function inspect(AppInstance $appInstance, bool $force): AppInstanceSourceInventory
-    {
+    private function inspect(
+        AppInstance $appInstance,
+        bool $force,
+        bool $inspectContent = true,
+    ): AppInstanceSourceInventory {
         try {
-            return $this->sourceInspector->inspect($appInstance, $force);
+            return $this->sourceInspector->inspect($appInstance, $force, $inspectContent);
         } catch (RuntimeConvergenceException $exception) {
             throw new ResourceOperationException(
                 errorCode: $exception->errorCode,

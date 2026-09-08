@@ -41,16 +41,22 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
         private AppDevSourceOperationLock $lock,
     ) {}
 
-    public function inspect(AppInstance $appInstance, bool $force): AppInstanceSourceInventory
-    {
+    public function inspect(
+        AppInstance $appInstance,
+        bool $force,
+        bool $inspectContent = true,
+    ): AppInstanceSourceInventory {
         return $this->lock->synchronized(
             $appInstance->node_id,
-            fn (): AppInstanceSourceInventory => $this->inspectLocked($appInstance, $force),
+            fn (): AppInstanceSourceInventory => $this->inspectLocked($appInstance, $force, $inspectContent),
         );
     }
 
-    private function inspectLocked(AppInstance $appInstance, bool $force): AppInstanceSourceInventory
-    {
+    private function inspectLocked(
+        AppInstance $appInstance,
+        bool $force,
+        bool $inspectContent,
+    ): AppInstanceSourceInventory {
         $context = $this->context($appInstance);
 
         return $this->inspectPathLocked(
@@ -65,6 +71,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
             startingCommit: $context['startingCommit'],
             expectedRepositoryIdentity: $context['repositoryIdentity'],
             force: $force,
+            inspectContent: $inspectContent,
         );
     }
 
@@ -84,6 +91,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
         string $startingCommit,
         string $expectedRepositoryIdentity,
         bool $force,
+        bool $inspectContent = true,
         array $quarantineMappings = [],
     ): AppInstanceSourceInventory {
         $result = $this->ssh->execute(
@@ -100,7 +108,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
                     $layout,
                     $expectedBranch,
                     $startingCommit,
-                    $force ? '0' : '1',
+                    $inspectContent && ! $force ? '1' : '0',
                 ],
                 input: self::inspectionScript(),
             ),
@@ -149,11 +157,11 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
             $this->invalidEvidence($appInstance, $force);
         }
 
-        if (! $force && $dirty !== '0') {
+        if ($inspectContent && ! $force && $dirty !== '0') {
             $this->unsafeContent($appInstance);
         }
 
-        if (! $force && ! $this->isPublished($appInstance, $origin, $commit)) {
+        if ($inspectContent && ! $force && ! $this->isPublished($appInstance, $origin, $commit)) {
             $this->unsafeContent($appInstance);
         }
 

@@ -215,11 +215,32 @@ it('returns force guidance before inspecting unsafe checkout content', function 
     expect(fn () => $this->orb181Coordinator->execute($checkout, false))
         ->toThrow(ResourceOperationException::class, 'retry with --force');
     expect($this->orb181Inspector->calls)
-        ->toBe(["inspect:{$checkout->id}:force"])
+        ->toBe(["inspect:{$checkout->id}:normal"])
         ->and(AppInstanceRemovalMember::query()->count())
         ->toBe(0)
         ->and(AppInstance::query()->where('status', AppInstanceState::Active->value)->count())
         ->toBe(3);
+});
+
+it('keeps normal refusal semantics when checkout inventory inspection fails', function (): void {
+    [$checkout] = orb182_coordinator_graph();
+    $this->orb181Inspector->inspectionFailureIds = [$checkout->id];
+    $exception = null;
+
+    try {
+        $this->orb181Coordinator->execute($checkout, false);
+    } catch (ResourceOperationException $caught) {
+        $exception = $caught;
+    }
+
+    expect($exception)
+        ->toBeInstanceOf(ResourceOperationException::class)
+        ->and($exception?->errorCode)
+        ->toBe('instance.remove_refused')
+        ->and($this->orb181Inspector->calls)
+        ->toBe(["inspect:{$checkout->id}:normal"])
+        ->and(AppInstanceRemovalMember::query()->count())
+        ->toBe(0);
 });
 
 it('refuses an unregistered checkout member before accepting either mode', function (bool $force): void {
@@ -594,11 +615,25 @@ final class Orb181CoordinatorInspector implements DevelopmentAppInstanceSourceRe
     /** @var list<int> */
     public array $normalUnsafeIds = [];
 
-    public function inspect(AppInstance $appInstance, bool $force): AppInstanceSourceInventory
-    {
+    /** @var list<int> */
+    public array $inspectionFailureIds = [];
+
+    public function inspect(
+        AppInstance $appInstance,
+        bool $force,
+        bool $inspectContent = true,
+    ): AppInstanceSourceInventory {
         $this->calls[] = sprintf('inspect:%d:%s', $appInstance->id, $force ? 'force' : 'normal');
 
-        if (! $force && in_array($appInstance->id, $this->normalUnsafeIds, true)) {
+        if (in_array($appInstance->id, $this->inspectionFailureIds, true)) {
+            throw new RuntimeConvergenceException(
+                'app-instance-source-removal-inspect',
+                $force ? 'instance.force_failed' : 'instance.remove_refused',
+                'Source inspection failed.',
+            );
+        }
+
+        if ($inspectContent && ! $force && in_array($appInstance->id, $this->normalUnsafeIds, true)) {
             throw new RuntimeConvergenceException(
                 'app-instance-source-removal-inspect',
                 'instance.remove_refused',
