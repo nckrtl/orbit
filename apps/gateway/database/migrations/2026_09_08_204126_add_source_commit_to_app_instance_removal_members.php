@@ -29,9 +29,7 @@ return new class extends Migration {
             $table->string('source_commit', 64)->nullable()->after('starting_commit');
         });
 
-        DB::table('app_instance_removal_members')
-            ->where('environment', 'development')
-            ->update(['source_commit' => DB::raw('starting_commit')]);
+        $this->backfillDevelopmentSourceCommits();
 
         $this->createSourceCommitTriggers();
     }
@@ -79,6 +77,26 @@ return new class extends Migration {
                 SELECT RAISE(ABORT, 'Invalid AppInstance removal member contract.');
             END
             SQL);
+    }
+
+    private function backfillDevelopmentSourceCommits(): void
+    {
+        $immutableTrigger = DB::table('sqlite_master')
+            ->where('type', 'trigger')
+            ->where('name', 'app_instance_removal_members_immutable')
+            ->value('sql');
+
+        if (! is_string($immutableTrigger) || trim($immutableTrigger) === '') {
+            throw new RuntimeException('The AppInstance removal member immutability trigger is missing.');
+        }
+
+        DB::transaction(static function () use ($immutableTrigger): void {
+            DB::statement('DROP TRIGGER app_instance_removal_members_immutable');
+            DB::table('app_instance_removal_members')
+                ->where('environment', 'development')
+                ->update(['source_commit' => DB::raw('starting_commit')]);
+            DB::unprepared($immutableTrigger);
+        });
     }
 
     private function dropSourceCommitTriggers(): void

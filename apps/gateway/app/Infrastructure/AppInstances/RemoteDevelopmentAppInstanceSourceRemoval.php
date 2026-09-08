@@ -1481,10 +1481,10 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
                 git --git-dir="$scratch/repository.git" fetch --quiet --no-tags --filter=blob:none origin \
                     '+refs/heads/*:refs/remotes/origin/*' '+refs/tags/*:refs/tags/*'
                 published=0
-                if git --git-dir="$scratch/repository.git" cat-file -e "$starting_commit^{commit}" 2>/dev/null; then
+                if git --git-dir="$scratch/repository.git" cat-file -e "$source_commit^{commit}" 2>/dev/null; then
                     while IFS= read -r advertised; do
                         tip=$(git --git-dir="$scratch/repository.git" rev-parse --verify "$advertised^{commit}" 2>/dev/null) || continue
-                        if git --git-dir="$scratch/repository.git" merge-base --is-ancestor "$starting_commit" "$tip"; then
+                        if git --git-dir="$scratch/repository.git" merge-base --is-ancestor "$source_commit" "$tip"; then
                             published=1
                             break
                         fi

@@ -786,6 +786,51 @@ it('finalizes newer published and forced unpublished commits from immutable evid
     'forced removal at an unpublished HEAD' => true,
 ]);
 
+it('refuses normal finalization when the observed commit is no longer published', function (): void {
+    $instance = orb180_resolved_source(
+        $this->source,
+        $this->orbitApp,
+        $this->node,
+        $this->appsRoot,
+        'withdrawn-observed-head',
+    );
+    $historicalCommit = $instance->starting_commit;
+    orb76_run(['git', '-C', $instance->checkout_path, 'config', 'user.name', 'Orbit Test']);
+    orb76_run(['git', '-C', $instance->checkout_path, 'config', 'user.email', 'orbit@example.test']);
+    file_put_contents($instance->checkout_path.'/newer.txt', 'published then withdrawn');
+    orb76_run(['git', '-C', $instance->checkout_path, 'add', 'newer.txt']);
+    orb76_run(['git', '-C', $instance->checkout_path, 'commit', '-m', 'Advance source']);
+    orb76_run([
+        'git',
+        '-C',
+        $instance->checkout_path,
+        'push',
+        'origin',
+        "HEAD:refs/heads/{$instance->branch}",
+    ]);
+    $member = orb180_record_source($this->removal, $instance, false);
+    $observedCommit = $member->source_commit;
+    $repository = $this->repository;
+    $branch = $instance->branch;
+    $this->transport->beforeFinalization = static function () use ($repository, $branch, $historicalCommit): void {
+        orb76_run([
+            'git',
+            "--git-dir={$repository}",
+            'update-ref',
+            "refs/heads/{$branch}",
+            $historicalCommit,
+        ]);
+    };
+
+    expect($observedCommit)
+        ->not
+        ->toBe($historicalCommit)
+        ->and(fn () => $this->removal->finalize($member))
+        ->toThrow(RuntimeConvergenceException::class)
+        ->and(is_dir($instance->checkout_path))
+        ->toBeTrue();
+});
+
 it('finalizes one recorded worktree while preserving shared Git state', function (): void {
     $checkout = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'shared');
     $worktreePath = $this->appsRoot.'/acme/feature';

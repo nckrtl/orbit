@@ -198,14 +198,41 @@ it('backfills historical source commits and preserves distinct observed evidence
     unset($historicalAttributes['source_commit']);
     $historicalMember = $historicalRemoval->members()->create($historicalAttributes);
 
+    [$completed, $completedRoute] = orb179_removal_fixture('source-backfill-completed');
+    $completedRemoval = orb179_removal_operation($completed);
+    $completedAttributes = orb179_removal_member($completed, $completedRoute, 0);
+    unset($completedAttributes['source_commit']);
+    $completedMember = $completedRemoval->members()->create($completedAttributes);
+    $completed->update(['status' => AppInstanceState::Removing]);
+    $completedMember->update(['source_prepared_at' => now()]);
+    $completedRoute->targets()->delete();
+    $completedMember->update(['route_cleared_at' => now(), 'route_outcome' => 'retained']);
+    $completedMember->update([
+        'source_finalized_at' => now(),
+        'finalization_receipt' => str_repeat('c', 64),
+    ]);
+    $completedMember->update(['runtime_cleaned_at' => now()]);
+    $completed->delete();
+    $completedMember->update(['row_deleted_at' => now()]);
+    $completedRemoval->update([
+        'status' => AppInstanceRemovalStatus::Completed,
+        'current_step' => null,
+    ]);
+
     expect(Schema::hasColumn('app_instance_removal_members', 'source_commit'))->toBeFalse();
 
     $migration->up();
 
     expect($historicalMember->refresh()->source_commit)
         ->toBe($historical->starting_commit)
+        ->and($completedMember->refresh()->source_commit)
+        ->toBe($completed->starting_commit)
         ->and(Schema::hasColumn('app_instance_removal_members', 'source_commit'))
         ->toBeTrue()
+        ->and(fn () => DB::table('app_instance_removal_members')
+            ->where('id', $completedMember->id)
+            ->update(['updated_at' => now()->addSecond()]))
+        ->toThrow(QueryException::class)
         ->and(fn () => $historicalMember->update(['source_commit' => str_repeat('f', 40)]))
         ->toThrow(QueryException::class);
 
