@@ -839,10 +839,8 @@ describe('TopologySnapshotPromoter', function (): void {
             ->and($state->attemptId(AttemptPurpose::Discovery)->value)
             ->toBe($discoveryTarget->requireAttempt()->value)
             ->and($events)
-            ->not
-            ->toContain('delete:'.$discoveryTarget->instance('gateway'))
-            ->not
-            ->toContain('network-delete:'.$discoveryTarget->network());
+            ->not->toContain('delete:'.$discoveryTarget->instance('gateway'))
+            ->not->toContain('network-delete:'.$discoveryTarget->network());
     });
 
     it('reports the installed generation when a captured attempt is replaced before cleanup', function (): void {
@@ -893,17 +891,13 @@ describe('TopologySnapshotPromoter', function (): void {
                 "is installed, but captured attempt cleanup failed: Captured proof attempt {$fixture['target']->requireAttempt()->value} was replaced by {$replacementTarget->requireAttempt()->value}",
             )
             ->and($fixture['manifests']->promoted()?->id)
-            ->not
-            ->toBe($before)
-            ->and(file_get_contents($fixture['worktree'].'/.e2e/'.IssueState::PROOF_ATTEMPT))
-            ->toBe($replacementLease)
-            ->and(file_get_contents($fixture['worktree'].'/.e2e/'.IssueState::PROOF_TOPOLOGY))
-            ->toBe($replacementTopology)
-            ->and($events)
-            ->not
-            ->toContain('delete:'.$fixture['target']->instance('gateway'))
-            ->not
-            ->toContain('network-delete:'.$fixture['target']->network());
+            ->not->toBe($before)->and(file_get_contents($fixture['worktree'].'/.e2e/'.IssueState::PROOF_ATTEMPT))->toBe(
+                $replacementLease,
+            )->and(file_get_contents($fixture['worktree'].'/.e2e/'.IssueState::PROOF_TOPOLOGY))->toBe(
+                $replacementTopology,
+            )->and($events)
+            ->not->toContain('delete:'.$fixture['target']->instance('gateway'))
+            ->not->toContain('network-delete:'.$fixture['target']->network());
     });
 
     it('reports installed-generation context and completed cleanup after a partial failure', function (): void {
