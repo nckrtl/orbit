@@ -167,6 +167,153 @@ it('resumes final Route cleanup after certificate deletion and a late DNS failur
         ->toBe(1);
 });
 
+it('retains an ordered shared production Route and republishes only its survivor', function (): void {
+    [$member, $route, $departing, $survivor, $router] = orb183_projector_production_member(shared: true);
+    [$projector, $ssh] = orb181_removal_projector($this);
+
+    expect($projector->clearRouteTarget($member))
+        ->toBe('retained')
+        ->and($route->refresh()->status)
+        ->toBe(RouteStatus::Active)
+        ->and($route->targets()->pluck('app_instance_id')->all())
+        ->toBe([$survivor->id])
+        ->and($route->targets()->pluck('position')->all())
+        ->toBe([0]);
+
+    $routerConfiguration = collect(orb181_caddy_configurations($ssh->commands))
+        ->first(static fn (string $configuration): bool => str_contains($configuration, 'reverse_proxy'));
+    expect($routerConfiguration)
+        ->toContain("reverse_proxy https://{$survivor->node->lan_ip}")
+        ->not
+        ->toContain((string) $departing->node->lan_ip)
+        ->and(collect($ssh->commands)
+            ->contains(
+                static fn (RemoteCommand $command): bool => in_array(
+                    "app-instance-{$departing->id}",
+                    $command->arguments,
+                    true,
+                ),
+            ))
+        ->toBeTrue()
+        ->and($ssh->connections)
+        ->toContainEqual(expectConnectionHost($router->wireguard_ip));
+
+    $ssh->phpDiscovery = "8.5\t".base64_encode(<<<FPM
+        [orbit-app-instance-{$departing->id}]
+        listen = /run/php/orbit-app-instance-{$departing->id}.sock
+        FPM)."\n";
+    $projector->cleanupRuntime($member);
+
+    $phpPublications = collect($ssh->commands)
+        ->filter(static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'php-fpm.conf'));
+    expect($phpPublications)
+        ->toHaveCount(1)
+        ->and($phpPublications->sole()->input)
+        ->not->toContain(base64_encode("[orbit-app-instance-{$departing->id}]"));
+});
+
+it('deletes a final production Route after cleanup without publishing development unavailability', function (): void {
+    [$member, $route] = orb183_projector_production_member(shared: false);
+    [$projector, $ssh] = orb181_removal_projector($this);
+
+    expect($projector->clearRouteTarget($member))
+        ->toBe('deleted')
+        ->and(Route::query()->find($route->id))
+        ->toBeNull()
+        ->and(collect(orb181_caddy_configurations($ssh->commands))
+            ->contains(
+                static fn (string $configuration): bool => str_contains($configuration, 'Orbit Route unavailable'),
+            ))
+        ->toBeFalse();
+});
+
+it('retries shared and final production cleanup without restoring targets or Routes', function (bool $shared): void {
+    [$member, $route, , $survivor] = orb183_projector_production_member($shared);
+    [$projector, $ssh, $processes] = orb181_removal_projector($this);
+    $processes->failCall = 1;
+
+    expect(fn () => $projector->clearRouteTarget($member))
+        ->toThrow(RuntimeConvergenceException::class);
+    expect($route->refresh()->targets()->pluck('app_instance_id')->all())
+        ->toBe($shared ? [$survivor->id] : [])
+        ->and(Route::query()->find($route->id))
+        ->not->toBeNull();
+
+    expect($projector->clearRouteTarget($member))
+        ->toBe($shared ? 'retained' : 'deleted')
+        ->and($route->targets()->pluck('app_instance_id')->all())
+        ->toBe($shared ? [$survivor->id] : [])
+        ->and(Route::query()->find($route->id) instanceof Route)
+        ->toBe($shared)
+        ->and(collect(orb181_caddy_configurations($ssh->commands))
+            ->contains(
+                static fn (string $configuration): bool => str_contains($configuration, 'Orbit Route unavailable'),
+            ))
+        ->toBeFalse();
+})->with(['shared' => true, 'final' => false]);
+
+function expectConnectionHost(?string $host): SshConnection
+{
+    return new SshConnection(
+        host: (string) $host,
+        user: 'orbit',
+        port: 22,
+        identityFile: '/tmp/orbit-test-key',
+        knownHostsFile: '/tmp/orbit-test-known-hosts',
+        commandTimeout: 900.0,
+    );
+}
+
+/** @return array{AppInstanceRemovalMember, Route, AppInstance, AppInstance, Node} */
+function orb183_projector_production_member(bool $shared): array
+{
+    $app = orb181_projector_app($shared ? 'production-shared' : 'production-final');
+    $cluster = Cluster::query()->create([
+        'name' => $shared ? 'production-shared' : 'production-final',
+        'state' => 'active',
+    ]);
+    $router = orb181_projector_node(
+        $shared ? 'router-shared' : 'router-final',
+        $shared ? '81' : '82',
+        $cluster,
+        RoleName::Router,
+    );
+    $departingNode = orb181_projector_node(
+        $shared ? 'prod-one-shared' : 'prod-one-final',
+        $shared ? '83' : '84',
+        $cluster,
+        RoleName::AppProd,
+    );
+    $survivorNode = orb181_projector_node(
+        $shared ? 'prod-two-shared' : 'prod-two-final',
+        $shared ? '85' : '86',
+        $cluster,
+        RoleName::AppProd,
+    );
+    $departing = orb181_projector_instance($app, $departingNode, 'production', 'one');
+    $survivor = orb181_projector_instance($app, $survivorNode, 'production', 'two');
+    $route = orb181_projector_route(
+        $app,
+        null,
+        $cluster,
+        $shared ? 'shared.production.test' : 'final.production.test',
+    );
+    $route->targets()->create(['app_instance_id' => $departing->id, 'position' => 0]);
+
+    if ($shared) {
+        $route->targets()->create(['app_instance_id' => $survivor->id, 'position' => 1]);
+    }
+
+    $route->update(['status' => RouteStatus::Active]);
+    $departing->update(['status' => AppInstanceState::Active]);
+
+    if ($shared) {
+        $survivor->update(['status' => AppInstanceState::Active]);
+    }
+
+    return [orb181_projector_member($departing, $route), $route, $departing, $survivor->load('node'), $router];
+}
+
 /** @return array{NativeAppInstanceRemovalProjector, Orb181RemovalSshExecutor, Orb181RemovalProcessRunner} */
 function orb181_removal_projector(object $test): array
 {
@@ -425,6 +572,8 @@ final class Orb181RemovalSshExecutor implements SshExecutor
 
     public bool $certificatePresent = true;
 
+    public ?string $phpDiscovery = null;
+
     public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
     {
         $this->connections[] = $connection;
@@ -432,6 +581,14 @@ final class Orb181RemovalSshExecutor implements SshExecutor
 
         if ($this->failCall === count($this->commands)) {
             return new CommandResult(1, '', 'injected failure', 1, false);
+        }
+
+        if (
+            is_string($this->phpDiscovery)
+            && is_string($command->input)
+            && str_contains($command->input, 'base64 --wrap=0 -- "$path"')
+        ) {
+            return new CommandResult(0, $this->phpDiscovery, '', 1, false);
         }
 
         if (is_string($command->input) && str_contains($command->input, "printf 'PRESENT\\n'")) {

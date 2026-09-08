@@ -12,6 +12,7 @@ use App\Domain\AppInstances\Removal\AppInstanceSourceInventory;
 use App\Domain\AppInstances\Removal\AppInstanceSourceRevalidationState;
 use App\Domain\AppInstances\Removal\DevelopmentAppInstanceSourceFinalizer;
 use App\Domain\AppInstances\Removal\DevelopmentAppInstanceSourceRemoval;
+use App\Domain\AppInstances\Removal\ProductionAppInstanceContentRetention;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
 use App\Domain\Routes\RouteProvenance;
@@ -22,6 +23,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\AppInstanceRemovalMember;
+use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\Route;
 use Illuminate\Support\Facades\DB;
@@ -31,12 +33,14 @@ beforeEach(function (): void {
     $this->orb181Finalizer = new Orb181CoordinatorFinalizer;
     $this->orb181Projector = new Orb181CoordinatorProjector;
     $this->orb181Lock = new Orb181CoordinatorLock;
+    $this->orb183Content = new Orb183CoordinatorContentRetention;
     $this->orb181Coordinator = new RemoveAppInstanceAction(
         $this->orb181Inspector,
         $this->orb181Finalizer,
         $this->orb181Projector,
         new ManagedCheckoutOverlap,
         $this->orb181Lock,
+        $this->orb183Content,
     );
 });
 
@@ -136,7 +140,71 @@ it('refuses unsupported removals before any durable mutation', function (string 
         ->toBeEmpty()
         ->and($this->orb181Inspector->calls)
         ->toBe($case === 'linked checkout' ? ["inspect:{$instance->id}:force"] : []);
-})->with(['linked checkout', 'worktree', 'production']);
+})->with(['linked checkout', 'worktree']);
+
+it('completes one production removal with retained-content evidence and no development source calls', function (): void {
+    $instance = orb181_coordinator_instance(environment: 'production');
+    $routeId = $instance->routes->sole()->id;
+    $removal = $this->orb181Coordinator->execute($instance, false);
+    $member = $removal->members->sole();
+
+    expect($removal->status->value)
+        ->toBe('completed')
+        ->and($removal->total)
+        ->toBe(1)
+        ->and($member->environment)
+        ->toBe('production')
+        ->and($member->linked_worktree_paths)
+        ->toBe([])
+        ->and($member->route_outcome)
+        ->toBe('deleted')
+        ->and($member->finalization_receipt)
+        ->toBe(hash('sha256', "production-retained\0{$member->source_digest}"))
+        ->and(Route::query()->find($routeId))
+        ->toBeNull()
+        ->and(AppInstance::query()->find($instance->id))
+        ->toBeNull()
+        ->and($this->orb181Inspector->calls)
+        ->toBeEmpty()
+        ->and($this->orb181Finalizer->calls)
+        ->toBeEmpty()
+        ->and($this->orb183Content->calls)
+        ->toBe([
+            "inventory:{$instance->id}",
+            "prepare:{$instance->id}",
+            "revalidate:{$instance->id}",
+            "finalize:{$instance->id}",
+        ]);
+});
+
+it('resumes production cleanup without restoring a cleared target or deleted Route', function (): void {
+    $instance = orb181_coordinator_instance(environment: 'production');
+    $routeId = $instance->routes->sole()->id;
+    $this->orb181Projector->failRuntime = true;
+
+    expect(fn () => $this->orb181Coordinator->execute($instance, false))
+        ->toThrow(AppInstanceRemovalException::class);
+    $member = AppInstanceRemovalMember::query()->sole();
+    expect($member->route_cleared_at)
+        ->not->toBeNull()->and($member->source_finalized_at)
+        ->not->toBeNull()->and($member->runtime_cleaned_at)->toBeNull()->and(Route::query()->find(
+            $routeId,
+        ))->toBeNull()->and($instance->refresh()->status)->toBe(AppInstanceState::Removing);
+
+    $this->orb181Projector->failRuntime = false;
+    $removal = $this->orb181Coordinator->execute($instance->refresh(), false);
+
+    expect($removal->status->value)
+        ->toBe('completed')
+        ->and(Route::query()->find($routeId))
+        ->toBeNull()
+        ->and($this->orb181Projector->calls)
+        ->toBe([
+            "route:{$instance->id}",
+            "runtime:{$instance->id}",
+            "runtime:{$instance->id}",
+        ]);
+});
 
 it('recovers a completed source receipt after its checkpoint transaction fails', function (): void {
     $instance = orb181_coordinator_instance();
@@ -239,14 +307,21 @@ function orb181_coordinator_instance(
         'default_branch' => 'main',
         'root' => 'public',
     ]);
+    $cluster = $environment === 'production'
+        ? Cluster::query()->create(['name' => 'production', 'state' => 'active'])
+        : null;
     $node = Node::query()->create([
+        'cluster_id' => $cluster?->id,
         'name' => 'app-dev',
         'status' => LifecycleStatus::Active,
         'platform' => 'linux',
         'public_ssh_host' => '192.0.2.50',
         'wireguard_ip' => '10.44.0.50',
     ]);
-    $node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
+    $node->roles()->create([
+        'role' => $environment === 'production' ? RoleName::AppProd : RoleName::AppDev,
+        'status' => LifecycleStatus::Active,
+    ]);
     $instance = AppInstance::query()->create([
         'app_id' => $app->id,
         'node_id' => $node->id,
@@ -260,10 +335,11 @@ function orb181_coordinator_instance(
     ]);
     $route = Route::query()->create([
         'app_id' => $app->id,
-        'node_id' => $node->id,
-        'generation_basis_node_id' => $node->id,
+        'node_id' => $environment === 'production' ? null : $node->id,
+        'cluster_id' => $cluster?->id,
+        'generation_basis_node_id' => $environment === 'production' ? null : $node->id,
         'hostname' => 'dev.acme.test',
-        'provenance' => RouteProvenance::Generated,
+        'provenance' => $environment === 'production' ? RouteProvenance::Explicit : RouteProvenance::Generated,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
     ]);
@@ -358,6 +434,48 @@ final class Orb181CoordinatorFinalizer implements DevelopmentAppInstanceSourceFi
         $this->states[$member->app_instance_id] = AppInstanceSourceRevalidationState::Completed;
 
         return hash('sha256', "receipt\0{$member->source_digest}");
+    }
+}
+
+final class Orb183CoordinatorContentRetention implements ProductionAppInstanceContentRetention
+{
+    /** @var list<string> */
+    public array $calls = [];
+
+    public function inventory(AppInstance $appInstance): AppInstanceSourceInventory
+    {
+        $this->calls[] = "inventory:{$appInstance->id}";
+
+        return new AppInstanceSourceInventory(
+            appInstanceId: $appInstance->id,
+            layout: $appInstance->source_layout,
+            repositoryIdentity: $appInstance->app->repository_identity,
+            checkoutPath: $appInstance->checkout_path,
+            root: (string) $appInstance->effectiveRoot(),
+            branch: (string) $appInstance->branch,
+            startingCommit: (string) $appInstance->starting_commit,
+            commonRepositoryPath: $appInstance->checkout_path,
+            sourceIdentity: "production:{$appInstance->id}:{$appInstance->node_id}",
+            linkedWorktreePaths: [],
+            digest: hash('sha256', "production\0{$appInstance->id}\0{$appInstance->checkout_path}"),
+        );
+    }
+
+    public function prepare(AppInstanceRemovalMember $member): void
+    {
+        $this->calls[] = "prepare:{$member->app_instance_id}";
+    }
+
+    public function revalidate(AppInstanceRemovalMember $member): void
+    {
+        $this->calls[] = "revalidate:{$member->app_instance_id}";
+    }
+
+    public function finalize(AppInstanceRemovalMember $member): string
+    {
+        $this->calls[] = "finalize:{$member->app_instance_id}";
+
+        return hash('sha256', "production-retained\0{$member->source_digest}");
     }
 }
 

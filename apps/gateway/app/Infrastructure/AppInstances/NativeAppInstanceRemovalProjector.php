@@ -17,6 +17,7 @@ use App\Models\Node;
 use App\Models\Route;
 use Illuminate\Support\Facades\DB;
 
+/** @mago-expect lint:cyclomatic-complexity Projection distinguishes shared and final Routes across resumable checkpoints. */
 final readonly class NativeAppInstanceRemovalProjector implements AppInstanceRemovalProjector
 {
     public function __construct(
@@ -29,14 +30,6 @@ final readonly class NativeAppInstanceRemovalProjector implements AppInstanceRem
 
     public function clearRouteTarget(AppInstanceRemovalMember $member): string
     {
-        if ($member->environment !== 'development') {
-            throw new ResourceOperationException(
-                errorCode: 'instance.removal_conflict',
-                message: 'Only a recorded development Route can be removed by this operation.',
-                status: 409,
-            );
-        }
-
         $appInstance = AppInstance::query()->with('node')->findOrFail($member->app_instance_id);
         $route = $member->route_id === null
             ? null
@@ -56,8 +49,7 @@ final readonly class NativeAppInstanceRemovalProjector implements AppInstanceRem
             );
         }
 
-        /** @var bool $removedTarget */
-        $removedTarget = DB::transaction(function () use ($route, $appInstance): bool {
+        $removedTarget = (bool) DB::transaction(function () use ($route, $appInstance): bool {
             $locked = Route::query()->lockForUpdate()->findOrFail($route->id);
             $target = $locked->targets()->where('app_instance_id', $appInstance->id)->first();
 
@@ -65,15 +57,13 @@ final readonly class NativeAppInstanceRemovalProjector implements AppInstanceRem
                 return false;
             }
 
-            if ($locked->targets()->count() !== 1) {
-                throw new ResourceOperationException(
-                    errorCode: 'instance.removal_conflict',
-                    message: 'The recorded development Route target set changed during removal.',
-                    status: 409,
-                );
-            }
-
             $target->delete();
+
+            foreach ($locked->targets()->orderBy('position')->orderBy('id')->get() as $position => $remaining) {
+                if ($remaining->position !== $position) {
+                    $remaining->update(['position' => $position]);
+                }
+            }
 
             return true;
         });
@@ -81,14 +71,24 @@ final readonly class NativeAppInstanceRemovalProjector implements AppInstanceRem
         $route->refresh()->load(['targets.appInstance.node', 'cluster.routerAssignment.node']);
 
         if ($route->targets->isNotEmpty()) {
-            throw new ResourceOperationException(
-                errorCode: 'instance.removal_conflict',
-                message: 'The recorded development Route target set changed during removal.',
-                status: 409,
-            );
+            if ($member->environment !== 'production') {
+                throw new ResourceOperationException(
+                    errorCode: 'instance.removal_conflict',
+                    message: 'The recorded development Route target set changed during removal.',
+                    status: 409,
+                );
+            }
+
+            $this->publishRoute($route, $appInstance);
+
+            return 'retained';
         }
 
-        if ($removedTarget || $this->certificates->appInstanceCertificateExists($appInstance)) {
+        if (
+            $member->environment === 'development'
+            && ($removedTarget
+            || $this->certificates->appInstanceCertificateExists($appInstance))
+        ) {
             $this->caddy->convergeUnavailableRoute($this->servingNode($route, $appInstance), $route, $appInstance);
             $this->dns->convergeUnavailableRoute($route, $appInstance);
         }
@@ -104,18 +104,34 @@ final readonly class NativeAppInstanceRemovalProjector implements AppInstanceRem
 
     public function cleanupRuntime(AppInstanceRemovalMember $member): void
     {
-        if ($member->environment !== 'development') {
-            throw new ResourceOperationException(
-                errorCode: 'instance.removal_conflict',
-                message: 'Only a recorded development runtime can be removed by this operation.',
-                status: 409,
-            );
-        }
-
         $appInstance = AppInstance::query()->with('node')->findOrFail($member->app_instance_id);
         $this->php->converge($appInstance->node);
         $this->caddy->converge($appInstance->node);
         $this->certificates->removeAppInstance($appInstance);
+    }
+
+    private function publishRoute(Route $route, AppInstance $departing): void
+    {
+        $router = $route->cluster?->routerAssignment?->node;
+        $nodes = collect();
+
+        if ($router instanceof Node) {
+            $nodes->put($router->id, $router);
+        }
+
+        foreach ($route->targets as $target) {
+            $nodes->put($target->appInstance->node->id, $target->appInstance->node);
+        }
+
+        $nodes->put($departing->node->id, $departing->node);
+
+        foreach ($nodes as $node) {
+            /** @var Node $node */
+            $this->caddy->converge($node);
+        }
+
+        $this->certificates->removeAppInstance($departing);
+        $this->dns->converge();
     }
 
     private function removeRouteProjection(Route $route, AppInstance $appInstance): void
@@ -129,7 +145,10 @@ final readonly class NativeAppInstanceRemovalProjector implements AppInstanceRem
             $this->certificates->removeRouteRouter($route, $router);
         }
 
-        $this->firewall->remove($appInstance->node, $route->id);
+        if ($appInstance->environment === 'development') {
+            $this->firewall->remove($appInstance->node, $route->id);
+        }
+
         $this->dns->converge();
     }
 

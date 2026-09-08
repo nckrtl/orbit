@@ -8,6 +8,7 @@ use App\Domain\AppDev\AppDevPhpFpmManager;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
+use App\Domain\Nodes\RoleName;
 use App\Infrastructure\Nodes\PhpFpmInstalledProjection;
 use App\Infrastructure\Nodes\PhpFpmPublicationPlan;
 use App\Infrastructure\Nodes\RemotePhpPackageManager;
@@ -62,7 +63,10 @@ final readonly class RemoteAppDevPhpFpmManager implements AppDevPhpFpmManager
         }
 
         $installedProjection = $this->installedProjection($node, $account);
-        $this->packages->installForAppDev($node, $desiredVersions, $this->ssh);
+        $role = $desiredSites->contains(static fn (AppDevSite $site): bool => $site->environment === 'production')
+            ? RoleName::AppProd
+            : RoleName::AppDev;
+        $this->packages->installForAppInstance($node->loadMissing('roles'), $desiredVersions, $this->ssh, $role);
 
         $desiredPoolVersions = $desiredSites
             ->mapWithKeys(static fn (AppDevSite $site): array => [$site->poolName() => $site->phpVersion ?? ''])
