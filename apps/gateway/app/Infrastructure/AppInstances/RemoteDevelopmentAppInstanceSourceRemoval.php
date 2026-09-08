@@ -18,6 +18,7 @@ use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\SourceControl\GitRepositoryIdentity;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
 use App\Infrastructure\Ssh\RemoteCommand;
+use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\AppInstanceRemovalMember;
 use App\Models\Node;
@@ -661,7 +662,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
         $appInstance = AppInstance::query()->with(['app', 'node'])->find($member->app_instance_id);
 
         if (! $appInstance instanceof AppInstance) {
-            $this->recordedConflict($member, 'The recorded AppInstance removal member is unavailable.');
+            $appInstance = $this->deletedMemberContext($member);
         }
 
         if (
@@ -682,6 +683,38 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
         $context = $this->context($appInstance);
 
         return [$appInstance->node, $context['user'], $context['group'], $context['root']];
+    }
+
+    private function deletedMemberContext(AppInstanceRemovalMember $member): AppInstance
+    {
+        $app = OrbitApp::query()->find($member->app_id);
+        $node = Node::query()->find($member->node_id);
+
+        if (
+            $member->row_deleted_at === null
+            || ! $app instanceof OrbitApp
+            || ! $node instanceof Node
+        ) {
+            $this->recordedConflict($member, 'The recorded AppInstance removal member is unavailable.');
+        }
+
+        $appInstance = new AppInstance;
+        $appInstance->forceFill([
+            'app_id' => $member->app_id,
+            'node_id' => $member->node_id,
+            'name' => $member->name,
+            'environment' => $member->environment,
+            'source_layout' => $member->source_layout,
+            'checkout_path' => $member->checkout_path,
+            'root' => $member->root,
+            'branch' => $member->branch,
+            'starting_commit' => $member->starting_commit,
+        ]);
+        $appInstance->setAttribute('id', $member->app_instance_id);
+        $appInstance->setRelation('app', $app);
+        $appInstance->setRelation('node', $node);
+
+        return $appInstance;
     }
 
     private function assertDevelopmentMember(AppInstanceRemovalMember $member): void

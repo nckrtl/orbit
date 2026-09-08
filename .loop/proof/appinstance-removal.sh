@@ -251,10 +251,48 @@ done
 BASH
 }
 
-assert_web_responds() {
-    local hostname=$1
-    curl -sS --connect-timeout 10 --max-time 20 --resolve "$hostname:443:$app_dev_ip" \
-        -o /dev/null -w '%{http_code}' "https://$hostname" | grep -E '^[1-5][0-9][0-9]$' >/dev/null
+install_fpm_access_probe() {
+    remote_script "$1" <<'BASH'
+instance_id=$1
+configuration=/etc/php/8.5/fpm/pool.d/orbit-scopes.conf
+pool="[orbit-app-instance-$instance_id]"
+access_log="/tmp/orb182-fpm-access-$instance_id.log"
+candidate=$(mktemp)
+trap 'rm -f -- "$candidate"' EXIT
+test "$(grep -Fxc -- "$pool" "$configuration")" = 1
+awk -v pool="$pool" -v access_log="$access_log" '
+    $0 == pool { print; print "access.log = " access_log; next }
+    { print }
+' "$configuration" > "$candidate"
+sudo install -o root -g root -m 0644 "$candidate" "$configuration"
+sudo rm -f -- "$access_log"
+sudo systemctl restart php8.5-fpm
+test "$(systemctl is-active php8.5-fpm)" = active
+BASH
+}
+
+fpm_access_count() {
+    remote_script "$1" <<'BASH'
+instance_id=$1
+access_log="/tmp/orb182-fpm-access-$instance_id.log"
+if sudo test -f "$access_log"; then
+    sudo awk 'END { print NR }' "$access_log"
+else
+    printf '0\n'
+fi
+BASH
+}
+
+assert_fpm_contact() {
+    local instance_id=$1
+    local hostname=$2
+    local before after status
+    before=$(fpm_access_count "$instance_id")
+    status=$(curl -sS --connect-timeout 10 --max-time 20 --resolve "$hostname:443:$app_dev_ip" \
+        -o /dev/null -w '%{http_code}' "https://$hostname")
+    printf '%s\n' "$status" | grep -E '^[1-5][0-9][0-9]$' >/dev/null
+    after=$(fpm_access_count "$instance_id")
+    test "$after" -gt "$before"
 }
 
 install_route_firewall_artifact() {
@@ -357,8 +395,20 @@ case "$scenario" in
         unregistered_id=$(seed_dev \
             orb182-unregistered-root checkout orb182-unregistered-root "$unregistered_commit" | seed_id)
         unregistered_before=$(gateway_fixture instance-state orb182-unregistered-root)
+        remote_script <<'BASH'
+root=/home/orbit/apps/laravel-typed/orb182-unregistered-root
+child=/home/orbit/apps/laravel-typed/orb182-unregistered-child
+test -d "$child"
+test "$(git -C "$root" worktree list --porcelain | grep -c '^worktree ')" = 2
+BASH
         expect_remove_failure "$unregistered_id" 0 instance.remove_refused
         assert_active_unchanged "$unregistered_before" orb182-unregistered-root
+        remote_script <<'BASH'
+root=/home/orbit/apps/laravel-typed/orb182-unregistered-root
+child=/home/orbit/apps/laravel-typed/orb182-unregistered-child
+test -d "$child"
+test "$(git -C "$root" worktree list --porcelain | grep -c '^worktree ')" = 2
+BASH
         expect_remove_failure "$unregistered_id" 1 instance.remove_refused
         assert_active_unchanged "$unregistered_before" orb182-unregistered-root
         remote_script <<'BASH'
@@ -383,6 +433,8 @@ BASH
         clean_sibling_id=$(seed_dev \
             orb182-clean-sibling worktree orb182-clean-sibling "$clean_commit" | seed_id)
         gateway_fixture project-dev orb182-clean-root orb182-clean-child orb182-clean-sibling
+        install_fpm_access_probe "$clean_root_id"
+        install_fpm_access_probe "$clean_sibling_id"
         clean_before=$(gateway_fixture instance-state orb182-clean-root)
         expect_remove_failure "$clean_root_id" 0 instance.remove_refused
         assert_active_unchanged "$clean_before" orb182-clean-root
@@ -411,8 +463,8 @@ BASH
         remote_after=$(remote_command git -C /home/orbit/apps/laravel-typed/orb182-clean-root \
             ls-remote origin refs/heads/13.x)
         test "$remote_before" = "$remote_after"
-        assert_web_responds orb182-clean-root.orbit
-        assert_web_responds orb182-clean-sibling.orbit
+        assert_fpm_contact "$clean_root_id" orb182-clean-root.orbit
+        assert_fpm_contact "$clean_sibling_id" orb182-clean-sibling.orbit
         remove_success "$clean_root_id" 1 2
         assert_source_absent orb182-clean-root orb182-clean-sibling
 
@@ -427,6 +479,7 @@ BASH
         unpublished_id=$(seed_dev \
             orb182-content-unpublished worktree orb182-content-unpublished "$content_commit" | seed_id)
         gateway_fixture project-dev orb182-content-root orb182-content-dirty orb182-content-unpublished
+        install_fpm_access_probe "$unpublished_id"
         mark_content orb182-content-dirty dirty
         mark_content orb182-content-unpublished unpublished
         dirty_before=$(gateway_fixture instance-state orb182-content-dirty)
@@ -444,7 +497,7 @@ test -d "$sibling"
 test "$(cat "$sibling/orb182-unpublished.txt")" = 'unpublished worktree'
 git -C "$root" show-ref --verify --quiet refs/heads/orb182-content-dirty
 BASH
-        assert_web_responds orb182-content-unpublished.orbit
+        assert_fpm_contact "$unpublished_id" orb182-content-unpublished.orbit
         remove_success "$unpublished_id" 1 1
         remote_script <<'BASH'
 root=/home/orbit/apps/laravel-typed/orb182-content-root

@@ -47,7 +47,7 @@ After preflight succeeds, the Gateway records one immutable member for a worktre
 | `route_target_clear` | Stop the Route from forwarding to the checkout, remove its managed projections, delete the final-target Route, and release its hostname. |
 | `source_finalization` | Delete the exact recorded checkout and store matching completion evidence. |
 | `runtime_cleanup` | Remove the AppInstance runtime artifacts after Route traffic stops reaching the checkout. |
-| `row_deletion` | Delete the AppInstance row and mark the operation completed in one database transaction. |
+| `row_deletion` | Delete the member's AppInstance row. The final member's transaction also marks the operation completed. |
 
 Source finalization never starts before that member's Route deletion releases the hostname. The Gateway removes managed workload and Router Caddy, certificate, Domain Name System (DNS), and development Route firewall projections before it deletes the Route. A projection failure keeps the AppInstance `removing` and keeps the unfinished checkpoint available for retry. The common checkout stays usable while Orbit removes its worktree members and their Git administration entries. Orbit deletes the common checkout only after every accepted worktree completes.
 

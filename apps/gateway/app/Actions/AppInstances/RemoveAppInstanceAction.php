@@ -245,7 +245,10 @@ final readonly class RemoveAppInstanceAction
     private function deletionSet(AppInstance $requested, bool $force): array
     {
         $this->assertMemberPathAvailable($requested);
-        $requestedInventory = $this->inspect($requested, $force);
+        $requestedInventory = $this->inspect(
+            $requested,
+            $force || $requested->source_layout === AppInstanceSourceLayout::Checkout->value,
+        );
         $this->assertMemberPathAvailable($requested);
         /** @var Collection<int, AppInstance> $members */
         $members = collect([$requested]);
@@ -271,6 +274,24 @@ final readonly class RemoveAppInstanceAction
                     message: 'The checkout has registered linked worktrees; retry with --force.',
                     status: 409,
                 );
+            }
+
+            if (! $force) {
+                $contentInventory = $this->inspect($requested, false);
+                $this->assertMemberPathAvailable($requested);
+
+                if (
+                    $contentInventory->digest !== $requestedInventory->digest
+                    || $contentInventory->worktreeInventory !== $requestedInventory->worktreeInventory
+                ) {
+                    throw new ResourceOperationException(
+                        errorCode: 'instance.remove_refused',
+                        message: 'The linked-worktree inventory is inconsistent.',
+                        status: 409,
+                    );
+                }
+
+                $requestedInventory = $contentInventory;
             }
 
             if ($force) {
@@ -504,7 +525,7 @@ final readonly class RemoveAppInstanceAction
 
     private function revalidateUnfinishedSource(AppInstanceRemoval $operation): void
     {
-        $member = $operation->members()->whereNull('source_finalized_at')->orderBy('position')->first();
+        $member = $operation->members()->whereNull('row_deleted_at')->orderBy('position')->first();
 
         if (! $member instanceof AppInstanceRemovalMember) {
             return;
@@ -520,7 +541,6 @@ final readonly class RemoveAppInstanceAction
         $members = $operation->members()->orderBy('position')->get();
         $developmentNodeIds = $members
             ->where('environment', 'development')
-            ->whereNull('source_finalized_at')
             ->pluck('node_id')
             ->unique()
             ->values();
@@ -552,7 +572,7 @@ final readonly class RemoveAppInstanceAction
         /** @var array<int, AppInstanceSourceRevalidationState> $states */
         $states = [];
 
-        foreach ($members->whereNull('source_finalized_at') as $member) {
+        foreach ($members as $member) {
             $expectation = $this->expectationFor($current, $members, $states);
             $states[$member->id] = $this->sourceFinalizer->revalidate($member, $expectation);
         }

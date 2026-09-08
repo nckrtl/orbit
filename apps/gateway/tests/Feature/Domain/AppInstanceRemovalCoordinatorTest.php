@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\AppInstances\RemoveAppInstanceAction;
 use App\Domain\AppDev\AppDevSourceOperationLock;
+use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\AppInstances\AppInstanceSourceLayout;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\AppInstances\Removal\AppInstanceRemovalException;
@@ -203,6 +204,24 @@ it('refuses normal checkout cascade then removes the immutable worktree-first se
         ->toBe(0);
 });
 
+it('returns force guidance before inspecting unsafe checkout content', function (): void {
+    [$checkout, $first, $second] = orb182_coordinator_graph();
+    $paths = [$checkout->checkout_path, $first->checkout_path, $second->checkout_path];
+    sort($paths, SORT_STRING);
+    $this->orb181Inspector->linkedPaths = $paths;
+    $this->orb181Inspector->commonRepositoryPath = $checkout->checkout_path;
+    $this->orb181Inspector->normalUnsafeIds = [$checkout->id];
+
+    expect(fn () => $this->orb181Coordinator->execute($checkout, false))
+        ->toThrow(ResourceOperationException::class, 'retry with --force');
+    expect($this->orb181Inspector->calls)
+        ->toBe(["inspect:{$checkout->id}:force"])
+        ->and(AppInstanceRemovalMember::query()->count())
+        ->toBe(0)
+        ->and(AppInstance::query()->where('status', AppInstanceState::Active->value)->count())
+        ->toBe(3);
+});
+
 it('refuses an unregistered checkout member before accepting either mode', function (bool $force): void {
     [$checkout, $first] = orb182_coordinator_graph();
     $unknown = '/srv/orbit/apps/acme/unregistered';
@@ -256,6 +275,37 @@ it('refuses a new source on retry before the next member changes', function (): 
                     'app_instance_id',
                     $second->id,
                 ))
+                ->exists(),
+        )
+        ->toBeTrue();
+});
+
+it('refuses a replacement at a completed member path before the next member changes', function (): void {
+    [$checkout, $first, $second] = orb182_coordinator_graph();
+    $paths = [$checkout->checkout_path, $first->checkout_path, $second->checkout_path];
+    sort($paths, SORT_STRING);
+    $this->orb181Inspector->linkedPaths = $paths;
+    $this->orb181Inspector->commonRepositoryPath = $checkout->checkout_path;
+    $this->orb181Finalizer->failPrepareFor = $second->id;
+
+    expect(fn () => $this->orb181Coordinator->execute($checkout, true))
+        ->toThrow(AppInstanceRemovalException::class);
+    $operation = $checkout->refresh()->removalMember?->removal;
+    $members = $operation?->members()->orderBy('position')->get();
+    expect($members?->first()?->row_deleted_at)->not->toBeNull();
+
+    $this->orb181Finalizer->failPrepareFor = null;
+    $this->orb181Finalizer->replacementPaths = [$first->checkout_path];
+
+    expect(fn () => $this->orb181Coordinator->execute($checkout->refresh(), true))
+        ->toThrow(AppInstanceRemovalException::class);
+    expect($operation?->refresh()->error_code)
+        ->toBe('instance.removal_conflict')
+        ->and($members?->get(1)?->refresh()->route_cleared_at)
+        ->toBeNull()
+        ->and(
+            Route::query()
+                ->whereHas('targets', fn ($query) => $query->where('app_instance_id', $second->id))
                 ->exists(),
         )
         ->toBeTrue();
@@ -541,9 +591,20 @@ final class Orb181CoordinatorInspector implements DevelopmentAppInstanceSourceRe
 
     public ?string $commonRepositoryPath = null;
 
+    /** @var list<int> */
+    public array $normalUnsafeIds = [];
+
     public function inspect(AppInstance $appInstance, bool $force): AppInstanceSourceInventory
     {
         $this->calls[] = sprintf('inspect:%d:%s', $appInstance->id, $force ? 'force' : 'normal');
+
+        if (! $force && in_array($appInstance->id, $this->normalUnsafeIds, true)) {
+            throw new RuntimeConvergenceException(
+                'app-instance-source-removal-inspect',
+                'instance.remove_refused',
+                'Source content is unsafe.',
+            );
+        }
 
         $paths = $this->linkedPaths ?? [$appInstance->checkout_path];
         $root = '/srv/orbit/apps';
@@ -604,6 +665,9 @@ final class Orb181CoordinatorFinalizer implements DevelopmentAppInstanceSourceFi
     /** @var array<int, list<string>> */
     public array $finalizeExpectations = [];
 
+    /** @var list<string> */
+    public array $replacementPaths = [];
+
     public function prepare(
         AppInstanceRemovalMember $member,
         ?AppInstanceSourceRevalidationExpectation $expectation = null,
@@ -625,6 +689,14 @@ final class Orb181CoordinatorFinalizer implements DevelopmentAppInstanceSourceFi
     ): AppInstanceSourceRevalidationState {
         $state = $this->states[$member->app_instance_id] ?? AppInstanceSourceRevalidationState::Present;
         $this->calls[] = "revalidate:{$member->app_instance_id}:{$state->value}";
+
+        if (in_array($member->checkout_path, $this->replacementPaths, true)) {
+            throw new ResourceOperationException(
+                'instance.removal_conflict',
+                'A completed source path was replaced after removal acceptance.',
+                409,
+            );
+        }
 
         if (in_array(
             $state,

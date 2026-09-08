@@ -912,6 +912,46 @@ it('refuses an unknown real worktree after one accepted member completes', funct
         ->toBeTrue();
 });
 
+it('refuses an independent replacement at a completed member path', function (): void {
+    [$checkout, $first, $second] = orb182_real_source_graph(
+        $this->source,
+        $this->orbitApp,
+        $this->node,
+        $this->appsRoot,
+        'completed-replacement',
+    );
+    $members = orb182_record_sources($this->removal, [$first, $second, $checkout], true);
+    $paths = [$checkout->checkout_path, $first->checkout_path, $second->checkout_path];
+    sort($paths, SORT_STRING);
+    $expectation = new AppInstanceSourceRevalidationExpectation($paths, $paths);
+    $this->removal->prepare($members[0], $expectation);
+    $members[0]->update(['source_prepared_at' => now()]);
+    orb182_clear_test_route($members[0]);
+    $members[0]->update(['route_cleared_at' => now(), 'route_outcome' => 'deleted']);
+    $receipt = $this->removal->finalize($members[0], $expectation);
+    $members[0]->update([
+        'source_finalized_at' => now(),
+        'finalization_receipt' => $receipt,
+    ]);
+    $first->delete();
+    $members[0]->update(['runtime_cleaned_at' => now(), 'row_deleted_at' => now()]);
+    orb76_run(['git', 'clone', $this->repository, $first->checkout_path]);
+    $expected = [$checkout->checkout_path, $second->checkout_path];
+    sort($expected, SORT_STRING);
+
+    expect(fn () => $this->removal->revalidate(
+        $members[0]->refresh(),
+        new AppInstanceSourceRevalidationExpectation($expected, $expected),
+    ))
+        ->toThrow(RuntimeConvergenceException::class)
+        ->and(is_dir($first->checkout_path.'/.git'))
+        ->toBeTrue()
+        ->and(is_dir($second->checkout_path))
+        ->toBeTrue()
+        ->and(is_dir($checkout->checkout_path.'/.git'))
+        ->toBeTrue();
+});
+
 it('authenticates a completed worktree shrink before the database checkpoint', function (): void {
     [$checkout, $first, $second] = orb182_real_source_graph(
         $this->source,

@@ -1392,12 +1392,15 @@ it('removes an active AppInstance through every durable checkpoint', function (b
         ->and(Route::query()->count())
         ->toBe(0)
         ->and($this->removalSource->calls)
-        ->toBe([
-            "inspect:{$created->json('data.id')}",
-            "prepare:{$created->json('data.id')}",
-            "revalidate:{$created->json('data.id')}",
-            "finalize:{$created->json('data.id')}",
-        ])
+        ->toBe(array_merge(
+            ["inspect:{$created->json('data.id')}"],
+            $force ? [] : ["inspect:{$created->json('data.id')}"],
+            [
+                "prepare:{$created->json('data.id')}",
+                "revalidate:{$created->json('data.id')}",
+                "finalize:{$created->json('data.id')}",
+            ],
+        ))
         ->and($this->source->calls)
         ->toBeEmpty()
         ->and($activity->subject_type)
