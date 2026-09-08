@@ -108,6 +108,75 @@ describe('tool responses', function (): void {
             ->toBe($constraint);
     });
 
+    it('applies constructor input bounds once through direct and factory construction', function (): void {
+        $boundedName = 'https://a:b@'.str_repeat('n', times: 20);
+        $boundedText = 'https://a:b@'.str_repeat('t', times: 243);
+        $boundedToken = 'a'.str_repeat('1', times: 31);
+
+        expect(strlen($boundedName))
+            ->toBe(32)
+            ->and(strlen($boundedText))
+            ->toBe(255)
+            ->and(strlen($boundedToken))
+            ->toBe(32);
+
+        $directTool = new ToolResponse(
+            41,
+            12,
+            $boundedName,
+            $boundedText,
+            '',
+            false,
+            $boundedToken,
+            $boundedText,
+            $boundedToken,
+            null,
+            $boundedToken,
+            tool_response_request_id(),
+        );
+        $toolData = tool_response_data();
+        $toolData['manager'] = $boundedName;
+        $toolData['package'] = $boundedText;
+        $toolData['version_constraint'] = '';
+        $toolData['status'] = $boundedToken;
+        $toolData['installed_version'] = $boundedText;
+        $toolData['failed_operation'] = $boundedToken;
+        $toolData['outcome'] = $boundedToken;
+        $factoryTool = ToolResponse::fromGatewayData($toolData, tool_response_request_id());
+
+        $directManager = new ToolManagerResponse(
+            7,
+            12,
+            $boundedName,
+            $boundedToken,
+            $boundedText,
+            '',
+            null,
+            tool_response_request_id(),
+        );
+        $factoryManager = ToolManagerResponse::fromGatewayData([
+            'id' => 7,
+            'node_id' => 12,
+            'name' => $boundedName,
+            'status' => $boundedToken,
+            'installed_version' => $boundedText,
+            'failed_step' => '',
+        ], tool_response_request_id());
+
+        expect($factoryTool->toArray())
+            ->toBe($directTool->toArray())
+            ->and($factoryManager->toArray())
+            ->toBe($directManager->toArray())
+            ->and(strlen($factoryTool->manager))
+            ->toBeGreaterThan(32)
+            ->and(strlen($factoryTool->package))
+            ->toBeGreaterThan(255)
+            ->and($factoryTool->versionConstraint)
+            ->toBeEmpty()
+            ->and($factoryManager->failedStep)
+            ->toBeEmpty();
+    });
+
     it('removes child request IDs from typed collections', function (): void {
         $tool = ToolResponse::fromGatewayData(tool_response_data(), tool_response_request_id());
         $manager = ToolManagerResponse::fromGatewayData([
@@ -194,6 +263,38 @@ describe('tool responses', function (): void {
             'installed_version' => false,
         ]],
     ]);
+
+    it('hides malformed sensitive transport values from SDK traces', function (): void {
+        $credential = 'malformed-transport-cred-71c4e2';
+        $toolData = tool_response_data();
+        $toolData['installed_version'] = ['token' => $credential];
+        $managerData = [
+            'id' => 7,
+            'node_id' => 12,
+            'name' => 'apt',
+            'status' => 'active',
+            'failed_step' => ['token' => $credential],
+        ];
+
+        foreach ([
+            fn (): ToolResponse => ToolResponse::fromGatewayData($toolData, tool_response_request_id()),
+            fn (): ToolManagerResponse => ToolManagerResponse::fromGatewayData(
+                $managerData,
+                tool_response_request_id(),
+            ),
+        ] as $construct) {
+            try {
+                $construct();
+                $this->fail('Expected malformed Tool transport validation to fail.');
+            } catch (InvalidArgumentException $exception) {
+                expect($exception->getMessage())
+                    ->toMatch('/\AInvalid Tool (?:manager )?response field \[[a-z_]+\]\.\z/')
+                    ->and(tool_response_sdk_trace($exception))
+                    ->toContain('SensitiveParameterValue')
+                    ->not->toContain($credential);
+            }
+        }
+    });
 
     it('redacts credential-shaped values from mapped fields and diagnostics', function (): void {
         $credential = 'tool-cred-9f3a7b';
