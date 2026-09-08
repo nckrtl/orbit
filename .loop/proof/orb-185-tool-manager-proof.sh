@@ -5,11 +5,11 @@ set -eu
 mode="${1:-}"
 database=/home/orbit/.orbit/gateway.sqlite
 
-gateway_node_id=$(
+managed_node_id=$(
     php -r '
         $database = new PDO("sqlite:/home/orbit/.orbit/gateway.sqlite");
         $id = $database->query(
-            "SELECT nodes.id FROM nodes INNER JOIN node_roles ON node_roles.node_id = nodes.id WHERE node_roles.role = \"gateway\" LIMIT 1",
+            "SELECT nodes.id FROM nodes INNER JOIN node_roles ON node_roles.node_id = nodes.id WHERE node_roles.role = \"app-dev\" LIMIT 1",
         )->fetchColumn();
         if (! is_int($id) && ! ctype_digit((string) $id)) {
             exit(1);
@@ -19,10 +19,16 @@ gateway_node_id=$(
 )
 
 if [ "$mode" = materialize ]; then
-    before=$(orbit tool:manager:list --node="$gateway_node_id" --json)
+    php -r '
+        $database = new PDO("sqlite:/home/orbit/.orbit/gateway.sqlite");
+        $statement = $database->prepare("DELETE FROM tool_managers WHERE node_id = ? AND name = ?");
+        $statement->execute([$argv[1], "composer"]);
+    ' "$managed_node_id"
+
+    before=$(orbit tool:manager:list --node="$managed_node_id" --json)
     php -r '
         $payload = json_decode($argv[1], true, flags: JSON_THROW_ON_ERROR);
-        foreach ($payload["data"] as $manager) {
+        foreach ($payload["managers"] as $manager) {
             if ($manager["name"] === "composer") {
                 if ($manager["id"] !== null || $manager["status"] !== "uninstalled") {
                     exit(1);
@@ -33,22 +39,22 @@ if [ "$mode" = materialize ]; then
         exit(1);
     ' "$before"
 
-    installed=$(orbit tool:install phpstan/phpstan --manager=composer --node="$gateway_node_id" --json)
+    installed=$(orbit tool:install phpstan/phpstan --manager=composer --node="$managed_node_id" --json)
     php -r '
         $payload = json_decode($argv[1], true, flags: JSON_THROW_ON_ERROR);
         if (
-            $payload["data"]["manager"] !== "composer"
-            || $payload["data"]["package"] !== "phpstan/phpstan"
-            || $payload["data"]["status"] !== "installed"
+            $payload["manager"] !== "composer"
+            || $payload["package"] !== "phpstan/phpstan"
+            || $payload["status"] !== "installed"
         ) {
             exit(1);
         }
     ' "$installed"
 
-    after=$(orbit tool:manager:list --node="$gateway_node_id" --json)
+    after=$(orbit tool:manager:list --node="$managed_node_id" --json)
     php -r '
         $payload = json_decode($argv[1], true, flags: JSON_THROW_ON_ERROR);
-        foreach ($payload["data"] as $manager) {
+        foreach ($payload["managers"] as $manager) {
             if ($manager["name"] === "composer") {
                 if (! is_int($manager["id"]) || $manager["status"] !== "active") {
                     exit(1);
