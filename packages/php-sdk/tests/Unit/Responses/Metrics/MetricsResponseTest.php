@@ -66,6 +66,56 @@ it('preserves failed metrics assignments for recovery', function (): void {
     ]);
 });
 
+it('normalizes malformed metrics assignment error codes to null', function (mixed $errorCode): void {
+    $response = MetricsStatusResponse::fromGatewayData([
+        'enabled' => true,
+        'url' => 'https://metrics.orbit',
+        'assignment' => [
+            'id' => 7,
+            'node_id' => 3,
+            'node_name' => 'app-dev',
+            'status' => 'failed',
+            'failed_step' => 'metrics:runtime',
+            'error_code' => $errorCode,
+        ],
+        'prometheus' => 'unknown',
+        'grafana' => 'unknown',
+        'exporters' => [],
+    ], 'req');
+
+    expect($response->assignment['error_code'])
+        ->toBeNull()
+        ->and($response->toArray()['assignment']['error_code'])
+        ->toBeNull()
+        ->and(serialize($response))
+        ->not->toContain(is_string($errorCode) ? $errorCode : 'credential');
+})->with([
+    'credential-shaped code' => 'token=metrics-response-credential',
+    'control characters' => "metrics.failed\r\ncredential",
+    'whitespace' => ' metrics.failed ',
+    'non-string' => [['credential']],
+    'oversized' => str_repeat('a', times: 129),
+]);
+
+it('keeps rejecting malformed metrics assignment state when the error code can normalize', function (): void {
+    expect(fn () => MetricsStatusResponse::fromGatewayData([
+        'enabled' => true,
+        'url' => 'https://metrics.orbit',
+        'assignment' => [
+            'id' => 7,
+            'node_id' => 3,
+            'node_name' => 'app-dev',
+            'status' => 'unexpected',
+            'failed_step' => 'metrics:runtime',
+            'error_code' => 'token=metrics-response-credential',
+        ],
+        'prometheus' => 'unknown',
+        'grafana' => 'unknown',
+        'exporters' => [],
+    ], 'req'))
+        ->toThrow(GatewayApiException::class, 'invalid metrics assignment');
+});
+
 it('preserves exporter ownership drift for operator recovery', function (): void {
     $response = MetricsStatusResponse::fromGatewayData([
         'enabled' => true,
