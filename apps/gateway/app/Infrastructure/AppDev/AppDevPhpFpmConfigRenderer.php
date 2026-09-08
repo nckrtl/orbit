@@ -21,26 +21,37 @@ final readonly class AppDevPhpFpmConfigRenderer
     {
         return $sites
             ->sortBy('scope')
-            ->map(static fn (AppDevSite $site): string => <<<FPM
-                [{$site->poolName()}]
-                user = {$account->user}
-                group = {$account->group}
-                listen = {$site->socketPath()}
-                listen.owner = {$account->user}
-                listen.group = caddy
-                listen.mode = 0660
-                pm = ondemand
-                pm.max_children = 10
-                pm.process_idle_timeout = 10s
-                pm.max_requests = 500
-                chdir = {$site->checkoutPath}
-                catch_workers_output = yes
-                clear_env = no
-                env[PATH] = /usr/local/bin:/opt/orbit/composer/vendor/bin:/usr/bin:/bin
-                php_admin_value[opcache.validate_timestamps] = 1
-                php_admin_value[opcache.revalidate_freq] = 0
+            ->map(static function (AppDevSite $site) use ($account): string {
+                $user = $site->executionUser($account->user);
+                $group = $site->executionUser($account->group);
+                $home = $site->executionHome($account->home);
+                $production = $site->environment === 'production';
+                $maxChildren = $production ? 20 : 10;
+                $clearEnvironment = $production ? 'yes' : 'no';
+                $homeEnvironment = $production ? "env[HOME] = {$home}\nenv[USER] = {$user}\n" : '';
+                $validateTimestamps = $production ? 0 : 1;
+                $revalidateFrequency = $production ? '' : "php_admin_value[opcache.revalidate_freq] = 0\n";
 
-                FPM)
+                return <<<FPM
+                    [{$site->poolName()}]
+                    user = {$user}
+                    group = {$group}
+                    listen = {$site->socketPath()}
+                    listen.owner = {$user}
+                    listen.group = caddy
+                    listen.mode = 0660
+                    pm = ondemand
+                    pm.max_children = {$maxChildren}
+                    pm.process_idle_timeout = 10s
+                    pm.max_requests = 500
+                    chdir = {$site->checkoutPath}
+                    catch_workers_output = yes
+                    clear_env = {$clearEnvironment}
+                    {$homeEnvironment}env[PATH] = /usr/local/bin:/opt/orbit/composer/vendor/bin:/usr/bin:/bin
+                    php_admin_value[opcache.validate_timestamps] = {$validateTimestamps}
+                    {$revalidateFrequency}
+                    FPM;
+            })
             ->implode(PHP_EOL);
     }
 }

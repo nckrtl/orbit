@@ -19,6 +19,10 @@ final readonly class AppDevCaddyConfigRenderer
             $sites
                 ->sortBy('hostname')
                 ->map(static function (AppDevSite $site): string {
+                    $upstreams = implode(' ', array_map(
+                        static fn (string $address): string => "https://{$address}",
+                        $site->proxyAddresses(),
+                    ));
                     $handler = $site->unavailable
                         ? <<<'CADDY'
                             header Cache-Control "no-store"
@@ -28,7 +32,7 @@ final readonly class AppDevCaddyConfigRenderer
                         : (
                             $site->isProxy()
                                 ? <<<CADDY
-                                    reverse_proxy https://{$site->upstreamAddress} {
+                                    reverse_proxy {$upstreams} {
                                         header_up Host {$site->hostname}
                                         transport http {
                                             tls_server_name {$site->hostname}

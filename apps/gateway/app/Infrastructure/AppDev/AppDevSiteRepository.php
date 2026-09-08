@@ -69,38 +69,48 @@ final readonly class AppDevSiteRepository
             ->get();
 
         foreach ($routes as $route) {
-            $target = $route->targets->first()?->appInstance;
-
-            if (! $target instanceof AppInstance) {
-                if (
-                    $pendingRoute instanceof Route
-                    && $route->is($pendingRoute)
-                    && $unavailableInstance instanceof AppInstance
-                ) {
-                    $sites->push($this->unavailableSite($unavailableInstance, $route));
-                }
-
-                continue;
-            }
-
-            if (! is_string($target->node->wireguard_ip)) {
-                continue;
-            }
-
-            if (! in_array($target->status, [AppInstanceState::SourceResolved, AppInstanceState::Active], true)) {
-                continue;
-            }
-
-            $sites->push($this->appInstanceSite($target, $route));
-
+            $targets = $route
+                ->targets
+                ->map(static fn ($targetRow) => $targetRow->appInstance)
+                ->filter(
+                    static fn ($target): bool => (
+                        $target instanceof AppInstance
+                        && is_string($target->node->wireguard_ip)
+                        && in_array(
+                            $target->status,
+                            [AppInstanceState::SourceResolved, AppInstanceState::Active],
+                            true,
+                        )
+                    ),
+                )
+                ->values();
             $router = $route->cluster?->routerAssignment?->node;
+            $hasRouterSite = $router instanceof Node
+            && is_string($router->wireguard_ip)
+            && $targets->isNotEmpty()
+            && ! $targets->contains(
+                static fn (AppInstance $target): bool => $router->is($target->node),
+            );
+
+            foreach ($targets as $target) {
+                assert($target instanceof AppInstance);
+
+                $sites->push($this->appInstanceSite($target, $route));
+            }
+
+            if ($hasRouterSite) {
+                assert($router instanceof Node);
+
+                $sites->push($this->routerSite(array_values($targets->all()), $route, $router));
+            }
 
             if (
-                $router instanceof Node
-                && is_string($router->wireguard_ip)
-                && ! $router->is($target->node)
+                $pendingRoute instanceof Route
+                && $route->is($pendingRoute)
+                && $unavailableInstance instanceof AppInstance
+                && $targets->isEmpty()
             ) {
-                $sites->push($this->routerSite($target, $route, $router));
+                $sites->push($this->unavailableSite($unavailableInstance, $route, $router));
             }
         }
 
@@ -144,14 +154,24 @@ final readonly class AppDevSiteRepository
             documentRoot: $instance->effectiveRoot() ?? '',
             phpVersion: $instance->selected_php_version,
             hostname: $route->hostname,
+            environment: $instance->environment,
+            appSlug: $instance->app->slug,
         );
     }
 
-    private function routerSite(AppInstance $instance, Route $route, Node $router): AppDevSite
+    /** @param list<AppInstance> $instances */
+    private function routerSite(array $instances, Route $route, Node $router): AppDevSite
     {
-        $address = is_string($instance->node->lan_ip) && $instance->node->lan_ip !== ''
-            ? $instance->node->lan_ip
-            : $instance->node->wireguard_ip;
+        $addresses = collect($instances)
+            ->map(static fn (AppInstance $instance): ?string => is_string($instance->node->lan_ip)
+                && $instance->node->lan_ip !== ''
+                    ? $instance->node->lan_ip
+                    : $instance->node->wireguard_ip)
+            ->filter(static fn (?string $address): bool => is_string($address) && $address !== '')
+            ->values()
+            ->all();
+
+        /** @var list<string> $addresses */
 
         return new AppDevSite(
             nodeId: $router->id,
@@ -161,20 +181,22 @@ final readonly class AppDevSiteRepository
             documentRoot: '',
             phpVersion: null,
             hostname: $route->hostname,
-            upstreamAddress: $address,
+            upstreamAddresses: $addresses,
         );
     }
 
-    private function unavailableSite(AppInstance $instance, Route $route): AppDevSite
+    private function unavailableSite(AppInstance $instance, Route $route, ?Node $router): AppDevSite
     {
-        $router = $route->cluster?->routerAssignment?->node;
         $usesRouterProjection = $router instanceof Node && ! $router->is($instance->node);
         $node = $usesRouterProjection ? $router : $instance->node;
+        $scope = $usesRouterProjection
+            ? "route-{$route->id}-router"
+            : "app-instance-{$instance->id}";
 
         return new AppDevSite(
             nodeId: $node->id,
             nodeAddress: $node->wireguard_ip ?? '',
-            scope: $usesRouterProjection ? "route-{$route->id}-router" : "app-instance-{$instance->id}",
+            scope: $scope,
             checkoutPath: '',
             documentRoot: '',
             phpVersion: null,

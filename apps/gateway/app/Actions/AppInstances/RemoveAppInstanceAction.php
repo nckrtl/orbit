@@ -17,9 +17,13 @@ use App\Domain\AppInstances\Removal\AppInstanceSourceRevalidationExpectation;
 use App\Domain\AppInstances\Removal\AppInstanceSourceRevalidationState;
 use App\Domain\AppInstances\Removal\DevelopmentAppInstanceSourceFinalizer;
 use App\Domain\AppInstances\Removal\DevelopmentAppInstanceSourceRemoval;
+use App\Domain\AppInstances\Removal\ProductionAppInstanceContentRetention;
+use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
 use App\Domain\Nodes\Storage\StoragePath;
+use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RouteStatus;
+use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\AppInstance;
 use App\Models\AppInstanceRemoval;
@@ -37,17 +41,19 @@ use Throwable;
  */
 final readonly class RemoveAppInstanceAction
 {
+    /** @mago-expect lint:excessive-parameter-list The coordinator names each source, Route, overlap, and lock boundary explicitly. */
     public function __construct(
         private DevelopmentAppInstanceSourceRemoval $sourceInspector,
         private DevelopmentAppInstanceSourceFinalizer $sourceFinalizer,
         private AppInstanceRemovalProjector $routes,
         private ManagedCheckoutOverlap $checkoutOverlap,
         private AppDevSourceOperationLock $sourceLock,
+        private ProductionAppInstanceContentRetention $productionContent,
     ) {}
 
     public function execute(AppInstance $appInstance, bool $force): AppInstanceRemoval
     {
-        $snapshot = $appInstance->refresh()->load(['app', 'node', 'routes.targets']);
+        $snapshot = $appInstance->refresh()->load($this->removalRelations());
 
         if ($snapshot->status === AppInstanceState::Removing) {
             return $this->resume($snapshot, $force);
@@ -93,6 +99,10 @@ final readonly class RemoveAppInstanceAction
     {
         $this->assertSupported($appInstance);
 
+        if ($appInstance->environment === 'production') {
+            return $this->acceptProduction($appInstance, $force);
+        }
+
         return $this->sourceLock->synchronized(
             $appInstance->node_id,
             fn (): AppInstanceRemoval => $this->acceptLocked($appInstance, $force),
@@ -101,7 +111,7 @@ final readonly class RemoveAppInstanceAction
 
     private function acceptLocked(AppInstance $appInstance, bool $force): AppInstanceRemoval
     {
-        $snapshot = $appInstance->refresh()->load(['app', 'node', 'routes.targets']);
+        $snapshot = $appInstance->refresh()->load($this->removalRelations());
         $this->assertSupported($snapshot);
         [$members, $inventories] = $this->deletionSet($snapshot, $force);
         $digest = $this->inventoryDigest($snapshot->id, $force, $inventories);
@@ -201,6 +211,67 @@ final readonly class RemoveAppInstanceAction
         return $operation;
     }
 
+    private function acceptProduction(AppInstance $appInstance, bool $force): AppInstanceRemoval
+    {
+        $snapshot = $appInstance->refresh()->load($this->removalRelations());
+        $this->assertSupported($snapshot);
+        $route = $this->productionRoute($snapshot);
+        $inventory = $this->productionContent->inventory($snapshot);
+
+        /** @var AppInstanceRemoval $operation */
+        $operation = DB::transaction(function () use ($snapshot, $route, $inventory, $force): AppInstanceRemoval {
+            $locked = AppInstance::query()->lockForUpdate()->findOrFail($snapshot->id);
+            $lockedRoute = Route::query()
+                ->with($this->productionRouteRelations())
+                ->lockForUpdate()
+                ->findOrFail($route->id);
+            $locked->load(['app', 'node', 'routes.targets']);
+
+            if ($locked->status !== AppInstanceState::Active || ! $this->productionRouteIsSafe($lockedRoute, $locked)) {
+                $this->conflict($snapshot);
+            }
+
+            $operation = AppInstanceRemoval::query()->create([
+                'id' => (string) Str::uuid(),
+                'requested_app_instance_id' => $snapshot->id,
+                'requested_name' => $snapshot->name,
+                'force' => $force,
+                'inventory_digest' => $this->inventoryDigest($snapshot->id, $force, [
+                    $snapshot->id => $inventory,
+                ]),
+                'total' => 1,
+                'status' => AppInstanceRemovalStatus::Removing,
+                'current_step' => AppInstanceRemovalStep::SourcePreparation,
+            ]);
+            $operation
+                ->members()
+                ->create([
+                    'position' => 0,
+                    'app_instance_id' => $snapshot->id,
+                    'app_id' => $snapshot->app_id,
+                    'node_id' => $snapshot->node_id,
+                    'route_id' => $route->id,
+                    'name' => $snapshot->name,
+                    'environment' => $snapshot->environment,
+                    'source_layout' => $inventory->layout,
+                    'repository_identity' => $inventory->repositoryIdentity,
+                    'checkout_path' => $inventory->checkoutPath,
+                    'root' => $inventory->root,
+                    'branch' => $inventory->branch,
+                    'starting_commit' => $inventory->startingCommit,
+                    'common_repository_path' => $inventory->commonRepositoryPath,
+                    'source_identity' => $inventory->sourceIdentity,
+                    'linked_worktree_paths' => $inventory->linkedWorktreePaths,
+                    'source_digest' => $inventory->digest,
+                ]);
+            $locked->update(['status' => AppInstanceState::Removing]);
+
+            return $operation->load('members');
+        });
+
+        return $operation;
+    }
+
     private function assertSupported(AppInstance $appInstance): void
     {
         if ($appInstance->migration_required) {
@@ -219,19 +290,22 @@ final readonly class RemoveAppInstanceAction
             );
         }
 
-        if ($appInstance->environment !== 'development') {
+        if (! in_array($appInstance->environment, ['development', 'production'], true)) {
             throw new ResourceOperationException(
                 errorCode: 'instance.remove_refused',
-                message: 'Production AppInstance removal is not available.',
+                message: 'The AppInstance environment cannot be removed.',
                 status: 409,
             );
         }
 
-        if (! in_array(
-            $appInstance->source_layout,
-            [AppInstanceSourceLayout::Checkout->value, AppInstanceSourceLayout::Worktree->value],
-            true,
-        )) {
+        if (
+            $appInstance->environment === 'development'
+            && ! in_array(
+                $appInstance->source_layout,
+                [AppInstanceSourceLayout::Checkout->value, AppInstanceSourceLayout::Worktree->value],
+                true,
+            )
+        ) {
             throw new ResourceOperationException(
                 errorCode: 'instance.remove_refused',
                 message: 'AppInstance source layout is not removable.',
@@ -320,6 +394,7 @@ final readonly class RemoveAppInstanceAction
             if (
                 $member->node_id !== $requested->node_id
                 || $member->app_id !== $requested->app_id
+                || $member->environment !== $requested->environment
                 || $member->app->repository_identity !== $requested->app->repository_identity
             ) {
                 throw new ResourceOperationException(
@@ -412,6 +487,69 @@ final readonly class RemoveAppInstanceAction
         return $route;
     }
 
+    private function productionRoute(AppInstance $appInstance): Route
+    {
+        if ($appInstance->routes->count() !== 1) {
+            throw new ResourceOperationException(
+                errorCode: 'instance.remove_refused',
+                message: "Production AppInstance [{$appInstance->name}] does not have one removable Route.",
+                status: 409,
+            );
+        }
+
+        $route = $appInstance->routes->sole();
+
+        if (! $this->productionRouteIsSafe($route, $appInstance)) {
+            throw new ResourceOperationException(
+                errorCode: 'instance.remove_refused',
+                message: "Production AppInstance [{$appInstance->name}] Route is not safe to remove.",
+                status: 409,
+            );
+        }
+
+        return $route;
+    }
+
+    private function productionRouteIsSafe(Route $route, AppInstance $requested): bool
+    {
+        if (
+            $route->status !== RouteStatus::Active
+            || $route->provenance !== RouteProvenance::Explicit
+            || $route->cluster_id === null
+            || $route->targets->isEmpty()
+            || ! $route->targets->contains('app_instance_id', $requested->id)
+        ) {
+            return false;
+        }
+
+        $nodeIds = [];
+
+        foreach ($route->targets as $position => $target) {
+            $instance = $target->appInstance;
+            $node = $instance->node;
+
+            if (
+                $target->position !== $position
+                || $instance->app_id !== $route->app_id
+                || $instance->environment !== 'production'
+                || $instance->status !== AppInstanceState::Active
+                || $node->status !== LifecycleStatus::Active
+                || $node->cluster_id !== $route->cluster_id
+                || ! $node->roles->contains(
+                    static fn ($role): bool => $role->role === RoleName::AppProd
+                    && $role->status === LifecycleStatus::Active,
+                )
+                || isset($nodeIds[$node->id])
+            ) {
+                return false;
+            }
+
+            $nodeIds[$node->id] = true;
+        }
+
+        return true;
+    }
+
     private function inspect(
         AppInstance $appInstance,
         bool $force,
@@ -477,6 +615,13 @@ final readonly class RemoveAppInstanceAction
         AppInstanceRemoval $operation,
         AppInstanceRemovalMember $member,
     ): void {
+        if ($member->environment === 'production') {
+            $this->productionContent->prepare($member);
+            $member->update(['source_prepared_at' => now()]);
+
+            return;
+        }
+
         $expectation = $this->expectationFor(
             $member,
             $operation->members()->orderBy('position')->get(),
@@ -496,6 +641,14 @@ final readonly class RemoveAppInstanceAction
         AppInstanceRemoval $operation,
         AppInstanceRemovalMember $member,
     ): void {
+        if ($member->environment === 'production') {
+            $this->productionContent->revalidate($member);
+            $receipt = $this->productionContent->finalize($member);
+            $member->update(['source_finalized_at' => now(), 'finalization_receipt' => $receipt]);
+
+            return;
+        }
+
         $expectation = $this->revalidateUnfinishedSources($operation, $member);
         $receipt = $this->sourceFinalizer->finalize($member, $expectation);
         $member->update(['source_finalized_at' => now(), 'finalization_receipt' => $receipt]);
@@ -533,6 +686,12 @@ final readonly class RemoveAppInstanceAction
         $member = $operation->members()->whereNull('row_deleted_at')->orderBy('position')->first();
 
         if (! $member instanceof AppInstanceRemovalMember) {
+            return;
+        }
+
+        if ($member->environment === 'production') {
+            $this->productionContent->revalidate($member);
+
             return;
         }
 
@@ -716,5 +875,25 @@ final readonly class RemoveAppInstanceAction
             message: "AppInstance [{$appInstance->name}] belongs to a different removal request.",
             status: 409,
         );
+    }
+
+    /** @return list<string> */
+    private function removalRelations(): array
+    {
+        return [
+            'app',
+            'node',
+            'routes.targets.appInstance.node.roles',
+            'routes.cluster.routerAssignment.node',
+        ];
+    }
+
+    /** @return list<string> */
+    private function productionRouteRelations(): array
+    {
+        return [
+            'targets.appInstance.node.roles',
+            'cluster.routerAssignment.node',
+        ];
     }
 }

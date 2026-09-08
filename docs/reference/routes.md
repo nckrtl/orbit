@@ -15,8 +15,8 @@ The Gateway stores Route intent and records the lifecycle of its derived private
 | Generation basis | The current target Node for a generated Route, or its last target Node after target clearing. An explicit Route stores no generation basis. |
 | Publication intent | The requested publication state, retained even when the Route has no target. |
 | Lifecycle | A new Route is pending during provisioning. It becomes active after Orbit prepares its required private projections. Failure metadata identifies an incomplete boundary for retry. |
-| Target storage | The Route can own several ordered target rows. |
-| Configured target | The API, PHP SDK, and CLI accept zero or one AppInstance target. A generated Route also permits at most one target. |
+| Target storage | The Route can own several ordered target rows. An active multi-target set belongs to one explicit production Route and uses distinct active app-prod Nodes in the same Cluster. |
+| Configured target | The API, PHP SDK, and CLI accept zero or one AppInstance target. Generated and development Routes permit at most one target. |
 
 Creating the same explicit Route again with identical App, hostname, publication intent, scope, and target returns the existing Route. A retry that changes one of those values fails without changing the Route.
 
@@ -104,7 +104,7 @@ Initial projection does not implement general later reconciliation. The Gateway 
 
 The guard covers Route hostname or publication changes, independent target replacement or clearing, and Route removal. It also covers Node WireGuard, LAN, TLD, or Cluster-membership changes, Cluster activation, deactivation, or TLD changes, and Router replacement or clearing when an active Route depends on the change. An identical request that makes no change remains safe. A Node grant change does not alter private network reachability and retains its command-authorization behavior.
 
-Development AppInstance removal is the coordinated target-clear exception. After complete fixed-set source and Route preflight, the Gateway marks every accepted AppInstance `removing`. For each member, it publishes an unavailable response, removes managed Route projections, deletes the final-target Route, and releases its hostname before source finalization. A projection failure keeps the unfinished Route checkpoint available for retry. The [AppInstance removal reference](appinstance-removal.md) owns the transient response, cascade order, and retry behavior.
+AppInstance removal is the coordinated target-clear exception. After complete source and Route preflight, the Gateway marks each accepted AppInstance `removing`. Development removal publishes an unavailable response before deleting each final-target Route in worktree-first order. Production removal republishes every ordered survivor when a shared Route remains. Final-target removal clears managed Route projections, deletes the Route, and releases its hostname before source finalization. A projection failure keeps the unfinished Route checkpoint available for retry. The [AppInstance removal reference](appinstance-removal.md) owns content retention, the transient response, cascade order, and retry behavior.
 
 Routes without an active AppInstance retain the existing validation for hostname, scope, target, uniqueness, generation basis, and required Router. Full reconciliation of an existing active Route is a separate contract.
 
@@ -117,7 +117,7 @@ Route ownership prevents deletion from leaving an invalid retained record.
 | App | Refused while the App owns a Route. |
 | Cluster | Refused while the Cluster owns a Route. |
 | Node | Refused while a Route retains the Node as scope, target host, or generation basis. |
-| AppInstance | Clears its target only inside an accepted removal and deletes its final-target development Route before source finalization. |
+| AppInstance | Clears its target only inside an accepted removal, retains a non-empty shared production Route, and deletes a final-target Route before source finalization. |
 | App role | Refused while the Node hosts a Route target. |
 | Cluster Router | Clearing the Router assignment is refused while the Cluster owns a Route. |
 | Route | Deletes only an eligible Route and its Route-owned target rows. |
@@ -126,4 +126,4 @@ Route ownership prevents deletion from leaving an invalid retained record.
 
 Route operations do not change legacy Instance hostname or certificate fields, Workspace hostnames, AppInstance source, Nodes, Clusters, or checkouts. Route and route target are typed inputs to the existing `instance` Doctor family; Doctor adds no family and remains verify-only.
 
-This contract projects private development Routes and coordinates target clearing during development checkout, worktree, and fixed-set cascade removal. It does not implement other later Route reconciliation or removal, public Ingress, public DNS providers, multi-target balancing, production removal, production placement, application setup, or application health tracking. [ADR 0009](../decisions/0009-clustered-app-instance-routing.md), [ADR 0011](../decisions/0011-clustered-production-ingress-and-app-prod-placement.md), [ADR 0023](../decisions/0023-separate-hostname-selection-from-cluster-routing.md), [ADR 0024](../decisions/0024-follow-generated-route-targets.md), [ADR 0029](../decisions/0029-manage-laravel-application-urls-through-orbit.md), [ADR 0030](../decisions/0030-complete-appinstance-provisioning-without-application-health-gates.md), [ADR 0033](../decisions/0033-trust-wireguard-members-for-private-node-traffic.md), and [ADR 0041](../decisions/0041-delete-an-empty-route-during-appinstance-removal.md) define the remaining boundaries.
+This contract projects private development Routes and coordinates target clearing during development checkout, worktree, fixed-set cascade, and production AppInstance removal. It does not implement other later Route reconciliation or removal, public Ingress, public DNS providers, public production pool creation, production placement, application setup, or application health tracking. [ADR 0009](../decisions/0009-clustered-app-instance-routing.md), [ADR 0011](../decisions/0011-clustered-production-ingress-and-app-prod-placement.md), [ADR 0023](../decisions/0023-separate-hostname-selection-from-cluster-routing.md), [ADR 0024](../decisions/0024-follow-generated-route-targets.md), [ADR 0029](../decisions/0029-manage-laravel-application-urls-through-orbit.md), [ADR 0030](../decisions/0030-complete-appinstance-provisioning-without-application-health-gates.md), [ADR 0033](../decisions/0033-trust-wireguard-members-for-private-node-traffic.md), and [ADR 0041](../decisions/0041-delete-an-empty-route-during-appinstance-removal.md) define the remaining boundaries.
