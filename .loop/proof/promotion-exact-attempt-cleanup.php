@@ -24,12 +24,10 @@ if (! is_file($autoload)) {
 }
 require $autoload;
 
-/** Stop the fixture with one concrete failed observation. */
+/** Throw one concrete failed observation through owned-resource cleanup. */
 function failFixture(string $message): never
 {
-    fwrite(STDERR, $message."\n");
-
-    exit(1);
+    throw new RuntimeException($message);
 }
 
 /** Run one command and require success. */
@@ -46,8 +44,16 @@ function runFixtureCommand(array $command): string
 /** Remove only the fixture-owned temporary tree. */
 function removeFixtureTree(string $root): void
 {
-    if (! str_starts_with($root, sys_get_temp_dir().'/orb-153-proof-') || ! is_dir($root)) {
+    if (! str_starts_with($root, sys_get_temp_dir().'/orb-153-proof-')) {
         failFixture('The fixture cleanup root is invalid.');
+    }
+    if (! file_exists($root) && ! is_link($root)) {
+        return;
+    }
+    if (! is_dir($root)) {
+        unlink($root);
+
+        return;
     }
 
     $iterator = new RecursiveIteratorIterator(
@@ -67,11 +73,18 @@ Facade::clearResolvedInstances();
 Facade::setFacadeApplication($container);
 
 $temporary = tempnam(sys_get_temp_dir(), 'orb-153-proof-');
-if ($temporary === false || ! unlink($temporary) || ! mkdir($temporary, 0700)) {
-    failFixture('Unable to create the fixture root.');
+if ($temporary === false) {
+    fwrite(STDERR, "Unable to allocate the fixture root.\n");
+
+    exit(1);
 }
 
+$failure = null;
+$result = null;
 try {
+    if (! unlink($temporary) || ! mkdir($temporary, 0700)) {
+        failFixture('Unable to create the fixture root.');
+    }
     $worktree = $temporary.'/worktree';
     $hostRoot = $temporary.'/host';
     $binaryRoot = $temporary.'/bin';
@@ -169,7 +182,7 @@ try {
     }
     $lock->release();
 
-    fwrite(STDOUT, json_encode([
+    $result = [
         'state' => 'passed',
         'replaced_attempt' => 'refused',
         'absent_attempt' => 'refused',
@@ -177,9 +190,31 @@ try {
         'replacement_state' => 'preserved',
         'proof_ref' => 'preserved',
         'issue_lock' => 'released',
-    ], JSON_THROW_ON_ERROR)."\n");
+    ];
 } catch (Throwable $exception) {
-    failFixture($exception->getMessage());
+    $failure = $exception;
 } finally {
-    removeFixtureTree($temporary);
+    try {
+        removeFixtureTree($temporary);
+    } catch (Throwable $cleanupException) {
+        $failure = $failure === null
+            ? $cleanupException
+            : new RuntimeException(
+                $failure->getMessage().' Fixture cleanup also failed: '.$cleanupException->getMessage(),
+                previous: $failure,
+            );
+    }
 }
+
+if ($failure !== null) {
+    fwrite(STDERR, $failure->getMessage()."\n");
+
+    exit(1);
+}
+if ($result === null) {
+    fwrite(STDERR, "The fixture completed without a result.\n");
+
+    exit(1);
+}
+
+fwrite(STDOUT, json_encode($result, JSON_THROW_ON_ERROR)."\n");
