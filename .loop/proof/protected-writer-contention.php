@@ -56,6 +56,65 @@ function waitForProof(Closure $condition, string $message, float $timeoutSeconds
     }
 }
 
+function openProcessCandidate(Process $process, string $path): ?string
+{
+    $processId = $process->getPid();
+
+    if (!is_int($processId)) {
+        return null;
+    }
+
+    $descriptors = glob("/proc/{$processId}/fd/*");
+
+    if (!is_array($descriptors)) {
+        return null;
+    }
+
+    foreach ($descriptors as $descriptor) {
+        $target = readlink($descriptor);
+
+        if (is_string($target) && str_starts_with($target, $path . '.candidate.')) {
+            return $target;
+        }
+    }
+
+    return null;
+}
+
+/** @param list<Process> $processes */
+function holdWriterCandidate(array $processes, string $path): array
+{
+    requireProof(function_exists('posix_kill'), 'The proof requires POSIX process signals.');
+    $deadline = microtime(true) + 10;
+
+    while (microtime(true) < $deadline) {
+        foreach ($processes as $process) {
+            $candidate = openProcessCandidate($process, $path);
+            $processId = $process->getPid();
+
+            if ($candidate === null || !is_int($processId)) {
+                continue;
+            }
+
+            if (!posix_kill($processId, 19)) {
+                continue;
+            }
+
+            usleep(10_000);
+
+            if (is_file($candidate)) {
+                return [$processId, $candidate];
+            }
+
+            posix_kill($processId, 18);
+        }
+
+        usleep(100);
+    }
+
+    throw new RuntimeException('No writer could be held while its candidate was open.');
+}
+
 function writerProcess(
     string $path,
     string $character,
@@ -134,8 +193,9 @@ try {
     $markerDirectory = $temporary . '/markers';
     $startPath = $markerDirectory . '/start';
     $characters = ['A', 'B', 'C', 'D'];
-    $bytes = 16 * 1024 * 1024;
+    $bytes = 32 * 1024 * 1024;
     $observedModes = [];
+    $heldProcessId = null;
     mkdir($markerDirectory, permissions: 0o700);
 
     foreach ($characters as $index => $character) {
@@ -152,6 +212,8 @@ try {
     }
 
     file_put_contents($startPath, 'start');
+    [$heldProcessId, $heldCandidate] = holdWriterCandidate($processes, $gatewayPath);
+    $observedModes[$heldCandidate] = fileperms($heldCandidate) & 0o777;
     waitForProof(function () use ($gatewayPath, &$observedModes): bool {
         foreach (proofCandidates($gatewayPath) as $candidate) {
             if (!array_key_exists($candidate, $observedModes) && is_file($candidate)) {
@@ -161,6 +223,8 @@ try {
 
         return count($observedModes) >= 2;
     }, 'Concurrent writers did not expose distinct sibling candidates.');
+    posix_kill($heldProcessId, 18);
+    $heldProcessId = null;
 
     foreach ($processes as $process) {
         $exitCode = $process->wait();
@@ -210,6 +274,7 @@ try {
 
     fwrite(STDOUT, json_encode([
         'state' => 'passed',
+        'contention_checkpoint' => 'writer-stopped-with-open-candidate',
         'distinct_candidates' => count($observedModes),
         'candidate_modes' => array_values($observedModes),
         'final_writer' => $contents[0],
@@ -226,6 +291,10 @@ try {
     fwrite(STDERR, "ORB-156 proof failed: {$exception->getMessage()}\n");
     exit(1);
 } finally {
+    if (is_int($heldProcessId ?? null)) {
+        posix_kill($heldProcessId, 18);
+    }
+
     foreach ($processes as $process) {
         if ($process->isRunning()) {
             $process->stop(0.1, 9);
