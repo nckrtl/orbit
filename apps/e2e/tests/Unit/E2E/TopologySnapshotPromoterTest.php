@@ -375,6 +375,7 @@ function fakePromotionHost(
     bool $failAssignments = false,
     ?TopologyTarget $discoveryTarget = null,
     ?TopologyTarget $retainedProofTarget = null,
+    ?Closure $afterSwap = null,
 ): void {
     $topologySnapshot = TopologyTarget::topologySnapshot();
     $instances = [];
@@ -488,6 +489,7 @@ function fakePromotionHost(
         $vm,
         $failAt,
         $failAssignments,
+        $afterSwap,
     ): ProcessResult {
         $command = $process->command;
         assert(is_array($command));
@@ -609,6 +611,9 @@ function fakePromotionHost(
         if ($action === 'delete') {
             $instance = $name($command[4] ?? '');
             $events[] = 'delete:'.$instance;
+            if ($failAt === 'release-discovery' && str_contains($instance, '-dddddddd-')) {
+                return Process::result('', 'controlled discovery release failure', 1);
+            }
             unset($instances[$instance], $snapshots[$instance]);
 
             return Process::result();
@@ -620,6 +625,9 @@ function fakePromotionHost(
             $instances[$to] = $instances[$from];
             $snapshots[$to] = $snapshots[$from];
             unset($instances[$from], $snapshots[$from]);
+            if ($afterSwap !== null && str_ends_with($to, '-app-prod')) {
+                $afterSwap();
+            }
 
             return Process::result();
         }
@@ -731,6 +739,19 @@ describe('TopologySnapshotPromoter', function (): void {
             )->value)
             ->and($fixture['manifests']->recorded())
             ->toHaveCount(1)
+            ->and($result['cleanup_attempts'])
+            ->toBe([
+                [
+                    'purpose' => AttemptPurpose::Proof->value,
+                    'attempt_id' => $target->requireAttempt()->value,
+                    'state' => 'released',
+                ],
+                [
+                    'purpose' => AttemptPurpose::Discovery->value,
+                    'attempt_id' => $discoveryTarget->requireAttempt()->value,
+                    'state' => 'released',
+                ],
+            ])
             ->and(IssueState::forWorktree('TST-123', $fixture['worktree'])->hasAttempt())
             ->toBeFalse();
 
@@ -774,6 +795,159 @@ describe('TopologySnapshotPromoter', function (): void {
         expect($removals)->toHaveCount(3)->and($removals[0])->toContain(ProofFixtures::GUEST_DIRECTORY);
 
         expect($events)->toBe($expected);
+    });
+
+    it('leaves discovery created after cleanup capture untouched', function (): void {
+        $fixture = promotableFixture();
+        $state = IssueState::forWorktree('TST-123', $fixture['worktree']);
+        $proofTopology = $state->requireTopology(AttemptPurpose::Proof);
+        $discoveryTarget = TopologyTarget::feature('TST-123', new AttemptId(str_repeat('d', 32)));
+        $events = [];
+        fakePromotionHost(
+            $fixture['target'],
+            $events,
+            discoveryTarget: $discoveryTarget,
+            afterSwap: function () use ($state, $proofTopology, $discoveryTarget): void {
+                $state->writeAttempt(
+                    $discoveryTarget->requireAttempt(),
+                    AttemptPurpose::Discovery,
+                    new OperationId(str_repeat('d', 32)),
+                );
+                $state->writeTopology(new FeatureTopology(
+                    \App\E2E\Value\TopologyConstructionInputs::create(
+                        $discoveryTarget,
+                        $proofTopology->generation,
+                        2,
+                    ),
+                    AttemptPurpose::Discovery,
+                    $proofTopology->generation,
+                    $proofTopology->source,
+                    $proofTopology->verification,
+                ));
+            },
+        );
+
+        $result = promoterFor($fixture['root'], $fixture['paths'], $fixture['manifests'])
+            ->promote($fixture['request'], $fixture['plan']);
+
+        expect($result['cleanup_attempts'])
+            ->toBe([[
+                'purpose' => AttemptPurpose::Proof->value,
+                'attempt_id' => $fixture['target']->requireAttempt()->value,
+                'state' => 'released',
+            ]])
+            ->and($state->attemptId(AttemptPurpose::Discovery)->value)
+            ->toBe($discoveryTarget->requireAttempt()->value)
+            ->and($events)
+            ->not
+            ->toContain('delete:'.$discoveryTarget->instance('gateway'))
+            ->not
+            ->toContain('network-delete:'.$discoveryTarget->network());
+    });
+
+    it('reports the installed generation when a captured attempt is replaced before cleanup', function (): void {
+        $fixture = promotableFixture();
+        $state = IssueState::forWorktree('TST-123', $fixture['worktree']);
+        $proofTopology = $state->requireTopology(AttemptPurpose::Proof);
+        $replacementTarget = TopologyTarget::feature('TST-123', new AttemptId(str_repeat('f', 32)));
+        $events = [];
+        $before = $fixture['manifests']->promoted()?->id;
+        $replacementLease = null;
+        $replacementTopology = null;
+        fakePromotionHost(
+            $fixture['target'],
+            $events,
+            afterSwap: function () use (
+                $fixture,
+                $state,
+                $proofTopology,
+                $replacementTarget,
+                &$replacementLease,
+                &$replacementTopology,
+            ): void {
+                $state->writeAttempt(
+                    $replacementTarget->requireAttempt(),
+                    AttemptPurpose::Proof,
+                    new OperationId(str_repeat('f', 32)),
+                );
+                $state->writeTopology(new FeatureTopology(
+                    \App\E2E\Value\TopologyConstructionInputs::create(
+                        $replacementTarget,
+                        $proofTopology->generation,
+                        2,
+                    ),
+                    AttemptPurpose::Proof,
+                    $proofTopology->generation,
+                    $proofTopology->source,
+                    $proofTopology->verification,
+                ));
+                $replacementLease = file_get_contents($fixture['worktree'].'/.e2e/'.IssueState::PROOF_ATTEMPT);
+                $replacementTopology = file_get_contents($fixture['worktree'].'/.e2e/'.IssueState::PROOF_TOPOLOGY);
+            },
+        );
+
+        expect(fn () => promoterFor($fixture['root'], $fixture['paths'], $fixture['manifests'])
+            ->promote($fixture['request'], $fixture['plan']))
+            ->toThrow(
+                RuntimeException::class,
+                "is installed, but captured attempt cleanup failed: Captured proof attempt {$fixture['target']->requireAttempt()->value} was replaced by {$replacementTarget->requireAttempt()->value}",
+            )
+            ->and($fixture['manifests']->promoted()?->id)
+            ->not
+            ->toBe($before)
+            ->and(file_get_contents($fixture['worktree'].'/.e2e/'.IssueState::PROOF_ATTEMPT))
+            ->toBe($replacementLease)
+            ->and(file_get_contents($fixture['worktree'].'/.e2e/'.IssueState::PROOF_TOPOLOGY))
+            ->toBe($replacementTopology)
+            ->and($events)
+            ->not
+            ->toContain('delete:'.$fixture['target']->instance('gateway'))
+            ->not
+            ->toContain('network-delete:'.$fixture['target']->network());
+    });
+
+    it('reports installed-generation context and completed cleanup after a partial failure', function (): void {
+        $fixture = promotableFixture();
+        $target = $fixture['target'];
+        $discoveryTarget = TopologyTarget::feature('TST-123', new AttemptId(str_repeat('d', 32)));
+        $state = IssueState::forWorktree('TST-123', $fixture['worktree']);
+        $proofTopology = $state->requireTopology(AttemptPurpose::Proof);
+        $state->writeAttempt(
+            $discoveryTarget->requireAttempt(),
+            AttemptPurpose::Discovery,
+            new OperationId(str_repeat('d', 32)),
+        );
+        $state->writeTopology(new FeatureTopology(
+            \App\E2E\Value\TopologyConstructionInputs::create(
+                $discoveryTarget,
+                $proofTopology->generation,
+                2,
+            ),
+            AttemptPurpose::Discovery,
+            $proofTopology->generation,
+            $proofTopology->source,
+            $proofTopology->verification,
+        ));
+        $events = [];
+        $before = $fixture['manifests']->promoted()?->id;
+        fakePromotionHost($target, $events, 'release-discovery', discoveryTarget: $discoveryTarget);
+
+        expect(fn () => promoterFor($fixture['root'], $fixture['paths'], $fixture['manifests'])
+            ->promote($fixture['request'], $fixture['plan']))
+            ->toThrow(
+                RuntimeException::class,
+                "is installed, but captured attempt cleanup failed: Exact cleanup failed for captured discovery attempt {$discoveryTarget->requireAttempt()->value}. Completed captured cleanup: proof {$target->requireAttempt()->value}.",
+            )
+            ->and($fixture['manifests']->promoted()?->id)
+            ->not
+            ->toBe($before)
+            ->and($state->hasAttempt(AttemptPurpose::Proof))
+            ->toBeFalse()
+            ->and($state->hasAttempt(AttemptPurpose::Discovery))
+            ->toBeTrue()
+            ->and($events)
+            ->toContain('delete:'.$target->instance('gateway'))
+            ->toContain('delete:'.$discoveryTarget->instance('app-prod'));
     });
 
     it('promotes retained proof for a different accepted SHA with equivalent recorded inputs', function (): void {
@@ -865,6 +1039,24 @@ describe('TopologySnapshotPromoter', function (): void {
                 'proved_sha' => $fixture['candidate'],
                 'accepted_sha' => new GitRepository($fixture['worktree'])->commit(),
                 'equivalence_sha256' => $candidate['equivalence']->fingerprint(),
+            ])
+            ->and($result['cleanup_attempts'])
+            ->toBe([
+                [
+                    'purpose' => AttemptPurpose::CandidateConvergence->value,
+                    'attempt_id' => $candidate['candidateTarget']->requireAttempt()->value,
+                    'state' => 'released',
+                ],
+                [
+                    'purpose' => AttemptPurpose::Discovery->value,
+                    'attempt_id' => $candidate['discoveryTarget']->requireAttempt()->value,
+                    'state' => 'released',
+                ],
+                [
+                    'purpose' => AttemptPurpose::Proof->value,
+                    'attempt_id' => $candidate['proofTarget']->requireAttempt()->value,
+                    'state' => 'released',
+                ],
             ])
             ->and($result['released'])
             ->toContain(...$expectedReleased)

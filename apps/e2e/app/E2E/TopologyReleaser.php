@@ -7,11 +7,13 @@ namespace App\E2E;
 use App\E2E\Git\GitRepository;
 use App\E2E\State\OperationLock;
 use App\E2E\State\StatePaths;
+use App\E2E\Value\AttemptId;
 use App\E2E\Value\AttemptPurpose;
 use App\E2E\Value\OperationId;
 use App\E2E\Value\TopologyRequest;
 use App\E2E\Value\TopologyTarget;
 use RuntimeException;
+use Throwable;
 
 /**
  * Release one selected attempt of an issue and prove its resources are gone.
@@ -52,32 +54,126 @@ final readonly class TopologyReleaser
                         ? AttemptPurpose::Proof
                         : AttemptPurpose::CandidateConvergence
                 );
-            $attempt = $state->attemptId($purpose);
-            $target = $state->topology($purpose)?->target ?? TopologyTarget::feature($request->issue, $attempt);
-            [$released, $absent] = $this->deleteResources($target);
-            $proof = $state->proof() ?? [];
-            if (
-                $purpose === AttemptPurpose::Proof
-                && ($proof['status'] ?? null) === 'proved'
-                && ($proof['attempt_id'] ?? null) === $attempt->value
-                && is_string($proof['manifest_sha256'] ?? null)
-            ) {
-                new GitRepository($request->worktree)->unpinProof($request->issue, $attempt);
+
+            return $this->releaseAttempt($request, $state, $purpose, $state->attemptId($purpose));
+        } finally {
+            $lock->release();
+        }
+    }
+
+    /**
+     * Release one ordered set of captured attempts only when every current identity still matches.
+     *
+     * @param array<string, AttemptId> $attempts Keyed by an AttemptPurpose value.
+     * @return array{state:string,issue:string,attempts:list<array{state:string,issue:string,purpose:string,attempt_id:string,released:list<string>,already_absent:list<string>,networks_reaped:list<string>}>,released:list<string>,already_absent:list<string>,networks_reaped:list<string>}
+     */
+    public function releaseExact(TopologyRequest $request, array $attempts): array
+    {
+        $state = IssueState::forWorktree($request->issue, $request->worktree);
+        $lock = new OperationLock($this->hostPaths);
+        if (! $lock->acquire('topology-'.$request->issue, $this->operation)) {
+            throw new RuntimeException('The issue topology is locked by another harness command.');
+        }
+        try {
+            $captured = $this->capturedAttempts($request, $state, $attempts);
+            $receipts = [];
+            foreach ($captured as [$purpose, $attempt]) {
+                try {
+                    $receipts[] = $this->releaseAttempt($request, $state, $purpose, $attempt);
+                } catch (Throwable $exception) {
+                    $completed = array_map(
+                        static fn (array $receipt): string => "{$receipt['purpose']} {$receipt['attempt_id']}",
+                        $receipts,
+                    );
+                    $context = $completed === []
+                        ? 'No captured attempt completed cleanup.'
+                        : 'Completed captured cleanup: '.implode(', ', $completed).'.';
+
+                    throw new RuntimeException(
+                        "Exact cleanup failed for captured {$purpose->value} attempt {$attempt->value}. {$context} {$exception->getMessage()}",
+                        previous: $exception,
+                    );
+                }
             }
-            $state->forgetAttempt($purpose);
 
             return [
                 'state' => 'released',
                 'issue' => $request->issue,
-                'purpose' => $purpose->value,
-                'attempt_id' => $attempt->value,
-                'released' => $released,
-                'already_absent' => $absent,
-                'networks_reaped' => $this->sweep?->sweep() ?? [],
+                'attempts' => $receipts,
+                'released' => array_merge(...array_column($receipts, 'released')),
+                'already_absent' => array_merge(...array_column($receipts, 'already_absent')),
+                'networks_reaped' => array_values(array_unique(array_merge(
+                    ...array_column($receipts, 'networks_reaped'),
+                ))),
             ];
         } finally {
             $lock->release();
         }
+    }
+
+    /**
+     * @param array<string, AttemptId> $attempts
+     * @return list<array{AttemptPurpose, AttemptId}>
+     */
+    private function capturedAttempts(TopologyRequest $request, IssueState $state, array $attempts): array
+    {
+        if ($attempts === []) {
+            throw new RuntimeException("{$request->issue} has no captured attempts to release.");
+        }
+
+        $captured = [];
+        foreach ($attempts as $purposeValue => $attempt) {
+            $purpose = AttemptPurpose::tryFrom($purposeValue);
+            if ($purpose === null || ! $attempt instanceof AttemptId) {
+                throw new RuntimeException('The captured attempt cleanup set is invalid.');
+            }
+            if (! $state->hasAttempt($purpose)) {
+                throw new RuntimeException(
+                    "Captured {$purpose->value} attempt {$attempt->value} is absent; no cleanup mutation was attempted.",
+                );
+            }
+            $current = $state->attemptId($purpose);
+            if ($current->value !== $attempt->value) {
+                throw new RuntimeException(
+                    "Captured {$purpose->value} attempt {$attempt->value} was replaced by {$current->value}; no cleanup mutation was attempted.",
+                );
+            }
+
+            $captured[] = [$purpose, $attempt];
+        }
+
+        return $captured;
+    }
+
+    /** @return array{state:string,issue:string,purpose:string,attempt_id:string,released:list<string>,already_absent:list<string>,networks_reaped:list<string>} */
+    private function releaseAttempt(
+        TopologyRequest $request,
+        IssueState $state,
+        AttemptPurpose $purpose,
+        AttemptId $attempt,
+    ): array {
+        $target = $state->topology($purpose)?->target ?? TopologyTarget::feature($request->issue, $attempt);
+        [$released, $absent] = $this->deleteResources($target);
+        $proof = $state->proof() ?? [];
+        if (
+            $purpose === AttemptPurpose::Proof
+            && ($proof['status'] ?? null) === 'proved'
+            && ($proof['attempt_id'] ?? null) === $attempt->value
+            && is_string($proof['manifest_sha256'] ?? null)
+        ) {
+            new GitRepository($request->worktree)->unpinProof($request->issue, $attempt);
+        }
+        $state->forgetAttempt($purpose);
+
+        return [
+            'state' => 'released',
+            'issue' => $request->issue,
+            'purpose' => $purpose->value,
+            'attempt_id' => $attempt->value,
+            'released' => $released,
+            'already_absent' => $absent,
+            'networks_reaped' => $this->sweep?->sweep() ?? [],
+        ];
     }
 
     /** @return array{list<string>, list<string>} */
