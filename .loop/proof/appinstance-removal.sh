@@ -394,6 +394,7 @@ case "$scenario" in
             orb182-unregistered-child orb182-unregistered-child)
         unregistered_id=$(seed_dev \
             orb182-unregistered-root checkout orb182-unregistered-root "$unregistered_commit" | seed_id)
+        gateway_fixture project-dev orb182-unregistered-root
         unregistered_before=$(gateway_fixture instance-state orb182-unregistered-root)
         remote_script <<'BASH'
 root=/home/orbit/apps/laravel-typed/orb182-unregistered-root
@@ -433,8 +434,6 @@ BASH
         clean_sibling_id=$(seed_dev \
             orb182-clean-sibling worktree orb182-clean-sibling "$clean_commit" | seed_id)
         gateway_fixture project-dev orb182-clean-root orb182-clean-child orb182-clean-sibling
-        install_fpm_access_probe "$clean_root_id"
-        install_fpm_access_probe "$clean_sibling_id"
         clean_before=$(gateway_fixture instance-state orb182-clean-root)
         expect_remove_failure "$clean_root_id" 0 instance.remove_refused
         assert_active_unchanged "$clean_before" orb182-clean-root
@@ -463,6 +462,8 @@ BASH
         remote_after=$(remote_command git -C /home/orbit/apps/laravel-typed/orb182-clean-root \
             ls-remote origin refs/heads/13.x)
         test "$remote_before" = "$remote_after"
+        install_fpm_access_probe "$clean_root_id"
+        install_fpm_access_probe "$clean_sibling_id"
         assert_fpm_contact "$clean_root_id" orb182-clean-root.orbit
         assert_fpm_contact "$clean_sibling_id" orb182-clean-sibling.orbit
         remove_success "$clean_root_id" 1 2
@@ -479,7 +480,6 @@ BASH
         unpublished_id=$(seed_dev \
             orb182-content-unpublished worktree orb182-content-unpublished "$content_commit" | seed_id)
         gateway_fixture project-dev orb182-content-root orb182-content-dirty orb182-content-unpublished
-        install_fpm_access_probe "$unpublished_id"
         mark_content orb182-content-dirty dirty
         mark_content orb182-content-unpublished unpublished
         dirty_before=$(gateway_fixture instance-state orb182-content-dirty)
@@ -497,6 +497,7 @@ test -d "$sibling"
 test "$(cat "$sibling/orb182-unpublished.txt")" = 'unpublished worktree'
 git -C "$root" show-ref --verify --quiet refs/heads/orb182-content-dirty
 BASH
+        install_fpm_access_probe "$unpublished_id"
         assert_fpm_contact "$unpublished_id" orb182-content-unpublished.orbit
         remove_success "$unpublished_id" 1 1
         remote_script <<'BASH'
