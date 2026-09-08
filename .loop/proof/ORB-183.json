@@ -40,5 +40,6 @@
         }
     ],
     "extension": "app-prod",
+    "mutates": true,
     "observed_inputs": true
 }
