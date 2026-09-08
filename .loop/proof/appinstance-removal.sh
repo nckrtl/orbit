@@ -72,7 +72,8 @@ while [ "$#" -gt 0 ]; do
     case "$child" in orb182-[a-z0-9-]*) ;; *) exit 64 ;; esac
     path="/home/orbit/apps/laravel-typed/$child"
     test ! -e "$path"
-    git -C "$root" worktree add -b "$branch" "$path" HEAD >/dev/null
+    git -C "$root" branch "$branch" HEAD
+    git -C "$root" worktree add "$path" "$branch" >/dev/null
 done
 git -C "$root" rev-parse HEAD
 BASH
