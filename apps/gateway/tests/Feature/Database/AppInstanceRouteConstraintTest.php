@@ -190,6 +190,56 @@ it('persists an ordered explicit production Route across distinct active app-pro
         ->toBe([$one->id, $two->id]);
 });
 
+it('rejects gapped writes after production Route activation and permits atomic delete compaction', function (): void {
+    [$app, $cluster, $one, $two] = production_route_constraint_fixture();
+    $route = Route::query()->create([
+        'app_id' => $app->id,
+        'cluster_id' => $cluster->id,
+        'hostname' => 'active-order.example.test',
+        'provenance' => RouteProvenance::Explicit,
+        'publication' => RoutePublication::Private,
+        'status' => RouteStatus::Pending,
+    ]);
+    $first = $route->targets()->create(['app_instance_id' => $one->id, 'position' => 0]);
+    $second = $route->targets()->create(['app_instance_id' => $two->id, 'position' => 1]);
+    $route->update(['status' => RouteStatus::Active]);
+    $threeNode = Node::query()->create([
+        'name' => 'shared-three',
+        'cluster_id' => $cluster->id,
+        'status' => LifecycleStatus::Active,
+        'public_ssh_host' => 'shared-three.test',
+        'wireguard_ip' => '10.44.0.83',
+    ]);
+    $threeNode->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
+    $three = AppInstance::query()->create([
+        'app_id' => $app->id,
+        'node_id' => $threeNode->id,
+        'name' => 'three',
+        'environment' => 'production',
+        'checkout_path' => '/srv/three',
+        'status' => AppInstanceState::SourceResolved,
+    ]);
+
+    expect(fn () => $second->update(['position' => 2]))
+        ->toThrow(QueryException::class)
+        ->and(fn () => $route->targets()->create(['app_instance_id' => $three->id, 'position' => 3]))
+        ->toThrow(QueryException::class)
+        ->and($route->targets()->orderBy('position')->pluck('position')->all())
+        ->toBe([0, 1]);
+
+    $route->targets()->create(['app_instance_id' => $three->id, 'position' => 2]);
+    DB::transaction(function () use ($first, $route): void {
+        $first->delete();
+
+        foreach ($route->targets()->orderBy('position')->orderBy('id')->get() as $position => $target) {
+            $target->update(['position' => $position]);
+        }
+    });
+
+    expect($route->targets()->orderBy('position')->pluck('position')->all())
+        ->toBe([0, 1]);
+});
+
 it('prevents an existing shared production target set from drifting through related records', function (): void {
     [$app, $cluster, $one, $two] = production_route_constraint_fixture();
     $route = Route::query()->create([

@@ -487,6 +487,17 @@ return new class extends Migration {
                     )
             SQL;
 
+        $activeInsertOrderContract = $sharedProductionRoutes
+            ? <<<'SQL'
+                OR (
+                    (SELECT status FROM routes WHERE id = NEW.route_id) = 'active'
+                    AND NEW.position <> (
+                        SELECT COUNT(*) FROM route_targets WHERE route_id = NEW.route_id
+                    )
+                )
+                SQL
+            : '';
+
         DB::statement(<<<SQL
             CREATE TRIGGER route_targets_contract_insert
             BEFORE INSERT ON route_targets
@@ -501,6 +512,7 @@ return new class extends Migration {
                     WHERE existing.route_id = NEW.route_id
                         AND existing_instance.node_id = proposed_instance.node_id
                 )
+                {$activeInsertOrderContract}
                 {$sharedTargetContract}
             )
             BEGIN
@@ -513,6 +525,29 @@ return new class extends Migration {
             'EXISTS (SELECT 1 FROM route_targets WHERE route_id = NEW.route_id AND id <> OLD.id)',
             $sharedTargetContract,
         );
+
+        $activeUpdateOrderContract = $sharedProductionRoutes
+            ? <<<'SQL'
+                OR (
+                    NEW.route_id = OLD.route_id
+                    AND (SELECT status FROM routes WHERE id = NEW.route_id) = 'active'
+                    AND NEW.position >= (
+                        SELECT COUNT(*) FROM route_targets WHERE route_id = NEW.route_id
+                    )
+                )
+                OR (
+                    NEW.route_id <> OLD.route_id
+                    AND (SELECT status FROM routes WHERE id = OLD.route_id) = 'active'
+                )
+                OR (
+                    NEW.route_id <> OLD.route_id
+                    AND (SELECT status FROM routes WHERE id = NEW.route_id) = 'active'
+                    AND NEW.position > (
+                        SELECT COUNT(*) FROM route_targets WHERE route_id = NEW.route_id
+                    )
+                )
+                SQL
+            : '';
 
         DB::statement(<<<SQL
             CREATE TRIGGER route_targets_contract_update
@@ -532,6 +567,7 @@ return new class extends Migration {
                         AND existing.id <> OLD.id
                         AND existing_instance.node_id = proposed_instance.node_id
                 )
+                {$activeUpdateOrderContract}
                 {$sharedUpdateContract}
             )
             BEGIN
