@@ -67,53 +67,55 @@ return new class extends Migration {
     /** @return list<string> */
     private function incompatibleProductionRouteIds(): array
     {
-        return collect(DB::select(<<<'SQL'
-            SELECT routes.id
-            FROM routes
-            WHERE (SELECT COUNT(*) FROM route_targets WHERE route_targets.route_id = routes.id) > 1
-                AND (
-                    routes.provenance <> 'explicit'
-                    OR routes.cluster_id IS NULL
-                    OR EXISTS (
-                        SELECT 1
-                        FROM route_targets
-                        JOIN app_instances ON app_instances.id = route_targets.app_instance_id
-                        JOIN nodes ON nodes.id = app_instances.node_id
-                        WHERE route_targets.route_id = routes.id
-                            AND (
-                                app_instances.app_id <> routes.app_id
-                                OR app_instances.environment <> 'production'
-                                OR nodes.status <> 'active'
-                                OR nodes.cluster_id IS NOT routes.cluster_id
-                                OR NOT EXISTS (
-                                    SELECT 1 FROM node_roles
-                                    WHERE node_roles.node_id = nodes.id
-                                        AND node_roles.role = 'app-prod'
-                                        AND node_roles.status = 'active'
+        return array_values(
+            collect(DB::select(<<<'SQL'
+                SELECT routes.id
+                FROM routes
+                WHERE (SELECT COUNT(*) FROM route_targets WHERE route_targets.route_id = routes.id) > 1
+                    AND (
+                        routes.provenance <> 'explicit'
+                        OR routes.cluster_id IS NULL
+                        OR EXISTS (
+                            SELECT 1
+                            FROM route_targets
+                            JOIN app_instances ON app_instances.id = route_targets.app_instance_id
+                            JOIN nodes ON nodes.id = app_instances.node_id
+                            WHERE route_targets.route_id = routes.id
+                                AND (
+                                    app_instances.app_id <> routes.app_id
+                                    OR app_instances.environment <> 'production'
+                                    OR nodes.status <> 'active'
+                                    OR nodes.cluster_id IS NOT routes.cluster_id
+                                    OR NOT EXISTS (
+                                        SELECT 1 FROM node_roles
+                                        WHERE node_roles.node_id = nodes.id
+                                            AND node_roles.role = 'app-prod'
+                                            AND node_roles.status = 'active'
+                                    )
                                 )
-                            )
+                        )
+                        OR (
+                            SELECT COUNT(DISTINCT app_instances.node_id)
+                            FROM route_targets
+                            JOIN app_instances ON app_instances.id = route_targets.app_instance_id
+                            WHERE route_targets.route_id = routes.id
+                        ) <> (
+                            SELECT COUNT(*) FROM route_targets WHERE route_targets.route_id = routes.id
+                        )
+                        OR (
+                            SELECT MIN(position) FROM route_targets WHERE route_targets.route_id = routes.id
+                        ) <> 0
+                        OR (
+                            SELECT MAX(position) FROM route_targets WHERE route_targets.route_id = routes.id
+                        ) <> (
+                            SELECT COUNT(*) - 1 FROM route_targets WHERE route_targets.route_id = routes.id
+                        )
                     )
-                    OR (
-                        SELECT COUNT(DISTINCT app_instances.node_id)
-                        FROM route_targets
-                        JOIN app_instances ON app_instances.id = route_targets.app_instance_id
-                        WHERE route_targets.route_id = routes.id
-                    ) <> (
-                        SELECT COUNT(*) FROM route_targets WHERE route_targets.route_id = routes.id
-                    )
-                    OR (
-                        SELECT MIN(position) FROM route_targets WHERE route_targets.route_id = routes.id
-                    ) <> 0
-                    OR (
-                        SELECT MAX(position) FROM route_targets WHERE route_targets.route_id = routes.id
-                    ) <> (
-                        SELECT COUNT(*) - 1 FROM route_targets WHERE route_targets.route_id = routes.id
-                    )
-                )
-            ORDER BY routes.id
-            SQL))
-            ->map(static fn (object $row): string => (string) $row->id)
-            ->all();
+                ORDER BY routes.id
+                SQL))
+                ->map(static fn (object $row): string => (string) $row->id)
+                ->all(),
+        );
     }
 
     private function createAppProdProjectionTriggers(): void

@@ -38,6 +38,7 @@ use Throwable;
  */
 final readonly class RemoveAppInstanceAction
 {
+    /** @mago-expect lint:excessive-parameter-list The coordinator names each source, Route, overlap, and lock boundary explicitly. */
     public function __construct(
         private DevelopmentAppInstanceSourceRemoval $sourceInspector,
         private DevelopmentAppInstanceSourceFinalizer $sourceFinalizer,

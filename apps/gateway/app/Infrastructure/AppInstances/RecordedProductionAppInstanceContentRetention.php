@@ -10,6 +10,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Models\AppInstance;
 use App\Models\AppInstanceRemovalMember;
 
+/** @mago-expect lint:cyclomatic-complexity Retained-content validation keeps every recorded production identity field explicit. */
 final readonly class RecordedProductionAppInstanceContentRetention implements ProductionAppInstanceContentRetention
 {
     public function inventory(AppInstance $appInstance): AppInstanceSourceInventory
@@ -102,6 +103,7 @@ final readonly class RecordedProductionAppInstanceContentRetention implements Pr
         }
     }
 
+    /** @mago-expect lint:excessive-parameter-list The digest binds every field of the recorded production content identity. */
     private function digest(
         int $appInstanceId,
         int $appId,
