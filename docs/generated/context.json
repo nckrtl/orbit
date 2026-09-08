@@ -1001,6 +1001,7 @@
             "concepts": [
                 "App",
                 "AppInstance",
+                "Cluster",
                 "Gateway",
                 "Node",
                 "Repository identity",
@@ -1010,6 +1011,7 @@
             "governing_adrs": [
                 "0027",
                 "0028",
+                "0031",
                 "0041"
             ]
         },

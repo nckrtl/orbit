@@ -209,6 +209,7 @@ function rollbackClusterNetworkMigration(): void
     $ingressMigration = require base_path('database/migrations/2026_09_01_120814_add_cluster_ingress_role.php');
     $migration = require base_path('database/migrations/2026_08_31_165346_add_clusters_and_node_network_identity.php');
 
+    orb183_production_route_migration()->down();
     $ingressMigration->down();
     $migration->down();
 }

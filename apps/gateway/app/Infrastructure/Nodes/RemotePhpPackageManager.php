@@ -74,6 +74,20 @@ final readonly class RemotePhpPackageManager
     }
 
     /** @param Collection<int, string> $versions */
+    public function installForAppInstance(
+        Node $node,
+        Collection $versions,
+        AppDevSshExecutor $ssh,
+        RoleName $role,
+    ): void {
+        $profile = $role === RoleName::AppProd && ! $node->roles->pluck('role')->contains(RoleName::AppDev)
+            ? 'app-prod'
+            : 'app-dev';
+
+        $this->install($node, $versions, $ssh, $role, $profile);
+    }
+
+    /** @param Collection<int, string> $versions */
     public function installForAppProd(Node $node, Collection $versions, AppProdSshExecutor $ssh): void
     {
         $needsPcov = $node->roles->pluck('role')->contains(RoleName::AppDev);
