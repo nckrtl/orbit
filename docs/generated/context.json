@@ -915,6 +915,7 @@
                 "Ingress",
                 "Legacy Instance",
                 "Node",
+                "Repository identity",
                 "Route",
                 "Router",
                 "Workspace"

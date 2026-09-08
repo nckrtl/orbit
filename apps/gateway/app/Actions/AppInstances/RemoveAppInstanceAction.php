@@ -6,7 +6,7 @@ namespace App\Actions\AppInstances;
 
 use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppInstances\AppInstanceSourceLayout;
-use App\Domain\AppInstances\DevelopmentAppInstanceSourceLifecycle;
+use App\Domain\AppInstances\Removal\DevelopmentAppInstanceSourceRemoval;
 use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Shared\ResourceOperationException;
@@ -16,7 +16,7 @@ final readonly class RemoveAppInstanceAction
 {
     public function __construct(
         private AppDevSourceOperationLock $sourceLock,
-        private DevelopmentAppInstanceSourceLifecycle $source,
+        private DevelopmentAppInstanceSourceRemoval $source,
         private ManagedCheckoutOverlap $checkoutOverlap,
     ) {}
 
@@ -67,7 +67,23 @@ final readonly class RemoveAppInstanceAction
                     'instance.checkout_path_unsafe',
                     ignoreAppInstanceId: $snapshot->id,
                 );
-                $this->source->remove($snapshot, $force);
+                $inventory = $this->source->inspect($snapshot, $force);
+
+                if ($inventory->linkedWorktreePaths !== [$snapshot->checkout_path]) {
+                    throw new ResourceOperationException(
+                        errorCode: 'instance.remove_refused',
+                        message: "AppInstance [{$snapshot->name}] checkout has linked worktrees.",
+                        status: 409,
+                    );
+                }
+
+                $this->checkoutOverlap->assertAvailable(
+                    $snapshot->node_id,
+                    $checkout,
+                    'instance.checkout_path_unsafe',
+                    ignoreAppInstanceId: $snapshot->id,
+                );
+                $this->source->remove($snapshot, $inventory, $force);
                 $snapshot->delete();
 
                 return $snapshot;

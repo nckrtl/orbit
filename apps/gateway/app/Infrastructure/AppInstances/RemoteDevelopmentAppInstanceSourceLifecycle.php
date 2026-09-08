@@ -174,64 +174,6 @@ final readonly class RemoteDevelopmentAppInstanceSourceLifecycle implements Deve
         return $this->resolution($result->stdout, $appInstance);
     }
 
-    public function remove(AppInstance $appInstance, bool $force): void
-    {
-        $context = $this->context($appInstance);
-        $resolution = $this->storedResolution($appInstance);
-        $groupingDirectory = $this->removal
-            ->appInstanceGroupingDirectory($appInstance, $context['root'])
-            ->value;
-        $this->ssh->execute(
-            $appInstance->node,
-            new RemoteCommand(
-                arguments: [
-                    ...$this->arguments($appInstance, $context),
-                    $groupingDirectory,
-                    $resolution->branch,
-                    $resolution->startingCommit,
-                    $force ? '1' : '0',
-                ],
-                input: self::preparedRepositoryGuard().<<<'BASH'
-                    repository=$1
-                    checkout=$2
-                    allowed_root=$3
-                    managed_user=$4
-                    managed_group=$5
-                    grouping_directory=$6
-                    branch=$7
-                    starting_commit=$8
-                    force=$9
-                    checkout_parent=$(dirname "$checkout")
-
-                    test "$grouping_directory" = "$checkout_parent"
-                    guard_parent_chain "$checkout_parent" "$allowed_root"
-                    inspect_prepared_repository
-                    test "$(git -C "$checkout" symbolic-ref --short HEAD)" = "$branch"
-                    git -C "$checkout" merge-base --is-ancestor "$starting_commit" HEAD
-
-                    if [ "$force" != 1 ]; then
-                        test -z "$(git -C "$checkout" status --porcelain --untracked-files=all)"
-                        git -C "$checkout" fetch --prune -- origin
-                        if git -C "$checkout" show-ref --verify --quiet "refs/remotes/origin/$branch"; then
-                            git -C "$checkout" merge-base --is-ancestor HEAD "refs/remotes/origin/$branch"
-                        else
-                            test "$(git -C "$checkout" rev-parse --verify HEAD^{commit})" = "$starting_commit"
-                        fi
-                    fi
-
-                    test -d "$grouping_directory"
-                    test ! -L "$grouping_directory"
-                    test "$(realpath -e "$grouping_directory")" = "$grouping_directory"
-                    test "$(stat -c '%U:%G' "$grouping_directory")" = "$managed_user:$managed_group"
-                    rm -rf -- "$checkout"
-                    rmdir --ignore-fail-on-non-empty -- "$grouping_directory"
-                    BASH,
-            ),
-            step: 'app-instance-source-remove',
-            errorCode: $force ? 'instance.force_failed' : 'instance.remove_refused',
-        );
-    }
-
     /**
      * @param array{repository: string, allowedRoot: string, root: StoragePath, managedUser: string, managedGroup: string} $context
      * @return non-empty-list<string>
@@ -263,22 +205,6 @@ final readonly class RemoteDevelopmentAppInstanceSourceLifecycle implements Deve
         }
 
         return $defaultBranch;
-    }
-
-    private function storedResolution(AppInstance $appInstance): DevelopmentSourceResolution
-    {
-        $branch = $appInstance->branch;
-        $startingCommit = $appInstance->starting_commit;
-
-        if (! is_string($branch) || ! is_string($startingCommit)) {
-            throw new RuntimeConvergenceException(
-                step: 'app-instance-source-remove',
-                errorCode: 'instance.source_identity_invalid',
-                message: "AppInstance [{$appInstance->name}] has incomplete source evidence.",
-            );
-        }
-
-        return $this->resolution("{$branch}\n{$startingCommit}\n", $appInstance);
     }
 
     /** @return array{repository: string, allowedRoot: string, root: StoragePath, managedUser: string, managedGroup: string} */
