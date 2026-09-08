@@ -874,6 +874,44 @@
             ]
         },
         {
+            "path": "docs/decisions/0042-provision-tool-managers-on-demand.md",
+            "title": "ADR 0042: Provision Tool Managers on demand",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Gateway",
+                "Node"
+            ],
+            "governing_adrs": [
+                "0001",
+                "0012",
+                "0042"
+            ]
+        },
+        {
+            "path": "docs/decisions/0043-manage-homebrew-core-formulae.md",
+            "title": "ADR 0043: Manage Homebrew Core formulae",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Gateway",
+                "Node"
+            ],
+            "governing_adrs": [
+                "0001",
+                "0042",
+                "0043"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
