@@ -1,0 +1,53 @@
+{
+    "setup": [
+        {
+            "id": "recorded-source-app-dev-setup",
+            "node": "app-dev",
+            "argv": [
+                "/var/lib/orbit-e2e/proof/orb-180-recorded-source.sh",
+                "setup-app-dev"
+            ],
+            "timeout_seconds": 300
+        },
+        {
+            "id": "recorded-source-gateway-setup",
+            "node": "gateway",
+            "argv": [
+                "/var/lib/orbit-e2e/proof/orb-180-recorded-source.sh",
+                "setup-gateway"
+            ],
+            "timeout_seconds": 300
+        }
+    ],
+    "acceptance": [
+        {
+            "id": "recorded-source-finalization",
+            "node": "gateway",
+            "argv": [
+                "/var/lib/orbit-e2e/proof/orb-180-recorded-source.sh",
+                "recorded-source-finalization"
+            ],
+            "timeout_seconds": 900
+        },
+        {
+            "id": "source-finalization-recovery",
+            "node": "gateway",
+            "argv": [
+                "/var/lib/orbit-e2e/proof/orb-180-recorded-source.sh",
+                "source-finalization-recovery"
+            ],
+            "timeout_seconds": 900
+        },
+        {
+            "id": "source-finalization-revalidation",
+            "node": "gateway",
+            "argv": [
+                "/var/lib/orbit-e2e/proof/orb-180-recorded-source.sh",
+                "source-finalization-revalidation"
+            ],
+            "timeout_seconds": 900
+        }
+    ],
+    "mutates": true,
+    "observed_inputs": true
+}
