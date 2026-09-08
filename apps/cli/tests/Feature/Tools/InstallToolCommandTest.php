@@ -75,6 +75,15 @@ it('prompts with active and uninstalled sorted managers and renders applied outp
                     'error_code' => null,
                 ],
                 [
+                    'id' => null,
+                    'node_id' => 12,
+                    'name' => 'brew',
+                    'status' => 'uninstalled',
+                    'installed_version' => null,
+                    'failed_step' => null,
+                    'error_code' => null,
+                ],
+                [
                     'id' => 4,
                     'node_id' => 12,
                     'name' => 'broken',
@@ -90,7 +99,7 @@ it('prompts with active and uninstalled sorted managers and renders applied outp
     ]);
     $this
         ->artisan('tool:install', ['--node' => 12])
-        ->expectsChoice('Tool manager', 'vp', ['apt', 'composer', 'vp'])
+        ->expectsChoice('Tool manager', 'vp', ['apt', 'brew', 'composer', 'vp'])
         ->expectsQuestion('Package', '@openai/codex')
         ->expectsOutput('Tool [@openai/codex] installed with [vp].')
         ->expectsOutput("Request ID: {$id}")

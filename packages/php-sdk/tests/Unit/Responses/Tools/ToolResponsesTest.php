@@ -57,7 +57,7 @@ describe('tool responses', function (): void {
         $response = ToolManagerResponse::fromGatewayData([
             'id' => 7,
             'node_id' => 12,
-            'name' => 'composer',
+            'name' => 'brew',
             'status' => 'failed',
             'installed_version' => '2.9.2',
             'failed_step' => 'materialize',
@@ -67,7 +67,7 @@ describe('tool responses', function (): void {
         expect($response->toArray())->toBe([
             'id' => 7,
             'node_id' => 12,
-            'name' => 'composer',
+            'name' => 'brew',
             'status' => 'failed',
             'installed_version' => '2.9.2',
             'failed_step' => 'materialize',
