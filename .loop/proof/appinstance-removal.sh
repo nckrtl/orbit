@@ -243,6 +243,22 @@ for member in members:
 ' "$total"
 }
 
+assert_commit_evidence() {
+    local name=$1
+    local starting_commit=$2
+    local source_commit=$3
+    gateway_fixture removal-evidence "$name" | python3 -c '
+import json
+import sys
+
+member = json.load(sys.stdin)["members"][-1]
+if member.get("starting_commit") != sys.argv[1]:
+    raise SystemExit(65)
+if member.get("source_commit") != sys.argv[2]:
+    raise SystemExit(65)
+' "$starting_commit" "$source_commit"
+}
+
 assert_source_absent() {
     remote_script "$@" <<'BASH'
 for name in "$@"; do
@@ -425,11 +441,13 @@ BASH
             orb182-clean-root orb182-clean-root \
             orb182-clean-child orb182-clean-child \
             orb182-clean-sibling orb182-clean-sibling)
+        clean_historical_commit=$(remote_command \
+            git -C /home/orbit/apps/laravel-typed/orb182-clean-child rev-parse HEAD^)
         read -r clean_root_id clean_root_route < <(
             seed_dev orb182-clean-root checkout orb182-clean-root "$clean_commit" | seed_identity
         )
         read -r clean_child_id clean_child_route < <(
-            seed_dev orb182-clean-child worktree orb182-clean-child "$clean_commit" | seed_identity
+            seed_dev orb182-clean-child worktree orb182-clean-child "$clean_historical_commit" | seed_identity
         )
         clean_sibling_id=$(seed_dev \
             orb182-clean-sibling worktree orb182-clean-sibling "$clean_commit" | seed_id)
@@ -447,6 +465,7 @@ if "--force" not in json.loads(sys.argv[1])["error"]["message"]:
         remote_before=$(remote_command git -C /home/orbit/apps/laravel-typed/orb182-clean-root \
             ls-remote origin refs/heads/13.x)
         remove_success "$clean_child_id" 0 1
+        assert_commit_evidence orb182-clean-child "$clean_historical_commit" "$clean_commit"
         gateway_fixture hostname-free orb182-clean-child.orbit
         remote_script <<'BASH'
 root=/home/orbit/apps/laravel-typed/orb182-clean-root
@@ -482,6 +501,8 @@ BASH
         gateway_fixture project-dev orb182-content-root orb182-content-dirty orb182-content-unpublished
         mark_content orb182-content-dirty dirty
         mark_content orb182-content-unpublished unpublished
+        unpublished_head=$(remote_command \
+            git -C /home/orbit/apps/laravel-typed/orb182-content-unpublished rev-parse HEAD)
         dirty_before=$(gateway_fixture instance-state orb182-content-dirty)
         unpublished_before=$(gateway_fixture instance-state orb182-content-unpublished)
         expect_remove_failure "$dirty_id" 0 instance.remove_refused
@@ -500,6 +521,7 @@ BASH
         install_fpm_access_probe "$unpublished_id"
         assert_fpm_contact "$unpublished_id" orb182-content-unpublished.orbit
         remove_success "$unpublished_id" 1 1
+        assert_commit_evidence orb182-content-unpublished "$content_commit" "$unpublished_head"
         remote_script <<'BASH'
 root=/home/orbit/apps/laravel-typed/orb182-content-root
 test -d "$root/.git"

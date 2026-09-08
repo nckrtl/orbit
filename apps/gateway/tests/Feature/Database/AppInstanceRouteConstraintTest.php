@@ -137,6 +137,7 @@ it('allows only a recorded removing member to lose its Route after source prepar
             'root' => $instance->effectiveRoot(),
             'branch' => $instance->branch,
             'starting_commit' => $instance->starting_commit,
+            'source_commit' => $instance->starting_commit,
             'common_repository_path' => $instance->checkout_path,
             'source_identity' => "1:{$instance->id}",
             'linked_worktree_paths' => [$instance->checkout_path],

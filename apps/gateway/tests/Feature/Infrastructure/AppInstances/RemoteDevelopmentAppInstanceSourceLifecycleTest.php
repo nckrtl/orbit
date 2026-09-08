@@ -739,6 +739,53 @@ it('finalizes one recorded checkout with durable matching evidence', function ()
         ->toBe("{$receipt}\n");
 });
 
+it('finalizes newer published and forced unpublished commits from immutable evidence', function (
+    bool $force,
+): void {
+    $instance = orb180_resolved_source(
+        $this->source,
+        $this->orbitApp,
+        $this->node,
+        $this->appsRoot,
+        $force ? 'unpublished-head' : 'published-head',
+    );
+    $historicalCommit = $instance->starting_commit;
+    orb76_run(['git', '-C', $instance->checkout_path, 'config', 'user.name', 'Orbit Test']);
+    orb76_run(['git', '-C', $instance->checkout_path, 'config', 'user.email', 'orbit@example.test']);
+    file_put_contents($instance->checkout_path.'/newer.txt', $force ? 'unpublished' : 'published');
+    orb76_run(['git', '-C', $instance->checkout_path, 'add', 'newer.txt']);
+    orb76_run(['git', '-C', $instance->checkout_path, 'commit', '-m', 'Advance source']);
+    $observedCommit = trim(orb76_run(['git', '-C', $instance->checkout_path, 'rev-parse', 'HEAD'])->stdout);
+
+    if (! $force) {
+        orb76_run([
+            'git',
+            '-C',
+            $instance->checkout_path,
+            'push',
+            'origin',
+            "HEAD:refs/heads/{$instance->branch}",
+        ]);
+    }
+
+    $member = orb180_record_source($this->removal, $instance, $force);
+
+    expect($member->starting_commit)
+        ->toBe($historicalCommit)
+        ->and($member->source_commit)
+        ->toBe($observedCommit)
+        ->and($member->source_commit)
+        ->not
+        ->toBe($member->starting_commit)
+        ->and($this->removal->finalize($member))
+        ->toBeString()
+        ->and(file_exists($instance->checkout_path))
+        ->toBeFalse();
+})->with([
+    'normal removal at a newer published HEAD' => false,
+    'forced removal at an unpublished HEAD' => true,
+]);
+
 it('finalizes one recorded worktree while preserving shared Git state', function (): void {
     $checkout = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'shared');
     $worktreePath = $this->appsRoot.'/acme/feature';
@@ -1358,6 +1405,39 @@ it('refuses recorded ownership drift', function (): void {
         ->toBeTrue();
 });
 
+it('reports foreign App ownership drift as a removal conflict before path validation', function (): void {
+    $instance = orb180_resolved_source(
+        $this->source,
+        $this->orbitApp,
+        $this->node,
+        $this->appsRoot,
+        'foreign-app',
+    );
+    $member = orb180_record_source($this->removal, $instance, true);
+    $foreign = OrbitApp::query()->create([
+        'name' => 'Foreign',
+        'slug' => 'foreign',
+        'repository_url' => 'https://example.test/foreign/site.git',
+        'default_branch' => 'main',
+        'root' => 'public',
+    ]);
+    $instance->update(['app_id' => $foreign->id]);
+    $exception = null;
+
+    try {
+        $this->removal->revalidate($member);
+    } catch (RuntimeConvergenceException $caught) {
+        $exception = $caught;
+    }
+
+    expect($exception)
+        ->toBeInstanceOf(RuntimeConvergenceException::class)
+        ->and($exception?->errorCode)
+        ->toBe('instance.removal_conflict')
+        ->and(is_dir((string) $member->checkout_path))
+        ->toBeTrue();
+});
+
 it('holds the per-Node source lock for every recorded adapter call', function (): void {
     $lock = new Orb180RecordingSourceLock;
     $removal = new RemoteDevelopmentAppInstanceSourceRemoval(
@@ -1525,7 +1605,8 @@ function orb180_record_source(
             'checkout_path' => $inventory->checkoutPath,
             'root' => $instance->effectiveRoot(),
             'branch' => $inventory->branch,
-            'starting_commit' => $inventory->startingCommit,
+            'starting_commit' => $instance->starting_commit,
+            'source_commit' => $inventory->startingCommit,
             'common_repository_path' => $inventory->commonRepositoryPath,
             'source_identity' => $inventory->sourceIdentity,
             'linked_worktree_paths' => $inventory->linkedWorktreePaths,
@@ -1647,7 +1728,8 @@ function orb182_record_sources(
                 'checkout_path' => $inventory->checkoutPath,
                 'root' => $instance->effectiveRoot(),
                 'branch' => $inventory->branch,
-                'starting_commit' => $inventory->startingCommit,
+                'starting_commit' => $instance->starting_commit,
+                'source_commit' => $inventory->startingCommit,
                 'common_repository_path' => $inventory->commonRepositoryPath,
                 'source_identity' => $inventory->sourceIdentity,
                 'linked_worktree_paths' => $inventory->linkedWorktreePaths,

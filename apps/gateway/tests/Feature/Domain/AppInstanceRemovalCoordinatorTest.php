@@ -67,6 +67,7 @@ it('accepts exactly one independent checkout and completes every durable step', 
             'root',
             'branch',
             'starting_commit',
+            'source_commit',
             'common_repository_path',
             'source_identity',
             'linked_worktree_paths',
@@ -86,6 +87,7 @@ it('accepts exactly one independent checkout and completes every durable step', 
             'root' => 'public',
             'branch' => 'dev',
             'starting_commit' => str_repeat('a', 40),
+            'source_commit' => str_repeat('a', 40),
             'common_repository_path' => $instance->checkout_path,
             'source_identity' => "test:{$instance->id}",
             'linked_worktree_paths' => [$instance->checkout_path],
@@ -106,6 +108,24 @@ it('accepts exactly one independent checkout and completes every durable step', 
             "runtime:{$instance->id}",
         ])->and($this->orb181Lock->acceptedWhileHeld)->toBeTrue();
 })->with([false, true]);
+
+it('records historical and observed source commits independently', function (
+    bool $force,
+    string $observedCommit,
+): void {
+    $instance = orb181_coordinator_instance();
+    $this->orb181Inspector->observedCommits[$instance->id] = $observedCommit;
+
+    $member = $this->orb181Coordinator->execute($instance, $force)->members->sole();
+
+    expect($member->starting_commit)
+        ->toBe(str_repeat('a', 40))
+        ->and($member->source_commit)
+        ->toBe($observedCommit);
+})->with([
+    'normal newer published source' => [false, str_repeat('b', 40)],
+    'forced unpublished source' => [true, str_repeat('c', 40)],
+]);
 
 it('refuses production removal before any durable mutation', function (): void {
     $instance = orb181_coordinator_instance(
@@ -618,6 +638,9 @@ final class Orb181CoordinatorInspector implements DevelopmentAppInstanceSourceRe
     /** @var list<int> */
     public array $inspectionFailureIds = [];
 
+    /** @var array<int, string> */
+    public array $observedCommits = [];
+
     public function inspect(
         AppInstance $appInstance,
         bool $force,
@@ -644,6 +667,7 @@ final class Orb181CoordinatorInspector implements DevelopmentAppInstanceSourceRe
         $paths = $this->linkedPaths ?? [$appInstance->checkout_path];
         $root = '/srv/orbit/apps';
         $commonRepositoryPath = $this->commonRepositoryPath ?? $appInstance->checkout_path;
+        $observedCommit = $this->observedCommits[$appInstance->id] ?? (string) $appInstance->starting_commit;
         $payload = [
             'app_instance_id' => $appInstance->id,
             'layout' => $appInstance->source_layout,
@@ -651,7 +675,7 @@ final class Orb181CoordinatorInspector implements DevelopmentAppInstanceSourceRe
             'checkout_path' => $appInstance->checkout_path,
             'root' => $root,
             'branch' => (string) $appInstance->branch,
-            'starting_commit' => (string) $appInstance->starting_commit,
+            'starting_commit' => $observedCommit,
             'common_repository_path' => $commonRepositoryPath,
             'source_identity' => "test:{$appInstance->id}",
             'linked_worktree_paths' => $paths,
@@ -664,7 +688,7 @@ final class Orb181CoordinatorInspector implements DevelopmentAppInstanceSourceRe
             checkoutPath: $appInstance->checkout_path,
             root: $root,
             branch: (string) $appInstance->branch,
-            startingCommit: (string) $appInstance->starting_commit,
+            startingCommit: $observedCommit,
             commonRepositoryPath: $commonRepositoryPath,
             sourceIdentity: "test:{$appInstance->id}",
             linkedWorktreePaths: $paths,

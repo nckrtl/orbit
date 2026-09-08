@@ -157,6 +157,8 @@ function removalEvidence(string $name): array
                     'root' => $value->root,
                     'common_repository_path' => $value->common_repository_path,
                     'source_layout' => $value->source_layout,
+                    'starting_commit' => $value->starting_commit,
+                    'source_commit' => $value->source_commit,
                     'source_digest' => $value->source_digest,
                     'source_identity' => $value->source_identity,
                     'linked_worktree_paths' => $value->linked_worktree_paths,

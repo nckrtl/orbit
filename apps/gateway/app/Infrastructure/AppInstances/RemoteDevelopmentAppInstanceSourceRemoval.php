@@ -395,6 +395,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
                         (string) $member->source_identity,
                         $inventory->origin,
                         base64_encode($inventory->worktreeInventory),
+                        (string) $member->source_commit,
                     ],
                     input: self::finalizationScript(),
                 ),
@@ -431,6 +432,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
             $this->recordedConflict($member, 'The recorded AppInstance removal member is unavailable.');
         }
 
+        $this->assertRecordedOwnership($member, $appInstance);
         $context = $this->context($appInstance);
         $logicalCheckout = (string) $member->checkout_path;
         $physicalCheckout = $state === AppInstanceSourceRevalidationState::Present
@@ -461,16 +463,9 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
         );
 
         if (
-            $member->app_id !== $appInstance->app_id
-            || $member->node_id !== $appInstance->node_id
-            || $member->name !== $appInstance->name
-            || $member->environment !== $appInstance->environment
-            || $member->root !== $appInstance->effectiveRoot()
-            || $member->checkout_path !== $appInstance->checkout_path
-            || $member->source_layout !== $appInstance->source_layout
-            || $member->repository_identity !== $appInstance->app->repository_identity
-            || $member->common_repository_path !== $inventory->commonRepositoryPath
+            $member->common_repository_path !== $inventory->commonRepositoryPath
             || $member->source_identity !== $inventory->sourceIdentity
+            || $member->source_commit !== $inventory->startingCommit
             || $member->source_digest !== $this->originalDigest($member, $inventory)
         ) {
             $this->recordedConflict(
@@ -680,6 +675,17 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
             $appInstance = $this->deletedMemberContext($member);
         }
 
+        $this->assertRecordedOwnership($member, $appInstance);
+
+        $context = $this->context($appInstance);
+
+        return [$appInstance->node, $context['user'], $context['group'], $context['root']];
+    }
+
+    private function assertRecordedOwnership(
+        AppInstanceRemovalMember $member,
+        AppInstance $appInstance,
+    ): void {
         if (
             $member->app_id !== $appInstance->app_id
             || $member->node_id !== $appInstance->node_id
@@ -694,10 +700,6 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
         ) {
             $this->recordedConflict($member, 'The recorded AppInstance removal ownership changed.');
         }
-
-        $context = $this->context($appInstance);
-
-        return [$appInstance->node, $context['user'], $context['group'], $context['root']];
     }
 
     private function deletedMemberContext(AppInstanceRemovalMember $member): AppInstance
@@ -745,12 +747,14 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
             || ! is_string($member->root)
             || ! is_string($member->branch)
             || ! is_string($member->starting_commit)
+            || ! is_string($member->source_commit)
             || ! is_string($member->common_repository_path)
             || ! is_string($member->source_identity)
             || ! is_string($member->repository_identity)
             || ! Str::isUuid($member->app_instance_removal_id)
             || $member->id < 1
             || preg_match('/\A[0-9a-f]{64}\z/D', $member->source_digest) !== 1
+            || preg_match('/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/D', $member->source_commit) !== 1
         ) {
             $this->recordedConflict($member, 'The recorded AppInstance removal source evidence is incomplete.');
         }
@@ -1379,6 +1383,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
             source_identity=$5
             expected_origin=$6
             expected_worktrees=$7
+            source_commit=$8
             export GIT_OPTIONAL_LOCKS=0
             state="$root/.orbit-removals"
             journal="$state/$operation.$member.journal"
@@ -1456,7 +1461,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
                 *) exit 1 ;;
             esac
             test "$(git -C "$physical" symbolic-ref --short HEAD)" = "$branch"
-            test "$(git -C "$physical" rev-parse --verify HEAD^{commit})" = "$starting_commit"
+            test "$(git -C "$physical" rev-parse --verify HEAD^{commit})" = "$source_commit"
             git -C "$physical" merge-base --is-ancestor "$starting_commit" HEAD
             origin_with_marker=$(git -C "$physical" remote get-url origin && printf x)
             origin=${origin_with_marker%x}
