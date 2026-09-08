@@ -335,7 +335,10 @@ inject_dns_failure() {
 
 restore_dns() {
     sudo rm -f -- /etc/dnsmasq.d/orb124-invalid.conf
+    sudo dnsmasq --test >/dev/null
+    sudo systemctl reset-failed dnsmasq
     sudo systemctl restart dnsmasq
+    test "$(systemctl is-active dnsmasq)" = active
 }
 
 break_php_fpm_config() {
@@ -405,10 +408,42 @@ route_id=$1
 BASH
 }
 
+install_fpm_access_probe() {
+    local instance_id=$1
+    remote_script app-dev "$instance_id" <<'BASH'
+instance_id=$1
+configuration=/etc/php/8.5/fpm/pool.d/orbit-scopes.conf
+pool="[orbit-app-instance-$instance_id]"
+log="/tmp/orb124-fpm-access-$instance_id.log"
+candidate=$(mktemp)
+trap 'rm -f -- "$candidate"' EXIT
+test "$(grep -Fxc -- "$pool" "$configuration")" = 1
+awk -v pool="$pool" -v log="$log" '
+    $0 == pool { print; print "access.log = " log; next }
+    { print }
+' "$configuration" > "$candidate"
+sudo install -o root -g root -m 0644 "$candidate" "$configuration"
+sudo rm -f -- "$log"
+sudo systemctl restart php8.5-fpm
+test "$(systemctl is-active php8.5-fpm)" = active
+BASH
+}
+
+fpm_access_count() {
+    local instance_id=$1
+    remote_script app-dev "$instance_id" <<'BASH'
+instance_id=$1
+log="/tmp/orb124-fpm-access-$instance_id.log"
+test -f "$log"
+wc -l < "$log"
+BASH
+}
+
 inject_source_finalization_state() {
     local name=$1
     local mode=$2
     local evidence
+    injected_branch=$name
     evidence=$(gateway_fixture removal-evidence "$name")
     read -r operation member checkout root digest identity layout common receipt < <(python3 -c '
 import hashlib
@@ -463,6 +498,46 @@ if [ "$mode" = after-delete ]; then
         checkout) rm -rf -- "$quarantine" ;;
     esac
 fi
+BASH
+}
+
+restore_injected_source_finalization_state() {
+    remote_script app-dev \
+        "$operation" \
+        "$member" \
+        "$checkout" \
+        "$root" \
+        "$layout" \
+        "$common" \
+        "$injected_branch" <<'BASH'
+operation=$1
+member=$2
+checkout=$3
+root=$4
+layout=$5
+common=$6
+branch=$7
+state="$root/.orbit-removals"
+quarantine="$state/$operation.$member.quarantine"
+receipt="$state/$operation.$member.receipt"
+git --git-dir="$common/.git" remote set-url origin https://github.com/laravel/laravel.git
+if [ ! -d "$checkout" ]; then
+    case "$layout" in
+        worktree)
+            if [ -d "$quarantine" ]; then
+                git --git-dir="$common/.git" worktree move "$quarantine" "$checkout"
+            else
+                git --git-dir="$common/.git" worktree add "$checkout" "$branch" >/dev/null
+            fi
+            ;;
+        checkout)
+            test -d "$quarantine"
+            mv -- "$quarantine" "$checkout"
+            ;;
+        *) exit 64 ;;
+    esac
+fi
+rm -f -- "$receipt"
 BASH
 }
 
@@ -779,10 +854,91 @@ print(value["id"])
 
     removal-route-before-source)
         hostname=orb124-ordered.orbit
-        read -r ordered_commit _ < <(make_checkout orb124-ordered orb124-ordered clean)
+        read -r ordered_commit _ < <(make_checkout orb124-ordered orb124-ordered endpoint)
         ordered_id=$(seed_dev orb124-ordered checkout orb124-ordered "$ordered_commit" "$hostname" | seed_id)
         gateway_fixture project-dev orb124-ordered
-        remove_success "$ordered_id" 0 1
+        test "$(curl -sS --resolve "$hostname:443:$app_dev_ip" "https://$hostname")" = 'former target'
+        contact_before=$(remote_script app-dev <<'BASH'
+wc -l < /tmp/orb124-former-target-contact
+BASH
+)
+        sudo rm -f -- /tmp/orb124-ordered-lock-held /tmp/orb124-ordered-lock-release
+        rm -f -- /tmp/orb124-ordered-output
+        sudo bash -seu <<'BASH' &
+exec 9>/run/lock/orbit-dnsmasq.lock
+flock 9
+touch /tmp/orb124-ordered-lock-held
+while [ ! -f /tmp/orb124-ordered-lock-release ]; do
+    sleep 0.1
+done
+BASH
+        lock_pid=$!
+        trap 'sudo touch /tmp/orb124-ordered-lock-release; wait "$lock_pid" || true' EXIT
+        for _ in $(seq 1 100); do
+            test -f /tmp/orb124-ordered-lock-held && break
+            sleep 0.1
+        done
+        test -f /tmp/orb124-ordered-lock-held
+        remote_command app-dev orbit instance:remove "$ordered_id" --force --json > /tmp/orb124-ordered-output &
+        removal_pid=$!
+        trap 'sudo touch /tmp/orb124-ordered-lock-release; wait "$lock_pid" || true; wait "$removal_pid" || true' EXIT
+        unavailable_published=0
+        for _ in $(seq 1 200); do
+            if remote_script app-dev "$hostname" <<'BASH'
+hostname=$1
+current=$(sudo readlink -f /etc/caddy/Caddyfile)
+fragment="$(dirname "$current")/fragments/app-dev.caddy"
+sudo grep -F "https://$hostname" "$fragment" >/dev/null
+sudo grep -F 'respond "Orbit Route unavailable\n" 503' "$fragment" >/dev/null
+BASH
+            then
+                unavailable_published=1
+                break
+            fi
+            sleep 0.1
+        done
+        test "$unavailable_published" = 1
+        gateway_fixture instance-state orb124-ordered | python3 -c '
+import json
+import sys
+
+value = json.load(sys.stdin)
+if value.get("status") != "removing" or value.get("routes") != []:
+    raise SystemExit(65)
+'
+        remote_script app-dev <<'BASH'
+test -d /home/orbit/apps/laravel-typed/orb124-ordered
+BASH
+        status=$(curl -sS --resolve "$hostname:443:$app_dev_ip" -D /tmp/orb124-ordered.headers -o /tmp/orb124-ordered.body -w '%{http_code}' "https://$hostname")
+        test "$status" = 503
+        python3 -c '
+from pathlib import Path
+import sys
+
+headers = Path(sys.argv[1]).read_text(encoding="iso-8859-1").splitlines()
+fields = {}
+for line in headers[1:]:
+    if ":" not in line:
+        continue
+    name, value = line.split(":", 1)
+    fields.setdefault(name.lower(), []).append(value.strip())
+if fields.get("content-type") != ["text/plain; charset=utf-8"]:
+    raise SystemExit(65)
+if fields.get("cache-control") != ["no-store"]:
+    raise SystemExit(65)
+if Path(sys.argv[2]).read_bytes() != b"Orbit Route unavailable\\n":
+    raise SystemExit(65)
+' /tmp/orb124-ordered.headers /tmp/orb124-ordered.body
+        contact_after=$(remote_script app-dev <<'BASH'
+wc -l < /tmp/orb124-former-target-contact
+BASH
+)
+        test "$contact_before" = "$contact_after"
+        sudo touch /tmp/orb124-ordered-lock-release
+        wait "$lock_pid"
+        wait "$removal_pid"
+        trap - EXIT
+        assert_successful_removal "$(cat /tmp/orb124-ordered-output)" "$ordered_id" 1 1
         gateway_fixture hostname-free "$hostname"
         remote_script app-dev <<'BASH'
 test ! -e /home/orbit/apps/laravel-typed/orb124-ordered
@@ -841,7 +997,16 @@ BASH
             restore_dns
             trap - EXIT
             gateway_fixture complete-removal-route-step "$child_name"
+            gateway_fixture removal-evidence "$child_name" | python3 -c '
+import json
+import sys
+
+member = json.load(sys.stdin)["members"][0]
+if member.get("route_cleared_at") is None or member.get("route_outcome") != "deleted":
+    raise SystemExit(65)
+'
             inject_source_finalization_state "$child_name" "$mode"
+            trap 'restore_injected_source_finalization_state; restore_dns; restore_php_fpm_config' EXIT
             if [ "$mode" != after-delete ]; then
                 evidence=$(gateway_fixture removal-evidence "$child_name")
                 quarantine=$(python3 -c '
@@ -896,6 +1061,7 @@ git -C "$root" worktree remove --force "$extra"
 test ! -e "$extra"
 BASH
             remove_success "$finalize_root_id" 1 2
+            trap - EXIT
             remote_script app-dev "$root_name" "$child_name" <<'BASH'
 root_name=$1
 child_name=$2
@@ -943,14 +1109,13 @@ BASH
 
     coordinated-development-removal)
         hostname=orb124-unavailable.orbit
-        read -r contact_commit _ < <(make_checkout orb124-unavailable orb124-unavailable endpoint)
+        read -r contact_commit _ < <(make_checkout orb124-unavailable orb124-unavailable clean)
         unavailable_id=$(seed_dev orb124-unavailable checkout orb124-unavailable "$contact_commit" "$hostname" | seed_id)
         gateway_fixture project-dev orb124-unavailable
-        test "$(curl -sS --resolve "$hostname:443:$app_dev_ip" "https://$hostname")" = 'former target'
-        contact_before=$(remote_script app-dev <<'BASH'
-wc -l < /tmp/orb124-former-target-contact
-BASH
-)
+        install_fpm_access_probe "$unavailable_id"
+        curl -sS --resolve "$hostname:443:$app_dev_ip" "https://$hostname" >/dev/null
+        contact_before=$(fpm_access_count "$unavailable_id")
+        test "$contact_before" -ge 1
         sudo rm -f -- /tmp/orb124-dns-lock-held /tmp/orb124-dns-lock-release
         rm -f -- /tmp/orb124-removal-output
         sudo bash -seu <<'BASH' &
@@ -970,6 +1135,7 @@ BASH
         test -f /tmp/orb124-dns-lock-held
         remote_command app-dev orbit instance:remove "$unavailable_id" --json > /tmp/orb124-removal-output &
         removal_pid=$!
+        trap 'sudo touch /tmp/orb124-dns-lock-release; wait "$lock_pid" || true; wait "$removal_pid" || true' EXIT
         unavailable_published=0
         for _ in $(seq 1 200); do
             if remote_script app-dev "$hostname" <<'BASH'
@@ -986,6 +1152,9 @@ BASH
             sleep 0.1
         done
         test "$unavailable_published" = 1
+        remote_script app-dev <<'BASH'
+test -d /home/orbit/apps/laravel-typed/orb124-unavailable
+BASH
         status=$(curl -sS --resolve "$hostname:443:$app_dev_ip" -D /tmp/orb124-unavailable.headers -o /tmp/orb124-unavailable.body -w '%{http_code}' "https://$hostname")
         test "$status" = 503
         python3 -c '
@@ -1006,10 +1175,7 @@ if fields.get("cache-control") != ["no-store"]:
 if Path(sys.argv[2]).read_bytes() != b"Orbit Route unavailable\\n":
     raise SystemExit(65)
 ' /tmp/orb124-unavailable.headers /tmp/orb124-unavailable.body
-        contact_after=$(remote_script app-dev <<'BASH'
-wc -l < /tmp/orb124-former-target-contact
-BASH
-)
+        contact_after=$(fpm_access_count "$unavailable_id")
         test "$contact_before" = "$contact_after"
         sudo touch /tmp/orb124-dns-lock-release
         wait "$lock_pid"

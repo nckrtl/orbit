@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 use App\Actions\AppInstances\RemoveAppInstanceAction;
 use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
 use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
 use App\Infrastructure\AppDev\RemoteAppDevCertificateManager;
@@ -25,6 +27,13 @@ $laravel->make(Kernel::class)->bootstrap();
 
 $command = $argv[1] ?? '';
 $arguments = array_slice($argv, 2);
+set_exception_handler(static function (Throwable $exception): never {
+    $errorCode = $exception instanceof RuntimeConvergenceException || $exception instanceof ResourceOperationException
+        ? $exception->errorCode
+        : 'fixture.command_failed';
+    fwrite(STDERR, "ORB-124 fixture failed: {$errorCode}\n");
+    exit(70);
+});
 
 function fixtureApp(): OrbitApp
 {

@@ -23,6 +23,7 @@ use App\Models\AppInstance;
 use App\Models\AppInstanceRemovalMember;
 use App\Models\Node;
 use App\Models\Route;
+use Illuminate\Support\Facades\DB;
 
 beforeEach(function (): void {
     $this->orb124CoordinatorSource = new Orb124CoordinatorSource;
@@ -68,6 +69,63 @@ it('refuses a normal checkout cascade then removes the fixed worktree-first set 
         ->toBe([$worktree->id, $checkout->id])
         ->and($this->orb124CoordinatorLock->acceptedWhileHeld)
         ->toBeTrue();
+});
+
+it('atomically completes the final cascade row while preserving intermediate progress', function (): void {
+    [$checkout, $worktree] = orb124_coordinator_graph();
+    $paths = [$checkout->checkout_path, $worktree->checkout_path];
+    sort($paths, SORT_STRING);
+    $this->orb124CoordinatorSource->paths = $paths;
+    DB::unprepared(<<<'SQL'
+        CREATE TRIGGER orb124_fail_final_cascade_completion
+        BEFORE UPDATE OF status ON app_instance_removals
+        WHEN NEW.status = 'completed'
+        BEGIN
+            SELECT RAISE(ABORT, 'Injected final cascade completion failure.');
+        END
+        SQL);
+
+    try {
+        expect(fn () => $this->orb124Coordinator->execute($checkout, true))
+            ->toThrow(AppInstanceRemovalException::class);
+    } finally {
+        DB::unprepared('DROP TRIGGER IF EXISTS orb124_fail_final_cascade_completion');
+    }
+
+    $operation = $checkout->refresh()->removalMember?->removal;
+    $members = $operation?->members()->orderBy('position')->get();
+    expect($operation?->refresh()->status->value)
+        ->toBe('failed')
+        ->and($operation?->current_step?->value)
+        ->toBe('row_deletion')
+        ->and($members?->get(0)?->app_instance_id)
+        ->toBe($worktree->id)
+        ->and($members?->get(0)?->row_deleted_at)
+        ->not
+        ->toBeNull()
+        ->and($members?->get(1)?->app_instance_id)
+        ->toBe($checkout->id)
+        ->and($members?->get(1)?->row_deleted_at)
+        ->toBeNull()
+        ->and(AppInstance::query()->whereKey($worktree->id)->exists())
+        ->toBeFalse()
+        ->and(AppInstance::query()->whereKey($checkout->id)->sole()->status)
+        ->toBe(AppInstanceState::Removing)
+        ->and(Route::query()->count())
+        ->toBe(0);
+
+    $removal = $this->orb124Coordinator->execute($checkout->refresh(), true);
+
+    expect($removal->status->value)
+        ->toBe('completed')
+        ->and($removal->members->pluck('row_deleted_at')->filter()->count())
+        ->toBe(2)
+        ->and(AppInstance::query()->count())
+        ->toBe(0)
+        ->and(Route::query()->count())
+        ->toBe(0)
+        ->and($this->orb124CoordinatorProjector->routeCalls)
+        ->toBe([$worktree->id, $checkout->id]);
 });
 
 it('revalidates the unfinished fixed inventory before retry and never extends it', function (): void {

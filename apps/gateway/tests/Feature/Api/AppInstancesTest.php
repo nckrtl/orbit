@@ -38,6 +38,7 @@ use App\Models\NodeRole;
 use App\Models\Route;
 use App\Models\RouteTarget;
 use App\Models\Workspace;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
@@ -1455,6 +1456,69 @@ it('retains bounded failed progress and resumes without recreating a deleted Rou
         ->assertJsonPath('data.completed', 1);
 
     expect(Route::query()->count())->toBe(0);
+});
+
+it('atomically completes final row deletion or preserves the public retry target', function (): void {
+    $created = $this->postJson('/api/v1/instances', [
+        'app_id' => $this->orbitApp->id,
+        'node_id' => $this->node->id,
+        'name' => 'dev',
+    ])->assertCreated();
+    $id = $created->json('data.id');
+    DB::unprepared(<<<'SQL'
+        CREATE TRIGGER orb124_fail_final_completion
+        BEFORE UPDATE OF status ON app_instance_removals
+        WHEN NEW.status = 'completed'
+        BEGIN
+            SELECT RAISE(ABORT, 'Injected final completion failure.');
+        END
+        SQL);
+
+    try {
+        $this
+            ->deleteJson("/api/v1/instances/{$id}")
+            ->assertStatus(502)
+            ->assertJsonPath('error.code', 'instance.removal_incomplete')
+            ->assertJsonPath('error.details.removal.id', $id)
+            ->assertJsonPath('error.details.removal.status', 'failed')
+            ->assertJsonPath('error.details.removal.current_step', 'row_deletion')
+            ->assertJsonPath('error.details.removal.completed', 0)
+            ->assertJsonPath('error.details.removal.remaining', 1)
+            ->assertJsonPath('error.details.removal.failed_step', 'row_deletion');
+    } finally {
+        DB::unprepared('DROP TRIGGER IF EXISTS orb124_fail_final_completion');
+    }
+
+    $member = AppInstanceRemovalMember::query()->sole();
+    expect(AppInstance::query()->whereKey($id)->sole()->status)
+        ->toBe(AppInstanceState::Removing)
+        ->and($member->row_deleted_at)
+        ->toBeNull()
+        ->and($member->removal()->firstOrFail()->status->value)
+        ->toBe('failed')
+        ->and(Route::query()->count())
+        ->toBe(0)
+        ->and($this->removalProjector->calls)
+        ->toBe(["route:{$id}", "runtime:{$id}"]);
+
+    $this
+        ->deleteJson("/api/v1/instances/{$id}")
+        ->assertOk()
+        ->assertJsonPath('data.status', 'completed')
+        ->assertJsonPath('data.completed', 1)
+        ->assertJsonPath('data.remaining', 0);
+
+    expect(AppInstance::query()->whereKey($id)->exists())
+        ->toBeFalse()
+        ->and($member->refresh()->row_deleted_at)
+        ->not
+        ->toBeNull()
+        ->and($member->removal()->firstOrFail()->status->value)
+        ->toBe('completed')
+        ->and(Route::query()->count())
+        ->toBe(0)
+        ->and($this->removalProjector->calls)
+        ->toBe(["route:{$id}", "runtime:{$id}"]);
 });
 
 it('returns current bounded progress when retry source revalidation is refused', function (): void {

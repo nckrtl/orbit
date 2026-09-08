@@ -45,7 +45,7 @@ After preflight succeeds, the Gateway records one fixed deletion set and marks e
 | Route target clear | Remove the AppInstance target, remove its managed Route artifacts, keep a shared production Route serving its remaining targets, or delete a final-target Route and release its hostname. |
 | Source finalization | Delete the exact owned source and record the matching outcome. |
 | Runtime cleanup | Remove the AppInstance runtime artifacts after Route traffic stops reaching that source. |
-| Row deletion | Delete the completed AppInstance row. |
+| Row deletion | Delete the completed AppInstance row. The final fixed-set row deletion and operation completion commit together. |
 
 Source finalization never starts before the Route stops forwarding requests to that source. A shared production Route keeps its identity and serves its remaining targets after the Gateway removes the departing workload's Caddy and certificate projections. For every final target, the Gateway removes managed workload and Router Caddy, certificate, Domain Name System (DNS), and development Route firewall projections. It then deletes the Route and releases its hostname before source finalization. A projection failure retains the Route row for retry.
 
@@ -68,7 +68,7 @@ The API, PHP SDK, CLI human output, CLI JSON output, and activity use one bounde
 | `total`, `completed`, `remaining` | Fixed-set member counts; completed counts row deletions and remaining equals total minus completed. |
 | `failed_step`, `error_code` | Null unless status is failed; otherwise the bounded failed step and error code. |
 
-Repeating the same removal request resumes the first unfinished step. Before deleting more source, the Gateway revalidates every unfinished member against the recorded inventory. It refuses a changed force value, replacement directory, changed repository identity, changed cascade, unsafe path, or request for a member owned by another removal. A retry after final-target Route deletion continues cleanup without recreating the Route or reclaiming its hostname.
+Repeating the same removal request resumes the first unfinished step. Before deleting more source, the Gateway revalidates every unfinished member against the recorded inventory. It refuses a changed force value, replacement directory, changed repository identity, changed cascade, unsafe path, or request for a member owned by another removal. A retry after final-target Route deletion continues cleanup without recreating the Route or reclaiming its hostname. If final completion cannot commit, its transaction preserves the last `removing` AppInstance so the same request can retry.
 
 Durable finalization evidence binds the recorded physical source identity to its outcome. A retry authenticates every unfinished member under the Node source lock and normalizes only exact operation-owned quarantine or completion paths in the fixed linked-worktree set. Before it deletes an authenticated quarantine, it repeats the applicable clean-and-published check and every recorded source, ownership, layout, containment, common-repository, physical-identity, and fixed-worktree check against that exact relocated path.
 

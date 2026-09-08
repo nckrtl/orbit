@@ -370,13 +370,6 @@ final readonly class RemoveAppInstanceAction
             }
         }
 
-        $operation->update([
-            'status' => AppInstanceRemovalStatus::Completed,
-            'current_step' => null,
-            'failed_step' => null,
-            'error_code' => null,
-        ]);
-
         return $operation->refresh()->load('members');
     }
 
@@ -390,7 +383,7 @@ final readonly class RemoveAppInstanceAction
             AppInstanceRemovalStep::RouteTargetClear => $this->clearRoute($member),
             AppInstanceRemovalStep::SourceFinalization => $this->finalizeSource($operation, $member),
             AppInstanceRemovalStep::RuntimeCleanup => $this->cleanupRuntime($member),
-            AppInstanceRemovalStep::RowDeletion => $this->deleteRow($member),
+            AppInstanceRemovalStep::RowDeletion => $this->deleteRow($operation, $member),
         };
     }
 
@@ -421,11 +414,26 @@ final readonly class RemoveAppInstanceAction
         $member->update(['runtime_cleaned_at' => now()]);
     }
 
-    private function deleteRow(AppInstanceRemovalMember $member): void
-    {
-        DB::transaction(function () use ($member): void {
+    private function deleteRow(
+        AppInstanceRemoval $operation,
+        AppInstanceRemovalMember $member,
+    ): void {
+        DB::transaction(function () use ($operation, $member): void {
+            $lockedOperation = AppInstanceRemoval::query()->lockForUpdate()->findOrFail($operation->id);
+            $lockedMember = $lockedOperation->members()->lockForUpdate()->findOrFail($member->id);
             AppInstance::query()->lockForUpdate()->findOrFail($member->app_instance_id)->delete();
-            $member->update(['row_deleted_at' => now()]);
+            $lockedMember->update(['row_deleted_at' => now()]);
+
+            if ($lockedOperation->members()->whereNull('row_deleted_at')->exists()) {
+                return;
+            }
+
+            $lockedOperation->update([
+                'status' => AppInstanceRemovalStatus::Completed,
+                'current_step' => null,
+                'failed_step' => null,
+                'error_code' => null,
+            ]);
         });
     }
 
