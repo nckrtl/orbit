@@ -18,6 +18,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Processes\ProcessOperationException;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ToolOperationException;
+use App\Http\Requests\Nodes\RemoveNodeRoleInputParser;
 use App\Http\Requests\TopLevelJsonObjectInspector;
 use App\Infrastructure\Activity\CommandActivityInputSanitizer;
 use App\Infrastructure\Activity\CommandActivityTargetResolver;
@@ -51,6 +52,7 @@ final readonly class RecordCommandActivity
         private CommandActivityInputSanitizer $inputSanitizer,
         private CommandActivityTargetResolver $targetResolver,
         private TopLevelJsonObjectInspector $jsonInspector,
+        private RemoveNodeRoleInputParser $removeNodeRoleInputParser,
     ) {}
 
     public function handle(Request $request, Closure $next): Response
@@ -345,28 +347,27 @@ final readonly class RecordCommandActivity
             return $this->appInstanceRemovalInput($request);
         }
 
-        if (! in_array($command, ['node:role:add', 'node:role:remove'], strict: true)) {
+        if ($command === 'node:role:remove') {
+            return $this->inputSanitizer->sanitizeProperties(
+                $this->removeNodeRoleInputParser->safeActivityInput(
+                    $request->getContent(),
+                    $request->route('role'),
+                ),
+            );
+        }
+
+        if ($command !== 'node:role:add') {
             return $this->inputSanitizer->sanitizeProperties($request->collect()->all());
         }
 
-        $allowedKeys = $command === 'node:role:add'
-            ? ['role', 'converge_existing']
-            : ['force', 'purge_data'];
-
         try {
-            $input = $this->jsonInspector->inspect($request->getContent(), $allowedKeys);
+            $input = $this->jsonInspector->inspect($request->getContent(), ['role', 'converge_existing']);
         } catch (UnexpectedValueException) {
             return [];
         }
 
-        if (! $this->validNodeRoleInput($command, $input, $request)) {
+        if (! $this->validNodeRoleAdditionInput($input)) {
             return [];
-        }
-
-        $routeRole = $request->route('role');
-
-        if ($command === 'node:role:remove' && is_string($routeRole)) {
-            $input['role'] = $routeRole;
         }
 
         return $this->inputSanitizer->sanitizeProperties($input);
@@ -443,25 +444,14 @@ final readonly class RecordCommandActivity
      * @param array<string, mixed> $input
      * @mago-expect analysis:mixed-assignment Request input is an untyped transport boundary.
      */
-    private function validNodeRoleInput(string $command, array $input, Request $request): bool
+    private function validNodeRoleAdditionInput(array $input): bool
     {
-        if ($command === 'node:role:add') {
-            $role = $input['role'] ?? null;
-
-            return (
-                is_string($role)
-                && RoleName::tryFrom($role) instanceof RoleName
-                && (! array_key_exists('converge_existing', $input) || is_bool($input['converge_existing']))
-            );
-        }
-
-        $routeRole = $request->route('role');
+        $role = $input['role'] ?? null;
 
         return (
-            is_string($routeRole)
-            && RoleName::tryFrom($routeRole) instanceof RoleName
-            && (! array_key_exists('force', $input) || is_bool($input['force']))
-            && (! array_key_exists('purge_data', $input) || is_bool($input['purge_data']))
+            is_string($role)
+            && RoleName::tryFrom($role) instanceof RoleName
+            && (! array_key_exists('converge_existing', $input) || is_bool($input['converge_existing']))
         );
     }
 
