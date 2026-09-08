@@ -2,17 +2,20 @@
 
 declare(strict_types=1);
 
+use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\AppInstances\CreateAppInstanceRequest;
 use Orbit\Sdk\Requests\AppInstances\ListAppInstancesRequest;
 use Orbit\Sdk\Requests\AppInstances\RemoveAppInstanceRequest;
 use Orbit\Sdk\Requests\AppInstances\ShowAppInstanceRequest;
+use Orbit\Sdk\Responses\AppInstances\AppInstanceRemovalResponse;
 use Orbit\Sdk\Responses\AppInstances\AppInstanceResponse;
 use Orbit\Sdk\Responses\AppInstances\AppInstancesResponse;
 use Saloon\Enums\Method;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
+/** @mago-expect lint:halstead The feature group locks the complete AppInstance request and removal contract. */
 describe('AppInstance requests', function (): void {
     it('creates an AppInstance with inherited root and maps the typed response', function (): void {
         $mockClient = new MockClient([
@@ -145,9 +148,9 @@ describe('AppInstance requests', function (): void {
             ->toBeInstanceOf(AppInstanceResponse::class);
     });
 
-    it('removes an AppInstance and transports explicit force intent', function (): void {
+    it('removes an AppInstance and transports explicit force intent with bounded progress', function (): void {
         $mockClient = new MockClient([
-            RemoveAppInstanceRequest::class => MockResponse::make(instance_envelope()),
+            RemoveAppInstanceRequest::class => MockResponse::make(removal_envelope()),
         ]);
         $connector = instance_gateway_connector($mockClient);
 
@@ -161,8 +164,10 @@ describe('AppInstance requests', function (): void {
             ->toBe('/api/v1/instances/7')
             ->and($remove->body()->all())
             ->toBe(['force' => true])
-            ->and($response->id)
-            ->toBe(7);
+            ->and($response)
+            ->toBeInstanceOf(AppInstanceRemovalResponse::class)
+            ->and($response->toArray())
+            ->toBe([...removal_gateway_data(), 'request_id' => instance_request_id()]);
     });
 
     it('preserves force omission and explicit false', function (): void {
@@ -170,6 +175,43 @@ describe('AppInstance requests', function (): void {
             ->toBeEmpty()
             ->and(new RemoveAppInstanceRequest(7, force: false)->body()->all())
             ->toBe(['force' => false]);
+    });
+
+    it('retains bounded removal progress from a failed accepted request', function (): void {
+        $failure = removal_gateway_data();
+        $failure['status'] = 'failed';
+        $failure['current_step'] = 'runtime_cleanup';
+        $failure['completed'] = 0;
+        $failure['remaining'] = 1;
+        $failure['failed_step'] = 'runtime_cleanup';
+        $failure['error_code'] = 'instance.runtime_interrupted';
+        $mockClient = new MockClient([
+            RemoveAppInstanceRequest::class => MockResponse::make(
+                [
+                    'error' => [
+                        'code' => 'instance.runtime_interrupted',
+                        'message' => 'AppInstance removal was accepted but remains incomplete.',
+                        'details' => ['removal' => $failure],
+                        'request_id' => instance_request_id(),
+                    ],
+                ],
+                502,
+                ['X-Orbit-Request-Id' => instance_request_id()],
+            ),
+        ]);
+        $connector = instance_gateway_connector($mockClient);
+
+        try {
+            $connector->send(new RemoveAppInstanceRequest(7, force: true));
+            $this->fail('Expected GatewayApiException.');
+        } catch (GatewayApiException $exception) {
+            expect($exception->errorCode())
+                ->toBe('instance.runtime_interrupted')
+                ->and($exception->requestId())
+                ->toBe(instance_request_id())
+                ->and($exception->details())
+                ->toBe(['removal' => $failure]);
+        }
     });
 });
 
@@ -211,6 +253,34 @@ function instance_gateway_data(): array
         'route' => instance_gateway_route_data(),
         'hostname' => 'orbit-docs.test',
         'url' => 'https://orbit-docs.test',
+        'removal' => null,
+    ];
+}
+
+/** @return array<string, mixed> */
+function removal_envelope(): array
+{
+    return [
+        'data' => removal_gateway_data(),
+        'meta' => ['request_id' => instance_request_id()],
+    ];
+}
+
+/** @return array<string, mixed> */
+function removal_gateway_data(): array
+{
+    return [
+        'operation_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a845',
+        'id' => 7,
+        'name' => 'main',
+        'force' => true,
+        'status' => 'completed',
+        'current_step' => null,
+        'total' => 1,
+        'completed' => 1,
+        'remaining' => 0,
+        'failed_step' => null,
+        'error_code' => null,
     ];
 }
 

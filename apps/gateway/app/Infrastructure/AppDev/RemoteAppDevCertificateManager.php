@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\AppDev;
 
 use App\Domain\AppDev\AppDevCertificateManager;
+use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -60,6 +61,52 @@ final readonly class RemoteAppDevCertificateManager implements AppDevCertificate
     public function convergeRouteRouter(Route $route, Node $router): void
     {
         $this->converge($router, "route-{$route->id}-router", $route->hostname);
+    }
+
+    public function appInstanceCertificateExists(AppInstance $appInstance): bool
+    {
+        $appInstance->loadMissing('node');
+        $account = $this->accounts->resolve($appInstance->node);
+        $scope = "app-instance-{$appInstance->id}";
+        $result = $this->ssh->execute(
+            $appInstance->node,
+            new RemoteCommand(
+                arguments: ['bash', '-seu', '--', $scope, $account->home],
+                input: <<<'BASH'
+                    scope=$1
+                    managed_home=$2
+                    if [ -f "$managed_home/.orbit/certificates/$scope/current/cert.pem" ] && \
+                        sudo test -f "/etc/caddy/orbit-certificates/$scope/current/cert.pem"; then
+                        printf 'PRESENT\n'
+                    else
+                        printf 'ABSENT\n'
+                    fi
+                    BASH,
+            ),
+            step: 'certificate-inspect',
+            errorCode: 'app-dev.certificate_inspection_failed',
+        );
+
+        return match (trim($result->stdout)) {
+            'PRESENT' => true,
+            'ABSENT' => false,
+            default => throw new RuntimeConvergenceException(
+                step: 'certificate-inspect',
+                errorCode: 'app-dev.certificate_inspection_failed',
+                message: 'AppInstance certificate inspection returned invalid evidence.',
+            ),
+        };
+    }
+
+    public function removeAppInstance(AppInstance $appInstance): void
+    {
+        $appInstance->loadMissing('node');
+        $this->remove($appInstance->node, "app-instance-{$appInstance->id}");
+    }
+
+    public function removeRouteRouter(Route $route, Node $router): void
+    {
+        $this->remove($router, "route-{$route->id}-router");
     }
 
     private function converge(Node $node, string $scope, string $hostname): void

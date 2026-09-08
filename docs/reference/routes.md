@@ -1,6 +1,6 @@
 # Routes
 
-This page tells an operator what a Route records, how Orbit provisions its initial private traffic path, and which later changes Orbit temporarily refuses. [ADR 0023](../decisions/0023-separate-hostname-selection-from-cluster-routing.md) owns hostname and scope selection, [ADR 0024](../decisions/0024-follow-generated-route-targets.md) owns generated target identity, [ADR 0028](../decisions/0028-require-one-route-per-active-appinstance.md) requires one Route per active AppInstance, and [ADR 0033](../decisions/0033-trust-wireguard-members-for-private-node-traffic.md) owns private Node trust.
+This page tells an operator what a Route records, how Orbit provisions its initial private traffic path, and which later changes Orbit refuses. [ADR 0023](../decisions/0023-separate-hostname-selection-from-cluster-routing.md) owns hostname and scope selection, [ADR 0024](../decisions/0024-follow-generated-route-targets.md) owns generated target identity, [ADR 0028](../decisions/0028-require-one-route-per-active-appinstance.md) requires one Route per active AppInstance, [ADR 0041](../decisions/0041-delete-an-empty-route-during-appinstance-removal.md) owns final-target deletion during AppInstance removal, and [ADR 0033](../decisions/0033-trust-wireguard-members-for-private-node-traffic.md) owns private Node trust.
 
 ## Route record
 
@@ -50,7 +50,7 @@ The API, PHP SDK, and CLI expose the same seven typed operations and return the 
 | Show | Return one Route with its stored scope, provenance, generation basis, intent, lifecycle, failure metadata, and target. |
 | Update | Change an explicit Route hostname or mutable publication intent without changing its App, provenance, generation basis, or scope. |
 | Target set | Add or replace the one AppInstance target when the change does not detach an active AppInstance from its sole Route. |
-| Target clear | Remove the target only when that does not leave an active AppInstance without a Route. |
+| Target clear | Remove the target only when that does not leave an active AppInstance without a Route, unless the same operation removes that AppInstance. |
 | Remove | Delete the Route and only its Route-owned target rows when no active AppInstance depends on it. |
 
 The CLI names these operations `route:new`, `route:list`, `route:show`, `route:update`, `route:target:set`, `route:target:clear`, and `route:remove`.
@@ -65,7 +65,7 @@ The Gateway validates the complete proposed Route before it commits a target cha
 | Set an active AppInstance from another Route | Return `route.reconciliation_required` and preserve both associations. |
 | Replace a generated Route target | Return `route.reconciliation_required` when replacement would detach an active AppInstance before coordinated runtime and URL reconciliation exists. |
 | Replace an explicit Route target | Return `route.reconciliation_required` when replacement would detach an active AppInstance before coordinated runtime and URL reconciliation exists. |
-| Clear the only target | Return `route.reconciliation_required` for an active AppInstance and preserve the Route, source, configuration, records, and serving path. |
+| Clear the only target | Return `route.reconciliation_required` for an active AppInstance unless the same operation first accepts its removal. |
 | Set an AppInstance from another App or an inactive AppInstance | Reject the change and retain the complete current Route. |
 | Set a generated target without an effective TLD | Reject the change and retain the complete current Route. |
 | Set a direct Node, backend URL, second generated target, or balancing value | Reject the change and retain the complete current Route. |
@@ -100,9 +100,11 @@ Public traffic enters through Ingress on HTTP or HTTPS. The firewall does not ex
 
 ## Guard later reconciliation
 
-Initial projection does not implement later reconciliation. The Gateway returns `route.reconciliation_required` before a mutation that would change an active Route's hostname, target, Node-or-Cluster scope, runtime projection, or Laravel URL. It preserves source, application configuration, Route records, and the serving path.
+Initial projection does not implement general later reconciliation. The Gateway returns `route.reconciliation_required` before a mutation that would change an active Route's hostname, target, Node-or-Cluster scope, runtime projection, or Laravel URL. It preserves source, application configuration, Route records, and the serving path.
 
-The temporary guard covers Route hostname or publication changes, target replacement or clearing, Route removal, and AppInstance removal. It also covers Node WireGuard, LAN, TLD, or Cluster-membership changes, Cluster activation, deactivation, or TLD changes, and Router replacement or clearing when an active Route depends on the change. An identical request that makes no change remains safe. A Node grant change does not alter private network reachability and retains its command-authorization behavior.
+The guard covers Route hostname or publication changes, independent target replacement or clearing, and Route removal. It also covers Node WireGuard, LAN, TLD, or Cluster-membership changes, Cluster activation, deactivation, or TLD changes, and Router replacement or clearing when an active Route depends on the change. An identical request that makes no change remains safe. A Node grant change does not alter private network reachability and retains its command-authorization behavior.
+
+Single-development-checkout removal is the coordinated target-clear exception. After complete source and Route preflight, the Gateway marks the AppInstance `removing`, publishes an unavailable response, removes managed Route projections, deletes the final-target Route, and releases its hostname before source finalization. A projection failure keeps the unfinished Route checkpoint available for retry. The [AppInstance removal reference](appinstance-removal.md) owns the transient response, removal order, and retry behavior.
 
 Routes without an active AppInstance retain the existing validation for hostname, scope, target, uniqueness, generation basis, and required Router. Full reconciliation of an existing active Route is a separate contract.
 
@@ -115,7 +117,7 @@ Route ownership prevents deletion from leaving an invalid retained record.
 | App | Refused while the App owns a Route. |
 | Cluster | Refused while the Cluster owns a Route. |
 | Node | Refused while a Route retains the Node as scope, target host, or generation basis. |
-| AppInstance | Returns `route.reconciliation_required` before source deletion or target detachment while coordinated removal is unavailable. |
+| AppInstance | Clears its target only inside an accepted removal and deletes its final-target development Route before source finalization. |
 | App role | Refused while the Node hosts a Route target. |
 | Cluster Router | Clearing the Router assignment is refused while the Cluster owns a Route. |
 | Route | Deletes only an eligible Route and its Route-owned target rows. |
@@ -124,4 +126,4 @@ Route ownership prevents deletion from leaving an invalid retained record.
 
 Route operations do not change legacy Instance hostname or certificate fields, Workspace hostnames, AppInstance source, Nodes, Clusters, or checkouts. Route and route target are typed inputs to the existing `instance` Doctor family; Doctor adds no family and remains verify-only.
 
-This contract projects the first private development Route only. It does not implement later Route reconciliation or removal, public Ingress, public DNS providers, multi-target balancing, production placement, application setup, or application health tracking. [ADR 0009](../decisions/0009-clustered-app-instance-routing.md), [ADR 0011](../decisions/0011-clustered-production-ingress-and-app-prod-placement.md), [ADR 0023](../decisions/0023-separate-hostname-selection-from-cluster-routing.md), [ADR 0024](../decisions/0024-follow-generated-route-targets.md), [ADR 0029](../decisions/0029-manage-laravel-application-urls-through-orbit.md), [ADR 0030](../decisions/0030-complete-appinstance-provisioning-without-application-health-gates.md), and [ADR 0033](../decisions/0033-trust-wireguard-members-for-private-node-traffic.md) define the remaining boundaries.
+This contract projects private development Routes and coordinates target clearing during one development-checkout removal. It does not implement other later Route reconciliation or removal, public Ingress, public DNS providers, multi-target balancing, production removal, production placement, application setup, or application health tracking. [ADR 0009](../decisions/0009-clustered-app-instance-routing.md), [ADR 0011](../decisions/0011-clustered-production-ingress-and-app-prod-placement.md), [ADR 0023](../decisions/0023-separate-hostname-selection-from-cluster-routing.md), [ADR 0024](../decisions/0024-follow-generated-route-targets.md), [ADR 0029](../decisions/0029-manage-laravel-application-urls-through-orbit.md), [ADR 0030](../decisions/0030-complete-appinstance-provisioning-without-application-health-gates.md), [ADR 0033](../decisions/0033-trust-wireguard-members-for-private-node-traffic.md), and [ADR 0041](../decisions/0041-delete-an-empty-route-during-appinstance-removal.md) define the remaining boundaries.

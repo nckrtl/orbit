@@ -19,13 +19,16 @@ use Illuminate\Support\Collection;
 final readonly class AppDevSiteRepository
 {
     /** @return Collection<int, AppDevSite> */
-    public function forNode(Node $node, ?Route $pendingRoute = null): Collection
-    {
-        return $this->all($pendingRoute)->where('nodeId', $node->id)->values();
+    public function forNode(
+        Node $node,
+        ?Route $pendingRoute = null,
+        ?AppInstance $unavailableInstance = null,
+    ): Collection {
+        return $this->all($pendingRoute, $unavailableInstance)->where('nodeId', $node->id)->values();
     }
 
     /** @return Collection<int, AppDevSite> */
-    public function all(?Route $pendingRoute = null): Collection
+    public function all(?Route $pendingRoute = null, ?AppInstance $unavailableInstance = null): Collection
     {
         $instances = Instance::query()
             ->with(['node', 'workspaces'])
@@ -68,7 +71,19 @@ final readonly class AppDevSiteRepository
         foreach ($routes as $route) {
             $target = $route->targets->first()?->appInstance;
 
-            if (! $target instanceof AppInstance || ! is_string($target->node->wireguard_ip)) {
+            if (! $target instanceof AppInstance) {
+                if (
+                    $pendingRoute instanceof Route
+                    && $route->is($pendingRoute)
+                    && $unavailableInstance instanceof AppInstance
+                ) {
+                    $sites->push($this->unavailableSite($unavailableInstance, $route));
+                }
+
+                continue;
+            }
+
+            if (! is_string($target->node->wireguard_ip)) {
                 continue;
             }
 
@@ -147,6 +162,24 @@ final readonly class AppDevSiteRepository
             phpVersion: null,
             hostname: $route->hostname,
             upstreamAddress: $address,
+        );
+    }
+
+    private function unavailableSite(AppInstance $instance, Route $route): AppDevSite
+    {
+        $router = $route->cluster?->routerAssignment?->node;
+        $usesRouterProjection = $router instanceof Node && ! $router->is($instance->node);
+        $node = $usesRouterProjection ? $router : $instance->node;
+
+        return new AppDevSite(
+            nodeId: $node->id,
+            nodeAddress: $node->wireguard_ip ?? '',
+            scope: $usesRouterProjection ? "route-{$route->id}-router" : "app-instance-{$instance->id}",
+            checkoutPath: '',
+            documentRoot: '',
+            phpVersion: null,
+            hostname: $route->hostname,
+            unavailable: true,
         );
     }
 }

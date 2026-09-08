@@ -10,6 +10,7 @@ use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\Requests\AppInstances\ShowAppInstanceRequest;
 use Orbit\Sdk\Responses\AppInstances\AppInstanceResponse;
 
+/** @mago-expect lint:cyclomatic-complexity Human output renders each optional removal progress field defensively. */
 final class ShowInstanceCommand extends GatewayCommand
 {
     #[\Override]
@@ -62,6 +63,17 @@ final class ShowInstanceCommand extends GatewayCommand
         $this->line('Starting commit: '.($instance->startingCommit ?? '-'));
         $this->line('Route hostname: '.($instance->hostname ?? '-'));
         $this->line('URL: '.($instance->url ?? '-'));
+
+        if ($instance->removal !== null) {
+            $this->line('Removal mode: '.($instance->removal->force ? 'forced' : 'normal'));
+            $this->line(
+                "Removal progress: {$instance->removal->completed}/{$instance->removal->total} completed; "
+                ."{$instance->removal->remaining} remaining",
+            );
+            $this->line('Removal step: '.($instance->removal->currentStep ?? '-'));
+            $this->line('Removal failed step: '.($instance->removal->failedStep ?? '-'));
+            $this->line('Removal error code: '.($instance->removal->errorCode ?? '-'));
+        }
 
         $this->line("Request ID: {$instance->requestId}");
 

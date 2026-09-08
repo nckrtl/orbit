@@ -10,6 +10,7 @@
                 "apps/gateway"
             ],
             "concepts": [
+                "AppInstance",
                 "Cluster",
                 "Gateway",
                 "Node"
@@ -915,7 +916,6 @@
                 "Ingress",
                 "Legacy Instance",
                 "Node",
-                "Repository identity",
                 "Route",
                 "Router",
                 "Workspace"
@@ -938,6 +938,26 @@
                 "Gateway"
             ],
             "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/appinstance-removal.md",
+            "title": "AppInstance removal",
+            "kind": "reference",
+            "components": [],
+            "concepts": [
+                "App",
+                "AppInstance",
+                "Gateway",
+                "Node",
+                "Repository identity",
+                "Route",
+                "Router"
+            ],
+            "governing_adrs": [
+                "0027",
+                "0028",
+                "0041"
+            ]
         },
         {
             "path": "docs/reference/apps.md",
@@ -1074,7 +1094,8 @@
                 "0028",
                 "0029",
                 "0030",
-                "0033"
+                "0033",
+                "0041"
             ]
         },
         {

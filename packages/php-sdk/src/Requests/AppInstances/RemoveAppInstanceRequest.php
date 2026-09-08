@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Orbit\Sdk\Requests\AppInstances;
 
 use Orbit\Sdk\GatewayRequest;
-use Orbit\Sdk\Responses\AppInstances\AppInstanceResponse;
+use Orbit\Sdk\Responses\AppInstances\AppInstanceRemovalResponse;
 use Saloon\Contracts\Body\HasBody;
 use Saloon\Enums\Method;
 use Saloon\Http\Response;
@@ -28,9 +28,9 @@ final class RemoveAppInstanceRequest extends GatewayRequest implements HasBody
         return "/api/v1/instances/{$this->appInstanceId}";
     }
 
-    public function createDtoFromResponse(#[\SensitiveParameter] Response $response): AppInstanceResponse
+    public function createDtoFromResponse(#[\SensitiveParameter] Response $response): AppInstanceRemovalResponse
     {
-        return AppInstanceResponse::fromGatewayData(
+        return AppInstanceRemovalResponse::fromGatewayData(
             $this->unwrapData($response),
             $this->successRequestId($response),
         );

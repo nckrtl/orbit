@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\AppDev;
 
 use App\Domain\AppDev\AppDevCaddyManager;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Route;
 
@@ -27,9 +28,19 @@ final readonly class RemoteAppDevCaddyManager implements AppDevCaddyManager
         $this->convergeSites($node, $route);
     }
 
-    private function convergeSites(Node $node, ?Route $pendingRoute = null): void
+    public function convergeUnavailableRoute(Node $node, Route $route, AppInstance $appInstance): void
     {
-        $configuration = $this->renderer->render($this->sites->forNode($node, $pendingRoute));
+        $this->convergeSites($node, $route, $appInstance);
+    }
+
+    private function convergeSites(
+        Node $node,
+        ?Route $pendingRoute = null,
+        ?AppInstance $unavailableInstance = null,
+    ): void {
+        $configuration = $this->renderer->render(
+            $this->sites->forNode($node, $pendingRoute, $unavailableInstance),
+        );
         $version = bin2hex(random_bytes(8));
         $this->ssh->execute(
             $node,

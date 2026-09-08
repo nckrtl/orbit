@@ -16,6 +16,7 @@ final readonly class AppDevSite
         public ?string $phpVersion,
         public string $hostname,
         public ?string $upstreamAddress = null,
+        public bool $unavailable = false,
     ) {}
 
     public function poolName(): string

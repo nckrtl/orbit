@@ -8,6 +8,7 @@ use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Route;
 use RuntimeException;
@@ -29,8 +30,16 @@ final readonly class DnsmasqPrivateDnsManager implements PrivateDnsManager
         $this->convergeProjection(null, $route);
     }
 
-    private function convergeProjection(?Node $pendingNode = null, ?Route $pendingRoute = null): void
+    public function convergeUnavailableRoute(Route $route, AppInstance $appInstance): void
     {
+        $this->convergeProjection(null, $route, $appInstance);
+    }
+
+    private function convergeProjection(
+        ?Node $pendingNode = null,
+        ?Route $pendingRoute = null,
+        ?AppInstance $unavailableInstance = null,
+    ): void {
         /** @mago-expect analysis:mixed-assignment Laravel configuration is an untyped boundary. */
         $configuredHome = config('orbit.home');
         $orbitHome = is_string($configuredHome) ? rtrim(string: $configuredHome, characters: '/') : '';
@@ -59,16 +68,19 @@ final readonly class DnsmasqPrivateDnsManager implements PrivateDnsManager
                 throw new RuntimeException("Could not acquire DNS projection lock [{$lockPath}].");
             }
 
-            $this->publish($pendingNode, $pendingRoute);
+            $this->publish($pendingNode, $pendingRoute, $unavailableInstance);
         } finally {
             flock($lock, LOCK_UN);
             fclose($lock);
         }
     }
 
-    private function publish(?Node $pendingNode, ?Route $pendingRoute): void
-    {
-        $configuration = $this->renderer->render($pendingNode, $pendingRoute);
+    private function publish(
+        ?Node $pendingNode,
+        ?Route $pendingRoute,
+        ?AppInstance $unavailableInstance,
+    ): void {
+        $configuration = $this->renderer->render($pendingNode, $pendingRoute, $unavailableInstance);
         $encoded = base64_encode($configuration);
         $result = $this->processes->run(new ProcessInvocation(
             arguments: ['sudo', 'bash', '-seu'],

@@ -29,6 +29,14 @@ final readonly class SetRouteTargetAction
                 $target = AppInstance::query()->with(['app', 'node'])->lockForUpdate()->findOrFail($appInstanceId);
                 $currentTarget = $locked->targets()->first();
 
+                if ($target->status === AppInstanceState::Removing) {
+                    throw new ResourceOperationException(
+                        errorCode: 'route.target_inactive',
+                        message: 'The Route target must be active.',
+                        status: 409,
+                    );
+                }
+
                 if ($currentTarget?->app_instance_id === $target->id) {
                     return $locked->load('targets');
                 }
