@@ -138,18 +138,18 @@ final readonly class ToolResponse
         string $requestId,
     ): self {
         return new self(
-            id: self::positiveInteger($data, 'id'),
-            nodeId: self::positiveInteger($data, 'node_id'),
-            manager: self::requiredText($data, 'manager', self::MANAGER_MAX_LENGTH),
-            package: self::requiredText($data, 'package', self::TEXT_MAX_LENGTH),
-            versionConstraint: self::nullableText($data, 'version_constraint', self::TEXT_MAX_LENGTH),
+            id: self::requiredInteger($data, 'id'),
+            nodeId: self::requiredInteger($data, 'node_id'),
+            manager: self::requiredString($data, 'manager'),
+            package: self::requiredString($data, 'package'),
+            versionConstraint: self::nullableString($data, 'version_constraint'),
             protected: self::requiredBoolean($data, 'protected'),
-            status: self::requiredToken($data, 'status'),
-            installedVersion: self::nullableText($data, 'installed_version', self::TEXT_MAX_LENGTH),
-            failedOperation: self::nullableToken($data, 'failed_operation'),
-            errorCode: GatewayErrorCode::fromTransport($data['error_code'] ?? null),
-            outcome: self::nullableToken($data, 'outcome'),
-            requestId: GatewayRequestId::fromTransport($requestId) ?? '',
+            status: self::requiredString($data, 'status'),
+            installedVersion: self::nullableString($data, 'installed_version'),
+            failedOperation: self::nullableString($data, 'failed_operation'),
+            errorCode: self::stringOrNull($data, 'error_code'),
+            outcome: self::nullableString($data, 'outcome'),
+            requestId: $requestId,
         );
     }
 
@@ -173,9 +173,9 @@ final readonly class ToolResponse
     }
 
     /** @param array<string, mixed> $data */
-    private static function positiveInteger(#[SensitiveParameter] array $data, string $key): int
+    private static function requiredInteger(#[SensitiveParameter] array $data, string $key): int
     {
-        if (! is_int($data[$key] ?? null) || $data[$key] < 1) {
+        if (! is_int($data[$key] ?? null)) {
             throw new InvalidArgumentException("Invalid Tool response field [{$key}].");
         }
 
@@ -193,62 +193,35 @@ final readonly class ToolResponse
     }
 
     /** @param array<string, mixed> $data */
-    private static function requiredText(
-        #[SensitiveParameter]
-        array $data,
-        string $key,
-        int $maxLength,
-    ): string {
-        if (
-            ! is_string($data[$key] ?? null)
-            || $data[$key] === ''
-            || strlen($data[$key]) > $maxLength
-        ) {
+    private static function requiredString(#[SensitiveParameter] array $data, string $key): string
+    {
+        if (! is_string($data[$key] ?? null)) {
             throw new InvalidArgumentException("Invalid Tool response field [{$key}].");
         }
 
-        return new CredentialRedactor()->redactText($data[$key]);
+        return $data[$key];
     }
 
     /** @param array<string, mixed> $data */
-    private static function nullableText(
-        #[SensitiveParameter]
-        array $data,
-        string $key,
-        int $maxLength,
-    ): ?string {
+    private static function nullableString(#[SensitiveParameter] array $data, string $key): ?string
+    {
         if (! array_key_exists($key, $data) || $data[$key] === null) {
             return null;
         }
 
-        if (! is_string($data[$key]) || strlen($data[$key]) > $maxLength) {
+        if (! is_string($data[$key])) {
             throw new InvalidArgumentException("Invalid Tool response field [{$key}].");
         }
 
-        return new CredentialRedactor()->redactText($data[$key]);
+        return $data[$key];
     }
 
     /** @param array<string, mixed> $data */
-    private static function requiredToken(#[SensitiveParameter] array $data, string $key): string
+    private static function stringOrNull(#[SensitiveParameter] array $data, string $key): ?string
     {
-        $value = self::requiredText($data, $key, self::TOKEN_MAX_LENGTH);
+        /** @mago-expect analysis:mixed-assignment Gateway Tool fields are decoded from mixed transport data. */
+        $value = $data[$key] ?? null;
 
-        if (preg_match(self::TOKEN_PATTERN, $value) !== 1) {
-            throw new InvalidArgumentException("Invalid Tool response field [{$key}].");
-        }
-
-        return $value;
-    }
-
-    /** @param array<string, mixed> $data */
-    private static function nullableToken(#[SensitiveParameter] array $data, string $key): ?string
-    {
-        $value = self::nullableText($data, $key, self::TOKEN_MAX_LENGTH);
-
-        if ($value !== null && preg_match(self::TOKEN_PATTERN, $value) !== 1) {
-            throw new InvalidArgumentException("Invalid Tool response field [{$key}].");
-        }
-
-        return $value;
+        return is_string($value) ? $value : null;
     }
 }

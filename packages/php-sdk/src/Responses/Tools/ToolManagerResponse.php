@@ -107,14 +107,14 @@ final readonly class ToolManagerResponse
         string $requestId,
     ): self {
         return new self(
-            id: self::nullablePositiveInteger($data, 'id'),
-            nodeId: self::positiveInteger($data, 'node_id'),
-            name: self::requiredText($data, 'name', self::NAME_MAX_LENGTH),
-            status: self::requiredToken($data, 'status'),
-            installedVersion: self::nullableText($data, 'installed_version'),
-            failedStep: self::nullableText($data, 'failed_step'),
-            errorCode: GatewayErrorCode::fromTransport($data['error_code'] ?? null),
-            requestId: GatewayRequestId::fromTransport($requestId) ?? '',
+            id: self::nullableInteger($data, 'id'),
+            nodeId: self::requiredInteger($data, 'node_id'),
+            name: self::requiredString($data, 'name'),
+            status: self::requiredString($data, 'status'),
+            installedVersion: self::nullableString($data, 'installed_version'),
+            failedStep: self::nullableString($data, 'failed_step'),
+            errorCode: self::stringOrNull($data, 'error_code'),
+            requestId: $requestId,
         );
     }
 
@@ -134,9 +134,9 @@ final readonly class ToolManagerResponse
     }
 
     /** @param array<string, mixed> $data */
-    private static function positiveInteger(#[SensitiveParameter] array $data, string $key): int
+    private static function requiredInteger(#[SensitiveParameter] array $data, string $key): int
     {
-        if (! is_int($data[$key] ?? null) || $data[$key] < 1) {
+        if (! is_int($data[$key] ?? null)) {
             throw new InvalidArgumentException("Invalid Tool manager response field [{$key}].");
         }
 
@@ -144,56 +144,45 @@ final readonly class ToolManagerResponse
     }
 
     /** @param array<string, mixed> $data */
-    private static function nullablePositiveInteger(#[SensitiveParameter] array $data, string $key): ?int
+    private static function nullableInteger(#[SensitiveParameter] array $data, string $key): ?int
     {
         if (($data[$key] ?? null) === null) {
             return null;
         }
 
-        return self::positiveInteger($data, $key);
+        return self::requiredInteger($data, $key);
     }
 
     /** @param array<string, mixed> $data */
-    private static function requiredText(
-        #[SensitiveParameter]
-        array $data,
-        string $key,
-        int $maxLength,
-    ): string {
-        if (
-            ! is_string($data[$key] ?? null)
-            || $data[$key] === ''
-            || strlen($data[$key]) > $maxLength
-        ) {
+    private static function requiredString(#[SensitiveParameter] array $data, string $key): string
+    {
+        if (! is_string($data[$key] ?? null)) {
             throw new InvalidArgumentException("Invalid Tool manager response field [{$key}].");
         }
 
-        return new CredentialRedactor()->redactText($data[$key]);
+        return $data[$key];
     }
 
     /** @param array<string, mixed> $data */
-    private static function nullableText(#[SensitiveParameter] array $data, string $key): ?string
+    private static function nullableString(#[SensitiveParameter] array $data, string $key): ?string
     {
         if (! array_key_exists($key, $data) || $data[$key] === null) {
             return null;
         }
 
-        if (! is_string($data[$key]) || strlen($data[$key]) > self::TEXT_MAX_LENGTH) {
+        if (! is_string($data[$key])) {
             throw new InvalidArgumentException("Invalid Tool manager response field [{$key}].");
         }
 
-        return new CredentialRedactor()->redactText($data[$key]);
+        return $data[$key];
     }
 
     /** @param array<string, mixed> $data */
-    private static function requiredToken(#[SensitiveParameter] array $data, string $key): string
+    private static function stringOrNull(#[SensitiveParameter] array $data, string $key): ?string
     {
-        $value = self::requiredText($data, $key, self::TOKEN_MAX_LENGTH);
+        /** @mago-expect analysis:mixed-assignment Gateway Tool manager fields are decoded from mixed transport data. */
+        $value = $data[$key] ?? null;
 
-        if (preg_match(self::TOKEN_PATTERN, $value) !== 1) {
-            throw new InvalidArgumentException("Invalid Tool manager response field [{$key}].");
-        }
-
-        return $value;
+        return is_string($value) ? $value : null;
     }
 }
