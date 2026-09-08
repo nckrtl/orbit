@@ -24,6 +24,7 @@ use App\Domain\AppInstances\DevelopmentAppInstanceConfigurator;
 use App\Domain\AppInstances\DevelopmentAppInstanceProvisioner;
 use App\Domain\AppInstances\DevelopmentAppInstanceSourceLifecycle;
 use App\Domain\AppInstances\DevelopmentRouteProjector;
+use App\Domain\AppInstances\Removal\DevelopmentAppInstanceSourceFinalizer;
 use App\Domain\AppInstances\Removal\DevelopmentAppInstanceSourceRemoval;
 use App\Domain\AppProd\AppProdCaddyManager;
 use App\Domain\AppProd\AppProdPhpFpmManager;
@@ -262,6 +263,10 @@ final class AppServiceProvider extends ServiceProvider
             static fn (): AppDevSourceOperationLock => new NativeAppDevSourceOperationLock(
                 rtrim(string: (string) config('orbit.home'), characters: '/').'/locks/app-dev-source',
             ),
+        );
+        $this->app->singleton(
+            DevelopmentAppInstanceSourceFinalizer::class,
+            static fn (): DevelopmentAppInstanceSourceFinalizer => app(RemoteDevelopmentAppInstanceSourceRemoval::class),
         );
         $this->app->singleton(
             LeafCertificateSigner::class,
