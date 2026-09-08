@@ -127,7 +127,7 @@ return new class extends Migration {
                 OR length(NEW.inventory_digest) <> 64
                 OR NEW.total < 1
                 OR NEW.status <> 'removing'
-                OR NEW.current_step <> 'source_preparation'
+                OR NEW.current_step IS NOT 'source_preparation'
                 OR NEW.failed_step IS NOT NULL
                 OR NEW.error_code IS NOT NULL
                 OR NOT EXISTS (
@@ -313,10 +313,10 @@ return new class extends Migration {
                     AND NEW.finalization_receipt IS NOT OLD.finalization_receipt)
                 OR (OLD.runtime_cleaned_at IS NOT NULL AND NEW.runtime_cleaned_at IS NOT OLD.runtime_cleaned_at)
                 OR (OLD.row_deleted_at IS NOT NULL AND NEW.row_deleted_at IS NOT OLD.row_deleted_at)
-                OR (NEW.source_prepared_at IS NOT NULL AND (
-                    (SELECT status FROM app_instances WHERE id = NEW.app_instance_id) <> 'removing'
+                OR (OLD.source_prepared_at IS NULL AND NEW.source_prepared_at IS NOT NULL AND (
+                    (SELECT status FROM app_instances WHERE id = NEW.app_instance_id) IS NOT 'removing'
                     OR (SELECT status FROM app_instance_removals
-                        WHERE id = NEW.app_instance_removal_id) <> 'removing'
+                        WHERE id = NEW.app_instance_removal_id) IS NOT 'removing'
                 ))
                 OR (NEW.route_cleared_at IS NOT NULL AND NEW.source_prepared_at IS NULL)
                 OR (NEW.route_outcome IS NOT NULL) <> (NEW.route_cleared_at IS NOT NULL)

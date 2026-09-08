@@ -70,4 +70,4 @@ Automated tests only. ORB-179 has no `proof:incus` label and changes only SQLite
 
 ## Review findings
 
-- None.
+- Resolved review `5142170216`: made initial-step and source-preparation admission comparisons NULL-safe and added a raw null-step regression.

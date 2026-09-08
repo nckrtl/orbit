@@ -91,6 +91,26 @@ it('preserves populated AppInstance and Route state while adding empty removal s
         ->toBeFalse();
 });
 
+it('rejects a removal operation without its initial step', function (): void {
+    [$instance] = orb179_removal_fixture('missing-step');
+
+    expect(fn () => DB::table('app_instance_removals')->insert([
+        'id' => (string) Str::uuid(),
+        'requested_app_instance_id' => $instance->id,
+        'requested_name' => $instance->name,
+        'force' => false,
+        'inventory_digest' => str_repeat('d', 64),
+        'total' => 1,
+        'status' => 'removing',
+        'current_step' => null,
+        'failed_step' => null,
+        'error_code' => null,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]))
+        ->toThrow(QueryException::class);
+});
+
 it('records immutable requested identity, force choice, and ordered member inventory', function (): void {
     [$first, $firstRoute] = orb179_removal_fixture('first');
     [$second, $secondRoute] = orb179_removal_fixture('second');
