@@ -29,7 +29,7 @@ Forced removal validates the configured origin identity locally and does not req
 
 ## Preflight the complete removal
 
-The Gateway validates the source and its sole active Route before it changes an AppInstance, Route, runtime, Git repository, directory, or database row. For development source, it holds the Node source-operation lock continuously through inspection, Route preflight, removal acceptance, and the first source preparation boundary.
+The Gateway validates the source and its sole active Route before it changes an AppInstance, Route, runtime, Git repository, directory, or database row. For development source, it holds the Node source-operation lock continuously through inspection, Route preflight, and removal acceptance. Source preparation and each retry revalidation acquire the same Node lock.
 
 Preflight compares the recorded checkout with its source layout, App repository identity, Node ownership, canonical path, allowed root, symlink-free parent chain, physical directory identity, Git directory, branch, starting commit ancestry, and linked-worktree inventory. It also compares the source path with other Orbit-managed source paths.
 

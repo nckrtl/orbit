@@ -1,0 +1,25 @@
+{
+    "setup": [],
+    "acceptance": [
+        {
+            "id": "single-development-removal",
+            "node": "gateway",
+            "argv": ["/var/lib/orbit-e2e/proof/appinstance-removal.sh", "single-development-removal"],
+            "timeout_seconds": 600
+        },
+        {
+            "id": "development-removal-traffic-cutoff",
+            "node": "gateway",
+            "argv": ["/var/lib/orbit-e2e/proof/appinstance-removal.sh", "development-removal-traffic-cutoff"],
+            "timeout_seconds": 600
+        },
+        {
+            "id": "development-removal-retry",
+            "node": "gateway",
+            "argv": ["/var/lib/orbit-e2e/proof/appinstance-removal.sh", "development-removal-retry"],
+            "timeout_seconds": 900
+        }
+    ],
+    "mutates": true,
+    "observed_inputs": true
+}
