@@ -604,7 +604,7 @@ BASH
         read -r mismatch_commit _ < <(make_checkout orb124-wrong-origin orb124-wrong-origin wrong-origin)
         mismatch_id=$(seed_dev orb124-wrong-origin checkout orb124-wrong-origin "$mismatch_commit" | seed_id)
         before=$(gateway_fixture instance-state orb124-wrong-origin)
-        expect_remove_failure "$mismatch_id" 1 instance.source_identity_invalid
+        expect_remove_failure "$mismatch_id" 1 instance.remove_refused
         assert_active_unchanged "$before" orb124-wrong-origin
         gateway_fixture cleanup-active orb124-wrong-origin
         remove_sources orb124-wrong-origin
