@@ -16,6 +16,7 @@ use App\Domain\AppInstances\DevelopmentSourceProfile;
 use App\Domain\AppInstances\DevelopmentSourceResolution;
 use App\Domain\AppInstances\Removal\AppInstanceRemovalProjector;
 use App\Domain\AppInstances\Removal\AppInstanceSourceInventory;
+use App\Domain\AppInstances\Removal\AppInstanceSourceRevalidationState;
 use App\Domain\AppInstances\Removal\DevelopmentAppInstanceSourceRemoval;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Instances\CertificateMode;
@@ -159,6 +160,7 @@ beforeEach(function (): void {
                 commonRepositoryPath: $appInstance->source_layout === 'checkout'
                     ? $appInstance->checkout_path
                     : dirname(dirname($appInstance->checkout_path)),
+                sourceIdentity: "test:{$appInstance->id}",
                 linkedWorktreePaths: $paths,
                 digest: hash('sha256', $payload),
             );
@@ -169,9 +171,11 @@ beforeEach(function (): void {
             $this->record('prepare', $member->app_instance_id);
         }
 
-        public function revalidate(AppInstanceRemovalMember $member): void
+        public function revalidate(AppInstanceRemovalMember $member): AppInstanceSourceRevalidationState
         {
             $this->record('revalidate', $member->app_instance_id);
+
+            return AppInstanceSourceRevalidationState::Present;
         }
 
         public function finalize(AppInstanceRemovalMember $member): string
@@ -186,6 +190,14 @@ beforeEach(function (): void {
             $this->calls[] = "{$operation}:{$id}";
 
             if ($this->fail === $operation) {
+                if ($operation === 'revalidate') {
+                    throw new ResourceOperationException(
+                        'instance.removal_conflict',
+                        'Source identity changed after removal acceptance.',
+                        409,
+                    );
+                }
+
                 throw new ResourceOperationException(
                     'instance.source_interrupted',
                     'Source operation interrupted.',
@@ -1434,6 +1446,54 @@ it('retains bounded failed progress and resumes without recreating a deleted Rou
         ->assertJsonPath('data.completed', 1);
 
     expect(Route::query()->count())->toBe(0);
+});
+
+it('returns current bounded progress when retry source revalidation is refused', function (): void {
+    $created = $this->postJson('/api/v1/instances', [
+        'app_id' => $this->orbitApp->id,
+        'node_id' => $this->node->id,
+        'name' => 'dev',
+    ])->assertCreated();
+    $id = $created->json('data.id');
+    $this->removalProjector->fail = 'route';
+
+    $this
+        ->deleteJson("/api/v1/instances/{$id}")
+        ->assertStatus(502)
+        ->assertJsonPath('error.details.removal.current_step', 'route_target_clear')
+        ->assertJsonPath('error.details.removal.error_code', 'instance.runtime_interrupted');
+
+    $this->removalProjector->fail = null;
+    $this->removalSource->fail = 'revalidate';
+
+    $this
+        ->deleteJson("/api/v1/instances/{$id}")
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'instance.removal_conflict')
+        ->assertJsonPath('error.details.removal.id', $id)
+        ->assertJsonPath('error.details.removal.status', 'failed')
+        ->assertJsonPath('error.details.removal.current_step', 'route_target_clear')
+        ->assertJsonPath('error.details.removal.completed', 0)
+        ->assertJsonPath('error.details.removal.remaining', 1)
+        ->assertJsonPath('error.details.removal.failed_step', 'route_target_clear')
+        ->assertJsonPath('error.details.removal.error_code', 'instance.removal_conflict');
+
+    $operation = AppInstance::query()->findOrFail($id)->removalMember?->removal;
+    $activity = Activity::query()->where('command', 'instance:remove')->latest('id')->firstOrFail();
+    expect(AppInstance::query()->findOrFail($id)->status)
+        ->toBe(AppInstanceState::Removing)
+        ->and($operation?->current_step?->value)
+        ->toBe('route_target_clear')
+        ->and($operation?->error_code)
+        ->toBe('instance.removal_conflict')
+        ->and($activity->properties?->get('removal'))
+        ->toMatchArray([
+            'id' => $id,
+            'status' => 'failed',
+            'current_step' => 'route_target_clear',
+            'failed_step' => 'route_target_clear',
+            'error_code' => 'instance.removal_conflict',
+        ]);
 });
 
 it('rejects a non-empty JSON array from the removal transport', function (): void {

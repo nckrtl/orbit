@@ -19,6 +19,7 @@ final readonly class AppInstanceSourceInventory
         public ?string $branch,
         public ?string $startingCommit,
         public ?string $commonRepositoryPath,
+        public ?string $sourceIdentity,
         public array $linkedWorktreePaths,
         public string $digest,
     ) {}

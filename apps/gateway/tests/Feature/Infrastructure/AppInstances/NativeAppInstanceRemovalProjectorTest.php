@@ -24,6 +24,7 @@ use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
 use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
 use App\Infrastructure\AppDev\RemoteAppDevCertificateManager;
 use App\Infrastructure\AppDev\RemoteAppDevPhpFpmManager;
+use App\Infrastructure\AppDev\RemoteAppDevRouteFirewallManager;
 use App\Infrastructure\AppInstances\NativeAppInstanceRemovalProjector;
 use App\Infrastructure\Nodes\RemotePhpPackageManager;
 use App\Infrastructure\Processes\CommandResult;
@@ -73,7 +74,16 @@ it('serves the exact transient development 503 without an upstream then deletes 
     expect($projector->clearRouteTarget($member))
         ->toBe('deleted')
         ->and(Route::query()->find($route->id))
-        ->toBeNull();
+        ->toBeNull()
+        ->and(collect($ssh->commands)
+            ->contains(
+                static fn (RemoteCommand $command): bool => in_array(
+                    "orbit:route-{$route->id}-lan",
+                    $command->arguments,
+                    true,
+                ),
+            ))
+        ->toBeTrue();
 
     $replacement = Route::query()->create([
         'app_id' => $member->app_id,
@@ -84,6 +94,25 @@ it('serves the exact transient development 503 without an upstream then deletes 
         'status' => RouteStatus::Pending,
     ]);
     expect($replacement->hostname)->toBe($route->hostname);
+});
+
+it('keeps the final Route row until every projection cleanup succeeds', function (): void {
+    [$member, $route] = orb124_projector_development_member();
+    [$projector, $ssh] = orb124_removal_projector($this);
+    $ssh->failCall = 5;
+
+    expect(fn () => $projector->clearRouteTarget($member))
+        ->toThrow(RuntimeConvergenceException::class);
+    expect(Route::query()->find($route->id))
+        ->not
+        ->toBeNull()
+        ->and($route->refresh()->targets()->count())
+        ->toBe(0);
+
+    expect($projector->clearRouteTarget($member))
+        ->toBe('deleted')
+        ->and(Route::query()->find($route->id))
+        ->toBeNull();
 });
 
 it('removes only the departing shared production target and republishes the ordered remainder', function (): void {
@@ -106,20 +135,34 @@ it('removes only the departing shared production target and republishes the orde
         ->not->toContain('10.44.0.41', 'Orbit Route unavailable');
 });
 
-it('deletes a final production Route without contacting the app-prod workload', function (): void {
+it('deletes a final production Route after cleaning workload and Router artifacts', function (): void {
     [$member, $route, $departing, $router] = orb124_projector_production_member();
     [$projector, $ssh] = orb124_removal_projector($this);
 
     expect($projector->clearRouteTarget($member))
         ->toBe('deleted')
         ->and(Route::query()->find($route->id))
-        ->toBeNull()
-        ->and(array_unique(array_map(
-            static fn (SshConnection $connection): string => $connection->host,
-            $ssh->connections,
-        )))
-        ->toBe([$router->wireguard_ip])
-        ->not->toContain($departing->node->wireguard_ip);
+        ->toBeNull();
+
+    $hosts = array_values(array_unique(array_map(
+        static fn (SshConnection $connection): string => $connection->host,
+        $ssh->connections,
+    )));
+    sort($hosts);
+    $expectedHosts = [$departing->node->wireguard_ip, $router->wireguard_ip];
+    sort($expectedHosts);
+    $arguments = collect($ssh->commands)->pluck('arguments');
+
+    expect($hosts)
+        ->toBe($expectedHosts)
+        ->and($arguments->contains(
+            static fn (array $command): bool => in_array("app-instance-{$departing->id}", $command, true),
+        ))
+        ->toBeTrue()
+        ->and($arguments->contains(
+            static fn (array $command): bool => in_array("route-{$route->id}-router", $command, true),
+        ))
+        ->toBeTrue();
 });
 
 /** @return array{NativeAppInstanceRemovalProjector, Orb124RemovalSshExecutor} */
@@ -186,6 +229,7 @@ function orb124_removal_projector(object $test): array
                 new RemotePhpPackageManager,
             ),
             new DnsmasqPrivateDnsManager($processes, new AppDevDnsConfigRenderer($sites)),
+            new RemoteAppDevRouteFirewallManager($executor),
         ),
         $ssh,
     ];
@@ -344,6 +388,7 @@ function orb124_projector_member(AppInstance $instance, Route $route): AppInstan
             'branch' => $instance->branch,
             'starting_commit' => $instance->starting_commit,
             'common_repository_path' => $instance->checkout_path,
+            'source_identity' => 'test:1',
             'linked_worktree_paths' => [$instance->checkout_path],
             'source_digest' => str_repeat('e', 64),
         ]);

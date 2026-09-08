@@ -3,11 +3,13 @@
 declare(strict_types=1);
 
 use App\Actions\AppInstances\RemoveAppInstanceAction;
+use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppInstances\AppInstanceSourceLayout;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\AppInstances\Removal\AppInstanceRemovalException;
 use App\Domain\AppInstances\Removal\AppInstanceRemovalProjector;
 use App\Domain\AppInstances\Removal\AppInstanceSourceInventory;
+use App\Domain\AppInstances\Removal\AppInstanceSourceRevalidationState;
 use App\Domain\AppInstances\Removal\DevelopmentAppInstanceSourceRemoval;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
@@ -25,10 +27,12 @@ use App\Models\Route;
 beforeEach(function (): void {
     $this->orb124CoordinatorSource = new Orb124CoordinatorSource;
     $this->orb124CoordinatorProjector = new Orb124CoordinatorProjector;
+    $this->orb124CoordinatorLock = new Orb124CoordinatorLock;
     $this->orb124Coordinator = new RemoveAppInstanceAction(
         $this->orb124CoordinatorSource,
         $this->orb124CoordinatorProjector,
         new ManagedCheckoutOverlap,
+        $this->orb124CoordinatorLock,
     );
 });
 
@@ -61,7 +65,9 @@ it('refuses a normal checkout cascade then removes the fixed worktree-first set 
         ->and($this->orb124CoordinatorSource->finalized)
         ->toBe([$worktree->checkout_path, $checkout->checkout_path])
         ->and($this->orb124CoordinatorProjector->routeCalls)
-        ->toBe([$worktree->id, $checkout->id]);
+        ->toBe([$worktree->id, $checkout->id])
+        ->and($this->orb124CoordinatorLock->acceptedWhileHeld)
+        ->toBeTrue();
 });
 
 it('revalidates the unfinished fixed inventory before retry and never extends it', function (): void {
@@ -92,13 +98,15 @@ it('revalidates the unfinished fixed inventory before retry and never extends it
     $this->orb124CoordinatorProjector->failRuntime = false;
 
     expect(fn () => $this->orb124Coordinator->execute($checkout->refresh(), true))
-        ->toThrow(ResourceOperationException::class, 'inventory changed')
+        ->toThrow(AppInstanceRemovalException::class)
         ->and(fn () => $this->orb124Coordinator->execute($checkout->refresh(), false))
         ->toThrow(ResourceOperationException::class, 'different removal request');
     expect(AppInstance::query()->whereKey($new->id)->sole()->getAttributes())
         ->toBe($before)
         ->and($operation?->members()->count())
         ->toBe(2)
+        ->and($operation?->refresh()->error_code)
+        ->toBe('instance.removal_conflict')
         ->and($checkout->refresh()->status)
         ->toBe(AppInstanceState::Removing);
 });
@@ -133,6 +141,75 @@ it('resumes after a lost Route-deletion response without recreating the Route', 
         ->and($this->orb124CoordinatorProjector->routeCalls)
         ->toBe([$checkout->id, $checkout->id]);
 });
+
+it('normalizes authenticated linked-worktree finalization state without extending the fixed cascade', function (
+    AppInstanceSourceRevalidationState $state,
+): void {
+    [$checkout, $worktree] = orb124_coordinator_graph();
+    $paths = [$checkout->checkout_path, $worktree->checkout_path];
+    sort($paths, SORT_STRING);
+    $this->orb124CoordinatorSource->paths = $paths;
+    $this->orb124CoordinatorSource->failFinalize = true;
+
+    expect(fn () => $this->orb124Coordinator->execute($checkout, true))
+        ->toThrow(AppInstanceRemovalException::class);
+    $operation = $checkout->refresh()->removalMember?->removal;
+    $member = $operation?->members()->orderBy('position')->firstOrFail();
+    expect($member?->app_instance_id)
+        ->toBe($worktree->id)
+        ->and($member?->route_cleared_at)
+        ->not->toBeNull();
+
+    $this->orb124CoordinatorSource->failFinalize = false;
+    $this->orb124CoordinatorSource->states[$worktree->id] = $state;
+    $this->orb124CoordinatorSource->paths = [$checkout->checkout_path];
+
+    if (in_array(
+        $state,
+        [
+            AppInstanceSourceRevalidationState::Quarantined,
+            AppInstanceSourceRevalidationState::ReceiptPendingCleanup,
+        ],
+        true,
+    )) {
+        $this->orb124CoordinatorSource->paths[] = sprintf(
+            '%s/.orbit-removals/%s.%d.quarantine',
+            $member?->root,
+            $operation?->id,
+            $member?->id,
+        );
+    }
+
+    $unrelated = '/srv/orbit/apps/acme/unregistered-worktree';
+    $this->orb124CoordinatorSource->paths[] = $unrelated;
+    sort($this->orb124CoordinatorSource->paths, SORT_STRING);
+
+    expect(fn () => $this->orb124Coordinator->execute($checkout->refresh(), true))
+        ->toThrow(AppInstanceRemovalException::class);
+    expect($operation?->refresh()->error_code)
+        ->toBe('instance.removal_conflict')
+        ->and($operation?->members()->count())
+        ->toBe(2)
+        ->and($checkout->refresh()->status)
+        ->toBe(AppInstanceState::Removing);
+
+    $this->orb124CoordinatorSource->paths = array_values(array_diff(
+        $this->orb124CoordinatorSource->paths,
+        [$unrelated],
+    ));
+    $removal = $this->orb124Coordinator->execute($checkout->refresh(), true);
+
+    expect($removal->status->value)
+        ->toBe('completed')
+        ->and($removal->total)
+        ->toBe(2)
+        ->and($this->orb124CoordinatorSource->finalized)
+        ->toBe([$worktree->checkout_path, $checkout->checkout_path]);
+})->with([
+    'quarantine before receipt' => AppInstanceSourceRevalidationState::Quarantined,
+    'quarantine after receipt' => AppInstanceSourceRevalidationState::ReceiptPendingCleanup,
+    'deleted after receipt' => AppInstanceSourceRevalidationState::Completed,
+]);
 
 /** @return array{AppInstance, AppInstance} */
 function orb124_coordinator_graph(): array
@@ -202,6 +279,11 @@ final class Orb124CoordinatorSource implements DevelopmentAppInstanceSourceRemov
     /** @var list<string> */
     public array $finalized = [];
 
+    /** @var array<int, AppInstanceSourceRevalidationState> */
+    public array $states = [];
+
+    public bool $failFinalize = false;
+
     public function inspect(AppInstance $appInstance, bool $force): AppInstanceSourceInventory
     {
         $this->calls[] = "inspect:{$appInstance->id}";
@@ -219,6 +301,7 @@ final class Orb124CoordinatorSource implements DevelopmentAppInstanceSourceRemov
             branch: $appInstance->branch,
             startingCommit: $appInstance->starting_commit,
             commonRepositoryPath: is_string($checkout) ? $checkout : $appInstance->checkout_path,
+            sourceIdentity: "test:{$appInstance->id}",
             linkedWorktreePaths: $this->paths,
             digest: hash('sha256', "source\0{$appInstance->id}\0{$appInstance->checkout_path}"),
         );
@@ -229,17 +312,34 @@ final class Orb124CoordinatorSource implements DevelopmentAppInstanceSourceRemov
         $this->calls[] = "prepare:{$member->app_instance_id}";
     }
 
-    public function revalidate(AppInstanceRemovalMember $member): void
+    public function revalidate(AppInstanceRemovalMember $member): AppInstanceSourceRevalidationState
     {
         $this->calls[] = "revalidate:{$member->app_instance_id}";
+
+        return $this->states[$member->app_instance_id] ?? AppInstanceSourceRevalidationState::Present;
     }
 
     public function finalize(AppInstanceRemovalMember $member): string
     {
+        if ($this->failFinalize) {
+            throw new ResourceOperationException(
+                'instance.source_interrupted',
+                'Source finalization was interrupted.',
+                502,
+            );
+        }
+
         $path = (string) $member->checkout_path;
+        $quarantine = sprintf(
+            '%s/.orbit-removals/%s.%d.quarantine',
+            $member->root,
+            $member->app_instance_removal_id,
+            $member->id,
+        );
         $this->calls[] = "finalize:{$member->app_instance_id}";
         $this->finalized[] = $path;
-        $this->paths = array_values(array_diff($this->paths, [$path]));
+        $this->paths = array_values(array_diff($this->paths, [$path, $quarantine]));
+        $this->states[$member->app_instance_id] = AppInstanceSourceRevalidationState::Completed;
 
         return hash('sha256', "receipt\0{$member->source_digest}");
     }
@@ -285,6 +385,37 @@ final class Orb124CoordinatorProjector implements AppInstanceRemovalProjector
                 'Runtime cleanup interrupted.',
                 502,
             );
+        }
+    }
+}
+
+final class Orb124CoordinatorLock implements AppDevSourceOperationLock
+{
+    public bool $acceptedWhileHeld = false;
+
+    private bool $held = false;
+
+    public function synchronized(int $nodeId, \Closure $operation): mixed
+    {
+        if ($this->held) {
+            return $operation();
+        }
+
+        $this->held = true;
+
+        try {
+            $result = $operation();
+
+            if ($result instanceof \App\Models\AppInstanceRemoval) {
+                $this->acceptedWhileHeld = AppInstance::query()
+                    ->whereKey($result->members->pluck('app_instance_id'))
+                    ->get()
+                    ->every(static fn (AppInstance $member): bool => $member->status === AppInstanceState::Removing);
+            }
+
+            return $result;
+        } finally {
+            $this->held = false;
         }
     }
 }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\AppInstances;
 
+use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\AppInstances\AppInstanceRemovalStatus;
 use App\Domain\AppInstances\AppInstanceRemovalStep;
@@ -12,6 +13,7 @@ use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\AppInstances\Removal\AppInstanceRemovalException;
 use App\Domain\AppInstances\Removal\AppInstanceRemovalProjector;
 use App\Domain\AppInstances\Removal\AppInstanceSourceInventory;
+use App\Domain\AppInstances\Removal\AppInstanceSourceRevalidationState;
 use App\Domain\AppInstances\Removal\DevelopmentAppInstanceSourceRemoval;
 use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
 use App\Domain\Nodes\Storage\StoragePath;
@@ -36,6 +38,7 @@ final readonly class RemoveAppInstanceAction
         private DevelopmentAppInstanceSourceRemoval $sources,
         private AppInstanceRemovalProjector $routes,
         private ManagedCheckoutOverlap $checkoutOverlap,
+        private AppDevSourceOperationLock $sourceLock,
     ) {}
 
     public function execute(AppInstance $appInstance, bool $force): AppInstanceRemoval
@@ -67,7 +70,29 @@ final readonly class RemoveAppInstanceAction
             $this->conflict($appInstance);
         }
 
-        $this->revalidateUnfinishedSources($removal);
+        try {
+            $this->revalidateUnfinishedSources($removal);
+        } catch (Throwable $exception) {
+            $errorCode = $this->errorCode($exception);
+            $step = $this->firstIncompleteStep($removal);
+            $removal->update([
+                'status' => AppInstanceRemovalStatus::Failed,
+                'current_step' => $step,
+                'failed_step' => $step,
+                'error_code' => $errorCode,
+            ]);
+
+            throw new AppInstanceRemovalException(
+                errorCode: $errorCode,
+                status: match (true) {
+                    $exception instanceof ResourceOperationException => $exception->status,
+                    $exception instanceof RuntimeConvergenceException => 409,
+                    default => 502,
+                },
+                removal: $removal->refresh()->load('members'),
+                previous: $exception,
+            );
+        }
 
         $removal->update([
             'status' => AppInstanceRemovalStatus::Removing,
@@ -96,6 +121,18 @@ final readonly class RemoveAppInstanceAction
             );
         }
 
+        if ($appInstance->environment === 'production') {
+            return $this->acceptLocked($appInstance, $force);
+        }
+
+        return $this->sourceLock->synchronized(
+            $appInstance->node_id,
+            fn (): AppInstanceRemoval => $this->acceptLocked($appInstance, $force),
+        );
+    }
+
+    private function acceptLocked(AppInstance $appInstance, bool $force): AppInstanceRemoval
+    {
         [$members, $inventories] = $this->deletionSet($appInstance, $force);
         $digest = $this->inventoryDigest($appInstance->id, $force, $inventories);
 
@@ -153,6 +190,7 @@ final readonly class RemoveAppInstanceAction
                         'branch' => $inventory->branch,
                         'starting_commit' => $inventory->startingCommit,
                         'common_repository_path' => $inventory->commonRepositoryPath,
+                        'source_identity' => $inventory->sourceIdentity,
                         'linked_worktree_paths' => $inventory->linkedWorktreePaths,
                         'source_digest' => $inventory->digest,
                     ]);
@@ -394,6 +432,42 @@ final readonly class RemoveAppInstanceAction
     private function revalidateUnfinishedSources(AppInstanceRemoval $operation): void
     {
         $members = $operation->members()->whereNull('source_finalized_at')->orderBy('position')->get();
+        $developmentNodeIds = $members
+            ->where('environment', 'development')
+            ->pluck('node_id')
+            ->unique()
+            ->values();
+
+        if ($developmentNodeIds->count() > 1) {
+            throw new ResourceOperationException(
+                errorCode: 'instance.removal_conflict',
+                message: 'The recorded AppInstance removal spans multiple development Nodes.',
+                status: 409,
+            );
+        }
+
+        if ($developmentNodeIds->isNotEmpty()) {
+            $this->sourceLock->synchronized(
+                (int) $developmentNodeIds->sole(),
+                fn () => $this->revalidateUnfinishedSourcesLocked($operation, $members),
+            );
+
+            return;
+        }
+
+        $this->revalidateUnfinishedSourcesLocked($operation, $members);
+    }
+
+    /** @param Collection<int, AppInstanceRemovalMember> $members */
+    private function revalidateUnfinishedSourcesLocked(AppInstanceRemoval $operation, Collection $members): void
+    {
+        /** @var array<int, AppInstanceSourceRevalidationState> $states */
+        $states = [];
+
+        foreach ($members as $member) {
+            $states[$member->id] = $this->sources->revalidate($member);
+        }
+
         $finalizedPaths = $operation
             ->members()
             ->whereNotNull('source_finalized_at')
@@ -403,16 +477,58 @@ final readonly class RemoveAppInstanceAction
             ->all();
         /** @var array<int, string> $finalizedPaths */
 
+        $allMembers = $operation->members()->orderBy('position')->get();
+
         foreach ($members as $member) {
-            $this->sources->revalidate($member);
+            $state = $states[$member->id];
             $appInstance = AppInstance::query()->find($member->app_instance_id);
 
-            if (! $appInstance instanceof AppInstance || $member->environment !== 'development') {
+            if (
+                $state !== AppInstanceSourceRevalidationState::Present
+                || ! $appInstance instanceof AppInstance
+                || $member->environment !== 'development'
+            ) {
                 continue;
             }
 
             $inventory = $this->sources->inspect($appInstance, $operation->force);
             $expectedPaths = array_values(array_diff($member->linked_worktree_paths, $finalizedPaths));
+
+            foreach ($allMembers as $recordedMember) {
+                if (
+                    $recordedMember->environment !== 'development'
+                    || $recordedMember->common_repository_path !== $member->common_repository_path
+                    || ! is_string($recordedMember->checkout_path)
+                ) {
+                    continue;
+                }
+
+                $recordedState = $states[$recordedMember->id] ?? AppInstanceSourceRevalidationState::Completed;
+
+                if ($recordedState === AppInstanceSourceRevalidationState::Present) {
+                    continue;
+                }
+
+                $expectedPaths = array_values(array_diff($expectedPaths, [$recordedMember->checkout_path]));
+
+                if (in_array(
+                    $recordedState,
+                    [
+                        AppInstanceSourceRevalidationState::Quarantined,
+                        AppInstanceSourceRevalidationState::ReceiptPendingCleanup,
+                    ],
+                    true,
+                )) {
+                    $expectedPaths[] = sprintf(
+                        '%s/.orbit-removals/%s.%d.quarantine',
+                        $recordedMember->root,
+                        $recordedMember->app_instance_removal_id,
+                        $recordedMember->id,
+                    );
+                }
+            }
+
+            $expectedPaths = array_values(array_unique($expectedPaths));
             sort($expectedPaths, SORT_STRING);
 
             if ($inventory->linkedWorktreePaths !== $expectedPaths) {
@@ -436,6 +552,19 @@ final readonly class RemoveAppInstanceAction
             AppInstanceRemovalStep::RuntimeCleanup => $member->runtime_cleaned_at !== null,
             AppInstanceRemovalStep::RowDeletion => $member->row_deleted_at !== null,
         };
+    }
+
+    private function firstIncompleteStep(AppInstanceRemoval $operation): AppInstanceRemovalStep
+    {
+        foreach ($operation->members()->orderBy('position')->get() as $member) {
+            foreach (AppInstanceRemovalStep::cases() as $step) {
+                if (! $this->stepComplete($member, $step)) {
+                    return $step;
+                }
+            }
+        }
+
+        return AppInstanceRemovalStep::RowDeletion;
     }
 
     /** @param array<int, AppInstanceSourceInventory> $inventories */

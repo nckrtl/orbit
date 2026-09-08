@@ -39,6 +39,7 @@ it('keeps the accepted removal identity and ordered checkpoint evidence immutabl
             'branch' => 'main',
             'starting_commit' => str_repeat('a', 40),
             'common_repository_path' => $instance->checkout_path,
+            'source_identity' => '1:100',
             'linked_worktree_paths' => [$instance->checkout_path],
             'source_digest' => str_repeat('b', 64),
         ]);
@@ -49,6 +50,8 @@ it('keeps the accepted removal identity and ordered checkpoint evidence immutabl
         ->and(fn () => $member->update(['route_cleared_at' => now(), 'route_outcome' => 'deleted']))
         ->toThrow(QueryException::class)
         ->and(fn () => $member->update(['linked_worktree_paths' => []]))
+        ->toThrow(QueryException::class)
+        ->and(fn () => $member->update(['source_identity' => '1:101']))
         ->toThrow(QueryException::class);
 
     $member->refresh();

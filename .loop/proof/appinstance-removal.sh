@@ -287,6 +287,34 @@ for member in members:
 ' "$total"
 }
 
+assert_failure_progress() {
+    local expected_id=$1
+    local expected_step=$2
+    local expected_total=$3
+    local expected_completed=$4
+    local expected_remaining=$5
+    python3 -c '
+import json
+import sys
+
+value = json.loads(sys.argv[1])
+removal = value.get("error", {}).get("details", {}).get("removal")
+valid = (
+    isinstance(removal, dict)
+    and removal.get("id") == int(sys.argv[2])
+    and removal.get("status") == "failed"
+    and removal.get("current_step") == sys.argv[3]
+    and removal.get("failed_step") == sys.argv[3]
+    and removal.get("total") == int(sys.argv[4])
+    and removal.get("completed") == int(sys.argv[5])
+    and removal.get("remaining") == int(sys.argv[6])
+    and removal.get("error_code") == value.get("error", {}).get("code")
+)
+if not valid:
+    raise SystemExit(65)
+' "$LAST_FAILURE" "$expected_id" "$expected_step" "$expected_total" "$expected_completed" "$expected_remaining"
+}
+
 inject_dns_failure() {
     temporary=$(mktemp)
     printf 'orb124-invalid-directive\n' > "$temporary"
@@ -315,43 +343,115 @@ fi
 BASH
 }
 
-install_production_backend() {
+install_production_content() {
     local node=$1
     local instance_id=$2
-    local hostname=$3
+    local instance_name=$3
     local response=$4
-    remote_script "$node" "$instance_id" "$hostname" "$response" <<'BASH'
-instance_id=$1
-hostname=$2
-response=$3
-current=$(sudo readlink -f /etc/caddy/Caddyfile)
-fragments=$(dirname "$current")/fragments
+    remote_script "$node" "$instance_name" "$response" <<'BASH'
+instance_name=$1
+response=$2
+root="/srv/orbit/$instance_name"
 candidate=$(mktemp)
-cat > "$candidate" <<EOF
-https://$hostname {
-    bind 0.0.0.0
-    tls /etc/caddy/orbit-certificates/app-instance-$instance_id/current/cert.pem /etc/caddy/orbit-certificates/app-instance-$instance_id/current/key.pem
-    respond "$response" 200
-}
-EOF
-sudo install -o root -g caddy -m 0640 "$candidate" "$fragments/99-orb124-backend.caddy"
+printf '%s\n' '<?php' "header(\"Content-Type: text/plain\");" "echo \"$response\\n\";" > "$candidate"
+sudo install -d -o orbit -g orbit -m 0755 "$root" "$root/public"
+sudo install -o orbit -g orbit -m 0644 "$candidate" "$root/public/index.php"
 rm -f "$candidate"
-sudo caddy validate --config "$current" --adapter caddyfile
-sudo systemctl reload-or-restart caddy
 BASH
 }
 
-remove_production_backend() {
+assert_workload_artifacts_removed() {
     local node=$1
     local instance_id=$2
-    remote_script "$node" "$instance_id" <<'BASH'
+    local instance_name=$3
+    local hostname=$4
+    remote_script "$node" "$instance_id" "$instance_name" "$hostname" <<'BASH'
 instance_id=$1
+instance_name=$2
+hostname=$3
 current=$(sudo readlink -f /etc/caddy/Caddyfile)
 fragments=$(dirname "$current")/fragments
-sudo rm -f -- "$fragments/99-orb124-backend.caddy"
-sudo rm -rf -- "/etc/caddy/orbit-certificates/app-instance-$instance_id"
-sudo caddy validate --config "$current" --adapter caddyfile
-sudo systemctl reload-or-restart caddy
+test ! -e "/etc/caddy/orbit-certificates/app-instance-$instance_id"
+! sudo grep -F -- "https://$hostname" "$fragments/app-dev.caddy" >/dev/null
+test -f "/srv/orbit/$instance_name/public/index.php"
+BASH
+}
+
+install_route_firewall_artifact() {
+    local route_id=$1
+    remote_script app-dev "$route_id" <<'BASH'
+route_id=$1
+sudo ufw allow in proto tcp from 10.44.0.1 to 10.44.0.2 port 443 comment "orbit:route-$route_id-lan" >/dev/null
+sudo ufw status numbered | grep -F -- "# orbit:route-$route_id-lan" >/dev/null
+BASH
+}
+
+assert_route_firewall_removed() {
+    local route_id=$1
+    remote_script app-dev "$route_id" <<'BASH'
+route_id=$1
+! sudo ufw status numbered | grep -F -- "# orbit:route-$route_id-lan" >/dev/null
+BASH
+}
+
+inject_source_finalization_state() {
+    local name=$1
+    local mode=$2
+    local evidence
+    evidence=$(gateway_fixture removal-evidence "$name")
+    read -r operation member checkout root digest identity layout common receipt < <(python3 -c '
+import hashlib
+import json
+import sys
+
+value = json.loads(sys.argv[1])
+member = value["members"][0]
+payload = "\0".join((value["operation_id"], str(member["member_id"]), member["source_digest"], "finalized"))
+print(
+    value["operation_id"],
+    member["member_id"],
+    member["checkout_path"],
+    member["root"],
+    member["source_digest"],
+    member["source_identity"],
+    member["layout"],
+    member["common_repository_path"],
+    hashlib.sha256(payload.encode()).hexdigest(),
+)
+' "$evidence")
+    remote_script app-dev "$operation" "$member" "$checkout" "$root" "$digest" "$identity" "$layout" "$common" "$receipt" "$mode" <<'BASH'
+operation=$1
+member=$2
+checkout=$3
+root=$4
+digest=$5
+identity=$6
+layout=$7
+common=$8
+receipt=$9
+shift 9
+mode=$1
+state="$root/.orbit-removals"
+journal="$state/$operation.$member.journal"
+receipt_path="$state/$operation.$member.receipt"
+quarantine="$state/$operation.$member.quarantine"
+test "$(cat "$journal")" = "$digest"
+test "$(stat -c '%d:%i' "$checkout")" = "$identity"
+case "$layout" in
+    worktree) git --git-dir="$common/.git" worktree move "$checkout" "$quarantine" ;;
+    checkout) mv -- "$checkout" "$quarantine" ;;
+    *) exit 64 ;;
+esac
+if [ "$mode" != before-receipt ]; then
+    printf '%s\n' "$receipt" > "$receipt_path"
+    chmod 0600 -- "$receipt_path"
+fi
+if [ "$mode" = after-delete ]; then
+    case "$layout" in
+        worktree) git --git-dir="$common/.git" worktree remove --force "$quarantine" ;;
+        checkout) rm -rf -- "$quarantine" ;;
+    esac
+fi
 BASH
 }
 
@@ -432,12 +532,10 @@ BASH
         seed_dev orb124-cascade-a worktree orb124-cascade-a "$graph_commit" >/dev/null
         seed_dev orb124-cascade-b worktree orb124-cascade-b "$graph_commit" >/dev/null
         gateway_fixture project-dev orb124-cascade-root orb124-cascade-a orb124-cascade-b
-        remove_success "$root_id" 1 3
-        remote_script app-dev <<'BASH'
-for name in orb124-cascade-root orb124-cascade-a orb124-cascade-b; do
-    test ! -e "/home/orbit/apps/laravel-typed/$name"
-done
-BASH
+        break_php_fpm_config
+        trap restore_php_fpm_config EXIT
+        expect_remove_failure "$root_id" 1 app-dev.php_fpm_config_failed
+        assert_failure_progress "$root_id" runtime_cleanup 3 0 3
         gateway_fixture removal-evidence orb124-cascade-root | python3 -c '
 import json
 import sys
@@ -448,7 +546,43 @@ if [item["layout"] for item in members] != ["worktree", "worktree", "checkout"]:
     raise SystemExit(65)
 if [item["position"] for item in members] != [0, 1, 2]:
     raise SystemExit(65)
+if members[0]["source_finalized_at"] is None or members[0]["runtime_cleaned_at"] is not None:
+    raise SystemExit(65)
 '
+        remote_script app-dev <<'BASH'
+root=/home/orbit/apps/laravel-typed/orb124-cascade-root
+new=/home/orbit/apps/laravel-typed/orb124-cascade-new
+test -d "$root"
+test ! -e "$new"
+git -C "$root" worktree add -b orb124-cascade-new "$new" HEAD >/dev/null
+BASH
+        expect_remove_failure "$root_id" 1 instance.removal_conflict
+        assert_failure_progress "$root_id" runtime_cleanup 3 0 3
+        gateway_fixture removal-evidence orb124-cascade-root | python3 -c '
+import json
+import sys
+
+value = json.load(sys.stdin)
+if value.get("total") != 3 or len(value.get("members", [])) != 3:
+    raise SystemExit(65)
+if [item["name"] for item in value["members"]] != ["orb124-cascade-a", "orb124-cascade-b", "orb124-cascade-root"]:
+    raise SystemExit(65)
+'
+        remote_script app-dev <<'BASH'
+root=/home/orbit/apps/laravel-typed/orb124-cascade-root
+new=/home/orbit/apps/laravel-typed/orb124-cascade-new
+test -d "$new"
+git -C "$root" worktree remove --force "$new"
+test ! -e "$new"
+BASH
+        restore_php_fpm_config
+        trap - EXIT
+        remove_success "$root_id" 1 3
+        remote_script app-dev <<'BASH'
+for name in orb124-cascade-root orb124-cascade-a orb124-cascade-b; do
+    test ! -e "/home/orbit/apps/laravel-typed/$name"
+done
+BASH
         assert_completed_evidence orb124-cascade-root 3
         ;;
 
@@ -542,17 +676,23 @@ if "--force" not in value["error"]["message"]:
 
     shared-route-target-removal)
         production=$(gateway_fixture seed-production)
-        read -r route_id hostname router_ip first_id second_id < <(python3 -c '
+        read -r route_id hostname router_ip first_id first_name second_id second_name < <(python3 -c '
 import json
 import sys
 
 value = json.loads(sys.argv[1])
-print(value["route_id"], value["hostname"], value["router_ip"], value["instances"][0]["id"], value["instances"][1]["id"])
+print(
+    value["route_id"], value["hostname"], value["router_ip"],
+    value["instances"][0]["id"], value["instances"][0]["name"],
+    value["instances"][1]["id"], value["instances"][1]["name"],
+)
 ' "$production")
-        install_production_backend app-prod "$first_id" "$hostname" orb124-prod-one
-        install_production_backend app-prod-2 "$second_id" "$hostname" orb124-prod-two
+        install_production_content app-prod "$first_id" "$first_name" orb124-prod-one
+        install_production_content app-prod-2 "$second_id" "$second_name" orb124-prod-two
+        gateway_fixture project-production "$route_id"
         curl -sS --resolve "$hostname:443:$router_ip" "https://$hostname" >/dev/null
         remove_success "$first_id" 0 1
+        assert_workload_artifacts_removed app-prod "$first_id" "$first_name" "$hostname"
         gateway_fixture production-evidence "$route_id" "$first_id" "$second_id" | python3 -c '
 import json
 import sys
@@ -565,18 +705,26 @@ if value != {"route_status": "active", "targets": [int(sys.argv[1])], "departing
             test "$(curl -sS --resolve "$hostname:443:$router_ip" "https://$hostname")" = orb124-prod-two
         done
         remove_success "$second_id" 0 1
+        assert_workload_artifacts_removed app-prod-2 "$second_id" "$second_name" "$hostname"
         gateway_fixture hostname-free "$hostname"
-        remove_production_backend app-prod "$first_id"
-        remove_production_backend app-prod-2 "$second_id"
         gateway_fixture reset-production-nodes
         ;;
 
     final-target-route-removal)
         hostname=orb124-reusable.orbit
         read -r final_commit _ < <(make_checkout orb124-final-target orb124-final-target clean)
-        final_id=$(seed_dev orb124-final-target checkout orb124-final-target "$final_commit" "$hostname" | seed_id)
+        final=$(seed_dev orb124-final-target checkout orb124-final-target "$final_commit" "$hostname")
+        read -r final_id final_route_id < <(python3 -c '
+import json
+import sys
+
+value = json.loads(sys.argv[1])
+print(value["id"], value["route_id"])
+' "$final")
         gateway_fixture project-dev orb124-final-target
+        install_route_firewall_artifact "$final_route_id"
         remove_success "$final_id" 0 1
+        assert_route_firewall_removed "$final_route_id"
         gateway_fixture hostname-free "$hostname"
         remote_script app-dev <<'BASH'
 test ! -e /home/orbit/apps/laravel-typed/orb124-final-target
@@ -638,6 +786,68 @@ BASH
         trap - EXIT
         remove_success "$interrupted_id" 0 1
         assert_completed_evidence orb124-interrupted
+
+        for window in before receipt deleted; do
+            root_name="orb124-finalize-$window-root"
+            child_name="orb124-finalize-$window-child"
+            extra_name="orb124-finalize-$window-extra"
+            case "$window" in
+                before) mode=before-receipt ;;
+                receipt) mode=after-receipt ;;
+                deleted) mode=after-delete ;;
+                *) exit 64 ;;
+            esac
+            finalize_commit=$(make_worktree_graph "$root_name" "$root_name" "$child_name" "$child_name")
+            finalize_root_id=$(seed_dev "$root_name" checkout "$root_name" "$finalize_commit" | seed_id)
+            seed_dev "$child_name" worktree "$child_name" "$finalize_commit" >/dev/null
+            gateway_fixture project-dev "$root_name" "$child_name"
+            inject_dns_failure
+            trap restore_dns EXIT
+            expect_remove_failure "$finalize_root_id" 1 app-dev.dns_config_failed
+            assert_failure_progress "$finalize_root_id" route_target_clear 2 0 2
+            restore_dns
+            trap - EXIT
+            gateway_fixture complete-removal-route-step "$child_name"
+            inject_source_finalization_state "$child_name" "$mode"
+            remote_script app-dev "$root_name" "$extra_name" <<'BASH'
+root_name=$1
+extra_name=$2
+root="/home/orbit/apps/laravel-typed/$root_name"
+extra="/home/orbit/apps/laravel-typed/$extra_name"
+test -d "$root"
+test ! -e "$extra"
+git -C "$root" worktree add -b "$extra_name" "$extra" HEAD >/dev/null
+BASH
+            expect_remove_failure "$finalize_root_id" 1 instance.removal_conflict
+            assert_failure_progress "$finalize_root_id" source_finalization 2 0 2
+            gateway_fixture removal-evidence "$root_name" | python3 -c '
+import json
+import sys
+
+value = json.load(sys.stdin)
+if value.get("total") != 2 or len(value.get("members", [])) != 2:
+    raise SystemExit(65)
+if [item["name"] for item in value["members"]] != [sys.argv[1], sys.argv[2]]:
+    raise SystemExit(65)
+' "$child_name" "$root_name"
+            remote_script app-dev "$root_name" "$extra_name" <<'BASH'
+root_name=$1
+extra_name=$2
+root="/home/orbit/apps/laravel-typed/$root_name"
+extra="/home/orbit/apps/laravel-typed/$extra_name"
+test -d "$extra"
+git -C "$root" worktree remove --force "$extra"
+test ! -e "$extra"
+BASH
+            remove_success "$finalize_root_id" 1 2
+            remote_script app-dev "$root_name" "$child_name" <<'BASH'
+root_name=$1
+child_name=$2
+test ! -e "/home/orbit/apps/laravel-typed/$root_name"
+test ! -e "/home/orbit/apps/laravel-typed/$child_name"
+BASH
+            assert_completed_evidence "$root_name" 2
+        done
         ;;
 
     removal-retry-revalidation)
@@ -649,20 +859,25 @@ BASH
         expect_remove_failure "$retry_id" 0 app-dev.dns_config_failed
         restore_dns
         trap - EXIT
-        remote_script app-dev <<'BASH'
+        remote_script app-dev "$retry_commit" <<'BASH'
+commit=$1
 path=/home/orbit/apps/laravel-typed/orb124-retry
 backup=/home/orbit/orb124-retry-original
 test ! -e "$backup"
 mv -- "$path" "$backup"
 git clone --local --no-checkout /home/orbit/apps/laravel-typed/e2e-dev "$path" >/dev/null
-git -C "$path" remote set-url origin https://example.com/replaced.git
-git -C "$path" checkout -b orb124-retry HEAD >/dev/null
+git -C "$path" remote set-url origin https://github.com/laravel/laravel.git
+git -C "$path" checkout -b orb124-retry "$commit" >/dev/null
 BASH
-        expect_remove_failure "$retry_id" 0 instance.source_identity_invalid
-        remote_script app-dev <<'BASH'
+        expect_remove_failure "$retry_id" 0 instance.removal_conflict
+        assert_failure_progress "$retry_id" route_target_clear 1 0 1
+        remote_script app-dev "$retry_commit" <<'BASH'
+commit=$1
 path=/home/orbit/apps/laravel-typed/orb124-retry
 backup=/home/orbit/orb124-retry-original
-test "$(git -C "$path" remote get-url origin)" = https://example.com/replaced.git
+test "$(git -C "$path" remote get-url origin)" = https://github.com/laravel/laravel.git
+test "$(git -C "$path" symbolic-ref --short HEAD)" = orb124-retry
+test "$(git -C "$path" rev-parse HEAD)" = "$commit"
 rm -rf -- "$path"
 mv -- "$backup" "$path"
 BASH

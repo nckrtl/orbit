@@ -20,14 +20,14 @@ The two modes differ only at the destructive source boundary.
 
 | Mode | Source behavior |
 | --- | --- |
-| Normal | Refuses dirty or unpublished source and refuses a checkout while an Orbit-owned linked-worktree AppInstance remains. |
+| Normal | Refuses dirty source or a HEAD that no current advertised origin branch or tag contains, and refuses a checkout while an Orbit-owned linked-worktree AppInstance remains. |
 | Forced | May delete dirty or unpublished source and may include every Orbit-owned linked-worktree AppInstance in one fixed cascade. |
 
-Forced removal does not waive source-layout, repository-identity, ownership, path, containment, symlink, overlap, common-repository, or linked-worktree inventory checks. Orbit never deletes a remote branch. Removing a worktree retains its local branch and common repository.
+Forced removal does not waive source-layout, repository-identity, ownership, path, containment, symlink, overlap, common-repository, or linked-worktree inventory checks. Normal preflight reads current advertised origin refs without fetching, pruning, taking optional Git locks, refreshing the index, or changing the requested repository, and the containing origin ref does not need to match the local branch name. Orbit never deletes a remote branch. Removing a worktree retains its local branch and common repository.
 
 ## Preflight the complete deletion set
 
-The Gateway validates the complete requested set before it changes an AppInstance, Route, runtime, Git repository, directory, or database row.
+The Gateway validates the complete requested set before it changes an AppInstance, Route, runtime, Git repository, directory, or database row. For development source, it holds the Node source-operation lock until it records the fixed set and marks every member `removing`.
 
 Preflight compares each recorded source with its source layout, App repository identity, Node ownership, canonical path, allowed root, symlink-free parent chain, and Git directory. It also compares every requested source with other Orbit-managed source paths. For a linked worktree, the common repository and worktree administration must be available and consistent.
 
@@ -41,13 +41,15 @@ After preflight succeeds, the Gateway records one fixed deletion set and marks e
 
 | Step | Result |
 | --- | --- |
-| Source preparation | Record the verified source and finalization identity without deleting it. |
-| Route target clear | Remove the AppInstance target, keep a shared production Route serving its remaining targets, or delete a final-target Route and release its hostname. |
+| Source preparation | Record the verified source, physical directory identity, and finalization identity without deleting it. |
+| Route target clear | Remove the AppInstance target, remove its managed Route artifacts, keep a shared production Route serving its remaining targets, or delete a final-target Route and release its hostname. |
 | Source finalization | Delete the exact owned source and record the matching outcome. |
 | Runtime cleanup | Remove the AppInstance runtime artifacts after Route traffic stops reaching that source. |
 | Row deletion | Delete the completed AppInstance row. |
 
-Source finalization never starts before the Route stops forwarding requests to that source. A shared production Route keeps its identity and serves its remaining targets. For every final target, the Gateway deletes the Route and releases its hostname before source finalization. During coordinated normal or forced development removal only, HTTPS GET returns `503 Service Unavailable` in the brief interval after target clearing and before Route deletion propagates. The response has `Content-Type: text/plain; charset=utf-8`, `Cache-Control: no-store`, and the exact body `Orbit Route unavailable\n`; it never contacts the former target. Orbit does not define that exact response for production removal, and it does not retain a targetless Route in either environment.
+Source finalization never starts before the Route stops forwarding requests to that source. A shared production Route keeps its identity and serves its remaining targets after the Gateway removes the departing workload's Caddy and certificate projections. For every final target, the Gateway removes managed workload and Router Caddy, certificate, Domain Name System (DNS), and development Route firewall projections. It then deletes the Route and releases its hostname before source finalization. A projection failure retains the Route row for retry.
+
+During coordinated normal or forced development removal only, HTTPS GET returns `503 Service Unavailable` in the brief interval after target clearing and before Route deletion propagates. The response has `Content-Type: text/plain; charset=utf-8`, `Cache-Control: no-store`, and the exact body `Orbit Route unavailable\n`; it never contacts the former target. Orbit does not define that exact response for production removal, and it does not retain a targetless Route in either environment.
 
 A forced checkout cascade finalizes linked worktrees and their administration entries before it finalizes the common checkout. It never expands the recorded set when a later inspection finds another path or worktree.
 
@@ -68,7 +70,7 @@ The API, PHP SDK, CLI human output, CLI JSON output, and activity use one bounde
 
 Repeating the same removal request resumes the first unfinished step. Before deleting more source, the Gateway revalidates every unfinished member against the recorded inventory. It refuses a changed force value, replacement directory, changed repository identity, changed cascade, unsafe path, or request for a member owned by another removal. A retry after final-target Route deletion continues cleanup without recreating the Route or reclaiming its hostname.
 
-Durable finalization evidence binds the source identity to its outcome. A retry accepts an absent source only when matching completion evidence proves that the same removal finalized it. An absent, ambiguous, or mismatched source remains a refusal.
+Durable finalization evidence binds the recorded physical source identity to its outcome. A retry authenticates every unfinished member under the Node source lock and normalizes only exact operation-owned quarantine or completion paths in the fixed linked-worktree set. It resumes an authenticated source in quarantine before a receipt, after a receipt, or after deletion before the database checkpoint. It accepts an absent source only when matching completion evidence proves that the same removal finalized it. An unrelated new worktree, absent evidence, ambiguous source, mismatch, or equivalent replacement source remains a refusal.
 
 ## Limits
 

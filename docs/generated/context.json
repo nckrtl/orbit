@@ -950,7 +950,8 @@
                 "Gateway",
                 "Node",
                 "Repository identity",
-                "Route"
+                "Route",
+                "Router"
             ],
             "governing_adrs": [
                 "0027",

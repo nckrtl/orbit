@@ -13,7 +13,7 @@ interface DevelopmentAppInstanceSourceRemoval
 
     public function prepare(AppInstanceRemovalMember $member): void;
 
-    public function revalidate(AppInstanceRemovalMember $member): void;
+    public function revalidate(AppInstanceRemovalMember $member): AppInstanceSourceRevalidationState;
 
     public function finalize(AppInstanceRemovalMember $member): string;
 }

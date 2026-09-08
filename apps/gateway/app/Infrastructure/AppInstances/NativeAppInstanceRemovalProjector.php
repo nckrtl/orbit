@@ -10,6 +10,7 @@ use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
 use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
 use App\Infrastructure\AppDev\RemoteAppDevCertificateManager;
 use App\Infrastructure\AppDev\RemoteAppDevPhpFpmManager;
+use App\Infrastructure\AppDev\RemoteAppDevRouteFirewallManager;
 use App\Models\AppInstance;
 use App\Models\AppInstanceRemovalMember;
 use App\Models\Node;
@@ -24,6 +25,7 @@ final readonly class NativeAppInstanceRemovalProjector implements AppInstanceRem
         private RemoteAppDevCertificateManager $certificates,
         private RemoteAppDevPhpFpmManager $php,
         private DnsmasqPrivateDnsManager $dns,
+        private RemoteAppDevRouteFirewallManager $firewall,
     ) {}
 
     public function clearRouteTarget(AppInstanceRemovalMember $member): string
@@ -65,7 +67,7 @@ final readonly class NativeAppInstanceRemovalProjector implements AppInstanceRem
         $route->refresh()->load(['targets.appInstance.node', 'cluster.routerAssignment.node']);
 
         if ($route->targets->isNotEmpty()) {
-            $this->publishRoute($route);
+            $this->publishRoute($route, $appInstance);
 
             return 'retained';
         }
@@ -76,11 +78,11 @@ final readonly class NativeAppInstanceRemovalProjector implements AppInstanceRem
             $this->dns->convergeUnavailableRoute($route, $appInstance);
         }
 
+        $this->removeRouteProjection($route, $appInstance);
+
         DB::transaction(function () use ($route): void {
             Route::query()->lockForUpdate()->findOrFail($route->id)->delete();
         });
-
-        $this->removeRouteProjection($route, $appInstance);
 
         return 'deleted';
     }
@@ -97,36 +99,44 @@ final readonly class NativeAppInstanceRemovalProjector implements AppInstanceRem
         $this->certificates->removeAppInstance($appInstance);
     }
 
-    private function publishRoute(Route $route): void
+    private function publishRoute(Route $route, AppInstance $departing): void
     {
         $router = $route->cluster?->routerAssignment?->node;
+        $nodes = collect();
 
         if ($router instanceof Node) {
-            $this->caddy->converge($router);
+            $nodes->put($router->id, $router);
         }
 
         foreach ($route->targets as $target) {
-            $appInstance = $target->appInstance;
-
-            if ($appInstance->environment === 'development') {
-                $this->caddy->converge($appInstance->node);
-            }
+            $nodes->put($target->appInstance->node->id, $target->appInstance->node);
         }
 
+        $nodes->put($departing->node->id, $departing->node);
+
+        foreach ($nodes as $node) {
+            /** @var Node $node */
+            $this->caddy->converge($node);
+        }
+
+        $this->certificates->removeAppInstance($departing);
         $this->dns->converge();
     }
 
     private function removeRouteProjection(Route $route, AppInstance $appInstance): void
     {
-        if ($appInstance->environment === 'development') {
-            $this->caddy->converge($appInstance->node);
-        }
+        $this->caddy->converge($appInstance->node);
+        $this->certificates->removeAppInstance($appInstance);
 
         $router = $route->cluster?->routerAssignment?->node;
 
         if ($router instanceof Node && ! $router->is($appInstance->node)) {
             $this->caddy->converge($router);
             $this->certificates->removeRouteRouter($route, $router);
+        }
+
+        if ($appInstance->environment === 'development') {
+            $this->firewall->remove($appInstance->node, $route->id);
         }
 
         $this->dns->converge();

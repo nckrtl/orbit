@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\AppInstances\Removal\AppInstanceSourceRevalidationState;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\Storage\CheckoutRemovalBoundary;
@@ -264,6 +265,59 @@ it('refuses dirty and unpublished source unless force is explicit', function (st
     expect(file_exists($instance->checkout_path))->toBeFalse();
 })->with(['dirty', 'unpublished']);
 
+it('refuses stale local publication evidence without mutating the requested repository', function (): void {
+    $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
+    $this->source->prepare($instance, false);
+    $resolution = $this->source->resolve($instance);
+    $instance->update([
+        'branch' => $resolution->branch,
+        'starting_commit' => $resolution->startingCommit,
+        'status' => AppInstanceState::SourceResolved,
+    ]);
+    $beforeRefs = orb76_run(['git', '-C', $instance->checkout_path, 'show-ref'])->stdout;
+    $beforeStatus = orb76_run(['git', '-C', $instance->checkout_path, 'status', '--porcelain=v1'])->stdout;
+    orb76_run(['git', '--git-dir='.$this->repository, 'update-ref', '-d', 'refs/heads/main']);
+    orb76_run(['git', '--git-dir='.$this->repository, 'update-ref', '-d', 'refs/heads/dev']);
+
+    expect(fn () => $this->removal->inspect($instance, false))
+        ->toThrow(RuntimeConvergenceException::class);
+    expect(orb76_run(['git', '-C', $instance->checkout_path, 'show-ref'])->stdout)
+        ->toBe($beforeRefs)
+        ->and(orb76_run(['git', '-C', $instance->checkout_path, 'status', '--porcelain=v1'])->stdout)
+        ->toBe($beforeStatus)
+        ->and($this->removal->inspect($instance, true)->checkoutPath)
+        ->toBe($instance->checkout_path);
+});
+
+it('keeps the Git index byte-for-byte unchanged through clean inspection and later refusal', function (): void {
+    $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
+    $this->source->prepare($instance, false);
+    $resolution = $this->source->resolve($instance);
+    $instance->update([
+        'branch' => $resolution->branch,
+        'starting_commit' => $resolution->startingCommit,
+        'status' => AppInstanceState::SourceResolved,
+    ]);
+    $index = $instance->checkout_path.'/.git/index';
+    $tracked = $instance->checkout_path.'/README.md';
+    expect(touch($tracked, time() + 10))->toBeTrue();
+    $beforeBytes = file_get_contents($index);
+    $beforeMtime = orb76_run(['stat', '-c', '%y', $index])->stdout;
+
+    expect($this->removal->inspect($instance, false)->checkoutPath)->toBe($instance->checkout_path);
+    orb76_run(['git', '--git-dir='.$this->repository, 'update-ref', '-d', 'refs/heads/main']);
+    orb76_run(['git', '--git-dir='.$this->repository, 'update-ref', '-d', 'refs/heads/dev']);
+
+    expect(fn () => $this->removal->inspect($instance, false))
+        ->toThrow(RuntimeConvergenceException::class)
+        ->and(file_get_contents($index))
+        ->toBe($beforeBytes)
+        ->and(orb76_run(['stat', '-c', '%y', $index])->stdout)
+        ->toBe($beforeMtime)
+        ->and(orb76_run(['git', '-C', $instance->checkout_path, 'status', '--porcelain=v1'])->stdout)
+        ->toBe('');
+});
+
 it('does not let force waive origin or symlink identity checks', function (string $mutation): void {
     $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
     $this->source->prepare($instance, false);
@@ -329,7 +383,7 @@ it('does not let force remove a checkout with shared Git administration', functi
         ->toBeTrue();
 });
 
-it('removes one worktree while retaining its branch common repository and sibling checkout', function (): void {
+it('removes one worktree published through another origin ref while retaining its local branch and siblings', function (): void {
     $checkout = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
     $this->source->prepare($checkout, false);
     $resolution = $this->source->resolve($checkout);
@@ -377,6 +431,44 @@ it('removes one worktree while retaining its branch common repository and siblin
         ->toBeTrue();
 });
 
+it('resumes authenticated quarantine before or after receipt creation', function (bool $withReceipt): void {
+    $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
+    $this->source->prepare($instance, false);
+    $resolution = $this->source->resolve($instance);
+    $instance->update([
+        'branch' => $resolution->branch,
+        'starting_commit' => $resolution->startingCommit,
+        'status' => AppInstanceState::SourceResolved,
+    ]);
+    $member = orb124_prepare_remove_source($this->removal, $instance, false);
+    $member->update(['source_prepared_at' => now()]);
+    $state = "{$member->root}/.orbit-removals";
+    $quarantine = "{$state}/{$member->app_instance_removal_id}.{$member->id}.quarantine";
+    expect(rename($instance->checkout_path, $quarantine))->toBeTrue();
+    $receipt = hash(
+        'sha256',
+        "{$member->app_instance_removal_id}\0{$member->id}\0{$member->source_digest}\0finalized",
+    );
+
+    if ($withReceipt) {
+        file_put_contents("{$state}/{$member->app_instance_removal_id}.{$member->id}.receipt", "{$receipt}\n");
+    }
+
+    expect($this->removal->revalidate($member))
+        ->toBe(
+            $withReceipt
+                ? AppInstanceSourceRevalidationState::ReceiptPendingCleanup
+                : AppInstanceSourceRevalidationState::Quarantined,
+        )
+        ->and($this->removal->finalize($member))
+        ->toBe($receipt)
+        ->and(file_exists($quarantine))
+        ->toBeFalse();
+})->with([
+    'before receipt' => false,
+    'after receipt' => true,
+]);
+
 it('accepts an absent source only with its matching durable completion receipt', function (): void {
     $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
     $this->source->prepare($instance, false);
@@ -386,19 +478,58 @@ it('accepts an absent source only with its matching durable completion receipt',
         'starting_commit' => $resolution->startingCommit,
         'status' => AppInstanceState::SourceResolved,
     ]);
-    $member = orb124_remove_source($this->removal, $instance, false);
+    $member = orb124_prepare_remove_source($this->removal, $instance, false);
+    $member->update(['source_prepared_at' => now()]);
     $receipt = hash(
         'sha256',
         "{$member->app_instance_removal_id}\0{$member->id}\0{$member->source_digest}\0finalized",
     );
 
-    expect($this->removal->finalize($member))->toBe($receipt);
+    expect($this->removal->finalize($member))
+        ->toBe($receipt)
+        ->and($this->removal->revalidate($member))
+        ->toBe(AppInstanceSourceRevalidationState::Completed)
+        ->and($this->removal->finalize($member))
+        ->toBe($receipt);
 
     $receiptPath = "{$member->root}/.orbit-removals/{$member->app_instance_removal_id}.{$member->id}.receipt";
     file_put_contents($receiptPath, 'mismatched');
 
     expect(fn () => $this->removal->finalize($member))
         ->toThrow(RuntimeConvergenceException::class);
+});
+
+it('refuses an equivalent replacement clone at the recorded path', function (): void {
+    $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
+    $this->source->prepare($instance, false);
+    $resolution = $this->source->resolve($instance);
+    $instance->update([
+        'branch' => $resolution->branch,
+        'starting_commit' => $resolution->startingCommit,
+        'status' => AppInstanceState::SourceResolved,
+    ]);
+    $member = orb124_prepare_remove_source($this->removal, $instance, false);
+    $member->update(['source_prepared_at' => now()]);
+    $original = $this->sandbox.'/original-source';
+    expect(rename($instance->checkout_path, $original))->toBeTrue();
+    orb76_run([
+        'git',
+        'clone',
+        '--no-checkout',
+        '--origin',
+        'origin',
+        '--',
+        $this->repository,
+        $instance->checkout_path,
+    ]);
+    orb76_run(['git', '-C', $instance->checkout_path, 'checkout', '-b', 'dev', $resolution->startingCommit]);
+
+    expect(fn () => $this->removal->revalidate($member))
+        ->toThrow(RuntimeConvergenceException::class);
+    expect(is_dir($instance->checkout_path))
+        ->toBeTrue()
+        ->and(trim(orb76_run(['git', '-C', $instance->checkout_path, 'rev-parse', 'HEAD'])->stdout))
+        ->toBe($resolution->startingCommit);
 });
 
 it('does not let removal waive the recorded starting commit ancestry', function (bool $force): void {
@@ -486,6 +617,17 @@ function orb124_remove_source(
     AppInstance $instance,
     bool $force,
 ): AppInstanceRemovalMember {
+    $member = orb124_prepare_remove_source($removal, $instance, $force);
+    $removal->finalize($member);
+
+    return $member;
+}
+
+function orb124_prepare_remove_source(
+    RemoteDevelopmentAppInstanceSourceRemoval $removal,
+    AppInstance $instance,
+    bool $force,
+): AppInstanceRemovalMember {
     $inventory = $removal->inspect($instance, $force);
     $route = Route::query()->create([
         'app_id' => $instance->app_id,
@@ -526,12 +668,12 @@ function orb124_remove_source(
             'branch' => $inventory->branch,
             'starting_commit' => $inventory->startingCommit,
             'common_repository_path' => $inventory->commonRepositoryPath,
+            'source_identity' => $inventory->sourceIdentity,
             'linked_worktree_paths' => $inventory->linkedWorktreePaths,
             'source_digest' => $inventory->digest,
         ]);
 
     $removal->prepare($member);
-    $removal->finalize($member);
 
     return $member;
 }

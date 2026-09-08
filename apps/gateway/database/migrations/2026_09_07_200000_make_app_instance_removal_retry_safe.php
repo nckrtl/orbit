@@ -50,6 +50,7 @@ return new class extends Migration {
             $table->string('branch')->nullable();
             $table->string('starting_commit', 64)->nullable();
             $table->text('common_repository_path')->nullable();
+            $table->string('source_identity')->nullable();
             $table->json('linked_worktree_paths');
             $table->string('source_digest', 64);
             $table->timestamp('source_prepared_at')->nullable();
@@ -232,6 +233,7 @@ return new class extends Migration {
                     OR NEW.branch IS NULL
                     OR NEW.starting_commit IS NULL
                     OR NEW.common_repository_path IS NULL
+                    OR NEW.source_identity IS NULL
                 ))
             BEGIN
                 SELECT RAISE(ABORT, 'Invalid AppInstance removal member contract.');
@@ -255,6 +257,7 @@ return new class extends Migration {
                 OR NEW.branch IS NOT OLD.branch
                 OR NEW.starting_commit IS NOT OLD.starting_commit
                 OR NEW.common_repository_path IS NOT OLD.common_repository_path
+                OR NEW.source_identity IS NOT OLD.source_identity
                 OR NEW.linked_worktree_paths <> OLD.linked_worktree_paths
                 OR NEW.source_digest <> OLD.source_digest
                 OR (OLD.source_prepared_at IS NOT NULL AND NEW.source_prepared_at IS NULL)

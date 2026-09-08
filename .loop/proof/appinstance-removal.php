@@ -156,6 +156,14 @@ function removalEvidence(string $name): array
                 'runtime_cleaned_at' => $value->runtime_cleaned_at?->format('Y-m-d H:i:s.u'),
                 'row_deleted_at' => $value->row_deleted_at?->format('Y-m-d H:i:s.u'),
                 'receipt' => $value->finalization_receipt,
+                'member_id' => $value->id,
+                'checkout_path' => $value->checkout_path,
+                'root' => $value->root,
+                'common_repository_path' => $value->common_repository_path,
+                'source_layout' => $value->source_layout,
+                'source_digest' => $value->source_digest,
+                'source_identity' => $value->source_identity,
+                'common_repository_path' => $value->common_repository_path,
             ])
             ->values()
             ->all(),
@@ -198,16 +206,7 @@ function seedProductionRoute(): array
 
     $route->update(['status' => RouteStatus::Active]);
     $instances->each(static fn (AppInstance $instance) => $instance->update(['status' => AppInstanceState::Active]));
-    $certificates = app(RemoteAppDevCertificateManager::class);
-
-    foreach ($instances as $instance) {
-        $certificates->convergeAppInstance($instance, $route);
-    }
-
     $router = $cluster->routerAssignment()->with('node')->sole()->node;
-    $certificates->convergeRouteRouter($route, $router);
-    app(RemoteAppDevCaddyManager::class)->converge($router);
-    app(DnsmasqPrivateDnsManager::class)->converge();
 
     return [
         'route_id' => $route->id,
@@ -219,6 +218,47 @@ function seedProductionRoute(): array
             'node' => $instance->node->name,
         ])->all(),
     ];
+}
+
+function projectProductionRoute(int $routeId): void
+{
+    $route = Route::query()
+        ->with(['targets.appInstance.node', 'cluster.routerAssignment.node'])
+        ->findOrFail($routeId);
+    $certificates = app(RemoteAppDevCertificateManager::class);
+    $php = app(RemoteAppDevPhpFpmManager::class);
+    $caddy = app(RemoteAppDevCaddyManager::class);
+
+    foreach ($route->targets as $target) {
+        $instance = $target->appInstance;
+        $certificates->convergeAppInstance($instance, $route);
+        $php->converge($instance->node);
+        $caddy->converge($instance->node);
+    }
+
+    $router = $route->cluster?->routerAssignment?->node;
+
+    if (! $router instanceof Node) {
+        exit(65);
+    }
+
+    $certificates->convergeRouteRouter($route, $router);
+    $caddy->converge($router);
+    app(DnsmasqPrivateDnsManager::class)->converge();
+}
+
+function completeRemovalRouteStep(string $name): void
+{
+    $member = AppInstanceRemovalMember::query()
+        ->where('name', $name)
+        ->whereNull('route_cleared_at')
+        ->sole();
+    $outcome = app(\App\Domain\AppInstances\Removal\AppInstanceRemovalProjector::class)
+        ->clearRouteTarget($member);
+    $member->update([
+        'route_cleared_at' => now(),
+        'route_outcome' => $outcome,
+    ]);
 }
 
 function productionEvidence(int $routeId, int $departingId, int $remainingId): array
@@ -326,6 +366,22 @@ switch ($command) {
             productionEvidence((int) $arguments[0], (int) $arguments[1], (int) $arguments[2]),
             JSON_THROW_ON_ERROR,
         ), PHP_EOL;
+        break;
+
+    case 'project-production':
+        if (count($arguments) !== 1) {
+            exit(64);
+        }
+
+        projectProductionRoute((int) $arguments[0]);
+        break;
+
+    case 'complete-removal-route-step':
+        if (count($arguments) !== 1) {
+            exit(64);
+        }
+
+        completeRemovalRouteStep($arguments[0]);
         break;
 
     case 'reset-production-nodes':
