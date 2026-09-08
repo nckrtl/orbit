@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 use App\Domain\Doctor\NodeInspectionData;
 use App\Domain\Doctor\NodeStateInspector;
+use App\Domain\Metrics\ExporterDegradationReason;
+use App\Domain\Nodes\NodeReachabilityProbe;
 use App\Domain\Nodes\NodeRoleDependencySet;
 use App\Domain\Nodes\NodeRoleDependentCleaner;
 use App\Domain\Nodes\RoleBaselineConverger;
+use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tools\ToolManagerException;
 use App\Domain\Tools\ToolManagerMaterializer;
@@ -390,6 +393,7 @@ it('records node role commands against the node with bounded inputs and stable f
         ->deleteJson("/api/v1/nodes/{$node->id}/roles/app-dev", [
             'force' => false,
             'purge_data' => false,
+            'offline' => false,
         ])
         ->assertUnprocessable()
         ->assertJsonPath('error.code', 'validation.failed');
@@ -421,12 +425,82 @@ it('records node role commands against the node with bounded inputs and stable f
         ->error_code->toBe('validation.failed')->and($activities[$removeRequestId]->properties?->get('input'))->toBe([
             'force' => false,
             'purge_data' => false,
+            'offline' => false,
             'role' => 'app-dev',
         ]);
 
     foreach ($activities as $activity) {
         expect($activity->properties?->toArray())->not->toHaveKeys(['stdout', 'stderr']);
     }
+});
+
+it('records complete SDK role removal input on success and before authentication', function (): void {
+    app()->instance(ToolManagerMaterializer::class, new FakeToolManagerMaterializer);
+    app()->instance(NodeReachabilityProbe::class, new class implements NodeReachabilityProbe {
+        public function degradation(Node $node): ?ExporterDegradationReason
+        {
+            return null;
+        }
+    });
+    $gateway = $this->markAsGateway(Node::query()->create([
+        'name' => 'role-input-gateway',
+        'status' => LifecycleStatus::Active,
+        'public_ssh_host' => '192.0.2.22',
+        'wireguard_ip' => '10.44.0.22',
+    ]));
+    $node = Node::query()->create([
+        'name' => 'role-input-target',
+        'status' => LifecycleStatus::Active,
+        'public_ssh_host' => '192.0.2.23',
+        'wireguard_ip' => '10.44.0.23',
+    ]);
+    $node
+        ->roles()
+        ->create([
+            'role' => RoleName::AppDev,
+            'status' => LifecycleStatus::Active,
+        ]);
+    $lifecycle = new CommandActivityNodeRoleLifecycleFake;
+    app()->instance(RoleBaselineConverger::class, $lifecycle);
+    app()->instance(NodeRoleDependentCleaner::class, $lifecycle);
+    $deniedRequestId = (string) Str::uuid();
+    $successRequestId = (string) Str::uuid();
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => '10.44.99.99'])
+        ->withHeader('X-Orbit-Request-Id', $deniedRequestId)
+        ->deleteJson("/api/v1/nodes/{$node->id}/roles/app-dev", [
+            'force' => false,
+            'purge_data' => false,
+            'offline' => false,
+        ])
+        ->assertForbidden()
+        ->assertJsonPath('error.code', 'peer.identity_unknown');
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
+        ->withHeader('X-Orbit-Request-Id', $successRequestId)
+        ->deleteJson("/api/v1/nodes/{$node->id}/roles/app-dev", [
+            'force' => true,
+            'purge_data' => true,
+            'offline' => true,
+        ])
+        ->assertOk();
+
+    expect(Activity::query()->where('request_id', $deniedRequestId)->sole()->properties?->get('input'))
+        ->toBe([
+            'force' => false,
+            'purge_data' => false,
+            'offline' => false,
+            'role' => 'app-dev',
+        ])
+        ->and(Activity::query()->where('request_id', $successRequestId)->sole()->properties?->get('input'))
+        ->toBe([
+            'force' => true,
+            'purge_data' => true,
+            'offline' => true,
+            'role' => 'app-dev',
+        ]);
 });
 
 /** @mago-expect lint:file-name Test-local fake isolates node role activity from remote effects. */
