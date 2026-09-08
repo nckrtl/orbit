@@ -821,6 +821,8 @@ it('finalizes a recorded fixed set against each expected real Git inventory', fu
     ])->stdout;
 
     $expectation = new AppInstanceSourceRevalidationExpectation($paths, $paths);
+    expect($this->removal->revalidate($members[2], $expectation))
+        ->toBe(AppInstanceSourceRevalidationState::Present);
     $this->removal->prepare($members[0], $expectation);
     $members[0]->update(['source_prepared_at' => now()]);
     orb182_clear_test_route($members[0]);
@@ -861,6 +863,8 @@ it('finalizes a recorded fixed set against each expected real Git inventory', fu
 
     expect(file_exists($checkout->checkout_path))
         ->toBeFalse()
+        ->and($this->removal->revalidate($members[0], $expectation))
+        ->toBe(AppInstanceSourceRevalidationState::Completed)
         ->and(orb76_run([
             'git',
             '--git-dir='.$this->repository,
@@ -989,6 +993,25 @@ it('authenticates a completed worktree shrink before the database checkpoint', f
         ->toBeTrue()
         ->and(is_dir($checkout->checkout_path.'/.git'))
         ->toBeTrue();
+
+    $this->removal->prepare($members[1], $expectation);
+    $members[1]->update(['source_prepared_at' => now()]);
+    orb182_clear_test_route($members[1]);
+    $members[1]->update(['route_cleared_at' => now(), 'route_outcome' => 'deleted']);
+    $receipt = $this->removal->finalize($members[1], $expectation);
+    $members[1]->update(['source_finalized_at' => now(), 'finalization_receipt' => $receipt]);
+    $rootOnly = [$checkout->checkout_path];
+    $states[$members[1]->id] = AppInstanceSourceRevalidationState::Completed;
+
+    expect($this->removal->revalidate(
+        $members[0]->refresh(),
+        new AppInstanceSourceRevalidationExpectation($rootOnly, $rootOnly, $states),
+    ))
+        ->toBe(AppInstanceSourceRevalidationState::Completed)
+        ->and(is_dir($checkout->checkout_path.'/.git'))
+        ->toBeTrue()
+        ->and(is_dir($second->checkout_path))
+        ->toBeFalse();
 });
 
 it('refuses to finalize a checkout while a linked worktree depends on it', function (): void {

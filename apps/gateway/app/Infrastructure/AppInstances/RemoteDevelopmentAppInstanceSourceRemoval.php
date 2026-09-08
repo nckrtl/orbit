@@ -326,7 +326,12 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
                         $states,
                     )
                     : null;
-                $this->inspectRecordedLocked($member, $state, $authenticatedExpectation);
+                $this->inspectRecordedLocked(
+                    $member,
+                    $state,
+                    $authenticatedExpectation,
+                    allowDependentWorktrees: true,
+                );
             }
 
             return $state;
@@ -413,6 +418,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
         AppInstanceRemovalMember $member,
         AppInstanceSourceRevalidationState $state,
         ?AppInstanceSourceRevalidationExpectation $expectation = null,
+        bool $allowDependentWorktrees = false,
     ): AppInstanceSourceInventory {
         if ($state === AppInstanceSourceRevalidationState::Completed) {
             $this->recordedConflict($member, 'A completed source has no inspectable source inventory.');
@@ -476,7 +482,8 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
         $this->assertExpectedLinkedInventory($member, $inventory, $expectation);
 
         if (
-            $member->source_layout === AppInstanceSourceLayout::Checkout->value
+            ! $allowDependentWorktrees
+            && $member->source_layout === AppInstanceSourceLayout::Checkout->value
             && $inventory->linkedWorktreePaths !== [$logicalCheckout]
         ) {
             $this->recordedConflict(
@@ -1142,27 +1149,41 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements
                     [[ "$common_identity" =~ ^[0-9]+:[0-9]+$ ]]
                     [[ "$worktrees_identity" =~ ^[0-9]+:[0-9]+$ ]]
                     test "$(dirname "$admin")" = "$common_repository/.git/worktrees"
-                    test -d "$common_repository/.git"
-                    test ! -L "$common_repository/.git"
-                    test "$(stat -c '%d:%i' "$common_repository/.git")" = "$common_identity"
-                    test "$(stat -c '%U:%G' "$common_repository/.git")" = "$managed_user:$managed_group"
                     worktrees="$common_repository/.git/worktrees"
-                    test -d "$worktrees"
-                    test ! -L "$worktrees"
-                    test "$(stat -c '%d:%i' "$worktrees")" = "$worktrees_identity"
-                    test "$(stat -c '%U:%G' "$worktrees")" = "$managed_user:$managed_group"
+                    common_present=0
+                    if [ -e "$common_repository/.git" ] || [ -L "$common_repository/.git" ]; then
+                        test -d "$common_repository/.git"
+                        test ! -L "$common_repository/.git"
+                        test "$(stat -c '%d:%i' "$common_repository/.git")" = "$common_identity"
+                        test "$(stat -c '%U:%G' "$common_repository/.git")" = "$managed_user:$managed_group"
+                        common_present=1
+                    else
+                        test ! -e "$common_repository"
+                        test ! -L "$common_repository"
+                    fi
+                    worktrees_present=0
+                    if [ -e "$worktrees" ] || [ -L "$worktrees" ]; then
+                        test "$common_present" = 1
+                        test -d "$worktrees"
+                        test ! -L "$worktrees"
+                        test "$(stat -c '%d:%i' "$worktrees")" = "$worktrees_identity"
+                        test "$(stat -c '%U:%G' "$worktrees")" = "$managed_user:$managed_group"
+                        worktrees_present=1
+                    fi
                     matching=0
-                    for candidate in "$worktrees"/*; do
-                        if [ ! -e "$candidate" ] && [ ! -L "$candidate" ]; then
-                            continue
-                        fi
-                        if [ -f "$candidate/gitdir" ] && [ ! -L "$candidate/gitdir" ] && \
-                            { printf '%s\n' "$checkout/.git" | cmp -s - "$candidate/gitdir" || \
-                                printf '%s\n' "$quarantine/.git" | cmp -s - "$candidate/gitdir"; }; then
-                            test "$candidate" = "$admin"
-                            matching=$((matching + 1))
-                        fi
-                    done
+                    if [ "$worktrees_present" = 1 ]; then
+                        for candidate in "$worktrees"/*; do
+                            if [ ! -e "$candidate" ] && [ ! -L "$candidate" ]; then
+                                continue
+                            fi
+                            if [ -f "$candidate/gitdir" ] && [ ! -L "$candidate/gitdir" ] && \
+                                { printf '%s\n' "$checkout/.git" | cmp -s - "$candidate/gitdir" || \
+                                    printf '%s\n' "$quarantine/.git" | cmp -s - "$candidate/gitdir"; }; then
+                                test "$candidate" = "$admin"
+                                matching=$((matching + 1))
+                            fi
+                        done
+                    fi
                     test "$matching" -le 1
                     admin_present=0
                     admin_complete=0
