@@ -84,25 +84,29 @@ final readonly class AppDevSiteRepository
                     ),
                 )
                 ->values();
+            $router = $route->cluster?->routerAssignment?->node;
+            $hasRouterSite = $router instanceof Node
+            && is_string($router->wireguard_ip)
+            && $targets->isNotEmpty()
+            && ! $targets->contains(
+                static fn (AppInstance $target): bool => $router->is($target->node),
+            );
 
             foreach ($targets as $target) {
                 assert($target instanceof AppInstance);
 
-                if ($target->environment === 'development') {
+                if (
+                    $target->environment === 'development'
+                    || $target->environment === 'production'
+                    && ! $hasRouterSite
+                ) {
                     $sites->push($this->appInstanceSite($target, $route));
                 }
             }
 
-            $router = $route->cluster?->routerAssignment?->node;
+            if ($hasRouterSite) {
+                assert($router instanceof Node);
 
-            if (
-                $router instanceof Node
-                && is_string($router->wireguard_ip)
-                && $targets->isNotEmpty()
-                && ! $targets->contains(
-                    static fn (AppInstance $target): bool => $router->is($target->node),
-                )
-            ) {
                 $sites->push($this->routerSite(array_values($targets->all()), $route, $router));
             }
 
