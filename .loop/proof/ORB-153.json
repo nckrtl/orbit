@@ -1,0 +1,14 @@
+{
+    "setup": [],
+    "acceptance": [
+        {
+            "id": "promotion-exact-attempt-cleanup",
+            "node": "gateway",
+            "argv": [
+                "/var/lib/orbit-e2e/proof/promotion-exact-attempt-cleanup.php"
+            ],
+            "timeout_seconds": 60
+        }
+    ],
+    "observed_inputs": false
+}
