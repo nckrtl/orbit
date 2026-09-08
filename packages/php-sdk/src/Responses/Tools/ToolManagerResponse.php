@@ -10,10 +10,13 @@ use Orbit\Sdk\Support\GatewayErrorCode;
 use Orbit\Sdk\Support\GatewayRequestId;
 use SensitiveParameter;
 
-/** @mago-expect lint:cyclomatic-complexity DTO validation remains at the transport boundary. */
+/**
+ * @mago-expect lint:cyclomatic-complexity DTO validation remains at the transport boundary.
+ * @mago-expect lint:too-many-methods DTO validation remains at the transport boundary.
+ */
 final readonly class ToolManagerResponse
 {
-    public int $id;
+    public ?int $id;
     public int $nodeId;
     public string $name;
     public string $status;
@@ -32,7 +35,7 @@ final readonly class ToolManagerResponse
 
     /** @mago-expect lint:excessive-parameter-list */
     public function __construct(
-        int $id,
+        ?int $id,
         int $nodeId,
         #[SensitiveParameter]
         string $name,
@@ -47,7 +50,7 @@ final readonly class ToolManagerResponse
         #[SensitiveParameter]
         string $requestId,
     ) {
-        if ($id < 1 || $nodeId < 1) {
+        if ($id !== null && $id < 1 || $nodeId < 1) {
             throw new InvalidArgumentException('Invalid Tool manager response identifier.');
         }
 
@@ -104,7 +107,7 @@ final readonly class ToolManagerResponse
         string $requestId,
     ): self {
         return new self(
-            id: self::positiveInteger($data, 'id'),
+            id: self::nullablePositiveInteger($data, 'id'),
             nodeId: self::positiveInteger($data, 'node_id'),
             name: self::requiredText($data, 'name', self::NAME_MAX_LENGTH),
             status: self::requiredToken($data, 'status'),
@@ -138,6 +141,16 @@ final readonly class ToolManagerResponse
         }
 
         return $data[$key];
+    }
+
+    /** @param array<string, mixed> $data */
+    private static function nullablePositiveInteger(#[SensitiveParameter] array $data, string $key): ?int
+    {
+        if (($data[$key] ?? null) === null) {
+            return null;
+        }
+
+        return self::positiveInteger($data, $key);
     }
 
     /** @param array<string, mixed> $data */

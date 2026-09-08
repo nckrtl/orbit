@@ -46,7 +46,9 @@ only at an intentional bootstrap, publication, or runtime boundary.
 
 ## Use the closed tool manager registry
 
-The closed tool manager registry contains apt, vp, and composer.
+The active Tool Manager registry contains the code-owned adapters apt, vp, and
+composer. Persisted identifiers that are absent from the active registry remain
+readable but cannot serve new Tool installations.
 Use Vite+ global packages instead of exposing npm as a manager. A nullable
 SemVer constraint gates the manager's normal candidate before mutation; it
 never selects or downgrades a version.
@@ -56,10 +58,10 @@ adoption, protected removal, and unsafe shared-scope removal.
 APT removal must remove only the exact recorded package. VP and Composer
 commands target the exact root package in their Orbit-owned shared scopes.
 
-VP and Composer are available only while an app-dev or app-prod assignment is
-provisioning or active. Public install and update require an active app role.
-Block last-app-role removal while non-protected VP or Composer tool intent
-exists; require explicit tool removal first. Successful last-app-role removal
-retains protected manager rows but marks VP and Composer unavailable until a
-later role convergence reactivates them. Never remove packages or tool intent
-implicitly from role removal.
+Treat managers as protected, role-independent Node capabilities. Allow Tool
+mutations only on active Linux Nodes whose WireGuard address and pinned SSH
+host identity are managed by the Gateway. Materialize a missing manager on
+first use, retain failed materialization for retry, and retain active manager
+state after its final Tool is removed. Roles may require managers during
+convergence but do not own them or their Tools. Never remove packages, Tool
+intent, or manager state implicitly during role removal.

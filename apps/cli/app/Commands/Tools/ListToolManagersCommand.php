@@ -36,7 +36,7 @@ final class ListToolManagersCommand extends ToolCommand
             return self::SUCCESS;
         }
         $rows = array_map(fn ($m): array => [
-            $m->id,
+            $this->value($m->id),
             $m->name,
             $m->status,
             $this->value($m->installedVersion),
