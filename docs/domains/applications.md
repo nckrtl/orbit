@@ -103,6 +103,8 @@ Orbit first refuses an AppInstance that requires manual source migration with `i
 
 For an AppInstance that is eligible for removal, normal removal verifies the recorded source identity. It refuses a dirty source, unpublished commits, a changed origin, a symlinked or non-canonical path, an out-of-root path, the wrong owner, or invalid Git metadata.
 
+The Gateway compares a checkout's origin by canonical repository identity, so supported SSH and HTTPS forms for the recorded App repository remain valid. It checks current remote branch and tag advertisements in a disposable repository outside the checkout. It does not fetch, prune refs, refresh the index, or write remote objects in the requested source.
+
 Remove clean, published source with:
 
 ```text
@@ -116,6 +118,8 @@ orbit instance:remove <id> --discard-source
 ```
 
 With `--discard-source`, Orbit waives the dirty-source and unpublished-commit checks after the migration and Route guards pass. It does not waive origin, symlink, canonical-path, containment, ownership, or repository-identity checks. Orbit removes only the exact recorded source. It does not remove sibling, legacy, or unrelated repositories.
+
+Checkout removal refuses when Git reports any linked worktree, including another Orbit-owned source. Before deletion, the Gateway verifies that the checkout still has the inspected physical identity, canonical origin, branch, commit ancestry, ownership, placement, and linked-worktree inventory. A refusal leaves the checkout, its Git index and refs, every linked worktree, every local or remote branch, the AppInstance, and its Route unchanged.
 
 ## Input boundary
 

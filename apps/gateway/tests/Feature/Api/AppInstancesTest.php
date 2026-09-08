@@ -14,6 +14,8 @@ use App\Domain\AppInstances\DevelopmentAppInstanceSourceLifecycle;
 use App\Domain\AppInstances\DevelopmentRouteProjector;
 use App\Domain\AppInstances\DevelopmentSourceProfile;
 use App\Domain\AppInstances\DevelopmentSourceResolution;
+use App\Domain\AppInstances\Removal\AppInstanceSourceInventory;
+use App\Domain\AppInstances\Removal\DevelopmentAppInstanceSourceRemoval;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Instances\CertificateMode;
 use App\Domain\Nodes\ManagedUserAccount;
@@ -119,11 +121,6 @@ beforeEach(function (): void {
             return $this->resolution;
         }
 
-        public function remove(AppInstance $appInstance, bool $discardSource): void
-        {
-            $this->record($discardSource ? 'remove-discard' : 'remove', $appInstance);
-        }
-
         private function record(string $operation, AppInstance $appInstance): void
         {
             $this->calls[] = "{$operation}:{$appInstance->status->value}";
@@ -134,6 +131,41 @@ beforeEach(function (): void {
         }
     };
     app()->instance(DevelopmentAppInstanceSourceLifecycle::class, $this->source);
+    $this->removal = new class implements DevelopmentAppInstanceSourceRemoval {
+        /** @var list<string> */
+        public array $calls = [];
+
+        /** @var null|list<string> */
+        public ?array $linkedWorktreePaths = null;
+
+        public function inspect(AppInstance $appInstance, bool $discardSource): AppInstanceSourceInventory
+        {
+            $this->calls[] = $discardSource ? 'inspect-discard' : 'inspect';
+
+            return new AppInstanceSourceInventory(
+                appInstanceId: $appInstance->id,
+                layout: $appInstance->source_layout,
+                repositoryIdentity: $appInstance->app->repository_identity,
+                checkoutPath: $appInstance->checkout_path,
+                root: dirname(dirname($appInstance->checkout_path)),
+                branch: (string) $appInstance->branch,
+                startingCommit: (string) $appInstance->starting_commit,
+                commonRepositoryPath: $appInstance->checkout_path,
+                sourceIdentity: '1:1',
+                linkedWorktreePaths: $this->linkedWorktreePaths ?? [$appInstance->checkout_path],
+                digest: str_repeat('a', 64),
+            );
+        }
+
+        public function remove(
+            AppInstance $appInstance,
+            AppInstanceSourceInventory $inventory,
+            bool $discardSource,
+        ): void {
+            $this->calls[] = $discardSource ? 'remove-discard' : 'remove';
+        }
+    };
+    app()->instance(DevelopmentAppInstanceSourceRemoval::class, $this->removal);
 
     $this->node = Node::query()->create([
         'name' => 'app-dev',
@@ -331,6 +363,7 @@ it('rejects added removed or changed branch override on creation retry before mu
     $this->postJson('/api/v1/instances', $payload)->assertCreated();
     $before = AppInstance::query()->sole()->getAttributes();
     $this->source->calls = [];
+    $this->removal->calls = [];
 
     if ($retry === null) {
         unset($payload['branch']);
@@ -1197,6 +1230,8 @@ it('refuses active AppInstance removal before source mutation', function (bool $
         ->and($route->refresh()->only(array_keys($routeBefore)))
         ->toBe($routeBefore)
         ->and($this->source->calls)
+        ->toBeEmpty()
+        ->and($this->removal->calls)
         ->toBeEmpty();
 })->with([false, true]);
 
@@ -1207,6 +1242,7 @@ it('uses the active Route guard when removal sends an empty JSON body', function
         'name' => 'dev',
     ])->assertCreated();
     $this->source->calls = [];
+    $this->removal->calls = [];
 
     $response = $this->deleteJson("/api/v1/instances/{$created->json('data.id')}");
 
@@ -1216,6 +1252,8 @@ it('uses the active Route guard when removal sends an empty JSON body', function
     expect(AppInstance::query()->count())
         ->toBe(1)
         ->and($this->source->calls)
+        ->toBeEmpty()
+        ->and($this->removal->calls)
         ->toBeEmpty();
 });
 
@@ -1226,6 +1264,7 @@ it('checks the active Route before checkout overlap during removal', function ()
         'name' => 'dev',
     ])->assertCreated();
     $this->source->calls = [];
+    $this->removal->calls = [];
 
     $this
         ->deleteJson("/api/v1/instances/{$created->json('data.id')}")
@@ -1235,6 +1274,8 @@ it('checks the active Route before checkout overlap during removal', function ()
     expect(AppInstance::query()->count())
         ->toBe(1)
         ->and($this->source->calls)
+        ->toBeEmpty()
+        ->and($this->removal->calls)
         ->toBeEmpty();
 });
 
@@ -1245,6 +1286,7 @@ it('rejects a non-empty JSON array from the removal transport', function (): voi
         'name' => 'dev',
     ])->assertCreated();
     $this->source->calls = [];
+    $this->removal->calls = [];
 
     $this
         ->call(
@@ -1262,5 +1304,86 @@ it('rejects a non-empty JSON array from the removal transport', function (): voi
     expect(AppInstance::query()->count())
         ->toBe(1)
         ->and($this->source->calls)
+        ->toBeEmpty()
+        ->and($this->removal->calls)
+        ->toBeEmpty();
+});
+
+it('removes a source-resolved checkout only after reusable source inspection', function (bool $discard): void {
+    $instance = AppInstance::query()->create([
+        'app_id' => $this->orbitApp->id,
+        'node_id' => $this->node->id,
+        'name' => 'dev',
+        'source_layout' => AppInstanceSourceLayout::Checkout,
+        'checkout_path' => '/srv/orbit/apps/acme/dev',
+        'branch' => 'dev',
+        'starting_commit' => str_repeat('a', 40),
+        'status' => AppInstanceState::SourceResolved,
+    ]);
+
+    $this
+        ->deleteJson("/api/v1/instances/{$instance->id}", ['discard_source' => $discard])
+        ->assertOk()
+        ->assertJsonPath('data.id', $instance->id);
+
+    expect(AppInstance::query()->find($instance->id))
+        ->toBeNull()
+        ->and($this->removal->calls)
+        ->toBe(
+            $discard
+                ? ['inspect-discard', 'remove-discard']
+                : ['inspect', 'remove'],
+        );
+})->with([false, true]);
+
+it('refuses a linked checkout before source or record deletion', function (): void {
+    $instance = AppInstance::query()->create([
+        'app_id' => $this->orbitApp->id,
+        'node_id' => $this->node->id,
+        'name' => 'dev',
+        'source_layout' => AppInstanceSourceLayout::Checkout,
+        'checkout_path' => '/srv/orbit/apps/acme/dev',
+        'branch' => 'dev',
+        'starting_commit' => str_repeat('a', 40),
+        'status' => AppInstanceState::SourceResolved,
+    ]);
+    $this->removal->linkedWorktreePaths = [
+        $instance->checkout_path,
+        '/srv/orbit/apps/acme/linked',
+    ];
+    $before = $instance->refresh()->getAttributes();
+
+    $this
+        ->deleteJson("/api/v1/instances/{$instance->id}", ['discard_source' => true])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'instance.remove_refused');
+
+    expect($instance->refresh()->getAttributes())
+        ->toBe($before)
+        ->and($this->removal->calls)
+        ->toBe(['inspect-discard']);
+});
+
+it('refuses an unsupported source layout before source inspection', function (): void {
+    $instance = AppInstance::query()->create([
+        'app_id' => $this->orbitApp->id,
+        'node_id' => $this->node->id,
+        'name' => 'dev',
+        'source_layout' => AppInstanceSourceLayout::Worktree,
+        'checkout_path' => '/srv/orbit/apps/acme/dev',
+        'branch' => 'dev',
+        'starting_commit' => str_repeat('a', 40),
+        'status' => AppInstanceState::SourceResolved,
+    ]);
+
+    $this
+        ->deleteJson("/api/v1/instances/{$instance->id}")
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'instance.source_layout_conflict');
+
+    expect(AppInstance::query()->find($instance->id))
+        ->not
+        ->toBeNull()
+        ->and($this->removal->calls)
         ->toBeEmpty();
 });
