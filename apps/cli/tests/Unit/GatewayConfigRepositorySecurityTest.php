@@ -57,6 +57,12 @@ it('rejects corrupted persisted gateway profiles', function (array $config): voi
         'active_gateway' => 'missing',
         'gateways' => (object) [],
     ]],
+    'list-shaped gateways' => [[
+        'active_gateway' => '0',
+        'gateways' => [
+            ['url' => 'https://10.70.0.1', 'ca_path' => null],
+        ],
+    ]],
     'invalid profile name' => [[
         'active_gateway' => "test\npersisted-secret",
         'gateways' => [
