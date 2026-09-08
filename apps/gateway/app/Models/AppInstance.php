@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 /**
  * @property int $id
@@ -33,6 +34,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property-read Node $node
  * @property-read \Illuminate\Database\Eloquent\Collection<int, RouteTarget> $routeTargets
  * @property-read \Illuminate\Database\Eloquent\Collection<int, Route> $routes
+ * @property-read AppInstanceRemovalMember|null $removalMember
  */
 final class AppInstance extends Model
 {
@@ -88,6 +90,12 @@ final class AppInstance extends Model
     public function routes(): BelongsToMany
     {
         return $this->belongsToMany(Route::class, 'route_targets')->withPivot('position');
+    }
+
+    /** @return HasOne<AppInstanceRemovalMember, $this> */
+    public function removalMember(): HasOne
+    {
+        return $this->hasOne(AppInstanceRemovalMember::class)->whereNull('row_deleted_at');
     }
 
     public function effectiveRoot(): ?string

@@ -8,105 +8,127 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 it('refuses unsupported legacy source ownership before changing schema or rows', function (): void {
+    $removalMigration = app_instance_identity_removal_migration();
     $migration = app_instance_identity_migration();
-    $migration->down();
-    $ids = app_instance_identity_legacy_graph();
-    DB::table('app_instances')
-        ->where('id', $ids['instance'])
-        ->update([
-            'source_kind' => 'registered_worktree',
-        ]);
-    $schemaBefore = app_instance_identity_schema();
-    $rowsBefore = app_instance_identity_rows();
+    $removalMigration->down();
 
-    expect(fn () => $migration->up())
-        ->toThrow(
-            RuntimeException::class,
-            "Cannot migrate unsupported AppInstance source ownership: {$ids['instance']}",
-        );
+    try {
+        $migration->down();
+        $ids = app_instance_identity_legacy_graph();
+        DB::table('app_instances')
+            ->where('id', $ids['instance'])
+            ->update([
+                'source_kind' => 'registered_worktree',
+            ]);
+        $schemaBefore = app_instance_identity_schema();
+        $rowsBefore = app_instance_identity_rows();
 
-    expect(app_instance_identity_schema())
-        ->toBe($schemaBefore)
-        ->and(app_instance_identity_rows())
-        ->toBe($rowsBefore);
+        expect(fn () => $migration->up())
+            ->toThrow(
+                RuntimeException::class,
+                "Cannot migrate unsupported AppInstance source ownership: {$ids['instance']}",
+            );
+
+        expect(app_instance_identity_schema())
+            ->toBe($schemaBefore)
+            ->and(app_instance_identity_rows())
+            ->toBe($rowsBefore);
+    } finally {
+        DB::table('app_instances')
+            ->where('source_kind', 'registered_worktree')
+            ->update(['source_kind' => 'managed_clone']);
+        $migration->up();
+        $removalMigration->up();
+    }
 });
 
 it('migrates stable source identity without changing legacy rows or relationships', function (): void {
+    $removalMigration = app_instance_identity_removal_migration();
     $migration = app_instance_identity_migration();
-    $migration->down();
-    $ids = app_instance_identity_legacy_graph();
-    $legacy = app_instance_identity_rows();
-    $legacySchema = app_instance_identity_schema();
+    $removalMigration->down();
 
-    $migration->up();
+    try {
+        $migration->down();
+        $ids = app_instance_identity_legacy_graph();
+        $legacy = app_instance_identity_rows();
+        $legacySchema = app_instance_identity_schema();
 
-    $migrated = app_instance_identity_rows();
-    $sourceLayout = collect(DB::select('PRAGMA table_info(app_instances)'))
-        ->firstWhere('name', 'source_layout');
-    expect(Schema::hasColumns('apps', ['default_branch']))
-        ->toBeTrue()
-        ->and(Schema::hasColumn('apps', 'main_branch'))
-        ->toBeFalse()
-        ->and(Schema::hasColumns(
-            'app_instances',
-            ['source_layout', 'branch_override', 'migration_required'],
-        ))
-        ->toBeTrue()
-        ->and(Schema::hasColumn('app_instances', 'source_kind'))
-        ->toBeFalse()
-        ->and($sourceLayout->dflt_value)
-        ->toBe("'checkout'")
-        ->and($migrated['apps'][0]['default_branch'])
-        ->toBe($legacy['apps'][0]['main_branch'])
-        ->and($migrated['app_instances'][0]['source_layout'])
-        ->toBe('checkout')
-        ->and($migrated['app_instances'][0]['branch_override'])
-        ->toBeNull()
-        ->and($migrated['app_instances'][0]['migration_required'])
-        ->toBe(1)
-        ->and($migrated['app_instances'][1]['source_layout'])
-        ->toBe('checkout')
-        ->and($migrated['app_instances'][1]['branch_override'])
-        ->toBeNull()
-        ->and($migrated['app_instances'][1]['migration_required'])
-        ->toBe(0)
-        ->and($migrated['routes'])
-        ->toBe($legacy['routes'])
-        ->and($migrated['route_targets'])
-        ->toBe($legacy['route_targets']);
+        $migration->up();
 
-    $unchangedApp = $migrated['apps'][0];
-    unset($unchangedApp['default_branch']);
-    $legacyApp = $legacy['apps'][0];
-    unset($legacyApp['main_branch']);
-    $unchangedInstances = array_map(static function (array $instance): array {
-        unset($instance['source_layout'], $instance['branch_override'], $instance['migration_required']);
+        $migrated = app_instance_identity_rows();
+        $sourceLayout = collect(DB::select('PRAGMA table_info(app_instances)'))
+            ->firstWhere('name', 'source_layout');
+        expect(Schema::hasColumns('apps', ['default_branch']))
+            ->toBeTrue()
+            ->and(Schema::hasColumn('apps', 'main_branch'))
+            ->toBeFalse()
+            ->and(Schema::hasColumns(
+                'app_instances',
+                ['source_layout', 'branch_override', 'migration_required'],
+            ))
+            ->toBeTrue()
+            ->and(Schema::hasColumn('app_instances', 'source_kind'))
+            ->toBeFalse()
+            ->and($sourceLayout->dflt_value)
+            ->toBe("'checkout'")
+            ->and($migrated['apps'][0]['default_branch'])
+            ->toBe($legacy['apps'][0]['main_branch'])
+            ->and($migrated['app_instances'][0]['source_layout'])
+            ->toBe('checkout')
+            ->and($migrated['app_instances'][0]['branch_override'])
+            ->toBeNull()
+            ->and($migrated['app_instances'][0]['migration_required'])
+            ->toBe(1)
+            ->and($migrated['app_instances'][1]['source_layout'])
+            ->toBe('checkout')
+            ->and($migrated['app_instances'][1]['branch_override'])
+            ->toBeNull()
+            ->and($migrated['app_instances'][1]['migration_required'])
+            ->toBe(0)
+            ->and($migrated['routes'])
+            ->toBe($legacy['routes'])
+            ->and($migrated['route_targets'])
+            ->toBe($legacy['route_targets']);
 
-        return $instance;
-    }, $migrated['app_instances']);
-    $legacyInstances = array_map(static function (array $instance): array {
-        unset($instance['source_kind']);
+        $unchangedApp = $migrated['apps'][0];
+        unset($unchangedApp['default_branch']);
+        $legacyApp = $legacy['apps'][0];
+        unset($legacyApp['main_branch']);
+        $unchangedInstances = array_map(static function (array $instance): array {
+            unset($instance['source_layout'], $instance['branch_override'], $instance['migration_required']);
 
-        return $instance;
-    }, $legacy['app_instances']);
+            return $instance;
+        }, $migrated['app_instances']);
+        $legacyInstances = array_map(static function (array $instance): array {
+            unset($instance['source_kind']);
 
-    expect($unchangedApp)
-        ->toBe($legacyApp)
-        ->and($unchangedInstances)
-        ->toBe($legacyInstances)
-        ->and(fn () => DB::table('app_instances')
-            ->where('id', $ids['instance'])
-            ->update([
-                'source_layout' => 'managed_clone',
-            ]))
-        ->toThrow(QueryException::class);
+            return $instance;
+        }, $legacy['app_instances']);
 
-    $migration->down();
+        expect($unchangedApp)
+            ->toBe($legacyApp)
+            ->and($unchangedInstances)
+            ->toBe($legacyInstances)
+            ->and(fn () => DB::table('app_instances')
+                ->where('id', $ids['instance'])
+                ->update([
+                    'source_layout' => 'managed_clone',
+                ]))
+            ->toThrow(QueryException::class);
 
-    expect(app_instance_identity_rows())
-        ->toBe($legacy)
-        ->and(app_instance_identity_schema())
-        ->toBe($legacySchema);
+        $migration->down();
+
+        expect(app_instance_identity_rows())
+            ->toBe($legacy)
+            ->and(app_instance_identity_schema())
+            ->toBe($legacySchema);
+    } finally {
+        if (! Schema::hasColumn('app_instances', 'source_layout')) {
+            $migration->up();
+        }
+
+        $removalMigration->up();
+    }
 });
 
 function app_instance_identity_migration(): object
@@ -114,6 +136,14 @@ function app_instance_identity_migration(): object
     return require
         base_path(
             'database/migrations/2026_09_07_000000_migrate_app_and_app_instance_source_identity.php',
+        );
+}
+
+function app_instance_identity_removal_migration(): object
+{
+    return require
+        base_path(
+            'database/migrations/2026_09_08_000000_persist_app_instance_removal_inventory.php',
         );
 }
 
