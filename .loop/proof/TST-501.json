@@ -1,0 +1,38 @@
+{
+  "setup": [],
+  "acceptance": [
+    {
+      "id": "artifact-gateway",
+      "node": "gateway",
+      "argv": [
+        "bash",
+        "/var/lib/orbit-e2e/proof/loop-smoke.sh",
+        "checkout",
+        "5db8409d394fb87e5cd4470028ef54f66dc27cae"
+      ],
+      "timeout_seconds": 30
+    },
+    {
+      "id": "artifact-app-dev",
+      "node": "app-dev",
+      "argv": [
+        "bash",
+        "/var/lib/orbit-e2e/proof/loop-smoke.sh",
+        "checkout",
+        "5db8409d394fb87e5cd4470028ef54f66dc27cae"
+      ],
+      "timeout_seconds": 30
+    },
+    {
+      "id": "artifact-app-prod",
+      "node": "app-prod",
+      "argv": [
+        "bash",
+        "/var/lib/orbit-e2e/proof/loop-smoke.sh",
+        "fixture",
+        "5db8409d394fb87e5cd4470028ef54f66dc27cae"
+      ],
+      "timeout_seconds": 30
+    }
+  ]
+}
