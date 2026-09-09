@@ -163,7 +163,7 @@ case "$scenario" in
         [[ $# -eq 2 && "$2" =~ ^app-prod(-2)?$ && "$(id -u)" -eq 1000 ]]
         base=/var/www/orb197
         sudo install -d -o orbit -g orbit -m 0755 "$base"
-        for name in create initial missing generated nonphp cluster laravel safety-home safety-existing safety-existing-repeat safety-root unresolved ownership retry retry-recovery retry-recovery-marker active remove remove-inactive nested-exposure legacy-coexistence coexistence-private; do
+        for name in create initial missing generated nonphp cluster laravel safety-home safety-existing safety-existing-repeat safety-root unresolved ownership publication-retry retry retry-recovery retry-recovery-marker active remove remove-inactive nested-exposure legacy-coexistence coexistence-private; do
             work=$(mktemp -d)
             trap 'rm -rf -- "$work"' EXIT
             git -C "$work" init --initial-branch=main --quiet
@@ -597,6 +597,50 @@ REMOTE
         cleanup_ownership_retry
         trap - EXIT
         printf 'retry ownership drift refused before ACL side effects\n'
+        ;;
+
+    publication-retry)
+        [[ $# -eq 1 && "$(id -u)" -eq 1000 ]]
+        app_id=$(fixture_app_id orb197-publication-retry)
+        node_id=$(fixture_node_field app-prod-2 id)
+        node_ip=$(fixture_node_field app-prod-2 wireguard_ip)
+        hostname=orb197-publication-retry.test
+        gateway_fixture publication-activation-fault on orb197-publication-retry >/dev/null
+        trap 'gateway_fixture publication-activation-fault off orb197-publication-retry >/dev/null' EXIT
+        expect_error gateway.unhandled orbit instance:new "$app_id" "$node_id" default --hostname="$hostname"
+        gateway_fixture publication-activation-fault off orb197-publication-retry >/dev/null
+        trap - EXIT
+        instance=$(inspect_single orb197-publication-retry)
+        [[ "$(json_field provisioning_step <<<"$instance")" == route-published ]]
+        [[ "$(json_field status <<<"$instance")" != active ]]
+        [[ "$(json_field error_code <<<"$instance")" == instance.provisioning_failed ]]
+        [[ "$(json_field routes.0.status <<<"$instance")" == failed ]]
+        remote_script app-prod-2 "$hostname" <<'REMOTE'
+hostname=$1
+live=$(sudo readlink -f /etc/caddy/Caddyfile)
+sudo grep -Fq -- "$hostname" "$(dirname "$live")/fragments/app-dev.caddy"
+REMOTE
+        sudo grep -Fq -- "host-record=$hostname,$node_ip" /etc/dnsmasq.d/orbit-records.conf
+
+        gateway_fixture converge-private-projections app-prod-2 >/dev/null
+        remote_script app-prod-2 "$hostname" <<'REMOTE'
+hostname=$1
+live=$(sudo readlink -f /etc/caddy/Caddyfile)
+! sudo grep -Fq -- "$hostname" "$(dirname "$live")/fragments/app-dev.caddy"
+REMOTE
+        ! sudo grep -Fq -- "host-record=$hostname,$node_ip" /etc/dnsmasq.d/orbit-records.conf
+
+        output=$(orbit instance:new "$app_id" "$node_id" default --hostname="$hostname" --json)
+        assert_instance "$output" "$app_id" "$node_id" default "$hostname" main null null
+        remote_script app-prod-2 "$hostname" <<'REMOTE'
+hostname=$1
+live=$(sudo readlink -f /etc/caddy/Caddyfile)
+sudo grep -Fq -- "$hostname" "$(dirname "$live")/fragments/app-dev.caddy"
+REMOTE
+        sudo grep -Fq -- "host-record=$hostname,$node_ip" /etc/dnsmasq.d/orbit-records.conf
+        body=$(curl --fail --silent --show-error --retry 10 --retry-delay 1 --cacert /home/orbit/.orbit/ca/root.pem --resolve "$hostname:443:$node_ip" "https://$hostname/")
+        grep -Fq orb197-publication-retry <<<"$body"
+        printf 'route-published retry restored excluded Caddy and DNS projections before activation\n'
         ;;
 
     standalone-retry)

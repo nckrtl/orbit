@@ -131,6 +131,15 @@
             "timeout_seconds": 300
         },
         {
+            "id": "app-prod-publication-retry",
+            "node": "gateway",
+            "argv": [
+                "/var/lib/orbit-e2e/proof/orb197-production.sh",
+                "publication-retry"
+            ],
+            "timeout_seconds": 300
+        },
+        {
             "id": "app-prod-creation-after-deployment",
             "node": "gateway",
             "argv": [

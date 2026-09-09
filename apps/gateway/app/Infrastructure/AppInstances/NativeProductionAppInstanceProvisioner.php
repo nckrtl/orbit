@@ -7,6 +7,7 @@ namespace App\Infrastructure\AppInstances;
 use App\Actions\Routes\CreateRouteAction;
 use App\Data\AppInstances\CreateAppInstanceData;
 use App\Domain\AppDev\AppDevSourceOperationLock;
+use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppInstances\AppInstanceSourceLayout;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\AppInstances\DevelopmentSourceResolution;
@@ -42,6 +43,7 @@ final readonly class NativeProductionAppInstanceProvisioner implements Productio
         private RouteStateResolver $routeState,
         private AppProdSiteRepository $appProdSites,
         private ProductionRouteProjector $projection,
+        private ?DevelopmentProjectionOperationLock $projectionOwner = null,
     ) {}
 
     /** @return array{appInstance: AppInstance, created: bool} */
@@ -259,34 +261,69 @@ final readonly class NativeProductionAppInstanceProvisioner implements Productio
             $this->checkpoint($appInstance, 'firewall-prepared');
         }
 
-        if ($appInstance->provisioning_step === 'firewall-prepared') {
-            $this->projection->publish($appInstance, $route);
-            $this->checkpoint($appInstance, 'route-published');
-        }
-
-        if ($appInstance->provisioning_step === 'route-published') {
-            DB::transaction(static function () use ($appInstance, $route): void {
-                Route::query()
-                    ->lockForUpdate()
-                    ->findOrFail($route->id)
-                    ->update([
-                        'status' => RouteStatus::Active,
-                        'failed_step' => null,
-                        'error_code' => null,
-                    ]);
-                AppInstance::query()
-                    ->lockForUpdate()
-                    ->findOrFail($appInstance->id)
-                    ->update([
-                        'status' => AppInstanceState::Active,
-                        'provisioning_step' => 'active',
-                        'failed_step' => null,
-                        'error_code' => null,
-                    ]);
-            });
+        if (in_array($appInstance->provisioning_step, ['firewall-prepared', 'route-published'], strict: true)) {
+            $this->completePublication($appInstance->id, $route->id);
         }
 
         return $appInstance->refresh()->load('routes.targets');
+    }
+
+    private function completePublication(int $appInstanceId, int $routeId): void
+    {
+        $this->projectionOwner()->run(
+            fn () => $this->completePublicationOwned($appInstanceId, $routeId),
+        );
+    }
+
+    private function completePublicationOwned(int $appInstanceId, int $routeId): void
+    {
+        $appInstance = AppInstance::query()->with('node')->findOrFail($appInstanceId);
+        $route = Route::query()
+            ->with(['targets.appInstance.node', 'cluster.routerAssignment.node'])
+            ->whereKey($routeId)
+            ->whereHas('targets', static fn ($query) => $query->where('app_instance_id', $appInstanceId))
+            ->first();
+
+        if (! $route instanceof Route) {
+            throw $this->conflict(
+                'instance.lifecycle_conflict',
+                'The AppInstance Route changed before production projection began.',
+            );
+        }
+
+        if (! in_array($appInstance->provisioning_step, ['firewall-prepared', 'route-published'], strict: true)) {
+            throw $this->conflict(
+                'instance.lifecycle_conflict',
+                'The AppInstance lifecycle changed before production projection began.',
+            );
+        }
+
+        $this->projection->publish($appInstance, $route);
+
+        if ($appInstance->provisioning_step === 'firewall-prepared') {
+            $this->checkpoint($appInstance, 'route-published');
+        }
+
+        DB::transaction(static function () use ($appInstance, $route): void {
+            $lockedInstance = AppInstance::query()->lockForUpdate()->findOrFail($appInstance->id);
+            $lockedRoute = Route::query()->lockForUpdate()->findOrFail($route->id);
+            $lockedRoute->update([
+                'status' => RouteStatus::Active,
+                'failed_step' => null,
+                'error_code' => null,
+            ]);
+            $lockedInstance->update([
+                'status' => AppInstanceState::Active,
+                'provisioning_step' => 'active',
+                'failed_step' => null,
+                'error_code' => null,
+            ]);
+        });
+    }
+
+    private function projectionOwner(): DevelopmentProjectionOperationLock
+    {
+        return $this->projectionOwner ?? app(DevelopmentProjectionOperationLock::class);
     }
 
     /** @param array<string, mixed> $attributes */

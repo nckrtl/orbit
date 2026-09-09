@@ -3,6 +3,9 @@
 declare(strict_types=1);
 
 use App\Domain\Clusters\ClusterState;
+use App\Domain\AppDev\AppDevCaddyManager;
+use App\Domain\AppDev\DevelopmentProjectionOperationLock;
+use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\AppProd\AppProdRuntimeConverger;
 use App\Domain\Instances\CertificateMode;
 use App\Domain\Nodes\NodeRoleFirewallManager;
@@ -47,6 +50,7 @@ function definitions(): array
         'safety-root',
         'unresolved',
         'ownership',
+        'publication-retry',
         'retry',
         'retry-recovery',
         'retry-recovery-marker',
@@ -274,6 +278,41 @@ switch ($command) {
                 SQL);
         }
         writeJson(['source_checkpoint_fault' => $arguments[0]]);
+        break;
+
+    case 'publication-activation-fault':
+        if (count($arguments) !== 2 || ! in_array($arguments[0], ['on', 'off'], true)) {
+            exit(64);
+        }
+        DB::unprepared('DROP TRIGGER IF EXISTS orb197_publication_activation_fault');
+        if ($arguments[0] === 'on') {
+            $state = currentState($statePath);
+            $appId = appId($state, $arguments[1]);
+            DB::unprepared(<<<SQL
+                CREATE TRIGGER orb197_publication_activation_fault
+                BEFORE UPDATE OF status ON app_instances
+                WHEN NEW.app_id = {$appId} AND NEW.status = 'active' AND OLD.status <> 'active'
+                BEGIN
+                    SELECT RAISE(ABORT, 'orb197 publication activation fault');
+                END
+                SQL);
+        }
+        writeJson(['publication_activation_fault' => $arguments[0]]);
+        break;
+
+    case 'converge-private-projections':
+        if (count($arguments) !== 1) {
+            exit(64);
+        }
+        $state = currentState($statePath);
+        $node = Node::query()->findOrFail(nodeId($state, $arguments[0]));
+        $laravel->make(DevelopmentProjectionOperationLock::class)->run(
+            static function () use ($laravel, $node): void {
+                $laravel->make(AppDevCaddyManager::class)->converge($node);
+                $laravel->make(PrivateDnsManager::class)->converge();
+            },
+        );
+        writeJson(['private_projections' => 'converged', 'node_id' => $node->id]);
         break;
 
     case 'legacy-coexistence':

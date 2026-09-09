@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Actions\Routes\CreateRouteAction;
 use App\Data\AppInstances\CreateAppInstanceData;
 use App\Domain\AppDev\AppDevSourceOperationLock;
+use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\AppInstances\DevelopmentSourceProfile;
@@ -14,6 +15,7 @@ use App\Domain\AppInstances\ProductionRouteProjector;
 use App\Domain\Instances\CertificateMode;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\RouteStateResolver;
+use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppInstances\NativeProductionAppInstanceProvisioner;
@@ -96,6 +98,14 @@ beforeEach(function (): void {
 
         public ?string $fail = null;
 
+        public bool $publicationPresent = false;
+
+        public ?string $publishedHostname = null;
+
+        public ?string $publishedNodeAddress = null;
+
+        public ?RouteStatus $routeStatusAtPublication = null;
+
         public function prepareRuntime(AppInstance $appInstance, Route $route): void
         {
             $this->record('runtime');
@@ -114,6 +124,15 @@ beforeEach(function (): void {
         public function publish(AppInstance $appInstance, Route $route): void
         {
             $this->record('route');
+            $this->publicationPresent = true;
+            $this->publishedHostname = $route->hostname;
+            $this->publishedNodeAddress = $appInstance->node->wireguard_ip;
+            $this->routeStatusAtPublication = $route->status;
+        }
+
+        public function convergeAggregateWithoutPendingRoute(): void
+        {
+            $this->publicationPresent = false;
         }
 
         private function record(string $operation): void
@@ -129,19 +148,16 @@ beforeEach(function (): void {
             }
         }
     };
-    $lock = new class implements AppDevSourceOperationLock {
-        public function synchronized(int $nodeId, \Closure $operation): mixed
-        {
-            return $operation();
-        }
-    };
+    $this->sourceLock = new ProvisionProductionSourceLock;
+    $this->projectionOwner = new ProvisionProductionProjectionOwner;
     $this->provisioner = new NativeProductionAppInstanceProvisioner(
-        $lock,
+        $this->sourceLock,
         $this->source,
         app(CreateRouteAction::class),
         app(RouteStateResolver::class),
         new AppProdSiteRepository,
         $this->projection,
+        $this->projectionOwner,
     );
     $this->data = new CreateAppInstanceData(
         appId: $this->orbitApp->id,
@@ -151,6 +167,76 @@ beforeEach(function (): void {
         hostname: null,
         branch: null,
     );
+});
+
+it('publishes fresh facts and activates while holding the source-ordered projection owner', function (): void {
+    $activeBeforeOwnerRelease = false;
+    $this->projectionOwner->onEnter = function (): void {
+        expect($this->sourceLock->inside)->toBeTrue();
+
+        Route::query()->sole()->update(['hostname' => 'fresh-production.test']);
+        $this->node->update(['wireguard_ip' => '10.44.0.99']);
+    };
+    $this->projectionOwner->onLeave = static function () use (&$activeBeforeOwnerRelease): void {
+        $activeBeforeOwnerRelease =
+            AppInstance::query()->sole()->status === AppInstanceState::Active
+            && Route::query()->sole()->status === RouteStatus::Active;
+    };
+
+    $result = $this->provisioner->execute($this->data, $this->orbitApp, $this->node, null);
+
+    expect($this->projectionOwner->runs)
+        ->toBe(1)
+        ->and($this->projection->publishedHostname)
+        ->toBe('fresh-production.test')
+        ->and($this->projection->publishedNodeAddress)
+        ->toBe('10.44.0.99')
+        ->and($this->projection->routeStatusAtPublication)
+        ->toBe(RouteStatus::Pending)
+        ->and($activeBeforeOwnerRelease)
+        ->toBeTrue()
+        ->and($result['appInstance']->routes->sole()->hostname)
+        ->toBe('fresh-production.test');
+});
+
+it('republishes a route-published retry after an aggregate excludes the pending Route', function (): void {
+    $this->projection->fail = 'route';
+    expect(fn () => $this->provisioner->execute($this->data, $this->orbitApp, $this->node, null))
+        ->toThrow(RuntimeConvergenceException::class);
+
+    $appInstance = AppInstance::query()->sole();
+    $route = Route::query()->sole();
+    $appInstance->update([
+        'provisioning_step' => 'route-published',
+        'failed_step' => null,
+        'error_code' => null,
+    ]);
+    $route->update([
+        'status' => RouteStatus::Pending,
+        'failed_step' => null,
+        'error_code' => null,
+    ]);
+    $this->projection->publicationPresent = true;
+    $this->projection->convergeAggregateWithoutPendingRoute();
+    $this->projection->fail = null;
+    $publicationPresentBeforeOwnerRelease = false;
+    $this->projectionOwner->onLeave = function () use (&$publicationPresentBeforeOwnerRelease): void {
+        $publicationPresentBeforeOwnerRelease =
+            $this->projection->publicationPresent
+            && AppInstance::query()->sole()->status === AppInstanceState::Active
+            && Route::query()->sole()->status === RouteStatus::Active;
+    };
+
+    $result = $this->provisioner->execute($this->data, $this->orbitApp, $this->node, null);
+
+    expect($this->projection->calls)
+        ->toBe(['runtime', 'certificate', 'firewall', 'route', 'route'])
+        ->and($publicationPresentBeforeOwnerRelease)
+        ->toBeTrue()
+        ->and($result['appInstance']->status)
+        ->toBe(AppInstanceState::Active)
+        ->and($result['appInstance']->routes->sole()->status)
+        ->toBe(RouteStatus::Active);
 });
 
 it('refuses a live legacy public production footprint before reserving or mutating', function (
@@ -304,4 +390,41 @@ function orb197_legacy_production_instance(Node $node, LifecycleStatus $status):
         'certificate_mode' => CertificateMode::Acme,
         'status' => $status,
     ]);
+}
+
+final class ProvisionProductionSourceLock implements AppDevSourceOperationLock
+{
+    public bool $inside = false;
+
+    public function synchronized(int $nodeId, \Closure $operation): mixed
+    {
+        $this->inside = true;
+
+        try {
+            return $operation();
+        } finally {
+            $this->inside = false;
+        }
+    }
+}
+
+final class ProvisionProductionProjectionOwner implements DevelopmentProjectionOperationLock
+{
+    public int $runs = 0;
+
+    public ?\Closure $onEnter = null;
+
+    public ?\Closure $onLeave = null;
+
+    public function run(\Closure $operation): mixed
+    {
+        $this->runs++;
+        ($this->onEnter ?? static fn () => null)();
+
+        try {
+            return $operation();
+        } finally {
+            ($this->onLeave ?? static fn () => null)();
+        }
+    }
 }
