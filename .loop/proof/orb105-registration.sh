@@ -275,7 +275,10 @@ BASH
         retry=$(register_request "$source")
         test "$(json_field "$retry" app_instance.id)" = "$id"
         test "$(json_field "$retry" app_instance.route.id)" = "$route_id"
-        remote_command grep -Fx 'normal edit after registration' "$destination/README.md" >/dev/null
+        remote_script "$destination" <<'BASH'
+path=$1
+grep -Fx 'normal edit after registration' "$path/README.md" >/dev/null
+BASH
         remote_command git -C "$destination" remote set-url origin https://github.com/acme/replacement.git
         set +e
         conflict=$(register_request "$source" 2>&1)
