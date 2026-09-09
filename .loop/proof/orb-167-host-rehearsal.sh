@@ -215,7 +215,7 @@ capture_target() {
                     owner: .config["user.orbit.e2e.owner"],
                     issue: .config["user.orbit.e2e.issue"],
                     attempt: .config["user.orbit.e2e.attempt"],
-                    used_by: .used_by
+                    used_by: (.used_by | sort)
                 }
             ] | sort_by(.name)
         }' > "$destination"
