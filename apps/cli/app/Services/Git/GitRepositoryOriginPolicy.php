@@ -6,6 +6,7 @@ namespace App\Services\Git;
 
 use SensitiveParameter;
 
+/** @mago-expect lint:cyclomatic-complexity Each branch rejects one unsafe Git origin shape. */
 final class GitRepositoryOriginPolicy
 {
     public static function isSafe(#[SensitiveParameter] string $repository): bool
@@ -28,11 +29,18 @@ final class GitRepositoryOriginPolicy
             return false;
         }
 
-        $scheme = $parts['scheme'] ?? null;
-        $host = $parts['host'] ?? '';
-        $path = $parts['path'] ?? '';
+        $scheme = is_string($parts['scheme'] ?? null) ? $parts['scheme'] : null;
+        $host = is_string($parts['host'] ?? null) ? $parts['host'] : null;
+        $path = is_string($parts['path'] ?? null) ? $parts['path'] : null;
 
-        if ($host === '' || $path === '') {
+        if (
+            $host === null
+            || $host === ''
+            || $path === null
+            || $path === ''
+            || array_key_exists('query', $parts)
+            || array_key_exists('fragment', $parts)
+        ) {
             return false;
         }
 
