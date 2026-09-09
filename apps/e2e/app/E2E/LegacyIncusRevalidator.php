@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\E2E;
 
+use App\E2E\Value\PreservedIncusReference;
 use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Process\Pool;
 use Illuminate\Support\Facades\Process;
@@ -43,13 +44,10 @@ final readonly class LegacyIncusRevalidator
         $seen = [];
         foreach ($groups as $kind => $resources) {
             foreach ($resources as $expected) {
-                $remote = $expected['remote'] ?? null;
-                $project = $expected['project'] ?? null;
-                $identity = $expected['identity'] ?? $expected['name'] ?? null;
-                if (! is_string($kind) || ! is_string($remote) || ! is_string($project) || ! is_string($identity)) {
-                    throw new RuntimeException('The reviewed Incus resource has no exact scope or identity.');
+                if (! is_string($kind)) {
+                    throw new RuntimeException('The reviewed Incus resource has no exact kind.');
                 }
-                $key = $kind."\0".$remote."\0".$project."\0".$identity;
+                $key = $this->referenceKey($kind, $expected);
                 if (isset($seen[$key])) {
                     throw new RuntimeException('The reviewed Incus batch contains a duplicate resource.');
                 }
@@ -68,15 +66,19 @@ final readonly class LegacyIncusRevalidator
             }
         }
 
-        $results = Process::pool(function (Pool $pool) use ($commands): void {
-            foreach ($commands as $label => $command) {
-                if (! array_is_list($command) || array_filter($command, is_string(...)) !== $command) {
-                    throw new RuntimeException('The live Incus resource command is invalid.');
+        try {
+            $results = Process::pool(function (Pool $pool) use ($commands): void {
+                foreach ($commands as $label => $command) {
+                    if (! array_is_list($command) || array_filter($command, is_string(...)) !== $command) {
+                        throw new RuntimeException('The live Incus resource command is invalid.');
+                    }
+                    /** @var list<string> $command */
+                    $pool->as($label)->timeout(300)->command($command);
                 }
-                /** @var list<string> $command */
-                $pool->as($label)->timeout(300)->command($command);
-            }
-        })->run();
+            })->run();
+        } catch (\Throwable $exception) {
+            throw new RuntimeException('The live Incus resource read could not run.', 0, $exception);
+        }
         $resultLabels = [];
         foreach ($results as $label => $_result) {
             if (! is_string($label) || ! $this->isBatchLabel($label) || ! array_key_exists($label, $references)) {
@@ -95,13 +97,11 @@ final readonly class LegacyIncusRevalidator
             if (! $result instanceof ProcessResult) {
                 throw new RuntimeException('Incus parallel query result is invalid.');
             }
-            if ($result->failed() && $this->isExactMissingEnvelope($result->output())) {
+            $live = $this->classifyResult($result);
+            if ($live === null) {
                 continue;
             }
-            if ($result->failed()) {
-                throw new RuntimeException('The live Incus resource read failed.');
-            }
-            $resource = $this->parseCurrent($kind, $expected, $result, $operation);
+            $resource = $this->parseCurrent($kind, $expected, $live, $operation);
             $current[$kind][] = $resource;
         }
 
@@ -124,53 +124,40 @@ final readonly class LegacyIncusRevalidator
             throw new RuntimeException('The live Incus resource command is invalid.');
         }
         /** @var list<string> $command */
-        $result = $this->run($command, true);
-        if ($result === null) {
+        $result = $this->run($command);
+        $live = $this->classifyResult($result);
+        if ($live === null) {
             return null;
         }
 
-        return $this->parseCurrent($kind, $expected, $result, $operation);
+        return $this->parseCurrent($kind, $expected, $live, $operation);
     }
 
     /** @param array<string, mixed> $expected @return list<string> */
     private function queryCommand(string $kind, array $expected): array
     {
-        $remote = $expected['remote'] ?? null;
-        $project = $expected['project'] ?? null;
-        $identity = $expected['identity'] ?? $expected['name'] ?? null;
-        if (! is_string($remote) || ! is_string($project) || ! is_string($identity)) {
-            throw new RuntimeException('The reviewed Incus resource has no exact scope or identity.');
-        }
-        $path = match ($kind) {
-            'instances' => '/1.0/instances/'.$this->exactName($identity, 'instance'),
-            'networks' => '/1.0/networks/'.$this->exactName($identity, 'network'),
-            'snapshots' => $this->snapshotPath($identity),
-            'pools' => '/1.0/storage-pools/'.$this->exactName((string) ($expected['identity'] ?? $identity), 'pool'),
-            'base_images' => '/1.0/images/'.$this->exactName((string) ($expected['fingerprint'] ?? $identity), 'image'),
-            'new_namespace' => '/1.0/projects/'
-                .$this->exactName((string) ($expected['identity'] ?? $identity), 'project'),
-            default => throw new RuntimeException('The live Incus resource kind is invalid.'),
-        };
+        [$remote, $project, $identity] = $this->scopedIdentity($kind, $expected);
+        assert(is_string($remote) && is_string($project) && is_string($identity));
+        $path = PreservedIncusReference::supports($kind)
+            ? PreservedIncusReference::fromResource($kind, $expected)->queryPath()
+            : match ($kind) {
+                'instances' => '/1.0/instances/'.$this->exactName($identity, 'instance'),
+                'networks' => '/1.0/networks/'.$this->exactName($identity, 'network'),
+                'snapshots' => $this->snapshotPath($identity),
+                'new_namespace' => '/1.0/projects/'
+                    .$this->exactName((string) ($expected['identity'] ?? $identity), 'project'),
+                default => throw new RuntimeException('The live Incus resource kind is invalid.'),
+            };
 
-        return ['incus', 'query', "{$remote}:{$path}?project={$project}"];
+        return ['incus', 'query', '--raw', "{$remote}:{$path}?project={$project}"];
     }
 
-    /** @param array<string, mixed> $expected */
-    private function parseCurrent(string $kind, array $expected, ProcessResult $result, ?string $operation): array
+    /** @param array<string, mixed> $expected @param array<string, mixed> $live */
+    private function parseCurrent(string $kind, array $expected, array $live, ?string $operation): array
     {
         $identity = $expected['identity'] ?? $expected['name'] ?? null;
         if (! is_string($identity)) {
             throw new RuntimeException('The reviewed Incus resource has no exact identity.');
-        }
-        try {
-            $live = json_decode($result->output(), true, 512, JSON_THROW_ON_ERROR);
-        } catch (JsonException $exception) {
-            throw new RuntimeException('Incus returned malformed live resource JSON.', 0, $exception);
-        }
-        $live = $this->liveObject($live);
-        if (($live['type'] ?? null) === 'sync') {
-            $metadata = $live['metadata'] ?? null;
-            $live = $this->liveObject($metadata);
         }
 
         $this->assertExact($kind, $identity, $expected, $live, $operation);
@@ -183,40 +170,41 @@ final readonly class LegacyIncusRevalidator
     }
 
     /** @param list<string> $command */
-    private function run(array $command, bool $allowMissing = false): ?ProcessResult
+    private function run(array $command): ProcessResult
     {
         try {
             $result = Process::timeout(300)->run($command);
         } catch (\Throwable $exception) {
             throw new RuntimeException('The live Incus resource read could not run.', 0, $exception);
         }
-        if ($result->failed()) {
-            if ($allowMissing && $this->isExactMissingEnvelope($result->output())) {
-                return null;
-            }
-            throw new RuntimeException('The live Incus resource read failed.');
-        }
-
-        if ($allowMissing && $this->isExactMissingEnvelope($result->output())) {
-            return null;
-        }
 
         return $result;
     }
 
-    private function isExactMissingEnvelope(string $output): bool
+    /** @return array<string, mixed>|null */
+    private function classifyResult(ProcessResult $result): ?array
     {
+        if ($result->failed()) {
+            throw new RuntimeException('The live Incus resource read failed.');
+        }
         try {
-            $value = json_decode($output, true, 512, JSON_THROW_ON_ERROR);
-        } catch (JsonException) {
-            return false;
+            $value = json_decode($result->output(), true, 512, JSON_THROW_ON_ERROR);
+        } catch (JsonException $exception) {
+            throw new RuntimeException('Incus returned malformed live resource JSON.', 0, $exception);
         }
-        if (! is_array($value) || ($value['type'] ?? null) !== 'error') {
-            return false;
-        }
-        $statusCode = $value['status_code'] ?? $value['metadata']['status_code'] ?? null;
+        $envelope = $this->liveObject($value);
+        if (($envelope['type'] ?? null) === 'error') {
+            if (($envelope['error_code'] ?? null) === 404) {
+                return null;
+            }
 
-        return $statusCode === 404;
+            throw new RuntimeException('The live Incus resource read failed.');
+        }
+        if (($envelope['type'] ?? null) !== 'sync') {
+            throw new RuntimeException('Incus returned an invalid live resource envelope.');
+        }
+
+        return $this->liveObject($envelope['metadata'] ?? null);
     }
 
     /** @return array<string, mixed> */
@@ -235,9 +223,16 @@ final readonly class LegacyIncusRevalidator
         return $value;
     }
 
-    /** @param array<string, mixed> $expected @param array<array-key, mixed> $live */
+    /** @param array<string, mixed> $expected @param array<string, mixed> $live */
     private function assertExact(string $kind, string $identity, array $expected, array $live, ?string $operation): void
     {
+        if (PreservedIncusReference::supports($kind)) {
+            if (! PreservedIncusReference::fromResource($kind, $expected)->matchesLive($live)) {
+                throw new RuntimeException('The live Incus resource identity changed.');
+            }
+
+            return;
+        }
         if (! in_array($kind, ['snapshots', 'pools', 'base_images', 'new_namespace'], true)) {
             $liveType = $live['type'] ?? $live['kind'] ?? null;
             $validTypes = match ($kind) {
@@ -357,13 +352,11 @@ final readonly class LegacyIncusRevalidator
 
             return;
         }
-        $liveIdentity = $kind === 'base_images'
-            ? $live['fingerprint'] ?? $live['name'] ?? null
-            : $live['name'] ?? $live['id'] ?? null;
+        $liveIdentity = $live['name'] ?? $live['id'] ?? null;
         if ($kind === 'new_namespace') {
             $liveIdentity = $live['name'] ?? $live['id'] ?? null;
         }
-        if ($liveIdentity !== ($kind === 'base_images' ? $identity : $identity)) {
+        if ($liveIdentity !== $identity) {
             throw new RuntimeException('The live Incus resource identity changed.');
         }
     }
@@ -418,19 +411,44 @@ final readonly class LegacyIncusRevalidator
     /** @param array<string, mixed> $expected */
     private function batchLabel(string $kind, array $expected): string
     {
-        $remote = $expected['remote'] ?? null;
-        $project = $expected['project'] ?? null;
-        $identity = $expected['identity'] ?? $expected['name'] ?? null;
-        if (! is_string($remote) || ! is_string($project) || ! is_string($identity)) {
-            throw new RuntimeException('The reviewed Incus resource has no exact scope or identity.');
-        }
-
-        $label = 'incus-'.hash('sha256', $kind."\0".$remote."\0".$project."\0".$identity);
+        $label = 'incus-'.hash('sha256', $this->referenceKey($kind, $expected));
         if (! $this->isBatchLabel($label)) {
             throw new RuntimeException('Incus parallel query label is invalid.');
         }
 
         return $label;
+    }
+
+    /** @param array<string, mixed> $expected */
+    private function referenceKey(string $kind, array $expected): string
+    {
+        if (PreservedIncusReference::supports($kind)) {
+            return PreservedIncusReference::fromResource($kind, $expected)->key();
+        }
+
+        [$remote, $project, $identity] = $this->scopedIdentity($kind, $expected);
+        assert(is_string($remote) && is_string($project) && is_string($identity));
+
+        return $kind."\0".$remote."\0".$project."\0".$identity;
+    }
+
+    /** @param array<string, mixed> $expected @return array{string, string, string} */
+    private function scopedIdentity(string $kind, array $expected): array
+    {
+        $remote = $expected['remote'] ?? null;
+        $project = $expected['project'] ?? null;
+        $identity = $expected['identity'] ?? $expected['name'] ?? null;
+        if (
+            ! is_string($remote)
+            || ! is_string($project)
+            || ! is_string($identity)
+            || preg_match('/\A[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}\z/D', $remote) !== 1
+            || preg_match('/\A[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}\z/D', $project) !== 1
+        ) {
+            throw new RuntimeException('The reviewed Incus resource has no exact scope or identity.');
+        }
+
+        return [$remote, $project, $identity];
     }
 
     private function isBatchLabel(mixed $label): bool
