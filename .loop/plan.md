@@ -85,4 +85,7 @@ Verification: `composer docs-build` passed; `composer docs-lint` passed with 0 i
 - `composer docs-build`: passed with no tracked generated-context change.
 - `composer docs-lint`: passed with 0 issues.
 - `cd apps/gateway && composer check`: passed; 2,660 tests and 15,011 assertions, with Rector and Mago passing.
+- Discovery topology `ac336b45b698e43e3bd659b246284de7`: `route-target-invariant-setup` passed; `route-target-invariant-refusals` passed; post-cleanup topology verification passed, including the original one active AppInstance and one Route association.
+- Discovery proof behavior: replacement, clear, Route removal, and cross-Route ownership returned exact `route.target_conflict` errors; exact set and empty clear returned unchanged success; database and API snapshots stayed unchanged before coordinated cleanup; cleanup removed every fixture record.
+- `.loop/proof/ORB-187.json` uses `observed_inputs: false` because this broad static API scenario does not exercise the required `app-dev:cli`, `gateway:cli`, and `gateway:fpm` PHP observation surfaces in both phases.
 - Root `bin/test` and immutable Incus proof remain assigned to the serialized final proof window.

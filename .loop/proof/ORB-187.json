@@ -1,0 +1,26 @@
+{
+    "setup": [
+        {
+            "id": "route-target-invariant-setup",
+            "node": "gateway",
+            "argv": [
+                "/var/lib/orbit-e2e/proof/route-target-invariants.sh",
+                "setup"
+            ],
+            "timeout_seconds": 300
+        }
+    ],
+    "acceptance": [
+        {
+            "id": "route-target-invariant-refusals",
+            "node": "gateway",
+            "argv": [
+                "/var/lib/orbit-e2e/proof/route-target-invariants.sh",
+                "acceptance"
+            ],
+            "timeout_seconds": 300
+        }
+    ],
+    "mutates": true,
+    "observed_inputs": false
+}
