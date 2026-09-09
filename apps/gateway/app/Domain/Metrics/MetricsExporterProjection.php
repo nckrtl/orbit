@@ -10,4 +10,6 @@ interface MetricsExporterProjection
 {
     /** @return list<MetricsExporterProjectionItem> */
     public function for(Node $metricsNode): array;
+
+    public function forNode(Node $metricsNode, Node $node): ?MetricsExporterProjectionItem;
 }

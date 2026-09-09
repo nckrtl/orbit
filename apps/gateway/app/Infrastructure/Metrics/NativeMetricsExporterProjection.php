@@ -29,27 +29,52 @@ final readonly class NativeMetricsExporterProjection implements MetricsExporterP
             ->where('status', LifecycleStatus::Active->value)
             ->orderBy('id')
             ->get() as $node) {
-            $roles = array_values(
-                $node
-                    ->roles
-                    ->filter(static fn (NodeRole $role): bool => in_array(
-                        $role->status,
-                        [LifecycleStatus::Provisioning, LifecycleStatus::Active],
-                        strict: true,
-                    ))
-                    ->map(static fn (NodeRole $role): RoleName => $role->role)
-                    ->all(),
-            );
-            $items[] = new MetricsExporterProjectionItem(
-                $node,
-                $this->selector->select(
-                    $roles,
-                    $this->preferences->get($node->id),
-                    $node->is($metricsNode),
-                ),
-            );
+            $items[] = $this->item($metricsNode, $node);
         }
 
         return $items;
+    }
+
+    public function forNode(Node $metricsNode, Node $node): ?MetricsExporterProjectionItem
+    {
+        if (! $node->exists) {
+            return null;
+        }
+
+        $projectedNode = Node::query()
+            ->with('roles')
+            ->whereKey($node->getKey())
+            ->where('status', LifecycleStatus::Active->value)
+            ->first();
+
+        if (! $projectedNode instanceof Node) {
+            return null;
+        }
+
+        return $this->item($metricsNode, $projectedNode);
+    }
+
+    private function item(Node $metricsNode, Node $node): MetricsExporterProjectionItem
+    {
+        $roles = array_values(
+            $node
+                ->roles
+                ->filter(static fn (NodeRole $role): bool => in_array(
+                    $role->status,
+                    [LifecycleStatus::Provisioning, LifecycleStatus::Active],
+                    strict: true,
+                ))
+                ->map(static fn (NodeRole $role): RoleName => $role->role)
+                ->all(),
+        );
+
+        return new MetricsExporterProjectionItem(
+            $node,
+            $this->selector->select(
+                $roles,
+                $this->preferences->get($node->id),
+                $node->is($metricsNode),
+            ),
+        );
     }
 }
