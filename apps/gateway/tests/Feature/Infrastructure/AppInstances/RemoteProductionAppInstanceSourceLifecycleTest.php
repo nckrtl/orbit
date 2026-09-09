@@ -45,9 +45,21 @@ it('prepares the recorded user and home and resolves only the App default branch
             '0',
         ])
         ->and($ssh->commands[1]->input)
-        ->toContain('git clone --no-checkout --origin origin')
+        ->toContain(
+            'set -o pipefail',
+            'unexpected_user=$(sudo find -P "$home" -xdev ! -user "$user" -print -quit)',
+            'unexpected_group=$(sudo find -P "$home" -xdev ! -group "$user" -print -quit)',
+            'if sudo -u "$user" -H test -e "$home/.git"',
+            'config --null --get remote.origin.url | base64 --wrap=0',
+            'expected=$(printf \'%s\\0\' "$repository" | base64 --wrap=0)',
+            'unexpected_entry=$(sudo find -P "$home" -mindepth 1 -maxdepth 1 -print -quit)',
+            'git clone --no-checkout --origin origin',
+        )
         ->not
-        ->toContain('rm -rf')
+        ->toContain(
+            'test -z "$(find',
+            'rm -rf',
+        )
         ->and($ssh->commands[2]->arguments)
         ->toBe(['bash', '-seu', '--', 'orbit-app-1', '/home/orbit-app-1', 'main'])
         ->and($resolution->branch)
@@ -57,7 +69,8 @@ it('prepares the recorded user and home and resolves only the App default branch
         ->and($ssh->commands[3]->input)
         ->toContain(
             'resolved=$(sudo -u "$user" -H realpath',
-            'sudo -u "$user" -H find -P "$home"',
+            'unexpected_user=$(sudo -u "$user" -H find -P "$home"',
+            'unexpected_group=$(sudo -u "$user" -H find -P "$home"',
             'sudo -u "$user" -H test -e "$composer"',
             'sudo -u "$user" -H test -f "$artisan"',
             'sudo -u "$user" -H base64',
@@ -67,7 +80,9 @@ it('prepares the recorded user and home and resolves only the App default branch
         ->and($ssh->commands[4]->input)
         ->toContain(
             'sudo -u "$user" -H realpath -m -- "$document_root"',
-            'sudo find -P "$document_root_real" -type l',
+            'unexpected_symlink=$(sudo find -P "$document_root_real" -type l',
+            'unexpected_user=$(sudo find -P "$home" -xdev ! -user "$user"',
+            'unexpected_group=$(sudo find -P "$home" -xdev ! -group "$user"',
             'sudo setfacl -m u:caddy:--x /home "$home"',
             'sudo setfacl -P -R -m u:caddy:r-X "$document_root_real"',
         )
@@ -121,6 +136,40 @@ it('permits an unresolved root and revalidates complete ownership immediately be
         ->toBeLessThan($firstAclMutation)
         ->and($firstAclMutation)
         ->toBeInt();
+});
+
+it('propagates every source safety enumeration failure before treating its output as clean', function (): void {
+    [$source, $ssh, $instance] = production_source_lifecycle([
+        new CommandResult(0, '', '', 1, false),
+        new CommandResult(0, "NONE\n", '', 1, false),
+        new CommandResult(0, '', '', 1, false),
+    ]);
+
+    $source->prepareSource($instance, true);
+    $source->inspectProfile($instance);
+    $source->prepareCaddyAccess($instance);
+
+    foreach ($ssh->commands as $command) {
+        expect($command->input)->not->toContain('test -z "$(sudo find', 'test -z "$(sudo -u');
+    }
+
+    expect($ssh->commands[0]->input)
+        ->toContain(
+            'unexpected_user=$(sudo find',
+            'unexpected_group=$(sudo find',
+            'unexpected_entry=$(sudo find',
+        )
+        ->and($ssh->commands[1]->input)
+        ->toContain(
+            'unexpected_user=$(sudo -u "$user" -H find',
+            'unexpected_group=$(sudo -u "$user" -H find',
+        )
+        ->and($ssh->commands[2]->input)
+        ->toContain(
+            'unexpected_symlink=$(sudo find',
+            'unexpected_user=$(sudo find',
+            'unexpected_group=$(sudo find',
+        );
 });
 
 /**

@@ -80,30 +80,34 @@ final readonly class RemoteProductionAppInstanceSourceLifecycle implements Produ
                     $allowExisting ? '1' : '0',
                 ],
                 input: <<<'BASH'
+                    set -o pipefail
                     repository=$1
                     user=$2
                     home=$3
                     allow_existing=$4
                     test "$home" = "/home/$user"
-                    test -d "$home"
-                    test ! -L "$home"
-                    test "$(stat -c %U -- "$home")" = "$user"
-                    test "$(stat -c %G -- "$home")" = "$user"
-                    test -z "$(find -P "$home" -xdev ! -user "$user" -print -quit)"
-                    test -z "$(find -P "$home" -xdev ! -group "$user" -print -quit)"
+                    sudo test -d "$home"
+                    sudo test ! -L "$home"
+                    test "$(sudo stat -c %U -- "$home")" = "$user"
+                    test "$(sudo stat -c %G -- "$home")" = "$user"
+                    unexpected_user=$(sudo find -P "$home" -xdev ! -user "$user" -print -quit)
+                    test -z "$unexpected_user"
+                    unexpected_group=$(sudo find -P "$home" -xdev ! -group "$user" -print -quit)
+                    test -z "$unexpected_group"
 
-                    if [ -e "$home/.git" ] || [ -L "$home/.git" ]; then
+                    if sudo -u "$user" -H test -e "$home/.git" || sudo -u "$user" -H test -L "$home/.git"; then
                         test "$allow_existing" = 1
-                        test -d "$home/.git"
-                        test ! -L "$home/.git"
+                        sudo -u "$user" -H test -d "$home/.git"
+                        sudo -u "$user" -H test ! -L "$home/.git"
                         test "$(sudo -u "$user" -H git -C "$home" rev-parse --is-inside-work-tree)" = true
-                        actual=$(sudo -u "$user" -H git -C "$home" config --get remote.origin.url | base64 --wrap=0)
-                        expected=$(printf '%s' "$repository" | base64 --wrap=0)
+                        actual=$(sudo -u "$user" -H git -C "$home" config --null --get remote.origin.url | base64 --wrap=0)
+                        expected=$(printf '%s\0' "$repository" | base64 --wrap=0)
                         test "$actual" = "$expected"
                         exit 0
                     fi
 
-                    test -z "$(find -P "$home" -mindepth 1 -maxdepth 1 -print -quit)"
+                    unexpected_entry=$(sudo find -P "$home" -mindepth 1 -maxdepth 1 -print -quit)
+                    test -z "$unexpected_entry"
                     sudo -u "$user" -H git clone --no-checkout --origin origin -- "$repository" "$home"
                     BASH,
             ),
@@ -178,8 +182,10 @@ final readonly class RemoteProductionAppInstanceSourceLifecycle implements Produ
                         "$home"/*) ;;
                         *) printf 'UNSAFE\n'; exit 0 ;;
                     esac
-                    test -z "$(sudo -u "$user" -H find -P "$home" -xdev ! -user "$user" -print -quit)" || { printf 'UNSAFE\n'; exit 0; }
-                    test -z "$(sudo -u "$user" -H find -P "$home" -xdev ! -group "$user" -print -quit)" || { printf 'UNSAFE\n'; exit 0; }
+                    unexpected_user=$(sudo -u "$user" -H find -P "$home" -xdev ! -user "$user" -print -quit)
+                    test -z "$unexpected_user" || { printf 'UNSAFE\n'; exit 0; }
+                    unexpected_group=$(sudo -u "$user" -H find -P "$home" -xdev ! -group "$user" -print -quit)
+                    test -z "$unexpected_group" || { printf 'UNSAFE\n'; exit 0; }
                     if sudo -u "$user" -H test -e "$resolved" || sudo -u "$user" -H test -L "$resolved"; then
                         test "$(sudo -u "$user" -H stat -c %U -- "$resolved")" = "$user" || { printf 'UNSAFE\n'; exit 0; }
                         test "$(sudo -u "$user" -H stat -c %G -- "$resolved")" = "$user" || { printf 'UNSAFE\n'; exit 0; }
@@ -245,11 +251,14 @@ final readonly class RemoteProductionAppInstanceSourceLifecycle implements Produ
                         sudo -u "$user" -H test -d "$document_root"
                         sudo -u "$user" -H test ! -L "$document_root"
                         test "$(sudo -u "$user" -H realpath -e -- "$document_root")" = "$document_root_real"
-                        test -z "$(sudo find -P "$document_root_real" -type l -print -quit)"
+                        unexpected_symlink=$(sudo find -P "$document_root_real" -type l -print -quit)
+                        test -z "$unexpected_symlink"
                         document_root_exists=1
                     fi
-                    test -z "$(sudo find -P "$home" -xdev ! -user "$user" -print -quit)"
-                    test -z "$(sudo find -P "$home" -xdev ! -group "$user" -print -quit)"
+                    unexpected_user=$(sudo find -P "$home" -xdev ! -user "$user" -print -quit)
+                    test -z "$unexpected_user"
+                    unexpected_group=$(sudo find -P "$home" -xdev ! -group "$user" -print -quit)
+                    test -z "$unexpected_group"
                     sudo setfacl -P -R -m u:caddy:--- "$home"
                     sudo find -P "$home" -type d -exec setfacl -m d:u:caddy:--- -- {} +
                     sudo setfacl -m u:caddy:--x /home "$home"

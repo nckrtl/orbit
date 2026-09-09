@@ -121,7 +121,7 @@ case "$scenario" in
         [[ $# -eq 2 && "$2" =~ ^app-prod(-2)?$ && "$(id -u)" -eq 1000 ]]
         base=/var/www/orb197
         sudo install -d -o orbit -g orbit -m 0755 "$base"
-        for name in create initial missing generated nonphp cluster laravel safety-home safety-existing safety-root unresolved ownership retry active remove; do
+        for name in create initial missing generated nonphp cluster laravel safety-home safety-existing safety-root unresolved ownership retry retry-recovery active remove remove-inactive; do
             work=$(mktemp -d)
             trap 'rm -rf -- "$work"' EXIT
             git -C "$work" init --initial-branch=main --quiet
@@ -138,9 +138,9 @@ case "$scenario" in
                     chmod +x "$work/artisan"
                     printf '<?php echo "orb197-laravel";\n' > "$work/public/index.php"
                     ;;
-                retry)
+                retry|retry-recovery)
                     printf '{"require":{"php":"<8.4"}}\n' > "$work/composer.json"
-                    printf '<?php echo "orb197-retry";\n' > "$work/public/index.php"
+                    printf '<?php echo "orb197-%s";\n' "$name" > "$work/public/index.php"
                     ;;
                 safety-root)
                     printf '{"require":{"php":"^8.4"}}\n' > "$work/composer.json"
@@ -406,23 +406,46 @@ REMOTE
 
     standalone-retry)
         [[ $# -eq 1 && "$(id -u)" -eq 1000 ]]
-        app_id=$(fixture_app_id orb197-retry)
+        app_id=$(fixture_app_id orb197-retry-recovery)
         node_id=$(fixture_node_field app-prod-2 id)
-        expect_error app-prod.php_version_unsupported orbit instance:new "$app_id" "$node_id" default --hostname=orb197-retry.test
-        instance=$(inspect_single orb197-retry)
-        [[ "$(json_field provisioning_step <<<"$instance")" == source-resolved ]]
-        [[ "$(json_field error_code <<<"$instance")" == app-prod.php_version_unsupported ]]
+        gateway_fixture source-checkpoint-fault on orb197-retry-recovery >/dev/null
+        trap 'gateway_fixture source-checkpoint-fault off orb197-retry-recovery >/dev/null' EXIT
+        expect_error gateway.unhandled orbit instance:new "$app_id" "$node_id" default --hostname=orb197-retry-recovery.test
+        gateway_fixture source-checkpoint-fault off orb197-retry-recovery >/dev/null
+        trap - EXIT
+        instance=$(inspect_single orb197-retry-recovery)
+        [[ "$(json_field provisioning_step <<<"$instance")" == user-prepared ]]
+        [[ "$(json_field error_code <<<"$instance")" == instance.provisioning_failed ]]
+        instance_id=$(json_field id <<<"$instance")
         user=orbit-app-$app_id
-        remote_script app-prod-2 "$user" <<'REMOTE'
+        source_identity=$(remote_script app-prod-2 "$user" <<'REMOTE'
 user=$1
 home=/home/$user
+sudo -u "$user" -H test -d "$home/.git"
+test "$(sudo -u "$user" -H git -C "$home" config --get remote.origin.url)" = https://localhost/orb197/retry-recovery.git
+printf '%s\n' retained-after-clone | sudo -u "$user" -H tee "$home/operator-marker" >/dev/null
+sudo stat -c %d:%i -- "$home/.git"
+REMOTE
+)
+        expect_error app-prod.php_version_unsupported orbit instance:new "$app_id" "$node_id" default --hostname=orb197-retry-recovery.test
+        instance=$(inspect_single orb197-retry-recovery)
+        [[ "$(json_field provisioning_step <<<"$instance")" == source-resolved ]]
+        [[ "$(json_field error_code <<<"$instance")" == app-prod.php_version_unsupported ]]
+        [[ "$(json_field id <<<"$instance")" == "$instance_id" ]]
+        remote_script app-prod-2 "$user" "$source_identity" <<'REMOTE'
+user=$1
+expected_identity=$2
+home=/home/$user
+test "$(sudo stat -c %d:%i -- "$home/.git")" = "$expected_identity"
+test "$(sudo -u "$user" -H cat "$home/operator-marker")" = retained-after-clone
 sudo -u "$user" -H mv "$home/.git" "$home/.git.operator"
 printf '%s\n' '{"require":{"php":"^8.4"}}' | sudo -u "$user" -H tee "$home/composer.json" >/dev/null
 REMOTE
-        output=$(orbit instance:new "$app_id" "$node_id" default --hostname=orb197-retry.test --json)
-        assert_instance "$output" "$app_id" "$node_id" default orb197-retry.test main null null
-        [[ "$(inspect_single orb197-retry | json_field provisioning_step)" == active ]]
-        printf 'durable production checkpoint retry passed after Git became unavailable\n'
+        output=$(orbit instance:new "$app_id" "$node_id" default --hostname=orb197-retry-recovery.test --json)
+        assert_instance "$output" "$app_id" "$node_id" default orb197-retry-recovery.test main null null
+        [[ "$(json_field id <<<"$output")" == "$instance_id" ]]
+        [[ "$(inspect_single orb197-retry-recovery | json_field provisioning_step)" == active ]]
+        printf 'retained clone and durable production checkpoint retries reused one source and AppInstance\n'
         ;;
 
     creation-after-deployment)
@@ -471,10 +494,15 @@ REMOTE
 
     create-and-remove)
         [[ $# -eq 1 && "$(id -u)" -eq 1000 ]]
-        app_id=$(fixture_app_id orb197-remove)
+        app_id=$(fixture_app_id orb197-remove-inactive)
         node_id=$(fixture_node_field app-prod-2 id)
-        created=$(orbit instance:new "$app_id" "$node_id" default --hostname=orb197-remove.test --json)
-        assert_instance "$created" "$app_id" "$node_id" default orb197-remove.test main null null
+        membership=$(gateway_fixture inactive-membership on)
+        [[ "$(json_field node_id <<<"$membership")" == "$node_id" ]]
+        [[ "$(json_field node_cluster_id <<<"$membership")" != null ]]
+        [[ "$(json_field cluster_state <<<"$membership")" == inactive ]]
+        trap 'gateway_fixture inactive-membership off >/dev/null' EXIT
+        created=$(orbit instance:new "$app_id" "$node_id" default --hostname=orb197-remove-inactive.test --json)
+        assert_instance "$created" "$app_id" "$node_id" default orb197-remove-inactive.test main null null
         instance_id=$(json_field id <<<"$created")
         user=orbit-app-$app_id
         removed=$(orbit instance:remove "$instance_id" --json)
@@ -482,7 +510,9 @@ REMOTE
             $value=json_decode($argv[1],true,64,JSON_THROW_ON_ERROR);
             if(($value["id"] ?? null)!==(int)$argv[2] || ($value["status"] ?? null)!=="completed" || ($value["completed"] ?? null)!==($value["total"] ?? null) || ($value["remaining"] ?? null)!==0 || ($value["failed_step"] ?? null)!==null || ($value["error_code"] ?? null)!==null || !is_string($value["request_id"] ?? null) || $value["request_id"]==="") exit(65);
         ' "$removed" "$instance_id"
-        gateway_fixture assert-removed orb197-remove >/dev/null
+        gateway_fixture assert-removed orb197-remove-inactive >/dev/null
+        gateway_fixture inactive-membership off >/dev/null
+        trap - EXIT
         remote_script app-prod-2 "$user" <<'REMOTE'
 user=$1
 home=/home/$user
@@ -490,9 +520,9 @@ getent passwd "$user" >/dev/null
 test -d "$home"
 sudo -u "$user" -H test -d "$home/.git"
 test "$(stat -c %U:%G "$home")" = "$user:$user"
-test "$(sudo -u "$user" -H git -C "$home" remote get-url origin)" = https://localhost/orb197/remove.git
+test "$(sudo -u "$user" -H git -C "$home" remote get-url origin)" = https://localhost/orb197/remove-inactive.git
 REMOTE
-        printf 'production removal retained user, home, and initial source while deleting Route state\n'
+        printf 'inactive-membership Node-scoped production removal retained user, home, and initial source\n'
         ;;
 
     *)

@@ -23,6 +23,7 @@ use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
+use App\Domain\Routes\RouteStateResolver;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -50,6 +51,7 @@ final readonly class RemoveAppInstanceAction
         private ManagedCheckoutOverlap $checkoutOverlap,
         private AppDevSourceOperationLock $sourceLock,
         private ProductionAppInstanceContentRetention $productionContent,
+        private RouteStateResolver $routeState,
     ) {}
 
     public function execute(AppInstance $appInstance, bool $force): AppInstanceRemoval
@@ -523,6 +525,7 @@ final readonly class RemoveAppInstanceAction
 
         if ($route->cluster_id === null) {
             $node = $requested->node;
+            $placement = $this->routeState->forNode($node);
 
             return (
                 $route->node_id === $requested->node_id
@@ -532,7 +535,8 @@ final readonly class RemoveAppInstanceAction
                 && $requested->environment === 'production'
                 && $requested->status === AppInstanceState::Active
                 && $node->status === LifecycleStatus::Active
-                && $node->cluster_id === null
+                && $placement->nodeId === $node->id
+                && $placement->clusterId === null
                 && $node->roles->contains(
                     static fn ($role): bool => (
                         $role->role === RoleName::AppProd

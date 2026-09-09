@@ -50,10 +50,10 @@ Reported: none.
 | Stable placement and cardinality | Stored production user/home and production uniqueness | Gateway API tests |
 | Relative root | Existing validator plus production resolved-root response | Gateway API tests; `app-prod-unresolved-root` |
 | User, home, source, root, and ownership safety | Remote production placement and source lifecycle | `app-prod-source-safety`; `app-prod-ownership-retry` |
-| Failure and retry boundaries | Durable production coordinator checkpoints | Coordinator tests; `app-prod-standalone-retry`; `app-prod-ownership-retry` |
+| Failure and retry boundaries | Durable production coordinator checkpoints | Coordinator tests; `app-prod-standalone-retry` retained-clone recovery; `app-prod-ownership-retry` |
 | Active creation idempotency | Active terminal gate before Git | Coordinator tests; `app-prod-creation-after-deployment` |
 | Private-only exposure | Orbit-CA workload projection and app-prod firewall retirement | Firewall tests; `app-prod-standalone-exposure` |
-| Removal compatibility | Existing removal coordinator with recorded production identity | API/removal tests; `app-prod-create-and-remove` |
+| Removal compatibility | Existing removal coordinator with recorded production identity | API/removal tests; `app-prod-create-and-remove` on inactive Cluster Node scope |
 | Maintained documentation | Scoped documentation pages and generated context | `composer docs-lint` |
 | Repository quality | Gateway, SDK, CLI, root | Project checks and `bin/test` |
 
@@ -89,3 +89,5 @@ Reported: none.
 - Resolved: allow an unresolved production document root while retaining containment checks for resolved paths; covered by the real `app-prod-unresolved-root` lifecycle action.
 - Resolved: revalidate full recorded user and group ownership immediately before every retry-time ACL mutation; covered by `app-prod-ownership-retry`, including an unchanged ACL sentinel after refusal.
 - Resolved: require private publication only for standalone production removal and retain public clustered production removal; covered by the API regression.
+- Resolved: inspect an interrupted initial clone with the recorded production identity, propagate every protected-home enumeration failure, and compare the exact origin without a newline mismatch; covered by the source lifecycle regression and retained-clone phase of `app-prod-standalone-retry`.
+- Resolved: apply the same active-Cluster placement boundary to production removal as creation; covered by the creation/removal API regression and inactive-membership phase of `app-prod-create-and-remove`.

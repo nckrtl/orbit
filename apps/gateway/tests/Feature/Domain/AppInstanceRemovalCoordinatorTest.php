@@ -19,6 +19,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
+use App\Domain\Routes\RouteStateResolver;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -43,6 +44,7 @@ beforeEach(function (): void {
         new ManagedCheckoutOverlap,
         $this->orb181Lock,
         $this->orb183Content,
+        app(RouteStateResolver::class),
     );
 });
 

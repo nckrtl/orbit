@@ -9,6 +9,7 @@ use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\Route;
 use Illuminate\Contracts\Console\Kernel;
+use Illuminate\Support\Facades\DB;
 
 require '/home/orbit/orbit/apps/gateway/vendor/autoload.php';
 $laravel = require '/home/orbit/orbit/apps/gateway/bootstrap/app.php';
@@ -40,8 +41,10 @@ function definitions(): array
         'unresolved',
         'ownership',
         'retry',
+        'retry-recovery',
         'active',
         'remove',
+        'remove-inactive',
     ];
     $definitions = [];
 
@@ -240,6 +243,47 @@ switch ($command) {
         $app = OrbitApp::query()->findOrFail(appId($state, $arguments[0]));
         $app->update(['slug' => $arguments[1], 'name' => $arguments[1]]);
         writeJson($app->refresh()->getAttributes());
+        break;
+
+    case 'source-checkpoint-fault':
+        if (count($arguments) !== 2 || ! in_array($arguments[0], ['on', 'off'], true)) {
+            exit(64);
+        }
+        DB::unprepared('DROP TRIGGER IF EXISTS orb197_source_checkpoint_fault');
+        if ($arguments[0] === 'on') {
+            $state = currentState($statePath);
+            $appId = appId($state, $arguments[1]);
+            DB::unprepared(<<<SQL
+                CREATE TRIGGER orb197_source_checkpoint_fault
+                BEFORE UPDATE OF provisioning_step ON app_instances
+                WHEN NEW.app_id = {$appId} AND NEW.provisioning_step = 'source-prepared'
+                BEGIN
+                    SELECT RAISE(ABORT, 'orb197 source checkpoint fault');
+                END
+                SQL);
+        }
+        writeJson(['source_checkpoint_fault' => $arguments[0]]);
+        break;
+
+    case 'inactive-membership':
+        if (count($arguments) !== 1 || ! in_array($arguments[0], ['on', 'off'], true)) {
+            exit(64);
+        }
+        $state = currentState($statePath);
+        $node = Node::query()->findOrFail(nodeId($state, 'app-prod-2'));
+        $cluster = Cluster::query()->findOrFail($state['cluster_id']);
+        if ($arguments[0] === 'on') {
+            $cluster->update(['state' => ClusterState::Inactive]);
+            $node->update(['cluster_id' => $cluster->id]);
+        } else {
+            $node->update(['cluster_id' => null]);
+            $cluster->update(['state' => ClusterState::Active]);
+        }
+        writeJson([
+            'node_id' => $node->id,
+            'node_cluster_id' => $node->refresh()->cluster_id,
+            'cluster_state' => $cluster->refresh()->state->value,
+        ]);
         break;
 
     case 'assert-removed':

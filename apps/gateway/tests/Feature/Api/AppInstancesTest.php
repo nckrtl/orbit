@@ -980,6 +980,37 @@ it('removes a newly created production AppInstance through retained-content remo
         ->toBe(["route:{$instance->id}", "runtime:{$instance->id}"]);
 });
 
+it('creates and removes a production AppInstance through inactive Cluster Node scope', function (): void {
+    $node = create_app_prod_node('inactive-removal-prod');
+    $cluster = Cluster::query()->create([
+        'name' => 'inactive-production-removal',
+        'state' => ClusterState::Inactive,
+    ]);
+    $node->update(['cluster_id' => $cluster->id]);
+
+    $this
+        ->postJson('/api/v1/instances', [
+            'app_id' => $this->orbitApp->id,
+            'node_id' => $node->id,
+            'name' => 'production',
+        ])
+        ->assertCreated()
+        ->assertJsonPath('data.status', 'active')
+        ->assertJsonPath('data.route.node_id', $node->id)
+        ->assertJsonPath('data.route.cluster_id', null);
+    $instance = AppInstance::query()->sole();
+
+    $this
+        ->deleteJson("/api/v1/instances/{$instance->id}")
+        ->assertOk()
+        ->assertJsonPath('data.status', 'completed');
+
+    expect(AppInstance::query()->count())
+        ->toBe(0)
+        ->and(Route::query()->count())
+        ->toBe(0);
+});
+
 it('retries newly created production removal without recreating its deleted Route', function (): void {
     $node = create_app_prod_node('removal-retry-prod');
     $this->postJson('/api/v1/instances', [
