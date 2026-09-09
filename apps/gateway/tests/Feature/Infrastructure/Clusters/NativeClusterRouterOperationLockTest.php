@@ -166,15 +166,15 @@ describe(NativeClusterRouterOperationLock::class, function (): void {
         $directory = sys_get_temp_dir().'/orbit-cluster-router-process-'.Str::uuid();
         $autoload = base_path('vendor/autoload.php');
         $script = <<<'PHP'
-require $argv[1];
-$owner = new App\Infrastructure\Clusters\NativeClusterRouterOperationLock(
-    $argv[2],
-    new App\Infrastructure\Processes\CommandDeadline,
-);
-$owner->run(41, static function (): never {
-    exit(0);
-});
-PHP;
+            require $argv[1];
+            $owner = new App\Infrastructure\Clusters\NativeClusterRouterOperationLock(
+                $argv[2],
+                new App\Infrastructure\Processes\CommandDeadline,
+            );
+            $owner->run(41, static function (): never {
+                exit(0);
+            });
+            PHP;
         $process = new Process([PHP_BINARY, '-r', $script, $autoload, $directory]);
 
         try {

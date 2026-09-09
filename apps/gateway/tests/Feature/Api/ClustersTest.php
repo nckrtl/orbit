@@ -2,8 +2,8 @@
 
 declare(strict_types=1);
 
-use App\Domain\Clusters\ClusterState;
 use App\Domain\Clusters\ClusterRouterOperationLock;
+use App\Domain\Clusters\ClusterState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Cluster;
