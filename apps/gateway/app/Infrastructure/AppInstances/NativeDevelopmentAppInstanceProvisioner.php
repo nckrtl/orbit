@@ -18,6 +18,7 @@ use App\Models\AppInstance;
 use App\Models\Route;
 use Illuminate\Support\Facades\DB;
 
+/** @mago-expect lint:cyclomatic-complexity Completion keeps source-profile recovery inside the owned publication lifecycle. */
 final readonly class NativeDevelopmentAppInstanceProvisioner implements DevelopmentAppInstanceProvisioner
 {
     public function __construct(
