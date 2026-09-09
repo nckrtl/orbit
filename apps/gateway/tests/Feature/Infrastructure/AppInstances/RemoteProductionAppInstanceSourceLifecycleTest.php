@@ -42,6 +42,7 @@ it('prepares the recorded user and home and resolves only the App default branch
             'https://example.test/application.git',
             'orbit-app-1',
             '/home/orbit-app-1',
+            '1',
             '0',
         ])
         ->and($ssh->commands[1]->input)
@@ -52,8 +53,12 @@ it('prepares the recorded user and home and resolves only the App default branch
             'if sudo -u "$user" -H test -e "$home/.git"',
             'config --null --get remote.origin.url | base64 --wrap=0',
             'expected=$(printf \'%s\\0\' "$repository" | base64 --wrap=0)',
+            'state_root=/var/lib/orbit/app-instance-sources',
+            'expected_marker=$(printf \'%s\\0%s\\0%s\\0\'',
+            'test "$(sudo stat -c %U:%G -- "$marker")" = root:root',
             'unexpected_entry=$(sudo find -P "$home" -mindepth 1 -maxdepth 1 -print -quit)',
             'git clone --no-checkout --origin origin',
+            'sudo mv -- "$temporary" "$marker"',
         )
         ->not
         ->toContain(
@@ -127,6 +132,8 @@ it('permits an unresolved root and revalidates complete ownership immediately be
             'document_root_real=$(sudo -u "$user" -H realpath -m -- "$document_root")',
             'if sudo -u "$user" -H test -e "$document_root" || sudo -u "$user" -H test -L "$document_root"; then',
             'if [ "$document_root_exists" = 1 ]; then',
+            'ancestor_paths+=("$ancestor")',
+            'sudo setfacl -m u:caddy:--x "$ancestor"',
         )
         ->and($userOwnership)
         ->toBeInt()
@@ -135,6 +142,42 @@ it('permits an unresolved root and revalidates complete ownership immediately be
         ->toBeInt()
         ->toBeLessThan($firstAclMutation)
         ->and($firstAclMutation)
+        ->toBeInt();
+});
+
+it('requires a root-owned clone marker before adopting source on retry', function (): void {
+    [$source, $ssh, $instance] = production_source_lifecycle([
+        new CommandResult(0, '', '', 1, false),
+    ]);
+
+    $source->prepareSource($instance, true);
+
+    $command = $ssh->commands[0];
+    $markerGate = strpos($command->input, 'actual_marker=$(sudo base64 --wrap=0 -- "$marker")');
+    $sourceInspection = strpos($command->input, 'git -C "$home" rev-parse --is-inside-work-tree');
+    $clone = strpos($command->input, 'git clone --no-checkout --origin origin');
+    $markerPublication = strpos($command->input, 'sudo mv -- "$temporary" "$marker"');
+
+    expect($command->arguments)
+        ->toBe([
+            'bash',
+            '-seu',
+            '--',
+            'https://example.test/application.git',
+            'orbit-app-1',
+            '/home/orbit-app-1',
+            '1',
+            '1',
+        ])
+        ->and($markerGate)
+        ->toBeInt()
+        ->toBeLessThan($sourceInspection)
+        ->and($sourceInspection)
+        ->toBeInt()
+        ->and($clone)
+        ->toBeInt()
+        ->toBeLessThan($markerPublication)
+        ->and($markerPublication)
         ->toBeInt();
 });
 

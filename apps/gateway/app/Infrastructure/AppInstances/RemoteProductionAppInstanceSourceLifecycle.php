@@ -77,6 +77,7 @@ final readonly class RemoteProductionAppInstanceSourceLifecycle implements Produ
                     $appInstance->app->repository_url,
                     $user,
                     $home,
+                    (string) $appInstance->id,
                     $allowExisting ? '1' : '0',
                 ],
                 input: <<<'BASH'
@@ -84,8 +85,14 @@ final readonly class RemoteProductionAppInstanceSourceLifecycle implements Produ
                     repository=$1
                     user=$2
                     home=$3
-                    allow_existing=$4
+                    instance=$4
+                    allow_existing=$5
+                    state_root=/var/lib/orbit/app-instance-sources
+                    state_directory="$state_root/$instance"
+                    marker="$state_directory/initial-clone"
                     test "$home" = "/home/$user"
+                    case "$instance" in ''|*[!0-9]*) exit 1 ;; esac
+                    test "$instance" -ge 1
                     sudo test -d "$home"
                     sudo test ! -L "$home"
                     test "$(sudo stat -c %U -- "$home")" = "$user"
@@ -97,6 +104,20 @@ final readonly class RemoteProductionAppInstanceSourceLifecycle implements Produ
 
                     if sudo -u "$user" -H test -e "$home/.git" || sudo -u "$user" -H test -L "$home/.git"; then
                         test "$allow_existing" = 1
+                        sudo test -d "$state_root"
+                        sudo test ! -L "$state_root"
+                        test "$(sudo stat -c %U:%G -- "$state_root")" = root:root
+                        sudo test -d "$state_directory"
+                        sudo test ! -L "$state_directory"
+                        test "$(sudo stat -c %U:%G -- "$state_directory")" = root:root
+                        test "$(sudo stat -c %a -- "$state_directory")" = 700
+                        sudo test -f "$marker"
+                        sudo test ! -L "$marker"
+                        test "$(sudo stat -c %U:%G -- "$marker")" = root:root
+                        test "$(sudo stat -c %a -- "$marker")" = 600
+                        actual_marker=$(sudo base64 --wrap=0 -- "$marker")
+                        expected_marker=$(printf '%s\0%s\0%s\0' "$repository" "$user" "$home" | base64 --wrap=0)
+                        test "$actual_marker" = "$expected_marker"
                         sudo -u "$user" -H test -d "$home/.git"
                         sudo -u "$user" -H test ! -L "$home/.git"
                         test "$(sudo -u "$user" -H git -C "$home" rev-parse --is-inside-work-tree)" = true
@@ -108,7 +129,23 @@ final readonly class RemoteProductionAppInstanceSourceLifecycle implements Produ
 
                     unexpected_entry=$(sudo find -P "$home" -mindepth 1 -maxdepth 1 -print -quit)
                     test -z "$unexpected_entry"
+                    if sudo test -e "$state_directory" || sudo test -L "$state_directory"; then exit 1; fi
                     sudo -u "$user" -H git clone --no-checkout --origin origin -- "$repository" "$home"
+                    sudo install -d -o root -g root -m 0700 -- "$state_root" "$state_directory"
+                    sudo test ! -L "$state_root"
+                    test "$(sudo stat -c %U:%G -- "$state_root")" = root:root
+                    sudo test ! -L "$state_directory"
+                    test "$(sudo stat -c %U:%G -- "$state_directory")" = root:root
+                    test "$(sudo stat -c %a -- "$state_directory")" = 700
+                    temporary=$(sudo mktemp "$state_directory/.initial-clone.XXXXXX")
+                    cleanup_marker() { sudo rm -f -- "$temporary"; }
+                    trap cleanup_marker EXIT
+                    printf '%s\0%s\0%s\0' "$repository" "$user" "$home" | sudo tee "$temporary" >/dev/null
+                    sudo chown root:root -- "$temporary"
+                    sudo chmod 0600 -- "$temporary"
+                    sudo mv -- "$temporary" "$marker"
+                    temporary=
+                    trap - EXIT
                     BASH,
             ),
             step: 'production-source-prepare',
@@ -247,12 +284,22 @@ final readonly class RemoteProductionAppInstanceSourceLifecycle implements Produ
                         *) exit 1 ;;
                     esac
                     document_root_exists=0
+                    ancestor_paths=()
                     if sudo -u "$user" -H test -e "$document_root" || sudo -u "$user" -H test -L "$document_root"; then
                         sudo -u "$user" -H test -d "$document_root"
                         sudo -u "$user" -H test ! -L "$document_root"
                         test "$(sudo -u "$user" -H realpath -e -- "$document_root")" = "$document_root_real"
                         unexpected_symlink=$(sudo find -P "$document_root_real" -type l -print -quit)
                         test -z "$unexpected_symlink"
+                        ancestor="$document_root_real"
+                        while [ "$ancestor" != "$home" ]; do
+                            ancestor=${ancestor%/*}
+                            if [ "$ancestor" = "$home" ]; then break; fi
+                            case "$ancestor" in "$home"/*) ;; *) exit 1 ;; esac
+                            sudo test -d "$ancestor"
+                            sudo test ! -L "$ancestor"
+                            ancestor_paths+=("$ancestor")
+                        done
                         document_root_exists=1
                     fi
                     unexpected_user=$(sudo find -P "$home" -xdev ! -user "$user" -print -quit)
@@ -263,6 +310,9 @@ final readonly class RemoteProductionAppInstanceSourceLifecycle implements Produ
                     sudo find -P "$home" -type d -exec setfacl -m d:u:caddy:--- -- {} +
                     sudo setfacl -m u:caddy:--x /home "$home"
                     if [ "$document_root_exists" = 1 ]; then
+                        for ancestor in "${ancestor_paths[@]}"; do
+                            sudo setfacl -m u:caddy:--x "$ancestor"
+                        done
                         sudo setfacl -P -R -m u:caddy:r-X "$document_root_real"
                         sudo find -P "$document_root_real" -type d -exec setfacl -m d:u:caddy:r-x -- {} +
                     fi

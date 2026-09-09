@@ -121,7 +121,7 @@ case "$scenario" in
         [[ $# -eq 2 && "$2" =~ ^app-prod(-2)?$ && "$(id -u)" -eq 1000 ]]
         base=/var/www/orb197
         sudo install -d -o orbit -g orbit -m 0755 "$base"
-        for name in create initial missing generated nonphp cluster laravel safety-home safety-existing safety-root unresolved ownership retry retry-recovery active remove remove-inactive; do
+        for name in create initial missing generated nonphp cluster laravel safety-home safety-existing safety-existing-repeat safety-root unresolved ownership retry retry-recovery retry-recovery-marker active remove remove-inactive nested-exposure; do
             work=$(mktemp -d)
             trap 'rm -rf -- "$work"' EXIT
             git -C "$work" init --initial-branch=main --quiet
@@ -138,7 +138,7 @@ case "$scenario" in
                     chmod +x "$work/artisan"
                     printf '<?php echo "orb197-laravel";\n' > "$work/public/index.php"
                     ;;
-                retry|retry-recovery)
+                retry|retry-recovery|retry-recovery-marker)
                     printf '{"require":{"php":"<8.4"}}\n' > "$work/composer.json"
                     printf '<?php echo "orb197-%s";\n' "$name" > "$work/public/index.php"
                     ;;
@@ -146,6 +146,12 @@ case "$scenario" in
                     printf '{"require":{"php":"^8.4"}}\n' > "$work/composer.json"
                     rm -rf "$work/public"
                     ln -s /tmp "$work/public"
+                    ;;
+                nested-exposure)
+                    printf '{"require":{"php":"^8.4"}}\n' > "$work/composer.json"
+                    mkdir -p "$work/site/public"
+                    printf '<?php echo "orb197-nested-exposure";\n' > "$work/site/public/index.php"
+                    printf 'outside-web-root\n' > "$work/site/operator-private.txt"
                     ;;
                 *)
                     printf '{"require":{"php":"^8.4"}}\n' > "$work/composer.json"
@@ -316,17 +322,57 @@ sudo ln -s /tmp "/home/$user"
 REMOTE
         expect_error app-prod.user_conflict orbit instance:new "$home_app" "$node_id" default --hostname=orb197-safety-home.test
         [[ "$(gateway_fixture inspect orb197-safety-home | json_field route_count)" == 0 ]]
-        existing_app=$(fixture_app_id orb197-safety-existing)
+        existing_app=$(fixture_app_id orb197-safety-existing-repeat)
         existing_user=orbit-app-$existing_app
         remote_script app-prod "$existing_user" <<'REMOTE'
 user=$1
 home=/home/$user
 sudo useradd --system --user-group --home-dir "$home" --shell /usr/sbin/nologin -- "$user"
 sudo install -d -o "$user" -g "$user" -m 0700 -- "$home"
-sudo -u "$user" -H git clone --quiet --no-checkout https://localhost/orb197/safety-existing.git "$home"
+sudo -u "$user" -H git clone --quiet https://localhost/orb197/safety-existing-repeat.git "$home"
+sudo -u "$user" -H git -C "$home" config user.name 'Production operator'
+sudo -u "$user" -H git -C "$home" config user.email operator@example.test
+printf '%s\n' operator-existing-content | sudo -u "$user" -H tee "$home/branch.txt" >/dev/null
+printf '%s\n' operator-private-content | sudo -u "$user" -H tee "$home/operator-private.txt" >/dev/null
+sudo -u "$user" -H git -C "$home" add branch.txt operator-private.txt
+sudo -u "$user" -H git -C "$home" commit --quiet -m 'operator deployment'
+sudo setfacl -m u:caddy:r-- -- "$home/operator-private.txt"
 REMOTE
-        expect_error instance.clone_failed orbit instance:new "$existing_app" "$node_id" default --hostname=orb197-safety-existing.test
-        [[ "$(gateway_fixture inspect orb197-safety-existing | json_field route_count)" == 0 ]]
+        existing_before=$(remote_script app-prod "$existing_user" <<'REMOTE'
+user=$1
+home=/home/$user
+printf '%s\n' \
+    "$(sudo stat -c %d:%i -- "$home/.git")" \
+    "$(sudo -u "$user" -H git -C "$home" remote get-url origin)" \
+    "$(sudo -u "$user" -H git -C "$home" branch --show-current)" \
+    "$(sudo -u "$user" -H git -C "$home" rev-parse HEAD)" \
+    "$(sudo -u "$user" -H cat "$home/branch.txt")" \
+    "$(sudo -u "$user" -H cat "$home/operator-private.txt")" \
+    "$(sudo getfacl -cpR -- "$home" | sha256sum)"
+test -z "$(sudo -u "$user" -H git -C "$home" status --porcelain)"
+REMOTE
+)
+        expect_error instance.clone_failed orbit instance:new "$existing_app" "$node_id" default --hostname=orb197-safety-existing-repeat.test
+        expect_error instance.clone_failed orbit instance:new "$existing_app" "$node_id" default --hostname=orb197-safety-existing-repeat.test
+        existing_after=$(remote_script app-prod "$existing_user" <<'REMOTE'
+user=$1
+home=/home/$user
+printf '%s\n' \
+    "$(sudo stat -c %d:%i -- "$home/.git")" \
+    "$(sudo -u "$user" -H git -C "$home" remote get-url origin)" \
+    "$(sudo -u "$user" -H git -C "$home" branch --show-current)" \
+    "$(sudo -u "$user" -H git -C "$home" rev-parse HEAD)" \
+    "$(sudo -u "$user" -H cat "$home/branch.txt")" \
+    "$(sudo -u "$user" -H cat "$home/operator-private.txt")" \
+    "$(sudo getfacl -cpR -- "$home" | sha256sum)"
+test -z "$(sudo -u "$user" -H git -C "$home" status --porcelain)"
+REMOTE
+)
+        [[ "$existing_after" == "$existing_before" ]]
+        existing_instance=$(inspect_single orb197-safety-existing-repeat)
+        [[ "$(json_field provisioning_step <<<"$existing_instance")" == user-prepared ]]
+        [[ "$(json_field error_code <<<"$existing_instance")" == instance.clone_failed ]]
+        [[ "$(gateway_fixture inspect orb197-safety-existing-repeat | json_field route_count)" == 0 ]]
         root_app=$(fixture_app_id orb197-safety-root)
         expect_error app-prod.source_metadata_unsafe orbit instance:new "$root_app" "$node_id" default --hostname=orb197-safety-root.test
         root_instance=$(inspect_single orb197-safety-root)
@@ -406,14 +452,14 @@ REMOTE
 
     standalone-retry)
         [[ $# -eq 1 && "$(id -u)" -eq 1000 ]]
-        app_id=$(fixture_app_id orb197-retry-recovery)
+        app_id=$(fixture_app_id orb197-retry-recovery-marker)
         node_id=$(fixture_node_field app-prod-2 id)
-        gateway_fixture source-checkpoint-fault on orb197-retry-recovery >/dev/null
-        trap 'gateway_fixture source-checkpoint-fault off orb197-retry-recovery >/dev/null' EXIT
-        expect_error gateway.unhandled orbit instance:new "$app_id" "$node_id" default --hostname=orb197-retry-recovery.test
-        gateway_fixture source-checkpoint-fault off orb197-retry-recovery >/dev/null
+        gateway_fixture source-checkpoint-fault on orb197-retry-recovery-marker >/dev/null
+        trap 'gateway_fixture source-checkpoint-fault off orb197-retry-recovery-marker >/dev/null' EXIT
+        expect_error gateway.unhandled orbit instance:new "$app_id" "$node_id" default --hostname=orb197-retry-recovery-marker.test
+        gateway_fixture source-checkpoint-fault off orb197-retry-recovery-marker >/dev/null
         trap - EXIT
-        instance=$(inspect_single orb197-retry-recovery)
+        instance=$(inspect_single orb197-retry-recovery-marker)
         [[ "$(json_field provisioning_step <<<"$instance")" == user-prepared ]]
         [[ "$(json_field error_code <<<"$instance")" == instance.provisioning_failed ]]
         instance_id=$(json_field id <<<"$instance")
@@ -422,13 +468,13 @@ REMOTE
 user=$1
 home=/home/$user
 sudo -u "$user" -H test -d "$home/.git"
-test "$(sudo -u "$user" -H git -C "$home" config --get remote.origin.url)" = https://localhost/orb197/retry-recovery.git
+test "$(sudo -u "$user" -H git -C "$home" config --get remote.origin.url)" = https://localhost/orb197/retry-recovery-marker.git
 printf '%s\n' retained-after-clone | sudo -u "$user" -H tee "$home/operator-marker" >/dev/null
 sudo stat -c %d:%i -- "$home/.git"
 REMOTE
 )
-        expect_error app-prod.php_version_unsupported orbit instance:new "$app_id" "$node_id" default --hostname=orb197-retry-recovery.test
-        instance=$(inspect_single orb197-retry-recovery)
+        expect_error app-prod.php_version_unsupported orbit instance:new "$app_id" "$node_id" default --hostname=orb197-retry-recovery-marker.test
+        instance=$(inspect_single orb197-retry-recovery-marker)
         [[ "$(json_field provisioning_step <<<"$instance")" == source-resolved ]]
         [[ "$(json_field error_code <<<"$instance")" == app-prod.php_version_unsupported ]]
         [[ "$(json_field id <<<"$instance")" == "$instance_id" ]]
@@ -441,10 +487,10 @@ test "$(sudo -u "$user" -H cat "$home/operator-marker")" = retained-after-clone
 sudo -u "$user" -H mv "$home/.git" "$home/.git.operator"
 printf '%s\n' '{"require":{"php":"^8.4"}}' | sudo -u "$user" -H tee "$home/composer.json" >/dev/null
 REMOTE
-        output=$(orbit instance:new "$app_id" "$node_id" default --hostname=orb197-retry-recovery.test --json)
-        assert_instance "$output" "$app_id" "$node_id" default orb197-retry-recovery.test main null null
+        output=$(orbit instance:new "$app_id" "$node_id" default --hostname=orb197-retry-recovery-marker.test --json)
+        assert_instance "$output" "$app_id" "$node_id" default orb197-retry-recovery-marker.test main null null
         [[ "$(json_field id <<<"$output")" == "$instance_id" ]]
-        [[ "$(inspect_single orb197-retry-recovery | json_field provisioning_step)" == active ]]
+        [[ "$(inspect_single orb197-retry-recovery-marker | json_field provisioning_step)" == active ]]
         printf 'retained clone and durable production checkpoint retries reused one source and AppInstance\n'
         ;;
 
@@ -475,21 +521,33 @@ REMOTE
 
     standalone-exposure)
         [[ $# -eq 1 && "$(id -u)" -eq 1000 ]]
-        create=$(inspect_single orb197-create)
+        app_id=$(fixture_app_id orb197-nested-exposure)
+        node_id=$(fixture_node_field app-prod id)
+        create=$(orbit instance:new "$app_id" "$node_id" nested --root=site/public --hostname=orb197-nested-exposure.test --json)
+        assert_instance "$create" "$app_id" "$node_id" nested orb197-nested-exposure.test main null site/public
         instance_id=$(json_field id <<<"$create")
-        remote_script app-prod "$instance_id" <<'REMOTE'
+        user=orbit-app-$app_id
+        remote_script app-prod "$instance_id" "$user" <<'REMOTE'
 instance=$1
+user=$2
+home=/home/$user
 live=$(sudo readlink -f /etc/caddy/Caddyfile)
-sudo grep -Fq -- "orb197-create.test" "$(dirname "$live")/fragments/app-dev.caddy"
+sudo grep -Fq -- "orb197-nested-exposure.test" "$(dirname "$live")/fragments/app-dev.caddy"
 sudo test -s "/etc/caddy/orbit-certificates/app-instance-$instance/current/cert.pem"
+site_acl=$(sudo getfacl -cp -- "$home/site")
+grep -Fqx 'user:caddy:--x' <<<"$site_acl"
+public_acl=$(sudo getfacl -cp -- "$home/site/public")
+grep -Fqx 'user:caddy:r-x' <<<"$public_acl"
+! sudo -u caddy cat "$home/site/operator-private.txt" >/dev/null 2>&1
+! sudo -u caddy cat "$home/composer.json" >/dev/null 2>&1
 status=$(sudo ufw status numbered)
 grep -Fq 'operator:orb197' <<<"$status"
 ! grep -Fq 'orbit:app-prod-http' <<<"$status"
 ! grep -Fq 'orbit:app-prod-https' <<<"$status"
 REMOTE
-        body=$(curl --fail --silent --show-error --retry 10 --retry-delay 1 --cacert /home/orbit/.orbit/ca/root.pem --resolve orb197-create.test:443:10.44.0.3 https://orb197-create.test/)
-        grep -Fq orb197-create-web <<<"$body"
-        printf 'private Orbit-CA HTTPS and app-prod firewall retirement passed\n'
+        body=$(curl --fail --silent --show-error --retry 10 --retry-delay 1 --cacert /home/orbit/.orbit/ca/root.pem --resolve orb197-nested-exposure.test:443:10.44.0.3 https://orb197-nested-exposure.test/)
+        grep -Fq orb197-nested-exposure <<<"$body"
+        printf 'private nested-root HTTPS, outside-root denial, and app-prod firewall retirement passed\n'
         ;;
 
     create-and-remove)

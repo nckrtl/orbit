@@ -91,3 +91,5 @@ Reported: none.
 - Resolved: require private publication only for standalone production removal and retain public clustered production removal; covered by the API regression.
 - Resolved: inspect an interrupted initial clone with the recorded production identity, propagate every protected-home enumeration failure, and compare the exact origin without a newline mismatch; covered by the source lifecycle regression and retained-clone phase of `app-prod-standalone-retry`.
 - Resolved: apply the same active-Cluster placement boundary to production removal as creation; covered by the creation/removal API regression and inactive-membership phase of `app-prod-create-and-remove`.
+- Resolved: require a root-owned, operation-specific clone marker before a retry can adopt existing source; covered by the source lifecycle regression and two repeated refusals with unchanged operator source in `app-prod-source-safety`.
+- Resolved: grant execute-only Caddy access to validated ancestors of an existing nested document root; covered by the source lifecycle regression and private HTTPS serving plus outside-root denial in `app-prod-standalone-exposure`.

@@ -37,14 +37,17 @@ function definitions(): array
         'laravel',
         'safety-home',
         'safety-existing',
+        'safety-existing-repeat',
         'safety-root',
         'unresolved',
         'ownership',
         'retry',
         'retry-recovery',
+        'retry-recovery-marker',
         'active',
         'remove',
         'remove-inactive',
+        'nested-exposure',
     ];
     $definitions = [];
 
