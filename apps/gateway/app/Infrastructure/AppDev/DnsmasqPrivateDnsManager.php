@@ -36,12 +36,18 @@ final readonly class DnsmasqPrivateDnsManager implements PrivateDnsManager
         $this->owner()->run(fn () => $this->publish(null, $route, $appInstance));
     }
 
+    public function convergeHostnameChange(Route $candidate): void
+    {
+        $this->owner()->run(fn () => $this->publish(null, null, null, $candidate));
+    }
+
     private function publish(
         ?Node $pendingNode,
         ?Route $pendingRoute,
         ?AppInstance $unavailableInstance,
+        ?Route $additionalRoute = null,
     ): void {
-        $configuration = $this->renderer->render($pendingNode, $pendingRoute, $unavailableInstance);
+        $configuration = $this->renderer->render($pendingNode, $pendingRoute, $unavailableInstance, $additionalRoute);
         $encoded = base64_encode($configuration);
         $result = $this->processes->run(new ProcessInvocation(
             arguments: ['sudo', 'bash', '-seu'],

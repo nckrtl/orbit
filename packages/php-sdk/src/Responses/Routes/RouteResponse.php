@@ -25,6 +25,10 @@ final readonly class RouteResponse
         public string $status,
         public ?string $failedStep,
         public ?string $errorCode,
+        public ?string $hostnameChangePrevious,
+        public ?string $hostnameChangeTarget,
+        public ?string $hostnameChangeDirection,
+        public ?string $hostnameChangeStep,
         public ?RouteTargetResponse $target,
         public string $requestId,
     ) {}
@@ -52,6 +56,18 @@ final readonly class RouteResponse
             status: is_string($data['status'] ?? null) ? $data['status'] : '',
             failedStep: is_string($data['failed_step'] ?? null) ? $data['failed_step'] : null,
             errorCode: GatewayErrorCode::fromTransport($data['error_code'] ?? null),
+            hostnameChangePrevious: is_string($data['hostname_change_previous'] ?? null)
+                ? $data['hostname_change_previous']
+                : null,
+            hostnameChangeTarget: is_string($data['hostname_change_target'] ?? null)
+                ? $data['hostname_change_target']
+                : null,
+            hostnameChangeDirection: is_string($data['hostname_change_direction'] ?? null)
+                ? $data['hostname_change_direction']
+                : null,
+            hostnameChangeStep: is_string($data['hostname_change_step'] ?? null)
+                ? $data['hostname_change_step']
+                : null,
             target: $target,
             requestId: $requestId,
         );
@@ -72,6 +88,10 @@ final readonly class RouteResponse
             'status' => $this->status,
             'failed_step' => $this->failedStep,
             'error_code' => $this->errorCode,
+            'hostname_change_previous' => $this->hostnameChangePrevious,
+            'hostname_change_target' => $this->hostnameChangeTarget,
+            'hostname_change_direction' => $this->hostnameChangeDirection,
+            'hostname_change_step' => $this->hostnameChangeStep,
             'target' => $this->target?->toArray(),
             'request_id' => $this->requestId,
         ];

@@ -6,6 +6,7 @@ namespace App\Infrastructure\AppInstances;
 
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\AppInstances\DevelopmentRouteProjector;
+use App\Domain\Routes\RouteHostnameProjector;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
 use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
 use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
@@ -16,7 +17,11 @@ use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Route;
 
-final readonly class NativeDevelopmentRouteProjector implements DevelopmentRouteProjector
+/**
+ * @mago-expect lint:cyclomatic-complexity The projector keeps each ordered private Route boundary explicit.
+ * @mago-expect lint:too-many-methods Each method implements one existing or hostname-change projection boundary.
+ */
+final readonly class NativeDevelopmentRouteProjector implements DevelopmentRouteProjector, RouteHostnameProjector
 {
     public function __construct(
         private RemoteAppDevPhpFpmManager $php,
@@ -60,6 +65,109 @@ final readonly class NativeDevelopmentRouteProjector implements DevelopmentRoute
 
         // DNS is deliberately last. A failed earlier projection is never reachable by name.
         $this->dns->convergeRoute($route);
+    }
+
+    public function prepareWorkloadCertificate(AppInstance $appInstance, Route $current, Route $candidate): void
+    {
+        $this->certificates->convergeAppInstanceHostnameChange($appInstance, $candidate->hostname);
+    }
+
+    public function prepareWorkloadCaddy(AppInstance $appInstance, Route $current, Route $candidate): void
+    {
+        $appInstance->loadMissing('node');
+        $this->caddy->convergeHostnameChange($appInstance->node, $candidate);
+    }
+
+    public function prepareRouterCertificate(AppInstance $appInstance, Route $current, Route $candidate): void
+    {
+        $router = $this->router($appInstance, $candidate);
+
+        if ($router instanceof Node) {
+            $this->certificates->convergeRouteRouterHostnameChange($candidate, $router);
+        }
+    }
+
+    public function prepareFirewallPolicy(AppInstance $appInstance, Route $candidate): void
+    {
+        $router = $this->router($appInstance, $candidate);
+
+        if ($router instanceof Node) {
+            $this->convergeLanFirewall($appInstance, $candidate, $router);
+        }
+    }
+
+    public function verifyWorkload(AppInstance $appInstance, Route $candidate): void
+    {
+        $router = $this->router($appInstance, $candidate);
+
+        if ($router instanceof Node) {
+            $this->verifyWorkloadLeaf($appInstance, $candidate, $router);
+        }
+    }
+
+    public function prepareRouterCaddy(AppInstance $appInstance, Route $current, Route $candidate): void
+    {
+        $router = $this->router($appInstance, $candidate);
+
+        if ($router instanceof Node) {
+            $this->caddy->convergeHostnameChange($router, $candidate);
+        }
+    }
+
+    public function publishDns(Route $current, Route $candidate): void
+    {
+        $this->dns->convergeHostnameChange($candidate);
+    }
+
+    public function cleanup(AppInstance $appInstance, Route $route): void
+    {
+        $appInstance->loadMissing('node');
+        $route->loadMissing('cluster.routerAssignment.node');
+        $this->certificates->convergeAppInstance($appInstance, $route);
+        $router = $this->router($appInstance, $route);
+
+        if ($router instanceof Node) {
+            $this->certificates->convergeRouteRouter($route, $router);
+        }
+
+        $this->caddy->converge($appInstance->node);
+
+        if ($router instanceof Node) {
+            $this->caddy->converge($router);
+        }
+
+        $this->certificates->removeHostnameChange($appInstance, $route);
+        $this->dns->converge();
+    }
+
+    public function rollbackDns(Route $route): void
+    {
+        $this->dns->converge();
+    }
+
+    public function rollbackCaddy(AppInstance $appInstance, Route $route): void
+    {
+        $appInstance->loadMissing('node');
+        $this->caddy->converge($appInstance->node);
+        $router = $this->router($appInstance, $route);
+
+        if ($router instanceof Node) {
+            $this->caddy->converge($router);
+        }
+    }
+
+    public function rollbackCertificates(AppInstance $appInstance, Route $route): void
+    {
+        $this->certificates->removeHostnameChange($appInstance, $route);
+    }
+
+    private function router(AppInstance $appInstance, Route $route): ?Node
+    {
+        $appInstance->loadMissing('node');
+        $route->loadMissing('cluster.routerAssignment.node');
+        $router = $route->cluster?->routerAssignment?->node;
+
+        return $router instanceof Node && ! $router->is($appInstance->node) ? $router : null;
     }
 
     private function convergeLanFirewall(AppInstance $appInstance, Route $route, Node $router): void
