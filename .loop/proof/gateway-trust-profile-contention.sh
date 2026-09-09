@@ -28,26 +28,47 @@ if not isinstance(request_id, str) or not request_id:
 '
 }
 
-probe_surfaces() {
+probe_local() {
     orbit gateway:status --json | assert_status
+}
+
+run_on_app_dev() {
+    local remote_scenario=$1
     ssh \
         -i "$ssh_key" \
         -o BatchMode=yes \
         -o IdentitiesOnly=yes \
         -o StrictHostKeyChecking=yes \
         -o "UserKnownHostsFile=$known_hosts" \
-        orbit@10.44.0.1 \
-        'env HOME=/home/orbit ORBIT_HOME=/home/orbit/.orbit DB_DATABASE=/home/orbit/.orbit/gateway.sqlite /usr/local/bin/orbit gateway:status --json' \
-        | assert_status
+        orbit@10.44.0.2 \
+        env \
+        HOME=/home/orbit \
+        ORBIT_HOME=/home/orbit/.orbit \
+        DB_DATABASE=/home/orbit/.orbit/gateway.sqlite \
+        "$fixture_root/gateway-trust-profile-contention.sh" \
+        "$remote_scenario"
 }
 
+if [[ "$scenario" == probe-local ]]; then
+    probe_local
+    exit 0
+fi
+
 if [[ "$scenario" == probe ]]; then
-    probe_surfaces
+    probe_local
+    run_on_app_dev probe-local
     printf 'gateway-trust observation surfaces ready\n'
     exit 0
 fi
 
-[[ "$scenario" == contention ]]
+if [[ "$scenario" == contention ]]; then
+    probe_local
+    run_on_app_dev contention-local
+    printf 'gateway-trust profile contention passed\n'
+    exit 0
+fi
+
+[[ "$scenario" == contention-local ]]
 [[ -s "$config" && -f "$mutator" ]]
 
 label_hash=$(printf 'e2e' | sha256sum | cut -c1-16)
@@ -220,4 +241,4 @@ run_case url
 run_case pin
 run_case active
 run_case identical
-probe_surfaces
+probe_local

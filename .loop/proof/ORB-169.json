@@ -2,7 +2,7 @@
     "setup": [
         {
             "id": "gateway-trust-observation-setup",
-            "node": "app-dev",
+            "node": "gateway",
             "argv": [
                 "/var/lib/orbit-e2e/proof/gateway-trust-profile-contention.sh",
                 "probe"
@@ -13,7 +13,7 @@
     "acceptance": [
         {
             "id": "gateway-trust-profile-contention",
-            "node": "app-dev",
+            "node": "gateway",
             "argv": [
                 "/var/lib/orbit-e2e/proof/gateway-trust-profile-contention.sh",
                 "contention"
