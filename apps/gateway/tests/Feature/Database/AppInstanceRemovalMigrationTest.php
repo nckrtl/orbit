@@ -258,6 +258,36 @@ it('backfills historical source commits and preserves distinct observed evidence
         );
 });
 
+it('persists nullable detached branches without weakening recorded branch identity', function (): void {
+    $migration = orb105_nullable_removal_branch_migration();
+    $migration->down();
+    [$detached, $detachedRoute] = orb179_removal_fixture('detached-removal');
+    $detached->update(['branch' => null]);
+    $detachedRemoval = orb179_removal_operation($detached);
+    $detachedAttributes = orb179_removal_member($detached, $detachedRoute, 0);
+    $detachedAttributes['branch'] = null;
+
+    expect(fn () => $detachedRemoval->members()->create($detachedAttributes))
+        ->toThrow(QueryException::class);
+
+    $migration->up();
+    $detachedMember = $detachedRemoval->members()->create($detachedAttributes);
+    [$named, $namedRoute] = orb179_removal_fixture('named-removal');
+    $namedRemoval = orb179_removal_operation($named);
+    $mismatchedAttributes = orb179_removal_member($named, $namedRoute, 0);
+    $mismatchedAttributes['branch'] = null;
+
+    expect($detachedMember->branch)
+        ->toBeNull()
+        ->and(fn () => $namedRemoval->members()->create($mismatchedAttributes))
+        ->toThrow(QueryException::class)
+        ->and(fn () => $migration->down())
+        ->toThrow(
+            RuntimeException::class,
+            "Cannot roll back detached AppInstance removal evidence: {$detachedMember->id}",
+        );
+});
+
 it('rolls back the development source column while retaining production removal evidence', function (): void {
     [$production, $productionRoute] = orb179_removal_fixture(
         'source-production',
@@ -473,6 +503,14 @@ function orb182_source_commit_migration(): object
     return require
         base_path(
             'database/migrations/2026_09_08_204126_add_source_commit_to_app_instance_removal_members.php',
+        );
+}
+
+function orb105_nullable_removal_branch_migration(): object
+{
+    return require
+        base_path(
+            'database/migrations/2026_09_09_033524_allow_nullable_branches_in_app_instance_removal_evidence.php',
         );
 }
 
