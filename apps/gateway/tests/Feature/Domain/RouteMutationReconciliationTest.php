@@ -201,6 +201,7 @@ it('hydrates and reconciles the complete affected Route dependency closure', fun
     $targetlessDirect = reconciliation_route($this->orbitApp, 'direct.example.test', node: $this->node);
     $retainedTarget = reconciliation_instance($this->orbitApp, $this->node, 'retained');
     $retained = app(CreateRouteAction::class)->ensureForAppInstance($retainedTarget, null);
+    $retainedTarget->update(['status' => AppInstanceState::Reserved]);
     app(ClearRouteTargetAction::class)->execute($retained);
 
     $cluster = reconciliation_active_cluster('production', 'cluster.test');
@@ -266,6 +267,7 @@ it('hydrates and reconciles the complete affected Route dependency closure', fun
 
 it('uses provisioning baseline overrides to select retained generated Routes', function (): void {
     $route = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
+    $this->target->update(['status' => AppInstanceState::Reserved]);
     app(ClearRouteTargetAction::class)->execute($route);
     $this->node->update(['tld' => 'next.test']);
 
