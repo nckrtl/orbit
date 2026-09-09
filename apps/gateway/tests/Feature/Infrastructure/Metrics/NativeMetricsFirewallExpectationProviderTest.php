@@ -5,7 +5,10 @@ declare(strict_types=1);
 use App\Domain\Metrics\ExporterPreference;
 use App\Domain\Metrics\ExporterPreferenceRepository;
 use App\Domain\Metrics\ExporterSelector;
+use App\Domain\Metrics\MetricsExporterProjection;
+use App\Domain\Metrics\MetricsExporterProjectionItem;
 use App\Domain\Metrics\MetricsGatewayResolver;
+use App\Domain\Nodes\RoleName;
 use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
 use App\Infrastructure\Metrics\NativeMetricsExporterProjection;
 use App\Infrastructure\Metrics\NativeMetricsFirewallExpectationProvider;
@@ -62,6 +65,47 @@ it('returns no expectations for absent or ambiguous active Metrics assignment st
     }
 
     expect($provider->for($node))->toBe([]);
+});
+
+it('uses the direct node projection and retains its firewall expectations', function (): void {
+    $metrics = metricsFirewallExpectationNode('metrics', '10.44.0.3');
+    $metrics->roles()->create(['role' => 'metrics', 'status' => 'active']);
+    $node = metricsFirewallExpectationNode('app', '10.44.0.4');
+    $projection = new class implements MetricsExporterProjection {
+        public int $fleetCalls = 0;
+
+        /** @var list<array{int, int}> */
+        public array $nodeCalls = [];
+
+        public function for(Node $metricsNode): array
+        {
+            $this->fleetCalls++;
+
+            return [];
+        }
+
+        public function forNode(Node $metricsNode, Node $node): ?MetricsExporterProjectionItem
+        {
+            $this->nodeCalls[] = [$metricsNode->id, $node->id];
+
+            return new MetricsExporterProjectionItem(
+                $node,
+                new ExporterSelector()->select([RoleName::AppProd]),
+            );
+        }
+    };
+    $provider = new NativeMetricsFirewallExpectationProvider(
+        $projection,
+        new MetricsGatewayResolver,
+        new NodeFirewallRuleCatalog,
+    );
+
+    expect(array_column($provider->for($node), 'resourceId'))
+        ->toBe(['orbit:metrics-node-exporter'])
+        ->and($projection->fleetCalls)
+        ->toBe(0)
+        ->and($projection->nodeCalls)
+        ->toBe([[$metrics->id, $node->id]]);
 });
 
 function metricsFirewallExpectationNode(string $name, string $address): Node

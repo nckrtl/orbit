@@ -416,9 +416,10 @@ final readonly class WorktreeSynchronizer
         if (file_put_contents($manifest, $paths === [] ? '' : implode("\0", $paths)."\0", LOCK_EX) === false) {
             throw new RuntimeException('Could not create the source manifest.');
         }
+        $root = $repository->root();
         $deletedPaths = array_values(array_filter(
             $paths,
-            fn (string $path): bool => ! file_exists($repository->root().'/'.$path),
+            fn (string $path): bool => ! file_exists($root.'/'.$path),
         ));
         if (
             file_put_contents($deletions, $deletedPaths === [] ? '' : implode("\0", $deletedPaths)."\0", LOCK_EX)

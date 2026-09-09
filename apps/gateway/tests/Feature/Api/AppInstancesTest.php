@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\AppInstances\CreateAppInstanceAction;
+use App\Data\AppInstances\AppInstanceData;
 use App\Data\AppInstances\CreateAppInstanceData;
 use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppInstances\AppInstanceDestinationGuard;
@@ -42,6 +43,7 @@ use App\Models\NodeRole;
 use App\Models\Route;
 use App\Models\RouteTarget;
 use App\Models\Workspace;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
@@ -413,6 +415,184 @@ function retain_legacy_source_profile_checkpoint(string $checkpoint): array
 
     return [$instance->refresh(), $route->refresh()];
 }
+
+it('bounds AppInstance response relationship queries for one and several visible rows', function (): void {
+    $secondVisibleNode = Node::query()->create([
+        'name' => 'second-visible-node',
+        'status' => LifecycleStatus::Active,
+        'public_ssh_host' => '192.0.2.20',
+        'wireguard_ip' => '10.44.0.20',
+    ]);
+    $inaccessibleNode = Node::query()->create([
+        'name' => 'inaccessible-node',
+        'status' => LifecycleStatus::Active,
+        'public_ssh_host' => '192.0.2.21',
+        'wireguard_ip' => '10.44.0.21',
+    ]);
+    $consumer = Node::query()->create([
+        'name' => 'direct-consumer',
+        'status' => LifecycleStatus::Active,
+        'public_ssh_host' => '192.0.2.22',
+        'wireguard_ip' => '10.44.0.22',
+    ]);
+    $consumer->accessibleNodes()->attach([$this->node->id, $secondVisibleNode->id]);
+
+    $first = AppInstance::query()->create([
+        'app_id' => $this->orbitApp->id,
+        'node_id' => $this->node->id,
+        'name' => 'first',
+        'checkout_path' => '/srv/orbit/apps/acme/first',
+    ]);
+    $firstRoute = Route::query()->create([
+        'app_id' => $this->orbitApp->id,
+        'node_id' => $this->node->id,
+        'generation_basis_node_id' => $this->node->id,
+        'hostname' => 'first.acme.test',
+        'provenance' => RouteProvenance::Generated,
+        'publication' => RoutePublication::Private,
+    ]);
+    $firstRoute->targets()->create(['app_instance_id' => $first->id, 'position' => 0]);
+    $firstRoute->update(['status' => RouteStatus::Active]);
+    $first->update(['status' => AppInstanceState::Active]);
+
+    /** @var list<string> $relationshipQueries */
+    $relationshipQueries = [];
+    DB::listen(static function (QueryExecuted $query) use (&$relationshipQueries): void {
+        $sql = str_replace(['"', '`'], '', mb_strtolower($query->sql));
+        $relationship = match (true) {
+            str_contains($sql, ' from apps ') => 'apps',
+            str_contains($sql, ' from routes ') => 'routes',
+            str_contains($sql, ' from route_targets ') => 'targets',
+            default => null,
+        };
+
+        if ($relationship !== null) {
+            $relationshipQueries[] = $relationship;
+        }
+    });
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $consumer->wireguard_ip])
+        ->getJson('/api/v1/instances')
+        ->assertOk()
+        ->assertJsonPath('data.*.id', [$first->id])
+        ->assertJsonPath('data.0.effective_root', 'public')
+        ->assertJsonPath('data.0.route.target.app_instance_id', $first->id);
+    $oneRowQueryCounts = array_count_values($relationshipQueries);
+
+    $second = AppInstance::query()->create([
+        'app_id' => $this->orbitApp->id,
+        'node_id' => $secondVisibleNode->id,
+        'name' => 'second',
+        'checkout_path' => '/srv/orbit/apps/acme/second',
+    ]);
+    $secondRoute = Route::query()->create([
+        'app_id' => $this->orbitApp->id,
+        'node_id' => $secondVisibleNode->id,
+        'generation_basis_node_id' => $secondVisibleNode->id,
+        'hostname' => 'second.acme.test',
+        'provenance' => RouteProvenance::Generated,
+        'publication' => RoutePublication::Private,
+    ]);
+    $secondRoute->targets()->create(['app_instance_id' => $second->id, 'position' => 0]);
+    $secondRoute->update(['status' => RouteStatus::Active]);
+    $second->update(['status' => AppInstanceState::Active]);
+    $unroutedApp = OrbitApp::query()->create([
+        'name' => 'Unrouted',
+        'slug' => 'unrouted',
+        'repository_url' => 'https://example.test/unrouted.git',
+        'root' => 'web',
+    ]);
+    $unrouted = AppInstance::query()->create([
+        'app_id' => $unroutedApp->id,
+        'node_id' => $this->node->id,
+        'name' => 'reserved',
+        'checkout_path' => '/srv/orbit/apps/unrouted/reserved',
+    ]);
+    $inaccessibleApp = OrbitApp::query()->create([
+        'name' => 'Inaccessible',
+        'slug' => 'inaccessible',
+        'repository_url' => 'https://example.test/inaccessible.git',
+        'root' => 'public',
+    ]);
+    $inaccessible = AppInstance::query()->create([
+        'app_id' => $inaccessibleApp->id,
+        'node_id' => $inaccessibleNode->id,
+        'name' => 'hidden',
+        'checkout_path' => '/srv/orbit/apps/inaccessible/hidden',
+    ]);
+    $inaccessibleRoute = Route::query()->create([
+        'app_id' => $inaccessibleApp->id,
+        'node_id' => $inaccessibleNode->id,
+        'generation_basis_node_id' => $inaccessibleNode->id,
+        'hostname' => 'hidden.inaccessible.test',
+        'provenance' => RouteProvenance::Generated,
+        'publication' => RoutePublication::Private,
+    ]);
+    $inaccessibleRoute->targets()->create(['app_instance_id' => $inaccessible->id, 'position' => 0]);
+    $inaccessibleRoute->update(['status' => RouteStatus::Active]);
+    $inaccessible->update(['status' => AppInstanceState::Active]);
+    $relationshipQueries = [];
+
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $consumer->wireguard_ip])
+        ->getJson('/api/v1/instances')
+        ->assertOk()
+        ->assertJsonPath('data.*.id', [$unrouted->id, $second->id, $first->id])
+        ->assertJsonPath('data.*.app_id', [$unroutedApp->id, $this->orbitApp->id, $this->orbitApp->id])
+        ->assertJsonPath('data.0.effective_root', 'web')
+        ->assertJsonPath('data.0.route', null)
+        ->assertJsonPath('data.1.route.target.app_instance_id', $second->id)
+        ->assertJsonPath('data.2.route.target.app_instance_id', $first->id);
+
+    expect($oneRowQueryCounts)
+        ->toBe(['apps' => 1, 'routes' => 1, 'targets' => 1])
+        ->and(array_count_values($relationshipQueries))
+        ->toBe($oneRowQueryCounts);
+});
+
+it('loads missing response relations for a single AppInstance DTO caller', function (): void {
+    $instance = AppInstance::query()->create([
+        'app_id' => $this->orbitApp->id,
+        'node_id' => $this->node->id,
+        'name' => 'single',
+        'checkout_path' => '/srv/orbit/apps/acme/single',
+    ]);
+    $route = Route::query()->create([
+        'app_id' => $this->orbitApp->id,
+        'node_id' => $this->node->id,
+        'generation_basis_node_id' => $this->node->id,
+        'hostname' => 'single.acme.test',
+        'provenance' => RouteProvenance::Generated,
+        'publication' => RoutePublication::Private,
+    ]);
+    $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+    $route->update(['status' => RouteStatus::Active]);
+    $instance->update(['status' => AppInstanceState::Active]);
+    $instance = AppInstance::query()->findOrFail($instance->id);
+    $instance->preventsLazyLoading = true;
+
+    expect($instance->relationLoaded('app'))
+        ->toBeFalse()
+        ->and($instance->relationLoaded('routes'))
+        ->toBeFalse();
+
+    $data = AppInstanceData::fromModel($instance);
+    $loadedRoute = $instance->routes->first();
+
+    expect($data->effectiveRoot)
+        ->toBe('public')
+        ->and($data->route?->target?->appInstanceId)
+        ->toBe($instance->id)
+        ->and($instance->relationLoaded('app'))
+        ->toBeTrue()
+        ->and($instance->relationLoaded('routes'))
+        ->toBeTrue()
+        ->and($loadedRoute)
+        ->toBeInstanceOf(Route::class)
+        ->and($loadedRoute?->relationLoaded('targets'))
+        ->toBeTrue();
+});
 
 it('creates an active checkout AppInstance on a standalone Node with inherited root', function (): void {
     $requestId = (string) Str::uuid();
@@ -989,6 +1169,44 @@ it('refuses Cluster activation that would change an active AppInstance Route', f
         ->toBeFalse()
         ->and($this->source->calls)
         ->toBeEmpty();
+});
+
+it('renames a Cluster and accepts unchanged placement input despite an unrelated failed checkout', function (): void {
+    $this->source->fail = 'resolve';
+    $this
+        ->postJson('/api/v1/instances', [
+            'app_id' => $this->orbitApp->id,
+            'node_id' => $this->node->id,
+            'name' => 'failed',
+        ])
+        ->assertUnprocessable();
+    $instanceBefore = AppInstance::query()->sole()->getAttributes();
+    $routeBefore = Route::query()->sole()->getAttributes();
+    $targetBefore = RouteTarget::query()->sole()->getAttributes();
+    $cluster = Cluster::query()->create([
+        'name' => 'routing',
+        'state' => ClusterState::Inactive,
+        'tld' => 'cluster',
+    ]);
+
+    $this
+        ->patchJson("/api/v1/clusters/{$cluster->id}", ['name' => 'renamed'])
+        ->assertOk()
+        ->assertJsonPath('data.name', 'renamed');
+    $this
+        ->patchJson("/api/v1/clusters/{$cluster->id}", [
+            'state' => 'inactive',
+            'tld' => 'cluster',
+        ])
+        ->assertOk()
+        ->assertJsonPath('data.name', 'renamed');
+
+    expect(AppInstance::query()->sole()->getAttributes())
+        ->toBe($instanceBefore)
+        ->and(Route::query()->sole()->getAttributes())
+        ->toBe($routeBefore)
+        ->and(RouteTarget::query()->sole()->getAttributes())
+        ->toBe($targetBefore);
 });
 
 it('transports a root override and returns it as the effective root', function (): void {
