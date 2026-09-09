@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppInstances\AppInstanceDestinationGuard;
 use App\Domain\AppInstances\AppInstanceSourceLayout;
 use App\Domain\AppInstances\AppInstanceState;
@@ -14,6 +15,9 @@ use App\Domain\Instances\CertificateMode;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\RouteHostnameChangeDirection;
+use App\Domain\Routes\RouteHostnameChangeStep;
+use App\Domain\Routes\RouteHostnameProjector;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
@@ -647,6 +651,232 @@ it('retains generated hostname provenance and returns 409 for a later explicit h
 
     expect($response->json('data.app_instance.route.provenance'))
         ->toBe(RouteProvenance::Generated->value);
+});
+
+it('uses the current sole Route after publication for omitted, matching, and conflicting retries', function (
+    bool $registrationCompleted,
+): void {
+    $app = OrbitApp::query()->create([
+        'name' => 'Acme',
+        'slug' => 'acme',
+        'repository_url' => 'https://github.com/acme/acme.git',
+        'default_branch' => 'main',
+        'root' => 'public',
+    ]);
+    $payload = [
+        'source_path' => '/work/acme',
+        'app_id' => $app->id,
+    ];
+    $first = $this->postJson('/api/v1/instances/register', [
+        ...$payload,
+        'hostname' => 'original.test',
+    ])->assertOk();
+    $instance = AppInstance::query()->sole();
+    $route = Route::query()->sole();
+    bind_route_hostname_update_for_registration_test();
+
+    $this
+        ->patchJson("/api/v1/routes/{$route->id}", ['hostname' => 'changed.test'])
+        ->assertOk()
+        ->assertJsonPath('data.hostname', 'changed.test');
+
+    if (! $registrationCompleted) {
+        $instance->update(['registration_completed_at' => null]);
+    }
+
+    $omitted = $this->postJson('/api/v1/instances/register', $payload)->assertOk();
+
+    if (! $registrationCompleted) {
+        $instance->update(['registration_completed_at' => null]);
+    }
+
+    $matching = $this->postJson('/api/v1/instances/register', [
+        ...$payload,
+        'hostname' => 'changed.test',
+    ])->assertOk();
+
+    if (! $registrationCompleted) {
+        $instance->update(['registration_completed_at' => null]);
+    }
+
+    $instanceBeforeConflict = $instance->refresh()->getAttributes();
+    $routeBeforeConflict = $route->refresh()->getAttributes();
+    $this
+        ->postJson('/api/v1/instances/register', [
+            ...$payload,
+            'hostname' => 'original.test',
+        ])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'instance.registration_conflict');
+
+    expect($omitted->json('data.app_instance.id'))
+        ->toBe($first->json('data.app_instance.id'))
+        ->and($omitted->json('data.app_instance.route.id'))
+        ->toBe($route->id)
+        ->and($omitted->json('data.app_instance.route.hostname'))
+        ->toBe('changed.test')
+        ->and($matching->json('data.app_instance.id'))
+        ->toBe($instance->id)
+        ->and($matching->json('data.app_instance.route.id'))
+        ->toBe($route->id)
+        ->and($instance->refresh()->getAttributes())
+        ->toBe($instanceBeforeConflict)
+        ->and($route->refresh()->getAttributes())
+        ->toBe($routeBeforeConflict)
+        ->and($instance->registration_route_hostname)
+        ->toBe('original.test');
+})->with([
+    'completed registration' => true,
+    'active publication before registration completion' => false,
+]);
+
+it('switches a retained migration from initial intent to the current Route only after publication', function (): void {
+    $app = OrbitApp::query()->create([
+        'name' => 'Acme',
+        'slug' => 'acme',
+        'repository_url' => 'https://github.com/acme/acme.git',
+        'default_branch' => 'main',
+        'root' => 'public',
+    ]);
+    $source = '/work/acme';
+    $instance = AppInstance::query()->create([
+        'app_id' => $app->id,
+        'node_id' => $this->node->id,
+        'name' => 'main',
+        'source_layout' => 'checkout',
+        'checkout_path' => $source,
+        'branch' => 'main',
+        'starting_commit' => str_repeat('a', 40),
+        'selected_php_version' => '8.4',
+        'source_is_laravel' => false,
+        'provisioning_step' => 'active',
+        'migration_required' => true,
+        ...registration_evidence_for_test($source),
+        'registration_route_hostname' => 'original.test',
+        'registration_route_provenance' => RouteProvenance::Explicit->value,
+        'registration_relocation_state' => 'reserved',
+        'registration_authoritative_path' => $source,
+        'status' => AppInstanceState::Active,
+    ]);
+    $route = Route::query()->create([
+        'app_id' => $app->id,
+        'node_id' => $this->node->id,
+        'hostname' => 'original.test',
+        'provenance' => RouteProvenance::Explicit,
+        'publication' => RoutePublication::Private,
+        'status' => RouteStatus::Pending,
+    ]);
+    $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+    $route->update(['status' => RouteStatus::Active]);
+    $instance->update([
+        'registration_migration_recovery' => [
+            ...registration_migration_recovery($instance, $route),
+            'planned' => [
+                'name' => 'default',
+                'checkout_path' => '/srv/orbit/apps/acme/default',
+            ],
+        ],
+    ]);
+    bind_route_hostname_update_for_registration_test();
+    $this
+        ->patchJson("/api/v1/routes/{$route->id}", ['hostname' => 'changed.test'])
+        ->assertOk();
+
+    $prePublicationInstance = $instance->refresh()->getAttributes();
+    $prePublicationRoute = $route->refresh()->getAttributes();
+    $this
+        ->postJson('/api/v1/instances/register', [
+            'source_path' => $source,
+            'app_id' => $app->id,
+        ])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'instance.registration_evidence_invalid');
+    expect($instance->refresh()->getAttributes())
+        ->toBe($prePublicationInstance)
+        ->and($route->refresh()->getAttributes())
+        ->toBe($prePublicationRoute);
+
+    $destination = '/srv/orbit/apps/acme/default';
+    $instance->update([
+        'name' => 'default',
+        'checkout_path' => $destination,
+        'migration_required' => false,
+        'registration_relocation_state' => 'relocated',
+        'registration_authoritative_path' => $destination,
+    ]);
+    $publishedInstance = $instance->refresh()->getAttributes();
+    $publishedRoute = $route->refresh()->getAttributes();
+    $this
+        ->postJson('/api/v1/instances/register', [
+            'source_path' => $source,
+            'app_id' => $app->id,
+            'hostname' => 'original.test',
+        ])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'instance.registration_conflict');
+    expect($instance->refresh()->getAttributes())
+        ->toBe($publishedInstance)
+        ->and($route->refresh()->getAttributes())
+        ->toBe($publishedRoute);
+
+    $omitted = $this->postJson('/api/v1/instances/register', [
+        'source_path' => $source,
+        'app_id' => $app->id,
+    ])->assertOk();
+    $matching = $this->postJson('/api/v1/instances/register', [
+        'source_path' => $source,
+        'app_id' => $app->id,
+        'hostname' => 'changed.test',
+    ])->assertOk();
+
+    expect($omitted->json('data.app_instance.id'))
+        ->toBe($instance->id)
+        ->and($omitted->json('data.app_instance.route.id'))
+        ->toBe($route->id)
+        ->and($omitted->json('data.app_instance.route.hostname'))
+        ->toBe('changed.test')
+        ->and($matching->json('data.app_instance.id'))
+        ->toBe($instance->id)
+        ->and($matching->json('data.app_instance.route.id'))
+        ->toBe($route->id)
+        ->and($instance->refresh()->registration_route_hostname)
+        ->toBe('original.test');
+});
+
+it('refuses registration while the authoritative Route hostname change is incomplete', function (): void {
+    $app = OrbitApp::query()->create([
+        'name' => 'Acme',
+        'slug' => 'acme',
+        'repository_url' => 'https://github.com/acme/acme.git',
+        'default_branch' => 'main',
+        'root' => 'public',
+    ]);
+    $payload = [
+        'source_path' => '/work/acme',
+        'app_id' => $app->id,
+        'hostname' => 'original.test',
+    ];
+    $this->postJson('/api/v1/instances/register', $payload)->assertOk();
+    $instance = AppInstance::query()->sole();
+    $route = Route::query()->sole();
+    $route->update([
+        'hostname_change_previous' => 'original.test',
+        'hostname_change_target' => 'changed.test',
+        'hostname_change_direction' => RouteHostnameChangeDirection::Forward,
+        'hostname_change_step' => RouteHostnameChangeStep::Reserved,
+    ]);
+    $instanceBefore = $instance->refresh()->getAttributes();
+    $routeBefore = $route->refresh()->getAttributes();
+
+    $this
+        ->postJson('/api/v1/instances/register', $payload)
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'instance.registration_conflict');
+
+    expect($instance->refresh()->getAttributes())
+        ->toBe($instanceBefore)
+        ->and($route->refresh()->getAttributes())
+        ->toBe($routeBefore);
 });
 
 it('refuses colliding complete-set identities before reservation on every retry', function (
@@ -1461,6 +1691,8 @@ it('resumes an interrupted manual migration through its validated planned destin
         'provisioning_step' => 'active',
         'migration_required' => true,
         ...registration_evidence_for_test($original),
+        'registration_route_hostname' => 'preserved.test',
+        'registration_route_provenance' => RouteProvenance::Explicit->value,
         'registration_relocation_state' => $state,
         'registration_authoritative_path' => $state === 'relocating' ? $original : $destination,
         'status' => AppInstanceState::Active,
@@ -1623,6 +1855,8 @@ it('returns 409 when retained default migration input conflicts with planned int
         'provisioning_step' => 'active',
         'migration_required' => true,
         ...registration_evidence_for_test($source),
+        'registration_route_hostname' => 'preserved.test',
+        'registration_route_provenance' => RouteProvenance::Explicit->value,
         'registration_relocation_state' => 'reserved',
         'registration_authoritative_path' => $source,
         'status' => AppInstanceState::Active,
@@ -2067,6 +2301,28 @@ it('refuses a source nested in each existing managed checkout type before reloca
 
     expect($this->registrationSource->calls)->toBe(['inspect']);
 })->with(['app-instance', 'legacy-instance', 'workspace']);
+
+function bind_route_hostname_update_for_registration_test(): void
+{
+    $projector = Mockery::mock(RouteHostnameProjector::class);
+    $projector->shouldReceive([
+        'prepareWorkloadCertificate' => null,
+        'prepareWorkloadCaddy' => null,
+        'prepareRouterCertificate' => null,
+        'prepareFirewallPolicy' => null,
+        'verifyWorkload' => null,
+        'prepareRouterCaddy' => null,
+        'publishDns' => null,
+        'cleanup' => null,
+    ]);
+    app()->instance(RouteHostnameProjector::class, $projector);
+    app()->instance(DevelopmentProjectionOperationLock::class, new class implements DevelopmentProjectionOperationLock {
+        public function run(Closure $operation): mixed
+        {
+            return $operation();
+        }
+    });
+}
 
 function registration_facts(string $digest = ''): RegistrationSourceFacts
 {
