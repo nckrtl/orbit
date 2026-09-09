@@ -403,8 +403,9 @@ describe('IncusNetworkLifecycle', function (): void {
         Process::assertNotRan(lifecycleIncus('network', 'set', 'local:oe-tst-123', 'ipv4.address', 'auto'));
     });
 
-    it('does not rewrite unchanged network configuration', function (): void {
-        Process::fake(function (PendingProcess $process) {
+    it('rechecks forwarding without rewriting unchanged network configuration', function (): void {
+        $helperCalls = 0;
+        Process::fake(function (PendingProcess $process) use (&$helperCalls) {
             if ($process->command === lifecycleIncus('network', 'list', 'local:', '--format=json')) {
                 return Process::result(json_encode([[
                     'name' => 'oe-tst-123',
@@ -420,13 +421,21 @@ describe('IncusNetworkLifecycle', function (): void {
             }
 
             if ($process->command === lifecycleFirewallHelper()) {
-                return Process::result("{\"changed\":false}\n");
+                $helperCalls++;
+
+                return Process::result(
+                    $helperCalls === 1
+                        ? "{\"changed\":true}\n"
+                        : "{\"changed\":false}\n",
+                );
             }
 
             return Process::result('', 'Unexpected command.', 2);
         });
 
-        $network = new IncusNetworkLifecycle(lifecycleHost())->reconcile('oe-tst-123');
+        $lifecycle = new IncusNetworkLifecycle(lifecycleHost());
+        $network = $lifecycle->reconcile('oe-tst-123');
+        $lifecycle->reconcile('oe-tst-123');
 
         expect($network->config)->toMatchArray([
             'ipv4.nat' => 'true',
@@ -434,8 +443,8 @@ describe('IncusNetworkLifecycle', function (): void {
             'ipv6.address' => 'none',
             'raw.dnsmasq' => lifecycleDnsmasq(),
         ]);
-        Process::assertRanTimes(lifecycleIncus('network', 'list', 'local:', '--format=json'), 1);
-        Process::assertRanTimes(lifecycleFirewallHelper(), 1);
+        Process::assertRanTimes(lifecycleIncus('network', 'list', 'local:', '--format=json'), 2);
+        Process::assertRanTimes(lifecycleFirewallHelper(), 2);
         Process::assertNotRan(fn (PendingProcess $process): bool => ($process->command[4] ?? null) === 'set');
     });
 

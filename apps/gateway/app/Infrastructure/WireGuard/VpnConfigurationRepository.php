@@ -60,7 +60,10 @@ final readonly class VpnConfigurationRepository
         $serverPrivateKey = $this->key('private');
         $serverPublicKey = $this->key('public');
         $endpoint =
-            $peer->wireguard_endpoint_override ?? $this->settings->endpoint() ?? "{$server->public_ssh_host}:{$port}";
+            $peer->wireguard_endpoint_override ?? $this->settings->endpoint() ?? WireGuardEndpoint::format(
+                $server->public_ssh_host,
+                $port,
+            );
         $dnsServer = $peer->dns_server_override ?? $this->settings->dnsServer() ?? $serverAddress;
         $domain = $this->settings->domain();
 
