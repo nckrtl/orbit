@@ -123,12 +123,15 @@ snapshot_source() {
     local path=$1
     local output=$2
     local portable=${3:-false}
-    local ignored=${4:-}
+    local ignored=${4:-__ORB105_NO_IGNORED_PATH__}
     remote_script "$path" "$output" "$portable" "$ignored" <<'BASH'
 path=$1
 output=$2
 portable=$3
 ignored=$4
+if [ "$ignored" = __ORB105_NO_IGNORED_PATH__ ]; then
+    ignored=
+fi
 case "$output" in /tmp/orb105-*) ;; *) exit 64 ;; esac
 env GIT_OPTIONAL_LOCKS=0 python3 - "$path" "$portable" "$ignored" > "$output" <<'PYTHON'
 import base64, hashlib, json, os, pathlib, stat, subprocess, sys
@@ -392,6 +395,7 @@ BASH
         remote_command test -d "$root"
         remote_command test -L "$child/.git"
         cleanup_path "$root" "$child"
+        remote_command rm -f /tmp/orb105-gitfile
 
         base=/home/orbit/orb105-collision-equal
         root="$base/primary/shared"
