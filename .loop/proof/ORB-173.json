@@ -1,0 +1,29 @@
+{
+    "setup": [
+        {
+            "id": "development-projection-surfaces",
+            "node": "gateway",
+            "argv": [
+                "bash",
+                "/var/lib/orbit-e2e/proof/development-projection-contention.sh",
+                "probe"
+            ],
+            "timeout_seconds": 120
+        }
+    ],
+    "acceptance": [
+        {
+            "id": "development-projection-contention",
+            "node": "gateway",
+            "argv": [
+                "bash",
+                "/var/lib/orbit-e2e/proof/development-projection-contention.sh",
+                "acceptance"
+            ],
+            "timeout_seconds": 900
+        }
+    ],
+    "extension": "app-prod",
+    "mutates": true,
+    "observed_inputs": true
+}
