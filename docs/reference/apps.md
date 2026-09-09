@@ -43,6 +43,22 @@ Repository validation and failure details do not expose embedded credentials or 
 
 During an upgrade, the Gateway checks every existing App before it makes repository identity unique. If it finds a duplicate identity, it reports the conflicting App IDs, changes no App, and refuses the migration until an operator resolves the conflict.
 
+## Resolve an App during registration
+
+Registration uses the verified checkout origin to find an App by canonical repository identity. The Gateway does not choose by URL transport or database order, and conflicting App or source identity stops registration before mutation.
+
+When no App owns the repository, the interactive CLI shows every inferred value, asks only for unresolved values and confirmation, and then asks the Gateway to create the App before its AppInstance. Non-interactive registration refuses when a required value remains unresolved. If App creation succeeds and later registration fails, the valid App remains available for an identical retry.
+
+Registration can infer these App values from unambiguous source evidence.
+
+| App value | Verified source evidence |
+| --- | --- |
+| Slug | Repository name |
+| `default_branch` | Remote symbolic default branch |
+| Root | `public` for an unambiguous Laravel checkout |
+
+Valid explicit values fill only unresolved or optional values. They do not override a conflicting repository identity or verified source fact.
+
 ## Retry creation safely
 
 `app:new` is an idempotent creation command. Repeating it with the same name, slug, repository access URL, default branch, root, and defaults returns the existing App. An omitted branch is not resolved again during that retry.

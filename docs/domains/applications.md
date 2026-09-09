@@ -1,6 +1,6 @@
 # Applications
 
-This page tells an operator how Orbit creates, configures, and exposes a development AppInstance on one manually selected app-dev Node. An App stores shared source defaults, and each AppInstance owns one source and one Route.
+This page tells an operator how Orbit creates or adopts, configures, and exposes a development AppInstance on one app-dev Node. An App stores shared source defaults, and each AppInstance owns one source and one Route.
 
 [ADR 0009](../decisions/0009-clustered-app-instance-routing.md) defines the development source boundary. [ADR 0025](../decisions/0025-stabilize-the-default-appinstance-identity.md) defines stable default identity, [ADR 0027](../decisions/0027-adopt-local-git-sources-into-appinstance-ownership.md) defines owned source layouts, and [ADR 0032](../decisions/0032-preserve-explicit-appinstance-branch-selection.md) defines explicit branch selection. [ADR 0011](../decisions/0011-clustered-production-ingress-and-app-prod-placement.md) defines the separate production placement contract.
 
@@ -42,7 +42,7 @@ The Gateway derives placement from the requested identity and selects the branch
 | Another name without `--branch` | `<node-apps-root>/<app-slug>/<instance-name>` | The matching remote branch, or a new branch from the exact fetched `default_branch` commit |
 | Any name with `--branch=<branch>` | The placement for the requested name | The existing remote `<branch>` |
 
-`instance:new` stores source layout `checkout`. The checkout has its own `.git` directory and does not use a Workspace or shared worktree administration. The `worktree` layout identifies a linked Git worktree under AppInstance ownership, but Orbit exposes no command that adopts or migrates an existing source.
+`instance:new` stores source layout `checkout`. The checkout has its own `.git` directory and does not use a Workspace or shared worktree administration.
 
 The API and PHP SDK accept the optional `branch` input. API, SDK, and CLI JSON responses return the resolved branch as `selected_branch`. They return the explicit input as nullable `branch_override`, including when it equals `default_branch`; inherited selection returns null. An explicit branch that does not exist returns `instance.branch_resolution_failed` without a fallback or an active AppInstance or Route.
 
@@ -56,17 +56,44 @@ reserved -> checkout_prepared -> source_resolved
 
 An identical retry verifies the recorded App, Node, source layout, root, path, repository, branch override, selected branch, hostname input, and pre-activation commit evidence. It then resumes the next incomplete source or provisioning boundary. Once active, the recorded starting commit stays unchanged while normal development advances `HEAD`. Adding, removing, or changing the branch override returns `instance.placement_conflict` before database, Git, filesystem, configuration, runtime, or Route mutation.
 
+## Register an existing development source
+
+Run registration from an independent Git checkout or a linked worktree on the caller's app-dev Node:
+
+```text
+orbit instance:register
+```
+
+The CLI refuses a directory outside a Git checkout or worktree before it asks the Gateway to create an App or AppInstance. The Gateway independently verifies the submitted source on the authenticated caller Node before it changes Git, files, runtime, Routes, or database records.
+
+The Gateway resolves an existing App by the source's canonical repository identity. The [Apps reference](../reference/apps.md#resolve-an-app-during-registration) owns App lookup, inference, confirmation, and missing-App creation.
+
+Registration infers AppInstance placement from verified source facts.
+
+| Verified source | AppInstance identity | Managed placement |
+| --- | --- | --- |
+| Top-level directory matches the App slug and the checked-out branch matches `default_branch` | `default` | `<node-apps-root>/<app-slug>/default` |
+| Any other accepted checkout or worktree | The Git top-level directory name | `<node-apps-root>/<app-slug>/<instance-name>` |
+
+An explicit valid value can fill an unresolved or optional value. It cannot replace conflicting verified source identity. Registration infers `public` as the web root only when Laravel detection is unambiguous.
+
+Orbit records `checkout` for an independent repository and `worktree` for a linked working tree. It preserves the complete source, including HEAD, branch or detached state, index, dirty and untracked files, refs, commits, and unrelated configuration, while it moves the source into managed placement.
+
+By default, registering a checkout adopts only the caller's source. Orbit repairs retained linked worktrees after it moves their common checkout and leaves those worktrees usable and unregistered. Use `--include-worktrees` to adopt the checkout and every linked worktree as one preflighted set. If any requested source fails preflight, Orbit moves none of them.
+
+For a cross-filesystem move, Orbit stages and verifies the complete source at the destination before it removes the original. Durable progress keeps one verified authoritative copy after interruption. An identical retry resumes the same App, AppInstances, Routes, and managed paths; conflicting input preserves the accepted registration.
+
 ## Complete a required source migration
 
-An AppInstance can require manual migration when its stored name follows the earlier branch-named default identity. Orbit keeps that name, checkout path, selected branch, source, and Route authoritative until an operator completes migration outside the current command set. List and show responses return `migration_required: true`, Doctor reports the same bounded condition, and the existing Route continues to serve the same source path.
+An AppInstance can require manual migration when its stored name follows the earlier branch-named default identity. Orbit keeps that name, checkout path, selected branch, source, and Route authoritative until an operator runs `instance:register` from its recorded source. List and show responses return `migration_required: true`, Doctor reports the same bounded condition, and the existing Route continues to serve the same source path.
 
-The Gateway returns `instance.migration_required` before database, Git, filesystem, runtime, or Route mutation when an operation would remove, rebind, or change this source. Read-only inspection remains available, and Orbit can still reconcile its Route without changing the source. An occupied `default` identity, an overlapping Orbit-managed destination, or an occupied unmanaged destination returns `instance.migration_conflict` with a bounded message that identifies the cause and preserves every existing AppInstance, source, and Route.
+Registration verifies the recorded source, moves it to the managed `default` placement, and updates its identity and runtime while it preserves the Route hostname. An identical retry resumes the same migration. A failed migration keeps the old record, path, runtime, Route, and Laravel URL configuration authoritative. An occupied `default` identity, an overlapping Orbit-managed destination, or an occupied unmanaged destination returns `instance.migration_conflict` with a bounded message that identifies the cause and preserves every existing AppInstance, source, and Route.
 
 ## Provision the application endpoint
 
 Before source or runtime changes, the Gateway resolves the Route hostname. The optional `--hostname` value requests an explicit hostname and takes precedence over generated naming. Without it, the Gateway uses the Node or Cluster naming basis described in the [Route reference](../reference/routes.md). The request fails before source or runtime mutation when neither basis can produce a hostname.
 
-After source resolution, the Gateway classifies the source, selects any required PHP runtime, associates the AppInstance with its sole Route, configures Laravel when detected, and prepares the runtime, certificates, Caddy, firewall, and private Domain Name System (DNS) projection. A Cluster-scoped Route also prepares the Router path. The [PHP runtime reference](../reference/php-runtime.md) describes source-driven runtime selection.
+After source creation or adoption, the Gateway classifies the source, selects any required PHP runtime, associates the AppInstance with its sole Route, configures Laravel when detected, and prepares the runtime, certificates, Caddy, firewall, and private Domain Name System (DNS) projection. A Cluster-scoped Route also prepares the Router path. The [PHP runtime reference](../reference/php-runtime.md) describes source-driven runtime selection.
 
 Orbit records each completed boundary. The same request can continue after a failure without duplicating source or Route records. Orbit returns the active AppInstance with its Route, hostname, and HTTPS URL when every provisioning step owned by Orbit succeeds.
 
@@ -117,8 +144,8 @@ The removal reference also describes worktree preflight, forced fixed-set cascad
 
 ## Input boundary
 
-AppInstance creation and removal do not accept a repository, command, process, or shell input. The App owns the repository, and the optional branch input selects source without changing placement or Route identity. Orbit does not install application dependencies as part of framework detection.
+AppInstance creation and removal do not accept a repository, command, process, or shell input. Registration accepts bounded source facts for independent Gateway verification; it does not accept a command, process, shell input, or caller-selected Node. The App owns the repository, and the optional creation branch selects source without changing placement or Route identity. Orbit does not install application dependencies as part of framework detection.
 
 The [Route reference](../reference/routes.md) defines initial private traffic projection and the refusal boundary for Route, Node, Cluster, and access changes that still need coordinated runtime and Laravel URL reconciliation.
 
-`instance:new` does not adopt caller-local Git sources. Orbit exposes no adoption or manual migration command. [ADR 0027](../decisions/0027-adopt-local-git-sources-into-appinstance-ownership.md) defines the ownership and safety boundary for that separate contract.
+`instance:new` creates a new checkout. `instance:register` adopts a caller-local checkout or worktree and can complete the manual default-source migration. Both commands end in the same AppInstance provisioning and removal lifecycle.
