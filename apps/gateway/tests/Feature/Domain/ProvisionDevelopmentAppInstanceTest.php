@@ -3,12 +3,14 @@
 declare(strict_types=1);
 
 use App\Actions\Routes\CreateRouteAction;
+use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\AppInstances\DevelopmentAppInstanceConfigurator;
 use App\Domain\AppInstances\DevelopmentRouteProjector;
 use App\Domain\AppInstances\DevelopmentSourceProfile;
 use App\Domain\Routes\RouteStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppInstances\NativeDevelopmentAppInstanceProvisioner;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
@@ -69,14 +71,25 @@ beforeEach(function (): void {
             }
         }
     };
-    $this->projection = new class implements DevelopmentRouteProjector {
+    $this->projectionOwner = new ProvisionDevelopmentProjectionOwner;
+    $this->projection = new class($this->projectionOwner) implements DevelopmentRouteProjector {
         public int $convergences = 0;
 
         public ?RuntimeConvergenceException $failure = null;
 
+        public bool $ownerWasActive = false;
+
+        public ?string $observedHostname = null;
+
+        public function __construct(
+            private readonly ProvisionDevelopmentProjectionOwner $owner,
+        ) {}
+
         public function converge(AppInstance $appInstance, Route $route): void
         {
             $this->convergences++;
+            $this->ownerWasActive = $this->owner->active;
+            $this->observedHostname = $route->hostname;
             if ($this->failure instanceof RuntimeConvergenceException) {
                 throw $this->failure;
             }
@@ -86,7 +99,84 @@ beforeEach(function (): void {
         app(CreateRouteAction::class),
         $this->configuration,
         $this->projection,
+        $this->projectionOwner,
     );
+});
+
+it('retains projection ownership through Route and AppInstance activation', function (): void {
+    $this->provisioner->reserve($this->instance, null);
+
+    $result = $this->provisioner->complete($this->instance, null);
+
+    expect($this->projection->ownerWasActive)
+        ->toBeTrue()
+        ->and($this->projectionOwner->active)
+        ->toBeFalse()
+        ->and($result->status)
+        ->toBe(AppInstanceState::Active)
+        ->and($result->routes()->sole()->status)
+        ->toBe(RouteStatus::Active);
+});
+
+it('refreshes projection facts after ownership begins', function (): void {
+    $this->provisioner->reserve($this->instance, null);
+    $route = $this->instance->routes()->sole();
+    $this->projectionOwner->onEnter = static function () use ($route): void {
+        Route::query()->whereKey($route->id)->update(['hostname' => 'fresh.test']);
+    };
+
+    $this->provisioner->complete($this->instance, null);
+
+    expect($this->projection->observedHostname)->toBe('fresh.test');
+});
+
+it('rejects target membership that changes before projection ownership begins', function (): void {
+    $this->provisioner->reserve($this->instance, null);
+    $route = $this->instance->routes()->sole();
+    $this->projectionOwner->onEnter = static function () use ($route): void {
+        $route->targets()->delete();
+    };
+
+    expect(fn () => $this->provisioner->complete($this->instance, null))
+        ->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)
+                ->toBe('instance.lifecycle_conflict')
+                ->and($exception->status)
+                ->toBe(409);
+        });
+    expect($this->configuration->inspections)
+        ->toBe(0)
+        ->and($this->projection->convergences)
+        ->toBe(0)
+        ->and($this->instance->refresh()->status)
+        ->toBe(AppInstanceState::SourceResolved)
+        ->and($route->refresh()->status)
+        ->toBe(RouteStatus::Pending);
+});
+
+it('returns retryable HTTP 409 contention before configuration projection or activation', function (): void {
+    $this->provisioner->reserve($this->instance, null);
+    $this->projectionOwner->failure = new ResourceOperationException(
+        errorCode: 'app-dev.projection_busy',
+        message: 'Another development projection operation is active. Retry the request.',
+        status: 409,
+    );
+
+    expect(fn () => $this->provisioner->complete($this->instance, null))
+        ->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)
+                ->toBe('app-dev.projection_busy')
+                ->and($exception->status)
+                ->toBe(409);
+        });
+    expect($this->configuration->inspections)
+        ->toBe(0)
+        ->and($this->projection->convergences)
+        ->toBe(0)
+        ->and($this->instance->refresh()->status)
+        ->toBe(AppInstanceState::SourceResolved)
+        ->and($this->instance->routes()->sole()->status)
+        ->toBe(RouteStatus::Pending);
 });
 
 it('reports source classification failure without persisting it and reuses the sole Route', function (): void {
@@ -231,4 +321,32 @@ function provisioning_failure(string $step): RuntimeConvergenceException
         errorCode: "app-dev.{$step}_failed",
         message: "The {$step} boundary failed.",
     );
+}
+
+final class ProvisionDevelopmentProjectionOwner implements DevelopmentProjectionOperationLock
+{
+    public bool $active = false;
+
+    public ?Closure $onEnter = null;
+
+    public ?ResourceOperationException $failure = null;
+
+    public function run(Closure $operation): mixed
+    {
+        if ($this->failure instanceof ResourceOperationException) {
+            throw $this->failure;
+        }
+
+        $this->active = true;
+
+        try {
+            if ($this->onEnter instanceof Closure) {
+                ($this->onEnter)();
+            }
+
+            return $operation();
+        } finally {
+            $this->active = false;
+        }
+    }
 }

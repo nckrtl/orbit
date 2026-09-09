@@ -7,13 +7,19 @@ use App\Domain\AppDev\AppDevCertificateManager;
 use App\Domain\AppDev\AppDevPhpFpmManager;
 use App\Domain\AppDev\AppDevSourceManager;
 use App\Domain\AppDev\AppDevSourceOperationLock;
+use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Certificates\LeafCertificateSigner;
+use App\Domain\Clusters\ClusterState;
 use App\Domain\Instances\CertificateMode;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\RouteProvenance;
+use App\Domain\Routes\RoutePublication;
+use App\Domain\Routes\RouteStatus;
 
 function app_dev_account_resolver(
     ManagedUserAccount $account = new ManagedUserAccount('orbit', 'orbit', '/home/orbit'),
@@ -31,6 +37,7 @@ function app_dev_account_resolver(
 }
 
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppDev\AppDevCaddyConfigRenderer;
 use App\Infrastructure\AppDev\AppDevCaddyPublisher;
 use App\Infrastructure\AppDev\AppDevDnsConfigRenderer;
@@ -40,12 +47,14 @@ use App\Infrastructure\AppDev\AppDevSshExecutor;
 use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
 use App\Infrastructure\AppDev\NativeAppDevRuntimeConverger;
 use App\Infrastructure\AppDev\NativeAppDevSourceOperationLock;
+use App\Infrastructure\AppDev\NativeDevelopmentProjectionOperationLock;
 use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
 use App\Infrastructure\AppDev\RemoteAppDevCertificateManager;
 use App\Infrastructure\AppDev\RemoteAppDevPhpFpmManager;
 use App\Infrastructure\AppDev\RemoteAppDevSourceManager;
 use App\Infrastructure\AppDev\RemoteAppDevTldRouteManager;
 use App\Infrastructure\Nodes\RemotePhpPackageManager;
+use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\ProcessInvocation;
@@ -54,8 +63,11 @@ use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\App as OrbitApp;
+use App\Models\AppInstance;
+use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Route;
 use App\Models\Workspace;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
@@ -2079,6 +2091,28 @@ it('publishes private Caddy and DNS configurations through complete preserved va
         );
 });
 
+it('retains exact DNS records for active and pending Routes on different Routers', function (): void {
+    $firstRoute = orb173_dns_projection_route('first', '10.44.0.31', '10.44.0.32', RouteStatus::Active);
+    $secondRoute = orb173_dns_projection_route('second', '10.44.0.41', '10.44.0.42', RouteStatus::Pending);
+    $processes = new AppDevFakeProcessRunner;
+    $renderer = new AppDevDnsConfigRenderer(new AppDevSiteRepository);
+    $manager = new DnsmasqPrivateDnsManager($processes, $renderer);
+
+    $manager->convergeRoute($secondRoute);
+
+    $configuration = $renderer->render(pendingRoute: $secondRoute);
+
+    expect($configuration)
+        ->toContain(
+            "host-record={$firstRoute->hostname},10.44.0.32",
+            "host-record={$secondRoute->hostname},10.44.0.42",
+        )
+        ->and($processes->invocations)
+        ->toHaveCount(1)
+        ->and($processes->invocations[0]->input)
+        ->toContain(base64_encode($configuration));
+});
+
 it('projects only the explicit provisioning node before its active transition', function (): void {
     $pending = Node::query()->create([
         'name' => 'pending-app-dev',
@@ -2181,6 +2215,164 @@ it('holds the shared projection lock while capturing and publishing DNS intent',
     } finally {
         new Filesystem()->deleteDirectory($orbitHome);
     }
+});
+
+it('keeps one reentrant projection owner until outer completion and releases it after failure', function (): void {
+    $orbitHome = sys_get_temp_dir().'/orbit-development-projection-'.Str::uuid();
+    $now = 0.0;
+    $clock = static function () use (&$now): float {
+        return $now;
+    };
+    $contenderDeadline = new CommandDeadline($clock);
+    $contenderDeadline->start(0.02);
+    $owner = new NativeDevelopmentProjectionOperationLock($orbitHome, new CommandDeadline($clock), $clock);
+    $contender = new NativeDevelopmentProjectionOperationLock(
+        $orbitHome,
+        $contenderDeadline,
+        $clock,
+        static function (int $microseconds) use (&$now): void {
+            $now += $microseconds / 1_000_000;
+        },
+    );
+    $events = [];
+
+    try {
+        $owner->run(function () use ($owner, $contender, &$events): void {
+            $events[] = 'outer-enter';
+            $owner->run(function () use (&$events): void {
+                $events[] = 'inner-enter';
+            });
+            $events[] = 'inner-return';
+
+            expect(fn () => $contender->run(static fn (): string => 'contended'))
+                ->toThrow(function (ResourceOperationException $exception): void {
+                    expect($exception->errorCode)
+                        ->toBe('app-dev.projection_busy')
+                        ->and($exception->status)
+                        ->toBe(409);
+                });
+        });
+
+        expect(fn () => $owner->run(static fn () => throw new RuntimeException('outer failure')))
+            ->toThrow(RuntimeException::class, 'outer failure');
+        $released = new NativeDevelopmentProjectionOperationLock(
+            $orbitHome,
+            new CommandDeadline($clock),
+            $clock,
+        );
+
+        expect($events)
+            ->toBe(['outer-enter', 'inner-enter', 'inner-return'])
+            ->and($released->run(static fn (): string => 'released'))
+            ->toBe('released')
+            ->and(fileperms($orbitHome) & 0o777)
+            ->toBe(0o700)
+            ->and(fileperms($orbitHome.'/.dnsmasq-projections.lock') & 0o777)
+            ->toBe(0o600);
+    } finally {
+        new Filesystem()->deleteDirectory($orbitHome);
+    }
+});
+
+it('binds one native projection owner for each application request scope', function (): void {
+    $first = app(DevelopmentProjectionOperationLock::class);
+    $sameScope = app(DevelopmentProjectionOperationLock::class);
+
+    app()->forgetScopedInstances();
+
+    $nextScope = app(DevelopmentProjectionOperationLock::class);
+
+    expect($first)
+        ->toBeInstanceOf(NativeDevelopmentProjectionOperationLock::class)
+        ->toBe($sameScope)
+        ->not->toBe($nextScope);
+});
+
+it('waits within the command deadline and continues after the current owner releases', function (): void {
+    $orbitHome = sys_get_temp_dir().'/orbit-development-projection-wait-'.Str::uuid();
+    mkdir($orbitHome, permissions: 0o700, recursive: true);
+    $path = $orbitHome.'/.dnsmasq-projections.lock';
+    $held = fopen($path, mode: 'c+');
+    expect($held)->not->toBeFalse();
+    flock($held, LOCK_EX);
+    $now = 10.0;
+    $clock = static function () use (&$now): float {
+        return $now;
+    };
+    $deadline = new CommandDeadline($clock);
+    $deadline->start(0.025);
+    $waits = 0;
+    $owner = new NativeDevelopmentProjectionOperationLock(
+        $orbitHome,
+        $deadline,
+        $clock,
+        static function (int $microseconds) use (&$now, &$waits, &$held): void {
+            $now += $microseconds / 1_000_000;
+            $waits++;
+
+            if ($waits === 2 && is_resource($held)) {
+                flock($held, LOCK_UN);
+                fclose($held);
+                $held = null;
+            }
+        },
+    );
+
+    try {
+        expect($owner->run(static fn (): string => 'fresh'))
+            ->toBe('fresh')
+            ->and($waits)
+            ->toBe(2)
+            ->and(round($now, 3))
+            ->toBe(10.02);
+    } finally {
+        if (is_resource($held)) {
+            flock($held, LOCK_UN);
+            fclose($held);
+        }
+
+        new Filesystem()->deleteDirectory($orbitHome);
+    }
+});
+
+it('enters projection ownership before app-dev Caddy and DNS host publication', function (): void {
+    [$node] = app_dev_runtime_models();
+    $owner = new AppDevProjectionOwnerSpy;
+    $ssh = new AppDevFakeSshExecutor;
+    $caddy = new RemoteAppDevCaddyManager(
+        sites: new AppDevSiteRepository,
+        renderer: new AppDevCaddyConfigRenderer,
+        ssh: app_dev_ssh($ssh),
+        projection: $owner,
+    );
+    $processes = new class($owner) implements \App\Infrastructure\Processes\ProcessRunner {
+        public function __construct(
+            private readonly AppDevProjectionOwnerSpy $owner,
+        ) {}
+
+        public function run(ProcessInvocation $invocation): CommandResult
+        {
+            expect($this->owner->active)->toBeTrue();
+
+            return new CommandResult(0, '', '', 1, false);
+        }
+    };
+    $dns = new DnsmasqPrivateDnsManager(
+        $processes,
+        new AppDevDnsConfigRenderer(new AppDevSiteRepository),
+        $owner,
+    );
+
+    $caddy->converge($node);
+    $caddy->remove($node);
+    $dns->converge();
+
+    expect($owner->runs)
+        ->toBe(3)
+        ->and($owner->active)
+        ->toBeFalse()
+        ->and($ssh->commands)
+        ->toHaveCount(3);
 });
 
 it('retires only the exact package-default caddyfile while preserving modified config and orbit fragments', function (): void {
@@ -2500,6 +2692,89 @@ function app_dev_runtime_models(
     $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
 
     return [$node, $instance, $workspace];
+}
+
+function orb173_dns_projection_route(
+    string $name,
+    string $workloadAddress,
+    string $routerAddress,
+    RouteStatus $status,
+): Route {
+    $cluster = Cluster::query()->create([
+        'name' => "{$name}-cluster",
+        'state' => ClusterState::Active,
+    ]);
+    $workload = Node::query()->create([
+        'cluster_id' => $cluster->id,
+        'name' => "{$name}-workload",
+        'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
+        'tld' => "{$name}.test",
+        'public_ssh_host' => "{$name}-workload.test",
+        'wireguard_ip' => $workloadAddress,
+        'user' => 'orbit',
+    ]);
+    $workload
+        ->roles()
+        ->create([
+            'role' => RoleName::AppDev,
+            'status' => LifecycleStatus::Active,
+        ]);
+    $router = Node::query()->create([
+        'cluster_id' => $cluster->id,
+        'name' => "{$name}-router",
+        'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
+        'public_ssh_host' => "{$name}-router.test",
+        'wireguard_ip' => $routerAddress,
+        'user' => 'orbit',
+    ]);
+    $router
+        ->roles()
+        ->create([
+            'cluster_id' => $cluster->id,
+            'role' => RoleName::Router,
+            'status' => LifecycleStatus::Active,
+        ]);
+    $app = OrbitApp::query()->create([
+        'name' => ucfirst($name),
+        'slug' => $name,
+        'repository_url' => "https://example.test/{$name}.git",
+        'root' => 'public',
+    ]);
+    $instance = AppInstance::query()->create([
+        'app_id' => $app->id,
+        'node_id' => $workload->id,
+        'name' => 'default',
+        'checkout_path' => "/home/orbit/apps/{$name}",
+        'root' => 'public',
+        'branch' => 'main',
+        'starting_commit' => str_repeat($name === 'first' ? 'a' : 'b', 40),
+        'selected_php_version' => '8.5',
+        'status' => $status === RouteStatus::Active
+            ? AppInstanceState::Active
+            : AppInstanceState::SourceResolved,
+    ]);
+    $route = Route::query()->create([
+        'app_id' => $app->id,
+        'cluster_id' => $cluster->id,
+        'hostname' => "{$name}.app.test",
+        'provenance' => RouteProvenance::Explicit,
+        'publication' => RoutePublication::Private,
+        'status' => RouteStatus::Pending,
+    ]);
+    $route
+        ->targets()
+        ->create([
+            'app_instance_id' => $instance->id,
+            'position' => 0,
+        ]);
+
+    if ($status === RouteStatus::Active) {
+        $route->update(['status' => RouteStatus::Active]);
+    }
+
+    return $route;
 }
 
 /** @return array{RemoteAppDevSourceManager, AppDevFakeSshExecutor} */
@@ -3122,6 +3397,25 @@ function zero_site_publisher(AppDevCaddyPublishHarness $harness): AppDevCaddyPub
         caddyServiceName: 'caddy',
         lockPath: $harness->etcCaddyPath('orbit-locks/caddy.lock'),
     );
+}
+
+final class AppDevProjectionOwnerSpy implements DevelopmentProjectionOperationLock
+{
+    public int $runs = 0;
+
+    public bool $active = false;
+
+    public function run(Closure $operation): mixed
+    {
+        $this->runs++;
+        $this->active = true;
+
+        try {
+            return $operation();
+        } finally {
+            $this->active = false;
+        }
+    }
 }
 
 function app_dev_ssh(AppDevFakeSshExecutor $ssh): AppDevSshExecutor

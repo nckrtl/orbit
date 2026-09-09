@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Nodes\ManagedUserAccount;
@@ -147,6 +148,69 @@ it('projects a dedicated Router over reachable LAN with separate keys and preser
             ->toHaveCount(1)
             ->and($workload->id)
             ->not->toBe($router->id);
+    } finally {
+        new Filesystem()->deleteDirectory($home);
+    }
+});
+
+it('retains active workload and Router sites while publishing a second Route on the same Router', function (): void {
+    [$firstInstance, $firstRoute, $workload, $router] = orb127_route_projection_models(phpVersion: '8.5');
+    $firstInstance->update(['status' => AppInstanceState::Active]);
+    $firstRoute->update(['status' => RouteStatus::Active]);
+    $secondInstance = AppInstance::query()->create([
+        'app_id' => $firstInstance->app_id,
+        'node_id' => $workload->id,
+        'name' => 'second',
+        'checkout_path' => '/home/orbit/apps/acme/second',
+        'root' => 'public',
+        'branch' => 'second',
+        'starting_commit' => str_repeat('b', 40),
+        'selected_php_version' => '8.5',
+        'status' => AppInstanceState::SourceResolved,
+    ]);
+    $secondRoute = Route::query()->create([
+        'app_id' => $firstRoute->app_id,
+        'cluster_id' => $firstRoute->cluster_id,
+        'hostname' => 'second.acme.test',
+        'provenance' => RouteProvenance::Explicit,
+        'publication' => RoutePublication::Private,
+        'status' => RouteStatus::Pending,
+    ]);
+    $secondRoute
+        ->targets()
+        ->create([
+            'app_instance_id' => $secondInstance->id,
+            'position' => 0,
+        ]);
+    [$projector, $ssh, , $home] = orb127_route_projector();
+
+    try {
+        $projector->converge($secondInstance, $secondRoute);
+
+        $sites = new AppDevSiteRepository;
+        $renderer = new AppDevCaddyConfigRenderer;
+        $workloadConfiguration = $renderer->render($sites->forNode($workload, $secondRoute));
+        $routerConfiguration = $renderer->render($sites->forNode($router, $secondRoute));
+        $publishedInputs = collect($ssh->commands)->pluck('input')->filter();
+
+        expect($workloadConfiguration)
+            ->toContain(
+                "/etc/caddy/orbit-certificates/app-instance-{$firstInstance->id}/current/cert.pem",
+                "/etc/caddy/orbit-certificates/app-instance-{$secondInstance->id}/current/cert.pem",
+            )
+            ->and($routerConfiguration)
+            ->toContain(
+                "/etc/caddy/orbit-certificates/route-{$firstRoute->id}-router/current/cert.pem",
+                "/etc/caddy/orbit-certificates/route-{$secondRoute->id}-router/current/cert.pem",
+            )
+            ->and($publishedInputs->contains(
+                static fn (string $input): bool => str_contains($input, base64_encode($workloadConfiguration)),
+            ))
+            ->toBeTrue()
+            ->and($publishedInputs->contains(
+                static fn (string $input): bool => str_contains($input, base64_encode($routerConfiguration)),
+            ))
+            ->toBeTrue();
     } finally {
         new Filesystem()->deleteDirectory($home);
     }
