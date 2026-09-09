@@ -63,6 +63,19 @@ Unchanged:
 - A validation failure remains the reported `gateway.fpm_config_invalid` failure.
 - A failed invocation never reloads PHP-FPM.
 
+## Proof decision
+
+- `.loop/proof/ORB-157.json` is mutating because the action publishes temporary
+  Gateway pool variants and injects a conflicting effective pool before it
+  restores the original root-owned live pool and service.
+- `observed_inputs` is `false`. The acceptance action executes the changed
+  Gateway CLI boundary and real PHP-FPM validation, but it cannot produce the
+  complete `app-dev:cli`, `gateway:cli`, and `gateway:fpm` PHP observations
+  required for honest PCOV collection.
+- Discovery attempt `8f3cb64f79ee819b548983095b90b848` passed the complete
+  fixture and post-recovery topology verification from product checkpoint
+  `603bfad080c89d4f14fafb1d7937e657d5f09206`.
+
 ## Open questions
 
 - None.

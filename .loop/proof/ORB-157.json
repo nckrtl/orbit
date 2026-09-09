@@ -1,0 +1,16 @@
+{
+    "setup": [],
+    "acceptance": [
+        {
+            "id": "gateway-fpm-stage-contention",
+            "node": "gateway",
+            "argv": [
+                "sudo",
+                "/var/lib/orbit-e2e/proof/gateway-fpm-stage-contention.sh"
+            ],
+            "timeout_seconds": 180
+        }
+    ],
+    "mutates": true,
+    "observed_inputs": false
+}
