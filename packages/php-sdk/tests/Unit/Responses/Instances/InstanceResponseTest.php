@@ -21,6 +21,7 @@ describe(AppInstanceResponse::class, function (): void {
             'branch_override' => 'main',
             'migration_required' => true,
             'starting_commit' => 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+            'detached' => false,
             'status' => 'active',
         ], '0198e15c-bf97-7c23-8f1f-61b8fe67a844');
 
@@ -38,6 +39,7 @@ describe(AppInstanceResponse::class, function (): void {
             'branch_override' => 'main',
             'migration_required' => true,
             'starting_commit' => 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+            'detached' => false,
             'status' => 'active',
             'route' => null,
             'hostname' => null,

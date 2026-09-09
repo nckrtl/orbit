@@ -49,6 +49,7 @@ final readonly class NativeInstanceStateInspector implements InstanceStateInspec
                         $appInstance->source_layout,
                         $appInstance->branch ?? '',
                         $appInstance->starting_commit ?? '',
+                        $appInstance->registration_detached ? '1' : '0',
                     ],
                     input: self::remoteScript(),
                 ),
@@ -100,6 +101,7 @@ final readonly class NativeInstanceStateInspector implements InstanceStateInspec
             source_layout=$6
             branch=$7
             starting_commit=$8
+            detached=$9
 
             emit() {
                 if "$@"; then printf '1\n'; else printf '0\n'; fi
@@ -134,11 +136,15 @@ final readonly class NativeInstanceStateInspector implements InstanceStateInspec
                 test "$(git -C "$checkout" remote get-url origin)" = "$repository"
             }
             source_identity_matches() {
-                test -n "$branch" &&
-                    test -n "$starting_commit" &&
-                    test "$(git -C "$checkout" symbolic-ref --short HEAD)" = "$branch" &&
-                    test "$(git -C "$checkout" rev-parse --verify "$starting_commit^{commit}")" = "$starting_commit" &&
-                    git -C "$checkout" merge-base --is-ancestor "$starting_commit" HEAD
+                test -n "$starting_commit" || return 1
+                test "$(git -C "$checkout" rev-parse --verify "$starting_commit^{commit}")" = "$starting_commit" || return 1
+                git -C "$checkout" merge-base --is-ancestor "$starting_commit" HEAD || return 1
+
+                if [ "$detached" = 1 ]; then
+                    ! git -C "$checkout" symbolic-ref --quiet HEAD >/dev/null
+                else
+                    test -n "$branch" && test "$(git -C "$checkout" symbolic-ref --short HEAD)" = "$branch"
+                fi
             }
 
             emit checkout_exists

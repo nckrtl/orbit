@@ -114,6 +114,7 @@ Route::prefix('v1')->group(function (): void {
         Route::get('instances', [AppInstancesController::class, 'index'])->name('instance:list');
         Route::get('instances/{instance}', [AppInstancesController::class, 'show'])->name('instance:show');
         Route::post('instances', [AppInstancesController::class, 'store'])->name('instance:new');
+        Route::post('instances/register', [AppInstancesController::class, 'register'])->name('instance:register');
         Route::delete('instances/{instance}', [AppInstancesController::class, 'destroy'])
             ->name('instance:remove');
         Route::get('routes', [RoutesController::class, 'index'])->name('route:list');

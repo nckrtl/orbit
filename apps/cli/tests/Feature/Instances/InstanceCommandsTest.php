@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
+use App\Services\Git\GitRegistrationDiscovery;
+use App\Services\Git\GitRegistrationFacts;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\AppInstances\CreateAppInstanceRequest;
 use Orbit\Sdk\Requests\AppInstances\ListAppInstancesRequest;
+use Orbit\Sdk\Requests\AppInstances\RegisterAppInstanceRequest;
 use Orbit\Sdk\Requests\AppInstances\RemoveAppInstanceRequest;
 use Orbit\Sdk\Requests\AppInstances\ShowAppInstanceRequest;
 use Saloon\Http\Faking\MockClient;
@@ -23,6 +26,125 @@ beforeEach(function (): void {
         url: 'https://10.44.0.1',
         caPath: '/home/orbit/.orbit/ca/root.pem',
     ));
+    $this->registrationGit = new class implements GitRegistrationDiscovery {
+        public ?GitRegistrationFacts $facts;
+
+        public function __construct()
+        {
+            $this->facts = new GitRegistrationFacts(
+                path: '/work/acme',
+                repositoryUrl: 'git@github.com:acme/acme.git',
+                slug: 'acme',
+                defaultBranch: 'main',
+                branch: 'main',
+                root: 'public',
+                layout: 'checkout',
+                commit: str_repeat(string: 'a', times: 40),
+            );
+        }
+
+        public function inspect(string $path): ?GitRegistrationFacts
+        {
+            return $this->facts;
+        }
+    };
+    app()->instance(GitRegistrationDiscovery::class, $this->registrationGit);
+});
+
+describe('instance:register', function (): void {
+    it('refuses outside Git before sending a request', function (): void {
+        $this->registrationGit->facts = null;
+        $mockClient = MockClient::global();
+
+        $this
+            ->artisan('instance:register', ['--path' => '/tmp/not-git'])
+            ->expectsOutputToContain('The current path is not a supported Git checkout or worktree.')
+            ->assertExitCode(1);
+
+        expect($mockClient->getLastPendingRequest())->toBeNull();
+    });
+
+    it('shows inferred values confirms ownership transfer and registers the source', function (): void {
+        $mockClient = MockClient::global([
+            RegisterAppInstanceRequest::class => registration_mock_response(),
+        ]);
+
+        $this
+            ->artisan('instance:register')
+            ->expectsOutput('Source: /work/acme')
+            ->expectsOutput('Repository: git@github.com:acme/acme.git')
+            ->expectsOutput('App slug: acme')
+            ->expectsOutput('Default branch: main')
+            ->expectsOutput('Root: public')
+            ->expectsConfirmation('Transfer this source to Orbit ownership?', 'yes')
+            ->expectsOutput('Instance [default] is active.')
+            ->expectsOutput('Managed path: /home/orbit/apps/acme/default')
+            ->assertExitCode(0);
+
+        expect($mockClient->getLastRequest())
+            ->toBeInstanceOf(RegisterAppInstanceRequest::class)
+            ->and($mockClient->getLastRequest()?->body()->all())
+            ->toBe([
+                'source_path' => '/work/acme',
+                'app_slug' => 'acme',
+                'default_branch' => 'main',
+                'root' => 'public',
+            ]);
+    });
+
+    it('refuses unresolved non interactive input without sending a request', function (): void {
+        $facts = $this->registrationGit->facts;
+        assert(
+            $facts instanceof GitRegistrationFacts,
+            description: 'The registration fixture starts with discovered Git facts.',
+        );
+        $this->registrationGit->facts = new GitRegistrationFacts(
+            path: $facts->path,
+            repositoryUrl: $facts->repositoryUrl,
+            slug: $facts->slug,
+            defaultBranch: null,
+            branch: $facts->branch,
+            root: null,
+            layout: $facts->layout,
+            commit: $facts->commit,
+        );
+        $mockClient = MockClient::global();
+
+        $this
+            ->artisan('instance:register', ['--no-interaction' => true, '--json' => true])
+            ->expectsOutputToContain('instance.registration_values_unresolved')
+            ->assertExitCode(1);
+        expect($mockClient->getLastPendingRequest())->toBeNull();
+    });
+
+    it('transports include worktrees and explicit values as JSON', function (): void {
+        $mockClient = MockClient::global([
+            RegisterAppInstanceRequest::class => registration_mock_response(),
+        ]);
+
+        $this
+            ->artisan('instance:register', [
+                '--app' => '3',
+                '--include-worktrees' => true,
+                '--name' => 'feature',
+                '--hostname' => 'feature.test',
+                '--json' => true,
+                '--no-interaction' => true,
+            ])
+            ->expectsOutput(registration_json())
+            ->assertExitCode(0);
+
+        expect($mockClient->getLastRequest()?->body()->all())->toBe([
+            'source_path' => '/work/acme',
+            'include_worktrees' => true,
+            'app_id' => 3,
+            'app_slug' => 'acme',
+            'default_branch' => 'main',
+            'instance_name' => 'feature',
+            'root' => 'public',
+            'hostname' => 'feature.test',
+        ]);
+    });
 });
 
 afterEach(function (): void {
@@ -429,12 +551,73 @@ function instance_payload(?array $removal = null): array
         'branch_override' => null,
         'migration_required' => false,
         'starting_commit' => str_repeat('a', times: 40),
+        'detached' => false,
         'status' => $removal === null ? 'active' : 'removing',
         'route' => instance_route_payload(),
         'hostname' => 'dev.orbit.test',
         'url' => 'https://dev.orbit.test',
         'removal' => $removal,
     ];
+}
+
+/** @return array<string, mixed> */
+function registration_payload(): array
+{
+    $instance = [
+        ...instance_payload(),
+        'name' => 'default',
+        'checkout_path' => '/home/orbit/apps/acme/default',
+        'selected_branch' => 'main',
+    ];
+
+    return [
+        'app' => [
+            'id' => 3,
+            'name' => 'acme',
+            'slug' => 'acme',
+            'repository_url' => 'git@github.com:acme/acme.git',
+            'default_branch' => 'main',
+            'root' => 'public',
+            'defaults' => null,
+        ],
+        'app_instance' => $instance,
+        'app_instances' => [$instance],
+        'status' => 'active',
+        'source_count' => 1,
+        'completed_count' => 1,
+    ];
+}
+
+function registration_mock_response(): MockResponse
+{
+    return MockResponse::make([
+        'data' => registration_payload(),
+        'meta' => ['request_id' => instance_request_id()],
+    ]);
+}
+
+function registration_json(): string
+{
+    $data = registration_payload();
+    $data['app']['request_id'] = instance_request_id();
+    foreach (['app_instance', 'app_instances'] as $key) {
+        if ($key === 'app_instance') {
+            $data[$key] = [
+                ...$data[$key],
+                'route' => [...instance_route_payload(), 'request_id' => instance_request_id()],
+                'request_id' => instance_request_id(),
+            ];
+            continue;
+        }
+        $data[$key] = array_map(static fn (array $row): array => [
+            ...$row,
+            'route' => [...instance_route_payload(), 'request_id' => instance_request_id()],
+            'request_id' => instance_request_id(),
+        ], $data[$key]);
+    }
+    $data['request_id'] = instance_request_id();
+
+    return json_encode($data, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
 }
 
 /** @return array<string, mixed> */

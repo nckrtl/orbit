@@ -198,6 +198,7 @@ it('observes only AppInstance source evidence through the fixed SSH boundary', f
             $appInstance->source_layout,
             $appInstance->branch,
             $appInstance->starting_commit,
+            '0',
         ])
         ->and($ssh->commands[0]->input)
         ->toContain('repository_layout_matches', 'origin_matches', 'source_identity_matches')
@@ -244,6 +245,7 @@ it('reports shared AppInstance Git administration as non-independent', function 
                 'checkout',
                 'development',
                 $fixture['startingCommit'],
+                '0',
             ],
             $script,
         );
@@ -273,6 +275,7 @@ it('keeps a wrong branch false when the ancestry check succeeds', function (): v
                 'checkout',
                 'wrong-branch',
                 $fixture['startingCommit'],
+                '0',
             ],
             $script,
         );
@@ -304,6 +307,7 @@ it('keeps a symlink checkout false when ownership lookup succeeds', function ():
                 'checkout',
                 'development',
                 $fixture['startingCommit'],
+                '0',
             ],
             $script,
         );
@@ -334,6 +338,7 @@ it('keeps a non-canonical checkout false when ownership lookup succeeds', functi
                 'checkout',
                 'development',
                 $fixture['startingCommit'],
+                '0',
             ],
             $script,
         );

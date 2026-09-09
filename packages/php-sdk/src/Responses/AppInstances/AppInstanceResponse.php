@@ -27,6 +27,7 @@ final readonly class AppInstanceResponse
         public ?string $branchOverride,
         public bool $migrationRequired,
         public ?string $startingCommit,
+        public bool $detached,
         public string $status,
         public ?RouteResponse $route,
         public ?string $hostname,
@@ -56,6 +57,7 @@ final readonly class AppInstanceResponse
             branchOverride: is_string($data['branch_override'] ?? null) ? $data['branch_override'] : null,
             migrationRequired: ($data['migration_required'] ?? null) === true,
             startingCommit: is_string($data['starting_commit'] ?? null) ? $data['starting_commit'] : null,
+            detached: ($data['detached'] ?? null) === true,
             status: is_string($data['status'] ?? null) ? $data['status'] : '',
             route: self::route($data['route'] ?? null, $requestId),
             hostname: is_string($data['hostname'] ?? null) ? $data['hostname'] : null,
@@ -82,6 +84,7 @@ final readonly class AppInstanceResponse
             'branch_override' => $this->branchOverride,
             'migration_required' => $this->migrationRequired,
             'starting_commit' => $this->startingCommit,
+            'detached' => $this->detached,
             'status' => $this->status,
             'route' => $this->route?->toArray(),
             'hostname' => $this->hostname,
@@ -119,12 +122,12 @@ final readonly class AppInstanceResponse
 
         $removal = [];
 
+        /** @mago-expect analysis:mixed-assignment Gateway response values remain intentionally mixed until DTO parsing. */
         foreach ($value as $key => $item) {
             if (! is_string($key)) {
                 continue;
             }
 
-            /** @mago-expect analysis:mixed-assignment Gateway response values remain intentionally mixed until DTO parsing. */
             $removal[$key] = $item;
         }
 
