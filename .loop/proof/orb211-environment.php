@@ -23,6 +23,69 @@ require $gateway.'/vendor/autoload.php';
 $application = require $gateway.'/bootstrap/app.php';
 $application->make(Kernel::class)->bootstrap();
 
+final readonly class Orb211ProofSshExecutor implements SshExecutor
+{
+    public function __construct(
+        private SshExecutor $inner,
+        private ?string $fault,
+        private bool $loseAcknowledgement,
+        private ?CommandResult $forcedResult,
+    ) {}
+
+    public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+    {
+        if ($this->forcedResult instanceof CommandResult) {
+            return $this->forcedResult;
+        }
+
+        $arguments = $command->arguments;
+        $programFlag = array_search('-c', $arguments, true);
+
+        if (is_int($programFlag) && is_string($this->fault)) {
+            $program = $arguments[$programFlag + 1] ?? '';
+            $arguments[$programFlag + 1] = match ($this->fault) {
+                'candidate-write' => str_replace(
+                    'written = os.write(candidate, chunk[offset:])',
+                    'written = (_ for _ in ()).throw(OSError())',
+                    $program,
+                ),
+                'permission' => str_replace(
+                    'os.fchmod(candidate, 0o600)',
+                    '(_ for _ in ()).throw(OSError())',
+                    $program,
+                ),
+                'rename' => str_replace(
+                    'os.replace(candidate_name, ".env", src_dir_fd=current, dst_dir_fd=current)',
+                    '(_ for _ in ()).throw(OSError())',
+                    $program,
+                ),
+                'post-rename-sync' => str_replace(
+                    'os.fsync(current)',
+                    '(_ for _ in ()).throw(OSError())',
+                    $program,
+                ),
+                default => throw new RuntimeException('Unknown ORB-211 fault.'),
+            };
+        }
+
+        $result = $this->inner->execute(
+            $connection,
+            new RemoteCommand(
+                arguments: $arguments,
+                input: $command->input,
+                protectedInput: $command->protectedInput,
+                maxOutputBytes: $command->maxOutputBytes,
+            ),
+        );
+
+        if (! $this->loseAcknowledgement) {
+            return $result;
+        }
+
+        return new CommandResult(255, '', 'Connection closed.', $result->durationMs, false);
+    }
+}
+
 $specifications = [
     'development' => [
         'node' => 'app-dev',
@@ -293,67 +356,4 @@ try {
 } catch (Throwable) {
     fwrite(STDERR, "ORB-211 fixture command failed: {$command}:{$failureStage}\n");
     exit(71);
-}
-
-final readonly class Orb211ProofSshExecutor implements SshExecutor
-{
-    public function __construct(
-        private SshExecutor $inner,
-        private ?string $fault,
-        private bool $loseAcknowledgement,
-        private ?CommandResult $forcedResult,
-    ) {}
-
-    public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
-    {
-        if ($this->forcedResult instanceof CommandResult) {
-            return $this->forcedResult;
-        }
-
-        $arguments = $command->arguments;
-        $programFlag = array_search('-c', $arguments, true);
-
-        if (is_int($programFlag) && is_string($this->fault)) {
-            $program = $arguments[$programFlag + 1] ?? '';
-            $arguments[$programFlag + 1] = match ($this->fault) {
-                'candidate-write' => str_replace(
-                    'written = os.write(candidate, chunk[offset:])',
-                    'written = (_ for _ in ()).throw(OSError())',
-                    $program,
-                ),
-                'permission' => str_replace(
-                    'os.fchmod(candidate, 0o600)',
-                    '(_ for _ in ()).throw(OSError())',
-                    $program,
-                ),
-                'rename' => str_replace(
-                    'os.replace(candidate_name, ".env", src_dir_fd=current, dst_dir_fd=current)',
-                    '(_ for _ in ()).throw(OSError())',
-                    $program,
-                ),
-                'post-rename-sync' => str_replace(
-                    'os.fsync(current)',
-                    '(_ for _ in ()).throw(OSError())',
-                    $program,
-                ),
-                default => throw new RuntimeException('Unknown ORB-211 fault.'),
-            };
-        }
-
-        $result = $this->inner->execute(
-            $connection,
-            new RemoteCommand(
-                arguments: $arguments,
-                input: $command->input,
-                protectedInput: $command->protectedInput,
-                maxOutputBytes: $command->maxOutputBytes,
-            ),
-        );
-
-        if (! $this->loseAcknowledgement) {
-            return $result;
-        }
-
-        return new CommandResult(255, '', 'Connection closed.', $result->durationMs, false);
-    }
 }
