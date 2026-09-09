@@ -57,6 +57,12 @@ remote_script() {
     remote_command "$node_ip" bash -seu -- "$@"
 }
 
+app_dev_route() {
+    local node_ip=$1
+    local route_id=$2
+    remote_command "$node_ip" orbit route:show "$route_id" --json
+}
+
 assert_route() {
     local value=$1
     local hostname=$2
@@ -116,9 +122,9 @@ case "$scenario" in
         remote_script "$node_ip" "$checkout" <<'REMOTE'
 checkout=$1
 cd "$checkout"
-DB_DATABASE="$checkout/database/database.sqlite" php artisan migrate:fresh --force --no-interaction >/dev/null
+DB_DATABASE="$checkout/database/database.sqlite" php -d auto_prepend_file= artisan migrate:fresh --force --no-interaction >/dev/null
 REMOTE
-        assert_route "$(orbit route:show "$route_id" --json)" "$original" null null null null null
+        assert_route "$(app_dev_route "$node_ip" "$route_id")" "$original" null null null null null
         assert_dns_owner "$original" "$node_ip"
         curl --fail --silent --show-error --cacert "$ca" --resolve "$original:443:$node_ip" "https://$original/" >/dev/null
         printf 'active development Route fixture ready\n'
@@ -133,6 +139,7 @@ REMOTE
         trap 'restore_original_route "$route_id" "$original"' EXIT
         output=$(update_route "$route_id" "$candidate")
         assert_route "$output" "$candidate" null null null null null
+        assert_route "$(app_dev_route "$node_ip" "$route_id")" "$candidate" null null null null null
         assert_dns_owner "$candidate" "$node_ip"
         assert_dns_absent "$original"
         curl --fail --silent --show-error --cacert "$ca" --resolve "$candidate:443:$node_ip" "https://$candidate/" >/dev/null
@@ -157,7 +164,7 @@ REMOTE
         status=$?
         set -e
         [[ "$status" -ne 0 ]]
-        rolled_back=$(orbit route:show "$route_id" --json)
+        rolled_back=$(app_dev_route "$node_ip" "$route_id")
         assert_route "$rolled_back" "$original" "$candidate" rollback rolled-back database-cutover route.hostname_change_failed
         assert_dns_owner "$original" "$node_ip"
         assert_dns_absent "$candidate"
@@ -169,6 +176,7 @@ REMOTE
         gateway_fixture cutover-failure off >/dev/null
         retried=$(update_route "$route_id" "$candidate")
         assert_route "$retried" "$candidate" null null null null null
+        assert_route "$(app_dev_route "$node_ip" "$route_id")" "$candidate" null null null null null
         restore_original_route "$route_id" "$original"
         trap - EXIT
         printf 'database failure restored URL and DNS, then the same request resumed\n'
@@ -204,6 +212,7 @@ restore_original_route "$route_id" "$original"' EXIT
         grep -Fxq orb188-application-error /tmp/orb188-before-body
         output=$(update_route "$route_id" "$candidate")
         assert_route "$output" "$candidate" null null null null null
+        assert_route "$(app_dev_route "$node_ip" "$route_id")" "$candidate" null null null null null
         after_status=$(curl --silent --show-error --output /tmp/orb188-after-body --write-out '%{http_code}' --cacert "$ca" --resolve "$candidate:443:$node_ip" "https://$candidate/")
         [[ "$after_status" == 500 ]]
         grep -Fxq orb188-application-error /tmp/orb188-after-body
@@ -258,6 +267,7 @@ REMOTE
 restore_original_route "$route_id" "$original"' EXIT
         output=$(update_route "$route_id" "$candidate")
         assert_route "$output" "$candidate" null null null null null
+        assert_route "$(app_dev_route "$node_ip" "$route_id")" "$candidate" null null null null null
         remote_script "$node_ip" "$checkout" "$candidate" <<'REMOTE'
 checkout=$1
 hostname=$2
