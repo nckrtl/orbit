@@ -78,7 +78,7 @@ Verification: `composer docs-build` and `composer docs-lint` passed with zero fi
 ## Proof decisions
 
 - Use the standard three-node topology without an extension.
-- Keep `mutates` false because the action backs up and restores the operator profile file and Linux trust-store target, refreshes the trust bundle after restoration, and leaves every registered Node and service intact.
+- Set `mutates` true because the action rewrites the operator profile file and Linux trust-store target and refreshes the system trust bundle. Its cleanup restores their original content, but that restoration does not make the action read-only.
 - Set `observed_inputs` true. Both setup and acceptance execute the CLI on gateway, then use the Gateway-managed SSH identity to execute the fixture and CLI on app-dev. The requests reach Gateway FPM, so all required `app-dev:cli`, `gateway:cli`, and `gateway:fpm` surfaces produce complete PHP observations.
 - The acceptance action removes only the profile-named Linux CA target, invokes the real `gateway:trust` command with a temporary `sudo` wrapper that applies the concurrent profile operation immediately after `update-ca-certificates`, verifies partial OS trust and profile state, and restores all state on exit.
 

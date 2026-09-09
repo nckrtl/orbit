@@ -21,6 +21,6 @@
             "timeout_seconds": 300
         }
     ],
-    "mutates": false,
+    "mutates": true,
     "observed_inputs": true
 }
