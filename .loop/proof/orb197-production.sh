@@ -79,6 +79,25 @@ expect_error() {
     ' "$output" "$expected"
 }
 
+request_body_with_marker() {
+    local marker=$1
+    shift
+    local attempt body=
+    for attempt in {1..10}; do
+        if body=$(curl --fail --silent --show-error --connect-timeout 2 --max-time 5 "$@") \
+            && grep -Fq -- "$marker" <<<"$body"; then
+            printf '%s' "$body"
+            return 0
+        fi
+        if (( attempt < 10 )); then
+            sleep 1
+        fi
+    done
+    printf 'Response did not contain marker [%s] after %s attempts; last body: %q\n' \
+        "$marker" "$attempt" "$body" >&2
+    return 1
+}
+
 assert_instance() {
     local output=$1 app_id=$2 node_id=$3 name=$4 hostname=$5 branch=$6 override=$7 root=$8
     php -r '
@@ -264,15 +283,26 @@ CADDY
 
     legacy-coexistence)
         [[ $# -eq 1 && "$(id -u)" -eq 1000 ]]
+        set -E
+        scenario_stage=initialize
+        report_legacy_coexistence_failure() {
+            local status=$? line=$1 command=$2
+            printf 'ORB-197 legacy-coexistence failed: stage=%s line=%s status=%s command=%q private_count=%s public_rules=%s\n' \
+                "$scenario_stage" "$line" "$status" "$command" "${private_count:-unset}" "${public_rules:-unset}" >&2
+            return "$status"
+        }
+        trap 'report_legacy_coexistence_failure "$LINENO" "$BASH_COMMAND"' ERR
         node_id=$(fixture_node_field app-prod id)
         node_ip=$(fixture_node_field app-prod wireguard_ip)
         app_id=$(fixture_app_id orb197-coexistence-private)
         private_user=orbit-app-$app_id
+        scenario_stage=reset-legacy-fixture
         gateway_fixture legacy-coexistence remove >/dev/null
         cleanup_legacy_coexistence() {
             gateway_fixture legacy-coexistence remove >/dev/null || true
         }
         trap cleanup_legacy_coexistence EXIT
+        scenario_stage=assert-clean-start
         remote_script app-prod "$private_user" <<'REMOTE'
 user=$1
 test ! -e "/home/$user"
@@ -281,26 +311,31 @@ status=$(sudo ufw status numbered)
 ! grep -Fq 'orbit:app-prod-http' <<<"$status"
 ! grep -Fq 'orbit:app-prod-https' <<<"$status"
 REMOTE
+        scenario_stage=activate-legacy-runtime
         legacy=$(gateway_fixture legacy-coexistence on)
         legacy_id=$(json_field id <<<"$legacy")
         [[ "$(json_field status <<<"$legacy")" == active ]]
         private_count=$(json_field private_count <<<"$legacy")
         public_rules=present
         [[ "$private_count" == 0 ]] || public_rules=absent
+        scenario_stage=snapshot-active-legacy-runtime
         before=$(legacy_snapshot "$legacy_id" "$public_rules")
-        legacy_body_before=$(curl --fail --silent --show-error --insecure --retry 10 --retry-delay 1 --retry-all-errors --resolve "orb197-legacy.localhost:443:$node_ip" https://orb197-legacy.localhost/)
-        grep -Fq orb197-legacy-coexistence <<<"$legacy_body_before"
+        scenario_stage=request-active-legacy-runtime
+        legacy_body_before=$(request_body_with_marker orb197-legacy-coexistence --insecure --resolve "orb197-legacy.localhost:443:$node_ip" https://orb197-legacy.localhost/)
 
-        set +e
-        refusal=$(orbit instance:new "$app_id" "$node_id" production --hostname=orb197-coexistence-private.test --json 2>&1)
-        status=$?
-        set -e
+        scenario_stage=refuse-private-creation
+        if refusal=$(orbit instance:new "$app_id" "$node_id" production --hostname=orb197-coexistence-private.test --json 2>&1); then
+            status=0
+        else
+            status=$?
+        fi
         [[ "$status" -ne 0 ]]
         php -r '
             $value=json_decode($argv[1], true, 64, JSON_THROW_ON_ERROR);
             $error=$value["error"] ?? null;
             if(!is_array($error) || ($error["code"] ?? null)!=="instance.legacy_production_conflict" || ($error["message"] ?? null)!=="The selected Node still serves a legacy public production Instance." || !is_string($error["request_id"] ?? null) || $error["request_id"]==="") exit(65);
         ' "$refusal"
+        scenario_stage=assert-private-creation-had-no-mutation
         evidence=$(gateway_fixture inspect orb197-coexistence-private)
         [[ "$(json_field route_count <<<"$evidence")" == 0 ]]
         [[ "$(php -r '$v=json_decode($argv[1],true,64,JSON_THROW_ON_ERROR); echo count($v["instances"]);' "$evidence")" == 0 ]]
@@ -311,11 +346,13 @@ test ! -e "/home/$user"
 live=$(sudo readlink -f /etc/caddy/Caddyfile)
 ! sudo grep -R -Fq -- 'orb197-coexistence-private.test' "$(dirname "$live")/fragments"
 REMOTE
+        scenario_stage=compare-legacy-runtime-after-refusal
         after=$(legacy_snapshot "$legacy_id" "$public_rules")
         [[ "$after" == "$before" ]]
-        legacy_body_after=$(curl --fail --silent --show-error --insecure --resolve "orb197-legacy.localhost:443:$node_ip" https://orb197-legacy.localhost/)
+        legacy_body_after=$(request_body_with_marker orb197-legacy-coexistence --insecure --resolve "orb197-legacy.localhost:443:$node_ip" https://orb197-legacy.localhost/)
         [[ "$legacy_body_after" == "$legacy_body_before" ]]
 
+        scenario_stage=disable-legacy-runtime
         disabled=$(gateway_fixture legacy-coexistence off)
         [[ "$(json_field status <<<"$disabled")" == failed ]]
         remote_script app-prod "$legacy_id" <<'REMOTE'
@@ -335,16 +372,17 @@ status=$(sudo ufw status numbered)
 ! grep -Fq 'orbit:app-prod-https' <<<"$status"
 REMOTE
 
+        scenario_stage=create-private-production-instance
         output=$(orbit instance:new "$app_id" "$node_id" production --hostname=orb197-coexistence-private.test --json)
         assert_instance "$output" "$app_id" "$node_id" production orb197-coexistence-private.test main null null
-        private_body=$(curl --fail --silent --show-error --retry 10 --retry-delay 1 --retry-all-errors --cacert /home/orbit/.orbit/ca/root.pem --resolve "orb197-coexistence-private.test:443:$node_ip" https://orb197-coexistence-private.test/)
-        grep -Fq orb197-coexistence-private <<<"$private_body"
+        private_body=$(request_body_with_marker orb197-coexistence-private --cacert /home/orbit/.orbit/ca/root.pem --resolve "orb197-coexistence-private.test:443:$node_ip" https://orb197-coexistence-private.test/)
         remote_script app-prod <<'REMOTE'
 status=$(sudo ufw status numbered)
 ! grep -Fq 'orbit:app-prod-http' <<<"$status"
 ! grep -Fq 'orbit:app-prod-https' <<<"$status"
 REMOTE
 
+        scenario_stage=remove-legacy-fixture
         gateway_fixture legacy-coexistence remove >/dev/null
         trap - EXIT
         remote_script app-prod <<'REMOTE'
@@ -354,7 +392,8 @@ status=$(sudo ufw status numbered)
 ! grep -Fq 'orbit:app-prod-http' <<<"$status"
 ! grep -Fq 'orbit:app-prod-https' <<<"$status"
 REMOTE
-        final_private_body=$(curl --fail --silent --show-error --cacert /home/orbit/.orbit/ca/root.pem --resolve "orb197-coexistence-private.test:443:$node_ip" https://orb197-coexistence-private.test/)
+        scenario_stage=assert-final-private-runtime
+        final_private_body=$(request_body_with_marker orb197-coexistence-private --cacert /home/orbit/.orbit/ca/root.pem --resolve "orb197-coexistence-private.test:443:$node_ip" https://orb197-coexistence-private.test/)
         [[ "$final_private_body" == "$private_body" ]]
         if [[ "$public_rules" == present ]]; then
             printf 'legacy-only runtime and public firewall stayed live through preflight refusal, then retired before private production creation\n'
