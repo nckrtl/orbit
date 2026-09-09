@@ -6,6 +6,8 @@ namespace App\Infrastructure\AppDev;
 
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\RouteHostnameChangeDirection;
+use App\Domain\Routes\RouteHostnameChangeStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\AppInstance;
@@ -57,6 +59,7 @@ final readonly class AppDevSiteRepository
             ->latest('id')
             ->get();
         /** @var Collection<int, Instance> $instances */
+        /** @var Collection<int, AppDevSite> $sites */
         $sites = collect();
 
         foreach ($instances as $instance) {
@@ -169,46 +172,64 @@ final readonly class AppDevSiteRepository
             ) {
                 $sites->push($this->unavailableSite($unavailableInstance, $route, $router));
             }
+
+            if (
+                $route->hostname_change_direction === RouteHostnameChangeDirection::Forward
+                && $route->hostname_change_step === RouteHostnameChangeStep::DnsPublished
+                && is_string($route->hostname_change_target)
+                && ! ($additionalRoute instanceof Route
+                && $additionalRoute->id === $route->id
+                && $additionalRoute->hostname === $route->hostname_change_target)
+            ) {
+                $candidate = clone $route;
+                $candidate->hostname = $route->hostname_change_target;
+                $this->appendHostnameChangeSites($sites, $candidate);
+            }
         }
 
         if ($additionalRoute instanceof Route) {
-            $additionalRoute->loadMissing([
-                'targets.appInstance.app',
-                'targets.appInstance.node',
-                'cluster.routerAssignment.node',
-            ]);
-            $targets = $additionalRoute
-                ->targets
-                ->map(static fn ($targetRow) => $targetRow->appInstance)
-                ->filter(static fn ($target): bool => $target instanceof AppInstance)
-                ->values();
-            $router = $additionalRoute->cluster?->routerAssignment?->node;
-
-            foreach ($targets as $target) {
-                assert($target instanceof AppInstance);
-                $sites->push($this->appInstanceSite($target, $additionalRoute, hostnameChange: true));
-            }
-
-            if (
-                $router instanceof Node
-                && $targets->isNotEmpty()
-                && ! $targets->contains(static fn (AppInstance $target): bool => $router->is($target->node))
-            ) {
-                $sites->push($this->routerSite(
-                    array_values($targets->all()),
-                    $additionalRoute,
-                    $router,
-                    hostnameChange: true,
-                ));
-            }
+            $this->appendHostnameChangeSites($sites, $additionalRoute);
         }
 
-        /** @var Collection<int, AppDevSite> $sites */
         if ($node instanceof Node) {
             return $sites->where('nodeId', $node->id)->values();
         }
 
         return $sites->values();
+    }
+
+    /** @param Collection<int, AppDevSite> $sites */
+    private function appendHostnameChangeSites(Collection $sites, Route $route): void
+    {
+        $route->loadMissing([
+            'targets.appInstance.app',
+            'targets.appInstance.node',
+            'cluster.routerAssignment.node',
+        ]);
+        $targets = $route
+            ->targets
+            ->map(static fn ($targetRow) => $targetRow->appInstance)
+            ->filter(static fn ($target): bool => $target instanceof AppInstance)
+            ->values();
+        $router = $route->cluster?->routerAssignment?->node;
+
+        foreach ($targets as $target) {
+            assert($target instanceof AppInstance);
+            $sites->push($this->appInstanceSite($target, $route, hostnameChange: true));
+        }
+
+        if (
+            $router instanceof Node
+            && $targets->isNotEmpty()
+            && ! $targets->contains(static fn (AppInstance $target): bool => $router->is($target->node))
+        ) {
+            $sites->push($this->routerSite(
+                array_values($targets->all()),
+                $route,
+                $router,
+                hostnameChange: true,
+            ));
+        }
     }
 
     private function instanceSite(Instance $instance): AppDevSite

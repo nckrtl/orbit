@@ -9,6 +9,8 @@ use App\Domain\Clusters\ClusterState;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\RouteHostnameChangeDirection;
+use App\Domain\Routes\RouteHostnameChangeStep;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
@@ -106,6 +108,47 @@ it('renders old and candidate hostname sites with separate certificate scopes be
             "host-record=feature.acme.test,{$router->wireguard_ip}",
             "host-record=next.acme.test,{$router->wireguard_ip}",
         );
+});
+
+it('preserves a durably published hostname candidate in ordinary Caddy and DNS inventory rebuilds', function (): void {
+    [$appInstance, $route, $workload, $router] = orb127_route_projection_models();
+    $appInstance->update([
+        'status' => AppInstanceState::Active,
+        'source_is_laravel' => false,
+    ]);
+    $route->update([
+        'status' => RouteStatus::Active,
+        'hostname_change_previous' => 'feature.acme.test',
+        'hostname_change_target' => 'next.acme.test',
+        'hostname_change_direction' => RouteHostnameChangeDirection::Forward,
+        'hostname_change_step' => RouteHostnameChangeStep::DnsPublished,
+    ]);
+    $sites = new AppDevSiteRepository;
+
+    $workloadSites = $sites->forNode($workload);
+    $routerSites = $sites->forNode($router);
+    $dns = new AppDevDnsConfigRenderer($sites)->render();
+
+    expect($workloadSites->pluck('hostname')->all())
+        ->toBe(['feature.acme.test', 'next.acme.test'])
+        ->and($workloadSites->map->certificateDirectory()->all())
+        ->toBe([
+            "/etc/caddy/orbit-certificates/app-instance-{$appInstance->id}/current",
+            "/etc/caddy/orbit-certificates/app-instance-{$appInstance->id}-hostname-change/current",
+        ])
+        ->and($routerSites->pluck('hostname')->all())
+        ->toBe(['feature.acme.test', 'next.acme.test'])
+        ->and($dns)
+        ->toContain(
+            "host-record=feature.acme.test,{$router->wireguard_ip}",
+            "host-record=next.acme.test,{$router->wireguard_ip}",
+        );
+
+    $candidate = clone $route->refresh();
+    $candidate->hostname = 'next.acme.test';
+
+    expect($sites->forNode($workload, additionalRoute: $candidate)->pluck('hostname')->all())
+        ->toBe(['feature.acme.test', 'next.acme.test']);
 });
 
 it('hydrates only requested workload and Router routes while global inventory stays complete', function (): void {

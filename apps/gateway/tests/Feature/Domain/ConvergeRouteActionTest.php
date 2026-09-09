@@ -160,7 +160,7 @@ it('records database cutover failure and rolls authoritative DNS back before ser
         ->toBe(['rollback-dns', 'rollback-caddy', 'rollback-certificates']);
 });
 
-it('resumes after the last durable forward checkpoint', function (): void {
+it('repairs completed forward projections before resuming after the durable checkpoint', function (): void {
     $route = route_hostname_change_route(laravel: false);
     $route->update([
         'hostname_change_previous' => 'old.example.test',
@@ -173,12 +173,36 @@ it('resumes after the last durable forward checkpoint', function (): void {
 
     expect($this->events->values)->toBe([
         'owner',
+        'workload-certificate',
+        'workload-caddy',
+        'router-certificate',
         'firewall-policy',
         'workload-verify',
         'router-caddy',
         'dns-publication',
         'cleanup',
     ]);
+});
+
+it('records the exact completed forward projection that fails revalidation', function (): void {
+    $route = route_hostname_change_route(laravel: false);
+    $route->update([
+        'hostname_change_previous' => 'old.example.test',
+        'hostname_change_target' => 'next.example.test',
+        'hostname_change_direction' => RouteHostnameChangeDirection::Forward,
+        'hostname_change_step' => RouteHostnameChangeStep::RouterCertificate,
+    ]);
+    $this->projector->failures['workload-certificate'] = 1;
+
+    expect(fn () => app(ConvergeRouteAction::class)->execute($route, 'next.example.test'))
+        ->toThrow(ResourceOperationException::class, 'Injected workload-certificate failure.');
+
+    expect($route->refresh()->failed_step)
+        ->toBe('workload-certificate')
+        ->and($route->error_code)
+        ->toBe('route.test_workload-certificate')
+        ->and($route->hostname_change_step)
+        ->toBe(RouteHostnameChangeStep::RolledBack);
 });
 
 it('records each rollback boundary failure and resumes at its first unfinished step', function (
@@ -213,7 +237,7 @@ it('records each rollback boundary failure and resumes at its first unfinished s
     $counts = array_count_values($this->events->values);
 
     foreach ($completed as $event) {
-        expect($counts[$event])->toBe(1);
+        expect($counts[$event])->toBe(2);
     }
 
     expect($route->refresh()->hostname)
@@ -270,7 +294,7 @@ it('keeps interrupted rollback visible and resumes it before retrying the same c
         ->and($updated->hostname_change_target)
         ->toBeNull()
         ->and(array_count_values($this->events->values)['rollback-dns'])
-        ->toBe(1);
+        ->toBe(2);
 });
 
 it('refuses a conflicting retry without changing durable rollback evidence', function (): void {
@@ -314,6 +338,32 @@ it('keeps the new hostname authoritative when cleanup fails and retries cleanup 
         ->toBe(['owner', 'cleanup'])
         ->and($updated->hostname_change_target)
         ->toBeNull();
+});
+
+it('records cleanup failure when clearing the durable operation fields fails', function (): void {
+    $route = route_hostname_change_route(laravel: false);
+    DB::unprepared(<<<'SQL'
+        CREATE TRIGGER route_hostname_change_cleanup_failure
+        BEFORE UPDATE OF hostname_change_target ON routes
+        WHEN OLD.hostname_change_step = 'database-cutover' AND NEW.hostname_change_target IS NULL
+        BEGIN
+            SELECT RAISE(ABORT, 'Injected cleanup persistence failure.');
+        END
+        SQL);
+
+    expect(fn () => app(ConvergeRouteAction::class)->execute($route, 'next.example.test'))
+        ->toThrow(\Illuminate\Database\QueryException::class);
+
+    expect($route->refresh()->hostname)
+        ->toBe('next.example.test')
+        ->and($route->hostname_change_target)
+        ->toBe('next.example.test')
+        ->and($route->hostname_change_step)
+        ->toBe(RouteHostnameChangeStep::DatabaseCutover)
+        ->and($route->failed_step)
+        ->toBe('cleanup')
+        ->and($route->error_code)
+        ->toBe('route.hostname_change_failed');
 });
 
 function route_hostname_change_route(bool $laravel): Route

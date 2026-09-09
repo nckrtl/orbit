@@ -109,6 +109,68 @@ restore_original_route() {
     fi
 }
 
+normalized_route() {
+    local node_ip=$1
+    local route_id=$2
+    app_dev_route "$node_ip" "$route_id" | php -r '
+        $value=json_decode(stream_get_contents(STDIN), true, 32, JSON_THROW_ON_ERROR);
+        unset($value["request_id"]);
+        ksort($value);
+        echo json_encode($value, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES), "\n";
+    '
+}
+
+remote_tree_digest() {
+    local node_ip=$1
+    local path=$2
+    remote_script "$node_ip" "$path" <<'REMOTE'
+path=$1
+sudo find "$path" -xdev -printf '%P\t%y\t%l\n' | LC_ALL=C sort
+sudo find "$path" -xdev -type f -print0 | LC_ALL=C sort -z | sudo xargs -0 -r sha256sum
+REMOTE
+}
+
+traffic_digest() {
+    local hostname=$1
+    local node_ip=$2
+    local body
+    local status
+    body=$(mktemp)
+    status=$(curl --silent --show-error --output "$body" --write-out '%{http_code}' --cacert "$ca" --resolve "$hostname:443:$node_ip" "https://$hostname/")
+    printf '%s\t%s\n' "$status" "$(sha256sum "$body" | awk '{print $1}')"
+    rm -f -- "$body"
+}
+
+refusal_snapshot() {
+    local route_id=$1
+    local occupied_route_id=$2
+    local hostname=$3
+    local checkout=$4
+    local node_ip=$5
+    printf 'route\t%s\n' "$(normalized_route "$node_ip" "$route_id")"
+    printf 'occupied-route\t%s\n' "$(normalized_route "$node_ip" "$occupied_route_id")"
+    printf 'laravel-url\t%s\n' "$(remote_command "$node_ip" grep -F 'APP_URL=' "$checkout/.env")"
+    printf 'caddy-link\t%s\n' "$(remote_command "$node_ip" readlink -f /etc/caddy/Caddyfile)"
+    printf 'caddy\n%s\n' "$(remote_tree_digest "$node_ip" /etc/caddy/orbit-versions)"
+    printf 'certificates\n%s\n' "$(remote_tree_digest "$node_ip" /etc/caddy/orbit-certificates)"
+    printf 'dns\t%s\n' "$(sha256sum /etc/dnsmasq.d/orbit-records.conf | awk '{print $1}')"
+    printf 'traffic\t%s\n' "$(traffic_digest "$hostname" "$node_ip")"
+}
+
+assert_update_refused() {
+    local route_id=$1
+    local hostname=$2
+    local error_code=$3
+    local output
+    local status
+    set +e
+    output=$(update_route "$route_id" "$hostname" 2>&1)
+    status=$?
+    set -e
+    [[ "$status" -ne 0 ]]
+    grep -Fq "$error_code" <<<"$output"
+}
+
 case "$scenario" in
     setup)
         [[ $# -eq 1 && "$(id -u)" -eq 1000 ]]
@@ -134,9 +196,23 @@ REMOTE
         [[ $# -eq 1 && "$(id -u)" -eq 1000 ]]
         route_id=$(fixture_field route.id)
         original=$(fixture_field original_hostname)
+        checkout=$(fixture_field instance.checkout_path)
         node_ip=$(fixture_field instance.node_ip)
+        occupied_route_id=$(fixture_field occupied_route.id)
+        occupied=$(fixture_field occupied_route.hostname)
         candidate=orb188-explicit.orbit
         trap 'restore_original_route "$route_id" "$original"' EXIT
+
+        before_invalid=$(refusal_snapshot "$route_id" "$occupied_route_id" "$original" "$checkout" "$node_ip")
+        assert_update_refused "$route_id" bad_name validation.failed
+        after_invalid=$(refusal_snapshot "$route_id" "$occupied_route_id" "$original" "$checkout" "$node_ip")
+        [[ "$after_invalid" == "$before_invalid" ]]
+
+        before_occupied=$(refusal_snapshot "$route_id" "$occupied_route_id" "$original" "$checkout" "$node_ip")
+        assert_update_refused "$route_id" "$occupied" route.hostname_conflict
+        after_occupied=$(refusal_snapshot "$route_id" "$occupied_route_id" "$original" "$checkout" "$node_ip")
+        [[ "$after_occupied" == "$before_occupied" ]]
+
         output=$(update_route "$route_id" "$candidate")
         assert_route "$output" "$candidate" null null null null null
         assert_route "$(app_dev_route "$node_ip" "$route_id")" "$candidate" null null null null null
@@ -147,7 +223,7 @@ REMOTE
         trap - EXIT
         assert_dns_owner "$original" "$node_ip"
         assert_dns_absent "$candidate"
-        printf 'explicit active Route hostname converged and cleaned up\n'
+        printf 'invalid and occupied hostnames were side-effect free before explicit active Route convergence\n'
         ;;
 
     route-url-rollback)

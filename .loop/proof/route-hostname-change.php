@@ -36,7 +36,11 @@ function readState(string $path): array
 {
     $value = json_decode((string) file_get_contents($path), true, 16, JSON_THROW_ON_ERROR);
 
-    if (! is_array($value) || ! is_int($value['route_id'] ?? null)) {
+    if (
+        ! is_array($value)
+        || ! is_int($value['route_id'] ?? null)
+        || ! is_int($value['occupied_route_id'] ?? null)
+    ) {
         throw new RuntimeException('The ORB-188 fixture state is invalid.');
     }
 
@@ -44,23 +48,31 @@ function readState(string $path): array
 }
 
 /** @return array<string, mixed> */
+function routeEvidence(Route $route): array
+{
+    return [
+        'id' => $route->id,
+        'hostname' => $route->hostname,
+        'status' => $route->status->value,
+        'failed_step' => $route->failed_step,
+        'error_code' => $route->error_code,
+        'hostname_change_previous' => $route->hostname_change_previous,
+        'hostname_change_target' => $route->hostname_change_target,
+        'hostname_change_direction' => $route->hostname_change_direction?->value,
+        'hostname_change_step' => $route->hostname_change_step?->value,
+    ];
+}
+
+/** @return array<string, mixed> */
 function routeState(array $fixture): array
 {
     $route = Route::query()->with('targets.appInstance.node')->findOrFail($fixture['route_id']);
+    $occupiedRoute = Route::query()->findOrFail($fixture['occupied_route_id']);
     $target = $route->targets->sole()->appInstance;
 
     return [
-        'route' => [
-            'id' => $route->id,
-            'hostname' => $route->hostname,
-            'status' => $route->status->value,
-            'failed_step' => $route->failed_step,
-            'error_code' => $route->error_code,
-            'hostname_change_previous' => $route->hostname_change_previous,
-            'hostname_change_target' => $route->hostname_change_target,
-            'hostname_change_direction' => $route->hostname_change_direction?->value,
-            'hostname_change_step' => $route->hostname_change_step?->value,
-        ],
+        'route' => routeEvidence($route),
+        'occupied_route' => routeEvidence($occupiedRoute),
         'instance' => [
             'id' => $target->id,
             'checkout_path' => $target->checkout_path,
@@ -110,8 +122,20 @@ switch ($command) {
             $instance,
             "https://{$route->hostname}",
         );
+        $occupiedRoute = Route::query()->firstOrCreate(
+            ['hostname' => 'orb188-occupied.orbit'],
+            [
+                'app_id' => $route->app_id,
+                'node_id' => $route->node_id,
+                'cluster_id' => $route->cluster_id,
+                'provenance' => 'explicit',
+                'publication' => 'private',
+                'status' => 'pending',
+            ],
+        );
         $fixture = [
             'route_id' => $route->id,
+            'occupied_route_id' => $occupiedRoute->id,
             'instance_id' => $instance->id,
             'original_hostname' => $route->hostname,
         ];

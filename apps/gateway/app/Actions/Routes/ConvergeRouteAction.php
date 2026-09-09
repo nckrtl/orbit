@@ -60,6 +60,7 @@ final readonly class ConvergeRouteAction
         }
 
         $candidate = $this->candidate($route);
+        $failureStep = 'workload-certificate';
 
         try {
             $this->forwardStep(
@@ -67,31 +68,37 @@ final readonly class ConvergeRouteAction
                 RouteHostnameChangeStep::WorkloadCertificate,
                 fn () => $this->projection->prepareWorkloadCertificate($appInstance, $route, $candidate),
             );
+            $failureStep = 'workload-caddy';
             $this->forwardStep(
                 $route,
                 RouteHostnameChangeStep::WorkloadCaddy,
                 fn () => $this->projection->prepareWorkloadCaddy($appInstance, $route, $candidate),
             );
+            $failureStep = 'router-certificate';
             $this->forwardStep(
                 $route,
                 RouteHostnameChangeStep::RouterCertificate,
                 fn () => $this->projection->prepareRouterCertificate($appInstance, $route, $candidate),
             );
+            $failureStep = 'firewall-policy';
             $this->forwardStep(
                 $route,
                 RouteHostnameChangeStep::FirewallPolicy,
                 fn () => $this->projection->prepareFirewallPolicy($appInstance, $candidate),
             );
+            $failureStep = 'workload-verify';
             $this->forwardStep(
                 $route,
                 RouteHostnameChangeStep::WorkloadVerified,
                 fn () => $this->projection->verifyWorkload($appInstance, $candidate),
             );
+            $failureStep = 'router-caddy';
             $this->forwardStep(
                 $route,
                 RouteHostnameChangeStep::RouterCaddy,
                 fn () => $this->projection->prepareRouterCaddy($appInstance, $route, $candidate),
             );
+            $failureStep = 'laravel-url';
             $this->forwardStep(
                 $route,
                 RouteHostnameChangeStep::LaravelUrl,
@@ -104,14 +111,16 @@ final readonly class ConvergeRouteAction
                     }
                 },
             );
+            $failureStep = 'dns-publication';
             $this->forwardStep(
                 $route,
                 RouteHostnameChangeStep::DnsPublished,
                 fn () => $this->projection->publishDns($route, $candidate),
             );
+            $failureStep = 'database-cutover';
             $this->databaseCutover($route);
         } catch (Throwable $exception) {
-            $this->recordFailure($route, $this->forwardFailureStep($route), $this->errorCode($exception));
+            $this->recordFailure($route, $failureStep, $this->errorCode($exception));
             $this->beginRollback($route);
 
             try {
@@ -228,12 +237,11 @@ final readonly class ConvergeRouteAction
 
     private function forwardStep(Route $route, RouteHostnameChangeStep $step, callable $operation): void
     {
-        if ($this->forwardRank($route->hostname_change_step) >= $this->forwardRank($step)) {
-            return;
-        }
-
         $operation();
-        $this->checkpoint($route, RouteHostnameChangeDirection::Forward, $step);
+
+        if ($this->forwardRank($route->hostname_change_step) < $this->forwardRank($step)) {
+            $this->checkpoint($route, RouteHostnameChangeDirection::Forward, $step);
+        }
     }
 
     private function databaseCutover(Route $route): void
@@ -254,20 +262,19 @@ final readonly class ConvergeRouteAction
     {
         try {
             $this->projection->cleanup($appInstance, $route);
+            $route->update([
+                'hostname_change_previous' => null,
+                'hostname_change_target' => null,
+                'hostname_change_direction' => null,
+                'hostname_change_step' => null,
+                'failed_step' => null,
+                'error_code' => null,
+            ]);
         } catch (Throwable $exception) {
             $this->recordFailure($route, 'cleanup', $this->errorCode($exception));
 
             throw $exception;
         }
-
-        $route->update([
-            'hostname_change_previous' => null,
-            'hostname_change_target' => null,
-            'hostname_change_direction' => null,
-            'hostname_change_step' => null,
-            'failed_step' => null,
-            'error_code' => null,
-        ]);
 
         return $route->refresh()->load('targets');
     }
@@ -284,22 +291,27 @@ final readonly class ConvergeRouteAction
 
     private function rollback(Route $route, AppInstance $appInstance): void
     {
+        $failureStep = 'rollback-dns';
+
         try {
             $this->rollbackStep(
                 $route,
                 RouteHostnameChangeStep::RollbackDns,
                 fn () => $this->projection->rollbackDns($route),
             );
+            $failureStep = 'rollback-caddy';
             $this->rollbackStep(
                 $route,
                 RouteHostnameChangeStep::RollbackCaddy,
                 fn () => $this->projection->rollbackCaddy($appInstance, $route),
             );
+            $failureStep = 'rollback-certificates';
             $this->rollbackStep(
                 $route,
                 RouteHostnameChangeStep::RollbackCertificates,
                 fn () => $this->projection->rollbackCertificates($appInstance, $route),
             );
+            $failureStep = 'rollback-laravel-url';
             $this->rollbackStep(
                 $route,
                 RouteHostnameChangeStep::RollbackLaravelUrl,
@@ -312,6 +324,7 @@ final readonly class ConvergeRouteAction
                     }
                 },
             );
+            $failureStep = 'rollback';
             $this->checkpoint(
                 $route,
                 RouteHostnameChangeDirection::Rollback,
@@ -319,7 +332,7 @@ final readonly class ConvergeRouteAction
                 clearFailure: false,
             );
         } catch (Throwable $exception) {
-            $this->recordFailure($route, $this->rollbackFailureStep($route), $this->errorCode($exception));
+            $this->recordFailure($route, $failureStep, $this->errorCode($exception));
 
             throw $exception;
         }
@@ -327,17 +340,16 @@ final readonly class ConvergeRouteAction
 
     private function rollbackStep(Route $route, RouteHostnameChangeStep $step, callable $operation): void
     {
-        if ($this->rollbackRank($route->hostname_change_step) >= $this->rollbackRank($step)) {
-            return;
-        }
-
         $operation();
-        $this->checkpoint(
-            $route,
-            RouteHostnameChangeDirection::Rollback,
-            $step,
-            clearFailure: false,
-        );
+
+        if ($this->rollbackRank($route->hostname_change_step) < $this->rollbackRank($step)) {
+            $this->checkpoint(
+                $route,
+                RouteHostnameChangeDirection::Rollback,
+                $step,
+                clearFailure: false,
+            );
+        }
     }
 
     private function checkpoint(
@@ -385,35 +397,6 @@ final readonly class ConvergeRouteAction
                 'error_code' => $errorCode,
             ]);
         $route->refresh();
-    }
-
-    private function forwardFailureStep(Route $route): string
-    {
-        return match ($route->hostname_change_step) {
-            RouteHostnameChangeStep::Reserved => 'workload-certificate',
-            RouteHostnameChangeStep::WorkloadCertificate => 'workload-caddy',
-            RouteHostnameChangeStep::WorkloadCaddy => 'router-certificate',
-            RouteHostnameChangeStep::RouterCertificate => 'firewall-policy',
-            RouteHostnameChangeStep::FirewallPolicy => 'workload-verify',
-            RouteHostnameChangeStep::WorkloadVerified => 'router-caddy',
-            RouteHostnameChangeStep::RouterCaddy => 'laravel-url',
-            RouteHostnameChangeStep::LaravelUrl => 'dns-publication',
-            RouteHostnameChangeStep::DnsPublished => 'database-cutover',
-            default => 'hostname-change',
-        };
-    }
-
-    private function rollbackFailureStep(Route $route): string
-    {
-        $route->refresh();
-
-        return match ($route->hostname_change_step) {
-            RouteHostnameChangeStep::RollbackPending => 'rollback-dns',
-            RouteHostnameChangeStep::RollbackDns => 'rollback-caddy',
-            RouteHostnameChangeStep::RollbackCaddy => 'rollback-certificates',
-            RouteHostnameChangeStep::RollbackCertificates => 'rollback-laravel-url',
-            default => 'rollback',
-        };
     }
 
     private function errorCode(Throwable $exception): string
