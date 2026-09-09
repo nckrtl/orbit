@@ -112,6 +112,181 @@ it('fetches through the SDK and installs the root CA locally on Linux', function
         ->toBeFalse();
 });
 
+it('preserves a same-name profile replacement when trust finishes later', function (
+    string $replacementType,
+): void {
+    $bootstrapRequestId = '0198e15c-bf97-7c23-8f1f-61b8fe67a844';
+    $verifiedRequestId = '0198e15c-bf97-7c23-8f1f-61b8fe67a845';
+    $mockClient = MockClient::global([
+        MockResponse::make([
+            'data' => [
+                'root_ca' => $this->certificate,
+                'sha256' => $this->fingerprint,
+            ],
+            'meta' => ['request_id' => $bootstrapRequestId],
+        ]),
+        MockResponse::make([
+            'data' => [
+                'root_ca' => $this->certificate,
+                'sha256' => $this->fingerprint,
+            ],
+            'meta' => ['request_id' => $verifiedRequestId],
+        ]),
+    ]);
+    $caPath = $this->orbitHome.'/gateways/test-gateway-7c27512b7c3e/ca/'.$this->fingerprint.'.pem';
+    $target = $this->trustStore.'/orbit-gateway-ca-7c27512b7c3eb57c.crt';
+    $replacement = $replacementType === 'url'
+        ? new GatewayProfile('test-gateway', 'https://replacement-secret.example')
+        : new GatewayProfile('test-gateway', 'https://10.44.0.1', '/tmp/replacement-secret-pin.pem');
+    $repository = app(GatewayConfigRepository::class);
+    $replacementApplied = false;
+    Process::fake(function (PendingProcess $process) use ($target, $replacement, $repository, &$replacementApplied) {
+        if (is_array($process->command) && ($process->command[1] ?? null) === 'install') {
+            if (! is_dir(dirname($target))) {
+                mkdir(directory: dirname($target), permissions: 0o755, recursive: true);
+            }
+
+            copy($process->command[5], $target);
+        }
+
+        if (
+            is_array($process->command)
+            && $process->command === ['sudo', 'update-ca-certificates']
+            && ! $replacementApplied
+        ) {
+            $repository->add($replacement);
+            $replacementApplied = true;
+        }
+
+        return Process::result();
+    });
+    Process::preventStrayProcesses();
+    $expected = json_encode([
+        'error' => [
+            'code' => 'gateway.ca_profile_update_failed',
+            'message' => 'The root CA was trusted, but the gateway profile could not be updated.',
+            'request_id' => $verifiedRequestId,
+        ],
+    ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+
+    $exitCode = Artisan::call('gateway:trust', ['--json' => true]);
+    $output = trim(Artisan::output());
+
+    expect($exitCode)
+        ->toBe(1)
+        ->and($output)
+        ->toBe($expected)
+        ->not->toContain('replacement-secret')
+        ->not->toContain('BEGIN CERTIFICATE');
+    expect($replacementApplied)
+        ->toBeTrue()
+        ->and($repository->find('test-gateway'))
+        ->toEqual($replacement)
+        ->and(file_get_contents($target))
+        ->toBe($this->certificate);
+
+    $requests = $mockClient->getRecordedResponses();
+
+    expect($requests)
+        ->toHaveCount(2)
+        ->and($requests[0]->getPendingRequest()->config()->get('verify'))
+        ->toBeFalse()
+        ->and($requests[0]->getPendingRequest()->config()->get('allow_redirects'))
+        ->toBeFalse()
+        ->and($requests[1]->getPendingRequest()->config()->get('verify'))
+        ->toBe($caPath)
+        ->and($requests[1]->getPendingRequest()->config()->get('allow_redirects'))
+        ->toBeFalse();
+    Process::assertRan(fn ($process): bool => $process->command === ['sudo', 'update-ca-certificates']);
+})->with(['url', 'pin']);
+
+it('accepts an independent active switch or an identical pin update during trust', function (
+    string $concurrentUpdate,
+): void {
+    $verifiedRequestId = '0198e15c-bf97-7c23-8f1f-61b8fe67a845';
+    $mockClient = MockClient::global([
+        MockResponse::make([
+            'data' => [
+                'root_ca' => $this->certificate,
+                'sha256' => $this->fingerprint,
+            ],
+            'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844'],
+        ]),
+        MockResponse::make([
+            'data' => [
+                'root_ca' => $this->certificate,
+                'sha256' => $this->fingerprint,
+            ],
+            'meta' => ['request_id' => $verifiedRequestId],
+        ]),
+    ]);
+    $caPath = $this->orbitHome.'/gateways/test-gateway-7c27512b7c3e/ca/'.$this->fingerprint.'.pem';
+    $target = $this->trustStore.'/orbit-gateway-ca-7c27512b7c3eb57c.crt';
+    $repository = app(GatewayConfigRepository::class);
+
+    if ($concurrentUpdate === 'active') {
+        $repository->add(new GatewayProfile('other-gateway', 'https://10.44.0.2'));
+    }
+
+    $updateApplied = false;
+    Process::fake(function (PendingProcess $process) use (
+        $target,
+        $caPath,
+        $concurrentUpdate,
+        $repository,
+        &$updateApplied,
+    ) {
+        if (is_array($process->command) && ($process->command[1] ?? null) === 'install') {
+            if (! is_dir(dirname($target))) {
+                mkdir(directory: dirname($target), permissions: 0o755, recursive: true);
+            }
+
+            copy($process->command[5], $target);
+        }
+
+        if (
+            is_array($process->command)
+            && $process->command === ['sudo', 'update-ca-certificates']
+            && ! $updateApplied
+        ) {
+            if ($concurrentUpdate === 'active') {
+                $repository->use('other-gateway');
+            }
+
+            if ($concurrentUpdate === 'pin') {
+                $repository->add(new GatewayProfile('test-gateway', 'https://10.44.0.1', $caPath));
+            }
+
+            $updateApplied = true;
+        }
+
+        return Process::result();
+    });
+    Process::preventStrayProcesses();
+    $expected = json_encode([
+        'gateway' => 'test-gateway',
+        'status' => 'trusted',
+        'sha256' => $this->fingerprint,
+        'ca_path' => $caPath,
+        'request_id' => $verifiedRequestId,
+    ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+
+    $exitCode = Artisan::call('gateway:trust', ['--json' => true]);
+
+    expect($exitCode)
+        ->toBe(0)
+        ->and(trim(Artisan::output()))
+        ->toBe($expected)
+        ->and($updateApplied)
+        ->toBeTrue()
+        ->and($repository->find('test-gateway')?->caPath)
+        ->toBe($caPath)
+        ->and($repository->active()?->name)
+        ->toBe($concurrentUpdate === 'active' ? 'other-gateway' : 'test-gateway')
+        ->and($mockClient->getRecordedResponses())
+        ->toHaveCount(2);
+})->with(['active', 'pin']);
+
 it('returns already_trusted without sudo when the exact certificate fingerprint matches', function (): void {
     $target = $this->trustStore.'/orbit-gateway-ca-7c27512b7c3eb57c.crt';
     mkdir(directory: dirname($target), permissions: 0o755, recursive: true);

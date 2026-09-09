@@ -62,10 +62,11 @@ The Gateway validates the complete proposed Route before it commits a target cha
 | Change | Result |
 | --- | --- |
 | Set the existing AppInstance target again | Return the unchanged Route. |
-| Set an active AppInstance from another Route | Return `route.reconciliation_required` and preserve both associations. |
-| Replace a generated Route target | Return `route.reconciliation_required` when replacement would detach an active AppInstance before coordinated runtime and URL reconciliation exists. |
-| Replace an explicit Route target | Return `route.reconciliation_required` when replacement would detach an active AppInstance before coordinated runtime and URL reconciliation exists. |
-| Clear the only target | Return `route.reconciliation_required` for an active AppInstance unless the same operation first accepts its removal. |
+| Clear an already empty Route | Return the unchanged Route. |
+| Set an AppInstance from another Route | Return `route.target_conflict`, identify the requested and existing Routes, and preserve both associations. |
+| Replace a generated or explicit Route target | Return `route.target_conflict` when replacement would detach an active AppInstance from its Route, and preserve the association. |
+| Clear the only target | Return `route.target_conflict` when clearing would detach an active AppInstance from its Route, and preserve the association. |
+| Remove a targeted Route | Return `route.target_conflict` when removal would detach an active AppInstance from its Route, and preserve the Route, AppInstance, and association. |
 | Set an AppInstance from another App or an inactive AppInstance | Reject the change and retain the complete current Route. |
 | Set a generated target without an effective TLD | Reject the change and retain the complete current Route. |
 | Set a direct Node, backend URL, second generated target, or balancing value | Reject the change and retain the complete current Route. |
@@ -98,11 +99,21 @@ Active WireGuard membership trusts a Node to reach every other active WireGuard 
 
 Public traffic enters through Ingress on HTTP or HTTPS. The firewall does not expose a Router or workload Node as a direct public endpoint. A standalone production Route is private and terminates Orbit-CA TLS on its workload Node. Orbit publishes private DNS only after runtime, certificates, Caddy, and firewall preparation succeed.
 
+### Publication ownership
+
+The Gateway serializes app-dev Caddy and private Domain Name System (DNS) publication with Metrics publication. It acquires one owner before it refreshes Route, target, Cluster, and Router facts or renders an aggregate. The owner remains held through Caddy publication, DNS-last publication, and the transaction that marks the Route and AppInstance active. Nested publication calls in the same request share that owner, and a failed operation releases it for a fresh retry.
+
+A concurrent publisher waits for at most 30 seconds or the shorter remaining command deadline. If the current operation still owns publication, the Gateway returns `app-dev.projection_busy` with HTTP 409 before rendering, remote publication, or activation. A retry reads current state after it acquires the owner.
+
+### Gateway worker rollout
+
+Deploy the shared publication owner by stopping admission of new Gateway mutations, draining requests that run the old code, restarting every Gateway worker, and resuming mutations. Keep `$ORBIT_HOME/.dnsmasq-projections.lock` in place throughout the rollout. The deployment deletes no lock file and runs no stored-data migration.
+
 ## Guard later reconciliation
 
-Initial projection does not implement general later reconciliation. The Gateway returns `route.reconciliation_required` before a mutation that would change an active Route's hostname, target, Node-or-Cluster scope, runtime projection, or Laravel URL. It preserves source, application configuration, Route records, and the serving path.
+Initial projection does not implement general later reconciliation. After it rejects a standalone change that would violate an AppInstance-to-Route association with `route.target_conflict`, the Gateway returns `route.reconciliation_required` before another mutation that would change an active Route's hostname, target, Node-or-Cluster scope, runtime projection, or Laravel URL. It preserves source, application configuration, Route records, and the serving path.
 
-The guard covers Route hostname or publication changes, independent target replacement or clearing, and Route removal. It also covers Node WireGuard, LAN, TLD, or Cluster-membership changes, Cluster activation, deactivation, or TLD changes, and Router replacement or clearing when an active Route depends on the change. An identical request that makes no change remains safe. A Node grant change does not alter private network reachability and retains its command-authorization behavior.
+The reconciliation guard covers Route hostname or publication changes and target or removal changes that pass the association guard. It also covers Node WireGuard, LAN, TLD, or Cluster-membership changes, Cluster activation, deactivation, or TLD changes, and Router replacement or clearing when an active Route depends on the change. Setting the existing target or clearing an already empty Route succeeds without creating, deleting, or reassigning a Route association. A Node grant change does not alter private network reachability and retains its command-authorization behavior.
 
 AppInstance removal is the coordinated target-clear exception. After complete source and Route preflight, the Gateway marks each accepted AppInstance `removing`. Development removal publishes an unavailable response before deleting each final-target Route in worktree-first order. Production removal republishes every ordered survivor when a shared Route remains. Final-target removal clears managed Route projections, deletes the Route, and releases its hostname before source finalization. A projection failure keeps the unfinished Route checkpoint available for retry. The [AppInstance removal reference](appinstance-removal.md) owns content retention, the transient response, cascade order, and retry behavior.
 

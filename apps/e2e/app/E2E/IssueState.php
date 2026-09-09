@@ -11,6 +11,7 @@ use App\E2E\Value\AttemptPurpose;
 use App\E2E\Value\CandidateConvergenceResult;
 use App\E2E\Value\FeatureTopology;
 use App\E2E\Value\OperationId;
+use App\E2E\Value\TopologyExtension;
 use RuntimeException;
 
 /**
@@ -74,7 +75,7 @@ final readonly class IssueState
     }
 
     /**
-     * @return array{issue:string,attempt_id:string,purpose:string,operation_id:string,acquired_at:string}
+     * @return array{issue:string,attempt_id:string,purpose:string,operation_id:string,acquired_at:string,extension?:null|string}
      */
     public function attempt(?AttemptPurpose $purpose = null): array
     {
@@ -95,11 +96,14 @@ final readonly class IssueState
             || ! is_string($lease['operation_id'] ?? null)
             || preg_match('/\A[0-9a-f]{32}\z/D', $lease['operation_id']) !== 1
             || ! is_string($lease['acquired_at'] ?? null)
+            || array_key_exists('extension', $lease)
+            && $lease['extension'] !== null
+            && $lease['extension'] !== TopologyExtension::AppProd->value
         ) {
             throw new RuntimeException("The {$this->issue} attempt lease is invalid.");
         }
 
-        /** @var array{issue:string,attempt_id:string,purpose:string,operation_id:string,acquired_at:string} $lease */
+        /** @var array{issue:string,attempt_id:string,purpose:string,operation_id:string,acquired_at:string,extension?:null|string} $lease */
         return $lease;
     }
 
@@ -113,8 +117,12 @@ final readonly class IssueState
         return new OperationId($this->attempt($purpose)['operation_id']);
     }
 
-    public function writeAttempt(AttemptId $attempt, AttemptPurpose $purpose, OperationId $operation): void
-    {
+    public function writeAttempt(
+        AttemptId $attempt,
+        AttemptPurpose $purpose,
+        OperationId $operation,
+        ?TopologyExtension $extension = null,
+    ): void {
         if ($purpose === AttemptPurpose::Discovery) {
             $this->migrateLegacyProof();
         }
@@ -124,7 +132,48 @@ final readonly class IssueState
             'purpose' => $purpose->value,
             'operation_id' => $operation->value,
             'acquired_at' => gmdate('Y-m-d\TH:i:s\Z'),
+            'extension' => $extension?->value,
         ]);
+    }
+
+    public function leaseHasExtension(AttemptPurpose $purpose): bool
+    {
+        return array_key_exists('extension', $this->attempt($purpose));
+    }
+
+    public function leaseExtension(AttemptPurpose $purpose): ?TopologyExtension
+    {
+        $lease = $this->attempt($purpose);
+        if (! array_key_exists('extension', $lease)) {
+            throw new RuntimeException("The {$this->issue} {$purpose->value} lease extension target is ambiguous.");
+        }
+
+        return $lease['extension'] === null ? null : TopologyExtension::AppProd;
+    }
+
+    /** Add only the missing target evidence after the caller validates external recovery constraints. */
+    public function recoverLeaseExtension(
+        AttemptPurpose $purpose,
+        AttemptId $expectedAttempt,
+        ?TopologyExtension $extension,
+    ): void {
+        $lease = $this->attempt($purpose);
+        if ($lease['attempt_id'] !== $expectedAttempt->value) {
+            throw new RuntimeException(
+                "The expected {$purpose->value} attempt {$expectedAttempt->value} does not match the active lease.",
+            );
+        }
+        if (array_key_exists('extension', $lease)) {
+            $current = $lease['extension'];
+            if ($current !== $extension?->value) {
+                throw new RuntimeException('Recovery cannot replace the lease extension target.');
+            }
+
+            return;
+        }
+
+        $lease['extension'] = $extension?->value;
+        $this->store->write($this->attemptPath($purpose), $lease);
     }
 
     public function topology(?AttemptPurpose $purpose = null): ?FeatureTopology
@@ -144,6 +193,18 @@ final readonly class IssueState
         if ($topology->purpose !== $purpose) {
             throw new RuntimeException('The topology record has the wrong attempt purpose.');
         }
+        if ($this->hasAttempt($purpose)) {
+            $lease = $this->attempt($purpose);
+            if ($topology->attempt->value !== $lease['attempt_id']) {
+                throw new RuntimeException('The attempt lease and the topology record name different attempts.');
+            }
+            if (
+                array_key_exists('extension', $lease)
+                && $topology->construction->extension?->value !== $lease['extension']
+            ) {
+                throw new RuntimeException('The attempt lease and the topology record name different extensions.');
+            }
+        }
 
         return $topology;
     }
@@ -152,13 +213,10 @@ final readonly class IssueState
     public function requireTopology(?AttemptPurpose $purpose = null): FeatureTopology
     {
         $purpose ??= $this->onlyAttemptPurpose();
-        $attempt = $this->attemptId($purpose);
+        $this->attemptId($purpose);
         $topology = $this->topology($purpose) ?? throw new RuntimeException(
             "{$this->issue} has an active {$purpose->value} lease but no topology record.",
         );
-        if ($topology->attempt->value !== $attempt->value) {
-            throw new RuntimeException('The attempt lease and the topology record name different attempts.');
-        }
 
         return $topology;
     }

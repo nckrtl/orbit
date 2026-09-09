@@ -16,7 +16,8 @@ usage: bin/e2e-topology <action> ISSUE [...]
   equivalence ISSUE [--plan=PATH] compare HEAD with the immutable inputs of its retained proof
   candidate ISSUE                converge and verify an equivalent accepted candidate
   status  ISSUE                   report discovery and proof from <worktree>/.e2e/
-  release ISSUE [--proof|--candidate] release discovery or the selected retained topology
+  release ISSUE [--proof|--candidate] [--recover-extension=none|app-prod --expected-attempt=ID]
+                                  release or recover the selected topology
 
 Every action except acquire finds the worktree at <primary>/.worktrees/<issue>-*
 or takes --worktree=PATH. State lives in <worktree>/.e2e/.

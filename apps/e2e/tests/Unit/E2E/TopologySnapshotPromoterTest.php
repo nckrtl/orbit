@@ -82,7 +82,12 @@ function promotableFixture(
     );
     $state = IssueState::forWorktree('TST-123', $worktree);
     $operation = new OperationId(str_repeat('b', 32));
-    $state->writeAttempt($target->requireAttempt(), $purpose, $operation);
+    $state->writeAttempt(
+        $target->requireAttempt(),
+        $purpose,
+        $operation,
+        $extended ? \App\E2E\Value\TopologyExtension::AppProd : null,
+    );
     $construction = $extended
         ? \App\E2E\Value\TopologyConstructionInputs::create(
             $target,

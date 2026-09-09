@@ -91,6 +91,7 @@ it('creates, retries, lists, shows, updates, clears, and removes an explicit Rou
         ->assertJsonPath('data.publication', 'public')
         ->assertJsonPath('data.status', 'pending');
 
+    $this->target->update(['status' => AppInstanceState::Reserved]);
     $this->deleteJson("/api/v1/routes/{$routeId}/target")->assertOk()->assertJsonPath('data.target', null);
     expect(Route::query()->sole()->node_id)->toBe($this->node->id);
 
@@ -120,46 +121,98 @@ it('creates targetless exclusive Node and active Cluster scopes', function (): v
         ->assertJsonPath('data.cluster_id', $cluster->id);
 });
 
-it('replaces generated and explicit targets atomically and retains zero-target state', function (): void {
-    $generated = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
+it('returns 409 before replacing or clearing an active target or removing its Route', function (): void {
+    $route = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
+    $route->update(['status' => 'active']);
     $otherNode = route_node('dev-two', '10.44.0.3', 'two.test');
     $other = route_instance($this->orbitApp, $otherNode, 'feature');
+    $before = $route->fresh(['targets'])->toArray();
+    $targetRowsBefore = route_api_target_rows();
+    $message = "Active AppInstance [{$this->target->id}] must remain associated with Route [{$route->id}].";
 
     $this
-        ->putJson("/api/v1/routes/{$generated->id}/target", [
+        ->putJson("/api/v1/routes/{$route->id}/target", [
             'app_instance_id' => $other->id,
         ])
-        ->assertOk()
-        ->assertJsonPath('data.hostname', 'feature.acme.two.test')
-        ->assertJsonPath('data.node_id', $otherNode->id)
-        ->assertJsonPath('data.generation_basis_node_id', $otherNode->id)
-        ->assertJsonPath('data.status', 'pending');
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'route.target_conflict')
+        ->assertJsonPath('error.message', $message);
+    $this
+        ->deleteJson("/api/v1/routes/{$route->id}/target")
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'route.target_conflict')
+        ->assertJsonPath('error.message', $message);
+    $this
+        ->deleteJson("/api/v1/routes/{$route->id}")
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'route.target_conflict')
+        ->assertJsonPath('error.message', $message);
 
-    $this->deleteJson("/api/v1/routes/{$generated->id}/target")->assertOk();
-    $retained = $generated->refresh();
-    expect($retained->hostname)
-        ->toBe('feature.acme.two.test')
-        ->and($retained->generation_basis_node_id)
-        ->toBe($otherNode->id)
-        ->and($retained->node_id)
-        ->toBe($otherNode->id)
-        ->and($retained->targets()->count())
-        ->toBe(0);
+    expect($route->fresh(['targets'])->toArray())
+        ->toBe($before)
+        ->and(route_api_target_rows())
+        ->toBe($targetRowsBefore)
+        ->and($this->target->fresh())
+        ->not->toBeNull();
+});
 
-    $explicit = $this->postJson('/api/v1/routes', [
+it('returns 409 with both Routes when the requested target belongs to another Route', function (): void {
+    $existing = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
+    $requested = $this->postJson('/api/v1/routes', [
         'app_id' => $this->orbitApp->id,
         'hostname' => 'fixed.example.test',
         'publication' => 'private',
-        'app_instance_id' => $this->target->id,
+        'node_id' => $this->node->id,
     ])->assertCreated();
+    $requestedId = $requested->json('data.id');
+    $routesBefore = route_api_routes();
+    $targetRowsBefore = route_api_target_rows();
+
     $this
-        ->putJson('/api/v1/routes/'.$explicit->json('data.id').'/target', [
-            'app_instance_id' => $other->id,
+        ->putJson("/api/v1/routes/{$requestedId}/target", [
+            'app_instance_id' => $this->target->id,
+        ])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'route.target_conflict')
+        ->assertJsonPath(
+            'error.message',
+            "AppInstance [{$this->target->id}] is already associated with Route [{$existing->id}] and cannot be assigned to Route [{$requestedId}].",
+        );
+
+    expect(route_api_routes())
+        ->toBe($routesBefore)
+        ->and(route_api_target_rows())
+        ->toBe($targetRowsBefore);
+});
+
+it('keeps every Route association unchanged for exact target no-ops', function (): void {
+    $targeted = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
+    $targeted->update(['status' => 'active']);
+    $empty = $this->postJson('/api/v1/routes', [
+        'app_id' => $this->orbitApp->id,
+        'hostname' => 'empty.example.test',
+        'publication' => 'private',
+        'node_id' => $this->node->id,
+    ])->assertCreated();
+    $emptyId = $empty->json('data.id');
+    $routesBefore = route_api_routes();
+    $targetRowsBefore = route_api_target_rows();
+
+    $this
+        ->putJson("/api/v1/routes/{$targeted->id}/target", [
+            'app_instance_id' => $this->target->id,
         ])
         ->assertOk()
-        ->assertJsonPath('data.hostname', 'fixed.example.test')
-        ->assertJsonPath('data.node_id', $otherNode->id)
-        ->assertJsonPath('data.generation_basis_node_id', null);
+        ->assertJsonPath('data.target.app_instance_id', $this->target->id);
+    $this
+        ->deleteJson("/api/v1/routes/{$emptyId}/target")
+        ->assertOk()
+        ->assertJsonPath('data.target', null);
+
+    expect(route_api_routes())
+        ->toBe($routesBefore)
+        ->and(route_api_target_rows())
+        ->toBe($targetRowsBefore);
 });
 
 it('leaves the complete Route unchanged for invalid target proposals', function (): void {
@@ -254,6 +307,7 @@ it('keeps legacy Instance and Workspace host identity unchanged through Route op
     $routeId = $route->json('data.id');
     $this->patchJson("/api/v1/routes/{$routeId}", ['hostname' => 'changed.example.test'])->assertOk();
     $this->putJson("/api/v1/routes/{$routeId}/target", ['app_instance_id' => $this->target->id])->assertOk();
+    $this->target->update(['status' => AppInstanceState::Reserved]);
     $this->deleteJson("/api/v1/routes/{$routeId}/target")->assertOk();
 
     $cluster = Cluster::query()->create(['name' => 'legacy-proof', 'state' => ClusterState::Inactive]);
@@ -352,6 +406,27 @@ function route_instance(OrbitApp $app, Node $node, string $name): AppInstance
         'starting_commit' => str_repeat('a', 40),
         'status' => AppInstanceState::Active,
     ]);
+}
+
+/** @return list<array<string, mixed>> */
+function route_api_routes(): array
+{
+    return Route::query()
+        ->with('targets')
+        ->orderBy('id')
+        ->get()
+        ->map(static fn (Route $route): array => $route->toArray())
+        ->all();
+}
+
+/** @return list<array<string, mixed>> */
+function route_api_target_rows(): array
+{
+    return RouteTarget::query()
+        ->orderBy('id')
+        ->get()
+        ->map(static fn (RouteTarget $target): array => $target->getAttributes())
+        ->all();
 }
 
 /** @return array{Cluster, Node} */

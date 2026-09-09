@@ -11,6 +11,7 @@ use JsonException;
 /**
  * @mago-expect lint:cyclomatic-complexity
  * @mago-expect lint:kan-defect
+ * @mago-expect lint:too-many-methods Profile reads and guarded mutations share one validation and lock boundary.
  */
 final readonly class GatewayConfigRepository
 {
@@ -33,6 +34,43 @@ final readonly class GatewayConfigRepository
             $config['gateways'][$profile->name] = $profile->toArray();
 
             $config['active_gateway'] ??= $profile->name;
+
+            $this->write($config);
+        });
+    }
+
+    public function updatePin(GatewayProfile $expected, string $caPath): void
+    {
+        if (
+            ! GatewayProfile::hasValidName($expected->name)
+            || ! GatewayProfile::hasSafeUrl($expected->url)
+            || ! GatewayProfile::hasValidCaPath($expected->caPath)
+            || ! GatewayProfile::hasValidCaPath($caPath)
+        ) {
+            throw new GatewayConfigException('Gateway profile is invalid.');
+        }
+
+        new GatewayConfigLock($this->path)->synchronized(function () use ($expected, $caPath): void {
+            $config = $this->read();
+            $current = $this->profile($expected->name, $config['gateways'][$expected->name] ?? null);
+
+            if (
+                ! $current instanceof GatewayProfile
+                || $current->url !== $expected->url
+                || ! in_array($current->caPath, [$expected->caPath, $caPath], strict: true)
+            ) {
+                throw new GatewayConfigException('Gateway profile changed while its root CA was being trusted.');
+            }
+
+            if ($current->caPath === $caPath) {
+                return;
+            }
+
+            $config['gateways'][$current->name] = new GatewayProfile(
+                name: $current->name,
+                url: $current->url,
+                caPath: $caPath,
+            )->toArray();
 
             $this->write($config);
         });

@@ -228,7 +228,12 @@ final readonly class TopologyProofRunner
         ));
 
         $target = TopologyTarget::feature($request->issue, $this->mintAttempt(), $plan->recipe());
-        $state->writeAttempt($target->requireAttempt(), AttemptPurpose::Proof, $this->operation);
+        $state->writeAttempt(
+            $target->requireAttempt(),
+            AttemptPurpose::Proof,
+            $this->operation,
+            $plan->extension,
+        );
         try {
             $construction = $this->createTopology($target, $generation, $plan->extension);
         } catch (Throwable $exception) {
@@ -392,7 +397,7 @@ final readonly class TopologyProofRunner
         }
         $target = TopologyTarget::feature($request->issue, $this->mintAttempt());
         $purpose = AttemptPurpose::CandidateConvergence;
-        $state->writeAttempt($target->requireAttempt(), $purpose, $this->operation);
+        $state->writeAttempt($target->requireAttempt(), $purpose, $this->operation, null);
         try {
             $construction = $this->createTopology($target, $generation);
         } catch (Throwable $exception) {
