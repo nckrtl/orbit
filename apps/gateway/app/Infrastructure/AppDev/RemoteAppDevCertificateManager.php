@@ -63,6 +63,21 @@ final readonly class RemoteAppDevCertificateManager implements AppDevCertificate
         $this->converge($router, "route-{$route->id}-router", $route->hostname);
     }
 
+    public function convergeAppInstanceHostnameChange(AppInstance $appInstance, string $hostname): void
+    {
+        $appInstance->loadMissing('node');
+        $this->converge(
+            $appInstance->node,
+            "app-instance-{$appInstance->id}-hostname-change",
+            $hostname,
+        );
+    }
+
+    public function convergeRouteRouterHostnameChange(Route $route, Node $router): void
+    {
+        $this->converge($router, "route-{$route->id}-router-hostname-change", $route->hostname);
+    }
+
     public function appInstanceCertificateExists(AppInstance $appInstance): bool
     {
         $appInstance->loadMissing('node');
@@ -107,6 +122,17 @@ final readonly class RemoteAppDevCertificateManager implements AppDevCertificate
     public function removeRouteRouter(Route $route, Node $router): void
     {
         $this->remove($router, "route-{$route->id}-router");
+    }
+
+    public function removeHostnameChange(AppInstance $appInstance, Route $route): void
+    {
+        $appInstance->loadMissing('node');
+        $this->remove($appInstance->node, "app-instance-{$appInstance->id}-hostname-change");
+        $router = $route->cluster?->routerAssignment?->node;
+
+        if ($router instanceof Node && ! $router->is($appInstance->node)) {
+            $this->remove($router, "route-{$route->id}-router-hostname-change");
+        }
     }
 
     private function converge(Node $node, string $scope, string $hostname): void

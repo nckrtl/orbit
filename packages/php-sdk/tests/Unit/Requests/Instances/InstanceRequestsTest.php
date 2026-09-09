@@ -385,7 +385,10 @@ function instance_sdk_data(): array
 {
     return [
         ...instance_gateway_data(),
-        'route' => [...instance_gateway_route_data(), 'request_id' => instance_request_id()],
+        'route' => [
+            ...instance_gateway_route_data(),
+            'request_id' => instance_request_id(),
+        ],
     ];
 }
 
@@ -404,6 +407,10 @@ function instance_gateway_route_data(): array
         'status' => 'active',
         'failed_step' => null,
         'error_code' => null,
+        'hostname_change_previous' => null,
+        'hostname_change_target' => null,
+        'hostname_change_direction' => null,
+        'hostname_change_step' => null,
         'target' => ['id' => 10, 'app_instance_id' => 7, 'position' => 0],
     ];
 }

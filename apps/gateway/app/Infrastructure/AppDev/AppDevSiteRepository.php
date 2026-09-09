@@ -6,6 +6,8 @@ namespace App\Infrastructure\AppDev;
 
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\RouteHostnameChangeDirection;
+use App\Domain\Routes\RouteHostnameChangeStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\AppInstance;
@@ -24,14 +26,18 @@ final readonly class AppDevSiteRepository
         Node $node,
         ?Route $pendingRoute = null,
         ?AppInstance $unavailableInstance = null,
+        ?Route $additionalRoute = null,
     ): Collection {
-        return $this->sites($node, $pendingRoute, $unavailableInstance);
+        return $this->sites($node, $pendingRoute, $unavailableInstance, $additionalRoute);
     }
 
     /** @return Collection<int, AppDevSite> */
-    public function all(?Route $pendingRoute = null, ?AppInstance $unavailableInstance = null): Collection
-    {
-        return $this->sites(null, $pendingRoute, $unavailableInstance);
+    public function all(
+        ?Route $pendingRoute = null,
+        ?AppInstance $unavailableInstance = null,
+        ?Route $additionalRoute = null,
+    ): Collection {
+        return $this->sites(null, $pendingRoute, $unavailableInstance, $additionalRoute);
     }
 
     /** @return Collection<int, AppDevSite> */
@@ -39,6 +45,7 @@ final readonly class AppDevSiteRepository
         ?Node $node,
         ?Route $pendingRoute,
         ?AppInstance $unavailableInstance,
+        ?Route $additionalRoute,
     ): Collection {
         $instanceQuery = Instance::query()
             ->with(['node', 'workspaces'])
@@ -52,6 +59,7 @@ final readonly class AppDevSiteRepository
             ->latest('id')
             ->get();
         /** @var Collection<int, Instance> $instances */
+        /** @var Collection<int, AppDevSite> $sites */
         $sites = collect();
 
         foreach ($instances as $instance) {
@@ -164,14 +172,68 @@ final readonly class AppDevSiteRepository
             ) {
                 $sites->push($this->unavailableSite($unavailableInstance, $route, $router));
             }
+
+            if (
+                $route->hostname_change_direction === RouteHostnameChangeDirection::Forward
+                && in_array(
+                    $route->hostname_change_step,
+                    [RouteHostnameChangeStep::LaravelUrl, RouteHostnameChangeStep::DnsPublished],
+                    true,
+                )
+                && is_string($route->hostname_change_target)
+                && ! ($additionalRoute instanceof Route
+                && $additionalRoute->id === $route->id
+                && $additionalRoute->hostname === $route->hostname_change_target)
+            ) {
+                $candidate = clone $route;
+                $candidate->hostname = $route->hostname_change_target;
+                $this->appendHostnameChangeSites($sites, $candidate);
+            }
         }
 
-        /** @var Collection<int, AppDevSite> $sites */
+        if ($additionalRoute instanceof Route) {
+            $this->appendHostnameChangeSites($sites, $additionalRoute);
+        }
+
         if ($node instanceof Node) {
             return $sites->where('nodeId', $node->id)->values();
         }
 
         return $sites->values();
+    }
+
+    /** @param Collection<int, AppDevSite> $sites */
+    private function appendHostnameChangeSites(Collection $sites, Route $route): void
+    {
+        $route->loadMissing([
+            'targets.appInstance.app',
+            'targets.appInstance.node',
+            'cluster.routerAssignment.node',
+        ]);
+        $targets = $route
+            ->targets
+            ->map(static fn ($targetRow) => $targetRow->appInstance)
+            ->filter(static fn ($target): bool => $target instanceof AppInstance)
+            ->values();
+        $router = $route->cluster?->routerAssignment?->node;
+
+        foreach ($targets as $target) {
+            assert($target instanceof AppInstance);
+            $sites->push($this->appInstanceSite($target, $route, hostnameChange: true));
+        }
+
+        if (
+            $router instanceof Node
+            && $targets->isNotEmpty()
+            && ! $targets->contains(static fn (AppInstance $target): bool => $router->is($target->node))
+        ) {
+            $sites->push($this->routerSite(
+                array_values($targets->all()),
+                $route,
+                $router,
+                hostnameChange: true,
+            ));
+        }
     }
 
     private function instanceSite(Instance $instance): AppDevSite
@@ -200,8 +262,11 @@ final readonly class AppDevSiteRepository
         );
     }
 
-    private function appInstanceSite(AppInstance $instance, Route $route): AppDevSite
-    {
+    private function appInstanceSite(
+        AppInstance $instance,
+        Route $route,
+        bool $hostnameChange = false,
+    ): AppDevSite {
         return new AppDevSite(
             nodeId: $instance->node_id,
             nodeAddress: $instance->node->wireguard_ip ?? '',
@@ -212,12 +277,17 @@ final readonly class AppDevSiteRepository
             hostname: $route->hostname,
             environment: $instance->environment,
             appSlug: $instance->app->slug,
+            certificateScope: $hostnameChange ? "app-instance-{$instance->id}-hostname-change" : null,
         );
     }
 
     /** @param list<AppInstance> $instances */
-    private function routerSite(array $instances, Route $route, Node $router): AppDevSite
-    {
+    private function routerSite(
+        array $instances,
+        Route $route,
+        Node $router,
+        bool $hostnameChange = false,
+    ): AppDevSite {
         $addresses = collect($instances)
             ->map(static fn (AppInstance $instance): ?string => is_string($instance->node->lan_ip)
                 && $instance->node->lan_ip !== ''
@@ -238,6 +308,7 @@ final readonly class AppDevSiteRepository
             phpVersion: null,
             hostname: $route->hostname,
             upstreamAddresses: $addresses,
+            certificateScope: $hostnameChange ? "route-{$route->id}-router-hostname-change" : null,
         );
     }
 

@@ -35,13 +35,19 @@ final readonly class RemoteAppDevCaddyManager implements AppDevCaddyManager
         $this->owner()->run(fn () => $this->convergeSites($node, $route, $appInstance));
     }
 
+    public function convergeHostnameChange(Node $node, Route $candidate): void
+    {
+        $this->owner()->run(fn () => $this->convergeSites($node, additionalRoute: $candidate));
+    }
+
     private function convergeSites(
         Node $node,
         ?Route $pendingRoute = null,
         ?AppInstance $unavailableInstance = null,
+        ?Route $additionalRoute = null,
     ): void {
         $configuration = $this->renderer->render(
-            $this->sites->forNode($node, $pendingRoute, $unavailableInstance),
+            $this->sites->forNode($node, $pendingRoute, $unavailableInstance, $additionalRoute),
         );
         $version = bin2hex(random_bytes(8));
         $this->ssh->execute(

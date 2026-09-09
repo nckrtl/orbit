@@ -21,6 +21,7 @@ final readonly class AppDevSite
         public bool $unavailable = false,
         public string $environment = 'development',
         public ?string $appSlug = null,
+        public ?string $certificateScope = null,
     ) {}
 
     public function poolName(): string
@@ -35,7 +36,9 @@ final readonly class AppDevSite
 
     public function certificateDirectory(): string
     {
-        return "/etc/caddy/orbit-certificates/{$this->scope}/current";
+        $scope = $this->certificateScope ?? $this->scope;
+
+        return "/etc/caddy/orbit-certificates/{$scope}/current";
     }
 
     public function isProxy(): bool

@@ -21,6 +21,14 @@ function production_route_target_set_migration(): Illuminate\Database\Migrations
         );
 }
 
+function route_hostname_change_migration(): Illuminate\Database\Migrations\Migration
+{
+    return require
+        base_path(
+            'database/migrations/2026_09_09_070000_add_hostname_change_state_to_routes_table.php',
+        );
+}
+
 it('stores exclusive Route scope, immutable provenance, basis, and pending lifecycle', function (): void {
     expect(Schema::hasColumns('routes', [
         'app_id',
@@ -81,6 +89,124 @@ it('rejects duplicate target Nodes', function (): void {
             'app_instance_id' => $duplicateNode->id,
             'position' => 1,
         ]))->toThrow(QueryException::class)->and($explicit->targets()->count())->toBe(1);
+});
+
+it('stores only complete and directionally valid active development hostname changes', function (): void {
+    $route = route_migration_hostname_change_route('validity');
+    $operation = route_migration_hostname_change_attributes('validity-next.example.test');
+
+    foreach ([
+        ['hostname_change_previous' => $route->hostname],
+        array_diff_key($operation, ['hostname_change_direction' => true]),
+        array_diff_key($operation, ['hostname_change_step' => true]),
+        [...$operation, 'hostname_change_direction' => 'sideways'],
+        [...$operation, 'hostname_change_step' => 'unknown'],
+        [...$operation, 'hostname_change_direction' => 'forward', 'hostname_change_step' => 'rollback-dns'],
+        [...$operation, 'hostname_change_direction' => 'rollback', 'hostname_change_step' => 'workload-caddy'],
+    ] as $invalid) {
+        expect(fn () => DB::table('routes')->where('id', $route->id)->update($invalid))
+            ->toThrow(QueryException::class);
+    }
+
+    expect(fn () => DB::table('routes')->where('id', $route->id)->update($operation))
+        ->not
+        ->toThrow(QueryException::class)
+        ->and($route->refresh()->hostname_change_step?->value)
+        ->toBe('reserved');
+});
+
+it('requires paired failure evidence during an active hostname change', function (): void {
+    $route = route_migration_hostname_change_route('failure-pair');
+    DB::table('routes')
+        ->where('id', $route->id)
+        ->update(
+            route_migration_hostname_change_attributes('failure-pair-next.example.test'),
+        );
+
+    expect(fn () => DB::table('routes')->where('id', $route->id)->update(['failed_step' => 'workload-caddy']))
+        ->toThrow(QueryException::class)
+        ->and(fn () => DB::table('routes')->where('id', $route->id)->update(['error_code' => 'route.failed']))
+        ->toThrow(QueryException::class)
+        ->and(fn () => DB::table('routes')
+            ->where('id', $route->id)
+            ->update([
+                'failed_step' => 'workload-caddy',
+                'error_code' => 'route.failed',
+            ]))
+        ->not->toThrow(QueryException::class);
+});
+
+it('limits active hostname change state to one eligible development target', function (): void {
+    $production = route_migration_hostname_change_route('production-operation', environment: 'production');
+    $unknown = route_migration_hostname_change_route('unknown-operation', sourceIsLaravel: null);
+
+    foreach ([$production, $unknown] as $route) {
+        expect(fn () => DB::table('routes')
+            ->where('id', $route->id)
+            ->update(
+                route_migration_hostname_change_attributes("{$route->id}-next.example.test", $route->hostname),
+            ))
+            ->toThrow(QueryException::class);
+    }
+});
+
+it('keeps canonical and candidate hostname ownership exclusive across Routes', function (): void {
+    $first = route_migration_hostname_change_route('first-owner');
+    $second = route_migration_hostname_change_route('second-owner');
+
+    expect(fn () => DB::table('routes')
+        ->where('id', $first->id)
+        ->update(
+            route_migration_hostname_change_attributes($second->hostname, $first->hostname),
+        ))
+        ->toThrow(QueryException::class);
+
+    DB::table('routes')
+        ->where('id', $first->id)
+        ->update(
+            route_migration_hostname_change_attributes('candidate-owner.example.test', $first->hostname),
+        );
+
+    expect(fn () => Route::query()->create([
+        'app_id' => $second->app_id,
+        'node_id' => $second->node_id,
+        'hostname' => 'candidate-owner.example.test',
+        'provenance' => RouteProvenance::Explicit,
+        'publication' => RoutePublication::Private,
+        'status' => RouteStatus::Pending,
+    ]))
+        ->toThrow(QueryException::class);
+});
+
+it('refuses hostname change rollback before discarding unfinished recovery evidence', function (): void {
+    $route = route_migration_hostname_change_route('rollback-evidence');
+    DB::table('routes')
+        ->where('id', $route->id)
+        ->update([
+            ...route_migration_hostname_change_attributes(
+                'rollback-evidence-next.example.test',
+                $route->hostname,
+            ),
+            'failed_step' => 'workload-caddy',
+            'error_code' => 'route.test_failure',
+        ]);
+    $evidenceBefore = $route->refresh()->getAttributes();
+    $schemaBefore = route_migration_hostname_change_schema();
+
+    expect(fn () => route_hostname_change_migration()->down())
+        ->toThrow(RuntimeException::class, "operations are unfinished: {$route->id}");
+
+    expect(route_migration_hostname_change_schema())
+        ->toBe($schemaBefore)
+        ->and($route->refresh()->getAttributes())
+        ->toBe($evidenceBefore)
+        ->and(Schema::hasColumns('routes', [
+            'hostname_change_previous',
+            'hostname_change_target',
+            'hostname_change_direction',
+            'hostname_change_step',
+        ]))
+        ->toBeTrue();
 });
 
 it('enforces multi-target storage with compatible Cluster-scoped production rows', function (): void {
@@ -212,6 +338,51 @@ function route_migration_instance(
     ]);
 }
 
+function route_migration_hostname_change_route(
+    string $suffix,
+    string $environment = 'development',
+    ?bool $sourceIsLaravel = false,
+): Route {
+    $app = App\Models\App::query()->create([
+        'name' => "Hostname {$suffix}",
+        'slug' => "hostname-{$suffix}",
+        'repository_url' => "https://example.test/hostname-{$suffix}.git",
+    ]);
+    $node = route_migration_node("hostname-{$suffix}");
+    $instance = App\Models\AppInstance::query()->create([
+        'app_id' => $app->id,
+        'node_id' => $node->id,
+        'name' => $suffix,
+        'environment' => $environment,
+        'checkout_path' => "/srv/{$suffix}",
+        'source_is_laravel' => $sourceIsLaravel,
+        'status' => AppInstanceState::Active,
+    ]);
+    $route = Route::query()->create([
+        'app_id' => $app->id,
+        'node_id' => $node->id,
+        'hostname' => "{$suffix}.example.test",
+        'provenance' => RouteProvenance::Explicit,
+        'publication' => RoutePublication::Private,
+        'status' => RouteStatus::Pending,
+    ]);
+    $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+    $route->update(['status' => RouteStatus::Active]);
+
+    return $route->refresh();
+}
+
+/** @return array<string, string> */
+function route_migration_hostname_change_attributes(string $target, ?string $previous = null): array
+{
+    return [
+        'hostname_change_previous' => $previous ?? str_replace('-next', '', $target),
+        'hostname_change_target' => $target,
+        'hostname_change_direction' => 'forward',
+        'hostname_change_step' => 'reserved',
+    ];
+}
+
 /** @return array{Route, App\Models\AppInstance, App\Models\AppInstance} */
 function route_migration_production_set(string $suffix, string $environment = 'production'): array
 {
@@ -264,6 +435,19 @@ function route_migration_target_schema(): array
         FROM sqlite_master
         WHERE type IN ('table', 'index', 'trigger')
             AND tbl_name IN ('nodes', 'node_roles', 'routes', 'route_targets', 'active_app_prod_nodes')
+        ORDER BY type, name
+        SQL))
+        ->map(static fn (object $entry): array => (array) $entry)
+        ->all();
+}
+
+/** @return list<array<string, mixed>> */
+function route_migration_hostname_change_schema(): array
+{
+    return collect(DB::select(<<<'SQL'
+        SELECT type, name, tbl_name, sql
+        FROM sqlite_master
+        WHERE tbl_name = 'routes'
         ORDER BY type, name
         SQL))
         ->map(static fn (object $entry): array => (array) $entry)

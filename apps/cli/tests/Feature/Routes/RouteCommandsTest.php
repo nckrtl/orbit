@@ -209,6 +209,10 @@ function route_payload(): array
         'status' => 'pending',
         'failed_step' => null,
         'error_code' => null,
+        'hostname_change_previous' => null,
+        'hostname_change_target' => null,
+        'hostname_change_direction' => null,
+        'hostname_change_step' => null,
         'target' => ['id' => 12, 'app_instance_id' => 7, 'position' => 0],
     ];
 }
